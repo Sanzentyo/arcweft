@@ -377,6 +377,7 @@ pub enum FlowItem {
     Select(SelectBlock),
     BorrowBlock(BorrowBlock),
     SourceLocale(SourceLocaleBlock),
+    Block(LexicalBlock),
     Scope(ScopeBlock),
     Include(EntityRef),
     AwaitWith(AwaitWith),
@@ -387,6 +388,13 @@ pub enum FlowItem {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceLocaleBlock {
     locale: String,
+    body: Vec<FlowItem>,
+    range: TextRange,
+}
+
+/// Bare `{ ... }` lexical block used as a statement.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LexicalBlock {
     body: Vec<FlowItem>,
     range: TextRange,
 }
@@ -2418,6 +2426,20 @@ impl SourceLocaleBlock {
 
     pub fn locale(&self) -> &str {
         &self.locale
+    }
+
+    pub fn body(&self) -> &[FlowItem] {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl LexicalBlock {
+    pub(crate) const fn new(body: Vec<FlowItem>, range: TextRange) -> Self {
+        Self { body, range }
     }
 
     pub fn body(&self) -> &[FlowItem] {

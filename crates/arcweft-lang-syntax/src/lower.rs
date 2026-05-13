@@ -2,9 +2,9 @@ use crate::ast::{
     Attribute, AwaitBranchKind, AwaitWith, BorrowBlock, CallableItem, ChoiceAction, ChoiceBlock,
     ChoicePlan, ContractClause, DialogueContent, EntityDeclItem, EntityRef, EnumItem,
     ExternModItem, Flow, FlowItem, FlowKind, FunctionItem, FunctionKind, HookItem, IfBlock,
-    IfLetBlock, ImplItem, Item, LinePlan, LoopBlock, MatchBlock, MemoFn, ParserItem, Pattern,
-    ScopeBlock, ScopeExprBlock, SourceItem, SourceLocaleBlock, SpeakerLine, StateItem, Stmt,
-    StructItem, SyntaxTree, TextRange, TraitItem, TypeAliasItem, WhileBlock, WhileLetBlock,
+    IfLetBlock, ImplItem, Item, LexicalBlock, LinePlan, LoopBlock, MatchBlock, MemoFn, ParserItem,
+    Pattern, ScopeBlock, ScopeExprBlock, SourceItem, SourceLocaleBlock, SpeakerLine, StateItem,
+    Stmt, StructItem, SyntaxTree, TextRange, TraitItem, TypeAliasItem, WhileBlock, WhileLetBlock,
 };
 use crate::expr::Expr;
 use crate::types::FnSignature;
@@ -95,6 +95,7 @@ pub enum HirFlowItem {
     Select(HirSelect),
     Borrow(HirBorrow),
     SourceLocale(HirSourceLocale),
+    Block(HirLexicalBlock),
     Scope(HirScope),
     Include(EntityRef),
     Await(HirAwait),
@@ -140,6 +141,12 @@ pub struct HirChoiceOption {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirSourceLocale {
     locale: String,
+    body: Vec<HirFlowItem>,
+}
+
+/// HIR-facing bare lexical block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirLexicalBlock {
     body: Vec<HirFlowItem>,
 }
 
@@ -429,6 +436,7 @@ fn lower_flow_item_with_context(
         FlowItem::SourceLocale(block) => {
             lower_source_locale(block, context).map(HirFlowItem::SourceLocale)
         }
+        FlowItem::Block(block) => lower_lexical_block(block, context).map(HirFlowItem::Block),
         FlowItem::Scope(block) => lower_scope(block, context).map(HirFlowItem::Scope),
         FlowItem::Include(entity) => Ok(HirFlowItem::Include(entity.clone())),
         FlowItem::AwaitWith(await_with) => {
@@ -680,6 +688,19 @@ fn lower_source_locale(
 ) -> Result<HirSourceLocale, HirLowerError> {
     Ok(HirSourceLocale {
         locale: block.locale().to_owned(),
+        body: block
+            .body()
+            .iter()
+            .map(|item| lower_flow_item_with_context(item, context))
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn lower_lexical_block(
+    block: &LexicalBlock,
+    context: &mut LowerContext,
+) -> Result<HirLexicalBlock, HirLowerError> {
+    Ok(HirLexicalBlock {
         body: block
             .body()
             .iter()
@@ -1028,6 +1049,12 @@ impl HirSourceLocale {
         &self.locale
     }
 
+    pub fn body(&self) -> &[HirFlowItem] {
+        &self.body
+    }
+}
+
+impl HirLexicalBlock {
     pub fn body(&self) -> &[HirFlowItem] {
         &self.body
     }

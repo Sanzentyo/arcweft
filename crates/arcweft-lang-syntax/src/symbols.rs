@@ -218,6 +218,7 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 collect_flow_item(item, uses);
             }
         }
+        HirFlowItem::Block(block) => collect_flow_items(block.body(), uses),
         HirFlowItem::Scope(block) => collect_flow_items(block.body(), uses),
         HirFlowItem::Include(entity) => push_entity(uses, entity),
         HirFlowItem::LetAwait { await_with, .. } | HirFlowItem::Await(await_with) => {

@@ -4,12 +4,13 @@ use crate::ast::{
     ChoiceOption, ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause,
     DialogueContent, EntityDeclItem, EntityDeclKind, EntityRef, EnumItem, EnumVariant,
     ExternModItem, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionInit, FunctionItem,
-    FunctionKind, HookInit, HookItem, IfBlock, IfLetBlock, ImplItem, ImplMember, Item, LineOptions,
-    LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem,
-    Pattern, RawItem, RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock,
-    SelectBranch, SelectBranchHead, SourceItem, SourceLocaleBlock, SpeakerLine, StateField,
-    StateItem, Stmt, StmtMatchArm, StructField, StructItem, SyntaxTree, TextRange, TraitItem,
-    TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    FunctionKind, HookInit, HookItem, IfBlock, IfLetBlock, ImplItem, ImplMember, Item,
+    LexicalBlock, LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn,
+    ModuleDecl, ParserItem, Pattern, RawItem, RecordPatternField, ScenarioCommand, ScopeBlock,
+    ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceItem, SourceLocaleBlock,
+    SpeakerLine, StateField, StateItem, Stmt, StmtMatchArm, StructField, StructItem, SyntaxTree,
+    TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock,
+    WhileLetBlock, WikiLink,
 };
 use crate::expr::{ComputationBlockKind, Expr, parse_expr};
 use crate::text::parse_dialogue_tokens;
@@ -74,12 +75,20 @@ type EntityDeclHead = (
     Option<String>,
     String,
 );
+type ContentCallParse = (
+    String,
+    Option<String>,
+    DialogueContent,
+    usize,
+    Option<LexicalBlock>,
+);
 
 struct Parser {
     source: String,
     lines: Vec<SourceLine>,
     index: usize,
     errors: Vec<ParseError>,
+    pending_flow_items: Vec<FlowItem>,
 }
 
 impl Parser {
@@ -90,6 +99,7 @@ impl Parser {
             lines,
             index: 0,
             errors: Vec::new(),
+            pending_flow_items: Vec::new(),
         }
     }
 
@@ -930,9 +940,11 @@ impl Parser {
     fn parse_flow_body(&mut self, body: &str, base_offset: usize) -> Vec<FlowItem> {
         let mut nested = Parser::new(body.to_owned());
         let mut items = Vec::new();
-        while nested.index < nested.lines.len() {
-            nested.skip_blank_and_comments();
-            if nested.index >= nested.lines.len() {
+        while !nested.pending_flow_items.is_empty() || nested.index < nested.lines.len() {
+            if nested.pending_flow_items.is_empty() {
+                nested.skip_blank_and_comments();
+            }
+            if nested.pending_flow_items.is_empty() && nested.index >= nested.lines.len() {
                 break;
             }
             if let Some(item) = nested.parse_flow_item_until_indent(0) {
@@ -953,6 +965,9 @@ impl Parser {
     }
 
     fn parse_flow_item_until_indent(&mut self, min_indent: usize) -> Option<FlowItem> {
+        if let Some(item) = self.pending_flow_items.pop() {
+            return Some(item);
+        }
         self.skip_blank_and_comments();
         let line = self.current().clone();
         let indent = indentation(&line.text);
@@ -967,47 +982,8 @@ impl Parser {
         if let Some(item) = self.parse_structured_flow_block(trimmed) {
             return Some(item);
         }
-        if let Some(command) = parse_scenario_command(trimmed, TextRange::new(line.start, line.end))
-        {
-            self.index += 1;
-            return Some(FlowItem::ScenarioCommand(command));
-        }
-        if let Some(command) =
-            parse_word_scenario_command(trimmed, TextRange::new(line.start, line.end))
-        {
-            self.index += 1;
-            return Some(FlowItem::ScenarioCommand(command));
-        }
-        if let Some(rest) = trimmed.strip_prefix("include ") {
-            let entity = parse_required_entity_ref(rest.trim(), line.start, &mut self.errors)?.0;
-            self.index += 1;
-            return Some(FlowItem::Include(entity));
-        }
-        if is_await_with_head(trimmed) {
-            if trimmed.contains('{') {
-                let (head, body, _, ok) = self.take_brace_block();
-                if ok {
-                    let range = TextRange::new(line.start, line.end);
-                    let await_with =
-                        parse_await_with(&format!("{head} {{ {body} }}"), range, &mut self.errors);
-                    return Some(FlowItem::AwaitWith(await_with));
-                }
-            } else if trimmed.ends_with("with:") {
-                self.index += 1;
-                let body = self.take_indented_await_body(indentation(&line.text) + 1);
-                let range = TextRange::new(line.start, line.end);
-                let await_with =
-                    parse_await_with(&format!("{trimmed}\n{body}"), range, &mut self.errors);
-                return Some(FlowItem::AwaitWith(await_with));
-            } else {
-                let await_with = parse_await_with(
-                    trimmed,
-                    TextRange::new(line.start, line.end),
-                    &mut self.errors,
-                );
-                self.index += 1;
-                return Some(FlowItem::AwaitWith(await_with));
-            }
+        if let Some(item) = self.parse_line_flow_item(&line, trimmed) {
+            return Some(item);
         }
         // `choice` owns a brace block, so parse `let x = choice ... { ... }`
         // before generic `let` handling can collapse it into a raw expression.
@@ -1057,6 +1033,56 @@ impl Parser {
         None
     }
 
+    fn parse_line_flow_item(&mut self, line: &SourceLine, trimmed: &str) -> Option<FlowItem> {
+        if let Some(command) = parse_scenario_command(trimmed, TextRange::new(line.start, line.end))
+        {
+            self.index += 1;
+            return Some(FlowItem::ScenarioCommand(command));
+        }
+        if let Some(command) =
+            parse_word_scenario_command(trimmed, TextRange::new(line.start, line.end))
+        {
+            self.index += 1;
+            return Some(FlowItem::ScenarioCommand(command));
+        }
+        if let Some(rest) = trimmed.strip_prefix("include ") {
+            let entity = parse_required_entity_ref(rest.trim(), line.start, &mut self.errors)?.0;
+            self.index += 1;
+            return Some(FlowItem::Include(entity));
+        }
+        is_await_with_head(trimmed)
+            .then(|| self.parse_await_flow_item(line, trimmed))
+            .flatten()
+    }
+
+    fn parse_await_flow_item(&mut self, line: &SourceLine, trimmed: &str) -> Option<FlowItem> {
+        if trimmed.contains('{') {
+            let (head, body, _, ok) = self.take_brace_block();
+            if ok {
+                let range = TextRange::new(line.start, line.end);
+                let await_with =
+                    parse_await_with(&format!("{head} {{ {body} }}"), range, &mut self.errors);
+                return Some(FlowItem::AwaitWith(await_with));
+            }
+        } else if trimmed.ends_with("with:") {
+            self.index += 1;
+            let body = self.take_indented_await_body(indentation(&line.text) + 1);
+            let range = TextRange::new(line.start, line.end);
+            let await_with =
+                parse_await_with(&format!("{trimmed}\n{body}"), range, &mut self.errors);
+            return Some(FlowItem::AwaitWith(await_with));
+        } else {
+            let await_with = parse_await_with(
+                trimmed,
+                TextRange::new(line.start, line.end),
+                &mut self.errors,
+            );
+            self.index += 1;
+            return Some(FlowItem::AwaitWith(await_with));
+        }
+        None
+    }
+
     fn parse_structured_flow_block(&mut self, trimmed: &str) -> Option<FlowItem> {
         if trimmed.starts_with("choice ") {
             return self.parse_choice().map(FlowItem::Choice);
@@ -1094,6 +1120,9 @@ impl Parser {
         }
         if trimmed.starts_with("source locale ") {
             return self.parse_source_locale_block().map(FlowItem::SourceLocale);
+        }
+        if trimmed.starts_with('{') {
+            return self.parse_lexical_block().map(FlowItem::Block);
         }
         if trimmed.starts_with("scope ") {
             return self.parse_scope_block().map(FlowItem::Scope);
@@ -1624,6 +1653,28 @@ impl Parser {
         ))
     }
 
+    fn parse_lexical_block(&mut self) -> Option<LexicalBlock> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing lexical block",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the lexical block"],
+            );
+            return None;
+        }
+        if !head.trim().is_empty() {
+            return None;
+        }
+        Some(LexicalBlock::new(
+            self.parse_flow_body(&body, start_line.start),
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
     fn take_choice_plan_after_current(&mut self, base: usize) -> Option<ChoicePlan> {
         self.skip_blank_and_comments();
         if self.index >= self.lines.len() {
@@ -1940,8 +1991,13 @@ impl Parser {
             )));
         }
 
-        if let Some((callee, args, content, consumed_end)) = self.try_take_content_call() {
+        if let Some((callee, args, content, consumed_end, trailing_block)) =
+            self.try_take_content_call()
+        {
             let plan = self.take_optional_line_plan();
+            if let Some(block) = trailing_block {
+                self.pending_flow_items.push(FlowItem::Block(block));
+            }
             return Some(FlowItem::ContentCall(ContentCall::new(
                 callee,
                 args.clone(),
@@ -1955,9 +2011,7 @@ impl Parser {
         None
     }
 
-    fn try_take_content_call(
-        &mut self,
-    ) -> Option<(String, Option<String>, DialogueContent, usize)> {
+    fn try_take_content_call(&mut self) -> Option<ContentCallParse> {
         let start = self.current().clone();
         let mut text = start.text.trim().to_owned();
         let mut end = start.end;
@@ -1988,13 +2042,44 @@ impl Parser {
         }
         let (callee, args) = split_call_head(before);
         let raw_content = text[open + 1..close].trim().to_owned();
+        let trailing_block =
+            self.take_trailing_lexical_block(&text, close, &mut cursor, start.start);
         self.index = cursor + 1;
         let content = DialogueContent::new(
             raw_content.clone(),
             parse_dialogue_tokens(&raw_content),
             TextRange::new(start.start + open + 1, start.start + close),
         );
-        Some((callee, args, content, end))
+        let consumed_end = trailing_block
+            .as_ref()
+            .map_or(end, |block| block.range().end());
+        Some((callee, args, content, consumed_end, trailing_block))
+    }
+
+    fn take_trailing_lexical_block(
+        &mut self,
+        text: &str,
+        close_bracket: usize,
+        cursor: &mut usize,
+        base: usize,
+    ) -> Option<LexicalBlock> {
+        let mut block_text = text[close_bracket + 1..].trim().to_owned();
+        if !block_text.starts_with('{') {
+            return None;
+        }
+        while brace_delta(&block_text) > 0 && *cursor + 1 < self.lines.len() {
+            *cursor += 1;
+            block_text.push('\n');
+            block_text.push_str(self.lines[*cursor].text.trim_end());
+        }
+        let (head, body) = split_brace_item(&block_text)?;
+        if !head.trim().is_empty() {
+            return None;
+        }
+        Some(LexicalBlock::new(
+            self.parse_flow_body(body, base + close_bracket + 1),
+            TextRange::new(base + close_bracket + 1, self.lines[*cursor].end),
+        ))
     }
 
     fn take_optional_line_plan(&mut self) -> Option<LinePlan> {
@@ -3631,6 +3716,14 @@ fn bracket_delta(text: &str) -> i32 {
     text.chars().fold(0, |depth, ch| match ch {
         '[' => depth + 1,
         ']' => depth - 1,
+        _ => depth,
+    })
+}
+
+fn brace_delta(text: &str) -> i32 {
+    text.chars().fold(0, |depth, ch| match ch {
+        '{' => depth + 1,
+        '}' => depth - 1,
         _ => depth,
     })
 }

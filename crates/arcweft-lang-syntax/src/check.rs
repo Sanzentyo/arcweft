@@ -286,30 +286,19 @@ impl TypeChecker<'_> {
                 self.check_choice(choice);
             }
             HirFlowItem::LetChoice { pattern, choice } => {
-                self.check_choice(choice);
-                if let Some(name) = ident_pattern_name(pattern) {
-                    if let Some(ty) = choice_output_type(choice) {
-                        self.locals.insert(name.to_owned(), ty);
-                    }
-                }
+                self.check_choice_binding(pattern, choice);
             }
             HirFlowItem::LetScope { pattern, scope } => {
                 self.check_scope_expr_binding(pattern, scope);
             }
             HirFlowItem::LetLoop { pattern, block } => {
-                let ty = self.check_loop_block(block, true);
-                if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), ty) {
-                    self.locals.insert(name.to_owned(), ty);
-                }
+                self.check_loop_binding(pattern, block);
             }
             HirFlowItem::LetAwait {
                 pattern,
                 await_with,
             } => {
-                let ty = self.check_await_item(await_with);
-                if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), ty) {
-                    self.locals.insert(name.to_owned(), ty);
-                }
+                self.check_await_binding(pattern, await_with);
             }
             HirFlowItem::If(block) => {
                 self.expect_expr_type(block.condition(), &TypeKind::Bool, "if condition");
@@ -353,6 +342,11 @@ impl TypeChecker<'_> {
             HirFlowItem::SourceLocale(block) => {
                 self.check_flow_items(block.body());
             }
+            HirFlowItem::Block(block) => {
+                let outer_locals = self.locals.clone();
+                self.check_flow_items(block.body());
+                self.locals = outer_locals;
+            }
             HirFlowItem::Scope(block) => {
                 self.check_flow_items(block.body());
             }
@@ -373,6 +367,29 @@ impl TypeChecker<'_> {
                     self.check_expr(arg);
                 }
             }
+        }
+    }
+
+    fn check_choice_binding(&mut self, pattern: &Pattern, choice: &crate::lower::HirChoice) {
+        self.check_choice(choice);
+        if let Some(name) = ident_pattern_name(pattern)
+            && let Some(ty) = choice_output_type(choice)
+        {
+            self.locals.insert(name.to_owned(), ty);
+        }
+    }
+
+    fn check_loop_binding(&mut self, pattern: &Pattern, block: &crate::lower::HirLoop) {
+        let ty = self.check_loop_block(block, true);
+        if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), ty) {
+            self.locals.insert(name.to_owned(), ty);
+        }
+    }
+
+    fn check_await_binding(&mut self, pattern: &Pattern, await_with: &crate::lower::HirAwait) {
+        let ty = self.check_await_item(await_with);
+        if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), ty) {
+            self.locals.insert(name.to_owned(), ty);
         }
     }
 

@@ -426,6 +426,38 @@ flow #flow.opening opening {
     }
 
     #[test]
+    fn parses_bare_block_after_dialogue_as_lexical_scope() {
+        let tree = parse_source(
+            r#"
+flow #flow.opening opening {
+    alice.say()[おはよう。[p]] {
+        let tmp = route_title(state.route)
+        log info "tmp={tmp}" { tmp = tmp }
+    }
+}
+"#,
+        )
+        .expect("dialogue followed by bare lexical block parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let [FlowItem::ContentCall(call), FlowItem::Block(block)] = flow.body() else {
+            panic!("expected dialogue call followed by lexical block");
+        };
+        assert!(call.plan().is_none());
+        assert_eq!(block.body().len(), 2);
+
+        let hir = lower_to_hir(&tree).expect("dialogue plus bare block lowers");
+        let [HirFlowItem::Dialogue(dialogue), HirFlowItem::Block(block)] = hir.flows()[0].body()
+        else {
+            panic!("expected HIR dialogue followed by lexical block");
+        };
+        assert!(dialogue.plan().is_none());
+        assert_eq!(block.body().len(), 2);
+    }
+
+    #[test]
     fn rejects_at_bracket_timed_cue_as_raw_line_plan_item() {
         let tree = parse_source(
             r"
