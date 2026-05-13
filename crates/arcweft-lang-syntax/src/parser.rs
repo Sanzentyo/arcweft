@@ -2858,9 +2858,10 @@ fn parse_trait_member(line: &str) -> TraitMember {
         };
     }
     if line.starts_with("fn ") {
-        return TraitMember::Function {
-            signature: line.to_owned(),
-        };
+        return parse_fn_signature(line).map_or_else(
+            |_| TraitMember::Raw(line.to_owned()),
+            |signature| TraitMember::Function { signature },
+        );
     }
     TraitMember::Raw(line.to_owned())
 }

@@ -110,6 +110,12 @@ fn parse_fn_params(source: &str) -> Result<(Vec<FnParam>, &str), TypeParseError>
 }
 
 fn parse_fn_param(source: &str) -> Result<FnParam, TypeParseError> {
+    if matches!(source.trim(), "self" | "&self" | "&mut self" | "mut self") {
+        return Ok(FnParam {
+            pattern: source.trim().to_owned(),
+            ty: TypeRef::Path("Self".to_owned()),
+        });
+    }
     let (pattern, ty) = split_top_level_once(source, ':')
         .ok_or_else(|| TypeParseError::new("expected `pattern: Type` parameter"))?;
     Ok(FnParam {
@@ -170,13 +176,16 @@ fn split_type_args(source: &str) -> Vec<&str> {
 
 fn find_matching_paren(source: &str) -> Option<usize> {
     let mut depth = 0_i32;
+    let mut previous = None;
     for (index, ch) in source.char_indices() {
         match ch {
             '(' | '<' | '[' | '{' => depth += 1,
             ')' if depth == 0 => return Some(index),
-            ')' | '>' | ']' | '}' => depth -= 1,
+            '>' if previous != Some('-') => depth -= 1,
+            ')' | ']' | '}' => depth -= 1,
             _ => {}
         }
+        previous = Some(ch);
     }
     None
 }
@@ -185,16 +194,19 @@ fn split_top_level(source: &str, delimiter: char) -> Vec<&str> {
     let mut args = Vec::new();
     let mut start = 0;
     let mut depth = 0_i32;
+    let mut previous = None;
     for (index, ch) in source.char_indices() {
         match ch {
             '<' | '[' | '(' | '{' => depth += 1,
-            '>' | ']' | ')' | '}' => depth -= 1,
+            '>' if previous != Some('-') => depth -= 1,
+            ']' | ')' | '}' => depth -= 1,
             ch if ch == delimiter && depth == 0 => {
                 args.push(source[start..index].trim());
                 start = index + 1;
             }
             _ => {}
         }
+        previous = Some(ch);
     }
     let tail = source[start..].trim();
     if !tail.is_empty() {
@@ -205,15 +217,18 @@ fn split_top_level(source: &str, delimiter: char) -> Vec<&str> {
 
 fn split_top_level_once(source: &str, delimiter: char) -> Option<(&str, &str)> {
     let mut depth = 0_i32;
+    let mut previous = None;
     for (index, ch) in source.char_indices() {
         match ch {
             '<' | '[' | '(' | '{' => depth += 1,
-            '>' | ']' | ')' | '}' => depth -= 1,
+            '>' if previous != Some('-') => depth -= 1,
+            ']' | ')' | '}' => depth -= 1,
             ch if ch == delimiter && depth == 0 => {
                 return Some((&source[..index], &source[index + ch.len_utf8()..]));
             }
             _ => {}
         }
+        previous = Some(ch);
     }
     None
 }

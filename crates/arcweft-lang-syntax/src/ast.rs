@@ -275,7 +275,7 @@ pub enum TraitMember {
         value: Option<TypeRef>,
     },
     Function {
-        signature: String,
+        signature: FnSignature,
     },
     Raw(String),
 }

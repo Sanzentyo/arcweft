@@ -2205,7 +2205,9 @@ pub impl<T> Mappable for Option<T> {
         ));
         assert!(matches!(
             &mappable.members()[2],
-            TraitMember::Function { signature } if signature.starts_with("fn map")
+            TraitMember::Function { signature }
+                if signature.name() == "map"
+                    && signature.params().first().is_some_and(|param| param.pattern() == "self")
         ));
 
         let Item::Trait(ord) = &tree.items()[1] else {
@@ -2445,6 +2447,19 @@ with {
         assert_eq!(signature.lifetimes()[0].name(), "a");
         assert_eq!(signature.params()[0].pattern(), "xs");
         assert!(signature.return_type().is_some());
+    }
+
+    #[test]
+    fn parses_self_receiver_and_function_type_parameters() {
+        let signature =
+            parse_fn_signature("fn map<B>(self, f: Self::Item -> B) -> Self::Mapped<B>")
+                .expect("trait method signature parses");
+        assert_eq!(signature.name(), "map");
+        assert_eq!(signature.params()[0].pattern(), "self");
+        assert_eq!(signature.params()[1].pattern(), "f");
+        assert!(
+            matches!(signature.return_type(), Some(TypeRef::Generic { base, .. }) if base == "Self::Mapped")
+        );
     }
 
     #[test]
