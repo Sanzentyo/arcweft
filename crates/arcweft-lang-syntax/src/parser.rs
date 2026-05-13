@@ -125,15 +125,49 @@ impl Parser {
             items.push(Item::Attribute(attribute));
             self.index += 1;
         } else if let Some(path) = trimmed.strip_prefix("mod ") {
-            *module = Some(ModuleDecl::new(path.trim().to_owned(), range));
+            if self.validate_module_path(path, range) {
+                *module = Some(ModuleDecl::new(path.trim().to_owned(), range));
+            }
             self.index += 1;
         } else if is_use_line(trimmed) {
             if let Some(use_item) = parse_use_line(trimmed, range) {
-                uses.push(use_item);
+                if self.validate_use_tree(use_item.tree(), range) {
+                    uses.push(use_item);
+                }
             }
             self.index += 1;
         } else {
             self.parse_top_level_item(trimmed, range, items);
+        }
+    }
+
+    fn validate_module_path(&mut self, path: &str, range: TextRange) -> bool {
+        if is_relative_id_path(path) {
+            self.push_error(
+                range,
+                "module paths cannot use relative `.suffix` ID syntax",
+                ["self::path", "super::path", "crate::path"],
+                Some(path.trim()),
+                ["use `self::`, `super::`, or `crate::` for module-relative paths"],
+            );
+            false
+        } else {
+            true
+        }
+    }
+
+    fn validate_use_tree(&mut self, tree: &str, range: TextRange) -> bool {
+        if is_relative_id_path(tree) {
+            self.push_error(
+                range,
+                "use paths cannot use relative `.suffix` ID syntax",
+                ["use self::path", "use super::path", "use crate::path"],
+                Some(tree.trim()),
+                ["use `self::`, `super::`, or `crate::` for module-relative imports"],
+            );
+            false
+        } else {
+            true
         }
     }
 
@@ -2115,6 +2149,10 @@ fn parse_use_line(trimmed: &str, range: TextRange) -> Option<UseItem> {
         tree.trim().to_owned(),
         range,
     ))
+}
+
+fn is_relative_id_path(path: &str) -> bool {
+    path.trim_start().starts_with('.')
 }
 
 fn looks_like_flow(trimmed: &str) -> bool {

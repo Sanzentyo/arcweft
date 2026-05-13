@@ -827,6 +827,19 @@ flow #flow.quiet_intro quiet_intro {}
     }
 
     #[test]
+    fn rejects_relative_id_syntax_in_module_and_use_paths() {
+        for source in ["mod .routes::opening", "use .characters::{alice}"] {
+            let errors = parse_source(source).expect_err("relative module path is rejected");
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.message().contains("relative `.suffix` ID syntax")),
+                "expected relative-id diagnostic for {source:?}, got {errors:?}"
+            );
+        }
+    }
+
+    #[test]
     fn lowers_relative_dialogue_line_options() {
         let tree = parse_source(
             r"
