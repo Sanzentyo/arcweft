@@ -1,6 +1,7 @@
 # examples
 
 - [Opening flow](opening-flow.md)
+- [Scope and Relative IDs](scope-relative-ids.md)
 - [Layer / Input example](layers-input.md)
 - [Layered scene input](layered-scene-input.md)
 - [Hooks / memoization](hooks-memoization.md)

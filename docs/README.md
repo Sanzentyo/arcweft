@@ -47,6 +47,7 @@
 - [Dialogue Character Methods, TextBox Targets, Interpolation, and Preload](01-language/dialogue-character-methods-and-textbox.md)
 - [TextBox Manifest](schemas/textbox-manifest.md)
 - [Concise Dialogue and Localization example](examples/concise-dialogue-and-localization.md)
+- [Scope and Relative IDs example](examples/scope-relative-ids.md)
 - [Character Stage / Sprite / Voice Timeline](03-presentation/character-stage.md)
 - [Touch Virtual Controller](03-presentation/touch-virtual-controller.md)
 - [Hooks and Memoization](01-language/hooks-and-memoization.md)
