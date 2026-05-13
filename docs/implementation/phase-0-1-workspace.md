@@ -88,6 +88,7 @@ Syntax parser:
 - `let name = choice ... { ... }` parses as a choice expression binding, lowers to HIR with normalized relative choice/option IDs, and the minimal checker can infer `Ref<Flow>` when every option uses `=> #flow...`.
 - Module and import paths accept `crate::`, `self::`, `super::`, and reserved `parent::` roots as source syntax.
 - `await ... with` keeps `pending`/`ready`/`error`/`denied` branches as structured AST/HIR, and branch bodies participate in symbol collection and type checking.
+- Ordinary Rust-like propagation syntax is represented in expression AST. `expr?` and prefix `try expr` parse as structured try expressions, participate in symbol collection, and the minimal checker unwraps `Result<T, E>`-like types while rejecting non-result expressions.
 - Flow/function contract clauses (`requires`, `ensures`, `invariant`, `assume`, `reads`, `effects`, `no_effect`, `modifies`, `decreases`) are parsed separately from the body and participate in symbol collection and type checking where applicable.
 - `lower_to_hir` verifies that parsed edge-case flow syntax can be converted to HIR-facing structures and rejects raw syntax that still needs parser coverage.
 - `collect_symbol_uses` walks HIR without reparsing source snippets so name resolution can see dialogue callees, entity references, paths, calls, methods, dialogue text expressions, timed cues, and choice-condition references.

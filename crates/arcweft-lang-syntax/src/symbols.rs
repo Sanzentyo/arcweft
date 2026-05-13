@@ -368,6 +368,7 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
             collect_expr(lhs, uses);
             collect_expr(rhs, uses);
         }
+        Expr::Try { expr } => collect_expr(expr, uses),
         Expr::Range { start, end, .. } => {
             if let Some(start) = start {
                 collect_expr(start, uses);

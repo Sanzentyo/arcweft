@@ -40,6 +40,10 @@ pub enum TypeKind {
         ready: Box<TypeKind>,
         error: Box<TypeKind>,
     },
+    Result {
+        ok: Box<TypeKind>,
+        error: Box<TypeKind>,
+    },
     Named(String),
     Tuple(Vec<TypeKind>),
     Unit,
@@ -653,6 +657,7 @@ impl TypeChecker<'_> {
                 self.check_expr(lhs);
                 self.check_expr(rhs)
             }
+            Expr::Try { expr } => self.check_try_expr(expr),
             Expr::Range { start, end, .. } => {
                 if let Some(start) = start {
                     self.check_expr(start);
@@ -742,6 +747,25 @@ impl TypeChecker<'_> {
                 None
             })
         })
+    }
+
+    fn check_try_expr(&mut self, expr: &Expr) -> Option<TypeKind> {
+        match self.check_expr(expr) {
+            Some(TypeKind::Result { ok, .. }) => Some(*ok),
+            Some(TypeKind::Named(name)) => result_ok_type(&name).or_else(|| {
+                self.errors.push(TypeCheckError::new(format!(
+                    "`?` requires Result<T, E> or Option<T>, found Named({name:?})"
+                )));
+                None
+            }),
+            Some(other) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "`?` requires Result<T, E> or Option<T>, found {other:?}"
+                )));
+                None
+            }
+            None => None,
+        }
     }
 
     fn check_block_expr(&mut self, statements: &[Stmt], value: Option<&Expr>) -> Option<TypeKind> {
@@ -1019,6 +1043,26 @@ fn option_payload_type(expr_type: Option<&TypeKind>) -> Option<TypeKind> {
         Some(TypeKind::Named(name)) if name == "Option<Int>" => Some(TypeKind::Int),
         Some(TypeKind::Named(name)) if name == "Option<String>" => Some(TypeKind::String),
         _ => None,
+    }
+}
+
+fn result_ok_type(name: &str) -> Option<TypeKind> {
+    let inner = name
+        .strip_prefix("Result<")
+        .and_then(|value| value.strip_suffix('>'))?;
+    let ok = inner.split_once(',').map_or(inner, |(ok, _)| ok).trim();
+    Some(named_type_label(ok))
+}
+
+fn named_type_label(name: &str) -> TypeKind {
+    match name {
+        "Bool" => TypeKind::Bool,
+        "Int" => TypeKind::Int,
+        "Float" => TypeKind::Float,
+        "String" => TypeKind::String,
+        "Duration" => TypeKind::Duration,
+        "Unit" => TypeKind::Unit,
+        other => TypeKind::Named(other.to_owned()),
     }
 }
 

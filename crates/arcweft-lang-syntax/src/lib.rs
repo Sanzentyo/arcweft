@@ -1217,6 +1217,90 @@ flow #flow.branching branching {
     }
 
     #[test]
+    fn parses_and_typechecks_postfix_try_expression() {
+        let tree = parse_source(
+            r"
+flow #flow.trying trying {
+    let config = load_config()?
+}
+",
+        )
+        .expect("postfix try fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::Stmt(Stmt::Let {
+            pattern,
+            expr: Expr::Try { expr },
+        }) = &flow.body()[0]
+        else {
+            panic!("expected let binding with postfix try expression");
+        };
+        assert_eq!(pattern, &Pattern::Ident("config".to_owned()));
+        assert!(matches!(expr.as_ref(), Expr::Call { .. }));
+
+        let hir = lower_to_hir(&tree).expect("postfix try fixture lowers");
+        validate_typecheck_ready(&hir).expect("postfix try expression is typecheck-ready");
+        typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new().with_function(
+                "load_config",
+                TypeKind::Result {
+                    ok: Box::new(TypeKind::Named("Config".to_owned())),
+                    error: Box::new(TypeKind::Named("ConfigError".to_owned())),
+                },
+            ),
+        )
+        .expect("postfix try expression typechecks");
+    }
+
+    #[test]
+    fn parses_and_typechecks_prefix_try_expression() {
+        let tree = parse_source(
+            r"
+flow #flow.trying trying {
+    let config = try load_config()
+}
+",
+        )
+        .expect("prefix try fixture parses");
+        let hir = lower_to_hir(&tree).expect("prefix try fixture lowers");
+        validate_typecheck_ready(&hir).expect("prefix try expression is typecheck-ready");
+        typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new().with_function(
+                "load_config",
+                TypeKind::Named("Result<Config, Error>".to_owned()),
+            ),
+        )
+        .expect("prefix try expression typechecks");
+    }
+
+    #[test]
+    fn typecheck_rejects_try_on_non_result_expression() {
+        let tree = parse_source(
+            r"
+flow #flow.trying trying {
+    let bad = score?
+}
+",
+        )
+        .expect("bad try fixture parses");
+        let hir = lower_to_hir(&tree).expect("bad try fixture lowers");
+        let errors = typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new().with_symbol("score", TypeKind::Int),
+        )
+        .expect_err("try on non-result expression is rejected");
+        assert!(errors.iter().any(|error| {
+            error
+                .message()
+                .contains("`?` requires Result<T, E> or Option<T>")
+        }));
+    }
+
+    #[test]
     fn typecheck_rejects_non_bool_if_let_guard() {
         let tree = parse_source(
             r"

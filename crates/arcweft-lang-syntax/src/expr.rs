@@ -39,6 +39,9 @@ pub enum Expr {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
+    Try {
+        expr: Box<Expr>,
+    },
     Range {
         start: Option<Box<Expr>>,
         end: Option<Box<Expr>>,
@@ -138,6 +141,11 @@ pub fn parse_expr(source: &str) -> Result<Expr, ExprParseError> {
 }
 
 fn parse_pipe(source: &str) -> Expr {
+    if let Some(rest) = source.strip_prefix("try ") {
+        return Expr::Try {
+            expr: Box::new(parse_pipe(rest.trim())),
+        };
+    }
     if let Some((lhs, rhs)) = split_top_level(source, "|>") {
         return Expr::Pipe {
             lhs: Box::new(parse_pipe(lhs)),
@@ -204,6 +212,13 @@ fn parse_binary(source: &str) -> Expr {
 
 fn parse_postfix(source: &str) -> Expr {
     let source = source.trim();
+    if let Some(inner) = source.strip_suffix('?') {
+        if !inner.trim().is_empty() {
+            return Expr::Try {
+                expr: Box::new(parse_postfix(inner.trim())),
+            };
+        }
+    }
     if let Some((target, content)) = split_bracket_postfix(source) {
         if looks_like_index_expr(content) {
             return Expr::Index {
