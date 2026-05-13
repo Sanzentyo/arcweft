@@ -246,6 +246,8 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         | Stmt::Spawn(expr)
         | Stmt::Defer(expr)
         | Stmt::Yield(expr)
+        | Stmt::Panic(expr)
+        | Stmt::Fail(expr)
         | Stmt::Close(expr)
         | Stmt::Expr(expr) => {
             collect_expr(expr, uses);

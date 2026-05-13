@@ -403,7 +403,12 @@ impl TypeChecker<'_> {
                     "loop expression binding must be lowered before type checking".to_owned(),
                 ));
             }
-            Stmt::Return(expr) | Stmt::Out(expr) | Stmt::Close(expr) | Stmt::Expr(expr) => {
+            Stmt::Return(expr)
+            | Stmt::Out(expr)
+            | Stmt::Close(expr)
+            | Stmt::Expr(expr)
+            | Stmt::Panic(expr)
+            | Stmt::Fail(expr) => {
                 self.check_expr(expr);
             }
             Stmt::Goto(expr) => {
@@ -1093,7 +1098,12 @@ fn stmts_diverge(stmts: &[Stmt]) -> bool {
 
 fn stmt_diverges(stmt: &Stmt) -> bool {
     match stmt {
-        Stmt::Return(_) | Stmt::Goto(_) | Stmt::Break(_) | Stmt::Continue => true,
+        Stmt::Return(_)
+        | Stmt::Goto(_)
+        | Stmt::Break(_)
+        | Stmt::Continue
+        | Stmt::Panic(_)
+        | Stmt::Fail(_) => true,
         Stmt::Raw(raw) => {
             raw.starts_with("break") || raw.starts_with("panic ") || raw.starts_with("fail ")
         }

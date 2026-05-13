@@ -460,6 +460,8 @@ pub enum Stmt {
     Spawn(Expr),
     Defer(Expr),
     Yield(Expr),
+    Panic(Expr),
+    Fail(Expr),
     Signal {
         target: Expr,
         value: Expr,

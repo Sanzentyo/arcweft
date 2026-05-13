@@ -85,6 +85,21 @@ alice(id=.comment)
   -> #text.opening.alice.rain.comment
 ```
 
+If a line ID is omitted, the generated stable slot still includes the current
+named-scope path:
+
+```awft
+scope rain {
+    地の文:
+        扉の向こうから、雨の音がした。[p]
+}
+```
+
+```text
+#say.opening.narrator.rain.001
+#text.opening.narrator.rain.001
+```
+
 Named scopes can nest, and the scope path is appended in order:
 
 ```awft
@@ -111,6 +126,10 @@ let can_enter = scope alice_route_check {
     affection_ok && has_key
 }
 ```
+
+Only ID-bearing constructs inside the named scope use the scope path for ID
+generation. The value of the scope expression is still only its final
+expression.
 
 ## Borrow and lifetime
 

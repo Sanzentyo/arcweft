@@ -90,6 +90,52 @@ Formatters should preserve `with:` by default in hand-written scenario files. LS
 
 `speaker.say()[text] { ... }` is not a line-plan attachment. A bare trailing `{ ... }` after a dialogue call is parsed as a separate lexical block/scope, so line plans must use `with { ... }` or `with:`.
 
+## Scope and relative ID decision
+
+`{ ... }` is a lexical block and can be a value-producing expression block in
+expression position. Statement-oriented bodies such as flow bodies, line plans,
+choice plans, `while`, and `for` do not export their final expression; they use
+explicit transfer such as `return`, `out`, or `break`.
+
+Named lexical scopes use the `scope` keyword:
+
+```awft
+scope rain {
+    alice(id=.comment):
+        雨、強くなってきたね。[p]
+}
+```
+
+The scope name contributes to relative line, text-key, choice, and option ID
+generation inside the block. It is also a diagnostic, trace, and LSP/debug name.
+`scope name { ... }` can be used in expression position and returns the final
+expression just like `{ ... }`.
+
+Relative `.suffix` IDs are accepted only in ID-bearing contexts where the
+entity family is known. They are not general entity references.
+
+```text
+alice(id=.comment)
+  -> #say.opening.alice.rain.comment
+
+choice .first
+  -> #choice.opening.rain.first
+
+.listen
+  -> #choice.opening.rain.first.listen
+```
+
+For module and import paths, use Rust-like roots instead:
+
+```awft
+use self::characters::{alice}
+use super::common::{route_gate}
+use crate::game::prelude::*
+```
+
+`parent::` is reserved as an alias for `super::`, but canonical formatting uses
+`super::`.
+
 ## let-else decision
 
 `let PAT = EXPR else { ... }` is supported. The `else` block must diverge or otherwise leave the current continuation.

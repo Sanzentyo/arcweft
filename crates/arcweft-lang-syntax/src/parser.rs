@@ -3345,6 +3345,8 @@ fn is_typed_stmt(trimmed: &str) -> bool {
                 | "spawn"
                 | "defer"
                 | "yield"
+                | "panic"
+                | "fail"
                 | "signal"
                 | "close"
                 | "break"
@@ -3503,6 +3505,12 @@ fn parse_stmt(trimmed: &str) -> Stmt {
     }
     if let Some(expr) = trimmed.strip_prefix("yield ") {
         return Stmt::Yield(parse_expr_lossy(expr.trim()));
+    }
+    if let Some(expr) = trimmed.strip_prefix("panic ") {
+        return Stmt::Panic(parse_expr_lossy(expr.trim()));
+    }
+    if let Some(expr) = trimmed.strip_prefix("fail ") {
+        return Stmt::Fail(parse_expr_lossy(expr.trim()));
     }
     if let Some(rest) = trimmed.strip_prefix("signal ") {
         if let Some((target, value)) = rest.split_once("<-") {

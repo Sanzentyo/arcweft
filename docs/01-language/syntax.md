@@ -3,20 +3,24 @@
 ## 最小例
 
 ```awft
-mod game::routes::opening
+mod crate::game::routes::opening
 
-use game::prelude::*
-use game::logic::affection::{has_affection_at_least}
+use crate::game::prelude::*
+use super::logic::affection::{has_affection_at_least}
 
 pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    alice(id=#say.opening.greeting): おはよう。[p]
+    scope greeting {
+        alice(id=.opening): おはよう。[p]
+    }
 
     let can_enter_alice = state |> has_affection_at_least(#character.alice, 3)
 
-    choice #choice.opening.first {
-        #choice.opening.listen "聞いてみる" if can_enter_alice -> #flow.alice_intro
-        #choice.opening.listen_locked "聞いてみる" -> #flow.alice_locked
-        #choice.opening.silent "黙っている" -> #flow.quiet_intro
+    scope dream {
+        choice .first {
+            .listen "聞いてみる" if can_enter_alice -> #flow.alice_intro
+            .listen_locked "聞いてみる" -> #flow.alice_locked
+            .silent "黙っている" -> #flow.quiet_intro
+        }
     }
 }
 ```
@@ -25,6 +29,8 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
 - 型パラメータは `<>`: `List<T>`, `Result<T, E>`。
 - Entity 参照は `#foo.bar`、複雑な参照やメンバアクセス前は `#<foo.bar>`。
+- `.suffix` は dialogue line / choice / option / text key のような ID 文脈だけで使う相対 ID。
+- module / import の相対指定は `self::` / `super::` / `crate::` を使う。
 - コメントリンクは `[[foo.bar]]`。
 - 属性は `@id(...)`, `@link<T>(...)`, `@derive(...)`。
 - パイプは `|>`。
@@ -157,13 +163,16 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
     @bg #asset.bg.room fade=300ms
     @show alice smile at=center
 
-    地の文: 扉の向こうから、雨の音がした。[p]
-    alice: おはよう。[l]
-    alice(voice=auto): 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    scope rain {
+        地の文(id=.sound): 扉の向こうから、雨の音がした。[p]
+        alice(id=.comment, voice=auto): 雨、強くなってきたね。[p]
+    }
 
-    choice #choice.opening.first {
-        #choice.opening.listen "聞いてみる" -> #flow.alice_intro
-        #choice.opening.silent "黙っている" -> #flow.quiet_intro
+    scope dream {
+        choice .first {
+            .listen "聞いてみる" -> #flow.alice_intro
+            .silent "黙っている" -> #flow.quiet_intro
+        }
     }
 }
 ```

@@ -935,6 +935,32 @@ flow #flow.title title {
     }
 
     #[test]
+    fn typechecks_let_else_panic_and_fail_as_diverging() {
+        for diverging in [r#"panic "missing route""#, "fail .MissingRoute"] {
+            let source = format!(
+                r"
+flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {{
+    let .Some(route) = state.route_override else {{
+        {diverging}
+    }}
+
+    goto route
+}}
+"
+            );
+            let tree = parse_source(source).expect("diverging let-else fixture parses");
+            let hir = lower_to_hir(&tree).expect("diverging let-else fixture lowers");
+            let env = TypeCheckEnv::new()
+                .with_symbol(
+                    "state.route_override",
+                    TypeKind::Named("Option<Ref<Flow>>".to_owned()),
+                )
+                .with_symbol(".MissingRoute", TypeKind::Named("ErrorKind".to_owned()));
+            typecheck_hir(&hir, &env).expect("panic/fail let-else branches diverge");
+        }
+    }
+
+    #[test]
     fn parses_and_typechecks_while_loop() {
         let tree = parse_source(
             r"

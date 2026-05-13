@@ -7,6 +7,7 @@ mod game::logic::affection
 mod crate::game::routes::opening
 mod self::routes::opening
 mod super::shared
+mod parent::shared
 ```
 
 item はデフォルト private。
@@ -28,6 +29,7 @@ pub use game::types::{GameState, GameEvent}
 use crate::game::prelude::*
 use self::characters::{alice, bob}
 use super::common::{route_gate, shared_flags}
+use parent::common::{route_gate}
 ```
 
 Module paths support Rust-like roots:
@@ -42,12 +44,34 @@ parent  reserved alias for super
 `crate`, `self`, and `super` are canonical. If `parent` is accepted by a parser,
 formatters should normalize it to `super`.
 
+```awft
+mod parent::shared
+```
+
+normalizes to:
+
+```awft
+mod super::shared
+```
+
 Do not use `.name` relative ID syntax in module paths. `.name` is only for
 ID-bearing contexts such as dialogue line IDs and choice option IDs.
 
 ```awft
 alice(id=.greeting):        # relative dialogue line ID
 use self::characters::alice # module-relative import
+```
+
+If `parent::` is accepted in `use`, it normalizes the same way:
+
+```awft
+use parent::common::{route_gate}
+```
+
+to:
+
+```awft
+use super::common::{route_gate}
 ```
 
 ## lazy use

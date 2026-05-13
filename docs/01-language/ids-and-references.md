@@ -184,6 +184,22 @@ choice .first
   -> #text.choice.opening.rain.first.listen
 ```
 
+When a line ID is omitted, the stable ordinal is generated under the same
+flow/speaker/scope prefix. This keeps later insertions stable while making the
+scope visible in localization and voice manifests.
+
+```awft
+scope rain {
+    地の文:
+        扉の向こうから、雨の音がした。[p]
+}
+```
+
+```text
+#say.opening.narrator.rain.001
+#text.opening.narrator.rain.001
+```
+
 `scope` は入れ子にでき、`scope_path` は外側から順に連結する。
 
 ```awft
@@ -218,3 +234,8 @@ ID に反映されるのは、その scope 内の ID-bearing construct だけで
 `.suffix` は module path には使わない。module / import の相対指定は
 `self::`、`super::`、`crate::` を使う。`parent::` は `super::` の予約
 alias で、formatter は `super::` に正規化する。
+
+```awft
+alice(id=.greeting):        # ID context
+use self::characters::alice # module path context
+```
