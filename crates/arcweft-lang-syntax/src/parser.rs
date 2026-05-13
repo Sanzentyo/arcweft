@@ -2817,14 +2817,19 @@ fn parse_match_arms(body: &str, base: usize, errors: &mut Vec<ParseError>) -> Ve
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .filter_map(|line| {
-            let (pattern, item) = line.split_once("=>")?;
+            let (head, item) = line.split_once("=>")?;
+            let (pattern, guard) = split_pattern_guard(head);
             let mut nested = Parser::new(item.trim().to_owned());
             let parsed = nested.parse_flow_item_until_indent(0).map_or_else(
                 || vec![FlowItem::Stmt(parse_stmt(item.trim()))],
                 |item| vec![item],
             );
             errors.extend(nested.errors.into_iter().map(|err| err.rebased(base)));
-            Some(MatchArm::new(parse_pattern(pattern.trim()), parsed))
+            Some(MatchArm::new(
+                parse_pattern(pattern.trim()),
+                guard.map(|guard| parse_expr_lossy(guard.trim())),
+                parsed,
+            ))
         })
         .collect()
 }

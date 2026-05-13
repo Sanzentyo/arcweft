@@ -204,9 +204,17 @@ impl TypeChecker<'_> {
                 self.check_if_let_block(block);
             }
             HirFlowItem::Match(block) => {
-                self.check_expr(block.expr());
+                let expr_type = self.check_expr(block.expr());
                 for arm in block.arms() {
+                    let outer_locals = self.locals.clone();
+                    for (name, ty) in let_else_bindings(arm.pattern(), expr_type.as_ref()) {
+                        self.locals.insert(name, ty);
+                    }
+                    if let Some(guard) = arm.guard() {
+                        self.expect_expr_type(guard, &TypeKind::Bool, "match arm guard");
+                    }
                     self.check_flow_items(arm.body());
+                    self.locals = outer_locals;
                 }
             }
             HirFlowItem::Loop(block) => {

@@ -2615,6 +2615,67 @@ flow #flow.branching branching {
     }
 
     #[test]
+    fn typechecks_statement_match_arm_guards_and_bindings() {
+        let tree = parse_source(
+            r"
+flow #flow.branching branching {
+    match state.route_override {
+        .Some(route) when route_enabled => goto route
+        _ => goto #flow.title
+    }
+}
+",
+        )
+        .expect("guarded match fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::Match(block) = &flow.body()[0] else {
+            panic!("expected statement match block");
+        };
+        assert!(block.arms()[0].guard().is_some());
+
+        let hir = lower_to_hir(&tree).expect("guarded match fixture lowers");
+        validate_typecheck_ready(&hir).expect("guarded match is typecheck-ready");
+        let env = TypeCheckEnv::new()
+            .with_symbol(
+                "state.route_override",
+                TypeKind::Named("Option<Ref<Flow>>".to_owned()),
+            )
+            .with_symbol("route_enabled", TypeKind::Bool);
+        typecheck_hir(&hir, &env).expect("guarded match binds route and typechecks goto");
+    }
+
+    #[test]
+    fn typecheck_rejects_statement_match_non_bool_guard() {
+        let tree = parse_source(
+            r"
+flow #flow.branching branching {
+    match state.route_override {
+        .Some(route) when route_count => goto route
+        _ => goto #flow.title
+    }
+}
+",
+        )
+        .expect("non-bool guarded match fixture parses");
+        let hir = lower_to_hir(&tree).expect("non-bool guarded match fixture lowers");
+        let env = TypeCheckEnv::new()
+            .with_symbol(
+                "state.route_override",
+                TypeKind::Named("Option<Ref<Flow>>".to_owned()),
+            )
+            .with_symbol("route_count", TypeKind::Int);
+        let errors = typecheck_hir(&hir, &env).expect_err("non-bool match guard is rejected");
+        assert!(errors.iter().any(|error| {
+            error
+                .message()
+                .contains("match arm guard must have type Bool")
+        }));
+    }
+
+    #[test]
     fn typechecks_flow_contract_expressions() {
         let tree = parse_source(
             r"

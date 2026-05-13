@@ -154,6 +154,7 @@ pub struct HirMatch {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirMatchArm {
     pattern: Pattern,
+    guard: Option<Expr>,
     body: Vec<HirFlowItem>,
 }
 
@@ -500,6 +501,7 @@ fn lower_match(block: &MatchBlock, context: &mut LowerContext) -> Result<HirMatc
             .map(|arm| {
                 Ok(HirMatchArm {
                     pattern: arm.pattern().clone(),
+                    guard: arm.guard().cloned(),
                     body: arm
                         .body()
                         .iter()
@@ -915,6 +917,10 @@ impl HirMatch {
 impl HirMatchArm {
     pub const fn pattern(&self) -> &Pattern {
         &self.pattern
+    }
+
+    pub const fn guard(&self) -> Option<&Expr> {
+        self.guard.as_ref()
     }
 
     pub fn body(&self) -> &[HirFlowItem] {

@@ -352,6 +352,7 @@ pub struct MatchBlock {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MatchArm {
     pattern: Pattern,
+    guard: Option<Expr>,
     body: Vec<FlowItem>,
 }
 
@@ -1456,12 +1457,20 @@ impl MatchBlock {
 }
 
 impl MatchArm {
-    pub(crate) const fn new(pattern: Pattern, body: Vec<FlowItem>) -> Self {
-        Self { pattern, body }
+    pub(crate) const fn new(pattern: Pattern, guard: Option<Expr>, body: Vec<FlowItem>) -> Self {
+        Self {
+            pattern,
+            guard,
+            body,
+        }
     }
 
     pub const fn pattern(&self) -> &Pattern {
         &self.pattern
+    }
+
+    pub const fn guard(&self) -> Option<&Expr> {
+        self.guard.as_ref()
     }
 
     pub fn body(&self) -> &[FlowItem] {

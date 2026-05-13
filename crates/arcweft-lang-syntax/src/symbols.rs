@@ -76,12 +76,7 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
             }
         }
         HirFlowItem::Match(block) => {
-            collect_expr(block.expr(), uses);
-            for arm in block.arms() {
-                for item in arm.body() {
-                    collect_flow_item(item, uses);
-                }
-            }
+            collect_match_block(block, uses);
         }
         HirFlowItem::While(block) => {
             collect_expr(block.condition(), uses);
@@ -188,6 +183,19 @@ fn collect_choice(choice: &crate::lower::HirChoice, uses: &mut Vec<SymbolUse>) {
         }
         if let crate::ast::ChoiceAction::Out(expr) = option.action() {
             collect_expr(expr, uses);
+        }
+    }
+}
+
+fn collect_match_block(block: &crate::lower::HirMatch, uses: &mut Vec<SymbolUse>) {
+    collect_expr(block.expr(), uses);
+    for arm in block.arms() {
+        collect_pattern(arm.pattern(), uses);
+        if let Some(guard) = arm.guard() {
+            collect_expr(guard, uses);
+        }
+        for item in arm.body() {
+            collect_flow_item(item, uses);
         }
     }
 }
