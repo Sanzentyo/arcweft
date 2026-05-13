@@ -2518,7 +2518,10 @@ fn parse_trait_member(line: &str) -> TraitMember {
 fn parse_choice_items(body: &str, base: usize, errors: &mut Vec<ParseError>) -> Vec<ChoiceItem> {
     collect_logical_choice_lines(body)
         .into_iter()
-        .filter_map(|line| parse_choice_item(line.trim(), base, errors))
+        .map(|line| {
+            parse_choice_item(line.trim(), base, errors)
+                .unwrap_or_else(|| ChoiceItem::Raw(line.trim().to_owned()))
+        })
         .collect()
 }
 

@@ -176,6 +176,9 @@ fn collect_choice(choice: &crate::lower::HirChoice, uses: &mut Vec<SymbolUse>) {
     if let Some(id) = choice.id() {
         push_entity(uses, id);
     }
+    for item in choice.items() {
+        collect_choice_item(item, uses);
+    }
     for option in choice.options() {
         if let Some(id) = option.id() {
             push_entity(uses, id);
@@ -204,6 +207,75 @@ fn collect_choice(choice: &crate::lower::HirChoice, uses: &mut Vec<SymbolUse>) {
         for item in plan.items() {
             collect_choice_plan_item(item, uses);
         }
+    }
+}
+
+fn collect_choice_item(item: &crate::ast::ChoiceItem, uses: &mut Vec<SymbolUse>) {
+    match item {
+        crate::ast::ChoiceItem::Let { pattern, expr } => {
+            collect_pattern(pattern, uses);
+            collect_expr(expr, uses);
+        }
+        crate::ast::ChoiceItem::If { condition, items } => {
+            collect_expr(condition, uses);
+            for item in items {
+                collect_choice_item(item, uses);
+            }
+        }
+        crate::ast::ChoiceItem::For {
+            pattern,
+            source,
+            items,
+        } => {
+            collect_pattern(pattern, uses);
+            collect_expr(source, uses);
+            for item in items {
+                collect_choice_item(item, uses);
+            }
+        }
+        crate::ast::ChoiceItem::Match { expr, arms } => {
+            collect_expr(expr, uses);
+            for arm in arms {
+                collect_pattern(arm.pattern(), uses);
+                if let Some(guard) = arm.guard() {
+                    collect_expr(guard, uses);
+                }
+                for item in arm.items() {
+                    collect_choice_item(item, uses);
+                }
+            }
+        }
+        crate::ast::ChoiceItem::Option(option) => {
+            collect_choice_option(option, uses);
+        }
+        crate::ast::ChoiceItem::Raw(raw) => {
+            uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone()));
+        }
+    }
+}
+
+fn collect_choice_option(option: &crate::ast::ChoiceOption, uses: &mut Vec<SymbolUse>) {
+    if let Some(id) = option.id() {
+        push_entity(uses, id);
+    }
+    if let Some(condition) = option.condition() {
+        collect_expr(condition, uses);
+    }
+    if let Some(value) = option.value() {
+        collect_expr(value, uses);
+    }
+    if let Some(text_key) = option.label_text_key() {
+        push_entity(uses, text_key);
+    }
+    if let Some(target) = option.target() {
+        push_entity(uses, target);
+    }
+    match option.action() {
+        crate::ast::ChoiceAction::Out(expr) => collect_expr(expr, uses),
+        crate::ast::ChoiceAction::SelectBlock(statements) => {
+            collect_stmt_block(statements, uses);
+        }
+        crate::ast::ChoiceAction::Goto(_) | crate::ast::ChoiceAction::None => {}
     }
 }
 

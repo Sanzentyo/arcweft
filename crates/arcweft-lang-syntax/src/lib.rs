@@ -562,7 +562,36 @@ choice #choice.opening.first {
 
         let hir = lower_to_hir(&tree).expect("choice match lowers");
         validate_typecheck_ready(&hir).expect("choice match is typecheck-ready");
-        typecheck_hir(&hir, &TypeCheckEnv::new()).expect("choice match options typecheck");
+        let env = TypeCheckEnv::new()
+            .with_symbol(
+                "state.route_override",
+                TypeKind::Named("Option<String>".to_owned()),
+            )
+            .with_symbol("route_enabled", TypeKind::Bool);
+        typecheck_hir(&hir, &env).expect("choice match options typecheck");
+    }
+
+    #[test]
+    fn choice_body_raw_items_are_not_typecheck_ready() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    choice #choice.opening.first {
+        unknown choice body syntax
+    }
+}
+",
+        )
+        .expect("raw choice body item is preserved");
+        let hir = lower_to_hir(&tree).expect("choice with raw item lowers");
+        let errors = validate_typecheck_ready(&hir).expect_err("raw choice item is rejected");
+
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message().contains("raw expression")
+                    && error.message().contains("unknown choice body syntax"))
+        );
     }
 
     #[test]

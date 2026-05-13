@@ -549,6 +549,7 @@ impl TypeChecker<'_> {
         if let Some(id) = choice.id() {
             self.expect_entity_kind(id, &EntityKind::Choice, "choice id");
         }
+        self.check_choice_items(choice.items());
         for option in choice.options() {
             if let Some(id) = option.id() {
                 self.expect_entity_kind(id, &EntityKind::ChoiceOption, "choice option id");
@@ -577,6 +578,69 @@ impl TypeChecker<'_> {
             for item in plan.items() {
                 self.check_choice_plan_item(item);
             }
+        }
+    }
+
+    fn check_choice_items(&mut self, items: &[crate::ast::ChoiceItem]) {
+        for item in items {
+            self.check_choice_item(item);
+        }
+    }
+
+    fn check_choice_item(&mut self, item: &crate::ast::ChoiceItem) {
+        match item {
+            crate::ast::ChoiceItem::Let { pattern, expr } => {
+                let value_type = self.check_expr(expr);
+                if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), value_type) {
+                    self.locals.insert(name.to_owned(), ty);
+                }
+                if let Pattern::Raw(raw) = pattern {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "raw choice let pattern is not type-checkable: {raw}"
+                    )));
+                }
+            }
+            crate::ast::ChoiceItem::If { condition, items } => {
+                self.expect_expr_type(condition, &TypeKind::Bool, "choice if condition");
+                let outer_locals = self.locals.clone();
+                self.check_choice_items(items);
+                self.locals = outer_locals;
+            }
+            crate::ast::ChoiceItem::For {
+                pattern,
+                source,
+                items,
+            } => {
+                self.check_expr(source);
+                let outer_locals = self.locals.clone();
+                if let Pattern::Raw(raw) = pattern {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "raw choice for pattern is not type-checkable: {raw}"
+                    )));
+                }
+                self.check_choice_items(items);
+                self.locals = outer_locals;
+            }
+            crate::ast::ChoiceItem::Match { expr, arms } => {
+                self.check_expr(expr);
+                for arm in arms {
+                    let outer_locals = self.locals.clone();
+                    if let Pattern::Raw(raw) = arm.pattern() {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "raw choice match pattern is not type-checkable: {raw}"
+                        )));
+                    }
+                    if let Some(guard) = arm.guard() {
+                        self.expect_expr_type(guard, &TypeKind::Bool, "choice match guard");
+                    }
+                    self.check_choice_items(arm.items());
+                    self.locals = outer_locals;
+                }
+            }
+            crate::ast::ChoiceItem::Option(_) => {}
+            crate::ast::ChoiceItem::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
+                "raw choice item is not type-checkable: {raw}"
+            ))),
         }
     }
 

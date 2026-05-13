@@ -93,6 +93,7 @@ pub struct HirDialogue {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirChoice {
     id: Option<EntityRef>,
+    items: Vec<crate::ast::ChoiceItem>,
     options: Vec<HirChoiceOption>,
     plan: Option<ChoicePlan>,
 }
@@ -590,6 +591,7 @@ fn lower_choice(choice: &ChoiceBlock, context: &mut LowerContext) -> HirChoice {
     }
     HirChoice {
         id,
+        items: choice.items().to_vec(),
         plan: choice.plan().cloned(),
         options,
     }
@@ -850,6 +852,10 @@ impl HirChoice {
 
     pub fn options(&self) -> &[HirChoiceOption] {
         &self.options
+    }
+
+    pub fn items(&self) -> &[crate::ast::ChoiceItem] {
+        &self.items
     }
 
     pub const fn plan(&self) -> Option<&ChoicePlan> {
