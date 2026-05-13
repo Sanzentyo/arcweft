@@ -481,6 +481,33 @@ with:
     }
 
     #[test]
+    fn parses_multiline_timed_cue_body_as_expression() {
+        let tree = parse_source(
+            r"
+alice[
+    おはよう。[p]
+]
+with:
+    at(0.42s):
+        alice.stage.face(smile)
+",
+        )
+        .expect("multiline timed cue parses");
+
+        let Item::FlowItem(FlowItem::ContentCall(call)) = &tree.items()[0] else {
+            panic!("expected content call");
+        };
+        let plan = call.plan().expect("line plan");
+        assert!(matches!(
+            &plan.items()[0],
+            LinePlanItem::TimedCue {
+                anchor: Expr::Literal(_),
+                body: Expr::MethodCall { .. }
+            }
+        ));
+    }
+
+    #[test]
     fn await_with_keeps_awaited_expression() {
         let tree = parse_source(
             r"

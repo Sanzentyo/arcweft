@@ -516,7 +516,7 @@ impl Parser {
             if !raw.is_empty() {
                 raw.push('\n');
             }
-            raw.push_str(line.text.trim());
+            raw.push_str(&line.text);
             end = line.end;
             self.index += 1;
         }
@@ -1038,13 +1038,43 @@ fn find_matching_square(text: &str, open: usize) -> Option<usize> {
 }
 
 fn parse_line_plan_body(style: BlockStyle, body: &str, range: TextRange) -> LinePlan {
-    let items = body
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(parse_line_plan_item)
-        .collect();
+    let lines = body.lines().collect::<Vec<_>>();
+    let mut items = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let line = lines[index];
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            index += 1;
+            continue;
+        }
+        if is_multiline_timed_cue_header(trimmed) {
+            let cue_indent = indentation(line);
+            let mut body_lines = Vec::new();
+            index += 1;
+            while index < lines.len() {
+                let child = lines[index];
+                let child_trimmed = child.trim();
+                if !child_trimmed.is_empty() && indentation(child) <= cue_indent {
+                    break;
+                }
+                if !child_trimmed.is_empty() {
+                    body_lines.push(child_trimmed);
+                }
+                index += 1;
+            }
+            let body = body_lines.join(" ");
+            items.push(parse_line_plan_item(&format!("{trimmed} {body}")));
+            continue;
+        }
+        items.push(parse_line_plan_item(trimmed));
+        index += 1;
+    }
     LinePlan::new(style, items, range)
+}
+
+fn is_multiline_timed_cue_header(line: &str) -> bool {
+    line.starts_with("at(") && line.ends_with(':')
 }
 
 fn parse_line_plan_item(line: &str) -> LinePlanItem {
