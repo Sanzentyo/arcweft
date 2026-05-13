@@ -902,9 +902,13 @@ impl TypeChecker<'_> {
             BinaryOp::Add | BinaryOp::Sub => {
                 if lhs_type == Some(TypeKind::Duration) && rhs_type == Some(TypeKind::Duration) {
                     Some(TypeKind::Duration)
+                } else if lhs_type == Some(TypeKind::Int) && rhs_type == Some(TypeKind::Int) {
+                    Some(TypeKind::Int)
+                } else if lhs_type == Some(TypeKind::Float) && rhs_type == Some(TypeKind::Float) {
+                    Some(TypeKind::Float)
                 } else {
                     self.errors.push(TypeCheckError::new(format!(
-                        "arithmetic timeline expression must use Duration operands, found {lhs_type:?} and {rhs_type:?}"
+                        "arithmetic expression operands must have a supported numeric or Duration type, found {lhs_type:?} and {rhs_type:?}"
                     )));
                     None
                 }

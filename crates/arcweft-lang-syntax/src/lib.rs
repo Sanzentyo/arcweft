@@ -830,6 +830,40 @@ flow #flow.alice_intro alice_intro {
     }
 
     #[test]
+    fn parses_and_typechecks_plain_block_expression_binding() {
+        let tree = parse_source(
+            r"
+flow #flow.block_expr block_expr {
+    let total = {
+        let a = 1
+        let b = 2
+        a + b
+    }
+}
+",
+        )
+        .expect("plain block expression fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::Stmt(Stmt::Let {
+            pattern,
+            expr: Expr::Block { statements, value },
+        }) = &flow.body()[0]
+        else {
+            panic!("expected let binding with block expression");
+        };
+        assert_eq!(pattern, &Pattern::Ident("total".to_owned()));
+        assert_eq!(statements.len(), 2);
+        assert!(value.is_some());
+
+        let hir = lower_to_hir(&tree).expect("plain block expression fixture lowers");
+        validate_typecheck_ready(&hir).expect("plain block expression is typecheck-ready");
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect("plain block expression typechecks");
+    }
+
+    #[test]
     fn parses_and_typechecks_let_else_binding() {
         let tree = parse_source(
             r"

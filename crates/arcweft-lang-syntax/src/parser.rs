@@ -767,6 +767,9 @@ impl Parser {
         if is_let_scope_head(trimmed) {
             return self.parse_let_scope().map(FlowItem::Stmt);
         }
+        if is_let_block_head(trimmed) {
+            return self.parse_let_block().map(FlowItem::Stmt);
+        }
         if is_let_loop_head(trimmed) {
             return self.parse_let_loop().map(FlowItem::Stmt);
         }
@@ -912,6 +915,31 @@ impl Parser {
                 value,
                 TextRange::new(start_line.start, end),
             ),
+        })
+    }
+
+    fn parse_let_block(&mut self) -> Option<Stmt> {
+        let start_line = self.current().clone();
+        let (head, body, _end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing block expression",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the block expression"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("let")?.trim();
+        let (pattern, block_head) = rest.split_once('=')?;
+        if !block_head.trim().is_empty() {
+            return None;
+        }
+
+        Some(Stmt::Let {
+            pattern: parse_pattern(pattern.trim()),
+            expr: parse_block_expr(&body),
         })
     }
 
@@ -3334,6 +3362,14 @@ fn is_let_scope_head(trimmed: &str) -> bool {
     };
     rest.split_once('=')
         .is_some_and(|(_, expr)| expr.trim_start().starts_with("scope "))
+}
+
+fn is_let_block_head(trimmed: &str) -> bool {
+    let Some(rest) = trimmed.strip_prefix("let ") else {
+        return false;
+    };
+    rest.split_once('=')
+        .is_some_and(|(_, expr)| expr.trim().starts_with('{'))
 }
 
 fn is_let_loop_head(trimmed: &str) -> bool {
