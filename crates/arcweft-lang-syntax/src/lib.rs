@@ -2252,6 +2252,14 @@ with {
             super::parse_expr("_.score >= ^").expect("partial comparison expression parses");
         assert!(matches!(partial, Expr::Binary { .. }));
 
+        let list = super::parse_expr("[normal, smile, worried]").expect("list expression parses");
+        assert!(matches!(list, Expr::List(items) if items.len() == 3));
+        let empty_list = super::parse_expr("[]").expect("empty list expression parses");
+        assert!(matches!(empty_list, Expr::List(items) if items.is_empty()));
+        let nested_list = super::parse_expr("[#stem.piano, fade(0.2s, [slow, fast])]")
+            .expect("nested list expression parses");
+        assert!(matches!(nested_list, Expr::List(items) if items.len() == 2));
+
         let generic_collect = super::parse_expr("visible_choices.collect<List<ChoiceView>>()")
             .expect("generic method call parses");
         assert!(matches!(

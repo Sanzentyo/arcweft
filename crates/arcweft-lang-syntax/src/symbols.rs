@@ -542,7 +542,7 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
         Expr::Literal(_) | Expr::Placeholder(_) => {}
         Expr::EntityRef(entity) => push_entity(uses, entity),
         Expr::Path(path) => uses.push(SymbolUse::new(SymbolUseKind::Path, path.clone())),
-        Expr::Tuple(items) => {
+        Expr::Tuple(items) | Expr::List(items) => {
             for item in items {
                 collect_expr(item, uses);
             }

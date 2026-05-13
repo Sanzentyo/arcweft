@@ -14,6 +14,7 @@ pub enum Expr {
     Path(String),
     Placeholder(Placeholder),
     Tuple(Vec<Expr>),
+    List(Vec<Expr>),
     Call {
         callee: Box<Expr>,
         args: Vec<Expr>,
@@ -334,6 +335,9 @@ fn parse_atom(source: &str) -> Expr {
     if let Some(entity) = parse_entity_expr(source) {
         return Expr::EntityRef(entity);
     }
+    if let Some(items) = parse_list_expr(source) {
+        return Expr::List(items);
+    }
     if let Some((path, fields)) = parse_record_expr(source) {
         return Expr::Record { path, fields };
     }
@@ -351,6 +355,14 @@ fn parse_atom(source: &str) -> Expr {
         return Expr::Path(source.to_owned());
     }
     Expr::Raw(source.to_owned())
+}
+
+fn parse_list_expr(source: &str) -> Option<Vec<Expr>> {
+    let inner = source.strip_prefix('[')?.strip_suffix(']')?;
+    if inner.trim().is_empty() {
+        return Some(Vec::new());
+    }
+    Some(split_args(inner).into_iter().map(parse_pipe).collect())
 }
 
 fn parse_record_expr(source: &str) -> Option<(String, Vec<(String, Expr)>)> {

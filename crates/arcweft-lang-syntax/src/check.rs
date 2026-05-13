@@ -855,12 +855,13 @@ impl TypeChecker<'_> {
                 })
             }),
             Expr::Placeholder(_) => None,
-            Expr::Tuple(items) => Some(TypeKind::Tuple(
-                items
-                    .iter()
-                    .filter_map(|item| self.check_expr(item))
-                    .collect(),
-            )),
+            Expr::Tuple(items) => Some(self.check_tuple_expr(items)),
+            Expr::List(items) => {
+                for item in items {
+                    self.check_expr(item);
+                }
+                Some(TypeKind::Named("List".to_owned()))
+            }
             Expr::Call { callee, args } => self.check_call_expr(callee, args),
             Expr::NamedArg { value, .. } => self.check_expr(value),
             Expr::MethodCall {
@@ -935,6 +936,15 @@ impl TypeChecker<'_> {
                 None
             }
         }
+    }
+
+    fn check_tuple_expr(&mut self, items: &[Expr]) -> TypeKind {
+        TypeKind::Tuple(
+            items
+                .iter()
+                .filter_map(|item| self.check_expr(item))
+                .collect(),
+        )
     }
 
     fn check_call_expr(&mut self, callee: &Expr, args: &[Expr]) -> Option<TypeKind> {
@@ -1402,6 +1412,7 @@ fn simple_expr_type(expr: &Expr) -> Option<TypeKind> {
             .map(simple_expr_type)
             .collect::<Option<Vec<_>>>()
             .map(TypeKind::Tuple),
+        Expr::List(_) => Some(TypeKind::Named("List".to_owned())),
         _ => None,
     }
 }
