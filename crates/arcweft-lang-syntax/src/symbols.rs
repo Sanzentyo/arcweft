@@ -441,6 +441,11 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
                 collect_expr(end, uses);
             }
         }
+        Expr::Record { fields, .. } => {
+            for (_, value) in fields {
+                collect_expr(value, uses);
+            }
+        }
         Expr::Block { statements, value } => {
             for stmt in statements {
                 collect_stmt(stmt, uses);
@@ -477,17 +482,23 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
                 collect_expr(else_branch, uses);
             }
         }
-        Expr::Match { scrutinee, arms } => {
-            collect_expr(scrutinee, uses);
-            for arm in arms {
-                collect_pattern(arm.pattern(), uses);
-                if let Some(guard) = arm.guard() {
-                    collect_expr(guard, uses);
-                }
-                collect_expr(arm.value(), uses);
-            }
-        }
+        Expr::Match { scrutinee, arms } => collect_match_expr(scrutinee, arms, uses),
         Expr::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
+    }
+}
+
+fn collect_match_expr(
+    scrutinee: &Expr,
+    arms: &[crate::expr::MatchExprArm],
+    uses: &mut Vec<SymbolUse>,
+) {
+    collect_expr(scrutinee, uses);
+    for arm in arms {
+        collect_pattern(arm.pattern(), uses);
+        if let Some(guard) = arm.guard() {
+            collect_expr(guard, uses);
+        }
+        collect_expr(arm.value(), uses);
     }
 }
 

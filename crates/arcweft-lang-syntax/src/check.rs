@@ -765,6 +765,12 @@ impl TypeChecker<'_> {
                 }
                 Some(TypeKind::Range)
             }
+            Expr::Record { path, fields } => {
+                for (_, value) in fields {
+                    self.check_expr(value);
+                }
+                Some(TypeKind::Named(path.clone()))
+            }
             Expr::Binary { lhs, op, rhs } => self.check_binary_expr(lhs, *op, rhs),
             Expr::Block { statements, value } => {
                 self.check_block_expr(statements, value.as_deref())

@@ -47,6 +47,10 @@ pub enum Expr {
         end: Option<Box<Expr>>,
         inclusive: bool,
     },
+    Record {
+        path: String,
+        fields: Vec<(String, Expr)>,
+    },
     Binary {
         lhs: Box<Expr>,
         op: BinaryOp,
@@ -276,6 +280,9 @@ fn parse_atom(source: &str) -> Expr {
     if let Some(entity) = parse_entity_expr(source) {
         return Expr::EntityRef(entity);
     }
+    if let Some((path, fields)) = parse_record_expr(source) {
+        return Expr::Record { path, fields };
+    }
     if let Some(inner) = source
         .strip_prefix('(')
         .and_then(|value| value.strip_suffix(')'))
@@ -290,6 +297,34 @@ fn parse_atom(source: &str) -> Expr {
         return Expr::Path(source.to_owned());
     }
     Expr::Raw(source.to_owned())
+}
+
+fn parse_record_expr(source: &str) -> Option<(String, Vec<(String, Expr)>)> {
+    let open = find_top_level_char(source, '{')?;
+    let close = source.rfind('}')?;
+    if open >= close || close != source.len() - 1 {
+        return None;
+    }
+    let path = source[..open].trim();
+    if path.is_empty() || !is_path_like(path) {
+        return None;
+    }
+    let fields = source[open + 1..close]
+        .lines()
+        .flat_map(|line| line.split(','))
+        .filter_map(|part| {
+            let part = part.trim().trim_end_matches(',');
+            if part.is_empty() {
+                return None;
+            }
+            let (name, value) = part
+                .split_once('=')
+                .or_else(|| part.split_once(':'))
+                .map_or((part, part), |(name, value)| (name.trim(), value.trim()));
+            Some((name.to_owned(), parse_pipe(value)))
+        })
+        .collect();
+    Some((path.to_owned(), fields))
 }
 
 fn parse_range_expr(source: &str) -> Option<Expr> {
@@ -313,6 +348,23 @@ fn parse_string(source: &str) -> Option<String> {
         .strip_prefix('"')
         .and_then(|value| value.strip_suffix('"'))
         .map(str::to_owned)
+}
+
+fn find_top_level_char(source: &str, needle: char) -> Option<usize> {
+    let mut depth = 0_i32;
+    let mut in_string = false;
+    for (index, ch) in source.char_indices() {
+        match ch {
+            '"' => in_string = !in_string,
+            '(' | '[' if !in_string => depth += 1,
+            ')' | ']' if !in_string => depth -= 1,
+            _ => {}
+        }
+        if depth == 0 && !in_string && ch == needle {
+            return Some(index);
+        }
+    }
+    None
 }
 
 fn split_top_level_range<'a>(source: &'a str, needle: &str) -> Option<(&'a str, &'a str)> {

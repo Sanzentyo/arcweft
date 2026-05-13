@@ -1835,7 +1835,10 @@ pub view current_scene(state: GameState) -> Scene {
         assert!(
             matches!(state.fields()[0].default(), Expr::EntityRef(entity) if entity.body() == "flow.opening")
         );
-        assert!(matches!(state.fields()[1].default(), Expr::Raw(raw) if raw == "Config {}"));
+        assert!(matches!(
+            state.fields()[1].default(),
+            Expr::Record { path, fields } if path == "Config" && fields.is_empty()
+        ));
 
         let Item::Callable(reducer) = &tree.items()[1] else {
             panic!("expected reducer item");
