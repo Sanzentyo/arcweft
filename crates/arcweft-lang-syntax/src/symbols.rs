@@ -395,6 +395,33 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
                 collect_expr(else_branch, uses);
             }
         }
+        Expr::IfLet {
+            pattern,
+            expr,
+            guard,
+            then_branch,
+            else_branch,
+        } => {
+            collect_pattern(pattern, uses);
+            collect_expr(expr, uses);
+            if let Some(guard) = guard {
+                collect_expr(guard, uses);
+            }
+            collect_expr(then_branch, uses);
+            if let Some(else_branch) = else_branch {
+                collect_expr(else_branch, uses);
+            }
+        }
+        Expr::Match { scrutinee, arms } => {
+            collect_expr(scrutinee, uses);
+            for arm in arms {
+                collect_pattern(arm.pattern(), uses);
+                if let Some(guard) = arm.guard() {
+                    collect_expr(guard, uses);
+                }
+                collect_expr(arm.value(), uses);
+            }
+        }
         Expr::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
     }
 }

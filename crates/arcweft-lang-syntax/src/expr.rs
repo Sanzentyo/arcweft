@@ -1,4 +1,4 @@
-use crate::ast::{EntityRef, Stmt, TextRange};
+use crate::ast::{EntityRef, Pattern, Stmt, TextRange};
 use arcweft_source::{SourceAnchor, SourceName};
 use core::fmt;
 
@@ -58,7 +58,26 @@ pub enum Expr {
         then_branch: Box<Expr>,
         else_branch: Option<Box<Expr>>,
     },
+    IfLet {
+        pattern: Box<Pattern>,
+        expr: Box<Expr>,
+        guard: Option<Box<Expr>>,
+        then_branch: Box<Expr>,
+        else_branch: Option<Box<Expr>>,
+    },
+    Match {
+        scrutinee: Box<Expr>,
+        arms: Vec<MatchExprArm>,
+    },
     Raw(String),
+}
+
+/// One value-producing `match` arm.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MatchExprArm {
+    pattern: Box<Pattern>,
+    guard: Option<Box<Expr>>,
+    value: Box<Expr>,
 }
 
 /// Literal expression.
@@ -551,6 +570,32 @@ impl ExprParseError {
     /// Source anchor for the expression parse failure.
     pub const fn anchor(&self) -> &SourceAnchor {
         &self.anchor
+    }
+}
+
+impl MatchExprArm {
+    /// Builds a value-producing match arm.
+    pub fn new(pattern: Pattern, guard: Option<Box<Expr>>, value: Box<Expr>) -> Self {
+        Self {
+            pattern: Box::new(pattern),
+            guard,
+            value,
+        }
+    }
+
+    /// Pattern that must match before this arm can run.
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    /// Optional `when` guard.
+    pub fn guard(&self) -> Option<&Expr> {
+        self.guard.as_deref()
+    }
+
+    /// Value produced by the arm.
+    pub fn value(&self) -> &Expr {
+        &self.value
     }
 }
 

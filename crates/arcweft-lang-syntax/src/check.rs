@@ -671,6 +671,20 @@ impl TypeChecker<'_> {
                 then_branch,
                 else_branch,
             } => self.check_if_expr(condition, then_branch, else_branch.as_deref()),
+            Expr::IfLet {
+                pattern,
+                expr,
+                guard,
+                then_branch,
+                else_branch,
+            } => self.check_if_let_expr(
+                pattern,
+                expr,
+                guard.as_deref(),
+                then_branch,
+                else_branch.as_deref(),
+            ),
+            Expr::Match { scrutinee, arms } => self.check_match_expr(scrutinee, arms),
             Expr::Raw(raw) => {
                 self.errors.push(TypeCheckError::new(format!(
                     "raw expression is not type-checkable: {raw}"
@@ -754,6 +768,78 @@ impl TypeChecker<'_> {
             (Some(then_type), Some(else_type)) => {
                 self.errors.push(TypeCheckError::new(format!(
                     "if expression branches must have the same type, found {then_type:?} and {else_type:?}"
+                )));
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn check_match_expr(
+        &mut self,
+        scrutinee: &Expr,
+        arms: &[crate::expr::MatchExprArm],
+    ) -> Option<TypeKind> {
+        let scrutinee_type = self.check_expr(scrutinee);
+        if arms.is_empty() {
+            self.errors.push(TypeCheckError::new(
+                "match expression must have at least one arm".to_owned(),
+            ));
+            return None;
+        }
+
+        let mut inferred = None;
+        for arm in arms {
+            let outer_locals = self.locals.clone();
+            for (name, ty) in let_else_bindings(arm.pattern(), scrutinee_type.as_ref()) {
+                self.locals.insert(name, ty);
+            }
+            if let Some(guard) = arm.guard() {
+                self.expect_expr_type(guard, &TypeKind::Bool, "match arm guard");
+            }
+            let arm_type = self.check_expr(arm.value());
+            self.locals = outer_locals;
+            match (&inferred, arm_type) {
+                (None, Some(ty)) => inferred = Some(ty),
+                (Some(existing), Some(ty)) if existing == &ty => {}
+                (Some(existing), Some(ty)) => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "match expression arms must have the same type, found {existing:?} and {ty:?}"
+                    )));
+                    return None;
+                }
+                (_, None) => return None,
+            }
+        }
+        inferred
+    }
+
+    fn check_if_let_expr(
+        &mut self,
+        pattern: &Pattern,
+        expr: &Expr,
+        guard: Option<&Expr>,
+        then_branch: &Expr,
+        else_branch: Option<&Expr>,
+    ) -> Option<TypeKind> {
+        let expr_type = self.check_expr(expr);
+        if let Some(guard) = guard {
+            self.expect_expr_type(guard, &TypeKind::Bool, "if-let expression guard");
+        }
+
+        let outer_locals = self.locals.clone();
+        for (name, ty) in let_else_bindings(pattern, expr_type.as_ref()) {
+            self.locals.insert(name, ty);
+        }
+        let then_type = self.check_expr(then_branch);
+        self.locals = outer_locals;
+
+        let else_type = else_branch.and_then(|branch| self.check_expr(branch));
+        match (then_type, else_type) {
+            (Some(then_type), Some(else_type)) if then_type == else_type => Some(then_type),
+            (Some(then_type), Some(else_type)) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "if-let expression branches must have the same type, found {then_type:?} and {else_type:?}"
                 )));
                 None
             }

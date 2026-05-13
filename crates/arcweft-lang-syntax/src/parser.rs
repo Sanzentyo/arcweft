@@ -770,8 +770,14 @@ impl Parser {
         if is_let_loop_head(trimmed) {
             return self.parse_let_loop().map(FlowItem::Stmt);
         }
+        if is_let_if_let_head(trimmed) {
+            return self.parse_let_if_let().map(FlowItem::Stmt);
+        }
         if is_let_if_head(trimmed) {
             return self.parse_let_if().map(FlowItem::Stmt);
+        }
+        if is_let_match_head(trimmed) {
+            return self.parse_let_match().map(FlowItem::Stmt);
         }
         if is_let_else_head(trimmed) {
             return self.parse_let_else().map(FlowItem::Stmt);
@@ -968,6 +974,70 @@ impl Parser {
                 condition: Box::new(parse_expr_lossy(condition)),
                 then_branch: Box::new(parse_block_expr(&then_body)),
                 else_branch: Some(Box::new(parse_block_expr(&else_body))),
+            },
+        })
+    }
+
+    fn parse_let_if_let(&mut self) -> Option<Stmt> {
+        let start_line = self.current().clone();
+        let (head, body, _end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing if-let expression",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the if-let expression block"],
+            );
+            return None;
+        }
+        let (then_body, else_body) = split_embedded_else_body(&body).map_or_else(
+            || {
+                self.take_optional_else_block(start_line.start)
+                    .map(|else_body| (body, else_body))
+            },
+            Some,
+        )?;
+        let rest = head.trim().strip_prefix("let")?.trim();
+        let (target_pattern, if_head) = rest.split_once('=')?;
+        let if_let_head = if_head.trim().strip_prefix("if let")?.trim();
+        let (binding_pattern, value_and_guard) = if_let_head.split_once('=')?;
+        let (value, guard) = split_if_let_guard(value_and_guard);
+
+        Some(Stmt::Let {
+            pattern: parse_pattern(target_pattern.trim()),
+            expr: crate::expr::Expr::IfLet {
+                pattern: Box::new(parse_pattern(binding_pattern.trim())),
+                expr: Box::new(parse_expr_lossy(value.trim())),
+                guard: guard.map(|guard| Box::new(parse_expr_lossy(guard.trim()))),
+                then_branch: Box::new(parse_block_expr(&then_body)),
+                else_branch: Some(Box::new(parse_block_expr(&else_body))),
+            },
+        })
+    }
+
+    fn parse_let_match(&mut self) -> Option<Stmt> {
+        let start_line = self.current().clone();
+        let (head, body, _end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing match expression",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the match expression block"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("let")?.trim();
+        let (pattern, match_head) = rest.split_once('=')?;
+        let scrutinee = match_head.trim().strip_prefix("match")?.trim();
+
+        Some(Stmt::Let {
+            pattern: parse_pattern(pattern.trim()),
+            expr: crate::expr::Expr::Match {
+                scrutinee: Box::new(parse_expr_lossy(scrutinee)),
+                arms: parse_match_expr_arms(&body),
             },
         })
     }
@@ -2731,6 +2801,35 @@ fn parse_match_arms(body: &str, base: usize, errors: &mut Vec<ParseError>) -> Ve
         .collect()
 }
 
+fn parse_match_expr_arms(body: &str) -> Vec<crate::expr::MatchExprArm> {
+    body.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| {
+            let (head, value) = line.split_once("=>")?;
+            let (pattern, guard) = split_pattern_guard(head);
+            Some(crate::expr::MatchExprArm::new(
+                parse_pattern(pattern.trim()),
+                guard.map(|guard| Box::new(parse_expr_lossy(guard.trim()))),
+                Box::new(parse_match_arm_value(value.trim())),
+            ))
+        })
+        .collect()
+}
+
+fn split_pattern_guard(source: &str) -> (&str, Option<&str>) {
+    source
+        .split_once(" when ")
+        .map_or((source, None), |(pattern, guard)| (pattern, Some(guard)))
+}
+
+fn parse_match_arm_value(source: &str) -> crate::expr::Expr {
+    source
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+        .map_or_else(|| parse_expr_lossy(source), parse_block_expr)
+}
+
 fn parse_select_branches(
     body: &str,
     base: usize,
@@ -3251,6 +3350,28 @@ fn is_let_if_head(trimmed: &str) -> bool {
     };
     rest.split_once('=')
         .is_some_and(|(_, expr)| expr.trim_start().starts_with("if "))
+}
+
+fn is_let_if_let_head(trimmed: &str) -> bool {
+    let Some(rest) = trimmed.strip_prefix("let ") else {
+        return false;
+    };
+    rest.split_once('=')
+        .is_some_and(|(_, expr)| expr.trim_start().starts_with("if let "))
+}
+
+fn is_let_match_head(trimmed: &str) -> bool {
+    let Some(rest) = trimmed.strip_prefix("let ") else {
+        return false;
+    };
+    rest.split_once('=')
+        .is_some_and(|(_, expr)| expr.trim_start().starts_with("match "))
+}
+
+fn split_if_let_guard(source: &str) -> (&str, Option<&str>) {
+    source
+        .split_once(" when ")
+        .map_or((source, None), |(value, guard)| (value, Some(guard)))
 }
 
 fn is_let_else_head(trimmed: &str) -> bool {

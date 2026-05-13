@@ -1057,6 +1057,166 @@ flow #flow.branching branching {
     }
 
     #[test]
+    fn parses_and_typechecks_value_if_let_expression_binding() {
+        let tree = parse_source(
+            r"
+flow #flow.branching branching {
+    let route = if let .Some(route) = state.route_override when route_enabled {
+        route
+    } else {
+        #flow.title
+    }
+}
+",
+        )
+        .expect("value if-let expression fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::Stmt(Stmt::Let {
+            pattern,
+            expr:
+                Expr::IfLet {
+                    pattern: binding,
+                    expr,
+                    guard: Some(_),
+                    then_branch,
+                    else_branch: Some(_),
+                },
+        }) = &flow.body()[0]
+        else {
+            panic!("expected let binding with value if-let expression");
+        };
+        assert_eq!(pattern, &Pattern::Ident("route".to_owned()));
+        assert!(matches!(binding.as_ref(), Pattern::Variant(raw) if raw == ".Some(route)"));
+        assert!(matches!(expr.as_ref(), Expr::Path(path) if path == "state.route_override"));
+        assert!(matches!(
+            then_branch.as_ref(),
+            Expr::Block {
+                value: Some(value),
+                ..
+            } if matches!(value.as_ref(), Expr::Path(path) if path == "route")
+        ));
+
+        let hir = lower_to_hir(&tree).expect("value if-let expression fixture lowers");
+        validate_typecheck_ready(&hir).expect("value if-let expression is typecheck-ready");
+        typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new()
+                .with_symbol(
+                    "state.route_override",
+                    TypeKind::Named("Option<Ref<Flow>>".to_owned()),
+                )
+                .with_symbol("route_enabled", TypeKind::Bool),
+        )
+        .expect("value if-let expression typechecks");
+    }
+
+    #[test]
+    fn typecheck_rejects_value_if_let_non_bool_guard() {
+        let tree = parse_source(
+            r"
+flow #flow.branching branching {
+    let route = if let .Some(route) = state.route_override when route_count {
+        route
+    } else {
+        #flow.title
+    }
+}
+",
+        )
+        .expect("non-bool value if-let fixture parses");
+        let hir = lower_to_hir(&tree).expect("non-bool value if-let fixture lowers");
+        let errors = typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new()
+                .with_symbol(
+                    "state.route_override",
+                    TypeKind::Named("Option<Ref<Flow>>".to_owned()),
+                )
+                .with_symbol("route_count", TypeKind::Int),
+        )
+        .expect_err("non-bool value if-let guard is rejected");
+        assert!(errors.iter().any(|error| {
+            error
+                .message()
+                .contains("if-let expression guard must have type Bool")
+        }));
+    }
+
+    #[test]
+    fn parses_and_typechecks_value_match_expression_binding() {
+        let tree = parse_source(
+            r"
+flow #flow.branching branching {
+    let route = match selected {
+        #choice.opening.listen when can_listen => #flow.alice_intro
+        #choice.opening.silent => #flow.quiet_intro
+        _ => #flow.title
+    }
+}
+",
+        )
+        .expect("value match expression fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::Stmt(Stmt::Let {
+            pattern,
+            expr: Expr::Match { scrutinee, arms },
+        }) = &flow.body()[0]
+        else {
+            panic!("expected let binding with value match expression");
+        };
+        assert_eq!(pattern, &Pattern::Ident("route".to_owned()));
+        assert!(matches!(scrutinee.as_ref(), Expr::Path(path) if path == "selected"));
+        assert_eq!(arms.len(), 3);
+        assert!(arms[0].guard().is_some());
+        assert!(matches!(
+            arms[0].value(),
+            Expr::EntityRef(entity) if entity.body() == "flow.alice_intro"
+        ));
+
+        let hir = lower_to_hir(&tree).expect("value match expression fixture lowers");
+        validate_typecheck_ready(&hir).expect("value match expression is typecheck-ready");
+        typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new()
+                .with_symbol("selected", TypeKind::Ref(EntityKind::ChoiceOption))
+                .with_symbol("can_listen", TypeKind::Bool),
+        )
+        .expect("value match expression typechecks");
+    }
+
+    #[test]
+    fn typecheck_rejects_value_match_branch_type_mismatch() {
+        let tree = parse_source(
+            r#"
+flow #flow.branching branching {
+    let route = match selected {
+        #choice.opening.listen => #flow.alice_intro
+        _ => "fallback"
+    }
+}
+"#,
+        )
+        .expect("mismatched value match fixture parses");
+        let hir = lower_to_hir(&tree).expect("mismatched value match fixture lowers");
+        let errors = typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new().with_symbol("selected", TypeKind::Ref(EntityKind::ChoiceOption)),
+        )
+        .expect_err("mismatched value match arms are rejected");
+        assert!(errors.iter().any(|error| {
+            error
+                .message()
+                .contains("match expression arms must have the same type")
+        }));
+    }
+
+    #[test]
     fn typecheck_rejects_non_bool_if_let_guard() {
         let tree = parse_source(
             r"
