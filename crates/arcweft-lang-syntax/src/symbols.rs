@@ -1,6 +1,6 @@
-use crate::ast::{ContractClause, DialogueToken, EntityRef, LinePlanItem, Stmt};
+use crate::ast::{ContractClause, DialogueToken, EntityRef, LinePlanItem, Stmt, TraitMember};
 use crate::expr::Expr;
-use crate::lower::{HirFlowItem, HirModule};
+use crate::lower::{HirFlowItem, HirModule, HirTopLevelDecl};
 
 /// Kind of symbol-like syntax discovered in lowered HIR.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -45,10 +45,47 @@ pub fn collect_symbol_uses(module: &HirModule) -> Vec<SymbolUse> {
             collect_expr(value, &mut uses);
         }
     }
+    for declaration in module.declarations() {
+        collect_top_level_decl(declaration, &mut uses);
+    }
     for item in module.top_level_items() {
         collect_flow_item(item, &mut uses);
     }
     uses
+}
+
+fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUse>) {
+    match declaration {
+        HirTopLevelDecl::Attribute(_)
+        | HirTopLevelDecl::Enum(_)
+        | HirTopLevelDecl::Impl(_)
+        | HirTopLevelDecl::MemoFn(_)
+        | HirTopLevelDecl::Parser(_)
+        | HirTopLevelDecl::Struct(_) => {}
+        HirTopLevelDecl::Callable(item) => {
+            for contract in item.contracts() {
+                collect_contract_clause(contract, uses);
+            }
+        }
+        HirTopLevelDecl::State(item) => {
+            for field in item.fields() {
+                collect_expr(field.default(), uses);
+            }
+        }
+        HirTopLevelDecl::Trait(item) => {
+            for member in item.members() {
+                if let TraitMember::Raw(raw) = member {
+                    uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone()));
+                }
+            }
+        }
+        HirTopLevelDecl::TypeAlias(item) => {
+            for clause in item.where_clauses() {
+                collect_expr(clause, uses);
+            }
+        }
+        HirTopLevelDecl::Hook(item) => push_entity(uses, item.id()),
+    }
 }
 
 fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {

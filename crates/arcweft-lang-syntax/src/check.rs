@@ -1,6 +1,6 @@
 use crate::ast::{ContractClause, DialogueToken, EntityRef, FlowKind, LinePlanItem, Pattern, Stmt};
 use crate::expr::{BinaryOp, Expr, Literal};
-use crate::lower::{HirFlowItem, HirModule};
+use crate::lower::{HirFlowItem, HirModule, HirTopLevelDecl};
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 use crate::types::TypeRef;
 use core::fmt;
@@ -189,7 +189,46 @@ impl TypeChecker<'_> {
                 }
             }
         }
+        for declaration in module.declarations() {
+            self.check_top_level_decl(declaration);
+        }
         self.check_flow_items(module.top_level_items());
+    }
+
+    fn check_top_level_decl(&mut self, declaration: &HirTopLevelDecl) {
+        match declaration {
+            HirTopLevelDecl::Attribute(_)
+            | HirTopLevelDecl::Enum(_)
+            | HirTopLevelDecl::Impl(_)
+            | HirTopLevelDecl::MemoFn(_)
+            | HirTopLevelDecl::Parser(_)
+            | HirTopLevelDecl::Struct(_)
+            | HirTopLevelDecl::Trait(_) => {}
+            HirTopLevelDecl::Callable(item) => {
+                self.active_borrows.clear();
+                self.locals.clear();
+                self.loop_stack.clear();
+                for contract in item.contracts() {
+                    self.check_contract_clause(contract);
+                }
+            }
+            HirTopLevelDecl::State(item) => {
+                self.active_borrows.clear();
+                self.locals.clear();
+                self.loop_stack.clear();
+                for field in item.fields() {
+                    self.check_expr(field.default());
+                }
+            }
+            HirTopLevelDecl::TypeAlias(item) => {
+                for clause in item.where_clauses() {
+                    self.check_expr(clause);
+                }
+            }
+            HirTopLevelDecl::Hook(item) => {
+                self.expect_entity_kind(item.id(), &EntityKind::Hook, "hook id");
+            }
+        }
     }
 
     fn check_flow_items(&mut self, items: &[HirFlowItem]) {

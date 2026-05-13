@@ -33,7 +33,7 @@ pub use expr::{BinaryOp, ComputationBlockKind, Expr, Literal, Placeholder, Unary
 pub use lower::{
     HirAwait, HirAwaitBranch, HirBorrow, HirChoice, HirChoiceOption, HirDialogue, HirFlow,
     HirFlowItem, HirFor, HirIf, HirIfLet, HirLoop, HirLowerError, HirMatch, HirMatchArm, HirModule,
-    HirScope, HirSelect, HirSelectBranch, HirWhile, HirWhileLet, lower_to_hir,
+    HirScope, HirSelect, HirSelectBranch, HirTopLevelDecl, HirWhile, HirWhileLet, lower_to_hir,
 };
 pub use parser::{ParseError, RecoverySuggestion, parse_source, parse_stub};
 pub use resolve::{NameRegistry, NameResolutionError, registry_from_hir, validate_hir_references};
@@ -48,9 +48,9 @@ mod tests {
     use super::{
         AwaitBranchKind, BinaryOp, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
         ComputationBlockKind, ContractClause, DialogueToken, EntityKind, Expr, FlowItem, FlowKind,
-        HirFlowItem, Item, LinePlanItem, Literal, NameRegistry, Pattern, Placeholder,
-        SelectBranchHead, Stmt, SymbolUseKind, TraitMember, TypeCheckEnv, TypeKind, TypeRef,
-        UnaryOp, VariantPatternPayload, Visibility, collect_symbol_uses, lower_to_hir,
+        HirFlowItem, HirTopLevelDecl, Item, LinePlanItem, Literal, NameRegistry, Pattern,
+        Placeholder, SelectBranchHead, Stmt, SymbolUseKind, TraitMember, TypeCheckEnv, TypeKind,
+        TypeRef, UnaryOp, VariantPatternPayload, Visibility, collect_symbol_uses, lower_to_hir,
         parse_dialogue_tokens, parse_fn_signature, parse_source, parse_stub, parse_type_ref,
         registry_from_hir, typecheck_hir, validate_hir_references, validate_typecheck_ready,
     };
@@ -1994,6 +1994,15 @@ where len(self) <= 16
 
         let hir = lower_to_hir(&tree).expect("syntax-only adt items do not block lowering");
         assert!(hir.flows().is_empty());
+        assert!(matches!(
+            hir.declarations(),
+            [
+                HirTopLevelDecl::Attribute(_),
+                HirTopLevelDecl::Enum(_),
+                HirTopLevelDecl::Struct(_),
+                HirTopLevelDecl::TypeAlias(_)
+            ]
+        ));
     }
 
     #[test]
@@ -2058,6 +2067,14 @@ pub view current_scene(state: GameState) -> Scene {
 
         let hir = lower_to_hir(&tree).expect("syntax-only state/callable items do not block HIR");
         assert!(hir.flows().is_empty());
+        assert!(matches!(
+            hir.declarations(),
+            [
+                HirTopLevelDecl::State(_),
+                HirTopLevelDecl::Callable(_),
+                HirTopLevelDecl::Callable(_)
+            ]
+        ));
     }
 
     #[test]
@@ -2118,6 +2135,14 @@ pub impl<T> Mappable for Option<T> {
 
         let hir = lower_to_hir(&tree).expect("syntax-only trait/impl items do not block HIR");
         assert!(hir.flows().is_empty());
+        assert!(matches!(
+            hir.declarations(),
+            [
+                HirTopLevelDecl::Trait(_),
+                HirTopLevelDecl::Trait(_),
+                HirTopLevelDecl::Impl(_)
+            ]
+        ));
     }
 
     #[test]

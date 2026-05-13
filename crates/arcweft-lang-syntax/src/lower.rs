@@ -1,8 +1,9 @@
 use crate::ast::{
-    AwaitBranchKind, BorrowBlock, ChoiceAction, ChoiceBlock, ChoicePlan, ContractClause,
-    DialogueContent, EntityRef, Flow, FlowItem, FlowKind, FunctionItem, IfBlock, IfLetBlock, Item,
-    LinePlan, LoopBlock, MatchBlock, Pattern, ScopeBlock, ScopeExprBlock, SourceLocaleBlock,
-    SpeakerLine, Stmt, SyntaxTree, TextRange, WhileBlock, WhileLetBlock,
+    Attribute, AwaitBranchKind, BorrowBlock, CallableItem, ChoiceAction, ChoiceBlock, ChoicePlan,
+    ContractClause, DialogueContent, EntityRef, EnumItem, Flow, FlowItem, FlowKind, FunctionItem,
+    HookItem, IfBlock, IfLetBlock, ImplItem, Item, LinePlan, LoopBlock, MatchBlock, MemoFn,
+    ParserItem, Pattern, ScopeBlock, ScopeExprBlock, SourceLocaleBlock, SpeakerLine, StateItem,
+    Stmt, StructItem, SyntaxTree, TextRange, TraitItem, TypeAliasItem, WhileBlock, WhileLetBlock,
 };
 use crate::expr::Expr;
 use crate::types::FnSignature;
@@ -18,6 +19,7 @@ use std::collections::HashMap;
 pub struct HirModule {
     flows: Vec<HirFlow>,
     functions: Vec<HirFunction>,
+    declarations: Vec<HirTopLevelDecl>,
     top_level_items: Vec<HirFlowItem>,
 }
 
@@ -38,6 +40,22 @@ pub struct HirFunction {
     contracts: Vec<ContractClause>,
     statements: Vec<Stmt>,
     value: Option<Expr>,
+}
+
+/// HIR-facing top-level declaration preserved for later semantic passes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HirTopLevelDecl {
+    Attribute(Attribute),
+    Callable(CallableItem),
+    State(StateItem),
+    Trait(TraitItem),
+    Impl(ImplItem),
+    Enum(EnumItem),
+    Struct(StructItem),
+    TypeAlias(TypeAliasItem),
+    Hook(HookItem),
+    MemoFn(MemoFn),
+    Parser(ParserItem),
 }
 
 /// HIR-facing flow item.
@@ -248,6 +266,7 @@ pub struct HirLowerError {
 pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> {
     let mut flows = Vec::new();
     let mut functions = Vec::new();
+    let mut declarations = Vec::new();
     let mut top_level_items = Vec::new();
     let mut errors = Vec::new();
 
@@ -262,17 +281,39 @@ pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> 
                 Ok(item) => top_level_items.push(item),
                 Err(err) => errors.push(err),
             },
-            Item::Attribute(_)
-            | Item::Callable(_)
-            | Item::Enum(_)
-            | Item::Hook(_)
-            | Item::Impl(_)
-            | Item::MemoFn(_)
-            | Item::Parser(_)
-            | Item::State(_)
-            | Item::Struct(_)
-            | Item::Trait(_)
-            | Item::TypeAlias(_) => {}
+            Item::Attribute(item) => {
+                declarations.push(HirTopLevelDecl::Attribute(item.clone()));
+            }
+            Item::Callable(item) => {
+                declarations.push(HirTopLevelDecl::Callable(item.clone()));
+            }
+            Item::Enum(item) => {
+                declarations.push(HirTopLevelDecl::Enum(item.clone()));
+            }
+            Item::Hook(item) => {
+                declarations.push(HirTopLevelDecl::Hook(item.clone()));
+            }
+            Item::Impl(item) => {
+                declarations.push(HirTopLevelDecl::Impl(item.clone()));
+            }
+            Item::MemoFn(item) => {
+                declarations.push(HirTopLevelDecl::MemoFn(item.clone()));
+            }
+            Item::Parser(item) => {
+                declarations.push(HirTopLevelDecl::Parser(item.clone()));
+            }
+            Item::State(item) => {
+                declarations.push(HirTopLevelDecl::State(item.clone()));
+            }
+            Item::Struct(item) => {
+                declarations.push(HirTopLevelDecl::Struct(item.clone()));
+            }
+            Item::Trait(item) => {
+                declarations.push(HirTopLevelDecl::Trait(item.clone()));
+            }
+            Item::TypeAlias(item) => {
+                declarations.push(HirTopLevelDecl::TypeAlias(item.clone()));
+            }
             Item::Raw(raw) => errors.push(HirLowerError::new(
                 format!("raw top-level item cannot be lowered: {}", raw.head()),
                 Some(*raw.range()),
@@ -284,6 +325,7 @@ pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> 
         Ok(HirModule {
             flows,
             functions,
+            declarations,
             top_level_items,
         })
     } else {
@@ -764,6 +806,10 @@ impl HirModule {
 
     pub fn functions(&self) -> &[HirFunction] {
         &self.functions
+    }
+
+    pub fn declarations(&self) -> &[HirTopLevelDecl] {
+        &self.declarations
     }
 
     pub fn top_level_items(&self) -> &[HirFlowItem] {
