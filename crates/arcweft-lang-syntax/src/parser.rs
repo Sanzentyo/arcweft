@@ -1,8 +1,8 @@
 use crate::ast::{
     Attribute, AwaitWith, BlockStyle, CancelRuleSyntax, ChoiceBlock, ChoiceOption, ContentCall,
     DialogueContent, EntityRef, Flow, FlowItem, HookItem, Item, LinePlan, LinePlanItem, MemoFn,
-    ModuleDecl, ParserItem, RawItem, ScenarioCommand, SpeakerLine, SyntaxTree, TextRange, UseItem,
-    UseMode, Visibility, WikiLink,
+    ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, SpeakerLine, Stmt, SyntaxTree,
+    TextRange, UseItem, UseMode, Visibility, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -325,12 +325,12 @@ impl Parser {
             self.index += 1;
             return Some(FlowItem::AwaitWith(await_with));
         }
-        if let Some(item) = self.parse_content_call_or_speaker_line() {
-            return Some(item);
-        }
         if is_typed_stmt(trimmed) {
             self.index += 1;
-            return Some(FlowItem::TypedStmt(trimmed.to_owned()));
+            return Some(FlowItem::Stmt(parse_stmt(trimmed)));
+        }
+        if let Some(item) = self.parse_content_call_or_speaker_line() {
+            return Some(item);
         }
 
         None
@@ -1046,7 +1046,7 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
     if let Some(rest) = line.strip_prefix("let ") {
         if let Some((pattern, expr)) = rest.split_once('=') {
             return LinePlanItem::Let {
-                pattern: pattern.trim().to_owned(),
+                pattern: parse_pattern(pattern.trim()),
                 expr: parse_expr_lossy(expr.trim()),
             };
         }
@@ -1117,6 +1117,82 @@ fn is_typed_stmt(trimmed: &str) -> bool {
         trimmed.split_whitespace().next(),
         Some("let" | "match" | "if" | "return" | "goto" | "spawn" | "defer")
     )
+}
+
+fn parse_stmt(trimmed: &str) -> Stmt {
+    if let Some(rest) = trimmed.strip_prefix("let ") {
+        if let Some((pattern, expr)) = rest.split_once('=') {
+            return Stmt::Let {
+                pattern: parse_pattern(pattern.trim()),
+                expr: parse_expr_lossy(expr.trim()),
+            };
+        }
+        return Stmt::Raw(trimmed.to_owned());
+    }
+    if let Some(expr) = trimmed.strip_prefix("return ") {
+        return Stmt::Return(parse_expr_lossy(expr.trim()));
+    }
+    if let Some(expr) = trimmed.strip_prefix("goto ") {
+        return Stmt::Goto(parse_expr_lossy(expr.trim()));
+    }
+    if matches!(
+        trimmed.split_whitespace().next(),
+        Some("match" | "if" | "spawn" | "defer")
+    ) {
+        return Stmt::Raw(trimmed.to_owned());
+    }
+    Stmt::Expr(parse_expr_lossy(trimmed))
+}
+
+fn parse_pattern(source: &str) -> Pattern {
+    let source = source.trim();
+    if source == "_" {
+        return Pattern::Discard;
+    }
+    if let Some(inner) = source
+        .strip_prefix('(')
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return Pattern::Tuple(
+            split_pattern_items(inner)
+                .into_iter()
+                .map(parse_pattern)
+                .collect(),
+        );
+    }
+    if source
+        .chars()
+        .all(|ch| ch.is_alphanumeric() || matches!(ch, '_'))
+        && source
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_alphabetic() || ch == '_')
+    {
+        return Pattern::Ident(source.to_owned());
+    }
+    Pattern::Raw(source.to_owned())
+}
+
+fn split_pattern_items(source: &str) -> Vec<&str> {
+    let mut items = Vec::new();
+    let mut start = 0;
+    let mut depth = 0_i32;
+    for (index, ch) in source.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => {
+                items.push(source[start..index].trim());
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    let tail = source[start..].trim();
+    if !tail.is_empty() {
+        items.push(tail);
+    }
+    items
 }
 
 fn indentation(text: &str) -> usize {

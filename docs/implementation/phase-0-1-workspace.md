@@ -63,6 +63,8 @@ Syntax parser:
 - `thiserror` is used for parser error integration.
 - Expression syntax now has an `Expr` AST for entity references, literals, tuples, calls, method calls, pipes, binary comparisons, and placeholders.
 - Line-plan options, line-plan `let`/`return`, choice conditions, and `await ... with` carry parsed expressions for later type checking and HIR lowering.
+- Flow `let`/`return`/`goto` statements now lower to structured `Stmt` and `Pattern` values instead of opaque strings.
+- `lower_to_hir` verifies that parsed edge-case flow syntax can be converted to HIR-facing structures and rejects raw syntax that still needs parser coverage.
 
 ## Deferred
 
@@ -76,6 +78,7 @@ Not implemented in this milestone:
 - MCP / agent protocol runtime
 - Cranelift JIT
 - type checking and HIR lowering
+- full type environment, name resolution, and type checking
 - full semantic expression resolution and type-directed ambiguity resolution
 
 ## Verification

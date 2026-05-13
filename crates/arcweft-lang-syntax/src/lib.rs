@@ -6,23 +6,28 @@
 
 mod ast;
 mod expr;
+mod lower;
 mod parser;
 mod text;
 
 pub use ast::{
     Attribute, ChoiceBlock, ChoiceOption, ContentCall, DialogueToken, EntityRef, Flow, FlowItem,
-    HookItem, Item, LinePlan, LinePlanItem, MemoFn, ModuleDecl, ParserItem, ScenarioCommand,
-    SpeakerLine, SyntaxTree, TextRange, UseItem, Visibility, WikiLink,
+    HookItem, Item, LinePlan, LinePlanItem, MemoFn, ModuleDecl, ParserItem, Pattern,
+    ScenarioCommand, SpeakerLine, Stmt, SyntaxTree, TextRange, UseItem, Visibility, WikiLink,
 };
 pub use expr::{BinaryOp, Expr, Literal, Placeholder, parse_expr};
+pub use lower::{
+    HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirLowerError, HirModule,
+    lower_to_hir,
+};
 pub use parser::{ParseError, RecoverySuggestion, parse_source, parse_stub};
 pub use text::parse_dialogue_tokens;
 
 #[cfg(test)]
 mod tests {
     use super::{
-        DialogueToken, Expr, FlowItem, Item, LinePlanItem, Visibility, parse_dialogue_tokens,
-        parse_source, parse_stub,
+        DialogueToken, Expr, FlowItem, HirFlowItem, Item, LinePlanItem, Pattern, Stmt, Visibility,
+        lower_to_hir, parse_dialogue_tokens, parse_source, parse_stub,
     };
 
     #[test]
@@ -442,5 +447,90 @@ flow #flow.loading loading {
         assert!(await_with.propagates_error());
         assert!(matches!(await_with.expr(), Expr::Call { .. }));
         assert!(await_with.pending().is_some());
+    }
+
+    #[test]
+    fn flow_typed_statements_keep_patterns_and_exprs() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    let (actor, (_, voice)) = alice.say()[聞いて。[p]]
+    return Ok(FlowExit::Done)
+    goto #flow.title
+}
+",
+        )
+        .expect("typed flow statements parse");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        assert!(matches!(
+            &flow.body()[0],
+            FlowItem::Stmt(Stmt::Let {
+                pattern: Pattern::Tuple(_),
+                expr: Expr::Raw(_) | Expr::MethodCall { .. } | Expr::Call { .. },
+            })
+        ));
+        assert!(matches!(
+            &flow.body()[1],
+            FlowItem::Stmt(Stmt::Return(Expr::Call { .. }))
+        ));
+        assert!(matches!(
+            &flow.body()[2],
+            FlowItem::Stmt(Stmt::Goto(Expr::EntityRef(entity))) if entity.body() == "flow.title"
+        ));
+    }
+
+    #[test]
+    fn lowers_edge_case_flow_to_hir_without_raw_reparse() {
+        let tree = parse_source(
+            r#"
+flow #flow.opening opening {
+    @bg #asset.bg.room fade=300ms
+    let (actor, (_, voice)) = alice.say()[聞いて。[p]]
+    await load_opening_assets()? with { pending p => scene #scene.loading { progress p.ratio } }
+    alice[
+        今日は｜変な夢《へんなゆめ》を見たんだ。[p]
+    ]
+    with:
+        at(0.42s): alice.stage.face(worried)
+    @choice #choice.opening.first {
+        #choice.opening.listen "聞いてみる" if state.affection[#character.alice] >= 3 -> #flow.alice_intro
+    }
+    goto #flow.title
+}
+"#,
+        )
+        .expect("edge flow parses");
+
+        let hir = lower_to_hir(&tree).expect("edge flow lowers");
+        let flow = &hir.flows()[0];
+        assert!(
+            flow.body()
+                .iter()
+                .any(|item| matches!(item, HirFlowItem::Stmt(Stmt::Let { .. })))
+        );
+        assert!(flow.body().iter().any(|item| matches!(
+            item,
+            HirFlowItem::Await {
+                propagates_error: true,
+                ..
+            }
+        )));
+        assert!(flow.body().iter().any(
+            |item| matches!(item, HirFlowItem::Dialogue(dialogue) if dialogue.callee() == "alice")
+        ));
+        assert!(flow
+            .body()
+            .iter()
+            .any(|item| matches!(item, HirFlowItem::Choice(choice) if choice.options()[0].condition().is_some())));
+    }
+
+    #[test]
+    fn lowering_rejects_unstructured_raw_items() {
+        let tree = parse_source("unknown top level syntax").expect("raw item is syntax-preserved");
+        let errors = lower_to_hir(&tree).expect_err("raw item cannot lower");
+        assert!(errors[0].message().contains("raw"));
     }
 }

@@ -106,13 +106,32 @@ pub struct Flow {
 /// Syntax allowed in a `flow` body and in top-level scenario snippets.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FlowItem {
-    TypedStmt(String),
+    Stmt(Stmt),
     ScenarioCommand(ScenarioCommand),
     SpeakerLine(SpeakerLine),
     ContentCall(ContentCall),
     Choice(ChoiceBlock),
     Include(EntityRef),
     AwaitWith(AwaitWith),
+    Raw(String),
+}
+
+/// Typed Arcweft statement inside a flow body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Stmt {
+    Let { pattern: Pattern, expr: Expr },
+    Return(Expr),
+    Goto(Expr),
+    Expr(Expr),
+    Raw(String),
+}
+
+/// Pattern syntax used by `let` and line-plan return destructuring.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Pattern {
+    Ident(String),
+    Discard,
+    Tuple(Vec<Pattern>),
     Raw(String),
 }
 
@@ -215,7 +234,7 @@ pub enum BlockStyle {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LinePlanItem {
     Option { name: String, value: Expr },
-    Let { pattern: String, expr: Expr },
+    Let { pattern: Pattern, expr: Expr },
     Return(Expr),
     CancelRule(CancelRuleSyntax),
     TimedCue { anchor: String, body: String },
