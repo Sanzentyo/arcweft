@@ -48,6 +48,23 @@ This schema summarizes the control-flow constructs recognized by the Arcweft com
       ],
       "trace_name": true
     },
+    "relative_id": {
+      "syntax": ".suffix",
+      "valid_contexts": [
+        "dialogue_line_id",
+        "text_key",
+        "choice_id",
+        "choice_option_id"
+      ],
+      "not_general_entity_reference": true
+    },
+    "module_path": {
+      "canonical_roots": ["crate", "self", "super"],
+      "reserved_aliases": {
+        "parent": "super"
+      },
+      "relative_id_syntax_allowed": false
+    },
     "semicolon": {
       "required": false,
       "meaning": ["same_line_separator", "discard_expression_value"]

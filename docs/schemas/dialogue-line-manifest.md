@@ -98,6 +98,28 @@ the context used to resolve relative IDs such as `id=.comment` and to derive
 text/voice keys. Fully qualified `line_id` and `text_key` remain the stable
 registry identities.
 
+Relative source IDs are resolved before manifest emission. Dialogue line IDs use
+the current flow, speaker, and named-scope path:
+
+```text
+id=.suffix
+  -> #say.{flow}.{speaker}.{scope_path}.{suffix}
+  -> #say.{flow}.{speaker}.{suffix} when scope_path is empty
+```
+
+The manifest should keep the resolver context as data so tooling can explain
+where a generated ID came from:
+
+```json
+{
+  "flow": "flow.opening",
+  "speaker": "character.alice",
+  "scope_path": ["dream"],
+  "line_id": "say.opening.alice.dream.hint",
+  "text_key": "text.opening.alice.dream.hint"
+}
+```
+
 ## Built-in narrator
 
 Narration uses `speaker = "character.narrator"` by default. Source aliases such as `narrator:`, `地の文:`, and `地:` are resolved to the same entity unless project configuration overrides them.

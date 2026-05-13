@@ -38,6 +38,7 @@
 - [Block Scopes and `{ ... }`](01-language/block-scopes.md)
 - [module / use / pub / lazy use](01-language/modules.md)
 - [ID と参照](01-language/ids-and-references.md)
+- [文法サマリ](01-language/grammar.md)
 - [Localization for Dialogue](01-language/localization-dialogue.md)
 - [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](01-language/dialogue-control-tags-and-ruby.md)
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](01-language/dialogue-calls-scopes-cancellation.md)

@@ -1,10 +1,10 @@
 # Opening flow example
 
 ```awft
-mod game::routes::opening
+mod crate::game::routes::opening
 
-use game::prelude::*
-use game::logic::affection::{has_affection_at_least}
+use crate::game::prelude::*
+use super::logic::affection::{has_affection_at_least}
 
 pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     signal #signal.current_flow <- #flow.opening
@@ -22,16 +22,25 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
     scene { background image(assets.bg) }
 
-    alice.say(id=#say.opening.dream_hint, voice=#cue.voice.alice.001)[
-        今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
-    ]
+    scope dream {
+        alice(id=.hint, voice=#cue.voice.alice.001):
+            今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 
-    let can_enter_alice = state |> has_affection_at_least(#character.alice, 3)
+        let can_enter_alice = state |> has_affection_at_least(#character.alice, 3)
 
-    choice #choice.opening.first {
-        #choice.opening.listen "聞いてみる" if can_enter_alice -> #flow.alice_intro
-        #choice.opening.truck "トラック勝負で聞き出す" -> #flow.truck_challenge
-        #choice.opening.silent "黙っている" -> #flow.quiet_intro
+        choice .first {
+            .listen "聞いてみる" if can_enter_alice -> #flow.alice_intro
+            .truck "トラック勝負で聞き出す" -> #flow.truck_challenge
+            .silent "黙っている" -> #flow.quiet_intro
+        }
     }
 }
+```
+
+The relative IDs in `scope dream` normalize to stable registry IDs:
+
+```text
+alice(id=.hint) -> #say.opening.alice.dream.hint
+choice .first   -> #choice.opening.dream.first
+.listen         -> #choice.opening.dream.first.listen
 ```
