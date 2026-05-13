@@ -109,6 +109,23 @@ alice.say(
 
 `#` remains an entity-reference marker, not an option marker. Older compact option styles without parentheses are not part of the stable grammar and must be rejected by parser and tooling.
 
+Line IDs may also be relative in the `id` option. Relative line IDs are resolved
+using the current flow, speaker, and named-scope path.
+
+```awft
+scope rain {
+    alice(id=.comment, voice=auto):
+        雨、強くなってきたね。[p]
+}
+```
+
+```text
+alice(id=.comment)
+  -> #say.opening.alice.rain.comment
+  -> #text.opening.alice.rain.comment
+  -> #voice.ja-JP.alice.opening.rain.comment
+```
+
 The long method form is preferred when the line has a custom window, timed cues, cancellation, local variables, or custom hooks.
 
 ---

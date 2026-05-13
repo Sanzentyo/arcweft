@@ -29,7 +29,7 @@ pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
     validate_typecheck_ready,
 };
-pub use expr::{BinaryOp, Expr, Literal, Placeholder, parse_expr};
+pub use expr::{BinaryOp, Expr, Literal, Placeholder, UnaryOp, parse_expr};
 pub use lower::{
     HirAwait, HirAwaitBranch, HirBorrow, HirChoice, HirChoiceOption, HirDialogue, HirFlow,
     HirFlowItem, HirFor, HirIf, HirIfLet, HirLoop, HirLowerError, HirMatch, HirMatchArm, HirModule,
@@ -49,7 +49,7 @@ mod tests {
         AwaitBranchKind, BinaryOp, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
         ContractClause, DialogueToken, EntityKind, Expr, FlowItem, FlowKind, HirFlowItem, Item,
         LinePlanItem, Literal, NameRegistry, Pattern, SelectBranchHead, Stmt, SymbolUseKind,
-        TraitMember, TypeCheckEnv, TypeKind, TypeRef, VariantPatternPayload, Visibility,
+        TraitMember, TypeCheckEnv, TypeKind, TypeRef, UnaryOp, VariantPatternPayload, Visibility,
         collect_symbol_uses, lower_to_hir, parse_dialogue_tokens, parse_fn_signature, parse_source,
         parse_stub, parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
         validate_typecheck_ready,
@@ -2069,6 +2069,15 @@ with {
                 ..
             }
         ));
+
+        let unary_not = super::parse_expr("!event.is_relevant()").expect("unary not expr parses");
+        assert!(matches!(
+            unary_not,
+            Expr::Unary {
+                op: UnaryOp::Not,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -3026,7 +3035,7 @@ flow #flow.branching branching {
         let tree = parse_source(
             r"
 flow #flow.branching branching {
-    if state.ready {
+    if !state.ready {
         goto #flow.ready
     }
     match next {
@@ -3043,6 +3052,32 @@ flow #flow.branching branching {
             .with_symbol("next", TypeKind::Named("Option<Ref<Flow>>".to_owned()));
 
         typecheck_hir(&hir, &env).expect("if and match fixture typechecks");
+    }
+
+    #[test]
+    fn typecheck_rejects_unary_not_on_non_bool_expression() {
+        let tree = parse_source(
+            r"
+flow #flow.branching branching {
+    if !state.count {
+        goto #flow.ready
+    }
+}
+",
+        )
+        .expect("unary not fixture parses");
+        let hir = lower_to_hir(&tree).expect("unary not fixture lowers");
+        let errors = typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new().with_symbol("state.count", TypeKind::Int),
+        )
+        .expect_err("unary not on non-bool is rejected");
+
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message().contains("not operand"))
+        );
     }
 
     #[test]

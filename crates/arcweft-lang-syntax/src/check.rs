@@ -825,6 +825,7 @@ impl TypeChecker<'_> {
                 Some(TypeKind::Named(path.clone()))
             }
             Expr::Binary { lhs, op, rhs } => self.check_binary_expr(lhs, *op, rhs),
+            Expr::Unary { op, expr } => Some(self.check_unary_expr(*op, expr)),
             Expr::Block { statements, value } => {
                 self.check_block_expr(statements, value.as_deref())
             }
@@ -868,6 +869,15 @@ impl TypeChecker<'_> {
             });
         }
         self.check_expr(callee)
+    }
+
+    fn check_unary_expr(&mut self, op: crate::expr::UnaryOp, expr: &Expr) -> TypeKind {
+        match op {
+            crate::expr::UnaryOp::Not => {
+                self.expect_expr_type(expr, &TypeKind::Bool, "not operand");
+                TypeKind::Bool
+            }
+        }
     }
 
     fn check_method_call_expr(

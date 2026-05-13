@@ -56,6 +56,10 @@ pub enum Expr {
         op: BinaryOp,
         rhs: Box<Expr>,
     },
+    Unary {
+        op: UnaryOp,
+        expr: Box<Expr>,
+    },
     Block {
         statements: Vec<Stmt>,
         value: Option<Box<Expr>>,
@@ -126,6 +130,12 @@ pub enum BinaryOp {
     Lt,
     Add,
     Sub,
+}
+
+/// Unary operator syntax.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnaryOp {
+    Not,
 }
 
 /// Expression parse error.
@@ -216,6 +226,14 @@ fn parse_binary(source: &str) -> Expr {
 
 fn parse_postfix(source: &str) -> Expr {
     let source = source.trim();
+    if let Some(inner) = source.strip_prefix('!') {
+        if !inner.trim().is_empty() {
+            return Expr::Unary {
+                op: UnaryOp::Not,
+                expr: Box::new(parse_postfix(inner.trim())),
+            };
+        }
+    }
     if let Some(inner) = source.strip_suffix('?') {
         if !inner.trim().is_empty() {
             return Expr::Try {

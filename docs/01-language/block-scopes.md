@@ -35,6 +35,32 @@ let unit = {
 
 Type: `Unit`.
 
+The same rule applies to richer control-flow expressions inside the block:
+
+```awft
+let label = {
+    let affection = state.affection[#character.alice]
+    if affection >= 3 {
+        "聞いてみる"
+    } else {
+        "まだ聞けない"
+    }
+}
+```
+
+Here the block has type `String`.
+
+When a bare `{ ... }` appears as a statement, it is still a lexical scope. Its
+locals do not escape, and any final non-`Unit` value must be explicitly
+discarded.
+
+```awft
+{
+    let tmp = route_title(state.route)
+    log debug "route={tmp}" { tmp = tmp };
+}
+```
+
 ## Statement block
 
 Some blocks are statement-oriented:
@@ -54,6 +80,17 @@ They do not export a value via final expression. Use explicit transfer:
 return expr
 out expr
 break expr
+```
+
+Line plans and choice plans therefore use `out` for their own result values:
+
+```awft
+let voice = alice(id=.greeting)[
+    おはよう。[p]
+]
+with:
+    let voice = line.voice_handle()
+    out voice
 ```
 
 ## Named scope

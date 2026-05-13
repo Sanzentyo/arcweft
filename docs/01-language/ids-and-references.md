@@ -169,6 +169,28 @@ choice option id:
     -> {current_choice_id}.{suffix}
 ```
 
+The same rule applies to both narration and character dialogue. The current
+speaker segment is inserted before the named-scope path for dialogue IDs:
+
+```awft
+地の文(id=.rain):
+    扉の向こうから、雨の音がした。[p]
+
+alice(id=.greeting, voice=auto):
+    おはよう。[p]
+```
+
+```text
+地の文(id=.rain)
+  -> #say.opening.narrator.rain
+  -> #text.opening.narrator.rain
+
+alice(id=.greeting, voice=auto)
+  -> #say.opening.alice.greeting
+  -> #text.opening.alice.greeting
+  -> #voice.ja-JP.alice.opening.greeting
+```
+
 名前付き scope がない場合、`scope_path` セグメントは空文字として残さず、
 ID から省略する。
 
@@ -291,3 +313,18 @@ alias で、formatter は `super::` に正規化する。
 alice(id=.greeting):        # ID context
 use self::characters::alice # module path context
 ```
+
+Module and import roots are deliberately separate from relative IDs:
+
+```awft
+mod crate::game::routes::opening
+mod self::routes::opening
+mod super::shared
+
+use crate::game::prelude::*
+use self::characters::{alice, bob}
+use super::common::{route_gate, shared_flags}
+```
+
+If a source file uses `parent::`, canonical tooling should rewrite it to
+`super::`.

@@ -6,6 +6,7 @@ This is a compact summary of the current Arcweft surface grammar. It is intentio
 
 ```text
 Ident        := /[A-Za-z_][A-Za-z0-9_]*/
+IdentPath    := Ident ('::' Ident)*
 EntityRef    := '#' Ident ('.' Ident)* | '#<' EntityBody '>'
 RelativeId   := '.' Ident ('.' Ident)*
 String       := '"' ... '"'
@@ -84,6 +85,7 @@ DialogueLine :=
 
 CallArgs       := '(' NamedArg (',' NamedArg)* ','? ')'
 NamedArg       := Ident '=' Expr
+RelativeLineId := RelativeId
 LineOption     := 'id' '=' (EntityRef | RelativeId)
                 | 'text_key' '=' (EntityRef | RelativeId)
                 | 'voice' '=' Expr
@@ -140,6 +142,15 @@ Relative choice IDs resolve through the current flow and named scope path.
 Relative option IDs resolve under the current choice ID.
 When the named scope path is empty, the scope segment is omitted from the
 normalized ID.
+
+Relative dialogue line IDs and text-key overrides resolve through the current
+flow, current speaker, and named scope path:
+
+```text
+id=.suffix
+  -> #say.{flow}.{speaker}.{scope_path}.{suffix}
+  -> #say.{flow}.{speaker}.{suffix} when scope_path is empty
+```
 
 ```text
 scope dream { choice .first { .listen "聞いてみる" -> #flow.alice_intro } }
