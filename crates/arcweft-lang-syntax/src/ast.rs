@@ -119,9 +119,34 @@ pub enum FlowItem {
     SpeakerLine(SpeakerLine),
     ContentCall(ContentCall),
     Choice(ChoiceBlock),
+    If(IfBlock),
+    Match(MatchBlock),
     Include(EntityRef),
     AwaitWith(AwaitWith),
     Raw(String),
+}
+
+/// Typed `if expr { ... }` flow block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IfBlock {
+    condition: Expr,
+    body: Vec<FlowItem>,
+    range: TextRange,
+}
+
+/// Typed `match expr { ... }` flow block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MatchBlock {
+    expr: Expr,
+    arms: Vec<MatchArm>,
+    range: TextRange,
+}
+
+/// One `pattern => flow item` match arm.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MatchArm {
+    pattern: Pattern,
+    body: Vec<FlowItem>,
 }
 
 /// Typed Arcweft statement inside a flow body.
@@ -522,6 +547,60 @@ impl ScenarioCommand {
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+}
+
+impl IfBlock {
+    pub(crate) const fn new(condition: Expr, body: Vec<FlowItem>, range: TextRange) -> Self {
+        Self {
+            condition,
+            body,
+            range,
+        }
+    }
+
+    pub const fn condition(&self) -> &Expr {
+        &self.condition
+    }
+
+    pub fn body(&self) -> &[FlowItem] {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl MatchBlock {
+    pub(crate) const fn new(expr: Expr, arms: Vec<MatchArm>, range: TextRange) -> Self {
+        Self { expr, arms, range }
+    }
+
+    pub const fn expr(&self) -> &Expr {
+        &self.expr
+    }
+
+    pub fn arms(&self) -> &[MatchArm] {
+        &self.arms
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl MatchArm {
+    pub(crate) const fn new(pattern: Pattern, body: Vec<FlowItem>) -> Self {
+        Self { pattern, body }
+    }
+
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    pub fn body(&self) -> &[FlowItem] {
+        &self.body
     }
 }
 

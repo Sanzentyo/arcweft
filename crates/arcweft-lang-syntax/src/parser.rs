@@ -1,8 +1,9 @@
 use crate::ast::{
     Attribute, AwaitWith, BlockStyle, CancelRuleSyntax, ChoiceBlock, ChoiceOption, ContentCall,
-    DialogueContent, EntityRef, Flow, FlowItem, FlowKind, HookItem, Item, LinePlan, LinePlanItem,
-    MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, SpeakerLine, Stmt,
-    SyntaxTree, TextRange, UseItem, UseMode, Visibility, WikiLink,
+    DialogueContent, EntityRef, Flow, FlowItem, FlowKind, HookItem, IfBlock, Item, LinePlan,
+    LinePlanItem, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem,
+    ScenarioCommand, SpeakerLine, Stmt, SyntaxTree, TextRange, UseItem, UseMode, Visibility,
+    WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -308,6 +309,12 @@ impl Parser {
         if trimmed.starts_with("@choice") {
             return self.parse_choice().map(FlowItem::Choice);
         }
+        if trimmed.starts_with("if ") {
+            return self.parse_if_block().map(FlowItem::If);
+        }
+        if trimmed.starts_with("match ") {
+            return self.parse_match_block().map(FlowItem::Match);
+        }
         if let Some(command) = parse_scenario_command(trimmed, TextRange::new(line.start, line.end))
         {
             self.index += 1;
@@ -356,6 +363,49 @@ impl Parser {
         Some(ChoiceBlock::new(
             id,
             options,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_if_block(&mut self) -> Option<IfBlock> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing if",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the if body"],
+            );
+            return None;
+        }
+        let condition = head.strip_prefix("if")?.trim();
+        let body_items = self.parse_flow_body(&body, start_line.start + head.len());
+        Some(IfBlock::new(
+            parse_expr_lossy(condition),
+            body_items,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_match_block(&mut self) -> Option<MatchBlock> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing match",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the match body"],
+            );
+            return None;
+        }
+        let expr = head.strip_prefix("match")?.trim();
+        Some(MatchBlock::new(
+            parse_expr_lossy(expr),
+            parse_match_arms(&body, start_line.start, &mut self.errors),
             TextRange::new(start_line.start, end),
         ))
     }
@@ -998,6 +1048,23 @@ fn parse_choice_option(
         target,
         TextRange::new(base, base + trimmed.len()),
     ))
+}
+
+fn parse_match_arms(body: &str, base: usize, errors: &mut Vec<ParseError>) -> Vec<MatchArm> {
+    body.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| {
+            let (pattern, item) = line.split_once("=>")?;
+            let mut nested = Parser::new(item.trim().to_owned());
+            let parsed = nested.parse_flow_item_until_indent(0).map_or_else(
+                || vec![FlowItem::Stmt(parse_stmt(item.trim()))],
+                |item| vec![item],
+            );
+            errors.extend(nested.errors.into_iter().map(|err| err.rebased(base)));
+            Some(MatchArm::new(parse_pattern(pattern.trim()), parsed))
+        })
+        .collect()
 }
 
 fn split_speaker_line(trimmed: &str) -> Option<(String, Option<String>, &str)> {

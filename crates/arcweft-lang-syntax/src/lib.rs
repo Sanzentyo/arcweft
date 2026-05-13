@@ -14,8 +14,9 @@ mod text;
 
 pub use ast::{
     Attribute, ChoiceBlock, ChoiceOption, ContentCall, DialogueToken, EntityRef, Flow, FlowItem,
-    FlowKind, HookItem, Item, LinePlan, LinePlanItem, MemoFn, ModuleDecl, ParserItem, Pattern,
-    ScenarioCommand, SpeakerLine, Stmt, SyntaxTree, TextRange, UseItem, Visibility, WikiLink,
+    FlowKind, HookItem, IfBlock, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn,
+    ModuleDecl, ParserItem, Pattern, ScenarioCommand, SpeakerLine, Stmt, SyntaxTree, TextRange,
+    UseItem, Visibility, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -23,8 +24,8 @@ pub use check::{
 };
 pub use expr::{BinaryOp, Expr, Literal, Placeholder, parse_expr};
 pub use lower::{
-    HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirLowerError, HirModule,
-    lower_to_hir,
+    HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirIf, HirLowerError, HirMatch,
+    HirMatchArm, HirModule, lower_to_hir,
 };
 pub use parser::{ParseError, RecoverySuggestion, parse_source, parse_stub};
 pub use symbols::{SymbolUse, SymbolUseKind, collect_symbol_uses};
@@ -591,6 +592,60 @@ flow #flow.opening opening {
             &flow.body()[2],
             FlowItem::Stmt(Stmt::Goto(Expr::EntityRef(entity))) if entity.body() == "flow.title"
         ));
+    }
+
+    #[test]
+    fn parses_if_and_match_flow_blocks_for_hir() {
+        let tree = parse_source(
+            r"
+flow #flow.branching branching {
+    if state.ready {
+        goto #flow.ready
+    }
+    match next {
+        None => goto #flow.title
+        _ => goto #flow.fallback
+    }
+}
+",
+        )
+        .expect("if and match parse");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        assert!(
+            matches!(&flow.body()[0], FlowItem::If(block) if matches!(block.condition(), Expr::Path(path) if path == "state.ready"))
+        );
+        assert!(matches!(&flow.body()[1], FlowItem::Match(block) if block.arms().len() == 2));
+
+        let hir = lower_to_hir(&tree).expect("if and match lower");
+        assert!(matches!(&hir.flows()[0].body()[0], HirFlowItem::If(_)));
+        assert!(matches!(&hir.flows()[0].body()[1], HirFlowItem::Match(_)));
+    }
+
+    #[test]
+    fn typechecks_if_and_match_flow_blocks() {
+        let tree = parse_source(
+            r"
+flow #flow.branching branching {
+    if state.ready {
+        goto #flow.ready
+    }
+    match next {
+        None => goto #flow.title
+        _ => goto #flow.fallback
+    }
+}
+",
+        )
+        .expect("if and match fixture parses");
+        let hir = lower_to_hir(&tree).expect("if and match fixture lowers");
+        let env = TypeCheckEnv::new()
+            .with_symbol("state.ready", TypeKind::Bool)
+            .with_symbol("next", TypeKind::Named("Option<Ref<Flow>>".to_owned()));
+
+        typecheck_hir(&hir, &env).expect("if and match fixture typechecks");
     }
 
     #[test]

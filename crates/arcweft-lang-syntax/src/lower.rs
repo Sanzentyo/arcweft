@@ -1,6 +1,6 @@
 use crate::ast::{
-    ChoiceBlock, DialogueContent, EntityRef, Flow, FlowItem, FlowKind, Item, LinePlan, SpeakerLine,
-    Stmt, SyntaxTree, TextRange,
+    ChoiceBlock, DialogueContent, EntityRef, Flow, FlowItem, FlowKind, IfBlock, Item, LinePlan,
+    MatchBlock, Pattern, SpeakerLine, Stmt, SyntaxTree, TextRange,
 };
 use crate::expr::Expr;
 use thiserror::Error;
@@ -31,6 +31,8 @@ pub enum HirFlowItem {
     Stmt(Stmt),
     Dialogue(HirDialogue),
     Choice(HirChoice),
+    If(HirIf),
+    Match(HirMatch),
     Include(EntityRef),
     Await { expr: Expr, propagates_error: bool },
     Scenario { name: String, args: Vec<Expr> },
@@ -59,6 +61,27 @@ pub struct HirChoiceOption {
     label: String,
     condition: Option<Expr>,
     target: EntityRef,
+}
+
+/// HIR-facing if block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirIf {
+    condition: Expr,
+    body: Vec<HirFlowItem>,
+}
+
+/// HIR-facing match block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirMatch {
+    expr: Expr,
+    arms: Vec<HirMatchArm>,
+}
+
+/// HIR-facing match arm.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirMatchArm {
+    pattern: Pattern,
+    body: Vec<HirFlowItem>,
 }
 
 /// Lowering failure for syntax that is still too raw for HIR.
@@ -132,6 +155,8 @@ fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
             plan: call.plan().cloned(),
         })),
         FlowItem::Choice(choice) => Ok(HirFlowItem::Choice(lower_choice(choice))),
+        FlowItem::If(block) => lower_if(block).map(HirFlowItem::If),
+        FlowItem::Match(block) => lower_match(block).map(HirFlowItem::Match),
         FlowItem::Include(entity) => Ok(HirFlowItem::Include(entity.clone())),
         FlowItem::AwaitWith(await_with) => Ok(HirFlowItem::Await {
             expr: await_with.expr().clone(),
@@ -142,6 +167,37 @@ fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
             None,
         )),
     }
+}
+
+fn lower_if(block: &IfBlock) -> Result<HirIf, HirLowerError> {
+    Ok(HirIf {
+        condition: block.condition().clone(),
+        body: block
+            .body()
+            .iter()
+            .map(lower_flow_item)
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn lower_match(block: &MatchBlock) -> Result<HirMatch, HirLowerError> {
+    Ok(HirMatch {
+        expr: block.expr().clone(),
+        arms: block
+            .arms()
+            .iter()
+            .map(|arm| {
+                Ok(HirMatchArm {
+                    pattern: arm.pattern().clone(),
+                    body: arm
+                        .body()
+                        .iter()
+                        .map(lower_flow_item)
+                        .collect::<Result<Vec<_>, _>>()?,
+                })
+            })
+            .collect::<Result<Vec<_>, HirLowerError>>()?,
+    })
 }
 
 fn lower_speaker_line(line: &SpeakerLine) -> HirDialogue {
@@ -240,6 +296,36 @@ impl HirChoiceOption {
 
     pub const fn target(&self) -> &EntityRef {
         &self.target
+    }
+}
+
+impl HirIf {
+    pub const fn condition(&self) -> &Expr {
+        &self.condition
+    }
+
+    pub fn body(&self) -> &[HirFlowItem] {
+        &self.body
+    }
+}
+
+impl HirMatch {
+    pub const fn expr(&self) -> &Expr {
+        &self.expr
+    }
+
+    pub fn arms(&self) -> &[HirMatchArm] {
+        &self.arms
+    }
+}
+
+impl HirMatchArm {
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    pub fn body(&self) -> &[HirFlowItem] {
+        &self.body
     }
 }
 

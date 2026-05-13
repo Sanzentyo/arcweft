@@ -66,6 +66,20 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 push_entity(uses, option.target());
             }
         }
+        HirFlowItem::If(block) => {
+            collect_expr(block.condition(), uses);
+            for item in block.body() {
+                collect_flow_item(item, uses);
+            }
+        }
+        HirFlowItem::Match(block) => {
+            collect_expr(block.expr(), uses);
+            for arm in block.arms() {
+                for item in arm.body() {
+                    collect_flow_item(item, uses);
+                }
+            }
+        }
         HirFlowItem::Include(entity) => push_entity(uses, entity),
         HirFlowItem::Await { expr, .. } => collect_expr(expr, uses),
         HirFlowItem::Scenario { args, .. } => {

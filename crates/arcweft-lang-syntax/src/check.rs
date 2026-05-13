@@ -176,6 +176,20 @@ impl TypeChecker<'_> {
                     self.expect_entity_kind(option.target(), &EntityKind::Flow, "choice target");
                 }
             }
+            HirFlowItem::If(block) => {
+                self.expect_expr_type(block.condition(), &TypeKind::Bool, "if condition");
+                for item in block.body() {
+                    self.check_flow_item(item);
+                }
+            }
+            HirFlowItem::Match(block) => {
+                self.check_expr(block.expr());
+                for arm in block.arms() {
+                    for item in arm.body() {
+                        self.check_flow_item(item);
+                    }
+                }
+            }
             HirFlowItem::Include(entity) => {
                 let kind = entity_kind(entity);
                 if !matches!(kind, Some(EntityKind::Fragment | EntityKind::Flow)) {
