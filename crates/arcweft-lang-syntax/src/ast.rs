@@ -282,6 +282,8 @@ pub enum FlowItem {
     Choice(ChoiceBlock),
     If(IfBlock),
     Match(MatchBlock),
+    For(ForBlock),
+    Select(SelectBlock),
     BorrowBlock(BorrowBlock),
     Include(EntityRef),
     AwaitWith(AwaitWith),
@@ -311,6 +313,42 @@ pub struct MatchArm {
     body: Vec<FlowItem>,
 }
 
+/// `for pattern in expr { ... }` sequence loop.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForBlock {
+    pattern: Pattern,
+    source: Expr,
+    body: Vec<FlowItem>,
+    range: TextRange,
+}
+
+/// Source-aware `select { ... }` block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectBlock {
+    branches: Vec<SelectBranch>,
+    range: TextRange,
+}
+
+/// One select branch with a parsed head and nested flow body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectBranch {
+    head: SelectBranchHead,
+    body: Vec<FlowItem>,
+}
+
+/// Select branch head categories documented for source consumption.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SelectBranchHead {
+    Bind {
+        name: String,
+        source: Expr,
+        propagates_error: bool,
+    },
+    Frame(Pattern),
+    Event(Pattern),
+    Raw(String),
+}
+
 /// `borrow expr as name: Type { ... }` zero-copy borrow block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BorrowBlock {
@@ -329,6 +367,9 @@ pub enum Stmt {
     Spawn(Expr),
     Defer(Expr),
     Yield(Expr),
+    Signal { target: Expr, value: Expr },
+    Close(Expr),
+    Continue,
     Expr(Expr),
     Raw(String),
 }
@@ -337,6 +378,7 @@ pub enum Stmt {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Pattern {
     Ident(String),
+    Variant(String),
     Discard,
     Tuple(Vec<Pattern>),
     Typed { name: String, ty: TypeRef },
@@ -1156,6 +1198,66 @@ impl MatchArm {
 
     pub const fn pattern(&self) -> &Pattern {
         &self.pattern
+    }
+
+    pub fn body(&self) -> &[FlowItem] {
+        &self.body
+    }
+}
+
+impl ForBlock {
+    pub(crate) const fn new(
+        pattern: Pattern,
+        source: Expr,
+        body: Vec<FlowItem>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            pattern,
+            source,
+            body,
+            range,
+        }
+    }
+
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    pub const fn source(&self) -> &Expr {
+        &self.source
+    }
+
+    pub fn body(&self) -> &[FlowItem] {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl SelectBlock {
+    pub(crate) const fn new(branches: Vec<SelectBranch>, range: TextRange) -> Self {
+        Self { branches, range }
+    }
+
+    pub fn branches(&self) -> &[SelectBranch] {
+        &self.branches
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl SelectBranch {
+    pub(crate) const fn new(head: SelectBranchHead, body: Vec<FlowItem>) -> Self {
+        Self { head, body }
+    }
+
+    pub const fn head(&self) -> &SelectBranchHead {
+        &self.head
     }
 
     pub fn body(&self) -> &[FlowItem] {

@@ -35,6 +35,8 @@ pub enum HirFlowItem {
     Choice(HirChoice),
     If(HirIf),
     Match(HirMatch),
+    For(HirFor),
+    Select(HirSelect),
     Borrow(HirBorrow),
     Include(EntityRef),
     Await(HirAwait),
@@ -84,6 +86,27 @@ pub struct HirMatch {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirMatchArm {
     pattern: Pattern,
+    body: Vec<HirFlowItem>,
+}
+
+/// HIR-facing sequence loop.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirFor {
+    pattern: Pattern,
+    source: Expr,
+    body: Vec<HirFlowItem>,
+}
+
+/// HIR-facing source select block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirSelect {
+    branches: Vec<HirSelectBranch>,
+}
+
+/// HIR-facing select branch.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirSelectBranch {
+    head: crate::ast::SelectBranchHead,
     body: Vec<HirFlowItem>,
 }
 
@@ -196,6 +219,8 @@ fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
         FlowItem::Choice(choice) => Ok(HirFlowItem::Choice(lower_choice(choice))),
         FlowItem::If(block) => lower_if(block).map(HirFlowItem::If),
         FlowItem::Match(block) => lower_match(block).map(HirFlowItem::Match),
+        FlowItem::For(block) => lower_for(block).map(HirFlowItem::For),
+        FlowItem::Select(block) => lower_select(block).map(HirFlowItem::Select),
         FlowItem::BorrowBlock(block) => lower_borrow(block).map(HirFlowItem::Borrow),
         FlowItem::Include(entity) => Ok(HirFlowItem::Include(entity.clone())),
         FlowItem::AwaitWith(await_with) => {
@@ -236,6 +261,37 @@ fn lower_borrow(block: &BorrowBlock) -> Result<HirBorrow, HirLowerError> {
             .iter()
             .map(lower_flow_item)
             .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn lower_for(block: &crate::ast::ForBlock) -> Result<HirFor, HirLowerError> {
+    Ok(HirFor {
+        pattern: block.pattern().clone(),
+        source: block.source().clone(),
+        body: block
+            .body()
+            .iter()
+            .map(lower_flow_item)
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn lower_select(block: &crate::ast::SelectBlock) -> Result<HirSelect, HirLowerError> {
+    Ok(HirSelect {
+        branches: block
+            .branches()
+            .iter()
+            .map(|branch| {
+                Ok(HirSelectBranch {
+                    head: branch.head().clone(),
+                    body: branch
+                        .body()
+                        .iter()
+                        .map(lower_flow_item)
+                        .collect::<Result<Vec<_>, _>>()?,
+                })
+            })
+            .collect::<Result<Vec<_>, HirLowerError>>()?,
     })
 }
 
@@ -396,6 +452,36 @@ impl HirMatch {
 impl HirMatchArm {
     pub const fn pattern(&self) -> &Pattern {
         &self.pattern
+    }
+
+    pub fn body(&self) -> &[HirFlowItem] {
+        &self.body
+    }
+}
+
+impl HirFor {
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    pub const fn source(&self) -> &Expr {
+        &self.source
+    }
+
+    pub fn body(&self) -> &[HirFlowItem] {
+        &self.body
+    }
+}
+
+impl HirSelect {
+    pub fn branches(&self) -> &[HirSelectBranch] {
+        &self.branches
+    }
+}
+
+impl HirSelectBranch {
+    pub const fn head(&self) -> &crate::ast::SelectBranchHead {
+        &self.head
     }
 
     pub fn body(&self) -> &[HirFlowItem] {

@@ -83,6 +83,20 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 }
             }
         }
+        HirFlowItem::For(block) => {
+            collect_expr(block.source(), uses);
+            for item in block.body() {
+                collect_flow_item(item, uses);
+            }
+        }
+        HirFlowItem::Select(block) => {
+            for branch in block.branches() {
+                collect_select_head(branch.head(), uses);
+                for item in branch.body() {
+                    collect_flow_item(item, uses);
+                }
+            }
+        }
         HirFlowItem::Borrow(block) => {
             collect_expr(block.source(), uses);
             for item in block.body() {
@@ -103,6 +117,25 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 collect_expr(arg, uses);
             }
         }
+    }
+}
+
+fn collect_select_head(head: &crate::ast::SelectBranchHead, uses: &mut Vec<SymbolUse>) {
+    match head {
+        crate::ast::SelectBranchHead::Bind { source, .. } => collect_expr(source, uses),
+        crate::ast::SelectBranchHead::Frame(pattern)
+        | crate::ast::SelectBranchHead::Event(pattern) => {
+            collect_pattern(pattern, uses);
+        }
+        crate::ast::SelectBranchHead::Raw(raw) => {
+            uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone()));
+        }
+    }
+}
+
+fn collect_pattern(pattern: &crate::ast::Pattern, uses: &mut Vec<SymbolUse>) {
+    if let crate::ast::Pattern::Raw(raw) = pattern {
+        uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone()));
     }
 }
 
@@ -132,9 +165,15 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         | Stmt::Spawn(expr)
         | Stmt::Defer(expr)
         | Stmt::Yield(expr)
+        | Stmt::Close(expr)
         | Stmt::Expr(expr) => {
             collect_expr(expr, uses);
         }
+        Stmt::Signal { target, value } => {
+            collect_expr(target, uses);
+            collect_expr(value, uses);
+        }
+        Stmt::Continue => {}
         Stmt::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
     }
 }

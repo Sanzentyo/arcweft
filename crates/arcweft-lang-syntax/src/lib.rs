@@ -17,10 +17,11 @@ mod types;
 pub use ast::{
     Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, CallableItem, CallableKind, ChoiceBlock,
     ChoiceOption, ContentCall, ContractClause, DialogueToken, EntityRef, EnumItem, EnumVariant,
-    Flow, FlowItem, FlowKind, FunctionItem, HookItem, IfBlock, ImplItem, Item, LinePlan,
+    Flow, FlowItem, FlowKind, ForBlock, FunctionItem, HookItem, IfBlock, ImplItem, Item, LinePlan,
     LinePlanItem, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand,
-    SpeakerLine, StateField, StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange,
-    TraitItem, TraitMember, TypeAliasItem, UseItem, Visibility, WikiLink,
+    SelectBlock, SelectBranch, SelectBranchHead, SpeakerLine, StateField, StateItem, Stmt,
+    StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
+    Visibility, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -29,7 +30,8 @@ pub use check::{
 pub use expr::{BinaryOp, Expr, Literal, Placeholder, parse_expr};
 pub use lower::{
     HirAwait, HirAwaitBranch, HirBorrow, HirChoice, HirChoiceOption, HirDialogue, HirFlow,
-    HirFlowItem, HirIf, HirLowerError, HirMatch, HirMatchArm, HirModule, lower_to_hir,
+    HirFlowItem, HirFor, HirIf, HirLowerError, HirMatch, HirMatchArm, HirModule, HirSelect,
+    HirSelectBranch, lower_to_hir,
 };
 pub use parser::{ParseError, RecoverySuggestion, parse_source, parse_stub};
 pub use resolve::{NameRegistry, NameResolutionError, registry_from_hir, validate_hir_references};
@@ -43,11 +45,11 @@ pub use types::{
 mod tests {
     use super::{
         AwaitBranchKind, BinaryOp, CallableKind, ContractClause, DialogueToken, EntityKind, Expr,
-        FlowItem, FlowKind, HirFlowItem, Item, LinePlanItem, NameRegistry, Pattern, Stmt,
-        SymbolUseKind, TraitMember, TypeCheckEnv, TypeKind, TypeRef, Visibility,
-        collect_symbol_uses, lower_to_hir, parse_dialogue_tokens, parse_fn_signature, parse_source,
-        parse_stub, parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
-        validate_typecheck_ready,
+        FlowItem, FlowKind, HirFlowItem, Item, LinePlanItem, NameRegistry, Pattern,
+        SelectBranchHead, Stmt, SymbolUseKind, TraitMember, TypeCheckEnv, TypeKind, TypeRef,
+        Visibility, collect_symbol_uses, lower_to_hir, parse_dialogue_tokens, parse_fn_signature,
+        parse_source, parse_stub, parse_type_ref, registry_from_hir, typecheck_hir,
+        validate_hir_references, validate_typecheck_ready,
     };
 
     #[test]
@@ -968,6 +970,74 @@ flow #flow.loading loading {
             &hir.flows()[0].body()[0],
             HirFlowItem::Await(await_with) if await_with.branches().len() == 4
         ));
+    }
+
+    #[test]
+    fn parses_for_and_select_flow_blocks() {
+        let tree = parse_source(
+            r"
+flow #flow.stream stream {
+    for c in choices {
+        option c.id c.label
+    }
+    select {
+        audio = frames.next? => {
+            signal #signal.voice_level <- audio.rms
+        }
+
+        frame _ => {
+            scene #scene.listening
+            continue
+        }
+
+        event .Back => {
+            close frames
+            return Ok(FlowExit::Goto(#flow.title))
+        }
+    }
+}
+",
+        )
+        .expect("for and select parse");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::For(for_block) = &flow.body()[0] else {
+            panic!("expected for block");
+        };
+        assert!(matches!(for_block.pattern(), Pattern::Ident(name) if name == "c"));
+        assert!(matches!(for_block.source(), Expr::Path(path) if path == "choices"));
+        assert!(matches!(
+            &for_block.body()[0],
+            FlowItem::ScenarioCommand(command) if command.name() == "option"
+        ));
+
+        let FlowItem::Select(select) = &flow.body()[1] else {
+            panic!("expected select block");
+        };
+        assert_eq!(select.branches().len(), 3);
+        assert!(matches!(
+            select.branches()[0].head(),
+            SelectBranchHead::Bind {
+                name,
+                propagates_error: true,
+                ..
+            } if name == "audio"
+        ));
+        assert!(matches!(
+            select.branches()[1].head(),
+            SelectBranchHead::Frame(Pattern::Discard)
+        ));
+        assert!(matches!(
+            select.branches()[2].head(),
+            SelectBranchHead::Event(Pattern::Variant(name)) if name == ".Back"
+        ));
+
+        let hir = lower_to_hir(&tree).expect("for and select lower");
+        assert!(matches!(&hir.flows()[0].body()[0], HirFlowItem::For(_)));
+        assert!(matches!(&hir.flows()[0].body()[1], HirFlowItem::Select(_)));
+        validate_typecheck_ready(&hir).expect("for and select are typecheck-ready");
     }
 
     #[test]

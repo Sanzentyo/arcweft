@@ -202,19 +202,17 @@ impl TypeChecker<'_> {
                     }
                 }
             }
-            HirFlowItem::Borrow(block) => {
+            HirFlowItem::For(block) => {
                 self.check_expr(block.source());
-                let borrow_start = self.active_borrows.len();
-                let locals_start = self.locals.clone();
-                collect_borrow_lifetimes(block.binding(), &mut self.active_borrows);
-                if let Some((name, ty)) = typed_pattern_binding(block.binding()) {
-                    self.locals.insert(name.to_owned(), type_ref_kind(ty));
-                }
                 for item in block.body() {
                     self.check_flow_item(item);
                 }
-                self.active_borrows.truncate(borrow_start);
-                self.locals = locals_start;
+            }
+            HirFlowItem::Select(block) => {
+                self.check_select_block(block);
+            }
+            HirFlowItem::Borrow(block) => {
+                self.check_borrow_block(block);
             }
             HirFlowItem::Include(entity) => {
                 let kind = entity_kind(entity);
@@ -258,7 +256,7 @@ impl TypeChecker<'_> {
                 self.check_expr(expr);
                 collect_borrow_lifetimes(pattern, &mut self.active_borrows);
             }
-            Stmt::Return(expr) | Stmt::Expr(expr) => {
+            Stmt::Return(expr) | Stmt::Close(expr) | Stmt::Expr(expr) => {
                 self.check_expr(expr);
             }
             Stmt::Goto(expr) => {
@@ -268,9 +266,62 @@ impl TypeChecker<'_> {
                 self.reject_active_borrows("suspension boundary");
                 self.check_expr(expr);
             }
+            Stmt::Signal { target, value } => {
+                self.check_expr(target);
+                self.check_expr(value);
+            }
+            Stmt::Continue => {}
             Stmt::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
                 "raw statement is not type-checkable: {raw}"
             ))),
+        }
+    }
+
+    fn check_select_block(&mut self, block: &crate::lower::HirSelect) {
+        if block.branches().is_empty() {
+            self.errors.push(TypeCheckError::new(
+                "select block must define at least one branch".to_owned(),
+            ));
+        }
+        for branch in block.branches() {
+            self.check_select_head(branch.head());
+            for item in branch.body() {
+                self.check_flow_item(item);
+            }
+        }
+    }
+
+    fn check_borrow_block(&mut self, block: &crate::lower::HirBorrow) {
+        self.check_expr(block.source());
+        let borrow_start = self.active_borrows.len();
+        let locals_start = self.locals.clone();
+        collect_borrow_lifetimes(block.binding(), &mut self.active_borrows);
+        if let Some((name, ty)) = typed_pattern_binding(block.binding()) {
+            self.locals.insert(name.to_owned(), type_ref_kind(ty));
+        }
+        for item in block.body() {
+            self.check_flow_item(item);
+        }
+        self.active_borrows.truncate(borrow_start);
+        self.locals = locals_start;
+    }
+
+    fn check_select_head(&mut self, head: &crate::ast::SelectBranchHead) {
+        match head {
+            crate::ast::SelectBranchHead::Bind { source, .. } => {
+                self.check_expr(source);
+            }
+            crate::ast::SelectBranchHead::Frame(pattern)
+            | crate::ast::SelectBranchHead::Event(pattern) => {
+                if let Pattern::Raw(raw) = pattern {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "raw select branch pattern is not type-checkable: {raw}"
+                    )));
+                }
+            }
+            crate::ast::SelectBranchHead::Raw(raw) => self.errors.push(TypeCheckError::new(
+                format!("raw select branch head is not type-checkable: {raw}"),
+            )),
         }
     }
 
@@ -538,7 +589,7 @@ fn collect_borrow_lifetimes(pattern: &Pattern, lifetimes: &mut Vec<String>) {
                 collect_borrow_lifetimes(item, lifetimes);
             }
         }
-        Pattern::Ident(_) | Pattern::Discard | Pattern::Raw(_) => {}
+        Pattern::Ident(_) | Pattern::Variant(_) | Pattern::Discard | Pattern::Raw(_) => {}
     }
 }
 

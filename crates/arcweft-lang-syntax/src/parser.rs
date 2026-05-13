@@ -2,10 +2,11 @@ use crate::ast::{
     Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, BorrowBlock, CallableItem,
     CallableKind, CancelRuleSyntax, ChoiceBlock, ChoiceOption, ContentCall, ContractClause,
     DialogueContent, EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind,
-    FunctionItem, HookItem, IfBlock, ImplItem, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock,
-    MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, SpeakerLine, StateField,
-    StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember,
-    TypeAliasItem, UseItem, UseMode, Visibility, WikiLink,
+    ForBlock, FunctionItem, HookItem, IfBlock, ImplItem, Item, LinePlan, LinePlanItem, MatchArm,
+    MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, SelectBlock,
+    SelectBranch, SelectBranchHead, SpeakerLine, StateField, StateItem, Stmt, StructField,
+    StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, UseMode,
+    Visibility, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -652,10 +653,22 @@ impl Parser {
         if trimmed.starts_with("match ") {
             return self.parse_match_block().map(FlowItem::Match);
         }
+        if trimmed.starts_with("for ") {
+            return self.parse_for_block().map(FlowItem::For);
+        }
+        if trimmed.starts_with("select") {
+            return self.parse_select_block().map(FlowItem::Select);
+        }
         if trimmed.starts_with("borrow ") {
             return self.parse_borrow_block().map(FlowItem::BorrowBlock);
         }
         if let Some(command) = parse_scenario_command(trimmed, TextRange::new(line.start, line.end))
+        {
+            self.index += 1;
+            return Some(FlowItem::ScenarioCommand(command));
+        }
+        if let Some(command) =
+            parse_word_scenario_command(trimmed, TextRange::new(line.start, line.end))
         {
             self.index += 1;
             return Some(FlowItem::ScenarioCommand(command));
@@ -800,6 +813,52 @@ impl Parser {
         Some(MatchBlock::new(
             parse_expr_lossy(expr),
             parse_match_arms(&body, start_line.start, &mut self.errors),
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_for_block(&mut self) -> Option<ForBlock> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing for",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the for body"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("for")?.trim();
+        let (pattern, source) = rest.split_once(" in ")?;
+        let body_items = self.parse_flow_body(&body, start_line.start + head.len());
+        Some(ForBlock::new(
+            parse_pattern(pattern.trim()),
+            parse_expr_lossy(source.trim()),
+            body_items,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_select_block(&mut self) -> Option<SelectBlock> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing select",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the select body"],
+            );
+            return None;
+        }
+        if !head.trim().starts_with("select") {
+            return None;
+        }
+        Some(SelectBlock::new(
+            parse_select_branches(&body, start_line.start, &mut self.errors),
             TextRange::new(start_line.start, end),
         ))
     }
@@ -1406,6 +1465,23 @@ fn parse_scenario_command(trimmed: &str, range: TextRange) -> Option<ScenarioCom
     ))
 }
 
+fn parse_word_scenario_command(trimmed: &str, range: TextRange) -> Option<ScenarioCommand> {
+    let (name, args) = trimmed
+        .split_once(char::is_whitespace)
+        .unwrap_or((trimmed, ""));
+    if !matches!(
+        name,
+        "option" | "log" | "scene" | "text" | "progress" | "meter"
+    ) {
+        return None;
+    }
+    Some(ScenarioCommand::new(
+        name.to_owned(),
+        parse_scenario_args(args.trim()),
+        range,
+    ))
+}
+
 fn parse_scenario_args(args: &str) -> Vec<crate::expr::Expr> {
     split_scenario_args(args)
         .into_iter()
@@ -1694,6 +1770,71 @@ fn parse_match_arms(body: &str, base: usize, errors: &mut Vec<ParseError>) -> Ve
         .collect()
 }
 
+fn parse_select_branches(
+    body: &str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Vec<SelectBranch> {
+    let lines = body.lines().collect::<Vec<_>>();
+    let mut branches = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let line = lines[index];
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            index += 1;
+            continue;
+        }
+        let Some(head) = trimmed
+            .strip_suffix("=> {")
+            .or_else(|| trimmed.strip_suffix("=>"))
+        else {
+            index += 1;
+            continue;
+        };
+        let branch_indent = indentation(line);
+        index += 1;
+        let mut body_lines = Vec::new();
+        while index < lines.len() {
+            let child = lines[index];
+            let child_trimmed = child.trim();
+            if child_trimmed == "}" && indentation(child) <= branch_indent {
+                index += 1;
+                break;
+            }
+            body_lines.push(child);
+            index += 1;
+        }
+        let mut nested = Parser::new(body_lines.join("\n"));
+        let parsed = nested.parse_flow_body(&body_lines.join("\n"), base);
+        errors.extend(nested.errors.into_iter().map(|err| err.rebased(base)));
+        branches.push(SelectBranch::new(
+            parse_select_branch_head(head.trim()),
+            parsed,
+        ));
+    }
+    branches
+}
+
+fn parse_select_branch_head(source: &str) -> SelectBranchHead {
+    if let Some(rest) = source.strip_prefix("frame ") {
+        return SelectBranchHead::Frame(parse_pattern(rest.trim()));
+    }
+    if let Some(rest) = source.strip_prefix("event ") {
+        return SelectBranchHead::Event(parse_pattern(rest.trim()));
+    }
+    if let Some((name, source)) = source.split_once('=') {
+        let source = source.trim();
+        let propagates_error = source.ends_with('?');
+        return SelectBranchHead::Bind {
+            name: name.trim().to_owned(),
+            source: parse_expr_lossy(source.trim_end_matches('?').trim()),
+            propagates_error,
+        };
+    }
+    SelectBranchHead::Raw(source.to_owned())
+}
+
 fn split_speaker_line(trimmed: &str) -> Option<(String, Option<String>, &str)> {
     let colon = find_top_level_colon(trimmed)?;
     if trimmed[..colon].contains('[') || trimmed[..colon].contains("->") {
@@ -1964,7 +2105,19 @@ fn parse_scene_command(body: &str) -> Option<ScenarioCommand> {
 fn is_typed_stmt(trimmed: &str) -> bool {
     matches!(
         trimmed.split_whitespace().next(),
-        Some("let" | "match" | "if" | "return" | "goto" | "spawn" | "defer" | "yield")
+        Some(
+            "let"
+                | "match"
+                | "if"
+                | "return"
+                | "goto"
+                | "spawn"
+                | "defer"
+                | "yield"
+                | "signal"
+                | "close"
+                | "continue"
+        )
     )
 }
 
@@ -1993,6 +2146,21 @@ fn parse_stmt(trimmed: &str) -> Stmt {
     if let Some(expr) = trimmed.strip_prefix("yield ") {
         return Stmt::Yield(parse_expr_lossy(expr.trim()));
     }
+    if let Some(rest) = trimmed.strip_prefix("signal ") {
+        if let Some((target, value)) = rest.split_once("<-") {
+            return Stmt::Signal {
+                target: parse_expr_lossy(target.trim()),
+                value: parse_expr_lossy(value.trim()),
+            };
+        }
+        return Stmt::Raw(trimmed.to_owned());
+    }
+    if let Some(expr) = trimmed.strip_prefix("close ") {
+        return Stmt::Close(parse_expr_lossy(expr.trim()));
+    }
+    if trimmed == "continue" {
+        return Stmt::Continue;
+    }
     if matches!(trimmed.split_whitespace().next(), Some("match" | "if")) {
         return Stmt::Raw(trimmed.to_owned());
     }
@@ -2003,6 +2171,9 @@ fn parse_pattern(source: &str) -> Pattern {
     let source = source.trim();
     if source == "_" {
         return Pattern::Discard;
+    }
+    if source.starts_with('.') {
+        return Pattern::Variant(source.to_owned());
     }
     if let Some((name, ty)) = source.split_once(':') {
         let name = name.trim();
