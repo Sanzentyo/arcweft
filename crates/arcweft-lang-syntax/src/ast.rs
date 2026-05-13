@@ -481,6 +481,10 @@ pub enum Stmt {
         target: Expr,
         value: Expr,
     },
+    Emit {
+        event: Expr,
+        fields: Vec<(String, Expr)>,
+    },
     Close(Expr),
     Select(Expr),
     Break(Option<Expr>),

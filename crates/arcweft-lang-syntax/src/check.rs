@@ -449,6 +449,12 @@ impl TypeChecker<'_> {
                 self.check_expr(target);
                 self.check_expr(value);
             }
+            Stmt::Emit { event, fields } => {
+                self.check_expr(event);
+                for (_, value) in fields {
+                    self.check_expr(value);
+                }
+            }
             Stmt::Break(expr) => self.check_break_stmt(expr.as_ref()),
             Stmt::Continue => self.check_continue_stmt(),
             Stmt::Raw(raw) => self.errors.push(TypeCheckError::new(format!(

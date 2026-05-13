@@ -3522,6 +3522,9 @@ fn parse_stmt(trimmed: &str) -> Stmt {
         }
         return Stmt::Raw(trimmed.to_owned());
     }
+    if let Some(rest) = trimmed.strip_prefix("emit ") {
+        return parse_emit_stmt(rest.trim());
+    }
     if let Some(expr) = trimmed.strip_prefix("close ") {
         return Stmt::Close(parse_expr_lossy(expr.trim()));
     }
@@ -3558,6 +3561,29 @@ fn parse_stmt(trimmed: &str) -> Stmt {
         return Stmt::Raw(trimmed.to_owned());
     }
     Stmt::Expr(parse_expr_lossy(trimmed))
+}
+
+fn parse_emit_stmt(rest: &str) -> Stmt {
+    if let Some((head, body)) = split_brace_item(rest) {
+        return Stmt::Emit {
+            event: parse_expr_lossy(head.trim()),
+            fields: parse_emit_fields(body),
+        };
+    }
+    Stmt::Emit {
+        event: parse_expr_lossy(rest),
+        fields: Vec::new(),
+    }
+}
+
+fn parse_emit_fields(body: &str) -> Vec<(String, crate::expr::Expr)> {
+    body.lines()
+        .flat_map(|line| line.split(','))
+        .filter_map(|part| {
+            let (name, value) = part.trim().trim_end_matches(',').split_once('=')?;
+            Some((name.trim().to_owned(), parse_expr_lossy(value.trim())))
+        })
+        .collect()
 }
 
 fn parse_pattern(source: &str) -> Pattern {

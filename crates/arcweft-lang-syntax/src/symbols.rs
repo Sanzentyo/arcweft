@@ -355,6 +355,12 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
             ));
         }
         Stmt::Break(Some(expr)) | Stmt::Select(expr) => collect_expr(expr, uses),
+        Stmt::Emit { event, fields } => {
+            collect_expr(event, uses);
+            for (_, value) in fields {
+                collect_expr(value, uses);
+            }
+        }
         Stmt::Break(None) | Stmt::Continue => {}
         Stmt::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
     }
