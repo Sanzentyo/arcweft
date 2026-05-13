@@ -792,12 +792,24 @@ fn is_dialogue_callee_type(ty: Option<&TypeKind>) -> bool {
 fn collect_borrow_lifetimes(pattern: &Pattern, lifetimes: &mut Vec<String>) {
     match pattern {
         Pattern::Typed { ty, .. } => collect_type_lifetimes(ty, lifetimes),
-        Pattern::Tuple(items) => {
+        Pattern::Tuple(items) | Pattern::List { items, .. } => {
             for item in items {
                 collect_borrow_lifetimes(item, lifetimes);
             }
         }
-        Pattern::Ident(_) | Pattern::Variant(_) | Pattern::Discard | Pattern::Raw(_) => {}
+        Pattern::Record { fields, .. } => {
+            for field in fields {
+                collect_borrow_lifetimes(field.pattern(), lifetimes);
+            }
+        }
+        Pattern::Whole { pattern, .. } => collect_borrow_lifetimes(pattern, lifetimes),
+        Pattern::Ident(_)
+        | Pattern::MutIdent(_)
+        | Pattern::Literal(_)
+        | Pattern::Entity(_)
+        | Pattern::Variant(_)
+        | Pattern::Discard
+        | Pattern::Raw(_) => {}
     }
 }
 
@@ -821,6 +833,10 @@ fn let_else_bindings(pattern: &Pattern, expr_type: Option<&TypeKind>) -> Vec<(St
             .cloned()
             .map(|ty| vec![(name.to_owned(), ty)])
             .unwrap_or_default(),
+        Pattern::MutIdent(name) => expr_type
+            .cloned()
+            .map(|ty| vec![(name.to_owned(), ty)])
+            .unwrap_or_default(),
         Pattern::Variant(raw) => variant_payload_binding(raw)
             .into_iter()
             .filter_map(|name| option_payload_type(expr_type).map(|ty| (name, ty)))
@@ -829,8 +845,24 @@ fn let_else_bindings(pattern: &Pattern, expr_type: Option<&TypeKind>) -> Vec<(St
             .iter()
             .flat_map(|item| let_else_bindings(item, None))
             .collect(),
+        Pattern::List { items, .. } => items
+            .iter()
+            .flat_map(|item| let_else_bindings(item, None))
+            .collect(),
+        Pattern::Record { fields, .. } => fields
+            .iter()
+            .flat_map(|field| let_else_bindings(field.pattern(), None))
+            .collect(),
+        Pattern::Whole { name, pattern } => {
+            let mut bindings = expr_type
+                .cloned()
+                .map(|ty| vec![(name.to_owned(), ty)])
+                .unwrap_or_default();
+            bindings.extend(let_else_bindings(pattern, expr_type));
+            bindings
+        }
         Pattern::Typed { name, ty } => vec![(name.to_owned(), type_ref_kind(ty))],
-        Pattern::Discard | Pattern::Raw(_) => Vec::new(),
+        Pattern::Literal(_) | Pattern::Entity(_) | Pattern::Discard | Pattern::Raw(_) => Vec::new(),
     }
 }
 

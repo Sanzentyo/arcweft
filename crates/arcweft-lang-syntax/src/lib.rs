@@ -20,10 +20,10 @@ pub use ast::{
     DialogueToken, EntityRef, EnumItem, EnumVariant, Flow, FlowItem, FlowKind, ForBlock,
     FunctionItem, HookItem, IfBlock, IfLetBlock, ImplItem, Item, LineOptions, LinePlan,
     LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern,
-    ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
-    SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField, StructItem,
-    SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, Visibility, WhileBlock,
-    WhileLetBlock, WikiLink,
+    RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch,
+    SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField,
+    StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, Visibility,
+    WhileBlock, WhileLetBlock, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -1986,6 +1986,79 @@ flow #flow.borrow borrow {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn parses_documented_structured_pattern_shapes() {
+        let tree = parse_source(
+            r"
+flow #flow.patterns patterns {
+    let mut route = current_route
+    let 42 = answer
+    let #choice.opening.listen = selected
+    let TruckResult { score, rank, .. } = result
+    let [first, ..rest] = items
+    let ev .ChoiceSelected { id } = event
+}
+",
+        )
+        .expect("structured pattern fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        assert!(matches!(
+            &flow.body()[0],
+            FlowItem::Stmt(Stmt::Let {
+                pattern: Pattern::MutIdent(name),
+                ..
+            }) if name == "route"
+        ));
+        assert!(matches!(
+            &flow.body()[1],
+            FlowItem::Stmt(Stmt::Let {
+                pattern: Pattern::Literal(Expr::Literal(_)),
+                ..
+            })
+        ));
+        assert!(matches!(
+            &flow.body()[2],
+            FlowItem::Stmt(Stmt::Let {
+                pattern: Pattern::Entity(entity),
+                ..
+            }) if entity.body() == "choice.opening.listen"
+        ));
+        assert!(matches!(
+            &flow.body()[3],
+            FlowItem::Stmt(Stmt::Let {
+                pattern: Pattern::Record {
+                    path: Some(path),
+                    fields,
+                    rest: true,
+                },
+                ..
+            }) if path == "TruckResult" && fields.len() == 2
+        ));
+        assert!(matches!(
+            &flow.body()[4],
+            FlowItem::Stmt(Stmt::Let {
+                pattern: Pattern::List {
+                    items,
+                    rest: Some(rest),
+                },
+                ..
+            }) if items.len() == 1 && rest == "rest"
+        ));
+        assert!(matches!(
+            &flow.body()[5],
+            FlowItem::Stmt(Stmt::Let {
+                pattern: Pattern::Whole { name, pattern },
+                ..
+            }) if name == "ev" && matches!(pattern.as_ref(), Pattern::Variant(raw) if raw.starts_with(".ChoiceSelected"))
+        ));
+
+        let hir = lower_to_hir(&tree).expect("structured pattern fixture lowers");
+        validate_typecheck_ready(&hir).expect("structured patterns do not introduce raw HIR");
     }
 
     #[test]

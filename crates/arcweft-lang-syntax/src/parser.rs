@@ -4,11 +4,11 @@ use crate::ast::{
     ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause, DialogueContent,
     EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionItem,
     HookItem, IfBlock, IfLetBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, LoopBlock,
-    MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand,
-    ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock,
-    SpeakerLine, StateField, StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange,
-    TraitItem, TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock,
-    WikiLink,
+    MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, RecordPatternField,
+    ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
+    SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField, StructItem,
+    SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, UseMode, Visibility,
+    WhileBlock, WhileLetBlock, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -3264,8 +3264,12 @@ fn parse_pattern(source: &str) -> Pattern {
     if source == "_" {
         return Pattern::Discard;
     }
-    if source.starts_with('.') {
-        return Pattern::Variant(source.to_owned());
+    if let Some(name) = source
+        .strip_prefix("mut ")
+        .map(str::trim)
+        .filter(|name| is_pattern_ident(name))
+    {
+        return Pattern::MutIdent(name.to_owned());
     }
     if let Some((name, ty)) = source.split_once(':') {
         let name = name.trim();
@@ -3278,6 +3282,23 @@ fn parse_pattern(source: &str) -> Pattern {
             }
         }
     }
+    if source.starts_with('.') {
+        return Pattern::Variant(source.to_owned());
+    }
+    let mut entity_errors = Vec::new();
+    if let Some((entity, rest)) = parse_required_entity_ref(source, 0, &mut entity_errors)
+        && rest.trim().is_empty()
+    {
+        return Pattern::Entity(entity);
+    }
+    if let Ok(expr @ (crate::expr::Expr::Literal(_) | crate::expr::Expr::EntityRef(_))) =
+        parse_expr(source)
+    {
+        return match expr {
+            crate::expr::Expr::EntityRef(entity) => Pattern::Entity(entity),
+            literal => Pattern::Literal(literal),
+        };
+    }
     if let Some(inner) = source
         .strip_prefix('(')
         .and_then(|value| value.strip_suffix(')'))
@@ -3289,10 +3310,86 @@ fn parse_pattern(source: &str) -> Pattern {
                 .collect(),
         );
     }
+    if let Some(inner) = source
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        return parse_list_pattern(inner);
+    }
+    if let Some(pattern) = parse_record_pattern(source) {
+        return pattern;
+    }
+    if let Some((name, rest)) = split_whole_pattern(source) {
+        return Pattern::Whole {
+            name: name.to_owned(),
+            pattern: Box::new(parse_pattern(rest)),
+        };
+    }
     if is_pattern_ident(source) {
         return Pattern::Ident(source.to_owned());
     }
     Pattern::Raw(source.to_owned())
+}
+
+fn split_whole_pattern(source: &str) -> Option<(&str, &str)> {
+    let (name, rest) = source.split_once(' ')?;
+    let name = name.trim();
+    let rest = rest.trim();
+    (is_pattern_ident(name)
+        && !matches!(name, "mut")
+        && !rest.is_empty()
+        && !is_pattern_ident(rest))
+    .then_some((name, rest))
+}
+
+fn parse_list_pattern(inner: &str) -> Pattern {
+    let mut rest = None;
+    let items = split_pattern_items(inner)
+        .into_iter()
+        .filter_map(|item| {
+            if item == ".." {
+                rest = Some(String::new());
+                None
+            } else if let Some(name) = item.strip_prefix("..") {
+                rest = Some(name.trim().to_owned());
+                None
+            } else {
+                Some(parse_pattern(item))
+            }
+        })
+        .collect();
+    Pattern::List { items, rest }
+}
+
+fn parse_record_pattern(source: &str) -> Option<Pattern> {
+    let (head, body) = split_brace_item(source)?;
+    if head.split_whitespace().count() > 1 {
+        return None;
+    }
+    if head.trim().is_empty() && !body.contains(':') {
+        return None;
+    }
+    let mut rest = false;
+    let fields = split_pattern_items(body)
+        .into_iter()
+        .filter_map(|field| {
+            if field == ".." {
+                rest = true;
+                return None;
+            }
+            let (name, pattern) = field
+                .split_once(':')
+                .map_or((field.trim(), field.trim()), |(name, pattern)| {
+                    (name.trim(), pattern.trim())
+                });
+            is_pattern_ident(name).then(|| RecordPatternField::new(name, parse_pattern(pattern)))
+        })
+        .collect();
+    Some(Pattern::Record {
+        path: (!head.trim().is_empty()).then(|| head.trim().to_owned()),
+        fields,
+        rest,
+    })
 }
 
 fn is_pattern_ident(source: &str) -> bool {
@@ -3311,8 +3408,8 @@ fn split_pattern_items(source: &str) -> Vec<&str> {
     let mut depth = 0_i32;
     for (index, ch) in source.char_indices() {
         match ch {
-            '(' => depth += 1,
-            ')' => depth -= 1,
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth -= 1,
             ',' if depth == 0 => {
                 items.push(source[start..index].trim());
                 start = index + 1;

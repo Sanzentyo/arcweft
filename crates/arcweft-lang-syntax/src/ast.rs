@@ -474,11 +474,54 @@ pub enum Stmt {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Pattern {
     Ident(String),
+    MutIdent(String),
+    Literal(Expr),
+    Entity(EntityRef),
     Variant(String),
     Discard,
     Tuple(Vec<Pattern>),
-    Typed { name: String, ty: TypeRef },
+    Record {
+        path: Option<String>,
+        fields: Vec<RecordPatternField>,
+        rest: bool,
+    },
+    List {
+        items: Vec<Pattern>,
+        rest: Option<String>,
+    },
+    Whole {
+        name: String,
+        pattern: Box<Pattern>,
+    },
+    Typed {
+        name: String,
+        ty: TypeRef,
+    },
     Raw(String),
+}
+
+/// One field inside a record/struct pattern.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecordPatternField {
+    name: String,
+    pattern: Pattern,
+}
+
+impl RecordPatternField {
+    pub(crate) fn new(name: impl Into<String>, pattern: Pattern) -> Self {
+        Self {
+            name: name.into(),
+            pattern,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
 }
 
 /// `await expr with ...` or `try await expr with ...` wait-view syntax.
