@@ -22,7 +22,7 @@ pub use ast::{
     MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand, ScopeBlock,
     ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine,
     StateField, StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TraitItem,
-    TraitMember, TypeAliasItem, UseItem, Visibility, WikiLink,
+    TraitMember, TypeAliasItem, UseItem, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -32,7 +32,7 @@ pub use expr::{BinaryOp, Expr, Literal, Placeholder, parse_expr};
 pub use lower::{
     HirAwait, HirAwaitBranch, HirBorrow, HirChoice, HirChoiceOption, HirDialogue, HirFlow,
     HirFlowItem, HirFor, HirIf, HirLowerError, HirMatch, HirMatchArm, HirModule, HirScope,
-    HirSelect, HirSelectBranch, lower_to_hir,
+    HirSelect, HirSelectBranch, HirWhile, HirWhileLet, lower_to_hir,
 };
 pub use parser::{ParseError, RecoverySuggestion, parse_source, parse_stub};
 pub use resolve::{NameRegistry, NameResolutionError, registry_from_hir, validate_hir_references};
@@ -895,6 +895,111 @@ flow #flow.title title {
             error
                 .message()
                 .contains("let-else else block must leave the current continuation")
+        }));
+    }
+
+    #[test]
+    fn parses_and_typechecks_while_loop() {
+        let tree = parse_source(
+            r"
+flow #flow.loading loading {
+    while loading {
+        continue
+    }
+}
+",
+        )
+        .expect("while fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::While(block) = &flow.body()[0] else {
+            panic!("expected while block");
+        };
+        assert!(matches!(block.condition(), Expr::Path(path) if path == "loading"));
+
+        let hir = lower_to_hir(&tree).expect("while fixture lowers");
+        let HirFlowItem::While(block) = &hir.flows()[0].body()[0] else {
+            panic!("expected HIR while block");
+        };
+        assert!(matches!(block.condition(), Expr::Path(path) if path == "loading"));
+
+        validate_typecheck_ready(&hir).expect("while block is typecheck-ready");
+        typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new().with_symbol("loading", TypeKind::Bool),
+        )
+        .expect("while block typechecks");
+    }
+
+    #[test]
+    fn parses_and_typechecks_while_let_loop() {
+        let tree = parse_source(
+            r"
+flow #flow.events events {
+    while let .Some(event) = next_event when event_ready {
+        goto event
+    }
+}
+",
+        )
+        .expect("while-let fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::WhileLet(block) = &flow.body()[0] else {
+            panic!("expected while-let block");
+        };
+        assert_eq!(
+            block.pattern(),
+            &Pattern::Variant(".Some(event)".to_owned())
+        );
+        assert!(matches!(block.expr(), Expr::Path(path) if path == "next_event"));
+        assert!(block.guard().is_some());
+
+        let hir = lower_to_hir(&tree).expect("while-let fixture lowers");
+        let HirFlowItem::WhileLet(block) = &hir.flows()[0].body()[0] else {
+            panic!("expected HIR while-let block");
+        };
+        assert_eq!(
+            block.pattern(),
+            &Pattern::Variant(".Some(event)".to_owned())
+        );
+
+        validate_typecheck_ready(&hir).expect("while-let block is typecheck-ready");
+        let env = TypeCheckEnv::new()
+            .with_symbol(
+                "next_event",
+                TypeKind::Named("Option<Ref<Flow>>".to_owned()),
+            )
+            .with_symbol("event_ready", TypeKind::Bool);
+        typecheck_hir(&hir, &env).expect("while-let block typechecks");
+    }
+
+    #[test]
+    fn typecheck_rejects_non_bool_while_condition() {
+        let tree = parse_source(
+            r"
+flow #flow.loading loading {
+    while loading_count {
+        continue
+    }
+}
+",
+        )
+        .expect("non-bool while fixture parses");
+        let hir = lower_to_hir(&tree).expect("non-bool while fixture lowers");
+        let errors = typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new().with_symbol("loading_count", TypeKind::Int),
+        )
+        .expect_err("non-bool while condition is rejected");
+        assert!(errors.iter().any(|error| {
+            error
+                .message()
+                .contains("while condition must have type Bool")
         }));
     }
 

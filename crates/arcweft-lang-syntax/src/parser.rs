@@ -7,7 +7,7 @@ use crate::ast::{
     MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, ScopeBlock, ScopeExprBlock,
     SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField,
     StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember,
-    TypeAliasItem, UseItem, UseMode, Visibility, WikiLink,
+    TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -722,6 +722,12 @@ impl Parser {
         if trimmed.starts_with("match ") {
             return self.parse_match_block().map(FlowItem::Match);
         }
+        if trimmed.starts_with("while let ") {
+            return self.parse_while_let_block().map(FlowItem::WhileLet);
+        }
+        if trimmed.starts_with("while ") {
+            return self.parse_while_block().map(FlowItem::While);
+        }
         if trimmed.starts_with("for ") {
             return self.parse_for_block().map(FlowItem::For);
         }
@@ -1111,6 +1117,56 @@ impl Parser {
             parse_pattern(pattern.trim()),
             parse_expr_lossy(source.trim()),
             body_items,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_while_block(&mut self) -> Option<WhileBlock> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing while",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the while body"],
+            );
+            return None;
+        }
+        let condition = head.trim().strip_prefix("while")?.trim();
+        Some(WhileBlock::new(
+            parse_expr_lossy(condition),
+            self.parse_flow_body(&body, start_line.start + head.len()),
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_while_let_block(&mut self) -> Option<WhileLetBlock> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing while-let",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the while-let body"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("while let")?.trim();
+        let (pattern, expr_and_guard) = rest.split_once('=')?;
+        let (expr, guard) = expr_and_guard
+            .split_once(" when ")
+            .map_or((expr_and_guard.trim(), None), |(expr, guard)| {
+                (expr.trim(), Some(parse_expr_lossy(guard.trim())))
+            });
+        Some(WhileLetBlock::new(
+            parse_pattern(pattern.trim()),
+            parse_expr_lossy(expr),
+            guard,
+            self.parse_flow_body(&body, start_line.start + head.len()),
             TextRange::new(start_line.start, end),
         ))
     }

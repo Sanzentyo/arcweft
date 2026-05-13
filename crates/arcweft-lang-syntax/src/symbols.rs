@@ -69,6 +69,21 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 }
             }
         }
+        HirFlowItem::While(block) => {
+            collect_expr(block.condition(), uses);
+            for item in block.body() {
+                collect_flow_item(item, uses);
+            }
+        }
+        HirFlowItem::WhileLet(block) => {
+            collect_expr(block.expr(), uses);
+            if let Some(guard) = block.guard() {
+                collect_expr(guard, uses);
+            }
+            for item in block.body() {
+                collect_flow_item(item, uses);
+            }
+        }
         HirFlowItem::For(block) => {
             collect_expr(block.source(), uses);
             for item in block.body() {

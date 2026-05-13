@@ -51,16 +51,24 @@ FlowBody     := '{' FlowItem* '}'
 
 FlowItem     :=
     LetStmt
+  | LetElseStmt
   | ControlStmt
   | ScenarioCommand
   | DialogueLine
   | ChoiceBlock
+  | IfExpr
+  | MatchExpr
+  | LoopExpr
+  | WhileStmt
+  | WhileLet
+  | ForStmt
   | AwaitExpr
   | ScopeStmt
   | ExprStmt
 
-ScopeStmt       := 'scope' Ident BlockExpr
-ScopeExpr       := 'scope' Ident BlockExpr
+NamedScope      := 'scope' Ident BlockExpr
+ScopeStmt       := NamedScope
+ScopeExpr       := NamedScope
 ScenarioCommand := '@' Ident ScenarioArgs?
 ```
 
@@ -177,6 +185,7 @@ BlockItem      := LetStmt | LetElseStmt | ExprStmt | ControlStmt | ScenarioStmt 
 
 In expression position, a block's final expression is its value. In statement position, a bare block creates a lexical scope and does not export a value; a non-`Unit` final expression must be discarded explicitly with `;` or `let _ = ...`.
 `scope name { ... }` behaves like a lexical block and also contributes `name` to relative line, text-key, choice, and option ID generation inside the block. In expression position, it returns the final expression just like `{ ... }`.
+Only ID-bearing constructs inside the named scope use the scope path for ID generation; the scope expression's own value is just the final expression.
 
 ## Statement / expression list
 

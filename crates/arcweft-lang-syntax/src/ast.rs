@@ -283,6 +283,8 @@ pub enum FlowItem {
     Choice(ChoiceBlock),
     If(IfBlock),
     Match(MatchBlock),
+    While(WhileBlock),
+    WhileLet(WhileLetBlock),
     For(ForBlock),
     Select(SelectBlock),
     BorrowBlock(BorrowBlock),
@@ -346,6 +348,24 @@ pub struct MatchArm {
 pub struct ForBlock {
     pattern: Pattern,
     source: Expr,
+    body: Vec<FlowItem>,
+    range: TextRange,
+}
+
+/// `while condition { ... }` statement loop.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WhileBlock {
+    condition: Expr,
+    body: Vec<FlowItem>,
+    range: TextRange,
+}
+
+/// `while let PAT = expr when guard { ... }` statement loop.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WhileLetBlock {
+    pattern: Pattern,
+    expr: Expr,
+    guard: Option<Expr>,
     body: Vec<FlowItem>,
     range: TextRange,
 }
@@ -1364,6 +1384,66 @@ impl ForBlock {
 
     pub const fn source(&self) -> &Expr {
         &self.source
+    }
+
+    pub fn body(&self) -> &[FlowItem] {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl WhileBlock {
+    pub(crate) const fn new(condition: Expr, body: Vec<FlowItem>, range: TextRange) -> Self {
+        Self {
+            condition,
+            body,
+            range,
+        }
+    }
+
+    pub const fn condition(&self) -> &Expr {
+        &self.condition
+    }
+
+    pub fn body(&self) -> &[FlowItem] {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl WhileLetBlock {
+    pub(crate) const fn new(
+        pattern: Pattern,
+        expr: Expr,
+        guard: Option<Expr>,
+        body: Vec<FlowItem>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            pattern,
+            expr,
+            guard,
+            body,
+            range,
+        }
+    }
+
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    pub const fn expr(&self) -> &Expr {
+        &self.expr
+    }
+
+    pub const fn guard(&self) -> Option<&Expr> {
+        self.guard.as_ref()
     }
 
     pub fn body(&self) -> &[FlowItem] {

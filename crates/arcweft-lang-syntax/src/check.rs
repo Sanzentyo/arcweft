@@ -161,25 +161,7 @@ impl TypeChecker<'_> {
         match item {
             HirFlowItem::Stmt(stmt) => self.check_stmt(stmt),
             HirFlowItem::Dialogue(dialogue) => {
-                let callee_type = self.env.symbol_type(dialogue.callee());
-                if !is_dialogue_callee_type(callee_type) {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "dialogue callee `{}` must resolve to Ref<Character> or SpeakerPreset",
-                        dialogue.callee()
-                    )));
-                }
-                if let Some(id) = dialogue.id() {
-                    self.expect_entity_kind(id, &EntityKind::DialogueLine, "dialogue line id");
-                }
-                if let Some(text_key) = dialogue.text_key() {
-                    self.expect_entity_kind(text_key, &EntityKind::Text, "dialogue text key");
-                }
-                self.check_dialogue_content(dialogue.content().tokens());
-                if let Some(plan) = dialogue.plan() {
-                    for item in plan.items() {
-                        self.check_line_plan_item(item);
-                    }
-                }
+                self.check_dialogue_item(dialogue);
             }
             HirFlowItem::Choice(choice) => {
                 self.check_choice(choice);
@@ -204,6 +186,22 @@ impl TypeChecker<'_> {
                 for arm in block.arms() {
                     self.check_flow_items(arm.body());
                 }
+            }
+            HirFlowItem::While(block) => {
+                self.expect_expr_type(block.condition(), &TypeKind::Bool, "while condition");
+                self.check_flow_items(block.body());
+            }
+            HirFlowItem::WhileLet(block) => {
+                let expr_type = self.check_expr(block.expr());
+                if let Some(guard) = block.guard() {
+                    self.expect_expr_type(guard, &TypeKind::Bool, "while-let guard");
+                }
+                let outer_locals = self.locals.clone();
+                for (name, ty) in let_else_bindings(block.pattern(), expr_type.as_ref()) {
+                    self.locals.insert(name, ty);
+                }
+                self.check_flow_items(block.body());
+                self.locals = outer_locals;
             }
             HirFlowItem::For(block) => {
                 self.check_expr(block.source());
@@ -231,27 +229,53 @@ impl TypeChecker<'_> {
                 }
             }
             HirFlowItem::Await(await_with) => {
-                self.reject_active_borrows("await suspension boundary");
-                let ty = self.check_expr(await_with.expr());
-                if !matches!(ty, Some(TypeKind::Need { .. })) {
-                    self.errors.push(TypeCheckError::new(
-                        "await expression must have Need<T, E> type".to_owned(),
-                    ));
-                }
-                if await_with.branches().is_empty() {
-                    self.errors.push(TypeCheckError::new(
-                        "await with must define at least one wait-view branch".to_owned(),
-                    ));
-                }
-                for branch in await_with.branches() {
-                    self.check_flow_items(branch.body());
-                }
+                self.check_await_item(await_with);
             }
             HirFlowItem::Scenario { args, .. } => {
                 for arg in args {
                     self.check_expr(arg);
                 }
             }
+        }
+    }
+
+    fn check_dialogue_item(&mut self, dialogue: &crate::lower::HirDialogue) {
+        let callee_type = self.env.symbol_type(dialogue.callee());
+        if !is_dialogue_callee_type(callee_type) {
+            self.errors.push(TypeCheckError::new(format!(
+                "dialogue callee `{}` must resolve to Ref<Character> or SpeakerPreset",
+                dialogue.callee()
+            )));
+        }
+        if let Some(id) = dialogue.id() {
+            self.expect_entity_kind(id, &EntityKind::DialogueLine, "dialogue line id");
+        }
+        if let Some(text_key) = dialogue.text_key() {
+            self.expect_entity_kind(text_key, &EntityKind::Text, "dialogue text key");
+        }
+        self.check_dialogue_content(dialogue.content().tokens());
+        if let Some(plan) = dialogue.plan() {
+            for item in plan.items() {
+                self.check_line_plan_item(item);
+            }
+        }
+    }
+
+    fn check_await_item(&mut self, await_with: &crate::lower::HirAwait) {
+        self.reject_active_borrows("await suspension boundary");
+        let ty = self.check_expr(await_with.expr());
+        if !matches!(ty, Some(TypeKind::Need { .. })) {
+            self.errors.push(TypeCheckError::new(
+                "await expression must have Need<T, E> type".to_owned(),
+            ));
+        }
+        if await_with.branches().is_empty() {
+            self.errors.push(TypeCheckError::new(
+                "await with must define at least one wait-view branch".to_owned(),
+            ));
+        }
+        for branch in await_with.branches() {
+            self.check_flow_items(branch.body());
         }
     }
 

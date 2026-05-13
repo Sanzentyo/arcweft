@@ -200,6 +200,21 @@ scope rain {
 #text.opening.narrator.rain.window.rattle
 ```
 
+`scope` は expression block としても使える。この場合も名前は trace / LSP
+表示名と、その中で生成または相対指定される line / choice / option /
+text key の namespace に使う。`scope` 式そのものの値は通常の `{ ... }`
+と同じく最後の式で決まる。
+
+```awft
+let can_enter = scope alice_route_check {
+    let affection_ok = state.affection[#character.alice] >= 3
+    let has_key = state.inventory.contains(#item.alice_key)
+    affection_ok && has_key
+}
+```
+
+ID に反映されるのは、その scope 内の ID-bearing construct だけである。
+
 `.suffix` は module path には使わない。module / import の相対指定は
 `self::`、`super::`、`crate::` を使う。`parent::` は `super::` の予約
 alias で、formatter は `super::` に正規化する。

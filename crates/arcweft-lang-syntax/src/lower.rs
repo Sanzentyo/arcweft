@@ -2,7 +2,7 @@ use crate::ast::{
     AwaitBranchKind, BorrowBlock, ChoiceAction, ChoiceBlock, ChoicePlan, ContractClause,
     DialogueContent, EntityRef, Flow, FlowItem, FlowKind, IfBlock, Item, LinePlan, MatchBlock,
     Pattern, ScopeBlock, ScopeExprBlock, SourceLocaleBlock, SpeakerLine, Stmt, SyntaxTree,
-    TextRange,
+    TextRange, WhileBlock, WhileLetBlock,
 };
 use crate::expr::Expr;
 use core::fmt;
@@ -45,6 +45,8 @@ pub enum HirFlowItem {
     },
     If(HirIf),
     Match(HirMatch),
+    While(HirWhile),
+    WhileLet(HirWhileLet),
     For(HirFor),
     Select(HirSelect),
     Borrow(HirBorrow),
@@ -145,6 +147,22 @@ pub struct HirMatchArm {
 pub struct HirFor {
     pattern: Pattern,
     source: Expr,
+    body: Vec<HirFlowItem>,
+}
+
+/// HIR-facing `while` statement loop.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirWhile {
+    condition: Expr,
+    body: Vec<HirFlowItem>,
+}
+
+/// HIR-facing `while let` statement loop.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirWhileLet {
+    pattern: Pattern,
+    expr: Expr,
+    guard: Option<Expr>,
     body: Vec<HirFlowItem>,
 }
 
@@ -283,6 +301,8 @@ fn lower_flow_item_with_context(
         FlowItem::Choice(choice) => Ok(HirFlowItem::Choice(lower_choice(choice, context))),
         FlowItem::If(block) => lower_if(block, context).map(HirFlowItem::If),
         FlowItem::Match(block) => lower_match(block, context).map(HirFlowItem::Match),
+        FlowItem::While(block) => lower_while(block, context).map(HirFlowItem::While),
+        FlowItem::WhileLet(block) => lower_while_let(block, context).map(HirFlowItem::WhileLet),
         FlowItem::For(block) => lower_for(block, context).map(HirFlowItem::For),
         FlowItem::Select(block) => lower_select(block, context).map(HirFlowItem::Select),
         FlowItem::BorrowBlock(block) => lower_borrow(block, context).map(HirFlowItem::Borrow),
@@ -338,6 +358,33 @@ fn lower_borrow(
     Ok(HirBorrow {
         source: block.source().clone(),
         binding: block.binding().clone(),
+        body: block
+            .body()
+            .iter()
+            .map(|item| lower_flow_item_with_context(item, context))
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn lower_while(block: &WhileBlock, context: &mut LowerContext) -> Result<HirWhile, HirLowerError> {
+    Ok(HirWhile {
+        condition: block.condition().clone(),
+        body: block
+            .body()
+            .iter()
+            .map(|item| lower_flow_item_with_context(item, context))
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn lower_while_let(
+    block: &WhileLetBlock,
+    context: &mut LowerContext,
+) -> Result<HirWhileLet, HirLowerError> {
+    Ok(HirWhileLet {
+        pattern: block.pattern().clone(),
+        expr: block.expr().clone(),
+        guard: block.guard().cloned(),
         body: block
             .body()
             .iter()
@@ -814,6 +861,34 @@ impl HirFor {
 
     pub const fn source(&self) -> &Expr {
         &self.source
+    }
+
+    pub fn body(&self) -> &[HirFlowItem] {
+        &self.body
+    }
+}
+
+impl HirWhile {
+    pub const fn condition(&self) -> &Expr {
+        &self.condition
+    }
+
+    pub fn body(&self) -> &[HirFlowItem] {
+        &self.body
+    }
+}
+
+impl HirWhileLet {
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    pub const fn expr(&self) -> &Expr {
+        &self.expr
+    }
+
+    pub const fn guard(&self) -> Option<&Expr> {
+        self.guard.as_ref()
     }
 
     pub fn body(&self) -> &[HirFlowItem] {
