@@ -34,6 +34,17 @@ pub fn collect_symbol_uses(module: &HirModule) -> Vec<SymbolUse> {
             collect_flow_item(item, &mut uses);
         }
     }
+    for function in module.functions() {
+        for contract in function.contracts() {
+            collect_contract_clause(contract, &mut uses);
+        }
+        for stmt in function.statements() {
+            collect_stmt(stmt, &mut uses);
+        }
+        if let Some(value) = function.value() {
+            collect_expr(value, &mut uses);
+        }
+    }
     for item in module.top_level_items() {
         collect_flow_item(item, &mut uses);
     }

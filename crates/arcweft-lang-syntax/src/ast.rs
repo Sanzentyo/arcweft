@@ -150,7 +150,22 @@ pub struct FunctionItem {
     signature_text: String,
     contracts: Vec<ContractClause>,
     body: String,
+    body_statements: Vec<Stmt>,
+    body_value: Option<Expr>,
     range: TextRange,
+}
+
+/// Internal initializer for a function item.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct FunctionInit {
+    pub(crate) visibility: Option<Visibility>,
+    pub(crate) signature: FnSignature,
+    pub(crate) signature_text: String,
+    pub(crate) contracts: Vec<ContractClause>,
+    pub(crate) body: String,
+    pub(crate) body_statements: Vec<Stmt>,
+    pub(crate) body_value: Option<Expr>,
+    pub(crate) range: TextRange,
 }
 
 /// Function-like top-level item such as `reducer` or `view`.
@@ -993,21 +1008,16 @@ impl Flow {
 }
 
 impl FunctionItem {
-    pub(crate) fn new(
-        visibility: Option<Visibility>,
-        signature: FnSignature,
-        signature_text: String,
-        contracts: Vec<ContractClause>,
-        body: String,
-        range: TextRange,
-    ) -> Self {
+    pub(crate) fn new(init: FunctionInit) -> Self {
         Self {
-            visibility,
-            signature,
-            signature_text,
-            contracts,
-            body,
-            range,
+            visibility: init.visibility,
+            signature: init.signature,
+            signature_text: init.signature_text,
+            contracts: init.contracts,
+            body: init.body,
+            body_statements: init.body_statements,
+            body_value: init.body_value,
+            range: init.range,
         }
     }
 
@@ -1029,6 +1039,14 @@ impl FunctionItem {
 
     pub fn body(&self) -> &str {
         &self.body
+    }
+
+    pub fn body_statements(&self) -> &[Stmt] {
+        &self.body_statements
+    }
+
+    pub const fn body_value(&self) -> Option<&Expr> {
+        self.body_value.as_ref()
     }
 
     pub const fn range(&self) -> &TextRange {

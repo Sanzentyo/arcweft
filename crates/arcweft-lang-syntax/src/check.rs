@@ -161,6 +161,15 @@ impl TypeChecker<'_> {
             }
             self.check_flow_items(flow.body());
         }
+        for function in module.functions() {
+            self.active_borrows.clear();
+            self.locals.clear();
+            self.loop_stack.clear();
+            for contract in function.contracts() {
+                self.check_contract_clause(contract);
+            }
+            self.check_block_expr(function.statements(), function.value());
+        }
         self.check_flow_items(module.top_level_items());
     }
 

@@ -1,8 +1,8 @@
 use crate::ast::{
     AwaitBranchKind, BorrowBlock, ChoiceAction, ChoiceBlock, ChoicePlan, ContractClause,
-    DialogueContent, EntityRef, Flow, FlowItem, FlowKind, IfBlock, IfLetBlock, Item, LinePlan,
-    LoopBlock, MatchBlock, Pattern, ScopeBlock, ScopeExprBlock, SourceLocaleBlock, SpeakerLine,
-    Stmt, SyntaxTree, TextRange, WhileBlock, WhileLetBlock,
+    DialogueContent, EntityRef, Flow, FlowItem, FlowKind, FunctionItem, IfBlock, IfLetBlock, Item,
+    LinePlan, LoopBlock, MatchBlock, Pattern, ScopeBlock, ScopeExprBlock, SourceLocaleBlock,
+    SpeakerLine, Stmt, SyntaxTree, TextRange, WhileBlock, WhileLetBlock,
 };
 use crate::expr::Expr;
 use core::fmt;
@@ -16,6 +16,7 @@ use std::collections::HashMap;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirModule {
     flows: Vec<HirFlow>,
+    functions: Vec<HirFunction>,
     top_level_items: Vec<HirFlowItem>,
 }
 
@@ -27,6 +28,15 @@ pub struct HirFlow {
     name: Option<String>,
     contracts: Vec<ContractClause>,
     body: Vec<HirFlowItem>,
+}
+
+/// HIR-facing function body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirFunction {
+    name: String,
+    contracts: Vec<ContractClause>,
+    statements: Vec<Stmt>,
+    value: Option<Expr>,
 }
 
 /// HIR-facing flow item.
@@ -235,6 +245,7 @@ pub struct HirLowerError {
 /// Lowers a parsed syntax tree into HIR-facing structures.
 pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> {
     let mut flows = Vec::new();
+    let mut functions = Vec::new();
     let mut top_level_items = Vec::new();
     let mut errors = Vec::new();
 
@@ -244,6 +255,7 @@ pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> 
                 Ok(flow) => flows.push(flow),
                 Err(err) => errors.push(err),
             },
+            Item::Function(function) => functions.push(lower_function(function)),
             Item::FlowItem(item) => match lower_flow_item(item) {
                 Ok(item) => top_level_items.push(item),
                 Err(err) => errors.push(err),
@@ -251,7 +263,6 @@ pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> 
             Item::Attribute(_)
             | Item::Callable(_)
             | Item::Enum(_)
-            | Item::Function(_)
             | Item::Hook(_)
             | Item::Impl(_)
             | Item::MemoFn(_)
@@ -270,10 +281,20 @@ pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> 
     if errors.is_empty() {
         Ok(HirModule {
             flows,
+            functions,
             top_level_items,
         })
     } else {
         Err(errors)
+    }
+}
+
+fn lower_function(function: &FunctionItem) -> HirFunction {
+    HirFunction {
+        name: function.signature().name().to_owned(),
+        contracts: function.contracts().to_vec(),
+        statements: function.body_statements().to_vec(),
+        value: function.body_value().cloned(),
     }
 }
 
@@ -738,6 +759,10 @@ impl HirModule {
         &self.flows
     }
 
+    pub fn functions(&self) -> &[HirFunction] {
+        &self.functions
+    }
+
     pub fn top_level_items(&self) -> &[HirFlowItem] {
         &self.top_level_items
     }
@@ -762,6 +787,24 @@ impl HirFlow {
 
     pub fn contracts(&self) -> &[ContractClause] {
         &self.contracts
+    }
+}
+
+impl HirFunction {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn contracts(&self) -> &[ContractClause] {
+        &self.contracts
+    }
+
+    pub fn statements(&self) -> &[Stmt] {
+        &self.statements
+    }
+
+    pub const fn value(&self) -> Option<&Expr> {
+        self.value.as_ref()
     }
 }
 

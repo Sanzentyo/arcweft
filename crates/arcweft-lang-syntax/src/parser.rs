@@ -2,13 +2,13 @@ use crate::ast::{
     Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, BorrowBlock, CallableItem,
     CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceOption,
     ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause, DialogueContent,
-    EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionItem,
-    HookItem, IfBlock, IfLetBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, LoopBlock,
-    MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, RecordPatternField,
-    ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
-    SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField, StructItem,
-    SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, UseMode, Visibility,
-    WhileBlock, WhileLetBlock, WikiLink,
+    EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionInit,
+    FunctionItem, HookItem, IfBlock, IfLetBlock, ImplItem, Item, LineOptions, LinePlan,
+    LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern,
+    RawItem, RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock,
+    SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt,
+    StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
+    UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -268,15 +268,18 @@ impl Parser {
             .skip(1)
             .filter_map(|line| parse_contract_clause(line))
             .collect();
+        let (body_statements, body_value) = parse_scope_expr_body(&body);
 
-        Some(FunctionItem::new(
+        Some(FunctionItem::new(FunctionInit {
             visibility,
             signature,
             signature_text,
             contracts,
             body,
-            TextRange::new(start_line.start, end),
-        ))
+            body_statements,
+            body_value,
+            range: TextRange::new(start_line.start, end),
+        }))
     }
 
     fn parse_enum_item(&mut self) -> Option<EnumItem> {

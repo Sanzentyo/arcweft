@@ -2021,6 +2021,8 @@ effects { asset.read }
             }
         ));
         assert!(function.body().contains("xs[0]"));
+        assert!(function.body_statements().is_empty());
+        assert!(matches!(function.body_value(), Some(Expr::Index { .. })));
     }
 
     #[test]
@@ -2038,9 +2040,44 @@ flow #flow.opening opening {
         )
         .expect("function and flow parse");
 
-        let hir = lower_to_hir(&tree).expect("function item is syntax-only for now");
+        let hir = lower_to_hir(&tree).expect("function and flow lower");
+        assert_eq!(hir.functions().len(), 1);
+        assert_eq!(hir.functions()[0].name(), "label");
         assert_eq!(hir.flows().len(), 1);
         assert_eq!(hir.flows()[0].id().expect("flow id").body(), "flow.opening");
+    }
+
+    #[test]
+    fn typechecks_structured_function_body_for_hir_readiness() {
+        let tree = parse_source(
+            r"
+fn load_score() -> Result<i32, ScoreError> {
+    let score = read_score()?
+    score
+}
+",
+        )
+        .expect("function body parses");
+        let hir = lower_to_hir(&tree).expect("function lowers");
+
+        assert_eq!(hir.functions().len(), 1);
+        assert!(matches!(
+            hir.functions()[0].statements()[0],
+            Stmt::Let {
+                expr: Expr::Try { .. },
+                ..
+            }
+        ));
+        validate_typecheck_ready(&hir).expect("function body has structured expressions");
+
+        let env = TypeCheckEnv::new().with_function(
+            "read_score",
+            TypeKind::Result {
+                ok: Box::new(TypeKind::Int),
+                error: Box::new(TypeKind::Named("ScoreError".to_owned())),
+            },
+        );
+        typecheck_hir(&hir, &env).expect("function body typechecks");
     }
 
     #[test]
