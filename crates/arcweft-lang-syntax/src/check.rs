@@ -463,6 +463,22 @@ impl TypeChecker<'_> {
                 }
                 self.locals = outer_locals;
             }
+            Stmt::Match { expr, arms } => {
+                let expr_type = self.check_expr(expr);
+                for arm in arms {
+                    let outer_locals = self.locals.clone();
+                    for (name, ty) in let_else_bindings(arm.pattern(), expr_type.as_ref()) {
+                        self.locals.insert(name, ty);
+                    }
+                    if let Some(guard) = arm.guard() {
+                        self.expect_expr_type(guard, &TypeKind::Bool, "match guard");
+                    }
+                    for stmt in arm.body() {
+                        self.check_stmt(stmt);
+                    }
+                    self.locals = outer_locals;
+                }
+            }
             Stmt::Break(expr) => self.check_break_stmt(expr.as_ref()),
             Stmt::Continue => self.check_continue_stmt(),
             Stmt::Raw(raw) => self.errors.push(TypeCheckError::new(format!(

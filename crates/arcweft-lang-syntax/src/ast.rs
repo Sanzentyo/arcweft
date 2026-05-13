@@ -432,6 +432,14 @@ pub enum SelectBranchHead {
     Raw(String),
 }
 
+/// One `match` arm inside a typed statement block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StmtMatchArm {
+    pattern: Pattern,
+    guard: Option<Expr>,
+    body: Vec<Stmt>,
+}
+
 /// `borrow expr as name: Type { ... }` zero-copy borrow block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BorrowBlock {
@@ -488,6 +496,10 @@ pub enum Stmt {
     If {
         condition: Expr,
         body: Vec<Stmt>,
+    },
+    Match {
+        expr: Expr,
+        arms: Vec<StmtMatchArm>,
     },
     Close(Expr),
     Select(Expr),
@@ -1637,6 +1649,28 @@ impl SelectBranch {
     }
 
     pub fn body(&self) -> &[FlowItem] {
+        &self.body
+    }
+}
+
+impl StmtMatchArm {
+    pub(crate) const fn new(pattern: Pattern, guard: Option<Expr>, body: Vec<Stmt>) -> Self {
+        Self {
+            pattern,
+            guard,
+            body,
+        }
+    }
+
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    pub const fn guard(&self) -> Option<&Expr> {
+        self.guard.as_ref()
+    }
+
+    pub fn body(&self) -> &[Stmt] {
         &self.body
     }
 }

@@ -600,8 +600,10 @@ flow #flow.opening opening {
                 if can_emit {
                     emit GameEvent::ChoiceSelected { id = #choice.opening.listen }
                 }
-                let route = #flow.alice_intro
-                out route
+                match selected_route {
+                    .Some(route) => out route
+                    _ => out #flow.title
+                }
             }
         }
     }
@@ -620,7 +622,7 @@ flow #flow.opening opening {
             ChoiceAction::SelectBlock(statements)
                 if matches!(
                     statements.as_slice(),
-                    [Stmt::If { .. }, Stmt::Let { .. }, Stmt::Out(_)]
+                    [Stmt::If { .. }, Stmt::Match { .. }]
                 )
         ));
 
@@ -633,7 +635,11 @@ flow #flow.opening opening {
                     "GameEvent::ChoiceSelected",
                     TypeKind::Named("GameEvent".to_owned()),
                 )
-                .with_symbol("can_emit", TypeKind::Bool),
+                .with_symbol("can_emit", TypeKind::Bool)
+                .with_symbol(
+                    "selected_route",
+                    TypeKind::Named("Option<Ref<Flow>>".to_owned()),
+                ),
         )
         .expect("choice option select block typechecks");
     }

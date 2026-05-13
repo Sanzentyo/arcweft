@@ -7,8 +7,8 @@ use crate::ast::{
     LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern,
     RawItem, RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock,
     SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt,
-    StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
-    UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    StmtMatchArm, StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember,
+    TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -3542,6 +3542,12 @@ fn parse_stmt(trimmed: &str) -> Stmt {
                 body: parse_stmt_lines(body),
             };
         }
+        if let Some(expr) = head.strip_prefix("match ") {
+            return Stmt::Match {
+                expr: parse_expr_lossy(expr.trim()),
+                arms: parse_stmt_match_arms(body),
+            };
+        }
     }
     if let Some(expr) = trimmed.strip_prefix("close ") {
         return Stmt::Close(parse_expr_lossy(expr.trim()));
@@ -3579,6 +3585,29 @@ fn parse_stmt(trimmed: &str) -> Stmt {
         return Stmt::Raw(trimmed.to_owned());
     }
     Stmt::Expr(parse_expr_lossy(trimmed))
+}
+
+fn parse_stmt_match_arms(body: &str) -> Vec<StmtMatchArm> {
+    collect_logical_choice_lines(body)
+        .into_iter()
+        .filter_map(|line| {
+            let (head, value) = line.trim().split_once("=>")?;
+            let (pattern, guard) = split_pattern_guard(head.trim());
+            let body = value
+                .trim()
+                .strip_prefix('{')
+                .and_then(|value| value.strip_suffix('}'))
+                .map_or_else(
+                    || vec![parse_stmt(value.trim())],
+                    |block| parse_stmt_lines(block.trim()),
+                );
+            Some(StmtMatchArm::new(
+                parse_pattern(pattern.trim()),
+                guard.map(|guard| parse_expr_lossy(guard.trim())),
+                body,
+            ))
+        })
+        .collect()
 }
 
 fn parse_emit_stmt(rest: &str) -> Stmt {

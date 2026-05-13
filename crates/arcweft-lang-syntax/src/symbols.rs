@@ -365,6 +365,16 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
             collect_expr(condition, uses);
             collect_stmt_block(body, uses);
         }
+        Stmt::Match { expr, arms } => {
+            collect_expr(expr, uses);
+            for arm in arms {
+                collect_pattern(arm.pattern(), uses);
+                if let Some(guard) = arm.guard() {
+                    collect_expr(guard, uses);
+                }
+                collect_stmt_block(arm.body(), uses);
+            }
+        }
         Stmt::Break(None) | Stmt::Continue => {}
         Stmt::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
     }
