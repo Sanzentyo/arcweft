@@ -2067,6 +2067,7 @@ pub view current_scene(state: GameState) -> Scene {
 
         let hir = lower_to_hir(&tree).expect("syntax-only state/callable items do not block HIR");
         assert!(hir.flows().is_empty());
+        validate_typecheck_ready(&hir).expect("state defaults lower without raw expressions");
         assert!(matches!(
             hir.declarations(),
             [
@@ -2284,6 +2285,11 @@ with {
         let nested_list = super::parse_expr("[#stem.piano, fade(0.2s, [slow, fast])]")
             .expect("nested list expression parses");
         assert!(matches!(nested_list, Expr::List(items) if items.len() == 2));
+        let record_literal = super::parse_expr("{ player_name = state.player_name }")
+            .expect("record literal parses");
+        assert!(matches!(record_literal, Expr::RecordLiteral(fields) if fields.len() == 1));
+        let empty_record = super::parse_expr("{}").expect("empty record literal parses");
+        assert!(matches!(empty_record, Expr::RecordLiteral(fields) if fields.is_empty()));
 
         let generic_collect = super::parse_expr("visible_choices.collect<List<ChoiceView>>()")
             .expect("generic method call parses");

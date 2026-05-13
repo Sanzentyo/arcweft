@@ -625,7 +625,7 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
                 collect_expr(end, uses);
             }
         }
-        Expr::Record { fields, .. } => {
+        Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => {
             for (_, value) in fields {
                 collect_expr(value, uses);
             }

@@ -932,10 +932,12 @@ impl TypeChecker<'_> {
                 Some(TypeKind::Range)
             }
             Expr::Record { path, fields } => {
-                for (_, value) in fields {
-                    self.check_expr(value);
-                }
+                self.check_record_fields(fields);
                 Some(TypeKind::Named(path.clone()))
+            }
+            Expr::RecordLiteral(fields) => {
+                self.check_record_fields(fields);
+                Some(TypeKind::Named("Record".to_owned()))
             }
             Expr::Binary { lhs, op, rhs } => self.check_binary_expr(lhs, *op, rhs),
             Expr::Closure { body, .. } => {
@@ -984,6 +986,12 @@ impl TypeChecker<'_> {
                 .filter_map(|item| self.check_expr(item))
                 .collect(),
         )
+    }
+
+    fn check_record_fields(&mut self, fields: &[(String, Expr)]) {
+        for (_, value) in fields {
+            self.check_expr(value);
+        }
     }
 
     fn check_call_expr(&mut self, callee: &Expr, args: &[Expr]) -> Option<TypeKind> {
@@ -1452,6 +1460,7 @@ fn simple_expr_type(expr: &Expr) -> Option<TypeKind> {
             .collect::<Option<Vec<_>>>()
             .map(TypeKind::Tuple),
         Expr::List(_) => Some(TypeKind::Named("List".to_owned())),
+        Expr::RecordLiteral(_) => Some(TypeKind::Named("Record".to_owned())),
         _ => None,
     }
 }

@@ -56,6 +56,7 @@ pub enum Expr {
         path: String,
         fields: Vec<(String, Expr)>,
     },
+    RecordLiteral(Vec<(String, Expr)>),
     Binary {
         lhs: Box<Expr>,
         op: BinaryOp,
@@ -341,6 +342,9 @@ fn parse_atom(source: &str) -> Expr {
     if let Some((path, fields)) = parse_record_expr(source) {
         return Expr::Record { path, fields };
     }
+    if let Some(fields) = parse_record_literal(source) {
+        return Expr::RecordLiteral(fields);
+    }
     if let Some(inner) = source
         .strip_prefix('(')
         .and_then(|value| value.strip_suffix(')'))
@@ -375,22 +379,35 @@ fn parse_record_expr(source: &str) -> Option<(String, Vec<(String, Expr)>)> {
     if path.is_empty() || !is_path_like(path) {
         return None;
     }
-    let fields = source[open + 1..close]
+    let fields = parse_record_fields(&source[open + 1..close])?;
+    Some((path.to_owned(), fields))
+}
+
+fn parse_record_literal(source: &str) -> Option<Vec<(String, Expr)>> {
+    let inner = source.strip_prefix('{')?.strip_suffix('}')?;
+    parse_record_fields(inner)
+}
+
+fn parse_record_fields(source: &str) -> Option<Vec<(String, Expr)>> {
+    if source.trim().is_empty() {
+        return Some(Vec::new());
+    }
+    source
         .lines()
         .flat_map(|line| line.split(','))
-        .filter_map(|part| {
+        .map(|part| {
             let part = part.trim().trim_end_matches(',');
             if part.is_empty() {
-                return None;
+                return Some(None);
             }
             let (name, value) = part
                 .split_once('=')
                 .or_else(|| part.split_once(':'))
                 .map_or((part, part), |(name, value)| (name.trim(), value.trim()));
-            Some((name.to_owned(), parse_pipe(value)))
+            is_identifier(name).then(|| Some((name.to_owned(), parse_pipe(value))))
         })
-        .collect();
-    Some((path.to_owned(), fields))
+        .collect::<Option<Vec<_>>>()
+        .map(|fields| fields.into_iter().flatten().collect())
 }
 
 fn parse_range_expr(source: &str) -> Option<Expr> {
