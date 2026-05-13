@@ -1,0 +1,418 @@
+# Dialogue Content Calls, `with:` Blocks, Line Return Values, and Scoped Handles
+
+Arcweft supports concise dialogue while preserving typed control over voice, BGM, stage objects, hooks, and cancellation.
+
+Related:
+
+- [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](dialogue-calls-scopes-cancellation.md)
+- [Dialogue Character Methods, Dialogue Windows, Speaker Presets, Interpolation, and Preload](dialogue-character-methods-and-textbox.md)
+- [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](dialogue-control-tags-and-ruby.md)
+- [Flow-Integrated Scenario Syntax](scenario-surface-syntax.md)
+- [Character Stage / Sprite / Voice Timeline](../03-presentation/character-stage.md)
+- [Audio / Spatial / TTS / BGM](../03-presentation/audio.md)
+
+---
+
+## Accepted dialogue-call forms
+
+The preferred detailed shape is:
+
+```awft
+speaker.say(args)[dialogue]
+with {
+    line plan
+}
+```
+
+For script-like sections, the indentation form is also first-class:
+
+```awft
+speaker.say(args)[dialogue]
+with:
+    line plan
+```
+
+For ordinary lines, the speaker itself can receive the content block:
+
+```awft
+alice[
+    おはよう。[p]
+]
+with:
+    at(0.42s):
+        alice.stage.face(smile)
+```
+
+This is equivalent to:
+
+```awft
+alice.say()[
+    おはよう。[p]
+]
+with:
+    at(0.42s):
+        alice.stage.face(smile)
+```
+
+The colon form remains the shortest syntax:
+
+```awft
+alice:
+    おはよう。[p]
+with:
+    at(0.42s):
+        alice.stage.face(smile)
+```
+
+This is equivalent to:
+
+```awft
+alice.say()[
+    おはよう。[p]
+]
+with:
+    at(0.42s):
+        alice.stage.face(smile)
+```
+
+All four forms produce the same typed `DialogueLine`.
+
+---
+
+## Why `alice[...] with:` is reasonable
+
+It is realistic and useful because `alice[...]` is only interpreted as a dialogue content call when `alice` has type `Speaker`, `Ref<Character>`, or `SpeakerPreset` and appears in flow-item position.
+
+```awft
+alice[おはよう。[p]]
+```
+
+is a dialogue call.
+
+```awft
+items[index]
+```
+
+is normal indexing, because `items` is not a speaker.
+
+If a parser cannot decide during lossless parsing, it keeps a generic `PostfixBracket` CST node. HIR lowering resolves it by type.
+
+```text
+Speaker + [DialogueText] in flow item context
+  -> DialogueContentCall
+
+Collection + [Expr]
+  -> IndexExpr
+```
+
+The formatter may expand ambiguous cases to `alice.say()[...]`.
+
+---
+
+## `with {}` and `with:`
+
+Both block forms are supported.
+
+```awft
+alice[おはよう。[p]]
+with {
+    at(0.42s) { alice.stage.face(smile) }
+}
+```
+
+```awft
+alice[おはよう。[p]]
+with:
+    at(0.42s):
+        alice.stage.face(smile)
+```
+
+The two forms are equivalent. Project formatting controls the default.
+
+```toml
+[fmt.dialogue]
+line_plan_style = "indent"   # "indent" | "brace" | "preserve"
+```
+
+`with:` begins a line-plan block only when it is aligned with the speaker line or content call. Inside dialogue text, `with:` is ordinary text unless escaped or parsed as part of a dialogue tag.
+
+---
+
+## Colon form with `with:`
+
+The following is the preferred concise complex line:
+
+```awft
+alice(voice=auto, face=smile):
+    今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+with:
+    at(0.42s):
+        alice.stage.face(worried, crossfade=120ms)
+
+    cancel on input .SkipLine:
+        stop voice fade=40ms
+        flush text instant
+        continue
+```
+
+It is equivalent to:
+
+```awft
+alice.say(voice=auto, face=smile)[
+    今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+]
+with:
+    at(0.42s):
+        alice.stage.face(worried, crossfade=120ms)
+
+    cancel on input .SkipLine:
+        stop voice fade=40ms
+        flush text instant
+        continue
+```
+
+---
+
+## Line result values
+
+A line plan may return a value. Without an explicit return, the line result is `()`.
+
+```awft
+let handles = alice.say(voice=auto)[
+    聞いて。[p]
+]
+with:
+    let voice = line.voice_handle()
+    let face = alice.stage.face(smile)
+    return (voice, face)
+```
+
+The type is inferred from the return expression.
+
+```text
+alice.say(...)[...] with: return (voice, face)
+  -> (VoiceHandle, StageCueHandle)
+```
+
+If a cancellation branch can complete the line differently, it must either:
+
+```text
+- return the same result type,
+- perform non-returning flow control such as goto/return FlowExit,
+- or make the whole expression return Result<R, LineCancel> with try-line syntax.
+```
+
+Example with explicit cancel result:
+
+```awft
+let result = try alice.say(voice=auto)[
+    聞いて。[p]
+]
+with:
+    cancel on input .SkipLine:
+        return Err(LineCancel::Skipped)
+
+    return Ok(())
+```
+
+For most visual-novel lines, cancel handlers use `continue`, `goto`, or `return Ok(FlowExit::...)`, so ordinary bindings remain ergonomic.
+
+---
+
+## Tuple destructuring and `_` discard
+
+Line results can be destructured.
+
+```awft
+let (line_alice, (face0, face1, voice)) = alice.say(
+    id=#say.opening.dream_hint,
+    voice=auto,
+    face=smile,
+)[
+    今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+]
+with:
+    let line_alice = alice.stage.acquire(scope=line)
+    let voice = line.voice_handle()
+    let face0 = line_alice.face(smile)
+    let face1 = at(0.42s):
+        line_alice.face(worried, crossfade=120ms)
+
+    return (line_alice, (face0, face1, voice))
+```
+
+`_` explicitly discards a returned value.
+
+```awft
+let (_, (face0, _, voice)) = alice.say(voice=auto)[
+    聞いて。[p]
+]
+with:
+    let actor = alice.stage.acquire(scope=line)
+    let face0 = actor.face(smile)
+    let face1 = at(0.42s): actor.face(worried)
+    let voice = line.voice_handle()
+    return (actor, (face0, face1, voice))
+```
+
+For plain values, `_` just discards. For scoped handles, `_` runs the handle's drop policy immediately after destructuring. This is intentional: if you do not keep the handle, you explicitly give up ownership and Arcweft cancels or releases it according to its type.
+
+---
+
+## Scoped handles
+
+Line plans can create handles for voice, BGM, animation, stage leases, subscriptions, and scheduled cues.
+
+```awft
+pub trait ScopedHandle {
+    fn drop_policy(self) -> DropPolicy
+}
+
+pub enum DropPolicy {
+    Cancel,
+    Stop { fade: Duration },
+    Finish,
+    Release,
+    Detach,
+}
+```
+
+Default policies:
+
+| Handle | Default when dropped in line scope |
+|---|---|
+| `VoiceHandle` | stop or release line voice; skip/cancel uses line cancel policy |
+| `BgmHandle(scope=line)` | stop/fade according to BGM policy |
+| `BgmHandle(scope=global)` | detach; not stopped by line drop |
+| `AnimationHandle` | cancel pending animation unless marked `complete_on_drop` |
+| `ScheduledCueHandle<T>` | cancel cue if it has not fired |
+| `StageLease` | release lease; does not hide sprite unless `hide_on_drop=true` |
+| `SignalSubscription` | unsubscribe |
+| `HookHandle` | unregister hook |
+
+A returned handle lives in the receiving scope. When that scope ends, the handle is dropped. Binding it to `_` drops it immediately.
+
+```awft
+let _ = bgm.play(#bgm.tension, scope=line, drop=fade(300ms))
+// BGM is started and then immediately dropped, so it is faded/stopped immediately.
+// LSP warns because this is probably a mistake.
+```
+
+To persist BGM beyond the line, detach it or use a global scope explicitly.
+
+```awft
+let bgm_handle = alice.say()[始まるよ。[p]]
+with:
+    let bgm = bgm.play(#bgm.tension, scope=line, drop=fade(300ms))
+    return bgm.detach()
+```
+
+---
+
+## Line-plan scope
+
+`with:` creates a lexical scope.
+
+```awft
+alice:
+    聞いて。[p]
+with:
+    let local_color = rgb("#ffffff")
+    at(0.2s):
+        flash(color=local_color)
+
+// local_color is not visible here.
+```
+
+Only values returned from the line plan can escape the line. Borrowed values such as `&'frame T` and `&'lease T` cannot be returned or captured across `at`, `await`, `yield`, or cancellation boundaries.
+
+---
+
+## Stage object handles and preload
+
+Characters expose object-like stage APIs. These APIs return handles that can be scoped, memoized, or preloaded.
+
+```awft
+preload next #flow.alice_intro:
+    alice.stage.prefetch(pose=normal, faces=[smile, worried], window=#textbox.0)
+    alice.voice_for(#say.alice_intro.001).preload()
+    bgm.prepare(#bgm.alice_theme)
+```
+
+Within a line:
+
+```awft
+let actor = alice.stage.acquire(scope=line, memo=true)
+let pose = actor.pose(normal)
+let face = actor.face(smile)
+```
+
+The `memo=true` flag allows the stage proxy to reuse loaded sprite atlases, expression meshes, and text-layout assets when the same key is requested again.
+
+```awft
+let actor = memo alice.stage.acquire(
+    key=(#character.alice, pose=normal, theme=env.theme.hash),
+    cache=scene,
+)
+```
+
+Preload declarations are hints, not hidden blocking operations. If an asset is not ready at use time, the normal `Need<T, E>` / pending-display rules still apply.
+
+---
+
+## Shadowing speaker names
+
+A line result binding may technically shadow a speaker alias:
+
+```awft
+let (alice, _) = alice.say()[おはよう。[p]] with:
+    let actor = alice.stage.acquire(scope=line)
+    return (actor, ())
+```
+
+This is allowed but discouraged, because after the binding `alice` refers to the stage handle, not the speaker alias. The LSP warns by default. Prefer a distinct name:
+
+```awft
+let (alice_actor, _) = alice.say()[おはよう。[p]] with:
+    let actor = alice.stage.acquire(scope=line)
+    return (actor, ())
+```
+
+---
+
+## Desugaring summary
+
+```awft
+alice[
+    おはよう。[p]
+]
+with:
+    at(0.42s): alice.stage.face(smile)
+```
+
+becomes conceptually:
+
+```awft
+alice.say()[
+    おはよう。[p]
+]
+with:
+    at(0.42s): alice.stage.face(smile)
+```
+
+```awft
+alice:
+    おはよう。[p]
+with:
+    at(0.42s): alice.stage.face(smile)
+```
+
+also becomes the same call.
+
+```awft
+let (_, cue) = alice.say()[おはよう。[p]] with:
+    let cue = at(0.42s): alice.stage.face(smile)
+    return (line.voice_handle(), cue)
+```
+
+runs `drop_now` on the discarded voice handle immediately after destructuring, while `cue` remains owned by the surrounding scope.

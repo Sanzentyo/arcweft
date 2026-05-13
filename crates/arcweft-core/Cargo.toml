@@ -1,0 +1,29 @@
+[package]
+name = "arcweft-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+render-wgpu = []
+ui-servo = []
+audio = []
+capture-camera = []
+usb = []
+mcp = []
+jit-cranelift = []
+
+[dependencies]
+arcweft-dialogue = { path = "../arcweft-dialogue" }
+arcweft-id = { path = "../arcweft-id" }
+arcweft-need = { path = "../arcweft-need" }
+arcweft-source = { path = "../arcweft-source" }
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true
