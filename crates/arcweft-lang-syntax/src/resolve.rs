@@ -1,3 +1,4 @@
+use crate::ast::EntityDeclKind;
 use crate::check::EntityKind;
 use crate::lower::{HirFlowItem, HirModule, HirTopLevelDecl};
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
@@ -35,13 +36,29 @@ pub fn registry_from_hir(module: &HirModule) -> NameRegistry {
         }
     }
     for declaration in module.declarations() {
-        if let HirTopLevelDecl::Source(source) = declaration {
-            if let Some(id) = source.id() {
-                registry.insert(id.body(), EntityKind::Source);
+        match declaration {
+            HirTopLevelDecl::Source(source) => {
+                if let Some(id) = source.id() {
+                    registry.insert(id.body(), EntityKind::Source);
+                }
             }
+            HirTopLevelDecl::EntityDecl(item) => {
+                registry.insert(item.id().body(), entity_decl_registry_kind(item.kind()));
+            }
+            _ => {}
         }
     }
     registry
+}
+
+fn entity_decl_registry_kind(kind: EntityDeclKind) -> EntityKind {
+    match kind {
+        EntityDeclKind::Character => EntityKind::Character,
+        EntityDeclKind::Component => EntityKind::Component,
+        EntityDeclKind::Activity => EntityKind::Activity,
+        EntityDeclKind::Signal => EntityKind::Signal,
+        EntityDeclKind::Layer => EntityKind::Layer,
+    }
 }
 
 /// Validates entity references collected from HIR against a registry.

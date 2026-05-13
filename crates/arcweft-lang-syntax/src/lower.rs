@@ -1,10 +1,10 @@
 use crate::ast::{
     Attribute, AwaitBranchKind, BorrowBlock, CallableItem, ChoiceAction, ChoiceBlock, ChoicePlan,
-    ContractClause, DialogueContent, EntityRef, EnumItem, Flow, FlowItem, FlowKind, FunctionItem,
-    FunctionKind, HookItem, IfBlock, IfLetBlock, ImplItem, Item, LinePlan, LoopBlock, MatchBlock,
-    MemoFn, ParserItem, Pattern, ScopeBlock, ScopeExprBlock, SourceItem, SourceLocaleBlock,
-    SpeakerLine, StateItem, Stmt, StructItem, SyntaxTree, TextRange, TraitItem, TypeAliasItem,
-    WhileBlock, WhileLetBlock,
+    ContractClause, DialogueContent, EntityDeclItem, EntityRef, EnumItem, Flow, FlowItem, FlowKind,
+    FunctionItem, FunctionKind, HookItem, IfBlock, IfLetBlock, ImplItem, Item, LinePlan, LoopBlock,
+    MatchBlock, MemoFn, ParserItem, Pattern, ScopeBlock, ScopeExprBlock, SourceItem,
+    SourceLocaleBlock, SpeakerLine, StateItem, Stmt, StructItem, SyntaxTree, TextRange, TraitItem,
+    TypeAliasItem, WhileBlock, WhileLetBlock,
 };
 use crate::expr::Expr;
 use crate::types::FnSignature;
@@ -53,6 +53,7 @@ pub enum HirTopLevelDecl {
     Trait(TraitItem),
     Impl(ImplItem),
     Enum(EnumItem),
+    EntityDecl(EntityDeclItem),
     Struct(StructItem),
     TypeAlias(TypeAliasItem),
     Hook(HookItem),
@@ -292,6 +293,9 @@ pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> 
             }
             Item::Enum(item) => {
                 declarations.push(HirTopLevelDecl::Enum(item.clone()));
+            }
+            Item::EntityDecl(item) => {
+                declarations.push(HirTopLevelDecl::EntityDecl(item.clone()));
             }
             Item::Hook(item) => {
                 declarations.push(HirTopLevelDecl::Hook(item.clone()));

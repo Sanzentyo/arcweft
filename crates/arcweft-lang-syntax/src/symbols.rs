@@ -60,6 +60,7 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
         | HirTopLevelDecl::Enum(_)
         | HirTopLevelDecl::Impl(_)
         | HirTopLevelDecl::Struct(_) => {}
+        HirTopLevelDecl::EntityDecl(item) => push_entity(uses, item.id()),
         HirTopLevelDecl::Callable(item) => {
             for contract in item.contracts() {
                 collect_contract_clause(contract, uses);

@@ -17,14 +17,14 @@ mod types;
 pub use ast::{
     Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, CallableItem, CallableKind, ChoiceAction,
     ChoiceBlock, ChoiceItem, ChoiceMatchArm, ChoiceOption, ChoicePlan, ChoicePlanItem, ContentCall,
-    ContractClause, DialogueToken, EntityRef, EnumItem, EnumVariant, Flow, FlowItem, FlowKind,
-    ForBlock, FunctionItem, FunctionKind, HookItem, IfBlock, IfLetBlock, ImplItem, Item,
-    LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl,
-    ParserItem, Pattern, RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock,
-    SelectBlock, SelectBranch, SelectBranchHead, SourceItem, SourceLocaleBlock, SpeakerLine,
-    StateField, StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TraitItem,
-    TraitMember, TypeAliasItem, UseItem, VariantPatternPayload, Visibility, WhileBlock,
-    WhileLetBlock, WikiLink,
+    ContractClause, DialogueToken, EntityDeclItem, EntityDeclKind, EntityRef, EnumItem,
+    EnumVariant, Flow, FlowItem, FlowKind, ForBlock, FunctionItem, FunctionKind, HookItem, IfBlock,
+    IfLetBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm,
+    MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RecordPatternField, ScenarioCommand,
+    ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceItem,
+    SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField, StructItem,
+    SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, VariantPatternPayload,
+    Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -48,10 +48,10 @@ pub use types::{
 mod tests {
     use super::{
         AwaitBranchKind, BinaryOp, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
-        ComputationBlockKind, ContractClause, DialogueToken, EntityKind, EntityRef, Expr, FlowItem,
-        FlowKind, FunctionKind, HirFlowItem, HirTopLevelDecl, Item, LinePlanItem, Literal,
-        NameRegistry, Pattern, Placeholder, SelectBranchHead, Stmt, SymbolUseKind, TraitMember,
-        TypeCheckEnv, TypeKind, TypeRef, UnaryOp, VariantPatternPayload, Visibility,
+        ComputationBlockKind, ContractClause, DialogueToken, EntityDeclKind, EntityKind, EntityRef,
+        Expr, FlowItem, FlowKind, FunctionKind, HirFlowItem, HirTopLevelDecl, Item, LinePlanItem,
+        Literal, NameRegistry, Pattern, Placeholder, SelectBranchHead, Stmt, SymbolUseKind,
+        TraitMember, TypeCheckEnv, TypeKind, TypeRef, UnaryOp, VariantPatternPayload, Visibility,
         collect_symbol_uses, lower_to_hir, parse_dialogue_tokens, parse_fn_signature, parse_source,
         parse_stub, parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
         validate_typecheck_ready,
@@ -3931,6 +3931,59 @@ source camera_frames() -> Source<VideoFrame, CameraError> {
                 },
             );
         typecheck_hir(&hir, &env).expect("function-like source typechecks");
+    }
+
+    #[test]
+    fn parses_entity_declarations_used_by_presentation_docs() {
+        let tree = parse_source(
+            r"
+pub signal #signal.microphone_level: Watch<f32>
+
+pub character #character.alice Alice {
+    role = main
+    nameplate = visible
+}
+
+pub layer #layer.ui.game: NativeUi {
+    phase = Ui
+    z = 500
+}
+
+activity #activity.truck_game TruckGame {
+    mode = embedded
+}
+
+component #ui.settings SettingsPanel(config: Binding<Config>) -> View {
+    SettingsView(config)
+}
+",
+        )
+        .expect("entity declarations parse");
+        let kinds = tree
+            .items()
+            .iter()
+            .map(|item| match item {
+                Item::EntityDecl(item) => item.kind(),
+                other => panic!("expected entity declaration, got {other:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            kinds,
+            [
+                EntityDeclKind::Signal,
+                EntityDeclKind::Character,
+                EntityDeclKind::Layer,
+                EntityDeclKind::Activity,
+                EntityDeclKind::Component,
+            ]
+        );
+
+        let hir = lower_to_hir(&tree).expect("entity declarations lower");
+        validate_typecheck_ready(&hir).expect("entity declarations are typecheck-ready");
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect("entity declarations typecheck");
+
+        let registry = registry_from_hir(&hir);
+        validate_hir_references(&hir, &registry).expect("declaration ids register themselves");
     }
 
     #[test]

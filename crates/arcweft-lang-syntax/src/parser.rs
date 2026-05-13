@@ -2,14 +2,14 @@ use crate::ast::{
     Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, BorrowBlock, CallableItem,
     CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceMatchArm,
     ChoiceOption, ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause,
-    DialogueContent, EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind,
-    ForBlock, FunctionInit, FunctionItem, FunctionKind, HookInit, HookItem, IfBlock, IfLetBlock,
-    ImplItem, Item, LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn,
-    ModuleDecl, ParserItem, Pattern, RawItem, RecordPatternField, ScenarioCommand, ScopeBlock,
-    ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceItem, SourceLocaleBlock,
-    SpeakerLine, StateField, StateItem, Stmt, StmtMatchArm, StructField, StructItem, SyntaxTree,
-    TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock,
-    WhileLetBlock, WikiLink,
+    DialogueContent, EntityDeclItem, EntityDeclKind, EntityRef, EnumItem, EnumVariant, Flow,
+    FlowInit, FlowItem, FlowKind, ForBlock, FunctionInit, FunctionItem, FunctionKind, HookInit,
+    HookItem, IfBlock, IfLetBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, LoopBlock,
+    MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, RecordPatternField,
+    ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
+    SourceItem, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StmtMatchArm,
+    StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
+    UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 use crate::expr::{ComputationBlockKind, Expr, parse_expr};
 use crate::text::parse_dialogue_tokens;
@@ -52,6 +52,14 @@ struct SourceLine {
     start: usize,
     end: usize,
 }
+
+type EntityDeclHead = (
+    EntityDeclKind,
+    Option<Visibility>,
+    EntityRef,
+    Option<String>,
+    String,
+);
 
 struct Parser {
     source: String,
@@ -135,6 +143,10 @@ impl Parser {
             } else if looks_like_type_alias(&trimmed) {
                 if let Some(type_alias) = self.parse_type_alias() {
                     items.push(Item::TypeAlias(type_alias));
+                }
+            } else if looks_like_entity_decl_item(&trimmed) {
+                if let Some(decl) = self.parse_entity_decl_item() {
+                    items.push(Item::EntityDecl(decl));
                 }
             } else if looks_like_hook(&trimmed) {
                 if let Some(hook) = self.parse_hook() {
@@ -496,6 +508,56 @@ impl Parser {
         ))
     }
 
+    fn parse_entity_decl_item(&mut self) -> Option<EntityDeclItem> {
+        if self.current().text.contains('{') || self.next_nonblank_line_is_brace() {
+            self.parse_entity_decl_block()
+        } else {
+            self.parse_entity_decl_line()
+        }
+    }
+
+    fn parse_entity_decl_block(&mut self) -> Option<EntityDeclItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_flow_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing entity declaration",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the declaration body"],
+            );
+            return None;
+        }
+        let (kind, visibility, id, name, signature_tail) =
+            parse_entity_decl_head(head.trim(), start_line.start, &mut self.errors)?;
+        Some(EntityDeclItem::new(
+            kind,
+            visibility,
+            id,
+            name,
+            signature_tail,
+            Some(body),
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_entity_decl_line(&mut self) -> Option<EntityDeclItem> {
+        let line = self.current().clone();
+        self.index += 1;
+        let (kind, visibility, id, name, signature_tail) =
+            parse_entity_decl_head(line.text.trim(), line.start, &mut self.errors)?;
+        Some(EntityDeclItem::new(
+            kind,
+            visibility,
+            id,
+            name,
+            signature_tail,
+            None,
+            TextRange::new(line.start, line.end),
+        ))
+    }
+
     fn take_flow_block(&mut self) -> (String, String, usize, bool) {
         let start = self.index;
         let mut header = String::new();
@@ -529,6 +591,15 @@ impl Parser {
             header.push_str(&body_head);
         }
         (header, body, end, ok)
+    }
+
+    fn next_nonblank_line_is_brace(&self) -> bool {
+        self.lines
+            .iter()
+            .skip(self.index + 1)
+            .map(|line| line.text.trim())
+            .find(|trimmed| !trimmed.is_empty() && !trimmed.starts_with('#'))
+            .is_some_and(|trimmed| trimmed == "{")
     }
 
     fn parse_hook(&mut self) -> Option<HookItem> {
@@ -716,7 +787,13 @@ impl Parser {
         let (id, name, signature_tail) = if after_source.starts_with('#') {
             let (id, rest) =
                 parse_optional_entity_ref(after_source, start_line.start, &mut self.errors);
-            let (id, signature_tail) = normalize_source_id_and_tail(id, rest);
+            let (id, signature_tail) = id.map_or_else(
+                || (None, rest.trim().to_owned()),
+                |id| {
+                    let (id, tail) = normalize_trailing_colon_id(id, rest);
+                    (Some(id), tail.trim().to_owned())
+                },
+            );
             (id, None, signature_tail)
         } else {
             let (name, tail) = parse_name_and_tail(after_source);
@@ -2039,6 +2116,55 @@ fn looks_like_type_alias(trimmed: &str) -> bool {
     rest.trim_start().starts_with("type ")
 }
 
+fn looks_like_entity_decl_item(trimmed: &str) -> bool {
+    let (_, rest) = parse_visibility_prefix(trimmed);
+    let rest = rest.trim_start();
+    entity_decl_kind(rest).is_some()
+}
+
+fn entity_decl_kind(input: &str) -> Option<(EntityDeclKind, &str)> {
+    [
+        ("character", EntityDeclKind::Character),
+        ("component", EntityDeclKind::Component),
+        ("activity", EntityDeclKind::Activity),
+        ("signal", EntityDeclKind::Signal),
+        ("layer", EntityDeclKind::Layer),
+    ]
+    .into_iter()
+    .find_map(|(keyword, kind)| {
+        input
+            .strip_prefix(keyword)
+            .filter(|rest| rest.starts_with(char::is_whitespace))
+            .map(|rest| (kind, rest.trim_start()))
+    })
+}
+
+fn parse_entity_decl_head(
+    head: &str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Option<EntityDeclHead> {
+    let (visibility, rest) = parse_visibility_prefix(head);
+    let (kind, rest) = entity_decl_kind(rest.trim_start())?;
+    let (id, rest) = parse_required_entity_ref(rest, base, errors)?;
+    let (id, rest) = normalize_trailing_colon_id(id, rest);
+    let rest = rest.trim();
+    let (name, signature_tail) = parse_name_and_tail(rest);
+    Some((kind, visibility, id, name, signature_tail))
+}
+
+fn normalize_trailing_colon_id(entity: EntityRef, rest: &str) -> (EntityRef, String) {
+    if entity.is_delimited() || !entity.body().ends_with(':') {
+        return (entity, rest.to_owned());
+    }
+    let body = entity.body().trim_end_matches(':').to_owned();
+    let range = TextRange::new(entity.range().start(), entity.range().end() - 1);
+    (
+        EntityRef::new(body, false, range),
+        format!(": {}", rest.trim_start()),
+    )
+}
+
 fn parse_callable_kind(input: &str) -> Option<(CallableKind, &str)> {
     if let Some(rest) = input.strip_prefix("reducer") {
         return Some((CallableKind::Reducer, rest.trim_start()));
@@ -2076,21 +2202,6 @@ fn looks_like_source_item(trimmed: &str) -> bool {
     let (_, rest) = parse_visibility_prefix(trimmed);
     let rest = rest.trim_start();
     rest.starts_with("source ") && !rest.starts_with("source locale ")
-}
-
-fn normalize_source_id_and_tail(id: Option<EntityRef>, rest: &str) -> (Option<EntityRef>, String) {
-    let Some(entity) = id else {
-        return (None, rest.trim().to_owned());
-    };
-    if entity.is_delimited() || !entity.body().ends_with(':') {
-        return (Some(entity), rest.trim().to_owned());
-    }
-    let body = entity.body().trim_end_matches(':').to_owned();
-    let range = TextRange::new(entity.range().start(), entity.range().end() - 1);
-    (
-        Some(EntityRef::new(body, false, range)),
-        format!(": {}", rest.trim_start()),
-    )
 }
 
 fn parse_visibility_prefix(input: &str) -> (Option<Visibility>, &str) {

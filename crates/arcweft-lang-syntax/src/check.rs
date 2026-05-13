@@ -1,4 +1,6 @@
-use crate::ast::{ContractClause, DialogueToken, EntityRef, FlowKind, LinePlanItem, Pattern, Stmt};
+use crate::ast::{
+    ContractClause, DialogueToken, EntityDeclKind, EntityRef, FlowKind, LinePlanItem, Pattern, Stmt,
+};
 use crate::expr::{BinaryOp, Expr, Literal};
 use crate::lower::{HirFlowItem, HirModule, HirTopLevelDecl};
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
@@ -14,6 +16,8 @@ pub enum EntityKind {
     Choice,
     ChoiceOption,
     Character,
+    Component,
+    Activity,
     Textbox,
     DialogueLine,
     Text,
@@ -24,6 +28,7 @@ pub enum EntityKind {
     Signal,
     Scene,
     Source,
+    Layer,
     Other(String),
 }
 
@@ -204,6 +209,13 @@ impl TypeChecker<'_> {
             | HirTopLevelDecl::Impl(_)
             | HirTopLevelDecl::Struct(_)
             | HirTopLevelDecl::Trait(_) => {}
+            HirTopLevelDecl::EntityDecl(item) => {
+                self.expect_entity_kind(
+                    item.id(),
+                    &entity_kind_for_decl(item.kind()),
+                    "entity declaration id",
+                );
+            }
             HirTopLevelDecl::Callable(item) => {
                 self.active_borrows.clear();
                 self.locals.clear();
@@ -1371,6 +1383,8 @@ fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
         "frag" | "fragment" => EntityKind::Fragment,
         "choice" => EntityKind::Choice,
         "character" => EntityKind::Character,
+        "ui" => EntityKind::Component,
+        "activity" => EntityKind::Activity,
         "textbox" => EntityKind::Textbox,
         "say" => EntityKind::DialogueLine,
         "text" => EntityKind::Text,
@@ -1382,9 +1396,20 @@ fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
         "signal" => EntityKind::Signal,
         "scene" => EntityKind::Scene,
         "source" => EntityKind::Source,
+        "layer" => EntityKind::Layer,
         "ent" => EntityKind::Other("ent".to_owned()),
         _ => return None,
     })
+}
+
+fn entity_kind_for_decl(kind: EntityDeclKind) -> EntityKind {
+    match kind {
+        EntityDeclKind::Character => EntityKind::Character,
+        EntityDeclKind::Component => EntityKind::Component,
+        EntityDeclKind::Activity => EntityKind::Activity,
+        EntityDeclKind::Signal => EntityKind::Signal,
+        EntityDeclKind::Layer => EntityKind::Layer,
+    }
 }
 
 fn literal_type(literal: &Literal) -> TypeKind {

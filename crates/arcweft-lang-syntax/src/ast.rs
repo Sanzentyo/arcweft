@@ -63,6 +63,7 @@ pub enum Item {
     Enum(EnumItem),
     Struct(StructItem),
     TypeAlias(TypeAliasItem),
+    EntityDecl(EntityDeclItem),
     Hook(HookItem),
     MemoFn(MemoFn),
     Parser(ParserItem),
@@ -168,6 +169,29 @@ pub enum FunctionKind {
     Dialogue,
     /// Generator-like function that yields a stream/source of values.
     Stream,
+}
+
+/// Top-level entity declaration family with runtime-specific body preserved.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EntityDeclKind {
+    Character,
+    Component,
+    Activity,
+    Signal,
+    Layer,
+}
+
+/// Top-level entity declaration such as `character`, `component`, `activity`,
+/// `signal`, or `layer`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EntityDeclItem {
+    kind: EntityDeclKind,
+    visibility: Option<Visibility>,
+    id: EntityRef,
+    name: Option<String>,
+    signature_tail: String,
+    body: Option<String>,
+    range: TextRange,
 }
 
 /// Internal initializer for a function item.
@@ -1200,6 +1224,56 @@ impl FunctionItem {
 
     pub const fn body_value(&self) -> Option<&Expr> {
         self.body_value.as_ref()
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl EntityDeclItem {
+    pub(crate) const fn new(
+        kind: EntityDeclKind,
+        visibility: Option<Visibility>,
+        id: EntityRef,
+        name: Option<String>,
+        signature_tail: String,
+        body: Option<String>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            kind,
+            visibility,
+            id,
+            name,
+            signature_tail,
+            body,
+            range,
+        }
+    }
+
+    pub const fn kind(&self) -> EntityDeclKind {
+        self.kind
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub const fn id(&self) -> &EntityRef {
+        &self.id
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn signature_tail(&self) -> &str {
+        &self.signature_tail
+    }
+
+    pub fn body(&self) -> Option<&str> {
+        self.body.as_deref()
     }
 
     pub const fn range(&self) -> &TextRange {
