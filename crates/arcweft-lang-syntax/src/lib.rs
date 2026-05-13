@@ -760,6 +760,40 @@ flow #flow.borrow borrow {
     }
 
     #[test]
+    fn typecheck_rejects_borrow_across_yield_spawn_and_defer_boundaries() {
+        for boundary in ["yield frame", "spawn load_avatar()", "defer cleanup()"] {
+            let tree = parse_source(format!(
+                r"
+flow #flow.borrow borrow {{
+    let pixels: &'asset [Rgba8] = bg.pixels()
+    {boundary}
+}}
+"
+            ))
+            .expect("borrow boundary fixture parses");
+            let hir = lower_to_hir(&tree).expect("borrow boundary fixture lowers");
+            let env = TypeCheckEnv::new()
+                .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
+                .with_symbol("frame", TypeKind::Named("Frame".to_owned()))
+                .with_function("load_avatar", TypeKind::Named("Task".to_owned()))
+                .with_function("cleanup", TypeKind::Unit)
+                .with_method(
+                    TypeKind::Named("ImageHandle".to_owned()),
+                    "pixels",
+                    TypeKind::Named("Pixels".to_owned()),
+                );
+            let errors = typecheck_hir(&hir, &env).expect_err("borrow cannot cross boundary");
+
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.message().contains("suspension boundary")),
+                "expected suspension-boundary error for {boundary}"
+            );
+        }
+    }
+
+    #[test]
     fn parses_if_and_match_flow_blocks_for_hir() {
         let tree = parse_source(
             r"

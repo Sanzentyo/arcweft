@@ -1443,7 +1443,7 @@ fn parse_scene_command(body: &str) -> Option<ScenarioCommand> {
 fn is_typed_stmt(trimmed: &str) -> bool {
     matches!(
         trimmed.split_whitespace().next(),
-        Some("let" | "match" | "if" | "return" | "goto" | "spawn" | "defer")
+        Some("let" | "match" | "if" | "return" | "goto" | "spawn" | "defer" | "yield")
     )
 }
 
@@ -1463,10 +1463,16 @@ fn parse_stmt(trimmed: &str) -> Stmt {
     if let Some(expr) = trimmed.strip_prefix("goto ") {
         return Stmt::Goto(parse_expr_lossy(expr.trim()));
     }
-    if matches!(
-        trimmed.split_whitespace().next(),
-        Some("match" | "if" | "spawn" | "defer")
-    ) {
+    if let Some(expr) = trimmed.strip_prefix("spawn ") {
+        return Stmt::Spawn(parse_expr_lossy(expr.trim()));
+    }
+    if let Some(expr) = trimmed.strip_prefix("defer ") {
+        return Stmt::Defer(parse_expr_lossy(expr.trim()));
+    }
+    if let Some(expr) = trimmed.strip_prefix("yield ") {
+        return Stmt::Yield(parse_expr_lossy(expr.trim()));
+    }
+    if matches!(trimmed.split_whitespace().next(), Some("match" | "if")) {
         return Stmt::Raw(trimmed.to_owned());
     }
     Stmt::Expr(parse_expr_lossy(trimmed))

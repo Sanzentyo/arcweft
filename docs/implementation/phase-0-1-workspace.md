@@ -72,7 +72,7 @@ Syntax parser:
 - `collect_symbol_uses` walks HIR without reparsing source snippets so name resolution can see dialogue callees, entity references, paths, calls, methods, dialogue text expressions, timed cues, and choice-condition references.
 - `validate_typecheck_ready` rejects lowered HIR that still contains raw expression fragments before the future type checker sees it.
 - `typecheck_hir` provides a minimal semantic checker over HIR with an explicit environment. It validates flow/fragment entity reference families, dialogue callees, `Need<T, E>` awaits, `Duration` timeline anchors, indexed expressions, calls, and methods for parser/HIR integration tests.
-- Typed let patterns preserve borrow types, and the checker rejects non-`'static` borrowed values crossing an `await` suspension boundary.
+- Typed let patterns preserve borrow types, and the checker rejects non-`'static` borrowed values crossing `await`, `yield`, `spawn`, and `defer` suspension boundaries.
 
 ## Deferred
 
@@ -88,7 +88,7 @@ Not implemented in this milestone:
 - full HIR ownership/region model
 - full type environment, name resolution, and type checking
 - inference, overload resolution, traits, generics, contracts, and effect checking
-- full suspension-boundary borrow/lifetime validation across `yield`, `spawn`, `defer`, and nested scopes
+- full nested-scope borrow lifetime analysis and precise borrow end tracking
 - full semantic expression resolution and type-directed ambiguity resolution
 
 ## Verification

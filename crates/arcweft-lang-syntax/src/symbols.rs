@@ -115,7 +115,13 @@ fn collect_contract_clause(contract: &ContractClause, uses: &mut Vec<SymbolUse>)
 
 fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
     match stmt {
-        Stmt::Let { expr, .. } | Stmt::Return(expr) | Stmt::Goto(expr) | Stmt::Expr(expr) => {
+        Stmt::Let { expr, .. }
+        | Stmt::Return(expr)
+        | Stmt::Goto(expr)
+        | Stmt::Spawn(expr)
+        | Stmt::Defer(expr)
+        | Stmt::Yield(expr)
+        | Stmt::Expr(expr) => {
             collect_expr(expr, uses);
         }
         Stmt::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),

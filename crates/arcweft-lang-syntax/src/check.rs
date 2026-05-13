@@ -207,12 +207,7 @@ impl TypeChecker<'_> {
                 }
             }
             HirFlowItem::Await(await_with) => {
-                if !self.active_borrows.is_empty() {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "borrowed values with lifetimes {:?} cannot cross await suspension boundary",
-                        self.active_borrows
-                    )));
-                }
+                self.reject_active_borrows("await suspension boundary");
                 let ty = self.check_expr(await_with.expr());
                 if !matches!(ty, Some(TypeKind::Need { .. })) {
                     self.errors.push(TypeCheckError::new(
@@ -250,6 +245,10 @@ impl TypeChecker<'_> {
             Stmt::Goto(expr) => {
                 self.expect_expr_type(expr, &TypeKind::Ref(EntityKind::Flow), "goto destination");
             }
+            Stmt::Spawn(expr) | Stmt::Defer(expr) | Stmt::Yield(expr) => {
+                self.reject_active_borrows("suspension boundary");
+                self.check_expr(expr);
+            }
             Stmt::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
                 "raw statement is not type-checkable: {raw}"
             ))),
@@ -269,6 +268,15 @@ impl TypeChecker<'_> {
                     self.check_expr(item);
                 }
             }
+        }
+    }
+
+    fn reject_active_borrows(&mut self, boundary: &str) {
+        if !self.active_borrows.is_empty() {
+            self.errors.push(TypeCheckError::new(format!(
+                "borrowed values with lifetimes {:?} cannot cross {boundary}",
+                self.active_borrows
+            )));
         }
     }
 

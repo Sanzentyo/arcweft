@@ -180,6 +180,9 @@ pub enum Stmt {
     Let { pattern: Pattern, expr: Expr },
     Return(Expr),
     Goto(Expr),
+    Spawn(Expr),
+    Defer(Expr),
+    Yield(Expr),
     Expr(Expr),
     Raw(String),
 }
