@@ -70,6 +70,7 @@ Syntax parser:
 - Flow contract clauses (`requires`, `ensures`, `effects`, `modifies`, `decreases`) are parsed separately from the flow body and participate in symbol collection and type checking.
 - `lower_to_hir` verifies that parsed edge-case flow syntax can be converted to HIR-facing structures and rejects raw syntax that still needs parser coverage.
 - `collect_symbol_uses` walks HIR without reparsing source snippets so name resolution can see dialogue callees, entity references, paths, calls, methods, dialogue text expressions, timed cues, and choice-condition references.
+- `registry_from_hir` and `validate_hir_references` provide minimal name resolution over HIR declarations and entity references.
 - `validate_typecheck_ready` rejects lowered HIR that still contains raw expression fragments before the future type checker sees it.
 - `typecheck_hir` provides a minimal semantic checker over HIR with an explicit environment. It validates flow/fragment entity reference families, dialogue callees, `Need<T, E>` awaits, `Duration` timeline anchors, indexed expressions, calls, and methods for parser/HIR integration tests.
 - Typed let patterns preserve borrow types, and the checker rejects non-`'static` borrowed values crossing `await`, `yield`, `spawn`, and `defer` suspension boundaries.

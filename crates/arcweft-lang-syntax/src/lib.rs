@@ -9,6 +9,7 @@ mod check;
 mod expr;
 mod lower;
 mod parser;
+mod resolve;
 mod symbols;
 mod text;
 mod types;
@@ -29,6 +30,7 @@ pub use lower::{
     HirLowerError, HirMatch, HirMatchArm, HirModule, lower_to_hir,
 };
 pub use parser::{ParseError, RecoverySuggestion, parse_source, parse_stub};
+pub use resolve::{NameRegistry, NameResolutionError, registry_from_hir, validate_hir_references};
 pub use symbols::{SymbolUse, SymbolUseKind, collect_symbol_uses};
 pub use text::parse_dialogue_tokens;
 pub use types::{
@@ -39,10 +41,10 @@ pub use types::{
 mod tests {
     use super::{
         AwaitBranchKind, ContractClause, DialogueToken, EntityKind, Expr, FlowItem, FlowKind,
-        HirFlowItem, Item, LinePlanItem, Pattern, Stmt, SymbolUseKind, TypeCheckEnv, TypeKind,
-        TypeRef, Visibility, collect_symbol_uses, lower_to_hir, parse_dialogue_tokens,
-        parse_fn_signature, parse_source, parse_stub, parse_type_ref, typecheck_hir,
-        validate_typecheck_ready,
+        HirFlowItem, Item, LinePlanItem, NameRegistry, Pattern, Stmt, SymbolUseKind, TypeCheckEnv,
+        TypeKind, TypeRef, Visibility, collect_symbol_uses, lower_to_hir, parse_dialogue_tokens,
+        parse_fn_signature, parse_source, parse_stub, parse_type_ref, registry_from_hir,
+        typecheck_hir, validate_hir_references, validate_typecheck_ready,
     };
 
     #[test]
@@ -877,6 +879,45 @@ effects { asset.read, ui.show }
             );
 
         typecheck_hir(&hir, &env).expect("contract expressions typecheck");
+    }
+
+    #[test]
+    fn validates_hir_entity_references_against_registry() {
+        let tree = parse_source(
+            r#"
+flow #flow.opening opening {
+    @choice #choice.opening.first {
+        #choice.opening.listen "聞く" -> #flow.alice_intro
+    }
+}
+
+flow #flow.alice_intro alice_intro {
+    goto #flow.opening
+}
+"#,
+        )
+        .expect("registry fixture parses");
+        let hir = lower_to_hir(&tree).expect("registry fixture lowers");
+        let registry = registry_from_hir(&hir);
+
+        validate_hir_references(&hir, &registry).expect("all local refs resolve");
+    }
+
+    #[test]
+    fn reports_unresolved_hir_entity_reference() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    goto #flow.missing
+}
+",
+        )
+        .expect("missing ref fixture parses");
+        let hir = lower_to_hir(&tree).expect("missing ref fixture lowers");
+        let registry = NameRegistry::new().with_entity("flow.opening", EntityKind::Flow);
+        let errors = validate_hir_references(&hir, &registry).expect_err("missing ref should fail");
+
+        assert!(errors[0].message().contains("flow.missing"));
     }
 
     #[test]
