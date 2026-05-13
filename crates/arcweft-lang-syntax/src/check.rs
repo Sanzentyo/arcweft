@@ -182,18 +182,13 @@ impl TypeChecker<'_> {
                 }
             }
             HirFlowItem::Choice(choice) => {
-                if let Some(id) = choice.id() {
-                    self.expect_entity_kind(id, &EntityKind::Choice, "choice id");
-                }
-                for option in choice.options() {
-                    if let Some(id) = option.id() {
-                        self.expect_entity_kind(id, &EntityKind::ChoiceOption, "choice option id");
-                    }
-                    if let Some(condition) = option.condition() {
-                        self.expect_expr_type(condition, &TypeKind::Bool, "choice condition");
-                    }
-                    if let Some(target) = option.target() {
-                        self.expect_entity_kind(target, &EntityKind::Flow, "choice target");
+                self.check_choice(choice);
+            }
+            HirFlowItem::LetChoice { pattern, choice } => {
+                self.check_choice(choice);
+                if let Some(name) = ident_pattern_name(pattern) {
+                    if let Some(ty) = choice_output_type(choice) {
+                        self.locals.insert(name.to_owned(), ty);
                     }
                 }
             }
@@ -263,6 +258,11 @@ impl TypeChecker<'_> {
                 self.check_expr(expr);
                 collect_borrow_lifetimes(pattern, &mut self.active_borrows);
             }
+            Stmt::LetChoice { .. } => {
+                self.errors.push(TypeCheckError::new(
+                    "choice expression binding must be lowered before type checking".to_owned(),
+                ));
+            }
             Stmt::Return(expr) | Stmt::Out(expr) | Stmt::Close(expr) | Stmt::Expr(expr) => {
                 self.check_expr(expr);
             }
@@ -281,6 +281,26 @@ impl TypeChecker<'_> {
             Stmt::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
                 "raw statement is not type-checkable: {raw}"
             ))),
+        }
+    }
+
+    fn check_choice(&mut self, choice: &crate::lower::HirChoice) {
+        if let Some(id) = choice.id() {
+            self.expect_entity_kind(id, &EntityKind::Choice, "choice id");
+        }
+        for option in choice.options() {
+            if let Some(id) = option.id() {
+                self.expect_entity_kind(id, &EntityKind::ChoiceOption, "choice option id");
+            }
+            if let Some(condition) = option.condition() {
+                self.expect_expr_type(condition, &TypeKind::Bool, "choice condition");
+            }
+            if let Some(target) = option.target() {
+                self.expect_entity_kind(target, &EntityKind::Flow, "choice target");
+            }
+            if let crate::ast::ChoiceAction::Out(expr) = option.action() {
+                self.check_expr(expr);
+            }
         }
     }
 
@@ -604,6 +624,42 @@ fn collect_borrow_lifetimes(pattern: &Pattern, lifetimes: &mut Vec<String>) {
 fn typed_pattern_binding(pattern: &Pattern) -> Option<(&str, &TypeRef)> {
     match pattern {
         Pattern::Typed { name, ty } => Some((name, ty)),
+        _ => None,
+    }
+}
+
+fn ident_pattern_name(pattern: &Pattern) -> Option<&str> {
+    match pattern {
+        Pattern::Ident(name) => Some(name),
+        _ => None,
+    }
+}
+
+fn choice_output_type(choice: &crate::lower::HirChoice) -> Option<TypeKind> {
+    let mut inferred = None;
+    for option in choice.options() {
+        let crate::ast::ChoiceAction::Out(expr) = option.action() else {
+            return None;
+        };
+        let ty = simple_expr_type(expr)?;
+        match &inferred {
+            Some(existing) if existing != &ty => return None,
+            Some(_) => {}
+            None => inferred = Some(ty),
+        }
+    }
+    inferred
+}
+
+fn simple_expr_type(expr: &Expr) -> Option<TypeKind> {
+    match expr {
+        Expr::EntityRef(entity) => entity_kind(entity).map(TypeKind::Ref),
+        Expr::Literal(literal) => Some(literal_type(literal)),
+        Expr::Tuple(items) => items
+            .iter()
+            .map(simple_expr_type)
+            .collect::<Option<Vec<_>>>()
+            .map(TypeKind::Tuple),
         _ => None,
     }
 }

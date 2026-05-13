@@ -380,14 +380,25 @@ pub struct BorrowBlock {
 /// Typed Arcweft statement inside a flow body.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Stmt {
-    Let { pattern: Pattern, expr: Expr },
+    Let {
+        pattern: Pattern,
+        expr: Expr,
+    },
+    /// `let PAT = choice ... { ... }` choice expression binding.
+    LetChoice {
+        pattern: Pattern,
+        choice: ChoiceBlock,
+    },
     Return(Expr),
     Out(Expr),
     Goto(Expr),
     Spawn(Expr),
     Defer(Expr),
     Yield(Expr),
-    Signal { target: Expr, value: Expr },
+    Signal {
+        target: Expr,
+        value: Expr,
+    },
     Close(Expr),
     Continue,
     Expr(Expr),

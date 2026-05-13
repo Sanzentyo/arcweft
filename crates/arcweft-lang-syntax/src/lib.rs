@@ -705,6 +705,64 @@ flow #flow.opening opening {
     }
 
     #[test]
+    fn lowers_choice_expression_let_binding() {
+        let tree = parse_source(
+            r#"
+flow #flow.opening opening {
+    let next_flow = choice .first {
+        .listen "聞いてみる" => #flow.alice_intro
+        .silent "黙っている" => #flow.quiet_intro
+    }
+
+    goto next_flow
+}
+
+flow #flow.alice_intro alice_intro {
+}
+
+flow #flow.quiet_intro quiet_intro {
+}
+"#,
+        )
+        .expect("choice expression fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected source flow");
+        };
+        let FlowItem::Stmt(Stmt::LetChoice { pattern, choice }) = &flow.body()[0] else {
+            panic!("expected AST choice expression binding");
+        };
+        assert_eq!(pattern, &Pattern::Ident("next_flow".to_owned()));
+        assert!(choice.id().expect("choice id").is_relative());
+
+        let hir = lower_to_hir(&tree).expect("choice expression fixture lowers");
+        let HirFlowItem::LetChoice { pattern, choice } = &hir.flows()[0].body()[0] else {
+            panic!("expected HIR choice expression binding");
+        };
+        assert_eq!(pattern, &Pattern::Ident("next_flow".to_owned()));
+        assert_eq!(
+            choice.id().expect("normalized choice id").body(),
+            "choice.opening.first"
+        );
+        assert_eq!(
+            choice.options()[0]
+                .id()
+                .expect("normalized first option id")
+                .body(),
+            "choice.opening.first.listen"
+        );
+        assert!(matches!(
+            choice.options()[0].action(),
+            ChoiceAction::Out(Expr::EntityRef(entity)) if entity.body() == "flow.alice_intro"
+        ));
+
+        let registry = registry_from_hir(&hir);
+        validate_hir_references(&hir, &registry).expect("choice expression refs resolve");
+        validate_typecheck_ready(&hir).expect("choice expression is typecheck-ready");
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect("choice expression typechecks");
+    }
+
+    #[test]
     fn parses_character_content_call_with_brace_plan() {
         let tree = parse_source(
             r##"

@@ -68,15 +68,8 @@ fn register_flow_item(item: &HirFlowItem, registry: &mut NameRegistry) {
                 registry.insert(text_key.body(), EntityKind::Text);
             }
         }
-        HirFlowItem::Choice(choice) => {
-            if let Some(id) = choice.id() {
-                registry.insert(id.body(), EntityKind::Choice);
-            }
-            for option in choice.options() {
-                if let Some(id) = option.id() {
-                    registry.insert(id.body(), EntityKind::ChoiceOption);
-                }
-            }
+        HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
+            register_choice(choice, registry);
         }
         HirFlowItem::If(block) => {
             for item in block.body() {
@@ -125,6 +118,17 @@ fn register_flow_item(item: &HirFlowItem, registry: &mut NameRegistry) {
             }
         }
         HirFlowItem::Stmt(_) | HirFlowItem::Include(_) | HirFlowItem::Scenario { .. } => {}
+    }
+}
+
+fn register_choice(choice: &crate::lower::HirChoice, registry: &mut NameRegistry) {
+    if let Some(id) = choice.id() {
+        registry.insert(id.body(), EntityKind::Choice);
+    }
+    for option in choice.options() {
+        if let Some(id) = option.id() {
+            registry.insert(id.body(), EntityKind::ChoiceOption);
+        }
     }
 }
 

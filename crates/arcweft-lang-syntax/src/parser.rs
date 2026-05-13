@@ -779,6 +779,11 @@ impl Parser {
                 return Some(FlowItem::AwaitWith(await_with));
             }
         }
+        // `choice` owns a brace block, so parse `let x = choice ... { ... }`
+        // before generic `let` handling can collapse it into a raw expression.
+        if is_let_choice_head(trimmed) {
+            return self.parse_let_choice().map(FlowItem::Stmt);
+        }
         if is_typed_stmt(trimmed) {
             self.index += 1;
             return Some(FlowItem::Stmt(parse_stmt(trimmed)));
@@ -813,6 +818,33 @@ impl Parser {
             plan,
             TextRange::new(start_line.start, end),
         ))
+    }
+
+    fn parse_let_choice(&mut self) -> Option<Stmt> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing choice expression",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the choice expression block"],
+            );
+            return None;
+        }
+
+        let rest = head.trim().strip_prefix("let")?.trim();
+        let (pattern, choice_head) = rest.split_once('=')?;
+        let choice_rest = choice_head.trim().strip_prefix("choice")?.trim();
+        let (id, _) = parse_optional_id_ref(choice_rest, start_line.start, &mut self.errors);
+        let items = parse_choice_items(&body, start_line.start, &mut self.errors);
+        let plan = self.take_choice_plan_after_current(start_line.start);
+
+        Some(Stmt::LetChoice {
+            pattern: parse_pattern(pattern.trim()),
+            choice: ChoiceBlock::new(id, items, plan, TextRange::new(start_line.start, end)),
+        })
     }
 
     fn parse_source_locale_block(&mut self) -> Option<SourceLocaleBlock> {
@@ -2898,6 +2930,14 @@ fn is_typed_stmt(trimmed: &str) -> bool {
                 | "continue"
         )
     )
+}
+
+fn is_let_choice_head(trimmed: &str) -> bool {
+    let Some(rest) = trimmed.strip_prefix("let ") else {
+        return false;
+    };
+    rest.split_once('=')
+        .is_some_and(|(_, expr)| expr.trim_start().starts_with("choice "))
 }
 
 fn parse_stmt(trimmed: &str) -> Stmt {

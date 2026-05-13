@@ -44,7 +44,9 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
     match item {
         HirFlowItem::Stmt(stmt) => collect_stmt(stmt, uses),
         HirFlowItem::Dialogue(dialogue) => collect_dialogue(dialogue, uses),
-        HirFlowItem::Choice(choice) => collect_choice(choice, uses),
+        HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
+            collect_choice(choice, uses);
+        }
         HirFlowItem::If(block) => {
             collect_expr(block.condition(), uses);
             for item in block.body() {
@@ -145,6 +147,9 @@ fn collect_choice(choice: &crate::lower::HirChoice, uses: &mut Vec<SymbolUse>) {
         if let Some(target) = option.target() {
             push_entity(uses, target);
         }
+        if let crate::ast::ChoiceAction::Out(expr) = option.action() {
+            collect_expr(expr, uses);
+        }
     }
 }
 
@@ -201,6 +206,34 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         Stmt::Signal { target, value } => {
             collect_expr(target, uses);
             collect_expr(value, uses);
+        }
+        Stmt::LetChoice { choice, .. } => {
+            if let Some(id) = choice.id() {
+                push_entity(uses, id);
+            }
+            for option in choice.options() {
+                if let Some(id) = option.id() {
+                    push_entity(uses, id);
+                }
+                if let Some(condition) = option.condition() {
+                    collect_expr(condition, uses);
+                }
+                if let Some(value) = option.value() {
+                    collect_expr(value, uses);
+                }
+                if let Some(text_key) = option.label_text_key() {
+                    push_entity(uses, text_key);
+                }
+                if let crate::ast::ChoiceAction::Out(expr) = option.action() {
+                    collect_expr(expr, uses);
+                }
+                if let Some(target) = match option.action() {
+                    crate::ast::ChoiceAction::Goto(target) => Some(target),
+                    _ => None,
+                } {
+                    push_entity(uses, target);
+                }
+            }
         }
         Stmt::Continue => {}
         Stmt::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),

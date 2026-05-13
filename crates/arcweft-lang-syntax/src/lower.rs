@@ -34,6 +34,7 @@ pub enum HirFlowItem {
     Stmt(Stmt),
     Dialogue(HirDialogue),
     Choice(HirChoice),
+    LetChoice { pattern: Pattern, choice: HirChoice },
     If(HirIf),
     Match(HirMatch),
     For(HirFor),
@@ -245,6 +246,10 @@ fn lower_flow_item_with_context(
     context: &mut LowerContext,
 ) -> Result<HirFlowItem, HirLowerError> {
     match item {
+        FlowItem::Stmt(Stmt::LetChoice { pattern, choice }) => Ok(HirFlowItem::LetChoice {
+            pattern: pattern.clone(),
+            choice: lower_choice(choice, context),
+        }),
         FlowItem::Stmt(stmt) => Ok(HirFlowItem::Stmt(stmt.clone())),
         FlowItem::ScenarioCommand(command) => Ok(HirFlowItem::Scenario {
             name: command.name().to_owned(),
