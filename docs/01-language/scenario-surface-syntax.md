@@ -133,33 +133,15 @@ The long method form is preferred when the line has a custom window, timed cues,
 ## Minimal dialogue flow
 
 ```awft
-mod game::routes::opening
+mod crate::game::routes::opening
 
-use game::prelude::*
-use game::characters::{alice}
+use crate::game::prelude::*
+use self::characters::{alice}
 
 pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     @bg #asset.bg.room fade=300ms
     @show alice normal at=center fade=200ms
 
-    地の文: 扉の向こうから、雨の音がした。[p]
-    alice: おはよう。[l]
-    alice(voice=auto): 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
-
-    choice #choice.opening.first {
-        #choice.opening.listen "聞いてみる" -> #flow.alice_intro
-        #choice.opening.silent "黙っている" -> #flow.quiet_intro
-    }
-}
-```
-
-This is a typed `flow`. The speaker lines and scenario commands are simply concise `FlowItem` forms.
-
-Named scopes make compact source IDs practical while keeping registry IDs
-stable and fully qualified.
-
-```awft
-pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     scope rain {
         地の文(id=.sound):
             扉の向こうから、雨の音がした。[p]
@@ -169,15 +151,29 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
     }
 
     scope dream {
-        let can_enter = {
-            let affection_ok = state.affection[#character.alice] >= 3
-            affection_ok
-        }
-
         choice .first {
-            .listen "聞いてみる" if can_enter -> #flow.alice_intro
+            .listen "聞いてみる" -> #flow.alice_intro
             .silent "黙っている" -> #flow.quiet_intro
         }
+    }
+}
+```
+
+This is a typed `flow`. The speaker lines and scenario commands are simply concise `FlowItem` forms. The `scope` names are lexical scopes and ID namespaces, so `.sound`, `.comment`, `.first`, `.listen`, and `.silent` normalize to stable fully qualified IDs.
+
+Named scopes make compact source IDs practical while keeping registry IDs
+stable and fully qualified.
+
+```awft
+scope dream {
+    let can_enter = {
+        let affection_ok = state.affection[#character.alice] >= 3
+        affection_ok
+    }
+
+    choice .first {
+        .listen "聞いてみる" if can_enter -> #flow.alice_intro
+        .silent "黙っている" -> #flow.quiet_intro
     }
 }
 ```
