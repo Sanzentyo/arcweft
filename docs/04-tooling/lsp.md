@@ -23,6 +23,11 @@
   - `speaker:` → `speaker.say()[...]`
   - `speaker(args):` → `speaker.say(args)[...]`
   - `await? expr with ...` → `try await expr with ...`
+  - `parent::path` → `super::path`
+- ID code actions:
+  - materialize `id=.suffix` as a normalized `#say...` ID
+  - materialize `choice .suffix` and relative option IDs as normalized `#choice...` IDs
+  - keep `.suffix` relative IDs by default during formatting
 - `Need` unhandled diagnostics
 - naked await in flow diagnostics
 - borrow crosses await diagnostics
