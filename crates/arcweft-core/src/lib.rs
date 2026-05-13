@@ -1,8 +1,11 @@
 pub mod prelude {
     pub use arcweft_dialogue::{
-        CancelScope, CancelTrigger, DialogueContent, DialogueContentPart, DialogueLine,
-        DialogueOptions, DialogueTag, LineExit, LinePlan, LinePlanStep, PlanArg, PlanCall,
-        PlanExpr, SpeakerPreset, SpeakerRef, TagArg, TextBoxRef, TimelineAnchor, VoiceRef,
+        CancelAction, CancelOnDrop, CancelRule, CancelScope, CancelTrigger, Cue, CueAction,
+        DialogueBuildError, DialogueBuildErrorKind, DialogueContent, DialogueContentPart,
+        DialogueLine, DialogueLineBuilder, DialogueOptions, DialogueTag, InputEventKind, LineExit,
+        LinePlan, LinePlanBuilder, LinePlanStep, PlanArg, PlanCall, PlanExpr, ReturnPayload,
+        SayOptions, SpeakerPreset, SpeakerRef, TagArg, TextBoxRef, TimelineAnchor, TimelineCue,
+        VoicePolicy, VoiceRef, character, line_id, textbox,
     };
     pub use arcweft_id::{EntityId, IdError, IdErrorKind, PublicId, TextKey};
     pub use arcweft_need::{Need, Progress, ProgressError};

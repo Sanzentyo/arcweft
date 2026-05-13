@@ -43,6 +43,12 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - Prefer deterministic runtime behavior.
 - Do not use `unsafe` unless isolated in a clearly named crate/module with an explanation.
 - Do not implement speculative full features before creating minimal stable interfaces.
+- When parser, compiler, or language-surface work requires broad reshaping, move directly toward the final model instead of preserving temporary compatibility layers.
+- Do not use `deprecated` APIs, compatibility aliases, or migration shims inside unfinished compiler/parser code. Let the Rust compiler expose every call site that must be updated.
+- Parser implementation should follow the grammar docs as the source of truth and should prefer explicit AST/CST nodes, source spans, and structured errors over stringly typed parsing.
+- Parser tests should cover complete documented syntax families, including success cases, malformed input, recovery spans, and ambiguity rules.
+- Public parser and AST types should have concise documentation comments suitable for generated Rust documentation.
+- Comments in parser code should explain grammar decisions, ambiguity handling, and recovery strategy; avoid restating obvious control flow.
 
 ## Rust conventions
 

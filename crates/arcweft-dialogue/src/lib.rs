@@ -1,5 +1,6 @@
 use arcweft_id::{PublicId, TextKey};
 use arcweft_source::SourceAnchor;
+use core::fmt;
 use core::time::Duration;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -15,32 +16,36 @@ pub struct TextBoxRef {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogueLine {
     speaker: SpeakerRef,
-    options: DialogueOptions,
+    options: SayOptions,
     content: DialogueContent,
     plan: LinePlan,
     source: SourceAnchor,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DialogueOptions {
+pub struct SayOptions {
     pub id: Option<PublicId>,
     pub text_key: Option<TextKey>,
-    pub voice: Option<VoiceRef>,
+    pub voice: Option<VoicePolicy>,
     pub face: Option<PublicId>,
     pub text_box: Option<TextBoxRef>,
 }
 
+pub type DialogueOptions = SayOptions;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SpeakerPreset {
     speaker: SpeakerRef,
-    options: DialogueOptions,
+    options: SayOptions,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum VoiceRef {
+pub enum VoicePolicy {
     Auto,
     Id(PublicId),
 }
+
+pub type VoiceRef = VoicePolicy;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogueContent {
@@ -72,9 +77,63 @@ pub struct TagArg {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LinePlan {
+    cues: Vec<TimelineCue>,
     steps: Vec<LinePlanStep>,
+    cancel_rules: Vec<CancelRule>,
     cancel_scopes: Vec<CancelScope>,
-    returns: Option<PlanExpr>,
+    returns: Option<ReturnPayload>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimelineCue {
+    pub anchor: TimelineAnchor,
+    pub cue: CueAction,
+    pub cancel_on_drop: CancelOnDrop,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CueAction {
+    Face { target: String, face: String },
+    Call(PlanCall),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Cue<'a> {
+    Face { target: &'a str, face: &'a str },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CancelOnDrop {
+    Cancel,
+    Finish,
+    Detach,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CancelRule {
+    pub trigger: CancelTrigger,
+    pub action: CancelAction,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InputEventKind {
+    SkipLine,
+    BackToTitle,
+    Named(String),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CancelAction {
+    Continue,
+    Goto(PublicId),
+    Return(ReturnPayload),
+    Cancelled(String),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReturnPayload {
+    Unit,
+    Expr(PlanExpr),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -142,7 +201,34 @@ pub enum LineExit {
     Continue,
     Cancelled(String),
     Goto(PublicId),
-    Return(PlanExpr),
+    Return(ReturnPayload),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DialogueLineBuilder {
+    preset: SpeakerPreset,
+    options: SayOptions,
+    content: Option<DialogueContent>,
+    plan: LinePlanBuilder,
+    source: SourceAnchor,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LinePlanBuilder {
+    cues: Vec<TimelineCue>,
+    steps: Vec<LinePlanStep>,
+    cancel_rules: Vec<CancelRule>,
+    returns: Option<ReturnPayload>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DialogueBuildError {
+    kind: DialogueBuildErrorKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DialogueBuildErrorKind {
+    MissingContent,
 }
 
 impl SpeakerRef {
@@ -163,6 +249,31 @@ impl SpeakerRef {
     }
 }
 
+pub fn character(name: &str) -> SpeakerRef {
+    SpeakerRef::new(domain_id("character", name))
+}
+
+pub fn textbox(name: &str) -> TextBoxRef {
+    TextBoxRef::new(domain_id("textbox", name))
+}
+
+/// Creates a dialogue line id from a full public id such as `say.opening.001`.
+///
+/// # Panics
+///
+/// Panics when `name` is not a valid `PublicId`.
+pub fn line_id(name: &str) -> PublicId {
+    PublicId::try_new(name).expect("line id helper requires a valid public id")
+}
+
+fn expression(name: &str) -> PublicId {
+    domain_id("expression", name)
+}
+
+fn domain_id(domain: &str, name: &str) -> PublicId {
+    PublicId::try_new(format!("{domain}.{name}")).expect("domain helper requires a valid public id")
+}
+
 impl TextBoxRef {
     pub const fn new(id: PublicId) -> Self {
         Self { id }
@@ -176,7 +287,7 @@ impl TextBoxRef {
 impl DialogueLine {
     pub fn new(
         speaker: SpeakerRef,
-        options: DialogueOptions,
+        options: SayOptions,
         content: DialogueContent,
         plan: LinePlan,
         source: SourceAnchor,
@@ -192,7 +303,7 @@ impl DialogueLine {
 
     pub fn from_preset(
         preset: &SpeakerPreset,
-        options: DialogueOptions,
+        options: SayOptions,
         content: DialogueContent,
         plan: LinePlan,
         source: SourceAnchor,
@@ -227,7 +338,7 @@ impl DialogueLine {
     }
 }
 
-impl DialogueOptions {
+impl SayOptions {
     pub const fn empty() -> Self {
         Self {
             id: None,
@@ -239,7 +350,7 @@ impl DialogueOptions {
     }
 
     #[must_use]
-    pub fn with_voice(mut self, voice: VoiceRef) -> Self {
+    pub fn with_voice(mut self, voice: VoicePolicy) -> Self {
         self.voice = Some(voice);
         self
     }
@@ -267,13 +378,42 @@ impl DialogueOptions {
     }
 }
 
-impl Default for DialogueOptions {
+impl Default for SayOptions {
     fn default() -> Self {
         Self::empty()
     }
 }
 
 impl SpeakerPreset {
+    pub fn new(speaker: SpeakerRef) -> Self {
+        Self {
+            speaker,
+            options: SayOptions::empty(),
+        }
+    }
+
+    #[must_use]
+    pub fn voice(mut self, voice: VoicePolicy) -> Self {
+        self.options.voice = Some(voice);
+        self
+    }
+
+    #[must_use]
+    pub fn face(mut self, face: &str) -> Self {
+        self.options.face = Some(expression(face));
+        self
+    }
+
+    #[must_use]
+    pub fn window(mut self, text_box: TextBoxRef) -> Self {
+        self.options.text_box = Some(text_box);
+        self
+    }
+
+    pub fn say(&self) -> DialogueLineBuilder {
+        DialogueLineBuilder::new(self.clone())
+    }
+
     pub const fn speaker(&self) -> &SpeakerRef {
         &self.speaker
     }
@@ -294,15 +434,90 @@ impl DialogueContent {
         Self::new([DialogueContentPart::Text(text.into())])
     }
 
+    pub fn parse_lossy(source: &str) -> Self {
+        let mut parts = Vec::new();
+        let mut rest = source;
+
+        while let Some(start) = rest.find('｜') {
+            let (before, after_marker) = rest.split_at(start);
+            push_text(&mut parts, before);
+
+            let after_marker = &after_marker['｜'.len_utf8()..];
+            let Some(open) = after_marker.find('《') else {
+                push_text(&mut parts, "｜");
+                rest = after_marker;
+                continue;
+            };
+            let Some(close_relative) = after_marker[open + '《'.len_utf8()..].find('》') else {
+                push_text(&mut parts, "｜");
+                rest = after_marker;
+                continue;
+            };
+
+            let base = &after_marker[..open];
+            let ruby_start = open + '《'.len_utf8();
+            let ruby_end = ruby_start + close_relative;
+            let ruby = &after_marker[ruby_start..ruby_end];
+            parts.push(DialogueContentPart::Ruby {
+                base: base.to_owned(),
+                ruby: ruby.to_owned(),
+            });
+            rest = &after_marker[ruby_end + '》'.len_utf8()..];
+        }
+
+        parse_control_tags(rest, &mut parts);
+        Self::new(parts)
+    }
+
     pub fn parts(&self) -> &[DialogueContentPart] {
         &self.parts
+    }
+}
+
+fn push_text(parts: &mut Vec<DialogueContentPart>, text: &str) {
+    if !text.is_empty() {
+        parse_control_tags(text, parts);
+    }
+}
+
+fn parse_control_tags(text: &str, parts: &mut Vec<DialogueContentPart>) {
+    let mut rest = text;
+    loop {
+        let Some(index) = rest.find('[') else {
+            if !rest.is_empty() {
+                parts.push(DialogueContentPart::Text(rest.to_owned()));
+            }
+            return;
+        };
+
+        let (before, after_open) = rest.split_at(index);
+        if !before.is_empty() {
+            parts.push(DialogueContentPart::Text(before.to_owned()));
+        }
+
+        let after_open = &after_open[1..];
+        let Some(close) = after_open.find(']') else {
+            parts.push(DialogueContentPart::Text(format!("[{after_open}")));
+            return;
+        };
+
+        let tag = &after_open[..close];
+        match tag {
+            "p" => parts.push(DialogueContentPart::Tag(DialogueTag::Page)),
+            "l" => parts.push(DialogueContentPart::Tag(DialogueTag::Line)),
+            "r" | "br" => parts.push(DialogueContentPart::Tag(DialogueTag::Break)),
+            _ => parts.push(DialogueContentPart::Text(format!("[{tag}]"))),
+        }
+        rest = &after_open[close + 1..];
     }
 }
 
 impl LinePlan {
     pub fn new(steps: impl Into<Vec<LinePlanStep>>) -> Self {
         Self {
+            cues: Vec::new(),
             steps: steps.into(),
+            cancel_rules: Vec::new(),
             cancel_scopes: Vec::new(),
             returns: None,
         }
@@ -310,7 +525,7 @@ impl LinePlan {
 
     #[must_use]
     pub fn with_return(mut self, value: PlanExpr) -> Self {
-        self.returns = Some(value);
+        self.returns = Some(ReturnPayload::Expr(value));
         self
     }
 
@@ -328,7 +543,15 @@ impl LinePlan {
         &self.cancel_scopes
     }
 
-    pub const fn returns(&self) -> Option<&PlanExpr> {
+    pub fn cues(&self) -> &[TimelineCue] {
+        &self.cues
+    }
+
+    pub fn cancel_rules(&self) -> &[CancelRule] {
+        &self.cancel_rules
+    }
+
+    pub const fn returns(&self) -> Option<&ReturnPayload> {
         self.returns.as_ref()
     }
 }
@@ -339,11 +562,194 @@ impl Default for LinePlan {
     }
 }
 
+impl DialogueLineBuilder {
+    fn new(preset: SpeakerPreset) -> Self {
+        Self {
+            preset,
+            options: SayOptions::empty(),
+            content: None,
+            plan: LinePlanBuilder::new(),
+            source: SourceAnchor::generated(),
+        }
+    }
+
+    #[must_use]
+    pub fn id(mut self, id: PublicId) -> Self {
+        self.options.id = Some(id);
+        self
+    }
+
+    #[must_use]
+    pub fn voice(mut self, voice: VoicePolicy) -> Self {
+        self.options.voice = Some(voice);
+        self
+    }
+
+    #[must_use]
+    pub fn face(mut self, face: &str) -> Self {
+        self.options.face = Some(expression(face));
+        self
+    }
+
+    #[must_use]
+    pub fn window(mut self, text_box: TextBoxRef) -> Self {
+        self.options.text_box = Some(text_box);
+        self
+    }
+
+    #[must_use]
+    pub fn content(mut self, content: DialogueContent) -> Self {
+        self.content = Some(content);
+        self
+    }
+
+    #[must_use]
+    pub fn at(mut self, offset: Duration, cue: Cue<'_>) -> Self {
+        self.plan = self.plan.at(offset, cue);
+        self
+    }
+
+    #[must_use]
+    pub fn cancel_on(mut self, input: InputEventKind, action: CancelAction) -> Self {
+        self.plan = self.plan.cancel_on(input, action);
+        self
+    }
+
+    #[must_use]
+    pub fn return_payload(mut self, payload: ReturnPayload) -> Self {
+        self.plan = self.plan.return_payload(payload);
+        self
+    }
+
+    pub fn build(self) -> Result<DialogueLine, DialogueBuildError> {
+        let content = self
+            .content
+            .ok_or_else(|| DialogueBuildError::new(DialogueBuildErrorKind::MissingContent))?;
+
+        Ok(DialogueLine::from_preset(
+            &self.preset,
+            self.options,
+            content,
+            self.plan.build(),
+            self.source,
+        ))
+    }
+}
+
+impl LinePlanBuilder {
+    pub const fn new() -> Self {
+        Self {
+            cues: Vec::new(),
+            steps: Vec::new(),
+            cancel_rules: Vec::new(),
+            returns: None,
+        }
+    }
+
+    #[must_use]
+    pub fn at(mut self, offset: Duration, cue: Cue<'_>) -> Self {
+        self.cues.push(TimelineCue {
+            anchor: TimelineAnchor::FromStart(offset),
+            cue: cue.into(),
+            cancel_on_drop: CancelOnDrop::Cancel,
+        });
+        self
+    }
+
+    #[must_use]
+    pub fn cue(mut self, cue: TimelineCue) -> Self {
+        self.cues.push(cue);
+        self
+    }
+
+    #[must_use]
+    pub fn step(mut self, step: LinePlanStep) -> Self {
+        self.steps.push(step);
+        self
+    }
+
+    #[must_use]
+    pub fn cancel_on(mut self, input: InputEventKind, action: CancelAction) -> Self {
+        self.cancel_rules.push(CancelRule {
+            trigger: CancelTrigger::Input(input.into_name()),
+            action,
+        });
+        self
+    }
+
+    #[must_use]
+    pub fn return_payload(mut self, payload: ReturnPayload) -> Self {
+        self.returns = Some(payload);
+        self
+    }
+
+    pub fn build(self) -> LinePlan {
+        LinePlan {
+            cues: self.cues,
+            steps: self.steps,
+            cancel_rules: self.cancel_rules,
+            cancel_scopes: Vec::new(),
+            returns: self.returns,
+        }
+    }
+}
+
+impl Default for LinePlanBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl From<Cue<'_>> for CueAction {
+    fn from(value: Cue<'_>) -> Self {
+        match value {
+            Cue::Face { target, face } => Self::Face {
+                target: target.to_owned(),
+                face: face.to_owned(),
+            },
+        }
+    }
+}
+
+impl InputEventKind {
+    fn into_name(self) -> String {
+        match self {
+            Self::SkipLine => "SkipLine".to_owned(),
+            Self::BackToTitle => "BackToTitle".to_owned(),
+            Self::Named(name) => name,
+        }
+    }
+}
+
+impl DialogueBuildError {
+    const fn new(kind: DialogueBuildErrorKind) -> Self {
+        Self { kind }
+    }
+
+    pub const fn kind(&self) -> DialogueBuildErrorKind {
+        self.kind
+    }
+}
+
+impl fmt::Display for DialogueBuildError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind {
+            DialogueBuildErrorKind::MissingContent => {
+                f.write_str("dialogue line content is required")
+            }
+        }
+    }
+}
+
+impl std::error::Error for DialogueBuildError {}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        DialogueContent, DialogueContentPart, DialogueLine, DialogueOptions, DialogueTag, LinePlan,
-        LinePlanStep, PlanCall, PlanExpr, SpeakerRef, TextBoxRef, TimelineAnchor, VoiceRef,
+        CancelAction, Cue, CueAction, DialogueContent, DialogueContentPart, DialogueLine,
+        DialogueOptions, DialogueTag, InputEventKind, LinePlan, LinePlanStep, PlanCall, PlanExpr,
+        SpeakerPreset, SpeakerRef, TextBoxRef, TimelineAnchor, VoicePolicy, VoiceRef, character,
+        line_id, textbox,
     };
     use arcweft_id::PublicId;
     use arcweft_source::SourceAnchor;
@@ -430,5 +836,67 @@ mod tests {
         assert!(matches!(line.options().voice, Some(VoiceRef::Auto)));
         assert_eq!(line.plan().steps().len(), 4);
         assert!(line.plan().returns().is_some());
+    }
+
+    #[test]
+    fn builder_api_builds_dialogue_line_from_concise_call_shape()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let alice = SpeakerPreset::new(character("alice"))
+            .voice(VoicePolicy::Auto)
+            .face("smile")
+            .window(textbox("side"));
+
+        let line = alice
+            .say()
+            .id(line_id("say.opening.dream_hint"))
+            .content(DialogueContent::parse_lossy(
+                "今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]",
+            ))
+            .at(
+                Duration::from_millis(420),
+                Cue::Face {
+                    target: "alice",
+                    face: "worried",
+                },
+            )
+            .cancel_on(InputEventKind::SkipLine, CancelAction::Continue)
+            .build()?;
+
+        assert_eq!(line.speaker().id().as_str(), "character.alice");
+        assert_eq!(
+            line.options().id.as_ref().map(PublicId::as_str),
+            Some("say.opening.dream_hint")
+        );
+        assert_eq!(
+            line.options()
+                .text_box
+                .as_ref()
+                .map(|text_box| text_box.id().as_str()),
+            Some("textbox.side")
+        );
+        assert!(matches!(line.options().voice, Some(VoicePolicy::Auto)));
+        assert_eq!(line.content().parts().len(), 4);
+        assert!(matches!(
+            line.content().parts().get(1),
+            Some(DialogueContentPart::Ruby { base, ruby })
+                if base == "変な夢" && ruby == "へんなゆめ"
+        ));
+        assert!(matches!(
+            line.content().parts().last(),
+            Some(DialogueContentPart::Tag(DialogueTag::Page))
+        ));
+        assert_eq!(line.plan().cues().len(), 1);
+        assert_eq!(
+            line.plan().cues()[0].anchor,
+            TimelineAnchor::FromStart(Duration::from_millis(420))
+        );
+        assert!(matches!(
+            &line.plan().cues()[0].cue,
+            CueAction::Face { target, face } if target == "alice" && face == "worried"
+        ));
+        assert_eq!(line.plan().cancel_rules().len(), 1);
+        assert_eq!(line.plan().cancel_rules()[0].action, CancelAction::Continue);
+
+        Ok(())
     }
 }

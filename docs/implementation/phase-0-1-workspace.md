@@ -42,6 +42,26 @@ Dialogue surface model:
 
 Supporting dialogue model types include speaker presets, voice references, content parts, line-plan steps, plan calls, and plan expressions. These are enough to represent the initial `alice2[...] with:` example as typed Rust data without implementing a parser.
 
+Builder API:
+
+- `SpeakerPreset`
+- `SayOptions`
+- `DialogueLineBuilder`
+- `LinePlanBuilder`
+- `TimelineCue`
+- `CancelRule`
+- `ReturnPayload`
+- `CancelOnDrop`
+
+The builder API supports fluent construction of a dialogue line with speaker defaults, line id, lossy dialogue content parsing, timeline cues, and input cancellation rules.
+
+Syntax parser:
+
+- `parse_source` and `parse_stub` now parse real `.awft` surface syntax into `SyntaxTree`.
+- The parser records module/use headers, attributes, wiki links, flows, flow items, scenario commands, speaker lines, content calls, choice blocks, hooks, memo functions, parser items, line plans, and dialogue tokens.
+- Diagnostics use structured `ParseError` values with spans, expected fragments, found text, recovery suggestions, and source anchors.
+- `thiserror` is used for parser error integration.
+
 ## Deferred
 
 Not implemented in this milestone:
@@ -53,7 +73,8 @@ Not implemented in this milestone:
 - USB / HID / gamepad backends
 - MCP / agent protocol runtime
 - Cranelift JIT
-- real `.awft` parser
+- type checking and HIR lowering
+- semantic expression resolution beyond syntax-preserving CST fields
 
 ## Verification
 
