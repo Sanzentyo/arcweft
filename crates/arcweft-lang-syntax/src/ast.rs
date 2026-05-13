@@ -83,6 +83,7 @@ pub struct RawItem {
 pub struct EntityRef {
     body: String,
     delimited: bool,
+    relative: bool,
     range: TextRange,
 }
 
@@ -286,6 +287,7 @@ pub enum FlowItem {
     Select(SelectBlock),
     BorrowBlock(BorrowBlock),
     SourceLocale(SourceLocaleBlock),
+    Scope(ScopeBlock),
     Include(EntityRef),
     AwaitWith(AwaitWith),
     Raw(String),
@@ -295,6 +297,14 @@ pub enum FlowItem {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceLocaleBlock {
     locale: String,
+    body: Vec<FlowItem>,
+    range: TextRange,
+}
+
+/// `scope name { ... }` lexical block that also names generated IDs.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScopeBlock {
+    name: String,
     body: Vec<FlowItem>,
     range: TextRange,
 }
@@ -740,6 +750,16 @@ impl EntityRef {
         Self {
             body,
             delimited,
+            relative: false,
+            range,
+        }
+    }
+
+    pub(crate) const fn new_relative(body: String, range: TextRange) -> Self {
+        Self {
+            body,
+            delimited: false,
+            relative: true,
             range,
         }
     }
@@ -750,6 +770,10 @@ impl EntityRef {
 
     pub const fn is_delimited(&self) -> bool {
         self.delimited
+    }
+
+    pub const fn is_relative(&self) -> bool {
+        self.relative
     }
 
     pub const fn range(&self) -> &TextRange {
@@ -1740,6 +1764,24 @@ impl SourceLocaleBlock {
 
     pub fn locale(&self) -> &str {
         &self.locale
+    }
+
+    pub fn body(&self) -> &[FlowItem] {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl ScopeBlock {
+    pub(crate) const fn new(name: String, body: Vec<FlowItem>, range: TextRange) -> Self {
+        Self { name, body, range }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn body(&self) -> &[FlowItem] {

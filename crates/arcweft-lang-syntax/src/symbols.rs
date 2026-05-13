@@ -116,6 +116,11 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 collect_flow_item(item, uses);
             }
         }
+        HirFlowItem::Scope(block) => {
+            for item in block.body() {
+                collect_flow_item(item, uses);
+            }
+        }
         HirFlowItem::Include(entity) => push_entity(uses, entity),
         HirFlowItem::Await(await_with) => {
             collect_expr(await_with.expr(), uses);
@@ -271,6 +276,9 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
 }
 
 fn push_entity(uses: &mut Vec<SymbolUse>, entity: &EntityRef) {
+    if entity.is_relative() {
+        return;
+    }
     uses.push(SymbolUse::new(
         SymbolUseKind::EntityRef,
         entity.body().to_owned(),

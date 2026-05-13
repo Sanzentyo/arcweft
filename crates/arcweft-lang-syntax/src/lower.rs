@@ -1,7 +1,7 @@
 use crate::ast::{
     AwaitBranchKind, BorrowBlock, ChoiceAction, ChoiceBlock, ChoicePlan, ContractClause,
     DialogueContent, EntityRef, Flow, FlowItem, FlowKind, IfBlock, Item, LinePlan, MatchBlock,
-    Pattern, SourceLocaleBlock, SpeakerLine, Stmt, SyntaxTree, TextRange,
+    Pattern, ScopeBlock, SourceLocaleBlock, SpeakerLine, Stmt, SyntaxTree, TextRange,
 };
 use crate::expr::Expr;
 use core::fmt;
@@ -39,6 +39,7 @@ pub enum HirFlowItem {
     Select(HirSelect),
     Borrow(HirBorrow),
     SourceLocale(HirSourceLocale),
+    Scope(HirScope),
     Include(EntityRef),
     Await(HirAwait),
     Scenario { name: String, args: Vec<Expr> },
@@ -77,6 +78,20 @@ pub struct HirChoiceOption {
 pub struct HirSourceLocale {
     locale: String,
     body: Vec<HirFlowItem>,
+}
+
+/// HIR-facing named lexical scope.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirScope {
+    name: String,
+    body: Vec<HirFlowItem>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct LowerContext {
+    flow_slug: Option<String>,
+    scopes: Vec<String>,
+    choice_stack: Vec<String>,
 }
 
 /// HIR-facing if block.
@@ -198,10 +213,14 @@ pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> 
 }
 
 fn lower_flow(flow: &Flow) -> Result<HirFlow, HirLowerError> {
+    let mut context = LowerContext {
+        flow_slug: flow.id().map(flow_slug_from_entity),
+        ..LowerContext::default()
+    };
     let body = flow
         .body()
         .iter()
-        .map(lower_flow_item)
+        .map(|item| lower_flow_item_with_context(item, &mut context))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(HirFlow {
         kind: flow.kind(),
@@ -213,6 +232,13 @@ fn lower_flow(flow: &Flow) -> Result<HirFlow, HirLowerError> {
 }
 
 fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
+    lower_flow_item_with_context(item, &mut LowerContext::default())
+}
+
+fn lower_flow_item_with_context(
+    item: &FlowItem,
+    context: &mut LowerContext,
+) -> Result<HirFlowItem, HirLowerError> {
     match item {
         FlowItem::Stmt(stmt) => Ok(HirFlowItem::Stmt(stmt.clone())),
         FlowItem::ScenarioCommand(command) => Ok(HirFlowItem::Scenario {
@@ -226,13 +252,16 @@ fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
             content: call.content().clone(),
             plan: call.plan().cloned(),
         })),
-        FlowItem::Choice(choice) => Ok(HirFlowItem::Choice(lower_choice(choice))),
-        FlowItem::If(block) => lower_if(block).map(HirFlowItem::If),
-        FlowItem::Match(block) => lower_match(block).map(HirFlowItem::Match),
-        FlowItem::For(block) => lower_for(block).map(HirFlowItem::For),
-        FlowItem::Select(block) => lower_select(block).map(HirFlowItem::Select),
-        FlowItem::BorrowBlock(block) => lower_borrow(block).map(HirFlowItem::Borrow),
-        FlowItem::SourceLocale(block) => lower_source_locale(block).map(HirFlowItem::SourceLocale),
+        FlowItem::Choice(choice) => Ok(HirFlowItem::Choice(lower_choice(choice, context))),
+        FlowItem::If(block) => lower_if(block, context).map(HirFlowItem::If),
+        FlowItem::Match(block) => lower_match(block, context).map(HirFlowItem::Match),
+        FlowItem::For(block) => lower_for(block, context).map(HirFlowItem::For),
+        FlowItem::Select(block) => lower_select(block, context).map(HirFlowItem::Select),
+        FlowItem::BorrowBlock(block) => lower_borrow(block, context).map(HirFlowItem::Borrow),
+        FlowItem::SourceLocale(block) => {
+            lower_source_locale(block, context).map(HirFlowItem::SourceLocale)
+        }
+        FlowItem::Scope(block) => lower_scope(block, context).map(HirFlowItem::Scope),
         FlowItem::Include(entity) => Ok(HirFlowItem::Include(entity.clone())),
         FlowItem::AwaitWith(await_with) => {
             let branches = await_with
@@ -245,7 +274,7 @@ fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
                         body: branch
                             .body()
                             .iter()
-                            .map(lower_flow_item)
+                            .map(|item| lower_flow_item_with_context(item, context))
                             .collect::<Result<Vec<_>, _>>()?,
                     })
                 })
@@ -263,31 +292,40 @@ fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
     }
 }
 
-fn lower_borrow(block: &BorrowBlock) -> Result<HirBorrow, HirLowerError> {
+fn lower_borrow(
+    block: &BorrowBlock,
+    context: &mut LowerContext,
+) -> Result<HirBorrow, HirLowerError> {
     Ok(HirBorrow {
         source: block.source().clone(),
         binding: block.binding().clone(),
         body: block
             .body()
             .iter()
-            .map(lower_flow_item)
+            .map(|item| lower_flow_item_with_context(item, context))
             .collect::<Result<Vec<_>, _>>()?,
     })
 }
 
-fn lower_for(block: &crate::ast::ForBlock) -> Result<HirFor, HirLowerError> {
+fn lower_for(
+    block: &crate::ast::ForBlock,
+    context: &mut LowerContext,
+) -> Result<HirFor, HirLowerError> {
     Ok(HirFor {
         pattern: block.pattern().clone(),
         source: block.source().clone(),
         body: block
             .body()
             .iter()
-            .map(lower_flow_item)
+            .map(|item| lower_flow_item_with_context(item, context))
             .collect::<Result<Vec<_>, _>>()?,
     })
 }
 
-fn lower_select(block: &crate::ast::SelectBlock) -> Result<HirSelect, HirLowerError> {
+fn lower_select(
+    block: &crate::ast::SelectBlock,
+    context: &mut LowerContext,
+) -> Result<HirSelect, HirLowerError> {
     Ok(HirSelect {
         branches: block
             .branches()
@@ -298,7 +336,7 @@ fn lower_select(block: &crate::ast::SelectBlock) -> Result<HirSelect, HirLowerEr
                     body: branch
                         .body()
                         .iter()
-                        .map(lower_flow_item)
+                        .map(|item| lower_flow_item_with_context(item, context))
                         .collect::<Result<Vec<_>, _>>()?,
                 })
             })
@@ -306,18 +344,18 @@ fn lower_select(block: &crate::ast::SelectBlock) -> Result<HirSelect, HirLowerEr
     })
 }
 
-fn lower_if(block: &IfBlock) -> Result<HirIf, HirLowerError> {
+fn lower_if(block: &IfBlock, context: &mut LowerContext) -> Result<HirIf, HirLowerError> {
     Ok(HirIf {
         condition: block.condition().clone(),
         body: block
             .body()
             .iter()
-            .map(lower_flow_item)
+            .map(|item| lower_flow_item_with_context(item, context))
             .collect::<Result<Vec<_>, _>>()?,
     })
 }
 
-fn lower_match(block: &MatchBlock) -> Result<HirMatch, HirLowerError> {
+fn lower_match(block: &MatchBlock, context: &mut LowerContext) -> Result<HirMatch, HirLowerError> {
     Ok(HirMatch {
         expr: block.expr().clone(),
         arms: block
@@ -329,7 +367,7 @@ fn lower_match(block: &MatchBlock) -> Result<HirMatch, HirLowerError> {
                     body: arm
                         .body()
                         .iter()
-                        .map(lower_flow_item)
+                        .map(|item| lower_flow_item_with_context(item, context))
                         .collect::<Result<Vec<_>, _>>()?,
                 })
             })
@@ -346,34 +384,112 @@ fn lower_speaker_line(line: &SpeakerLine) -> HirDialogue {
     }
 }
 
-fn lower_choice(choice: &ChoiceBlock) -> HirChoice {
+fn lower_choice(choice: &ChoiceBlock, context: &mut LowerContext) -> HirChoice {
+    let id = choice
+        .id()
+        .map(|id| normalize_choice_id(id, context))
+        .or_else(|| choice.id().cloned());
+    if let Some(id) = &id {
+        context.choice_stack.push(id.body().to_owned());
+    }
+    let options = choice
+        .options()
+        .iter()
+        .map(|option| HirChoiceOption {
+            id: option.id().map(|id| normalize_option_id(id, context)),
+            label: option.label().to_owned(),
+            condition: option.condition().cloned(),
+            action: option.action().clone(),
+            value: option.value().cloned(),
+            label_text_key: option
+                .label_text_key()
+                .map(|id| normalize_text_key_id(id, context)),
+        })
+        .collect();
+    if choice.id().is_some() {
+        context.choice_stack.pop();
+    }
     HirChoice {
-        id: choice.id().cloned(),
+        id,
         plan: choice.plan().cloned(),
-        options: choice
-            .options()
-            .iter()
-            .map(|option| HirChoiceOption {
-                id: option.id().cloned(),
-                label: option.label().to_owned(),
-                condition: option.condition().cloned(),
-                action: option.action().clone(),
-                value: option.value().cloned(),
-                label_text_key: option.label_text_key().cloned(),
-            })
-            .collect(),
+        options,
     }
 }
 
-fn lower_source_locale(block: &SourceLocaleBlock) -> Result<HirSourceLocale, HirLowerError> {
+fn lower_source_locale(
+    block: &SourceLocaleBlock,
+    context: &mut LowerContext,
+) -> Result<HirSourceLocale, HirLowerError> {
     Ok(HirSourceLocale {
         locale: block.locale().to_owned(),
         body: block
             .body()
             .iter()
-            .map(lower_flow_item)
+            .map(|item| lower_flow_item_with_context(item, context))
             .collect::<Result<Vec<_>, _>>()?,
     })
+}
+
+fn lower_scope(block: &ScopeBlock, context: &mut LowerContext) -> Result<HirScope, HirLowerError> {
+    context.scopes.push(block.name().to_owned());
+    let body = block
+        .body()
+        .iter()
+        .map(|item| lower_flow_item_with_context(item, context))
+        .collect::<Result<Vec<_>, _>>()?;
+    context.scopes.pop();
+    Ok(HirScope {
+        name: block.name().to_owned(),
+        body,
+    })
+}
+
+fn normalize_choice_id(id: &EntityRef, context: &LowerContext) -> EntityRef {
+    if !id.is_relative() {
+        return id.clone();
+    }
+    let Some(flow_slug) = &context.flow_slug else {
+        return id.clone();
+    };
+    let mut parts = vec!["choice".to_owned(), flow_slug.clone()];
+    parts.extend(context.scopes.iter().cloned());
+    parts.push(id.body().to_owned());
+    EntityRef::new(parts.join("."), false, *id.range())
+}
+
+fn normalize_option_id(id: &EntityRef, context: &LowerContext) -> EntityRef {
+    if !id.is_relative() {
+        return id.clone();
+    }
+    context.choice_stack.last().map_or_else(
+        || id.clone(),
+        |choice| EntityRef::new(format!("{choice}.{}", id.body()), false, *id.range()),
+    )
+}
+
+fn normalize_text_key_id(id: &EntityRef, context: &LowerContext) -> EntityRef {
+    if !id.is_relative() {
+        return id.clone();
+    }
+    context.choice_stack.last().map_or_else(
+        || id.clone(),
+        |choice| {
+            let choice_path = choice.strip_prefix("choice.").unwrap_or(choice);
+            EntityRef::new(
+                format!("text.choice.{choice_path}.{}", id.body()),
+                false,
+                *id.range(),
+            )
+        },
+    )
+}
+
+fn flow_slug_from_entity(id: &EntityRef) -> String {
+    id.body()
+        .strip_prefix("flow.")
+        .or_else(|| id.body().strip_prefix("fragment."))
+        .unwrap_or(id.body())
+        .to_owned()
 }
 
 impl HirModule {
@@ -437,6 +553,16 @@ impl HirChoice {
 
     pub const fn plan(&self) -> Option<&ChoicePlan> {
         self.plan.as_ref()
+    }
+}
+
+impl HirScope {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn body(&self) -> &[HirFlowItem] {
+        &self.body
     }
 }
 

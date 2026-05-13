@@ -4,10 +4,10 @@ use crate::ast::{
     ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause, DialogueContent,
     EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionItem,
     HookItem, IfBlock, ImplItem, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn,
-    ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, SelectBlock, SelectBranch,
-    SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField,
-    StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, UseMode,
-    Visibility, WikiLink,
+    ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, ScopeBlock, SelectBlock,
+    SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt,
+    StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
+    UseMode, Visibility, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -734,6 +734,9 @@ impl Parser {
         if trimmed.starts_with("source locale ") {
             return self.parse_source_locale_block().map(FlowItem::SourceLocale);
         }
+        if trimmed.starts_with("scope ") {
+            return self.parse_scope_block().map(FlowItem::Scope);
+        }
         if let Some(command) = parse_scenario_command(trimmed, TextRange::new(line.start, line.end))
         {
             self.index += 1;
@@ -801,7 +804,7 @@ impl Parser {
             return None;
         }
         let rest = head.trim().strip_prefix("choice")?.trim();
-        let (id, _) = parse_optional_entity_ref(rest, start_line.start, &mut self.errors);
+        let (id, _) = parse_optional_id_ref(rest, start_line.start, &mut self.errors);
         let items = parse_choice_items(&body, start_line.start, &mut self.errors);
         let plan = self.take_choice_plan_after_current(start_line.start);
         Some(ChoiceBlock::new(
@@ -829,6 +832,28 @@ impl Parser {
         let body = self.parse_flow_body(&body, start_line.start + head.len());
         Some(SourceLocaleBlock::new(
             locale,
+            body,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_scope_block(&mut self) -> Option<ScopeBlock> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing named scope",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the scope block"],
+            );
+            return None;
+        }
+        let name = head.trim().strip_prefix("scope")?.trim().to_owned();
+        let body = self.parse_flow_body(&body, start_line.start + head.len());
+        Some(ScopeBlock::new(
+            name,
             body,
             TextRange::new(start_line.start, end),
         ))
@@ -1548,6 +1573,24 @@ fn parse_optional_entity_ref<'a>(
     }
 }
 
+fn parse_optional_id_ref<'a>(
+    input: &'a str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> (Option<EntityRef>, &'a str) {
+    let trimmed = input.trim_start();
+    if trimmed.starts_with('#') {
+        parse_optional_entity_ref(trimmed, base, errors)
+    } else if trimmed.starts_with('.') {
+        match parse_required_id_ref(trimmed, base, errors) {
+            Some((entity, rest)) => (Some(entity), rest),
+            None => (None, input),
+        }
+    } else {
+        (None, input)
+    }
+}
+
 fn parse_required_entity_ref<'a>(
     input: &'a str,
     base: usize,
@@ -1605,6 +1648,45 @@ fn parse_required_entity_ref<'a>(
         ));
     }
     None
+}
+
+fn parse_required_id_ref<'a>(
+    input: &'a str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Option<(EntityRef, &'a str)> {
+    let input = input.trim_start();
+    if input.starts_with('#') {
+        return parse_required_entity_ref(input, base, errors);
+    }
+    let Some(rest) = input.strip_prefix('.') else {
+        errors.push(simple_error(
+            base,
+            input.len(),
+            "expected entity reference or relative id",
+            "#domain.path",
+        ));
+        return None;
+    };
+    let len = rest
+        .char_indices()
+        .take_while(|(_, ch)| ch.is_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+        .map(|(index, ch)| index + ch.len_utf8())
+        .last()
+        .unwrap_or(0);
+    if len == 0 {
+        errors.push(simple_error(
+            base,
+            input.len(),
+            "relative id is missing a suffix",
+            ".suffix",
+        ));
+        return None;
+    }
+    Some((
+        EntityRef::new_relative(rest[..len].to_owned(), TextRange::new(base, base + len + 1)),
+        &rest[len..],
+    ))
 }
 
 fn simple_error(base: usize, len: usize, message: &str, expected: &str) -> ParseError {
@@ -2040,7 +2122,7 @@ fn parse_choice_arm_sugar(
     if trimmed.is_empty() {
         return None;
     }
-    let (id, rest) = parse_optional_entity_ref(trimmed, base, errors);
+    let (id, rest) = parse_optional_id_ref(trimmed, base, errors);
     let rest = rest.trim();
     let quote_start = rest.find('"')?;
     let quote_end = rest[quote_start + 1..].find('"')? + quote_start + 1;
@@ -2113,7 +2195,7 @@ fn parse_choice_option_block(
     errors: &mut Vec<ParseError>,
 ) -> Option<ChoiceOption> {
     let option_id = head.strip_prefix("option")?.trim();
-    let (id, rest) = parse_optional_entity_ref(option_id, base, errors);
+    let (id, rest) = parse_optional_id_ref(option_id, base, errors);
     let mut id_expr =
         (id.is_none() && !rest.trim().is_empty()).then(|| parse_expr_lossy(rest.trim()));
     let mut label = String::new();
@@ -2135,7 +2217,7 @@ fn parse_choice_option_block(
         } else if let Some(value_part) = trimmed.strip_prefix("label(") {
             if let Some((key_part, expr_part)) = value_part.split_once(')') {
                 if let Some(text_key) = key_part.trim().strip_prefix("id=") {
-                    label_text_key = parse_required_entity_ref(text_key.trim(), base, errors)
+                    label_text_key = parse_required_id_ref(text_key.trim(), base, errors)
                         .map(|(entity, _)| entity);
                 }
                 let expr_part = expr_part

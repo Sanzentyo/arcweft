@@ -145,11 +145,13 @@ impl TypeChecker<'_> {
             for contract in flow.contracts() {
                 self.check_contract_clause(contract);
             }
-            for item in flow.body() {
-                self.check_flow_item(item);
-            }
+            self.check_flow_items(flow.body());
         }
-        for item in module.top_level_items() {
+        self.check_flow_items(module.top_level_items());
+    }
+
+    fn check_flow_items(&mut self, items: &[HirFlowItem]) {
+        for item in items {
             self.check_flow_item(item);
         }
     }
@@ -190,23 +192,17 @@ impl TypeChecker<'_> {
             }
             HirFlowItem::If(block) => {
                 self.expect_expr_type(block.condition(), &TypeKind::Bool, "if condition");
-                for item in block.body() {
-                    self.check_flow_item(item);
-                }
+                self.check_flow_items(block.body());
             }
             HirFlowItem::Match(block) => {
                 self.check_expr(block.expr());
                 for arm in block.arms() {
-                    for item in arm.body() {
-                        self.check_flow_item(item);
-                    }
+                    self.check_flow_items(arm.body());
                 }
             }
             HirFlowItem::For(block) => {
                 self.check_expr(block.source());
-                for item in block.body() {
-                    self.check_flow_item(item);
-                }
+                self.check_flow_items(block.body());
             }
             HirFlowItem::Select(block) => {
                 self.check_select_block(block);
@@ -215,9 +211,10 @@ impl TypeChecker<'_> {
                 self.check_borrow_block(block);
             }
             HirFlowItem::SourceLocale(block) => {
-                for item in block.body() {
-                    self.check_flow_item(item);
-                }
+                self.check_flow_items(block.body());
+            }
+            HirFlowItem::Scope(block) => {
+                self.check_flow_items(block.body());
             }
             HirFlowItem::Include(entity) => {
                 let kind = entity_kind(entity);
@@ -242,9 +239,7 @@ impl TypeChecker<'_> {
                     ));
                 }
                 for branch in await_with.branches() {
-                    for item in branch.body() {
-                        self.check_flow_item(item);
-                    }
+                    self.check_flow_items(branch.body());
                 }
             }
             HirFlowItem::Scenario { args, .. } => {

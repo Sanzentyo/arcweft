@@ -19,10 +19,10 @@ pub use ast::{
     ChoiceBlock, ChoiceItem, ChoiceOption, ChoicePlan, ChoicePlanItem, ContentCall, ContractClause,
     DialogueToken, EntityRef, EnumItem, EnumVariant, Flow, FlowItem, FlowKind, ForBlock,
     FunctionItem, HookItem, IfBlock, ImplItem, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock,
-    MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand, SelectBlock, SelectBranch,
-    SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField,
-    StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, Visibility,
-    WikiLink,
+    MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand, ScopeBlock, SelectBlock,
+    SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt,
+    StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
+    Visibility, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -31,8 +31,8 @@ pub use check::{
 pub use expr::{BinaryOp, Expr, Literal, Placeholder, parse_expr};
 pub use lower::{
     HirAwait, HirAwaitBranch, HirBorrow, HirChoice, HirChoiceOption, HirDialogue, HirFlow,
-    HirFlowItem, HirFor, HirIf, HirLowerError, HirMatch, HirMatchArm, HirModule, HirSelect,
-    HirSelectBranch, lower_to_hir,
+    HirFlowItem, HirFor, HirIf, HirLowerError, HirMatch, HirMatchArm, HirModule, HirScope,
+    HirSelect, HirSelectBranch, lower_to_hir,
 };
 pub use parser::{ParseError, RecoverySuggestion, parse_source, parse_stub};
 pub use resolve::{NameRegistry, NameResolutionError, registry_from_hir, validate_hir_references};
@@ -558,6 +558,78 @@ source locale en-US {
         };
         assert_eq!(block.locale(), "en-US");
         assert_eq!(block.body().len(), 1);
+    }
+
+    #[test]
+    fn lowers_named_scope_and_relative_choice_ids() {
+        let tree = parse_source(
+            r#"
+mod crate::game::routes::opening
+use self::characters::{alice}
+use parent::common::{route_gate}
+
+flow #flow.opening opening {
+    scope dream {
+        choice .first {
+            .listen "聞いてみる" -> #flow.alice_intro
+            .silent "黙っている" -> #flow.quiet_intro
+        }
+    }
+}
+
+flow #flow.alice_intro alice_intro {}
+flow #flow.quiet_intro quiet_intro {}
+"#,
+        )
+        .expect("named scope and relative choice ids parse");
+
+        assert_eq!(
+            tree.module().expect("module").path(),
+            "crate::game::routes::opening"
+        );
+        assert_eq!(tree.uses()[0].tree(), "self::characters::{alice}");
+        assert_eq!(tree.uses()[1].tree(), "parent::common::{route_gate}");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::Scope(scope) = &flow.body()[0] else {
+            panic!("expected named scope");
+        };
+        assert_eq!(scope.name(), "dream");
+        let FlowItem::Choice(choice) = &scope.body()[0] else {
+            panic!("expected scoped choice");
+        };
+        assert!(choice.id().expect("choice id").is_relative());
+        assert!(choice.options()[0].id().expect("option id").is_relative());
+
+        let hir = lower_to_hir(&tree).expect("relative choice ids lower");
+        let HirFlowItem::Scope(scope) = &hir.flows()[0].body()[0] else {
+            panic!("expected HIR scope");
+        };
+        let HirFlowItem::Choice(choice) = &scope.body()[0] else {
+            panic!("expected HIR choice");
+        };
+        assert_eq!(
+            choice.id().expect("normalized choice id").body(),
+            "choice.opening.dream.first"
+        );
+        assert_eq!(
+            choice.options()[0]
+                .id()
+                .expect("normalized option id")
+                .body(),
+            "choice.opening.dream.first.listen"
+        );
+
+        let registry = registry_from_hir(&hir);
+        validate_hir_references(&hir, &registry).expect("normalized scoped ids resolve");
+        validate_typecheck_ready(&hir).expect("scoped relative ids are typecheck-ready");
+        typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new().with_symbol("can_enter", TypeKind::Bool),
+        )
+        .expect("scoped relative choice HIR typechecks");
     }
 
     #[test]

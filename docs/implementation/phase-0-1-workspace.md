@@ -74,6 +74,8 @@ Syntax parser:
 - Flow `let`/`return`/`goto` statements now lower to structured `Stmt` and `Pattern` values instead of opaque strings.
 - Flow `if` and `match` blocks lower to structured HIR nodes, and their nested flow items participate in symbol collection and type checking.
 - Flow `for` loops and source-aware `select` blocks lower to structured HIR nodes, and their nested flow items participate in symbol collection and type-check readiness checks.
+- Named `scope name { ... }` blocks lower to structured HIR nodes. Relative choice IDs such as `choice .first` and relative option IDs such as `.listen` normalize through the current flow and scope path during HIR lowering.
+- Module and import paths accept `crate::`, `self::`, `super::`, and reserved `parent::` roots as source syntax.
 - `await ... with` keeps `pending`/`ready`/`error`/`denied` branches as structured AST/HIR, and branch bodies participate in symbol collection and type checking.
 - Flow/function contract clauses (`requires`, `ensures`, `invariant`, `assume`, `reads`, `effects`, `no_effect`, `modifies`, `decreases`) are parsed separately from the body and participate in symbol collection and type checking where applicable.
 - `lower_to_hir` verifies that parsed edge-case flow syntax can be converted to HIR-facing structures and rejects raw syntax that still needs parser coverage.
@@ -101,7 +103,7 @@ Not implemented in this milestone:
 - full nested-scope borrow lifetime analysis and precise borrow end tracking
 - full semantic expression resolution and type-directed ambiguity resolution
 - choice expression result typing, lifecycle runtime execution, reactive option-state reevaluation, localization extraction, formatter/canonicalizer output, and LSP diagnostics for dynamic labels and unordered map-backed options
-- parser/lowering support for named `scope`, relative `.suffix` ID resolution, and `self`/`super`/`crate`/`parent` module-path normalization
+- relative dialogue line ID extraction from raw call options, generated line/text-key ID allocation, and formatter/canonicalizer normalization for `parent::` and relative `.suffix` IDs
 
 ## Verification
 
