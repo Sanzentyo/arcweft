@@ -155,7 +155,7 @@ pub struct AwaitWith {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScenarioCommand {
     name: String,
-    args: String,
+    args: Vec<Expr>,
     range: TextRange,
 }
 
@@ -508,7 +508,7 @@ impl Flow {
 }
 
 impl ScenarioCommand {
-    pub(crate) const fn new(name: String, args: String, range: TextRange) -> Self {
+    pub(crate) const fn new(name: String, args: Vec<Expr>, range: TextRange) -> Self {
         Self { name, args, range }
     }
 
@@ -516,7 +516,7 @@ impl ScenarioCommand {
         &self.name
     }
 
-    pub fn args(&self) -> &str {
+    pub fn args(&self) -> &[Expr] {
         &self.args
     }
 

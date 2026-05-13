@@ -76,8 +76,39 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
         assert_eq!(flow.kind(), FlowKind::Flow);
         assert_eq!(flow.id().expect("flow id").body(), "flow.opening");
         assert_eq!(flow.body().len(), 2);
-        assert!(matches!(&flow.body()[0], FlowItem::ScenarioCommand(_)));
+        assert!(
+            matches!(&flow.body()[0], FlowItem::ScenarioCommand(command) if command.args().len() == 2)
+        );
         assert!(matches!(&flow.body()[1], FlowItem::Include(_)));
+    }
+
+    #[test]
+    fn parses_scenario_command_args_as_expressions() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    @show alice normal at=right fade=220ms
+}
+",
+        )
+        .expect("scenario command args parse");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::ScenarioCommand(command) = &flow.body()[0] else {
+            panic!("expected scenario command");
+        };
+        assert_eq!(command.name(), "show");
+        assert!(matches!(&command.args()[0], Expr::Path(path) if path == "alice"));
+        assert!(matches!(
+            &command.args()[2],
+            Expr::NamedArg { name, value } if name == "at" && matches!(value.as_ref(), Expr::Path(path) if path == "right")
+        ));
+        assert!(matches!(
+            &command.args()[3],
+            Expr::NamedArg { name, value } if name == "fade" && matches!(value.as_ref(), Expr::Literal(_))
+        ));
     }
 
     #[test]
@@ -671,6 +702,7 @@ alice[
         let tree = parse_source(
             r#"
 flow #flow.opening opening {
+    @show alice normal at=right fade=220ms
     let (actor, (_, voice)) = alice.say(voice=auto)[聞いて。[p]]
     await load_opening_assets()? with { pending p => scene #scene.loading { progress p.ratio } }
     alice[
@@ -692,6 +724,8 @@ flow #flow.opening opening {
             .with_symbol("alice.stage", TypeKind::Named("StageActor".to_owned()))
             .with_symbol("auto", TypeKind::Named("VoicePolicy".to_owned()))
             .with_symbol("blue", TypeKind::Named("Color".to_owned()))
+            .with_symbol("normal", TypeKind::Named("Pose".to_owned()))
+            .with_symbol("right", TypeKind::Named("StagePosition".to_owned()))
             .with_symbol("worried", TypeKind::Named("Face".to_owned()))
             .with_symbol("end", TypeKind::Duration)
             .with_symbol(

@@ -33,7 +33,7 @@ pub enum HirFlowItem {
     Choice(HirChoice),
     Include(EntityRef),
     Await { expr: Expr, propagates_error: bool },
-    Scenario { name: String, args: String },
+    Scenario { name: String, args: Vec<Expr> },
 }
 
 /// Dialogue call normalized enough for type checking to resolve speaker symbols.
@@ -122,7 +122,7 @@ fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
         FlowItem::Stmt(stmt) => Ok(HirFlowItem::Stmt(stmt.clone())),
         FlowItem::ScenarioCommand(command) => Ok(HirFlowItem::Scenario {
             name: command.name().to_owned(),
-            args: command.args().to_owned(),
+            args: command.args().to_vec(),
         }),
         FlowItem::SpeakerLine(line) => Ok(HirFlowItem::Dialogue(lower_speaker_line(line))),
         FlowItem::ContentCall(call) => Ok(HirFlowItem::Dialogue(HirDialogue {

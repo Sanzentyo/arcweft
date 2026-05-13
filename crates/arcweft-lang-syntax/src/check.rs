@@ -193,7 +193,11 @@ impl TypeChecker<'_> {
                     ));
                 }
             }
-            HirFlowItem::Scenario { .. } => {}
+            HirFlowItem::Scenario { args, .. } => {
+                for arg in args {
+                    self.check_expr(arg);
+                }
+            }
         }
     }
 

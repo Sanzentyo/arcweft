@@ -907,9 +907,43 @@ fn parse_scenario_command(trimmed: &str, range: TextRange) -> Option<ScenarioCom
     let (name, args) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
     Some(ScenarioCommand::new(
         name.to_owned(),
-        args.trim().to_owned(),
+        parse_scenario_args(args.trim()),
         range,
     ))
+}
+
+fn parse_scenario_args(args: &str) -> Vec<crate::expr::Expr> {
+    split_scenario_args(args)
+        .into_iter()
+        .map(parse_expr_lossy)
+        .collect()
+}
+
+fn split_scenario_args(source: &str) -> Vec<&str> {
+    let mut args = Vec::new();
+    let mut start = 0;
+    let mut depth = 0_i32;
+    let mut in_string = false;
+    for (index, ch) in source.char_indices() {
+        match ch {
+            '"' => in_string = !in_string,
+            '(' | '[' | '{' if !in_string => depth += 1,
+            ')' | ']' | '}' if !in_string => depth -= 1,
+            ch if ch.is_whitespace() && depth == 0 && !in_string => {
+                let arg = source[start..index].trim();
+                if !arg.is_empty() {
+                    args.push(arg);
+                }
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    let tail = source[start..].trim();
+    if !tail.is_empty() {
+        args.push(tail);
+    }
+    args
 }
 
 fn parse_attribute(trimmed: &str, range: TextRange) -> Option<Attribute> {
