@@ -17,10 +17,10 @@ mod types;
 pub use ast::{
     Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, CallableItem, CallableKind, ChoiceBlock,
     ChoiceOption, ContentCall, ContractClause, DialogueToken, EntityRef, EnumItem, EnumVariant,
-    Flow, FlowItem, FlowKind, FunctionItem, HookItem, IfBlock, Item, LinePlan, LinePlanItem,
-    MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand, SpeakerLine,
-    StateField, StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TypeAliasItem,
-    UseItem, Visibility, WikiLink,
+    Flow, FlowItem, FlowKind, FunctionItem, HookItem, IfBlock, ImplItem, Item, LinePlan,
+    LinePlanItem, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand,
+    SpeakerLine, StateField, StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange,
+    TraitItem, TraitMember, TypeAliasItem, UseItem, Visibility, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -44,9 +44,9 @@ mod tests {
     use super::{
         AwaitBranchKind, BinaryOp, CallableKind, ContractClause, DialogueToken, EntityKind, Expr,
         FlowItem, FlowKind, HirFlowItem, Item, LinePlanItem, NameRegistry, Pattern, Stmt,
-        SymbolUseKind, TypeCheckEnv, TypeKind, TypeRef, Visibility, collect_symbol_uses,
-        lower_to_hir, parse_dialogue_tokens, parse_fn_signature, parse_source, parse_stub,
-        parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
+        SymbolUseKind, TraitMember, TypeCheckEnv, TypeKind, TypeRef, Visibility,
+        collect_symbol_uses, lower_to_hir, parse_dialogue_tokens, parse_fn_signature, parse_source,
+        parse_stub, parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
         validate_typecheck_ready,
     };
 
@@ -563,6 +563,66 @@ pub view current_scene(state: GameState) -> Scene {
         assert_eq!(view.name(), "current_scene");
 
         let hir = lower_to_hir(&tree).expect("syntax-only state/callable items do not block HIR");
+        assert!(hir.flows().is_empty());
+    }
+
+    #[test]
+    fn parses_documented_trait_and_impl_items() {
+        let tree = parse_source(
+            r"
+pub trait Mappable {
+    type Item
+    type Mapped<B>
+    fn map<B>(self, f: Self::Item -> B) -> Self::Mapped<B>
+}
+
+pub trait Ord: Eq {}
+
+pub impl<T> Mappable for Option<T> {
+    type Item = T
+    type Mapped<B> = Option<B>
+
+    fn map<B>(self, f: T -> B) -> Option<B> {
+        match self {
+            Some(x) => Some(f(x)),
+            None => None,
+        }
+    }
+}
+",
+        )
+        .expect("trait and impl items parse");
+
+        let Item::Trait(mappable) = &tree.items()[0] else {
+            panic!("expected trait item");
+        };
+        assert_eq!(mappable.visibility(), Some(Visibility::Public));
+        assert_eq!(mappable.name(), "Mappable");
+        assert_eq!(mappable.members().len(), 3);
+        assert!(matches!(
+            &mappable.members()[0],
+            TraitMember::AssociatedType { name, value: None } if name == "Item"
+        ));
+        assert!(matches!(
+            &mappable.members()[2],
+            TraitMember::Function { signature } if signature.starts_with("fn map")
+        ));
+
+        let Item::Trait(ord) = &tree.items()[1] else {
+            panic!("expected second trait item");
+        };
+        assert_eq!(ord.supertraits(), &["Eq".to_owned()]);
+
+        let Item::Impl(impl_item) = &tree.items()[2] else {
+            panic!("expected impl item");
+        };
+        assert_eq!(impl_item.visibility(), Some(Visibility::Public));
+        assert_eq!(impl_item.generics(), Some("<T>"));
+        assert_eq!(impl_item.trait_name(), Some("Mappable"));
+        assert_eq!(impl_item.target(), "Option<T>");
+        assert!(impl_item.body().contains("Some(x)"));
+
+        let hir = lower_to_hir(&tree).expect("syntax-only trait/impl items do not block HIR");
         assert!(hir.flows().is_empty());
     }
 

@@ -2,10 +2,10 @@ use crate::ast::{
     Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, BorrowBlock, CallableItem,
     CallableKind, CancelRuleSyntax, ChoiceBlock, ChoiceOption, ContentCall, ContractClause,
     DialogueContent, EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind,
-    FunctionItem, HookItem, IfBlock, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn,
-    ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, SpeakerLine, StateField, StateItem,
-    Stmt, StructField, StructItem, SyntaxTree, TextRange, TypeAliasItem, UseItem, UseMode,
-    Visibility, WikiLink,
+    FunctionItem, HookItem, IfBlock, ImplItem, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock,
+    MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, SpeakerLine, StateField,
+    StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember,
+    TypeAliasItem, UseItem, UseMode, Visibility, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -110,6 +110,14 @@ impl Parser {
             } else if looks_like_state_item(&trimmed) {
                 if let Some(state) = self.parse_state_item() {
                     items.push(Item::State(state));
+                }
+            } else if looks_like_trait_item(&trimmed) {
+                if let Some(trait_item) = self.parse_trait_item() {
+                    items.push(Item::Trait(trait_item));
+                }
+            } else if looks_like_impl_item(&trimmed) {
+                if let Some(impl_item) = self.parse_impl_item() {
+                    items.push(Item::Impl(impl_item));
                 }
             } else if looks_like_enum_item(&trimmed) {
                 if let Some(enum_item) = self.parse_enum_item() {
@@ -332,6 +340,64 @@ impl Parser {
             visibility,
             name.unwrap_or_default(),
             parse_state_fields(&body),
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_trait_item(&mut self) -> Option<TraitItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing trait",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the trait body"],
+            );
+            return None;
+        }
+        let (visibility, rest) = parse_visibility_prefix(head.trim());
+        let rest = rest.trim_start().strip_prefix("trait")?.trim();
+        let (name, supertraits) = rest
+            .split_once(':')
+            .map_or((rest, ""), |(name, traits)| (name.trim(), traits.trim()));
+        Some(TraitItem::new(
+            visibility,
+            name.to_owned(),
+            split_supertraits(supertraits),
+            parse_trait_members(&body),
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_impl_item(&mut self) -> Option<ImplItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing impl",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the impl body"],
+            );
+            return None;
+        }
+        let (visibility, rest) = parse_visibility_prefix(head.trim());
+        let rest = rest.trim_start().strip_prefix("impl")?.trim();
+        let (generics, rest) = parse_optional_angle_head(rest);
+        let (trait_name, target) = rest
+            .split_once(" for ")
+            .map_or((None, rest.trim()), |(trait_name, target)| {
+                (Some(trait_name.trim().to_owned()), target.trim())
+            });
+        Some(ImplItem::new(
+            visibility,
+            generics,
+            trait_name,
+            target.to_owned(),
+            body,
             TextRange::new(start_line.start, end),
         ))
     }
@@ -1151,6 +1217,16 @@ fn looks_like_state_item(trimmed: &str) -> bool {
     rest.trim_start().starts_with("state ")
 }
 
+fn looks_like_trait_item(trimmed: &str) -> bool {
+    let (_, rest) = parse_visibility_prefix(trimmed);
+    rest.trim_start().starts_with("trait ")
+}
+
+fn looks_like_impl_item(trimmed: &str) -> bool {
+    let (_, rest) = parse_visibility_prefix(trimmed);
+    rest.trim_start().starts_with("impl")
+}
+
 fn looks_like_enum_item(trimmed: &str) -> bool {
     let (_, rest) = parse_visibility_prefix(trimmed);
     rest.trim_start().starts_with("enum ")
@@ -1503,6 +1579,66 @@ fn parse_state_fields(body: &str) -> Vec<StateField> {
             })
         })
         .collect()
+}
+
+fn split_supertraits(source: &str) -> Vec<String> {
+    source
+        .split('+')
+        .map(str::trim)
+        .filter(|trait_name| !trait_name.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+fn parse_optional_angle_head(source: &str) -> (Option<String>, &str) {
+    let source = source.trim_start();
+    if !source.starts_with('<') {
+        return (None, source);
+    }
+    let mut depth = 0_i32;
+    for (index, ch) in source.char_indices() {
+        match ch {
+            '<' => depth += 1,
+            '>' => {
+                depth -= 1;
+                if depth == 0 {
+                    return (
+                        Some(source[..=index].to_owned()),
+                        source[index + ch.len_utf8()..].trim_start(),
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+    (None, source)
+}
+
+fn parse_trait_members(body: &str) -> Vec<TraitMember> {
+    body.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(parse_trait_member)
+        .collect()
+}
+
+fn parse_trait_member(line: &str) -> TraitMember {
+    let line = line.trim_end_matches(';').trim();
+    if let Some(rest) = line.strip_prefix("type ") {
+        let (name, value) = rest.split_once('=').map_or((rest, None), |(name, value)| {
+            (name.trim(), parse_type_ref(value.trim()).ok())
+        });
+        return TraitMember::AssociatedType {
+            name: name.trim().to_owned(),
+            value,
+        };
+    }
+    if line.starts_with("fn ") {
+        return TraitMember::Function {
+            signature: line.to_owned(),
+        };
+    }
+    TraitMember::Raw(line.to_owned())
 }
 
 fn parse_choice_option(

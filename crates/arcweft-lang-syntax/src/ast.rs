@@ -58,6 +58,8 @@ pub enum Item {
     Function(FunctionItem),
     Callable(CallableItem),
     State(StateItem),
+    Trait(TraitItem),
+    Impl(ImplItem),
     Enum(EnumItem),
     Struct(StructItem),
     TypeAlias(TypeAliasItem),
@@ -185,6 +187,40 @@ pub struct StateField {
     name: String,
     ty: TypeRef,
     default: Expr,
+}
+
+/// Trait declaration with associated type and function members.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TraitItem {
+    visibility: Option<Visibility>,
+    name: String,
+    supertraits: Vec<String>,
+    members: Vec<TraitMember>,
+    range: TextRange,
+}
+
+/// Member allowed inside a trait declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TraitMember {
+    AssociatedType {
+        name: String,
+        value: Option<TypeRef>,
+    },
+    Function {
+        signature: String,
+    },
+    Raw(String),
+}
+
+/// Impl declaration preserving the implementation body for later lowering.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImplItem {
+    visibility: Option<Visibility>,
+    generics: Option<String>,
+    trait_name: Option<String>,
+    target: String,
+    body: String,
+    range: TextRange,
 }
 
 /// Top-level algebraic data type declaration.
@@ -840,6 +876,88 @@ impl StateField {
 
     pub const fn default(&self) -> &Expr {
         &self.default
+    }
+}
+
+impl TraitItem {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        name: String,
+        supertraits: Vec<String>,
+        members: Vec<TraitMember>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            name,
+            supertraits,
+            members,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn supertraits(&self) -> &[String] {
+        &self.supertraits
+    }
+
+    pub fn members(&self) -> &[TraitMember] {
+        &self.members
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl ImplItem {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        generics: Option<String>,
+        trait_name: Option<String>,
+        target: String,
+        body: String,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            generics,
+            trait_name,
+            target,
+            body,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn generics(&self) -> Option<&str> {
+        self.generics.as_deref()
+    }
+
+    pub fn trait_name(&self) -> Option<&str> {
+        self.trait_name.as_deref()
+    }
+
+    pub fn target(&self) -> &str {
+        &self.target
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
     }
 }
 
