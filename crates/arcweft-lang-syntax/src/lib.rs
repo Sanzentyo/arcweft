@@ -828,6 +828,77 @@ flow #flow.alice_intro alice_intro {
     }
 
     #[test]
+    fn parses_and_typechecks_let_else_binding() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+    let .Some(route) = state.route_override else {
+        goto #flow.title
+    }
+
+    goto route
+}
+
+flow #flow.title title {
+}
+",
+        )
+        .expect("let-else fixture parses");
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected source flow");
+        };
+        let FlowItem::Stmt(Stmt::LetElse {
+            pattern,
+            expr,
+            else_body,
+        }) = &flow.body()[0]
+        else {
+            panic!("expected structured let-else");
+        };
+        assert_eq!(pattern, &Pattern::Variant(".Some(route)".to_owned()));
+        assert!(matches!(expr, Expr::Path(path) if path == "state.route_override"));
+        assert!(matches!(else_body.as_slice(), [Stmt::Goto(_)]));
+
+        let hir = lower_to_hir(&tree).expect("let-else fixture lowers");
+        let registry = registry_from_hir(&hir);
+        validate_hir_references(&hir, &registry).expect("let-else refs resolve");
+        validate_typecheck_ready(&hir).expect("let-else is typecheck-ready");
+        let env = TypeCheckEnv::new().with_symbol(
+            "state.route_override",
+            TypeKind::Named("Option<Ref<Flow>>".to_owned()),
+        );
+        typecheck_hir(&hir, &env).expect("let-else typechecks and binds route");
+    }
+
+    #[test]
+    fn typecheck_rejects_non_diverging_let_else() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+    let .Some(route) = state.route_override else {
+        #flow.title
+    }
+}
+
+flow #flow.title title {
+}
+",
+        )
+        .expect("non-diverging let-else fixture parses");
+        let hir = lower_to_hir(&tree).expect("non-diverging let-else fixture lowers");
+        let env = TypeCheckEnv::new().with_symbol(
+            "state.route_override",
+            TypeKind::Named("Option<Ref<Flow>>".to_owned()),
+        );
+        let errors = typecheck_hir(&hir, &env).expect_err("non-diverging let-else is rejected");
+        assert!(errors.iter().any(|error| {
+            error
+                .message()
+                .contains("let-else else block must leave the current continuation")
+        }));
+    }
+
+    #[test]
     fn parses_character_content_call_with_brace_plan() {
         let tree = parse_source(
             r##"

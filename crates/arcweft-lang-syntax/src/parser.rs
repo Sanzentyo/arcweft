@@ -787,6 +787,9 @@ impl Parser {
         if is_let_scope_head(trimmed) {
             return self.parse_let_scope().map(FlowItem::Stmt);
         }
+        if is_let_else_head(trimmed) {
+            return self.parse_let_else().map(FlowItem::Stmt);
+        }
         if is_typed_stmt(trimmed) {
             self.index += 1;
             return Some(FlowItem::Stmt(parse_stmt(trimmed)));
@@ -877,6 +880,30 @@ impl Parser {
                 value,
                 TextRange::new(start_line.start, end),
             ),
+        })
+    }
+
+    fn parse_let_else(&mut self) -> Option<Stmt> {
+        let start_line = self.current().clone();
+        let (head, body, _end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing let-else",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the let-else block"],
+            );
+            return None;
+        }
+
+        let rest = head.trim().strip_prefix("let")?.trim();
+        let (pattern, rhs) = rest.split_once('=')?;
+        let expr = rhs.trim().strip_suffix("else")?.trim();
+        Some(Stmt::LetElse {
+            pattern: parse_pattern(pattern.trim()),
+            expr: parse_expr_lossy(expr),
+            else_body: parse_stmt_lines(&body),
         })
     }
 
@@ -2981,6 +3008,10 @@ fn is_let_scope_head(trimmed: &str) -> bool {
         .is_some_and(|(_, expr)| expr.trim_start().starts_with("scope "))
 }
 
+fn is_let_else_head(trimmed: &str) -> bool {
+    trimmed.starts_with("let ") && trimmed.contains(" else") && trimmed.contains('{')
+}
+
 fn parse_scope_expr_body(body: &str) -> (Vec<Stmt>, Option<crate::expr::Expr>) {
     let lines = body
         .lines()
@@ -3001,6 +3032,14 @@ fn parse_scope_expr_body(body: &str) -> (Vec<Stmt>, Option<crate::expr::Expr>) {
     } else {
         (parsed_statements, Some(parse_expr_lossy(last)))
     }
+}
+
+fn parse_stmt_lines(body: &str) -> Vec<Stmt> {
+    body.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(parse_stmt)
+        .collect()
 }
 
 fn parse_stmt(trimmed: &str) -> Stmt {

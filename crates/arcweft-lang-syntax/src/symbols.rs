@@ -215,6 +215,14 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
             collect_expr(target, uses);
             collect_expr(value, uses);
         }
+        Stmt::LetElse {
+            expr, else_body, ..
+        } => {
+            collect_expr(expr, uses);
+            for stmt in else_body {
+                collect_stmt(stmt, uses);
+            }
+        }
         Stmt::LetChoice { choice, .. } => {
             if let Some(id) = choice.id() {
                 push_entity(uses, id);

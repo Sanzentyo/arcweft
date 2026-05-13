@@ -264,6 +264,25 @@ impl TypeChecker<'_> {
                 }
                 collect_borrow_lifetimes(pattern, &mut self.active_borrows);
             }
+            Stmt::LetElse {
+                pattern,
+                expr,
+                else_body,
+            } => {
+                let expr_type = self.check_expr(expr);
+                for stmt in else_body {
+                    self.check_stmt(stmt);
+                }
+                if !stmts_diverge(else_body) {
+                    self.errors.push(TypeCheckError::new(
+                        "let-else else block must leave the current continuation".to_owned(),
+                    ));
+                }
+                for (name, ty) in let_else_bindings(pattern, expr_type.as_ref()) {
+                    self.locals.insert(name, ty);
+                }
+                collect_borrow_lifetimes(pattern, &mut self.active_borrows);
+            }
             Stmt::LetChoice { .. } => {
                 self.errors.push(TypeCheckError::new(
                     "choice expression binding must be lowered before type checking".to_owned(),
@@ -657,6 +676,67 @@ fn ident_pattern_name(pattern: &Pattern) -> Option<&str> {
         Pattern::Ident(name) => Some(name),
         _ => None,
     }
+}
+
+fn let_else_bindings(pattern: &Pattern, expr_type: Option<&TypeKind>) -> Vec<(String, TypeKind)> {
+    match pattern {
+        Pattern::Ident(name) => expr_type
+            .cloned()
+            .map(|ty| vec![(name.to_owned(), ty)])
+            .unwrap_or_default(),
+        Pattern::Variant(raw) => variant_payload_binding(raw)
+            .into_iter()
+            .filter_map(|name| option_payload_type(expr_type).map(|ty| (name, ty)))
+            .collect(),
+        Pattern::Tuple(items) => items
+            .iter()
+            .flat_map(|item| let_else_bindings(item, None))
+            .collect(),
+        Pattern::Typed { name, ty } => vec![(name.to_owned(), type_ref_kind(ty))],
+        Pattern::Discard | Pattern::Raw(_) => Vec::new(),
+    }
+}
+
+fn variant_payload_binding(raw: &str) -> Option<String> {
+    raw.strip_prefix(".Some(")
+        .and_then(|rest| rest.strip_suffix(')'))
+        .map(str::trim)
+        .filter(|name| is_local_ident(name))
+        .map(str::to_owned)
+}
+
+fn option_payload_type(expr_type: Option<&TypeKind>) -> Option<TypeKind> {
+    match expr_type {
+        Some(TypeKind::Named(name)) if name == "Option<Ref<Flow>>" => {
+            Some(TypeKind::Ref(EntityKind::Flow))
+        }
+        Some(TypeKind::Named(name)) if name == "Option<Bool>" => Some(TypeKind::Bool),
+        Some(TypeKind::Named(name)) if name == "Option<Int>" => Some(TypeKind::Int),
+        Some(TypeKind::Named(name)) if name == "Option<String>" => Some(TypeKind::String),
+        _ => None,
+    }
+}
+
+fn stmts_diverge(stmts: &[Stmt]) -> bool {
+    stmts.last().is_some_and(stmt_diverges)
+}
+
+fn stmt_diverges(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Return(_) | Stmt::Goto(_) | Stmt::Continue => true,
+        Stmt::Raw(raw) => {
+            raw.starts_with("break") || raw.starts_with("panic ") || raw.starts_with("fail ")
+        }
+        _ => false,
+    }
+}
+
+fn is_local_ident(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
 fn choice_output_type(choice: &crate::lower::HirChoice) -> Option<TypeKind> {

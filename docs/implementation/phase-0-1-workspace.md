@@ -74,6 +74,7 @@ Syntax parser:
 - Flow `let`/`return`/`goto` statements now lower to structured `Stmt` and `Pattern` values instead of opaque strings.
 - Flow `if` and `match` blocks lower to structured HIR nodes, and their nested flow items participate in symbol collection and type checking.
 - Flow `for` loops and source-aware `select` blocks lower to structured HIR nodes, and their nested flow items participate in symbol collection and type-check readiness checks.
+- `let PAT = EXPR else { ... }` parses as a structured statement, keeps the else body as typed statements, and the checker rejects else blocks that do not leave the current continuation.
 - Named `scope name { ... }` blocks lower to structured HIR nodes. Relative choice IDs such as `choice .first` and relative option IDs such as `.listen` normalize through the current flow and scope path during HIR lowering.
 - `let name = scope name { ... }` parses as a named scope expression binding, preserves nested typed statements and final expression separately, and lets the checker infer the bound value while keeping inner locals scoped to the block.
 - Dialogue call options are parsed enough to expose `id`, `text_key`, and `source_locale` to HIR. Relative dialogue line IDs such as `alice(id=.comment)` normalize through the current flow, speaker, and scope path. When `id` is omitted, HIR lowering allocates a stable per-flow/speaker/scope ordinal such as `say.opening.narrator.rain.001`, and omitted `text_key` is derived from the normalized `say...` line ID.

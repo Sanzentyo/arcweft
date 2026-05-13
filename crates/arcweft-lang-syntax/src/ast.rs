@@ -393,6 +393,12 @@ pub enum Stmt {
         pattern: Pattern,
         expr: Expr,
     },
+    /// `let PAT = EXPR else { ... }` binding whose else block must diverge.
+    LetElse {
+        pattern: Pattern,
+        expr: Expr,
+        else_body: Vec<Stmt>,
+    },
     /// `let PAT = choice ... { ... }` choice expression binding.
     LetChoice {
         pattern: Pattern,
