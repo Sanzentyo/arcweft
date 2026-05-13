@@ -55,7 +55,7 @@ let bg = asset.image(#asset.bg.room) // Need<ImageHandle, AssetError>
 flow で使うには:
 
 ```awft
-let bg = await asset.image(#asset.bg.room)? with {
+let bg = try await asset.image(#asset.bg.room) with {
     pending p => scene #scene.loading { progress p.ratio }
 }
 ```

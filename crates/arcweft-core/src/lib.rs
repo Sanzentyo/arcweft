@@ -3,7 +3,7 @@ pub mod prelude {
         CancelAction, CancelOnDrop, CancelRule, CancelScope, CancelTrigger, Cue, CueAction,
         DialogueBuildError, DialogueBuildErrorKind, DialogueContent, DialogueContentPart,
         DialogueLine, DialogueLineBuilder, DialogueOptions, DialogueTag, InputEventKind, LineExit,
-        LinePlan, LinePlanBuilder, LinePlanStep, PlanArg, PlanCall, PlanExpr, ReturnPayload,
+        LinePlan, LinePlanBuilder, LinePlanStep, OutPayload, PlanArg, PlanCall, PlanExpr,
         SayOptions, SpeakerPreset, SpeakerRef, TagArg, TextBoxRef, TimelineAnchor, TimelineCue,
         VoicePolicy, VoiceRef, character, line_id, textbox,
     };

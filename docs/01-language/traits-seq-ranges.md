@@ -136,7 +136,7 @@ fn selected_route(state: GameState) -> Result<Ref<Flow>, GameError> {
 
 ```awft
 let bg =
-    await asset.image(#asset.bg.room)? with {
+    try await asset.image(#asset.bg.room) with {
         pending p => scene #scene.loading { progress p.ratio }
     }
 ```

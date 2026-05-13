@@ -122,7 +122,7 @@ pub struct HirBorrow {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirAwait {
     expr: Expr,
-    propagates_error: bool,
+    applies_try: bool,
     branches: Vec<HirAwaitBranch>,
 }
 
@@ -171,7 +171,7 @@ pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> 
             | Item::TypeAlias(_) => {}
             Item::Raw(raw) => errors.push(HirLowerError::new(
                 format!("raw top-level item cannot be lowered: {}", raw.head()),
-                Some(raw.range().clone()),
+                Some(*raw.range()),
             )),
         }
     }
@@ -240,7 +240,7 @@ fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
                 .collect::<Result<Vec<_>, HirLowerError>>()?;
             Ok(HirFlowItem::Await(HirAwait {
                 expr: await_with.expr().clone(),
-                propagates_error: await_with.propagates_error(),
+                applies_try: await_with.applies_try(),
                 branches,
             }))
         }
@@ -507,8 +507,8 @@ impl HirAwait {
         &self.expr
     }
 
-    pub const fn propagates_error(&self) -> bool {
-        self.propagates_error
+    pub const fn applies_try(&self) -> bool {
+        self.applies_try
     }
 
     pub fn branches(&self) -> &[HirAwaitBranch] {

@@ -451,7 +451,7 @@ key (self, expression, pose, env.locale, env.render_profile)
 The object API hides the memo function behind concise calls:
 
 ```awft
-let smile = await alice.sprite(smile)? with {
+let smile = try await alice.sprite(smile) with {
     pending p => scene #scene.loading_sprite { progress p.ratio }
 }
 

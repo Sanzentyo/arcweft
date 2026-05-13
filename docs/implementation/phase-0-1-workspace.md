@@ -50,7 +50,7 @@ Builder API:
 - `LinePlanBuilder`
 - `TimelineCue`
 - `CancelRule`
-- `ReturnPayload`
+- `OutPayload`
 - `CancelOnDrop`
 
 The builder API supports fluent construction of a dialogue line with speaker defaults, line id, lossy dialogue content parsing, timeline cues, and input cancellation rules.

@@ -41,7 +41,7 @@ watch signal #signal.camera_frame from capture.latest_frame(#capture.face_camera
 ```awft
 pub flow #flow.capture_setup capture_setup(state: GameState) -> Result<FlowExit, FlowError> {
     let mic =
-        await capture.microphone(#capture.player_microphone)? with {
+        try await capture.microphone(#capture.player_microphone) with {
             pending _ => scene #scene.permission_wait {
                 text "マイクの使用を許可してください"
             }
@@ -49,7 +49,7 @@ pub flow #flow.capture_setup capture_setup(state: GameState) -> Result<FlowExit,
         }
 
     let cam =
-        await capture.camera(#capture.face_camera)? with {
+        try await capture.camera(#capture.face_camera) with {
             pending _ => scene #scene.permission_wait {
                 text "カメラの使用を許可してください"
             }

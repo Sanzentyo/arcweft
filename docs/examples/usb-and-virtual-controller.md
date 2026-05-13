@@ -104,7 +104,7 @@ pub virtual_controller #vc.shooter_touch: VirtualController {
 ```awft
 flow #flow.shooting_gallery_intro opening(state: GameState) -> Result<FlowExit, FlowError> {
     let gun =
-        await usb.open(#usb.lightgun).optional()? with {
+        try await usb.open(#usb.lightgun).optional() with {
             pending p => scene #scene.usb_wait {
                 text "専用コントローラーを探しています。タッチ操作でも遊べます。"
                 progress p.ratio

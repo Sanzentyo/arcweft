@@ -114,7 +114,7 @@ User-visible flows must decide what to do while a source is being acquired.
 
 ```awft
 let mic =
-    await capture.microphone(#capture.player_microphone)? with {
+    try await capture.microphone(#capture.player_microphone) with {
         pending p => scene #scene.permission_wait {
             text "マイクの許可を待っています"
             progress p.ratio

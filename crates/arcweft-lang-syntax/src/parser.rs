@@ -84,7 +84,7 @@ impl Parser {
             let trimmed = line.text.trim().to_owned();
             let range = TextRange::new(line.start, line.end);
 
-            if let Some(attribute) = parse_attribute(&trimmed, range.clone()) {
+            if let Some(attribute) = parse_attribute(&trimmed, range) {
                 items.push(Item::Attribute(attribute));
                 self.index += 1;
             } else if let Some(path) = trimmed.strip_prefix("mod ") {
@@ -677,16 +677,28 @@ impl Parser {
             self.index += 1;
             return Some(FlowItem::Include(entity));
         }
-        if trimmed.starts_with("await ") && trimmed.contains(" with ") {
+        if is_await_with_head(trimmed) {
             if trimmed.contains('{') {
                 let (head, body, _, ok) = self.take_brace_block();
                 if ok {
-                    return Some(FlowItem::AwaitWith(parse_await_with(&format!(
-                        "{head} {{ {body} }}"
-                    ))));
+                    let range = TextRange::new(line.start, line.end);
+                    let await_with =
+                        parse_await_with(&format!("{head} {{ {body} }}"), range, &mut self.errors);
+                    return Some(FlowItem::AwaitWith(await_with));
                 }
+            } else if trimmed.ends_with("with:") {
+                self.index += 1;
+                let body = self.take_indented_await_body(indentation(&line.text) + 1);
+                let range = TextRange::new(line.start, line.end);
+                let await_with =
+                    parse_await_with(&format!("{trimmed}\n{body}"), range, &mut self.errors);
+                return Some(FlowItem::AwaitWith(await_with));
             } else {
-                let await_with = parse_await_with(trimmed);
+                let await_with = parse_await_with(
+                    trimmed,
+                    TextRange::new(line.start, line.end),
+                    &mut self.errors,
+                );
                 self.index += 1;
                 return Some(FlowItem::AwaitWith(await_with));
             }
@@ -1023,6 +1035,27 @@ impl Parser {
             self.index += 1;
         }
         parse_line_plan_body(BlockStyle::Indent, &raw, TextRange::new(start, end))
+    }
+
+    fn take_indented_await_body(&mut self, min_indent: usize) -> String {
+        let mut raw = String::new();
+        while self.index < self.lines.len() {
+            let line = self.current();
+            if line.text.trim().is_empty() {
+                raw.push('\n');
+                self.index += 1;
+                continue;
+            }
+            if indentation(&line.text) < min_indent {
+                break;
+            }
+            if !raw.is_empty() {
+                raw.push('\n');
+            }
+            raw.push_str(&line.text);
+            self.index += 1;
+        }
+        raw
     }
 
     fn take_brace_block(&mut self) -> (String, String, usize, bool) {
@@ -1954,8 +1987,8 @@ fn is_multiline_timed_cue_header(line: &str) -> bool {
 }
 
 fn parse_line_plan_item(line: &str) -> LinePlanItem {
-    if let Some(rest) = line.strip_prefix("return ") {
-        return LinePlanItem::Return(parse_expr_lossy(rest.trim()));
+    if let Some(rest) = line.strip_prefix("out ") {
+        return LinePlanItem::Out(parse_expr_lossy(rest.trim()));
     }
     if let Some(rest) = line.strip_prefix("let ") {
         if let Some((pattern, expr)) = rest.split_once('=') {
@@ -2019,18 +2052,62 @@ fn normalize_timed_cue_body(source: &str) -> &str {
         .trim()
 }
 
-fn parse_await_with(trimmed: &str) -> AwaitWith {
-    let without_await = trimmed.trim_start_matches("await").trim();
-    let (expr_part, branch_part) = without_await
-        .split_once(" with ")
-        .unwrap_or((without_await, ""));
-    let propagates_error = expr_part.ends_with('?');
-    let expr_text = expr_part.trim_end_matches('?').trim();
+fn is_await_with_head(trimmed: &str) -> bool {
+    (trimmed.starts_with("await ")
+        || trimmed.starts_with("try await ")
+        || trimmed.starts_with("await? "))
+        && (trimmed.contains(" with ") || trimmed.ends_with("with:"))
+}
+
+fn parse_await_with(trimmed: &str, range: TextRange, errors: &mut Vec<ParseError>) -> AwaitWith {
+    let source = trimmed.trim();
+    let (applies_try, after_keyword) = source
+        .strip_prefix("try await")
+        .map(|rest| (true, rest.trim()))
+        .or_else(|| {
+            source
+                .strip_prefix("await?")
+                .map(|rest| (true, rest.trim()))
+        })
+        .or_else(|| {
+            source
+                .strip_prefix("await")
+                .map(|rest| (false, rest.trim()))
+        })
+        .unwrap_or((false, source));
+    let (expr_part, branch_part) = split_await_head(after_keyword);
+
+    // Postfix `?` remains the ordinary Rust-like propagation operator. The
+    // rejected form is only `await expr? with:`, where pending handling must
+    // group with the await before propagation is applied.
+    if expr_part.trim_end().ends_with('?') {
+        errors.push(ParseError::new(
+            range,
+            vec!["try await expr with:".to_owned()],
+            Some(expr_part.trim().to_owned()),
+            "`await expr? with` is ambiguous; use `try await expr with`".to_owned(),
+            vec![RecoverySuggestion {
+                message: "move `?` before `await` as `try await`".to_owned(),
+            }],
+            SourceAnchor::new(SourceName::path("<memory>"), range.start()..range.end()),
+        ));
+    }
+
     AwaitWith::new(
-        parse_expr_lossy(expr_text),
-        propagates_error,
+        parse_expr_lossy(expr_part.trim_end_matches('?').trim()),
+        applies_try,
         parse_await_branches(branch_part.trim()),
     )
+}
+
+fn split_await_head(source: &str) -> (&str, &str) {
+    if let Some((expr, branches)) = source.split_once(" with:") {
+        return (expr, branches);
+    }
+    if let Some((expr, branches)) = source.split_once(" with ") {
+        return (expr, branches);
+    }
+    (source, "")
 }
 
 fn parse_await_branches(source: &str) -> Vec<AwaitBranch> {
@@ -2039,10 +2116,74 @@ fn parse_await_branches(source: &str) -> Vec<AwaitBranch> {
         .and_then(|value| value.strip_suffix('}'))
         .unwrap_or(source)
         .trim();
+    if body
+        .lines()
+        .any(|line| is_colon_await_branch_head(line.trim()))
+    {
+        return parse_colon_await_branches(body);
+    }
     split_await_branch_lines(body)
         .into_iter()
         .filter_map(parse_await_branch)
         .collect()
+}
+
+fn parse_colon_await_branches(source: &str) -> Vec<AwaitBranch> {
+    let mut branches = Vec::new();
+    let mut current_head = None::<String>;
+    let mut current_body = String::new();
+
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if is_colon_await_branch_head(trimmed) {
+            if let Some(head) = current_head.replace(trimmed.to_owned()) {
+                if let Some(branch) = parse_colon_await_branch(&head, &current_body) {
+                    branches.push(branch);
+                }
+                current_body.clear();
+            }
+        } else {
+            if !current_body.is_empty() {
+                current_body.push('\n');
+            }
+            current_body.push_str(line);
+        }
+    }
+
+    if let Some(head) = current_head {
+        if let Some(branch) = parse_colon_await_branch(&head, &current_body) {
+            branches.push(branch);
+        }
+    }
+    branches
+}
+
+fn is_colon_await_branch_head(trimmed: &str) -> bool {
+    trimmed.ends_with(':')
+        && matches!(
+            trimmed.trim_end_matches(':').split_whitespace().next(),
+            Some("pending" | "ready" | "error" | "denied")
+        )
+}
+
+fn parse_colon_await_branch(head: &str, body: &str) -> Option<AwaitBranch> {
+    let mut parts = head.trim_end_matches(':').split_whitespace();
+    let kind = match parts.next()? {
+        "pending" => AwaitBranchKind::Pending,
+        "ready" => AwaitBranchKind::Ready,
+        "error" => AwaitBranchKind::Error,
+        "denied" => AwaitBranchKind::Denied,
+        _ => return None,
+    };
+    let pattern = parse_pattern(parts.collect::<Vec<_>>().join(" ").trim());
+    Some(AwaitBranch::new(
+        kind,
+        pattern,
+        parse_await_branch_body(body),
+    ))
 }
 
 fn split_await_branch_lines(source: &str) -> Vec<&str> {
@@ -2085,8 +2226,37 @@ fn parse_await_branch(line: &str) -> Option<AwaitBranch> {
     Some(AwaitBranch::new(
         kind,
         pattern,
-        vec![parse_inline_await_branch_item(body.trim())],
+        parse_await_branch_body(body.trim()),
     ))
+}
+
+fn parse_await_branch_body(body: &str) -> Vec<FlowItem> {
+    if let Some(command) = parse_scene_command(body.trim()) {
+        return vec![FlowItem::ScenarioCommand(command)];
+    }
+
+    let mut nested = Parser::new(body.to_owned());
+    let mut items = Vec::new();
+    while nested.index < nested.lines.len() {
+        nested.skip_blank_and_comments();
+        if nested.index >= nested.lines.len() {
+            break;
+        }
+        let before = nested.index;
+        let item = nested.parse_flow_item_until_indent(0).unwrap_or_else(|| {
+            let stmt = FlowItem::Stmt(parse_stmt(nested.current().text.trim()));
+            nested.index += 1;
+            stmt
+        });
+        items.push(item);
+        if nested.index == before {
+            nested.index += 1;
+        }
+    }
+    if items.is_empty() && !body.trim().is_empty() {
+        items.push(parse_inline_await_branch_item(body.trim()));
+    }
+    items
 }
 
 fn parse_inline_await_branch_item(body: &str) -> FlowItem {
@@ -2117,6 +2287,7 @@ fn is_typed_stmt(trimmed: &str) -> bool {
                 | "match"
                 | "if"
                 | "return"
+                | "out"
                 | "goto"
                 | "spawn"
                 | "defer"
@@ -2140,6 +2311,9 @@ fn parse_stmt(trimmed: &str) -> Stmt {
     }
     if let Some(expr) = trimmed.strip_prefix("return ") {
         return Stmt::Return(parse_expr_lossy(expr.trim()));
+    }
+    if let Some(expr) = trimmed.strip_prefix("out ") {
+        return Stmt::Out(parse_expr_lossy(expr.trim()));
     }
     if let Some(expr) = trimmed.strip_prefix("goto ") {
         return Stmt::Goto(parse_expr_lossy(expr.trim()));

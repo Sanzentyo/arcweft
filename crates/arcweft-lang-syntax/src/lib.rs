@@ -300,7 +300,7 @@ alice(voice=auto, face=smile):
 with:
     at(0.42s): alice.stage.face(worried)
     cancel on input .SkipLine => continue
-    return (actor, voice)
+    out (actor, voice)
 ",
         )
         .expect("speaker line with line plan parses");
@@ -314,7 +314,7 @@ with:
         let plan = line.plan().expect("line plan");
         assert!(matches!(&plan.items()[0], LinePlanItem::TimedCue { .. }));
         assert!(matches!(&plan.items()[1], LinePlanItem::CancelRule(_)));
-        assert!(matches!(&plan.items()[2], LinePlanItem::Return(_)));
+        assert!(matches!(&plan.items()[2], LinePlanItem::Out(_)));
     }
 
     #[test]
@@ -856,7 +856,7 @@ alice:
 with:
     reveal = voice
     let voice = line.voice_handle()
-    return (actor, voice)
+    out (actor, voice)
 ",
         )
         .expect("line plan exprs parse");
@@ -878,7 +878,7 @@ with:
         ));
         assert!(matches!(
             &plan.items()[2],
-            LinePlanItem::Return(Expr::Tuple(_))
+            LinePlanItem::Out(Expr::Tuple(_))
         ));
     }
 
@@ -914,7 +914,7 @@ with:
         let tree = parse_source(
             r"
 flow #flow.loading loading {
-    await load_opening_assets()? with { pending p => scene #scene.loading { progress p.ratio } }
+    try await load_opening_assets() with { pending p => scene #scene.loading { progress p.ratio } }
 }
 ",
         )
@@ -926,8 +926,11 @@ flow #flow.loading loading {
         let FlowItem::AwaitWith(await_with) = &flow.body()[0] else {
             panic!("expected await with");
         };
-        assert!(await_with.propagates_error());
-        assert!(matches!(await_with.expr(), Expr::Call { .. }));
+        assert!(await_with.applies_try());
+        assert!(matches!(
+            await_with.expr(),
+            Expr::Call { .. } | Expr::MethodCall { .. }
+        ));
         let pending = await_with.pending().expect("pending branch");
         assert_eq!(pending.kind(), AwaitBranchKind::Pending);
         assert!(matches!(pending.body()[0], FlowItem::ScenarioCommand(_)));
@@ -938,7 +941,7 @@ flow #flow.loading loading {
         let tree = parse_source(
             r"
 flow #flow.loading loading {
-    await load_avatar()? with {
+    await load_avatar() with {
         pending p => scene #scene.loading { progress p.ratio }
         ready img => Image(img)
         error _ => Icon(#asset.avatar_fallback)
@@ -970,6 +973,77 @@ flow #flow.loading loading {
             &hir.flows()[0].body()[0],
             HirFlowItem::Await(await_with) if await_with.branches().len() == 4
         ));
+    }
+
+    #[test]
+    fn try_await_accepts_indented_with_block() {
+        let tree = parse_source(
+            r"
+flow #flow.loading loading {
+    try await asset.image(#asset.bg.room) with:
+        pending p:
+            scene #scene.loading:
+                progress p.ratio
+}
+",
+        )
+        .expect("try await with colon block parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::AwaitWith(await_with) = &flow.body()[0] else {
+            panic!("expected await with");
+        };
+        assert!(await_with.applies_try());
+        assert!(matches!(
+            await_with.expr(),
+            Expr::Call { .. } | Expr::MethodCall { .. }
+        ));
+        let pending = await_with.pending().expect("pending branch");
+        assert_eq!(pending.body().len(), 1);
+        assert!(matches!(pending.body()[0], FlowItem::ScenarioCommand(_)));
+    }
+
+    #[test]
+    fn await_question_prefix_is_try_await_sugar() {
+        let tree = parse_source(
+            r"
+flow #flow.loading loading {
+    await? asset.image(#asset.bg.room) with { pending p => scene #scene.loading }
+}
+",
+        )
+        .expect("await? prefix sugar parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::AwaitWith(await_with) = &flow.body()[0] else {
+            panic!("expected await with");
+        };
+        assert!(await_with.applies_try());
+        assert!(matches!(
+            await_with.expr(),
+            Expr::Call { .. } | Expr::MethodCall { .. }
+        ));
+    }
+
+    #[test]
+    fn await_question_with_is_rejected_as_ambiguous() {
+        let errors = parse_source(
+            r"
+flow #flow.loading loading {
+    await load_opening_assets()? with { pending p => scene #scene.loading }
+}
+",
+        )
+        .expect_err("ambiguous await propagation is rejected");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message().contains("await expr? with"))
+        );
     }
 
     #[test]
@@ -1144,7 +1218,7 @@ flow #flow.borrow borrow {
             r"
 flow #flow.borrow borrow {
     borrow bg.pixels() as pixels: &'asset [Rgba8] {
-        await load_avatar()? with { pending p => scene #scene.loading { progress p.ratio } }
+        try await load_avatar() with { pending p => scene #scene.loading { progress p.ratio } }
     }
 }
 ",
@@ -1180,7 +1254,7 @@ flow #flow.borrow borrow {
             r"
 flow #flow.borrow borrow {
     let pixels: &'asset [Rgba8] = bg.pixels()
-    await load_avatar()? with { pending p => scene #scene.loading { progress p.ratio } }
+    try await load_avatar() with { pending p => scene #scene.loading { progress p.ratio } }
 }
 ",
         )
@@ -1376,7 +1450,7 @@ flow #flow.opening opening {
         let tree = parse_source(
             r"
 flow #flow.loading loading {
-    await load_avatar()? with {
+    try await load_avatar() with {
         pending p => scene #scene.loading { progress p.ratio }
         ready img => Image(img)
         error _ => Icon(#asset.avatar_fallback)
@@ -1411,7 +1485,7 @@ flow #flow.loading loading {
 flow #flow.opening opening {
     @bg #asset.bg.room fade=300ms
     let (actor, (_, voice)) = alice.say()[聞いて。[p]]
-    await load_opening_assets()? with { pending p => scene #scene.loading { progress p.ratio } }
+    try await load_opening_assets() with { pending p => scene #scene.loading { progress p.ratio } }
     alice[
         今日は｜変な夢《へんなゆめ》を見たんだ。[p]
     ]
@@ -1434,7 +1508,7 @@ flow #flow.opening opening {
                 .any(|item| matches!(item, HirFlowItem::Stmt(Stmt::Let { .. })))
         );
         assert!(flow.body().iter().any(
-            |item| matches!(item, HirFlowItem::Await(await_with) if await_with.propagates_error())
+            |item| matches!(item, HirFlowItem::Await(await_with) if await_with.applies_try())
         ));
         assert!(flow.body().iter().any(
             |item| matches!(item, HirFlowItem::Dialogue(dialogue) if dialogue.callee() == "alice")
@@ -1511,7 +1585,7 @@ alice[
 flow #flow.opening opening {
     @show alice normal at=right fade=220ms
     let (actor, (_, voice)) = alice.say(voice=auto)[聞いて。[p]]
-    await load_opening_assets()? with { pending p => scene #scene.loading { progress p.ratio } }
+    try await load_opening_assets() with { pending p => scene #scene.loading { progress p.ratio } }
     alice[
         #[fmt("夢", color=blue)]を見た。[p]
     ]

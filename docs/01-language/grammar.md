@@ -1,339 +1,127 @@
-# 文法サマリ
+# Grammar Summary: Control Flow and Patterns
 
-この章は Arcweft parser 実装時の grammar 草案である。詳細な意味論は各章を参照する。
+This is a grammar summary for the updated control-flow subset.
 
-関連:
-
-- [構文概要](syntax.md)
-- [ID と参照](ids-and-references.md)
-- [関数、パイプ、カリー化](functions-and-pipeline.md)
-- [Flow-Integrated Scenario Syntax](scenario-surface-syntax.md)
-- [Dialogue Character Methods, TextBox Targets, Interpolation, and Preload](dialogue-character-methods-and-textbox.md)
-- [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](dialogue-calls-scopes-cancellation.md)
-- [Dialogue Content Calls, `with:` Blocks, Line Return Values, and Scoped Handles](dialogue-line-handles-and-returns.md)
-- [Object Hooks / Memoization](hooks-and-memoization.md)
-- [契約プログラミング](contracts.md)
-- [入力パース](parsing.md)
-
----
-
-## Core grammar
-
-```ebnf
-module      := "mod" path
-use_item    := visibility? ("lazy" | "eager")? "use" use_tree
-visibility  := "pub" | "pub(crate)" | "pub(super)"
-
-item        := visibility? (
-                fn
-              | task_fn
-              | flow
-              | reducer
-              | state
-              | enum
-              | struct
-              | component
-              | shader
-              | parser
-              | signal
-              | test
-              | bench
-              | hook_item
-              | memo_fn
-              | character_item
-              | textbox_item
-              | layer_item
-              )
-
-entity_ref  := "#" ident_path | "#<" ref_body ">"
-wiki_link   := "[[" link_body "]]"
-attribute   := "@" ident generic_args? "(" args? ")"
-
-type        := ident generic_args?
-             | "Ref" "<" type ">"
-             | "Result" "<" type "," type ">"
-             | "Option" "<" type ">"
-             | "Need" "<" type "," type ">"
-
-generic_args:= "<" type_list ">"
-
-expr        := literal
-             | entity_ref
-             | path
-             | call
-             | method_call
-             | content_call
-             | pipe
-             | lambda
-             | placeholder
-             | match
-             | block
-
-content_call := method_call content_block line_plan_block?
-              | call content_block line_plan_block?
-
-pipe        := expr "|>" expr
-placeholder := "_" | "^"
-
-await_with  := "await" expr ("?")? "with" block
-
-contract    := requires | ensures | invariant | modifies | effects | decreases
-requires    := "requires" contract_mode? expr
-ensures     := "ensures" contract_mode? expr
-```
-
----
-
-## ID ambiguity rules
+## Statement / expression list
 
 ```text
-- `<...>` is for generics.
-- Entity references use `#foo.bar` or `#<foo.bar>`.
-- `#foo.bar.baz` is read as one entity path.
-- Use `#<foo.bar>.method()` or `(#foo.bar).method()` for member access on an EntityRef.
-- `#` is not an option-list marker.
-- `^` is the pipe-left placeholder.
-- `_` is the lambda / partial-application placeholder.
+BlockExpr      := '{' Item* FinalExpr? '}'
+StatementBlock := '{' Item* '}' | ':' Newline IndentedItems
+Item           := LetStmt | LetElseStmt | ExprStmt | ControlStmt | ScenarioStmt
+ExprStmt       := Expr (';')?
 ```
 
----
+Newlines separate statements. Semicolons are optional separators and explicit value-discard markers.
 
-## Flow-integrated dialogue grammar
+## If
 
-Arcweft does not define a separate `script` item. Concise visual-novel syntax is part of `flow_body`. There is no script-lowering phase.
+```text
+IfExpr := 'if' Expr BlockExpr ('else' (IfExpr | BlockExpr))?
+IfLet  := 'if' 'let' Pattern '=' Expr Guard? BlockExpr ('else' (IfExpr | BlockExpr))?
+Guard  := 'when' Expr
+```
 
-```ebnf
-flow        := visibility? "flow" entity_ref ident? param_list? return_type? contract* block
-flow_body   := "{" flow_item* "}"
-flow_item   := typed_stmt
-             | scenario_command
-             | speaker_line
-             | character_content_call
-             | choice_block
-             | include_fragment
-             | line_plan_attachment
+Value-producing `if` requires `else`.
 
-scenario_command := "@" ident scenario_args?
+## Match
 
-character_content_call := character_expr "." "say" call_args? content_block line_plan_attachment?
-                        | speaker_expr call_args? content_block line_plan_attachment?
-character_expr := ident | entity_ref | "(" entity_ref ")"
+```text
+MatchExpr := 'match' Expr '{' MatchArm* '}'
+MatchArm  := Pattern Guard? '=>' (Expr | BlockExpr)
+Guard     := 'when' Expr
+```
 
-speaker_expr := ident | entity_ref | "(" entity_ref ")"
-              ; ident may resolve to Ref<Character> or SpeakerPreset
-speaker_line := speaker_expr call_args? ":" dialogue_inline line_plan_attachment?
-              | speaker_expr call_args? ":" newline indent dialogue_body dedent line_plan_attachment?
-              | speaker_expr call_args? ":[" dialogue_body "]" line_plan_attachment?
-              | speaker_expr call_args? content_block line_plan_attachment?
+## Loop / while / for
 
-line_plan_attachment := "with" line_plan_block
-                      | line_plan_block_compat
-line_plan_block_compat := "{" line_plan_item* "}"  ; accepted after content calls, formatted as with
+```text
+LoopExpr  := 'loop' BlockExpr
+WhileStmt := 'while' Expr StatementBlock
+WhileLet  := 'while' 'let' Pattern '=' Expr Guard? StatementBlock
+ForStmt   := 'for' Pattern 'in' Expr StatementBlock
+```
 
-choice_block := "@choice" entity_ref? "{" choice_option* "}"
-choice_option := entity_ref? string ("if" expr)? "->" entity_ref
+`loop` may be value-producing through `break expr`. `while` and `for` return `Unit`.
 
-include_fragment := "include" entity_ref
+## Break / continue
+
+```text
+BreakStmt    := 'break' Expr?
+ContinueStmt := 'continue'
+```
+
+`break expr` is allowed only in `loop`.
+
+## Let and let-else
+
+```text
+LetStmt     := 'let' Pattern '=' Expr
+LetElseStmt := 'let' Pattern '=' Expr 'else' DivergingBlock
+```
+
+`DivergingBlock` must leave the current continuation.
+
+## Patterns
+
+```text
+Pattern :=
+    '_'
+  | Ident
+  | 'mut' Ident
+  | Literal
+  | EntityRef
+  | TuplePattern
+  | RecordPattern
+  | VariantPattern
+  | ListPattern
+  | Ident '@' Pattern
+
+TuplePattern  := '(' Pattern (',' Pattern)* ')'
+RecordPattern := TypePath? '{' FieldPattern* '..'? '}'
+FieldPattern  := Ident | Ident ':' Pattern
+VariantPattern:= ('.' Ident | TypePath '::' Ident) VariantPayload?
+ListPattern   := '[' Pattern* RestPattern? ']'
+RestPattern   := '..' Ident?
 ```
 
 Examples:
 
 ```awft
-alice: おはよう。[p]
-
-alice(id=#say.opening.001, face=smile, voice=auto):
-    おはよう。[p]
-
-alice.say(id=#say.opening.001, voice=auto)[
-    おはよう。[p]
-]
-with {
-    at(0.42s) { alice.stage.face(worried) }
-}
-
-alice(voice=auto):
-    おはよう。[p]
-with {
-    at(0.42s) { alice.stage.face(worried) }
-}
+.Some(route)
+.Err(e)
+.ChoiceSelected { id }
+TruckResult { score, rank, .. }
+ev @ .ChoiceSelected { id }
+[first, ..rest]
 ```
 
-`alice(args): text` is sugar for `alice.say(args)[text]`. If `alice(args)` appears in expression position, it creates a `SpeakerPreset` instead of displaying text:
-
-```awft
-let alice2 = alice(face=smile, voice=auto)
-alice2: おはよう。[p]
-```
-
----
-
-## Dialogue call and line plan blocks
-
-```ebnf
-call_args   := "(" args? ")"
-content_block := "[" dialogue_token* "]"
-line_plan_block := "{" line_plan_item* "}"
-                 | ":" newline indent line_plan_item* dedent
-line_plan_item := line_option
-                | return_stmt
-                | cancel_rule
-                | timed_cue
-                | start_group
-                | together_group
-                | let_stmt
-                | assert_stmt
-                | memo_line_stmt
-
-start_group := "start" block
-together_group := "together" block
-
-timed_cue := "at" "(" timeline_anchor ")" cue_content_block
-cue_content_block := "{" cue_stmt* "}"
-                   | ":" newline indent cue_stmt* dedent
-                   | ":" cue_stmt
-
-cancel_rule := "cancel" "on" cancel_trigger cancel_action
-
-line_option := ident "=" expr
-memo_line_stmt := "memo" ident memo_opts?
-return_stmt := "return" expr
-```
-
-Compatibility: older `at(...)[...]` cue blocks are accepted by the parser but formatted as `at(...) { ... }`.
-
----
-
-## Dialogue-text mode grammar
-
-`[...]` tags are special only in dialogue text mode.
-
-```ebnf
-dialogue_inline := dialogue_token*
-dialogue_body   := dialogue_token*
-
-dialogue_token  := text_chunk
-                 | dialogue_tag
-                 | dialogue_end_tag
-                 | dialogue_expr
-                 | format_expr
-                 | ruby_natural
-                 | escaped_char
-
-dialogue_tag    := "[" tag_name tag_attrs? "]"
-dialogue_end_tag:= "[/" tag_name "]"
-dialogue_expr   := "#[" expr "]"
-format_expr     := "fmt" "(" expr ("," format_arg)* ")"
-ruby_natural    := "｜" ruby_base "《" ruby_text "》"
-escaped_char    := "\\" ("[" | "]" | "#" | "\\" | "｜" | "《" | "》" | ":" | "{" | "}")
-
-tag_name        := ident
-```
-
-Reserved tag names include:
+## Try operator and await
 
 ```text
-p, l, r, br, w, ruby, voice, face, pose, show, hide, move,
-anim, hook, call, at, signal, if, else, endif, raw, fmt
+TryExpr      := Expr '?'
+AwaitExpr    := 'await' Expr AwaitPendingBlock?
+TryAwaitExpr := 'try' 'await' Expr AwaitPendingBlock?
+TryAwaitExpr := 'await?' Expr AwaitPendingBlock?
+AwaitPendingBlock := 'with' ':' Newline AwaitCase+
+                   | 'with' '{' AwaitCase* '}'
 ```
 
----
+`expr?` is the ordinary Rust-like postfix try operator for `Result` and `Option` expressions. `await` returns `Result<T, E>`. `try await` returns `T` and propagates errors using the same semantics as `(await ...)?`.
+`await? expr with:` is sugar for `try await expr with:`.
+The brace form is syntax sugar for the indentation form; formatters should prefer `with:` in hand-written code.
 
-## Hooks and memoization grammar
+Only the following await grouping is rejected for ambiguity:
 
-```ebnf
-hook_item   := visibility? "hook" entity_ref hook_target hook_phase hook_check? block
-hook_target := "on" ("query" type | entity_ref | hook_selector)
-hook_phase  := "phase" ident
-hook_check  := "check" ("before" ident
-              | "after" ident
-              | "every" "frame"
-              | "on" "event"
-              | "on" "change" expr
-              | "every" int "frames"
-              | "throttle" duration
-              | "debounce" duration
-              | "once"
-              | "until" expr)
-
-memo_fn     := "memo" "fn" fn_signature memo_opts? block
-memo_let    := "memo" "let" ident "=" expr memo_opts?
-memo_block  := "memo" ident? memo_opts? block
-memo_opts   := ("cache" ident)? ("key" expr_list)? memo_policy_block?
+```text
+'await' Expr '?' AwaitPendingBlock
 ```
 
----
+Use `try await Expr AwaitPendingBlock`, `await? Expr AwaitPendingBlock`, or the explicit parenthesized form instead.
 
-## Layer grammar
+## Never
 
-```ebnf
-layer_item  := visibility? "layer" entity_ref ":" ident layer_options? block
-layer_options := ("z" "=" int)? ("input" "=" ident)? ("hit_test" "=" ident)?
-scene_layer := "layer" entity_ref block
+```text
+NeverType := '!'
+DivergingExpr := ReturnStmt | GotoStmt | BreakStmt | ContinueStmt | PanicStmt | FailStmt
 ```
 
----
-
-## Example
-
-```awft
-alice.say(id=#say.opening.dream_hint, voice=auto)[
-    今日は少しだけ、#[fmt("変な夢", color=rgb("#a8b5ff"))]を見たんだ。[p]
-]
-with {
-    at(0.42s) { alice.stage.face(worried, crossfade=120ms) }
-}
-
-hook #hook.choice_visible
-on #choice.opening.listen
-phase AfterLayout
-check every frame
-{
-    signal #signal.choice_visible <- true
-}
-
-memo fn route_title(route: Ref<Flow>) -> String
-cache session
-{
-    registry.flow(route).title
-}
-```
-
-
----
-
-## Line result and handle destructuring grammar
-
-Line plans may return values. The returned value is matched by normal pattern grammar.
-
-```ebnf
-let_stmt    := "let" pattern "=" expr
-pattern     := ident
-             | "_"
-             | "(" pattern ("," pattern)* ")"
-             | struct_pattern
-
-line_expr   := character_content_call
-             | speaker_line
-```
-
-Examples:
-
-```awft
-let (actor, voice) = alice.say(voice=auto)[聞いて。[p]]
-with:
-    let actor = alice.stage.acquire(scope=line)
-    let voice = line.voice_handle()
-    return (actor, voice)
-```
-
-`_` in a pattern explicitly discards the matched value. If the discarded value is a `ScopedHandle`, its drop policy runs immediately after destructuring.
-
-```awft
-let (_, cue) = alice[おはよう。[p]]
-with:
-    let actor = alice.stage.acquire(scope=line)
-    let cue = at(0.42s): actor.face(smile)
-    return (actor, cue)
-```
-
-The discarded actor lease is released immediately. The scheduled cue remains owned by `cue`.
+`!` coerces to any expected type. Diagnostics should normally say "this branch never returns" rather than exposing bottom-type theory to non-expert users.

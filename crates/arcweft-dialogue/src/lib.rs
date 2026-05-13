@@ -81,7 +81,7 @@ pub struct LinePlan {
     steps: Vec<LinePlanStep>,
     cancel_rules: Vec<CancelRule>,
     cancel_scopes: Vec<CancelScope>,
-    returns: Option<ReturnPayload>,
+    output: Option<OutPayload>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -126,12 +126,12 @@ pub enum InputEventKind {
 pub enum CancelAction {
     Continue,
     Goto(PublicId),
-    Return(ReturnPayload),
+    Out(OutPayload),
     Cancelled(String),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ReturnPayload {
+pub enum OutPayload {
     Unit,
     Expr(PlanExpr),
 }
@@ -201,7 +201,7 @@ pub enum LineExit {
     Continue,
     Cancelled(String),
     Goto(PublicId),
-    Return(ReturnPayload),
+    Out(OutPayload),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -218,7 +218,7 @@ pub struct LinePlanBuilder {
     cues: Vec<TimelineCue>,
     steps: Vec<LinePlanStep>,
     cancel_rules: Vec<CancelRule>,
-    returns: Option<ReturnPayload>,
+    output: Option<OutPayload>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -519,13 +519,13 @@ impl LinePlan {
             steps: steps.into(),
             cancel_rules: Vec::new(),
             cancel_scopes: Vec::new(),
-            returns: None,
+            output: None,
         }
     }
 
     #[must_use]
-    pub fn with_return(mut self, value: PlanExpr) -> Self {
-        self.returns = Some(ReturnPayload::Expr(value));
+    pub fn with_out(mut self, value: PlanExpr) -> Self {
+        self.output = Some(OutPayload::Expr(value));
         self
     }
 
@@ -551,8 +551,8 @@ impl LinePlan {
         &self.cancel_rules
     }
 
-    pub const fn returns(&self) -> Option<&ReturnPayload> {
-        self.returns.as_ref()
+    pub const fn output(&self) -> Option<&OutPayload> {
+        self.output.as_ref()
     }
 }
 
@@ -616,8 +616,8 @@ impl DialogueLineBuilder {
     }
 
     #[must_use]
-    pub fn return_payload(mut self, payload: ReturnPayload) -> Self {
-        self.plan = self.plan.return_payload(payload);
+    pub fn out_payload(mut self, payload: OutPayload) -> Self {
+        self.plan = self.plan.out_payload(payload);
         self
     }
 
@@ -642,7 +642,7 @@ impl LinePlanBuilder {
             cues: Vec::new(),
             steps: Vec::new(),
             cancel_rules: Vec::new(),
-            returns: None,
+            output: None,
         }
     }
 
@@ -678,8 +678,8 @@ impl LinePlanBuilder {
     }
 
     #[must_use]
-    pub fn return_payload(mut self, payload: ReturnPayload) -> Self {
-        self.returns = Some(payload);
+    pub fn out_payload(mut self, payload: OutPayload) -> Self {
+        self.output = Some(payload);
         self
     }
 
@@ -689,7 +689,7 @@ impl LinePlanBuilder {
             steps: self.steps,
             cancel_rules: self.cancel_rules,
             cancel_scopes: Vec::new(),
-            returns: self.returns,
+            output: self.output,
         }
     }
 }
@@ -756,7 +756,7 @@ mod tests {
     use core::time::Duration;
 
     #[test]
-    fn models_speaker_preset_and_line_plan_return() {
+    fn models_speaker_preset_and_line_plan_out() {
         let alice =
             SpeakerRef::new(PublicId::try_new("character.alice").expect("valid speaker id"));
         let textbox = TextBoxRef::new(PublicId::try_new("textbox.side").expect("valid textbox id"));
@@ -814,7 +814,7 @@ mod tests {
         };
 
         let plan =
-            LinePlan::new([actor, face0, timed_face, voice]).with_return(PlanExpr::Tuple(vec![
+            LinePlan::new([actor, face0, timed_face, voice]).with_out(PlanExpr::Tuple(vec![
                 PlanExpr::Name("actor".to_owned()),
                 PlanExpr::Tuple(vec![
                     PlanExpr::Name("face0".to_owned()),
@@ -835,7 +835,7 @@ mod tests {
         assert_eq!(line.options().face.as_ref(), Some(&smile));
         assert!(matches!(line.options().voice, Some(VoiceRef::Auto)));
         assert_eq!(line.plan().steps().len(), 4);
-        assert!(line.plan().returns().is_some());
+        assert!(line.plan().output().is_some());
     }
 
     #[test]

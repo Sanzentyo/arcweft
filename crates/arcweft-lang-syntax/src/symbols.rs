@@ -161,6 +161,7 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
     match stmt {
         Stmt::Let { expr, .. }
         | Stmt::Return(expr)
+        | Stmt::Out(expr)
         | Stmt::Goto(expr)
         | Stmt::Spawn(expr)
         | Stmt::Defer(expr)
@@ -182,7 +183,7 @@ fn collect_line_plan_item(item: &LinePlanItem, uses: &mut Vec<SymbolUse>) {
     match item {
         LinePlanItem::Option { value, .. }
         | LinePlanItem::Let { expr: value, .. }
-        | LinePlanItem::Return(value) => collect_expr(value, uses),
+        | LinePlanItem::Out(value) => collect_expr(value, uses),
         LinePlanItem::TimedCue { anchor, body } => {
             collect_expr(anchor, uses);
             collect_expr(body, uses);

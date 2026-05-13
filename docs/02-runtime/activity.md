@@ -51,7 +51,7 @@ pub activity #activity.truck_game from rust "mini_games/truck" {
 ## Flow usage
 
 ```awft
-let result = await #<activity.truck_game>.run({ seed = state.seed })? with {
+let result = try await #<activity.truck_game>.run({ seed = state.seed }) with {
     pending .Realizing(p) => scene #scene.loading_plugin { progress p.ratio }
     pending .Running(p) => scene #scene.truck_loading { progress p.ratio }
 }

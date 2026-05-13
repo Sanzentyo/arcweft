@@ -69,7 +69,7 @@ pub typeset #typeset.credits typst {
 使用:
 
 ```awft
-let doc = await typeset(#typeset.credits)? with {
+let doc = try await typeset(#typeset.credits) with {
     pending p => scene #scene.loading_typeset { text "組版中"; progress p.ratio }
 }
 

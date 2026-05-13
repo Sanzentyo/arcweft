@@ -173,7 +173,7 @@ Starting capture returns a `Need` and therefore must define a pending UI in a pl
 
 ```awft
 let mic =
-    await capture.microphone(#capture.player_microphone)? with {
+    try await capture.microphone(#capture.player_microphone) with {
         pending p => scene #scene.permission_wait {
             text "マイクの許可を待っています"
             progress p.ratio
@@ -190,7 +190,7 @@ Camera capture is the same:
 
 ```awft
 let cam =
-    await capture.camera(#capture.face_camera)? with {
+    try await capture.camera(#capture.face_camera) with {
         pending p => scene #scene.permission_wait {
             text "カメラの許可を待っています"
             progress p.ratio

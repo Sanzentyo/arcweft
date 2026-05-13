@@ -181,7 +181,7 @@ let (actor, voice) = alice.say(voice=auto)[
 with:
     let actor = alice.stage.acquire(scope=line)
     let voice = line.voice_handle()
-    return (actor, voice)
+    out (actor, voice)
 ```
 
 ---

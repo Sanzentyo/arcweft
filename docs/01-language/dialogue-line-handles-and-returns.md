@@ -175,7 +175,7 @@ with:
 
 ## Line result values
 
-A line plan may return a value. Without an explicit return, the line result is `()`.
+A line plan may export a value with `out`. Without an explicit `out`, the line result is `()`.
 
 ```awft
 let handles = alice.say(voice=auto)[
@@ -184,20 +184,20 @@ let handles = alice.say(voice=auto)[
 with:
     let voice = line.voice_handle()
     let face = alice.stage.face(smile)
-    return (voice, face)
+    out (voice, face)
 ```
 
-The type is inferred from the return expression.
+The type is inferred from the `out` expression.
 
 ```text
-alice.say(...)[...] with: return (voice, face)
+alice.say(...)[...] with: out (voice, face)
   -> (VoiceHandle, StageCueHandle)
 ```
 
 If a cancellation branch can complete the line differently, it must either:
 
 ```text
-- return the same result type,
+- out the same result type,
 - perform non-returning flow control such as goto/return FlowExit,
 - or make the whole expression return Result<R, LineCancel> with try-line syntax.
 ```
@@ -210,9 +210,9 @@ let result = try alice.say(voice=auto)[
 ]
 with:
     cancel on input .SkipLine:
-        return Err(LineCancel::Skipped)
+        out Err(LineCancel::Skipped)
 
-    return Ok(())
+    out Ok(())
 ```
 
 For most visual-novel lines, cancel handlers use `continue`, `goto`, or `return Ok(FlowExit::...)`, so ordinary bindings remain ergonomic.
@@ -238,7 +238,7 @@ with:
     let face1 = at(0.42s):
         line_alice.face(worried, crossfade=120ms)
 
-    return (line_alice, (face0, face1, voice))
+    out (line_alice, (face0, face1, voice))
 ```
 
 `_` explicitly discards a returned value.
@@ -252,7 +252,7 @@ with:
     let face0 = actor.face(smile)
     let face1 = at(0.42s): actor.face(worried)
     let voice = line.voice_handle()
-    return (actor, (face0, face1, voice))
+    out (actor, (face0, face1, voice))
 ```
 
 For plain values, `_` just discards. For scoped handles, `_` runs the handle's drop policy immediately after destructuring. This is intentional: if you do not keep the handle, you explicitly give up ownership and Arcweft cancels or releases it according to its type.
@@ -304,7 +304,7 @@ To persist BGM beyond the line, detach it or use a global scope explicitly.
 let bgm_handle = alice.say()[始まるよ。[p]]
 with:
     let bgm = bgm.play(#bgm.tension, scope=line, drop=fade(300ms))
-    return bgm.detach()
+    out bgm.detach()
 ```
 
 ---
@@ -324,7 +324,7 @@ with:
 // local_color is not visible here.
 ```
 
-Only values returned from the line plan can escape the line. Borrowed values such as `&'frame T` and `&'lease T` cannot be returned or captured across `at`, `await`, `yield`, or cancellation boundaries.
+Only values exported with `out` from the line plan can escape the line. Borrowed values such as `&'frame T` and `&'lease T` cannot be exported or captured across `at`, `await`, `yield`, or cancellation boundaries.
 
 ---
 
@@ -367,7 +367,7 @@ A line result binding may technically shadow a speaker alias:
 ```awft
 let (alice, _) = alice.say()[おはよう。[p]] with:
     let actor = alice.stage.acquire(scope=line)
-    return (actor, ())
+    out (actor, ())
 ```
 
 This is allowed but discouraged, because after the binding `alice` refers to the stage handle, not the speaker alias. The LSP warns by default. Prefer a distinct name:
@@ -375,7 +375,7 @@ This is allowed but discouraged, because after the binding `alice` refers to the
 ```awft
 let (alice_actor, _) = alice.say()[おはよう。[p]] with:
     let actor = alice.stage.acquire(scope=line)
-    return (actor, ())
+    out (actor, ())
 ```
 
 ---
@@ -412,7 +412,7 @@ also becomes the same call.
 ```awft
 let (_, cue) = alice.say()[おはよう。[p]] with:
     let cue = at(0.42s): alice.stage.face(smile)
-    return (line.voice_handle(), cue)
+    out (line.voice_handle(), cue)
 ```
 
 runs `drop_now` on the discarded voice handle immediately after destructuring, while `cue` remains owned by the surrounding scope.

@@ -4,6 +4,8 @@
 - [非同期・scheduler・Need](async-scheduler.md)
 - [Device Streams / Generator Policy](device-streams.md)
 - [Streams, Generators, and Live Device Sources](streams-generators.md)
+- [Control Flow Runtime Notes](control-flow-runtime.md)
+- [Error Diagnostics, Context, and Script Stack Traces](error-diagnostics-stacktrace.md)
 - [Layered input runtime](layered-input.md)
 - [Runtime Hooks and Memoization](hooks-memoization.md)
 - [Activity model](activity.md)

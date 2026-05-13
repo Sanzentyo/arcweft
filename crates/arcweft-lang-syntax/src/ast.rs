@@ -3,7 +3,7 @@ use crate::types::{FnSignature, TypeRef};
 use core::ops::Range;
 
 /// Half-open byte range in the original source.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TextRange {
     start: usize,
     end: usize,
@@ -363,6 +363,7 @@ pub struct BorrowBlock {
 pub enum Stmt {
     Let { pattern: Pattern, expr: Expr },
     Return(Expr),
+    Out(Expr),
     Goto(Expr),
     Spawn(Expr),
     Defer(Expr),
@@ -385,11 +386,11 @@ pub enum Pattern {
     Raw(String),
 }
 
-/// `await expr? with { ... }` surface syntax.
+/// `await expr with ...` or `try await expr with ...` wait-view syntax.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AwaitWith {
     expr: Expr,
-    propagates_error: bool,
+    applies_try: bool,
     branches: Vec<AwaitBranch>,
 }
 
@@ -502,7 +503,7 @@ pub enum BlockStyle {
 pub enum LinePlanItem {
     Option { name: String, value: Expr },
     Let { pattern: Pattern, expr: Expr },
-    Return(Expr),
+    Out(Expr),
     CancelRule(CancelRuleSyntax),
     TimedCue { anchor: Expr, body: Expr },
     StartGroup(String),
@@ -1298,14 +1299,10 @@ impl BorrowBlock {
 }
 
 impl AwaitWith {
-    pub(crate) const fn new(
-        expr: Expr,
-        propagates_error: bool,
-        branches: Vec<AwaitBranch>,
-    ) -> Self {
+    pub(crate) const fn new(expr: Expr, applies_try: bool, branches: Vec<AwaitBranch>) -> Self {
         Self {
             expr,
-            propagates_error,
+            applies_try,
             branches,
         }
     }
@@ -1314,8 +1311,8 @@ impl AwaitWith {
         &self.expr
     }
 
-    pub const fn propagates_error(&self) -> bool {
-        self.propagates_error
+    pub const fn applies_try(&self) -> bool {
+        self.applies_try
     }
 
     pub fn branches(&self) -> &[AwaitBranch] {

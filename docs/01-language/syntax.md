@@ -69,7 +69,7 @@ await #<activity.truck_game>.run(input)
 flow 内では、時間のかかる処理に待機時の表示が必須。
 
 ```awft
-let assets = await load_opening_assets()? with {
+let assets = try await load_opening_assets() with {
     pending p => scene #scene.loading {
         text "Openingを準備中"
         progress p.ratio

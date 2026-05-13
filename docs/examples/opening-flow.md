@@ -17,7 +17,7 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
         shader #shader.transition.dissolve
     }
 
-    let assets = await load_opening_assets()? with {
+    let assets = try await load_opening_assets() with {
         pending p => scene #scene.loading { progress p.ratio }
     }
 
@@ -43,7 +43,7 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
             if state |> has_affection_at_least(#character.alice, 3) {
                 Ok(FlowExit::Goto(#flow.alice_intro))
             } else {
-                let result = await #<activity.truck_game>.run({ seed = state.seed })? with {
+                let result = try await #<activity.truck_game>.run({ seed = state.seed }) with {
                     pending .Realizing(p) => scene #scene.loading_plugin { progress p.ratio }
                     pending .Running(p) => scene #scene.truck_loading { progress p.ratio }
                 }

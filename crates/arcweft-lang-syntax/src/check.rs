@@ -254,7 +254,7 @@ impl TypeChecker<'_> {
                 self.check_expr(expr);
                 collect_borrow_lifetimes(pattern, &mut self.active_borrows);
             }
-            Stmt::Return(expr) | Stmt::Close(expr) | Stmt::Expr(expr) => {
+            Stmt::Return(expr) | Stmt::Out(expr) | Stmt::Close(expr) | Stmt::Expr(expr) => {
                 self.check_expr(expr);
             }
             Stmt::Goto(expr) => {
@@ -357,7 +357,7 @@ impl TypeChecker<'_> {
         match item {
             LinePlanItem::Option { value, .. }
             | LinePlanItem::Let { expr: value, .. }
-            | LinePlanItem::Return(value) => {
+            | LinePlanItem::Out(value) => {
                 self.check_expr(value);
             }
             LinePlanItem::TimedCue { anchor, body } => {

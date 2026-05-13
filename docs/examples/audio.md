@@ -32,7 +32,7 @@ pub voice profile #voice.alice.tts {
 flow #flow.voice_demo demo(state: GameState) -> Result<FlowExit, FlowError> {
     command audio.ensure_bgm(#bgm.alice_theme) { section = #music.intro; fade_in = 1s }
 
-    let speech = await tts.speak(#voice.alice.tts, "おはよう。")? with {
+    let speech = try await tts.speak(#voice.alice.tts, "おはよう。") with {
         pending p => scene #scene.loading_voice { progress p.ratio }
     }
 

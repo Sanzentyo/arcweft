@@ -77,7 +77,7 @@ pub trait CooperativeJob {
 flow:
 
 ```awft
-let data = await load()? with {
+let data = try await load() with {
     pending p => scene #scene.loading { progress p.ratio }
 }
 ```

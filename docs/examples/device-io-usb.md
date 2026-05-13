@@ -49,7 +49,7 @@ Use in a flow:
 ```awft
 flow #flow.device_demo device_demo(state: GameState) -> Result<FlowExit, FlowError> {
     let dev =
-        await device.usb(#device.usb.sensor)? with {
+        try await device.usb(#device.usb.sensor) with {
             pending _ => scene #scene.device_wait { text "USBセンサーを接続してください" }
             denied _ => return Ok(FlowExit::Goto(#flow.device_optional))
         }

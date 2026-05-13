@@ -237,7 +237,7 @@ pub bgm #bgm.generated.alice_theme compose {
 生成系は `Need<Result<AudioHandle, AudioError>, TaskError>`。
 
 ```awft
-let bgm = await compose_bgm(#bgm.generated.alice_theme)? with {
+let bgm = try await compose_bgm(#bgm.generated.alice_theme) with {
     pending p => scene #scene.loading_audio { text "BGMを生成中"; progress p.ratio }
 }
 ```
@@ -260,7 +260,7 @@ pub voice profile #voice.alice.tts {
 読み上げ:
 
 ```awft
-let speech = await tts.speak(#voice.alice.tts, "おはよう。")? with {
+let speech = try await tts.speak(#voice.alice.tts, "おはよう。") with {
     pending p => scene #scene.loading_voice { progress p.ratio }
 }
 
