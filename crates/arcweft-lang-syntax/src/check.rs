@@ -702,9 +702,15 @@ impl TypeChecker<'_> {
             LinePlanItem::Assert { expr, .. } => {
                 self.expect_expr_type(expr, &TypeKind::Bool, "line-plan assertion");
             }
-            LinePlanItem::StartGroup(_)
-            | LinePlanItem::TogetherGroup(_)
-            | LinePlanItem::Memo(_) => {}
+            LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
+                for item in items {
+                    self.check_line_plan_item(item);
+                }
+            }
+            LinePlanItem::Memo(_) => {}
+            LinePlanItem::Expr(expr) => {
+                self.check_expr(expr);
+            }
             LinePlanItem::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
                 "raw line-plan item is not type-checkable: {raw}"
             ))),

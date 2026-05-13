@@ -2333,6 +2333,58 @@ flow #flow.opening opening {
     }
 
     #[test]
+    fn line_plan_parallel_groups_keep_typed_items() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    alice:
+        走って！[p]
+    with {
+        start {
+            together {
+                cue_move()
+                cue_face()
+                cue_se()
+            }
+        }
+    }
+}
+",
+        )
+        .expect("line plan parallel groups parse");
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
+            panic!("expected speaker line");
+        };
+        let plan = line.plan().expect("line plan");
+        let [LinePlanItem::StartGroup(start_items)] = plan.items() else {
+            panic!("expected start group");
+        };
+        let [LinePlanItem::TogetherGroup(together_items)] = start_items.as_slice() else {
+            panic!("expected together group inside start group");
+        };
+        assert_eq!(together_items.len(), 3);
+        assert!(matches!(
+            &together_items[0],
+            LinePlanItem::Expr(Expr::Call { .. })
+        ));
+
+        let hir = lower_to_hir(&tree).expect("line plan parallel groups lower");
+        validate_typecheck_ready(&hir).expect("line plan parallel groups are typecheck-ready");
+        typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new()
+                .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+                .with_function("cue_move", TypeKind::Unit)
+                .with_function("cue_face", TypeKind::Unit)
+                .with_function("cue_se", TypeKind::Unit),
+        )
+        .expect("line plan parallel groups typecheck");
+    }
+
+    #[test]
     fn parses_multiline_timed_cue_body_as_expression() {
         let tree = parse_source(
             r"

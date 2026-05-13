@@ -3028,6 +3028,14 @@ fn is_multiline_timed_cue_header(line: &str) -> bool {
 }
 
 fn parse_line_plan_item(line: &str) -> LinePlanItem {
+    if let Some((head, body)) = split_brace_item(line) {
+        if head == "start" {
+            return LinePlanItem::StartGroup(parse_line_plan_nested_items(body));
+        }
+        if head == "together" {
+            return LinePlanItem::TogetherGroup(parse_line_plan_nested_items(body));
+        }
+    }
     if let Some(rest) = line.strip_prefix("out ") {
         return LinePlanItem::Out(parse_expr_lossy(rest.trim()));
     }
@@ -3063,10 +3071,10 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
         }
     }
     if let Some(rest) = line.strip_prefix("start ") {
-        return LinePlanItem::StartGroup(rest.trim().to_owned());
+        return LinePlanItem::StartGroup(parse_line_plan_nested_items(rest.trim()));
     }
     if let Some(rest) = line.strip_prefix("together ") {
-        return LinePlanItem::TogetherGroup(rest.trim().to_owned());
+        return LinePlanItem::TogetherGroup(parse_line_plan_nested_items(rest.trim()));
     }
     if let Some(rest) = line.strip_prefix("memo ") {
         return LinePlanItem::Memo(rest.trim().to_owned());
@@ -3083,13 +3091,27 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
             expr: parse_expr_lossy(expr.trim()),
         };
     }
-    if let Some((name, value)) = line.split_once('=') {
+    if let Some((name, value)) = split_top_level_equals(line) {
         return LinePlanItem::Option {
             name: name.trim().to_owned(),
             value: parse_expr_lossy(value.trim()),
         };
     }
+    if let Ok(expr) = parse_expr(line) {
+        return LinePlanItem::Expr(expr);
+    }
     LinePlanItem::Raw(line.to_owned())
+}
+
+fn parse_line_plan_nested_items(source: &str) -> Vec<LinePlanItem> {
+    let body = source
+        .trim()
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+        .unwrap_or_else(|| source.trim());
+    parse_line_plan_body(BlockStyle::Brace, body, TextRange::new(0, body.len()))
+        .items()
+        .to_vec()
 }
 
 fn parse_line_plan_cancel_action(action: &str) -> Vec<Stmt> {

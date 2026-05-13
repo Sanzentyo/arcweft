@@ -756,10 +756,11 @@ pub enum LinePlanItem {
     Out(Expr),
     CancelRule(CancelRuleSyntax),
     TimedCue { anchor: Expr, body: Expr },
-    StartGroup(String),
-    TogetherGroup(String),
+    StartGroup(Vec<LinePlanItem>),
+    TogetherGroup(Vec<LinePlanItem>),
     Memo(String),
     Assert { debug: bool, expr: Expr },
+    Expr(Expr),
     Raw(String),
 }
 
