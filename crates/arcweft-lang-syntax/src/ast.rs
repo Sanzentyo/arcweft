@@ -56,6 +56,9 @@ pub enum Item {
     Attribute(Attribute),
     Flow(Flow),
     Function(FunctionItem),
+    Enum(EnumItem),
+    Struct(StructItem),
+    TypeAlias(TypeAliasItem),
     Hook(HookItem),
     MemoFn(MemoFn),
     Parser(ParserItem),
@@ -142,6 +145,48 @@ pub struct FunctionItem {
     signature_text: String,
     contracts: Vec<ContractClause>,
     body: String,
+    range: TextRange,
+}
+
+/// Top-level algebraic data type declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnumItem {
+    visibility: Option<Visibility>,
+    name: String,
+    variants: Vec<EnumVariant>,
+    range: TextRange,
+}
+
+/// One enum variant row, preserving payload syntax for later lowering.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnumVariant {
+    name: String,
+    payload: Option<String>,
+}
+
+/// Top-level struct declaration with typed fields.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StructItem {
+    visibility: Option<Visibility>,
+    name: String,
+    fields: Vec<StructField>,
+    range: TextRange,
+}
+
+/// One `name: Type` struct field.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StructField {
+    name: String,
+    ty: TypeRef,
+}
+
+/// Newtype/type alias declaration with optional `where` contracts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeAliasItem {
+    visibility: Option<Visibility>,
+    name: String,
+    target: TypeRef,
+    where_clauses: Vec<Expr>,
     range: TextRange,
 }
 
@@ -638,6 +683,136 @@ impl FunctionItem {
 
     pub fn body(&self) -> &str {
         &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl EnumItem {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        name: String,
+        variants: Vec<EnumVariant>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            name,
+            variants,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn variants(&self) -> &[EnumVariant] {
+        &self.variants
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl EnumVariant {
+    pub(crate) const fn new(name: String, payload: Option<String>) -> Self {
+        Self { name, payload }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn payload(&self) -> Option<&str> {
+        self.payload.as_deref()
+    }
+}
+
+impl StructItem {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        name: String,
+        fields: Vec<StructField>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            name,
+            fields,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn fields(&self) -> &[StructField] {
+        &self.fields
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl StructField {
+    pub(crate) const fn new(name: String, ty: TypeRef) -> Self {
+        Self { name, ty }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn ty(&self) -> &TypeRef {
+        &self.ty
+    }
+}
+
+impl TypeAliasItem {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        name: String,
+        target: TypeRef,
+        where_clauses: Vec<Expr>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            name,
+            target,
+            where_clauses,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn target(&self) -> &TypeRef {
+        &self.target
+    }
+
+    pub fn where_clauses(&self) -> &[Expr] {
+        &self.where_clauses
     }
 
     pub const fn range(&self) -> &TextRange {

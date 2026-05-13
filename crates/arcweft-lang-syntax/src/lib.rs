@@ -16,10 +16,10 @@ mod types;
 
 pub use ast::{
     Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, ChoiceBlock, ChoiceOption, ContentCall,
-    ContractClause, DialogueToken, EntityRef, Flow, FlowItem, FlowKind, FunctionItem, HookItem,
-    IfBlock, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem,
-    Pattern, ScenarioCommand, SpeakerLine, Stmt, SyntaxTree, TextRange, UseItem, Visibility,
-    WikiLink,
+    ContractClause, DialogueToken, EntityRef, EnumItem, EnumVariant, Flow, FlowItem, FlowKind,
+    FunctionItem, HookItem, IfBlock, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn,
+    ModuleDecl, ParserItem, Pattern, ScenarioCommand, SpeakerLine, Stmt, StructField, StructItem,
+    SyntaxTree, TextRange, TypeAliasItem, UseItem, Visibility, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -449,6 +449,58 @@ pub parser parse_player_command: Parser<PlayerCommand, ParseError> {
         assert!(matches!(&tree.items()[0], Item::Hook(_)));
         assert!(matches!(&tree.items()[1], Item::MemoFn(_)));
         assert!(matches!(&tree.items()[2], Item::Parser(_)));
+    }
+
+    #[test]
+    fn parses_documented_adt_items() {
+        let tree = parse_source(
+            r"
+@derive(Clone, Debug, Format, Serialize, Eq)
+pub enum GameEvent {
+    StartGame,
+    ChoiceSelected { id: Ref<ChoiceOption> },
+}
+
+pub struct SettingsInput {
+    text_speed: f32,
+    master_volume: f32,
+}
+
+pub type PlayerName = String
+where len(self) >= 1
+where len(self) <= 16
+",
+        )
+        .expect("adt items parse");
+
+        assert!(matches!(&tree.items()[0], Item::Attribute(_)));
+        let Item::Enum(event) = &tree.items()[1] else {
+            panic!("expected enum item");
+        };
+        assert_eq!(event.visibility(), Some(Visibility::Public));
+        assert_eq!(event.name(), "GameEvent");
+        assert_eq!(event.variants().len(), 2);
+        assert_eq!(event.variants()[1].name(), "ChoiceSelected");
+        assert_eq!(
+            event.variants()[1].payload(),
+            Some("{ id: Ref<ChoiceOption> }")
+        );
+
+        let Item::Struct(settings) = &tree.items()[2] else {
+            panic!("expected struct item");
+        };
+        assert_eq!(settings.fields().len(), 2);
+        assert_eq!(settings.fields()[0].name(), "text_speed");
+
+        let Item::TypeAlias(alias) = &tree.items()[3] else {
+            panic!("expected type alias item");
+        };
+        assert_eq!(alias.name(), "PlayerName");
+        assert!(matches!(alias.target(), TypeRef::Path(path) if path == "String"));
+        assert_eq!(alias.where_clauses().len(), 2);
+
+        let hir = lower_to_hir(&tree).expect("syntax-only adt items do not block lowering");
+        assert!(hir.flows().is_empty());
     }
 
     #[test]

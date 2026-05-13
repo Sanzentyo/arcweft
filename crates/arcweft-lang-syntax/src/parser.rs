@@ -1,9 +1,10 @@
 use crate::ast::{
     Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, BorrowBlock, CancelRuleSyntax,
-    ChoiceBlock, ChoiceOption, ContentCall, ContractClause, DialogueContent, EntityRef, Flow,
-    FlowInit, FlowItem, FlowKind, FunctionItem, HookItem, IfBlock, Item, LinePlan, LinePlanItem,
-    MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand,
-    SpeakerLine, Stmt, SyntaxTree, TextRange, UseItem, UseMode, Visibility, WikiLink,
+    ChoiceBlock, ChoiceOption, ContentCall, ContractClause, DialogueContent, EntityRef, EnumItem,
+    EnumVariant, Flow, FlowInit, FlowItem, FlowKind, FunctionItem, HookItem, IfBlock, Item,
+    LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem,
+    ScenarioCommand, SpeakerLine, Stmt, StructField, StructItem, SyntaxTree, TextRange,
+    TypeAliasItem, UseItem, UseMode, Visibility, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -100,6 +101,18 @@ impl Parser {
             } else if looks_like_function_item(&trimmed) {
                 if let Some(function) = self.parse_function_item() {
                     items.push(Item::Function(function));
+                }
+            } else if looks_like_enum_item(&trimmed) {
+                if let Some(enum_item) = self.parse_enum_item() {
+                    items.push(Item::Enum(enum_item));
+                }
+            } else if looks_like_struct_item(&trimmed) {
+                if let Some(struct_item) = self.parse_struct_item() {
+                    items.push(Item::Struct(struct_item));
+                }
+            } else if looks_like_type_alias(&trimmed) {
+                if let Some(type_alias) = self.parse_type_alias() {
+                    items.push(Item::TypeAlias(type_alias));
                 }
             } else if looks_like_hook(&trimmed) {
                 if let Some(hook) = self.parse_hook() {
@@ -223,6 +236,92 @@ impl Parser {
             signature_text,
             contracts,
             body,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_enum_item(&mut self) -> Option<EnumItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing enum",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the enum body"],
+            );
+            return None;
+        }
+        let (visibility, rest) = parse_visibility_prefix(head.trim());
+        let name = rest.trim_start().strip_prefix("enum")?.trim();
+        let (name, _) = parse_name_and_tail(name);
+        Some(EnumItem::new(
+            visibility,
+            name.unwrap_or_default(),
+            parse_enum_variants(&body),
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_struct_item(&mut self) -> Option<StructItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing struct",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the struct body"],
+            );
+            return None;
+        }
+        let (visibility, rest) = parse_visibility_prefix(head.trim());
+        let name = rest.trim_start().strip_prefix("struct")?.trim();
+        let (name, _) = parse_name_and_tail(name);
+        Some(StructItem::new(
+            visibility,
+            name.unwrap_or_default(),
+            parse_struct_fields(&body),
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_type_alias(&mut self) -> Option<TypeAliasItem> {
+        let start_line = self.current().clone();
+        let mut raw = start_line.text.clone();
+        let mut end = start_line.end;
+        self.index += 1;
+        while self.index < self.lines.len() {
+            let line = self.current();
+            let trimmed = line.text.trim();
+            if !trimmed.starts_with("where ") {
+                break;
+            }
+            raw.push('\n');
+            raw.push_str(&line.text);
+            end = line.end;
+            self.index += 1;
+        }
+
+        let mut lines = raw.lines().map(str::trim).filter(|line| !line.is_empty());
+        let first = lines.next()?;
+        let (visibility, rest) = parse_visibility_prefix(first);
+        let rest = rest.trim_start().strip_prefix("type")?.trim();
+        let (name, target) = rest.split_once('=')?;
+        let target = parse_type_ref(target.trim()).ok()?;
+        let where_clauses = lines
+            .filter_map(|line| line.strip_prefix("where "))
+            .map(str::trim)
+            .map(parse_expr_lossy)
+            .collect();
+
+        Some(TypeAliasItem::new(
+            visibility,
+            name.trim().to_owned(),
+            target,
+            where_clauses,
             TextRange::new(start_line.start, end),
         ))
     }
@@ -969,6 +1068,21 @@ fn looks_like_function_item(trimmed: &str) -> bool {
     rest.trim_start().starts_with("fn ")
 }
 
+fn looks_like_enum_item(trimmed: &str) -> bool {
+    let (_, rest) = parse_visibility_prefix(trimmed);
+    rest.trim_start().starts_with("enum ")
+}
+
+fn looks_like_struct_item(trimmed: &str) -> bool {
+    let (_, rest) = parse_visibility_prefix(trimmed);
+    rest.trim_start().starts_with("struct ")
+}
+
+fn looks_like_type_alias(trimmed: &str) -> bool {
+    let (_, rest) = parse_visibility_prefix(trimmed);
+    rest.trim_start().starts_with("type ")
+}
+
 fn parse_flow_kind(input: &str) -> Option<(FlowKind, &str)> {
     if let Some(rest) = input.strip_prefix("flow") {
         return Some((FlowKind::Flow, rest.trim_start()));
@@ -1240,6 +1354,41 @@ fn parse_contract_expr_list(source: &str) -> Vec<crate::expr::Expr> {
         .map(str::trim)
         .filter(|item| !item.is_empty())
         .map(parse_expr_lossy)
+        .collect()
+}
+
+fn parse_enum_variants(body: &str) -> Vec<EnumVariant> {
+    body.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| line.trim_end_matches(',').trim())
+        .filter_map(|line| {
+            let name_len = line
+                .char_indices()
+                .take_while(|(_, ch)| ch.is_alphanumeric() || *ch == '_')
+                .map(|(index, ch)| index + ch.len_utf8())
+                .last()?;
+            let name = line[..name_len].to_owned();
+            let payload = line[name_len..].trim();
+            Some(EnumVariant::new(
+                name,
+                (!payload.is_empty()).then(|| payload.to_owned()),
+            ))
+        })
+        .collect()
+}
+
+fn parse_struct_fields(body: &str) -> Vec<StructField> {
+    body.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| line.trim_end_matches(',').trim())
+        .filter_map(|line| {
+            let (name, ty) = line.split_once(':')?;
+            parse_type_ref(ty.trim())
+                .ok()
+                .map(|ty| StructField::new(name.trim().to_owned(), ty))
+        })
         .collect()
 }
 

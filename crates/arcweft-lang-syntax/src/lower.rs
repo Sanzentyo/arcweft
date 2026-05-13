@@ -136,10 +136,13 @@ pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> 
                 Err(err) => errors.push(err),
             },
             Item::Attribute(_)
+            | Item::Enum(_)
             | Item::Function(_)
             | Item::Hook(_)
             | Item::MemoFn(_)
-            | Item::Parser(_) => {}
+            | Item::Parser(_)
+            | Item::Struct(_)
+            | Item::TypeAlias(_) => {}
             Item::Raw(raw) => errors.push(HirLowerError::new(
                 format!("raw top-level item cannot be lowered: {}", raw.head()),
                 Some(raw.range().clone()),
