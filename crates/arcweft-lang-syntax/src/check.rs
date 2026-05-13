@@ -343,12 +343,10 @@ impl TypeChecker<'_> {
                 self.check_flow_items(block.body());
             }
             HirFlowItem::Block(block) => {
-                let outer_locals = self.locals.clone();
-                self.check_flow_items(block.body());
-                self.locals = outer_locals;
+                self.check_scoped_flow_items(block.body());
             }
             HirFlowItem::Scope(block) => {
-                self.check_flow_items(block.body());
+                self.check_scoped_flow_items(block.body());
             }
             HirFlowItem::Include(entity) => {
                 let kind = entity_kind(entity);
@@ -368,6 +366,12 @@ impl TypeChecker<'_> {
                 }
             }
         }
+    }
+
+    fn check_scoped_flow_items(&mut self, items: &[HirFlowItem]) {
+        let outer_locals = self.locals.clone();
+        self.check_flow_items(items);
+        self.locals = outer_locals;
     }
 
     fn check_choice_binding(&mut self, pattern: &Pattern, choice: &crate::lower::HirChoice) {

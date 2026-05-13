@@ -458,6 +458,48 @@ flow #flow.opening opening {
     }
 
     #[test]
+    fn typecheck_rejects_locals_escaping_named_and_bare_scopes() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    scope rain {
+        let scoped_name = true
+    }
+
+    {
+        let block_name = true
+    }
+
+    let from_scope = scoped_name
+    let from_block = block_name
+}
+",
+        )
+        .expect("scope escape fixture parses");
+
+        let hir = lower_to_hir(&tree).expect("scope escape fixture lowers");
+        validate_typecheck_ready(&hir).expect("scope escape fixture is typecheck-ready");
+        let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
+            .expect_err("scoped locals must not escape named or bare lexical scopes");
+        let messages = errors
+            .iter()
+            .map(|error| error.message().to_owned())
+            .collect::<Vec<_>>();
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("unknown symbol `scoped_name`")),
+            "expected scoped_name to be unavailable outside scope, got {messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("unknown symbol `block_name`")),
+            "expected block_name to be unavailable outside block, got {messages:?}"
+        );
+    }
+
+    #[test]
     fn rejects_at_bracket_timed_cue_as_raw_line_plan_item() {
         let tree = parse_source(
             r"
