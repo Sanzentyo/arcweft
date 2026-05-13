@@ -654,6 +654,65 @@ with {
     }
 
     #[test]
+    fn typechecks_dynamic_choice_option_fields_in_for_sugar() {
+        let tree = parse_source(
+            r"
+choice #choice.opening.routes {
+    option route in opening_routes(state) {
+        id = route.choice_id
+        label(id=#text.choice.opening.route) = route.label
+        value = route.target
+        enabled = route.enabled
+        visible = route.visible
+        order = route.order
+
+        ui {
+            disabled_reason = route.disabled_reason
+            badge = route.badge
+        }
+
+        select { out route.target }
+    }
+}
+",
+        )
+        .expect("dynamic choice option fixture parses");
+
+        let hir = lower_to_hir(&tree).expect("dynamic choice option fixture lowers");
+        validate_typecheck_ready(&hir).expect("dynamic choice option fixture is typecheck-ready");
+        let env = TypeCheckEnv::new()
+            .with_symbol("state", TypeKind::Named("GameState".to_owned()))
+            .with_function(
+                "opening_routes",
+                TypeKind::Named("List<RouteChoice>".to_owned()),
+            );
+        typecheck_hir(&hir, &env).expect("dynamic choice option fields typecheck");
+    }
+
+    #[test]
+    fn rejects_dynamic_id_in_compact_choice_arm() {
+        let tree = parse_source(
+            r#"
+choice #choice.opening.routes {
+    route.choice_id "Dynamic label" -> #flow.alice_intro
+}
+"#,
+        )
+        .expect("dynamic compact choice arm is preserved for recovery");
+
+        let hir = lower_to_hir(&tree).expect("choice with dynamic compact arm lowers");
+        let errors =
+            validate_typecheck_ready(&hir).expect_err("dynamic compact arm is not typecheck-ready");
+
+        assert!(
+            errors.iter().any(|error| error
+                .message()
+                .contains("raw expression is not ready for type checking")),
+            "expected raw choice item diagnostic, got {errors:?}"
+        );
+    }
+
+    #[test]
     fn typechecks_choice_plan_structured_bodies() {
         let tree = parse_source(
             r#"

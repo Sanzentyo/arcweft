@@ -3289,6 +3289,10 @@ fn parse_choice_arm_sugar(
         return None;
     }
     let (id, rest) = parse_optional_id_ref(trimmed, base, errors);
+    // Compact arms are registry-visible localization entries, so their leading
+    // option ID must be static. Dynamic option IDs use full `option ... { }`
+    // blocks or `option pattern in expr { id = ... }` sugar.
+    let id = id?;
     let rest = rest.trim();
     let quote_start = rest.find('"')?;
     let quote_end = rest[quote_start + 1..].find('"')? + quote_start + 1;
@@ -3315,7 +3319,7 @@ fn parse_choice_arm_sugar(
         (None, parse_choice_action(&action, base, errors)?)
     };
     let mut option = ChoiceOption::new(
-        id,
+        Some(id),
         label,
         action,
         TextRange::new(base, base + trimmed.len()),

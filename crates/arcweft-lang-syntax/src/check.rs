@@ -793,24 +793,8 @@ impl TypeChecker<'_> {
             if let Some(id) = option.id() {
                 self.expect_entity_kind(id, &EntityKind::ChoiceOption, "choice option id");
             }
-            if let Some(condition) = option.condition() {
-                self.expect_expr_type(condition, &TypeKind::Bool, "choice condition");
-            }
             if let Some(target) = option.target() {
                 self.expect_entity_kind(target, &EntityKind::Flow, "choice target");
-            }
-            match option.action() {
-                crate::ast::ChoiceAction::Out(expr) => {
-                    self.check_expr(expr);
-                }
-                crate::ast::ChoiceAction::SelectBlock(statements) => {
-                    let outer_locals = self.locals.clone();
-                    for stmt in statements {
-                        self.check_stmt(stmt);
-                    }
-                    self.locals = outer_locals;
-                }
-                crate::ast::ChoiceAction::Goto(_) | crate::ast::ChoiceAction::None => {}
             }
         }
         if let Some(plan) = choice.plan() {
@@ -850,9 +834,12 @@ impl TypeChecker<'_> {
                 source,
                 items,
             } => {
-                self.check_expr(source);
+                let source_type = self.check_expr(source);
                 let outer_locals = self.locals.clone();
-                if let Pattern::Raw(raw) = pattern {
+                if let Some(name) = ident_pattern_name(pattern) {
+                    self.locals
+                        .insert(name.to_owned(), iter_item_type(source_type.as_ref()));
+                } else if let Pattern::Raw(raw) = pattern {
                     self.errors.push(TypeCheckError::new(format!(
                         "raw choice for pattern is not type-checkable: {raw}"
                     )));
@@ -876,10 +863,64 @@ impl TypeChecker<'_> {
                     self.locals = outer_locals;
                 }
             }
-            crate::ast::ChoiceItem::Option(_) => {}
+            crate::ast::ChoiceItem::Option(option) => self.check_choice_option(option),
             crate::ast::ChoiceItem::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
                 "raw choice item is not type-checkable: {raw}"
             ))),
+        }
+    }
+
+    fn check_choice_option(&mut self, option: &crate::ast::ChoiceOption) {
+        if let Some(id) = option.id() {
+            if !id.is_relative() {
+                self.expect_entity_kind(id, &EntityKind::ChoiceOption, "choice option id");
+            }
+        }
+        if let Some(id_expr) = option.id_expr() {
+            self.check_expr(id_expr);
+        }
+        if let Some(text_key) = option.label_text_key() {
+            if !text_key.is_relative() {
+                self.expect_entity_kind(text_key, &EntityKind::Text, "choice label text key");
+            }
+        }
+        if let Some(value) = option.value() {
+            self.check_expr(value);
+        }
+        if let Some(enabled) = option.enabled() {
+            self.expect_expr_type(enabled, &TypeKind::Bool, "choice enabled");
+        }
+        if let Some(visible) = option.visible() {
+            self.expect_expr_type(visible, &TypeKind::Bool, "choice visible");
+        }
+        if let Some(order) = option.order() {
+            self.expect_expr_type(order, &TypeKind::Int, "choice order");
+        }
+        if let Some(hotkey) = option.hotkey() {
+            self.check_expr(hotkey);
+        }
+        for field in option.ui_fields() {
+            self.check_expr(field.value());
+        }
+        self.check_choice_action(option.action());
+    }
+
+    fn check_choice_action(&mut self, action: &crate::ast::ChoiceAction) {
+        match action {
+            crate::ast::ChoiceAction::Out(expr) => {
+                self.check_expr(expr);
+            }
+            crate::ast::ChoiceAction::SelectBlock(statements) => {
+                let outer_locals = self.locals.clone();
+                for stmt in statements {
+                    self.check_stmt(stmt);
+                }
+                self.locals = outer_locals;
+            }
+            crate::ast::ChoiceAction::Goto(target) => {
+                self.expect_entity_kind(target, &EntityKind::Flow, "choice target");
+            }
+            crate::ast::ChoiceAction::None => {}
         }
     }
 
@@ -1283,7 +1324,10 @@ impl TypeChecker<'_> {
     }
 
     fn check_dotted_path_target(&mut self, path: &str) -> Option<TypeKind> {
-        let (target, _) = path.rsplit_once('.')?;
+        let (target, field) = path.rsplit_once('.')?;
+        if let Some(field_type) = well_known_field_type(field) {
+            return Some(field_type);
+        }
         self.locals
             .get(target)
             .cloned()
@@ -1560,6 +1604,33 @@ fn ident_pattern_name(pattern: &Pattern) -> Option<&str> {
         Pattern::Ident(name) => Some(name),
         _ => None,
     }
+}
+
+fn iter_item_type(source_type: Option<&TypeKind>) -> TypeKind {
+    match source_type {
+        Some(TypeKind::Named(name)) if name.starts_with("List<") && name.ends_with('>') => {
+            TypeKind::Named(name[5..name.len() - 1].to_owned())
+        }
+        Some(TypeKind::Named(name)) if name.starts_with("Seq<") && name.ends_with('>') => {
+            TypeKind::Named(name[4..name.len() - 1].to_owned())
+        }
+        Some(TypeKind::Named(name)) if name.starts_with("Vec<") && name.ends_with('>') => {
+            TypeKind::Named(name[4..name.len() - 1].to_owned())
+        }
+        _ => TypeKind::Named("ChoiceOptionSource".to_owned()),
+    }
+}
+
+fn well_known_field_type(field: &str) -> Option<TypeKind> {
+    Some(match field {
+        "choice_id" | "id" => TypeKind::Ref(EntityKind::ChoiceOption),
+        "target" => TypeKind::Ref(EntityKind::Flow),
+        "enabled" | "visible" | "ready" => TypeKind::Bool,
+        "order" | "count" | "index" => TypeKind::Int,
+        "ratio" => TypeKind::Float,
+        "label" | "disabled_reason" | "badge" | "hotkey" | "text" => TypeKind::String,
+        _ => return None,
+    })
 }
 
 fn let_else_bindings(pattern: &Pattern, expr_type: Option<&TypeKind>) -> Vec<(String, TypeKind)> {
