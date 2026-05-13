@@ -66,6 +66,7 @@ Syntax parser:
 - Flow `let`/`return`/`goto` statements now lower to structured `Stmt` and `Pattern` values instead of opaque strings.
 - `lower_to_hir` verifies that parsed edge-case flow syntax can be converted to HIR-facing structures and rejects raw syntax that still needs parser coverage.
 - `collect_symbol_uses` walks HIR without reparsing source snippets so name resolution can see dialogue callees, entity references, paths, calls, methods, dialogue text expressions, timed cues, and choice-condition references.
+- `validate_typecheck_ready` rejects lowered HIR that still contains raw expression fragments before the future type checker sees it.
 
 ## Deferred
 

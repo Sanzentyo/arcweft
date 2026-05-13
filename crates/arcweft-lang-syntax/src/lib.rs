@@ -5,6 +5,7 @@
 //! type resolution or runtime semantics.
 
 mod ast;
+mod check;
 mod expr;
 mod lower;
 mod parser;
@@ -16,6 +17,7 @@ pub use ast::{
     HookItem, Item, LinePlan, LinePlanItem, MemoFn, ModuleDecl, ParserItem, Pattern,
     ScenarioCommand, SpeakerLine, Stmt, SyntaxTree, TextRange, UseItem, Visibility, WikiLink,
 };
+pub use check::{TypeCheckReadinessError, validate_typecheck_ready};
 pub use expr::{BinaryOp, Expr, Literal, Placeholder, parse_expr};
 pub use lower::{
     HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirLowerError, HirModule,
@@ -30,7 +32,7 @@ mod tests {
     use super::{
         DialogueToken, Expr, FlowItem, HirFlowItem, Item, LinePlanItem, Pattern, Stmt,
         SymbolUseKind, Visibility, collect_symbol_uses, lower_to_hir, parse_dialogue_tokens,
-        parse_source, parse_stub,
+        parse_source, parse_stub, validate_typecheck_ready,
     };
 
     #[test]
@@ -586,6 +588,23 @@ flow #flow.opening opening {
             uses.iter()
                 .all(|symbol| symbol.kind() != SymbolUseKind::RawExpr)
         );
+        validate_typecheck_ready(&hir).expect("edge fixture is typecheck-ready");
+    }
+
+    #[test]
+    fn typecheck_readiness_rejects_raw_dialogue_expressions() {
+        let tree = parse_source(
+            r#"
+alice[
+    #[fmt("夢", color=)]を見た。[p]
+]
+"#,
+        )
+        .expect("raw dialogue expression fixture parses lossily");
+        let hir = lower_to_hir(&tree).expect("raw dialogue expression still lowers");
+        let errors = validate_typecheck_ready(&hir).expect_err("raw expr blocks type checking");
+
+        assert!(errors[0].message().contains("raw expression"));
     }
 
     #[test]
