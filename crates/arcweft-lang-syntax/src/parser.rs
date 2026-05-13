@@ -3183,7 +3183,7 @@ fn parse_choice_select_action(body: &str) -> ChoiceAction {
     let statements = parse_stmt_lines(body);
     match statements.as_slice() {
         [Stmt::Goto(crate::expr::Expr::EntityRef(target))] => ChoiceAction::Goto(target.clone()),
-        [Stmt::Out(expr)] => ChoiceAction::Out(expr.clone()),
+        [Stmt::Out { expr, .. }] => ChoiceAction::Out(expr.clone()),
         [] => ChoiceAction::None,
         _ => ChoiceAction::SelectBlock(statements),
     }
@@ -4113,14 +4113,38 @@ fn parse_braced_while_let_stmt(head: &str, body: &str) -> Option<Stmt> {
 
 fn parse_control_transfer_stmt(trimmed: &str) -> Option<Stmt> {
     if trimmed == "break" {
-        return Some(Stmt::Break(None));
+        return Some(Stmt::Break {
+            label: None,
+            expr: None,
+        });
     }
-    if trimmed == "continue" {
-        return Some(Stmt::Continue);
+    if let Some(rest) = trimmed.strip_prefix("continue") {
+        if rest.trim().is_empty() {
+            return Some(Stmt::Continue { label: None });
+        }
+        let rest = rest.trim();
+        return parse_label_ref(rest).and_then(|(label, tail)| {
+            tail.trim()
+                .is_empty()
+                .then_some(Stmt::Continue { label: Some(label) })
+        });
+    }
+    if let Some(rest) = trimmed.strip_prefix("out ") {
+        let (label, expr) = split_optional_label_ref(rest.trim());
+        return Some(Stmt::Out {
+            label,
+            expr: parse_expr_lossy(expr.trim()),
+        });
+    }
+    if let Some(rest) = trimmed.strip_prefix("break ") {
+        let (label, expr) = split_optional_label_ref(rest.trim());
+        return Some(Stmt::Break {
+            label,
+            expr: (!expr.trim().is_empty()).then(|| parse_expr_lossy(expr.trim())),
+        });
     }
     [
         ("return ", Stmt::Return as fn(Expr) -> Stmt),
-        ("out ", Stmt::Out),
         ("goto ", Stmt::Goto),
         ("spawn ", Stmt::Spawn),
         ("defer ", Stmt::Defer),
@@ -4130,7 +4154,6 @@ fn parse_control_transfer_stmt(trimmed: &str) -> Option<Stmt> {
         ("bail ", Stmt::Bail),
         ("close ", Stmt::Close),
         ("select ", Stmt::Select),
-        ("break ", build_break_stmt),
     ]
     .into_iter()
     .find_map(|(prefix, build)| {
@@ -4142,8 +4165,19 @@ fn parse_control_transfer_stmt(trimmed: &str) -> Option<Stmt> {
     })
 }
 
-fn build_break_stmt(expr: Expr) -> Stmt {
-    Stmt::Break(Some(expr))
+fn split_optional_label_ref(input: &str) -> (Option<String>, &str) {
+    parse_label_ref(input).map_or((None, input), |(label, tail)| (Some(label), tail))
+}
+
+fn parse_label_ref(input: &str) -> Option<(String, &str)> {
+    let rest = input.strip_prefix('\'')?;
+    let len = rest
+        .char_indices()
+        .take_while(|(_, ch)| *ch == '_' || ch.is_ascii_alphanumeric())
+        .map(|(index, ch)| index + ch.len_utf8())
+        .last()
+        .unwrap_or(0);
+    (len > 0).then(|| (rest[..len].to_owned(), &rest[len..]))
 }
 
 fn parse_stmt_match_arms(body: &str) -> Vec<StmtMatchArm> {

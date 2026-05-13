@@ -350,7 +350,7 @@ with:
             panic!("expected cancel rule");
         };
         assert_eq!(rule.trigger(), "input .SkipLine");
-        assert!(matches!(rule.action(), [Stmt::Continue]));
+        assert!(matches!(rule.action(), [Stmt::Continue { label: None }]));
         assert!(matches!(&plan.items()[2], LinePlanItem::Out(_)));
     }
 
@@ -1770,7 +1770,7 @@ flow #flow.loading loading {
             r"
 flow #flow.opening opening {
     let next = loop {
-        break #flow.title
+        break 'events #flow.title
     }
 
     goto next
@@ -1791,7 +1791,8 @@ flow #flow.title title {
         assert_eq!(pattern, &Pattern::Ident("next".to_owned()));
         assert!(matches!(
             block.body(),
-            [FlowItem::Stmt(Stmt::Break(Some(Expr::EntityRef(entity))))] if entity.body() == "flow.title"
+            [FlowItem::Stmt(Stmt::Break { label: Some(label), expr: Some(Expr::EntityRef(entity)) })]
+                if label == "events" && entity.body() == "flow.title"
         ));
 
         let hir = lower_to_hir(&tree).expect("loop expression fixture lowers");
@@ -1801,7 +1802,8 @@ flow #flow.title title {
         assert_eq!(pattern, &Pattern::Ident("next".to_owned()));
         assert!(matches!(
             block.body(),
-            [HirFlowItem::Stmt(Stmt::Break(Some(Expr::EntityRef(entity))))] if entity.body() == "flow.title"
+            [HirFlowItem::Stmt(Stmt::Break { label: Some(label), expr: Some(Expr::EntityRef(entity)) })]
+                if label == "events" && entity.body() == "flow.title"
         ));
 
         let registry = registry_from_hir(&hir);
@@ -2680,7 +2682,7 @@ flow #flow.opening opening {
         聞いて。[p]
     ]
     with {
-        cancel on input .SkipLine { out .Skipped }
+        cancel on input .SkipLine { out 'line .Skipped }
         cancel on input .BackToTitle => goto #flow.title
     }
 }
@@ -2700,7 +2702,8 @@ flow #flow.opening opening {
         };
         assert!(matches!(
             skip_rule.action(),
-            [Stmt::Out(Expr::Path(path))] if path == ".Skipped"
+            [Stmt::Out { label: Some(label), expr: Expr::Path(path) }]
+                if label == "line" && path == ".Skipped"
         ));
         let LinePlanItem::CancelRule(back_rule) = &plan.items()[1] else {
             panic!("expected back-to-title cancel rule");
@@ -2733,7 +2736,7 @@ flow #flow.opening opening {
         cancel on input .SkipLine {
             stop voice fade=40ms
             flush text instant
-            continue
+            continue 'events
         }
     }
 }
@@ -2753,8 +2756,8 @@ flow #flow.opening opening {
         };
         assert!(matches!(
             rule.action(),
-            [Stmt::Command(stop), Stmt::Command(flush), Stmt::Continue]
-                if stop.name() == "stop" && flush.name() == "flush"
+            [Stmt::Command(stop), Stmt::Command(flush), Stmt::Continue { label: Some(label) }]
+                if stop.name() == "stop" && flush.name() == "flush" && label == "events"
         ));
 
         let hir = lower_to_hir(&tree).expect("line plan cancel commands lower");

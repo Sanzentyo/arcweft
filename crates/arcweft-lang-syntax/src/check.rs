@@ -486,13 +486,13 @@ impl TypeChecker<'_> {
                 ));
             }
             Stmt::Return(expr)
-            | Stmt::Out(expr)
             | Stmt::Close(expr)
             | Stmt::Expr(expr)
             | Stmt::Panic(expr)
             | Stmt::Fail(expr)
             | Stmt::Bail(expr)
-            | Stmt::Select(expr) => {
+            | Stmt::Select(expr)
+            | Stmt::Out { expr, .. } => {
                 self.check_expr(expr);
             }
             Stmt::Ensure { condition, message } => {
@@ -551,8 +551,8 @@ impl TypeChecker<'_> {
                 body,
             } => self.check_stmt_for(pattern, source, body),
             Stmt::Match { expr, arms } => self.check_match_stmt(expr, arms),
-            Stmt::Break(expr) => self.check_break_stmt(expr.as_ref()),
-            Stmt::Continue => self.check_continue_stmt(),
+            Stmt::Break { expr, .. } => self.check_break_stmt(expr.as_ref()),
+            Stmt::Continue { .. } => self.check_continue_stmt(),
             Stmt::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
                 "raw statement is not type-checkable: {raw}"
             ))),
@@ -1579,8 +1579,8 @@ fn stmt_diverges(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Return(_)
         | Stmt::Goto(_)
-        | Stmt::Break(_)
-        | Stmt::Continue
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
         | Stmt::Panic(_)
         | Stmt::Fail(_)
         | Stmt::Bail(_) => true,
@@ -1605,7 +1605,7 @@ fn choice_output_type(choice: &crate::lower::HirChoice) -> Option<TypeKind> {
         let ty = match option.action() {
             crate::ast::ChoiceAction::Out(expr) => simple_expr_type(expr)?,
             crate::ast::ChoiceAction::SelectBlock(statements) => {
-                let [Stmt::Out(expr)] = statements.as_slice() else {
+                let [Stmt::Out { expr, .. }] = statements.as_slice() else {
                     return None;
                 };
                 simple_expr_type(expr)?

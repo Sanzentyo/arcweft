@@ -462,7 +462,6 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
     match stmt {
         Stmt::Let { expr, .. }
         | Stmt::Return(expr)
-        | Stmt::Out(expr)
         | Stmt::Goto(expr)
         | Stmt::Spawn(expr)
         | Stmt::Defer(expr)
@@ -505,7 +504,11 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
                 format!("loop expression with {} body items", block.body().len()),
             ));
         }
-        Stmt::Break(Some(expr)) | Stmt::Select(expr) => collect_expr(expr, uses),
+        Stmt::Break {
+            expr: Some(expr), ..
+        }
+        | Stmt::Select(expr)
+        | Stmt::Out { expr, .. } => collect_expr(expr, uses),
         Stmt::Emit { event, fields } => {
             collect_expr(event, uses);
             for (_, value) in fields {
@@ -545,7 +548,7 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
             collect_stmt_block(body, uses);
         }
         Stmt::Match { expr, arms } => collect_stmt_match(expr, arms, uses),
-        Stmt::Break(None) | Stmt::Continue => {}
+        Stmt::Break { expr: None, .. } | Stmt::Continue { .. } => {}
         Stmt::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
     }
 }

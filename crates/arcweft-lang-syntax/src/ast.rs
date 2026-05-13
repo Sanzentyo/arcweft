@@ -530,7 +530,11 @@ pub enum Stmt {
         block: LoopBlock,
     },
     Return(Expr),
-    Out(Expr),
+    /// `out expr` or `out 'label expr` from a line/cue/content continuation.
+    Out {
+        label: Option<String>,
+        expr: Expr,
+    },
     Goto(Expr),
     Spawn(Expr),
     Defer(Expr),
@@ -590,8 +594,15 @@ pub enum Stmt {
     },
     Close(Expr),
     Select(Expr),
-    Break(Option<Expr>),
-    Continue,
+    /// `break`, `break expr`, or `break 'label expr`.
+    Break {
+        label: Option<String>,
+        expr: Option<Expr>,
+    },
+    /// `continue` or `continue 'label`.
+    Continue {
+        label: Option<String>,
+    },
     Expr(Expr),
     Raw(String),
 }
