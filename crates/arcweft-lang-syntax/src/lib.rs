@@ -3398,6 +3398,73 @@ flow #flow.loading loading {
     }
 
     #[test]
+    fn let_parenthesized_await_with_question_is_try_sugar() {
+        let tree = parse_source(
+            r"
+flow #flow.loading loading {
+    let bg = (await asset.image(#asset.bg.room) with:
+        pending p:
+            p.ratio
+    )?
+    let display = bg.id
+}
+",
+        )
+        .expect("parenthesized await-with try parses");
+
+        let hir = lower_to_hir(&tree).expect("parenthesized await-with lowers");
+        assert!(matches!(
+            &hir.flows()[0].body()[0],
+            HirFlowItem::LetAwait { await_with, .. } if await_with.applies_try()
+        ));
+        let need_type = TypeKind::Need {
+            ready: Box::new(TypeKind::Named("Image".to_owned())),
+            error: Box::new(TypeKind::Named("AssetError".to_owned())),
+        };
+        let env = TypeCheckEnv::new()
+            .with_symbol("asset", TypeKind::Named("AssetApi".to_owned()))
+            .with_method(TypeKind::Named("AssetApi".to_owned()), "image", need_type);
+        typecheck_hir(&hir, &env).expect("parenthesized await-with unwraps Result");
+    }
+
+    #[test]
+    fn let_parenthesized_await_with_context_after_block_typechecks() {
+        let tree = parse_source(
+            r#"
+flow #flow.loading loading {
+    let bg = (await asset.image(#asset.bg.room) with:
+        pending p:
+            p.ratio
+    ).context("opening background failed")?
+    let display = bg.id
+}
+"#,
+        )
+        .expect("post-await context parses");
+
+        let hir = lower_to_hir(&tree).expect("post-await context lowers");
+        assert!(matches!(
+            &hir.flows()[0].body()[0],
+            HirFlowItem::LetAwait { await_with, .. }
+                if await_with.applies_try()
+                    && matches!(await_with.expr(), Expr::MethodCall { method, .. } if method == "context")
+        ));
+        let need_type = TypeKind::Need {
+            ready: Box::new(TypeKind::Named("Image".to_owned())),
+            error: Box::new(TypeKind::Named("AssetError".to_owned())),
+        };
+        let env = TypeCheckEnv::new()
+            .with_symbol("asset", TypeKind::Named("AssetApi".to_owned()))
+            .with_method(
+                TypeKind::Named("AssetApi".to_owned()),
+                "image",
+                need_type.clone(),
+            )
+            .with_method(need_type.clone(), "context", need_type);
+        typecheck_hir(&hir, &env).expect("post-await context remains structured");
+    }
+
+    #[test]
     fn let_try_await_without_wait_view_stays_expression_await() {
         let tree = parse_source(
             r"

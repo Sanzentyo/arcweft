@@ -1316,7 +1316,11 @@ impl Parser {
         } else if trimmed.ends_with("with:") {
             self.index += 1;
             let body = self.take_indented_await_body(indentation(&start_line.text) + 1);
-            (trimmed.to_owned(), Some(body))
+            let closing = self.take_parenthesized_await_closing();
+            (
+                format!("{}{}", trimmed, closing.unwrap_or_default()),
+                Some(body),
+            )
         } else {
             self.take_multiline_let_await_head(&start_line)
         };
@@ -1324,12 +1328,13 @@ impl Parser {
         let rest = head.trim().strip_prefix("let")?.trim();
         let (pattern, await_head) = rest.split_once('=')?;
         let await_source = body.map_or_else(
-            || await_head.trim().to_owned(),
+            || normalize_let_await_source(await_head.trim(), None),
             |body| {
+                let head = normalize_let_await_source(await_head.trim(), None);
                 if body.trim_start().starts_with('{') {
-                    format!("{} {}", await_head.trim(), body)
+                    format!("{head} {body}")
                 } else {
-                    format!("{}\n{}", await_head.trim(), body)
+                    format!("{head}\n{body}")
                 }
             },
         );
@@ -1358,12 +1363,20 @@ impl Parser {
             if trimmed == "with:" {
                 self.index += 1;
                 let body = self.take_indented_await_body(base_indent + 1);
-                return (format!("{head} with:"), Some(body));
+                let closing = self.take_parenthesized_await_closing();
+                return (
+                    format!("{head} with:{}", closing.unwrap_or_default()),
+                    Some(body),
+                );
             }
             if has_standalone_brace_with(trimmed) {
                 let (with_head, body, _, ok) = self.take_brace_block();
                 if ok {
-                    return (format!("{head} {with_head}"), Some(format!("{{ {body} }}")));
+                    let closing = self.take_parenthesized_await_closing();
+                    return (
+                        format!("{head} {with_head}{}", closing.unwrap_or_default()),
+                        Some(format!("{{ {body} }}")),
+                    );
                 }
             }
             if indentation(&line.text) > base_indent || trimmed.starts_with('.') {
@@ -1375,6 +1388,19 @@ impl Parser {
         }
 
         (head, None)
+    }
+
+    fn take_parenthesized_await_closing(&mut self) -> Option<String> {
+        if self.index >= self.lines.len() {
+            return None;
+        }
+        let line = self.current().clone();
+        let trimmed = line.text.trim();
+        if !trimmed.starts_with(')') {
+            return None;
+        }
+        self.index += 1;
+        Some(trimmed.to_owned())
     }
 
     fn has_multiline_await_with(&self, base_indent: usize) -> bool {
@@ -2037,12 +2063,13 @@ impl Parser {
         let mut end = start;
         while self.index < self.lines.len() {
             let line = self.current();
-            if line.text.trim().is_empty() {
+            let trimmed = line.text.trim();
+            if trimmed.is_empty() {
                 raw.push('\n');
                 self.index += 1;
                 continue;
             }
-            if indentation(&line.text) < min_indent {
+            if indentation(&line.text) < min_indent || trimmed.starts_with(')') {
                 break;
             }
             if !raw.is_empty() {
@@ -3870,7 +3897,8 @@ fn is_let_await_with_head(trimmed: &str) -> bool {
     let Some((_, value)) = rest.split_once('=') else {
         return false;
     };
-    is_await_with_head(value.trim())
+    let value = value.trim();
+    is_await_with_head(value) || value.starts_with("(await ") && value.contains(" with")
 }
 
 fn is_let_await_start_head(trimmed: &str) -> bool {
@@ -3881,7 +3909,10 @@ fn is_let_await_start_head(trimmed: &str) -> bool {
         return false;
     };
     let value = value.trim();
-    value.starts_with("await ") || value.starts_with("try await ") || value.starts_with("await? ")
+    value.starts_with("await ")
+        || value.starts_with("try await ")
+        || value.starts_with("await? ")
+        || value.starts_with("(await ")
 }
 
 fn has_inline_brace_await_with(trimmed: &str) -> bool {
@@ -3898,6 +3929,77 @@ fn append_await_head_continuation(head: &mut String, continuation: &str) {
     } else {
         head.push(' ');
         head.push_str(continuation);
+    }
+}
+
+fn normalize_let_await_source(head: &str, trailing: Option<&str>) -> String {
+    let source = trailing.map_or_else(
+        || head.trim().to_owned(),
+        |trailing| format!("{head}{trailing}"),
+    );
+    normalize_parenthesized_await_source(&source).unwrap_or(source)
+}
+
+fn normalize_parenthesized_await_source(source: &str) -> Option<String> {
+    let source = source.trim();
+    let inner = source.strip_prefix('(')?;
+    let (await_part, postfix) = split_parenthesized_await_postfix(inner)?;
+    let postfix = postfix.trim();
+    let applies_try = postfix.ends_with('?');
+    let context_call = postfix.trim_end_matches('?').strip_prefix(".context(");
+    let await_part = await_part.trim();
+    let await_part = await_part.strip_prefix("await ")?;
+    let await_head = context_call
+        .and_then(|args| args.strip_suffix(')'))
+        .map_or_else(
+            || await_part.to_owned(),
+            |args| insert_context_before_await_with(await_part, args),
+        );
+    Some(if applies_try {
+        format!("try await {await_head}")
+    } else {
+        format!("await {await_head}")
+    })
+}
+
+fn split_parenthesized_await_postfix(source: &str) -> Option<(&str, &str)> {
+    let mut depth = 1_i32;
+    let mut in_string = false;
+    let mut escape = false;
+    for (index, ch) in source.char_indices() {
+        if in_string {
+            if escape {
+                escape = false;
+            } else if ch == '\\' {
+                escape = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((&source[..index], &source[index + 1..]));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn insert_context_before_await_with(await_part: &str, args: &str) -> String {
+    let (expr, branches) = split_await_head(await_part);
+    if await_part.contains(" with:") {
+        format!("{}.context({args}) with:{branches}", expr.trim())
+    } else if await_part.contains(" with ") {
+        format!("{}.context({args}) with {branches}", expr.trim())
+    } else {
+        format!("{}.context({args})", expr.trim())
     }
 }
 
