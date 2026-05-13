@@ -933,6 +933,7 @@ impl TypeChecker<'_> {
                 self.check_expr(rhs)
             }
             Expr::Try { expr } => self.check_try_expr(expr),
+            Expr::Await { expr, applies_try } => self.check_await_expr(expr, *applies_try),
             Expr::Range { start, end, .. } => {
                 Some(self.check_range_expr(start.as_deref(), end.as_deref()))
             }
@@ -1083,6 +1084,21 @@ impl TypeChecker<'_> {
             Some(other) => {
                 self.errors.push(TypeCheckError::new(format!(
                     "`?` requires Result<T, E> or Option<T>, found {other:?}"
+                )));
+                None
+            }
+            None => None,
+        }
+    }
+
+    fn check_await_expr(&mut self, expr: &Expr, applies_try: bool) -> Option<TypeKind> {
+        self.reject_active_borrows("await suspension boundary");
+        match self.check_expr(expr) {
+            Some(TypeKind::Need { ready, .. }) if applies_try => Some(*ready),
+            Some(TypeKind::Need { ready, error }) => Some(TypeKind::Result { ok: ready, error }),
+            Some(other) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "await expression must have Need<T, E> type, found {other:?}"
                 )));
                 None
             }

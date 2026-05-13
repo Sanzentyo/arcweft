@@ -635,7 +635,9 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
             collect_expr(rhs, uses);
         }
         Expr::Closure { body, .. } => collect_expr(body, uses),
-        Expr::Unary { expr, .. } | Expr::Try { expr } => collect_expr(expr, uses),
+        Expr::Unary { expr, .. } | Expr::Try { expr } | Expr::Await { expr, .. } => {
+            collect_expr(expr, uses);
+        }
         Expr::Range { start, end, .. } => {
             if let Some(start) = start {
                 collect_expr(start, uses);
@@ -667,32 +669,55 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
             condition,
             then_branch,
             else_branch,
-        } => {
-            collect_expr(condition, uses);
-            collect_expr(then_branch, uses);
-            if let Some(else_branch) = else_branch {
-                collect_expr(else_branch, uses);
-            }
-        }
+        } => collect_if_expr(condition, then_branch, else_branch.as_deref(), uses),
         Expr::IfLet {
             pattern,
             expr,
             guard,
             then_branch,
             else_branch,
-        } => {
-            collect_pattern(pattern, uses);
-            collect_expr(expr, uses);
-            if let Some(guard) = guard {
-                collect_expr(guard, uses);
-            }
-            collect_expr(then_branch, uses);
-            if let Some(else_branch) = else_branch {
-                collect_expr(else_branch, uses);
-            }
-        }
+        } => collect_if_let_expr(
+            pattern,
+            expr,
+            guard.as_deref(),
+            then_branch,
+            else_branch.as_deref(),
+            uses,
+        ),
         Expr::Match { scrutinee, arms } => collect_match_expr(scrutinee, arms, uses),
         Expr::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
+    }
+}
+
+fn collect_if_expr(
+    condition: &Expr,
+    then_branch: &Expr,
+    else_branch: Option<&Expr>,
+    uses: &mut Vec<SymbolUse>,
+) {
+    collect_expr(condition, uses);
+    collect_expr(then_branch, uses);
+    if let Some(else_branch) = else_branch {
+        collect_expr(else_branch, uses);
+    }
+}
+
+fn collect_if_let_expr(
+    pattern: &crate::ast::Pattern,
+    expr: &Expr,
+    guard: Option<&Expr>,
+    then_branch: &Expr,
+    else_branch: Option<&Expr>,
+    uses: &mut Vec<SymbolUse>,
+) {
+    collect_pattern(pattern, uses);
+    collect_expr(expr, uses);
+    if let Some(guard) = guard {
+        collect_expr(guard, uses);
+    }
+    collect_expr(then_branch, uses);
+    if let Some(else_branch) = else_branch {
+        collect_expr(else_branch, uses);
     }
 }
 

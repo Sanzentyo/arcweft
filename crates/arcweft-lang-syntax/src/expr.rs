@@ -47,6 +47,10 @@ pub enum Expr {
     Try {
         expr: Box<Expr>,
     },
+    Await {
+        expr: Box<Expr>,
+        applies_try: bool,
+    },
     Range {
         start: Option<Box<Expr>>,
         end: Option<Box<Expr>>,
@@ -183,6 +187,24 @@ pub fn parse_expr(source: &str) -> Result<Expr, ExprParseError> {
 }
 
 fn parse_pipe(source: &str) -> Expr {
+    if let Some(rest) = source.strip_prefix("try await ") {
+        return Expr::Await {
+            expr: Box::new(parse_pipe(rest.trim())),
+            applies_try: true,
+        };
+    }
+    if let Some(rest) = source.strip_prefix("await? ") {
+        return Expr::Await {
+            expr: Box::new(parse_pipe(rest.trim())),
+            applies_try: true,
+        };
+    }
+    if let Some(rest) = source.strip_prefix("await ") {
+        return Expr::Await {
+            expr: Box::new(parse_pipe(rest.trim())),
+            applies_try: false,
+        };
+    }
     if let Some(rest) = source.strip_prefix("try ") {
         return Expr::Try {
             expr: Box::new(parse_pipe(rest.trim())),

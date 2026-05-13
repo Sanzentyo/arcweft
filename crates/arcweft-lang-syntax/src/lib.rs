@@ -2418,7 +2418,7 @@ effects { asset.read }
         let tree = parse_source(
             r"
 task fn load_opening_assets() -> ArcResult<OpeningAssets> {
-    let bg = load_bg()?
+    let bg = try await load_bg()
     Ok(OpeningAssets { bg })
 }
 ",
@@ -2437,7 +2437,10 @@ task fn load_opening_assets() -> ArcResult<OpeningAssets> {
         assert!(matches!(
             function.body_statements()[0],
             Stmt::Let {
-                expr: Expr::Try { .. },
+                expr: Expr::Await {
+                    applies_try: true,
+                    ..
+                },
                 ..
             }
         ));
@@ -2450,6 +2453,59 @@ task fn load_opening_assets() -> ArcResult<OpeningAssets> {
         assert_eq!(hir.functions().len(), 1);
         assert_eq!(hir.functions()[0].kind(), FunctionKind::Task);
         validate_typecheck_ready(&hir).expect("task function body has structured expressions");
+    }
+
+    #[test]
+    fn typechecks_task_fn_try_await_without_wait_view() {
+        let tree = parse_source(
+            r"
+task fn load_bg_task() -> Image {
+    let bg = try await load_bg()
+    bg
+}
+",
+        )
+        .expect("task function parses");
+        let hir = lower_to_hir(&tree).expect("task function lowers");
+        validate_typecheck_ready(&hir).expect("try await expression is structured");
+
+        let env = TypeCheckEnv::new().with_function(
+            "load_bg",
+            TypeKind::Need {
+                ready: Box::new(TypeKind::Named("Image".to_owned())),
+                error: Box::new(TypeKind::Named("AssetError".to_owned())),
+            },
+        );
+        typecheck_hir(&hir, &env).expect("try await unwraps Need<T, E> to T");
+    }
+
+    #[test]
+    fn plain_await_expression_returns_result_in_task_fn() {
+        let tree = parse_source(
+            r"
+task fn load_bg_result() -> Result<Image, AssetError> {
+    await load_bg()
+}
+",
+        )
+        .expect("task function parses");
+        let hir = lower_to_hir(&tree).expect("task function lowers");
+        assert!(matches!(
+            hir.functions()[0].value(),
+            Some(Expr::Await {
+                applies_try: false,
+                ..
+            })
+        ));
+
+        let env = TypeCheckEnv::new().with_function(
+            "load_bg",
+            TypeKind::Need {
+                ready: Box::new(TypeKind::Named("Image".to_owned())),
+                error: Box::new(TypeKind::Named("AssetError".to_owned())),
+            },
+        );
+        typecheck_hir(&hir, &env).expect("plain await returns Result<T, E>");
     }
 
     #[test]
