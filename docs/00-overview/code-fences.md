@@ -19,7 +19,7 @@ Arcweft の source extension は `.awft` なので、DSL 例は原則 `awft` fen
 
 ```awft
 pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    say #say.opening.001 alice "おはよう。"
+    alice(id=#say.opening.001): おはよう。[p]
     Ok(FlowExit::Done)
 }
 ```
@@ -40,4 +40,3 @@ WGSL 単体の shader body は `wgsl` を使う。ただし、`shader #shader...
 - `.awft` source と Rust 実装を明確に分ける。
 - LLM / RAG が Arcweft DSL と Rust API を誤認しにくくする。
 - 将来の syntax highlighter / tree-sitter grammar / docs renderer が `awft` fence を手がかりにできるようにする。
-

@@ -205,7 +205,7 @@ layer #layer.ui.glass_modal: Modal {
 }
 ```
 
-## InputLayerStack
+## Input routing table
 
 入力は `input_order` を上から下へ走査する。
 
@@ -671,7 +671,8 @@ Layer は hook の主要対象でもある。入力 routing、modal、focus、Ag
 ```awft
 hook #hook.modal.escape
 on #layer.modal
-phase = input.capture
+phase InputCapture
+check on input KeyDown
 when input.key == .Escape
 {
     emit UiEvent::CloseModal
@@ -692,14 +693,18 @@ layer #layer.choices: Choice {
     input = hit_test
     hit_test = ui_layout
 
-    hook on input.pointer_enter
-    check on_input(pointer_enter)
+    hook #hook.layer.choices.pointer_enter
+    on #layer.choices
+    phase InputTarget
+    check on input PointerEnter
     {
         signal #signal.hovered_layer <- Some(#layer.choices)
     }
 
-    hook on layout.changed
-    check dirty(layout)
+    hook #hook.layer.choices.layout_changed
+    on #layer.choices
+    phase AfterLayout
+    check on change layout
     {
         log debug "choices layer layout changed"
     }
@@ -713,18 +718,24 @@ layer #layer.choices: Choice {
 Layer は Hook target でもある。描画順・visibility・input policy・focus などの変化に対して hook を attach できる。
 
 ```awft
-on #layer.choice_ui appear once {
+hook #hook.choice_ui_appeared
+on #layer.choice_ui
+phase AfterLayout
+check on change visibility
+when visible(self)
+once per scene
+{
     log info "choice layer appeared"
 }
 
-hook #hook.modal_opened on #layer.modal.settings {
-    phase = after_layout
-    check = on_visibility_change
-    when visible(self)
-
-    do {
-        signal #signal.modal_open <- Some(self)
-    }
+hook #hook.modal_opened
+on #layer.modal.settings
+phase AfterLayout
+check on change visibility
+when visible(self)
+effects { signal_write }
+{
+    signal #signal.modal_open <- Some(self)
 }
 ```
 

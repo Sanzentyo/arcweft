@@ -50,9 +50,9 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
     地の文: 扉の向こうから、雨の音がした。[p]
     alice: おはよう。[l]
-    alice voice auto: 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    alice(voice=auto): 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 
-    @choice #choice.opening.first {
+    choice #choice.opening.first {
         #choice.opening.listen "聞いてみる" -> #flow.alice_intro
         #choice.opening.silent "黙っている" -> #flow.quiet_intro
     }
@@ -68,8 +68,8 @@ LSP inlay view:
 alice: おはよう。[l]
        #say.opening.alice.001 / text.opening.alice.001 / voice.ja-JP.alice.opening.001
 
-alice voice auto: 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
-                  #say.opening.alice.002 / text.opening.alice.002 / voice.ja-JP.alice.opening.002
+alice(voice=auto): 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+                   #say.opening.alice.002 / text.opening.alice.002 / voice.ja-JP.alice.opening.002
 ```
 
 ---

@@ -53,9 +53,12 @@ Flow は逐次進行で、suspend/resume 可能。
 
 ```awft
 pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    say #say.opening.greeting alice "おはよう。"
-    let selected = choice #choice.opening.first { ... }
-    Ok(FlowExit::Done)
+    alice(id=#say.opening.greeting): おはよう。[p]
+
+    choice #choice.opening.first {
+        #choice.opening.listen "聞いてみる" -> #flow.alice_intro
+        #choice.opening.silent "黙っている" -> #flow.quiet_intro
+    }
 }
 ```
 
@@ -92,4 +95,3 @@ state
     .set(.config.text_speed, value.clamp(0.1, 3.0))
     .update(.affection[#character.alice], |v| v + 1)
 ```
-

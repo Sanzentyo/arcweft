@@ -1,6 +1,6 @@
 # Render / Input Layer System
 
-描画システムには、単なる描画順ではなく、**入力ルーティング・hit-test・focus・modal・Agent観測・mask生成・デバッグ**まで含む `LayerStack` を導入する。
+描画システムには、単なる描画順ではなく、**入力ルーティング・hit-test・focus・modal・Agent観測・mask生成・デバッグ**まで含む `LayerTree` を導入する。
 
 これにより、`bg`、立ち絵、テキストボックス、選択肢、Game Native UI、HTML/Servo/DOM UI、modal、debug overlay、Agent overlay を同じ概念で扱える。
 
@@ -22,18 +22,19 @@
 Layer = Render + Input + HitTest + Debug metadata の単位
 ```
 
-従来の `RenderSpec.layers` を `LayerStack` に拡張する。
+従来の `RenderSpec.layers` を `LayerTree` に拡張する。
 
 ```rust
 pub struct RenderSpec {
     pub size: UVec2,
     pub clear: Color,
-    pub layer_stack: LayerStackSpec,
+    pub layer_tree: LayerTree,
+    pub layer_contents: IndexMap<LayerId, LayerContent>,
     pub postprocess: Vec<ShaderPassSpec>,
 }
 ```
 
-`LayerStack` は以下を満たす。
+`LayerTree` は以下を満たす。
 
 ```text
 1. 描画順を安定に決める
@@ -42,24 +43,34 @@ pub struct RenderSpec {
 4. modal / focus / pointer capture / keyboard scope を持つ
 5. Agent Debug Bus へ bbox / polygon / mask / z-order を出す
 6. headless でも同じ routing ができる
-7. Servo/DOM HTML UI も stack 上の layer として扱う
+7. Servo/DOM HTML UI も tree 上の layer として扱う
 ```
 
 ---
 
-## 2. LayerStack 型
+## 2. LayerTree 型
 
 ```rust
-pub struct LayerStackSpec {
-    pub layers: Vec<LayerSpec>,
-    pub root_input_policy: RootInputPolicy,
-    pub composition: StackCompositionPolicy,
+pub struct LayerTree {
+    pub root: LayerId,
+    pub layers: IndexMap<LayerId, LayerNode>,
+    pub render_order: Vec<LayerId>,
+    pub input_order: Vec<LayerId>,
+    pub routing_hash: RoutingHash,
+}
+
+pub struct LayerNode {
+    pub parent: Option<LayerId>,
+    pub children: Vec<LayerId>,
+    pub spec: LayerSpec,
 }
 
 pub struct LayerSpec {
     pub id: LayerId,
     pub entity: Option<EntityId>,
     pub public_id: Option<PublicId>,
+    pub root_input_policy: RootInputPolicy,
+    pub composition: StackCompositionPolicy,
 
     pub kind: LayerKind,
     pub order: LayerOrder,
@@ -452,24 +463,24 @@ project config で default を決める。
 
 ```toml
 [layers.defaults.background]
-phase = "Background"
+order = "background(0)"
 z = 0
 input = "none"
 
 [layers.defaults.characters]
-phase = "Characters"
+order = "world(200)"
 z = 200
 input = "passthrough"
 hit_test = "bbox"
 
 [layers.defaults.dialogue]
-phase = "Dialogue"
+order = "ui(500)"
 z = 500
 input = "hit_test"
 hit_test = "layout_boxes"
 
 [layers.defaults.modal]
-phase = "Modal"
+order = "modal(0)"
 z = 900
 input = "modal"
 hit_test = "layout_boxes"
@@ -486,15 +497,16 @@ component Hud(state: GameState) -> View {
     HStack {
         Button("設定").agent_target(#ui.settings.open)
     }
-    .layer(#layer.hud, phase = GameUi, z = 700)
+    .layer(#layer.hud, order = ui(700))
 }
 ```
 
 または scene 側で明示する。
 
 ```awft
-layer #layer.hud phase GameUi z 700 {
-    input hit_test
+layer #layer.hud {
+    order = ui(700)
+    input = hit_test
     ui Hud(state)
 }
 ```
@@ -527,7 +539,7 @@ layer #layer.html_settings phase HtmlUi z 800 {
 Native:
 
 ```text
-LayerStack
+LayerTree
   → ServoUiHost
   → WebView bbox/action metadata
   → InputRouter
@@ -536,7 +548,7 @@ LayerStack
 Web:
 
 ```text
-LayerStack
+LayerTree
   → Browser DOM overlay
   → DOM bbox/action metadata
   → InputRouter
@@ -689,7 +701,7 @@ Modal 契約:
 contract modal_layer(layer: LayerSpec) {
     requires layer.input.policy == .Modal
     ensures layer.input.modal.block_below == true
-    ensures layer.order.phase == .Modal
+    ensures layer.order.kind == .Modal
 }
 ```
 
@@ -699,7 +711,7 @@ contract modal_layer(layer: LayerSpec) {
 
 ```text
 arcweft-layer-core
-  LayerId, LayerSpec, LayerStackSpec, LayerOrder
+  LayerId, LayerSpec, LayerTree, LayerNode, LayerOrder
 
 arcweft-layer-render
   LayerRenderTargetPolicy, layer composition, layer cache
@@ -720,7 +732,7 @@ arcweft-layer-lsp
 
 ## 18. 実装順
 
-1. `LayerSpec` / `LayerStackSpec` を `RenderSpec` に入れる。
+1. `LayerTree` / `LayerNode` / `LayerSpec` を `RenderSpec` に入れる。
 2. `LayerInputRouter` を作り、semantic action と pointer hit-test を layer top-down に統一する。
 3. Game Native UI node に所属layerを持たせる。
 4. Object ID pass を layer/object ID と結びつける。
@@ -736,11 +748,11 @@ arcweft-layer-lsp
 
 ```text
 1. Layer は描画だけでなく input routing の基本単位にする。
-2. RenderSpec は layers ではなく LayerStackSpec を持つ。
+2. RenderSpec は layers ではなく LayerTree を持つ。
 3. 入力は top-most layer から routing する。
 4. modal/focus/capture は layer state として管理する。
 5. Agent bbox/mask/action target は layer 情報を必ず持つ。
-6. HTML/Servo/DOM UI も LayerStack 上の HtmlUi layer として扱う。
+6. HTML/Servo/DOM UI も LayerTree 上の HtmlUi layer として扱う。
 7. Activity viewport も layer として扱う。
 8. headless と windowed で同じ LayerInputRouter を使う。
 9. `#<...>.method` のように境界が必要な参照は従来通り `#<...>` を使う。
@@ -757,18 +769,22 @@ layer #layer.choices: Choice {
     z = 550
     input = hit_test
     hit_test = ui_layout
+}
 
-    hook on input.pointer_enter
-    check on_input(pointer_enter)
-    {
-        signal #signal.hovered_layer <- Some(#layer.choices)
-    }
+hook #hook.layer.choices.pointer_enter
+on #layer.choices
+phase InputTarget
+check on input PointerEnter
+{
+    signal #signal.hovered_layer <- Some(#layer.choices)
+}
 
-    hook on layout.changed
-    check dirty(layout)
-    {
-        log debug "choices layer layout changed"
-    }
+hook #hook.layer.choices.layout_changed
+on #layer.choices
+phase AfterLayout
+check on change layout
+{
+    log debug "choices layer layout changed"
 }
 ```
 

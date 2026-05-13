@@ -294,7 +294,7 @@ Inside dialogue text mode, special characters can be escaped:
 | `\{` | literal `{` |
 | `\}` | literal `}` |
 | `\:` | literal `:` in contexts where it may be parsed specially |
-| `\|` | literal ruby bar `｜` |
+| `\｜` | literal ruby bar `｜` |
 | `\《` | literal `《` |
 | `\》` | literal `》` |
 
@@ -309,10 +309,12 @@ alice.say()[
 Raw block:
 
 ```awft
-alice.say()[raw]
-ここでは複数行にわたりタグを解釈しない。
-[p] も文字として表示する。
-[/raw]
+alice.say()[
+    [raw]
+    ここでは複数行にわたりタグを解釈しない。
+    [p] も文字として表示する。
+    [/raw]
+]
 ```
 
 ---
@@ -335,7 +337,7 @@ pub character #character.alice Alice {
 Built-in read/unread hook:
 
 ```awft
-pub dialogue_defaults #dialogue.defaults {
+pub dialogue defaults #dialogue.defaults {
     read_state_style = builtin.read_state_color(
         unread = rgb("#ffffff"),
         read = rgb("#b8b8c0"),

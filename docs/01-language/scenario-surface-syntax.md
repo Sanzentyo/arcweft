@@ -107,7 +107,7 @@ alice.say(
 ]
 ```
 
-`#` remains an entity-reference marker, not an option marker. The older `alice #say... @smile voice auto:` style is not part of the stable grammar and may be formatter-migrated while early tooling still recognizes it.
+`#` remains an entity-reference marker, not an option marker. Older compact option styles without parentheses are not part of the stable grammar and must be rejected by parser and tooling.
 
 The long method form is preferred when the line has a custom window, timed cues, cancellation, local variables, or custom hooks.
 
@@ -129,7 +129,7 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
     alice: おはよう。[l]
     alice(voice=auto): 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 
-    @choice #choice.opening.first {
+    choice #choice.opening.first {
         #choice.opening.listen "聞いてみる" -> #flow.alice_intro
         #choice.opening.silent "黙っている" -> #flow.quiet_intro
     }
@@ -319,7 +319,7 @@ pub character #character.narrator narrator {
     nameplate = hidden
     localizable_name = false
     dialogue_style {
-        textbox = #textbox.narrator
+        window = #textbox.narrator
     }
 }
 ```
@@ -349,7 +349,7 @@ Project configuration can disable Japanese aliases or rename them:
 entity = "character.narrator"
 aliases = ["narrator", "地の文", "地"]
 nameplate = "hidden"
-textbox = "textbox.narrator"
+window = "textbox.narrator"
 ```
 
 ---

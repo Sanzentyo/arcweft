@@ -13,8 +13,8 @@ fn alice_route_ready(state: GameState) -> Bool {
 
 pub hook #hook.opening.listen_enable
 on #choice.opening.listen
-phase = input.hit_test
-check = on_change(state.affection[#character.alice])
+phase InputHitTest
+check on change state.affection[#character.alice]
 memo condition scope = state key = [state.affection[#character.alice]]
 when alice_route_ready(state)
 effects { ui.enable, log.debug }
@@ -25,8 +25,8 @@ effects { ui.enable, log.debug }
 
 pub hook #hook.opening.listen_hover
 on #choice.opening.listen
-phase = input.target
-check = every_frame
+phase InputTarget
+check every frame
 when input.pointer.hovered
 effects { ui.style }
 {
@@ -39,8 +39,8 @@ effects { ui.style }
 
 pub hook #hook.opening.listen_agent_note
 on #choice.opening.listen
-phase = agent.observed
-check = on_change(state.affection[#character.alice])
+phase AgentObserved
+check on change state.affection[#character.alice]
 when !alice_route_ready(state)
 effects { agent.annotate }
 {

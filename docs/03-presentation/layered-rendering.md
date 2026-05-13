@@ -370,18 +370,22 @@ layer #layer.choices: Choice {
     z = 550
     input = hit_test
     hit_test = ui_layout
+}
 
-    hook on input.pointer_enter
-    check on_input(pointer_enter)
-    {
-        signal #signal.hovered_layer <- Some(#layer.choices)
-    }
+hook #hook.layer.choices.pointer_enter
+on #layer.choices
+phase InputTarget
+check on input PointerEnter
+{
+    signal #signal.hovered_layer <- Some(#layer.choices)
+}
 
-    hook on layout.changed
-    check dirty(layout)
-    {
-        log debug "choices layer layout changed"
-    }
+hook #hook.layer.choices.layout_changed
+on #layer.choices
+phase AfterLayout
+check on change layout
+{
+    log debug "choices layer layout changed"
 }
 ```
 

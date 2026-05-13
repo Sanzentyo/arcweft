@@ -1,14 +1,132 @@
-# Grammar Summary: Control Flow and Patterns
+# Grammar Summary
 
-This is a grammar summary for the updated control-flow subset.
+This is a compact summary of the current Arcweft surface grammar. It is intentionally canonical: removed migration forms are not part of this grammar.
+
+## Lexical conventions
+
+```text
+Ident        := /[A-Za-z_][A-Za-z0-9_]*/
+EntityRef    := '#' Ident ('.' Ident)* | '#<' EntityBody '>'
+String       := '"' ... '"'
+Newline      := '\n'
+Comment      := '#' TextToEndOfLine
+```
+
+`#` is reserved for entity references. `@` remains available for attributes and scenario commands such as `@bg`, but `choice` is a flow item and is written without `@`.
+
+## Module items
+
+```text
+Source       := ModuleDecl? UseDecl* Item*
+ModuleDecl   := 'mod' Path
+UseDecl      := 'use' Path ('::' UseTree)?
+Visibility   := 'pub'?
+
+Item         :=
+    FlowDecl
+  | FragmentDecl
+  | FunctionDecl
+  | StateDecl
+  | ReducerDecl
+  | ViewDecl
+  | ParserDecl
+  | HookDecl
+  | MemoDecl
+  | DialogueDefaultsDecl
+  | TypeDecl
+```
+
+## Flow and fragments
+
+```text
+FlowDecl     := Visibility 'flow' EntityRef Ident? ParamList? ReturnType? Contract* FlowBody
+FragmentDecl := Visibility 'fragment' EntityRef Ident? (':' Type)? Contract* FlowBody
+FlowBody     := '{' FlowItem* '}'
+
+FlowItem     :=
+    LetStmt
+  | ControlStmt
+  | ScenarioCommand
+  | DialogueLine
+  | ChoiceBlock
+  | AwaitExpr
+  | ScopeStmt
+  | ExprStmt
+
+ScenarioCommand := '@' Ident ScenarioArgs?
+```
+
+## Dialogue and line plans
+
+```text
+DialogueLine :=
+    SpeakerRef CallArgs? ':' DialogueText
+  | Callee CallArgs? '[' DialogueContent ']'
+
+CallArgs       := '(' NamedArg (',' NamedArg)* ','? ')'
+NamedArg       := Ident '=' Expr
+DialogueText   := TextUntilLineEnd | Newline IndentedText
+DialogueContent:= TextAndDialogueTags*
+
+LinePlanAttach := 'with' Block | 'with' ':' Newline IndentedItems
+LinePlanItem   := LetStmt | TimedCue | CancelRule | OutStmt | ScopeStmt | ExprStmt
+OutStmt        := 'out' Expr
+```
+
+`with:` is indentation sugar for `with { ... }`. A bare `{ ... }` after a dialogue content block is a normal lexical scope, not a line plan.
+
+## Choice
+
+```text
+ChoiceBlock := 'choice' EntityRef? '{' ChoiceArm* '}'
+ChoiceArm   := EntityRef String ChoiceCondition? '->' EntityRef
+ChoiceCondition := 'if' Expr
+```
+
+`choice` displays a choice block and advances the current flow to the selected arm target. It is not an expression form; value-returning choice selection is intentionally left for a separate future construct.
+
+## Hooks
+
+```text
+HookDecl   :=
+    Visibility 'hook' EntityRef
+    HookTarget
+    HookPhase
+    HookCheck?
+    HookWhen?
+    HookPriority?
+    HookOnce?
+    HookEffects?
+    BlockExpr
+
+HookTarget := 'on' HookTargetExpr
+HookTargetExpr := EntityRef | 'state' StatePath | 'signal' EntityRef | 'query' Type WhereClause?
+HookPhase  := 'phase' Ident
+HookCheck  := 'check' CheckPolicy
+HookWhen   := 'when' Expr
+HookPriority := 'priority' Int
+HookOnce   := 'once' OncePolicy?
+HookEffects:= 'effects' '{' Ident (',' Ident)* ','? '}'
+```
+
+## Blocks and scopes
+
+```text
+Block          := '{' BlockItem* FinalExpr? '}'
+ExprBlock      := Block
+ScopeStmt      := Block
+StatementBlock := Block | ':' Newline IndentedItems
+LabeledBlock   := Label? Block
+Label          := '\'' Ident ':'
+BlockItem      := LetStmt | LetElseStmt | ExprStmt | ControlStmt | ScenarioStmt | ScopeStmt
+```
+
+In expression position, a block's final expression is its value. In statement position, a bare block creates a lexical scope and does not export a value; a non-`Unit` final expression must be discarded explicitly with `;` or `let _ = ...`.
 
 ## Statement / expression list
 
 ```text
-BlockExpr      := '{' Item* FinalExpr? '}'
-StatementBlock := '{' Item* '}' | ':' Newline IndentedItems
-LabeledBlock   := Label? BlockExpr
-Label          := '\'' Ident ':'
+BlockExpr      := Block
 Item           := LetStmt | LetElseStmt | ExprStmt | ControlStmt | ScenarioStmt
 ExprStmt       := Expr (';')?
 ```

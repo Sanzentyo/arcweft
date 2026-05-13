@@ -244,7 +244,7 @@ pub fragment #frag.alice_enters alice_enters: FlowFragment {
         let tree = parse_source(
             r#"
 flow #flow.opening opening {
-    @choice #choice.opening.first {
+    choice #choice.opening.first {
         #choice.opening.listen "聞いてみる" -> #flow.alice_intro
         #choice.opening.silent "黙っている" -> #flow.quiet_intro
     }
@@ -265,6 +265,23 @@ flow #flow.opening opening {
         );
         assert_eq!(choice.options().len(), 2);
         assert_eq!(choice.options()[0].label(), "聞いてみる");
+    }
+
+    #[test]
+    fn rejects_old_at_choice_syntax() {
+        let errors = parse_source(
+            r#"
+flow #flow.opening opening {
+    @choice #choice.opening.first {
+        #choice.opening.listen "聞いてみる" -> #flow.alice_intro
+    }
+}
+"#,
+        )
+        .expect_err("old @choice syntax is rejected");
+
+        assert!(errors[0].message().contains("@choice"));
+        assert_eq!(errors[0].expected(), &["choice #choice.id { ... }"]);
     }
 
     #[test]
@@ -386,7 +403,7 @@ with:
     fn parses_choice_option_with_condition() {
         let tree = parse_source(
             r#"
-@choice #choice.opening.first {
+choice #choice.opening.first {
     #choice.opening.listen "聞いてみる" if state.affection[#character.alice] >= 3 -> #flow.alice_intro
 }
 "#,
@@ -454,6 +471,34 @@ pub parser parse_player_command: Parser<PlayerCommand, ParseError> {
         assert!(matches!(&tree.items()[0], Item::Hook(_)));
         assert!(matches!(&tree.items()[1], Item::MemoFn(_)));
         assert!(matches!(&tree.items()[2], Item::Parser(_)));
+    }
+
+    #[test]
+    fn rejects_old_hook_header_syntax() {
+        let errors = parse_source(
+            r"
+hook #hook.choice_click
+for #choice.opening.listen
+on input target PointerClick
+phase = input.target
+{
+    stop_propagation
+}
+",
+        )
+        .expect_err("old hook syntax is rejected");
+
+        assert!(errors.iter().any(|error| error.message().contains("for")));
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message().contains("phase ="))
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message().contains("on input target"))
+        );
     }
 
     #[test]
@@ -1411,7 +1456,7 @@ ensures no_effect network.request
         let tree = parse_source(
             r#"
 flow #flow.opening opening {
-    @choice #choice.opening.first {
+    choice #choice.opening.first {
         #choice.opening.listen "聞く" -> #flow.alice_intro
     }
 }
@@ -1491,7 +1536,7 @@ flow #flow.opening opening {
     ]
     with:
         at(end-250ms): alice.stage.face(worried)
-    @choice #choice.opening.first {
+    choice #choice.opening.first {
         #choice.opening.listen "聞いてみる" if state.affection[#character.alice] >= 3 -> #flow.alice_intro
     }
     goto #flow.title
@@ -1533,7 +1578,7 @@ flow #flow.opening opening {
     ]
     with:
         at(0.42s): alice.stage.face(worried)
-    @choice #choice.opening.first {
+    choice #choice.opening.first {
         #choice.opening.listen "聞く" if state.affection[#character.alice] >= 3 -> #flow.alice_intro
     }
 }
@@ -1591,7 +1636,7 @@ flow #flow.opening opening {
     ]
     with:
         at(0.42s): alice.stage.face(worried)
-    @choice #choice.opening.first {
+    choice #choice.opening.first {
         #choice.opening.listen "聞く" if state.affection[#character.alice] >= 3 -> #flow.alice_intro
     }
     goto #flow.title
@@ -1665,7 +1710,7 @@ flow #flow.opening opening {
         let tree = parse_source(
             r#"
 flow #flow.opening opening {
-    @choice #choice.opening.first {
+    choice #choice.opening.first {
         #choice.opening.listen "聞く" -> #asset.bg.room
     }
 }

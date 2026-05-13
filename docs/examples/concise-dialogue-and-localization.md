@@ -10,7 +10,7 @@ use game::characters::{alice}
 use tag game::fx::{flash}
 
 dialogue defaults {
-    textbox = #textbox.0
+    window = #textbox.0
     hooks {
         before_text_style += #hook.dialogue.read_state_color
         before_voice_resolve += #hook.dialogue.auto_voice_key
@@ -43,7 +43,7 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
     let can_enter_alice = state |> has_affection_at_least(#character.alice, 3)
 
-    @choice #choice.opening.first {
+    choice #choice.opening.first {
         #choice.opening.listen "聞いてみる" if can_enter_alice -> #flow.alice_intro
         #choice.opening.silent "黙っている" -> #flow.quiet_intro
     }
@@ -164,7 +164,7 @@ with:
     at(0.45s):
         actor.face(worried, crossfade=120ms)
 
-    return (actor, (face, voice))
+    out (actor, (face, voice))
 ```
 
 Here the initial `face` handle is intentionally discarded with `_`; if the cue is still pending at destructuring time, Arcweft applies its drop policy.

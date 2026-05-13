@@ -1,4 +1,4 @@
-# Arcweft Engine 完成版設計仕様
+# Arcweft Engine 設計仕様
 
 このフォルダは、wgpu を中核にしたノベルゲームエンジンの設計仕様です。独自 DSL、Rust 拡張、WASM、Cranelift JIT、LayerTree、Object Hook、Memoization、Servo/DOM UI、リアクティブ UI、Typst 級テキスト、WGSL シェーダー、音声、マイク/カメラ入力、USB/HIDデバイス、タッチ向けバーチャルコントローラー、形式検証、RAG、Jujutsu 履歴管理、LLM デバッグインターフェースを統合した実装方針をまとめています。
 

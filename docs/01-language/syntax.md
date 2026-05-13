@@ -9,22 +9,14 @@ use game::prelude::*
 use game::logic::affection::{has_affection_at_least}
 
 pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    say #say.opening.greeting alice "おはよう。"
+    alice(id=#say.opening.greeting): おはよう。[p]
 
-    let selected = choice #choice.opening.first {
-        option #choice.opening.listen "聞いてみる"
-        option #choice.opening.silent "黙っている"
-    }
+    let can_enter_alice = state |> has_affection_at_least(#character.alice, 3)
 
-    match selected.id {
-        #choice.opening.listen => {
-            if state |> has_affection_at_least(#character.alice, 3) {
-                Ok(FlowExit::Goto(#flow.alice_intro))
-            } else {
-                Ok(FlowExit::Goto(#flow.alice_locked))
-            }
-        }
-        #choice.opening.silent => Ok(FlowExit::Goto(#flow.quiet_intro))
+    choice #choice.opening.first {
+        #choice.opening.listen "聞いてみる" if can_enter_alice -> #flow.alice_intro
+        #choice.opening.listen_locked "聞いてみる" -> #flow.alice_locked
+        #choice.opening.silent "黙っている" -> #flow.quiet_intro
     }
 }
 ```
@@ -52,7 +44,11 @@ image(#asset.bg.room)
 境界明示が必要なとき:
 
 ```awft
-await #<activity.truck_game>.run(input)
+let result = try await #<activity.truck_game>.run(input) with:
+    pending p:
+        scene #scene.loading:
+            progress p.ratio
+
 #<say.opening.dream_hint@sem:b3_9f2a1c>
 #<asset:bg/room.ktx2>
 ```
@@ -100,8 +96,9 @@ AwaitView(typeset(#typeset.credits)) {
 hook #hook.opening.choice_visible
 on #choice.opening.listen
 phase AfterLayout
-when object.visible && object.enabled
 check every frame
+when object.visible && object.enabled
+effects { signal_write, assert }
 {
     signal #signal.choice_visible <- true
     debug_assert object.bbox.area > 0
@@ -120,8 +117,9 @@ cache session
 
 ```awft
 hook #hook.choice.listen_visible
-on object #choice.opening.listen
-at visibility_changed
+on #choice.opening.listen
+phase VisibilityChanged
+check on change
 when object.visible
 once
 {
@@ -161,9 +159,9 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
     地の文: 扉の向こうから、雨の音がした。[p]
     alice: おはよう。[l]
-    alice voice auto: 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    alice(voice=auto): 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 
-    @choice #choice.opening.first {
+    choice #choice.opening.first {
         #choice.opening.listen "聞いてみる" -> #flow.alice_intro
         #choice.opening.silent "黙っている" -> #flow.quiet_intro
     }

@@ -308,7 +308,7 @@ alice.say(window=#textbox.phone_message, voice=auto)[
 ]
 ```
 
-`textbox=` is accepted as a deprecated alias of `window=` during migration. The canonical parameter name is `window`.
+The canonical parameter name is `window`. The legacy `textbox` option name is not valid Arcweft source; `textbox` remains the entity kind for dialogue window objects.
 
 A dialogue window target is a stateful UI object. Updating a line in that textbox affects the selected window only. Agent observation exposes the target window, current line ID, visible text, reveal cursor, and actionable wait state.
 
@@ -364,7 +364,7 @@ alice.say(color=rgb("#ff8080"))[
 Common visual-novel patterns are built in.
 
 ```awft
-pub dialogue_defaults #dialogue.defaults {
+pub dialogue defaults #dialogue.defaults {
     window = #textbox.0
     read_state_style = builtin.read_state_color(
         unread = rgb("#ffffff"),
@@ -509,7 +509,7 @@ Inside dialogue-text mode, the following characters can be escaped:
 | `\{` | literal `{` |
 | `\}` | literal `}` |
 | `\:` | literal `:` in contexts where it may be parsed specially |
-| `\|` | literal ruby bar `｜` |
+| `\｜` | literal ruby bar `｜` |
 | `\《` | literal `《` |
 | `\》` | literal `》` |
 
@@ -524,10 +524,12 @@ alice.say()[
 Raw block:
 
 ```awft
-alice.say()[raw]
-ここでは複数行にわたりタグを解釈しない。
-[p] も文字として表示する。
-[/raw]
+alice.say()[
+    [raw]
+    ここでは複数行にわたりタグを解釈しない。
+    [p] も文字として表示する。
+    [/raw]
+]
 ```
 
 ---

@@ -32,7 +32,7 @@ Sans I/O Core
         ├── WASM / Rust plugin host
         ├── Cranelift JIT backend
         ├── wgpu renderer
-        ├── Render / Input LayerStack
+        ├── Render / Input LayerTree
         ├── Game Native UI renderer
         ├── Servo / DOM HTML UI backend
         ├── Audio mixer / spatial / TTS / BGM graph
@@ -75,9 +75,9 @@ pub trait Activity {
 描画 system は `LayerTree` を持ち、world、character、effect、Activity、native UI、HTML UI、modal、debug overlay を明示的な layer として扱う。入力も同じ layer stack で上位から hit-test し、`Consumed` / `PassThrough` / `Blocked` を返す。詳細は [Layer System](../03-presentation/layers.md)。
 
 
-### LayerStack は描画と入力の共通単位
+### LayerTree は描画と入力の共通単位
 
-`RenderSpec` は `LayerStackSpec` を持ち、背景、立ち絵、dialogue、choice、native UI、HTML UI、modal、debug overlay、Activity viewport を同じ stack 上で扱う。入力は top-most layer から routing され、modal、focus、pointer capture、semantic action、Agent hit-test は layer state として管理する。詳細は [Render / Input Layer System](../03-presentation/render-input-layers.md)。
+`RenderSpec` は `LayerTree` を持ち、背景、立ち絵、dialogue、choice、native UI、HTML UI、modal、debug overlay、Activity viewport を同じ tree 上で扱う。入力は derived input order の上位 layer から routing され、modal、focus、pointer capture、semantic action、Agent hit-test は layer state として管理する。詳細は [Render / Input Layer System](../03-presentation/render-input-layers.md)。
 
 ### UI は二系統
 

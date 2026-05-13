@@ -56,14 +56,7 @@ alice(id=#say.opening.greeting, window=#textbox.side, voice=auto, face=smile):
 
 `with` is reserved for attaching a line plan to dialogue calls. Parentheses `(...)` are for options; brackets `[...]` are player-facing dialogue content; canonical `with { ... }` or indentation sugar `with:` attaches the line plan. A bare trailing `{ ... }` after `]` is a separate lexical scope, not a line plan attachment.
 
-The older compact option style:
-
-```awft
-alice #say.opening.greeting @smile voice auto:
-    おはよう。[p]
-```
-
-is not part of the stable grammar. The formatter may migrate it to the parenthesized form while this syntax is still recognized by early tooling.
+Older compact option styles without parentheses are not part of the stable grammar and must be rejected by parser and tooling.
 
 ---
 
@@ -696,7 +689,7 @@ with:
     let face1 = at(0.42s):
         actor.face(worried, crossfade=120ms)
 
-    return (actor, (face0, face1, voice))
+    out (actor, (face0, face1, voice))
 ```
 
 Returned values are ordinary typed values, but many presentation operations return scoped handles. Handles have drop policies. Binding a returned handle to `_` explicitly discards it; for cancellable handles this cancels or releases the operation immediately after destructuring.
@@ -710,7 +703,7 @@ with:
     let face0 = actor.face(smile)
     let face1 = at(0.42s): actor.face(worried)
     let voice = line.voice_handle()
-    return (actor, (face0, face1, voice))
+    out (actor, (face0, face1, voice))
 ```
 
 `face1` is discarded and its scheduled cue is cancelled if it has not fired. The discarded `actor` release policy runs immediately. The `voice` handle is kept by the surrounding scope.
@@ -721,5 +714,5 @@ BGM, subscriptions, hooks, and stage leases follow the same rule. To keep BGM be
 let bgm_handle = alice[始まるよ。[p]]
 with:
     let scoped_bgm = bgm.play(#bgm.tension, scope=line, drop=fade(300ms))
-    return scoped_bgm.detach()
+    out scoped_bgm.detach()
 ```

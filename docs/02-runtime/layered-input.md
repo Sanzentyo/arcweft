@@ -452,7 +452,8 @@ Input routing の各 phase では hook を実行できる。`input.capture` hook
 ```awft
 hook #hook.choice.hover
 on #choice.opening.listen
-phase = input.target
+phase InputTarget
+check on input PointerMove
 when input.pointer.hovered
 {
     emit UiCommand::SetHover { target = #choice.opening.listen, value = true }
@@ -480,8 +481,9 @@ RawInputEvent
 
 ```awft
 hook #hook.choice.hit_trace
-on layer #layer.ui.choices
-at hit_test
+on #layer.ui.choices
+phase InputHitTest
+check on input PointerMove
 when object.entity == #choice.opening.listen
 {
     log debug "hit choice listen" {}
@@ -500,18 +502,22 @@ layer #layer.choices: Choice {
     z = 550
     input = hit_test
     hit_test = ui_layout
+}
 
-    hook on input.pointer_enter
-    check on_input(pointer_enter)
-    {
-        signal #signal.hovered_layer <- Some(#layer.choices)
-    }
+hook #hook.layer.choices.pointer_enter
+on #layer.choices
+phase InputTarget
+check on input PointerEnter
+{
+    signal #signal.hovered_layer <- Some(#layer.choices)
+}
 
-    hook on layout.changed
-    check dirty(layout)
-    {
-        log debug "choices layer layout changed"
-    }
+hook #hook.layer.choices.layout_changed
+on #layer.choices
+phase AfterLayout
+check on change layout
+{
+    log debug "choices layer layout changed"
 }
 ```
 
@@ -524,8 +530,9 @@ Layer routing の各 phase は hook の trigger になる。
 
 ```awft
 hook #hook.choice_click
-for #choice.opening.listen
-on input target PointerClick
+on #choice.opening.listen
+phase InputTarget
+check on input PointerClick
 {
     emit GameEvent::ChoiceSelected { id = #choice.opening.listen }
     stop_propagation

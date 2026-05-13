@@ -53,7 +53,7 @@ pub textbox #textbox.main main_textbox {
 }
 
 dialogue defaults {
-    textbox = #textbox.main
+    window = #textbox.main
 }
 ```
 
@@ -150,7 +150,7 @@ The project may declare default hooks, reveal behavior, voice behavior, and text
 
 ```awft
 dialogue defaults {
-    textbox = #textbox.0
+    window = #textbox.0
     reveal = typewriter(speed=normal)
     voice = auto_if_available
 
@@ -298,4 +298,3 @@ Text windows expose:
 ```
 
 This lets LLM debuggers inspect whether a line is visible, partially revealed, read/unread, or blocked by a wait tag.
-

@@ -465,7 +465,7 @@ pub struct ContentCall {
     range: TextRange,
 }
 
-/// `@choice` block with option rows.
+/// `choice #choice.id { ... }` flow item with option rows.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ChoiceBlock {
     id: Option<EntityRef>,

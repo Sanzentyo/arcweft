@@ -43,12 +43,10 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
         }
     }
 
-    let selected = choice #choice.opening.first {
-        option #choice.opening.listen "聞いてみる" => #flow.alice_intro
-        option #choice.opening.silent "黙っている" => #flow.quiet_intro
+    choice #choice.opening.first {
+        #choice.opening.listen "聞いてみる" -> #flow.alice_intro
+        #choice.opening.silent "黙っている" -> #flow.quiet_intro
     }
-
-    Ok(FlowExit::Goto(selected.target))
 }
 ```
 

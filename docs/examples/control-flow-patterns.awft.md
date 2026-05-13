@@ -12,7 +12,7 @@ pub flow #flow.control_flow_example example(state: GameState) -> Result<FlowExit
         #flow.alice_locked
     }
 
-    let selected = try await choice #choice.opening.first with:
+    let selected = try await wait_choice(#choice.opening.first) with:
         pending p:
             scene #scene.wait_choice:
                 progress p.ratio

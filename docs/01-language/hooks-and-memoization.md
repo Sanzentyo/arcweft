@@ -31,22 +31,16 @@ hook は通常の callback ではない。全 hook は compile 時に `HookTable
 
 ```awft
 hook #hook.choice_listen_clicked
-for #choice.opening.listen
-on input target PointerClick
+on #choice.opening.listen
+phase InputTarget
+check on input PointerClick
 when state.flags.contains(.input_enabled)
 priority 100
+effects { emit_event, log, input_disposition }
 {
     emit GameEvent::ChoiceSelected { id = #choice.opening.listen }
     log info "choice selected {id:?}" { id = #choice.opening.listen }
     stop_propagation
-}
-```
-
-短縮形:
-
-```awft
-on #choice.opening.listen input PointerClick {
-    emit GameEvent::ChoiceSelected { id = #choice.opening.listen }
 }
 ```
 
@@ -65,20 +59,21 @@ Button("聞いてみる")
 ## Hook target
 
 ```awft
-for #choice.opening.listen
-for #layer.ui.modal
-for #character.alice
-for #activity.truck_game
-for #signal.loading_progress
-for #shader.post.crt
+on #choice.opening.listen
+on #layer.ui.modal
+on #character.alice
+on #activity.truck_game
+on #signal.loading_progress
+on #shader.post.crt
 ```
 
 query target も使える。
 
 ```awft
 hook #hook.disable_all_choices
-for query<ChoiceOption>(where parent == #choice.opening.first)
-on state changed .ui.locked
+on query ChoiceOption where parent == #choice.opening.first
+phase StateChanged
+check on change state.ui.locked
 when state.ui.locked
 {
     command ui.disable(target)
@@ -124,7 +119,9 @@ pub enum HookPhase {
 
 ```awft
 hook #hook.alice_affection_watch
-on state changed .affection[#character.alice]
+on state .affection[#character.alice]
+phase StateChanged
+check on change
 when state.affection[#character.alice] >= 3
 once per save
 {
@@ -134,8 +131,9 @@ once per save
 
 ```awft
 hook #hook.modal_blocks_world
-for #layer.ui.modal
-on input capture PointerClick
+on #layer.ui.modal
+phase InputCapture
+check on input PointerClick
 when layer.visible
 {
     stop_propagation
@@ -150,7 +148,9 @@ when layer.visible
 
 ```awft
 hook #hook.alice_route_unlock
-on check state .affection[#character.alice]
+on state .affection[#character.alice]
+phase StateChanged
+check on change
 when state.affection[#character.alice] >= 3
 once per save
 {
@@ -220,8 +220,9 @@ input hook は `InputDisposition` を返せる。
 
 ```awft
 hook #hook.choice_keyboard_select
-for #layer.choices
-on input target KeyDown
+on #layer.choices
+phase InputTarget
+check on input KeyDown
 when event.key == .Enter && focus.target.is_choice
 {
     emit GameEvent::ChoiceSelected { id = focus.target.entity.as<ChoiceOption>()? }
@@ -235,7 +236,9 @@ when event.key == .Enter && focus.target.is_choice
 
 ```awft
 hook #hook.show_unlock_once
-on check state .affection[#character.alice]
+on state .affection[#character.alice]
+phase StateChanged
+check on change
 when state.affection[#character.alice] >= 3
 once per save
 {
@@ -445,5 +448,5 @@ memo_options:= ("scope" memo_scope)? ("key" "=" expr_tuple)? ("depends" dep_list
 7. memo は pure / deterministic な計算だけに付けられる。
 8. memo scope は lifetime / save / replay と整合させる。
 9. Need/Task は TaskKey で in-flight 合流し、memo cache と統合する。
-10. Agent/LSP/CLI から hook/memo を inspection できる。
+10. Agent/LSP/CLI から hook/memo を検査・可視化できる。
 ```

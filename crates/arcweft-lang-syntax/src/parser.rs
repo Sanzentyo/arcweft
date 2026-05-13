@@ -517,6 +517,7 @@ impl Parser {
             .map(str::trim)
             .filter(|line| !line.is_empty())
             .collect();
+        self.reject_old_hook_header_syntax(&header_lines, start_line.start);
         let first = header_lines.first()?;
         let (visibility, after_visibility) = parse_visibility_prefix(first);
         let after_hook = after_visibility
@@ -548,6 +549,36 @@ impl Parser {
             body,
             TextRange::new(start_line.start, end),
         ))
+    }
+
+    fn reject_old_hook_header_syntax(&mut self, header_lines: &[&str], base: usize) {
+        for line in header_lines {
+            if line.starts_with("for ") {
+                self.push_error(
+                    TextRange::new(base, base + line.len()),
+                    "`for` is not valid hook target syntax",
+                    ["on #target"],
+                    Some(line),
+                    ["write the hook target as `on #target`"],
+                );
+            } else if line.starts_with("phase =") {
+                self.push_error(
+                    TextRange::new(base, base + line.len()),
+                    "`phase =` is not valid hook phase syntax",
+                    ["phase PhaseName"],
+                    Some(line),
+                    ["write the hook phase without `=`"],
+                );
+            } else if line.starts_with("on input target") {
+                self.push_error(
+                    TextRange::new(base, base + line.len()),
+                    "`on input target` is not valid hook input syntax",
+                    ["phase InputTarget", "check on input EventKind"],
+                    Some(line),
+                    ["split input hooks into `phase InputTarget` and `check on input EventKind`"],
+                );
+            }
+        }
     }
 
     fn parse_memo_fn(&mut self) -> Option<MemoFn> {
@@ -644,6 +675,9 @@ impl Parser {
         let trimmed = line.text.trim();
 
         if trimmed.starts_with("@choice") {
+            return Some(FlowItem::Raw(self.reject_old_choice_syntax()));
+        }
+        if trimmed.starts_with("choice ") {
             return self.parse_choice().map(FlowItem::Choice);
         }
         if trimmed.starts_with("if ") {
@@ -727,7 +761,7 @@ impl Parser {
             );
             return None;
         }
-        let rest = head.trim().strip_prefix("@choice")?.trim();
+        let rest = head.trim().strip_prefix("choice")?.trim();
         let (id, _) = parse_optional_entity_ref(rest, start_line.start, &mut self.errors);
         let options = body
             .lines()
@@ -738,6 +772,29 @@ impl Parser {
             options,
             TextRange::new(start_line.start, end),
         ))
+    }
+
+    fn reject_old_choice_syntax(&mut self) -> String {
+        let start_line = self.current().clone();
+        let raw = if start_line.text.contains('{') {
+            let (head, body, _, _) = self.take_brace_block();
+            if body.is_empty() {
+                head
+            } else {
+                format!("{head} {{ ... }}")
+            }
+        } else {
+            self.index += 1;
+            start_line.text.trim().to_owned()
+        };
+        self.push_error(
+            TextRange::new(start_line.start, start_line.end),
+            "`@choice` is not valid Arcweft syntax",
+            ["choice #choice.id { ... }"],
+            Some(start_line.text.trim()),
+            ["remove `@` and write `choice #choice.id { ... }`"],
+        );
+        raw
     }
 
     fn parse_if_block(&mut self) -> Option<IfBlock> {
