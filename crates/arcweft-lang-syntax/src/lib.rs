@@ -3337,6 +3337,28 @@ flow #flow.loading loading {
     }
 
     #[test]
+    fn await_with_variant_pending_pattern_binds_payload() {
+        let tree = parse_source(
+            r"
+flow #flow.loading loading {
+    try await run_activity() with { pending .Realizing(p) => p.ratio pending .Running(p) => p.ratio }
+}
+",
+        )
+        .expect("variant pending patterns parse");
+        let hir = lower_to_hir(&tree).expect("variant pending patterns lower");
+
+        let env = TypeCheckEnv::new().with_function(
+            "run_activity",
+            TypeKind::Need {
+                ready: Box::new(TypeKind::Named("ActivityOutput".to_owned())),
+                error: Box::new(TypeKind::Named("ActivityError".to_owned())),
+            },
+        );
+        typecheck_hir(&hir, &env).expect("variant payloads bind in wait-view branches");
+    }
+
+    #[test]
     fn await_question_with_is_rejected_as_ambiguous() {
         let errors = parse_source(
             r"

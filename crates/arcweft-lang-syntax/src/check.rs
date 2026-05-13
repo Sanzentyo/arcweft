@@ -1575,7 +1575,7 @@ fn let_else_bindings(pattern: &Pattern, expr_type: Option<&TypeKind>) -> Vec<(St
         Pattern::Variant { payload, .. } => payload
             .iter()
             .flat_map(variant_payload_bindings)
-            .filter_map(|name| option_payload_type(expr_type).map(|ty| (name, ty)))
+            .filter_map(|name| variant_payload_type(expr_type).map(|ty| (name, ty)))
             .collect(),
         Pattern::Tuple(items) => items
             .iter()
@@ -1636,6 +1636,10 @@ fn option_payload_type(expr_type: Option<&TypeKind>) -> Option<TypeKind> {
         Some(TypeKind::Named(name)) if name == "Option<String>" => Some(TypeKind::String),
         _ => None,
     }
+}
+
+fn variant_payload_type(expr_type: Option<&TypeKind>) -> Option<TypeKind> {
+    option_payload_type(expr_type).or_else(|| expr_type.cloned())
 }
 
 fn result_ok_type(name: &str) -> Option<TypeKind> {
