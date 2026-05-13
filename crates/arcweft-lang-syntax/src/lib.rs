@@ -17,7 +17,10 @@ pub use ast::{
     HookItem, Item, LinePlan, LinePlanItem, MemoFn, ModuleDecl, ParserItem, Pattern,
     ScenarioCommand, SpeakerLine, Stmt, SyntaxTree, TextRange, UseItem, Visibility, WikiLink,
 };
-pub use check::{TypeCheckReadinessError, validate_typecheck_ready};
+pub use check::{
+    EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
+    validate_typecheck_ready,
+};
 pub use expr::{BinaryOp, Expr, Literal, Placeholder, parse_expr};
 pub use lower::{
     HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirLowerError, HirModule,
@@ -30,9 +33,9 @@ pub use text::parse_dialogue_tokens;
 #[cfg(test)]
 mod tests {
     use super::{
-        DialogueToken, Expr, FlowItem, HirFlowItem, Item, LinePlanItem, Pattern, Stmt,
-        SymbolUseKind, Visibility, collect_symbol_uses, lower_to_hir, parse_dialogue_tokens,
-        parse_source, parse_stub, validate_typecheck_ready,
+        DialogueToken, EntityKind, Expr, FlowItem, HirFlowItem, Item, LinePlanItem, Pattern, Stmt,
+        SymbolUseKind, TypeCheckEnv, TypeKind, Visibility, collect_symbol_uses, lower_to_hir,
+        parse_dialogue_tokens, parse_source, parse_stub, typecheck_hir, validate_typecheck_ready,
     };
 
     #[test]
@@ -605,6 +608,86 @@ alice[
         let errors = validate_typecheck_ready(&hir).expect_err("raw expr blocks type checking");
 
         assert!(errors[0].message().contains("raw expression"));
+    }
+
+    #[test]
+    fn typechecks_edge_case_hir_with_explicit_environment() {
+        let tree = parse_source(
+            r#"
+flow #flow.opening opening {
+    let (actor, (_, voice)) = alice.say(voice=auto)[聞いて。[p]]
+    await load_opening_assets()? with { pending p => scene #scene.loading { progress p.ratio } }
+    alice[
+        #[fmt("夢", color=blue)]を見た。[p]
+    ]
+    with:
+        at(0.42s): alice.stage.face(worried)
+    @choice #choice.opening.first {
+        #choice.opening.listen "聞く" if state.affection[#character.alice] >= 3 -> #flow.alice_intro
+    }
+    goto #flow.title
+}
+"#,
+        )
+        .expect("typecheck fixture parses");
+        let hir = lower_to_hir(&tree).expect("typecheck fixture lowers");
+        let env = TypeCheckEnv::new()
+            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("alice.stage", TypeKind::Named("StageActor".to_owned()))
+            .with_symbol("auto", TypeKind::Named("VoicePolicy".to_owned()))
+            .with_symbol("blue", TypeKind::Named("Color".to_owned()))
+            .with_symbol("worried", TypeKind::Named("Face".to_owned()))
+            .with_symbol(
+                "state.affection",
+                TypeKind::Named("Map<Ref<Character>, Int>".to_owned()),
+            )
+            .with_function("fmt", TypeKind::DisplayText)
+            .with_function(
+                "load_opening_assets",
+                TypeKind::Need {
+                    ready: Box::new(TypeKind::Unit),
+                    error: Box::new(TypeKind::Named("AssetError".to_owned())),
+                },
+            )
+            .with_method(
+                TypeKind::Ref(EntityKind::Character),
+                "say",
+                TypeKind::Named("SayBuilder".to_owned()),
+            )
+            .with_method(
+                TypeKind::Named("StageActor".to_owned()),
+                "face",
+                TypeKind::Named("StageCue".to_owned()),
+            )
+            .with_index(
+                TypeKind::Named("Map<Ref<Character>, Int>".to_owned()),
+                TypeKind::Int,
+            );
+
+        typecheck_hir(&hir, &env).expect("edge fixture typechecks");
+    }
+
+    #[test]
+    fn typecheck_reports_wrong_choice_target_kind() {
+        let tree = parse_source(
+            r#"
+flow #flow.opening opening {
+    @choice #choice.opening.first {
+        #choice.opening.listen "聞く" -> #asset.bg.room
+    }
+}
+"#,
+        )
+        .expect("bad choice target fixture parses");
+        let hir = lower_to_hir(&tree).expect("bad choice target lowers");
+        let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
+            .expect_err("choice target must be a flow ref");
+
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message().contains("choice target"))
+        );
     }
 
     #[test]
