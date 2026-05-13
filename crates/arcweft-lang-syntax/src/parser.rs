@@ -1,9 +1,10 @@
 use crate::ast::{
-    Attribute, BlockStyle, CancelRuleSyntax, ChoiceBlock, ChoiceOption, ContentCall,
+    Attribute, AwaitWith, BlockStyle, CancelRuleSyntax, ChoiceBlock, ChoiceOption, ContentCall,
     DialogueContent, EntityRef, Flow, FlowItem, HookItem, Item, LinePlan, LinePlanItem, MemoFn,
     ModuleDecl, ParserItem, RawItem, ScenarioCommand, SpeakerLine, SyntaxTree, TextRange, UseItem,
     UseMode, Visibility, WikiLink,
 };
+use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
 use arcweft_source::{SourceAnchor, SourceName};
 use thiserror::Error;
@@ -320,8 +321,9 @@ impl Parser {
             return Some(FlowItem::Include(entity));
         }
         if trimmed.starts_with("await ") && trimmed.contains(" with ") {
+            let await_with = parse_await_with(trimmed);
             self.index += 1;
-            return Some(FlowItem::AwaitWith(trimmed.to_owned()));
+            return Some(FlowItem::AwaitWith(await_with));
         }
         if let Some(item) = self.parse_content_call_or_speaker_line() {
             return Some(item);
@@ -936,7 +938,13 @@ fn parse_choice_option(
     let after_label = rest[quote_end + 1..].trim();
     let (condition, target_part) = if let Some(condition_body) = after_label.strip_prefix("if ") {
         let (condition, target) = condition_body.split_once("->")?;
-        (Some(condition.trim().to_owned()), target.trim())
+        (
+            Some(
+                parse_expr(condition.trim())
+                    .unwrap_or_else(|_| crate::expr::Expr::Raw(condition.trim().to_owned())),
+            ),
+            target.trim(),
+        )
     } else {
         (None, after_label.strip_prefix("->")?.trim())
     };
@@ -1033,13 +1041,13 @@ fn parse_line_plan_body(style: BlockStyle, body: &str, range: TextRange) -> Line
 
 fn parse_line_plan_item(line: &str) -> LinePlanItem {
     if let Some(rest) = line.strip_prefix("return ") {
-        return LinePlanItem::Return(rest.trim().to_owned());
+        return LinePlanItem::Return(parse_expr_lossy(rest.trim()));
     }
     if let Some(rest) = line.strip_prefix("let ") {
         if let Some((pattern, expr)) = rest.split_once('=') {
             return LinePlanItem::Let {
                 pattern: pattern.trim().to_owned(),
-                expr: expr.trim().to_owned(),
+                expr: parse_expr_lossy(expr.trim()),
             };
         }
     }
@@ -1080,10 +1088,28 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
     if let Some((name, value)) = line.split_once('=') {
         return LinePlanItem::Option {
             name: name.trim().to_owned(),
-            value: value.trim().to_owned(),
+            value: parse_expr_lossy(value.trim()),
         };
     }
     LinePlanItem::Raw(line.to_owned())
+}
+
+fn parse_expr_lossy(source: &str) -> crate::expr::Expr {
+    parse_expr(source).unwrap_or_else(|_| crate::expr::Expr::Raw(source.to_owned()))
+}
+
+fn parse_await_with(trimmed: &str) -> AwaitWith {
+    let without_await = trimmed.trim_start_matches("await").trim();
+    let (expr_part, pending) = without_await
+        .split_once(" with ")
+        .unwrap_or((without_await, ""));
+    let propagates_error = expr_part.ends_with('?');
+    let expr_text = expr_part.trim_end_matches('?').trim();
+    AwaitWith::new(
+        parse_expr_lossy(expr_text),
+        propagates_error,
+        (!pending.trim().is_empty()).then(|| pending.trim().to_owned()),
+    )
 }
 
 fn is_typed_stmt(trimmed: &str) -> bool {

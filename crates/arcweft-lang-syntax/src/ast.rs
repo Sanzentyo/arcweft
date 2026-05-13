@@ -1,3 +1,4 @@
+use crate::expr::Expr;
 use core::ops::Range;
 
 /// Half-open byte range in the original source.
@@ -111,8 +112,16 @@ pub enum FlowItem {
     ContentCall(ContentCall),
     Choice(ChoiceBlock),
     Include(EntityRef),
-    AwaitWith(String),
+    AwaitWith(AwaitWith),
     Raw(String),
+}
+
+/// `await expr? with { ... }` surface syntax.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AwaitWith {
+    expr: Expr,
+    propagates_error: bool,
+    pending: Option<String>,
 }
 
 /// Compact `@bg`, `@show`, and similar scenario command.
@@ -182,7 +191,7 @@ pub struct ChoiceBlock {
 pub struct ChoiceOption {
     id: Option<EntityRef>,
     label: String,
-    condition: Option<String>,
+    condition: Option<Expr>,
     target: EntityRef,
     range: TextRange,
 }
@@ -205,9 +214,9 @@ pub enum BlockStyle {
 /// Item allowed inside a line plan.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LinePlanItem {
-    Option { name: String, value: String },
-    Let { pattern: String, expr: String },
-    Return(String),
+    Option { name: String, value: Expr },
+    Let { pattern: String, expr: Expr },
+    Return(Expr),
     CancelRule(CancelRuleSyntax),
     TimedCue { anchor: String, body: String },
     StartGroup(String),
@@ -483,6 +492,66 @@ impl ScenarioCommand {
     }
 }
 
+impl AwaitWith {
+    pub(crate) const fn new(expr: Expr, propagates_error: bool, pending: Option<String>) -> Self {
+        Self {
+            expr,
+            propagates_error,
+            pending,
+        }
+    }
+
+    pub const fn expr(&self) -> &Expr {
+        &self.expr
+    }
+
+    pub const fn propagates_error(&self) -> bool {
+        self.propagates_error
+    }
+
+    pub fn pending(&self) -> Option<&str> {
+        self.pending.as_deref()
+    }
+}
+
+impl ChoiceOption {
+    pub(crate) const fn new(
+        id: Option<EntityRef>,
+        label: String,
+        condition: Option<Expr>,
+        target: EntityRef,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            id,
+            label,
+            condition,
+            target,
+            range,
+        }
+    }
+
+    pub const fn id(&self) -> Option<&EntityRef> {
+        self.id.as_ref()
+    }
+
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    pub const fn condition(&self) -> Option<&Expr> {
+        self.condition.as_ref()
+    }
+
+    pub const fn target(&self) -> &EntityRef {
+        &self.target
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
 impl DialogueContent {
     pub(crate) const fn new(raw: String, tokens: Vec<DialogueToken>, range: TextRange) -> Self {
         Self { raw, tokens, range }
@@ -606,44 +675,6 @@ impl ChoiceBlock {
 
     pub fn options(&self) -> &[ChoiceOption] {
         &self.options
-    }
-
-    pub const fn range(&self) -> &TextRange {
-        &self.range
-    }
-}
-
-impl ChoiceOption {
-    pub(crate) const fn new(
-        id: Option<EntityRef>,
-        label: String,
-        condition: Option<String>,
-        target: EntityRef,
-        range: TextRange,
-    ) -> Self {
-        Self {
-            id,
-            label,
-            condition,
-            target,
-            range,
-        }
-    }
-
-    pub const fn id(&self) -> Option<&EntityRef> {
-        self.id.as_ref()
-    }
-
-    pub fn label(&self) -> &str {
-        &self.label
-    }
-
-    pub fn condition(&self) -> Option<&str> {
-        self.condition.as_deref()
-    }
-
-    pub const fn target(&self) -> &EntityRef {
-        &self.target
     }
 
     pub const fn range(&self) -> &TextRange {

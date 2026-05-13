@@ -61,6 +61,8 @@ Syntax parser:
 - The parser records module/use headers, attributes, wiki links, flows, flow items, scenario commands, speaker lines, content calls, choice blocks, hooks, memo functions, parser items, line plans, and dialogue tokens.
 - Diagnostics use structured `ParseError` values with spans, expected fragments, found text, recovery suggestions, and source anchors.
 - `thiserror` is used for parser error integration.
+- Expression syntax now has an `Expr` AST for entity references, literals, tuples, calls, method calls, pipes, binary comparisons, and placeholders.
+- Line-plan options, line-plan `let`/`return`, choice conditions, and `await ... with` carry parsed expressions for later type checking and HIR lowering.
 
 ## Deferred
 
@@ -74,7 +76,7 @@ Not implemented in this milestone:
 - MCP / agent protocol runtime
 - Cranelift JIT
 - type checking and HIR lowering
-- semantic expression resolution beyond syntax-preserving CST fields
+- full semantic expression resolution and type-directed ambiguity resolution
 
 ## Verification
 

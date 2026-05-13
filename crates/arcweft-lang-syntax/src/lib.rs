@@ -5,6 +5,7 @@
 //! type resolution or runtime semantics.
 
 mod ast;
+mod expr;
 mod parser;
 mod text;
 
@@ -13,13 +14,14 @@ pub use ast::{
     HookItem, Item, LinePlan, LinePlanItem, MemoFn, ModuleDecl, ParserItem, ScenarioCommand,
     SpeakerLine, SyntaxTree, TextRange, UseItem, Visibility, WikiLink,
 };
+pub use expr::{BinaryOp, Expr, Literal, Placeholder, parse_expr};
 pub use parser::{ParseError, RecoverySuggestion, parse_source, parse_stub};
 pub use text::parse_dialogue_tokens;
 
 #[cfg(test)]
 mod tests {
     use super::{
-        DialogueToken, FlowItem, Item, LinePlanItem, Visibility, parse_dialogue_tokens,
+        DialogueToken, Expr, FlowItem, Item, LinePlanItem, Visibility, parse_dialogue_tokens,
         parse_source, parse_stub,
     };
 
@@ -217,10 +219,7 @@ with:
             option.id().expect("choice option id").body(),
             "choice.opening.listen"
         );
-        assert_eq!(
-            option.condition(),
-            Some("state.affection[#character.alice] >= 3")
-        );
+        assert!(matches!(option.condition(), Some(Expr::Binary { .. })));
         assert_eq!(option.target().body(), "flow.alice_intro");
     }
 
@@ -368,5 +367,80 @@ with {
         assert_eq!(errors.len(), 1);
         assert!(errors[0].message().contains("line plan"));
         assert!(!errors[0].recovery().is_empty());
+    }
+
+    #[test]
+    fn parses_expression_shapes_needed_by_hir_lowering() {
+        let pipe = super::parse_expr("state |> has_affection_at_least(#character.alice, 3)")
+            .expect("pipe expr parses");
+        assert!(matches!(pipe, Expr::Pipe { .. }));
+
+        let method = super::parse_expr("choices.filter(_.enabled).map(_.label)")
+            .expect("method chain parses");
+        assert!(matches!(method, Expr::MethodCall { .. }));
+
+        let placeholder = super::parse_expr("clamp(0, ^, 100)").expect("placeholder call parses");
+        assert!(matches!(placeholder, Expr::Call { .. }));
+
+        let delimited = super::parse_expr("#<say.opening.dream_hint@sem:b3_9f2a1c>")
+            .expect("delimited ref expr parses");
+        assert!(matches!(delimited, Expr::EntityRef(entity) if entity.is_delimited()));
+    }
+
+    #[test]
+    fn line_plan_items_keep_typed_expressions() {
+        let tree = parse_source(
+            r"
+alice:
+    聞いて。[p]
+with:
+    reveal = voice
+    let voice = line.voice_handle()
+    return (actor, voice)
+",
+        )
+        .expect("line plan exprs parse");
+
+        let Item::FlowItem(FlowItem::SpeakerLine(line)) = &tree.items()[0] else {
+            panic!("expected speaker line");
+        };
+        let plan = line.plan().expect("line plan");
+        assert!(matches!(
+            &plan.items()[0],
+            LinePlanItem::Option { value: Expr::Path(path), .. } if path == "voice"
+        ));
+        assert!(matches!(
+            &plan.items()[1],
+            LinePlanItem::Let {
+                expr: Expr::MethodCall { .. },
+                ..
+            }
+        ));
+        assert!(matches!(
+            &plan.items()[2],
+            LinePlanItem::Return(Expr::Tuple(_))
+        ));
+    }
+
+    #[test]
+    fn await_with_keeps_awaited_expression() {
+        let tree = parse_source(
+            r"
+flow #flow.loading loading {
+    await load_opening_assets()? with { pending p => scene #scene.loading { progress p.ratio } }
+}
+",
+        )
+        .expect("await with parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::AwaitWith(await_with) = &flow.body()[0] else {
+            panic!("expected await with");
+        };
+        assert!(await_with.propagates_error());
+        assert!(matches!(await_with.expr(), Expr::Call { .. }));
+        assert!(await_with.pending().is_some());
     }
 }
