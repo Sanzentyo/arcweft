@@ -79,6 +79,11 @@ pub enum Expr {
         statements: Vec<Stmt>,
         value: Option<Box<Expr>>,
     },
+    NamedBlock {
+        name: String,
+        statements: Vec<Stmt>,
+        value: Option<Box<Expr>>,
+    },
     If {
         condition: Box<Expr>,
         then_branch: Box<Expr>,
@@ -292,7 +297,7 @@ fn parse_postfix(source: &str) -> Expr {
             args: parse_arg_list(args),
         };
     }
-    if let Some((target, field)) = split_placeholder_field(source) {
+    if let Some((target, field)) = split_field_access(source) {
         return Expr::Field {
             target: Box::new(parse_postfix(target)),
             field: field.to_owned(),
@@ -528,11 +533,16 @@ fn split_method_call(source: &str) -> Option<(&str, &str, &str)> {
     Some((receiver, method, args))
 }
 
-fn split_placeholder_field(source: &str) -> Option<(&str, &str)> {
+fn split_field_access(source: &str) -> Option<(&str, &str)> {
+    if source.starts_with('#') || is_float_literal(source) || parse_duration(source).is_some() {
+        return None;
+    }
     let dot = find_last_top_level_dot(source)?;
     let target = source[..dot].trim();
     let field = source[dot + 1..].trim();
-    if !matches!(target, "_" | "^") || field.is_empty() || !is_identifier(field) {
+    let target_can_have_field =
+        matches!(target, "_" | "^") || target.ends_with([')', ']']) || target.contains(')');
+    if !target_can_have_field || target.is_empty() || field.is_empty() || !is_identifier(field) {
         return None;
     }
     Some((target, field))

@@ -200,8 +200,6 @@ impl TypeChecker<'_> {
             HirTopLevelDecl::Attribute(_)
             | HirTopLevelDecl::Enum(_)
             | HirTopLevelDecl::Impl(_)
-            | HirTopLevelDecl::MemoFn(_)
-            | HirTopLevelDecl::Parser(_)
             | HirTopLevelDecl::Struct(_)
             | HirTopLevelDecl::Trait(_) => {}
             HirTopLevelDecl::Callable(item) => {
@@ -227,6 +225,19 @@ impl TypeChecker<'_> {
             }
             HirTopLevelDecl::Hook(item) => {
                 self.expect_entity_kind(item.id(), &EntityKind::Hook, "hook id");
+                self.check_block_expr(item.body_statements(), None);
+            }
+            HirTopLevelDecl::MemoFn(item) => {
+                self.active_borrows.clear();
+                self.locals.clear();
+                self.loop_stack.clear();
+                self.check_block_expr(item.body_statements(), item.body_value());
+            }
+            HirTopLevelDecl::Parser(item) => {
+                self.active_borrows.clear();
+                self.locals.clear();
+                self.loop_stack.clear();
+                self.check_block_expr(item.body_statements(), item.body_value());
             }
         }
     }
@@ -923,13 +934,7 @@ impl TypeChecker<'_> {
             }
             Expr::Try { expr } => self.check_try_expr(expr),
             Expr::Range { start, end, .. } => {
-                if let Some(start) = start {
-                    self.check_expr(start);
-                }
-                if let Some(end) = end {
-                    self.check_expr(end);
-                }
-                Some(TypeKind::Range)
+                Some(self.check_range_expr(start.as_deref(), end.as_deref()))
             }
             Expr::Record { path, fields } => {
                 self.check_record_fields(fields);
@@ -949,6 +954,9 @@ impl TypeChecker<'_> {
                 self.check_block_expr(statements, value.as_deref())
             }
             Expr::ComputationBlock {
+                statements, value, ..
+            }
+            | Expr::NamedBlock {
                 statements, value, ..
             } => self.check_block_expr(statements, value.as_deref()),
             Expr::If {
@@ -992,6 +1000,16 @@ impl TypeChecker<'_> {
         for (_, value) in fields {
             self.check_expr(value);
         }
+    }
+
+    fn check_range_expr(&mut self, start: Option<&Expr>, end: Option<&Expr>) -> TypeKind {
+        if let Some(start) = start {
+            self.check_expr(start);
+        }
+        if let Some(end) = end {
+            self.check_expr(end);
+        }
+        TypeKind::Range
     }
 
     fn check_call_expr(&mut self, callee: &Expr, args: &[Expr]) -> Option<TypeKind> {

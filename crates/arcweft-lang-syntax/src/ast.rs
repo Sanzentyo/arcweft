@@ -829,7 +829,21 @@ pub struct HookItem {
     phase: String,
     check: Option<String>,
     body: String,
+    body_statements: Vec<Stmt>,
     range: TextRange,
+}
+
+/// Internal initializer for hook syntax.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct HookInit {
+    pub(crate) visibility: Option<Visibility>,
+    pub(crate) id: EntityRef,
+    pub(crate) target: String,
+    pub(crate) phase: String,
+    pub(crate) check: Option<String>,
+    pub(crate) body: String,
+    pub(crate) body_statements: Vec<Stmt>,
+    pub(crate) range: TextRange,
 }
 
 /// Memoized function item.
@@ -839,6 +853,8 @@ pub struct MemoFn {
     signature: String,
     options: Vec<String>,
     body: String,
+    body_statements: Vec<Stmt>,
+    body_value: Option<Expr>,
     range: TextRange,
 }
 
@@ -849,6 +865,8 @@ pub struct ParserItem {
     name: String,
     signature_tail: String,
     body: String,
+    body_statements: Vec<Stmt>,
+    body_value: Option<Expr>,
     range: TextRange,
 }
 
@@ -2302,23 +2320,16 @@ impl CancelRuleSyntax {
 }
 
 impl HookItem {
-    pub(crate) const fn new(
-        visibility: Option<Visibility>,
-        id: EntityRef,
-        target: String,
-        phase: String,
-        check: Option<String>,
-        body: String,
-        range: TextRange,
-    ) -> Self {
+    pub(crate) fn new(init: HookInit) -> Self {
         Self {
-            visibility,
-            id,
-            target,
-            phase,
-            check,
-            body,
-            range,
+            visibility: init.visibility,
+            id: init.id,
+            target: init.target,
+            phase: init.phase,
+            check: init.check,
+            body: init.body,
+            body_statements: init.body_statements,
+            range: init.range,
         }
     }
 
@@ -2346,6 +2357,10 @@ impl HookItem {
         &self.body
     }
 
+    pub fn body_statements(&self) -> &[Stmt] {
+        &self.body_statements
+    }
+
     pub const fn range(&self) -> &TextRange {
         &self.range
     }
@@ -2357,6 +2372,8 @@ impl MemoFn {
         signature: String,
         options: Vec<String>,
         body: String,
+        body_statements: Vec<Stmt>,
+        body_value: Option<Expr>,
         range: TextRange,
     ) -> Self {
         Self {
@@ -2364,6 +2381,8 @@ impl MemoFn {
             signature,
             options,
             body,
+            body_statements,
+            body_value,
             range,
         }
     }
@@ -2384,6 +2403,14 @@ impl MemoFn {
         &self.body
     }
 
+    pub fn body_statements(&self) -> &[Stmt] {
+        &self.body_statements
+    }
+
+    pub const fn body_value(&self) -> Option<&Expr> {
+        self.body_value.as_ref()
+    }
+
     pub const fn range(&self) -> &TextRange {
         &self.range
     }
@@ -2395,6 +2422,8 @@ impl ParserItem {
         name: String,
         signature_tail: String,
         body: String,
+        body_statements: Vec<Stmt>,
+        body_value: Option<Expr>,
         range: TextRange,
     ) -> Self {
         Self {
@@ -2402,6 +2431,8 @@ impl ParserItem {
             name,
             signature_tail,
             body,
+            body_statements,
+            body_value,
             range,
         }
     }
@@ -2420,6 +2451,14 @@ impl ParserItem {
 
     pub fn body(&self) -> &str {
         &self.body
+    }
+
+    pub fn body_statements(&self) -> &[Stmt] {
+        &self.body_statements
+    }
+
+    pub const fn body_value(&self) -> Option<&Expr> {
+        self.body_value.as_ref()
     }
 
     pub const fn range(&self) -> &TextRange {

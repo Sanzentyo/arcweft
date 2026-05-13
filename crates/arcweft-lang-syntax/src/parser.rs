@@ -3,7 +3,7 @@ use crate::ast::{
     CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceMatchArm,
     ChoiceOption, ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause,
     DialogueContent, EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind,
-    ForBlock, FunctionInit, FunctionItem, HookItem, IfBlock, IfLetBlock, ImplItem, Item,
+    ForBlock, FunctionInit, FunctionItem, HookInit, HookItem, IfBlock, IfLetBlock, ImplItem, Item,
     LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl,
     ParserItem, Pattern, RawItem, RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock,
     SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField,
@@ -564,16 +564,18 @@ impl Parser {
             .iter()
             .find_map(|line| line.strip_prefix("check ").map(str::trim))
             .map(str::to_owned);
+        let body_statements = parse_stmt_lines(&body);
 
-        Some(HookItem::new(
+        Some(HookItem::new(HookInit {
             visibility,
             id,
             target,
             phase,
             check,
             body,
-            TextRange::new(start_line.start, end),
-        ))
+            body_statements,
+            range: TextRange::new(start_line.start, end),
+        }))
     }
 
     fn reject_old_hook_header_syntax(&mut self, header_lines: &[&str], base: usize) {
@@ -631,11 +633,14 @@ impl Parser {
             .inspect(|line| self.reject_old_memo_option(line, start_line.start))
             .map(str::to_owned)
             .collect();
+        let (body_statements, body_value) = parse_scope_expr_body(&body);
         Some(MemoFn::new(
             visibility,
             signature,
             options,
             body,
+            body_statements,
+            body_value,
             TextRange::new(start_line.start, end),
         ))
     }
@@ -671,11 +676,14 @@ impl Parser {
             .strip_prefix("parser")?
             .trim_start();
         let (name, tail) = parse_name_and_tail(after_parser);
+        let (body_statements, body_value) = parse_scope_expr_body(&body);
         Some(ParserItem::new(
             visibility,
             name.unwrap_or_default(),
             tail,
             body,
+            body_statements,
+            body_value,
             TextRange::new(start_line.start, end),
         ))
     }
@@ -3213,7 +3221,24 @@ fn parse_line_plan_cancel_action(action: &str) -> Vec<Stmt> {
 }
 
 fn parse_expr_lossy(source: &str) -> crate::expr::Expr {
+    if let Some((head, body)) = split_brace_item(source) {
+        let name = head.trim();
+        if is_plain_block_callee(name) {
+            return parse_named_block_expr(name, body);
+        }
+    }
     parse_expr(source).unwrap_or_else(|_| crate::expr::Expr::Raw(source.to_owned()))
+}
+
+fn is_plain_block_callee(source: &str) -> bool {
+    !source.is_empty()
+        && source
+            .chars()
+            .all(|ch| ch.is_alphanumeric() || matches!(ch, '_' | ':'))
+        && source
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_lowercase() || ch == '_')
 }
 
 fn normalize_timed_cue_body(source: &str) -> &str {
@@ -3583,6 +3608,15 @@ fn parse_scope_expr_body(body: &str) -> (Vec<Stmt>, Option<crate::expr::Expr>) {
 fn parse_block_expr(body: &str) -> crate::expr::Expr {
     let (statements, value) = parse_scope_expr_body(body);
     crate::expr::Expr::Block {
+        statements,
+        value: value.map(Box::new),
+    }
+}
+
+fn parse_named_block_expr(name: &str, body: &str) -> crate::expr::Expr {
+    let (statements, value) = parse_scope_expr_body(body);
+    crate::expr::Expr::NamedBlock {
+        name: name.to_owned(),
         statements,
         value: value.map(Box::new),
     }

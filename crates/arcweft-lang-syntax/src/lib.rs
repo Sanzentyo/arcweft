@@ -1889,9 +1889,27 @@ pub parser parse_player_command: Parser<PlayerCommand, ParseError> {
         )
         .expect("hook, memo, and parser items parse");
 
-        assert!(matches!(&tree.items()[0], Item::Hook(_)));
-        assert!(matches!(&tree.items()[1], Item::MemoFn(_)));
-        assert!(matches!(&tree.items()[2], Item::Parser(_)));
+        let Item::Hook(hook) = &tree.items()[0] else {
+            panic!("expected hook item");
+        };
+        assert!(matches!(hook.body_statements(), [Stmt::Signal { .. }]));
+
+        let Item::MemoFn(memo) = &tree.items()[1] else {
+            panic!("expected memo item");
+        };
+        assert!(memo.body_statements().is_empty());
+        assert!(matches!(memo.body_value(), Some(Expr::Field { .. })));
+
+        let Item::Parser(parser) = &tree.items()[2] else {
+            panic!("expected parser item");
+        };
+        assert!(parser.body_statements().is_empty());
+        assert!(
+            matches!(parser.body_value(), Some(Expr::NamedBlock { name, .. }) if name == "alt")
+        );
+
+        let hir = lower_to_hir(&tree).expect("hook, memo, and parser items lower");
+        validate_typecheck_ready(&hir).expect("hook, memo, and parser bodies are structured");
     }
 
     #[test]

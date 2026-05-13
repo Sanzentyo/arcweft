@@ -59,8 +59,6 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
         HirTopLevelDecl::Attribute(_)
         | HirTopLevelDecl::Enum(_)
         | HirTopLevelDecl::Impl(_)
-        | HirTopLevelDecl::MemoFn(_)
-        | HirTopLevelDecl::Parser(_)
         | HirTopLevelDecl::Struct(_) => {}
         HirTopLevelDecl::Callable(item) => {
             for contract in item.contracts() {
@@ -84,7 +82,28 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
                 collect_expr(clause, uses);
             }
         }
-        HirTopLevelDecl::Hook(item) => push_entity(uses, item.id()),
+        HirTopLevelDecl::Hook(item) => {
+            push_entity(uses, item.id());
+            for stmt in item.body_statements() {
+                collect_stmt(stmt, uses);
+            }
+        }
+        HirTopLevelDecl::MemoFn(item) => {
+            for stmt in item.body_statements() {
+                collect_stmt(stmt, uses);
+            }
+            if let Some(value) = item.body_value() {
+                collect_expr(value, uses);
+            }
+        }
+        HirTopLevelDecl::Parser(item) => {
+            for stmt in item.body_statements() {
+                collect_stmt(stmt, uses);
+            }
+            if let Some(value) = item.body_value() {
+                collect_expr(value, uses);
+            }
+        }
     }
 }
 
@@ -632,6 +651,9 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
         }
         Expr::Block { statements, value }
         | Expr::ComputationBlock {
+            statements, value, ..
+        }
+        | Expr::NamedBlock {
             statements, value, ..
         } => {
             for stmt in statements {
