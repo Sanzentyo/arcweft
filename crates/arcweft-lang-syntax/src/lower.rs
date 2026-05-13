@@ -1,6 +1,6 @@
 use crate::ast::{
-    ChoiceBlock, DialogueContent, EntityRef, Flow, FlowItem, Item, SpeakerLine, Stmt, SyntaxTree,
-    TextRange,
+    ChoiceBlock, DialogueContent, EntityRef, Flow, FlowItem, Item, LinePlan, SpeakerLine, Stmt,
+    SyntaxTree, TextRange,
 };
 use crate::expr::Expr;
 use thiserror::Error;
@@ -39,7 +39,9 @@ pub enum HirFlowItem {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirDialogue {
     callee: String,
+    args: Option<String>,
     content: DialogueContent,
+    plan: Option<LinePlan>,
 }
 
 /// HIR-facing choice block.
@@ -123,7 +125,9 @@ fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
         FlowItem::SpeakerLine(line) => Ok(HirFlowItem::Dialogue(lower_speaker_line(line))),
         FlowItem::ContentCall(call) => Ok(HirFlowItem::Dialogue(HirDialogue {
             callee: call.callee().to_owned(),
+            args: call.args().map(str::to_owned),
             content: call.content().clone(),
+            plan: call.plan().cloned(),
         })),
         FlowItem::Choice(choice) => Ok(HirFlowItem::Choice(lower_choice(choice))),
         FlowItem::Include(entity) => Ok(HirFlowItem::Include(entity.clone())),
@@ -141,7 +145,9 @@ fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
 fn lower_speaker_line(line: &SpeakerLine) -> HirDialogue {
     HirDialogue {
         callee: line.speaker().to_owned(),
+        args: line.args().map(str::to_owned),
         content: line.content().clone(),
+        plan: line.plan().cloned(),
     }
 }
 
@@ -190,8 +196,16 @@ impl HirDialogue {
         &self.callee
     }
 
+    pub fn args(&self) -> Option<&str> {
+        self.args.as_deref()
+    }
+
     pub const fn content(&self) -> &DialogueContent {
         &self.content
+    }
+
+    pub const fn plan(&self) -> Option<&LinePlan> {
+        self.plan.as_ref()
     }
 }
 

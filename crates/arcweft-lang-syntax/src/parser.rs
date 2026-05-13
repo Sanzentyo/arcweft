@@ -1064,12 +1064,8 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
     if let Some(rest) = line.strip_prefix("at(") {
         if let Some((anchor, body)) = rest.split_once(')') {
             return LinePlanItem::TimedCue {
-                anchor: anchor.trim().to_owned(),
-                body: body
-                    .trim_start_matches([':', ' ', '{'])
-                    .trim_end_matches('}')
-                    .trim()
-                    .to_owned(),
+                anchor: parse_expr_lossy(anchor.trim()),
+                body: parse_expr_lossy(normalize_timed_cue_body(body)),
             };
         }
     }
@@ -1096,6 +1092,17 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
 
 fn parse_expr_lossy(source: &str) -> crate::expr::Expr {
     parse_expr(source).unwrap_or_else(|_| crate::expr::Expr::Raw(source.to_owned()))
+}
+
+fn normalize_timed_cue_body(source: &str) -> &str {
+    let body = source
+        .trim_start_matches([':', ' ', '{'])
+        .trim_end_matches('}')
+        .trim();
+    body.strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(body)
+        .trim()
 }
 
 fn parse_await_with(trimmed: &str) -> AwaitWith {

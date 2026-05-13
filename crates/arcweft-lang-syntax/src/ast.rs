@@ -165,7 +165,7 @@ pub enum DialogueToken {
     Text(String),
     Tag(DialogueTag),
     EndTag(String),
-    Expr(String),
+    Expr(Expr),
     Ruby { base: String, ruby: String },
     Escape(char),
 }
@@ -237,7 +237,7 @@ pub enum LinePlanItem {
     Let { pattern: Pattern, expr: Expr },
     Return(Expr),
     CancelRule(CancelRuleSyntax),
-    TimedCue { anchor: String, body: String },
+    TimedCue { anchor: Expr, body: Expr },
     StartGroup(String),
     TogetherGroup(String),
     Memo(String),

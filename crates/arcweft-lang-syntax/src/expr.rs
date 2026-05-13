@@ -18,10 +18,22 @@ pub enum Expr {
         callee: Box<Expr>,
         args: Vec<Expr>,
     },
+    NamedArg {
+        name: String,
+        value: Box<Expr>,
+    },
     MethodCall {
         receiver: Box<Expr>,
         method: String,
         args: Vec<Expr>,
+    },
+    DialogueCall {
+        callee: Box<Expr>,
+        content: String,
+    },
+    Index {
+        target: Box<Expr>,
+        index: Box<Expr>,
     },
     Pipe {
         lhs: Box<Expr>,
@@ -41,7 +53,7 @@ pub enum Literal {
     String(String),
     Int(i64),
     Bool(bool),
-    Duration { value: u64, unit: DurationUnit },
+    Duration { amount: String, unit: DurationUnit },
 }
 
 /// Duration suffix recognized by the syntax parser.
@@ -93,6 +105,12 @@ fn parse_pipe(source: &str) -> Expr {
             rhs: Box::new(parse_pipe(rhs)),
         };
     }
+    if let Some((name, value)) = split_named_arg(source) {
+        return Expr::NamedArg {
+            name: name.to_owned(),
+            value: Box::new(parse_pipe(value)),
+        };
+    }
     parse_binary(source)
 }
 
@@ -121,6 +139,18 @@ fn parse_binary(source: &str) -> Expr {
 
 fn parse_postfix(source: &str) -> Expr {
     let source = source.trim();
+    if let Some((target, content)) = split_bracket_postfix(source) {
+        if looks_like_index_expr(content) {
+            return Expr::Index {
+                target: Box::new(parse_postfix(target)),
+                index: Box::new(parse_pipe(content)),
+            };
+        }
+        return Expr::DialogueCall {
+            callee: Box::new(parse_postfix(target)),
+            content: content.to_owned(),
+        };
+    }
     if let Some((receiver, method, args)) = split_method_call(source) {
         return Expr::MethodCall {
             receiver: Box::new(parse_postfix(receiver)),
@@ -188,19 +218,18 @@ fn parse_string(source: &str) -> Option<String> {
 
 fn parse_duration(source: &str) -> Option<Literal> {
     if let Some(value) = source.strip_suffix("ms") {
-        return value.parse::<u64>().ok().map(|value| Literal::Duration {
-            value,
-            unit: DurationUnit::Millis,
-        });
+        if is_numeric_duration(value) {
+            return Some(Literal::Duration {
+                amount: value.to_owned(),
+                unit: DurationUnit::Millis,
+            });
+        }
     }
-    source
-        .strip_suffix('s')?
-        .parse::<u64>()
-        .ok()
-        .map(|value| Literal::Duration {
-            value,
-            unit: DurationUnit::Seconds,
-        })
+    let value = source.strip_suffix('s')?;
+    is_numeric_duration(value).then(|| Literal::Duration {
+        amount: value.to_owned(),
+        unit: DurationUnit::Seconds,
+    })
 }
 
 fn parse_entity_expr(source: &str) -> Option<EntityRef> {
@@ -248,6 +277,16 @@ fn split_method_call(source: &str) -> Option<(&str, &str, &str)> {
 
 fn parse_arg_list(source: &str) -> Vec<Expr> {
     split_args(source).into_iter().map(parse_pipe).collect()
+}
+
+fn split_bracket_postfix(source: &str) -> Option<(&str, &str)> {
+    let close = source.strip_suffix(']')?;
+    let open = find_last_top_level_open_bracket(close)?;
+    let target = close[..open].trim();
+    if target.is_empty() {
+        return None;
+    }
+    Some((target, &close[open + 1..]))
 }
 
 fn split_args(source: &str) -> Vec<&str> {
@@ -298,6 +337,21 @@ fn split_top_level<'a>(source: &'a str, needle: &str) -> Option<(&'a str, &'a st
     None
 }
 
+fn split_named_arg(source: &str) -> Option<(&str, &str)> {
+    let (name, value) = split_top_level(source, "=")?;
+    if name.is_empty()
+        || value.is_empty()
+        || source.contains("==")
+        || source.contains("!=")
+        || source.contains(">=")
+        || source.contains("<=")
+        || !is_identifier(name)
+    {
+        return None;
+    }
+    Some((name, value))
+}
+
 fn find_last_top_level_open_paren(source: &str) -> Option<usize> {
     let mut depth = 0_i32;
     let mut last = None;
@@ -310,6 +364,27 @@ fn find_last_top_level_open_paren(source: &str) -> Option<usize> {
                 depth += 1;
             }
             ')' => depth -= 1,
+            _ => {}
+        }
+    }
+    last
+}
+
+fn find_last_top_level_open_bracket(source: &str) -> Option<usize> {
+    let mut paren_depth = 0_i32;
+    let mut bracket_depth = 0_i32;
+    let mut last = None;
+    for (index, ch) in source.char_indices() {
+        match ch {
+            '(' => paren_depth += 1,
+            ')' => paren_depth -= 1,
+            '[' => {
+                if paren_depth == 0 && bracket_depth == 0 {
+                    last = Some(index);
+                }
+                bracket_depth += 1;
+            }
+            ']' => bracket_depth -= 1,
             _ => {}
         }
     }
@@ -334,6 +409,33 @@ fn is_path_like(source: &str) -> bool {
     source
         .chars()
         .all(|ch| ch.is_alphanumeric() || matches!(ch, '_' | ':' | '.'))
+}
+
+fn is_identifier(source: &str) -> bool {
+    source
+        .chars()
+        .next()
+        .is_some_and(|ch| ch.is_alphabetic() || ch == '_')
+        && source.chars().all(|ch| ch.is_alphanumeric() || ch == '_')
+}
+
+fn is_numeric_duration(source: &str) -> bool {
+    !source.is_empty()
+        && source.chars().filter(|ch| *ch == '.').count() <= 1
+        && source.chars().any(|ch| ch.is_ascii_digit())
+        && source.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
+}
+
+fn looks_like_index_expr(source: &str) -> bool {
+    let trimmed = source.trim();
+    trimmed.starts_with('#')
+        || trimmed.starts_with('"')
+        || trimmed == "_"
+        || trimmed == "^"
+        || trimmed == "true"
+        || trimmed == "false"
+        || trimmed.parse::<i64>().is_ok()
+        || is_path_like(trimmed)
 }
 
 impl ExprParseError {

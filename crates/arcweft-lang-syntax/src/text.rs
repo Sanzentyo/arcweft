@@ -1,4 +1,5 @@
 use crate::ast::{DialogueTag, DialogueToken};
+use crate::expr::{Expr, parse_expr};
 
 /// Parses dialogue-text mode into tokens.
 ///
@@ -38,7 +39,7 @@ pub fn parse_dialogue_tokens(source: &str) -> Vec<DialogueToken> {
                 let _ = chars.next();
                 if let Some((expr, consumed_to)) = take_balanced_bracket(source, index + 2) {
                     flush_text(&mut text, &mut tokens);
-                    tokens.push(DialogueToken::Expr(expr));
+                    tokens.push(DialogueToken::Expr(parse_dialogue_expr_lossy(&expr)));
                     while chars
                         .peek()
                         .is_some_and(|(offset, _)| *offset < consumed_to)
@@ -139,4 +140,8 @@ fn parse_tag(source: &str, start: usize) -> Option<(DialogueToken, usize)> {
         DialogueToken::Tag(DialogueTag::new(name, attrs)),
         consumed_to,
     ))
+}
+
+fn parse_dialogue_expr_lossy(source: &str) -> Expr {
+    parse_expr(source).unwrap_or_else(|_| Expr::Raw(source.to_owned()))
 }

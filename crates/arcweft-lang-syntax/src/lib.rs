@@ -8,6 +8,7 @@ mod ast;
 mod expr;
 mod lower;
 mod parser;
+mod symbols;
 mod text;
 
 pub use ast::{
@@ -21,13 +22,15 @@ pub use lower::{
     lower_to_hir,
 };
 pub use parser::{ParseError, RecoverySuggestion, parse_source, parse_stub};
+pub use symbols::{SymbolUse, SymbolUseKind, collect_symbol_uses};
 pub use text::parse_dialogue_tokens;
 
 #[cfg(test)]
 mod tests {
     use super::{
-        DialogueToken, Expr, FlowItem, HirFlowItem, Item, LinePlanItem, Pattern, Stmt, Visibility,
-        lower_to_hir, parse_dialogue_tokens, parse_source, parse_stub,
+        DialogueToken, Expr, FlowItem, HirFlowItem, Item, LinePlanItem, Pattern, Stmt,
+        SymbolUseKind, Visibility, collect_symbol_uses, lower_to_hir, parse_dialogue_tokens,
+        parse_source, parse_stub,
     };
 
     #[test]
@@ -167,9 +170,13 @@ with:
         assert_eq!(call.callee(), "alice");
         assert_eq!(call.content().raw(), "おはよう。[p]");
         let plan = call.plan().expect("line plan");
-        assert!(
-            matches!(&plan.items()[0], LinePlanItem::TimedCue { anchor, body } if anchor == "0.42s" && body == "alice.stage.face(smile)")
-        );
+        assert!(matches!(
+            &plan.items()[0],
+            LinePlanItem::TimedCue {
+                anchor: Expr::Literal(_),
+                body: Expr::MethodCall { .. }
+            }
+        ));
     }
 
     #[test]
@@ -200,9 +207,13 @@ with:
             panic!("expected content call");
         };
         let plan = call.plan().expect("line plan");
-        assert!(
-            matches!(&plan.items()[0], LinePlanItem::TimedCue { anchor, body } if anchor == "0.42s" && body == "[alice.stage.face(worried)]")
-        );
+        assert!(matches!(
+            &plan.items()[0],
+            LinePlanItem::TimedCue {
+                anchor: Expr::Literal(_),
+                body: Expr::MethodCall { .. }
+            }
+        ));
     }
 
     #[test]
@@ -303,9 +314,9 @@ flow #flow.opening opening {}
 
         assert!(tokens.iter().any(|token| matches!(token, DialogueToken::Ruby { base, ruby } if base == "変な夢" && ruby == "へんなゆめ")));
         assert!(
-            tokens.iter().any(
-                |token| matches!(token, DialogueToken::Expr(expr) if expr.starts_with("fmt("))
-            )
+            tokens
+                .iter()
+                .any(|token| matches!(token, DialogueToken::Expr(Expr::Call { .. })))
         );
         assert!(
             tokens
@@ -383,6 +394,14 @@ with {
         let method = super::parse_expr("choices.filter(_.enabled).map(_.label)")
             .expect("method chain parses");
         assert!(matches!(method, Expr::MethodCall { .. }));
+
+        let indexed =
+            super::parse_expr("state.affection[#character.alice]").expect("index expr parses");
+        assert!(matches!(indexed, Expr::Index { .. }));
+
+        let dialogue_call =
+            super::parse_expr("alice.say()[聞いて。[p]]").expect("dialogue call expr parses");
+        assert!(matches!(dialogue_call, Expr::DialogueCall { .. }));
 
         let placeholder = super::parse_expr("clamp(0, ^, 100)").expect("placeholder call parses");
         assert!(matches!(placeholder, Expr::Call { .. }));
@@ -469,7 +488,7 @@ flow #flow.opening opening {
             &flow.body()[0],
             FlowItem::Stmt(Stmt::Let {
                 pattern: Pattern::Tuple(_),
-                expr: Expr::Raw(_) | Expr::MethodCall { .. } | Expr::Call { .. },
+                expr: Expr::DialogueCall { .. },
             })
         ));
         assert!(matches!(
@@ -521,10 +540,52 @@ flow #flow.opening opening {
         assert!(flow.body().iter().any(
             |item| matches!(item, HirFlowItem::Dialogue(dialogue) if dialogue.callee() == "alice")
         ));
+        assert!(flow.body().iter().any(
+            |item| matches!(item, HirFlowItem::Dialogue(dialogue) if dialogue.plan().is_some())
+        ));
         assert!(flow
             .body()
             .iter()
             .any(|item| matches!(item, HirFlowItem::Choice(choice) if choice.options()[0].condition().is_some())));
+    }
+
+    #[test]
+    fn collects_hir_symbol_uses_for_type_checking_without_reparsing() {
+        let tree = parse_source(
+            r#"
+flow #flow.opening opening {
+    let (actor, (_, voice)) = alice.say()[聞いて。[p]]
+    alice[
+        #[fmt("夢", color=blue)]を見た。[p]
+    ]
+    with:
+        at(0.42s): alice.stage.face(worried)
+    @choice #choice.opening.first {
+        #choice.opening.listen "聞く" if state.affection[#character.alice] >= 3 -> #flow.alice_intro
+    }
+}
+"#,
+        )
+        .expect("symbol fixture parses");
+        let hir = lower_to_hir(&tree).expect("symbol fixture lowers");
+        let uses = collect_symbol_uses(&hir);
+
+        assert!(uses.iter().any(
+            |symbol| symbol.kind() == SymbolUseKind::DialogueCallee && symbol.name() == "alice"
+        ));
+        assert!(
+            uses.iter()
+                .any(|symbol| symbol.kind() == SymbolUseKind::Method && symbol.name() == "face")
+        );
+        assert!(
+            uses.iter()
+                .any(|symbol| symbol.kind() == SymbolUseKind::EntityRef
+                    && symbol.name() == "character.alice")
+        );
+        assert!(
+            uses.iter()
+                .all(|symbol| symbol.kind() != SymbolUseKind::RawExpr)
+        );
     }
 
     #[test]
