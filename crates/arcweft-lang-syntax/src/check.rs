@@ -19,9 +19,11 @@ pub enum EntityKind {
     Text,
     Asset,
     Animation,
+    Capture,
     Hook,
     Signal,
     Scene,
+    Source,
     Other(String),
 }
 
@@ -238,6 +240,15 @@ impl TypeChecker<'_> {
                 self.locals.clear();
                 self.loop_stack.clear();
                 self.check_block_expr(item.body_statements(), item.body_value());
+            }
+            HirTopLevelDecl::Source(item) => {
+                self.active_borrows.clear();
+                self.locals.clear();
+                self.loop_stack.clear();
+                if let Some(id) = item.id() {
+                    self.expect_entity_kind(id, &EntityKind::Source, "source id");
+                }
+                self.check_block_expr(item.body_statements(), None);
             }
         }
     }
@@ -492,6 +503,14 @@ impl TypeChecker<'_> {
                     self.check_expr(value);
                 }
             }
+            Stmt::On { body, .. } => {
+                let outer_locals = self.locals.clone();
+                self.bind_on_head_locals(stmt);
+                for stmt in body {
+                    self.check_stmt(stmt);
+                }
+                self.locals = outer_locals;
+            }
             Stmt::Command(command) => {
                 for arg in command.args() {
                     self.check_expr(arg);
@@ -513,6 +532,27 @@ impl TypeChecker<'_> {
             self.locals.insert(name.to_owned(), ty);
         }
         collect_borrow_lifetimes(pattern, &mut self.active_borrows);
+    }
+
+    fn bind_on_head_locals(&mut self, stmt: &Stmt) {
+        let Stmt::On { head, .. } = stmt else {
+            return;
+        };
+        let mut parts = head.split_whitespace();
+        let Some(kind) = parts.next() else {
+            return;
+        };
+        let Some(binding) = parts.next_back() else {
+            return;
+        };
+        let ty = match kind {
+            "item" => TypeKind::Named("SourceItem".to_owned()),
+            "error" => TypeKind::Named("SourceError".to_owned()),
+            _ => return,
+        };
+        if is_local_ident(binding) {
+            self.locals.insert(binding.to_owned(), ty);
+        }
     }
 
     fn check_let_else_stmt(&mut self, pattern: &Pattern, expr: &Expr, else_body: &[Stmt]) {
@@ -1268,9 +1308,11 @@ fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
         "item" => EntityKind::Other("item".to_owned()),
         "asset" => EntityKind::Asset,
         "anim" => EntityKind::Animation,
+        "capture" => EntityKind::Capture,
         "hook" => EntityKind::Hook,
         "signal" => EntityKind::Signal,
         "scene" => EntityKind::Scene,
+        "source" => EntityKind::Source,
         "ent" => EntityKind::Other("ent".to_owned()),
         _ => return None,
     })

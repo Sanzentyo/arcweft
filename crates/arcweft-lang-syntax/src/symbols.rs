@@ -104,6 +104,14 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
                 collect_expr(value, uses);
             }
         }
+        HirTopLevelDecl::Source(item) => {
+            if let Some(id) = item.id() {
+                push_entity(uses, id);
+            }
+            for stmt in item.body_statements() {
+                collect_stmt(stmt, uses);
+            }
+        }
     }
 }
 
@@ -502,6 +510,7 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
                 collect_expr(value, uses);
             }
         }
+        Stmt::On { body, .. } => collect_stmt_block(body, uses),
         Stmt::Command(command) => {
             for arg in command.args() {
                 collect_expr(arg, uses);

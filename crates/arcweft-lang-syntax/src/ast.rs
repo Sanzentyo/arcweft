@@ -66,6 +66,7 @@ pub enum Item {
     Hook(HookItem),
     MemoFn(MemoFn),
     Parser(ParserItem),
+    Source(SourceItem),
     FlowItem(FlowItem),
     Raw(RawItem),
 }
@@ -515,6 +516,11 @@ pub enum Stmt {
         event: Expr,
         fields: Vec<(String, Expr)>,
     },
+    /// `on head => stmt` event branch used by source and plan-like bodies.
+    On {
+        head: String,
+        body: Vec<Stmt>,
+    },
     Command(ScenarioCommand),
     If {
         condition: Expr,
@@ -882,6 +888,22 @@ pub struct ParserItem {
     body: String,
     body_statements: Vec<Stmt>,
     body_value: Option<Expr>,
+    range: TextRange,
+}
+
+/// Declarative `source` stream declaration.
+///
+/// Source declarations are syntax-only at this layer. They preserve the source
+/// id or function-like name plus parsed policy/event statements so HIR and
+/// later semantic passes do not need to reparse the body text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceItem {
+    visibility: Option<Visibility>,
+    id: Option<EntityRef>,
+    name: Option<String>,
+    signature_tail: String,
+    body: String,
+    body_statements: Vec<Stmt>,
     range: TextRange,
 }
 
@@ -2479,6 +2501,56 @@ impl ParserItem {
 
     pub const fn body_value(&self) -> Option<&Expr> {
         self.body_value.as_ref()
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl SourceItem {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        id: Option<EntityRef>,
+        name: Option<String>,
+        signature_tail: String,
+        body: String,
+        body_statements: Vec<Stmt>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            id,
+            name,
+            signature_tail,
+            body,
+            body_statements,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub const fn id(&self) -> Option<&EntityRef> {
+        self.id.as_ref()
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn signature_tail(&self) -> &str {
+        &self.signature_tail
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub fn body_statements(&self) -> &[Stmt] {
+        &self.body_statements
     }
 
     pub const fn range(&self) -> &TextRange {

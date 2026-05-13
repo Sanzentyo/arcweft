@@ -6,10 +6,10 @@ use crate::ast::{
     ForBlock, FunctionInit, FunctionItem, FunctionKind, HookInit, HookItem, IfBlock, IfLetBlock,
     ImplItem, Item, LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn,
     ModuleDecl, ParserItem, Pattern, RawItem, RecordPatternField, ScenarioCommand, ScopeBlock,
-    ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine,
-    StateField, StateItem, Stmt, StmtMatchArm, StructField, StructItem, SyntaxTree, TextRange,
-    TraitItem, TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock,
-    WikiLink,
+    ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceItem, SourceLocaleBlock,
+    SpeakerLine, StateField, StateItem, Stmt, StmtMatchArm, StructField, StructItem, SyntaxTree,
+    TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock,
+    WhileLetBlock, WikiLink,
 };
 use crate::expr::{ComputationBlockKind, Expr, parse_expr};
 use crate::text::parse_dialogue_tokens;
@@ -147,6 +147,10 @@ impl Parser {
             } else if looks_like_parser_item(&trimmed) {
                 if let Some(parser) = self.parse_parser_item() {
                     items.push(Item::Parser(parser));
+                }
+            } else if looks_like_source_item(&trimmed) {
+                if let Some(source) = self.parse_source_item() {
+                    items.push(Item::Source(source));
                 }
             } else if let Some(flow_item) = self.parse_flow_item_until_indent(0) {
                 items.push(Item::FlowItem(flow_item));
@@ -687,6 +691,45 @@ impl Parser {
             body,
             body_statements,
             body_value,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_source_item(&mut self) -> Option<SourceItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_flow_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing source item",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the source body"],
+            );
+            return None;
+        }
+        let (visibility, after_visibility) = parse_visibility_prefix(head.trim());
+        let after_source = after_visibility
+            .trim_start()
+            .strip_prefix("source")?
+            .trim_start();
+        let (id, name, signature_tail) = if after_source.starts_with('#') {
+            let (id, rest) =
+                parse_optional_entity_ref(after_source, start_line.start, &mut self.errors);
+            let (id, signature_tail) = normalize_source_id_and_tail(id, rest);
+            (id, None, signature_tail)
+        } else {
+            let (name, tail) = parse_name_and_tail(after_source);
+            (None, name, tail)
+        };
+
+        Some(SourceItem::new(
+            visibility,
+            id,
+            name,
+            signature_tail,
+            body.clone(),
+            parse_source_stmt_lines(&body),
             TextRange::new(start_line.start, end),
         ))
     }
@@ -2027,6 +2070,27 @@ fn looks_like_memo_fn(trimmed: &str) -> bool {
 fn looks_like_parser_item(trimmed: &str) -> bool {
     let (_, rest) = parse_visibility_prefix(trimmed);
     rest.trim_start().starts_with("parser ")
+}
+
+fn looks_like_source_item(trimmed: &str) -> bool {
+    let (_, rest) = parse_visibility_prefix(trimmed);
+    let rest = rest.trim_start();
+    rest.starts_with("source ") && !rest.starts_with("source locale ")
+}
+
+fn normalize_source_id_and_tail(id: Option<EntityRef>, rest: &str) -> (Option<EntityRef>, String) {
+    let Some(entity) = id else {
+        return (None, rest.trim().to_owned());
+    };
+    if entity.is_delimited() || !entity.body().ends_with(':') {
+        return (Some(entity), rest.trim().to_owned());
+    }
+    let body = entity.body().trim_end_matches(':').to_owned();
+    let range = TextRange::new(entity.range().start(), entity.range().end() - 1);
+    (
+        Some(EntityRef::new(body, false, range)),
+        format!(": {}", rest.trim_start()),
+    )
 }
 
 fn parse_visibility_prefix(input: &str) -> (Option<Visibility>, &str) {
@@ -3672,6 +3736,26 @@ fn parse_stmt_lines(body: &str) -> Vec<Stmt> {
         .collect()
 }
 
+fn parse_source_stmt_lines(body: &str) -> Vec<Stmt> {
+    collect_logical_choice_lines(body)
+        .into_iter()
+        .map(|line| line.trim().to_owned())
+        .filter(|line| !line.is_empty())
+        .map(|line| parse_source_stmt(&line))
+        .collect()
+}
+
+fn parse_source_stmt(trimmed: &str) -> Stmt {
+    if let Some(rest) = trimmed.strip_prefix("from ") {
+        return Stmt::Command(ScenarioCommand::new(
+            "from".to_owned(),
+            vec![parse_expr_lossy(rest.trim())],
+            TextRange::new(0, trimmed.len()),
+        ));
+    }
+    parse_stmt(trimmed)
+}
+
 fn parse_stmt(trimmed: &str) -> Stmt {
     if let Some(rest) = trimmed.strip_prefix("let ") {
         if let Some((pattern, expr)) = rest.split_once('=') {
@@ -3705,6 +3789,15 @@ fn parse_stmt(trimmed: &str) -> Stmt {
     }
     if let Some(rest) = trimmed.strip_prefix("emit ") {
         return parse_emit_stmt(rest.trim());
+    }
+    if let Some(rest) = trimmed.strip_prefix("on ") {
+        if let Some((head, action)) = rest.split_once("=>") {
+            return Stmt::On {
+                head: head.trim().to_owned(),
+                body: vec![parse_stmt(action.trim())],
+            };
+        }
+        return Stmt::Raw(trimmed.to_owned());
     }
     if let Some((head, body)) = split_brace_item(trimmed) {
         if let Some(condition) = head.strip_prefix("if ") {
@@ -3805,6 +3898,14 @@ fn parse_stmt_match_arms(body: &str) -> Vec<StmtMatchArm> {
 }
 
 fn parse_emit_stmt(rest: &str) -> Stmt {
+    if let Some(signal) = rest.strip_prefix("signal ") {
+        if let Some((target, value)) = signal.split_once("<-") {
+            return Stmt::Signal {
+                target: parse_expr_lossy(target.trim()),
+                value: parse_expr_lossy(value.trim()),
+            };
+        }
+    }
     if let Some((head, body)) = split_brace_item(rest) {
         return Stmt::Emit {
             event: parse_expr_lossy(head.trim()),

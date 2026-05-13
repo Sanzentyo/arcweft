@@ -2,9 +2,9 @@ use crate::ast::{
     Attribute, AwaitBranchKind, BorrowBlock, CallableItem, ChoiceAction, ChoiceBlock, ChoicePlan,
     ContractClause, DialogueContent, EntityRef, EnumItem, Flow, FlowItem, FlowKind, FunctionItem,
     FunctionKind, HookItem, IfBlock, IfLetBlock, ImplItem, Item, LinePlan, LoopBlock, MatchBlock,
-    MemoFn, ParserItem, Pattern, ScopeBlock, ScopeExprBlock, SourceLocaleBlock, SpeakerLine,
-    StateItem, Stmt, StructItem, SyntaxTree, TextRange, TraitItem, TypeAliasItem, WhileBlock,
-    WhileLetBlock,
+    MemoFn, ParserItem, Pattern, ScopeBlock, ScopeExprBlock, SourceItem, SourceLocaleBlock,
+    SpeakerLine, StateItem, Stmt, StructItem, SyntaxTree, TextRange, TraitItem, TypeAliasItem,
+    WhileBlock, WhileLetBlock,
 };
 use crate::expr::Expr;
 use crate::types::FnSignature;
@@ -58,6 +58,7 @@ pub enum HirTopLevelDecl {
     Hook(HookItem),
     MemoFn(MemoFn),
     Parser(ParserItem),
+    Source(SourceItem),
 }
 
 /// HIR-facing flow item.
@@ -303,6 +304,9 @@ pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> 
             }
             Item::Parser(item) => {
                 declarations.push(HirTopLevelDecl::Parser(item.clone()));
+            }
+            Item::Source(item) => {
+                declarations.push(HirTopLevelDecl::Source(item.clone()));
             }
             Item::State(item) => {
                 declarations.push(HirTopLevelDecl::State(item.clone()));

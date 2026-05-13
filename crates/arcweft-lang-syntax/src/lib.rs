@@ -21,9 +21,10 @@ pub use ast::{
     ForBlock, FunctionItem, FunctionKind, HookItem, IfBlock, IfLetBlock, ImplItem, Item,
     LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl,
     ParserItem, Pattern, RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock,
-    SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField,
-    StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember,
-    TypeAliasItem, UseItem, VariantPatternPayload, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    SelectBlock, SelectBranch, SelectBranchHead, SourceItem, SourceLocaleBlock, SpeakerLine,
+    StateField, StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TraitItem,
+    TraitMember, TypeAliasItem, UseItem, VariantPatternPayload, Visibility, WhileBlock,
+    WhileLetBlock, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -47,12 +48,12 @@ pub use types::{
 mod tests {
     use super::{
         AwaitBranchKind, BinaryOp, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
-        ComputationBlockKind, ContractClause, DialogueToken, EntityKind, Expr, FlowItem, FlowKind,
-        FunctionKind, HirFlowItem, HirTopLevelDecl, Item, LinePlanItem, Literal, NameRegistry,
-        Pattern, Placeholder, SelectBranchHead, Stmt, SymbolUseKind, TraitMember, TypeCheckEnv,
-        TypeKind, TypeRef, UnaryOp, VariantPatternPayload, Visibility, collect_symbol_uses,
-        lower_to_hir, parse_dialogue_tokens, parse_fn_signature, parse_source, parse_stub,
-        parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
+        ComputationBlockKind, ContractClause, DialogueToken, EntityKind, EntityRef, Expr, FlowItem,
+        FlowKind, FunctionKind, HirFlowItem, HirTopLevelDecl, Item, LinePlanItem, Literal,
+        NameRegistry, Pattern, Placeholder, SelectBranchHead, Stmt, SymbolUseKind, TraitMember,
+        TypeCheckEnv, TypeKind, TypeRef, UnaryOp, VariantPatternPayload, Visibility,
+        collect_symbol_uses, lower_to_hir, parse_dialogue_tokens, parse_fn_signature, parse_source,
+        parse_stub, parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
         validate_typecheck_ready,
     };
 
@@ -3837,6 +3838,62 @@ flow #flow.opening opening {
 
         assert_eq!(hir.flows()[0].kind(), FlowKind::Fragment);
         typecheck_hir(&hir, &env).expect("fragment include fixture typechecks");
+    }
+
+    #[test]
+    fn parses_lowers_and_typechecks_documented_source_item() {
+        let tree = parse_source(
+            r#"
+pub source #source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
+    from capture.camera(#capture.face_camera)
+    backpressure = latest
+    replay = hash_only
+    privacy = transient
+
+    on item frame => yield frame
+    on disconnected => emit signal #signal.camera_connected <- false
+    on error e => log warn "camera stream error {err:?}" { err = e }
+}
+"#,
+        )
+        .expect("documented source item parses");
+        let Item::Source(source) = &tree.items()[0] else {
+            panic!("expected source item");
+        };
+        assert_eq!(
+            source.id().map(EntityRef::body),
+            Some("source.face_camera_frames")
+        );
+        assert!(source.signature_tail().contains("Source<VideoFrameHandle"));
+        assert!(source.body_statements().iter().any(|stmt| matches!(
+            stmt,
+            Stmt::On { head, body }
+                if head == "item frame" && matches!(body.as_slice(), [Stmt::Yield(_)])
+        )));
+        assert!(source.body_statements().iter().any(|stmt| matches!(
+            stmt,
+            Stmt::On { head, body }
+                if head == "disconnected" && matches!(body.as_slice(), [Stmt::Signal { .. }])
+        )));
+
+        let hir = lower_to_hir(&tree).expect("documented source item lowers");
+        assert!(matches!(
+            hir.declarations(),
+            [HirTopLevelDecl::Source(source)] if source.id().is_some()
+        ));
+        validate_typecheck_ready(&hir).expect("source item is typecheck-ready");
+        let env = TypeCheckEnv::new()
+            .with_symbol("capture", TypeKind::Named("CaptureApi".to_owned()))
+            .with_symbol("latest", TypeKind::Named("BackpressurePolicy".to_owned()))
+            .with_symbol("hash_only", TypeKind::Named("ReplayPolicy".to_owned()))
+            .with_symbol("transient", TypeKind::Named("PrivacyPolicy".to_owned()))
+            .with_method(
+                TypeKind::Named("CaptureApi".to_owned()),
+                "camera",
+                TypeKind::Named("CaptureStream".to_owned()),
+            )
+            .with_function("log.warn", TypeKind::Unit);
+        typecheck_hir(&hir, &env).expect("documented source item typechecks");
     }
 
     #[test]

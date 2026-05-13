@@ -1,5 +1,5 @@
 use crate::check::EntityKind;
-use crate::lower::{HirFlowItem, HirModule};
+use crate::lower::{HirFlowItem, HirModule, HirTopLevelDecl};
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 use core::fmt;
 use std::collections::HashMap;
@@ -32,6 +32,13 @@ pub fn registry_from_hir(module: &HirModule) -> NameRegistry {
         }
         for item in flow.body() {
             register_flow_item(item, &mut registry);
+        }
+    }
+    for declaration in module.declarations() {
+        if let HirTopLevelDecl::Source(source) = declaration {
+            if let Some(id) = source.id() {
+                registry.insert(id.body(), EntityKind::Source);
+            }
         }
     }
     registry
