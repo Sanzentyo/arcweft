@@ -16,6 +16,7 @@ pub enum EntityKind {
     Character,
     Textbox,
     DialogueLine,
+    Text,
     Asset,
     Animation,
     Hook,
@@ -166,6 +167,12 @@ impl TypeChecker<'_> {
                         "dialogue callee `{}` must resolve to Ref<Character> or SpeakerPreset",
                         dialogue.callee()
                     )));
+                }
+                if let Some(id) = dialogue.id() {
+                    self.expect_entity_kind(id, &EntityKind::DialogueLine, "dialogue line id");
+                }
+                if let Some(text_key) = dialogue.text_key() {
+                    self.expect_entity_kind(text_key, &EntityKind::Text, "dialogue text key");
                 }
                 self.check_dialogue_content(dialogue.content().tokens());
                 if let Some(plan) = dialogue.plan() {
@@ -556,6 +563,7 @@ fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
         "character" => EntityKind::Character,
         "textbox" => EntityKind::Textbox,
         "say" => EntityKind::DialogueLine,
+        "text" => EntityKind::Text,
         "asset" => EntityKind::Asset,
         "anim" => EntityKind::Animation,
         "hook" => EntityKind::Hook,

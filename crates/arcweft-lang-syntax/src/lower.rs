@@ -50,6 +50,9 @@ pub enum HirFlowItem {
 pub struct HirDialogue {
     callee: String,
     args: Option<String>,
+    id: Option<EntityRef>,
+    text_key: Option<EntityRef>,
+    source_locale: Option<String>,
     content: DialogueContent,
     plan: Option<LinePlan>,
 }
@@ -245,10 +248,22 @@ fn lower_flow_item_with_context(
             name: command.name().to_owned(),
             args: command.args().to_vec(),
         }),
-        FlowItem::SpeakerLine(line) => Ok(HirFlowItem::Dialogue(lower_speaker_line(line))),
+        FlowItem::SpeakerLine(line) => Ok(HirFlowItem::Dialogue(lower_speaker_line(line, context))),
         FlowItem::ContentCall(call) => Ok(HirFlowItem::Dialogue(HirDialogue {
             callee: call.callee().to_owned(),
             args: call.args().map(str::to_owned),
+            id: normalize_line_id(
+                call.options().id(),
+                content_callee_slug(call.callee()),
+                context,
+            ),
+            text_key: normalize_line_text_key(
+                call.options().text_key(),
+                call.options().id(),
+                content_callee_slug(call.callee()),
+                context,
+            ),
+            source_locale: call.options().source_locale().map(str::to_owned),
             content: call.content().clone(),
             plan: call.plan().cloned(),
         })),
@@ -375,10 +390,18 @@ fn lower_match(block: &MatchBlock, context: &mut LowerContext) -> Result<HirMatc
     })
 }
 
-fn lower_speaker_line(line: &SpeakerLine) -> HirDialogue {
+fn lower_speaker_line(line: &SpeakerLine, context: &LowerContext) -> HirDialogue {
     HirDialogue {
         callee: line.speaker().to_owned(),
         args: line.args().map(str::to_owned),
+        id: normalize_line_id(line.options().id(), speaker_slug(line.speaker()), context),
+        text_key: normalize_line_text_key(
+            line.options().text_key(),
+            line.options().id(),
+            speaker_slug(line.speaker()),
+            context,
+        ),
+        source_locale: line.options().source_locale().map(str::to_owned),
         content: line.content().clone(),
         plan: line.plan().cloned(),
     }
@@ -484,6 +507,71 @@ fn normalize_text_key_id(id: &EntityRef, context: &LowerContext) -> EntityRef {
     )
 }
 
+fn normalize_line_id(
+    id: Option<&EntityRef>,
+    speaker: String,
+    context: &LowerContext,
+) -> Option<EntityRef> {
+    id.map(|id| {
+        if !id.is_relative() {
+            return id.clone();
+        }
+        let Some(flow_slug) = &context.flow_slug else {
+            return id.clone();
+        };
+        let mut parts = vec!["say".to_owned(), flow_slug.clone(), speaker];
+        parts.extend(context.scopes.iter().cloned());
+        parts.push(id.body().to_owned());
+        EntityRef::new(parts.join("."), false, *id.range())
+    })
+}
+
+fn normalize_line_text_key(
+    text_key: Option<&EntityRef>,
+    line_id: Option<&EntityRef>,
+    speaker: String,
+    context: &LowerContext,
+) -> Option<EntityRef> {
+    if let Some(text_key) = text_key {
+        if !text_key.is_relative() {
+            return Some(text_key.clone());
+        }
+        let Some(flow_slug) = &context.flow_slug else {
+            return Some(text_key.clone());
+        };
+        let mut parts = vec!["text".to_owned(), flow_slug.clone(), speaker];
+        parts.extend(context.scopes.iter().cloned());
+        parts.push(text_key.body().to_owned());
+        return Some(EntityRef::new(parts.join("."), false, *text_key.range()));
+    }
+    normalize_line_id(line_id, speaker, context)
+        .map(|id| EntityRef::new(line_id_to_text_key(id.body()), false, *id.range()))
+}
+
+fn line_id_to_text_key(line_id: &str) -> String {
+    line_id
+        .strip_prefix("say.")
+        .map_or_else(|| format!("text.{line_id}"), |tail| format!("text.{tail}"))
+}
+
+fn speaker_slug(speaker: &str) -> String {
+    match speaker {
+        "地の文" | "narrator" => "narrator".to_owned(),
+        other => other
+            .rsplit(['.', ':'])
+            .next()
+            .unwrap_or(other)
+            .trim_end_matches(".say")
+            .to_owned(),
+    }
+}
+
+fn content_callee_slug(callee: &str) -> String {
+    callee
+        .strip_suffix(".say")
+        .map_or_else(|| speaker_slug(callee), speaker_slug)
+}
+
 fn flow_slug_from_entity(id: &EntityRef) -> String {
     id.body()
         .strip_prefix("flow.")
@@ -531,6 +619,18 @@ impl HirDialogue {
 
     pub fn args(&self) -> Option<&str> {
         self.args.as_deref()
+    }
+
+    pub const fn id(&self) -> Option<&EntityRef> {
+        self.id.as_ref()
+    }
+
+    pub const fn text_key(&self) -> Option<&EntityRef> {
+        self.text_key.as_ref()
+    }
+
+    pub fn source_locale(&self) -> Option<&str> {
+        self.source_locale.as_deref()
     }
 
     pub const fn content(&self) -> &DialogueContent {

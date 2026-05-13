@@ -60,6 +60,14 @@ pub fn validate_hir_references(
 
 fn register_flow_item(item: &HirFlowItem, registry: &mut NameRegistry) {
     match item {
+        HirFlowItem::Dialogue(dialogue) => {
+            if let Some(id) = dialogue.id() {
+                registry.insert(id.body(), EntityKind::DialogueLine);
+            }
+            if let Some(text_key) = dialogue.text_key() {
+                registry.insert(text_key.body(), EntityKind::Text);
+            }
+        }
         HirFlowItem::Choice(choice) => {
             if let Some(id) = choice.id() {
                 registry.insert(id.body(), EntityKind::Choice);
@@ -116,10 +124,7 @@ fn register_flow_item(item: &HirFlowItem, registry: &mut NameRegistry) {
                 }
             }
         }
-        HirFlowItem::Stmt(_)
-        | HirFlowItem::Dialogue(_)
-        | HirFlowItem::Include(_)
-        | HirFlowItem::Scenario { .. } => {}
+        HirFlowItem::Stmt(_) | HirFlowItem::Include(_) | HirFlowItem::Scenario { .. } => {}
     }
 }
 

@@ -3,8 +3,8 @@ use crate::ast::{
     CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceOption,
     ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause, DialogueContent,
     EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionItem,
-    HookItem, IfBlock, ImplItem, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn,
-    ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, ScopeBlock, SelectBlock,
+    HookItem, IfBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, MatchArm, MatchBlock,
+    MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, ScopeBlock, SelectBlock,
     SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt,
     StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
     UseMode, Visibility, WikiLink,
@@ -1063,7 +1063,8 @@ impl Parser {
             let plan = self.take_optional_line_plan();
             return Some(FlowItem::SpeakerLine(SpeakerLine::new(
                 speaker,
-                args,
+                args.clone(),
+                parse_line_options(args.as_deref(), line.start, &mut self.errors),
                 content,
                 plan,
                 TextRange::new(line.start, self.previous_end()),
@@ -1074,7 +1075,8 @@ impl Parser {
             let plan = self.take_optional_line_plan();
             return Some(FlowItem::ContentCall(ContentCall::new(
                 callee,
-                args,
+                args.clone(),
+                parse_line_options(args.as_deref(), line.start, &mut self.errors),
                 content,
                 plan,
                 TextRange::new(line.start, consumed_end),
@@ -1782,6 +1784,82 @@ fn split_scenario_args(source: &str) -> Vec<&str> {
         args.push(tail);
     }
     args
+}
+
+fn parse_line_options(
+    args: Option<&str>,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> LineOptions {
+    let Some(args) = args else {
+        return LineOptions::default();
+    };
+    let mut id = None;
+    let mut text_key = None;
+    let mut source_locale = None;
+    for arg in split_comma_args(args) {
+        let Some((name, value)) = split_top_level_equals(arg) else {
+            continue;
+        };
+        match name.trim() {
+            "id" => {
+                id = parse_required_id_ref(value.trim(), base, errors).map(|(entity, _)| entity);
+            }
+            "text_key" => {
+                text_key =
+                    parse_required_id_ref(value.trim(), base, errors).map(|(entity, _)| entity);
+            }
+            "source_locale" => {
+                source_locale = Some(value.trim().to_owned());
+            }
+            _ => {}
+        }
+    }
+    LineOptions::new(id, text_key, source_locale)
+}
+
+fn split_comma_args(source: &str) -> Vec<&str> {
+    let mut args = Vec::new();
+    let mut start = 0;
+    let mut depth = 0_i32;
+    let mut in_string = false;
+    for (index, ch) in source.char_indices() {
+        match ch {
+            '"' => in_string = !in_string,
+            '(' | '[' | '{' if !in_string => depth += 1,
+            ')' | ']' | '}' if !in_string => depth -= 1,
+            ',' if depth == 0 && !in_string => {
+                let arg = source[start..index].trim();
+                if !arg.is_empty() {
+                    args.push(arg);
+                }
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    let tail = source[start..].trim();
+    if !tail.is_empty() {
+        args.push(tail);
+    }
+    args
+}
+
+fn split_top_level_equals(source: &str) -> Option<(&str, &str)> {
+    let mut depth = 0_i32;
+    let mut in_string = false;
+    for (index, ch) in source.char_indices() {
+        match ch {
+            '"' => in_string = !in_string,
+            '(' | '[' | '{' if !in_string => depth += 1,
+            ')' | ']' | '}' if !in_string => depth -= 1,
+            '=' if depth == 0 && !in_string => {
+                return Some((source[..index].trim(), source[index + 1..].trim()));
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn parse_attribute(trimmed: &str, range: TextRange) -> Option<Attribute> {

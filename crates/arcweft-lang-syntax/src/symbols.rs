@@ -43,40 +43,8 @@ pub fn collect_symbol_uses(module: &HirModule) -> Vec<SymbolUse> {
 fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
     match item {
         HirFlowItem::Stmt(stmt) => collect_stmt(stmt, uses),
-        HirFlowItem::Dialogue(dialogue) => {
-            uses.push(SymbolUse::new(
-                SymbolUseKind::DialogueCallee,
-                dialogue.callee().to_owned(),
-            ));
-            collect_dialogue_content(dialogue.content().tokens(), uses);
-            if let Some(plan) = dialogue.plan() {
-                for item in plan.items() {
-                    collect_line_plan_item(item, uses);
-                }
-            }
-        }
-        HirFlowItem::Choice(choice) => {
-            if let Some(id) = choice.id() {
-                push_entity(uses, id);
-            }
-            for option in choice.options() {
-                if let Some(id) = option.id() {
-                    push_entity(uses, id);
-                }
-                if let Some(condition) = option.condition() {
-                    collect_expr(condition, uses);
-                }
-                if let Some(value) = option.value() {
-                    collect_expr(value, uses);
-                }
-                if let Some(text_key) = option.label_text_key() {
-                    push_entity(uses, text_key);
-                }
-                if let Some(target) = option.target() {
-                    push_entity(uses, target);
-                }
-            }
-        }
+        HirFlowItem::Dialogue(dialogue) => collect_dialogue(dialogue, uses),
+        HirFlowItem::Choice(choice) => collect_choice(choice, uses),
         HirFlowItem::If(block) => {
             collect_expr(block.condition(), uses);
             for item in block.body() {
@@ -134,6 +102,48 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
             for arg in args {
                 collect_expr(arg, uses);
             }
+        }
+    }
+}
+
+fn collect_dialogue(dialogue: &crate::lower::HirDialogue, uses: &mut Vec<SymbolUse>) {
+    uses.push(SymbolUse::new(
+        SymbolUseKind::DialogueCallee,
+        dialogue.callee().to_owned(),
+    ));
+    if let Some(id) = dialogue.id() {
+        push_entity(uses, id);
+    }
+    if let Some(text_key) = dialogue.text_key() {
+        push_entity(uses, text_key);
+    }
+    collect_dialogue_content(dialogue.content().tokens(), uses);
+    if let Some(plan) = dialogue.plan() {
+        for item in plan.items() {
+            collect_line_plan_item(item, uses);
+        }
+    }
+}
+
+fn collect_choice(choice: &crate::lower::HirChoice, uses: &mut Vec<SymbolUse>) {
+    if let Some(id) = choice.id() {
+        push_entity(uses, id);
+    }
+    for option in choice.options() {
+        if let Some(id) = option.id() {
+            push_entity(uses, id);
+        }
+        if let Some(condition) = option.condition() {
+            collect_expr(condition, uses);
+        }
+        if let Some(value) = option.value() {
+            collect_expr(value, uses);
+        }
+        if let Some(text_key) = option.label_text_key() {
+            push_entity(uses, text_key);
+        }
+        if let Some(target) = option.target() {
+            push_entity(uses, target);
         }
     }
 }

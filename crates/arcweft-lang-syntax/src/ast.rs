@@ -469,6 +469,7 @@ pub struct DialogueTag {
 pub struct SpeakerLine {
     speaker: String,
     args: Option<String>,
+    options: LineOptions,
     content: DialogueContent,
     plan: Option<LinePlan>,
     range: TextRange,
@@ -479,9 +480,18 @@ pub struct SpeakerLine {
 pub struct ContentCall {
     callee: String,
     args: Option<String>,
+    options: LineOptions,
     content: DialogueContent,
     plan: Option<LinePlan>,
     range: TextRange,
+}
+
+/// Structured dialogue line options parsed from the raw call argument list.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct LineOptions {
+    id: Option<EntityRef>,
+    text_key: Option<EntityRef>,
+    source_locale: Option<String>,
 }
 
 /// `choice #choice.id { ... }` flow item with option rows.
@@ -1617,6 +1627,7 @@ impl SpeakerLine {
     pub(crate) const fn new(
         speaker: String,
         args: Option<String>,
+        options: LineOptions,
         content: DialogueContent,
         plan: Option<LinePlan>,
         range: TextRange,
@@ -1624,6 +1635,7 @@ impl SpeakerLine {
         Self {
             speaker,
             args,
+            options,
             content,
             plan,
             range,
@@ -1636,6 +1648,10 @@ impl SpeakerLine {
 
     pub fn args(&self) -> Option<&str> {
         self.args.as_deref()
+    }
+
+    pub const fn options(&self) -> &LineOptions {
+        &self.options
     }
 
     pub const fn content(&self) -> &DialogueContent {
@@ -1655,6 +1671,7 @@ impl ContentCall {
     pub(crate) const fn new(
         callee: String,
         args: Option<String>,
+        options: LineOptions,
         content: DialogueContent,
         plan: Option<LinePlan>,
         range: TextRange,
@@ -1662,6 +1679,7 @@ impl ContentCall {
         Self {
             callee,
             args,
+            options,
             content,
             plan,
             range,
@@ -1676,6 +1694,10 @@ impl ContentCall {
         self.args.as_deref()
     }
 
+    pub const fn options(&self) -> &LineOptions {
+        &self.options
+    }
+
     pub const fn content(&self) -> &DialogueContent {
         &self.content
     }
@@ -1686,6 +1708,32 @@ impl ContentCall {
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+}
+
+impl LineOptions {
+    pub(crate) const fn new(
+        id: Option<EntityRef>,
+        text_key: Option<EntityRef>,
+        source_locale: Option<String>,
+    ) -> Self {
+        Self {
+            id,
+            text_key,
+            source_locale,
+        }
+    }
+
+    pub const fn id(&self) -> Option<&EntityRef> {
+        self.id.as_ref()
+    }
+
+    pub const fn text_key(&self) -> Option<&EntityRef> {
+        self.text_key.as_ref()
+    }
+
+    pub fn source_locale(&self) -> Option<&str> {
+        self.source_locale.as_deref()
     }
 }
 

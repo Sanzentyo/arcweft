@@ -18,8 +18,8 @@ pub use ast::{
     Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, CallableItem, CallableKind, ChoiceAction,
     ChoiceBlock, ChoiceItem, ChoiceOption, ChoicePlan, ChoicePlanItem, ContentCall, ContractClause,
     DialogueToken, EntityRef, EnumItem, EnumVariant, Flow, FlowItem, FlowKind, ForBlock,
-    FunctionItem, HookItem, IfBlock, ImplItem, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock,
-    MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand, ScopeBlock, SelectBlock,
+    FunctionItem, HookItem, IfBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, MatchArm,
+    MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand, ScopeBlock, SelectBlock,
     SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt,
     StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
     Visibility, WikiLink,
@@ -630,6 +630,63 @@ flow #flow.quiet_intro quiet_intro {}
             &TypeCheckEnv::new().with_symbol("can_enter", TypeKind::Bool),
         )
         .expect("scoped relative choice HIR typechecks");
+    }
+
+    #[test]
+    fn lowers_relative_dialogue_line_options() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    scope rain {
+        地の文(id=.sound):
+            扉の向こうから、雨の音がした。[p]
+
+        alice(id=.comment, text_key=.comment_text, source_locale=en-US):
+            Good morning.[p]
+    }
+}
+",
+        )
+        .expect("relative dialogue options parse");
+        let hir = lower_to_hir(&tree).expect("relative dialogue options lower");
+        let HirFlowItem::Scope(scope) = &hir.flows()[0].body()[0] else {
+            panic!("expected HIR scope");
+        };
+        let HirFlowItem::Dialogue(narration) = &scope.body()[0] else {
+            panic!("expected narration");
+        };
+        assert_eq!(
+            narration.id().expect("narration id").body(),
+            "say.opening.narrator.rain.sound"
+        );
+        assert_eq!(
+            narration.text_key().expect("derived text key").body(),
+            "text.opening.narrator.rain.sound"
+        );
+
+        let HirFlowItem::Dialogue(alice) = &scope.body()[1] else {
+            panic!("expected alice line");
+        };
+        assert_eq!(
+            alice.id().expect("alice line id").body(),
+            "say.opening.alice.rain.comment"
+        );
+        assert_eq!(
+            alice.text_key().expect("explicit text key").body(),
+            "text.opening.alice.rain.comment_text"
+        );
+        assert_eq!(alice.source_locale(), Some("en-US"));
+
+        let registry = registry_from_hir(&hir);
+        validate_hir_references(&hir, &registry).expect("dialogue ids resolve");
+        validate_typecheck_ready(&hir).expect("dialogue option IDs are typecheck-ready");
+        typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new()
+                .with_symbol("地の文", TypeKind::Ref(EntityKind::Character))
+                .with_symbol("alice", TypeKind::Ref(EntityKind::Character)),
+        )
+        .expect("relative dialogue options typecheck");
     }
 
     #[test]
