@@ -285,9 +285,18 @@ pub enum FlowItem {
     For(ForBlock),
     Select(SelectBlock),
     BorrowBlock(BorrowBlock),
+    SourceLocale(SourceLocaleBlock),
     Include(EntityRef),
     AwaitWith(AwaitWith),
     Raw(String),
+}
+
+/// Scoped source-locale override for directly authored text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceLocaleBlock {
+    locale: String,
+    body: Vec<FlowItem>,
+    range: TextRange,
 }
 
 /// Typed `if expr { ... }` flow block.
@@ -471,7 +480,26 @@ pub struct ChoiceBlock {
     id: Option<EntityRef>,
     items: Vec<ChoiceItem>,
     options: Vec<ChoiceOption>,
+    plan: Option<ChoicePlan>,
     range: TextRange,
+}
+
+/// Choice lifecycle plan attached with `with { ... }` or `with:`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChoicePlan {
+    style: BlockStyle,
+    items: Vec<ChoicePlanItem>,
+    range: TextRange,
+}
+
+/// Item inside a choice lifecycle plan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ChoicePlanItem {
+    Option { name: String, value: Expr },
+    Timeout { duration: Expr, body: String },
+    Cancel { trigger: String, body: String },
+    OnSelect { pattern: Pattern, body: String },
+    Raw(String),
 }
 
 /// Item inside a choice body.
@@ -500,6 +528,8 @@ pub struct ChoiceOption {
     id: Option<EntityRef>,
     id_expr: Option<Expr>,
     label: String,
+    label_text_key: Option<EntityRef>,
+    value: Option<Expr>,
     enabled: Option<Expr>,
     visible: Option<Expr>,
     order: Option<Expr>,
@@ -1401,6 +1431,8 @@ impl ChoiceOption {
             id,
             id_expr: None,
             label,
+            label_text_key: None,
+            value: None,
             enabled: None,
             visible: None,
             order: None,
@@ -1418,6 +1450,16 @@ impl ChoiceOption {
 
     pub(crate) fn with_enabled(mut self, enabled: Expr) -> Self {
         self.enabled = Some(enabled);
+        self
+    }
+
+    pub(crate) fn with_label_text_key(mut self, text_key: EntityRef) -> Self {
+        self.label_text_key = Some(text_key);
+        self
+    }
+
+    pub(crate) fn with_value(mut self, value: Expr) -> Self {
+        self.value = Some(value);
         self
     }
 
@@ -1451,6 +1493,14 @@ impl ChoiceOption {
 
     pub fn label(&self) -> &str {
         &self.label
+    }
+
+    pub const fn label_text_key(&self) -> Option<&EntityRef> {
+        self.label_text_key.as_ref()
+    }
+
+    pub const fn value(&self) -> Option<&Expr> {
+        self.value.as_ref()
     }
 
     pub const fn condition(&self) -> Option<&Expr> {
@@ -1616,12 +1666,18 @@ impl ContentCall {
 }
 
 impl ChoiceBlock {
-    pub(crate) fn new(id: Option<EntityRef>, items: Vec<ChoiceItem>, range: TextRange) -> Self {
+    pub(crate) fn new(
+        id: Option<EntityRef>,
+        items: Vec<ChoiceItem>,
+        plan: Option<ChoicePlan>,
+        range: TextRange,
+    ) -> Self {
         let options = collect_choice_options(&items);
         Self {
             id,
             items,
             options,
+            plan,
             range,
         }
     }
@@ -1636,6 +1692,58 @@ impl ChoiceBlock {
 
     pub fn items(&self) -> &[ChoiceItem] {
         &self.items
+    }
+
+    pub const fn plan(&self) -> Option<&ChoicePlan> {
+        self.plan.as_ref()
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl ChoicePlan {
+    pub(crate) const fn new(
+        style: BlockStyle,
+        items: Vec<ChoicePlanItem>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            style,
+            items,
+            range,
+        }
+    }
+
+    pub const fn style(&self) -> BlockStyle {
+        self.style
+    }
+
+    pub fn items(&self) -> &[ChoicePlanItem] {
+        &self.items
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl SourceLocaleBlock {
+    pub(crate) const fn new(locale: String, body: Vec<FlowItem>, range: TextRange) -> Self {
+        Self {
+            locale,
+            body,
+            range,
+        }
+    }
+
+    pub fn locale(&self) -> &str {
+        &self.locale
+    }
+
+    pub fn body(&self) -> &[FlowItem] {
+        &self.body
     }
 
     pub const fn range(&self) -> &TextRange {

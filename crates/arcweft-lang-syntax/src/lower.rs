@@ -1,7 +1,7 @@
 use crate::ast::{
-    AwaitBranchKind, BorrowBlock, ChoiceAction, ChoiceBlock, ContractClause, DialogueContent,
-    EntityRef, Flow, FlowItem, FlowKind, IfBlock, Item, LinePlan, MatchBlock, Pattern, SpeakerLine,
-    Stmt, SyntaxTree, TextRange,
+    AwaitBranchKind, BorrowBlock, ChoiceAction, ChoiceBlock, ChoicePlan, ContractClause,
+    DialogueContent, EntityRef, Flow, FlowItem, FlowKind, IfBlock, Item, LinePlan, MatchBlock,
+    Pattern, SourceLocaleBlock, SpeakerLine, Stmt, SyntaxTree, TextRange,
 };
 use crate::expr::Expr;
 use core::fmt;
@@ -38,6 +38,7 @@ pub enum HirFlowItem {
     For(HirFor),
     Select(HirSelect),
     Borrow(HirBorrow),
+    SourceLocale(HirSourceLocale),
     Include(EntityRef),
     Await(HirAwait),
     Scenario { name: String, args: Vec<Expr> },
@@ -57,6 +58,7 @@ pub struct HirDialogue {
 pub struct HirChoice {
     id: Option<EntityRef>,
     options: Vec<HirChoiceOption>,
+    plan: Option<ChoicePlan>,
 }
 
 /// HIR-facing choice option.
@@ -66,6 +68,15 @@ pub struct HirChoiceOption {
     label: String,
     condition: Option<Expr>,
     action: ChoiceAction,
+    value: Option<Expr>,
+    label_text_key: Option<EntityRef>,
+}
+
+/// HIR-facing source-locale block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirSourceLocale {
+    locale: String,
+    body: Vec<HirFlowItem>,
 }
 
 /// HIR-facing if block.
@@ -221,6 +232,7 @@ fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
         FlowItem::For(block) => lower_for(block).map(HirFlowItem::For),
         FlowItem::Select(block) => lower_select(block).map(HirFlowItem::Select),
         FlowItem::BorrowBlock(block) => lower_borrow(block).map(HirFlowItem::Borrow),
+        FlowItem::SourceLocale(block) => lower_source_locale(block).map(HirFlowItem::SourceLocale),
         FlowItem::Include(entity) => Ok(HirFlowItem::Include(entity.clone())),
         FlowItem::AwaitWith(await_with) => {
             let branches = await_with
@@ -337,6 +349,7 @@ fn lower_speaker_line(line: &SpeakerLine) -> HirDialogue {
 fn lower_choice(choice: &ChoiceBlock) -> HirChoice {
     HirChoice {
         id: choice.id().cloned(),
+        plan: choice.plan().cloned(),
         options: choice
             .options()
             .iter()
@@ -345,9 +358,22 @@ fn lower_choice(choice: &ChoiceBlock) -> HirChoice {
                 label: option.label().to_owned(),
                 condition: option.condition().cloned(),
                 action: option.action().clone(),
+                value: option.value().cloned(),
+                label_text_key: option.label_text_key().cloned(),
             })
             .collect(),
     }
+}
+
+fn lower_source_locale(block: &SourceLocaleBlock) -> Result<HirSourceLocale, HirLowerError> {
+    Ok(HirSourceLocale {
+        locale: block.locale().to_owned(),
+        body: block
+            .body()
+            .iter()
+            .map(lower_flow_item)
+            .collect::<Result<Vec<_>, _>>()?,
+    })
 }
 
 impl HirModule {
@@ -408,6 +434,10 @@ impl HirChoice {
     pub fn options(&self) -> &[HirChoiceOption] {
         &self.options
     }
+
+    pub const fn plan(&self) -> Option<&ChoicePlan> {
+        self.plan.as_ref()
+    }
 }
 
 impl HirChoiceOption {
@@ -432,6 +462,24 @@ impl HirChoiceOption {
 
     pub const fn action(&self) -> &ChoiceAction {
         &self.action
+    }
+
+    pub const fn value(&self) -> Option<&Expr> {
+        self.value.as_ref()
+    }
+
+    pub const fn label_text_key(&self) -> Option<&EntityRef> {
+        self.label_text_key.as_ref()
+    }
+}
+
+impl HirSourceLocale {
+    pub fn locale(&self) -> &str {
+        &self.locale
+    }
+
+    pub fn body(&self) -> &[HirFlowItem] {
+        &self.body
     }
 }
 

@@ -1,12 +1,13 @@
 use crate::ast::{
     Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, BorrowBlock, CallableItem,
     CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceOption,
-    ChoiceUiField, ContentCall, ContractClause, DialogueContent, EntityRef, EnumItem, EnumVariant,
-    Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionItem, HookItem, IfBlock, ImplItem, Item,
-    LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem,
-    ScenarioCommand, SelectBlock, SelectBranch, SelectBranchHead, SpeakerLine, StateField,
-    StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember,
-    TypeAliasItem, UseItem, UseMode, Visibility, WikiLink,
+    ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause, DialogueContent,
+    EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionItem,
+    HookItem, IfBlock, ImplItem, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn,
+    ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, SelectBlock, SelectBranch,
+    SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField,
+    StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, UseMode,
+    Visibility, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -730,6 +731,9 @@ impl Parser {
         if trimmed.starts_with("borrow ") {
             return self.parse_borrow_block().map(FlowItem::BorrowBlock);
         }
+        if trimmed.starts_with("source locale ") {
+            return self.parse_source_locale_block().map(FlowItem::SourceLocale);
+        }
         if let Some(command) = parse_scenario_command(trimmed, TextRange::new(line.start, line.end))
         {
             self.index += 1;
@@ -799,11 +803,64 @@ impl Parser {
         let rest = head.trim().strip_prefix("choice")?.trim();
         let (id, _) = parse_optional_entity_ref(rest, start_line.start, &mut self.errors);
         let items = parse_choice_items(&body, start_line.start, &mut self.errors);
+        let plan = self.take_choice_plan_after_current(start_line.start);
         Some(ChoiceBlock::new(
             id,
             items,
+            plan,
             TextRange::new(start_line.start, end),
         ))
+    }
+
+    fn parse_source_locale_block(&mut self) -> Option<SourceLocaleBlock> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing source locale",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the source locale block"],
+            );
+            return None;
+        }
+        let locale = head.trim().strip_prefix("source locale")?.trim().to_owned();
+        let body = self.parse_flow_body(&body, start_line.start + head.len());
+        Some(SourceLocaleBlock::new(
+            locale,
+            body,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn take_choice_plan_after_current(&mut self, base: usize) -> Option<ChoicePlan> {
+        self.skip_blank_and_comments();
+        if self.index >= self.lines.len() {
+            return None;
+        }
+        let line = self.current().clone();
+        let trimmed = line.text.trim();
+        if trimmed == "with" || trimmed.starts_with("with ") {
+            let (head, body, end, ok) = self.take_brace_block();
+            if ok && head.trim() == "with" {
+                return Some(ChoicePlan::new(
+                    BlockStyle::Brace,
+                    parse_choice_plan_items(&body),
+                    TextRange::new(line.start, end),
+                ));
+            }
+        }
+        if trimmed == "with:" {
+            self.index += 1;
+            let body = self.take_indented_await_body(indentation(&line.text) + 1);
+            return Some(ChoicePlan::new(
+                BlockStyle::Indent,
+                parse_choice_plan_items(&body),
+                TextRange::new(line.start, base + body.len()),
+            ));
+        }
+        None
     }
 
     fn reject_old_choice_syntax(&mut self) -> String {
@@ -1893,6 +1950,20 @@ fn parse_choice_item(
         });
     }
     if let Some((head, body)) = split_brace_item(trimmed) {
+        if let Some(rest) = head.strip_prefix("option ") {
+            if let Some((pattern, source)) = rest.split_once(" in ") {
+                let option_head = format!("option {}", pattern.trim());
+                let Some(option) = parse_choice_option_block(&option_head, body, base, errors)
+                else {
+                    return Some(ChoiceItem::Raw(trimmed.to_owned()));
+                };
+                return Some(ChoiceItem::For {
+                    pattern: parse_pattern(pattern.trim()),
+                    source: parse_expr_lossy(source.trim()),
+                    items: vec![ChoiceItem::Option(Box::new(option))],
+                });
+            }
+        }
         if let Some(condition) = head.strip_prefix("if ") {
             return Some(ChoiceItem::If {
                 condition: parse_expr_lossy(condition.trim()),
@@ -1923,6 +1994,42 @@ fn split_brace_item(source: &str) -> Option<(&str, &str)> {
     let open = source.find('{')?;
     let close = source.rfind('}')?;
     (open < close).then(|| (source[..open].trim(), source[open + 1..close].trim()))
+}
+
+fn parse_choice_plan_items(body: &str) -> Vec<ChoicePlanItem> {
+    collect_logical_choice_lines(body)
+        .into_iter()
+        .map(|line| {
+            let trimmed = line.trim();
+            if let Some((head, block_body)) = split_brace_item(trimmed) {
+                if let Some(duration) = head.strip_prefix("timeout ") {
+                    return ChoicePlanItem::Timeout {
+                        duration: parse_expr_lossy(duration.trim()),
+                        body: block_body.trim().to_owned(),
+                    };
+                }
+                if let Some(trigger) = head.strip_prefix("cancel on ") {
+                    return ChoicePlanItem::Cancel {
+                        trigger: trigger.trim().to_owned(),
+                        body: block_body.trim().to_owned(),
+                    };
+                }
+                if let Some(pattern) = head.strip_prefix("on select ") {
+                    return ChoicePlanItem::OnSelect {
+                        pattern: parse_pattern(pattern.trim()),
+                        body: block_body.trim().to_owned(),
+                    };
+                }
+            }
+            trimmed.split_once('=').map_or_else(
+                || ChoicePlanItem::Raw(trimmed.to_owned()),
+                |(name, value)| ChoicePlanItem::Option {
+                    name: name.trim().to_owned(),
+                    value: parse_expr_lossy(value.trim()),
+                },
+            )
+        })
+        .collect()
 }
 
 fn parse_choice_arm_sugar(
@@ -2007,8 +2114,11 @@ fn parse_choice_option_block(
 ) -> Option<ChoiceOption> {
     let option_id = head.strip_prefix("option")?.trim();
     let (id, rest) = parse_optional_entity_ref(option_id, base, errors);
-    let id_expr = (id.is_none() && !rest.trim().is_empty()).then(|| parse_expr_lossy(rest.trim()));
+    let mut id_expr =
+        (id.is_none() && !rest.trim().is_empty()).then(|| parse_expr_lossy(rest.trim()));
     let mut label = String::new();
+    let mut label_text_key = None;
+    let mut value = None;
     let mut enabled = None;
     let mut visible = None;
     let mut order = None;
@@ -2020,6 +2130,23 @@ fn parse_choice_option_block(
         let trimmed = line.trim();
         if let Some(value) = trimmed.strip_prefix("label =") {
             label = trim_string_literal(value.trim()).unwrap_or_else(|| value.trim().to_owned());
+        } else if let Some(value_expr) = trimmed.strip_prefix("id =") {
+            id_expr = Some(parse_expr_lossy(value_expr.trim()));
+        } else if let Some(value_part) = trimmed.strip_prefix("label(") {
+            if let Some((key_part, expr_part)) = value_part.split_once(')') {
+                if let Some(text_key) = key_part.trim().strip_prefix("id=") {
+                    label_text_key = parse_required_entity_ref(text_key.trim(), base, errors)
+                        .map(|(entity, _)| entity);
+                }
+                let expr_part = expr_part
+                    .trim()
+                    .strip_prefix('=')
+                    .unwrap_or(expr_part)
+                    .trim();
+                label = trim_string_literal(expr_part).unwrap_or_else(|| expr_part.to_owned());
+            }
+        } else if let Some(value_expr) = trimmed.strip_prefix("value =") {
+            value = Some(parse_expr_lossy(value_expr.trim()));
         } else if let Some(value) = trimmed.strip_prefix("enabled =") {
             enabled = Some(parse_expr_lossy(value.trim()));
         } else if let Some(value) = trimmed.strip_prefix("visible =") {
@@ -2040,6 +2167,12 @@ fn parse_choice_option_block(
     let mut option = ChoiceOption::new(id, label, action, TextRange::new(base, base + head.len()));
     if let Some(id_expr) = id_expr {
         option = option.with_id_expr(id_expr);
+    }
+    if let Some(label_text_key) = label_text_key {
+        option = option.with_label_text_key(label_text_key);
+    }
+    if let Some(value) = value {
+        option = option.with_value(value);
     }
     if let Some(enabled) = enabled {
         option = option.with_enabled(enabled);

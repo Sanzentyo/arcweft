@@ -16,12 +16,13 @@ mod types;
 
 pub use ast::{
     Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, CallableItem, CallableKind, ChoiceAction,
-    ChoiceBlock, ChoiceItem, ChoiceOption, ContentCall, ContractClause, DialogueToken, EntityRef,
-    EnumItem, EnumVariant, Flow, FlowItem, FlowKind, ForBlock, FunctionItem, HookItem, IfBlock,
-    ImplItem, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem,
-    Pattern, ScenarioCommand, SelectBlock, SelectBranch, SelectBranchHead, SpeakerLine, StateField,
-    StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember,
-    TypeAliasItem, UseItem, Visibility, WikiLink,
+    ChoiceBlock, ChoiceItem, ChoiceOption, ChoicePlan, ChoicePlanItem, ContentCall, ContractClause,
+    DialogueToken, EntityRef, EnumItem, EnumVariant, Flow, FlowItem, FlowKind, ForBlock,
+    FunctionItem, HookItem, IfBlock, ImplItem, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock,
+    MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand, SelectBlock, SelectBranch,
+    SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField,
+    StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, Visibility,
+    WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -44,12 +45,12 @@ pub use types::{
 #[cfg(test)]
 mod tests {
     use super::{
-        AwaitBranchKind, BinaryOp, CallableKind, ChoiceAction, ChoiceItem, ContractClause,
-        DialogueToken, EntityKind, Expr, FlowItem, FlowKind, HirFlowItem, Item, LinePlanItem,
-        NameRegistry, Pattern, SelectBranchHead, Stmt, SymbolUseKind, TraitMember, TypeCheckEnv,
-        TypeKind, TypeRef, Visibility, collect_symbol_uses, lower_to_hir, parse_dialogue_tokens,
-        parse_fn_signature, parse_source, parse_stub, parse_type_ref, registry_from_hir,
-        typecheck_hir, validate_hir_references, validate_typecheck_ready,
+        AwaitBranchKind, BinaryOp, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
+        ContractClause, DialogueToken, EntityKind, Expr, FlowItem, FlowKind, HirFlowItem, Item,
+        LinePlanItem, NameRegistry, Pattern, SelectBranchHead, Stmt, SymbolUseKind, TraitMember,
+        TypeCheckEnv, TypeKind, TypeRef, Visibility, collect_symbol_uses, lower_to_hir,
+        parse_dialogue_tokens, parse_fn_signature, parse_source, parse_stub, parse_type_ref,
+        registry_from_hir, typecheck_hir, validate_hir_references, validate_typecheck_ready,
     };
 
     #[test]
@@ -461,6 +462,7 @@ choice #choice.opening.first {
         assert_eq!(option.label(), "聞いてみる");
         assert!(option.enabled().is_some());
         assert!(option.visible().is_some());
+        assert!(option.order().is_some());
         assert_eq!(option.ui_fields().len(), 2);
         assert_eq!(
             option.target().expect("goto target").body(),
@@ -495,6 +497,67 @@ choice #choice.opening.routes {
         assert!(matches!(&choice.items()[0], ChoiceItem::For { .. }));
         assert_eq!(choice.options().len(), 1);
         assert!(choice.options()[0].id_expr().is_some());
+    }
+
+    #[test]
+    fn parses_choice_plan_option_in_sugar_label_key_and_value() {
+        let tree = parse_source(
+            r#"
+choice #choice.opening.routes {
+    option route in opening_routes(state) {
+        id = route.choice_id
+        label(id=#text.choice.opening.route) = route.label
+        value = route.target
+        enabled = route.enabled
+        select { out route.target }
+    }
+}
+with {
+    window = #choice_window.main
+    layout = vertical
+    default_focus = #choice.opening.listen
+    timeout 10s { select #choice.opening.silent }
+    cancel on input .BackToTitle { return Ok(FlowExit::Goto(#flow.title)) }
+    on select selected { log info "selected {id:?}" { id = selected.id } }
+}
+"#,
+        )
+        .expect("choice plan and option-in sugar parse");
+
+        let Item::FlowItem(FlowItem::Choice(choice)) = &tree.items()[0] else {
+            panic!("expected choice");
+        };
+        let plan = choice.plan().expect("choice plan");
+        assert!(
+            matches!(&plan.items()[0], ChoicePlanItem::Option { name, .. } if name == "window")
+        );
+        assert!(matches!(&plan.items()[3], ChoicePlanItem::Timeout { .. }));
+        assert!(matches!(&plan.items()[4], ChoicePlanItem::Cancel { .. }));
+        assert!(matches!(&plan.items()[5], ChoicePlanItem::OnSelect { .. }));
+        assert!(matches!(&choice.items()[0], ChoiceItem::For { .. }));
+        let option = &choice.options()[0];
+        assert!(option.label_text_key().is_some());
+        assert!(option.value().is_some());
+        assert!(matches!(option.action(), ChoiceAction::Out(_)));
+    }
+
+    #[test]
+    fn parses_source_locale_block() {
+        let tree = parse_source(
+            r"
+source locale en-US {
+    alice(id=#say.opening.alice.english_quote):
+        Good morning.[p]
+}
+",
+        )
+        .expect("source locale block parses");
+
+        let Item::FlowItem(FlowItem::SourceLocale(block)) = &tree.items()[0] else {
+            panic!("expected source locale block");
+        };
+        assert_eq!(block.locale(), "en-US");
+        assert_eq!(block.body().len(), 1);
     }
 
     #[test]

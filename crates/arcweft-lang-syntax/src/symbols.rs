@@ -66,6 +66,12 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 if let Some(condition) = option.condition() {
                     collect_expr(condition, uses);
                 }
+                if let Some(value) = option.value() {
+                    collect_expr(value, uses);
+                }
+                if let Some(text_key) = option.label_text_key() {
+                    push_entity(uses, text_key);
+                }
                 if let Some(target) = option.target() {
                     push_entity(uses, target);
                 }
@@ -101,6 +107,11 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
         }
         HirFlowItem::Borrow(block) => {
             collect_expr(block.source(), uses);
+            for item in block.body() {
+                collect_flow_item(item, uses);
+            }
+        }
+        HirFlowItem::SourceLocale(block) => {
             for item in block.body() {
                 collect_flow_item(item, uses);
             }

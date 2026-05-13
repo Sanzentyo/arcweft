@@ -214,6 +214,11 @@ impl TypeChecker<'_> {
             HirFlowItem::Borrow(block) => {
                 self.check_borrow_block(block);
             }
+            HirFlowItem::SourceLocale(block) => {
+                for item in block.body() {
+                    self.check_flow_item(item);
+                }
+            }
             HirFlowItem::Include(entity) => {
                 let kind = entity_kind(entity);
                 if !matches!(kind, Some(EntityKind::Fragment | EntityKind::Flow)) {
