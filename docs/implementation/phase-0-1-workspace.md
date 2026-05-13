@@ -58,7 +58,7 @@ The builder API supports fluent construction of a dialogue line with speaker def
 Syntax parser:
 
 - `parse_source` and `parse_stub` now parse real `.awft` surface syntax into `SyntaxTree`.
-- The parser records module/use headers, attributes, wiki links, flows, flow items, scenario commands, speaker lines, content calls, choice blocks, hooks, memo functions, parser items, line plans, and dialogue tokens.
+- The parser records module/use headers, attributes, wiki links, flows, fragments, flow items, scenario commands, speaker lines, content calls, choice blocks, hooks, memo functions, parser items, line plans, and dialogue tokens.
 - Diagnostics use structured `ParseError` values with spans, expected fragments, found text, recovery suggestions, and source anchors.
 - `thiserror` is used for parser error integration.
 - Expression syntax now has an `Expr` AST for entity references, literals, tuples, calls, named arguments, method calls, dialogue calls, indexes, pipes, binary comparisons, and placeholders.
@@ -67,7 +67,7 @@ Syntax parser:
 - `lower_to_hir` verifies that parsed edge-case flow syntax can be converted to HIR-facing structures and rejects raw syntax that still needs parser coverage.
 - `collect_symbol_uses` walks HIR without reparsing source snippets so name resolution can see dialogue callees, entity references, paths, calls, methods, dialogue text expressions, timed cues, and choice-condition references.
 - `validate_typecheck_ready` rejects lowered HIR that still contains raw expression fragments before the future type checker sees it.
-- `typecheck_hir` provides a minimal semantic checker over HIR with an explicit environment. It validates entity reference families, dialogue callees, `Need<T, E>` awaits, `Duration` timeline anchors, indexed expressions, calls, and methods for parser/HIR integration tests.
+- `typecheck_hir` provides a minimal semantic checker over HIR with an explicit environment. It validates flow/fragment entity reference families, dialogue callees, `Need<T, E>` awaits, `Duration` timeline anchors, indexed expressions, calls, and methods for parser/HIR integration tests.
 
 ## Deferred
 

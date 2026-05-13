@@ -14,7 +14,7 @@ mod text;
 
 pub use ast::{
     Attribute, ChoiceBlock, ChoiceOption, ContentCall, DialogueToken, EntityRef, Flow, FlowItem,
-    HookItem, Item, LinePlan, LinePlanItem, MemoFn, ModuleDecl, ParserItem, Pattern,
+    FlowKind, HookItem, Item, LinePlan, LinePlanItem, MemoFn, ModuleDecl, ParserItem, Pattern,
     ScenarioCommand, SpeakerLine, Stmt, SyntaxTree, TextRange, UseItem, Visibility, WikiLink,
 };
 pub use check::{
@@ -33,9 +33,10 @@ pub use text::parse_dialogue_tokens;
 #[cfg(test)]
 mod tests {
     use super::{
-        DialogueToken, EntityKind, Expr, FlowItem, HirFlowItem, Item, LinePlanItem, Pattern, Stmt,
-        SymbolUseKind, TypeCheckEnv, TypeKind, Visibility, collect_symbol_uses, lower_to_hir,
-        parse_dialogue_tokens, parse_source, parse_stub, typecheck_hir, validate_typecheck_ready,
+        DialogueToken, EntityKind, Expr, FlowItem, FlowKind, HirFlowItem, Item, LinePlanItem,
+        Pattern, Stmt, SymbolUseKind, TypeCheckEnv, TypeKind, Visibility, collect_symbol_uses,
+        lower_to_hir, parse_dialogue_tokens, parse_source, parse_stub, typecheck_hir,
+        validate_typecheck_ready,
     };
 
     #[test]
@@ -72,10 +73,35 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
             panic!("expected flow item");
         };
         assert_eq!(flow.visibility(), Some(Visibility::Public));
+        assert_eq!(flow.kind(), FlowKind::Flow);
         assert_eq!(flow.id().expect("flow id").body(), "flow.opening");
         assert_eq!(flow.body().len(), 2);
         assert!(matches!(&flow.body()[0], FlowItem::ScenarioCommand(_)));
         assert!(matches!(&flow.body()[1], FlowItem::Include(_)));
+    }
+
+    #[test]
+    fn parses_fragment_as_flow_like_body() {
+        let tree = parse_source(
+            r"
+pub fragment #frag.alice_enters alice_enters: FlowFragment {
+    @show alice normal at=right fade=220ms
+    alice: おはよう。[p]
+}
+",
+        )
+        .expect("fragment parses");
+
+        let Item::Flow(fragment) = &tree.items()[0] else {
+            panic!("expected fragment as flow-like item");
+        };
+        assert_eq!(fragment.kind(), FlowKind::Fragment);
+        assert_eq!(
+            fragment.id().expect("fragment id").body(),
+            "frag.alice_enters"
+        );
+        assert!(matches!(&fragment.body()[0], FlowItem::ScenarioCommand(_)));
+        assert!(matches!(&fragment.body()[1], FlowItem::SpeakerLine(_)));
     }
 
     #[test]
@@ -665,6 +691,27 @@ flow #flow.opening opening {
             );
 
         typecheck_hir(&hir, &env).expect("edge fixture typechecks");
+    }
+
+    #[test]
+    fn typechecks_fragment_hir_and_include_target() {
+        let tree = parse_source(
+            r"
+pub fragment #frag.alice_enters alice_enters: FlowFragment {
+    alice: おはよう。[p]
+}
+
+flow #flow.opening opening {
+    include #frag.alice_enters
+}
+",
+        )
+        .expect("fragment include fixture parses");
+        let hir = lower_to_hir(&tree).expect("fragment include fixture lowers");
+        let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::Ref(EntityKind::Character));
+
+        assert_eq!(hir.flows()[0].kind(), FlowKind::Fragment);
+        typecheck_hir(&hir, &env).expect("fragment include fixture typechecks");
     }
 
     #[test]

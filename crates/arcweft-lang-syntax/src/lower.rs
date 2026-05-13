@@ -1,6 +1,6 @@
 use crate::ast::{
-    ChoiceBlock, DialogueContent, EntityRef, Flow, FlowItem, Item, LinePlan, SpeakerLine, Stmt,
-    SyntaxTree, TextRange,
+    ChoiceBlock, DialogueContent, EntityRef, Flow, FlowItem, FlowKind, Item, LinePlan, SpeakerLine,
+    Stmt, SyntaxTree, TextRange,
 };
 use crate::expr::Expr;
 use thiserror::Error;
@@ -19,6 +19,7 @@ pub struct HirModule {
 /// HIR-facing flow.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirFlow {
+    kind: FlowKind,
     id: Option<EntityRef>,
     name: Option<String>,
     body: Vec<HirFlowItem>,
@@ -109,6 +110,7 @@ fn lower_flow(flow: &Flow) -> Result<HirFlow, HirLowerError> {
         .map(lower_flow_item)
         .collect::<Result<Vec<_>, _>>()?;
     Ok(HirFlow {
+        kind: flow.kind(),
         id: flow.id().cloned(),
         name: flow.name().map(str::to_owned),
         body,
@@ -178,6 +180,10 @@ impl HirModule {
 }
 
 impl HirFlow {
+    pub const fn kind(&self) -> FlowKind {
+        self.kind
+    }
+
     pub const fn id(&self) -> Option<&EntityRef> {
         self.id.as_ref()
     }

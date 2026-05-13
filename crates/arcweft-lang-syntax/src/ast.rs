@@ -95,12 +95,20 @@ pub struct Attribute {
 /// Flow item with typed header and parsed flow body.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Flow {
+    kind: FlowKind,
     visibility: Option<Visibility>,
     id: Option<EntityRef>,
     name: Option<String>,
     signature_tail: String,
     body: Vec<FlowItem>,
     range: TextRange,
+}
+
+/// Top-level flow-like item kind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FlowKind {
+    Flow,
+    Fragment,
 }
 
 /// Syntax allowed in a `flow` body and in top-level scenario snippets.
@@ -451,6 +459,7 @@ impl Attribute {
 
 impl Flow {
     pub(crate) const fn new(
+        kind: FlowKind,
         visibility: Option<Visibility>,
         id: Option<EntityRef>,
         name: Option<String>,
@@ -459,6 +468,7 @@ impl Flow {
         range: TextRange,
     ) -> Self {
         Self {
+            kind,
             visibility,
             id,
             name,
@@ -466,6 +476,10 @@ impl Flow {
             body,
             range,
         }
+    }
+
+    pub const fn kind(&self) -> FlowKind {
+        self.kind
     }
 
     pub const fn visibility(&self) -> Option<Visibility> {

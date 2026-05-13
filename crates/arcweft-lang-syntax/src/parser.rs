@@ -1,8 +1,8 @@
 use crate::ast::{
     Attribute, AwaitWith, BlockStyle, CancelRuleSyntax, ChoiceBlock, ChoiceOption, ContentCall,
-    DialogueContent, EntityRef, Flow, FlowItem, HookItem, Item, LinePlan, LinePlanItem, MemoFn,
-    ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, SpeakerLine, Stmt, SyntaxTree,
-    TextRange, UseItem, UseMode, Visibility, WikiLink,
+    DialogueContent, EntityRef, Flow, FlowItem, FlowKind, HookItem, Item, LinePlan, LinePlanItem,
+    MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, SpeakerLine, Stmt,
+    SyntaxTree, TextRange, UseItem, UseMode, Visibility, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -144,16 +144,14 @@ impl Parser {
         }
 
         let (visibility, after_visibility) = parse_visibility_prefix(&head);
-        let after_flow = after_visibility
-            .trim_start()
-            .strip_prefix("flow")?
-            .trim_start();
+        let (kind, after_flow) = parse_flow_kind(after_visibility.trim_start())?;
         let (id, after_id) =
             parse_optional_entity_ref(after_flow, start_line.start, &mut self.errors);
         let (name, signature_tail) = parse_name_and_tail(after_id.trim());
         let body_items = self.parse_flow_body(&body, start_line.start + head.len());
 
         Some(Flow::new(
+            kind,
             visibility,
             id,
             name,
@@ -755,7 +753,17 @@ fn parse_use_line(trimmed: &str, range: TextRange) -> Option<UseItem> {
 
 fn looks_like_flow(trimmed: &str) -> bool {
     let (_, rest) = parse_visibility_prefix(trimmed);
-    rest.trim_start().starts_with("flow ")
+    let rest = rest.trim_start();
+    rest.starts_with("flow ") || rest.starts_with("fragment ")
+}
+
+fn parse_flow_kind(input: &str) -> Option<(FlowKind, &str)> {
+    if let Some(rest) = input.strip_prefix("flow") {
+        return Some((FlowKind::Flow, rest.trim_start()));
+    }
+    input
+        .strip_prefix("fragment")
+        .map(|rest| (FlowKind::Fragment, rest.trim_start()))
 }
 
 fn looks_like_hook(trimmed: &str) -> bool {

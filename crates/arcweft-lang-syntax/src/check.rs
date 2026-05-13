@@ -1,4 +1,4 @@
-use crate::ast::{DialogueToken, EntityRef, LinePlanItem, Stmt};
+use crate::ast::{DialogueToken, EntityRef, FlowKind, LinePlanItem, Stmt};
 use crate::expr::{Expr, Literal};
 use crate::lower::{HirFlowItem, HirModule};
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
@@ -128,7 +128,12 @@ impl TypeChecker<'_> {
 
         for flow in module.flows() {
             if let Some(id) = flow.id() {
-                self.expect_entity_kind(id, &EntityKind::Flow, "flow id");
+                match flow.kind() {
+                    FlowKind::Flow => self.expect_entity_kind(id, &EntityKind::Flow, "flow id"),
+                    FlowKind::Fragment => {
+                        self.expect_entity_kind(id, &EntityKind::Fragment, "fragment id");
+                    }
+                }
             }
             for item in flow.body() {
                 self.check_flow_item(item);
