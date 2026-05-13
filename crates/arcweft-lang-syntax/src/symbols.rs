@@ -205,6 +205,14 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
             collect_expr(lhs, uses);
             collect_expr(rhs, uses);
         }
+        Expr::Range { start, end, .. } => {
+            if let Some(start) = start {
+                collect_expr(start, uses);
+            }
+            if let Some(end) = end {
+                collect_expr(end, uses);
+            }
+        }
         Expr::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
     }
 }

@@ -62,6 +62,7 @@ Syntax parser:
 - Diagnostics use structured `ParseError` values with spans, expected fragments, found text, recovery suggestions, and source anchors.
 - `thiserror` is used for parser error integration.
 - Expression syntax now has an `Expr` AST for entity references, literals, tuples, calls, named arguments, method calls, dialogue calls, indexes, pipes, binary comparisons, and placeholders.
+- Expression syntax also preserves float literals, half-open/inclusive ranges, and `in` membership expressions used by documented contracts.
 - Type syntax now has `TypeRef`/`LifetimeName` support for lifetime-bearing borrow types such as `&'asset [Rgba8]`, and function signature lifetime parameters such as `fn first<'a>(...)`.
 - Top-level `fn` items are parsed as structured syntax items with visibility, lifetime-bearing signature heads, contract clauses, source ranges, and raw bodies reserved for later semantic lowering.
 - Top-level ADT declarations (`enum`, `struct`, `type`) are parsed as structured syntax items with visibility, variant/field/type information, and type-alias `where` clauses.

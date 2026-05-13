@@ -100,6 +100,7 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
 requires delta >= -100 && delta <= 100
 ensures check result.affection[character] >= 0
+requires progress in 0.0..=1.0
 effects { asset.read, ui.show }
 ensures no_effect network.request
 {
@@ -112,7 +113,7 @@ ensures no_effect network.request
         let Item::Flow(flow) = &tree.items()[0] else {
             panic!("expected flow");
         };
-        assert_eq!(flow.contracts().len(), 4);
+        assert_eq!(flow.contracts().len(), 5);
         assert!(matches!(
             &flow.contracts()[0],
             ContractClause::Requires {
@@ -127,7 +128,7 @@ ensures no_effect network.request
                 expr: Expr::Binary { .. },
             } if mode == "check"
         ));
-        assert!(matches!(&flow.contracts()[3], ContractClause::NoEffect(_)));
+        assert!(matches!(&flow.contracts()[4], ContractClause::NoEffect(_)));
         assert!(matches!(&flow.body()[0], FlowItem::Stmt(Stmt::Goto(_))));
     }
 
@@ -748,6 +749,25 @@ with {
         let delimited = super::parse_expr("#<say.opening.dream_hint@sem:b3_9f2a1c>")
             .expect("delimited ref expr parses");
         assert!(matches!(delimited, Expr::EntityRef(entity) if entity.is_delimited()));
+
+        let range = super::parse_expr("0.0..=1.0").expect("inclusive float range parses");
+        assert!(matches!(
+            range,
+            Expr::Range {
+                inclusive: true,
+                ..
+            }
+        ));
+
+        let membership =
+            super::parse_expr("progress in 0.0..=1.0").expect("range membership parses");
+        assert!(matches!(
+            membership,
+            Expr::Binary {
+                op: BinaryOp::In,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -1225,6 +1245,7 @@ ensures no_effect network.request
         let hir = lower_to_hir(&tree).expect("contract typecheck fixture lowers");
         let env = TypeCheckEnv::new()
             .with_symbol("delta", TypeKind::Int)
+            .with_symbol("progress", TypeKind::Float)
             .with_symbol(
                 "result.affection",
                 TypeKind::Named("Map<Character, Int>".to_owned()),

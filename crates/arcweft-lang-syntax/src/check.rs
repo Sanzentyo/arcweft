@@ -29,8 +29,10 @@ pub enum EntityKind {
 pub enum TypeKind {
     Bool,
     Int,
+    Float,
     String,
     Duration,
+    Range,
     DisplayText,
     Ref(EntityKind),
     Need {
@@ -433,6 +435,15 @@ impl TypeChecker<'_> {
                 self.check_expr(lhs);
                 self.check_expr(rhs)
             }
+            Expr::Range { start, end, .. } => {
+                if let Some(start) = start {
+                    self.check_expr(start);
+                }
+                if let Some(end) = end {
+                    self.check_expr(end);
+                }
+                Some(TypeKind::Range)
+            }
             Expr::Binary { lhs, op, rhs } => self.check_binary_expr(lhs, *op, rhs),
             Expr::Raw(raw) => {
                 self.errors.push(TypeCheckError::new(format!(
@@ -447,6 +458,15 @@ impl TypeChecker<'_> {
         let lhs_type = self.check_expr(lhs);
         let rhs_type = self.check_expr(rhs);
         match op {
+            BinaryOp::In => {
+                if rhs_type != Some(TypeKind::Range) {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "`in` expression requires a range on the right, found {rhs_type:?}"
+                    )));
+                    return None;
+                }
+                Some(TypeKind::Bool)
+            }
             BinaryOp::Implies | BinaryOp::Or | BinaryOp::And => {
                 if lhs_type != Some(TypeKind::Bool) || rhs_type != Some(TypeKind::Bool) {
                     self.errors.push(TypeCheckError::new(format!(
@@ -499,6 +519,7 @@ fn literal_type(literal: &Literal) -> TypeKind {
     match literal {
         Literal::String(_) => TypeKind::String,
         Literal::Int(_) => TypeKind::Int,
+        Literal::Float(_) => TypeKind::Float,
         Literal::Bool(_) => TypeKind::Bool,
         Literal::Duration { .. } => TypeKind::Duration,
     }

@@ -39,6 +39,11 @@ pub enum Expr {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
+    Range {
+        start: Option<Box<Expr>>,
+        end: Option<Box<Expr>>,
+        inclusive: bool,
+    },
     Binary {
         lhs: Box<Expr>,
         op: BinaryOp,
@@ -52,6 +57,7 @@ pub enum Expr {
 pub enum Literal {
     String(String),
     Int(i64),
+    Float(String),
     Bool(bool),
     Duration { amount: String, unit: DurationUnit },
 }
@@ -76,6 +82,7 @@ pub enum BinaryOp {
     Implies,
     Or,
     And,
+    In,
     Eq,
     NotEq,
     Gte,
@@ -127,6 +134,7 @@ fn parse_binary(source: &str) -> Expr {
         ("=>", BinaryOp::Implies),
         ("||", BinaryOp::Or),
         ("&&", BinaryOp::And),
+        (" in ", BinaryOp::In),
     ] {
         if let Some((lhs, rhs)) = split_top_level(source, needle) {
             return Expr::Binary {
@@ -135,6 +143,9 @@ fn parse_binary(source: &str) -> Expr {
                 rhs: Box::new(parse_binary(rhs)),
             };
         }
+    }
+    if let Some(range) = parse_range_expr(source) {
+        return range;
     }
     for (needle, op) in [
         ("==", BinaryOp::Eq),
@@ -217,6 +228,9 @@ fn parse_atom(source: &str) -> Expr {
     if let Ok(value) = source.parse::<i64>() {
         return Expr::Literal(Literal::Int(value));
     }
+    if is_float_literal(source) {
+        return Expr::Literal(Literal::Float(source.to_owned()));
+    }
     if let Some(entity) = parse_entity_expr(source) {
         return Expr::EntityRef(entity);
     }
@@ -236,11 +250,46 @@ fn parse_atom(source: &str) -> Expr {
     Expr::Raw(source.to_owned())
 }
 
+fn parse_range_expr(source: &str) -> Option<Expr> {
+    if let Some((start, end)) = split_top_level_range(source, "..=") {
+        return Some(Expr::Range {
+            start: (!start.is_empty()).then(|| Box::new(parse_pipe(start))),
+            end: (!end.is_empty()).then(|| Box::new(parse_pipe(end))),
+            inclusive: true,
+        });
+    }
+    let (start, end) = split_top_level_range(source, "..")?;
+    Some(Expr::Range {
+        start: (!start.is_empty()).then(|| Box::new(parse_pipe(start))),
+        end: (!end.is_empty()).then(|| Box::new(parse_pipe(end))),
+        inclusive: false,
+    })
+}
+
 fn parse_string(source: &str) -> Option<String> {
     source
         .strip_prefix('"')
         .and_then(|value| value.strip_suffix('"'))
         .map(str::to_owned)
+}
+
+fn split_top_level_range<'a>(source: &'a str, needle: &str) -> Option<(&'a str, &'a str)> {
+    let mut depth = 0_i32;
+    let mut in_string = false;
+    for (index, ch) in source.char_indices() {
+        match ch {
+            '"' => in_string = !in_string,
+            '(' | '[' | '{' if !in_string => depth += 1,
+            ')' | ']' | '}' if !in_string => depth -= 1,
+            _ => {}
+        }
+        if depth == 0 && !in_string && source[index..].starts_with(needle) {
+            let lhs = source[..index].trim();
+            let rhs = source[index + needle.len()..].trim();
+            return Some((lhs, rhs));
+        }
+    }
+    None
 }
 
 fn parse_duration(source: &str) -> Option<Literal> {
@@ -460,6 +509,13 @@ fn is_identifier(source: &str) -> bool {
 fn is_numeric_duration(source: &str) -> bool {
     !source.is_empty()
         && source.chars().filter(|ch| *ch == '.').count() <= 1
+        && source.chars().any(|ch| ch.is_ascii_digit())
+        && source.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
+}
+
+fn is_float_literal(source: &str) -> bool {
+    !source.is_empty()
+        && source.chars().filter(|ch| *ch == '.').count() == 1
         && source.chars().any(|ch| ch.is_ascii_digit())
         && source.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
 }
