@@ -104,10 +104,9 @@ renumber_on_format = false
 pattern = "flow.{name}"
 
 [id.rules.say]
-pattern = "say.{flow}.{seq:03}"
-sequence = "stable_counter"
+pattern = "say.{flow}.{slot:03}"
+slot = "stable_registry_slot"
 scope = "flow"
 ```
 
 `seq` は registry で保持し、挿入時に既存 ID をずらさない。
-

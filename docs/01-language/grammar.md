@@ -7,6 +7,8 @@ This is a grammar summary for the updated control-flow subset.
 ```text
 BlockExpr      := '{' Item* FinalExpr? '}'
 StatementBlock := '{' Item* '}' | ':' Newline IndentedItems
+LabeledBlock   := Label? BlockExpr
+Label          := '\'' Ident ':'
 Item           := LetStmt | LetElseStmt | ExprStmt | ControlStmt | ScenarioStmt
 ExprStmt       := Expr (';')?
 ```
@@ -45,11 +47,14 @@ ForStmt   := 'for' Pattern 'in' Expr StatementBlock
 ## Break / continue
 
 ```text
-BreakStmt    := 'break' Expr?
-ContinueStmt := 'continue'
+BreakStmt    := 'break' LabelRef? Expr?
+ContinueStmt := 'continue' LabelRef?
+OutStmt      := 'out' LabelRef? Expr
+LabelRef     := '\'' Ident
 ```
 
 `break expr` is allowed only in `loop`.
+`out` is allowed only in line-plan, cue-block, and content-scope continuations.
 
 ## Let and let-else
 
@@ -98,6 +103,7 @@ ev @ .ChoiceSelected { id }
 
 ```text
 TryExpr      := Expr '?'
+TryExpr      := 'try' Expr
 AwaitExpr    := 'await' Expr AwaitPendingBlock?
 TryAwaitExpr := 'try' 'await' Expr AwaitPendingBlock?
 TryAwaitExpr := 'await?' Expr AwaitPendingBlock?

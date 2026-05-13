@@ -16,7 +16,7 @@ for     statement-oriented, returns Unit
 
 ## Pattern decision
 
-`match` supports structured binding patterns. The same pattern language is reused by:
+`match` supports structured binding patterns. The same complete pattern language is reused by:
 
 ```text
 match
@@ -29,6 +29,62 @@ function parameter destructuring, if explicitly enabled
 ```
 
 This avoids having one pattern system for `match` and another for `let`.
+
+Phase 1 parser/HIR should carry the full pattern shape, including tuple, record, variant, list/rest, literal, entity-ref, mutable binding, and `name @ pattern` forms. Type checking may stage exhaustiveness and shape validation, but the syntax model should not collapse these patterns into raw strings.
+
+## Syntax canonicalization decision
+
+Arcweft has script-friendly sugar, but semantic hashing, formatting, hot reload, and diagnostics use canonical lowering.
+
+Canonical forms:
+
+```text
+speaker.say(args)[text]
+with { line_plan }
+
+try await expr with { pending p => ... }
+
+at(time) { cue_body }
+```
+
+Sugar forms:
+
+```text
+speaker: text
+speaker(args): text
+speaker[text]
+with:
+    line_plan
+await? expr with:
+    pending p:
+        ...
+at(time):
+    cue_body
+```
+
+Lowering rules:
+
+```text
+alice: text
+  -> alice.say()[text]
+
+alice(voice=auto): text
+  -> alice.say(voice=auto)[text]
+
+alice2(voice=auto): text
+  -> alice2(voice=auto)[text]
+     # speaker presets remain callable; do not force `.say`.
+
+with:
+  -> with { ... }
+
+await? expr with { ... }
+  -> try await expr with { ... }
+```
+
+Formatters should preserve `with:` by default in hand-written scenario files. LSP and CLI may offer an explicit expansion action that rewrites sugar to canonical form.
+
+`speaker.say()[text] { ... }` is not a line-plan attachment. A bare trailing `{ ... }` after a dialogue call is parsed as a separate lexical block/scope, so line plans must use `with { ... }` or `with:`.
 
 ## let-else decision
 
@@ -84,6 +140,8 @@ This is the most balanced choice after adding expression-oriented `if` / `match`
 `await expr with:` returns `Result<T, E>`. The ergonomic propagation form is `try await expr with:`.
 `await? expr with:` is accepted as syntax sugar for `try await expr with:`.
 
+`?` remains the ordinary Rust-like postfix propagation operator for `Result` and `Option`. Arcweft also reserves prefix `try expr` as a general propagation form equivalent to `expr?`; `try await` is the important readable specialization where `await` and pending handling must group before propagation.
+
 ```awft
 let bg_result = await asset.image(#asset.bg.room) with:
     pending p:
@@ -117,3 +175,25 @@ Rationale: `?` must remain Rust-like, but pending handling makes postfix groupin
 ## Never decision
 
 Arcweft has a real bottom type `!`, shown as `Never` in diagnostics/manifests. It is required for expression-oriented `if`, `match`, `loop`, `let else`, `?`, `return`, `goto`, `break`, `continue`, `panic`, and `fail`.
+
+## Control-transfer target decision
+
+`out` is limited to line-plan, cue-block, and content-scope outputs. It is not a general block return.
+
+Control-transfer diagnostics must name the continuation being exited. Scope labels are supported on blocks and loops using Rust-like labels:
+
+```awft
+'choose: loop {
+    if done {
+        break 'choose route
+    }
+}
+
+alice.say()[聞いて。[p]]
+with 'line {
+    cancel on input .SkipLine:
+        out 'line .Skipped
+}
+```
+
+`break` and `continue` may target loop labels. `out` may target a line/cue/content label. `return` exits the nearest `fn`, `task fn`, `parser`, or `flow`; diagnostics should spell that target explicitly, and future syntax may allow `return from 'flow expr` only for named function/flow boundaries if needed.

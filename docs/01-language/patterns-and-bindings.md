@@ -81,7 +81,7 @@ GameEvent::ChoiceSelected { id }
 
 ## List / slice patterns
 
-MVP supports fixed-length list patterns and rest patterns for owned lists.
+Phase 1 syntax supports fixed-length list patterns and rest patterns.
 
 ```awft
 match items {
@@ -91,7 +91,7 @@ match items {
 }
 ```
 
-Borrowed slice patterns are advanced and must obey lifetime rules.
+Owned list and borrowed slice patterns use the same surface syntax. Type checking decides whether the scrutinee supports owned-list or borrowed-slice destructuring and applies the corresponding lifetime rules.
 
 ## Binding entire pattern
 

@@ -79,6 +79,20 @@ while let .Some(event) = queue.pop_front() {
 }
 ```
 
+Loop scopes may be labeled when an explicit target improves diagnostics or avoids ambiguity.
+
+```awft
+'events: loop {
+    let event = await_input_event()
+
+    match event {
+        .TextAdvanced => continue 'events
+        .ChoiceSelected { id } => break 'events route_for_choice(id)
+        _ => ()
+    }
+}
+```
+
 ## `break expr` is loop-only
 
 `while` and `for` are statement-oriented and return `Unit`.
@@ -107,3 +121,16 @@ with:
 ```
 
 `out` gives a line result. `return` leaves the flow. `goto` is flow-transition sugar.
+
+`out` is only valid for line-plan, cue-block, and content-scope outputs. These scopes may also be labeled:
+
+```awft
+alice.say()[長い台詞です。[p]]
+with 'line {
+    cancel on input .SkipLine:
+        flush text instant
+        out 'line .Skipped
+}
+```
+
+Diagnostics must state the continuation being exited, for example "this `return` exits flow `flow.opening`" or "this `out` exits line scope `'line`".

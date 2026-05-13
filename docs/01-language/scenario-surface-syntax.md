@@ -15,7 +15,7 @@ Related:
 - [Dialogue Character Methods, TextBox Targets, Interpolation, and Preload](dialogue-character-methods-and-textbox.md)
 - [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](dialogue-control-tags-and-ruby.md)
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](dialogue-calls-scopes-cancellation.md)
-- [Dialogue Content Calls, `with:` Blocks, Line Return Values, and Scoped Handles](dialogue-line-handles-and-returns.md)
+- [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles](dialogue-line-handles-and-returns.md)
 - [Localization for Dialogue](localization-dialogue.md)
 - [Character Stage / Sprite / Voice Timeline](../03-presentation/character-stage.md)
 - [ID と参照](ids-and-references.md)
@@ -107,7 +107,7 @@ alice.say(
 ]
 ```
 
-`#` remains an entity-reference marker, not an option marker. The older `alice #say... @smile voice auto:` style is deprecated and may be formatter-migrated.
+`#` remains an entity-reference marker, not an option marker. The older `alice #say... @smile voice auto:` style is not part of the stable grammar and may be formatter-migrated while early tooling still recognizes it.
 
 The long method form is preferred when the line has a custom window, timed cues, cancellation, local variables, or custom hooks.
 
@@ -173,6 +173,19 @@ with:
 ```
 
 Here `alice:` lowers to the same dialogue call as `alice.say()[...]`, and `with:` lowers to `with { ... }`.
+
+Colon lowering keeps speaker presets callable:
+
+```text
+alice: text
+  -> alice.say()[text]
+
+alice(voice=auto): text
+  -> alice.say(voice=auto)[text]
+
+alice2(voice=auto): text
+  -> alice2(voice=auto)[text]
+```
 
 Use the canonical method form when the line exports handles or values:
 

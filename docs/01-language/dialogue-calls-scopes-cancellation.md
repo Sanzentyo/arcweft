@@ -54,7 +54,7 @@ alice(id=#say.opening.greeting, window=#textbox.side, voice=auto, face=smile):
     おはよう。[p]
 ```
 
-`with` is reserved for attaching a line plan to dialogue calls. Parentheses `(...)` are for options; brackets `[...]` are player-facing dialogue content; canonical `with { ... }` or indentation sugar `with:` attaches the line plan. A bare trailing `{ ... }` after `]` remains accepted for compatibility, but the formatter should make the attachment explicit with `with`.
+`with` is reserved for attaching a line plan to dialogue calls. Parentheses `(...)` are for options; brackets `[...]` are player-facing dialogue content; canonical `with { ... }` or indentation sugar `with:` attaches the line plan. A bare trailing `{ ... }` after `]` is a separate lexical scope, not a line plan attachment.
 
 The older compact option style:
 
@@ -63,7 +63,7 @@ alice #say.opening.greeting @smile voice auto:
     おはよう。[p]
 ```
 
-is deprecated. The formatter may migrate it to the parenthesized form.
+is not part of the stable grammar. The formatter may migrate it to the parenthesized form while this syntax is still recognized by early tooling.
 
 ---
 

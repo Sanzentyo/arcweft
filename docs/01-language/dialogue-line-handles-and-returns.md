@@ -136,6 +136,16 @@ line_plan_style = "indent"   # "indent" | "brace" | "preserve"
 
 `with:` begins a line-plan block only when it is aligned with the speaker line or content call. Inside dialogue text, `with:` is ordinary text unless escaped or parsed as part of a dialogue tag. Lowering should normalize it to the same representation as `with { ... }`.
 
+A bare block after dialogue content is not a line plan:
+
+```awft
+alice.say()[おはよう。[p]] {
+    debug_log()
+}
+```
+
+The `{ ... }` above is a separate lexical scope. Use `with { ... }` when the block is intended to be a line plan.
+
 ---
 
 ## Colon speaker sugar with `with:`

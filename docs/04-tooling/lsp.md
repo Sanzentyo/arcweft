@@ -18,6 +18,11 @@
 
 - ID inference / materialize / rename
 - Ref resolution
+- Sugar expansion code actions:
+  - `with:` → `with { ... }`
+  - `speaker:` → `speaker.say()[...]`
+  - `speaker(args):` → `speaker.say(args)[...]`
+  - `await? expr with ...` → `try await expr with ...`
 - `Need` unhandled diagnostics
 - naked await in flow diagnostics
 - borrow crosses await diagnostics
@@ -39,6 +44,7 @@ arcweft/applyGraphPatch
 arcweft/getRagContext
 arcweft/renderRouteMap
 arcweft/parseInput
+arcweft/expandSugar
 arcweft/shaderPreview
 arcweft/audioCuePreview
 ```
@@ -57,4 +63,3 @@ CLI/LSP は machine-readable diagnostics を出す。
   ]
 }
 ```
-

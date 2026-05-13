@@ -33,6 +33,8 @@ let config = match load_config() {
 
 The error path has type `!`, so the expression has type `T`.
 
+Arcweft also reserves prefix `try expr` as equivalent propagation syntax. It is mainly useful when another prefix construct must group before propagation, most notably `try await expr with { ... }`.
+
 ## Postfix `?` on Option
 
 In an `Option`-returning function:
