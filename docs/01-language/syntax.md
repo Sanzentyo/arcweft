@@ -105,7 +105,7 @@ effects { signal_write, assert }
 }
 
 memo fn route_title(route: Ref<Flow>) -> String
-cache session
+scope = session
 {
     registry.flow(route).title
 }

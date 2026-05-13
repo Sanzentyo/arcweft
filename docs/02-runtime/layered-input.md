@@ -566,8 +566,10 @@ RawInputEvent
 
 Hit-test や target resolution が高コストな場合は、frame scoped memo を使う。
 
-```rust
-memo(frame) let routed = route_input(raw, layer_tree, hit_regions)
+```awft
+let routed = memo(scope=frame, key=(raw, layer_tree.routing_hash)) {
+    route_input(raw, layer_tree, hit_regions)
+}
 ```
 
 関連:

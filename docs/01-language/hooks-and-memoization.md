@@ -271,8 +271,9 @@ debounce 300ms
 ## Memoization の基本
 
 ```awft
-@memo(scope = scene)
-fn choice_to_view(state: GameState)(choice: ChoiceDef) -> ChoiceView {
+memo fn choice_to_view(state: GameState)(choice: ChoiceDef) -> ChoiceView
+scope = scene
+{
     ChoiceView {
         id = choice.id,
         label = choice.label,
@@ -285,8 +286,8 @@ fn choice_to_view(state: GameState)(choice: ChoiceDef) -> ChoiceView {
 
 ```awft
 memo fn route_graph(root: Ref<Flow>) -> RouteGraph
-scope bundle
-depends graph flows
+scope = bundle
+depends = graph.flows
 ensures deterministic(result)
 {
     build_route_graph(root)
@@ -315,11 +316,13 @@ pub enum MemoScope {
 borrow を含む値は lifetime より長い scope に保存できない。
 
 ```awft
-@memo(scope = scene)
-fn parse_header<'frame>(bytes: &'frame [u8]) -> Header { ... } // error
+memo fn parse_header<'frame>(bytes: &'frame [u8]) -> Header
+scope = scene
+{ ... } // error
 
-@memo(scope = frame)
-fn parse_header<'frame>(bytes: &'frame [u8]) -> Header { ... } // OK
+memo fn parse_header<'frame>(bytes: &'frame [u8]) -> Header
+scope = frame
+{ ... } // OK
 ```
 
 ---
@@ -340,8 +343,10 @@ selected dependencies
 明示 key:
 
 ```awft
-@memo(scope = scene, key = (choice.id, state.affection[#character.alice]))
-fn choice_enabled(state: GameState)(choice: ChoiceDef) -> Bool {
+memo fn choice_enabled(state: GameState)(choice: ChoiceDef) -> Bool
+scope = scene
+key = (choice.id, state.affection[#character.alice])
+{
     choice.condition(state)
 }
 ```
@@ -349,8 +354,10 @@ fn choice_enabled(state: GameState)(choice: ChoiceDef) -> Bool {
 自動依存追跡:
 
 ```awft
-@memo(scope = scene, track = auto)
-fn visible_choices(state: GameState) -> List<ChoiceView> {
+memo fn visible_choices(state: GameState) -> List<ChoiceView>
+scope = scene
+track = auto
+{
     opening_choices()
         .filter(choice_available(state))
         .map(choice_to_view(state))
@@ -386,10 +393,18 @@ on state changed .current_bg
 ## Need / Task memoization
 
 ```awft
-@memo_need(scope = scene, key = #asset_pack.opening)
 task fn load_opening_assets() -> Result<OpeningAssets, AssetError> {
-    let bg = await asset.image(#asset.bg.room)?
-    let voice = await asset.audio(#asset.voice.alice.001)?
+    let assets = memo(scope=scene, key=#asset_pack.opening) {
+        load_opening_assets_task()
+    }
+    let bg = try await assets.bg with:
+        pending p:
+            scene #scene.loading:
+                progress p.ratio
+    let voice = try await assets.voice with:
+        pending p:
+            scene #scene.loading:
+                progress p.ratio
     Ok(OpeningAssets { bg, voice })
 }
 ```
@@ -401,8 +416,11 @@ task fn load_opening_assets() -> Result<OpeningAssets, AssetError> {
 ## UI / Render memoization
 
 ```awft
-@memo_view(key = (props, state.config.theme, env.text_scale))
-component SettingsPanel(props: SettingsProps) -> View { ... }
+component SettingsPanel(props: SettingsProps) -> View {
+    memo(scope=frame, key=(props, state.config.theme, env.text_scale)) {
+        SettingsPanelBody(props)
+    }
+}
 ```
 
 ```awft
@@ -431,9 +449,9 @@ hook_event  := "input" input_phase? input_kind
              | "activity" entity_ref lifecycle_event
 hook_options:= ("when" expr)? ("priority" int)? ("once" once_policy)? ("debounce" duration)? ("throttle" duration)?
 
-memo_attr   := "@memo" "(" memo_args? ")"
 memo_fn     := "memo" "fn" ident generic_params? fn_params return_type memo_options? block
-memo_options:= ("scope" memo_scope)? ("key" "=" expr_tuple)? ("depends" dep_list)? ("track" "=" ("auto" | "manual"))?
+memo_expr   := "memo" "(" memo_args? ")" block
+memo_options:= ("scope" "=" memo_scope)? ("key" "=" expr_tuple)? ("depends" "=" dep_list)? ("track" "=" ("auto" | "manual"))?
 ```
 
 ## 最終ルール

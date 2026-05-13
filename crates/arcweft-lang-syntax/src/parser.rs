@@ -84,7 +84,9 @@ impl Parser {
             let trimmed = line.text.trim().to_owned();
             let range = TextRange::new(line.start, line.end);
 
-            if let Some(attribute) = parse_attribute(&trimmed, range) {
+            if let Some(item) = self.reject_old_memo_attribute(&trimmed, range) {
+                items.push(item);
+            } else if let Some(attribute) = parse_attribute(&trimmed, range) {
                 items.push(Item::Attribute(attribute));
                 self.index += 1;
             } else if let Some(path) = trimmed.strip_prefix("mod ") {
@@ -162,6 +164,24 @@ impl Parser {
         } else {
             Err(core::mem::take(&mut self.errors))
         }
+    }
+
+    fn reject_old_memo_attribute(&mut self, trimmed: &str, range: TextRange) -> Option<Item> {
+        if !trimmed.starts_with("@memo") {
+            return None;
+        }
+        self.push_error(
+            range,
+            "`@memo`-style memo attributes are not valid Arcweft syntax",
+            [
+                "memo fn name(...) -> Type",
+                "memo(scope=..., key=...) { ... }",
+            ],
+            Some(trimmed),
+            ["remove `@` and use a `memo fn` item or `memo(...) { ... }` block"],
+        );
+        self.index += 1;
+        Some(Item::Raw(RawItem::new(trimmed.to_owned(), None, range)))
     }
 
     fn parse_flow(&mut self) -> Option<Flow> {
@@ -602,7 +622,10 @@ impl Parser {
             .strip_prefix("memo fn")?
             .trim()
             .to_owned();
-        let options = lines.map(str::to_owned).collect();
+        let options = lines
+            .inspect(|line| self.reject_old_memo_option(line, start_line.start))
+            .map(str::to_owned)
+            .collect();
         Some(MemoFn::new(
             visibility,
             signature,
@@ -610,6 +633,18 @@ impl Parser {
             body,
             TextRange::new(start_line.start, end),
         ))
+    }
+
+    fn reject_old_memo_option(&mut self, line: &str, base: usize) {
+        if line.starts_with("cache ") {
+            self.push_error(
+                TextRange::new(base, base + line.len()),
+                "`cache` is not valid memo option syntax",
+                ["scope = MemoScope"],
+                Some(line),
+                ["replace `cache session` with `scope = session`"],
+            );
+        }
     }
 
     fn parse_parser_item(&mut self) -> Option<ParserItem> {

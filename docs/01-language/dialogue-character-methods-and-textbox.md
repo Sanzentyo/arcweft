@@ -238,10 +238,9 @@ let face = actor.face(smile)
 These handles can be memoized or preloaded:
 
 ```awft
-let actor = memo alice.stage.acquire(
-    key=(#character.alice, pose=normal, theme=env.theme.hash),
-    cache=scene,
-)
+let actor = memo(scope=scene, key=(#character.alice, pose=normal, theme=env.theme.hash)) {
+    alice.stage.acquire(scope=line)
+}
 ```
 
 A `preload next` block explicitly prepares assets for a future flow.

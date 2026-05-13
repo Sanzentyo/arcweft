@@ -360,10 +360,9 @@ let face = actor.face(smile)
 The `memo=true` flag allows the stage proxy to reuse loaded sprite atlases, expression meshes, and text-layout assets when the same key is requested again.
 
 ```awft
-let actor = memo alice.stage.acquire(
-    key=(#character.alice, pose=normal, theme=env.theme.hash),
-    cache=scene,
-)
+let actor = memo(scope=scene, key=(#character.alice, pose=normal, theme=env.theme.hash)) {
+    alice.stage.acquire(scope=line)
+}
 ```
 
 Preload declarations are hints, not hidden blocking operations. If an asset is not ready at use time, the normal `Need<T, E>` / pending-display rules still apply.

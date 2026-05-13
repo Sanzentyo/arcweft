@@ -298,8 +298,8 @@ let visible_choices = seq {
 Memoization には stable key が必要。
 
 ```awft
-@memo
-fn route_available(state: GameState, route: Ref<Flow>) -> Bool
+memo fn route_available(state: GameState, route: Ref<Flow>) -> Bool
+scope = scene
 where
     GameState: StableHash,
     Ref<Flow>: Hash + Eq
@@ -311,8 +311,8 @@ where
 結果を cache に保持する場合は `Clone` も要求できる。
 
 ```awft
-@memo
-fn expensive<T>(x: T) -> Computed
+memo fn expensive<T>(x: T) -> Computed
+scope = session
 where
     T: StableHash + Eq,
     Computed: Clone
@@ -332,4 +332,3 @@ Arcweft は曖昧な method resolution を避けるため、初期仕様では i
 4. blanket impl は core/prelude crate 中心
 5. user blanket impl は将来拡張
 ```
-

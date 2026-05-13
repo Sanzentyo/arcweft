@@ -456,7 +456,7 @@ check every frame
 }
 
 memo fn route_title(route: Ref<Flow>) -> String
-cache session
+scope = session
 {
     registry.flow(route).title
 }
@@ -471,6 +471,28 @@ pub parser parse_player_command: Parser<PlayerCommand, ParseError> {
         assert!(matches!(&tree.items()[0], Item::Hook(_)));
         assert!(matches!(&tree.items()[1], Item::MemoFn(_)));
         assert!(matches!(&tree.items()[2], Item::Parser(_)));
+    }
+
+    #[test]
+    fn rejects_old_memo_attribute_and_cache_option() {
+        let errors = parse_source(
+            r"
+@memo(scope = scene)
+fn route_title(route: Ref<Flow>) -> String {
+    registry.flow(route).title
+}
+
+memo fn route_graph(root: Ref<Flow>) -> RouteGraph
+cache session
+{
+    build_route_graph(root)
+}
+",
+        )
+        .expect_err("old memo syntax is rejected");
+
+        assert!(errors.iter().any(|error| error.message().contains("@memo")));
+        assert!(errors.iter().any(|error| error.message().contains("cache")));
     }
 
     #[test]
