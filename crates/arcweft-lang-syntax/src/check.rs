@@ -509,8 +509,18 @@ impl TypeChecker<'_> {
             if let Some(target) = option.target() {
                 self.expect_entity_kind(target, &EntityKind::Flow, "choice target");
             }
-            if let crate::ast::ChoiceAction::Out(expr) = option.action() {
-                self.check_expr(expr);
+            match option.action() {
+                crate::ast::ChoiceAction::Out(expr) => {
+                    self.check_expr(expr);
+                }
+                crate::ast::ChoiceAction::SelectBlock(statements) => {
+                    let outer_locals = self.locals.clone();
+                    for stmt in statements {
+                        self.check_stmt(stmt);
+                    }
+                    self.locals = outer_locals;
+                }
+                crate::ast::ChoiceAction::Goto(_) | crate::ast::ChoiceAction::None => {}
             }
         }
         if let Some(plan) = choice.plan() {
@@ -1191,10 +1201,16 @@ fn is_local_ident(name: &str) -> bool {
 fn choice_output_type(choice: &crate::lower::HirChoice) -> Option<TypeKind> {
     let mut inferred = None;
     for option in choice.options() {
-        let crate::ast::ChoiceAction::Out(expr) = option.action() else {
-            return None;
+        let ty = match option.action() {
+            crate::ast::ChoiceAction::Out(expr) => simple_expr_type(expr)?,
+            crate::ast::ChoiceAction::SelectBlock(statements) => {
+                let [Stmt::Out(expr)] = statements.as_slice() else {
+                    return None;
+                };
+                simple_expr_type(expr)?
+            }
+            crate::ast::ChoiceAction::Goto(_) | crate::ast::ChoiceAction::None => return None,
         };
-        let ty = simple_expr_type(expr)?;
         match &inferred {
             Some(existing) if existing != &ty => return None,
             Some(_) => {}

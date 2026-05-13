@@ -709,7 +709,7 @@ pub struct ChoiceUiField {
 pub enum ChoiceAction {
     Goto(EntityRef),
     Out(Expr),
-    SelectBlock(String),
+    SelectBlock(Vec<Stmt>),
     None,
 }
 

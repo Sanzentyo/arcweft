@@ -589,6 +589,41 @@ flow #flow.opening opening {
     }
 
     #[test]
+    fn typechecks_choice_option_select_block_statements() {
+        let tree = parse_source(
+            r#"
+flow #flow.opening opening {
+    choice #choice.opening.first {
+        option #choice.opening.listen {
+            label = "聞いてみる"
+            select {
+                let route = #flow.alice_intro
+                out route
+            }
+        }
+    }
+}
+"#,
+        )
+        .expect("choice option select block parses");
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::Choice(choice) = &flow.body()[0] else {
+            panic!("expected choice");
+        };
+        assert!(matches!(
+            choice.options()[0].action(),
+            ChoiceAction::SelectBlock(statements)
+                if matches!(statements.as_slice(), [Stmt::Let { .. }, Stmt::Out(_)])
+        ));
+
+        let hir = lower_to_hir(&tree).expect("choice option select block lowers");
+        validate_typecheck_ready(&hir).expect("choice option select block is typecheck-ready");
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect("choice option select block typechecks");
+    }
+
+    #[test]
     fn parses_source_locale_block() {
         let tree = parse_source(
             r"

@@ -192,8 +192,12 @@ fn collect_choice(choice: &crate::lower::HirChoice, uses: &mut Vec<SymbolUse>) {
         if let Some(target) = option.target() {
             push_entity(uses, target);
         }
-        if let crate::ast::ChoiceAction::Out(expr) = option.action() {
-            collect_expr(expr, uses);
+        match option.action() {
+            crate::ast::ChoiceAction::Out(expr) => collect_expr(expr, uses),
+            crate::ast::ChoiceAction::SelectBlock(statements) => {
+                collect_stmt_block(statements, uses);
+            }
+            crate::ast::ChoiceAction::Goto(_) | crate::ast::ChoiceAction::None => {}
         }
     }
     if let Some(plan) = choice.plan() {
@@ -321,8 +325,12 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
                 if let Some(text_key) = option.label_text_key() {
                     push_entity(uses, text_key);
                 }
-                if let crate::ast::ChoiceAction::Out(expr) = option.action() {
-                    collect_expr(expr, uses);
+                match option.action() {
+                    crate::ast::ChoiceAction::Out(expr) => collect_expr(expr, uses),
+                    crate::ast::ChoiceAction::SelectBlock(statements) => {
+                        collect_stmt_block(statements, uses);
+                    }
+                    crate::ast::ChoiceAction::Goto(_) | crate::ast::ChoiceAction::None => {}
                 }
                 if let Some(target) = match option.action() {
                     crate::ast::ChoiceAction::Goto(target) => Some(target),

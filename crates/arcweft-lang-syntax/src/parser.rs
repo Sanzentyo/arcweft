@@ -2740,7 +2740,7 @@ fn parse_choice_option_block(
             if head == "ui" {
                 ui_fields = parse_choice_ui_fields(ui_body);
             } else if head == "select" {
-                action = parse_choice_select_action(ui_body, base, errors);
+                action = parse_choice_select_action(ui_body);
             }
         }
     }
@@ -2783,29 +2783,14 @@ fn parse_choice_ui_fields(body: &str) -> Vec<ChoiceUiField> {
         .collect()
 }
 
-fn parse_choice_select_action(
-    body: &str,
-    base: usize,
-    errors: &mut Vec<ParseError>,
-) -> ChoiceAction {
-    body.lines()
-        .map(str::trim)
-        .find_map(|line| {
-            if let Some(target) = line.strip_prefix("goto ") {
-                let target = target.trim();
-                return target
-                    .starts_with('#')
-                    .then(|| {
-                        parse_required_entity_ref(target, base, errors)
-                            .map(|(entity, _)| ChoiceAction::Goto(entity))
-                    })
-                    .flatten()
-                    .or_else(|| Some(ChoiceAction::SelectBlock(body.trim().to_owned())));
-            }
-            line.strip_prefix("out ")
-                .map(|expr| ChoiceAction::Out(parse_expr_lossy(expr.trim())))
-        })
-        .unwrap_or_else(|| ChoiceAction::SelectBlock(body.trim().to_owned()))
+fn parse_choice_select_action(body: &str) -> ChoiceAction {
+    let statements = parse_stmt_lines(body);
+    match statements.as_slice() {
+        [Stmt::Goto(crate::expr::Expr::EntityRef(target))] => ChoiceAction::Goto(target.clone()),
+        [Stmt::Out(expr)] => ChoiceAction::Out(expr.clone()),
+        [] => ChoiceAction::None,
+        _ => ChoiceAction::SelectBlock(statements),
+    }
 }
 
 fn trim_string_literal(source: &str) -> Option<String> {
