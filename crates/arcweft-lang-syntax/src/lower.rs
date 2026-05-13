@@ -1,6 +1,7 @@
 use crate::ast::{
-    AwaitBranchKind, ChoiceBlock, DialogueContent, EntityRef, Flow, FlowItem, FlowKind, IfBlock,
-    Item, LinePlan, MatchBlock, Pattern, SpeakerLine, Stmt, SyntaxTree, TextRange,
+    AwaitBranchKind, ChoiceBlock, ContractClause, DialogueContent, EntityRef, Flow, FlowItem,
+    FlowKind, IfBlock, Item, LinePlan, MatchBlock, Pattern, SpeakerLine, Stmt, SyntaxTree,
+    TextRange,
 };
 use crate::expr::Expr;
 use thiserror::Error;
@@ -22,6 +23,7 @@ pub struct HirFlow {
     kind: FlowKind,
     id: Option<EntityRef>,
     name: Option<String>,
+    contracts: Vec<ContractClause>,
     body: Vec<HirFlowItem>,
 }
 
@@ -152,6 +154,7 @@ fn lower_flow(flow: &Flow) -> Result<HirFlow, HirLowerError> {
         kind: flow.kind(),
         id: flow.id().cloned(),
         name: flow.name().map(str::to_owned),
+        contracts: flow.contracts().to_vec(),
         body,
     })
 }
@@ -284,6 +287,10 @@ impl HirFlow {
 
     pub fn body(&self) -> &[HirFlowItem] {
         &self.body
+    }
+
+    pub fn contracts(&self) -> &[ContractClause] {
+        &self.contracts
     }
 }
 

@@ -14,10 +14,10 @@ mod text;
 mod types;
 
 pub use ast::{
-    Attribute, AwaitBranch, AwaitBranchKind, ChoiceBlock, ChoiceOption, ContentCall, DialogueToken,
-    EntityRef, Flow, FlowItem, FlowKind, HookItem, IfBlock, Item, LinePlan, LinePlanItem, MatchArm,
-    MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand, SpeakerLine, Stmt,
-    SyntaxTree, TextRange, UseItem, Visibility, WikiLink,
+    Attribute, AwaitBranch, AwaitBranchKind, ChoiceBlock, ChoiceOption, ContentCall,
+    ContractClause, DialogueToken, EntityRef, Flow, FlowItem, FlowKind, HookItem, IfBlock, Item,
+    LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern,
+    ScenarioCommand, SpeakerLine, Stmt, SyntaxTree, TextRange, UseItem, Visibility, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -38,10 +38,11 @@ pub use types::{
 #[cfg(test)]
 mod tests {
     use super::{
-        AwaitBranchKind, DialogueToken, EntityKind, Expr, FlowItem, FlowKind, HirFlowItem, Item,
-        LinePlanItem, Pattern, Stmt, SymbolUseKind, TypeCheckEnv, TypeKind, TypeRef, Visibility,
-        collect_symbol_uses, lower_to_hir, parse_dialogue_tokens, parse_fn_signature, parse_source,
-        parse_stub, parse_type_ref, typecheck_hir, validate_typecheck_ready,
+        AwaitBranchKind, ContractClause, DialogueToken, EntityKind, Expr, FlowItem, FlowKind,
+        HirFlowItem, Item, LinePlanItem, Pattern, Stmt, SymbolUseKind, TypeCheckEnv, TypeKind,
+        TypeRef, Visibility, collect_symbol_uses, lower_to_hir, parse_dialogue_tokens,
+        parse_fn_signature, parse_source, parse_stub, parse_type_ref, typecheck_hir,
+        validate_typecheck_ready,
     };
 
     #[test]
@@ -85,6 +86,42 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
             matches!(&flow.body()[0], FlowItem::ScenarioCommand(command) if command.args().len() == 2)
         );
         assert!(matches!(&flow.body()[1], FlowItem::Include(_)));
+    }
+
+    #[test]
+    fn parses_flow_contracts_before_body_block() {
+        let tree = parse_source(
+            r"
+pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
+requires delta >= -100
+ensures check result.affection[character] >= 0
+effects { asset.read, ui.show }
+{
+    goto #flow.title
+}
+",
+        )
+        .expect("flow contracts parse");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        assert_eq!(flow.contracts().len(), 3);
+        assert!(matches!(
+            &flow.contracts()[0],
+            ContractClause::Requires {
+                expr: Expr::Binary { .. },
+                ..
+            }
+        ));
+        assert!(matches!(
+            &flow.contracts()[1],
+            ContractClause::Ensures {
+                mode: Some(mode),
+                expr: Expr::Binary { .. },
+            } if mode == "check"
+        ));
+        assert!(matches!(&flow.body()[0], FlowItem::Stmt(Stmt::Goto(_))));
     }
 
     #[test]
@@ -774,6 +811,38 @@ flow #flow.branching branching {
             .with_symbol("next", TypeKind::Named("Option<Ref<Flow>>".to_owned()));
 
         typecheck_hir(&hir, &env).expect("if and match fixture typechecks");
+    }
+
+    #[test]
+    fn typechecks_flow_contract_expressions() {
+        let tree = parse_source(
+            r"
+pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
+requires delta >= -100
+ensures check result.affection[character] >= 0
+effects { asset.read, ui.show }
+{
+    goto #flow.title
+}
+",
+        )
+        .expect("contract typecheck fixture parses");
+        let hir = lower_to_hir(&tree).expect("contract typecheck fixture lowers");
+        let env = TypeCheckEnv::new()
+            .with_symbol("delta", TypeKind::Int)
+            .with_symbol(
+                "result.affection",
+                TypeKind::Named("Map<Character, Int>".to_owned()),
+            )
+            .with_symbol("character", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("asset.read", TypeKind::Named("Effect".to_owned()))
+            .with_symbol("ui.show", TypeKind::Named("Effect".to_owned()))
+            .with_index(
+                TypeKind::Named("Map<Character, Int>".to_owned()),
+                TypeKind::Int,
+            );
+
+        typecheck_hir(&hir, &env).expect("contract expressions typecheck");
     }
 
     #[test]

@@ -101,8 +101,32 @@ pub struct Flow {
     id: Option<EntityRef>,
     name: Option<String>,
     signature_tail: String,
+    contracts: Vec<ContractClause>,
     body: Vec<FlowItem>,
     range: TextRange,
+}
+
+/// Internal initializer for a flow-like item.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct FlowInit {
+    pub(crate) kind: FlowKind,
+    pub(crate) visibility: Option<Visibility>,
+    pub(crate) id: Option<EntityRef>,
+    pub(crate) name: Option<String>,
+    pub(crate) signature_tail: String,
+    pub(crate) contracts: Vec<ContractClause>,
+    pub(crate) body: Vec<FlowItem>,
+    pub(crate) range: TextRange,
+}
+
+/// Flow/function contract clause.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ContractClause {
+    Requires { mode: Option<String>, expr: Expr },
+    Ensures { mode: Option<String>, expr: Expr },
+    Effects(Vec<Expr>),
+    Modifies(Vec<Expr>),
+    Decreases(Expr),
 }
 
 /// Top-level flow-like item kind.
@@ -502,23 +526,16 @@ impl Attribute {
 }
 
 impl Flow {
-    pub(crate) const fn new(
-        kind: FlowKind,
-        visibility: Option<Visibility>,
-        id: Option<EntityRef>,
-        name: Option<String>,
-        signature_tail: String,
-        body: Vec<FlowItem>,
-        range: TextRange,
-    ) -> Self {
+    pub(crate) fn new(init: FlowInit) -> Self {
         Self {
-            kind,
-            visibility,
-            id,
-            name,
-            signature_tail,
-            body,
-            range,
+            kind: init.kind,
+            visibility: init.visibility,
+            id: init.id,
+            name: init.name,
+            signature_tail: init.signature_tail,
+            contracts: init.contracts,
+            body: init.body,
+            range: init.range,
         }
     }
 
@@ -540,6 +557,10 @@ impl Flow {
 
     pub fn signature_tail(&self) -> &str {
         &self.signature_tail
+    }
+
+    pub fn contracts(&self) -> &[ContractClause] {
+        &self.contracts
     }
 
     pub fn body(&self) -> &[FlowItem] {

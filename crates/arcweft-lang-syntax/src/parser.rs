@@ -1,9 +1,9 @@
 use crate::ast::{
     Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, CancelRuleSyntax, ChoiceBlock,
-    ChoiceOption, ContentCall, DialogueContent, EntityRef, Flow, FlowItem, FlowKind, HookItem,
-    IfBlock, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem,
-    Pattern, RawItem, ScenarioCommand, SpeakerLine, Stmt, SyntaxTree, TextRange, UseItem, UseMode,
-    Visibility, WikiLink,
+    ChoiceOption, ContentCall, ContractClause, DialogueContent, EntityRef, Flow, FlowInit,
+    FlowItem, FlowKind, HookItem, IfBlock, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock,
+    MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, SpeakerLine, Stmt,
+    SyntaxTree, TextRange, UseItem, UseMode, Visibility, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -133,7 +133,7 @@ impl Parser {
     fn parse_flow(&mut self) -> Option<Flow> {
         let start_line = self.current().clone();
         let header = start_line.text.trim();
-        let (head, body, end, ok) = self.take_brace_block();
+        let (head, body, end, ok) = self.take_flow_block();
         if !ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
@@ -145,22 +145,69 @@ impl Parser {
             return None;
         }
 
-        let (visibility, after_visibility) = parse_visibility_prefix(&head);
+        let header_lines = head
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>();
+        let first = header_lines.first().copied()?;
+        let (visibility, after_visibility) = parse_visibility_prefix(first);
         let (kind, after_flow) = parse_flow_kind(after_visibility.trim_start())?;
         let (id, after_id) =
             parse_optional_entity_ref(after_flow, start_line.start, &mut self.errors);
         let (name, signature_tail) = parse_name_and_tail(after_id.trim());
+        let contracts = header_lines
+            .iter()
+            .skip(1)
+            .filter_map(|line| parse_contract_clause(line))
+            .collect();
         let body_items = self.parse_flow_body(&body, start_line.start + head.len());
 
-        Some(Flow::new(
+        Some(Flow::new(FlowInit {
             kind,
             visibility,
             id,
             name,
             signature_tail,
-            body_items,
-            TextRange::new(start_line.start, end),
-        ))
+            contracts,
+            body: body_items,
+            range: TextRange::new(start_line.start, end),
+        }))
+    }
+
+    fn take_flow_block(&mut self) -> (String, String, usize, bool) {
+        let start = self.index;
+        let mut header = String::new();
+        let mut end = self.current().end;
+
+        while self.index < self.lines.len() {
+            let line = self.current();
+            let trimmed = line.text.trim();
+            let is_body_line = trimmed == "{"
+                || (self.index == start
+                    && trimmed.contains('{')
+                    && !trimmed.starts_with("effects"));
+            if is_body_line {
+                break;
+            }
+            if !header.is_empty() {
+                header.push('\n');
+            }
+            header.push_str(&line.text);
+            end = line.end;
+            self.index += 1;
+        }
+        if self.index >= self.lines.len() {
+            return (header, String::new(), end, false);
+        }
+        let (body_head, body, end, ok) = self.take_brace_block();
+        if !body_head.is_empty() {
+            if !header.is_empty() {
+                header.push('\n');
+            }
+            header.push_str(&body_head);
+        }
+        (header, body, end, ok)
     }
 
     fn parse_hook(&mut self) -> Option<HookItem> {
@@ -1022,6 +1069,55 @@ fn parse_attribute(trimmed: &str, range: TextRange) -> Option<Attribute> {
         (!args.is_empty()).then(|| args.to_owned()),
         range,
     ))
+}
+
+fn parse_contract_clause(line: &str) -> Option<ContractClause> {
+    if let Some(rest) = line.strip_prefix("requires ") {
+        let (mode, expr) = split_contract_mode(rest);
+        return Some(ContractClause::Requires {
+            mode,
+            expr: parse_expr_lossy(expr),
+        });
+    }
+    if let Some(rest) = line.strip_prefix("ensures ") {
+        let (mode, expr) = split_contract_mode(rest);
+        return Some(ContractClause::Ensures {
+            mode,
+            expr: parse_expr_lossy(expr),
+        });
+    }
+    if let Some(rest) = line.strip_prefix("effects ") {
+        return Some(ContractClause::Effects(parse_contract_expr_list(rest)));
+    }
+    if let Some(rest) = line.strip_prefix("modifies ") {
+        return Some(ContractClause::Modifies(parse_contract_expr_list(rest)));
+    }
+    line.strip_prefix("decreases ")
+        .map(|expr| ContractClause::Decreases(parse_expr_lossy(expr.trim())))
+}
+
+fn split_contract_mode(source: &str) -> (Option<String>, &str) {
+    let trimmed = source.trim();
+    for mode in ["prove", "check", "debug"] {
+        if let Some(rest) = trimmed.strip_prefix(mode) {
+            return (Some(mode.to_owned()), rest.trim());
+        }
+    }
+    (None, trimmed)
+}
+
+fn parse_contract_expr_list(source: &str) -> Vec<crate::expr::Expr> {
+    let body = source
+        .trim()
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+        .unwrap_or(source)
+        .trim();
+    body.split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(parse_expr_lossy)
+        .collect()
 }
 
 fn parse_choice_option(

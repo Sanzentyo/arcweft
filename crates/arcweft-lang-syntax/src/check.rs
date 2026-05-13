@@ -1,4 +1,4 @@
-use crate::ast::{DialogueToken, EntityRef, FlowKind, LinePlanItem, Pattern, Stmt};
+use crate::ast::{ContractClause, DialogueToken, EntityRef, FlowKind, LinePlanItem, Pattern, Stmt};
 use crate::expr::{BinaryOp, Expr, Literal};
 use crate::lower::{HirFlowItem, HirModule};
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
@@ -139,6 +139,9 @@ impl TypeChecker<'_> {
                     }
                 }
             }
+            for contract in flow.contracts() {
+                self.check_contract_clause(contract);
+            }
             for item in flow.body() {
                 self.check_flow_item(item);
             }
@@ -250,6 +253,22 @@ impl TypeChecker<'_> {
             Stmt::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
                 "raw statement is not type-checkable: {raw}"
             ))),
+        }
+    }
+
+    fn check_contract_clause(&mut self, contract: &ContractClause) {
+        match contract {
+            ContractClause::Requires { expr, .. } | ContractClause::Ensures { expr, .. } => {
+                self.expect_expr_type(expr, &TypeKind::Bool, "contract expression");
+            }
+            ContractClause::Decreases(expr) => {
+                self.check_expr(expr);
+            }
+            ContractClause::Effects(items) | ContractClause::Modifies(items) => {
+                for item in items {
+                    self.check_expr(item);
+                }
+            }
         }
     }
 

@@ -1,4 +1,4 @@
-use crate::ast::{DialogueToken, EntityRef, LinePlanItem, Stmt};
+use crate::ast::{ContractClause, DialogueToken, EntityRef, LinePlanItem, Stmt};
 use crate::expr::Expr;
 use crate::lower::{HirFlowItem, HirModule};
 
@@ -26,6 +26,9 @@ pub fn collect_symbol_uses(module: &HirModule) -> Vec<SymbolUse> {
     for flow in module.flows() {
         if let Some(id) = flow.id() {
             push_entity(&mut uses, id);
+        }
+        for contract in flow.contracts() {
+            collect_contract_clause(contract, &mut uses);
         }
         for item in flow.body() {
             collect_flow_item(item, &mut uses);
@@ -92,6 +95,19 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
         HirFlowItem::Scenario { args, .. } => {
             for arg in args {
                 collect_expr(arg, uses);
+            }
+        }
+    }
+}
+
+fn collect_contract_clause(contract: &ContractClause, uses: &mut Vec<SymbolUse>) {
+    match contract {
+        ContractClause::Requires { expr, .. }
+        | ContractClause::Ensures { expr, .. }
+        | ContractClause::Decreases(expr) => collect_expr(expr, uses),
+        ContractClause::Effects(items) | ContractClause::Modifies(items) => {
+            for item in items {
+                collect_expr(item, uses);
             }
         }
     }

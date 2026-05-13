@@ -67,6 +67,7 @@ Syntax parser:
 - Flow `let`/`return`/`goto` statements now lower to structured `Stmt` and `Pattern` values instead of opaque strings.
 - Flow `if` and `match` blocks lower to structured HIR nodes, and their nested flow items participate in symbol collection and type checking.
 - `await ... with` keeps `pending`/`ready`/`error`/`denied` branches as structured AST/HIR, and branch bodies participate in symbol collection and type checking.
+- Flow contract clauses (`requires`, `ensures`, `effects`, `modifies`, `decreases`) are parsed separately from the flow body and participate in symbol collection and type checking.
 - `lower_to_hir` verifies that parsed edge-case flow syntax can be converted to HIR-facing structures and rejects raw syntax that still needs parser coverage.
 - `collect_symbol_uses` walks HIR without reparsing source snippets so name resolution can see dialogue callees, entity references, paths, calls, methods, dialogue text expressions, timed cues, and choice-condition references.
 - `validate_typecheck_ready` rejects lowered HIR that still contains raw expression fragments before the future type checker sees it.
