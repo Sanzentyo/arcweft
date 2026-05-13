@@ -154,7 +154,7 @@ fn register_flow_item(item: &HirFlowItem, registry: &mut NameRegistry) {
                 register_flow_item(item, registry);
             }
         }
-        HirFlowItem::Await(await_with) => {
+        HirFlowItem::LetAwait { await_with, .. } | HirFlowItem::Await(await_with) => {
             for branch in await_with.branches() {
                 for item in branch.body() {
                     register_flow_item(item, registry);

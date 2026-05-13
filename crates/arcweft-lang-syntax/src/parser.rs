@@ -1029,6 +1029,9 @@ impl Parser {
         if is_let_loop_head(trimmed) {
             return self.parse_let_loop().map(FlowItem::Stmt);
         }
+        if is_let_await_with_head(trimmed) {
+            return self.parse_let_await_with().map(FlowItem::Stmt);
+        }
         if is_let_if_let_head(trimmed) {
             return self.parse_let_if_let().map(FlowItem::Stmt);
         }
@@ -1287,6 +1290,52 @@ impl Parser {
                 self.parse_flow_body(&body, start_line.start + head.len()),
                 TextRange::new(start_line.start, end),
             ),
+        })
+    }
+
+    fn parse_let_await_with(&mut self) -> Option<Stmt> {
+        let start_line = self.current().clone();
+        let trimmed = start_line.text.trim();
+        let range = TextRange::new(start_line.start, start_line.end);
+
+        let (head, body) = if trimmed.contains('{') {
+            let (head, body, _, ok) = self.take_brace_block();
+            if !ok {
+                self.push_error(
+                    range,
+                    "unclosed block while parsing await expression binding",
+                    ["}"],
+                    Some(trimmed),
+                    ["insert a closing `}` for the await wait-view block"],
+                );
+                return None;
+            }
+            (head, Some(format!("{{ {body} }}")))
+        } else if trimmed.ends_with("with:") {
+            self.index += 1;
+            let body = self.take_indented_await_body(indentation(&start_line.text) + 1);
+            (trimmed.to_owned(), Some(body))
+        } else {
+            self.index += 1;
+            (trimmed.to_owned(), None)
+        };
+
+        let rest = head.trim().strip_prefix("let")?.trim();
+        let (pattern, await_head) = rest.split_once('=')?;
+        let await_source = body.map_or_else(
+            || await_head.trim().to_owned(),
+            |body| {
+                if body.trim_start().starts_with('{') {
+                    format!("{} {}", await_head.trim(), body)
+                } else {
+                    format!("{}\n{}", await_head.trim(), body)
+                }
+            },
+        );
+
+        Some(Stmt::LetAwait {
+            pattern: parse_pattern(pattern.trim()),
+            await_with: parse_await_with(&await_source, range, &mut self.errors),
         })
     }
 
@@ -3757,6 +3806,16 @@ fn is_await_with_head(trimmed: &str) -> bool {
         || trimmed.starts_with("try await ")
         || trimmed.starts_with("await? "))
         && (trimmed.contains(" with ") || trimmed.ends_with("with:"))
+}
+
+fn is_let_await_with_head(trimmed: &str) -> bool {
+    let Some(rest) = trimmed.strip_prefix("let ") else {
+        return false;
+    };
+    let Some((_, value)) = rest.split_once('=') else {
+        return false;
+    };
+    is_await_with_head(value.trim())
 }
 
 fn parse_await_with(trimmed: &str, range: TextRange, errors: &mut Vec<ParseError>) -> AwaitWith {

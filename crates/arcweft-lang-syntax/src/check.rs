@@ -1,5 +1,6 @@
 use crate::ast::{
-    ContractClause, DialogueToken, EntityDeclKind, EntityRef, FlowKind, LinePlanItem, Pattern, Stmt,
+    AwaitBranchKind, ContractClause, DialogueToken, EntityDeclKind, EntityRef, FlowKind,
+    LinePlanItem, Pattern, Stmt,
 };
 use crate::expr::{BinaryOp, Expr, Literal};
 use crate::lower::{HirFlowItem, HirModule, HirTopLevelDecl};
@@ -301,6 +302,15 @@ impl TypeChecker<'_> {
                     self.locals.insert(name.to_owned(), ty);
                 }
             }
+            HirFlowItem::LetAwait {
+                pattern,
+                await_with,
+            } => {
+                let ty = self.check_await_item(await_with);
+                if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), ty) {
+                    self.locals.insert(name.to_owned(), ty);
+                }
+            }
             HirFlowItem::If(block) => {
                 self.expect_expr_type(block.condition(), &TypeKind::Bool, "if condition");
                 self.check_flow_items(block.body());
@@ -390,21 +400,34 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_await_item(&mut self, await_with: &crate::lower::HirAwait) {
+    fn check_await_item(&mut self, await_with: &crate::lower::HirAwait) -> Option<TypeKind> {
         self.reject_active_borrows("await suspension boundary");
         let ty = self.check_expr(await_with.expr());
-        if !matches!(ty, Some(TypeKind::Need { .. })) {
+        let Some(TypeKind::Need { ready, error }) = ty else {
             self.errors.push(TypeCheckError::new(
                 "await expression must have Need<T, E> type".to_owned(),
             ));
-        }
+            return None;
+        };
         if await_with.branches().is_empty() {
             self.errors.push(TypeCheckError::new(
                 "await with must define at least one wait-view branch".to_owned(),
             ));
         }
         for branch in await_with.branches() {
+            let outer_locals = self.locals.clone();
+            let branch_type = await_branch_pattern_type(branch.kind(), &ready, &error);
+            for (name, ty) in let_else_bindings(branch.pattern(), Some(&branch_type)) {
+                self.locals.insert(name, ty);
+            }
             self.check_flow_items(branch.body());
+            self.locals = outer_locals;
+        }
+
+        if await_with.applies_try() {
+            Some(*ready)
+        } else {
+            Some(TypeKind::Result { ok: ready, error })
         }
     }
 
@@ -490,6 +513,11 @@ impl TypeChecker<'_> {
             Stmt::LetLoop { .. } => {
                 self.errors.push(TypeCheckError::new(
                     "loop expression binding must be lowered before type checking".to_owned(),
+                ));
+            }
+            Stmt::LetAwait { .. } => {
+                self.errors.push(TypeCheckError::new(
+                    "await expression binding must be lowered before type checking".to_owned(),
                 ));
             }
             Stmt::Return(expr)
@@ -1691,6 +1719,19 @@ fn simple_expr_type(expr: &Expr) -> Option<TypeKind> {
         Expr::List(_) => Some(TypeKind::Named("List".to_owned())),
         Expr::RecordLiteral(_) => Some(TypeKind::Named("Record".to_owned())),
         _ => None,
+    }
+}
+
+fn await_branch_pattern_type(
+    kind: AwaitBranchKind,
+    ready: &TypeKind,
+    error: &TypeKind,
+) -> TypeKind {
+    match kind {
+        AwaitBranchKind::Pending => TypeKind::Named("Progress".to_owned()),
+        AwaitBranchKind::Ready => ready.clone(),
+        AwaitBranchKind::Error => error.clone(),
+        AwaitBranchKind::Denied => TypeKind::Named("AwaitDenied".to_owned()),
     }
 }
 

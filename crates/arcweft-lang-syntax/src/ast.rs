@@ -549,6 +549,11 @@ pub enum Stmt {
         pattern: Pattern,
         block: LoopBlock,
     },
+    /// `let PAT = try await EXPR with ...` wait-view expression binding.
+    LetAwait {
+        pattern: Pattern,
+        await_with: AwaitWith,
+    },
     Return(Expr),
     /// `out expr` or `out 'label expr` from a line/cue/content continuation.
     Out {

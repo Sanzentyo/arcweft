@@ -1,10 +1,10 @@
 use crate::ast::{
-    Attribute, AwaitBranchKind, BorrowBlock, CallableItem, ChoiceAction, ChoiceBlock, ChoicePlan,
-    ContractClause, DialogueContent, EntityDeclItem, EntityRef, EnumItem, ExternModItem, Flow,
-    FlowItem, FlowKind, FunctionItem, FunctionKind, HookItem, IfBlock, IfLetBlock, ImplItem, Item,
-    LinePlan, LoopBlock, MatchBlock, MemoFn, ParserItem, Pattern, ScopeBlock, ScopeExprBlock,
-    SourceItem, SourceLocaleBlock, SpeakerLine, StateItem, Stmt, StructItem, SyntaxTree, TextRange,
-    TraitItem, TypeAliasItem, WhileBlock, WhileLetBlock,
+    Attribute, AwaitBranchKind, AwaitWith, BorrowBlock, CallableItem, ChoiceAction, ChoiceBlock,
+    ChoicePlan, ContractClause, DialogueContent, EntityDeclItem, EntityRef, EnumItem,
+    ExternModItem, Flow, FlowItem, FlowKind, FunctionItem, FunctionKind, HookItem, IfBlock,
+    IfLetBlock, ImplItem, Item, LinePlan, LoopBlock, MatchBlock, MemoFn, ParserItem, Pattern,
+    ScopeBlock, ScopeExprBlock, SourceItem, SourceLocaleBlock, SpeakerLine, StateItem, Stmt,
+    StructItem, SyntaxTree, TextRange, TraitItem, TypeAliasItem, WhileBlock, WhileLetBlock,
 };
 use crate::expr::Expr;
 use crate::types::FnSignature;
@@ -80,6 +80,10 @@ pub enum HirFlowItem {
     LetLoop {
         pattern: Pattern,
         block: HirLoop,
+    },
+    LetAwait {
+        pattern: Pattern,
+        await_with: HirAwait,
     },
     If(HirIf),
     IfLet(HirIfLet),
@@ -398,6 +402,13 @@ fn lower_flow_item_with_context(
             pattern: pattern.clone(),
             block: lower_loop(block, context)?,
         }),
+        FlowItem::Stmt(Stmt::LetAwait {
+            pattern,
+            await_with,
+        }) => Ok(HirFlowItem::LetAwait {
+            pattern: pattern.clone(),
+            await_with: lower_await_with(await_with, context)?,
+        }),
         FlowItem::Stmt(stmt) => Ok(HirFlowItem::Stmt(stmt.clone())),
         FlowItem::ScenarioCommand(command) => Ok(HirFlowItem::Scenario {
             name: command.name().to_owned(),
@@ -421,32 +432,39 @@ fn lower_flow_item_with_context(
         FlowItem::Scope(block) => lower_scope(block, context).map(HirFlowItem::Scope),
         FlowItem::Include(entity) => Ok(HirFlowItem::Include(entity.clone())),
         FlowItem::AwaitWith(await_with) => {
-            let branches = await_with
-                .branches()
-                .iter()
-                .map(|branch| {
-                    Ok(HirAwaitBranch {
-                        kind: branch.kind(),
-                        pattern: branch.pattern().clone(),
-                        body: branch
-                            .body()
-                            .iter()
-                            .map(|item| lower_flow_item_with_context(item, context))
-                            .collect::<Result<Vec<_>, _>>()?,
-                    })
-                })
-                .collect::<Result<Vec<_>, HirLowerError>>()?;
-            Ok(HirFlowItem::Await(HirAwait {
-                expr: await_with.expr().clone(),
-                applies_try: await_with.applies_try(),
-                branches,
-            }))
+            lower_await_with(await_with, context).map(HirFlowItem::Await)
         }
         FlowItem::Raw(raw) => Err(HirLowerError::new(
             format!("raw flow item cannot be lowered: {raw}"),
             None,
         )),
     }
+}
+
+fn lower_await_with(
+    await_with: &AwaitWith,
+    context: &mut LowerContext,
+) -> Result<HirAwait, HirLowerError> {
+    let branches = await_with
+        .branches()
+        .iter()
+        .map(|branch| {
+            Ok(HirAwaitBranch {
+                kind: branch.kind(),
+                pattern: branch.pattern().clone(),
+                body: branch
+                    .body()
+                    .iter()
+                    .map(|item| lower_flow_item_with_context(item, context))
+                    .collect::<Result<Vec<_>, _>>()?,
+            })
+        })
+        .collect::<Result<Vec<_>, HirLowerError>>()?;
+    Ok(HirAwait {
+        expr: await_with.expr().clone(),
+        applies_try: await_with.applies_try(),
+        branches,
+    })
 }
 
 fn lower_scope_expr(scope: &ScopeExprBlock, context: &mut LowerContext) -> HirScopeExpr {

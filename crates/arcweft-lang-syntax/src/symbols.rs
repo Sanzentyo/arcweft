@@ -220,9 +220,10 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
         }
         HirFlowItem::Scope(block) => collect_flow_items(block.body(), uses),
         HirFlowItem::Include(entity) => push_entity(uses, entity),
-        HirFlowItem::Await(await_with) => {
+        HirFlowItem::LetAwait { await_with, .. } | HirFlowItem::Await(await_with) => {
             collect_expr(await_with.expr(), uses);
             for branch in await_with.branches() {
+                collect_pattern(branch.pattern(), uses);
                 for item in branch.body() {
                     collect_flow_item(item, uses);
                 }
@@ -527,6 +528,9 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
                 format!("loop expression with {} body items", block.body().len()),
             ));
         }
+        Stmt::LetAwait { await_with, .. } => {
+            collect_unlowered_await_binding(await_with, uses);
+        }
         Stmt::Break {
             expr: Some(expr), ..
         }
@@ -574,6 +578,16 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         Stmt::Break { expr: None, .. } | Stmt::Continue { .. } => {}
         Stmt::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
     }
+}
+
+fn collect_unlowered_await_binding(await_with: &crate::ast::AwaitWith, uses: &mut Vec<SymbolUse>) {
+    uses.push(SymbolUse::new(
+        SymbolUseKind::RawExpr,
+        format!(
+            "await expression binding with {} wait-view branches",
+            await_with.branches().len()
+        ),
+    ));
 }
 
 fn collect_choice_stmt(choice: &crate::ast::ChoiceBlock, uses: &mut Vec<SymbolUse>) {

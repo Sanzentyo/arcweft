@@ -3266,6 +3266,77 @@ flow #flow.loading loading {
     }
 
     #[test]
+    fn let_try_await_with_binds_ready_value_and_keeps_wait_view() {
+        let tree = parse_source(
+            r"
+flow #flow.loading loading {
+    let assets = try await load_opening_assets() with { pending p => p ready loaded => loaded }
+    let display = assets
+}
+",
+        )
+        .expect("bound try-await wait-view parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::Stmt(Stmt::LetAwait {
+            pattern,
+            await_with,
+        }) = &flow.body()[0]
+        else {
+            panic!("expected let-await statement");
+        };
+        assert!(matches!(pattern, Pattern::Ident(name) if name == "assets"));
+        assert!(await_with.applies_try());
+        assert!(await_with.pending().is_some());
+
+        let hir = lower_to_hir(&tree).expect("bound try-await lowers");
+        assert!(matches!(
+            &hir.flows()[0].body()[0],
+            HirFlowItem::LetAwait {
+                pattern: Pattern::Ident(name),
+                await_with,
+            } if name == "assets" && await_with.applies_try()
+        ));
+        validate_typecheck_ready(&hir).expect("bound try-await is typecheck-ready");
+
+        let env = TypeCheckEnv::new().with_function(
+            "load_opening_assets",
+            TypeKind::Need {
+                ready: Box::new(TypeKind::Named("OpeningAssets".to_owned())),
+                error: Box::new(TypeKind::Named("AssetError".to_owned())),
+            },
+        );
+        typecheck_hir(&hir, &env).expect("ready value and pending progress bind in scope");
+    }
+
+    #[test]
+    fn let_plain_await_with_binds_result_value() {
+        let tree = parse_source(
+            r"
+flow #flow.loading loading {
+    let result = await load_opening_assets() with:
+        pending p:
+            p
+    let display = result
+}
+",
+        )
+        .expect("bound plain await wait-view parses");
+        let hir = lower_to_hir(&tree).expect("bound plain await lowers");
+
+        let env = TypeCheckEnv::new().with_function(
+            "load_opening_assets",
+            TypeKind::Need {
+                ready: Box::new(TypeKind::Named("OpeningAssets".to_owned())),
+                error: Box::new(TypeKind::Named("AssetError".to_owned())),
+            },
+        );
+        typecheck_hir(&hir, &env).expect("plain await binds Result<T, E>");
+    }
+
+    #[test]
     fn await_question_with_is_rejected_as_ambiguous() {
         let errors = parse_source(
             r"
