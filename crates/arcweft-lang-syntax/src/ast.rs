@@ -145,6 +145,7 @@ pub enum ContractClause {
 /// Top-level function item with parsed signature head and contract clauses.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionItem {
+    kind: FunctionKind,
     visibility: Option<Visibility>,
     signature: FnSignature,
     signature_text: String,
@@ -155,9 +156,19 @@ pub struct FunctionItem {
     range: TextRange,
 }
 
+/// Top-level function category.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FunctionKind {
+    /// Ordinary synchronous function.
+    Function,
+    /// Background task function that may await non-visible work.
+    Task,
+}
+
 /// Internal initializer for a function item.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FunctionInit {
+    pub(crate) kind: FunctionKind,
     pub(crate) visibility: Option<Visibility>,
     pub(crate) signature: FnSignature,
     pub(crate) signature_text: String,
@@ -1099,6 +1110,7 @@ impl Flow {
 impl FunctionItem {
     pub(crate) fn new(init: FunctionInit) -> Self {
         Self {
+            kind: init.kind,
             visibility: init.visibility,
             signature: init.signature,
             signature_text: init.signature_text,
@@ -1108,6 +1120,10 @@ impl FunctionItem {
             body_value: init.body_value,
             range: init.range,
         }
+    }
+
+    pub const fn kind(&self) -> FunctionKind {
+        self.kind
     }
 
     pub const fn visibility(&self) -> Option<Visibility> {

@@ -3,12 +3,13 @@ use crate::ast::{
     CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceMatchArm,
     ChoiceOption, ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause,
     DialogueContent, EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind,
-    ForBlock, FunctionInit, FunctionItem, HookInit, HookItem, IfBlock, IfLetBlock, ImplItem, Item,
-    LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl,
-    ParserItem, Pattern, RawItem, RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock,
-    SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField,
-    StateItem, Stmt, StmtMatchArm, StructField, StructItem, SyntaxTree, TextRange, TraitItem,
-    TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    ForBlock, FunctionInit, FunctionItem, FunctionKind, HookInit, HookItem, IfBlock, IfLetBlock,
+    ImplItem, Item, LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn,
+    ModuleDecl, ParserItem, Pattern, RawItem, RecordPatternField, ScenarioCommand, ScopeBlock,
+    ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine,
+    StateField, StateItem, Stmt, StmtMatchArm, StructField, StructItem, SyntaxTree, TextRange,
+    TraitItem, TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock,
+    WikiLink,
 };
 use crate::expr::{ComputationBlockKind, Expr, parse_expr};
 use crate::text::parse_dialogue_tokens;
@@ -252,7 +253,8 @@ impl Parser {
             .collect::<Vec<_>>();
         let first = header_lines.first().copied()?;
         let (visibility, signature_text) = parse_visibility_prefix(first);
-        let signature_text = signature_text.trim().to_owned();
+        let (kind, signature_text) = parse_function_kind_and_signature(signature_text.trim());
+        let signature_text = signature_text.to_owned();
         let Ok(signature) = parse_fn_signature(&signature_text) else {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
@@ -271,6 +273,7 @@ impl Parser {
         let (body_statements, body_value) = parse_scope_expr_body(&body);
 
         Some(FunctionItem::new(FunctionInit {
+            kind,
             visibility,
             signature,
             signature_text,
@@ -1935,7 +1938,16 @@ fn looks_like_flow(trimmed: &str) -> bool {
 
 fn looks_like_function_item(trimmed: &str) -> bool {
     let (_, rest) = parse_visibility_prefix(trimmed);
-    rest.trim_start().starts_with("fn ")
+    let rest = rest.trim_start();
+    rest.starts_with("fn ") || rest.starts_with("task fn ")
+}
+
+fn parse_function_kind_and_signature(source: &str) -> (FunctionKind, &str) {
+    source
+        .strip_prefix("task ")
+        .map_or((FunctionKind::Function, source), |signature| {
+            (FunctionKind::Task, signature.trim_start())
+        })
 }
 
 fn looks_like_callable_item(trimmed: &str) -> bool {

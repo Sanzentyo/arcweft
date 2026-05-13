@@ -1,9 +1,10 @@
 use crate::ast::{
     Attribute, AwaitBranchKind, BorrowBlock, CallableItem, ChoiceAction, ChoiceBlock, ChoicePlan,
     ContractClause, DialogueContent, EntityRef, EnumItem, Flow, FlowItem, FlowKind, FunctionItem,
-    HookItem, IfBlock, IfLetBlock, ImplItem, Item, LinePlan, LoopBlock, MatchBlock, MemoFn,
-    ParserItem, Pattern, ScopeBlock, ScopeExprBlock, SourceLocaleBlock, SpeakerLine, StateItem,
-    Stmt, StructItem, SyntaxTree, TextRange, TraitItem, TypeAliasItem, WhileBlock, WhileLetBlock,
+    FunctionKind, HookItem, IfBlock, IfLetBlock, ImplItem, Item, LinePlan, LoopBlock, MatchBlock,
+    MemoFn, ParserItem, Pattern, ScopeBlock, ScopeExprBlock, SourceLocaleBlock, SpeakerLine,
+    StateItem, Stmt, StructItem, SyntaxTree, TextRange, TraitItem, TypeAliasItem, WhileBlock,
+    WhileLetBlock,
 };
 use crate::expr::Expr;
 use crate::types::FnSignature;
@@ -36,6 +37,7 @@ pub struct HirFlow {
 /// HIR-facing function body.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirFunction {
+    kind: FunctionKind,
     signature: FnSignature,
     contracts: Vec<ContractClause>,
     statements: Vec<Stmt>,
@@ -335,6 +337,7 @@ pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> 
 
 fn lower_function(function: &FunctionItem) -> HirFunction {
     HirFunction {
+        kind: function.kind(),
         signature: function.signature().clone(),
         contracts: function.contracts().to_vec(),
         statements: function.body_statements().to_vec(),
@@ -840,6 +843,10 @@ impl HirFlow {
 }
 
 impl HirFunction {
+    pub const fn kind(&self) -> FunctionKind {
+        self.kind
+    }
+
     pub fn name(&self) -> &str {
         self.signature.name()
     }

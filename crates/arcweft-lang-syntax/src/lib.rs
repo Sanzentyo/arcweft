@@ -18,12 +18,12 @@ pub use ast::{
     Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, CallableItem, CallableKind, ChoiceAction,
     ChoiceBlock, ChoiceItem, ChoiceMatchArm, ChoiceOption, ChoicePlan, ChoicePlanItem, ContentCall,
     ContractClause, DialogueToken, EntityRef, EnumItem, EnumVariant, Flow, FlowItem, FlowKind,
-    ForBlock, FunctionItem, HookItem, IfBlock, IfLetBlock, ImplItem, Item, LineOptions, LinePlan,
-    LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern,
-    RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch,
-    SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField,
-    StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
-    VariantPatternPayload, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    ForBlock, FunctionItem, FunctionKind, HookItem, IfBlock, IfLetBlock, ImplItem, Item,
+    LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl,
+    ParserItem, Pattern, RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock,
+    SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField,
+    StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember,
+    TypeAliasItem, UseItem, VariantPatternPayload, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -48,11 +48,12 @@ mod tests {
     use super::{
         AwaitBranchKind, BinaryOp, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
         ComputationBlockKind, ContractClause, DialogueToken, EntityKind, Expr, FlowItem, FlowKind,
-        HirFlowItem, HirTopLevelDecl, Item, LinePlanItem, Literal, NameRegistry, Pattern,
-        Placeholder, SelectBranchHead, Stmt, SymbolUseKind, TraitMember, TypeCheckEnv, TypeKind,
-        TypeRef, UnaryOp, VariantPatternPayload, Visibility, collect_symbol_uses, lower_to_hir,
-        parse_dialogue_tokens, parse_fn_signature, parse_source, parse_stub, parse_type_ref,
-        registry_from_hir, typecheck_hir, validate_hir_references, validate_typecheck_ready,
+        FunctionKind, HirFlowItem, HirTopLevelDecl, Item, LinePlanItem, Literal, NameRegistry,
+        Pattern, Placeholder, SelectBranchHead, Stmt, SymbolUseKind, TraitMember, TypeCheckEnv,
+        TypeKind, TypeRef, UnaryOp, VariantPatternPayload, Visibility, collect_symbol_uses,
+        lower_to_hir, parse_dialogue_tokens, parse_fn_signature, parse_source, parse_stub,
+        parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
+        validate_typecheck_ready,
     };
 
     fn variant_tuple_binding(pattern: &Pattern, variant: &str, binding: &str) -> bool {
@@ -2410,6 +2411,45 @@ effects { asset.read }
         assert!(function.body().contains("xs[0]"));
         assert!(function.body_statements().is_empty());
         assert!(matches!(function.body_value(), Some(Expr::Index { .. })));
+    }
+
+    #[test]
+    fn parses_task_fn_as_structured_function_item() {
+        let tree = parse_source(
+            r"
+task fn load_opening_assets() -> ArcResult<OpeningAssets> {
+    let bg = load_bg()?
+    Ok(OpeningAssets { bg })
+}
+",
+        )
+        .expect("task function parses");
+
+        let Item::Function(function) = &tree.items()[0] else {
+            panic!("expected task function item");
+        };
+        assert_eq!(function.kind(), FunctionKind::Task);
+        assert_eq!(function.signature().name(), "load_opening_assets");
+        assert_eq!(
+            function.signature_text(),
+            "fn load_opening_assets() -> ArcResult<OpeningAssets>"
+        );
+        assert!(matches!(
+            function.body_statements()[0],
+            Stmt::Let {
+                expr: Expr::Try { .. },
+                ..
+            }
+        ));
+        assert!(matches!(
+            function.body_value(),
+            Some(Expr::Call { callee, .. }) if matches!(callee.as_ref(), Expr::Path(path) if path == "Ok")
+        ));
+
+        let hir = lower_to_hir(&tree).expect("task function lowers");
+        assert_eq!(hir.functions().len(), 1);
+        assert_eq!(hir.functions()[0].kind(), FunctionKind::Task);
+        validate_typecheck_ready(&hir).expect("task function body has structured expressions");
     }
 
     #[test]
