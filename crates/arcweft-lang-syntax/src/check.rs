@@ -1088,9 +1088,11 @@ impl TypeChecker<'_> {
             }),
             Expr::Path(path) => self.locals.get(path).cloned().or_else(|| {
                 self.env.symbol_type(path).cloned().or_else(|| {
-                    self.errors
-                        .push(TypeCheckError::new(format!("unknown symbol `{path}`")));
-                    None
+                    self.check_dotted_path_target(path).or_else(|| {
+                        self.errors
+                            .push(TypeCheckError::new(format!("unknown symbol `{path}`")));
+                        None
+                    })
                 })
             }),
             Expr::Placeholder(_) => None,
@@ -1278,6 +1280,14 @@ impl TypeChecker<'_> {
                 None
             })
         })
+    }
+
+    fn check_dotted_path_target(&mut self, path: &str) -> Option<TypeKind> {
+        let (target, _) = path.rsplit_once('.')?;
+        self.locals
+            .get(target)
+            .cloned()
+            .or_else(|| self.env.symbol_type(target).cloned())
     }
 
     fn check_try_expr(&mut self, expr: &Expr) -> Option<TypeKind> {

@@ -3270,8 +3270,8 @@ flow #flow.loading loading {
         let tree = parse_source(
             r"
 flow #flow.loading loading {
-    let assets = try await load_opening_assets() with { pending p => p ready loaded => loaded }
-    let display = assets
+    let assets = try await load_opening_assets() with { pending p => p.ratio ready loaded => loaded.ready }
+    let count = assets.count
 }
 ",
         )
@@ -3318,7 +3318,7 @@ flow #flow.loading loading {
 flow #flow.loading loading {
     let result = await load_opening_assets() with:
         pending p:
-            p
+            p.ratio
     let display = result
 }
 ",
