@@ -361,8 +361,8 @@ fn collect_line_plan_item(item: &LinePlanItem, uses: &mut Vec<SymbolUse>) {
             collect_expr(anchor, uses);
             collect_expr(body, uses);
         }
-        LinePlanItem::CancelRule(_)
-        | LinePlanItem::StartGroup(_)
+        LinePlanItem::CancelRule(rule) => collect_stmt_block(rule.action(), uses),
+        LinePlanItem::StartGroup(_)
         | LinePlanItem::TogetherGroup(_)
         | LinePlanItem::Memo(_)
         | LinePlanItem::Assert(_) => {}

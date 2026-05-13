@@ -654,8 +654,12 @@ impl TypeChecker<'_> {
                 self.expect_expr_type(anchor, &TypeKind::Duration, "timeline anchor");
                 self.check_expr(body);
             }
-            LinePlanItem::CancelRule(_)
-            | LinePlanItem::StartGroup(_)
+            LinePlanItem::CancelRule(rule) => {
+                for stmt in rule.action() {
+                    self.check_stmt(stmt);
+                }
+            }
+            LinePlanItem::StartGroup(_)
             | LinePlanItem::TogetherGroup(_)
             | LinePlanItem::Memo(_)
             | LinePlanItem::Assert(_) => {}

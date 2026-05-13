@@ -333,7 +333,11 @@ with:
         assert!(line.plan().is_some());
         let plan = line.plan().expect("line plan");
         assert!(matches!(&plan.items()[0], LinePlanItem::TimedCue { .. }));
-        assert!(matches!(&plan.items()[1], LinePlanItem::CancelRule(_)));
+        let LinePlanItem::CancelRule(rule) = &plan.items()[1] else {
+            panic!("expected cancel rule");
+        };
+        assert_eq!(rule.trigger(), "input .SkipLine");
+        assert!(matches!(rule.action(), [Stmt::Continue]));
         assert!(matches!(&plan.items()[2], LinePlanItem::Out(_)));
     }
 
@@ -2175,6 +2179,56 @@ with:
             &plan.items()[2],
             LinePlanItem::Out(Expr::Tuple(_))
         ));
+    }
+
+    #[test]
+    fn line_plan_cancel_actions_keep_typed_statements() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    alice[
+        聞いて。[p]
+    ]
+    with {
+        cancel on input .SkipLine { out .Skipped }
+        cancel on input .BackToTitle => goto #flow.title
+    }
+}
+",
+        )
+        .expect("line plan cancel actions parse");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::ContentCall(call) = &flow.body()[0] else {
+            panic!("expected content call");
+        };
+        let plan = call.plan().expect("line plan");
+        let LinePlanItem::CancelRule(skip_rule) = &plan.items()[0] else {
+            panic!("expected skip cancel rule");
+        };
+        assert!(matches!(
+            skip_rule.action(),
+            [Stmt::Out(Expr::Path(path))] if path == ".Skipped"
+        ));
+        let LinePlanItem::CancelRule(back_rule) = &plan.items()[1] else {
+            panic!("expected back-to-title cancel rule");
+        };
+        assert!(matches!(
+            back_rule.action(),
+            [Stmt::Goto(Expr::EntityRef(target))] if target.body() == "flow.title"
+        ));
+
+        let hir = lower_to_hir(&tree).expect("line plan cancel actions lower");
+        validate_typecheck_ready(&hir).expect("line plan cancel actions are typecheck-ready");
+        typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new()
+                .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+                .with_symbol(".Skipped", TypeKind::Named("LineExit".to_owned())),
+        )
+        .expect("line plan cancel actions typecheck");
     }
 
     #[test]

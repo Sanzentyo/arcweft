@@ -747,7 +747,7 @@ pub enum LinePlanItem {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CancelRuleSyntax {
     trigger: String,
-    action: String,
+    action: Vec<Stmt>,
 }
 
 /// Hook item syntax.
@@ -2170,7 +2170,7 @@ impl LinePlan {
 }
 
 impl CancelRuleSyntax {
-    pub(crate) const fn new(trigger: String, action: String) -> Self {
+    pub(crate) const fn new(trigger: String, action: Vec<Stmt>) -> Self {
         Self { trigger, action }
     }
 
@@ -2178,7 +2178,7 @@ impl CancelRuleSyntax {
         &self.trigger
     }
 
-    pub fn action(&self) -> &str {
+    pub fn action(&self) -> &[Stmt] {
         &self.action
     }
 }

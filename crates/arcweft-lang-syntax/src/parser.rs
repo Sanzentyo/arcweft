@@ -2496,12 +2496,12 @@ fn collect_logical_choice_lines(body: &str) -> Vec<String> {
     let mut current = String::new();
     let mut depth = 0_i32;
 
-    for line in body.lines().map(str::trim).filter(|line| !line.is_empty()) {
+    for raw_line in body.lines().filter(|line| !line.trim().is_empty()) {
         if !current.is_empty() {
             current.push('\n');
         }
-        current.push_str(line);
-        for ch in line.chars() {
+        current.push_str(raw_line);
+        for ch in raw_line.chars() {
             match ch {
                 '{' => depth += 1,
                 '}' => depth -= 1,
@@ -3003,11 +3003,11 @@ fn find_matching_square(text: &str, open: usize) -> Option<usize> {
 }
 
 fn parse_line_plan_body(style: BlockStyle, body: &str, range: TextRange) -> LinePlan {
-    let lines = body.lines().collect::<Vec<_>>();
+    let lines = collect_logical_choice_lines(body);
     let mut items = Vec::new();
     let mut index = 0;
     while index < lines.len() {
-        let line = lines[index];
+        let line = &lines[index];
         let trimmed = line.trim();
         if trimmed.is_empty() {
             index += 1;
@@ -3018,9 +3018,9 @@ fn parse_line_plan_body(style: BlockStyle, body: &str, range: TextRange) -> Line
             let mut body_lines = Vec::new();
             index += 1;
             while index < lines.len() {
-                let child = lines[index];
+                let child = &lines[index];
                 let child_trimmed = child.trim();
-                if !child_trimmed.is_empty() && indentation(child) <= cue_indent {
+                if !child_trimmed.is_empty() && indentation(child.as_str()) <= cue_indent {
                     break;
                 }
                 if !child_trimmed.is_empty() {
@@ -3055,13 +3055,18 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
         }
     }
     if let Some(rest) = line.strip_prefix("cancel on ") {
-        let (trigger, action) = rest
-            .split_once("=>")
-            .or_else(|| rest.split_once(':'))
-            .unwrap_or((rest, ""));
+        if let Some((head, body)) = split_brace_item(line) {
+            if let Some(trigger) = head.strip_prefix("cancel on ") {
+                return LinePlanItem::CancelRule(CancelRuleSyntax::new(
+                    trigger.trim().to_owned(),
+                    parse_stmt_lines(body.trim()),
+                ));
+            }
+        }
+        let (trigger, action) = rest.split_once("=>").unwrap_or((rest, ""));
         return LinePlanItem::CancelRule(CancelRuleSyntax::new(
             trigger.trim().to_owned(),
-            action.trim().to_owned(),
+            parse_line_plan_cancel_action(action.trim()),
         ));
     }
     if let Some(rest) = line.strip_prefix("at(") {
@@ -3091,6 +3096,14 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
         };
     }
     LinePlanItem::Raw(line.to_owned())
+}
+
+fn parse_line_plan_cancel_action(action: &str) -> Vec<Stmt> {
+    if action.is_empty() {
+        Vec::new()
+    } else {
+        parse_stmt_lines(action)
+    }
 }
 
 fn parse_expr_lossy(source: &str) -> crate::expr::Expr {
