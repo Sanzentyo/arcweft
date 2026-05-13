@@ -183,7 +183,9 @@ impl TypeChecker<'_> {
                     if let Some(condition) = option.condition() {
                         self.expect_expr_type(condition, &TypeKind::Bool, "choice condition");
                     }
-                    self.expect_entity_kind(option.target(), &EntityKind::Flow, "choice target");
+                    if let Some(target) = option.target() {
+                        self.expect_entity_kind(target, &EntityKind::Flow, "choice target");
+                    }
                 }
             }
             HirFlowItem::If(block) => {

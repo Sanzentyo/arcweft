@@ -87,6 +87,61 @@ Speaker     #character.alice
 
 `LineId` remains stable through text edits. `source_hash` changes and marks translations as stale.
 
+The canonical dialogue form is `speaker.say(...)[...]`; `speaker(...):` is sugar. Dialogue and narration use the same line options:
+
+```awft
+alice.say(
+    id = #say.opening.alice.greeting,
+    text_key = #text.opening.alice.greeting,
+    voice = auto,
+    args = { player_name = state.player_name },
+)[
+    {player_name}、おはよう。[p]
+]
+
+alice(
+    id = #say.opening.alice.greeting,
+    text_key = #text.opening.alice.greeting,
+    voice = auto,
+    args = { player_name = state.player_name },
+):
+    {player_name}、おはよう。[p]
+```
+
+`text_key` is optional. If omitted, it is derived from the narrative line ID:
+
+```text
+id = #say.opening.alice.greeting
+  -> text_key = #text.opening.alice.greeting
+  -> voice_key = #voice.{runtime_locale}.alice.opening.greeting
+```
+
+Narration is the built-in narrator speaker alias and accepts the same options:
+
+```awft
+地の文(id=#say.opening.narrator.rain):
+    扉の向こうから、雨の音がした。[p]
+
+narrator(id=#say.opening.narrator.rain):
+    扉の向こうから、雨の音がした。[p]
+```
+
+Locale is split into source locale and runtime locale. `source` in project config describes the language of text written directly in `.awft`. Runtime locale comes from engine state/config and is not normally a line option. Per-line `source_locale` is only for exceptional embedded-language lines:
+
+```awft
+alice(id=#say.opening.alice.english_quote, source_locale=en-US):
+    Good morning.[p]
+```
+
+For a scoped override, use a lexical source locale block:
+
+```awft
+source locale en-US {
+    alice(id=#say.opening.alice.english_quote):
+        Good morning.[p]
+}
+```
+
 ---
 
 ## Dialogue line registry
@@ -131,6 +186,15 @@ source_hash = "b3:12cd..."
 source_anchor = "game/routes/opening.awft:12:9-12:15"
 flow = "flow.opening"
 ```
+
+Static choice labels are localization extraction targets. Their text key is derived from the choice option ID unless explicitly provided:
+
+```text
+#choice.opening.listen
+  -> #text.choice.opening.listen
+```
+
+Dynamic option labels are extracted only when the label value is `LocalizedText`, `TextKey`, or rich text with a stable text key. Plain runtime `String` labels are displayed but are not extractable; LSP should report `CHOICE_DYNAMIC_LABEL_NOT_LOCALIZABLE` for user-facing strings that need translation.
 
 ---
 

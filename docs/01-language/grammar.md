@@ -65,6 +65,14 @@ DialogueLine :=
 
 CallArgs       := '(' NamedArg (',' NamedArg)* ','? ')'
 NamedArg       := Ident '=' Expr
+LineOption     := 'id' '=' EntityRef
+                | 'text_key' '=' EntityRef
+                | 'voice' '=' Expr
+                | 'window' '=' EntityRef
+                | 'args' '=' RecordExpr
+                | 'source_locale' '=' Locale
+                | 'hooks' '=' ListExpr
+                | 'style' '=' Expr
 DialogueText   := TextUntilLineEnd | Newline IndentedText
 DialogueContent:= TextAndDialogueTags*
 
@@ -78,12 +86,35 @@ OutStmt        := 'out' Expr
 ## Choice
 
 ```text
-ChoiceBlock := 'choice' EntityRef? '{' ChoiceArm* '}'
-ChoiceArm   := EntityRef String ChoiceCondition? '->' EntityRef
-ChoiceCondition := 'if' Expr
+ChoiceExpr  := 'choice' EntityRef? ChoiceBody ChoicePlan?
+ChoiceBody  := '{' ChoiceItem* '}' | ':' Newline IndentedItems
+ChoiceItem  := LetStmt | IfExpr | MatchExpr | ForStmt | OptionItem | OptionForSugar | ChoiceArm
+
+OptionItem  := 'option' OptionId OptionBody
+OptionId    := EntityRef | Expr
+OptionBody  := '{' OptionField* '}' | ':' Newline IndentedItems
+OptionField := 'label' '=' Expr
+             | 'label' '(' 'id' '=' EntityRef ')' '=' Expr
+             | 'value' '=' Expr
+             | 'visible' '=' Expr
+             | 'enabled' '=' Expr
+             | 'order' '=' Expr
+             | 'hotkey' '=' Expr
+             | 'ui' Block
+             | 'select' Block
+             | LetStmt
+
+OptionForSugar := 'option' Pattern 'in' Expr OptionBody
+ChoiceArm      := EntityRef String ChoiceArmCondition? ChoiceArmAction
+ChoiceArmCondition := 'if' Expr
+ChoiceArmAction := '->' EntityRef | '=>' Expr
+
+ChoicePlan := 'with' Block | 'with' ':' Newline IndentedItems
 ```
 
-`choice` displays a choice block and advances the current flow to the selected arm target. It is not an expression form; value-returning choice selection is intentionally left for a separate future construct.
+`choice` displays a choice UI and may also be used as an expression. A choice body is a lexical scope. `option` creates an option candidate. Inline arm `if` is enabled-state sugar; wrapping an option in a block `if` controls whether the option exists. `visible = expr` controls rendering. `ui { ... }` is propagated to rendering, accessibility, test, and Agent observation.
+
+`-> target` is sugar for `select { goto target }`. `=> value` is sugar for `select { out value }`.
 
 ## Hooks
 

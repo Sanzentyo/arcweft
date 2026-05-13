@@ -1,7 +1,7 @@
 use crate::ast::{
-    AwaitBranchKind, BorrowBlock, ChoiceBlock, ContractClause, DialogueContent, EntityRef, Flow,
-    FlowItem, FlowKind, IfBlock, Item, LinePlan, MatchBlock, Pattern, SpeakerLine, Stmt,
-    SyntaxTree, TextRange,
+    AwaitBranchKind, BorrowBlock, ChoiceAction, ChoiceBlock, ContractClause, DialogueContent,
+    EntityRef, Flow, FlowItem, FlowKind, IfBlock, Item, LinePlan, MatchBlock, Pattern, SpeakerLine,
+    Stmt, SyntaxTree, TextRange,
 };
 use crate::expr::Expr;
 use core::fmt;
@@ -65,7 +65,7 @@ pub struct HirChoiceOption {
     id: Option<EntityRef>,
     label: String,
     condition: Option<Expr>,
-    target: EntityRef,
+    action: ChoiceAction,
 }
 
 /// HIR-facing if block.
@@ -344,7 +344,7 @@ fn lower_choice(choice: &ChoiceBlock) -> HirChoice {
                 id: option.id().cloned(),
                 label: option.label().to_owned(),
                 condition: option.condition().cloned(),
-                target: option.target().clone(),
+                action: option.action().clone(),
             })
             .collect(),
     }
@@ -423,8 +423,15 @@ impl HirChoiceOption {
         self.condition.as_ref()
     }
 
-    pub const fn target(&self) -> &EntityRef {
-        &self.target
+    pub const fn target(&self) -> Option<&EntityRef> {
+        match &self.action {
+            ChoiceAction::Goto(target) => Some(target),
+            _ => None,
+        }
+    }
+
+    pub const fn action(&self) -> &ChoiceAction {
+        &self.action
     }
 }
 

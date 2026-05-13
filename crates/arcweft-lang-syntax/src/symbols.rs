@@ -66,7 +66,9 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 if let Some(condition) = option.condition() {
                     collect_expr(condition, uses);
                 }
-                push_entity(uses, option.target());
+                if let Some(target) = option.target() {
+                    push_entity(uses, target);
+                }
             }
         }
         HirFlowItem::If(block) => {

@@ -141,6 +141,109 @@ This is a typed `flow`. The speaker lines and scenario commands are simply conci
 
 ---
 
+## Choice option state and value form
+
+The compact arm form is sugar. `->` advances the flow with `goto`; `=>` outputs a value from the choice expression.
+
+```awft
+let next_flow = choice #choice.opening.first {
+    #choice.opening.listen "聞いてみる" => #flow.alice_intro
+    #choice.opening.silent "黙っている" => #flow.quiet_intro
+}
+
+goto next_flow
+```
+
+Use full `option` blocks when the UI needs visible/enabled state, disabled reasons, badges, hotkeys, or a multi-statement selected action.
+
+```awft
+let can_enter_alice = state.affection[#character.alice] >= 3
+
+choice #choice.opening.first {
+    option #choice.opening.listen {
+        label = "聞いてみる"
+        enabled = can_enter_alice
+        visible = true
+        order = 10
+
+        ui {
+            disabled_reason = if can_enter_alice { None } else { Some("アリスの好感度が足りません") }
+            badge = if can_enter_alice { None } else { Some("LOCKED") }
+            style = if can_enter_alice { #style.choice.normal } else { #style.choice.locked }
+        }
+
+        select {
+            emit GameEvent::ChoiceSelected { id = #choice.opening.listen }
+            goto #flow.alice_intro
+        }
+    }
+
+    #choice.opening.silent "黙っている" -> #flow.quiet_intro
+}
+```
+
+Inline arm `if` is enabled-state sugar. A block `if` controls whether an option exists at all.
+
+```awft
+choice #choice.opening.first {
+    if state.flags.contains(.alice_route_discovered) {
+        #choice.opening.listen "聞いてみる" -> #flow.alice_intro
+    }
+
+    #choice.opening.silent "黙っている" -> #flow.quiet_intro
+}
+```
+
+Dynamic options use ordinary `for` over lists, sequences, or sorted map entries.
+
+```awft
+choice #choice.opening.routes {
+    for route in opening_routes(state) {
+        option route.choice_id {
+            label = route.label
+            enabled = route.enabled
+
+            ui {
+                disabled_reason = route.disabled_reason
+                badge = route.badge
+            }
+
+            select {
+                goto route.target
+            }
+        }
+    }
+}
+```
+
+`choice ... with { ... }` attaches a choice lifecycle plan. `with:` is indentation sugar, as with dialogue line plans.
+
+```awft
+choice #choice.opening.first {
+    #choice.opening.listen "聞いてみる" -> #flow.alice_intro
+    #choice.opening.silent "黙っている" -> #flow.quiet_intro
+}
+with {
+    window = #choice_window.main
+    layout = vertical
+    default_focus = #choice.opening.listen
+
+    timeout 10s {
+        select #choice.opening.silent
+    }
+
+    cancel on input .BackToTitle {
+        return Ok(FlowExit::Goto(#flow.title))
+    }
+
+    on select selected {
+        log info "selected choice {id:?}" { id = selected.id }
+    }
+}
+```
+
+---
+
 ## Dialogue call sugar
 
 The canonical detailed dialogue shape is an explicit character call. Arcweft also accepts bracket shorthand when the callee is a speaker, character reference, or speaker preset:
