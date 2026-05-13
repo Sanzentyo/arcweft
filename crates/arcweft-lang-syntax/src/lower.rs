@@ -1,8 +1,8 @@
 use crate::ast::{
     AwaitBranchKind, BorrowBlock, ChoiceAction, ChoiceBlock, ChoicePlan, ContractClause,
-    DialogueContent, EntityRef, Flow, FlowItem, FlowKind, IfBlock, Item, LinePlan, LoopBlock,
-    MatchBlock, Pattern, ScopeBlock, ScopeExprBlock, SourceLocaleBlock, SpeakerLine, Stmt,
-    SyntaxTree, TextRange, WhileBlock, WhileLetBlock,
+    DialogueContent, EntityRef, Flow, FlowItem, FlowKind, IfBlock, IfLetBlock, Item, LinePlan,
+    LoopBlock, MatchBlock, Pattern, ScopeBlock, ScopeExprBlock, SourceLocaleBlock, SpeakerLine,
+    Stmt, SyntaxTree, TextRange, WhileBlock, WhileLetBlock,
 };
 use crate::expr::Expr;
 use core::fmt;
@@ -48,6 +48,7 @@ pub enum HirFlowItem {
         block: HirLoop,
     },
     If(HirIf),
+    IfLet(HirIfLet),
     Match(HirMatch),
     Loop(HirLoop),
     While(HirWhile),
@@ -130,6 +131,15 @@ struct LowerContext {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirIf {
     condition: Expr,
+    body: Vec<HirFlowItem>,
+}
+
+/// HIR-facing if-let block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirIfLet {
+    pattern: Pattern,
+    expr: Expr,
+    guard: Option<Expr>,
     body: Vec<HirFlowItem>,
 }
 
@@ -315,6 +325,7 @@ fn lower_flow_item_with_context(
         FlowItem::ContentCall(call) => Ok(HirFlowItem::Dialogue(lower_content_call(call, context))),
         FlowItem::Choice(choice) => Ok(HirFlowItem::Choice(lower_choice(choice, context))),
         FlowItem::If(block) => lower_if(block, context).map(HirFlowItem::If),
+        FlowItem::IfLet(block) => lower_if_let(block, context).map(HirFlowItem::IfLet),
         FlowItem::Match(block) => lower_match(block, context).map(HirFlowItem::Match),
         FlowItem::Loop(block) => lower_loop(block, context).map(HirFlowItem::Loop),
         FlowItem::While(block) => lower_while(block, context).map(HirFlowItem::While),
@@ -459,6 +470,19 @@ fn lower_select(
 fn lower_if(block: &IfBlock, context: &mut LowerContext) -> Result<HirIf, HirLowerError> {
     Ok(HirIf {
         condition: block.condition().clone(),
+        body: block
+            .body()
+            .iter()
+            .map(|item| lower_flow_item_with_context(item, context))
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn lower_if_let(block: &IfLetBlock, context: &mut LowerContext) -> Result<HirIfLet, HirLowerError> {
+    Ok(HirIfLet {
+        pattern: block.pattern().clone(),
+        expr: block.expr().clone(),
+        guard: block.guard().cloned(),
         body: block
             .body()
             .iter()
@@ -853,6 +877,24 @@ impl HirSourceLocale {
 impl HirIf {
     pub const fn condition(&self) -> &Expr {
         &self.condition
+    }
+
+    pub fn body(&self) -> &[HirFlowItem] {
+        &self.body
+    }
+}
+
+impl HirIfLet {
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    pub const fn expr(&self) -> &Expr {
+        &self.expr
+    }
+
+    pub const fn guard(&self) -> Option<&Expr> {
+        self.guard.as_ref()
     }
 
     pub fn body(&self) -> &[HirFlowItem] {

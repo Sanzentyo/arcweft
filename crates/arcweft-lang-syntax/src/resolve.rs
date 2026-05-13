@@ -76,6 +76,11 @@ fn register_flow_item(item: &HirFlowItem, registry: &mut NameRegistry) {
                 register_flow_item(item, registry);
             }
         }
+        HirFlowItem::IfLet(block) => {
+            for item in block.body() {
+                register_flow_item(item, registry);
+            }
+        }
         HirFlowItem::Match(block) => {
             for arm in block.arms() {
                 for item in arm.body() {

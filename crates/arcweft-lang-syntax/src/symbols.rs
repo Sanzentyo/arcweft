@@ -66,6 +66,15 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 collect_flow_item(item, uses);
             }
         }
+        HirFlowItem::IfLet(block) => {
+            collect_expr(block.expr(), uses);
+            if let Some(guard) = block.guard() {
+                collect_expr(guard, uses);
+            }
+            for item in block.body() {
+                collect_flow_item(item, uses);
+            }
+        }
         HirFlowItem::Match(block) => {
             collect_expr(block.expr(), uses);
             for arm in block.arms() {
@@ -114,11 +123,7 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 collect_flow_item(item, uses);
             }
         }
-        HirFlowItem::Scope(block) => {
-            for item in block.body() {
-                collect_flow_item(item, uses);
-            }
-        }
+        HirFlowItem::Scope(block) => collect_flow_items(block.body(), uses),
         HirFlowItem::Include(entity) => push_entity(uses, entity),
         HirFlowItem::Await(await_with) => {
             collect_expr(await_with.expr(), uses);
@@ -133,6 +138,12 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 collect_expr(arg, uses);
             }
         }
+    }
+}
+
+fn collect_flow_items(items: &[HirFlowItem], uses: &mut Vec<SymbolUse>) {
+    for item in items {
+        collect_flow_item(item, uses);
     }
 }
 

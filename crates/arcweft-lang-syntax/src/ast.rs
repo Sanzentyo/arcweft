@@ -282,6 +282,7 @@ pub enum FlowItem {
     ContentCall(ContentCall),
     Choice(ChoiceBlock),
     If(IfBlock),
+    IfLet(IfLetBlock),
     Match(MatchBlock),
     Loop(LoopBlock),
     While(WhileBlock),
@@ -325,6 +326,16 @@ pub struct ScopeExprBlock {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IfBlock {
     condition: Expr,
+    body: Vec<FlowItem>,
+    range: TextRange,
+}
+
+/// Typed `if let PAT = expr when guard { ... }` flow block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IfLetBlock {
+    pattern: Pattern,
+    expr: Expr,
+    guard: Option<Expr>,
     body: Vec<FlowItem>,
     range: TextRange,
 }
@@ -1334,6 +1345,44 @@ impl IfBlock {
 
     pub const fn condition(&self) -> &Expr {
         &self.condition
+    }
+
+    pub fn body(&self) -> &[FlowItem] {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl IfLetBlock {
+    pub(crate) const fn new(
+        pattern: Pattern,
+        expr: Expr,
+        guard: Option<Expr>,
+        body: Vec<FlowItem>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            pattern,
+            expr,
+            guard,
+            body,
+            range,
+        }
+    }
+
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    pub const fn expr(&self) -> &Expr {
+        &self.expr
+    }
+
+    pub const fn guard(&self) -> Option<&Expr> {
+        self.guard.as_ref()
     }
 
     pub fn body(&self) -> &[FlowItem] {

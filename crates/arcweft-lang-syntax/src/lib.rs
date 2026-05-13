@@ -18,12 +18,12 @@ pub use ast::{
     Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, CallableItem, CallableKind, ChoiceAction,
     ChoiceBlock, ChoiceItem, ChoiceOption, ChoicePlan, ChoicePlanItem, ContentCall, ContractClause,
     DialogueToken, EntityRef, EnumItem, EnumVariant, Flow, FlowItem, FlowKind, ForBlock,
-    FunctionItem, HookItem, IfBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem,
-    LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand,
-    ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock,
-    SpeakerLine, StateField, StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange,
-    TraitItem, TraitMember, TypeAliasItem, UseItem, Visibility, WhileBlock, WhileLetBlock,
-    WikiLink,
+    FunctionItem, HookItem, IfBlock, IfLetBlock, ImplItem, Item, LineOptions, LinePlan,
+    LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern,
+    ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
+    SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField, StructItem,
+    SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, Visibility, WhileBlock,
+    WhileLetBlock, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -32,8 +32,8 @@ pub use check::{
 pub use expr::{BinaryOp, Expr, Literal, Placeholder, parse_expr};
 pub use lower::{
     HirAwait, HirAwaitBranch, HirBorrow, HirChoice, HirChoiceOption, HirDialogue, HirFlow,
-    HirFlowItem, HirFor, HirIf, HirLoop, HirLowerError, HirMatch, HirMatchArm, HirModule, HirScope,
-    HirSelect, HirSelectBranch, HirWhile, HirWhileLet, lower_to_hir,
+    HirFlowItem, HirFor, HirIf, HirIfLet, HirLoop, HirLowerError, HirMatch, HirMatchArm, HirModule,
+    HirScope, HirSelect, HirSelectBranch, HirWhile, HirWhileLet, lower_to_hir,
 };
 pub use parser::{ParseError, RecoverySuggestion, parse_source, parse_stub};
 pub use resolve::{NameRegistry, NameResolutionError, registry_from_hir, validate_hir_references};
@@ -932,6 +932,78 @@ flow #flow.loading loading {
             &TypeCheckEnv::new().with_symbol("loading", TypeKind::Bool),
         )
         .expect("while block typechecks");
+    }
+
+    #[test]
+    fn parses_and_typechecks_if_let_guard_block() {
+        let tree = parse_source(
+            r"
+flow #flow.branching branching {
+    if let .Some(route) = state.route_override when route_available {
+        goto route
+    }
+}
+",
+        )
+        .expect("if-let fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::IfLet(block) = &flow.body()[0] else {
+            panic!("expected if-let block");
+        };
+        assert_eq!(
+            block.pattern(),
+            &Pattern::Variant(".Some(route)".to_owned())
+        );
+        assert!(matches!(block.expr(), Expr::Path(path) if path == "state.route_override"));
+        assert!(block.guard().is_some());
+
+        let hir = lower_to_hir(&tree).expect("if-let fixture lowers");
+        let HirFlowItem::IfLet(block) = &hir.flows()[0].body()[0] else {
+            panic!("expected HIR if-let block");
+        };
+        assert_eq!(
+            block.pattern(),
+            &Pattern::Variant(".Some(route)".to_owned())
+        );
+
+        validate_typecheck_ready(&hir).expect("if-let block is typecheck-ready");
+        let env = TypeCheckEnv::new()
+            .with_symbol(
+                "state.route_override",
+                TypeKind::Named("Option<Ref<Flow>>".to_owned()),
+            )
+            .with_symbol("route_available", TypeKind::Bool);
+        typecheck_hir(&hir, &env).expect("if-let block typechecks and binds route in body");
+    }
+
+    #[test]
+    fn typecheck_rejects_non_bool_if_let_guard() {
+        let tree = parse_source(
+            r"
+flow #flow.branching branching {
+    if let .Some(route) = state.route_override when route_count {
+        goto route
+    }
+}
+",
+        )
+        .expect("non-bool if-let guard fixture parses");
+        let hir = lower_to_hir(&tree).expect("non-bool if-let guard fixture lowers");
+        let env = TypeCheckEnv::new()
+            .with_symbol(
+                "state.route_override",
+                TypeKind::Named("Option<Ref<Flow>>".to_owned()),
+            )
+            .with_symbol("route_count", TypeKind::Int);
+        let errors = typecheck_hir(&hir, &env).expect_err("non-bool if-let guard is rejected");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message().contains("if-let guard must have type Bool"))
+        );
     }
 
     #[test]

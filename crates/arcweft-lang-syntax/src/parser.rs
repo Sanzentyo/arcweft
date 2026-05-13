@@ -3,11 +3,12 @@ use crate::ast::{
     CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceOption,
     ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause, DialogueContent,
     EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionItem,
-    HookItem, IfBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm,
-    MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, ScopeBlock,
-    ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine,
-    StateField, StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TraitItem,
-    TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    HookItem, IfBlock, IfLetBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, LoopBlock,
+    MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand,
+    ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock,
+    SpeakerLine, StateField, StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange,
+    TraitItem, TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock,
+    WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -787,6 +788,9 @@ impl Parser {
         if trimmed.starts_with("choice ") {
             return self.parse_choice().map(FlowItem::Choice);
         }
+        if trimmed.starts_with("if let ") {
+            return self.parse_if_let_block().map(FlowItem::IfLet);
+        }
         if trimmed.starts_with("if ") {
             return self.parse_if_block().map(FlowItem::If);
         }
@@ -1069,6 +1073,35 @@ impl Parser {
         Some(IfBlock::new(
             parse_expr_lossy(condition),
             body_items,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_if_let_block(&mut self) -> Option<IfLetBlock> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing if-let",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the if-let body"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("if let")?.trim();
+        let (pattern, expr_and_guard) = rest.split_once('=')?;
+        let (expr, guard) = expr_and_guard
+            .split_once(" when ")
+            .map_or((expr_and_guard.trim(), None), |(expr, guard)| {
+                (expr.trim(), Some(parse_expr_lossy(guard.trim())))
+            });
+        Some(IfLetBlock::new(
+            parse_pattern(pattern.trim()),
+            parse_expr_lossy(expr),
+            guard,
+            self.parse_flow_body(&body, start_line.start + head.len()),
             TextRange::new(start_line.start, end),
         ))
     }

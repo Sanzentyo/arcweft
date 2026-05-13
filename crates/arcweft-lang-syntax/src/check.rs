@@ -196,6 +196,9 @@ impl TypeChecker<'_> {
                 self.expect_expr_type(block.condition(), &TypeKind::Bool, "if condition");
                 self.check_flow_items(block.body());
             }
+            HirFlowItem::IfLet(block) => {
+                self.check_if_let_block(block);
+            }
             HirFlowItem::Match(block) => {
                 self.check_expr(block.expr());
                 for arm in block.arms() {
@@ -303,6 +306,19 @@ impl TypeChecker<'_> {
     fn check_while_block(&mut self, block: &crate::lower::HirWhile) {
         self.expect_expr_type(block.condition(), &TypeKind::Bool, "while condition");
         self.with_statement_loop(|this| this.check_flow_items(block.body()));
+    }
+
+    fn check_if_let_block(&mut self, block: &crate::lower::HirIfLet) {
+        let expr_type = self.check_expr(block.expr());
+        if let Some(guard) = block.guard() {
+            self.expect_expr_type(guard, &TypeKind::Bool, "if-let guard");
+        }
+        let outer_locals = self.locals.clone();
+        for (name, ty) in let_else_bindings(block.pattern(), expr_type.as_ref()) {
+            self.locals.insert(name, ty);
+        }
+        self.check_flow_items(block.body());
+        self.locals = outer_locals;
     }
 
     fn check_while_let_block(&mut self, block: &crate::lower::HirWhileLet) {
