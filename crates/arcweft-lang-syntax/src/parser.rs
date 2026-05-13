@@ -2899,9 +2899,14 @@ fn parse_impl_member(item: &str) -> ImplMember {
         if head.starts_with("fn ") {
             return parse_fn_signature(head).map_or_else(
                 |_| ImplMember::Raw(item.to_owned()),
-                |signature| ImplMember::Function {
-                    signature,
-                    body: body.to_owned(),
+                |signature| {
+                    let (body_statements, body_value) = parse_scope_expr_body(body);
+                    ImplMember::Function {
+                        signature,
+                        body: body.to_owned(),
+                        body_statements,
+                        body_value,
+                    }
                 },
             );
         }
@@ -2912,6 +2917,8 @@ fn parse_impl_member(item: &str) -> ImplMember {
             |signature| ImplMember::Function {
                 signature,
                 body: String::new(),
+                body_statements: Vec::new(),
+                body_value: None,
             },
         );
     }
@@ -4048,9 +4055,9 @@ fn is_let_else_head(trimmed: &str) -> bool {
 }
 
 fn parse_scope_expr_body(body: &str) -> (Vec<Stmt>, Option<crate::expr::Expr>) {
-    let lines = body
-        .lines()
-        .map(str::trim)
+    let lines = collect_logical_block_items(body)
+        .into_iter()
+        .map(|line| line.trim().to_owned())
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>();
     let Some((last, statements)) = lines.split_last() else {
@@ -4058,15 +4065,28 @@ fn parse_scope_expr_body(body: &str) -> (Vec<Stmt>, Option<crate::expr::Expr>) {
     };
     let parsed_statements = statements
         .iter()
-        .map(|line| parse_stmt(line))
+        .map(|line| parse_stmt(line.as_str()))
         .collect::<Vec<_>>();
+    if let Some(value) = parse_final_block_expr(last.as_str()) {
+        return (parsed_statements, Some(value));
+    }
     if is_typed_stmt(last) {
         let mut parsed_statements = parsed_statements;
-        parsed_statements.push(parse_stmt(last));
+        parsed_statements.push(parse_stmt(last.as_str()));
         (parsed_statements, None)
     } else {
-        (parsed_statements, Some(parse_expr_lossy(last)))
+        (parsed_statements, Some(parse_expr_lossy(last.as_str())))
     }
+}
+
+fn parse_final_block_expr(source: &str) -> Option<crate::expr::Expr> {
+    let (head, body) = split_brace_item(source)?;
+    head.strip_prefix("match ")
+        .map(str::trim)
+        .map(|scrutinee| crate::expr::Expr::Match {
+            scrutinee: Box::new(parse_expr_lossy(scrutinee)),
+            arms: parse_match_expr_arms(body),
+        })
 }
 
 fn parse_block_expr(body: &str) -> crate::expr::Expr {

@@ -2243,10 +2243,17 @@ pub impl<T> Mappable for Option<T> {
         ));
         assert!(matches!(
             &impl_item.members()[2],
-            ImplMember::Function { signature, body }
+            ImplMember::Function {
+                signature,
+                body,
+                body_statements,
+                body_value,
+            }
                 if signature.name() == "map"
                     && signature.params().first().is_some_and(|param| param.pattern() == "self")
                     && body.contains("match self")
+                    && body_statements.is_empty()
+                    && matches!(body_value, Some(Expr::Match { .. }))
         ));
         assert!(impl_item.body().contains("Some(x)"));
 

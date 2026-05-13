@@ -292,6 +292,8 @@ pub enum ImplMember {
     Function {
         signature: FnSignature,
         body: String,
+        body_statements: Vec<Stmt>,
+        body_value: Option<Expr>,
     },
     Raw(String),
 }

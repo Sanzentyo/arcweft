@@ -64,8 +64,23 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
         | HirTopLevelDecl::Struct(_) => {}
         HirTopLevelDecl::Impl(item) => {
             for member in item.members() {
-                if let ImplMember::Raw(raw) = member {
-                    uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone()));
+                match member {
+                    ImplMember::Function {
+                        body_statements,
+                        body_value,
+                        ..
+                    } => {
+                        for stmt in body_statements {
+                            collect_stmt(stmt, uses);
+                        }
+                        if let Some(value) = body_value {
+                            collect_expr(value, uses);
+                        }
+                    }
+                    ImplMember::Raw(raw) => {
+                        uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone()));
+                    }
+                    ImplMember::AssociatedType { .. } => {}
                 }
             }
         }
