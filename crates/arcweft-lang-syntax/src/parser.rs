@@ -736,6 +736,9 @@ impl Parser {
     }
 
     fn parse_parser_item(&mut self) -> Option<ParserItem> {
+        if !self.current().text.contains('{') && !self.next_nonblank_line_is_brace() {
+            return self.parse_parser_item_line();
+        }
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();
         if !ok {
@@ -763,6 +766,26 @@ impl Parser {
             body_statements,
             body_value,
             TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_parser_item_line(&mut self) -> Option<ParserItem> {
+        let line = self.current().clone();
+        self.index += 1;
+        let (visibility, after_visibility) = parse_visibility_prefix(line.text.trim());
+        let after_parser = after_visibility
+            .trim_start()
+            .strip_prefix("parser")?
+            .trim_start();
+        let (name, tail) = parse_name_and_tail(after_parser);
+        Some(ParserItem::new(
+            visibility,
+            name.unwrap_or_default(),
+            tail,
+            String::new(),
+            Vec::new(),
+            None,
+            TextRange::new(line.start, line.end),
         ))
     }
 

@@ -3987,6 +3987,30 @@ component #ui.settings SettingsPanel(config: Binding<Config>) -> View {
     }
 
     #[test]
+    fn parses_bodyless_parser_declarations_from_docs() {
+        let tree = parse_source(
+            r"
+pub parser parse_player_command: Parser<PlayerCommand, ParseError>
+pub parser parse_image_header<'a>: Parser<ImageHeader<'a>, ParseError>
+",
+        )
+        .expect("bodyless parser declarations parse");
+        assert_eq!(tree.items().len(), 2);
+        for item in tree.items() {
+            let Item::Parser(parser) = item else {
+                panic!("expected parser declaration");
+            };
+            assert!(parser.body().is_empty());
+            assert!(parser.body_statements().is_empty());
+            assert!(parser.signature_tail().contains("Parser<"));
+        }
+
+        let hir = lower_to_hir(&tree).expect("bodyless parser declarations lower");
+        validate_typecheck_ready(&hir).expect("bodyless parser declarations are typecheck-ready");
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect("bodyless parser declarations typecheck");
+    }
+
+    #[test]
     fn typecheck_reports_wrong_choice_target_kind() {
         let tree = parse_source(
             r#"
