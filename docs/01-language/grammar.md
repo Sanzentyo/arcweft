@@ -60,6 +60,7 @@ FlowItem     :=
   | ExprStmt
 
 ScopeStmt       := 'scope' Ident BlockExpr
+ScopeExpr       := 'scope' Ident BlockExpr
 ScenarioCommand := '@' Ident ScenarioArgs?
 ```
 
@@ -166,7 +167,8 @@ HookEffects:= 'effects' '{' Ident (',' Ident)* ','? '}'
 ```text
 Block          := '{' BlockItem* FinalExpr? '}'
 ExprBlock      := Block
-ScopeStmt      := Block
+ScopeStmt      := 'scope' Ident BlockExpr
+ScopeExpr      := 'scope' Ident BlockExpr
 StatementBlock := Block | ':' Newline IndentedItems
 LabeledBlock   := Label? Block
 Label          := '\'' Ident ':'
@@ -174,6 +176,7 @@ BlockItem      := LetStmt | LetElseStmt | ExprStmt | ControlStmt | ScenarioStmt 
 ```
 
 In expression position, a block's final expression is its value. In statement position, a bare block creates a lexical scope and does not export a value; a non-`Unit` final expression must be discarded explicitly with `;` or `let _ = ...`.
+`scope name { ... }` behaves like a lexical block and also contributes `name` to relative line, text-key, choice, and option ID generation inside the block. In expression position, it returns the final expression just like `{ ... }`.
 
 ## Statement / expression list
 
@@ -248,8 +251,10 @@ Pattern :=
   | RecordPattern
   | VariantPattern
   | ListPattern
-  | Ident '@' Pattern
+  | WholeBindingPattern
 
+WholeBindingPattern := Ident NonBindingPattern
+NonBindingPattern  := Literal | EntityRef | TuplePattern | RecordPattern | VariantPattern | ListPattern
 TuplePattern  := '(' Pattern (',' Pattern)* ')'
 RecordPattern := TypePath? '{' FieldPattern* '..'? '}'
 FieldPattern  := Ident | Ident ':' Pattern
@@ -265,9 +270,13 @@ Examples:
 .Err(e)
 .ChoiceSelected { id }
 TruckResult { score, rank, .. }
-ev @ .ChoiceSelected { id }
+ev .ChoiceSelected { id }
 [first, ..rest]
 ```
+
+Whole-pattern binding uses `Ident Pattern` only where the second token clearly
+starts a non-binding pattern, such as a variant, tuple, record, list, literal, or
+entity reference. `name @ pattern` is not part of Arcweft grammar.
 
 ## Try operator and await
 

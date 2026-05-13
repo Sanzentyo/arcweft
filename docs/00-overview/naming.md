@@ -186,11 +186,17 @@ scope dream {
 ```
 
 Relative IDs normalize through the current flow, speaker, choice, and named
-scope path:
+scope path. Dialogue lines place the speaker before the scope path; choices use
+the flow and scope path directly.
 
 ```text
 id=.greeting
   -> #say.opening.alice.greeting
+
+scope rain { alice(id=.comment): ... }
+  -> #say.opening.alice.rain.comment
+  -> #text.opening.alice.rain.comment
+  -> #voice.ja-JP.alice.opening.rain.comment
 
 choice .first
   -> #choice.opening.dream.first

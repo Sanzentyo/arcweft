@@ -95,11 +95,13 @@ Owned list and borrowed slice patterns use the same surface syntax. Type checkin
 
 ## Binding entire pattern
 
-Rust-like `name @ pattern` is supported inside pattern contexts.
+Whole-pattern binding is supported without `@`. `@` remains reserved for
+attributes and scenario commands, so pattern binding uses a leading name followed
+by a non-binding pattern in contexts where this is unambiguous.
 
 ```awft
 match event {
-    ev @ .ChoiceSelected { id } => {
+    ev .ChoiceSelected { id } => {
         log info "choice event {ev:?}" { ev = ev }
         handle_choice(id)
     }
@@ -107,7 +109,8 @@ match event {
 }
 ```
 
-`@` is not ambiguous here because it appears inside a pattern, not at statement start as a scenario directive.
+The binding name captures the entire matched value, while nested fields such as
+`id` are still bound by the inner pattern.
 
 ## Pattern guards
 

@@ -157,10 +157,23 @@ with:
 let bg = bg_result?
 ```
 
-Rejected:
+`await? expr with:` is accepted as prefix sugar for `try await expr with:`, but
+formatter and examples should prefer `try await` for handwritten code.
 
 ```awft
-await? asset.image(#asset.bg.room) with:
+let bg = await? asset.image(#asset.bg.room)
+    .context("opening background failed")
+with:
+    pending p:
+        scene #scene.loading:
+            progress p.ratio
+```
+
+Rejected because `with:` belongs to the await operation and the postfix grouping
+is ambiguous:
+
+```awft
+await asset.image(#asset.bg.room)? with:
     pending p:
         scene #scene.loading
 ```

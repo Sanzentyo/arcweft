@@ -190,10 +190,14 @@ let bg = (await asset.image(#asset.bg.room) with:
 ).context("while loading opening background")?
 ```
 
-Rejected:
+`await? expr with:` is accepted as prefix sugar for `try await expr with:`, but
+diagnostics and formatter output should prefer `try await` unless the user
+explicitly asks for prefix-`?` style.
+
+Rejected because postfix `?` groups with the expression before `with:`:
 
 ```awft
-await? asset.image(#asset.bg.room) with:
+await asset.image(#asset.bg.room)? with:
     pending p:
         scene #scene.loading
 ```

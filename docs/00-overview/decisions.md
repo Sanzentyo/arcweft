@@ -30,7 +30,11 @@ function parameter destructuring, if explicitly enabled
 
 This avoids having one pattern system for `match` and another for `let`.
 
-Phase 1 parser/HIR should carry the full pattern shape, including tuple, record, variant, list/rest, literal, entity-ref, mutable binding, and `name @ pattern` forms. Type checking may stage exhaustiveness and shape validation, but the syntax model should not collapse these patterns into raw strings.
+Phase 1 parser/HIR should carry the full pattern shape, including tuple, record, variant, list/rest, literal, entity-ref, mutable binding, and whole-pattern binding forms. Type checking may stage exhaustiveness and shape validation, but the syntax model should not collapse these patterns into raw strings.
+
+Arcweft does not use Rust's `name @ pattern` spelling. `@` remains available for
+attributes and scenario commands. Whole-pattern binding should use the
+`Ident Pattern` form only in unambiguous pattern positions.
 
 ## Syntax canonicalization decision
 

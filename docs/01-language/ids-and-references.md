@@ -110,3 +110,96 @@ scope = "flow"
 ```
 
 `seq` は registry で保持し、挿入時に既存 ID をずらさない。
+
+## 相対 ID と名前付き scope
+
+`.suffix` 形式の相対 ID は、ID を期待する文脈だけで使える。通常の
+entity reference ではないので、`goto .next` のような裸の相対参照は
+採用しない。flow や asset を参照する場合は完全な `#flow...` /
+`#asset...` を書く。
+
+```awft
+alice(id=.greeting):
+    おはよう。[p]
+
+choice .first {
+    .listen "聞いてみる" -> #flow.alice_intro
+}
+```
+
+名前付き scope は、lexical scope であると同時に ID namespace として使う。
+
+```awft
+scope rain {
+    地の文(id=.sound):
+        扉の向こうから、雨の音がした。[p]
+
+    alice(id=.comment):
+        雨、強くなってきたね。[p]
+}
+```
+
+正規化規則:
+
+```text
+line id:
+  id=.suffix
+    -> #say.{flow}.{speaker}.{scope_path}.{suffix}
+
+omitted line id:
+  -> #say.{flow}.{speaker}.{scope_path}.{stable_slot}
+
+omitted text key:
+  -> #text.{flow}.{speaker}.{scope_path}.{line_suffix_or_slot}
+
+voice key when voice=auto:
+  -> #voice.{locale}.{speaker}.{flow}.{scope_path}.{line_suffix_or_slot}
+
+choice id:
+  choice .suffix
+    -> #choice.{flow}.{scope_path}.{suffix}
+
+choice option id:
+  .suffix
+    -> {current_choice_id}.{suffix}
+```
+
+例:
+
+```text
+地の文(id=.sound)
+  -> #say.opening.narrator.rain.sound
+  -> #text.opening.narrator.rain.sound
+
+alice(id=.comment)
+  -> #say.opening.alice.rain.comment
+  -> #text.opening.alice.rain.comment
+  -> #voice.ja-JP.alice.opening.rain.comment
+
+choice .first
+  -> #choice.opening.rain.first
+
+.listen
+  -> #choice.opening.rain.first.listen
+  -> #text.choice.opening.rain.first.listen
+```
+
+`scope` は入れ子にでき、`scope_path` は外側から順に連結する。
+
+```awft
+scope rain {
+    scope window {
+        地の文(id=.rattle):
+            窓が小さく鳴った。[p]
+    }
+}
+```
+
+```text
+#say.opening.narrator.rain.window.rattle
+#text.opening.narrator.rain.window.rattle
+```
+
+`.suffix` は module path には使わない。module / import の相対指定は
+`self::`、`super::`、`crate::` を使う。`parent::` は `super::` の予約
+alias で、formatter は `super::` に正規化する。
