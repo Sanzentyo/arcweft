@@ -517,7 +517,11 @@ pub enum Pattern {
     MutIdent(String),
     Literal(Expr),
     Entity(EntityRef),
-    Variant(String),
+    Variant {
+        path: Option<String>,
+        name: String,
+        payload: Option<VariantPatternPayload>,
+    },
     Discard,
     Tuple(Vec<Pattern>),
     Record {
@@ -545,6 +549,16 @@ pub enum Pattern {
 pub struct RecordPatternField {
     name: String,
     pattern: Pattern,
+}
+
+/// Payload attached to an enum variant pattern.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum VariantPatternPayload {
+    Tuple(Vec<Pattern>),
+    Record {
+        fields: Vec<RecordPatternField>,
+        rest: bool,
+    },
 }
 
 impl RecordPatternField {

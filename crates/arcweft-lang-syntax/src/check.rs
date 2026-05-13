@@ -1128,7 +1128,7 @@ fn collect_borrow_lifetimes(pattern: &Pattern, lifetimes: &mut Vec<String>) {
         | Pattern::MutIdent(_)
         | Pattern::Literal(_)
         | Pattern::Entity(_)
-        | Pattern::Variant(_)
+        | Pattern::Variant { .. }
         | Pattern::Discard
         | Pattern::Raw(_) => {}
     }
@@ -1158,8 +1158,9 @@ fn let_else_bindings(pattern: &Pattern, expr_type: Option<&TypeKind>) -> Vec<(St
             .cloned()
             .map(|ty| vec![(name.to_owned(), ty)])
             .unwrap_or_default(),
-        Pattern::Variant(raw) => variant_payload_binding(raw)
-            .into_iter()
+        Pattern::Variant { payload, .. } => payload
+            .iter()
+            .flat_map(variant_payload_bindings)
             .filter_map(|name| option_payload_type(expr_type).map(|ty| (name, ty)))
             .collect(),
         Pattern::Tuple(items) => items
@@ -1187,12 +1188,28 @@ fn let_else_bindings(pattern: &Pattern, expr_type: Option<&TypeKind>) -> Vec<(St
     }
 }
 
-fn variant_payload_binding(raw: &str) -> Option<String> {
-    raw.strip_prefix(".Some(")
-        .and_then(|rest| rest.strip_suffix(')'))
-        .map(str::trim)
-        .filter(|name| is_local_ident(name))
-        .map(str::to_owned)
+fn variant_payload_bindings(payload: &crate::ast::VariantPatternPayload) -> Vec<String> {
+    match payload {
+        crate::ast::VariantPatternPayload::Tuple(items) => items
+            .iter()
+            .filter_map(|pattern| match pattern {
+                Pattern::Ident(name) if is_local_ident(name) => Some(name.to_owned()),
+                _ => None,
+            })
+            .collect(),
+        crate::ast::VariantPatternPayload::Record { fields, .. } => fields
+            .iter()
+            .flat_map(|field| {
+                let names = let_else_bindings(field.pattern(), None);
+                if names.is_empty() {
+                    vec![(field.name().to_owned(), TypeKind::Unit)]
+                } else {
+                    names
+                }
+            })
+            .map(|(name, _)| name)
+            .collect(),
+    }
 }
 
 fn option_payload_type(expr_type: Option<&TypeKind>) -> Option<TypeKind> {

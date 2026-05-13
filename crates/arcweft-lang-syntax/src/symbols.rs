@@ -258,8 +258,47 @@ fn collect_select_head(head: &crate::ast::SelectBranchHead, uses: &mut Vec<Symbo
 }
 
 fn collect_pattern(pattern: &crate::ast::Pattern, uses: &mut Vec<SymbolUse>) {
-    if let crate::ast::Pattern::Raw(raw) = pattern {
-        uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone()));
+    match pattern {
+        crate::ast::Pattern::Raw(raw) => {
+            uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone()));
+        }
+        crate::ast::Pattern::Literal(expr) => collect_expr(expr, uses),
+        crate::ast::Pattern::Entity(entity) => push_entity(uses, entity),
+        crate::ast::Pattern::Tuple(items) | crate::ast::Pattern::List { items, .. } => {
+            for item in items {
+                collect_pattern(item, uses);
+            }
+        }
+        crate::ast::Pattern::Record { fields, .. } => {
+            for field in fields {
+                collect_pattern(field.pattern(), uses);
+            }
+        }
+        crate::ast::Pattern::Whole { pattern, .. } => collect_pattern(pattern, uses),
+        crate::ast::Pattern::Variant {
+            payload: Some(payload),
+            ..
+        } => collect_variant_payload(payload, uses),
+        crate::ast::Pattern::Ident(_)
+        | crate::ast::Pattern::MutIdent(_)
+        | crate::ast::Pattern::Variant { payload: None, .. }
+        | crate::ast::Pattern::Discard
+        | crate::ast::Pattern::Typed { .. } => {}
+    }
+}
+
+fn collect_variant_payload(payload: &crate::ast::VariantPatternPayload, uses: &mut Vec<SymbolUse>) {
+    match payload {
+        crate::ast::VariantPatternPayload::Tuple(items) => {
+            for item in items {
+                collect_pattern(item, uses);
+            }
+        }
+        crate::ast::VariantPatternPayload::Record { fields, .. } => {
+            for field in fields {
+                collect_pattern(field.pattern(), uses);
+            }
+        }
     }
 }
 

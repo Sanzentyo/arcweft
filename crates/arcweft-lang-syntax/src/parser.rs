@@ -3697,8 +3697,8 @@ fn parse_pattern(source: &str) -> Pattern {
             }
         }
     }
-    if source.starts_with('.') {
-        return Pattern::Variant(source.to_owned());
+    if let Some(pattern) = parse_variant_pattern(source) {
+        return pattern;
     }
     let mut entity_errors = Vec::new();
     if let Some((entity, rest)) = parse_required_entity_ref(source, 0, &mut entity_errors)
@@ -3774,6 +3774,68 @@ fn parse_list_pattern(inner: &str) -> Pattern {
         })
         .collect();
     Pattern::List { items, rest }
+}
+
+fn parse_variant_pattern(source: &str) -> Option<Pattern> {
+    let (head, payload) = split_variant_payload(source);
+    let (path, name) = if let Some(name) = head.strip_prefix('.') {
+        (None, name.trim())
+    } else if let Some((path, name)) = head.rsplit_once("::") {
+        (Some(path.trim().to_owned()), name.trim())
+    } else {
+        return None;
+    };
+    if !is_pattern_ident(name) {
+        return None;
+    }
+    Some(Pattern::Variant {
+        path,
+        name: name.to_owned(),
+        payload,
+    })
+}
+
+fn split_variant_payload(source: &str) -> (&str, Option<crate::ast::VariantPatternPayload>) {
+    if let Some(inner) = source.find('(').and_then(|open| {
+        source
+            .strip_suffix(')')
+            .map(|_| (open, &source[open + 1..source.len() - 1]))
+    }) {
+        let (open, inner) = inner;
+        return (
+            source[..open].trim(),
+            Some(crate::ast::VariantPatternPayload::Tuple(
+                split_pattern_items(inner)
+                    .into_iter()
+                    .map(parse_pattern)
+                    .collect(),
+            )),
+        );
+    }
+    if let Some((head, body)) = split_brace_item(source) {
+        let mut rest = false;
+        let fields = split_pattern_items(body)
+            .into_iter()
+            .filter_map(|field| {
+                if field == ".." {
+                    rest = true;
+                    return None;
+                }
+                let (name, pattern) = field
+                    .split_once(':')
+                    .map_or((field.trim(), field.trim()), |(name, pattern)| {
+                        (name.trim(), pattern.trim())
+                    });
+                is_pattern_ident(name)
+                    .then(|| RecordPatternField::new(name, parse_pattern(pattern)))
+            })
+            .collect();
+        return (
+            head.trim(),
+            Some(crate::ast::VariantPatternPayload::Record { fields, rest }),
+        );
+    }
+    (source, None)
 }
 
 fn parse_record_pattern(source: &str) -> Option<Pattern> {

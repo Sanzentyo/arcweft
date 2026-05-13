@@ -22,8 +22,8 @@ pub use ast::{
     LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern,
     RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch,
     SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField,
-    StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, Visibility,
-    WhileBlock, WhileLetBlock, WikiLink,
+    StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
+    VariantPatternPayload, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -49,11 +49,22 @@ mod tests {
         AwaitBranchKind, BinaryOp, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
         ContractClause, DialogueToken, EntityKind, Expr, FlowItem, FlowKind, HirFlowItem, Item,
         LinePlanItem, Literal, NameRegistry, Pattern, SelectBranchHead, Stmt, SymbolUseKind,
-        TraitMember, TypeCheckEnv, TypeKind, TypeRef, Visibility, collect_symbol_uses,
-        lower_to_hir, parse_dialogue_tokens, parse_fn_signature, parse_source, parse_stub,
-        parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
+        TraitMember, TypeCheckEnv, TypeKind, TypeRef, VariantPatternPayload, Visibility,
+        collect_symbol_uses, lower_to_hir, parse_dialogue_tokens, parse_fn_signature, parse_source,
+        parse_stub, parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
         validate_typecheck_ready,
     };
+
+    fn variant_tuple_binding(pattern: &Pattern, variant: &str, binding: &str) -> bool {
+        matches!(
+            pattern,
+            Pattern::Variant {
+                path: None,
+                name,
+                payload: Some(VariantPatternPayload::Tuple(items)),
+            } if name == variant && matches!(items.as_slice(), [Pattern::Ident(name)] if name == binding)
+        )
+    }
 
     #[test]
     fn stub_is_now_real_source_parser() {
@@ -992,7 +1003,7 @@ flow #flow.title title {
         else {
             panic!("expected structured let-else");
         };
-        assert_eq!(pattern, &Pattern::Variant(".Some(route)".to_owned()));
+        assert!(variant_tuple_binding(pattern, "Some", "route"));
         assert!(matches!(expr, Expr::Path(path) if path == "state.route_override"));
         assert!(matches!(else_body.as_slice(), [Stmt::Goto(_)]));
 
@@ -1115,10 +1126,7 @@ flow #flow.branching branching {
         let FlowItem::IfLet(block) = &flow.body()[0] else {
             panic!("expected if-let block");
         };
-        assert_eq!(
-            block.pattern(),
-            &Pattern::Variant(".Some(route)".to_owned())
-        );
+        assert!(variant_tuple_binding(block.pattern(), "Some", "route"));
         assert!(matches!(block.expr(), Expr::Path(path) if path == "state.route_override"));
         assert!(block.guard().is_some());
 
@@ -1126,10 +1134,7 @@ flow #flow.branching branching {
         let HirFlowItem::IfLet(block) = &hir.flows()[0].body()[0] else {
             panic!("expected HIR if-let block");
         };
-        assert_eq!(
-            block.pattern(),
-            &Pattern::Variant(".Some(route)".to_owned())
-        );
+        assert!(variant_tuple_binding(block.pattern(), "Some", "route"));
 
         validate_typecheck_ready(&hir).expect("if-let block is typecheck-ready");
         let env = TypeCheckEnv::new()
@@ -1250,7 +1255,7 @@ flow #flow.branching branching {
             panic!("expected let binding with value if-let expression");
         };
         assert_eq!(pattern, &Pattern::Ident("route".to_owned()));
-        assert!(matches!(binding.as_ref(), Pattern::Variant(raw) if raw == ".Some(route)"));
+        assert!(variant_tuple_binding(binding.as_ref(), "Some", "route"));
         assert!(matches!(expr.as_ref(), Expr::Path(path) if path == "state.route_override"));
         assert!(matches!(
             then_branch.as_ref(),
@@ -1507,10 +1512,7 @@ flow #flow.events events {
         let FlowItem::WhileLet(block) = &flow.body()[0] else {
             panic!("expected while-let block");
         };
-        assert_eq!(
-            block.pattern(),
-            &Pattern::Variant(".Some(event)".to_owned())
-        );
+        assert!(variant_tuple_binding(block.pattern(), "Some", "event"));
         assert!(matches!(block.expr(), Expr::Path(path) if path == "next_event"));
         assert!(block.guard().is_some());
 
@@ -1518,10 +1520,7 @@ flow #flow.events events {
         let HirFlowItem::WhileLet(block) = &hir.flows()[0].body()[0] else {
             panic!("expected HIR while-let block");
         };
-        assert_eq!(
-            block.pattern(),
-            &Pattern::Variant(".Some(event)".to_owned())
-        );
+        assert!(variant_tuple_binding(block.pattern(), "Some", "event"));
 
         validate_typecheck_ready(&hir).expect("while-let block is typecheck-ready");
         let env = TypeCheckEnv::new()
@@ -2698,7 +2697,7 @@ flow #flow.stream stream {
         ));
         assert!(matches!(
             select.branches()[2].head(),
-            SelectBranchHead::Event(Pattern::Variant(name)) if name == ".Back"
+            SelectBranchHead::Event(Pattern::Variant { name, payload: None, .. }) if name == "Back"
         ));
 
         let hir = lower_to_hir(&tree).expect("for and select lower");
@@ -2827,12 +2826,21 @@ flow #flow.patterns patterns {
                 ..
             }) if items.len() == 1 && rest == "rest"
         ));
+        let FlowItem::Stmt(Stmt::Let {
+            pattern: Pattern::Whole { name, pattern },
+            ..
+        }) = &flow.body()[5]
+        else {
+            panic!("expected whole-pattern variant binding");
+        };
+        assert_eq!(name, "ev");
         assert!(matches!(
-            &flow.body()[5],
-            FlowItem::Stmt(Stmt::Let {
-                pattern: Pattern::Whole { name, pattern },
+            pattern.as_ref(),
+            Pattern::Variant {
+                name,
+                payload: Some(VariantPatternPayload::Record { fields, rest: false }),
                 ..
-            }) if name == "ev" && matches!(pattern.as_ref(), Pattern::Variant(raw) if raw.starts_with(".ChoiceSelected"))
+            } if name == "ChoiceSelected" && fields.len() == 1 && fields[0].name() == "id"
         ));
 
         let hir = lower_to_hir(&tree).expect("structured pattern fixture lowers");
