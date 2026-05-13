@@ -19,8 +19,8 @@ pub use ast::{
     ChoiceBlock, ChoiceItem, ChoiceMatchArm, ChoiceOption, ChoicePlan, ChoicePlanItem, ContentCall,
     ContractClause, DialogueToken, EntityDeclItem, EntityDeclKind, EntityRef, EnumItem,
     EnumVariant, ExternModItem, Flow, FlowItem, FlowKind, ForBlock, FunctionItem, FunctionKind,
-    HookItem, IfBlock, IfLetBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, LoopBlock,
-    MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RecordPatternField,
+    HookItem, IfBlock, IfLetBlock, ImplItem, ImplMember, Item, LineOptions, LinePlan, LinePlanItem,
+    LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RecordPatternField,
     ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
     SourceItem, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField,
     StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
@@ -49,12 +49,12 @@ mod tests {
     use super::{
         AwaitBranchKind, BinaryOp, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
         ComputationBlockKind, ContractClause, DialogueToken, EntityDeclKind, EntityKind, EntityRef,
-        Expr, FlowItem, FlowKind, FunctionKind, HirFlowItem, HirTopLevelDecl, Item, LinePlanItem,
-        Literal, NameRegistry, Pattern, Placeholder, SelectBranchHead, Stmt, SymbolUseKind,
-        TraitMember, TypeCheckEnv, TypeKind, TypeRef, UnaryOp, VariantPatternPayload, Visibility,
-        collect_symbol_uses, lower_to_hir, parse_dialogue_tokens, parse_fn_signature, parse_source,
-        parse_stub, parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
-        validate_typecheck_ready,
+        Expr, FlowItem, FlowKind, FunctionKind, HirFlowItem, HirTopLevelDecl, ImplMember, Item,
+        LinePlanItem, Literal, NameRegistry, Pattern, Placeholder, SelectBranchHead, Stmt,
+        SymbolUseKind, TraitMember, TypeCheckEnv, TypeKind, TypeRef, UnaryOp,
+        VariantPatternPayload, Visibility, collect_symbol_uses, lower_to_hir,
+        parse_dialogue_tokens, parse_fn_signature, parse_source, parse_stub, parse_type_ref,
+        registry_from_hir, typecheck_hir, validate_hir_references, validate_typecheck_ready,
     };
 
     fn variant_tuple_binding(pattern: &Pattern, variant: &str, binding: &str) -> bool {
@@ -2228,6 +2228,26 @@ pub impl<T> Mappable for Option<T> {
         assert_eq!(impl_item.generics(), Some("<T>"));
         assert_eq!(impl_item.trait_name(), Some("Mappable"));
         assert_eq!(impl_item.target(), "Option<T>");
+        assert_eq!(impl_item.members().len(), 3);
+        assert!(matches!(
+            &impl_item.members()[0],
+            ImplMember::AssociatedType { name, params, value }
+                if name == "Item" && params.is_empty() && matches!(value, TypeRef::Path(path) if path == "T")
+        ));
+        assert!(matches!(
+            &impl_item.members()[1],
+            ImplMember::AssociatedType { name, params, value }
+                if name == "Mapped"
+                    && params == &["B".to_owned()]
+                    && matches!(value, TypeRef::Generic { base, args } if base == "Option" && args.len() == 1)
+        ));
+        assert!(matches!(
+            &impl_item.members()[2],
+            ImplMember::Function { signature, body }
+                if signature.name() == "map"
+                    && signature.params().first().is_some_and(|param| param.pattern() == "self")
+                    && body.contains("match self")
+        ));
         assert!(impl_item.body().contains("Some(x)"));
 
         let hir = lower_to_hir(&tree).expect("syntax-only trait/impl items do not block HIR");

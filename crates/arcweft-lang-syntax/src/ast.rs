@@ -281,13 +281,29 @@ pub enum TraitMember {
     Raw(String),
 }
 
-/// Impl declaration preserving the implementation body for later lowering.
+/// Member allowed inside an impl declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ImplMember {
+    AssociatedType {
+        name: String,
+        params: Vec<String>,
+        value: TypeRef,
+    },
+    Function {
+        signature: FnSignature,
+        body: String,
+    },
+    Raw(String),
+}
+
+/// Impl declaration with structured members and original body text.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImplItem {
     visibility: Option<Visibility>,
     generics: Option<String>,
     trait_name: Option<String>,
     target: String,
+    members: Vec<ImplMember>,
     body: String,
     range: TextRange,
 }
@@ -1503,6 +1519,7 @@ impl ImplItem {
         generics: Option<String>,
         trait_name: Option<String>,
         target: String,
+        members: Vec<ImplMember>,
         body: String,
         range: TextRange,
     ) -> Self {
@@ -1511,6 +1528,7 @@ impl ImplItem {
             generics,
             trait_name,
             target,
+            members,
             body,
             range,
         }
@@ -1530,6 +1548,10 @@ impl ImplItem {
 
     pub fn target(&self) -> &str {
         &self.target
+    }
+
+    pub fn members(&self) -> &[ImplMember] {
+        &self.members
     }
 
     pub fn body(&self) -> &str {

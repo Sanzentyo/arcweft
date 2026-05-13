@@ -1,4 +1,6 @@
-use crate::ast::{ContractClause, DialogueToken, EntityRef, LinePlanItem, Stmt, TraitMember};
+use crate::ast::{
+    ContractClause, DialogueToken, EntityRef, ImplMember, LinePlanItem, Stmt, TraitMember,
+};
 use crate::expr::Expr;
 use crate::lower::{HirFlowItem, HirModule, HirTopLevelDecl};
 
@@ -59,8 +61,14 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
         HirTopLevelDecl::Attribute(_)
         | HirTopLevelDecl::Enum(_)
         | HirTopLevelDecl::ExternMod(_)
-        | HirTopLevelDecl::Impl(_)
         | HirTopLevelDecl::Struct(_) => {}
+        HirTopLevelDecl::Impl(item) => {
+            for member in item.members() {
+                if let ImplMember::Raw(raw) = member {
+                    uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone()));
+                }
+            }
+        }
         HirTopLevelDecl::EntityDecl(item) => push_entity(uses, item.id()),
         HirTopLevelDecl::Callable(item) => {
             for contract in item.contracts() {

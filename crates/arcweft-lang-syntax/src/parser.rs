@@ -4,9 +4,9 @@ use crate::ast::{
     ChoiceOption, ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause,
     DialogueContent, EntityDeclItem, EntityDeclKind, EntityRef, EnumItem, EnumVariant,
     ExternModItem, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionInit, FunctionItem,
-    FunctionKind, HookInit, HookItem, IfBlock, IfLetBlock, ImplItem, Item, LineOptions, LinePlan,
-    LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern,
-    RawItem, RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock,
+    FunctionKind, HookInit, HookItem, IfBlock, IfLetBlock, ImplItem, ImplMember, Item, LineOptions,
+    LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem,
+    Pattern, RawItem, RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock,
     SelectBranch, SelectBranchHead, SourceItem, SourceLocaleBlock, SpeakerLine, StateField,
     StateItem, Stmt, StmtMatchArm, StructField, StructItem, SyntaxTree, TextRange, TraitItem,
     TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
@@ -510,6 +510,7 @@ impl Parser {
             generics,
             trait_name,
             target.to_owned(),
+            parse_impl_members(&body),
             body,
             TextRange::new(start_line.start, end),
         ))
@@ -2868,6 +2869,55 @@ fn parse_trait_member(line: &str) -> TraitMember {
     TraitMember::Raw(line.to_owned())
 }
 
+fn parse_impl_members(body: &str) -> Vec<ImplMember> {
+    collect_logical_block_items(body)
+        .into_iter()
+        .map(|item| parse_impl_member(item.trim()))
+        .collect()
+}
+
+fn parse_impl_member(item: &str) -> ImplMember {
+    let item = item.trim_end_matches(';').trim();
+    if let Some(rest) = item.strip_prefix("type ") {
+        if let Some((name, value)) = rest.split_once('=') {
+            if let Ok(value) = parse_type_ref(value.trim()) {
+                let (name, params) = parse_associated_type_head(name.trim());
+                return ImplMember::AssociatedType {
+                    name,
+                    params,
+                    value,
+                };
+            }
+        }
+        return ImplMember::Raw(item.to_owned());
+    }
+
+    // Impl function bodies are kept as source text for later expression
+    // lowering, but their signatures are parsed now so type/HIR passes do not
+    // need to rediscover the member boundary.
+    if let Some((head, body)) = split_brace_item(item) {
+        if head.starts_with("fn ") {
+            return parse_fn_signature(head).map_or_else(
+                |_| ImplMember::Raw(item.to_owned()),
+                |signature| ImplMember::Function {
+                    signature,
+                    body: body.to_owned(),
+                },
+            );
+        }
+    }
+    if item.starts_with("fn ") {
+        return parse_fn_signature(item).map_or_else(
+            |_| ImplMember::Raw(item.to_owned()),
+            |signature| ImplMember::Function {
+                signature,
+                body: String::new(),
+            },
+        );
+    }
+    ImplMember::Raw(item.to_owned())
+}
+
 fn parse_associated_type_head(source: &str) -> (String, Vec<String>) {
     source.split_once('<').map_or_else(
         || (source.to_owned(), Vec::new()),
@@ -2888,7 +2938,7 @@ fn parse_associated_type_head(source: &str) -> (String, Vec<String>) {
 }
 
 fn parse_choice_items(body: &str, base: usize, errors: &mut Vec<ParseError>) -> Vec<ChoiceItem> {
-    collect_logical_choice_lines(body)
+    collect_logical_block_items(body)
         .into_iter()
         .map(|line| {
             parse_choice_item(line.trim(), base, errors)
@@ -2897,7 +2947,7 @@ fn parse_choice_items(body: &str, base: usize, errors: &mut Vec<ParseError>) -> 
         .collect()
 }
 
-fn collect_logical_choice_lines(body: &str) -> Vec<String> {
+fn collect_logical_block_items(body: &str) -> Vec<String> {
     let mut lines = Vec::new();
     let mut current = String::new();
     let mut depth = 0_i32;
@@ -2988,7 +3038,7 @@ fn parse_choice_match_arms(
     base: usize,
     errors: &mut Vec<ParseError>,
 ) -> Vec<ChoiceMatchArm> {
-    collect_logical_choice_lines(body)
+    collect_logical_block_items(body)
         .into_iter()
         .filter_map(|line| {
             let (head, value) = line.trim().split_once("=>")?;
@@ -3021,7 +3071,7 @@ fn split_brace_item(source: &str) -> Option<(&str, &str)> {
 }
 
 fn parse_choice_plan_items(body: &str) -> Vec<ChoicePlanItem> {
-    collect_logical_choice_lines(body)
+    collect_logical_block_items(body)
         .into_iter()
         .map(|line| {
             let trimmed = line.trim();
@@ -3150,7 +3200,7 @@ fn parse_choice_option_block(
     let mut ui_fields = Vec::new();
     let mut action = ChoiceAction::None;
 
-    for line in collect_logical_choice_lines(body) {
+    for line in collect_logical_block_items(body) {
         let trimmed = line.trim();
         if let Some(value) = trimmed.strip_prefix("label =") {
             label = trim_string_literal(value.trim()).unwrap_or_else(|| value.trim().to_owned());
@@ -3431,7 +3481,7 @@ fn find_matching_square(text: &str, open: usize) -> Option<usize> {
 }
 
 fn parse_line_plan_body(style: BlockStyle, body: &str, range: TextRange) -> LinePlan {
-    let lines = collect_logical_choice_lines(body);
+    let lines = collect_logical_block_items(body);
     let mut items = Vec::new();
     let mut index = 0;
     while index < lines.len() {
@@ -4056,7 +4106,7 @@ fn split_embedded_else_body(body: &str) -> Option<(String, String)> {
 }
 
 fn parse_stmt_lines(body: &str) -> Vec<Stmt> {
-    collect_logical_choice_lines(body)
+    collect_logical_block_items(body)
         .into_iter()
         .map(|line| line.trim().to_owned())
         .filter(|line| !line.is_empty())
@@ -4065,7 +4115,7 @@ fn parse_stmt_lines(body: &str) -> Vec<Stmt> {
 }
 
 fn parse_source_stmt_lines(body: &str) -> Vec<Stmt> {
-    collect_logical_choice_lines(body)
+    collect_logical_block_items(body)
         .into_iter()
         .map(|line| line.trim().to_owned())
         .filter(|line| !line.is_empty())
@@ -4278,7 +4328,7 @@ fn parse_label_ref(input: &str) -> Option<(String, &str)> {
 }
 
 fn parse_stmt_match_arms(body: &str) -> Vec<StmtMatchArm> {
-    collect_logical_choice_lines(body)
+    collect_logical_block_items(body)
         .into_iter()
         .filter_map(|line| {
             let (head, value) = line.trim().split_once("=>")?;
