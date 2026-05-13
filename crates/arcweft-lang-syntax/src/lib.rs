@@ -3897,6 +3897,43 @@ pub source #source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     }
 
     #[test]
+    fn parses_function_like_source_with_loop_yield_body() {
+        let tree = parse_source(
+            r"
+source camera_frames() -> Source<VideoFrame, CameraError> {
+    loop {
+        let frame = await camera.next_frame()
+        yield frame
+    }
+}
+",
+        )
+        .expect("function-like source parses");
+        let Item::Source(source) = &tree.items()[0] else {
+            panic!("expected source item");
+        };
+        assert_eq!(source.name(), Some("camera_frames"));
+        assert!(matches!(
+            source.body_statements(),
+            [Stmt::Loop { body }] if matches!(body.as_slice(), [Stmt::Let { .. }, Stmt::Yield(_)])
+        ));
+
+        let hir = lower_to_hir(&tree).expect("function-like source lowers");
+        validate_typecheck_ready(&hir).expect("function-like source is typecheck-ready");
+        let env = TypeCheckEnv::new()
+            .with_symbol("camera", TypeKind::Named("Camera".to_owned()))
+            .with_method(
+                TypeKind::Named("Camera".to_owned()),
+                "next_frame",
+                TypeKind::Need {
+                    ready: Box::new(TypeKind::Named("VideoFrame".to_owned())),
+                    error: Box::new(TypeKind::Named("CameraError".to_owned())),
+                },
+            );
+        typecheck_hir(&hir, &env).expect("function-like source typechecks");
+    }
+
+    #[test]
     fn typecheck_reports_wrong_choice_target_kind() {
         let tree = parse_source(
             r#"

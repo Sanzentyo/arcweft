@@ -3799,19 +3799,8 @@ fn parse_stmt(trimmed: &str) -> Stmt {
         }
         return Stmt::Raw(trimmed.to_owned());
     }
-    if let Some((head, body)) = split_brace_item(trimmed) {
-        if let Some(condition) = head.strip_prefix("if ") {
-            return Stmt::If {
-                condition: parse_expr_lossy(condition.trim()),
-                body: parse_stmt_lines(body),
-            };
-        }
-        if let Some(expr) = head.strip_prefix("match ") {
-            return Stmt::Match {
-                expr: parse_expr_lossy(expr.trim()),
-                arms: parse_stmt_match_arms(body),
-            };
-        }
+    if let Some(stmt) = parse_braced_stmt(trimmed) {
+        return stmt;
     }
     if let Some(rest) = trimmed.strip_prefix("log ") {
         if let Some((level, args)) = rest.trim().split_once(' ') {
@@ -3837,6 +3826,58 @@ fn parse_stmt(trimmed: &str) -> Stmt {
         return Stmt::Raw(trimmed.to_owned());
     }
     Stmt::Expr(parse_expr_lossy(trimmed))
+}
+
+fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {
+    let (head, body) = split_brace_item(trimmed)?;
+    if let Some(condition) = head.strip_prefix("if ") {
+        return Some(Stmt::If {
+            condition: parse_expr_lossy(condition.trim()),
+            body: parse_stmt_lines(body),
+        });
+    }
+    if head == "loop" {
+        return Some(Stmt::Loop {
+            body: parse_stmt_lines(body),
+        });
+    }
+    if let Some(stmt) = parse_braced_while_let_stmt(head, body) {
+        return Some(stmt);
+    }
+    if let Some(condition) = head.strip_prefix("while ") {
+        return Some(Stmt::While {
+            condition: parse_expr_lossy(condition.trim()),
+            body: parse_stmt_lines(body),
+        });
+    }
+    if let Some(rest) = head.strip_prefix("for ") {
+        let Some((pattern, source)) = rest.split_once(" in ") else {
+            return Some(Stmt::Raw(trimmed.to_owned()));
+        };
+        return Some(Stmt::For {
+            pattern: parse_pattern(pattern.trim()),
+            source: parse_expr_lossy(source.trim()),
+            body: parse_stmt_lines(body),
+        });
+    }
+    head.strip_prefix("match ").map(|expr| Stmt::Match {
+        expr: parse_expr_lossy(expr.trim()),
+        arms: parse_stmt_match_arms(body),
+    })
+}
+
+fn parse_braced_while_let_stmt(head: &str, body: &str) -> Option<Stmt> {
+    let rest = head.strip_prefix("while let ")?;
+    let Some((pattern, expr_and_guard)) = rest.split_once('=') else {
+        return Some(Stmt::Raw(format!("{head} {{ {body} }}")));
+    };
+    let (expr, guard) = split_pattern_guard(expr_and_guard.trim());
+    Some(Stmt::WhileLet {
+        pattern: parse_pattern(pattern.trim()),
+        expr: parse_expr_lossy(expr.trim()),
+        guard: guard.map(|guard| parse_expr_lossy(guard.trim())),
+        body: parse_stmt_lines(body),
+    })
 }
 
 fn parse_control_transfer_stmt(trimmed: &str) -> Option<Stmt> {

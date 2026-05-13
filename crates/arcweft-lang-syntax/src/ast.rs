@@ -526,6 +526,28 @@ pub enum Stmt {
         condition: Expr,
         body: Vec<Stmt>,
     },
+    /// `loop { ... }` inside typed statement bodies.
+    Loop {
+        body: Vec<Stmt>,
+    },
+    /// `while expr { ... }` inside typed statement bodies.
+    While {
+        condition: Expr,
+        body: Vec<Stmt>,
+    },
+    /// `while let PAT = EXPR when GUARD { ... }` inside typed statement bodies.
+    WhileLet {
+        pattern: Pattern,
+        expr: Expr,
+        guard: Option<Expr>,
+        body: Vec<Stmt>,
+    },
+    /// `for PAT in EXPR { ... }` inside typed statement bodies.
+    For {
+        pattern: Pattern,
+        source: Expr,
+        body: Vec<Stmt>,
+    },
     Match {
         expr: Expr,
         arms: Vec<StmtMatchArm>,

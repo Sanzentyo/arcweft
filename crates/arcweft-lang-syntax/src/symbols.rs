@@ -510,14 +510,36 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
                 collect_expr(value, uses);
             }
         }
-        Stmt::On { body, .. } => collect_stmt_block(body, uses),
+        Stmt::On { body, .. } | Stmt::Loop { body } => collect_stmt_block(body, uses),
         Stmt::Command(command) => {
             for arg in command.args() {
                 collect_expr(arg, uses);
             }
         }
-        Stmt::If { condition, body } => {
+        Stmt::If { condition, body } | Stmt::While { condition, body } => {
             collect_expr(condition, uses);
+            collect_stmt_block(body, uses);
+        }
+        Stmt::WhileLet {
+            pattern,
+            expr,
+            guard,
+            body,
+        } => {
+            collect_pattern(pattern, uses);
+            collect_expr(expr, uses);
+            if let Some(guard) = guard {
+                collect_expr(guard, uses);
+            }
+            collect_stmt_block(body, uses);
+        }
+        Stmt::For {
+            pattern,
+            source,
+            body,
+        } => {
+            collect_pattern(pattern, uses);
+            collect_expr(source, uses);
             collect_stmt_block(body, uses);
         }
         Stmt::Match { expr, arms } => collect_stmt_match(expr, arms, uses),

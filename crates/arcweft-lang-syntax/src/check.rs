@@ -517,6 +517,26 @@ impl TypeChecker<'_> {
                 }
             }
             Stmt::If { condition, body } => self.check_if_stmt(condition, body),
+            Stmt::Loop { body } => self.check_stmt_loop(body),
+            Stmt::While { condition, body } => {
+                self.expect_expr_type(condition, &TypeKind::Bool, "while condition");
+                self.with_statement_loop(|this| {
+                    for stmt in body {
+                        this.check_stmt(stmt);
+                    }
+                });
+            }
+            Stmt::WhileLet {
+                pattern,
+                expr,
+                guard,
+                body,
+            } => self.check_stmt_while_let(pattern, expr, guard.as_ref(), body),
+            Stmt::For {
+                pattern,
+                source,
+                body,
+            } => self.check_stmt_for(pattern, source, body),
             Stmt::Match { expr, arms } => self.check_match_stmt(expr, arms),
             Stmt::Break(expr) => self.check_break_stmt(expr.as_ref()),
             Stmt::Continue => self.check_continue_stmt(),
@@ -577,6 +597,55 @@ impl TypeChecker<'_> {
         for stmt in body {
             self.check_stmt(stmt);
         }
+        self.locals = outer_locals;
+    }
+
+    fn check_stmt_loop(&mut self, body: &[Stmt]) {
+        self.loop_stack.push(LoopContext {
+            allows_value_break: true,
+            break_types: Vec::new(),
+        });
+        for stmt in body {
+            self.check_stmt(stmt);
+        }
+        self.loop_stack.pop();
+    }
+
+    fn check_stmt_while_let(
+        &mut self,
+        pattern: &Pattern,
+        expr: &Expr,
+        guard: Option<&Expr>,
+        body: &[Stmt],
+    ) {
+        let expr_type = self.check_expr(expr);
+        let outer_locals = self.locals.clone();
+        for (name, ty) in let_else_bindings(pattern, expr_type.as_ref()) {
+            self.locals.insert(name, ty);
+        }
+        if let Some(guard) = guard {
+            self.expect_expr_type(guard, &TypeKind::Bool, "while-let guard");
+        }
+        self.with_statement_loop(|this| {
+            for stmt in body {
+                this.check_stmt(stmt);
+            }
+        });
+        self.locals = outer_locals;
+    }
+
+    fn check_stmt_for(&mut self, pattern: &Pattern, source: &Expr, body: &[Stmt]) {
+        self.check_expr(source);
+        let outer_locals = self.locals.clone();
+        if let Some(name) = ident_pattern_name(pattern) {
+            self.locals
+                .insert(name.to_owned(), TypeKind::Named("IteratorItem".to_owned()));
+        }
+        self.with_statement_loop(|this| {
+            for stmt in body {
+                this.check_stmt(stmt);
+            }
+        });
         self.locals = outer_locals;
     }
 
