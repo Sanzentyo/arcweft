@@ -116,6 +116,56 @@ id = #say.opening.alice.greeting
   -> voice_key = #voice.{runtime_locale}.alice.opening.greeting
 ```
 
+Line IDs may be written as relative IDs when the surrounding flow and speaker
+provide the stable prefix:
+
+```awft
+alice(id=.greeting, voice=auto):
+    おはよう。[p]
+
+地の文(id=.rain):
+    扉の向こうから、雨の音がした。[p]
+```
+
+Relative line IDs normalize to full `#say...` IDs:
+
+```text
+alice(id=.greeting)
+  -> #say.opening.alice.greeting
+  -> #text.opening.alice.greeting
+
+地の文(id=.rain)
+  -> #say.opening.narrator.rain
+  -> #text.opening.narrator.rain
+```
+
+Named `scope` blocks become part of generated and relative IDs:
+
+```awft
+scope rain {
+    地の文(id=.sound):
+        扉の向こうから、雨の音がした。[p]
+
+    alice(id=.comment):
+        雨、強くなってきたね。[p]
+}
+```
+
+```text
+#say.opening.narrator.rain.sound
+#text.opening.narrator.rain.sound
+#say.opening.alice.rain.comment
+#text.opening.alice.rain.comment
+```
+
+If `id` is omitted, the generated stable ID still includes the named scope path:
+
+```text
+scope rain { 地の文: ... }
+  -> #say.opening.narrator.rain.001
+  -> #text.opening.narrator.rain.001
+```
+
 Narration is the built-in narrator speaker alias and accepts the same options:
 
 ```awft

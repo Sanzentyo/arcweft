@@ -168,6 +168,47 @@ signal.loading_progress
 
 engine 名は file、crate、CLI、protocol、packaging に使い、すべての in-game entity に prefix として付けない。
 
+## Relative IDs in source
+
+`.suffix` is allowed only in ID-bearing source contexts where the expected
+entity family is known: dialogue line IDs, choice IDs, choice option IDs, and
+text-key overrides. It is not a general entity reference.
+
+```awft
+alice(id=.greeting):
+    おはよう。[p]
+
+scope dream {
+    choice .first {
+        .listen "聞いてみる" -> #flow.alice_intro
+    }
+}
+```
+
+Relative IDs normalize through the current flow, speaker, choice, and named
+scope path:
+
+```text
+id=.greeting
+  -> #say.opening.alice.greeting
+
+choice .first
+  -> #choice.opening.dream.first
+
+.listen
+  -> #choice.opening.dream.first.listen
+```
+
+For ordinary entity references, keep the `#domain.path` form:
+
+```awft
+goto #flow.opening.next
+```
+
+Do not write `goto .next`. If general relative entity references are added
+later, they should use an explicit marker such as `#.` rather than overloading
+bare `.suffix`.
+
 ## 予約名
 
 以下の prefix は engine internal として予約する。

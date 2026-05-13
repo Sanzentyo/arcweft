@@ -138,6 +138,45 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
 This is a typed `flow`. The speaker lines and scenario commands are simply concise `FlowItem` forms.
 
+Named scopes make compact source IDs practical while keeping registry IDs
+stable and fully qualified.
+
+```awft
+pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+    scope rain {
+        地の文(id=.sound):
+            扉の向こうから、雨の音がした。[p]
+
+        alice(id=.comment, voice=auto):
+            雨、強くなってきたね。[p]
+    }
+
+    scope dream {
+        let can_enter = {
+            let affection_ok = state.affection[#character.alice] >= 3
+            affection_ok
+        }
+
+        choice .first {
+            .listen "聞いてみる" if can_enter -> #flow.alice_intro
+            .silent "黙っている" -> #flow.quiet_intro
+        }
+    }
+}
+```
+
+The relative IDs normalize as follows:
+
+```text
+#say.opening.narrator.rain.sound
+#text.opening.narrator.rain.sound
+#say.opening.alice.rain.comment
+#text.opening.alice.rain.comment
+#choice.opening.dream.first
+#choice.opening.dream.first.listen
+#text.choice.opening.dream.first.listen
+```
+
 
 ---
 
@@ -240,6 +279,63 @@ with {
         log info "selected choice {id:?}" { id = selected.id }
     }
 }
+```
+
+Choice execution is defined in terms of a candidate-option plan, not as a
+one-shot list of strings:
+
+1. Enter the choice body's lexical scope.
+2. Evaluate local `let`, block `if`, `match`, and `for` items to build option candidates.
+3. Evaluate each candidate's `visible`, `enabled`, `order`, `hotkey`, and `ui { ... }` state.
+4. Send visible options to the choice UI, accessibility layer, tests, and Agent observation.
+5. Suspend the flow while waiting for player, Agent, test, timeout, or cancel input.
+6. Re-evaluate dependent option state when tracked state/signals change.
+7. Run choice-level `on select selected` handlers.
+8. Run the selected option's `select { ... }` block.
+9. Continue according to `goto`, `return`, `out`, or normal completion.
+
+Dynamic labels are not automatically localization extraction targets. If a
+dynamic option should be localizable, its `label` expression should evaluate to
+localized text, a text key, or rich text carrying localization identity. A plain
+runtime `String` is displayable, but tools should warn when it is used where a
+localizable choice label is expected.
+
+```awft
+choice #choice.opening.routes {
+    option route in opening_routes(state) {
+        id = route.choice_id
+        label(id=#text.choice.opening.route) = route.label
+        value = route.target
+        enabled = route.enabled
+
+        ui {
+            disabled_reason = route.disabled_reason
+            badge = route.badge
+        }
+
+        select {
+            out route.target
+        }
+    }
+}
+```
+
+Relative choice IDs are resolved from the current flow and named scope path.
+Relative option IDs are resolved under the current choice ID.
+
+```awft
+scope dream {
+    choice .first {
+        .listen "聞いてみる" -> #flow.alice_intro
+        .silent "黙っている" -> #flow.quiet_intro
+    }
+}
+```
+
+```text
+choice .first -> #choice.opening.dream.first
+.listen       -> #choice.opening.dream.first.listen
+.silent       -> #choice.opening.dream.first.silent
 ```
 
 ---

@@ -4,6 +4,9 @@
 
 ```awft
 mod game::logic::affection
+mod crate::game::routes::opening
+mod self::routes::opening
+mod super::shared
 ```
 
 item はデフォルト private。
@@ -22,6 +25,29 @@ use game::prelude::*
 use game::logic::affection::{affection_of, has_affection_at_least}
 use game::ui::settings as settings_ui
 pub use game::types::{GameState, GameEvent}
+use crate::game::prelude::*
+use self::characters::{alice, bob}
+use super::common::{route_gate, shared_flags}
+```
+
+Module paths support Rust-like roots:
+
+```text
+crate   current package / crate root
+self    current module
+super   parent module
+parent  reserved alias for super
+```
+
+`crate`, `self`, and `super` are canonical. If `parent` is accepted by a parser,
+formatters should normalize it to `super`.
+
+Do not use `.name` relative ID syntax in module paths. `.name` is only for
+ID-bearing contexts such as dialogue line IDs and choice option IDs.
+
+```awft
+alice(id=.greeting):        # relative dialogue line ID
+use self::characters::alice # module-relative import
 ```
 
 ## lazy use
@@ -29,6 +55,7 @@ pub use game::types::{GameState, GameEvent}
 ```awft
 lazy use mini_games::truck::{truck_game, TruckResult}
 lazy use game::shaders::heavy::{crt_postprocess}
+lazy use crate::mini_games::truck::{truck_game, TruckResult}
 ```
 
 `lazy use` は export summary だけを読み、body parse/typecheck/compile/load は初回使用まで遅延する。
@@ -37,6 +64,7 @@ lazy use game::shaders::heavy::{crt_postprocess}
 
 ```awft
 eager use game::generated::route_map::{RouteMap}
+eager use self::generated::route_map::{RouteMap}
 ```
 
 import 時副作用は禁止。`eager use` は compile/cache/diagnostics の都合で使う。
@@ -79,4 +107,3 @@ extern rust mod mini_games::truck from crate "truck_game" {
     pub activity truck_game: Activity<TruckInput, TruckResult>
 }
 ```
-

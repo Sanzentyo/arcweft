@@ -7,6 +7,7 @@ This is a compact summary of the current Arcweft surface grammar. It is intentio
 ```text
 Ident        := /[A-Za-z_][A-Za-z0-9_]*/
 EntityRef    := '#' Ident ('.' Ident)* | '#<' EntityBody '>'
+RelativeId   := '.' Ident ('.' Ident)*
 String       := '"' ... '"'
 Newline      := '\n'
 Comment      := '#' TextToEndOfLine
@@ -14,13 +15,18 @@ Comment      := '#' TextToEndOfLine
 
 `#` is reserved for entity references. `@` remains available for attributes and scenario commands such as `@bg`, but `choice` is a flow item and is written without `@`.
 
+`RelativeId` is accepted only in ID-bearing contexts such as dialogue line IDs,
+choice IDs, option IDs, and text-key overrides. It is not a general entity
+reference; write `goto #flow.opening.next`, not `goto .next`.
+
 ## Module items
 
 ```text
 Source       := ModuleDecl? UseDecl* Item*
-ModuleDecl   := 'mod' Path
-UseDecl      := 'use' Path ('::' UseTree)?
+ModuleDecl   := 'mod' ModulePath
+UseDecl      := Visibility? ('lazy' | 'eager')? 'use' ModulePath ('::' UseTree)?
 Visibility   := 'pub'?
+ModulePath   := ('crate' '::' | 'self' '::' | 'super' '::' | 'parent' '::')? IdentPath
 
 Item         :=
     FlowDecl
@@ -53,8 +59,12 @@ FlowItem     :=
   | ScopeStmt
   | ExprStmt
 
+ScopeStmt       := 'scope' Ident BlockExpr
 ScenarioCommand := '@' Ident ScenarioArgs?
 ```
+
+`crate`, `self`, and `super` are canonical module-path roots. `parent` is a
+reserved alias for `super`; formatters should normalize it to `super`.
 
 ## Dialogue and line plans
 
@@ -65,8 +75,8 @@ DialogueLine :=
 
 CallArgs       := '(' NamedArg (',' NamedArg)* ','? ')'
 NamedArg       := Ident '=' Expr
-LineOption     := 'id' '=' EntityRef
-                | 'text_key' '=' EntityRef
+LineOption     := 'id' '=' (EntityRef | RelativeId)
+                | 'text_key' '=' (EntityRef | RelativeId)
                 | 'voice' '=' Expr
                 | 'window' '=' EntityRef
                 | 'args' '=' RecordExpr
@@ -86,15 +96,16 @@ OutStmt        := 'out' Expr
 ## Choice
 
 ```text
-ChoiceExpr  := 'choice' EntityRef? ChoiceBody ChoicePlan?
+ChoiceExpr  := 'choice' ChoiceId? ChoiceBody ChoicePlan?
 ChoiceBody  := '{' ChoiceItem* '}' | ':' Newline IndentedItems
 ChoiceItem  := LetStmt | IfExpr | MatchExpr | ForStmt | OptionItem | OptionForSugar | ChoiceArm
 
 OptionItem  := 'option' OptionId OptionBody
-OptionId    := EntityRef | Expr
+ChoiceId    := EntityRef | RelativeId
+OptionId    := EntityRef | RelativeId | Expr
 OptionBody  := '{' OptionField* '}' | ':' Newline IndentedItems
 OptionField := 'label' '=' Expr
-             | 'label' '(' 'id' '=' EntityRef ')' '=' Expr
+             | 'label' '(' 'id' '=' (EntityRef | RelativeId) ')' '=' Expr
              | 'value' '=' Expr
              | 'visible' '=' Expr
              | 'enabled' '=' Expr
@@ -105,7 +116,7 @@ OptionField := 'label' '=' Expr
              | LetStmt
 
 OptionForSugar := 'option' Pattern 'in' Expr OptionBody
-ChoiceArm      := EntityRef String ChoiceArmCondition? ChoiceArmAction
+ChoiceArm      := OptionId String ChoiceArmCondition? ChoiceArmAction
 ChoiceArmCondition := 'if' Expr
 ChoiceArmAction := '->' EntityRef | '=>' Expr
 
@@ -115,6 +126,16 @@ ChoicePlan := 'with' Block | 'with' ':' Newline IndentedItems
 `choice` displays a choice UI and may also be used as an expression. A choice body is a lexical scope. `option` creates an option candidate. Inline arm `if` is enabled-state sugar; wrapping an option in a block `if` controls whether the option exists. `visible = expr` controls rendering. `ui { ... }` is propagated to rendering, accessibility, test, and Agent observation.
 
 `-> target` is sugar for `select { goto target }`. `=> value` is sugar for `select { out value }`.
+
+Relative choice IDs resolve through the current flow and named scope path.
+Relative option IDs resolve under the current choice ID.
+
+```text
+scope dream { choice .first { .listen "聞いてみる" -> #flow.alice_intro } }
+
+choice .first -> #choice.opening.dream.first
+.listen       -> #choice.opening.dream.first.listen
+```
 
 ## Hooks
 

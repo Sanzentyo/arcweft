@@ -69,7 +69,8 @@ Syntax parser:
 - Top-level `state`, `reducer`, and `view` declarations are parsed as structured syntax items. State fields keep visibility, type, and default expressions; reducers/views keep signature tails, contracts, bodies, and source ranges.
 - Top-level `trait` and `impl` declarations are parsed as structured syntax items. Trait members keep associated type/function signatures; impl items keep generics, trait target, implementation target, body, and source ranges.
 - Zero-copy `borrow expr as name: Type { ... }` blocks are parsed into AST/HIR, and the checker treats their non-`'static` lifetimes as active only inside the borrow body.
-- Dialogue `#[...]` expressions, compact scenario command arguments, same-line and multiline timed-cue anchors/bodies, line-plan options, line-plan `let`/`return`, choice conditions, and `await ... with` carry parsed expressions for later type checking and HIR lowering.
+- Dialogue `#[...]` expressions, compact scenario command arguments, same-line and multiline timed-cue anchors/bodies, line-plan options, line-plan `let`/`return`, choice option fields, choice lifecycle plans, source-locale blocks, and `await ... with` carry parsed expressions for later type checking and HIR lowering.
+- Choice syntax covers static arm sugar (`->` as `goto`, `=>` as `out`), full `option` blocks, `ui { ... }` state, `select { ... }` blocks, dynamic `for` options, `option pattern in expr` sugar, `label(id=#text...)`, `value = expr`, and `with { ... }` / `with:` choice plans.
 - Flow `let`/`return`/`goto` statements now lower to structured `Stmt` and `Pattern` values instead of opaque strings.
 - Flow `if` and `match` blocks lower to structured HIR nodes, and their nested flow items participate in symbol collection and type checking.
 - Flow `for` loops and source-aware `select` blocks lower to structured HIR nodes, and their nested flow items participate in symbol collection and type-check readiness checks.
@@ -99,6 +100,8 @@ Not implemented in this milestone:
 - inference, overload resolution, traits, generics, contracts, and effect checking
 - full nested-scope borrow lifetime analysis and precise borrow end tracking
 - full semantic expression resolution and type-directed ambiguity resolution
+- choice expression result typing, lifecycle runtime execution, reactive option-state reevaluation, localization extraction, formatter/canonicalizer output, and LSP diagnostics for dynamic labels and unordered map-backed options
+- parser/lowering support for named `scope`, relative `.suffix` ID resolution, and `self`/`super`/`crate`/`parent` module-path normalization
 
 ## Verification
 
