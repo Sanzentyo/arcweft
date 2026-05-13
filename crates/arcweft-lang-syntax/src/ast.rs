@@ -493,6 +493,7 @@ pub enum Stmt {
         event: Expr,
         fields: Vec<(String, Expr)>,
     },
+    Command(ScenarioCommand),
     If {
         condition: Expr,
         body: Vec<Stmt>,

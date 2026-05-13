@@ -308,38 +308,7 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
                 collect_stmt(stmt, uses);
             }
         }
-        Stmt::LetChoice { choice, .. } => {
-            if let Some(id) = choice.id() {
-                push_entity(uses, id);
-            }
-            for option in choice.options() {
-                if let Some(id) = option.id() {
-                    push_entity(uses, id);
-                }
-                if let Some(condition) = option.condition() {
-                    collect_expr(condition, uses);
-                }
-                if let Some(value) = option.value() {
-                    collect_expr(value, uses);
-                }
-                if let Some(text_key) = option.label_text_key() {
-                    push_entity(uses, text_key);
-                }
-                match option.action() {
-                    crate::ast::ChoiceAction::Out(expr) => collect_expr(expr, uses),
-                    crate::ast::ChoiceAction::SelectBlock(statements) => {
-                        collect_stmt_block(statements, uses);
-                    }
-                    crate::ast::ChoiceAction::Goto(_) | crate::ast::ChoiceAction::None => {}
-                }
-                if let Some(target) = match option.action() {
-                    crate::ast::ChoiceAction::Goto(target) => Some(target),
-                    _ => None,
-                } {
-                    push_entity(uses, target);
-                }
-            }
-        }
+        Stmt::LetChoice { choice, .. } => collect_choice_stmt(choice, uses),
         Stmt::LetScope { scope, .. } => {
             for stmt in scope.statements() {
                 collect_stmt(stmt, uses);
@@ -361,22 +330,61 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
                 collect_expr(value, uses);
             }
         }
+        Stmt::Command(command) => {
+            for arg in command.args() {
+                collect_expr(arg, uses);
+            }
+        }
         Stmt::If { condition, body } => {
             collect_expr(condition, uses);
             collect_stmt_block(body, uses);
         }
-        Stmt::Match { expr, arms } => {
-            collect_expr(expr, uses);
-            for arm in arms {
-                collect_pattern(arm.pattern(), uses);
-                if let Some(guard) = arm.guard() {
-                    collect_expr(guard, uses);
-                }
-                collect_stmt_block(arm.body(), uses);
-            }
-        }
+        Stmt::Match { expr, arms } => collect_stmt_match(expr, arms, uses),
         Stmt::Break(None) | Stmt::Continue => {}
         Stmt::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
+    }
+}
+
+fn collect_choice_stmt(choice: &crate::ast::ChoiceBlock, uses: &mut Vec<SymbolUse>) {
+    if let Some(id) = choice.id() {
+        push_entity(uses, id);
+    }
+    for option in choice.options() {
+        if let Some(id) = option.id() {
+            push_entity(uses, id);
+        }
+        if let Some(condition) = option.condition() {
+            collect_expr(condition, uses);
+        }
+        if let Some(value) = option.value() {
+            collect_expr(value, uses);
+        }
+        if let Some(text_key) = option.label_text_key() {
+            push_entity(uses, text_key);
+        }
+        match option.action() {
+            crate::ast::ChoiceAction::Out(expr) => collect_expr(expr, uses),
+            crate::ast::ChoiceAction::SelectBlock(statements) => {
+                collect_stmt_block(statements, uses);
+            }
+            crate::ast::ChoiceAction::Goto(target) => push_entity(uses, target),
+            crate::ast::ChoiceAction::None => {}
+        }
+    }
+}
+
+fn collect_stmt_match(
+    expr: &crate::expr::Expr,
+    arms: &[crate::ast::StmtMatchArm],
+    uses: &mut Vec<SymbolUse>,
+) {
+    collect_expr(expr, uses);
+    for arm in arms {
+        collect_pattern(arm.pattern(), uses);
+        if let Some(guard) = arm.guard() {
+            collect_expr(guard, uses);
+        }
+        collect_stmt_block(arm.body(), uses);
     }
 }
 

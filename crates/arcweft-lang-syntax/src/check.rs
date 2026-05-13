@@ -111,6 +111,7 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
         active_borrows: Vec::new(),
         locals: HashMap::new(),
         loop_stack: Vec::new(),
+        line_cancel_depth: 0,
     };
     checker.check_module(module);
     if checker.errors.is_empty() {
@@ -126,6 +127,7 @@ struct TypeChecker<'a> {
     active_borrows: Vec<String>,
     locals: HashMap<String, TypeKind>,
     loop_stack: Vec<LoopContext>,
+    line_cancel_depth: usize,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -388,32 +390,12 @@ impl TypeChecker<'_> {
 
     fn check_stmt(&mut self, stmt: &Stmt) {
         match stmt {
-            Stmt::Let { pattern, expr } => {
-                let ty = self.check_expr(expr);
-                if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), ty) {
-                    self.locals.insert(name.to_owned(), ty);
-                }
-                collect_borrow_lifetimes(pattern, &mut self.active_borrows);
-            }
+            Stmt::Let { pattern, expr } => self.check_let_stmt(pattern, expr),
             Stmt::LetElse {
                 pattern,
                 expr,
                 else_body,
-            } => {
-                let expr_type = self.check_expr(expr);
-                for stmt in else_body {
-                    self.check_stmt(stmt);
-                }
-                if !stmts_diverge(else_body) {
-                    self.errors.push(TypeCheckError::new(
-                        "let-else else block must leave the current continuation".to_owned(),
-                    ));
-                }
-                for (name, ty) in let_else_bindings(pattern, expr_type.as_ref()) {
-                    self.locals.insert(name, ty);
-                }
-                collect_borrow_lifetimes(pattern, &mut self.active_borrows);
-            }
+            } => self.check_let_else_stmt(pattern, expr, else_body),
             Stmt::LetChoice { .. } => {
                 self.errors.push(TypeCheckError::new(
                     "choice expression binding must be lowered before type checking".to_owned(),
@@ -455,35 +437,68 @@ impl TypeChecker<'_> {
                     self.check_expr(value);
                 }
             }
-            Stmt::If { condition, body } => {
-                self.expect_expr_type(condition, &TypeKind::Bool, "if condition");
-                let outer_locals = self.locals.clone();
-                for stmt in body {
-                    self.check_stmt(stmt);
-                }
-                self.locals = outer_locals;
-            }
-            Stmt::Match { expr, arms } => {
-                let expr_type = self.check_expr(expr);
-                for arm in arms {
-                    let outer_locals = self.locals.clone();
-                    for (name, ty) in let_else_bindings(arm.pattern(), expr_type.as_ref()) {
-                        self.locals.insert(name, ty);
-                    }
-                    if let Some(guard) = arm.guard() {
-                        self.expect_expr_type(guard, &TypeKind::Bool, "match guard");
-                    }
-                    for stmt in arm.body() {
-                        self.check_stmt(stmt);
-                    }
-                    self.locals = outer_locals;
+            Stmt::Command(command) => {
+                for arg in command.args() {
+                    self.check_expr(arg);
                 }
             }
+            Stmt::If { condition, body } => self.check_if_stmt(condition, body),
+            Stmt::Match { expr, arms } => self.check_match_stmt(expr, arms),
             Stmt::Break(expr) => self.check_break_stmt(expr.as_ref()),
             Stmt::Continue => self.check_continue_stmt(),
             Stmt::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
                 "raw statement is not type-checkable: {raw}"
             ))),
+        }
+    }
+
+    fn check_let_stmt(&mut self, pattern: &Pattern, expr: &Expr) {
+        let ty = self.check_expr(expr);
+        if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), ty) {
+            self.locals.insert(name.to_owned(), ty);
+        }
+        collect_borrow_lifetimes(pattern, &mut self.active_borrows);
+    }
+
+    fn check_let_else_stmt(&mut self, pattern: &Pattern, expr: &Expr, else_body: &[Stmt]) {
+        let expr_type = self.check_expr(expr);
+        for stmt in else_body {
+            self.check_stmt(stmt);
+        }
+        if !stmts_diverge(else_body) {
+            self.errors.push(TypeCheckError::new(
+                "let-else else block must leave the current continuation".to_owned(),
+            ));
+        }
+        for (name, ty) in let_else_bindings(pattern, expr_type.as_ref()) {
+            self.locals.insert(name, ty);
+        }
+        collect_borrow_lifetimes(pattern, &mut self.active_borrows);
+    }
+
+    fn check_if_stmt(&mut self, condition: &Expr, body: &[Stmt]) {
+        self.expect_expr_type(condition, &TypeKind::Bool, "if condition");
+        let outer_locals = self.locals.clone();
+        for stmt in body {
+            self.check_stmt(stmt);
+        }
+        self.locals = outer_locals;
+    }
+
+    fn check_match_stmt(&mut self, expr: &Expr, arms: &[crate::ast::StmtMatchArm]) {
+        let expr_type = self.check_expr(expr);
+        for arm in arms {
+            let outer_locals = self.locals.clone();
+            for (name, ty) in let_else_bindings(arm.pattern(), expr_type.as_ref()) {
+                self.locals.insert(name, ty);
+            }
+            if let Some(guard) = arm.guard() {
+                self.expect_expr_type(guard, &TypeKind::Bool, "match guard");
+            }
+            for stmt in arm.body() {
+                self.check_stmt(stmt);
+            }
+            self.locals = outer_locals;
         }
     }
 
@@ -518,9 +533,9 @@ impl TypeChecker<'_> {
     }
 
     fn check_continue_stmt(&mut self) {
-        if self.loop_stack.is_empty() {
+        if self.loop_stack.is_empty() && self.line_cancel_depth == 0 {
             self.errors.push(TypeCheckError::new(
-                "continue is only allowed inside loop, while, or for".to_owned(),
+                "continue is only allowed inside loop, while, for, or line cancellation".to_owned(),
             ));
         }
     }
@@ -695,9 +710,11 @@ impl TypeChecker<'_> {
                 self.check_expr(body);
             }
             LinePlanItem::CancelRule(rule) => {
+                self.line_cancel_depth += 1;
                 for stmt in rule.action() {
                     self.check_stmt(stmt);
                 }
+                self.line_cancel_depth -= 1;
             }
             LinePlanItem::Assert { expr, .. } => {
                 self.expect_expr_type(expr, &TypeKind::Bool, "line-plan assertion");

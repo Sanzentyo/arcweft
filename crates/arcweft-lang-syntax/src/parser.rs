@@ -2162,7 +2162,7 @@ fn parse_word_scenario_command(trimmed: &str, range: TextRange) -> Option<Scenar
         .unwrap_or((trimmed, ""));
     if !matches!(
         name,
-        "option" | "log" | "scene" | "text" | "progress" | "meter"
+        "option" | "log" | "scene" | "text" | "progress" | "meter" | "stop" | "flush"
     ) {
         return None;
     }
@@ -3593,6 +3593,9 @@ fn parse_stmt(trimmed: &str) -> Stmt {
                 ))],
             });
         }
+    }
+    if let Some(command) = parse_word_scenario_command(trimmed, TextRange::new(0, trimmed.len())) {
+        return Stmt::Command(command);
     }
     if trimmed == "break" {
         return Stmt::Break(None);

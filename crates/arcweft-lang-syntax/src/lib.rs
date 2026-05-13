@@ -2291,6 +2291,55 @@ flow #flow.opening opening {
     }
 
     #[test]
+    fn line_plan_cancel_commands_keep_structured_arguments() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    alice[
+        聞いて。[p]
+    ]
+    with {
+        cancel on input .SkipLine {
+            stop voice fade=40ms
+            flush text instant
+            continue
+        }
+    }
+}
+",
+        )
+        .expect("line plan cancel commands parse");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::ContentCall(call) = &flow.body()[0] else {
+            panic!("expected content call");
+        };
+        let plan = call.plan().expect("line plan");
+        let LinePlanItem::CancelRule(rule) = &plan.items()[0] else {
+            panic!("expected cancel rule");
+        };
+        assert!(matches!(
+            rule.action(),
+            [Stmt::Command(stop), Stmt::Command(flush), Stmt::Continue]
+                if stop.name() == "stop" && flush.name() == "flush"
+        ));
+
+        let hir = lower_to_hir(&tree).expect("line plan cancel commands lower");
+        validate_typecheck_ready(&hir).expect("line plan cancel commands are typecheck-ready");
+        typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new()
+                .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+                .with_symbol("voice", TypeKind::Named("VoiceHandle".to_owned()))
+                .with_symbol("text", TypeKind::Named("DialogueText".to_owned()))
+                .with_symbol("instant", TypeKind::Named("FlushPolicy".to_owned())),
+        )
+        .expect("line plan cancel commands typecheck");
+    }
+
+    #[test]
     fn line_plan_assertions_keep_typed_conditions() {
         let tree = parse_source(
             r"
