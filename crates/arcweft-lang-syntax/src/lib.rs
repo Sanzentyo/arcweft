@@ -2434,6 +2434,48 @@ flow #flow.opening opening {
     }
 
     #[test]
+    fn line_plan_memo_keeps_typed_options() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    alice:
+        聞いて。[p]
+    with {
+        memo rich_text key=(line.id, locale, theme.text_hash) cache=flow
+    }
+}
+",
+        )
+        .expect("line plan memo parses");
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
+            panic!("expected speaker line");
+        };
+        let plan = line.plan().expect("line plan");
+        let [LinePlanItem::Memo { name, options }] = plan.items() else {
+            panic!("expected memo item");
+        };
+        assert_eq!(name, "rich_text");
+        assert_eq!(options.len(), 2);
+        assert!(matches!(&options[0].1, Expr::Tuple(items) if items.len() == 3));
+
+        let hir = lower_to_hir(&tree).expect("line plan memo lowers");
+        validate_typecheck_ready(&hir).expect("line plan memo is typecheck-ready");
+        typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new()
+                .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+                .with_symbol("line.id", TypeKind::Ref(EntityKind::DialogueLine))
+                .with_symbol("locale", TypeKind::String)
+                .with_symbol("theme.text_hash", TypeKind::Named("TextHash".to_owned()))
+                .with_symbol("flow", TypeKind::Named("CacheScope".to_owned())),
+        )
+        .expect("line plan memo typechecks");
+    }
+
+    #[test]
     fn parses_multiline_timed_cue_body_as_expression() {
         let tree = parse_source(
             r"

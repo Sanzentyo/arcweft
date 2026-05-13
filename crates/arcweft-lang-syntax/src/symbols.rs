@@ -404,7 +404,11 @@ fn collect_line_plan_item(item: &LinePlanItem, uses: &mut Vec<SymbolUse>) {
                 collect_line_plan_item(item, uses);
             }
         }
-        LinePlanItem::Memo(_) => {}
+        LinePlanItem::Memo { options, .. } => {
+            for (_, value) in options {
+                collect_expr(value, uses);
+            }
+        }
         LinePlanItem::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
     }
 }

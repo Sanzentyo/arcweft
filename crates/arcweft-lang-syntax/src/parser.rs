@@ -3077,7 +3077,7 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
         return LinePlanItem::TogetherGroup(parse_line_plan_nested_items(rest.trim()));
     }
     if let Some(rest) = line.strip_prefix("memo ") {
-        return LinePlanItem::Memo(rest.trim().to_owned());
+        return parse_line_plan_memo(rest.trim());
     }
     if let Some(expr) = line.strip_prefix("debug_assert ") {
         return LinePlanItem::Assert {
@@ -3101,6 +3101,22 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
         return LinePlanItem::Expr(expr);
     }
     LinePlanItem::Raw(line.to_owned())
+}
+
+fn parse_line_plan_memo(source: &str) -> LinePlanItem {
+    let mut parts = split_scenario_args(source);
+    if parts.is_empty() {
+        return LinePlanItem::Raw("memo".to_owned());
+    }
+    let name = parts.remove(0).to_owned();
+    let options = parts
+        .into_iter()
+        .filter_map(|part| {
+            split_top_level_equals(part)
+                .map(|(name, value)| (name.to_owned(), parse_expr_lossy(value)))
+        })
+        .collect();
+    LinePlanItem::Memo { name, options }
 }
 
 fn parse_line_plan_nested_items(source: &str) -> Vec<LinePlanItem> {

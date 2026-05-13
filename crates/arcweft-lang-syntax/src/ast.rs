@@ -752,15 +752,30 @@ pub enum BlockStyle {
 /// Item allowed inside a line plan.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LinePlanItem {
-    Option { name: String, value: Expr },
-    Let { pattern: Pattern, expr: Expr },
+    Option {
+        name: String,
+        value: Expr,
+    },
+    Let {
+        pattern: Pattern,
+        expr: Expr,
+    },
     Out(Expr),
     CancelRule(CancelRuleSyntax),
-    TimedCue { anchor: Expr, body: Expr },
+    TimedCue {
+        anchor: Expr,
+        body: Expr,
+    },
     StartGroup(Vec<LinePlanItem>),
     TogetherGroup(Vec<LinePlanItem>),
-    Memo(String),
-    Assert { debug: bool, expr: Expr },
+    Memo {
+        name: String,
+        options: Vec<(String, Expr)>,
+    },
+    Assert {
+        debug: bool,
+        expr: Expr,
+    },
     Expr(Expr),
     Raw(String),
 }

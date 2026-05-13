@@ -724,7 +724,11 @@ impl TypeChecker<'_> {
                     self.check_line_plan_item(item);
                 }
             }
-            LinePlanItem::Memo(_) => {}
+            LinePlanItem::Memo { options, .. } => {
+                for (_, value) in options {
+                    self.check_expr(value);
+                }
+            }
             LinePlanItem::Expr(expr) => {
                 self.check_expr(expr);
             }
