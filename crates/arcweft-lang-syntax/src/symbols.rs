@@ -376,10 +376,8 @@ fn collect_line_plan_item(item: &LinePlanItem, uses: &mut Vec<SymbolUse>) {
             collect_expr(body, uses);
         }
         LinePlanItem::CancelRule(rule) => collect_stmt_block(rule.action(), uses),
-        LinePlanItem::StartGroup(_)
-        | LinePlanItem::TogetherGroup(_)
-        | LinePlanItem::Memo(_)
-        | LinePlanItem::Assert(_) => {}
+        LinePlanItem::Assert { expr, .. } => collect_expr(expr, uses),
+        LinePlanItem::StartGroup(_) | LinePlanItem::TogetherGroup(_) | LinePlanItem::Memo(_) => {}
         LinePlanItem::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
     }
 }

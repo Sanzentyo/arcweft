@@ -743,7 +743,7 @@ pub enum LinePlanItem {
     StartGroup(String),
     TogetherGroup(String),
     Memo(String),
-    Assert(String),
+    Assert { debug: bool, expr: Expr },
     Raw(String),
 }
 

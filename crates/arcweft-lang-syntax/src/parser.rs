@@ -3071,8 +3071,17 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
     if let Some(rest) = line.strip_prefix("memo ") {
         return LinePlanItem::Memo(rest.trim().to_owned());
     }
-    if line.starts_with("assert") || line.starts_with("debug_assert") {
-        return LinePlanItem::Assert(line.to_owned());
+    if let Some(expr) = line.strip_prefix("debug_assert ") {
+        return LinePlanItem::Assert {
+            debug: true,
+            expr: parse_expr_lossy(expr.trim()),
+        };
+    }
+    if let Some(expr) = line.strip_prefix("assert ") {
+        return LinePlanItem::Assert {
+            debug: false,
+            expr: parse_expr_lossy(expr.trim()),
+        };
     }
     if let Some((name, value)) = line.split_once('=') {
         return LinePlanItem::Option {

@@ -2281,6 +2281,48 @@ flow #flow.opening opening {
     }
 
     #[test]
+    fn line_plan_assertions_keep_typed_conditions() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    alice:
+        聞いて。[p]
+    with {
+        assert textbox_ready
+        debug_assert route_count > 0
+    }
+}
+",
+        )
+        .expect("line plan assertions parse");
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
+            panic!("expected speaker line");
+        };
+        let plan = line.plan().expect("line plan");
+        assert!(matches!(
+            &plan.items()[0],
+            LinePlanItem::Assert {
+                debug: false,
+                expr: Expr::Path(path)
+            } if path == "textbox_ready"
+        ));
+
+        let hir = lower_to_hir(&tree).expect("line plan assertions lower");
+        validate_typecheck_ready(&hir).expect("line plan assertions are typecheck-ready");
+        typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new()
+                .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+                .with_symbol("textbox_ready", TypeKind::Bool)
+                .with_symbol("route_count", TypeKind::Int),
+        )
+        .expect("line plan assertions typecheck");
+    }
+
+    #[test]
     fn parses_multiline_timed_cue_body_as_expression() {
         let tree = parse_source(
             r"
