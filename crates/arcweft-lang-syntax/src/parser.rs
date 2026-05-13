@@ -1029,7 +1029,9 @@ impl Parser {
         if is_let_loop_head(trimmed) {
             return self.parse_let_loop().map(FlowItem::Stmt);
         }
-        if is_let_await_with_head(trimmed) {
+        if is_let_await_with_head(trimmed)
+            || (is_let_await_start_head(trimmed) && self.has_multiline_await_with(indent))
+        {
             return self.parse_let_await_with().map(FlowItem::Stmt);
         }
         if is_let_if_let_head(trimmed) {
@@ -1298,7 +1300,7 @@ impl Parser {
         let trimmed = start_line.text.trim();
         let range = TextRange::new(start_line.start, start_line.end);
 
-        let (head, body) = if trimmed.contains('{') {
+        let (head, body) = if has_inline_brace_await_with(trimmed) {
             let (head, body, _, ok) = self.take_brace_block();
             if !ok {
                 self.push_error(
@@ -1316,8 +1318,7 @@ impl Parser {
             let body = self.take_indented_await_body(indentation(&start_line.text) + 1);
             (trimmed.to_owned(), Some(body))
         } else {
-            self.index += 1;
-            (trimmed.to_owned(), None)
+            self.take_multiline_let_await_head(&start_line)
         };
 
         let rest = head.trim().strip_prefix("let")?.trim();
@@ -1337,6 +1338,60 @@ impl Parser {
             pattern: parse_pattern(pattern.trim()),
             await_with: parse_await_with(&await_source, range, &mut self.errors),
         })
+    }
+
+    fn take_multiline_let_await_head(
+        &mut self,
+        start_line: &SourceLine,
+    ) -> (String, Option<String>) {
+        let base_indent = indentation(&start_line.text);
+        let mut head = start_line.text.trim().to_owned();
+        self.index += 1;
+
+        while self.index < self.lines.len() {
+            let line = self.current().clone();
+            let trimmed = line.text.trim();
+            if trimmed.is_empty() {
+                self.index += 1;
+                continue;
+            }
+            if trimmed == "with:" {
+                self.index += 1;
+                let body = self.take_indented_await_body(base_indent + 1);
+                return (format!("{head} with:"), Some(body));
+            }
+            if has_standalone_brace_with(trimmed) {
+                let (with_head, body, _, ok) = self.take_brace_block();
+                if ok {
+                    return (format!("{head} {with_head}"), Some(format!("{{ {body} }}")));
+                }
+            }
+            if indentation(&line.text) > base_indent || trimmed.starts_with('.') {
+                append_await_head_continuation(&mut head, trimmed);
+                self.index += 1;
+                continue;
+            }
+            break;
+        }
+
+        (head, None)
+    }
+
+    fn has_multiline_await_with(&self, base_indent: usize) -> bool {
+        self.lines
+            .iter()
+            .skip(self.index + 1)
+            .take_while(|line| {
+                let trimmed = line.text.trim();
+                trimmed.is_empty()
+                    || indentation(&line.text) > base_indent
+                    || trimmed.starts_with('.')
+                    || trimmed.starts_with("with")
+            })
+            .any(|line| {
+                let trimmed = line.text.trim();
+                trimmed == "with:" || has_standalone_brace_with(trimmed)
+            })
     }
 
     fn parse_let_if(&mut self) -> Option<Stmt> {
@@ -3816,6 +3871,34 @@ fn is_let_await_with_head(trimmed: &str) -> bool {
         return false;
     };
     is_await_with_head(value.trim())
+}
+
+fn is_let_await_start_head(trimmed: &str) -> bool {
+    let Some(rest) = trimmed.strip_prefix("let ") else {
+        return false;
+    };
+    let Some((_, value)) = rest.split_once('=') else {
+        return false;
+    };
+    let value = value.trim();
+    value.starts_with("await ") || value.starts_with("try await ") || value.starts_with("await? ")
+}
+
+fn has_inline_brace_await_with(trimmed: &str) -> bool {
+    (trimmed.contains(" with {") || trimmed.contains(" with{")) && trimmed.contains('{')
+}
+
+fn has_standalone_brace_with(trimmed: &str) -> bool {
+    trimmed.starts_with("with {") || trimmed.starts_with("with{")
+}
+
+fn append_await_head_continuation(head: &mut String, continuation: &str) {
+    if continuation.starts_with('.') {
+        head.push_str(continuation);
+    } else {
+        head.push(' ');
+        head.push_str(continuation);
+    }
 }
 
 fn parse_await_with(trimmed: &str, range: TextRange, errors: &mut Vec<ParseError>) -> AwaitWith {

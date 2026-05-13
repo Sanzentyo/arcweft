@@ -3359,6 +3359,70 @@ flow #flow.loading loading {
     }
 
     #[test]
+    fn let_try_await_with_accepts_multiline_context_before_with() {
+        let tree = parse_source(
+            r#"
+flow #flow.loading loading {
+    let bg = try await asset.image(#asset.bg.room)
+        .context("opening background failed")
+    with:
+        pending p:
+            p.ratio
+    let display = bg.id
+}
+"#,
+        )
+        .expect("multiline contextual try-await parses");
+
+        let hir = lower_to_hir(&tree).expect("multiline contextual try-await lowers");
+        assert!(matches!(
+            &hir.flows()[0].body()[0],
+            HirFlowItem::LetAwait { await_with, .. }
+                if matches!(await_with.expr(), Expr::MethodCall { method, .. } if method == "context")
+        ));
+        validate_typecheck_ready(&hir).expect("multiline contextual try-await is typecheck-ready");
+
+        let need_type = TypeKind::Need {
+            ready: Box::new(TypeKind::Named("Image".to_owned())),
+            error: Box::new(TypeKind::Named("AssetError".to_owned())),
+        };
+        let env = TypeCheckEnv::new()
+            .with_symbol("asset", TypeKind::Named("AssetApi".to_owned()))
+            .with_method(
+                TypeKind::Named("AssetApi".to_owned()),
+                "image",
+                need_type.clone(),
+            )
+            .with_method(need_type.clone(), "context", need_type);
+        typecheck_hir(&hir, &env).expect("context-preserved try-await typechecks");
+    }
+
+    #[test]
+    fn let_try_await_without_wait_view_stays_expression_await() {
+        let tree = parse_source(
+            r"
+flow #flow.loading loading {
+    let bg = try await load_bg()
+}
+",
+        )
+        .expect("plain try-await binding parses");
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        assert!(matches!(
+            &flow.body()[0],
+            FlowItem::Stmt(Stmt::Let {
+                expr: Expr::Await {
+                    applies_try: true,
+                    ..
+                },
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn await_question_with_is_rejected_as_ambiguous() {
         let errors = parse_source(
             r"
