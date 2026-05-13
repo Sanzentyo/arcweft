@@ -5,6 +5,7 @@ use crate::ast::{
 };
 use crate::expr::Expr;
 use core::fmt;
+use std::collections::HashMap;
 
 /// HIR-facing module produced from parsed surface syntax.
 ///
@@ -95,6 +96,7 @@ struct LowerContext {
     flow_slug: Option<String>,
     scopes: Vec<String>,
     choice_stack: Vec<String>,
+    line_counters: HashMap<String, usize>,
 }
 
 /// HIR-facing if block.
@@ -249,24 +251,7 @@ fn lower_flow_item_with_context(
             args: command.args().to_vec(),
         }),
         FlowItem::SpeakerLine(line) => Ok(HirFlowItem::Dialogue(lower_speaker_line(line, context))),
-        FlowItem::ContentCall(call) => Ok(HirFlowItem::Dialogue(HirDialogue {
-            callee: call.callee().to_owned(),
-            args: call.args().map(str::to_owned),
-            id: normalize_line_id(
-                call.options().id(),
-                content_callee_slug(call.callee()),
-                context,
-            ),
-            text_key: normalize_line_text_key(
-                call.options().text_key(),
-                call.options().id(),
-                content_callee_slug(call.callee()),
-                context,
-            ),
-            source_locale: call.options().source_locale().map(str::to_owned),
-            content: call.content().clone(),
-            plan: call.plan().cloned(),
-        })),
+        FlowItem::ContentCall(call) => Ok(HirFlowItem::Dialogue(lower_content_call(call, context))),
         FlowItem::Choice(choice) => Ok(HirFlowItem::Choice(lower_choice(choice, context))),
         FlowItem::If(block) => lower_if(block, context).map(HirFlowItem::If),
         FlowItem::Match(block) => lower_match(block, context).map(HirFlowItem::Match),
@@ -390,20 +375,31 @@ fn lower_match(block: &MatchBlock, context: &mut LowerContext) -> Result<HirMatc
     })
 }
 
-fn lower_speaker_line(line: &SpeakerLine, context: &LowerContext) -> HirDialogue {
+fn lower_speaker_line(line: &SpeakerLine, context: &mut LowerContext) -> HirDialogue {
+    let speaker = speaker_slug(line.speaker());
+    let id = normalize_line_id(line.options().id(), speaker.clone(), context, *line.range());
     HirDialogue {
         callee: line.speaker().to_owned(),
         args: line.args().map(str::to_owned),
-        id: normalize_line_id(line.options().id(), speaker_slug(line.speaker()), context),
-        text_key: normalize_line_text_key(
-            line.options().text_key(),
-            line.options().id(),
-            speaker_slug(line.speaker()),
-            context,
-        ),
+        text_key: normalize_line_text_key(line.options().text_key(), id.as_ref(), speaker, context),
+        id,
         source_locale: line.options().source_locale().map(str::to_owned),
         content: line.content().clone(),
         plan: line.plan().cloned(),
+    }
+}
+
+fn lower_content_call(call: &crate::ast::ContentCall, context: &mut LowerContext) -> HirDialogue {
+    let speaker = content_callee_slug(call.callee());
+    let id = normalize_line_id(call.options().id(), speaker.clone(), context, *call.range());
+    HirDialogue {
+        callee: call.callee().to_owned(),
+        args: call.args().map(str::to_owned),
+        text_key: normalize_line_text_key(call.options().text_key(), id.as_ref(), speaker, context),
+        id,
+        source_locale: call.options().source_locale().map(str::to_owned),
+        content: call.content().clone(),
+        plan: call.plan().cloned(),
     }
 }
 
@@ -510,20 +506,19 @@ fn normalize_text_key_id(id: &EntityRef, context: &LowerContext) -> EntityRef {
 fn normalize_line_id(
     id: Option<&EntityRef>,
     speaker: String,
-    context: &LowerContext,
+    context: &mut LowerContext,
+    range: TextRange,
 ) -> Option<EntityRef> {
-    id.map(|id| {
-        if !id.is_relative() {
-            return id.clone();
-        }
-        let Some(flow_slug) = &context.flow_slug else {
-            return id.clone();
-        };
-        let mut parts = vec!["say".to_owned(), flow_slug.clone(), speaker];
-        parts.extend(context.scopes.iter().cloned());
-        parts.push(id.body().to_owned());
-        EntityRef::new(parts.join("."), false, *id.range())
-    })
+    match id {
+        Some(id) if !id.is_relative() => Some(id.clone()),
+        Some(id) => Some(build_line_entity_ref(
+            speaker,
+            Some(id.body()),
+            context,
+            *id.range(),
+        )?),
+        None => Some(build_line_entity_ref(speaker, None, context, range)?),
+    }
 }
 
 fn normalize_line_text_key(
@@ -544,8 +539,28 @@ fn normalize_line_text_key(
         parts.push(text_key.body().to_owned());
         return Some(EntityRef::new(parts.join("."), false, *text_key.range()));
     }
-    normalize_line_id(line_id, speaker, context)
-        .map(|id| EntityRef::new(line_id_to_text_key(id.body()), false, *id.range()))
+    line_id.map(|id| EntityRef::new(line_id_to_text_key(id.body()), false, *id.range()))
+}
+
+fn build_line_entity_ref(
+    speaker: String,
+    explicit_suffix: Option<&str>,
+    context: &mut LowerContext,
+    range: TextRange,
+) -> Option<EntityRef> {
+    let flow_slug = context.flow_slug.as_ref()?;
+    let mut parts = vec!["say".to_owned(), flow_slug.clone(), speaker];
+    parts.extend(context.scopes.iter().cloned());
+    let prefix = parts.join(".");
+    let suffix = explicit_suffix.map_or_else(
+        || {
+            let next = context.line_counters.entry(prefix.clone()).or_insert(0);
+            *next += 1;
+            format!("{next:03}")
+        },
+        str::to_owned,
+    );
+    Some(EntityRef::new(format!("{prefix}.{suffix}"), false, range))
 }
 
 fn line_id_to_text_key(line_id: &str) -> String {

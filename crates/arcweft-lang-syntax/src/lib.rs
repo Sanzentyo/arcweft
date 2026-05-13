@@ -643,6 +643,9 @@ flow #flow.opening opening {
 
         alice(id=.comment, text_key=.comment_text, source_locale=en-US):
             Good morning.[p]
+
+        地の文:
+            窓が小さく鳴った。[p]
     }
 }
 ",
@@ -676,6 +679,18 @@ flow #flow.opening opening {
             "text.opening.alice.rain.comment_text"
         );
         assert_eq!(alice.source_locale(), Some("en-US"));
+
+        let HirFlowItem::Dialogue(generated) = &scope.body()[2] else {
+            panic!("expected generated-id narration");
+        };
+        assert_eq!(
+            generated.id().expect("generated line id").body(),
+            "say.opening.narrator.rain.001"
+        );
+        assert_eq!(
+            generated.text_key().expect("generated text key").body(),
+            "text.opening.narrator.rain.001"
+        );
 
         let registry = registry_from_hir(&hir);
         validate_hir_references(&hir, &registry).expect("dialogue ids resolve");
