@@ -3986,6 +3986,7 @@ fn is_typed_stmt(trimmed: &str) -> bool {
             "let"
                 | "match"
                 | "if"
+                | "for"
                 | "return"
                 | "out"
                 | "goto"
@@ -4032,8 +4033,9 @@ fn is_let_computation_block_head(trimmed: &str) -> bool {
     let Some(rest) = trimmed.strip_prefix("let ") else {
         return false;
     };
-    rest.split_once('=')
-        .is_some_and(|(_, expr)| matches!(expr.trim(), "result {" | "task {" | "seq {"))
+    rest.split_once('=').is_some_and(|(_, expr)| {
+        matches!(expr.trim(), "result {" | "task {" | "seq {" | "stream {")
+    })
 }
 
 fn is_let_memo_block_head(trimmed: &str) -> bool {
@@ -4066,6 +4068,7 @@ fn parse_computation_block_kind(source: &str) -> Option<ComputationBlockKind> {
         "result" => Some(ComputationBlockKind::Result),
         "task" => Some(ComputationBlockKind::Task),
         "seq" => Some(ComputationBlockKind::Seq),
+        "stream" => Some(ComputationBlockKind::Stream),
         _ => None,
     }
 }

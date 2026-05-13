@@ -167,12 +167,13 @@ pub enum UnaryOp {
     Not,
 }
 
-/// Named computation block syntax such as `result { ... }`, `task { ... }`, or `seq { ... }`.
+/// Named computation block syntax such as `result { ... }`, `task { ... }`, `seq { ... }`, or `stream { ... }`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ComputationBlockKind {
     Result,
     Task,
     Seq,
+    Stream,
 }
 
 /// Expression parse error.

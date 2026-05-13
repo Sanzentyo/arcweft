@@ -1270,6 +1270,53 @@ flow #flow.compute compute {
     }
 
     #[test]
+    fn parses_and_typechecks_stream_computation_block_binding() {
+        let tree = parse_source(
+            r"
+flow #flow.stream stream_example {
+    let levels = stream {
+        for frame in frames {
+            yield rms(frame)
+        }
+    }
+    goto #flow.title
+}
+
+flow #flow.title title {}
+",
+        )
+        .expect("stream computation block fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::Stmt(Stmt::Let {
+            expr:
+                Expr::ComputationBlock {
+                    kind,
+                    statements,
+                    value: None,
+                },
+            ..
+        }) = &flow.body()[0]
+        else {
+            panic!("expected stream computation block binding");
+        };
+        assert_eq!(kind, &ComputationBlockKind::Stream);
+        assert_eq!(statements.len(), 1);
+
+        let hir = lower_to_hir(&tree).expect("stream computation block fixture lowers");
+        validate_typecheck_ready(&hir).expect("stream computation block is typecheck-ready");
+        typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new()
+                .with_symbol("frames", TypeKind::Named("Stream".to_owned()))
+                .with_function("rms", TypeKind::Int),
+        )
+        .expect("stream computation block typechecks");
+    }
+
+    #[test]
     fn parses_and_typechecks_memo_expression_block_binding() {
         let tree = parse_source(
             r"
