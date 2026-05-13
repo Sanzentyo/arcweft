@@ -1094,7 +1094,11 @@ flow #flow.title title {
 
     #[test]
     fn typechecks_let_else_panic_and_fail_as_diverging() {
-        for diverging in [r#"panic "missing route""#, "fail .MissingRoute"] {
+        for diverging in [
+            r#"panic "missing route""#,
+            "fail .MissingRoute",
+            r#"bail "missing route""#,
+        ] {
             let source = format!(
                 r"
 flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {{
@@ -1116,6 +1120,60 @@ flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {{
                 .with_symbol(".MissingRoute", TypeKind::Named("ErrorKind".to_owned()));
             typecheck_hir(&hir, &env).expect("panic/fail let-else branches diverge");
         }
+    }
+
+    #[test]
+    fn parses_and_typechecks_bail_and_ensure_statements() {
+        let tree = parse_source(
+            r#"
+flow #flow.validate validate {
+    ensure score >= 0, "score must be non-negative"
+    if !valid {
+        bail "invalid score"
+    }
+    goto #flow.title
+}
+"#,
+        )
+        .expect("bail and ensure fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        assert!(matches!(
+            &flow.body()[0],
+            FlowItem::Stmt(Stmt::Ensure { .. })
+        ));
+        let hir = lower_to_hir(&tree).expect("bail and ensure fixture lowers");
+        validate_typecheck_ready(&hir).expect("bail and ensure are typecheck-ready");
+        let env = TypeCheckEnv::new()
+            .with_symbol("score", TypeKind::Int)
+            .with_symbol("valid", TypeKind::Bool);
+        typecheck_hir(&hir, &env).expect("bail and ensure typecheck");
+    }
+
+    #[test]
+    fn typecheck_rejects_non_bool_ensure_condition() {
+        let tree = parse_source(
+            r#"
+flow #flow.validate validate {
+    ensure score, "score must be non-negative"
+}
+"#,
+        )
+        .expect("non-bool ensure fixture parses");
+        let hir = lower_to_hir(&tree).expect("non-bool ensure fixture lowers");
+        let errors = typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new().with_symbol("score", TypeKind::Int),
+        )
+        .expect_err("non-bool ensure condition is rejected");
+
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message().contains("ensure condition"))
+        );
     }
 
     #[test]

@@ -417,8 +417,13 @@ impl TypeChecker<'_> {
             | Stmt::Expr(expr)
             | Stmt::Panic(expr)
             | Stmt::Fail(expr)
+            | Stmt::Bail(expr)
             | Stmt::Select(expr) => {
                 self.check_expr(expr);
+            }
+            Stmt::Ensure { condition, message } => {
+                self.expect_expr_type(condition, &TypeKind::Bool, "ensure condition");
+                self.check_expr(message);
             }
             Stmt::Goto(expr) => {
                 self.expect_expr_type(expr, &TypeKind::Ref(EntityKind::Flow), "goto destination");
@@ -1274,7 +1279,8 @@ fn stmt_diverges(stmt: &Stmt) -> bool {
         | Stmt::Break(_)
         | Stmt::Continue
         | Stmt::Panic(_)
-        | Stmt::Fail(_) => true,
+        | Stmt::Fail(_)
+        | Stmt::Bail(_) => true,
         Stmt::Raw(raw) => {
             raw.starts_with("break") || raw.starts_with("panic ") || raw.starts_with("fail ")
         }

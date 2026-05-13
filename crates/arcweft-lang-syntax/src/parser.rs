@@ -10,7 +10,7 @@ use crate::ast::{
     StateItem, Stmt, StmtMatchArm, StructField, StructItem, SyntaxTree, TextRange, TraitItem,
     TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
-use crate::expr::parse_expr;
+use crate::expr::{Expr, parse_expr};
 use crate::text::parse_dialogue_tokens;
 use crate::types::{parse_fn_signature, parse_type_ref};
 use arcweft_source::{SourceAnchor, SourceName};
@@ -3432,6 +3432,8 @@ fn is_typed_stmt(trimmed: &str) -> bool {
                 | "yield"
                 | "panic"
                 | "fail"
+                | "bail"
+                | "ensure"
                 | "signal"
                 | "close"
                 | "break"
@@ -3574,29 +3576,17 @@ fn parse_stmt(trimmed: &str) -> Stmt {
         }
         return Stmt::Raw(trimmed.to_owned());
     }
-    if let Some(expr) = trimmed.strip_prefix("return ") {
-        return Stmt::Return(parse_expr_lossy(expr.trim()));
+    if let Some(stmt) = parse_control_transfer_stmt(trimmed) {
+        return stmt;
     }
-    if let Some(expr) = trimmed.strip_prefix("out ") {
-        return Stmt::Out(parse_expr_lossy(expr.trim()));
-    }
-    if let Some(expr) = trimmed.strip_prefix("goto ") {
-        return Stmt::Goto(parse_expr_lossy(expr.trim()));
-    }
-    if let Some(expr) = trimmed.strip_prefix("spawn ") {
-        return Stmt::Spawn(parse_expr_lossy(expr.trim()));
-    }
-    if let Some(expr) = trimmed.strip_prefix("defer ") {
-        return Stmt::Defer(parse_expr_lossy(expr.trim()));
-    }
-    if let Some(expr) = trimmed.strip_prefix("yield ") {
-        return Stmt::Yield(parse_expr_lossy(expr.trim()));
-    }
-    if let Some(expr) = trimmed.strip_prefix("panic ") {
-        return Stmt::Panic(parse_expr_lossy(expr.trim()));
-    }
-    if let Some(expr) = trimmed.strip_prefix("fail ") {
-        return Stmt::Fail(parse_expr_lossy(expr.trim()));
+    if let Some(rest) = trimmed.strip_prefix("ensure ") {
+        if let Some((condition, message)) = rest.split_once(',') {
+            return Stmt::Ensure {
+                condition: parse_expr_lossy(condition.trim()),
+                message: parse_expr_lossy(message.trim()),
+            };
+        }
+        return Stmt::Raw(trimmed.to_owned());
     }
     if let Some(rest) = trimmed.strip_prefix("signal ") {
         if let Some((target, value)) = rest.split_once("<-") {
@@ -3624,12 +3614,6 @@ fn parse_stmt(trimmed: &str) -> Stmt {
             };
         }
     }
-    if let Some(expr) = trimmed.strip_prefix("close ") {
-        return Stmt::Close(parse_expr_lossy(expr.trim()));
-    }
-    if let Some(expr) = trimmed.strip_prefix("select ") {
-        return Stmt::Select(parse_expr_lossy(expr.trim()));
-    }
     if let Some(rest) = trimmed.strip_prefix("log ") {
         if let Some((level, args)) = rest.trim().split_once(' ') {
             let message = args
@@ -3650,19 +3634,45 @@ fn parse_stmt(trimmed: &str) -> Stmt {
     if let Some(command) = parse_word_scenario_command(trimmed, TextRange::new(0, trimmed.len())) {
         return Stmt::Command(command);
     }
-    if trimmed == "break" {
-        return Stmt::Break(None);
-    }
-    if let Some(expr) = trimmed.strip_prefix("break ") {
-        return Stmt::Break(Some(parse_expr_lossy(expr.trim())));
-    }
-    if trimmed == "continue" {
-        return Stmt::Continue;
-    }
     if matches!(trimmed.split_whitespace().next(), Some("match" | "if")) {
         return Stmt::Raw(trimmed.to_owned());
     }
     Stmt::Expr(parse_expr_lossy(trimmed))
+}
+
+fn parse_control_transfer_stmt(trimmed: &str) -> Option<Stmt> {
+    if trimmed == "break" {
+        return Some(Stmt::Break(None));
+    }
+    if trimmed == "continue" {
+        return Some(Stmt::Continue);
+    }
+    [
+        ("return ", Stmt::Return as fn(Expr) -> Stmt),
+        ("out ", Stmt::Out),
+        ("goto ", Stmt::Goto),
+        ("spawn ", Stmt::Spawn),
+        ("defer ", Stmt::Defer),
+        ("yield ", Stmt::Yield),
+        ("panic ", Stmt::Panic),
+        ("fail ", Stmt::Fail),
+        ("bail ", Stmt::Bail),
+        ("close ", Stmt::Close),
+        ("select ", Stmt::Select),
+        ("break ", build_break_stmt),
+    ]
+    .into_iter()
+    .find_map(|(prefix, build)| {
+        trimmed
+            .strip_prefix(prefix)
+            .map(str::trim)
+            .map(parse_expr_lossy)
+            .map(build)
+    })
+}
+
+fn build_break_stmt(expr: Expr) -> Stmt {
+    Stmt::Break(Some(expr))
 }
 
 fn parse_stmt_match_arms(body: &str) -> Vec<StmtMatchArm> {

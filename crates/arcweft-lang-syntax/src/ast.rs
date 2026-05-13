@@ -485,6 +485,13 @@ pub enum Stmt {
     Yield(Expr),
     Panic(Expr),
     Fail(Expr),
+    /// `bail expr` constructs and returns an error from the current continuation.
+    Bail(Expr),
+    /// `ensure cond, msg` checks a recoverable invariant and bails on failure.
+    Ensure {
+        condition: Expr,
+        message: Expr,
+    },
     Signal {
         target: Expr,
         value: Expr,
