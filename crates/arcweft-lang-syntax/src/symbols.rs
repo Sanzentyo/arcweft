@@ -196,6 +196,35 @@ fn collect_choice(choice: &crate::lower::HirChoice, uses: &mut Vec<SymbolUse>) {
             collect_expr(expr, uses);
         }
     }
+    if let Some(plan) = choice.plan() {
+        for item in plan.items() {
+            collect_choice_plan_item(item, uses);
+        }
+    }
+}
+
+fn collect_choice_plan_item(item: &crate::ast::ChoicePlanItem, uses: &mut Vec<SymbolUse>) {
+    match item {
+        crate::ast::ChoicePlanItem::Option { value, .. } => collect_expr(value, uses),
+        crate::ast::ChoicePlanItem::Timeout { duration, body } => {
+            collect_expr(duration, uses);
+            collect_stmt_block(body, uses);
+        }
+        crate::ast::ChoicePlanItem::Cancel { body, .. } => collect_stmt_block(body, uses),
+        crate::ast::ChoicePlanItem::OnSelect { pattern, body } => {
+            collect_pattern(pattern, uses);
+            collect_stmt_block(body, uses);
+        }
+        crate::ast::ChoicePlanItem::Raw(raw) => {
+            uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone()));
+        }
+    }
+}
+
+fn collect_stmt_block(statements: &[Stmt], uses: &mut Vec<SymbolUse>) {
+    for stmt in statements {
+        collect_stmt(stmt, uses);
+    }
 }
 
 fn collect_match_block(block: &crate::lower::HirMatch, uses: &mut Vec<SymbolUse>) {
@@ -317,7 +346,7 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
                 format!("loop expression with {} body items", block.body().len()),
             ));
         }
-        Stmt::Break(Some(expr)) => collect_expr(expr, uses),
+        Stmt::Break(Some(expr)) | Stmt::Select(expr) => collect_expr(expr, uses),
         Stmt::Break(None) | Stmt::Continue => {}
         Stmt::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
     }

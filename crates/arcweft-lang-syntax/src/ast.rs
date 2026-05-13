@@ -482,6 +482,7 @@ pub enum Stmt {
         value: Expr,
     },
     Close(Expr),
+    Select(Expr),
     Break(Option<Expr>),
     Continue,
     Expr(Expr),
@@ -653,9 +654,9 @@ pub struct ChoicePlan {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ChoicePlanItem {
     Option { name: String, value: Expr },
-    Timeout { duration: Expr, body: String },
-    Cancel { trigger: String, body: String },
-    OnSelect { pattern: Pattern, body: String },
+    Timeout { duration: Expr, body: Vec<Stmt> },
+    Cancel { trigger: String, body: Vec<Stmt> },
+    OnSelect { pattern: Pattern, body: Vec<Stmt> },
     Raw(String),
 }
 

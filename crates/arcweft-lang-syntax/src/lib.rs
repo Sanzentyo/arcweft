@@ -536,11 +536,52 @@ with {
         assert!(matches!(&plan.items()[3], ChoicePlanItem::Timeout { .. }));
         assert!(matches!(&plan.items()[4], ChoicePlanItem::Cancel { .. }));
         assert!(matches!(&plan.items()[5], ChoicePlanItem::OnSelect { .. }));
+        assert!(matches!(
+            &plan.items()[3],
+            ChoicePlanItem::Timeout { body, .. }
+                if matches!(body.first(), Some(Stmt::Select(Expr::EntityRef(_))))
+        ));
+        assert!(matches!(
+            &plan.items()[4],
+            ChoicePlanItem::Cancel { body, .. }
+                if matches!(body.first(), Some(Stmt::Return(Expr::Call { .. })))
+        ));
+        assert!(matches!(
+            &plan.items()[5],
+            ChoicePlanItem::OnSelect { body, .. }
+                if matches!(body.first(), Some(Stmt::Expr(Expr::Call { .. })))
+        ));
         assert!(matches!(&choice.items()[0], ChoiceItem::For { .. }));
         let option = &choice.options()[0];
         assert!(option.label_text_key().is_some());
         assert!(option.value().is_some());
         assert!(matches!(option.action(), ChoiceAction::Out(_)));
+    }
+
+    #[test]
+    fn typechecks_choice_plan_structured_bodies() {
+        let tree = parse_source(
+            r#"
+flow #flow.opening opening {
+    choice #choice.opening.first {
+        #choice.opening.listen "聞いてみる" -> #flow.alice_intro
+    }
+    with {
+        timeout 10s { select #choice.opening.listen }
+        cancel on input .BackToTitle { return Ok(FlowExit::Goto(#flow.title)) }
+        on select selected { log info "selected {id:?}" { id = selected.id } }
+    }
+}
+"#,
+        )
+        .expect("choice plan parses");
+        let hir = lower_to_hir(&tree).expect("choice plan lowers");
+        validate_typecheck_ready(&hir).expect("choice plan bodies have structured expressions");
+        let env = TypeCheckEnv::new()
+            .with_function("Ok", TypeKind::Named("Result".to_owned()))
+            .with_function("FlowExit::Goto", TypeKind::Named("FlowExit".to_owned()))
+            .with_function("log.info", TypeKind::Unit);
+        typecheck_hir(&hir, &env).expect("choice plan bodies typecheck");
     }
 
     #[test]

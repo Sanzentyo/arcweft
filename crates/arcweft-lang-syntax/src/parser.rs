@@ -2586,19 +2586,19 @@ fn parse_choice_plan_items(body: &str) -> Vec<ChoicePlanItem> {
                 if let Some(duration) = head.strip_prefix("timeout ") {
                     return ChoicePlanItem::Timeout {
                         duration: parse_expr_lossy(duration.trim()),
-                        body: block_body.trim().to_owned(),
+                        body: parse_stmt_lines(block_body.trim()),
                     };
                 }
                 if let Some(trigger) = head.strip_prefix("cancel on ") {
                     return ChoicePlanItem::Cancel {
                         trigger: trigger.trim().to_owned(),
-                        body: block_body.trim().to_owned(),
+                        body: parse_stmt_lines(block_body.trim()),
                     };
                 }
                 if let Some(pattern) = head.strip_prefix("on select ") {
                     return ChoicePlanItem::OnSelect {
                         pattern: parse_pattern(pattern.trim()),
-                        body: block_body.trim().to_owned(),
+                        body: parse_stmt_lines(block_body.trim()),
                     };
                 }
             }
@@ -3526,6 +3526,26 @@ fn parse_stmt(trimmed: &str) -> Stmt {
     }
     if let Some(expr) = trimmed.strip_prefix("close ") {
         return Stmt::Close(parse_expr_lossy(expr.trim()));
+    }
+    if let Some(expr) = trimmed.strip_prefix("select ") {
+        return Stmt::Select(parse_expr_lossy(expr.trim()));
+    }
+    if let Some(rest) = trimmed.strip_prefix("log ") {
+        if let Some((level, args)) = rest.trim().split_once(' ') {
+            let message = args
+                .find('"')
+                .and_then(|start| args[start + 1..].find('"').map(|end| (start, end)))
+                .map_or_else(
+                    || args.trim().to_owned(),
+                    |(start, end)| args[start + 1..start + 1 + end].to_owned(),
+                );
+            return Stmt::Expr(crate::expr::Expr::Call {
+                callee: Box::new(crate::expr::Expr::Path(format!("log.{level}"))),
+                args: vec![crate::expr::Expr::Literal(crate::expr::Literal::String(
+                    message,
+                ))],
+            });
+        }
     }
     if trimmed == "break" {
         return Stmt::Break(None);

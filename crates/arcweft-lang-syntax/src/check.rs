@@ -434,7 +434,8 @@ impl TypeChecker<'_> {
             | Stmt::Close(expr)
             | Stmt::Expr(expr)
             | Stmt::Panic(expr)
-            | Stmt::Fail(expr) => {
+            | Stmt::Fail(expr)
+            | Stmt::Select(expr) => {
                 self.check_expr(expr);
             }
             Stmt::Goto(expr) => {
@@ -511,6 +512,44 @@ impl TypeChecker<'_> {
             if let crate::ast::ChoiceAction::Out(expr) = option.action() {
                 self.check_expr(expr);
             }
+        }
+        if let Some(plan) = choice.plan() {
+            for item in plan.items() {
+                self.check_choice_plan_item(item);
+            }
+        }
+    }
+
+    fn check_choice_plan_item(&mut self, item: &crate::ast::ChoicePlanItem) {
+        match item {
+            crate::ast::ChoicePlanItem::Option { value, .. } => {
+                self.check_expr(value);
+            }
+            crate::ast::ChoicePlanItem::Timeout { duration, body } => {
+                self.expect_expr_type(duration, &TypeKind::Duration, "choice timeout duration");
+                for stmt in body {
+                    self.check_stmt(stmt);
+                }
+            }
+            crate::ast::ChoicePlanItem::Cancel { body, .. } => {
+                for stmt in body {
+                    self.check_stmt(stmt);
+                }
+            }
+            crate::ast::ChoicePlanItem::OnSelect { pattern, body } => {
+                let outer_locals = self.locals.clone();
+                if let Some(name) = ident_pattern_name(pattern) {
+                    self.locals
+                        .insert(name.to_owned(), TypeKind::Ref(EntityKind::ChoiceOption));
+                }
+                for stmt in body {
+                    self.check_stmt(stmt);
+                }
+                self.locals = outer_locals;
+            }
+            crate::ast::ChoicePlanItem::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
+                "raw choice-plan item is not type-checkable: {raw}"
+            ))),
         }
     }
 
