@@ -83,6 +83,11 @@ fn register_flow_item(item: &HirFlowItem, registry: &mut NameRegistry) {
                 }
             }
         }
+        HirFlowItem::Loop(block) | HirFlowItem::LetLoop { block, .. } => {
+            for item in block.body() {
+                register_flow_item(item, registry);
+            }
+        }
         HirFlowItem::While(block) => {
             for item in block.body() {
                 register_flow_item(item, registry);

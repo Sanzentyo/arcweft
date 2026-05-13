@@ -283,6 +283,7 @@ pub enum FlowItem {
     Choice(ChoiceBlock),
     If(IfBlock),
     Match(MatchBlock),
+    Loop(LoopBlock),
     While(WhileBlock),
     WhileLet(WhileLetBlock),
     For(ForBlock),
@@ -341,6 +342,13 @@ pub struct MatchBlock {
 pub struct MatchArm {
     pattern: Pattern,
     body: Vec<FlowItem>,
+}
+
+/// `loop { ... }` value-capable loop block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LoopBlock {
+    body: Vec<FlowItem>,
+    range: TextRange,
 }
 
 /// `for pattern in expr { ... }` sequence loop.
@@ -429,6 +437,11 @@ pub enum Stmt {
         pattern: Pattern,
         scope: ScopeExprBlock,
     },
+    /// `let PAT = loop { ... }` loop expression binding.
+    LetLoop {
+        pattern: Pattern,
+        block: LoopBlock,
+    },
     Return(Expr),
     Out(Expr),
     Goto(Expr),
@@ -440,6 +453,7 @@ pub enum Stmt {
         value: Expr,
     },
     Close(Expr),
+    Break(Option<Expr>),
     Continue,
     Expr(Expr),
     Raw(String),
@@ -1360,6 +1374,20 @@ impl MatchArm {
 
     pub fn body(&self) -> &[FlowItem] {
         &self.body
+    }
+}
+
+impl LoopBlock {
+    pub(crate) const fn new(body: Vec<FlowItem>, range: TextRange) -> Self {
+        Self { body, range }
+    }
+
+    pub fn body(&self) -> &[FlowItem] {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
     }
 }
 

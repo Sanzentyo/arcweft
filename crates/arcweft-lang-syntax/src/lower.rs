@@ -1,8 +1,8 @@
 use crate::ast::{
     AwaitBranchKind, BorrowBlock, ChoiceAction, ChoiceBlock, ChoicePlan, ContractClause,
-    DialogueContent, EntityRef, Flow, FlowItem, FlowKind, IfBlock, Item, LinePlan, MatchBlock,
-    Pattern, ScopeBlock, ScopeExprBlock, SourceLocaleBlock, SpeakerLine, Stmt, SyntaxTree,
-    TextRange, WhileBlock, WhileLetBlock,
+    DialogueContent, EntityRef, Flow, FlowItem, FlowKind, IfBlock, Item, LinePlan, LoopBlock,
+    MatchBlock, Pattern, ScopeBlock, ScopeExprBlock, SourceLocaleBlock, SpeakerLine, Stmt,
+    SyntaxTree, TextRange, WhileBlock, WhileLetBlock,
 };
 use crate::expr::Expr;
 use core::fmt;
@@ -43,8 +43,13 @@ pub enum HirFlowItem {
         pattern: Pattern,
         scope: HirScopeExpr,
     },
+    LetLoop {
+        pattern: Pattern,
+        block: HirLoop,
+    },
     If(HirIf),
     Match(HirMatch),
+    Loop(HirLoop),
     While(HirWhile),
     WhileLet(HirWhileLet),
     For(HirFor),
@@ -139,6 +144,12 @@ pub struct HirMatch {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirMatchArm {
     pattern: Pattern,
+    body: Vec<HirFlowItem>,
+}
+
+/// HIR-facing value-capable `loop` block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirLoop {
     body: Vec<HirFlowItem>,
 }
 
@@ -291,6 +302,10 @@ fn lower_flow_item_with_context(
             pattern: pattern.clone(),
             scope: lower_scope_expr(scope, context),
         }),
+        FlowItem::Stmt(Stmt::LetLoop { pattern, block }) => Ok(HirFlowItem::LetLoop {
+            pattern: pattern.clone(),
+            block: lower_loop(block, context)?,
+        }),
         FlowItem::Stmt(stmt) => Ok(HirFlowItem::Stmt(stmt.clone())),
         FlowItem::ScenarioCommand(command) => Ok(HirFlowItem::Scenario {
             name: command.name().to_owned(),
@@ -301,6 +316,7 @@ fn lower_flow_item_with_context(
         FlowItem::Choice(choice) => Ok(HirFlowItem::Choice(lower_choice(choice, context))),
         FlowItem::If(block) => lower_if(block, context).map(HirFlowItem::If),
         FlowItem::Match(block) => lower_match(block, context).map(HirFlowItem::Match),
+        FlowItem::Loop(block) => lower_loop(block, context).map(HirFlowItem::Loop),
         FlowItem::While(block) => lower_while(block, context).map(HirFlowItem::While),
         FlowItem::WhileLet(block) => lower_while_let(block, context).map(HirFlowItem::WhileLet),
         FlowItem::For(block) => lower_for(block, context).map(HirFlowItem::For),
@@ -358,6 +374,16 @@ fn lower_borrow(
     Ok(HirBorrow {
         source: block.source().clone(),
         binding: block.binding().clone(),
+        body: block
+            .body()
+            .iter()
+            .map(|item| lower_flow_item_with_context(item, context))
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn lower_loop(block: &LoopBlock, context: &mut LowerContext) -> Result<HirLoop, HirLowerError> {
+    Ok(HirLoop {
         body: block
             .body()
             .iter()
@@ -849,6 +875,12 @@ impl HirMatchArm {
         &self.pattern
     }
 
+    pub fn body(&self) -> &[HirFlowItem] {
+        &self.body
+    }
+}
+
+impl HirLoop {
     pub fn body(&self) -> &[HirFlowItem] {
         &self.body
     }

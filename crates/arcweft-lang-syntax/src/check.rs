@@ -106,6 +106,7 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
         errors: Vec::new(),
         active_borrows: Vec::new(),
         locals: HashMap::new(),
+        loop_stack: Vec::new(),
     };
     checker.check_module(module);
     if checker.errors.is_empty() {
@@ -120,6 +121,13 @@ struct TypeChecker<'a> {
     errors: Vec<TypeCheckError>,
     active_borrows: Vec<String>,
     locals: HashMap<String, TypeKind>,
+    loop_stack: Vec<LoopContext>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct LoopContext {
+    allows_value_break: bool,
+    break_types: Vec<TypeKind>,
 }
 
 impl TypeChecker<'_> {
@@ -135,6 +143,7 @@ impl TypeChecker<'_> {
         for flow in module.flows() {
             self.active_borrows.clear();
             self.locals.clear();
+            self.loop_stack.clear();
             if let Some(id) = flow.id() {
                 match flow.kind() {
                     FlowKind::Flow => self.expect_entity_kind(id, &EntityKind::Flow, "flow id"),
@@ -177,6 +186,12 @@ impl TypeChecker<'_> {
             HirFlowItem::LetScope { pattern, scope } => {
                 self.check_scope_expr_binding(pattern, scope);
             }
+            HirFlowItem::LetLoop { pattern, block } => {
+                let ty = self.check_loop_block(block, true);
+                if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), ty) {
+                    self.locals.insert(name.to_owned(), ty);
+                }
+            }
             HirFlowItem::If(block) => {
                 self.expect_expr_type(block.condition(), &TypeKind::Bool, "if condition");
                 self.check_flow_items(block.body());
@@ -187,25 +202,17 @@ impl TypeChecker<'_> {
                     self.check_flow_items(arm.body());
                 }
             }
+            HirFlowItem::Loop(block) => {
+                self.check_loop_block(block, true);
+            }
             HirFlowItem::While(block) => {
-                self.expect_expr_type(block.condition(), &TypeKind::Bool, "while condition");
-                self.check_flow_items(block.body());
+                self.check_while_block(block);
             }
             HirFlowItem::WhileLet(block) => {
-                let expr_type = self.check_expr(block.expr());
-                if let Some(guard) = block.guard() {
-                    self.expect_expr_type(guard, &TypeKind::Bool, "while-let guard");
-                }
-                let outer_locals = self.locals.clone();
-                for (name, ty) in let_else_bindings(block.pattern(), expr_type.as_ref()) {
-                    self.locals.insert(name, ty);
-                }
-                self.check_flow_items(block.body());
-                self.locals = outer_locals;
+                self.check_while_let_block(block);
             }
             HirFlowItem::For(block) => {
-                self.check_expr(block.source());
-                self.check_flow_items(block.body());
+                self.check_for_block(block);
             }
             HirFlowItem::Select(block) => {
                 self.check_select_block(block);
@@ -279,6 +286,52 @@ impl TypeChecker<'_> {
         }
     }
 
+    fn check_loop_block(
+        &mut self,
+        block: &crate::lower::HirLoop,
+        allows_value_break: bool,
+    ) -> Option<TypeKind> {
+        self.loop_stack.push(LoopContext {
+            allows_value_break,
+            break_types: Vec::new(),
+        });
+        self.check_flow_items(block.body());
+        let context = self.loop_stack.pop()?;
+        unify_loop_break_types(&context.break_types)
+    }
+
+    fn check_while_block(&mut self, block: &crate::lower::HirWhile) {
+        self.expect_expr_type(block.condition(), &TypeKind::Bool, "while condition");
+        self.with_statement_loop(|this| this.check_flow_items(block.body()));
+    }
+
+    fn check_while_let_block(&mut self, block: &crate::lower::HirWhileLet) {
+        let expr_type = self.check_expr(block.expr());
+        if let Some(guard) = block.guard() {
+            self.expect_expr_type(guard, &TypeKind::Bool, "while-let guard");
+        }
+        let outer_locals = self.locals.clone();
+        for (name, ty) in let_else_bindings(block.pattern(), expr_type.as_ref()) {
+            self.locals.insert(name, ty);
+        }
+        self.with_statement_loop(|this| this.check_flow_items(block.body()));
+        self.locals = outer_locals;
+    }
+
+    fn check_for_block(&mut self, block: &crate::lower::HirFor) {
+        self.check_expr(block.source());
+        self.with_statement_loop(|this| this.check_flow_items(block.body()));
+    }
+
+    fn with_statement_loop(&mut self, check_body: impl FnOnce(&mut Self)) {
+        self.loop_stack.push(LoopContext {
+            allows_value_break: false,
+            break_types: Vec::new(),
+        });
+        check_body(self);
+        self.loop_stack.pop();
+    }
+
     fn check_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Let { pattern, expr } => {
@@ -317,6 +370,11 @@ impl TypeChecker<'_> {
                     "scope expression binding must be lowered before type checking".to_owned(),
                 ));
             }
+            Stmt::LetLoop { .. } => {
+                self.errors.push(TypeCheckError::new(
+                    "loop expression binding must be lowered before type checking".to_owned(),
+                ));
+            }
             Stmt::Return(expr) | Stmt::Out(expr) | Stmt::Close(expr) | Stmt::Expr(expr) => {
                 self.check_expr(expr);
             }
@@ -331,10 +389,49 @@ impl TypeChecker<'_> {
                 self.check_expr(target);
                 self.check_expr(value);
             }
-            Stmt::Continue => {}
+            Stmt::Break(expr) => self.check_break_stmt(expr.as_ref()),
+            Stmt::Continue => self.check_continue_stmt(),
             Stmt::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
                 "raw statement is not type-checkable: {raw}"
             ))),
+        }
+    }
+
+    fn check_break_stmt(&mut self, expr: Option<&Expr>) {
+        let Some(index) = self.loop_stack.len().checked_sub(1) else {
+            self.errors.push(TypeCheckError::new(
+                "break is only allowed inside loop, while, or for".to_owned(),
+            ));
+            if let Some(expr) = expr {
+                self.check_expr(expr);
+            }
+            return;
+        };
+        let allows_value_break = self.loop_stack[index].allows_value_break;
+        match expr {
+            Some(expr) if !allows_value_break => {
+                self.errors.push(TypeCheckError::new(
+                    "break expr is allowed only in loop blocks".to_owned(),
+                ));
+                self.check_expr(expr);
+            }
+            Some(expr) => {
+                if let Some(ty) = self.check_expr(expr) {
+                    self.loop_stack[index].break_types.push(ty);
+                }
+            }
+            None if allows_value_break => {
+                self.loop_stack[index].break_types.push(TypeKind::Unit);
+            }
+            None => {}
+        }
+    }
+
+    fn check_continue_stmt(&mut self) {
+        if self.loop_stack.is_empty() {
+            self.errors.push(TypeCheckError::new(
+                "continue is only allowed inside loop, while, or for".to_owned(),
+            ));
         }
     }
 
@@ -741,13 +838,22 @@ fn option_payload_type(expr_type: Option<&TypeKind>) -> Option<TypeKind> {
     }
 }
 
+fn unify_loop_break_types(types: &[TypeKind]) -> Option<TypeKind> {
+    let first = types.first()?.clone();
+    if types.iter().all(|ty| ty == &first) {
+        Some(first)
+    } else {
+        None
+    }
+}
+
 fn stmts_diverge(stmts: &[Stmt]) -> bool {
     stmts.last().is_some_and(stmt_diverges)
 }
 
 fn stmt_diverges(stmt: &Stmt) -> bool {
     match stmt {
-        Stmt::Return(_) | Stmt::Goto(_) | Stmt::Continue => true,
+        Stmt::Return(_) | Stmt::Goto(_) | Stmt::Break(_) | Stmt::Continue => true,
         Stmt::Raw(raw) => {
             raw.starts_with("break") || raw.starts_with("panic ") || raw.starts_with("fail ")
         }

@@ -55,6 +55,11 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 collect_expr(value, uses);
             }
         }
+        HirFlowItem::LetLoop { block, .. } | HirFlowItem::Loop(block) => {
+            for item in block.body() {
+                collect_flow_item(item, uses);
+            }
+        }
         HirFlowItem::If(block) => {
             collect_expr(block.condition(), uses);
             for item in block.body() {
@@ -274,7 +279,14 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
                 collect_expr(value, uses);
             }
         }
-        Stmt::Continue => {}
+        Stmt::LetLoop { block, .. } => {
+            uses.push(SymbolUse::new(
+                SymbolUseKind::RawExpr,
+                format!("loop expression with {} body items", block.body().len()),
+            ));
+        }
+        Stmt::Break(Some(expr)) => collect_expr(expr, uses),
+        Stmt::Break(None) | Stmt::Continue => {}
         Stmt::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
     }
 }

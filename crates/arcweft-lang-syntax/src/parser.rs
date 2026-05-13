@@ -3,11 +3,11 @@ use crate::ast::{
     CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceOption,
     ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause, DialogueContent,
     EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionItem,
-    HookItem, IfBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, MatchArm, MatchBlock,
-    MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, ScopeBlock, ScopeExprBlock,
-    SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField,
-    StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember,
-    TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    HookItem, IfBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm,
+    MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, ScopeBlock,
+    ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine,
+    StateField, StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TraitItem,
+    TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -713,35 +713,8 @@ impl Parser {
         if trimmed.starts_with("@choice") {
             return Some(FlowItem::Raw(self.reject_old_choice_syntax()));
         }
-        if trimmed.starts_with("choice ") {
-            return self.parse_choice().map(FlowItem::Choice);
-        }
-        if trimmed.starts_with("if ") {
-            return self.parse_if_block().map(FlowItem::If);
-        }
-        if trimmed.starts_with("match ") {
-            return self.parse_match_block().map(FlowItem::Match);
-        }
-        if trimmed.starts_with("while let ") {
-            return self.parse_while_let_block().map(FlowItem::WhileLet);
-        }
-        if trimmed.starts_with("while ") {
-            return self.parse_while_block().map(FlowItem::While);
-        }
-        if trimmed.starts_with("for ") {
-            return self.parse_for_block().map(FlowItem::For);
-        }
-        if trimmed.starts_with("select") {
-            return self.parse_select_block().map(FlowItem::Select);
-        }
-        if trimmed.starts_with("borrow ") {
-            return self.parse_borrow_block().map(FlowItem::BorrowBlock);
-        }
-        if trimmed.starts_with("source locale ") {
-            return self.parse_source_locale_block().map(FlowItem::SourceLocale);
-        }
-        if trimmed.starts_with("scope ") {
-            return self.parse_scope_block().map(FlowItem::Scope);
+        if let Some(item) = self.parse_structured_flow_block(trimmed) {
+            return Some(item);
         }
         if let Some(command) = parse_scenario_command(trimmed, TextRange::new(line.start, line.end))
         {
@@ -793,6 +766,9 @@ impl Parser {
         if is_let_scope_head(trimmed) {
             return self.parse_let_scope().map(FlowItem::Stmt);
         }
+        if is_let_loop_head(trimmed) {
+            return self.parse_let_loop().map(FlowItem::Stmt);
+        }
         if is_let_else_head(trimmed) {
             return self.parse_let_else().map(FlowItem::Stmt);
         }
@@ -804,6 +780,43 @@ impl Parser {
             return Some(item);
         }
 
+        None
+    }
+
+    fn parse_structured_flow_block(&mut self, trimmed: &str) -> Option<FlowItem> {
+        if trimmed.starts_with("choice ") {
+            return self.parse_choice().map(FlowItem::Choice);
+        }
+        if trimmed.starts_with("if ") {
+            return self.parse_if_block().map(FlowItem::If);
+        }
+        if trimmed.starts_with("match ") {
+            return self.parse_match_block().map(FlowItem::Match);
+        }
+        if trimmed == "loop" || trimmed.starts_with("loop ") {
+            return self.parse_loop_block().map(FlowItem::Loop);
+        }
+        if trimmed.starts_with("while let ") {
+            return self.parse_while_let_block().map(FlowItem::WhileLet);
+        }
+        if trimmed.starts_with("while ") {
+            return self.parse_while_block().map(FlowItem::While);
+        }
+        if trimmed.starts_with("for ") {
+            return self.parse_for_block().map(FlowItem::For);
+        }
+        if trimmed.starts_with("select") {
+            return self.parse_select_block().map(FlowItem::Select);
+        }
+        if trimmed.starts_with("borrow ") {
+            return self.parse_borrow_block().map(FlowItem::BorrowBlock);
+        }
+        if trimmed.starts_with("source locale ") {
+            return self.parse_source_locale_block().map(FlowItem::SourceLocale);
+        }
+        if trimmed.starts_with("scope ") {
+            return self.parse_scope_block().map(FlowItem::Scope);
+        }
         None
     }
 
@@ -884,6 +897,35 @@ impl Parser {
                 name.to_owned(),
                 statements,
                 value,
+                TextRange::new(start_line.start, end),
+            ),
+        })
+    }
+
+    fn parse_let_loop(&mut self) -> Option<Stmt> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing loop expression",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the loop expression block"],
+            );
+            return None;
+        }
+
+        let rest = head.trim().strip_prefix("let")?.trim();
+        let (pattern, loop_head) = rest.split_once('=')?;
+        if loop_head.trim() != "loop" {
+            return None;
+        }
+
+        Some(Stmt::LetLoop {
+            pattern: parse_pattern(pattern.trim()),
+            block: LoopBlock::new(
+                self.parse_flow_body(&body, start_line.start + head.len()),
                 TextRange::new(start_line.start, end),
             ),
         })
@@ -1093,6 +1135,28 @@ impl Parser {
         Some(MatchBlock::new(
             parse_expr_lossy(expr),
             parse_match_arms(&body, start_line.start, &mut self.errors),
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_loop_block(&mut self) -> Option<LoopBlock> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing loop",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the loop body"],
+            );
+            return None;
+        }
+        if head.trim() != "loop" {
+            return None;
+        }
+        Some(LoopBlock::new(
+            self.parse_flow_body(&body, start_line.start + head.len()),
             TextRange::new(start_line.start, end),
         ))
     }
@@ -3043,6 +3107,7 @@ fn is_typed_stmt(trimmed: &str) -> bool {
                 | "yield"
                 | "signal"
                 | "close"
+                | "break"
                 | "continue"
         )
     )
@@ -3062,6 +3127,14 @@ fn is_let_scope_head(trimmed: &str) -> bool {
     };
     rest.split_once('=')
         .is_some_and(|(_, expr)| expr.trim_start().starts_with("scope "))
+}
+
+fn is_let_loop_head(trimmed: &str) -> bool {
+    let Some(rest) = trimmed.strip_prefix("let ") else {
+        return false;
+    };
+    rest.split_once('=')
+        .is_some_and(|(_, expr)| expr.trim_start().starts_with("loop"))
 }
 
 fn is_let_else_head(trimmed: &str) -> bool {
@@ -3137,6 +3210,12 @@ fn parse_stmt(trimmed: &str) -> Stmt {
     }
     if let Some(expr) = trimmed.strip_prefix("close ") {
         return Stmt::Close(parse_expr_lossy(expr.trim()));
+    }
+    if trimmed == "break" {
+        return Stmt::Break(None);
+    }
+    if let Some(expr) = trimmed.strip_prefix("break ") {
+        return Stmt::Break(Some(parse_expr_lossy(expr.trim())));
     }
     if trimmed == "continue" {
         return Stmt::Continue;

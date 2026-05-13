@@ -18,11 +18,12 @@ pub use ast::{
     Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, CallableItem, CallableKind, ChoiceAction,
     ChoiceBlock, ChoiceItem, ChoiceOption, ChoicePlan, ChoicePlanItem, ContentCall, ContractClause,
     DialogueToken, EntityRef, EnumItem, EnumVariant, Flow, FlowItem, FlowKind, ForBlock,
-    FunctionItem, HookItem, IfBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, MatchArm,
-    MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand, ScopeBlock,
-    ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine,
-    StateField, StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TraitItem,
-    TraitMember, TypeAliasItem, UseItem, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    FunctionItem, HookItem, IfBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem,
+    LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand,
+    ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock,
+    SpeakerLine, StateField, StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange,
+    TraitItem, TraitMember, TypeAliasItem, UseItem, Visibility, WhileBlock, WhileLetBlock,
+    WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -31,7 +32,7 @@ pub use check::{
 pub use expr::{BinaryOp, Expr, Literal, Placeholder, parse_expr};
 pub use lower::{
     HirAwait, HirAwaitBranch, HirBorrow, HirChoice, HirChoiceOption, HirDialogue, HirFlow,
-    HirFlowItem, HirFor, HirIf, HirLowerError, HirMatch, HirMatchArm, HirModule, HirScope,
+    HirFlowItem, HirFor, HirIf, HirLoop, HirLowerError, HirMatch, HirMatchArm, HirModule, HirScope,
     HirSelect, HirSelectBranch, HirWhile, HirWhileLet, lower_to_hir,
 };
 pub use parser::{ParseError, RecoverySuggestion, parse_source, parse_stub};
@@ -1000,6 +1001,100 @@ flow #flow.loading loading {
             error
                 .message()
                 .contains("while condition must have type Bool")
+        }));
+    }
+
+    #[test]
+    fn parses_and_typechecks_loop_expression_binding() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    let next = loop {
+        break #flow.title
+    }
+
+    goto next
+}
+
+flow #flow.title title {
+}
+",
+        )
+        .expect("loop expression fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::Stmt(Stmt::LetLoop { pattern, block }) = &flow.body()[0] else {
+            panic!("expected loop expression binding");
+        };
+        assert_eq!(pattern, &Pattern::Ident("next".to_owned()));
+        assert!(matches!(
+            block.body(),
+            [FlowItem::Stmt(Stmt::Break(Some(Expr::EntityRef(entity))))] if entity.body() == "flow.title"
+        ));
+
+        let hir = lower_to_hir(&tree).expect("loop expression fixture lowers");
+        let HirFlowItem::LetLoop { pattern, block } = &hir.flows()[0].body()[0] else {
+            panic!("expected HIR loop expression binding");
+        };
+        assert_eq!(pattern, &Pattern::Ident("next".to_owned()));
+        assert!(matches!(
+            block.body(),
+            [HirFlowItem::Stmt(Stmt::Break(Some(Expr::EntityRef(entity))))] if entity.body() == "flow.title"
+        ));
+
+        let registry = registry_from_hir(&hir);
+        validate_hir_references(&hir, &registry).expect("loop expression refs resolve");
+        validate_typecheck_ready(&hir).expect("loop expression is typecheck-ready");
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect("loop expression typechecks");
+    }
+
+    #[test]
+    fn typecheck_rejects_break_value_in_while() {
+        let tree = parse_source(
+            r"
+flow #flow.loading loading {
+    while is_loading {
+        break #flow.title
+    }
+}
+
+flow #flow.title title {
+}
+",
+        )
+        .expect("while break-value fixture parses");
+        let hir = lower_to_hir(&tree).expect("while break-value fixture lowers");
+        let errors = typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new().with_symbol("is_loading", TypeKind::Bool),
+        )
+        .expect_err("break expr in while is rejected");
+        assert!(errors.iter().any(|error| {
+            error
+                .message()
+                .contains("break expr is allowed only in loop")
+        }));
+    }
+
+    #[test]
+    fn typecheck_rejects_break_outside_loop() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    break
+}
+",
+        )
+        .expect("bare break fixture parses");
+        let hir = lower_to_hir(&tree).expect("bare break fixture lowers");
+        let errors =
+            typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("break outside loops is rejected");
+        assert!(errors.iter().any(|error| {
+            error
+                .message()
+                .contains("break is only allowed inside loop")
         }));
     }
 
