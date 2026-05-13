@@ -53,6 +53,20 @@ struct SourceLine {
     end: usize,
 }
 
+enum OptionalLabel {
+    None,
+    Some(String),
+}
+
+impl OptionalLabel {
+    fn into_option(self) -> Option<String> {
+        match self {
+            Self::None => None,
+            Self::Some(label) => Some(label),
+        }
+    }
+}
+
 type EntityDeclHead = (
     EntityDeclKind,
     Option<Visibility>,
@@ -1047,7 +1061,11 @@ impl Parser {
         if trimmed.starts_with("match ") {
             return self.parse_match_block().map(FlowItem::Match);
         }
-        if trimmed == "loop" || trimmed.starts_with("loop ") {
+        if trimmed == "loop"
+            || trimmed.starts_with("loop ")
+            || labeled_head_tail(trimmed)
+                .is_some_and(|tail| tail == "loop" || tail.starts_with("loop "))
+        {
             return self.parse_loop_block().map(FlowItem::Loop);
         }
         if trimmed.starts_with("while let ") {
@@ -1225,13 +1243,15 @@ impl Parser {
 
         let rest = head.trim().strip_prefix("let")?.trim();
         let (pattern, loop_head) = rest.split_once('=')?;
-        if loop_head.trim() != "loop" {
+        let (label, loop_head) = split_optional_block_label(loop_head.trim());
+        if loop_head != "loop" {
             return None;
         }
 
         Some(Stmt::LetLoop {
             pattern: parse_pattern(pattern.trim()),
             block: LoopBlock::new(
+                label,
                 self.parse_flow_body(&body, start_line.start + head.len()),
                 TextRange::new(start_line.start, end),
             ),
@@ -1624,11 +1644,14 @@ impl Parser {
             );
             return None;
         }
-        if head.trim() != "loop" {
+        let body_base = start_line.start + head.len();
+        let (label, head) = split_optional_block_label(head.trim());
+        if head != "loop" {
             return None;
         }
         Some(LoopBlock::new(
-            self.parse_flow_body(&body, start_line.start + head.len()),
+            label,
+            self.parse_flow_body(&body, body_base),
             TextRange::new(start_line.start, end),
         ))
     }
@@ -1819,11 +1842,12 @@ impl Parser {
         }
         let line = self.current().clone();
         let trimmed = line.text.trim();
-        if trimmed == "with:" {
+        if let Some(label) = parse_with_indent_label(trimmed) {
             self.index += 1;
-            return Some(self.take_indented_line_plan(indentation(&line.text) + 1, line.start));
+            let plan = self.take_indented_line_plan(indentation(&line.text) + 1, line.start);
+            return Some(attach_line_plan_label(plan, label.into_option()));
         }
-        if trimmed.starts_with("with {") || trimmed == "with{" {
+        if is_with_brace_head(trimmed) {
             let (head, body, end, ok) = self.take_brace_block();
             if !ok {
                 self.push_error(
@@ -1835,10 +1859,11 @@ impl Parser {
                 );
                 return None;
             }
-            return Some(parse_line_plan_body(
-                BlockStyle::Brace,
-                &body,
-                TextRange::new(line.start, end),
+            let plan =
+                parse_line_plan_body(BlockStyle::Brace, &body, TextRange::new(line.start, end));
+            return Some(attach_line_plan_label(
+                plan,
+                parse_with_brace_label(head.trim()),
             ));
         }
         None
@@ -3419,6 +3444,53 @@ fn parse_line_plan_body(style: BlockStyle, body: &str, range: TextRange) -> Line
     LinePlan::new(style, items, range)
 }
 
+fn attach_line_plan_label(plan: LinePlan, label: Option<String>) -> LinePlan {
+    if let Some(label) = label {
+        plan.with_label(label)
+    } else {
+        plan
+    }
+}
+
+fn parse_with_indent_label(trimmed: &str) -> Option<OptionalLabel> {
+    if trimmed == "with:" {
+        return Some(OptionalLabel::None);
+    }
+    let label = trimmed.strip_prefix("with ")?.strip_suffix(':')?.trim();
+    parse_label_ref(label)
+        .and_then(|(label, tail)| tail.trim().is_empty().then_some(OptionalLabel::Some(label)))
+}
+
+fn is_with_brace_head(trimmed: &str) -> bool {
+    trimmed.starts_with("with {")
+        || trimmed == "with{"
+        || trimmed.starts_with("with '")
+        || trimmed.starts_with("with'")
+}
+
+fn parse_with_brace_label(head: &str) -> Option<String> {
+    let label = head.strip_prefix("with")?.trim();
+    parse_label_ref(label).and_then(|(label, tail)| tail.trim().is_empty().then_some(label))
+}
+
+fn split_optional_block_label(head: &str) -> (Option<String>, &str) {
+    labeled_head_tail(head).map_or((None, head), |tail| {
+        let label = head
+            .trim_start()
+            .strip_prefix('\'')
+            .and_then(|rest| rest.split_once(':'))
+            .map(|(label, _)| label.trim().to_owned())
+            .unwrap_or_default();
+        (Some(label), tail)
+    })
+}
+
+fn labeled_head_tail(head: &str) -> Option<&str> {
+    let rest = head.trim_start().strip_prefix('\'')?;
+    let (_, tail) = rest.split_once(':')?;
+    Some(tail.trim_start())
+}
+
 fn is_multiline_timed_cue_header(line: &str) -> bool {
     line.starts_with("at(") && line.ends_with(':')
 }
@@ -3862,8 +3934,11 @@ fn is_let_loop_head(trimmed: &str) -> bool {
     let Some(rest) = trimmed.strip_prefix("let ") else {
         return false;
     };
-    rest.split_once('=')
-        .is_some_and(|(_, expr)| expr.trim_start().starts_with("loop"))
+    rest.split_once('=').is_some_and(|(_, expr)| {
+        let expr = expr.trim_start();
+        expr.starts_with("loop")
+            || labeled_head_tail(expr).is_some_and(|tail| tail.starts_with("loop"))
+    })
 }
 
 fn is_let_if_head(trimmed: &str) -> bool {

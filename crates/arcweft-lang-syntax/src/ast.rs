@@ -426,6 +426,7 @@ pub struct MatchArm {
 /// `loop { ... }` value-capable loop block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoopBlock {
+    label: Option<String>,
     body: Vec<FlowItem>,
     range: TextRange,
 }
@@ -861,6 +862,7 @@ pub enum ChoiceAction {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LinePlan {
     style: BlockStyle,
+    label: Option<String>,
     items: Vec<LinePlanItem>,
     range: TextRange,
 }
@@ -1787,8 +1789,12 @@ impl MatchArm {
 }
 
 impl LoopBlock {
-    pub(crate) const fn new(body: Vec<FlowItem>, range: TextRange) -> Self {
-        Self { body, range }
+    pub(crate) const fn new(label: Option<String>, body: Vec<FlowItem>, range: TextRange) -> Self {
+        Self { label, body, range }
+    }
+
+    pub fn label(&self) -> Option<&str> {
+        self.label.as_deref()
     }
 
     pub fn body(&self) -> &[FlowItem] {
@@ -2486,13 +2492,23 @@ impl LinePlan {
     pub(crate) const fn new(style: BlockStyle, items: Vec<LinePlanItem>, range: TextRange) -> Self {
         Self {
             style,
+            label: None,
             items,
             range,
         }
     }
 
+    pub(crate) fn with_label(mut self, label: String) -> Self {
+        self.label = Some(label);
+        self
+    }
+
     pub const fn style(&self) -> BlockStyle {
         self.style
+    }
+
+    pub fn label(&self) -> Option<&str> {
+        self.label.as_deref()
     }
 
     pub fn items(&self) -> &[LinePlanItem] {

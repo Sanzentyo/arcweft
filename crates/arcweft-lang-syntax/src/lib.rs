@@ -1769,7 +1769,7 @@ flow #flow.loading loading {
         let tree = parse_source(
             r"
 flow #flow.opening opening {
-    let next = loop {
+    let next = 'events: loop {
         break 'events #flow.title
     }
 
@@ -1789,6 +1789,7 @@ flow #flow.title title {
             panic!("expected loop expression binding");
         };
         assert_eq!(pattern, &Pattern::Ident("next".to_owned()));
+        assert_eq!(block.label(), Some("events"));
         assert!(matches!(
             block.body(),
             [FlowItem::Stmt(Stmt::Break { label: Some(label), expr: Some(Expr::EntityRef(entity)) })]
@@ -1800,6 +1801,7 @@ flow #flow.title title {
             panic!("expected HIR loop expression binding");
         };
         assert_eq!(pattern, &Pattern::Ident("next".to_owned()));
+        assert_eq!(block.label(), Some("events"));
         assert!(matches!(
             block.body(),
             [HirFlowItem::Stmt(Stmt::Break { label: Some(label), expr: Some(Expr::EntityRef(entity)) })]
@@ -2681,7 +2683,7 @@ flow #flow.opening opening {
     alice[
         聞いて。[p]
     ]
-    with {
+    with 'line {
         cancel on input .SkipLine { out 'line .Skipped }
         cancel on input .BackToTitle => goto #flow.title
     }
@@ -2697,6 +2699,7 @@ flow #flow.opening opening {
             panic!("expected content call");
         };
         let plan = call.plan().expect("line plan");
+        assert_eq!(plan.label(), Some("line"));
         let LinePlanItem::CancelRule(skip_rule) = &plan.items()[0] else {
             panic!("expected skip cancel rule");
         };

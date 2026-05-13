@@ -196,6 +196,7 @@ pub struct HirMatchArm {
 /// HIR-facing value-capable `loop` block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirLoop {
+    label: Option<String>,
     body: Vec<HirFlowItem>,
 }
 
@@ -476,6 +477,7 @@ fn lower_borrow(
 
 fn lower_loop(block: &LoopBlock, context: &mut LowerContext) -> Result<HirLoop, HirLowerError> {
     Ok(HirLoop {
+        label: block.label().map(str::to_owned),
         body: block
             .body()
             .iter()
@@ -952,6 +954,16 @@ impl HirScopeExpr {
     }
 }
 
+impl HirLoop {
+    pub fn label(&self) -> Option<&str> {
+        self.label.as_deref()
+    }
+
+    pub fn body(&self) -> &[HirFlowItem] {
+        &self.body
+    }
+}
+
 impl HirChoiceOption {
     pub const fn id(&self) -> Option<&EntityRef> {
         self.id.as_ref()
@@ -1042,12 +1054,6 @@ impl HirMatchArm {
         self.guard.as_ref()
     }
 
-    pub fn body(&self) -> &[HirFlowItem] {
-        &self.body
-    }
-}
-
-impl HirLoop {
     pub fn body(&self) -> &[HirFlowItem] {
         &self.body
     }
