@@ -272,6 +272,7 @@ pub struct TraitItem {
 pub enum TraitMember {
     AssociatedType {
         name: String,
+        params: Vec<String>,
         value: Option<TypeRef>,
     },
     Function {

@@ -2201,7 +2201,13 @@ pub impl<T> Mappable for Option<T> {
         assert_eq!(mappable.members().len(), 3);
         assert!(matches!(
             &mappable.members()[0],
-            TraitMember::AssociatedType { name, value: None } if name == "Item"
+            TraitMember::AssociatedType { name, params, value: None }
+                if name == "Item" && params.is_empty()
+        ));
+        assert!(matches!(
+            &mappable.members()[1],
+            TraitMember::AssociatedType { name, params, value: None }
+                if name == "Mapped" && params == &["B".to_owned()]
         ));
         assert!(matches!(
             &mappable.members()[2],

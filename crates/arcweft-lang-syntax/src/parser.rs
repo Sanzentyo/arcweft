@@ -2852,8 +2852,10 @@ fn parse_trait_member(line: &str) -> TraitMember {
         let (name, value) = rest.split_once('=').map_or((rest, None), |(name, value)| {
             (name.trim(), parse_type_ref(value.trim()).ok())
         });
+        let (name, params) = parse_associated_type_head(name.trim());
         return TraitMember::AssociatedType {
-            name: name.trim().to_owned(),
+            name,
+            params,
             value,
         };
     }
@@ -2864,6 +2866,25 @@ fn parse_trait_member(line: &str) -> TraitMember {
         );
     }
     TraitMember::Raw(line.to_owned())
+}
+
+fn parse_associated_type_head(source: &str) -> (String, Vec<String>) {
+    source.split_once('<').map_or_else(
+        || (source.to_owned(), Vec::new()),
+        |(name, params)| {
+            (
+                name.trim().to_owned(),
+                params
+                    .strip_suffix('>')
+                    .unwrap_or(params)
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|param| !param.is_empty())
+                    .map(str::to_owned)
+                    .collect(),
+            )
+        },
+    )
 }
 
 fn parse_choice_items(body: &str, base: usize, errors: &mut Vec<ParseError>) -> Vec<ChoiceItem> {
