@@ -1020,6 +1020,9 @@ impl Parser {
         if is_let_computation_block_head(trimmed) {
             return self.parse_let_computation_block().map(FlowItem::Stmt);
         }
+        if is_let_memo_block_head(trimmed) {
+            return self.parse_let_memo_block().map(FlowItem::Stmt);
+        }
         if is_let_block_head(trimmed) {
             return self.parse_let_block().map(FlowItem::Stmt);
         }
@@ -1222,6 +1225,34 @@ impl Parser {
             pattern: parse_pattern(pattern.trim()),
             expr: Expr::ComputationBlock {
                 kind,
+                statements,
+                value: value.map(Box::new),
+            },
+        })
+    }
+
+    fn parse_let_memo_block(&mut self) -> Option<Stmt> {
+        let start_line = self.current().clone();
+        let (head, body, _end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing memo expression",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the memo expression block"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("let")?.trim();
+        let (pattern, block_head) = rest.split_once('=')?;
+        let options = parse_memo_block_options(block_head.trim())?;
+        let (statements, value) = parse_scope_expr_body(&body);
+
+        Some(Stmt::Let {
+            pattern: parse_pattern(pattern.trim()),
+            expr: Expr::MemoBlock {
+                options,
                 statements,
                 value: value.map(Box::new),
             },
@@ -4003,6 +4034,31 @@ fn is_let_computation_block_head(trimmed: &str) -> bool {
     };
     rest.split_once('=')
         .is_some_and(|(_, expr)| matches!(expr.trim(), "result {" | "task {" | "seq {"))
+}
+
+fn is_let_memo_block_head(trimmed: &str) -> bool {
+    let Some(rest) = trimmed.strip_prefix("let ") else {
+        return false;
+    };
+    rest.split_once('=')
+        .is_some_and(|(_, expr)| expr.trim_start().starts_with("memo("))
+}
+
+fn parse_memo_block_options(source: &str) -> Option<Vec<(String, Expr)>> {
+    let args = source
+        .trim()
+        .strip_prefix("memo(")?
+        .trim_end()
+        .strip_suffix(')')?;
+    Some(
+        split_comma_args(args)
+            .into_iter()
+            .filter_map(|part| {
+                split_top_level_equals(part)
+                    .map(|(name, value)| (name.trim().to_owned(), parse_expr_lossy(value.trim())))
+            })
+            .collect(),
+    )
 }
 
 fn parse_computation_block_kind(source: &str) -> Option<ComputationBlockKind> {

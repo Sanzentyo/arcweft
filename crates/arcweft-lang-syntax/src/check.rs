@@ -1067,12 +1067,7 @@ impl TypeChecker<'_> {
             }),
             Expr::Placeholder(_) => None,
             Expr::Tuple(items) => Some(self.check_tuple_expr(items)),
-            Expr::List(items) => {
-                for item in items {
-                    self.check_expr(item);
-                }
-                Some(TypeKind::Named("List".to_owned()))
-            }
+            Expr::List(items) => Some(self.check_list_expr(items)),
             Expr::Call { callee, args } => self.check_call_expr(callee, args),
             Expr::NamedArg { value, .. } => self.check_expr(value),
             Expr::MethodCall {
@@ -1121,6 +1116,11 @@ impl TypeChecker<'_> {
             | Expr::NamedBlock {
                 statements, value, ..
             } => self.check_block_expr(statements, value.as_deref()),
+            Expr::MemoBlock {
+                options,
+                statements,
+                value,
+            } => self.check_memo_block_expr(options, statements, value.as_deref()),
             Expr::If {
                 condition,
                 then_branch,
@@ -1156,6 +1156,25 @@ impl TypeChecker<'_> {
                 .filter_map(|item| self.check_expr(item))
                 .collect(),
         )
+    }
+
+    fn check_list_expr(&mut self, items: &[Expr]) -> TypeKind {
+        for item in items {
+            self.check_expr(item);
+        }
+        TypeKind::Named("List".to_owned())
+    }
+
+    fn check_memo_block_expr(
+        &mut self,
+        options: &[(String, Expr)],
+        statements: &[Stmt],
+        value: Option<&Expr>,
+    ) -> Option<TypeKind> {
+        for (_, option) in options {
+            self.check_expr(option);
+        }
+        self.check_block_expr(statements, value)
     }
 
     fn check_record_fields(&mut self, fields: &[(String, Expr)]) {

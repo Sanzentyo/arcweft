@@ -716,13 +716,16 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
         }
         | Expr::NamedBlock {
             statements, value, ..
+        } => collect_block_expr(statements, value.as_deref(), uses),
+        Expr::MemoBlock {
+            options,
+            statements,
+            value,
         } => {
-            for stmt in statements {
-                collect_stmt(stmt, uses);
+            for (_, option) in options {
+                collect_expr(option, uses);
             }
-            if let Some(value) = value {
-                collect_expr(value, uses);
-            }
+            collect_block_expr(statements, value.as_deref(), uses);
         }
         Expr::If {
             condition,
@@ -745,6 +748,15 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
         ),
         Expr::Match { scrutinee, arms } => collect_match_expr(scrutinee, arms, uses),
         Expr::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
+    }
+}
+
+fn collect_block_expr(statements: &[Stmt], value: Option<&Expr>, uses: &mut Vec<SymbolUse>) {
+    for stmt in statements {
+        collect_stmt(stmt, uses);
+    }
+    if let Some(value) = value {
+        collect_expr(value, uses);
     }
 }
 

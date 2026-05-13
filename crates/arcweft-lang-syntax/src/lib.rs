@@ -1270,6 +1270,52 @@ flow #flow.compute compute {
     }
 
     #[test]
+    fn parses_and_typechecks_memo_expression_block_binding() {
+        let tree = parse_source(
+            r"
+flow #flow.memo memo_example {
+    let value = memo(scope=scene, key=(score)) {
+        let next = score
+        next
+    }
+    goto #flow.title
+}
+
+flow #flow.title title {}
+",
+        )
+        .expect("memo expression block fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::Stmt(Stmt::Let {
+            expr:
+                Expr::MemoBlock {
+                    options,
+                    statements,
+                    value: Some(_),
+                },
+            ..
+        }) = &flow.body()[0]
+        else {
+            panic!("expected memo expression block binding");
+        };
+        assert_eq!(options.len(), 2);
+        assert_eq!(statements.len(), 1);
+
+        let hir = lower_to_hir(&tree).expect("memo expression block fixture lowers");
+        validate_typecheck_ready(&hir).expect("memo expression block is typecheck-ready");
+        typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new()
+                .with_symbol("score", TypeKind::Int)
+                .with_symbol("scene", TypeKind::Named("MemoScope".to_owned())),
+        )
+        .expect("memo expression block typechecks");
+    }
+
+    #[test]
     fn typecheck_rejects_non_bool_ensure_condition() {
         let tree = parse_source(
             r#"
