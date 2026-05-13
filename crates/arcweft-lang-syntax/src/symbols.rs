@@ -519,7 +519,10 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
                 collect_expr(value, uses);
             }
         }
-        Expr::Block { statements, value } => {
+        Expr::Block { statements, value }
+        | Expr::ComputationBlock {
+            statements, value, ..
+        } => {
             for stmt in statements {
                 collect_stmt(stmt, uses);
             }

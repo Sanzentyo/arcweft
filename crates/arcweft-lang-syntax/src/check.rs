@@ -834,6 +834,9 @@ impl TypeChecker<'_> {
             Expr::Block { statements, value } => {
                 self.check_block_expr(statements, value.as_deref())
             }
+            Expr::ComputationBlock {
+                statements, value, ..
+            } => self.check_block_expr(statements, value.as_deref()),
             Expr::If {
                 condition,
                 then_branch,

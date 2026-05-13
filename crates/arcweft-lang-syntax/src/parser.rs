@@ -10,7 +10,7 @@ use crate::ast::{
     StateItem, Stmt, StmtMatchArm, StructField, StructItem, SyntaxTree, TextRange, TraitItem,
     TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
-use crate::expr::{Expr, parse_expr};
+use crate::expr::{ComputationBlockKind, Expr, parse_expr};
 use crate::text::parse_dialogue_tokens;
 use crate::types::{parse_fn_signature, parse_type_ref};
 use arcweft_source::{SourceAnchor, SourceName};
@@ -770,6 +770,9 @@ impl Parser {
         if is_let_scope_head(trimmed) {
             return self.parse_let_scope().map(FlowItem::Stmt);
         }
+        if is_let_computation_block_head(trimmed) {
+            return self.parse_let_computation_block().map(FlowItem::Stmt);
+        }
         if is_let_block_head(trimmed) {
             return self.parse_let_block().map(FlowItem::Stmt);
         }
@@ -943,6 +946,34 @@ impl Parser {
         Some(Stmt::Let {
             pattern: parse_pattern(pattern.trim()),
             expr: parse_block_expr(&body),
+        })
+    }
+
+    fn parse_let_computation_block(&mut self) -> Option<Stmt> {
+        let start_line = self.current().clone();
+        let (head, body, _end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing computation block expression",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the computation block expression"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("let")?.trim();
+        let (pattern, block_head) = rest.split_once('=')?;
+        let kind = parse_computation_block_kind(block_head.trim())?;
+        let (statements, value) = parse_scope_expr_body(&body);
+
+        Some(Stmt::Let {
+            pattern: parse_pattern(pattern.trim()),
+            expr: Expr::ComputationBlock {
+                kind,
+                statements,
+                value: value.map(Box::new),
+            },
         })
     }
 
@@ -3101,6 +3132,9 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
     }
     if let Some(rest) = line.strip_prefix("at(") {
         if let Some((anchor, body)) = rest.split_once(')') {
+            if body.trim_start().starts_with('[') {
+                return LinePlanItem::Raw(line.to_owned());
+            }
             return LinePlanItem::TimedCue {
                 anchor: parse_expr_lossy(anchor.trim()),
                 body: parse_expr_lossy(normalize_timed_cue_body(body)),
@@ -3180,13 +3214,9 @@ fn parse_expr_lossy(source: &str) -> crate::expr::Expr {
 }
 
 fn normalize_timed_cue_body(source: &str) -> &str {
-    let body = source
+    source
         .trim_start_matches([':', ' ', '{'])
         .trim_end_matches('}')
-        .trim();
-    body.strip_prefix('[')
-        .and_then(|value| value.strip_suffix(']'))
-        .unwrap_or(body)
         .trim()
 }
 
@@ -3464,6 +3494,23 @@ fn is_let_block_head(trimmed: &str) -> bool {
     };
     rest.split_once('=')
         .is_some_and(|(_, expr)| expr.trim().starts_with('{'))
+}
+
+fn is_let_computation_block_head(trimmed: &str) -> bool {
+    let Some(rest) = trimmed.strip_prefix("let ") else {
+        return false;
+    };
+    rest.split_once('=')
+        .is_some_and(|(_, expr)| matches!(expr.trim(), "result {" | "task {" | "seq {"))
+}
+
+fn parse_computation_block_kind(source: &str) -> Option<ComputationBlockKind> {
+    match source {
+        "result" => Some(ComputationBlockKind::Result),
+        "task" => Some(ComputationBlockKind::Task),
+        "seq" => Some(ComputationBlockKind::Seq),
+        _ => None,
+    }
 }
 
 fn is_let_loop_head(trimmed: &str) -> bool {

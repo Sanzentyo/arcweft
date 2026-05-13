@@ -64,6 +64,11 @@ pub enum Expr {
         statements: Vec<Stmt>,
         value: Option<Box<Expr>>,
     },
+    ComputationBlock {
+        kind: ComputationBlockKind,
+        statements: Vec<Stmt>,
+        value: Option<Box<Expr>>,
+    },
     If {
         condition: Box<Expr>,
         then_branch: Box<Expr>,
@@ -136,6 +141,14 @@ pub enum BinaryOp {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UnaryOp {
     Not,
+}
+
+/// Named computation block syntax such as `result { ... }`, `task { ... }`, or `seq { ... }`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ComputationBlockKind {
+    Result,
+    Task,
+    Seq,
 }
 
 /// Expression parse error.

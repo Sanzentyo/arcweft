@@ -73,7 +73,12 @@ alice2(id=#say.opening.side_001):
     こっちのウィンドウで話すね。[p]
 ```
 
-`alice2:` is sugar for `alice2.say()[...]`. Per-line options override preset options. The preset is a pure lexical value, so it can be passed to helper functions or kept local to a block without mutating `#character.alice`.
+`alice2:` is sugar for calling the speaker preset with an empty option set and
+then applying dialogue content: `alice2()[...]`. Per-line options refine the
+preset first, so `alice2(voice=auto): text` lowers to
+`alice2(voice=auto)[text]`, not to a forced character `.say(...)` call. The
+preset is a pure lexical value, so it can be passed to helper functions or kept
+local to a block without mutating `#character.alice`.
 ---
 
 ## Canonical form
@@ -367,7 +372,8 @@ Supported anchors:
 | `at(char 12)` | character reveal index |
 | `at(word 3)` | word/token reveal index |
 
-Older `at(...)[...]` cue blocks are accepted by the parser for compatibility, but the canonical line-plan form is `at(...) { ... }` or the indentation form `at(...):`.
+The line-plan cue form is `at(...) { ... }` or the indentation sugar
+`at(...):`. `at(...)[...]` is not part of the stable grammar.
 
 ---
 
@@ -670,9 +676,11 @@ with {
 
 ---
 
-## Line plan return values and scoped handles
+## Line plan output values and scoped handles
 
-A line plan may `return` a value. This is how short-lived line-local handles can be exported deliberately.
+A line plan exports a value with `out`. Do not use `return` for line-plan
+values; `return` exits the nearest `fn`, `task fn`, `parser`, or `flow`.
+`out` is how short-lived line-local handles are exported deliberately.
 
 ```awft
 let (actor, (face0, face1, voice)) = alice.say(

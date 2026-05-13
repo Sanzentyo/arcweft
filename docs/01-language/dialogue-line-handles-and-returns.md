@@ -75,7 +75,12 @@ with:
         alice.stage.face(smile)
 ```
 
-All four source forms produce the same typed `DialogueLine`; only the brace `with { ... }` and explicit `speaker.say()[...]` shape is canonical after syntax normalization.
+All four source forms produce the same typed `DialogueLine`. The canonical
+semantic shape uses an explicit speaker content call plus a `with { ... }` plan,
+while formatters may preserve `with:` in hand-written scenario files. When the
+callee is a speaker preset, the explicit content call remains the preset call
+surface, for example `alice2(voice=auto)[...]`, instead of being rewritten as a
+character `.say(...)` call.
 
 ---
 

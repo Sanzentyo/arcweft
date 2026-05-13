@@ -60,7 +60,10 @@ use game::characters::{alice, bob}
 
 ## `:` syntax sugar
 
-The compact speaker-prefix form is sugar for `Character.say(...)[...]`.
+For a character alias, the compact speaker-prefix form is sugar for
+`Character.say(...)[...]`. For a `SpeakerPreset`, the same surface syntax calls
+the preset and applies the dialogue content without forcing a character
+`.say(...)` rewrite.
 
 ```awft
 alice: おはよう。[p]
@@ -116,7 +119,8 @@ is equivalent to:
 
 ## Bracket content call
 
-A character or speaker preset may be called directly with a dialogue content block.
+A character alias or speaker preset may be called directly with a dialogue
+content block.
 
 ```awft
 alice[
@@ -124,7 +128,7 @@ alice[
 ]
 ```
 
-This is sugar for:
+For a character alias, this is sugar for:
 
 ```awft
 alice.say()[
@@ -132,7 +136,8 @@ alice.say()[
 ]
 ```
 
-Options still use the parenthesized speaker-preset call or the canonical `.say(...)` call.
+Options still use the parenthesized speaker-preset call or the canonical
+`.say(...)` call.
 
 ```awft
 alice(face=smile, voice=auto)[
@@ -161,7 +166,9 @@ This form is especially convenient for tool-generated dialogue because the conte
 
 ## Speaker presets and curried line options
 
-A character alias is callable. Calling a character with `say()` options does not display text immediately; it returns a **speaker preset** that carries default line options.
+A character alias is callable. Calling a character with line options does not
+display text immediately; it returns a **speaker preset** that carries default
+line options.
 
 ```awft
 let alice2 = alice(face=smile, voice=auto, window=#textbox.side)
@@ -175,11 +182,11 @@ alice2(id=#say.opening.side_001):
 This is equivalent to:
 
 ```awft
-alice.say(face=smile, voice=auto, window=#textbox.side)[
+alice(face=smile, voice=auto, window=#textbox.side)[
     おはよう。[p]
 ]
 
-alice.say(id=#say.opening.side_001, face=smile, voice=auto, window=#textbox.side)[
+alice2(id=#say.opening.side_001)[
     こっちのウィンドウで話すね。[p]
 ]
 ```
@@ -192,6 +199,20 @@ let alice_worried = alice_side(face=worried)
 
 alice_worried: ……本当に、大丈夫？[p]
 ```
+
+The colon form on a speaker preset lowers through the preset call surface:
+
+```text
+alice2: text
+  -> alice2()[text]
+
+alice2(voice=auto): text
+  -> alice2(voice=auto)[text]
+```
+
+If tooling chooses to display the fully expanded character call, it must preserve
+the same effective option order and must not imply that the preset mutated the
+underlying character.
 
 The effective option order is:
 
@@ -689,11 +710,11 @@ anticipate #flow.alice_intro {
 ## Design decisions
 
 ```text
-1. `Character.say(...)[...]` is canonical for dialogue.
-2. `speaker:` is only sugar for `speaker.say()[...]`.
+1. `Character.say(...)[...]` is canonical for character-alias dialogue.
+2. `speaker:` is only sugar for applying dialogue content to a speaker value. For `Ref<Character>` this is `speaker.say()[...]`; for `SpeakerPreset` this is `speaker()[...]`.
 3. There is no `script` item and no script-lowering phase.
 4. A missing dialogue window target resolves to `#textbox.0`.
-5. `alice(options)` creates a lexical speaker preset; it does not display text until `:` or `.say()[...]` is used.
+5. `alice(options)` creates a lexical speaker preset; it does not display text until `:`, `[...]`, or `.say()[...]` is used.
 6. Text interpolation uses `DisplayText` or explicit `fmt(...)`.
 7. Runtime interpolation `#[expr]` is separate from localization placeholders `{name}`.
 8. Dialogue hooks use `[hook ...]` / `[call ...]`; pure content insertion uses `#[...]`.

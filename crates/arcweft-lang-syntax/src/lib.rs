@@ -29,7 +29,7 @@ pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
     validate_typecheck_ready,
 };
-pub use expr::{BinaryOp, Expr, Literal, Placeholder, UnaryOp, parse_expr};
+pub use expr::{BinaryOp, ComputationBlockKind, Expr, Literal, Placeholder, UnaryOp, parse_expr};
 pub use lower::{
     HirAwait, HirAwaitBranch, HirBorrow, HirChoice, HirChoiceOption, HirDialogue, HirFlow,
     HirFlowItem, HirFor, HirIf, HirIfLet, HirLoop, HirLowerError, HirMatch, HirMatchArm, HirModule,
@@ -47,12 +47,12 @@ pub use types::{
 mod tests {
     use super::{
         AwaitBranchKind, BinaryOp, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
-        ContractClause, DialogueToken, EntityKind, Expr, FlowItem, FlowKind, HirFlowItem, Item,
-        LinePlanItem, Literal, NameRegistry, Pattern, SelectBranchHead, Stmt, SymbolUseKind,
-        TraitMember, TypeCheckEnv, TypeKind, TypeRef, UnaryOp, VariantPatternPayload, Visibility,
-        collect_symbol_uses, lower_to_hir, parse_dialogue_tokens, parse_fn_signature, parse_source,
-        parse_stub, parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
-        validate_typecheck_ready,
+        ComputationBlockKind, ContractClause, DialogueToken, EntityKind, Expr, FlowItem, FlowKind,
+        HirFlowItem, Item, LinePlanItem, Literal, NameRegistry, Pattern, SelectBranchHead, Stmt,
+        SymbolUseKind, TraitMember, TypeCheckEnv, TypeKind, TypeRef, UnaryOp,
+        VariantPatternPayload, Visibility, collect_symbol_uses, lower_to_hir,
+        parse_dialogue_tokens, parse_fn_signature, parse_source, parse_stub, parse_type_ref,
+        registry_from_hir, typecheck_hir, validate_hir_references, validate_typecheck_ready,
     };
 
     fn variant_tuple_binding(pattern: &Pattern, variant: &str, binding: &str) -> bool {
@@ -394,7 +394,7 @@ with:
     }
 
     #[test]
-    fn parses_compat_at_bracket_timed_cue() {
+    fn rejects_at_bracket_timed_cue_as_raw_line_plan_item() {
         let tree = parse_source(
             r"
 alice[おはよう。[p]]
@@ -402,19 +402,22 @@ with:
     at(0.42s)[alice.stage.face(worried)]
 ",
         )
-        .expect("compat at bracket cue parses");
+        .expect("old at bracket cue parses lossily");
 
         let Item::FlowItem(FlowItem::ContentCall(call)) = &tree.items()[0] else {
             panic!("expected content call");
         };
         let plan = call.plan().expect("line plan");
-        assert!(matches!(
-            &plan.items()[0],
-            LinePlanItem::TimedCue {
-                anchor: Expr::Literal(_),
-                body: Expr::MethodCall { .. }
-            }
-        ));
+        assert!(matches!(&plan.items()[0], LinePlanItem::Raw(_)));
+
+        let hir = lower_to_hir(&tree).expect("lossy line plan still lowers");
+        let errors = validate_typecheck_ready(&hir).expect_err("old at bracket cue is rejected");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message().contains("raw expression")
+                    && error.message().contains("at(0.42s)["))
+        );
     }
 
     #[test]
@@ -1150,6 +1153,62 @@ flow #flow.validate validate {
             .with_symbol("score", TypeKind::Int)
             .with_symbol("valid", TypeKind::Bool);
         typecheck_hir(&hir, &env).expect("bail and ensure typecheck");
+    }
+
+    #[test]
+    fn parses_and_typechecks_result_computation_block_binding() {
+        let tree = parse_source(
+            r#"
+flow #flow.compute compute {
+    let route = result {
+        let id = parse_choice_id(raw)?
+        ensure id_valid, "choice id must be valid"
+        Ok(#flow.title)
+    }
+    goto #flow.title
+}
+"#,
+        )
+        .expect("result computation block fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::Stmt(Stmt::Let {
+            expr:
+                Expr::ComputationBlock {
+                    kind,
+                    statements,
+                    value: Some(_),
+                },
+            ..
+        }) = &flow.body()[0]
+        else {
+            panic!("expected result computation block binding");
+        };
+        assert_eq!(kind, &ComputationBlockKind::Result);
+        assert_eq!(statements.len(), 2);
+
+        let hir = lower_to_hir(&tree).expect("result computation block fixture lowers");
+        validate_typecheck_ready(&hir).expect("result computation block is typecheck-ready");
+        let env = TypeCheckEnv::new()
+            .with_symbol("raw", TypeKind::String)
+            .with_symbol("id_valid", TypeKind::Bool)
+            .with_function(
+                "parse_choice_id",
+                TypeKind::Result {
+                    ok: Box::new(TypeKind::String),
+                    error: Box::new(TypeKind::Named("ParseError".to_owned())),
+                },
+            )
+            .with_function(
+                "Ok",
+                TypeKind::Result {
+                    ok: Box::new(TypeKind::Ref(EntityKind::Flow)),
+                    error: Box::new(TypeKind::Named("ArcError".to_owned())),
+                },
+            );
+        typecheck_hir(&hir, &env).expect("result computation block typechecks");
     }
 
     #[test]
