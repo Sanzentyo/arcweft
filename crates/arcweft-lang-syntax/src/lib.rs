@@ -434,6 +434,9 @@ with {
             super::parse_expr("alice.say()[聞いて。[p]]").expect("dialogue call expr parses");
         assert!(matches!(dialogue_call, Expr::DialogueCall { .. }));
 
+        let timeline_offset = super::parse_expr("end-250ms").expect("timeline offset parses");
+        assert!(matches!(timeline_offset, Expr::Binary { .. }));
+
         let placeholder = super::parse_expr("clamp(0, ^, 100)").expect("placeholder call parses");
         assert!(matches!(placeholder, Expr::Call { .. }));
 
@@ -544,7 +547,7 @@ flow #flow.opening opening {
         今日は｜変な夢《へんなゆめ》を見たんだ。[p]
     ]
     with:
-        at(0.42s): alice.stage.face(worried)
+        at(end-250ms): alice.stage.face(worried)
     @choice #choice.opening.first {
         #choice.opening.listen "聞いてみる" if state.affection[#character.alice] >= 3 -> #flow.alice_intro
     }
@@ -663,6 +666,7 @@ flow #flow.opening opening {
             .with_symbol("auto", TypeKind::Named("VoicePolicy".to_owned()))
             .with_symbol("blue", TypeKind::Named("Color".to_owned()))
             .with_symbol("worried", TypeKind::Named("Face".to_owned()))
+            .with_symbol("end", TypeKind::Duration)
             .with_symbol(
                 "state.affection",
                 TypeKind::Named("Map<Ref<Character>, Int>".to_owned()),

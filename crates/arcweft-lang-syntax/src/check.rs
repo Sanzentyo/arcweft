@@ -1,5 +1,5 @@
 use crate::ast::{DialogueToken, EntityRef, FlowKind, LinePlanItem, Stmt};
-use crate::expr::{Expr, Literal};
+use crate::expr::{BinaryOp, Expr, Literal};
 use crate::lower::{HirFlowItem, HirModule};
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 use std::collections::HashMap;
@@ -340,16 +340,35 @@ impl TypeChecker<'_> {
                 self.check_expr(lhs);
                 self.check_expr(rhs)
             }
-            Expr::Binary { lhs, rhs, .. } => {
-                self.check_expr(lhs);
-                self.check_expr(rhs);
-                Some(TypeKind::Bool)
-            }
+            Expr::Binary { lhs, op, rhs } => self.check_binary_expr(lhs, *op, rhs),
             Expr::Raw(raw) => {
                 self.errors.push(TypeCheckError::new(format!(
                     "raw expression is not type-checkable: {raw}"
                 )));
                 None
+            }
+        }
+    }
+
+    fn check_binary_expr(&mut self, lhs: &Expr, op: BinaryOp, rhs: &Expr) -> Option<TypeKind> {
+        let lhs_type = self.check_expr(lhs);
+        let rhs_type = self.check_expr(rhs);
+        match op {
+            BinaryOp::Eq
+            | BinaryOp::NotEq
+            | BinaryOp::Gte
+            | BinaryOp::Lte
+            | BinaryOp::Gt
+            | BinaryOp::Lt => Some(TypeKind::Bool),
+            BinaryOp::Add | BinaryOp::Sub => {
+                if lhs_type == Some(TypeKind::Duration) && rhs_type == Some(TypeKind::Duration) {
+                    Some(TypeKind::Duration)
+                } else {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "arithmetic timeline expression must use Duration operands, found {lhs_type:?} and {rhs_type:?}"
+                    )));
+                    None
+                }
             }
         }
     }

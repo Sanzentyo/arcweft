@@ -79,6 +79,8 @@ pub enum BinaryOp {
     Lte,
     Gt,
     Lt,
+    Add,
+    Sub,
 }
 
 /// Expression parse error.
@@ -127,6 +129,15 @@ fn parse_binary(source: &str) -> Expr {
         ("<", BinaryOp::Lt),
     ] {
         if let Some((lhs, rhs)) = split_top_level(source, needle) {
+            return Expr::Binary {
+                lhs: Box::new(parse_postfix(lhs)),
+                op,
+                rhs: Box::new(parse_postfix(rhs)),
+            };
+        }
+    }
+    for (needle, op) in [("+", BinaryOp::Add), ("-", BinaryOp::Sub)] {
+        if let Some((lhs, rhs)) = split_top_level_arithmetic(source, needle) {
             return Expr::Binary {
                 lhs: Box::new(parse_postfix(lhs)),
                 op,
@@ -350,6 +361,17 @@ fn split_named_arg(source: &str) -> Option<(&str, &str)> {
         return None;
     }
     Some((name, value))
+}
+
+fn split_top_level_arithmetic<'a>(source: &'a str, needle: &str) -> Option<(&'a str, &'a str)> {
+    if source.starts_with('#') {
+        return None;
+    }
+    let (lhs, rhs) = split_top_level(source, needle)?;
+    if lhs.is_empty() || rhs.is_empty() || lhs.ends_with(['e', 'E']) {
+        return None;
+    }
+    Some((lhs, rhs))
 }
 
 fn find_last_top_level_open_paren(source: &str) -> Option<usize> {
