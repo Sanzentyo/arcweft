@@ -1,6 +1,6 @@
 use crate::ast::{
-    ChoiceBlock, DialogueContent, EntityRef, Flow, FlowItem, FlowKind, IfBlock, Item, LinePlan,
-    MatchBlock, Pattern, SpeakerLine, Stmt, SyntaxTree, TextRange,
+    AwaitBranchKind, ChoiceBlock, DialogueContent, EntityRef, Flow, FlowItem, FlowKind, IfBlock,
+    Item, LinePlan, MatchBlock, Pattern, SpeakerLine, Stmt, SyntaxTree, TextRange,
 };
 use crate::expr::Expr;
 use thiserror::Error;
@@ -34,7 +34,7 @@ pub enum HirFlowItem {
     If(HirIf),
     Match(HirMatch),
     Include(EntityRef),
-    Await { expr: Expr, propagates_error: bool },
+    Await(HirAwait),
     Scenario { name: String, args: Vec<Expr> },
 }
 
@@ -80,6 +80,22 @@ pub struct HirMatch {
 /// HIR-facing match arm.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirMatchArm {
+    pattern: Pattern,
+    body: Vec<HirFlowItem>,
+}
+
+/// HIR-facing await-with block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirAwait {
+    expr: Expr,
+    propagates_error: bool,
+    branches: Vec<HirAwaitBranch>,
+}
+
+/// HIR-facing wait-view branch.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirAwaitBranch {
+    kind: AwaitBranchKind,
     pattern: Pattern,
     body: Vec<HirFlowItem>,
 }
@@ -158,10 +174,28 @@ fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
         FlowItem::If(block) => lower_if(block).map(HirFlowItem::If),
         FlowItem::Match(block) => lower_match(block).map(HirFlowItem::Match),
         FlowItem::Include(entity) => Ok(HirFlowItem::Include(entity.clone())),
-        FlowItem::AwaitWith(await_with) => Ok(HirFlowItem::Await {
-            expr: await_with.expr().clone(),
-            propagates_error: await_with.propagates_error(),
-        }),
+        FlowItem::AwaitWith(await_with) => {
+            let branches = await_with
+                .branches()
+                .iter()
+                .map(|branch| {
+                    Ok(HirAwaitBranch {
+                        kind: branch.kind(),
+                        pattern: branch.pattern().clone(),
+                        body: branch
+                            .body()
+                            .iter()
+                            .map(lower_flow_item)
+                            .collect::<Result<Vec<_>, _>>()?,
+                    })
+                })
+                .collect::<Result<Vec<_>, HirLowerError>>()?;
+            Ok(HirFlowItem::Await(HirAwait {
+                expr: await_with.expr().clone(),
+                propagates_error: await_with.propagates_error(),
+                branches,
+            }))
+        }
         FlowItem::Raw(raw) => Err(HirLowerError::new(
             format!("raw flow item cannot be lowered: {raw}"),
             None,
@@ -320,6 +354,34 @@ impl HirMatch {
 }
 
 impl HirMatchArm {
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    pub fn body(&self) -> &[HirFlowItem] {
+        &self.body
+    }
+}
+
+impl HirAwait {
+    pub const fn expr(&self) -> &Expr {
+        &self.expr
+    }
+
+    pub const fn propagates_error(&self) -> bool {
+        self.propagates_error
+    }
+
+    pub fn branches(&self) -> &[HirAwaitBranch] {
+        &self.branches
+    }
+}
+
+impl HirAwaitBranch {
+    pub const fn kind(&self) -> AwaitBranchKind {
+        self.kind
+    }
+
     pub const fn pattern(&self) -> &Pattern {
         &self.pattern
     }

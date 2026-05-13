@@ -173,7 +173,24 @@ pub enum Pattern {
 pub struct AwaitWith {
     expr: Expr,
     propagates_error: bool,
-    pending: Option<String>,
+    branches: Vec<AwaitBranch>,
+}
+
+/// One branch in an `await ... with` wait-view block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AwaitBranch {
+    kind: AwaitBranchKind,
+    pattern: Pattern,
+    body: Vec<FlowItem>,
+}
+
+/// Wait-view branch kind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AwaitBranchKind {
+    Pending,
+    Ready,
+    Error,
+    Denied,
 }
 
 /// Compact `@bg`, `@show`, and similar scenario command.
@@ -605,11 +622,15 @@ impl MatchArm {
 }
 
 impl AwaitWith {
-    pub(crate) const fn new(expr: Expr, propagates_error: bool, pending: Option<String>) -> Self {
+    pub(crate) const fn new(
+        expr: Expr,
+        propagates_error: bool,
+        branches: Vec<AwaitBranch>,
+    ) -> Self {
         Self {
             expr,
             propagates_error,
-            pending,
+            branches,
         }
     }
 
@@ -621,8 +642,36 @@ impl AwaitWith {
         self.propagates_error
     }
 
-    pub fn pending(&self) -> Option<&str> {
-        self.pending.as_deref()
+    pub fn branches(&self) -> &[AwaitBranch] {
+        &self.branches
+    }
+
+    pub fn pending(&self) -> Option<&AwaitBranch> {
+        self.branches
+            .iter()
+            .find(|branch| branch.kind == AwaitBranchKind::Pending)
+    }
+}
+
+impl AwaitBranch {
+    pub(crate) const fn new(kind: AwaitBranchKind, pattern: Pattern, body: Vec<FlowItem>) -> Self {
+        Self {
+            kind,
+            pattern,
+            body,
+        }
+    }
+
+    pub const fn kind(&self) -> AwaitBranchKind {
+        self.kind
+    }
+
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    pub fn body(&self) -> &[FlowItem] {
+        &self.body
     }
 }
 

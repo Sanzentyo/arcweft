@@ -81,7 +81,14 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
             }
         }
         HirFlowItem::Include(entity) => push_entity(uses, entity),
-        HirFlowItem::Await { expr, .. } => collect_expr(expr, uses),
+        HirFlowItem::Await(await_with) => {
+            collect_expr(await_with.expr(), uses);
+            for branch in await_with.branches() {
+                for item in branch.body() {
+                    collect_flow_item(item, uses);
+                }
+            }
+        }
         HirFlowItem::Scenario { args, .. } => {
             for arg in args {
                 collect_expr(arg, uses);

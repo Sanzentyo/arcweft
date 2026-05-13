@@ -199,12 +199,22 @@ impl TypeChecker<'_> {
                     )));
                 }
             }
-            HirFlowItem::Await { expr, .. } => {
-                let ty = self.check_expr(expr);
+            HirFlowItem::Await(await_with) => {
+                let ty = self.check_expr(await_with.expr());
                 if !matches!(ty, Some(TypeKind::Need { .. })) {
                     self.errors.push(TypeCheckError::new(
                         "await expression must have Need<T, E> type".to_owned(),
                     ));
+                }
+                if await_with.branches().is_empty() {
+                    self.errors.push(TypeCheckError::new(
+                        "await with must define at least one wait-view branch".to_owned(),
+                    ));
+                }
+                for branch in await_with.branches() {
+                    for item in branch.body() {
+                        self.check_flow_item(item);
+                    }
                 }
             }
             HirFlowItem::Scenario { args, .. } => {

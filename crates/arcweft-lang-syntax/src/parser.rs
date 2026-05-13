@@ -1,9 +1,9 @@
 use crate::ast::{
-    Attribute, AwaitWith, BlockStyle, CancelRuleSyntax, ChoiceBlock, ChoiceOption, ContentCall,
-    DialogueContent, EntityRef, Flow, FlowItem, FlowKind, HookItem, IfBlock, Item, LinePlan,
-    LinePlanItem, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem,
-    ScenarioCommand, SpeakerLine, Stmt, SyntaxTree, TextRange, UseItem, UseMode, Visibility,
-    WikiLink,
+    Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, CancelRuleSyntax, ChoiceBlock,
+    ChoiceOption, ContentCall, DialogueContent, EntityRef, Flow, FlowItem, FlowKind, HookItem,
+    IfBlock, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem,
+    Pattern, RawItem, ScenarioCommand, SpeakerLine, Stmt, SyntaxTree, TextRange, UseItem, UseMode,
+    Visibility, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -326,9 +326,18 @@ impl Parser {
             return Some(FlowItem::Include(entity));
         }
         if trimmed.starts_with("await ") && trimmed.contains(" with ") {
-            let await_with = parse_await_with(trimmed);
-            self.index += 1;
-            return Some(FlowItem::AwaitWith(await_with));
+            if trimmed.contains('{') {
+                let (head, body, _, ok) = self.take_brace_block();
+                if ok {
+                    return Some(FlowItem::AwaitWith(parse_await_with(&format!(
+                        "{head} {{ {body} }}"
+                    ))));
+                }
+            } else {
+                let await_with = parse_await_with(trimmed);
+                self.index += 1;
+                return Some(FlowItem::AwaitWith(await_with));
+            }
         }
         if is_typed_stmt(trimmed) {
             self.index += 1;
@@ -1246,7 +1255,7 @@ fn normalize_timed_cue_body(source: &str) -> &str {
 
 fn parse_await_with(trimmed: &str) -> AwaitWith {
     let without_await = trimmed.trim_start_matches("await").trim();
-    let (expr_part, pending) = without_await
+    let (expr_part, branch_part) = without_await
         .split_once(" with ")
         .unwrap_or((without_await, ""));
     let propagates_error = expr_part.ends_with('?');
@@ -1254,8 +1263,84 @@ fn parse_await_with(trimmed: &str) -> AwaitWith {
     AwaitWith::new(
         parse_expr_lossy(expr_text),
         propagates_error,
-        (!pending.trim().is_empty()).then(|| pending.trim().to_owned()),
+        parse_await_branches(branch_part.trim()),
     )
+}
+
+fn parse_await_branches(source: &str) -> Vec<AwaitBranch> {
+    let body = source
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+        .unwrap_or(source)
+        .trim();
+    split_await_branch_lines(body)
+        .into_iter()
+        .filter_map(parse_await_branch)
+        .collect()
+}
+
+fn split_await_branch_lines(source: &str) -> Vec<&str> {
+    if source.lines().count() > 1 {
+        return source
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect();
+    }
+    let mut lines = Vec::new();
+    let mut start = 0;
+    for keyword in [" pending ", " ready ", " error ", " denied "] {
+        for (index, _) in source.match_indices(keyword) {
+            let line = source[start..index].trim();
+            if !line.is_empty() {
+                lines.push(line);
+            }
+            start = index + 1;
+        }
+    }
+    let tail = source[start..].trim();
+    if !tail.is_empty() {
+        lines.push(tail);
+    }
+    lines
+}
+
+fn parse_await_branch(line: &str) -> Option<AwaitBranch> {
+    let (head, body) = line.split_once("=>")?;
+    let mut parts = head.split_whitespace();
+    let kind = match parts.next()? {
+        "pending" => AwaitBranchKind::Pending,
+        "ready" => AwaitBranchKind::Ready,
+        "error" => AwaitBranchKind::Error,
+        "denied" => AwaitBranchKind::Denied,
+        _ => return None,
+    };
+    let pattern = parse_pattern(parts.collect::<Vec<_>>().join(" ").trim());
+    Some(AwaitBranch::new(
+        kind,
+        pattern,
+        vec![parse_inline_await_branch_item(body.trim())],
+    ))
+}
+
+fn parse_inline_await_branch_item(body: &str) -> FlowItem {
+    if let Some(command) = parse_scene_command(body) {
+        return FlowItem::ScenarioCommand(command);
+    }
+    let mut nested = Parser::new(body.to_owned());
+    nested
+        .parse_flow_item_until_indent(0)
+        .unwrap_or_else(|| FlowItem::Stmt(parse_stmt(body)))
+}
+
+fn parse_scene_command(body: &str) -> Option<ScenarioCommand> {
+    let rest = body.strip_prefix("scene ")?;
+    let args = rest.split_once('{').map_or(rest, |(head, _)| head).trim();
+    Some(ScenarioCommand::new(
+        "scene".to_owned(),
+        parse_scenario_args(args),
+        TextRange::new(0, body.len()),
+    ))
 }
 
 fn is_typed_stmt(trimmed: &str) -> bool {

@@ -13,10 +13,10 @@ mod symbols;
 mod text;
 
 pub use ast::{
-    Attribute, ChoiceBlock, ChoiceOption, ContentCall, DialogueToken, EntityRef, Flow, FlowItem,
-    FlowKind, HookItem, IfBlock, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn,
-    ModuleDecl, ParserItem, Pattern, ScenarioCommand, SpeakerLine, Stmt, SyntaxTree, TextRange,
-    UseItem, Visibility, WikiLink,
+    Attribute, AwaitBranch, AwaitBranchKind, ChoiceBlock, ChoiceOption, ContentCall, DialogueToken,
+    EntityRef, Flow, FlowItem, FlowKind, HookItem, IfBlock, Item, LinePlan, LinePlanItem, MatchArm,
+    MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand, SpeakerLine, Stmt,
+    SyntaxTree, TextRange, UseItem, Visibility, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -24,8 +24,8 @@ pub use check::{
 };
 pub use expr::{BinaryOp, Expr, Literal, Placeholder, parse_expr};
 pub use lower::{
-    HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirIf, HirLowerError, HirMatch,
-    HirMatchArm, HirModule, lower_to_hir,
+    HirAwait, HirAwaitBranch, HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirIf,
+    HirLowerError, HirMatch, HirMatchArm, HirModule, lower_to_hir,
 };
 pub use parser::{ParseError, RecoverySuggestion, parse_source, parse_stub};
 pub use symbols::{SymbolUse, SymbolUseKind, collect_symbol_uses};
@@ -34,10 +34,10 @@ pub use text::parse_dialogue_tokens;
 #[cfg(test)]
 mod tests {
     use super::{
-        DialogueToken, EntityKind, Expr, FlowItem, FlowKind, HirFlowItem, Item, LinePlanItem,
-        Pattern, Stmt, SymbolUseKind, TypeCheckEnv, TypeKind, Visibility, collect_symbol_uses,
-        lower_to_hir, parse_dialogue_tokens, parse_source, parse_stub, typecheck_hir,
-        validate_typecheck_ready,
+        AwaitBranchKind, DialogueToken, EntityKind, Expr, FlowItem, FlowKind, HirFlowItem, Item,
+        LinePlanItem, Pattern, Stmt, SymbolUseKind, TypeCheckEnv, TypeKind, Visibility,
+        collect_symbol_uses, lower_to_hir, parse_dialogue_tokens, parse_source, parse_stub,
+        typecheck_hir, validate_typecheck_ready,
     };
 
     #[test]
@@ -558,7 +558,48 @@ flow #flow.loading loading {
         };
         assert!(await_with.propagates_error());
         assert!(matches!(await_with.expr(), Expr::Call { .. }));
-        assert!(await_with.pending().is_some());
+        let pending = await_with.pending().expect("pending branch");
+        assert_eq!(pending.kind(), AwaitBranchKind::Pending);
+        assert!(matches!(pending.body()[0], FlowItem::ScenarioCommand(_)));
+    }
+
+    #[test]
+    fn await_with_keeps_wait_view_branches() {
+        let tree = parse_source(
+            r"
+flow #flow.loading loading {
+    await load_avatar()? with {
+        pending p => scene #scene.loading { progress p.ratio }
+        ready img => Image(img)
+        error _ => Icon(#asset.avatar_fallback)
+        denied _ => return Ok(FlowExit::Goto(#flow.title))
+    }
+}
+",
+        )
+        .expect("await branches parse");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::AwaitWith(await_with) = &flow.body()[0] else {
+            panic!("expected await with");
+        };
+        assert_eq!(await_with.branches().len(), 4);
+        assert!(matches!(
+            await_with.branches()[0].kind(),
+            AwaitBranchKind::Pending
+        ));
+        assert!(matches!(
+            await_with.branches()[1].body()[0],
+            FlowItem::Stmt(Stmt::Expr(Expr::Call { .. }))
+        ));
+
+        let hir = lower_to_hir(&tree).expect("await branches lower");
+        assert!(matches!(
+            &hir.flows()[0].body()[0],
+            HirFlowItem::Await(await_with) if await_with.branches().len() == 4
+        ));
     }
 
     #[test]
@@ -649,6 +690,39 @@ flow #flow.branching branching {
     }
 
     #[test]
+    fn typechecks_await_wait_view_branches() {
+        let tree = parse_source(
+            r"
+flow #flow.loading loading {
+    await load_avatar()? with {
+        pending p => scene #scene.loading { progress p.ratio }
+        ready img => Image(img)
+        error _ => Icon(#asset.avatar_fallback)
+        denied _ => return Ok(FlowExit::Goto(#flow.title))
+    }
+}
+",
+        )
+        .expect("await branch typecheck fixture parses");
+        let hir = lower_to_hir(&tree).expect("await branch typecheck fixture lowers");
+        let env = TypeCheckEnv::new()
+            .with_function(
+                "load_avatar",
+                TypeKind::Need {
+                    ready: Box::new(TypeKind::Named("Image".to_owned())),
+                    error: Box::new(TypeKind::Named("AvatarError".to_owned())),
+                },
+            )
+            .with_function("Image", TypeKind::Named("View".to_owned()))
+            .with_function("Icon", TypeKind::Named("View".to_owned()))
+            .with_function("Ok", TypeKind::Named("Result".to_owned()))
+            .with_function("FlowExit::Goto", TypeKind::Named("FlowExit".to_owned()))
+            .with_symbol("img", TypeKind::Named("Image".to_owned()));
+
+        typecheck_hir(&hir, &env).expect("await wait-view branches typecheck");
+    }
+
+    #[test]
     fn lowers_edge_case_flow_to_hir_without_raw_reparse() {
         let tree = parse_source(
             r#"
@@ -677,13 +751,9 @@ flow #flow.opening opening {
                 .iter()
                 .any(|item| matches!(item, HirFlowItem::Stmt(Stmt::Let { .. })))
         );
-        assert!(flow.body().iter().any(|item| matches!(
-            item,
-            HirFlowItem::Await {
-                propagates_error: true,
-                ..
-            }
-        )));
+        assert!(flow.body().iter().any(
+            |item| matches!(item, HirFlowItem::Await(await_with) if await_with.propagates_error())
+        ));
         assert!(flow.body().iter().any(
             |item| matches!(item, HirFlowItem::Dialogue(dialogue) if dialogue.callee() == "alice")
         ));
