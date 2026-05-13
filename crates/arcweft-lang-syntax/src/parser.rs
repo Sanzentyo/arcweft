@@ -1939,15 +1939,25 @@ fn looks_like_flow(trimmed: &str) -> bool {
 fn looks_like_function_item(trimmed: &str) -> bool {
     let (_, rest) = parse_visibility_prefix(trimmed);
     let rest = rest.trim_start();
-    rest.starts_with("fn ") || rest.starts_with("task fn ")
+    rest.starts_with("fn ")
+        || rest.starts_with("task fn ")
+        || rest.starts_with("dialogue fn ")
+        || rest.starts_with("stream fn ")
 }
 
 fn parse_function_kind_and_signature(source: &str) -> (FunctionKind, &str) {
-    source
-        .strip_prefix("task ")
-        .map_or((FunctionKind::Function, source), |signature| {
-            (FunctionKind::Task, signature.trim_start())
-        })
+    [
+        ("task ", FunctionKind::Task),
+        ("dialogue ", FunctionKind::Dialogue),
+        ("stream ", FunctionKind::Stream),
+    ]
+    .into_iter()
+    .find_map(|(prefix, kind)| {
+        source
+            .strip_prefix(prefix)
+            .map(|signature| (kind, signature.trim_start()))
+    })
+    .unwrap_or((FunctionKind::Function, source))
 }
 
 fn looks_like_callable_item(trimmed: &str) -> bool {

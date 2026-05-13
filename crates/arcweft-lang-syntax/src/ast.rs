@@ -163,6 +163,10 @@ pub enum FunctionKind {
     Function,
     /// Background task function that may await non-visible work.
     Task,
+    /// Dialogue-safe function callable from dialogue content tags.
+    Dialogue,
+    /// Generator-like function that yields a stream/source of values.
+    Stream,
 }
 
 /// Internal initializer for a function item.
