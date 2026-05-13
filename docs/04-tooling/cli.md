@@ -17,10 +17,16 @@ Expansion rewrites source-level sugar to canonical forms:
 ```text
 with:                 -> with { ... }
 speaker: text         -> speaker.say()[text]
-speaker(args): text   -> speaker.say(args)[text]
+speaker(args): text   -> speaker.say(args)[text] for character refs
+speaker_preset(args): text
+                      -> speaker_preset(args)[text]
 await? expr with ...  -> try await expr with ...
 parent::path          -> super::path
 ```
+
+The expansion must preserve the callee kind. A lexical `SpeakerPreset` remains a
+callable speaker value, so `alice2(voice=auto): text` expands to
+`alice2(voice=auto)[text]`, not to `alice2.say(voice=auto)[text]`.
 
 The command must preserve IDs, source anchors where possible, comments, and stable child entity slots. It must never renumber dialogue or choice IDs as a side effect of formatting.
 

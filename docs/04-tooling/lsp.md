@@ -21,9 +21,12 @@
 - Sugar expansion code actions:
   - `with:` → `with { ... }`
   - `speaker:` → `speaker.say()[...]`
-  - `speaker(args):` → `speaker.say(args)[...]`
+  - `speaker(args):` → `speaker.say(args)[...]` for character refs
+  - `speaker_preset(args):` → `speaker_preset(args)[...]`
   - `await? expr with ...` → `try await expr with ...`
   - `parent::path` → `super::path`
+  - preserve the callee kind when expanding dialogue sugar, so lexical speaker
+    presets are not rewritten into forced `.say(...)` calls
 - ID code actions:
   - materialize `id=.suffix` as a normalized `#say...` ID
   - materialize `choice .suffix` and relative option IDs as normalized `#choice...` IDs

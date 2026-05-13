@@ -113,7 +113,8 @@ ChoiceItem  := LetStmt | IfExpr | MatchExpr | ForStmt | OptionItem | OptionForSu
 
 OptionItem  := 'option' OptionId OptionBody
 ChoiceId    := EntityRef | RelativeId
-OptionId    := EntityRef | RelativeId | Expr
+OptionId    := StaticOptionId | Expr
+StaticOptionId := EntityRef | RelativeId
 OptionBody  := '{' OptionField* '}' | ':' Newline IndentedItems
 OptionField := 'label' '=' Expr
              | 'label' '(' 'id' '=' (EntityRef | RelativeId) ')' '=' Expr
@@ -127,7 +128,7 @@ OptionField := 'label' '=' Expr
              | LetStmt
 
 OptionForSugar := 'option' Pattern 'in' Expr OptionBody
-ChoiceArm      := OptionId String ChoiceArmCondition? ChoiceArmAction
+ChoiceArm      := StaticOptionId String ChoiceArmCondition? ChoiceArmAction
 ChoiceArmCondition := 'if' Expr
 ChoiceArmAction := '->' EntityRef | '=>' Expr
 
@@ -137,6 +138,11 @@ ChoicePlan := 'with' Block | 'with' ':' Newline IndentedItems
 `choice` displays a choice UI and may also be used as an expression. A choice body is a lexical scope. `option` creates an option candidate. Inline arm `if` is enabled-state sugar; wrapping an option in a block `if` controls whether the option exists. `visible = expr` controls rendering. `ui { ... }` is propagated to rendering, accessibility, test, and Agent observation.
 
 `-> target` is sugar for `select { goto target }`. `=> value` is sugar for `select { out value }`.
+Compact choice arms use only static option IDs because their syntax must be
+stable enough for localization and registry extraction. Full `option ... { }`
+blocks may use an expression ID for dynamic data-driven choices, or the
+`option pattern in expr { id = ... }` sugar when the ID is computed inside the
+option body.
 
 Relative choice IDs resolve through the current flow and named scope path.
 Relative option IDs resolve under the current choice ID.

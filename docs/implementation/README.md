@@ -26,7 +26,7 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   blocks for relative ID namespaces, `.suffix` IDs only in ID-bearing contexts,
   `self::` / `super::` / `crate::` module-path roots, reserved `parent::`
   normalization, and explicit sugar expansion for `with:`, speaker colon lines,
-  and `await?`.
+  speaker-preset calls, and `await?`.
 
 The stable specification locations for the `pro_review4.md` decisions are:
 
@@ -38,3 +38,4 @@ The stable specification locations for the `pro_review4.md` decisions are:
 - `docs/01-language/scenario-surface-syntax.md`: dialogue, choice, and scenario-facing sugar examples.
 - `docs/01-language/modules.md`: `self::`, `super::`, `crate::`, and `parent::` normalization.
 - `docs/04-tooling/cli.md`: explicit sugar expansion and ID materialization commands.
+- `docs/04-tooling/lsp.md`: sugar expansion and ID materialization code actions.
