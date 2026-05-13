@@ -41,11 +41,11 @@ pub use types::{
 #[cfg(test)]
 mod tests {
     use super::{
-        AwaitBranchKind, ContractClause, DialogueToken, EntityKind, Expr, FlowItem, FlowKind,
-        HirFlowItem, Item, LinePlanItem, NameRegistry, Pattern, Stmt, SymbolUseKind, TypeCheckEnv,
-        TypeKind, TypeRef, Visibility, collect_symbol_uses, lower_to_hir, parse_dialogue_tokens,
-        parse_fn_signature, parse_source, parse_stub, parse_type_ref, registry_from_hir,
-        typecheck_hir, validate_hir_references, validate_typecheck_ready,
+        AwaitBranchKind, BinaryOp, ContractClause, DialogueToken, EntityKind, Expr, FlowItem,
+        FlowKind, HirFlowItem, Item, LinePlanItem, NameRegistry, Pattern, Stmt, SymbolUseKind,
+        TypeCheckEnv, TypeKind, TypeRef, Visibility, collect_symbol_uses, lower_to_hir,
+        parse_dialogue_tokens, parse_fn_signature, parse_source, parse_stub, parse_type_ref,
+        registry_from_hir, typecheck_hir, validate_hir_references, validate_typecheck_ready,
     };
 
     #[test]
@@ -96,9 +96,10 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
         let tree = parse_source(
             r"
 pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
-requires delta >= -100
+requires delta >= -100 && delta <= 100
 ensures check result.affection[character] >= 0
 effects { asset.read, ui.show }
+ensures no_effect network.request
 {
     goto #flow.title
 }
@@ -109,7 +110,7 @@ effects { asset.read, ui.show }
         let Item::Flow(flow) = &tree.items()[0] else {
             panic!("expected flow");
         };
-        assert_eq!(flow.contracts().len(), 3);
+        assert_eq!(flow.contracts().len(), 4);
         assert!(matches!(
             &flow.contracts()[0],
             ContractClause::Requires {
@@ -124,7 +125,60 @@ effects { asset.read, ui.show }
                 expr: Expr::Binary { .. },
             } if mode == "check"
         ));
+        assert!(matches!(&flow.contracts()[3], ContractClause::NoEffect(_)));
         assert!(matches!(&flow.body()[0], FlowItem::Stmt(Stmt::Goto(_))));
+    }
+
+    #[test]
+    fn parses_documented_contract_clauses_and_logical_ops() {
+        let tree = parse_source(
+            r"
+pub fn add_affection(character: Ref<Character>, delta: i32)(state: GameState) -> GameState
+requires delta >= -100 && delta <= 100
+ensures no_effect network.request
+invariant affection_bounds_ok
+reads state.affection[character]
+modifies state.affection[character]
+assume external_plugin_is_deterministic
+{
+    state
+}
+",
+        )
+        .expect("documented contracts parse");
+
+        let Item::Function(function) = &tree.items()[0] else {
+            panic!("expected function item");
+        };
+        assert_eq!(function.contracts().len(), 6);
+        assert!(matches!(
+            &function.contracts()[0],
+            ContractClause::Requires {
+                expr: Expr::Binary {
+                    op: BinaryOp::And,
+                    ..
+                },
+                ..
+            }
+        ));
+        assert!(matches!(
+            &function.contracts()[1],
+            ContractClause::NoEffect(Expr::Path(path)) if path == "network.request"
+        ));
+        assert!(matches!(
+            &function.contracts()[2],
+            ContractClause::Invariant {
+                expr: Expr::Path(path),
+                ..
+            } if path == "affection_bounds_ok"
+        ));
+        assert!(matches!(&function.contracts()[3], ContractClause::Reads(_)));
+        assert!(matches!(
+            &function.contracts()[5],
+            ContractClause::Assume {
+                expr: Expr::Path(path)
+            } if path == "external_plugin_is_deterministic"
+        ));
     }
 
     #[test]
@@ -983,9 +1037,10 @@ flow #flow.branching branching {
         let tree = parse_source(
             r"
 pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
-requires delta >= -100
+requires delta >= -100 && delta <= 100
 ensures check result.affection[character] >= 0
 effects { asset.read, ui.show }
+ensures no_effect network.request
 {
     goto #flow.title
 }
@@ -1002,6 +1057,7 @@ effects { asset.read, ui.show }
             .with_symbol("character", TypeKind::Ref(EntityKind::Character))
             .with_symbol("asset.read", TypeKind::Named("Effect".to_owned()))
             .with_symbol("ui.show", TypeKind::Named("Effect".to_owned()))
+            .with_symbol("network.request", TypeKind::Named("Effect".to_owned()))
             .with_index(
                 TypeKind::Named("Map<Character, Int>".to_owned()),
                 TypeKind::Int,

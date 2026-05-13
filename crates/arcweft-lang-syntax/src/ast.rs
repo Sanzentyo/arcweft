@@ -125,7 +125,11 @@ pub(crate) struct FlowInit {
 pub enum ContractClause {
     Requires { mode: Option<String>, expr: Expr },
     Ensures { mode: Option<String>, expr: Expr },
+    Invariant { mode: Option<String>, expr: Expr },
+    Assume { expr: Expr },
+    Reads(Vec<Expr>),
     Effects(Vec<Expr>),
+    NoEffect(Expr),
     Modifies(Vec<Expr>),
     Decreases(Expr),
 }

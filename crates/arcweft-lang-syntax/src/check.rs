@@ -274,13 +274,18 @@ impl TypeChecker<'_> {
 
     fn check_contract_clause(&mut self, contract: &ContractClause) {
         match contract {
-            ContractClause::Requires { expr, .. } | ContractClause::Ensures { expr, .. } => {
+            ContractClause::Requires { expr, .. }
+            | ContractClause::Ensures { expr, .. }
+            | ContractClause::Invariant { expr, .. }
+            | ContractClause::Assume { expr } => {
                 self.expect_expr_type(expr, &TypeKind::Bool, "contract expression");
             }
-            ContractClause::Decreases(expr) => {
+            ContractClause::NoEffect(expr) | ContractClause::Decreases(expr) => {
                 self.check_expr(expr);
             }
-            ContractClause::Effects(items) | ContractClause::Modifies(items) => {
+            ContractClause::Reads(items)
+            | ContractClause::Effects(items)
+            | ContractClause::Modifies(items) => {
                 for item in items {
                     self.check_expr(item);
                 }
@@ -442,6 +447,15 @@ impl TypeChecker<'_> {
         let lhs_type = self.check_expr(lhs);
         let rhs_type = self.check_expr(rhs);
         match op {
+            BinaryOp::Implies | BinaryOp::Or | BinaryOp::And => {
+                if lhs_type != Some(TypeKind::Bool) || rhs_type != Some(TypeKind::Bool) {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "logical contract expression must use Bool operands, found {lhs_type:?} and {rhs_type:?}"
+                    )));
+                    return None;
+                }
+                Some(TypeKind::Bool)
+            }
             BinaryOp::Eq
             | BinaryOp::NotEq
             | BinaryOp::Gte

@@ -73,6 +73,9 @@ pub enum Placeholder {
 /// Binary operator syntax used in conditions and partial application.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BinaryOp {
+    Implies,
+    Or,
+    And,
     Eq,
     NotEq,
     Gte,
@@ -119,6 +122,19 @@ fn parse_pipe(source: &str) -> Expr {
 fn parse_binary(source: &str) -> Expr {
     if source.starts_with("#<") && source.ends_with('>') {
         return parse_postfix(source);
+    }
+    for (needle, op) in [
+        ("=>", BinaryOp::Implies),
+        ("||", BinaryOp::Or),
+        ("&&", BinaryOp::And),
+    ] {
+        if let Some((lhs, rhs)) = split_top_level(source, needle) {
+            return Expr::Binary {
+                lhs: Box::new(parse_binary(lhs)),
+                op,
+                rhs: Box::new(parse_binary(rhs)),
+            };
+        }
     }
     for (needle, op) in [
         ("==", BinaryOp::Eq),

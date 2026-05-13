@@ -1186,10 +1186,28 @@ fn parse_contract_clause(line: &str) -> Option<ContractClause> {
     }
     if let Some(rest) = line.strip_prefix("ensures ") {
         let (mode, expr) = split_contract_mode(rest);
+        if let Some(effect) = expr.strip_prefix("no_effect ") {
+            return Some(ContractClause::NoEffect(parse_expr_lossy(effect.trim())));
+        }
         return Some(ContractClause::Ensures {
             mode,
             expr: parse_expr_lossy(expr),
         });
+    }
+    if let Some(rest) = line.strip_prefix("invariant ") {
+        let (mode, expr) = split_contract_mode(rest);
+        return Some(ContractClause::Invariant {
+            mode,
+            expr: parse_expr_lossy(expr),
+        });
+    }
+    if let Some(rest) = line.strip_prefix("assume ") {
+        return Some(ContractClause::Assume {
+            expr: parse_expr_lossy(rest.trim()),
+        });
+    }
+    if let Some(rest) = line.strip_prefix("reads ") {
+        return Some(ContractClause::Reads(parse_contract_expr_list(rest)));
     }
     if let Some(rest) = line.strip_prefix("effects ") {
         return Some(ContractClause::Effects(parse_contract_expr_list(rest)));

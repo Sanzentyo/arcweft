@@ -110,8 +110,13 @@ fn collect_contract_clause(contract: &ContractClause, uses: &mut Vec<SymbolUse>)
     match contract {
         ContractClause::Requires { expr, .. }
         | ContractClause::Ensures { expr, .. }
+        | ContractClause::Invariant { expr, .. }
+        | ContractClause::Assume { expr }
+        | ContractClause::NoEffect(expr)
         | ContractClause::Decreases(expr) => collect_expr(expr, uses),
-        ContractClause::Effects(items) | ContractClause::Modifies(items) => {
+        ContractClause::Reads(items)
+        | ContractClause::Effects(items)
+        | ContractClause::Modifies(items) => {
             for item in items {
                 collect_expr(item, uses);
             }
