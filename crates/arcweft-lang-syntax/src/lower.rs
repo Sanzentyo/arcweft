@@ -1,7 +1,7 @@
 use crate::ast::{
-    AwaitBranchKind, ChoiceBlock, ContractClause, DialogueContent, EntityRef, Flow, FlowItem,
-    FlowKind, IfBlock, Item, LinePlan, MatchBlock, Pattern, SpeakerLine, Stmt, SyntaxTree,
-    TextRange,
+    AwaitBranchKind, BorrowBlock, ChoiceBlock, ContractClause, DialogueContent, EntityRef, Flow,
+    FlowItem, FlowKind, IfBlock, Item, LinePlan, MatchBlock, Pattern, SpeakerLine, Stmt,
+    SyntaxTree, TextRange,
 };
 use crate::expr::Expr;
 use thiserror::Error;
@@ -35,6 +35,7 @@ pub enum HirFlowItem {
     Choice(HirChoice),
     If(HirIf),
     Match(HirMatch),
+    Borrow(HirBorrow),
     Include(EntityRef),
     Await(HirAwait),
     Scenario { name: String, args: Vec<Expr> },
@@ -83,6 +84,14 @@ pub struct HirMatch {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirMatchArm {
     pattern: Pattern,
+    body: Vec<HirFlowItem>,
+}
+
+/// HIR-facing zero-copy borrow block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirBorrow {
+    source: Expr,
+    binding: Pattern,
     body: Vec<HirFlowItem>,
 }
 
@@ -180,6 +189,7 @@ fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
         FlowItem::Choice(choice) => Ok(HirFlowItem::Choice(lower_choice(choice))),
         FlowItem::If(block) => lower_if(block).map(HirFlowItem::If),
         FlowItem::Match(block) => lower_match(block).map(HirFlowItem::Match),
+        FlowItem::BorrowBlock(block) => lower_borrow(block).map(HirFlowItem::Borrow),
         FlowItem::Include(entity) => Ok(HirFlowItem::Include(entity.clone())),
         FlowItem::AwaitWith(await_with) => {
             let branches = await_with
@@ -208,6 +218,18 @@ fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
             None,
         )),
     }
+}
+
+fn lower_borrow(block: &BorrowBlock) -> Result<HirBorrow, HirLowerError> {
+    Ok(HirBorrow {
+        source: block.source().clone(),
+        binding: block.binding().clone(),
+        body: block
+            .body()
+            .iter()
+            .map(lower_flow_item)
+            .collect::<Result<Vec<_>, _>>()?,
+    })
 }
 
 fn lower_if(block: &IfBlock) -> Result<HirIf, HirLowerError> {
@@ -367,6 +389,20 @@ impl HirMatch {
 impl HirMatchArm {
     pub const fn pattern(&self) -> &Pattern {
         &self.pattern
+    }
+
+    pub fn body(&self) -> &[HirFlowItem] {
+        &self.body
+    }
+}
+
+impl HirBorrow {
+    pub const fn source(&self) -> &Expr {
+        &self.source
+    }
+
+    pub const fn binding(&self) -> &Pattern {
+        &self.binding
     }
 
     pub fn body(&self) -> &[HirFlowItem] {

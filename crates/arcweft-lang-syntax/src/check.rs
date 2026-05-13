@@ -104,6 +104,7 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
         env,
         errors: Vec::new(),
         active_borrows: Vec::new(),
+        locals: HashMap::new(),
     };
     checker.check_module(module);
     if checker.errors.is_empty() {
@@ -117,6 +118,7 @@ struct TypeChecker<'a> {
     env: &'a TypeCheckEnv,
     errors: Vec<TypeCheckError>,
     active_borrows: Vec<String>,
+    locals: HashMap<String, TypeKind>,
 }
 
 impl TypeChecker<'_> {
@@ -131,6 +133,7 @@ impl TypeChecker<'_> {
 
         for flow in module.flows() {
             self.active_borrows.clear();
+            self.locals.clear();
             if let Some(id) = flow.id() {
                 match flow.kind() {
                     FlowKind::Flow => self.expect_entity_kind(id, &EntityKind::Flow, "flow id"),
@@ -196,6 +199,20 @@ impl TypeChecker<'_> {
                         self.check_flow_item(item);
                     }
                 }
+            }
+            HirFlowItem::Borrow(block) => {
+                self.check_expr(block.source());
+                let borrow_start = self.active_borrows.len();
+                let locals_start = self.locals.clone();
+                collect_borrow_lifetimes(block.binding(), &mut self.active_borrows);
+                if let Some((name, ty)) = typed_pattern_binding(block.binding()) {
+                    self.locals.insert(name.to_owned(), type_ref_kind(ty));
+                }
+                for item in block.body() {
+                    self.check_flow_item(item);
+                }
+                self.active_borrows.truncate(borrow_start);
+                self.locals = locals_start;
             }
             HirFlowItem::Include(entity) => {
                 let kind = entity_kind(entity);
@@ -342,10 +359,12 @@ impl TypeChecker<'_> {
                 )));
                 None
             }),
-            Expr::Path(path) => self.env.symbol_type(path).cloned().or_else(|| {
-                self.errors
-                    .push(TypeCheckError::new(format!("unknown symbol `{path}`")));
-                None
+            Expr::Path(path) => self.locals.get(path).cloned().or_else(|| {
+                self.env.symbol_type(path).cloned().or_else(|| {
+                    self.errors
+                        .push(TypeCheckError::new(format!("unknown symbol `{path}`")));
+                    None
+                })
             }),
             Expr::Placeholder(_) => None,
             Expr::Tuple(items) => Some(TypeKind::Tuple(
@@ -488,6 +507,13 @@ fn collect_borrow_lifetimes(pattern: &Pattern, lifetimes: &mut Vec<String>) {
     }
 }
 
+fn typed_pattern_binding(pattern: &Pattern) -> Option<(&str, &TypeRef)> {
+    match pattern {
+        Pattern::Typed { name, ty } => Some((name, ty)),
+        _ => None,
+    }
+}
+
 fn collect_type_lifetimes(ty: &TypeRef, lifetimes: &mut Vec<String>) {
     match ty {
         TypeRef::Ref { lifetime, inner } => {
@@ -506,6 +532,31 @@ fn collect_type_lifetimes(ty: &TypeRef, lifetimes: &mut Vec<String>) {
         }
         TypeRef::Slice(inner) => collect_type_lifetimes(inner, lifetimes),
         TypeRef::Path(_) => {}
+    }
+}
+
+fn type_ref_kind(ty: &TypeRef) -> TypeKind {
+    TypeKind::Named(type_ref_label(ty))
+}
+
+fn type_ref_label(ty: &TypeRef) -> String {
+    match ty {
+        TypeRef::Path(path) => path.clone(),
+        TypeRef::Generic { base, args } => format!(
+            "{base}<{}>",
+            args.iter()
+                .map(type_ref_label)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        TypeRef::Ref { lifetime, inner } => {
+            let lifetime = lifetime
+                .as_ref()
+                .map(|lifetime| format!("'{} ", lifetime.name()))
+                .unwrap_or_default();
+            format!("&{lifetime}{}", type_ref_label(inner))
+        }
+        TypeRef::Slice(inner) => format!("[{}]", type_ref_label(inner)),
     }
 }
 

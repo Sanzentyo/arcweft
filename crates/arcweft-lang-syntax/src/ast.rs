@@ -158,6 +158,7 @@ pub enum FlowItem {
     Choice(ChoiceBlock),
     If(IfBlock),
     Match(MatchBlock),
+    BorrowBlock(BorrowBlock),
     Include(EntityRef),
     AwaitWith(AwaitWith),
     Raw(String),
@@ -184,6 +185,15 @@ pub struct MatchBlock {
 pub struct MatchArm {
     pattern: Pattern,
     body: Vec<FlowItem>,
+}
+
+/// `borrow expr as name: Type { ... }` zero-copy borrow block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BorrowBlock {
+    source: Expr,
+    binding: Pattern,
+    body: Vec<FlowItem>,
+    range: TextRange,
 }
 
 /// Typed Arcweft statement inside a flow body.
@@ -700,6 +710,38 @@ impl MatchArm {
 
     pub fn body(&self) -> &[FlowItem] {
         &self.body
+    }
+}
+
+impl BorrowBlock {
+    pub(crate) const fn new(
+        source: Expr,
+        binding: Pattern,
+        body: Vec<FlowItem>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            source,
+            binding,
+            body,
+            range,
+        }
+    }
+
+    pub const fn source(&self) -> &Expr {
+        &self.source
+    }
+
+    pub const fn binding(&self) -> &Pattern {
+        &self.binding
+    }
+
+    pub fn body(&self) -> &[FlowItem] {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
     }
 }
 

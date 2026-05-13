@@ -83,6 +83,11 @@ fn register_flow_item(item: &HirFlowItem, registry: &mut NameRegistry) {
                 }
             }
         }
+        HirFlowItem::Borrow(block) => {
+            for item in block.body() {
+                register_flow_item(item, registry);
+            }
+        }
         HirFlowItem::Await(await_with) => {
             for branch in await_with.branches() {
                 for item in branch.body() {

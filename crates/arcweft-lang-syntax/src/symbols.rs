@@ -83,6 +83,12 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 }
             }
         }
+        HirFlowItem::Borrow(block) => {
+            collect_expr(block.source(), uses);
+            for item in block.body() {
+                collect_flow_item(item, uses);
+            }
+        }
         HirFlowItem::Include(entity) => push_entity(uses, entity),
         HirFlowItem::Await(await_with) => {
             collect_expr(await_with.expr(), uses);

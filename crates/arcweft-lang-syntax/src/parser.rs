@@ -1,9 +1,9 @@
 use crate::ast::{
-    Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, CancelRuleSyntax, ChoiceBlock,
-    ChoiceOption, ContentCall, ContractClause, DialogueContent, EntityRef, Flow, FlowInit,
-    FlowItem, FlowKind, FunctionItem, HookItem, IfBlock, Item, LinePlan, LinePlanItem, MatchArm,
-    MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, SpeakerLine,
-    Stmt, SyntaxTree, TextRange, UseItem, UseMode, Visibility, WikiLink,
+    Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, BorrowBlock, CancelRuleSyntax,
+    ChoiceBlock, ChoiceOption, ContentCall, ContractClause, DialogueContent, EntityRef, Flow,
+    FlowInit, FlowItem, FlowKind, FunctionItem, HookItem, IfBlock, Item, LinePlan, LinePlanItem,
+    MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand,
+    SpeakerLine, Stmt, SyntaxTree, TextRange, UseItem, UseMode, Visibility, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -415,6 +415,9 @@ impl Parser {
         if trimmed.starts_with("match ") {
             return self.parse_match_block().map(FlowItem::Match);
         }
+        if trimmed.starts_with("borrow ") {
+            return self.parse_borrow_block().map(FlowItem::BorrowBlock);
+        }
         if let Some(command) = parse_scenario_command(trimmed, TextRange::new(line.start, line.end))
         {
             self.index += 1;
@@ -493,6 +496,51 @@ impl Parser {
         let body_items = self.parse_flow_body(&body, start_line.start + head.len());
         Some(IfBlock::new(
             parse_expr_lossy(condition),
+            body_items,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_borrow_block(&mut self) -> Option<BorrowBlock> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing borrow",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the borrow block"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("borrow")?.trim();
+        let Some((source, binding)) = rest.split_once(" as ") else {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "borrow block must bind a typed alias",
+                ["borrow expr as name: Type { ... }"],
+                Some(head.trim()),
+                ["write the borrow block as `borrow source as name: Type { ... }`"],
+            );
+            return None;
+        };
+        let Some((name, ty)) = binding.split_once(':') else {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "borrow binding must declare a type",
+                ["name: Type"],
+                Some(binding.trim()),
+                ["add the borrowed reference type after the alias name"],
+            );
+            return None;
+        };
+        let binding = parse_pattern(&format!("{}: {}", name.trim(), ty.trim()));
+        let body_items = self.parse_flow_body(&body, start_line.start + head.len());
+
+        Some(BorrowBlock::new(
+            parse_expr_lossy(source.trim()),
+            binding,
             body_items,
             TextRange::new(start_line.start, end),
         ))

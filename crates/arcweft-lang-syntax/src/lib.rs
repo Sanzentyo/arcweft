@@ -15,7 +15,7 @@ mod text;
 mod types;
 
 pub use ast::{
-    Attribute, AwaitBranch, AwaitBranchKind, ChoiceBlock, ChoiceOption, ContentCall,
+    Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, ChoiceBlock, ChoiceOption, ContentCall,
     ContractClause, DialogueToken, EntityRef, Flow, FlowItem, FlowKind, FunctionItem, HookItem,
     IfBlock, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem,
     Pattern, ScenarioCommand, SpeakerLine, Stmt, SyntaxTree, TextRange, UseItem, Visibility,
@@ -27,8 +27,8 @@ pub use check::{
 };
 pub use expr::{BinaryOp, Expr, Literal, Placeholder, parse_expr};
 pub use lower::{
-    HirAwait, HirAwaitBranch, HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirIf,
-    HirLowerError, HirMatch, HirMatchArm, HirModule, lower_to_hir,
+    HirAwait, HirAwaitBranch, HirBorrow, HirChoice, HirChoiceOption, HirDialogue, HirFlow,
+    HirFlowItem, HirIf, HirLowerError, HirMatch, HirMatchArm, HirModule, lower_to_hir,
 };
 pub use parser::{ParseError, RecoverySuggestion, parse_source, parse_stub};
 pub use resolve::{NameRegistry, NameResolutionError, registry_from_hir, validate_hir_references};
@@ -778,6 +778,81 @@ flow #flow.borrow borrow {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn parses_borrow_block_with_lifetime_binding() {
+        let tree = parse_source(
+            r"
+flow #flow.borrow borrow {
+    borrow bg.pixels() as pixels: &'asset [Rgba8] {
+        let average = pixels.average_color()
+    }
+}
+",
+        )
+        .expect("borrow block parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::BorrowBlock(block) = &flow.body()[0] else {
+            panic!("expected borrow block");
+        };
+        assert!(matches!(block.source(), Expr::MethodCall { .. }));
+        assert!(matches!(
+            block.binding(),
+            Pattern::Typed {
+                name,
+                ty: TypeRef::Ref { .. }
+            } if name == "pixels"
+        ));
+        assert!(matches!(
+            &block.body()[0],
+            FlowItem::Stmt(Stmt::Let {
+                expr: Expr::MethodCall { .. },
+                ..
+            })
+        ));
+
+        let hir = lower_to_hir(&tree).expect("borrow block lowers");
+        assert!(matches!(&hir.flows()[0].body()[0], HirFlowItem::Borrow(_)));
+    }
+
+    #[test]
+    fn typecheck_rejects_borrow_block_across_await_boundary() {
+        let tree = parse_source(
+            r"
+flow #flow.borrow borrow {
+    borrow bg.pixels() as pixels: &'asset [Rgba8] {
+        await load_avatar()? with { pending p => scene #scene.loading { progress p.ratio } }
+    }
+}
+",
+        )
+        .expect("borrow block await fixture parses");
+        let hir = lower_to_hir(&tree).expect("borrow block await fixture lowers");
+        let env = TypeCheckEnv::new()
+            .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
+            .with_method(
+                TypeKind::Named("ImageHandle".to_owned()),
+                "pixels",
+                TypeKind::Named("&'asset [Rgba8]".to_owned()),
+            )
+            .with_function(
+                "load_avatar",
+                TypeKind::Need {
+                    ready: Box::new(TypeKind::Unit),
+                    error: Box::new(TypeKind::Named("AssetError".to_owned())),
+                },
+            );
+
+        let errors = typecheck_hir(&hir, &env).expect_err("borrow block cannot cross await");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message().contains("suspension boundary"))
+        );
     }
 
     #[test]
