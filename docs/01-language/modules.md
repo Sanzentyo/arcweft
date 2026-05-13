@@ -44,6 +44,13 @@ parent  reserved alias for super
 `crate`, `self`, and `super` are canonical. If `parent` is accepted by a parser,
 formatters should normalize it to `super`.
 
+Grammar summary:
+
+```text
+ModulePath :=
+    ("crate" "::" | "self" "::" | "super" "::" | "parent" "::")? IdentPath
+```
+
 ```awft
 mod parent::shared
 ```
@@ -60,6 +67,18 @@ ID-bearing contexts such as dialogue line IDs and choice option IDs.
 ```awft
 alice(id=.greeting):        # relative dialogue line ID
 use self::characters::alice # module-relative import
+```
+
+This is invalid:
+
+```awft
+use .characters::{alice}
+```
+
+Write:
+
+```awft
+use self::characters::{alice}
 ```
 
 If `parent::` is accepted in `use`, it normalizes the same way:

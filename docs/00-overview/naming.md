@@ -188,6 +188,7 @@ scope dream {
 Relative IDs normalize through the current flow, speaker, choice, and named
 scope path. Dialogue lines place the speaker before the scope path; choices use
 the flow and scope path directly.
+If the named scope path is empty, the scope segment is omitted.
 
 ```text
 id=.greeting

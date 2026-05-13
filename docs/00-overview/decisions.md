@@ -115,6 +115,9 @@ Relative `.suffix` IDs are accepted only in ID-bearing contexts where the
 entity family is known. They are not general entity references.
 
 ```text
+alice(id=.greeting)
+  -> #say.opening.alice.greeting
+
 alice(id=.comment)
   -> #say.opening.alice.rain.comment
 
@@ -124,6 +127,9 @@ choice .first
 .listen
   -> #choice.opening.rain.first.listen
 ```
+
+When the named scope path is empty, the scope segment is omitted. It is not
+emitted as an empty path component.
 
 For module and import paths, use Rust-like roots instead:
 

@@ -177,6 +177,14 @@ The relative IDs normalize as follows:
 #text.choice.opening.dream.first.listen
 ```
 
+If a relative line or choice ID appears outside a named scope, the scope segment
+is omitted:
+
+```text
+alice(id=.greeting) -> #say.opening.alice.greeting
+choice .first       -> #choice.opening.first
+```
+
 
 ---
 

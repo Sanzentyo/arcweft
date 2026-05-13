@@ -145,23 +145,52 @@ scope rain {
 line id:
   id=.suffix
     -> #say.{flow}.{speaker}.{scope_path}.{suffix}
+    -> #say.{flow}.{speaker}.{suffix}                 # scope_path が空の場合
 
 omitted line id:
   -> #say.{flow}.{speaker}.{scope_path}.{stable_slot}
+  -> #say.{flow}.{speaker}.{stable_slot}               # scope_path が空の場合
 
 omitted text key:
   -> #text.{flow}.{speaker}.{scope_path}.{line_suffix_or_slot}
+  -> #text.{flow}.{speaker}.{line_suffix_or_slot}      # scope_path が空の場合
 
 voice key when voice=auto:
   -> #voice.{locale}.{speaker}.{flow}.{scope_path}.{line_suffix_or_slot}
+  -> #voice.{locale}.{speaker}.{flow}.{line_suffix_or_slot}
 
 choice id:
   choice .suffix
     -> #choice.{flow}.{scope_path}.{suffix}
+    -> #choice.{flow}.{suffix}                         # scope_path が空の場合
 
 choice option id:
   .suffix
     -> {current_choice_id}.{suffix}
+```
+
+名前付き scope がない場合、`scope_path` セグメントは空文字として残さず、
+ID から省略する。
+
+```awft
+alice(id=.greeting):
+    おはよう。[p]
+
+choice .first {
+    .listen "聞いてみる" -> #flow.alice_intro
+}
+```
+
+```text
+alice(id=.greeting)
+  -> #say.opening.alice.greeting
+  -> #text.opening.alice.greeting
+
+choice .first
+  -> #choice.opening.first
+
+.listen
+  -> #choice.opening.first.listen
 ```
 
 例:
@@ -230,6 +259,29 @@ let can_enter = scope alice_route_check {
 ```
 
 ID に反映されるのは、その scope 内の ID-bearing construct だけである。
+
+```awft
+scope dream {
+    let can_enter = {
+        let affection_ok = state.affection[#character.alice] >= 3
+        affection_ok
+    }
+
+    choice .first {
+        .listen "聞いてみる" if can_enter -> #flow.alice_intro
+        .silent "黙っている" -> #flow.quiet_intro
+    }
+}
+```
+
+```text
+choice .first
+  -> #choice.opening.dream.first
+
+.listen
+  -> #choice.opening.dream.first.listen
+  -> #text.choice.opening.dream.first.listen
+```
 
 `.suffix` は module path には使わない。module / import の相対指定は
 `self::`、`super::`、`crate::` を使う。`parent::` は `super::` の予約

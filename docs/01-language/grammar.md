@@ -138,12 +138,16 @@ ChoicePlan := 'with' Block | 'with' ':' Newline IndentedItems
 
 Relative choice IDs resolve through the current flow and named scope path.
 Relative option IDs resolve under the current choice ID.
+When the named scope path is empty, the scope segment is omitted from the
+normalized ID.
 
 ```text
 scope dream { choice .first { .listen "聞いてみる" -> #flow.alice_intro } }
 
 choice .first -> #choice.opening.dream.first
 .listen       -> #choice.opening.dream.first.listen
+
+choice .first outside a scope -> #choice.opening.first
 ```
 
 ## Hooks

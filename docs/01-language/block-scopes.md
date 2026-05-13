@@ -131,6 +131,30 @@ Only ID-bearing constructs inside the named scope use the scope path for ID
 generation. The value of the scope expression is still only its final
 expression.
 
+For choices, the same scope path is applied to the choice ID first, and
+relative option IDs are then resolved under that normalized choice ID.
+
+```awft
+scope dream {
+    choice .first {
+        .listen "聞いてみる" -> #flow.alice_intro
+    }
+}
+```
+
+```text
+choice .first -> #choice.opening.dream.first
+.listen       -> #choice.opening.dream.first.listen
+```
+
+When there is no named scope, the scope segment is omitted rather than emitted
+as an empty path component:
+
+```text
+alice(id=.greeting) -> #say.opening.alice.greeting
+choice .first       -> #choice.opening.first
+```
+
 ## Borrow and lifetime
 
 Values borrowed inside a block cannot escape if their lifetime is shorter than the destination scope.
