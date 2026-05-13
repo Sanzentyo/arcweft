@@ -101,7 +101,7 @@ Syntax parser:
 - Plain `let name = { ... }` block expression bindings parse as structured expression blocks with scoped statements and an optional final value.
 - Dialogue call options are parsed enough to expose `id`, `text_key`, and `source_locale` to HIR. Relative dialogue line IDs such as `alice(id=.comment)` normalize through the current flow, speaker, and scope path. When `id` is omitted, HIR lowering allocates a stable per-flow/speaker/scope ordinal such as `say.opening.narrator.rain.001`, and omitted `text_key` is derived from the normalized `say...` line ID.
 - `let name = choice ... { ... }` parses as a choice expression binding, lowers to HIR with normalized relative choice/option IDs, and the minimal checker can infer `Ref<Flow>` when every option uses `=> #flow...`.
-- Module and import paths accept `crate::`, `self::`, `super::`, and reserved `parent::` roots as source syntax, and reject relative `.suffix` ID syntax in `mod`/`use` paths so ID-relative notation stays limited to line, text-key, choice, and option contexts.
+- Module and import paths accept `crate::`, `self::`, `super::`, and reserved `parent::` roots as source syntax, normalize parsed `parent::` roots to canonical `super::`, and reject relative `.suffix` ID syntax in `mod`/`use` paths so ID-relative notation stays limited to line, text-key, choice, and option contexts.
 - The documentation from `docs/reviews/pro_review4.md` is reflected in the language specs: ordinary `{ ... }` blocks remain value-producing in expression position; `scope name { ... }` is both lexical scope and ID namespace; `.suffix` IDs are limited to line, text-key, choice, and option contexts; module-relative paths use `self::`, `super::`, or `crate::`; and `parent::` is a reserved alias that formatter/canonicalizer work should normalize to `super::`.
 - `await ... with` keeps `pending`/`ready`/`error`/`denied` branches as structured AST/HIR, and branch bodies participate in symbol collection and type checking.
 - Background task-style `await expr`, `try await expr`, and `await? expr` without a wait-view block parse as structured expression AST. The minimal checker requires the awaited expression to have `Need<T, E>` type, returns `Result<T, E>` for plain `await`, and unwraps to `T` for `try await` / `await?`.
@@ -132,7 +132,7 @@ Not implemented in this milestone:
 - full nested-scope borrow lifetime analysis and precise borrow end tracking
 - full semantic expression resolution and type-directed ambiguity resolution
 - full choice expression type unification beyond the current `=> #flow...` case, lifecycle runtime execution, reactive option-state reevaluation, localization extraction, formatter/canonicalizer output, and LSP diagnostics for dynamic labels and unordered map-backed options
-- full localization extraction manifests and formatter/canonicalizer normalization for `parent::` and relative `.suffix` IDs
+- full localization extraction manifests and formatter/canonicalizer normalization for relative `.suffix` IDs
 
 ## Verification
 

@@ -140,7 +140,7 @@ impl Parser {
             self.index += 1;
         } else if let Some(path) = trimmed.strip_prefix("mod ") {
             if self.validate_module_path(path, range) {
-                *module = Some(ModuleDecl::new(path.trim().to_owned(), range));
+                *module = Some(ModuleDecl::new(normalize_module_path(path.trim()), range));
             }
             self.index += 1;
         } else if is_use_line(trimmed) {
@@ -2172,9 +2172,14 @@ fn parse_use_line(trimmed: &str, range: TextRange) -> Option<UseItem> {
     Some(UseItem::new(
         visibility,
         mode,
-        tree.trim().to_owned(),
+        normalize_module_path(tree.trim()),
         range,
     ))
+}
+
+fn normalize_module_path(path: &str) -> String {
+    path.strip_prefix("parent::")
+        .map_or_else(|| path.to_owned(), |tail| format!("super::{tail}"))
 }
 
 fn is_relative_id_path(path: &str) -> bool {

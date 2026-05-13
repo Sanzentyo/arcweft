@@ -782,7 +782,7 @@ flow #flow.quiet_intro quiet_intro {}
             "crate::game::routes::opening"
         );
         assert_eq!(tree.uses()[0].tree(), "self::characters::{alice}");
-        assert_eq!(tree.uses()[1].tree(), "parent::common::{route_gate}");
+        assert_eq!(tree.uses()[1].tree(), "super::common::{route_gate}");
 
         let Item::Flow(flow) = &tree.items()[0] else {
             panic!("expected flow");
@@ -837,6 +837,20 @@ flow #flow.quiet_intro quiet_intro {}
                 "expected relative-id diagnostic for {source:?}, got {errors:?}"
             );
         }
+    }
+
+    #[test]
+    fn normalizes_parent_module_root_alias() {
+        let tree = parse_source(
+            r"
+mod parent::shared
+lazy use parent::common::{route_gate}
+",
+        )
+        .expect("parent module root parses as alias");
+
+        assert_eq!(tree.module().expect("module").path(), "super::shared");
+        assert_eq!(tree.uses()[0].tree(), "super::common::{route_gate}");
     }
 
     #[test]
