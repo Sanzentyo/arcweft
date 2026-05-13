@@ -192,6 +192,9 @@ impl TypeChecker<'_> {
                     }
                 }
             }
+            HirFlowItem::LetScope { pattern, scope } => {
+                self.check_scope_expr_binding(pattern, scope);
+            }
             HirFlowItem::If(block) => {
                 self.expect_expr_type(block.condition(), &TypeKind::Bool, "if condition");
                 self.check_flow_items(block.body());
@@ -255,12 +258,20 @@ impl TypeChecker<'_> {
     fn check_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Let { pattern, expr } => {
-                self.check_expr(expr);
+                let ty = self.check_expr(expr);
+                if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), ty) {
+                    self.locals.insert(name.to_owned(), ty);
+                }
                 collect_borrow_lifetimes(pattern, &mut self.active_borrows);
             }
             Stmt::LetChoice { .. } => {
                 self.errors.push(TypeCheckError::new(
                     "choice expression binding must be lowered before type checking".to_owned(),
+                ));
+            }
+            Stmt::LetScope { .. } => {
+                self.errors.push(TypeCheckError::new(
+                    "scope expression binding must be lowered before type checking".to_owned(),
                 ));
             }
             Stmt::Return(expr) | Stmt::Out(expr) | Stmt::Close(expr) | Stmt::Expr(expr) => {
@@ -301,6 +312,18 @@ impl TypeChecker<'_> {
             if let crate::ast::ChoiceAction::Out(expr) = option.action() {
                 self.check_expr(expr);
             }
+        }
+    }
+
+    fn check_scope_expr_binding(&mut self, pattern: &Pattern, scope: &crate::lower::HirScopeExpr) {
+        let outer_locals = self.locals.clone();
+        for stmt in scope.statements() {
+            self.check_stmt(stmt);
+        }
+        let value_type = scope.value().and_then(|value| self.check_expr(value));
+        self.locals = outer_locals;
+        if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), value_type) {
+            self.locals.insert(name.to_owned(), ty);
         }
     }
 
@@ -584,6 +607,7 @@ fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
         "textbox" => EntityKind::Textbox,
         "say" => EntityKind::DialogueLine,
         "text" => EntityKind::Text,
+        "item" => EntityKind::Other("item".to_owned()),
         "asset" => EntityKind::Asset,
         "anim" => EntityKind::Animation,
         "hook" => EntityKind::Hook,

@@ -47,6 +47,14 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
         HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
             collect_choice(choice, uses);
         }
+        HirFlowItem::LetScope { scope, .. } => {
+            for stmt in scope.statements() {
+                collect_stmt(stmt, uses);
+            }
+            if let Some(value) = scope.value() {
+                collect_expr(value, uses);
+            }
+        }
         HirFlowItem::If(block) => {
             collect_expr(block.condition(), uses);
             for item in block.body() {
@@ -233,6 +241,14 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
                 } {
                     push_entity(uses, target);
                 }
+            }
+        }
+        Stmt::LetScope { scope, .. } => {
+            for stmt in scope.statements() {
+                collect_stmt(stmt, uses);
+            }
+            if let Some(value) = scope.value() {
+                collect_expr(value, uses);
             }
         }
         Stmt::Continue => {}

@@ -309,6 +309,15 @@ pub struct ScopeBlock {
     range: TextRange,
 }
 
+/// `scope name { ... }` used in expression position.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScopeExprBlock {
+    name: String,
+    statements: Vec<Stmt>,
+    value: Option<Expr>,
+    range: TextRange,
+}
+
 /// Typed `if expr { ... }` flow block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IfBlock {
@@ -388,6 +397,11 @@ pub enum Stmt {
     LetChoice {
         pattern: Pattern,
         choice: ChoiceBlock,
+    },
+    /// `let PAT = scope name { ... }` named block expression binding.
+    LetScope {
+        pattern: Pattern,
+        scope: ScopeExprBlock,
     },
     Return(Expr),
     Out(Expr),
@@ -1849,6 +1863,38 @@ impl ScopeBlock {
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+}
+
+impl ScopeExprBlock {
+    pub(crate) const fn new(
+        name: String,
+        statements: Vec<Stmt>,
+        value: Option<Expr>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            name,
+            statements,
+            value,
+            range,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn statements(&self) -> &[Stmt] {
+        &self.statements
+    }
+
+    pub const fn value(&self) -> Option<&Expr> {
+        self.value.as_ref()
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
     }
 }
 

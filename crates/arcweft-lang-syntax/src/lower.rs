@@ -1,7 +1,8 @@
 use crate::ast::{
     AwaitBranchKind, BorrowBlock, ChoiceAction, ChoiceBlock, ChoicePlan, ContractClause,
     DialogueContent, EntityRef, Flow, FlowItem, FlowKind, IfBlock, Item, LinePlan, MatchBlock,
-    Pattern, ScopeBlock, SourceLocaleBlock, SpeakerLine, Stmt, SyntaxTree, TextRange,
+    Pattern, ScopeBlock, ScopeExprBlock, SourceLocaleBlock, SpeakerLine, Stmt, SyntaxTree,
+    TextRange,
 };
 use crate::expr::Expr;
 use core::fmt;
@@ -34,7 +35,14 @@ pub enum HirFlowItem {
     Stmt(Stmt),
     Dialogue(HirDialogue),
     Choice(HirChoice),
-    LetChoice { pattern: Pattern, choice: HirChoice },
+    LetChoice {
+        pattern: Pattern,
+        choice: HirChoice,
+    },
+    LetScope {
+        pattern: Pattern,
+        scope: HirScopeExpr,
+    },
     If(HirIf),
     Match(HirMatch),
     For(HirFor),
@@ -44,7 +52,10 @@ pub enum HirFlowItem {
     Scope(HirScope),
     Include(EntityRef),
     Await(HirAwait),
-    Scenario { name: String, args: Vec<Expr> },
+    Scenario {
+        name: String,
+        args: Vec<Expr>,
+    },
 }
 
 /// Dialogue call normalized enough for type checking to resolve speaker symbols.
@@ -90,6 +101,14 @@ pub struct HirSourceLocale {
 pub struct HirScope {
     name: String,
     body: Vec<HirFlowItem>,
+}
+
+/// HIR-facing named scope expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirScopeExpr {
+    name: String,
+    statements: Vec<Stmt>,
+    value: Option<Expr>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -250,6 +269,10 @@ fn lower_flow_item_with_context(
             pattern: pattern.clone(),
             choice: lower_choice(choice, context),
         }),
+        FlowItem::Stmt(Stmt::LetScope { pattern, scope }) => Ok(HirFlowItem::LetScope {
+            pattern: pattern.clone(),
+            scope: lower_scope_expr(scope, context),
+        }),
         FlowItem::Stmt(stmt) => Ok(HirFlowItem::Stmt(stmt.clone())),
         FlowItem::ScenarioCommand(command) => Ok(HirFlowItem::Scenario {
             name: command.name().to_owned(),
@@ -295,6 +318,17 @@ fn lower_flow_item_with_context(
             None,
         )),
     }
+}
+
+fn lower_scope_expr(scope: &ScopeExprBlock, context: &mut LowerContext) -> HirScopeExpr {
+    context.scopes.push(scope.name().to_owned());
+    let lowered = HirScopeExpr {
+        name: scope.name().to_owned(),
+        statements: scope.statements().to_vec(),
+        value: scope.value().cloned(),
+    };
+    context.scopes.pop();
+    lowered
 }
 
 fn lower_borrow(
@@ -683,6 +717,20 @@ impl HirScope {
 
     pub fn body(&self) -> &[HirFlowItem] {
         &self.body
+    }
+}
+
+impl HirScopeExpr {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn statements(&self) -> &[Stmt] {
+        &self.statements
+    }
+
+    pub const fn value(&self) -> Option<&Expr> {
+        self.value.as_ref()
     }
 }
 

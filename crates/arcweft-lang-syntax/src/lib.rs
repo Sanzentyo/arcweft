@@ -19,10 +19,10 @@ pub use ast::{
     ChoiceBlock, ChoiceItem, ChoiceOption, ChoicePlan, ChoicePlanItem, ContentCall, ContractClause,
     DialogueToken, EntityRef, EnumItem, EnumVariant, Flow, FlowItem, FlowKind, ForBlock,
     FunctionItem, HookItem, IfBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, MatchArm,
-    MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand, ScopeBlock, SelectBlock,
-    SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt,
-    StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
-    Visibility, WikiLink,
+    MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand, ScopeBlock,
+    ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine,
+    StateField, StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TraitItem,
+    TraitMember, TypeAliasItem, UseItem, Visibility, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -760,6 +760,71 @@ flow #flow.quiet_intro quiet_intro {
         validate_hir_references(&hir, &registry).expect("choice expression refs resolve");
         validate_typecheck_ready(&hir).expect("choice expression is typecheck-ready");
         typecheck_hir(&hir, &TypeCheckEnv::new()).expect("choice expression typechecks");
+    }
+
+    #[test]
+    fn lowers_scope_expression_let_binding() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+    let can_enter = scope alice_route_check {
+        let affection_ok = state.affection[#character.alice] >= 3
+        let has_key = state.inventory.contains(#item.alice_key)
+        affection_ok && has_key
+    }
+
+    if can_enter {
+        goto #flow.alice_intro
+    }
+}
+
+flow #flow.alice_intro alice_intro {
+}
+",
+        )
+        .expect("scope expression fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected source flow");
+        };
+        let FlowItem::Stmt(Stmt::LetScope { pattern, scope }) = &flow.body()[0] else {
+            panic!("expected AST scope expression binding");
+        };
+        assert_eq!(pattern, &Pattern::Ident("can_enter".to_owned()));
+        assert_eq!(scope.name(), "alice_route_check");
+        assert_eq!(scope.statements().len(), 2);
+        assert!(scope.value().is_some());
+
+        let hir = lower_to_hir(&tree).expect("scope expression fixture lowers");
+        let HirFlowItem::LetScope { pattern, scope } = &hir.flows()[0].body()[0] else {
+            panic!("expected HIR scope expression binding");
+        };
+        assert_eq!(pattern, &Pattern::Ident("can_enter".to_owned()));
+        assert_eq!(scope.name(), "alice_route_check");
+        assert_eq!(scope.statements().len(), 2);
+        assert!(scope.value().is_some());
+
+        let registry = registry_from_hir(&hir)
+            .with_entity("character.alice", EntityKind::Character)
+            .with_entity("item.alice_key", EntityKind::Other("item".to_owned()));
+        validate_hir_references(&hir, &registry).expect("scope expression refs resolve");
+        validate_typecheck_ready(&hir).expect("scope expression is typecheck-ready");
+        let env = TypeCheckEnv::new()
+            .with_symbol(
+                "state.affection",
+                TypeKind::Named("Map<Character, Int>".to_owned()),
+            )
+            .with_symbol("state.inventory", TypeKind::Named("Inventory".to_owned()))
+            .with_method(
+                TypeKind::Named("Inventory".to_owned()),
+                "contains",
+                TypeKind::Bool,
+            )
+            .with_index(
+                TypeKind::Named("Map<Character, Int>".to_owned()),
+                TypeKind::Int,
+            );
+        typecheck_hir(&hir, &env).expect("scope expression typechecks");
     }
 
     #[test]

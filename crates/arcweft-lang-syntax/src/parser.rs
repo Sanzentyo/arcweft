@@ -4,10 +4,10 @@ use crate::ast::{
     ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause, DialogueContent,
     EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionItem,
     HookItem, IfBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, MatchArm, MatchBlock,
-    MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, ScopeBlock, SelectBlock,
-    SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt,
-    StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
-    UseMode, Visibility, WikiLink,
+    MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, ScopeBlock, ScopeExprBlock,
+    SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField,
+    StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember,
+    TypeAliasItem, UseItem, UseMode, Visibility, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -784,6 +784,9 @@ impl Parser {
         if is_let_choice_head(trimmed) {
             return self.parse_let_choice().map(FlowItem::Stmt);
         }
+        if is_let_scope_head(trimmed) {
+            return self.parse_let_scope().map(FlowItem::Stmt);
+        }
         if is_typed_stmt(trimmed) {
             self.index += 1;
             return Some(FlowItem::Stmt(parse_stmt(trimmed)));
@@ -844,6 +847,36 @@ impl Parser {
         Some(Stmt::LetChoice {
             pattern: parse_pattern(pattern.trim()),
             choice: ChoiceBlock::new(id, items, plan, TextRange::new(start_line.start, end)),
+        })
+    }
+
+    fn parse_let_scope(&mut self) -> Option<Stmt> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing scope expression",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the scope expression block"],
+            );
+            return None;
+        }
+
+        let rest = head.trim().strip_prefix("let")?.trim();
+        let (pattern, scope_head) = rest.split_once('=')?;
+        let name = scope_head.trim().strip_prefix("scope")?.trim();
+        let (statements, value) = parse_scope_expr_body(&body);
+
+        Some(Stmt::LetScope {
+            pattern: parse_pattern(pattern.trim()),
+            scope: ScopeExprBlock::new(
+                name.to_owned(),
+                statements,
+                value,
+                TextRange::new(start_line.start, end),
+            ),
         })
     }
 
@@ -2938,6 +2971,36 @@ fn is_let_choice_head(trimmed: &str) -> bool {
     };
     rest.split_once('=')
         .is_some_and(|(_, expr)| expr.trim_start().starts_with("choice "))
+}
+
+fn is_let_scope_head(trimmed: &str) -> bool {
+    let Some(rest) = trimmed.strip_prefix("let ") else {
+        return false;
+    };
+    rest.split_once('=')
+        .is_some_and(|(_, expr)| expr.trim_start().starts_with("scope "))
+}
+
+fn parse_scope_expr_body(body: &str) -> (Vec<Stmt>, Option<crate::expr::Expr>) {
+    let lines = body
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    let Some((last, statements)) = lines.split_last() else {
+        return (Vec::new(), None);
+    };
+    let parsed_statements = statements
+        .iter()
+        .map(|line| parse_stmt(line))
+        .collect::<Vec<_>>();
+    if is_typed_stmt(last) {
+        let mut parsed_statements = parsed_statements;
+        parsed_statements.push(parse_stmt(last));
+        (parsed_statements, None)
+    } else {
+        (parsed_statements, Some(parse_expr_lossy(last)))
+    }
 }
 
 fn parse_stmt(trimmed: &str) -> Stmt {

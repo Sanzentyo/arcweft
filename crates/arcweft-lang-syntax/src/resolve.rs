@@ -117,7 +117,10 @@ fn register_flow_item(item: &HirFlowItem, registry: &mut NameRegistry) {
                 }
             }
         }
-        HirFlowItem::Stmt(_) | HirFlowItem::Include(_) | HirFlowItem::Scenario { .. } => {}
+        HirFlowItem::Stmt(_)
+        | HirFlowItem::LetScope { .. }
+        | HirFlowItem::Include(_)
+        | HirFlowItem::Scenario { .. } => {}
     }
 }
 
