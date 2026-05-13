@@ -485,6 +485,10 @@ pub enum Stmt {
         event: Expr,
         fields: Vec<(String, Expr)>,
     },
+    If {
+        condition: Expr,
+        body: Vec<Stmt>,
+    },
     Close(Expr),
     Select(Expr),
     Break(Option<Expr>),

@@ -361,6 +361,10 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
                 collect_expr(value, uses);
             }
         }
+        Stmt::If { condition, body } => {
+            collect_expr(condition, uses);
+            collect_stmt_block(body, uses);
+        }
         Stmt::Break(None) | Stmt::Continue => {}
         Stmt::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
     }

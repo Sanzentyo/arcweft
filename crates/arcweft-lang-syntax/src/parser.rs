@@ -3481,10 +3481,11 @@ fn split_embedded_else_body(body: &str) -> Option<(String, String)> {
 }
 
 fn parse_stmt_lines(body: &str) -> Vec<Stmt> {
-    body.lines()
-        .map(str::trim)
+    collect_logical_choice_lines(body)
+        .into_iter()
+        .map(|line| line.trim().to_owned())
         .filter(|line| !line.is_empty())
-        .map(parse_stmt)
+        .map(|line| parse_stmt(&line))
         .collect()
 }
 
@@ -3533,6 +3534,14 @@ fn parse_stmt(trimmed: &str) -> Stmt {
     }
     if let Some(rest) = trimmed.strip_prefix("emit ") {
         return parse_emit_stmt(rest.trim());
+    }
+    if let Some((head, body)) = split_brace_item(trimmed) {
+        if let Some(condition) = head.strip_prefix("if ") {
+            return Stmt::If {
+                condition: parse_expr_lossy(condition.trim()),
+                body: parse_stmt_lines(body),
+            };
+        }
     }
     if let Some(expr) = trimmed.strip_prefix("close ") {
         return Stmt::Close(parse_expr_lossy(expr.trim()));

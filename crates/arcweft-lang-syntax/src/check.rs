@@ -455,6 +455,14 @@ impl TypeChecker<'_> {
                     self.check_expr(value);
                 }
             }
+            Stmt::If { condition, body } => {
+                self.expect_expr_type(condition, &TypeKind::Bool, "if condition");
+                let outer_locals = self.locals.clone();
+                for stmt in body {
+                    self.check_stmt(stmt);
+                }
+                self.locals = outer_locals;
+            }
             Stmt::Break(expr) => self.check_break_stmt(expr.as_ref()),
             Stmt::Continue => self.check_continue_stmt(),
             Stmt::Raw(raw) => self.errors.push(TypeCheckError::new(format!(

@@ -597,7 +597,9 @@ flow #flow.opening opening {
         option #choice.opening.listen {
             label = "聞いてみる"
             select {
-                emit GameEvent::ChoiceSelected { id = #choice.opening.listen }
+                if can_emit {
+                    emit GameEvent::ChoiceSelected { id = #choice.opening.listen }
+                }
                 let route = #flow.alice_intro
                 out route
             }
@@ -618,7 +620,7 @@ flow #flow.opening opening {
             ChoiceAction::SelectBlock(statements)
                 if matches!(
                     statements.as_slice(),
-                    [Stmt::Emit { .. }, Stmt::Let { .. }, Stmt::Out(_)]
+                    [Stmt::If { .. }, Stmt::Let { .. }, Stmt::Out(_)]
                 )
         ));
 
@@ -626,10 +628,12 @@ flow #flow.opening opening {
         validate_typecheck_ready(&hir).expect("choice option select block is typecheck-ready");
         typecheck_hir(
             &hir,
-            &TypeCheckEnv::new().with_symbol(
-                "GameEvent::ChoiceSelected",
-                TypeKind::Named("GameEvent".to_owned()),
-            ),
+            &TypeCheckEnv::new()
+                .with_symbol(
+                    "GameEvent::ChoiceSelected",
+                    TypeKind::Named("GameEvent".to_owned()),
+                )
+                .with_symbol("can_emit", TypeKind::Bool),
         )
         .expect("choice option select block typechecks");
     }
