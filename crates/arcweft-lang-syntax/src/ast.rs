@@ -1,4 +1,5 @@
 use crate::expr::Expr;
+use crate::types::TypeRef;
 use core::ops::Range;
 
 /// Half-open byte range in the original source.
@@ -165,6 +166,7 @@ pub enum Pattern {
     Ident(String),
     Discard,
     Tuple(Vec<Pattern>),
+    Typed { name: String, ty: TypeRef },
     Raw(String),
 }
 

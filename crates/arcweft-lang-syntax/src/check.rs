@@ -1,7 +1,8 @@
-use crate::ast::{DialogueToken, EntityRef, FlowKind, LinePlanItem, Stmt};
+use crate::ast::{DialogueToken, EntityRef, FlowKind, LinePlanItem, Pattern, Stmt};
 use crate::expr::{BinaryOp, Expr, Literal};
 use crate::lower::{HirFlowItem, HirModule};
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
+use crate::types::TypeRef;
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -102,6 +103,7 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
     let mut checker = TypeChecker {
         env,
         errors: Vec::new(),
+        active_borrows: Vec::new(),
     };
     checker.check_module(module);
     if checker.errors.is_empty() {
@@ -114,6 +116,7 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
 struct TypeChecker<'a> {
     env: &'a TypeCheckEnv,
     errors: Vec<TypeCheckError>,
+    active_borrows: Vec<String>,
 }
 
 impl TypeChecker<'_> {
@@ -127,6 +130,7 @@ impl TypeChecker<'_> {
         }
 
         for flow in module.flows() {
+            self.active_borrows.clear();
             if let Some(id) = flow.id() {
                 match flow.kind() {
                     FlowKind::Flow => self.expect_entity_kind(id, &EntityKind::Flow, "flow id"),
@@ -200,6 +204,12 @@ impl TypeChecker<'_> {
                 }
             }
             HirFlowItem::Await(await_with) => {
+                if !self.active_borrows.is_empty() {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "borrowed values with lifetimes {:?} cannot cross await suspension boundary",
+                        self.active_borrows
+                    )));
+                }
                 let ty = self.check_expr(await_with.expr());
                 if !matches!(ty, Some(TypeKind::Need { .. })) {
                     self.errors.push(TypeCheckError::new(
@@ -227,7 +237,11 @@ impl TypeChecker<'_> {
 
     fn check_stmt(&mut self, stmt: &Stmt) {
         match stmt {
-            Stmt::Let { expr, .. } | Stmt::Return(expr) | Stmt::Expr(expr) => {
+            Stmt::Let { pattern, expr } => {
+                self.check_expr(expr);
+                collect_borrow_lifetimes(pattern, &mut self.active_borrows);
+            }
+            Stmt::Return(expr) | Stmt::Expr(expr) => {
                 self.check_expr(expr);
             }
             Stmt::Goto(expr) => {
@@ -433,6 +447,39 @@ fn literal_type(literal: &Literal) -> TypeKind {
 fn is_dialogue_callee_type(ty: Option<&TypeKind>) -> bool {
     matches!(ty, Some(TypeKind::Ref(EntityKind::Character)))
         || matches!(ty, Some(TypeKind::Named(name)) if name == "SpeakerPreset")
+}
+
+fn collect_borrow_lifetimes(pattern: &Pattern, lifetimes: &mut Vec<String>) {
+    match pattern {
+        Pattern::Typed { ty, .. } => collect_type_lifetimes(ty, lifetimes),
+        Pattern::Tuple(items) => {
+            for item in items {
+                collect_borrow_lifetimes(item, lifetimes);
+            }
+        }
+        Pattern::Ident(_) | Pattern::Discard | Pattern::Raw(_) => {}
+    }
+}
+
+fn collect_type_lifetimes(ty: &TypeRef, lifetimes: &mut Vec<String>) {
+    match ty {
+        TypeRef::Ref { lifetime, inner } => {
+            if let Some(lifetime) = lifetime {
+                let name = lifetime.name();
+                if name != "static" {
+                    lifetimes.push(name.to_owned());
+                }
+            }
+            collect_type_lifetimes(inner, lifetimes);
+        }
+        TypeRef::Generic { args, .. } => {
+            for arg in args {
+                collect_type_lifetimes(arg, lifetimes);
+            }
+        }
+        TypeRef::Slice(inner) => collect_type_lifetimes(inner, lifetimes),
+        TypeRef::Path(_) => {}
+    }
 }
 
 impl TypeCheckReadinessError {

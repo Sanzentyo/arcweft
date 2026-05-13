@@ -7,6 +7,7 @@ use crate::ast::{
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
+use crate::types::parse_type_ref;
 use arcweft_source::{SourceAnchor, SourceName};
 use thiserror::Error;
 
@@ -1380,6 +1381,17 @@ fn parse_pattern(source: &str) -> Pattern {
     if source == "_" {
         return Pattern::Discard;
     }
+    if let Some((name, ty)) = source.split_once(':') {
+        let name = name.trim();
+        if is_pattern_ident(name) {
+            if let Ok(ty) = parse_type_ref(ty.trim()) {
+                return Pattern::Typed {
+                    name: name.to_owned(),
+                    ty,
+                };
+            }
+        }
+    }
     if let Some(inner) = source
         .strip_prefix('(')
         .and_then(|value| value.strip_suffix(')'))
@@ -1391,17 +1403,20 @@ fn parse_pattern(source: &str) -> Pattern {
                 .collect(),
         );
     }
-    if source
+    if is_pattern_ident(source) {
+        return Pattern::Ident(source.to_owned());
+    }
+    Pattern::Raw(source.to_owned())
+}
+
+fn is_pattern_ident(source: &str) -> bool {
+    source
         .chars()
         .all(|ch| ch.is_alphanumeric() || matches!(ch, '_'))
         && source
             .chars()
             .next()
             .is_some_and(|ch| ch.is_alphabetic() || ch == '_')
-    {
-        return Pattern::Ident(source.to_owned());
-    }
-    Pattern::Raw(source.to_owned())
 }
 
 fn split_pattern_items(source: &str) -> Vec<&str> {

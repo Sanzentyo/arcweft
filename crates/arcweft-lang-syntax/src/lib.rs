@@ -662,6 +662,67 @@ flow #flow.opening opening {
     }
 
     #[test]
+    fn typed_patterns_keep_lifetime_borrow_types() {
+        let tree = parse_source(
+            r"
+flow #flow.borrow borrow {
+    let pixels: &'asset [Rgba8] = bg.pixels()
+}
+",
+        )
+        .expect("typed borrow pattern parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        assert!(matches!(
+            &flow.body()[0],
+            FlowItem::Stmt(Stmt::Let {
+                pattern: Pattern::Typed {
+                    ty: TypeRef::Ref { .. },
+                    ..
+                },
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn typecheck_rejects_borrow_across_await_boundary() {
+        let tree = parse_source(
+            r"
+flow #flow.borrow borrow {
+    let pixels: &'asset [Rgba8] = bg.pixels()
+    await load_avatar()? with { pending p => scene #scene.loading { progress p.ratio } }
+}
+",
+        )
+        .expect("borrow across await fixture parses");
+        let hir = lower_to_hir(&tree).expect("borrow across await fixture lowers");
+        let env = TypeCheckEnv::new()
+            .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
+            .with_method(
+                TypeKind::Named("ImageHandle".to_owned()),
+                "pixels",
+                TypeKind::Named("Pixels".to_owned()),
+            )
+            .with_function(
+                "load_avatar",
+                TypeKind::Need {
+                    ready: Box::new(TypeKind::Unit),
+                    error: Box::new(TypeKind::Named("AssetError".to_owned())),
+                },
+            );
+        let errors = typecheck_hir(&hir, &env).expect_err("borrow cannot cross await");
+
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message().contains("suspension boundary"))
+        );
+    }
+
+    #[test]
     fn parses_if_and_match_flow_blocks_for_hir() {
         let tree = parse_source(
             r"
