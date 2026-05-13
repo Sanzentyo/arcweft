@@ -118,6 +118,7 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
         active_borrows: Vec::new(),
         locals: HashMap::new(),
         loop_stack: Vec::new(),
+        line_label_stack: Vec::new(),
         line_cancel_depth: 0,
     };
     checker.check_module(module);
@@ -134,11 +135,13 @@ struct TypeChecker<'a> {
     active_borrows: Vec<String>,
     locals: HashMap<String, TypeKind>,
     loop_stack: Vec<LoopContext>,
+    line_label_stack: Vec<Option<String>>,
     line_cancel_depth: usize,
 }
 
 #[derive(Clone, Debug, Default)]
 struct LoopContext {
+    label: Option<String>,
     allows_value_break: bool,
     break_types: Vec<TypeKind>,
 }
@@ -379,9 +382,11 @@ impl TypeChecker<'_> {
         }
         self.check_dialogue_content(dialogue.content().tokens());
         if let Some(plan) = dialogue.plan() {
+            self.line_label_stack.push(plan.label().map(str::to_owned));
             for item in plan.items() {
                 self.check_line_plan_item(item);
             }
+            self.line_label_stack.pop();
         }
     }
 
@@ -409,6 +414,7 @@ impl TypeChecker<'_> {
         allows_value_break: bool,
     ) -> Option<TypeKind> {
         self.loop_stack.push(LoopContext {
+            label: block.label().map(str::to_owned),
             allows_value_break,
             break_types: Vec::new(),
         });
@@ -455,6 +461,7 @@ impl TypeChecker<'_> {
 
     fn with_statement_loop(&mut self, check_body: impl FnOnce(&mut Self)) {
         self.loop_stack.push(LoopContext {
+            label: None,
             allows_value_break: false,
             break_types: Vec::new(),
         });
@@ -491,10 +498,10 @@ impl TypeChecker<'_> {
             | Stmt::Panic(expr)
             | Stmt::Fail(expr)
             | Stmt::Bail(expr)
-            | Stmt::Select(expr)
-            | Stmt::Out { expr, .. } => {
+            | Stmt::Select(expr) => {
                 self.check_expr(expr);
             }
+            Stmt::Out { label, expr } => self.check_out_stmt(label.as_deref(), expr),
             Stmt::Ensure { condition, message } => {
                 self.expect_expr_type(condition, &TypeKind::Bool, "ensure condition");
                 self.check_expr(message);
@@ -551,8 +558,8 @@ impl TypeChecker<'_> {
                 body,
             } => self.check_stmt_for(pattern, source, body),
             Stmt::Match { expr, arms } => self.check_match_stmt(expr, arms),
-            Stmt::Break { expr, .. } => self.check_break_stmt(expr.as_ref()),
-            Stmt::Continue { .. } => self.check_continue_stmt(),
+            Stmt::Break { label, expr } => self.check_break_stmt(label.as_deref(), expr.as_ref()),
+            Stmt::Continue { label } => self.check_continue_stmt(label.as_deref()),
             Stmt::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
                 "raw statement is not type-checkable: {raw}"
             ))),
@@ -615,6 +622,7 @@ impl TypeChecker<'_> {
 
     fn check_stmt_loop(&mut self, body: &[Stmt]) {
         self.loop_stack.push(LoopContext {
+            label: None,
             allows_value_break: true,
             break_types: Vec::new(),
         });
@@ -679,11 +687,12 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_break_stmt(&mut self, expr: Option<&Expr>) {
-        let Some(index) = self.loop_stack.len().checked_sub(1) else {
-            self.errors.push(TypeCheckError::new(
-                "break is only allowed inside loop, while, or for".to_owned(),
-            ));
+    fn check_break_stmt(&mut self, label: Option<&str>, expr: Option<&Expr>) {
+        let Some(index) = self.resolve_loop_label(label) else {
+            self.errors.push(TypeCheckError::new(label.map_or_else(
+                || "break is only allowed inside loop, while, or for".to_owned(),
+                |label| format!("break label `'{label}` does not name an active loop"),
+            )));
             if let Some(expr) = expr {
                 self.check_expr(expr);
             }
@@ -709,11 +718,41 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_continue_stmt(&mut self) {
-        if self.loop_stack.is_empty() && self.line_cancel_depth == 0 {
-            self.errors.push(TypeCheckError::new(
-                "continue is only allowed inside loop, while, for, or line cancellation".to_owned(),
-            ));
+    fn check_continue_stmt(&mut self, label: Option<&str>) {
+        let resolves_to_loop = self.resolve_loop_label(label).is_some();
+        if !resolves_to_loop && (self.line_cancel_depth == 0 || label.is_some()) {
+            self.errors.push(TypeCheckError::new(label.map_or_else(
+                || {
+                    "continue is only allowed inside loop, while, for, or line cancellation"
+                        .to_owned()
+                },
+                |label| format!("continue label `'{label}` does not name an active loop"),
+            )));
+        }
+    }
+
+    fn check_out_stmt(&mut self, label: Option<&str>, expr: &Expr) {
+        if let Some(label) = label
+            && !self
+                .line_label_stack
+                .iter()
+                .rev()
+                .any(|active| active.as_deref() == Some(label))
+        {
+            self.errors.push(TypeCheckError::new(format!(
+                "out label `'{label}` does not name an active line-plan scope"
+            )));
+        }
+        self.check_expr(expr);
+    }
+
+    fn resolve_loop_label(&self, label: Option<&str>) -> Option<usize> {
+        match label {
+            Some(label) => self
+                .loop_stack
+                .iter()
+                .rposition(|context| context.label.as_deref() == Some(label)),
+            None => self.loop_stack.len().checked_sub(1),
         }
     }
 

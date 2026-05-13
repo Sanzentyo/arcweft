@@ -1863,6 +1863,57 @@ flow #flow.opening opening {
     }
 
     #[test]
+    fn typecheck_rejects_unresolved_control_transfer_labels() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    let next = 'events: loop {
+        if done {
+            break 'missing #flow.title
+        }
+        continue 'missing
+    }
+
+    alice[
+        聞いて。[p]
+    ]
+    with 'line {
+        cancel on input .SkipLine { out 'missing .Skipped }
+    }
+}
+
+flow #flow.title title {}
+",
+        )
+        .expect("unresolved label fixture parses");
+        let hir = lower_to_hir(&tree).expect("unresolved label fixture lowers");
+        validate_typecheck_ready(&hir).expect("unresolved label fixture is typecheck-ready");
+        let errors = typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new()
+                .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+                .with_symbol("done", TypeKind::Bool)
+                .with_symbol(".Skipped", TypeKind::Named("LineExit".to_owned())),
+        )
+        .expect_err("unresolved labels are rejected");
+        assert!(errors.iter().any(|error| {
+            error
+                .message()
+                .contains("break label `'missing` does not name an active loop")
+        }));
+        assert!(errors.iter().any(|error| {
+            error
+                .message()
+                .contains("continue label `'missing` does not name an active loop")
+        }));
+        assert!(errors.iter().any(|error| {
+            error
+                .message()
+                .contains("out label `'missing` does not name an active line-plan scope")
+        }));
+    }
+
+    #[test]
     fn parses_character_content_call_with_brace_plan() {
         let tree = parse_source(
             r##"
@@ -2739,7 +2790,7 @@ flow #flow.opening opening {
         cancel on input .SkipLine {
             stop voice fade=40ms
             flush text instant
-            continue 'events
+            continue
         }
     }
 }
@@ -2759,8 +2810,8 @@ flow #flow.opening opening {
         };
         assert!(matches!(
             rule.action(),
-            [Stmt::Command(stop), Stmt::Command(flush), Stmt::Continue { label: Some(label) }]
-                if stop.name() == "stop" && flush.name() == "flush" && label == "events"
+            [Stmt::Command(stop), Stmt::Command(flush), Stmt::Continue { label: None }]
+                if stop.name() == "stop" && flush.name() == "flush"
         ));
 
         let hir = lower_to_hir(&tree).expect("line plan cancel commands lower");
