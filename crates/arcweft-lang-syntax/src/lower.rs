@@ -811,12 +811,20 @@ fn line_id_to_text_key(line_id: &str) -> String {
 fn speaker_slug(speaker: &str) -> String {
     match speaker {
         "地の文" | "narrator" => "narrator".to_owned(),
-        other => other
-            .rsplit(['.', ':'])
-            .next()
-            .unwrap_or(other)
-            .trim_end_matches(".say")
-            .to_owned(),
+        other => {
+            let source = other
+                .trim()
+                .strip_prefix("#<")
+                .and_then(|inner| inner.strip_suffix('>'))
+                .or_else(|| other.trim().strip_prefix('#'))
+                .unwrap_or(other)
+                .trim_end_matches(".say");
+            source
+                .rsplit(['.', ':'])
+                .next()
+                .unwrap_or(source)
+                .to_owned()
+        }
     }
 }
 

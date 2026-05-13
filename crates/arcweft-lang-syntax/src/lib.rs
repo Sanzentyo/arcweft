@@ -396,6 +396,36 @@ with:
     }
 
     #[test]
+    fn typechecks_character_method_and_speaker_preset_dialogue_callees() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    alice.say(voice=auto)[おはよう。[p]]
+    #<character.alice>.say(voice=auto)[おはよう。[p]]
+    alice2(voice=auto): おはよう。[p]
+    alice2(voice=auto)[おはよう。[p]]
+}
+",
+        )
+        .expect("dialogue callee fixture parses");
+
+        let hir = lower_to_hir(&tree).expect("dialogue callee fixture lowers");
+        let env = TypeCheckEnv::new()
+            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("alice2", TypeKind::Named("SpeakerPreset".to_owned()));
+
+        typecheck_hir(&hir, &env).expect("dialogue callee forms typecheck");
+        let flow = &hir.flows()[0];
+        let HirFlowItem::Dialogue(delimited) = &flow.body()[1] else {
+            panic!("expected delimited character dialogue");
+        };
+        assert_eq!(
+            delimited.id().expect("generated delimited line id").body(),
+            "say.opening.alice.002"
+        );
+    }
+
+    #[test]
     fn rejects_at_bracket_timed_cue_as_raw_line_plan_item() {
         let tree = parse_source(
             r"

@@ -377,8 +377,7 @@ impl TypeChecker<'_> {
     }
 
     fn check_dialogue_item(&mut self, dialogue: &crate::lower::HirDialogue) {
-        let callee_type = self.env.symbol_type(dialogue.callee());
-        if !is_dialogue_callee_type(callee_type) {
+        if !self.is_dialogue_callee(dialogue.callee()) {
             self.errors.push(TypeCheckError::new(format!(
                 "dialogue callee `{}` must resolve to Ref<Character> or SpeakerPreset",
                 dialogue.callee()
@@ -398,6 +397,16 @@ impl TypeChecker<'_> {
             }
             self.line_label_stack.pop();
         }
+    }
+
+    fn is_dialogue_callee(&self, callee: &str) -> bool {
+        if is_dialogue_callee_type(self.env.symbol_type(callee)) {
+            return true;
+        }
+        callee.strip_suffix(".say").is_some_and(|receiver| {
+            is_dialogue_callee_type(self.env.symbol_type(receiver))
+                || is_character_entity_literal(receiver)
+        })
     }
 
     fn check_await_item(&mut self, await_with: &crate::lower::HirAwait) -> Option<TypeKind> {
@@ -1566,6 +1575,17 @@ fn literal_type(literal: &Literal) -> TypeKind {
 fn is_dialogue_callee_type(ty: Option<&TypeKind>) -> bool {
     matches!(ty, Some(TypeKind::Ref(EntityKind::Character)))
         || matches!(ty, Some(TypeKind::Named(name)) if name == "SpeakerPreset")
+}
+
+fn is_character_entity_literal(source: &str) -> bool {
+    let trimmed = source.trim();
+    trimmed
+        .strip_prefix("#<")
+        .and_then(|inner| inner.strip_suffix('>'))
+        .map_or_else(
+            || trimmed.strip_prefix("#character.").is_some(),
+            |inner| inner.starts_with("character."),
+        )
 }
 
 fn collect_borrow_lifetimes(pattern: &Pattern, lifetimes: &mut Vec<String>) {
