@@ -11,6 +11,7 @@ mod lower;
 mod parser;
 mod symbols;
 mod text;
+mod types;
 
 pub use ast::{
     Attribute, AwaitBranch, AwaitBranchKind, ChoiceBlock, ChoiceOption, ContentCall, DialogueToken,
@@ -30,14 +31,17 @@ pub use lower::{
 pub use parser::{ParseError, RecoverySuggestion, parse_source, parse_stub};
 pub use symbols::{SymbolUse, SymbolUseKind, collect_symbol_uses};
 pub use text::parse_dialogue_tokens;
+pub use types::{
+    FnSignature, LifetimeName, TypeParseError, TypeRef, parse_fn_signature, parse_type_ref,
+};
 
 #[cfg(test)]
 mod tests {
     use super::{
         AwaitBranchKind, DialogueToken, EntityKind, Expr, FlowItem, FlowKind, HirFlowItem, Item,
-        LinePlanItem, Pattern, Stmt, SymbolUseKind, TypeCheckEnv, TypeKind, Visibility,
-        collect_symbol_uses, lower_to_hir, parse_dialogue_tokens, parse_source, parse_stub,
-        typecheck_hir, validate_typecheck_ready,
+        LinePlanItem, Pattern, Stmt, SymbolUseKind, TypeCheckEnv, TypeKind, TypeRef, Visibility,
+        collect_symbol_uses, lower_to_hir, parse_dialogue_tokens, parse_fn_signature, parse_source,
+        parse_stub, parse_type_ref, typecheck_hir, validate_typecheck_ready,
     };
 
     #[test]
@@ -475,6 +479,28 @@ with {
         let delimited = super::parse_expr("#<say.opening.dream_hint@sem:b3_9f2a1c>")
             .expect("delimited ref expr parses");
         assert!(matches!(delimited, Expr::EntityRef(entity) if entity.is_delimited()));
+    }
+
+    #[test]
+    fn parses_lifetime_type_syntax_for_borrow_checks() {
+        let borrowed_slice = parse_type_ref("&'asset [Rgba8]").expect("borrowed slice type parses");
+        assert!(matches!(
+            borrowed_slice,
+            TypeRef::Ref {
+                lifetime: Some(ref lifetime),
+                inner,
+            } if lifetime.name() == "asset" && matches!(inner.as_ref(), TypeRef::Slice(_))
+        ));
+
+        let option_borrow =
+            parse_type_ref("Option<&'a ChoiceView>").expect("generic borrowed type parses");
+        assert!(matches!(option_borrow, TypeRef::Generic { .. }));
+
+        let signature =
+            parse_fn_signature("fn first<'a>(xs: &'a [ChoiceView]) -> Option<&'a ChoiceView>")
+                .expect("fn signature lifetimes parse");
+        assert_eq!(signature.name(), "first");
+        assert_eq!(signature.lifetimes()[0].name(), "a");
     }
 
     #[test]
