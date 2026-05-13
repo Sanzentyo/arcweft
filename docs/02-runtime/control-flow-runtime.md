@@ -8,6 +8,7 @@ pub enum Expr {
     Match(MatchExpr),
     Loop(LoopExpr),
     Block(BlockExpr),
+    Scope(ScopeExpr),
     Await(AwaitExpr),
     TryAwait(TryAwaitExpr),
     // ...
@@ -16,6 +17,7 @@ pub enum Expr {
 pub enum Stmt {
     Let { pattern: Pattern, value: Expr },
     LetElse { pattern: Pattern, value: Expr, else_block: Block },
+    Scope(ScopeStmt),
     While(WhileStmt),
     WhileLet(WhileLetStmt),
     For(ForStmt),
@@ -28,7 +30,25 @@ pub enum Stmt {
 }
 ```
 
+`ScopeExpr` / `ScopeStmt` represent `scope name { ... }`. They behave like
+lexical blocks for evaluation and type checking. The name is carried in HIR so
+diagnostics, trace frames, LSP/debug views, and ID generation can recover the
+author-visible scope path.
+
 ## Type checking
+
+`block` / `scope`:
+
+```text
+expression position:
+  final expression determines the value type
+
+statement position:
+  lexical scope returns Unit unless an explicit transfer leaves the continuation
+
+named scope:
+  same typing as block; name does not change the value type
+```
 
 `if`:
 
@@ -93,6 +113,19 @@ Never-returning function
 ```
 
 ## Interpreter/VM lowering
+
+`scope name { ... }` lowers to the same control-flow shape as a lexical block,
+plus a scope-name push/pop around ID-bearing constructs and trace/debug frames.
+
+```text
+PushNamedScope(name)
+  body
+PopNamedScope(name)
+```
+
+The scope path affects only generated or relative line, text-key, choice, and
+option IDs created inside the scope. It does not change ordinary entity
+references, local variable lookup, or the value returned by the block.
 
 `loop` lowers to a block with a loop-exit slot.
 

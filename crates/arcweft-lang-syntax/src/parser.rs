@@ -770,6 +770,9 @@ impl Parser {
         if is_let_loop_head(trimmed) {
             return self.parse_let_loop().map(FlowItem::Stmt);
         }
+        if is_let_if_head(trimmed) {
+            return self.parse_let_if().map(FlowItem::Stmt);
+        }
         if is_let_else_head(trimmed) {
             return self.parse_let_else().map(FlowItem::Stmt);
         }
@@ -933,6 +936,78 @@ impl Parser {
                 TextRange::new(start_line.start, end),
             ),
         })
+    }
+
+    fn parse_let_if(&mut self) -> Option<Stmt> {
+        let start_line = self.current().clone();
+        let (head, body, _end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing if expression",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the if expression block"],
+            );
+            return None;
+        }
+        let (then_body, else_body) = split_embedded_else_body(&body).map_or_else(
+            || {
+                self.take_optional_else_block(start_line.start)
+                    .map(|else_body| (body, else_body))
+            },
+            Some,
+        )?;
+        let rest = head.trim().strip_prefix("let")?.trim();
+        let (pattern, if_head) = rest.split_once('=')?;
+        let condition = if_head.trim().strip_prefix("if")?.trim();
+
+        Some(Stmt::Let {
+            pattern: parse_pattern(pattern.trim()),
+            expr: crate::expr::Expr::If {
+                condition: Box::new(parse_expr_lossy(condition)),
+                then_branch: Box::new(parse_block_expr(&then_body)),
+                else_branch: Some(Box::new(parse_block_expr(&else_body))),
+            },
+        })
+    }
+
+    fn take_optional_else_block(&mut self, base: usize) -> Option<String> {
+        self.skip_blank_and_comments();
+        if self.index >= self.lines.len() {
+            self.push_error(
+                TextRange::new(base, self.previous_end()),
+                "value-producing if expression requires else",
+                ["else { ... }"],
+                None,
+                ["add an else block or use statement-style if"],
+            );
+            return None;
+        }
+        let line = self.current().clone();
+        if !line.text.trim_start().starts_with("else") {
+            self.push_error(
+                TextRange::new(line.start, line.end),
+                "value-producing if expression requires else",
+                ["else { ... }"],
+                Some(line.text.trim()),
+                ["add an else block before the next statement"],
+            );
+            return None;
+        }
+        let (_, body, _, ok) = self.take_brace_block();
+        if ok {
+            Some(body)
+        } else {
+            self.push_error(
+                TextRange::new(line.start, line.end),
+                "unclosed else block while parsing if expression",
+                ["}"],
+                Some(line.text.trim()),
+                ["insert a closing `}` for the else block"],
+            );
+            None
+        }
     }
 
     fn parse_let_else(&mut self) -> Option<Stmt> {
@@ -3170,6 +3245,14 @@ fn is_let_loop_head(trimmed: &str) -> bool {
         .is_some_and(|(_, expr)| expr.trim_start().starts_with("loop"))
 }
 
+fn is_let_if_head(trimmed: &str) -> bool {
+    let Some(rest) = trimmed.strip_prefix("let ") else {
+        return false;
+    };
+    rest.split_once('=')
+        .is_some_and(|(_, expr)| expr.trim_start().starts_with("if "))
+}
+
 fn is_let_else_head(trimmed: &str) -> bool {
     trimmed.starts_with("let ") && trimmed.contains(" else") && trimmed.contains('{')
 }
@@ -3194,6 +3277,33 @@ fn parse_scope_expr_body(body: &str) -> (Vec<Stmt>, Option<crate::expr::Expr>) {
     } else {
         (parsed_statements, Some(parse_expr_lossy(last)))
     }
+}
+
+fn parse_block_expr(body: &str) -> crate::expr::Expr {
+    let (statements, value) = parse_scope_expr_body(body);
+    crate::expr::Expr::Block {
+        statements,
+        value: value.map(Box::new),
+    }
+}
+
+fn split_embedded_else_body(body: &str) -> Option<(String, String)> {
+    let mut then_lines = Vec::new();
+    let mut else_lines = Vec::new();
+    let mut in_else = false;
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if matches!(trimmed, "} else {" | "} else{") {
+            in_else = true;
+            continue;
+        }
+        if in_else {
+            else_lines.push(line);
+        } else {
+            then_lines.push(line);
+        }
+    }
+    in_else.then(|| (then_lines.join("\n"), else_lines.join("\n")))
 }
 
 fn parse_stmt_lines(body: &str) -> Vec<Stmt> {

@@ -140,10 +140,15 @@ let bg = (await asset.image(#asset.bg.room) with:
 Rejected:
 
 ```awft
-await? asset.image(#asset.bg.room) with:
+await asset.image(#asset.bg.room)? with:
     pending p:
         scene #scene.loading
 ```
+
+Use `try await asset.image(...) with:`, `await? asset.image(...) with:`, or the
+explicit parenthesized form `(await asset.image(...) with: ...)?`. Only
+`await expr? with:` is rejected because it makes the owner of `with:` visually
+ambiguous.
 
 ## Automatic source frames
 

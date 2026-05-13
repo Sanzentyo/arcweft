@@ -48,10 +48,11 @@ mod tests {
     use super::{
         AwaitBranchKind, BinaryOp, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
         ContractClause, DialogueToken, EntityKind, Expr, FlowItem, FlowKind, HirFlowItem, Item,
-        LinePlanItem, NameRegistry, Pattern, SelectBranchHead, Stmt, SymbolUseKind, TraitMember,
-        TypeCheckEnv, TypeKind, TypeRef, Visibility, collect_symbol_uses, lower_to_hir,
-        parse_dialogue_tokens, parse_fn_signature, parse_source, parse_stub, parse_type_ref,
-        registry_from_hir, typecheck_hir, validate_hir_references, validate_typecheck_ready,
+        LinePlanItem, Literal, NameRegistry, Pattern, SelectBranchHead, Stmt, SymbolUseKind,
+        TraitMember, TypeCheckEnv, TypeKind, TypeRef, Visibility, collect_symbol_uses,
+        lower_to_hir, parse_dialogue_tokens, parse_fn_signature, parse_source, parse_stub,
+        parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
+        validate_typecheck_ready,
     };
 
     #[test]
@@ -977,6 +978,82 @@ flow #flow.branching branching {
             )
             .with_symbol("route_available", TypeKind::Bool);
         typecheck_hir(&hir, &env).expect("if-let block typechecks and binds route in body");
+    }
+
+    #[test]
+    fn parses_and_typechecks_value_if_expression_binding() {
+        let tree = parse_source(
+            r#"
+flow #flow.branching branching {
+    let face = if ready {
+        "smile"
+    } else {
+        "worried"
+    }
+}
+"#,
+        )
+        .expect("value if expression fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::Stmt(Stmt::Let {
+            pattern,
+            expr:
+                Expr::If {
+                    condition,
+                    then_branch,
+                    else_branch: Some(_),
+                },
+        }) = &flow.body()[0]
+        else {
+            panic!("expected let binding with value if expression");
+        };
+        assert_eq!(pattern, &Pattern::Ident("face".to_owned()));
+        assert!(matches!(condition.as_ref(), Expr::Path(path) if path == "ready"));
+        assert!(matches!(
+            then_branch.as_ref(),
+            Expr::Block {
+                value: Some(value),
+                ..
+            } if matches!(value.as_ref(), Expr::Literal(Literal::String(value)) if value == "smile")
+        ));
+
+        let hir = lower_to_hir(&tree).expect("value if expression fixture lowers");
+        validate_typecheck_ready(&hir).expect("value if expression is typecheck-ready");
+        typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new().with_symbol("ready", TypeKind::Bool),
+        )
+        .expect("value if expression typechecks");
+    }
+
+    #[test]
+    fn typecheck_rejects_value_if_branch_type_mismatch() {
+        let tree = parse_source(
+            r#"
+flow #flow.branching branching {
+    let face = if ready {
+        "smile"
+    } else {
+        1
+    }
+}
+"#,
+        )
+        .expect("mismatched value if fixture parses");
+        let hir = lower_to_hir(&tree).expect("mismatched value if fixture lowers");
+        let errors = typecheck_hir(
+            &hir,
+            &TypeCheckEnv::new().with_symbol("ready", TypeKind::Bool),
+        )
+        .expect_err("mismatched value if branches are rejected");
+        assert!(errors.iter().any(|error| {
+            error
+                .message()
+                .contains("if expression branches must have the same type")
+        }));
     }
 
     #[test]

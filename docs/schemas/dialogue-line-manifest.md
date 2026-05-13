@@ -14,6 +14,8 @@ A dialogue line is the compiled unit connecting source text, localization key, s
   "source_rich_text": "今日は少しだけ、#[fmt(\"変な夢\", color=dream_color)]を見たんだ。[p]",
   "source_hash": "b3:...",
   "source_anchor": "game/routes/opening.awft:9:5-9:48",
+  "flow": "flow.opening",
+  "scope_path": ["dream"],
   "canonical_form": "character.say",
   "sugar_source": "speaker_colon",
   "voice_policy": "auto",
@@ -91,6 +93,11 @@ A dialogue line is the compiled unit connecting source text, localization key, s
 | `source_rich_text` | Source rich text including ruby, interpolation, and permitted control tags |
 | `source_hash` | Hash used for stale translation detection |
 
+`flow` and `scope_path` are recommended for generated manifests. They preserve
+the context used to resolve relative IDs such as `id=.comment` and to derive
+text/voice keys. Fully qualified `line_id` and `text_key` remain the stable
+registry identities.
+
 ## Built-in narrator
 
 Narration uses `speaker = "character.narrator"` by default. Source aliases such as `narrator:`, `地の文:`, and `地:` are resolved to the same entity unless project configuration overrides them.
@@ -113,6 +120,28 @@ narrator_alias
 ```
 
 There is no `script` form in the manifest.
+
+Relative source IDs are normalized before entering the manifest:
+
+```awft
+scope rain {
+    alice(id=.comment, voice=auto):
+        雨、強くなってきたね。[p]
+}
+```
+
+```json
+{
+  "line_id": "say.opening.alice.rain.comment",
+  "text_key": "text.opening.alice.rain.comment",
+  "speaker": "character.alice",
+  "flow": "flow.opening",
+  "scope_path": ["rain"],
+  "voice_by_locale": {
+    "ja-JP": "voice.ja-JP.alice.opening.rain.comment"
+  }
+}
+```
 
 ## TextBox target
 

@@ -376,6 +376,25 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
                 collect_expr(end, uses);
             }
         }
+        Expr::Block { statements, value } => {
+            for stmt in statements {
+                collect_stmt(stmt, uses);
+            }
+            if let Some(value) = value {
+                collect_expr(value, uses);
+            }
+        }
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            collect_expr(condition, uses);
+            collect_expr(then_branch, uses);
+            if let Some(else_branch) = else_branch {
+                collect_expr(else_branch, uses);
+            }
+        }
         Expr::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
     }
 }

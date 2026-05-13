@@ -31,6 +31,23 @@ This schema summarizes the control-flow constructs recognized by the Arcweft com
     "let_else": {
       "else_must_diverge": true
     },
+    "block": {
+      "expression": true,
+      "final_expression_value": true,
+      "semicolon_discards_final_value": true
+    },
+    "named_scope": {
+      "syntax": "scope ident { ... }",
+      "expression": true,
+      "lexical_scope": true,
+      "id_namespace": [
+        "dialogue_line",
+        "text_key",
+        "choice",
+        "choice_option"
+      ],
+      "trace_name": true
+    },
     "semicolon": {
       "required": false,
       "meaning": ["same_line_separator", "discard_expression_value"]

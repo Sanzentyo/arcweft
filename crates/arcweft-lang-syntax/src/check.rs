@@ -637,57 +637,18 @@ impl TypeChecker<'_> {
                     .filter_map(|item| self.check_expr(item))
                     .collect(),
             )),
-            Expr::Call { callee, args } => {
-                for arg in args {
-                    self.check_expr(arg);
-                }
-                if let Expr::Path(name) = callee.as_ref() {
-                    return self.env.function_type(name).cloned().or_else(|| {
-                        self.errors
-                            .push(TypeCheckError::new(format!("unknown function `{name}`")));
-                        None
-                    });
-                }
-                self.check_expr(callee)
-            }
+            Expr::Call { callee, args } => self.check_call_expr(callee, args),
             Expr::NamedArg { value, .. } => self.check_expr(value),
             Expr::MethodCall {
                 receiver,
                 method,
                 args,
-            } => {
-                let receiver_type = self.check_expr(receiver);
-                for arg in args {
-                    self.check_expr(arg);
-                }
-                receiver_type.and_then(|receiver_type| {
-                    self.env
-                        .method_type(&receiver_type, method)
-                        .cloned()
-                        .or_else(|| {
-                            self.errors.push(TypeCheckError::new(format!(
-                                "unknown method `{method}` on {receiver_type:?}"
-                            )));
-                            None
-                        })
-                })
-            }
+            } => self.check_method_call_expr(receiver, method, args),
             Expr::DialogueCall { callee, .. } => {
                 self.check_expr(callee);
                 Some(TypeKind::Named("DialogueLine".to_owned()))
             }
-            Expr::Index { target, index } => {
-                let target_type = self.check_expr(target);
-                self.check_expr(index);
-                target_type.and_then(|target_type| {
-                    self.env.index_type(&target_type).cloned().or_else(|| {
-                        self.errors.push(TypeCheckError::new(format!(
-                            "type {target_type:?} is not indexable"
-                        )));
-                        None
-                    })
-                })
-            }
+            Expr::Index { target, index } => self.check_index_expr(target, index),
             Expr::Pipe { lhs, rhs } => {
                 self.check_expr(lhs);
                 self.check_expr(rhs)
@@ -702,12 +663,101 @@ impl TypeChecker<'_> {
                 Some(TypeKind::Range)
             }
             Expr::Binary { lhs, op, rhs } => self.check_binary_expr(lhs, *op, rhs),
+            Expr::Block { statements, value } => {
+                self.check_block_expr(statements, value.as_deref())
+            }
+            Expr::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => self.check_if_expr(condition, then_branch, else_branch.as_deref()),
             Expr::Raw(raw) => {
                 self.errors.push(TypeCheckError::new(format!(
                     "raw expression is not type-checkable: {raw}"
                 )));
                 None
             }
+        }
+    }
+
+    fn check_call_expr(&mut self, callee: &Expr, args: &[Expr]) -> Option<TypeKind> {
+        for arg in args {
+            self.check_expr(arg);
+        }
+        if let Expr::Path(name) = callee {
+            return self.env.function_type(name).cloned().or_else(|| {
+                self.errors
+                    .push(TypeCheckError::new(format!("unknown function `{name}`")));
+                None
+            });
+        }
+        self.check_expr(callee)
+    }
+
+    fn check_method_call_expr(
+        &mut self,
+        receiver: &Expr,
+        method: &str,
+        args: &[Expr],
+    ) -> Option<TypeKind> {
+        let receiver_type = self.check_expr(receiver);
+        for arg in args {
+            self.check_expr(arg);
+        }
+        receiver_type.and_then(|receiver_type| {
+            self.env
+                .method_type(&receiver_type, method)
+                .cloned()
+                .or_else(|| {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "unknown method `{method}` on {receiver_type:?}"
+                    )));
+                    None
+                })
+        })
+    }
+
+    fn check_index_expr(&mut self, target: &Expr, index: &Expr) -> Option<TypeKind> {
+        let target_type = self.check_expr(target);
+        self.check_expr(index);
+        target_type.and_then(|target_type| {
+            self.env.index_type(&target_type).cloned().or_else(|| {
+                self.errors.push(TypeCheckError::new(format!(
+                    "type {target_type:?} is not indexable"
+                )));
+                None
+            })
+        })
+    }
+
+    fn check_block_expr(&mut self, statements: &[Stmt], value: Option<&Expr>) -> Option<TypeKind> {
+        let outer_locals = self.locals.clone();
+        for stmt in statements {
+            self.check_stmt(stmt);
+        }
+        let ty = value.map_or(Some(TypeKind::Unit), |value| self.check_expr(value));
+        self.locals = outer_locals;
+        ty
+    }
+
+    fn check_if_expr(
+        &mut self,
+        condition: &Expr,
+        then_branch: &Expr,
+        else_branch: Option<&Expr>,
+    ) -> Option<TypeKind> {
+        self.expect_expr_type(condition, &TypeKind::Bool, "if expression condition");
+        let then_type = self.check_expr(then_branch);
+        let else_type = else_branch.and_then(|branch| self.check_expr(branch));
+        match (then_type, else_type) {
+            (Some(then_type), Some(else_type)) if then_type == else_type => Some(then_type),
+            (Some(then_type), Some(else_type)) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "if expression branches must have the same type, found {then_type:?} and {else_type:?}"
+                )));
+                None
+            }
+            _ => None,
         }
     }
 

@@ -1,4 +1,4 @@
-use crate::ast::{EntityRef, TextRange};
+use crate::ast::{EntityRef, Stmt, TextRange};
 use arcweft_source::{SourceAnchor, SourceName};
 use core::fmt;
 
@@ -48,6 +48,15 @@ pub enum Expr {
         lhs: Box<Expr>,
         op: BinaryOp,
         rhs: Box<Expr>,
+    },
+    Block {
+        statements: Vec<Stmt>,
+        value: Option<Box<Expr>>,
+    },
+    If {
+        condition: Box<Expr>,
+        then_branch: Box<Expr>,
+        else_branch: Option<Box<Expr>>,
     },
     Raw(String),
 }
