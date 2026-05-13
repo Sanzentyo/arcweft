@@ -16,9 +16,10 @@ mod types;
 
 pub use ast::{
     Attribute, AwaitBranch, AwaitBranchKind, ChoiceBlock, ChoiceOption, ContentCall,
-    ContractClause, DialogueToken, EntityRef, Flow, FlowItem, FlowKind, HookItem, IfBlock, Item,
-    LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern,
-    ScenarioCommand, SpeakerLine, Stmt, SyntaxTree, TextRange, UseItem, Visibility, WikiLink,
+    ContractClause, DialogueToken, EntityRef, Flow, FlowItem, FlowKind, FunctionItem, HookItem,
+    IfBlock, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem,
+    Pattern, ScenarioCommand, SpeakerLine, Stmt, SyntaxTree, TextRange, UseItem, Visibility,
+    WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -540,6 +541,59 @@ with {
                 .expect("fn signature lifetimes parse");
         assert_eq!(signature.name(), "first");
         assert_eq!(signature.lifetimes()[0].name(), "a");
+    }
+
+    #[test]
+    fn parses_function_item_with_lifetimes_and_contracts() {
+        let tree = parse_source(
+            r"
+pub fn first<'a>(xs: &'a [ChoiceView]) -> Option<&'a ChoiceView>
+requires xs.len() > 0
+ensures check result.is_some()
+effects { asset.read }
+{
+    xs[0]
+}
+",
+        )
+        .expect("function item parses");
+
+        let Item::Function(function) = &tree.items()[0] else {
+            panic!("expected function item");
+        };
+        assert_eq!(function.visibility(), Some(Visibility::Public));
+        assert_eq!(function.signature().name(), "first");
+        assert_eq!(function.signature().lifetimes()[0].name(), "a");
+        assert!(function.signature_text().contains("Option<&'a ChoiceView>"));
+        assert_eq!(function.contracts().len(), 3);
+        assert!(matches!(
+            &function.contracts()[0],
+            ContractClause::Requires {
+                expr: Expr::Binary { .. },
+                ..
+            }
+        ));
+        assert!(function.body().contains("xs[0]"));
+    }
+
+    #[test]
+    fn top_level_function_items_do_not_block_hir_lowering() {
+        let tree = parse_source(
+            r"
+fn label<'a>(choice: &'a ChoiceView) -> &'a DisplayText {
+    choice.label
+}
+
+flow #flow.opening opening {
+    goto #flow.title
+}
+",
+        )
+        .expect("function and flow parse");
+
+        let hir = lower_to_hir(&tree).expect("function item is syntax-only for now");
+        assert_eq!(hir.flows().len(), 1);
+        assert_eq!(hir.flows()[0].id().expect("flow id").body(), "flow.opening");
     }
 
     #[test]

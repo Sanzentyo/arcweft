@@ -1,13 +1,13 @@
 use crate::ast::{
     Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, CancelRuleSyntax, ChoiceBlock,
     ChoiceOption, ContentCall, ContractClause, DialogueContent, EntityRef, Flow, FlowInit,
-    FlowItem, FlowKind, HookItem, IfBlock, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock,
-    MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, SpeakerLine, Stmt,
-    SyntaxTree, TextRange, UseItem, UseMode, Visibility, WikiLink,
+    FlowItem, FlowKind, FunctionItem, HookItem, IfBlock, Item, LinePlan, LinePlanItem, MatchArm,
+    MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, SpeakerLine,
+    Stmt, SyntaxTree, TextRange, UseItem, UseMode, Visibility, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
-use crate::types::parse_type_ref;
+use crate::types::{parse_fn_signature, parse_type_ref};
 use arcweft_source::{SourceAnchor, SourceName};
 use thiserror::Error;
 
@@ -97,6 +97,10 @@ impl Parser {
                 if let Some(flow) = self.parse_flow() {
                     items.push(Item::Flow(flow));
                 }
+            } else if looks_like_function_item(&trimmed) {
+                if let Some(function) = self.parse_function_item() {
+                    items.push(Item::Function(function));
+                }
             } else if looks_like_hook(&trimmed) {
                 if let Some(hook) = self.parse_hook() {
                     items.push(Item::Hook(hook));
@@ -173,6 +177,54 @@ impl Parser {
             body: body_items,
             range: TextRange::new(start_line.start, end),
         }))
+    }
+
+    fn parse_function_item(&mut self) -> Option<FunctionItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_flow_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing function",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the function body"],
+            );
+            return None;
+        }
+
+        let header_lines = head
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>();
+        let first = header_lines.first().copied()?;
+        let (visibility, signature_text) = parse_visibility_prefix(first);
+        let signature_text = signature_text.trim().to_owned();
+        let Ok(signature) = parse_fn_signature(&signature_text) else {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "invalid function signature",
+                ["fn name<'a>(...)"],
+                Some(first),
+                ["write the function item with a valid `fn` signature head"],
+            );
+            return None;
+        };
+        let contracts = header_lines
+            .iter()
+            .skip(1)
+            .filter_map(|line| parse_contract_clause(line))
+            .collect();
+
+        Some(FunctionItem::new(
+            visibility,
+            signature,
+            signature_text,
+            contracts,
+            body,
+            TextRange::new(start_line.start, end),
+        ))
     }
 
     fn take_flow_block(&mut self) -> (String, String, usize, bool) {
@@ -862,6 +914,11 @@ fn looks_like_flow(trimmed: &str) -> bool {
     let (_, rest) = parse_visibility_prefix(trimmed);
     let rest = rest.trim_start();
     rest.starts_with("flow ") || rest.starts_with("fragment ")
+}
+
+fn looks_like_function_item(trimmed: &str) -> bool {
+    let (_, rest) = parse_visibility_prefix(trimmed);
+    rest.trim_start().starts_with("fn ")
 }
 
 fn parse_flow_kind(input: &str) -> Option<(FlowKind, &str)> {

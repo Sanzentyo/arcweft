@@ -63,6 +63,7 @@ Syntax parser:
 - `thiserror` is used for parser error integration.
 - Expression syntax now has an `Expr` AST for entity references, literals, tuples, calls, named arguments, method calls, dialogue calls, indexes, pipes, binary comparisons, and placeholders.
 - Type syntax now has `TypeRef`/`LifetimeName` support for lifetime-bearing borrow types such as `&'asset [Rgba8]`, and function signature lifetime parameters such as `fn first<'a>(...)`.
+- Top-level `fn` items are parsed as structured syntax items with visibility, lifetime-bearing signature heads, contract clauses, source ranges, and raw bodies reserved for later semantic lowering.
 - Dialogue `#[...]` expressions, compact scenario command arguments, same-line and multiline timed-cue anchors/bodies, line-plan options, line-plan `let`/`return`, choice conditions, and `await ... with` carry parsed expressions for later type checking and HIR lowering.
 - Flow `let`/`return`/`goto` statements now lower to structured `Stmt` and `Pattern` values instead of opaque strings.
 - Flow `if` and `match` blocks lower to structured HIR nodes, and their nested flow items participate in symbol collection and type checking.
@@ -87,6 +88,7 @@ Not implemented in this milestone:
 - MCP / agent protocol runtime
 - Cranelift JIT
 - full HIR ownership/region model
+- full function-body HIR lowering and semantic checking
 - full type environment, name resolution, and type checking
 - inference, overload resolution, traits, generics, contracts, and effect checking
 - full nested-scope borrow lifetime analysis and precise borrow end tracking

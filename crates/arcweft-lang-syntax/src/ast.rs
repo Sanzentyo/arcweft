@@ -1,5 +1,5 @@
 use crate::expr::Expr;
-use crate::types::TypeRef;
+use crate::types::{FnSignature, TypeRef};
 use core::ops::Range;
 
 /// Half-open byte range in the original source.
@@ -55,6 +55,7 @@ pub enum UseMode {
 pub enum Item {
     Attribute(Attribute),
     Flow(Flow),
+    Function(FunctionItem),
     Hook(HookItem),
     MemoFn(MemoFn),
     Parser(ParserItem),
@@ -127,6 +128,17 @@ pub enum ContractClause {
     Effects(Vec<Expr>),
     Modifies(Vec<Expr>),
     Decreases(Expr),
+}
+
+/// Top-level function item with parsed signature head and contract clauses.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FunctionItem {
+    visibility: Option<Visibility>,
+    signature: FnSignature,
+    signature_text: String,
+    contracts: Vec<ContractClause>,
+    body: String,
+    range: TextRange,
 }
 
 /// Top-level flow-like item kind.
@@ -567,6 +579,50 @@ impl Flow {
     }
 
     pub fn body(&self) -> &[FlowItem] {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl FunctionItem {
+    pub(crate) fn new(
+        visibility: Option<Visibility>,
+        signature: FnSignature,
+        signature_text: String,
+        contracts: Vec<ContractClause>,
+        body: String,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            signature,
+            signature_text,
+            contracts,
+            body,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub const fn signature(&self) -> &FnSignature {
+        &self.signature
+    }
+
+    pub fn signature_text(&self) -> &str {
+        &self.signature_text
+    }
+
+    pub fn contracts(&self) -> &[ContractClause] {
+        &self.contracts
+    }
+
+    pub fn body(&self) -> &str {
         &self.body
     }
 
