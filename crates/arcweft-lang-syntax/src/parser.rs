@@ -1,14 +1,14 @@
 use crate::ast::{
     Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, BorrowBlock, CallableItem,
-    CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceOption,
-    ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause, DialogueContent,
-    EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionInit,
-    FunctionItem, HookItem, IfBlock, IfLetBlock, ImplItem, Item, LineOptions, LinePlan,
-    LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern,
-    RawItem, RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock,
-    SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt,
-    StmtMatchArm, StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember,
-    TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceMatchArm,
+    ChoiceOption, ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause,
+    DialogueContent, EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind,
+    ForBlock, FunctionInit, FunctionItem, HookItem, IfBlock, IfLetBlock, ImplItem, Item,
+    LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl,
+    ParserItem, Pattern, RawItem, RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock,
+    SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField,
+    StateItem, Stmt, StmtMatchArm, StructField, StructItem, SyntaxTree, TextRange, TraitItem,
+    TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -2551,6 +2551,12 @@ fn parse_choice_item(
                 items: parse_choice_items(body, base, errors),
             });
         }
+        if let Some(expr) = head.strip_prefix("match ") {
+            return Some(ChoiceItem::Match {
+                expr: parse_expr_lossy(expr.trim()),
+                arms: parse_choice_match_arms(body, base, errors),
+            });
+        }
         if let Some(rest) = head.strip_prefix("for ") {
             if let Some((pattern, source)) = rest.split_once(" in ") {
                 return Some(ChoiceItem::For {
@@ -2569,6 +2575,37 @@ fn parse_choice_item(
     parse_choice_arm_sugar(trimmed, base, errors)
         .map(Box::new)
         .map(ChoiceItem::Option)
+}
+
+fn parse_choice_match_arms(
+    body: &str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Vec<ChoiceMatchArm> {
+    collect_logical_choice_lines(body)
+        .into_iter()
+        .filter_map(|line| {
+            let (head, value) = line.trim().split_once("=>")?;
+            let (pattern, guard) = split_pattern_guard(head.trim());
+            let value = value.trim();
+            let items = if let Some(block) = value
+                .strip_prefix('{')
+                .and_then(|value| value.strip_suffix('}'))
+            {
+                parse_choice_items(block.trim(), base, errors)
+            } else {
+                parse_choice_item(value, base, errors).map_or_else(
+                    || vec![ChoiceItem::Raw(value.to_owned())],
+                    |item| vec![item],
+                )
+            };
+            Some(ChoiceMatchArm::new(
+                parse_pattern(pattern.trim()),
+                guard.map(|guard| parse_expr_lossy(guard.trim())),
+                items,
+            ))
+        })
+        .collect()
 }
 
 fn split_brace_item(source: &str) -> Option<(&str, &str)> {

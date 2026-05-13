@@ -16,9 +16,9 @@ mod types;
 
 pub use ast::{
     Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, CallableItem, CallableKind, ChoiceAction,
-    ChoiceBlock, ChoiceItem, ChoiceOption, ChoicePlan, ChoicePlanItem, ContentCall, ContractClause,
-    DialogueToken, EntityRef, EnumItem, EnumVariant, Flow, FlowItem, FlowKind, ForBlock,
-    FunctionItem, HookItem, IfBlock, IfLetBlock, ImplItem, Item, LineOptions, LinePlan,
+    ChoiceBlock, ChoiceItem, ChoiceMatchArm, ChoiceOption, ChoicePlan, ChoicePlanItem, ContentCall,
+    ContractClause, DialogueToken, EntityRef, EnumItem, EnumVariant, Flow, FlowItem, FlowKind,
+    ForBlock, FunctionItem, HookItem, IfBlock, IfLetBlock, ImplItem, Item, LineOptions, LinePlan,
     LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern,
     RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch,
     SelectBranchHead, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField,
@@ -514,6 +514,52 @@ choice #choice.opening.routes {
         assert!(matches!(&choice.items()[0], ChoiceItem::For { .. }));
         assert_eq!(choice.options().len(), 1);
         assert!(choice.options()[0].id_expr().is_some());
+    }
+
+    #[test]
+    fn parses_choice_match_items_and_collects_arm_options() {
+        let tree = parse_source(
+            r#"
+choice #choice.opening.first {
+    match state.route_override {
+        .Some(route) when route_enabled => {
+            .listen "聞いてみる" -> #flow.alice_intro
+        }
+        _ => {
+            .silent "黙っている" -> #flow.quiet_intro
+        }
+    }
+}
+"#,
+        )
+        .expect("choice match item parses");
+
+        let Item::FlowItem(FlowItem::Choice(choice)) = &tree.items()[0] else {
+            panic!("expected choice");
+        };
+        let ChoiceItem::Match { expr, arms } = &choice.items()[0] else {
+            panic!("expected choice match item");
+        };
+        assert!(matches!(expr, Expr::Path(path) if path == "state.route_override"));
+        assert_eq!(arms.len(), 2);
+        assert!(arms[0].guard().is_some());
+        assert!(matches!(
+            arms[0].items().first(),
+            Some(ChoiceItem::Option(option)) if option.label() == "聞いてみる"
+        ));
+        assert_eq!(choice.options().len(), 2);
+        assert_eq!(
+            choice.options()[0].target().expect("listen target").body(),
+            "flow.alice_intro"
+        );
+        assert_eq!(
+            choice.options()[1].target().expect("silent target").body(),
+            "flow.quiet_intro"
+        );
+
+        let hir = lower_to_hir(&tree).expect("choice match lowers");
+        validate_typecheck_ready(&hir).expect("choice match is typecheck-ready");
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect("choice match options typecheck");
     }
 
     #[test]

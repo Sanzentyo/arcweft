@@ -711,8 +711,20 @@ pub enum ChoiceItem {
         source: Expr,
         items: Vec<ChoiceItem>,
     },
+    Match {
+        expr: Expr,
+        arms: Vec<ChoiceMatchArm>,
+    },
     Option(Box<ChoiceOption>),
     Raw(String),
+}
+
+/// One branch of a `match` item inside a choice body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChoiceMatchArm {
+    pattern: Pattern,
+    guard: Option<Expr>,
+    items: Vec<ChoiceItem>,
 }
 
 /// One option in a choice block.
@@ -2215,9 +2227,35 @@ fn collect_choice_options(items: &[ChoiceItem]) -> Vec<ChoiceOption> {
             ChoiceItem::If { items, .. } | ChoiceItem::For { items, .. } => {
                 collect_choice_options(items)
             }
+            ChoiceItem::Match { arms, .. } => arms
+                .iter()
+                .flat_map(|arm| collect_choice_options(arm.items()))
+                .collect(),
             ChoiceItem::Let { .. } | ChoiceItem::Raw(_) => Vec::new(),
         })
         .collect()
+}
+
+impl ChoiceMatchArm {
+    pub(crate) const fn new(pattern: Pattern, guard: Option<Expr>, items: Vec<ChoiceItem>) -> Self {
+        Self {
+            pattern,
+            guard,
+            items,
+        }
+    }
+
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    pub const fn guard(&self) -> Option<&Expr> {
+        self.guard.as_ref()
+    }
+
+    pub fn items(&self) -> &[ChoiceItem] {
+        &self.items
+    }
 }
 
 impl LinePlan {
