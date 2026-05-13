@@ -18,13 +18,13 @@ pub use ast::{
     Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, CallableItem, CallableKind, ChoiceAction,
     ChoiceBlock, ChoiceItem, ChoiceMatchArm, ChoiceOption, ChoicePlan, ChoicePlanItem, ContentCall,
     ContractClause, DialogueToken, EntityDeclItem, EntityDeclKind, EntityRef, EnumItem,
-    EnumVariant, Flow, FlowItem, FlowKind, ForBlock, FunctionItem, FunctionKind, HookItem, IfBlock,
-    IfLetBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm,
-    MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RecordPatternField, ScenarioCommand,
-    ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceItem,
-    SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField, StructItem,
-    SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, VariantPatternPayload,
-    Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    EnumVariant, ExternModItem, Flow, FlowItem, FlowKind, ForBlock, FunctionItem, FunctionKind,
+    HookItem, IfBlock, IfLetBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, LoopBlock,
+    MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RecordPatternField,
+    ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
+    SourceItem, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField,
+    StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
+    VariantPatternPayload, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -4008,6 +4008,36 @@ pub parser parse_image_header<'a>: Parser<ImageHeader<'a>, ParseError>
         let hir = lower_to_hir(&tree).expect("bodyless parser declarations lower");
         validate_typecheck_ready(&hir).expect("bodyless parser declarations are typecheck-ready");
         typecheck_hir(&hir, &TypeCheckEnv::new()).expect("bodyless parser declarations typecheck");
+    }
+
+    #[test]
+    fn parses_extern_rust_module_declaration_from_docs() {
+        let tree = parse_source(
+            r#"
+extern rust mod mini_games::truck from crate "truck_game" {
+    pub event TruckEvent
+    pub type TruckResult
+    pub fn score_to_rank(score: i32) -> Rank
+    pub activity truck_game: Activity<TruckInput, TruckResult>
+}
+"#,
+        )
+        .expect("extern rust module parses");
+        let Item::ExternMod(item) = &tree.items()[0] else {
+            panic!("expected extern module item");
+        };
+        assert_eq!(item.abi(), "rust");
+        assert_eq!(item.path(), "mini_games::truck");
+        assert_eq!(item.source(), Some(r#"crate "truck_game""#));
+        assert!(item.body().contains("pub activity truck_game"));
+
+        let hir = lower_to_hir(&tree).expect("extern rust module lowers");
+        assert!(matches!(
+            hir.declarations(),
+            [HirTopLevelDecl::ExternMod(_)]
+        ));
+        validate_typecheck_ready(&hir).expect("extern module is typecheck-ready");
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect("extern module typechecks");
     }
 
     #[test]

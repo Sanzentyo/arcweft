@@ -206,6 +206,7 @@ impl TypeChecker<'_> {
         match declaration {
             HirTopLevelDecl::Attribute(_)
             | HirTopLevelDecl::Enum(_)
+            | HirTopLevelDecl::ExternMod(_)
             | HirTopLevelDecl::Impl(_)
             | HirTopLevelDecl::Struct(_)
             | HirTopLevelDecl::Trait(_) => {}

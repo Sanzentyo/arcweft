@@ -2,14 +2,14 @@ use crate::ast::{
     Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, BorrowBlock, CallableItem,
     CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceMatchArm,
     ChoiceOption, ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause,
-    DialogueContent, EntityDeclItem, EntityDeclKind, EntityRef, EnumItem, EnumVariant, Flow,
-    FlowInit, FlowItem, FlowKind, ForBlock, FunctionInit, FunctionItem, FunctionKind, HookInit,
-    HookItem, IfBlock, IfLetBlock, ImplItem, Item, LineOptions, LinePlan, LinePlanItem, LoopBlock,
-    MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem, RecordPatternField,
-    ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
-    SourceItem, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StmtMatchArm,
-    StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
-    UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    DialogueContent, EntityDeclItem, EntityDeclKind, EntityRef, EnumItem, EnumVariant,
+    ExternModItem, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionInit, FunctionItem,
+    FunctionKind, HookInit, HookItem, IfBlock, IfLetBlock, ImplItem, Item, LineOptions, LinePlan,
+    LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern,
+    RawItem, RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock,
+    SelectBranch, SelectBranchHead, SourceItem, SourceLocaleBlock, SpeakerLine, StateField,
+    StateItem, Stmt, StmtMatchArm, StructField, StructItem, SyntaxTree, TextRange, TraitItem,
+    TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 use crate::expr::{ComputationBlockKind, Expr, parse_expr};
 use crate::text::parse_dialogue_tokens;
@@ -95,81 +95,7 @@ impl Parser {
             let trimmed = line.text.trim().to_owned();
             let range = TextRange::new(line.start, line.end);
 
-            if let Some(item) = self.reject_old_memo_attribute(&trimmed, range) {
-                items.push(item);
-            } else if let Some(attribute) = parse_attribute(&trimmed, range) {
-                items.push(Item::Attribute(attribute));
-                self.index += 1;
-            } else if let Some(path) = trimmed.strip_prefix("mod ") {
-                module = Some(ModuleDecl::new(path.trim().to_owned(), range));
-                self.index += 1;
-            } else if is_use_line(&trimmed) {
-                if let Some(use_item) = parse_use_line(&trimmed, range) {
-                    uses.push(use_item);
-                }
-                self.index += 1;
-            } else if looks_like_flow(&trimmed) {
-                if let Some(flow) = self.parse_flow() {
-                    items.push(Item::Flow(flow));
-                }
-            } else if looks_like_function_item(&trimmed) {
-                if let Some(function) = self.parse_function_item() {
-                    items.push(Item::Function(function));
-                }
-            } else if looks_like_callable_item(&trimmed) {
-                if let Some(callable) = self.parse_callable_item() {
-                    items.push(Item::Callable(callable));
-                }
-            } else if looks_like_state_item(&trimmed) {
-                if let Some(state) = self.parse_state_item() {
-                    items.push(Item::State(state));
-                }
-            } else if looks_like_trait_item(&trimmed) {
-                if let Some(trait_item) = self.parse_trait_item() {
-                    items.push(Item::Trait(trait_item));
-                }
-            } else if looks_like_impl_item(&trimmed) {
-                if let Some(impl_item) = self.parse_impl_item() {
-                    items.push(Item::Impl(impl_item));
-                }
-            } else if looks_like_enum_item(&trimmed) {
-                if let Some(enum_item) = self.parse_enum_item() {
-                    items.push(Item::Enum(enum_item));
-                }
-            } else if looks_like_struct_item(&trimmed) {
-                if let Some(struct_item) = self.parse_struct_item() {
-                    items.push(Item::Struct(struct_item));
-                }
-            } else if looks_like_type_alias(&trimmed) {
-                if let Some(type_alias) = self.parse_type_alias() {
-                    items.push(Item::TypeAlias(type_alias));
-                }
-            } else if looks_like_entity_decl_item(&trimmed) {
-                if let Some(decl) = self.parse_entity_decl_item() {
-                    items.push(Item::EntityDecl(decl));
-                }
-            } else if looks_like_hook(&trimmed) {
-                if let Some(hook) = self.parse_hook() {
-                    items.push(Item::Hook(hook));
-                }
-            } else if looks_like_memo_fn(&trimmed) {
-                if let Some(memo) = self.parse_memo_fn() {
-                    items.push(Item::MemoFn(memo));
-                }
-            } else if looks_like_parser_item(&trimmed) {
-                if let Some(parser) = self.parse_parser_item() {
-                    items.push(Item::Parser(parser));
-                }
-            } else if looks_like_source_item(&trimmed) {
-                if let Some(source) = self.parse_source_item() {
-                    items.push(Item::Source(source));
-                }
-            } else if let Some(flow_item) = self.parse_flow_item_until_indent(0) {
-                items.push(Item::FlowItem(flow_item));
-            } else {
-                items.push(Item::Raw(RawItem::new(trimmed, None, range)));
-                self.index += 1;
-            }
+            self.parse_top_level_line(&trimmed, range, &mut module, &mut uses, &mut items);
         }
 
         if self.errors.is_empty() {
@@ -182,6 +108,101 @@ impl Parser {
             ))
         } else {
             Err(core::mem::take(&mut self.errors))
+        }
+    }
+
+    fn parse_top_level_line(
+        &mut self,
+        trimmed: &str,
+        range: TextRange,
+        module: &mut Option<ModuleDecl>,
+        uses: &mut Vec<UseItem>,
+        items: &mut Vec<Item>,
+    ) {
+        if let Some(item) = self.reject_old_memo_attribute(trimmed, range) {
+            items.push(item);
+        } else if let Some(attribute) = parse_attribute(trimmed, range) {
+            items.push(Item::Attribute(attribute));
+            self.index += 1;
+        } else if let Some(path) = trimmed.strip_prefix("mod ") {
+            *module = Some(ModuleDecl::new(path.trim().to_owned(), range));
+            self.index += 1;
+        } else if is_use_line(trimmed) {
+            if let Some(use_item) = parse_use_line(trimmed, range) {
+                uses.push(use_item);
+            }
+            self.index += 1;
+        } else {
+            self.parse_top_level_item(trimmed, range, items);
+        }
+    }
+
+    fn parse_top_level_item(&mut self, trimmed: &str, range: TextRange, items: &mut Vec<Item>) {
+        if looks_like_flow(trimmed) {
+            if let Some(flow) = self.parse_flow() {
+                items.push(Item::Flow(flow));
+            }
+        } else if looks_like_function_item(trimmed) {
+            if let Some(function) = self.parse_function_item() {
+                items.push(Item::Function(function));
+            }
+        } else if looks_like_callable_item(trimmed) {
+            if let Some(callable) = self.parse_callable_item() {
+                items.push(Item::Callable(callable));
+            }
+        } else if looks_like_state_item(trimmed) {
+            if let Some(state) = self.parse_state_item() {
+                items.push(Item::State(state));
+            }
+        } else if looks_like_trait_item(trimmed) {
+            if let Some(trait_item) = self.parse_trait_item() {
+                items.push(Item::Trait(trait_item));
+            }
+        } else if looks_like_impl_item(trimmed) {
+            if let Some(impl_item) = self.parse_impl_item() {
+                items.push(Item::Impl(impl_item));
+            }
+        } else if looks_like_enum_item(trimmed) {
+            if let Some(enum_item) = self.parse_enum_item() {
+                items.push(Item::Enum(enum_item));
+            }
+        } else if looks_like_struct_item(trimmed) {
+            if let Some(struct_item) = self.parse_struct_item() {
+                items.push(Item::Struct(struct_item));
+            }
+        } else if looks_like_type_alias(trimmed) {
+            if let Some(type_alias) = self.parse_type_alias() {
+                items.push(Item::TypeAlias(type_alias));
+            }
+        } else if looks_like_entity_decl_item(trimmed) {
+            if let Some(decl) = self.parse_entity_decl_item() {
+                items.push(Item::EntityDecl(decl));
+            }
+        } else if looks_like_extern_mod_item(trimmed) {
+            if let Some(item) = self.parse_extern_mod_item() {
+                items.push(Item::ExternMod(item));
+            }
+        } else if looks_like_hook(trimmed) {
+            if let Some(hook) = self.parse_hook() {
+                items.push(Item::Hook(hook));
+            }
+        } else if looks_like_memo_fn(trimmed) {
+            if let Some(memo) = self.parse_memo_fn() {
+                items.push(Item::MemoFn(memo));
+            }
+        } else if looks_like_parser_item(trimmed) {
+            if let Some(parser) = self.parse_parser_item() {
+                items.push(Item::Parser(parser));
+            }
+        } else if looks_like_source_item(trimmed) {
+            if let Some(source) = self.parse_source_item() {
+                items.push(Item::Source(source));
+            }
+        } else if let Some(flow_item) = self.parse_flow_item_until_indent(0) {
+            items.push(Item::FlowItem(flow_item));
+        } else {
+            items.push(Item::Raw(RawItem::new(trimmed.to_owned(), None, range)));
+            self.index += 1;
         }
     }
 
@@ -555,6 +576,29 @@ impl Parser {
             signature_tail,
             None,
             TextRange::new(line.start, line.end),
+        ))
+    }
+
+    fn parse_extern_mod_item(&mut self) -> Option<ExternModItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing external module",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the external module body"],
+            );
+            return None;
+        }
+        let (abi, path, source) = parse_extern_mod_head(head.trim())?;
+        Some(ExternModItem::new(
+            abi,
+            path,
+            source,
+            body,
+            TextRange::new(start_line.start, end),
         ))
     }
 
@@ -2143,6 +2187,21 @@ fn looks_like_entity_decl_item(trimmed: &str) -> bool {
     let (_, rest) = parse_visibility_prefix(trimmed);
     let rest = rest.trim_start();
     entity_decl_kind(rest).is_some()
+}
+
+fn looks_like_extern_mod_item(trimmed: &str) -> bool {
+    trimmed.trim_start().starts_with("extern ")
+}
+
+fn parse_extern_mod_head(head: &str) -> Option<(String, String, Option<String>)> {
+    let rest = head.trim_start().strip_prefix("extern")?.trim_start();
+    let (abi, rest) = rest.split_once(" mod ")?;
+    let (path, source) = rest
+        .split_once(" from ")
+        .map_or((rest.trim(), None), |(path, source)| {
+            (path.trim(), Some(source.trim().to_owned()))
+        });
+    Some((abi.trim().to_owned(), path.to_owned(), source))
 }
 
 fn entity_decl_kind(input: &str) -> Option<(EntityDeclKind, &str)> {

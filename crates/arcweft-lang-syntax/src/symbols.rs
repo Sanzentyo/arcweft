@@ -58,6 +58,7 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
     match declaration {
         HirTopLevelDecl::Attribute(_)
         | HirTopLevelDecl::Enum(_)
+        | HirTopLevelDecl::ExternMod(_)
         | HirTopLevelDecl::Impl(_)
         | HirTopLevelDecl::Struct(_) => {}
         HirTopLevelDecl::EntityDecl(item) => push_entity(uses, item.id()),

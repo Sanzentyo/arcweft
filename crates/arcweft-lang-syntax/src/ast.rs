@@ -64,6 +64,7 @@ pub enum Item {
     Struct(StructItem),
     TypeAlias(TypeAliasItem),
     EntityDecl(EntityDeclItem),
+    ExternMod(ExternModItem),
     Hook(HookItem),
     MemoFn(MemoFn),
     Parser(ParserItem),
@@ -191,6 +192,17 @@ pub struct EntityDeclItem {
     name: Option<String>,
     signature_tail: String,
     body: Option<String>,
+    range: TextRange,
+}
+
+/// External module import declaration such as
+/// `extern rust mod path from crate "name" { ... }`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternModItem {
+    abi: String,
+    path: String,
+    source: Option<String>,
+    body: String,
     range: TextRange,
 }
 
@@ -1274,6 +1286,44 @@ impl EntityDeclItem {
 
     pub fn body(&self) -> Option<&str> {
         self.body.as_deref()
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl ExternModItem {
+    pub(crate) const fn new(
+        abi: String,
+        path: String,
+        source: Option<String>,
+        body: String,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            abi,
+            path,
+            source,
+            body,
+            range,
+        }
+    }
+
+    pub fn abi(&self) -> &str {
+        &self.abi
+    }
+
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    pub fn source(&self) -> Option<&str> {
+        self.source.as_deref()
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
     }
 
     pub const fn range(&self) -> &TextRange {
