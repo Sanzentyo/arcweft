@@ -1,6 +1,6 @@
 use crate::ast::{EntityRef, TextRange};
 use arcweft_source::{SourceAnchor, SourceName};
-use thiserror::Error;
+use core::fmt;
 
 /// Expression syntax preserved for type checking and HIR lowering.
 ///
@@ -94,8 +94,7 @@ pub enum BinaryOp {
 }
 
 /// Expression parse error.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-#[error("{message}")]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExprParseError {
     message: String,
     anchor: SourceAnchor,
@@ -545,3 +544,11 @@ impl ExprParseError {
         &self.anchor
     }
 }
+
+impl fmt::Display for ExprParseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ExprParseError {}

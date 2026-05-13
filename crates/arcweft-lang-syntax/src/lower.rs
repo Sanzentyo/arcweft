@@ -4,7 +4,7 @@ use crate::ast::{
     SyntaxTree, TextRange,
 };
 use crate::expr::Expr;
-use thiserror::Error;
+use core::fmt;
 
 /// HIR-facing module produced from parsed surface syntax.
 ///
@@ -135,8 +135,7 @@ pub struct HirAwaitBranch {
 }
 
 /// Lowering failure for syntax that is still too raw for HIR.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-#[error("{message}")]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirLowerError {
     message: String,
     range: Option<TextRange>,
@@ -544,3 +543,11 @@ impl HirLowerError {
         self.range.as_ref()
     }
 }
+
+impl fmt::Display for HirLowerError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for HirLowerError {}

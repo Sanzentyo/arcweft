@@ -3,8 +3,8 @@ use crate::expr::{BinaryOp, Expr, Literal};
 use crate::lower::{HirFlowItem, HirModule};
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 use crate::types::TypeRef;
+use core::fmt;
 use std::collections::HashMap;
-use thiserror::Error;
 
 /// Entity family inferred from an Arcweft public id prefix.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -60,15 +60,13 @@ pub struct TypeCheckEnv {
 }
 
 /// Semantic type-checking diagnostic.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-#[error("{message}")]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeCheckError {
     message: String,
 }
 
 /// Syntax-to-HIR readiness error for the future type checker.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-#[error("{message}")]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeCheckReadinessError {
     message: String,
 }
@@ -657,6 +655,14 @@ impl TypeCheckReadinessError {
     }
 }
 
+impl fmt::Display for TypeCheckReadinessError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for TypeCheckReadinessError {}
+
 impl TypeCheckEnv {
     /// Creates an empty type-checking environment.
     pub fn new() -> Self {
@@ -726,3 +732,11 @@ impl TypeCheckError {
         &self.message
     }
 }
+
+impl fmt::Display for TypeCheckError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for TypeCheckError {}

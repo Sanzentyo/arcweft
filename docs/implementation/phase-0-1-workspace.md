@@ -60,7 +60,7 @@ Syntax parser:
 - `parse_source` and `parse_stub` now parse real `.awft` surface syntax into `SyntaxTree`.
 - The parser records module/use headers, attributes, wiki links, flows, fragments, flow items, scenario commands, speaker lines, content calls, choice blocks, hooks, memo functions, parser items, line plans, and dialogue tokens.
 - Diagnostics use structured `ParseError` values with spans, expected fragments, found text, recovery suggestions, and source anchors.
-- `thiserror` is used for parser error integration.
+- Parser and semantic diagnostics implement `Display` and `std::error::Error` directly without external error-derive dependencies.
 - Expression syntax now has an `Expr` AST for entity references, literals, tuples, calls, named arguments, method calls, dialogue calls, indexes, pipes, binary comparisons, and placeholders.
 - Expression syntax also preserves float literals, half-open/inclusive ranges, and `in` membership expressions used by documented contracts.
 - Type syntax now has `TypeRef`/`LifetimeName` support for lifetime-bearing borrow types such as `&'asset [Rgba8]`, and function signature lifetime parameters such as `fn first<'a>(...)`.

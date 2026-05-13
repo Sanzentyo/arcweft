@@ -1,4 +1,4 @@
-use thiserror::Error;
+use core::fmt;
 
 /// Lifetime name used in Arcweft type syntax.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -29,8 +29,7 @@ pub struct FnSignature {
 }
 
 /// Type syntax parse failure.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-#[error("{message}")]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeParseError {
     message: String,
 }
@@ -172,3 +171,11 @@ impl TypeParseError {
         }
     }
 }
+
+impl fmt::Display for TypeParseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for TypeParseError {}
