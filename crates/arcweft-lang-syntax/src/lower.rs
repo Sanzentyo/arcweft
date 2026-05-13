@@ -5,6 +5,7 @@ use crate::ast::{
     SpeakerLine, Stmt, SyntaxTree, TextRange, WhileBlock, WhileLetBlock,
 };
 use crate::expr::Expr;
+use crate::types::FnSignature;
 use core::fmt;
 use std::collections::HashMap;
 
@@ -33,7 +34,7 @@ pub struct HirFlow {
 /// HIR-facing function body.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirFunction {
-    name: String,
+    signature: FnSignature,
     contracts: Vec<ContractClause>,
     statements: Vec<Stmt>,
     value: Option<Expr>,
@@ -291,7 +292,7 @@ pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> 
 
 fn lower_function(function: &FunctionItem) -> HirFunction {
     HirFunction {
-        name: function.signature().name().to_owned(),
+        signature: function.signature().clone(),
         contracts: function.contracts().to_vec(),
         statements: function.body_statements().to_vec(),
         value: function.body_value().cloned(),
@@ -792,7 +793,11 @@ impl HirFlow {
 
 impl HirFunction {
     pub fn name(&self) -> &str {
-        &self.name
+        self.signature.name()
+    }
+
+    pub const fn signature(&self) -> &FnSignature {
+        &self.signature
     }
 
     pub fn contracts(&self) -> &[ContractClause] {

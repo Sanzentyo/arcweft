@@ -1988,6 +1988,8 @@ with {
                 .expect("fn signature lifetimes parse");
         assert_eq!(signature.name(), "first");
         assert_eq!(signature.lifetimes()[0].name(), "a");
+        assert_eq!(signature.params()[0].pattern(), "xs");
+        assert!(signature.return_type().is_some());
     }
 
     #[test]
@@ -2051,7 +2053,7 @@ flow #flow.opening opening {
     fn typechecks_structured_function_body_for_hir_readiness() {
         let tree = parse_source(
             r"
-fn load_score() -> Result<i32, ScoreError> {
+fn load_score() -> i32 {
     let score = read_score()?
     score
 }
@@ -2078,6 +2080,25 @@ fn load_score() -> Result<i32, ScoreError> {
             },
         );
         typecheck_hir(&hir, &env).expect("function body typechecks");
+    }
+
+    #[test]
+    fn typecheck_rejects_function_return_type_mismatch() {
+        let tree = parse_source(
+            r"
+fn bad_score() -> Bool {
+    1
+}
+",
+        )
+        .expect("function body parses");
+        let hir = lower_to_hir(&tree).expect("function lowers");
+        let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("return mismatch");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message().contains("function `bad_score` returns"))
+        );
     }
 
     #[test]

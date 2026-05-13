@@ -165,10 +165,27 @@ impl TypeChecker<'_> {
             self.active_borrows.clear();
             self.locals.clear();
             self.loop_stack.clear();
+            for param in function.signature().params() {
+                if is_local_ident(param.pattern()) {
+                    self.locals
+                        .insert(param.pattern().to_owned(), type_ref_kind(param.ty()));
+                }
+            }
             for contract in function.contracts() {
                 self.check_contract_clause(contract);
             }
-            self.check_block_expr(function.statements(), function.value());
+            let actual = self.check_block_expr(function.statements(), function.value());
+            if let (Some(expected), Some(actual)) = (
+                function.signature().return_type().map(type_ref_kind),
+                actual,
+            ) {
+                if actual != expected {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "function `{}` returns {expected:?}, but body has {actual:?}",
+                        function.name()
+                    )));
+                }
+            }
         }
         self.check_flow_items(module.top_level_items());
     }
@@ -1082,12 +1099,12 @@ fn result_ok_type(name: &str) -> Option<TypeKind> {
 
 fn named_type_label(name: &str) -> TypeKind {
     match name {
-        "Bool" => TypeKind::Bool,
-        "Int" => TypeKind::Int,
-        "Float" => TypeKind::Float,
+        "bool" | "Bool" => TypeKind::Bool,
+        "i32" | "i64" | "usize" | "Int" => TypeKind::Int,
+        "f32" | "f64" | "Float" => TypeKind::Float,
         "String" => TypeKind::String,
         "Duration" => TypeKind::Duration,
-        "Unit" => TypeKind::Unit,
+        "()" | "Unit" => TypeKind::Unit,
         other => TypeKind::Named(other.to_owned()),
     }
 }
@@ -1179,7 +1196,20 @@ fn collect_type_lifetimes(ty: &TypeRef, lifetimes: &mut Vec<String>) {
 }
 
 fn type_ref_kind(ty: &TypeRef) -> TypeKind {
-    TypeKind::Named(type_ref_label(ty))
+    match ty {
+        TypeRef::Path(path) => named_type_label(path),
+        TypeRef::Generic { base, args } if base == "Result" && args.len() == 2 => {
+            TypeKind::Result {
+                ok: Box::new(type_ref_kind(&args[0])),
+                error: Box::new(type_ref_kind(&args[1])),
+            }
+        }
+        TypeRef::Generic { base, args } if base == "Need" && args.len() == 2 => TypeKind::Need {
+            ready: Box::new(type_ref_kind(&args[0])),
+            error: Box::new(type_ref_kind(&args[1])),
+        },
+        _ => TypeKind::Named(type_ref_label(ty)),
+    }
 }
 
 fn type_ref_label(ty: &TypeRef) -> String {

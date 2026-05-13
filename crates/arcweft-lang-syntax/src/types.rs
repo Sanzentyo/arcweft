@@ -26,6 +26,15 @@ pub enum TypeRef {
 pub struct FnSignature {
     name: String,
     lifetimes: Vec<LifetimeName>,
+    params: Vec<FnParam>,
+    return_type: Option<TypeRef>,
+}
+
+/// One function parameter pattern and type annotation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FnParam {
+    pattern: String,
+    ty: TypeRef,
 }
 
 /// Type syntax parse failure.
@@ -56,11 +65,12 @@ pub fn parse_fn_signature(source: &str) -> Result<FnSignature, TypeParseError> {
         .last()
         .ok_or_else(|| TypeParseError::new("expected function name"))?;
     let name = after_fn[..name_end].to_owned();
-    let rest = after_fn[name_end..].trim_start();
+    let mut rest = after_fn[name_end..].trim_start();
     let lifetimes = rest
         .strip_prefix('<')
         .and_then(|value| value.split_once('>'))
-        .map_or_else(Vec::new, |(params, _)| {
+        .map_or_else(Vec::new, |(params, tail)| {
+            rest = tail.trim_start();
             params
                 .split(',')
                 .map(str::trim)
@@ -68,7 +78,44 @@ pub fn parse_fn_signature(source: &str) -> Result<FnSignature, TypeParseError> {
                 .map(parse_lifetime_name)
                 .collect()
         });
-    Ok(FnSignature { name, lifetimes })
+    let (params, rest) = parse_fn_params(rest)?;
+    let return_type = rest
+        .trim_start()
+        .strip_prefix("->")
+        .map(str::trim)
+        .filter(|tail| !tail.is_empty())
+        .map(parse_type_ref)
+        .transpose()?;
+    Ok(FnSignature {
+        name,
+        lifetimes,
+        params,
+        return_type,
+    })
+}
+
+fn parse_fn_params(source: &str) -> Result<(Vec<FnParam>, &str), TypeParseError> {
+    let source = source.trim_start();
+    let inner = source
+        .strip_prefix('(')
+        .ok_or_else(|| TypeParseError::new("expected parameter list"))?;
+    let close =
+        find_matching_paren(inner).ok_or_else(|| TypeParseError::new("unclosed parameter list"))?;
+    let params = split_top_level(&inner[..close], ',')
+        .into_iter()
+        .filter(|param| !param.is_empty())
+        .map(parse_fn_param)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((params, &inner[close + 1..]))
+}
+
+fn parse_fn_param(source: &str) -> Result<FnParam, TypeParseError> {
+    let (pattern, ty) = split_top_level_once(source, ':')
+        .ok_or_else(|| TypeParseError::new("expected `pattern: Type` parameter"))?;
+    Ok(FnParam {
+        pattern: pattern.trim().to_owned(),
+        ty: parse_type_ref(ty.trim())?,
+    })
 }
 
 fn parse_type_atom(source: &str) -> TypeRef {
@@ -118,14 +165,31 @@ fn split_generic_type(source: &str) -> Option<(&str, &str)> {
 }
 
 fn split_type_args(source: &str) -> Vec<&str> {
+    split_top_level(source, ',')
+}
+
+fn find_matching_paren(source: &str) -> Option<usize> {
+    let mut depth = 0_i32;
+    for (index, ch) in source.char_indices() {
+        match ch {
+            '(' | '<' | '[' | '{' => depth += 1,
+            ')' if depth == 0 => return Some(index),
+            ')' | '>' | ']' | '}' => depth -= 1,
+            _ => {}
+        }
+    }
+    None
+}
+
+fn split_top_level(source: &str, delimiter: char) -> Vec<&str> {
     let mut args = Vec::new();
     let mut start = 0;
     let mut depth = 0_i32;
     for (index, ch) in source.char_indices() {
         match ch {
-            '<' | '[' => depth += 1,
-            '>' | ']' => depth -= 1,
-            ',' if depth == 0 => {
+            '<' | '[' | '(' | '{' => depth += 1,
+            '>' | ']' | ')' | '}' => depth -= 1,
+            ch if ch == delimiter && depth == 0 => {
                 args.push(source[start..index].trim());
                 start = index + 1;
             }
@@ -137,6 +201,21 @@ fn split_type_args(source: &str) -> Vec<&str> {
         args.push(tail);
     }
     args
+}
+
+fn split_top_level_once(source: &str, delimiter: char) -> Option<(&str, &str)> {
+    let mut depth = 0_i32;
+    for (index, ch) in source.char_indices() {
+        match ch {
+            '<' | '[' | '(' | '{' => depth += 1,
+            '>' | ']' | ')' | '}' => depth -= 1,
+            ch if ch == delimiter && depth == 0 => {
+                return Some((&source[..index], &source[index + ch.len_utf8()..]));
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn parse_lifetime_name(source: &str) -> LifetimeName {
@@ -161,6 +240,28 @@ impl FnSignature {
     /// Declared lifetime parameters.
     pub fn lifetimes(&self) -> &[LifetimeName] {
         &self.lifetimes
+    }
+
+    /// Declared function parameters.
+    pub fn params(&self) -> &[FnParam] {
+        &self.params
+    }
+
+    /// Declared return type, if present.
+    pub const fn return_type(&self) -> Option<&TypeRef> {
+        self.return_type.as_ref()
+    }
+}
+
+impl FnParam {
+    /// Parameter binding pattern.
+    pub fn pattern(&self) -> &str {
+        &self.pattern
+    }
+
+    /// Parameter type annotation.
+    pub const fn ty(&self) -> &TypeRef {
+        &self.ty
     }
 }
 
