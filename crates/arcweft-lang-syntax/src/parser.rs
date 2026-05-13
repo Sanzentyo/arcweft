@@ -1,10 +1,11 @@
 use crate::ast::{
-    Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, BorrowBlock, CancelRuleSyntax,
-    ChoiceBlock, ChoiceOption, ContentCall, ContractClause, DialogueContent, EntityRef, EnumItem,
-    EnumVariant, Flow, FlowInit, FlowItem, FlowKind, FunctionItem, HookItem, IfBlock, Item,
-    LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RawItem,
-    ScenarioCommand, SpeakerLine, Stmt, StructField, StructItem, SyntaxTree, TextRange,
-    TypeAliasItem, UseItem, UseMode, Visibility, WikiLink,
+    Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, BorrowBlock, CallableItem,
+    CallableKind, CancelRuleSyntax, ChoiceBlock, ChoiceOption, ContentCall, ContractClause,
+    DialogueContent, EntityRef, EnumItem, EnumVariant, Flow, FlowInit, FlowItem, FlowKind,
+    FunctionItem, HookItem, IfBlock, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn,
+    ModuleDecl, ParserItem, Pattern, RawItem, ScenarioCommand, SpeakerLine, StateField, StateItem,
+    Stmt, StructField, StructItem, SyntaxTree, TextRange, TypeAliasItem, UseItem, UseMode,
+    Visibility, WikiLink,
 };
 use crate::expr::parse_expr;
 use crate::text::parse_dialogue_tokens;
@@ -101,6 +102,14 @@ impl Parser {
             } else if looks_like_function_item(&trimmed) {
                 if let Some(function) = self.parse_function_item() {
                     items.push(Item::Function(function));
+                }
+            } else if looks_like_callable_item(&trimmed) {
+                if let Some(callable) = self.parse_callable_item() {
+                    items.push(Item::Callable(callable));
+                }
+            } else if looks_like_state_item(&trimmed) {
+                if let Some(state) = self.parse_state_item() {
+                    items.push(Item::State(state));
                 }
             } else if looks_like_enum_item(&trimmed) {
                 if let Some(enum_item) = self.parse_enum_item() {
@@ -260,6 +269,69 @@ impl Parser {
             visibility,
             name.unwrap_or_default(),
             parse_enum_variants(&body),
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_callable_item(&mut self) -> Option<CallableItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_flow_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing function-like item",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the item body"],
+            );
+            return None;
+        }
+        let header_lines = head
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>();
+        let first = header_lines.first().copied()?;
+        let (visibility, rest) = parse_visibility_prefix(first);
+        let (kind, after_kind) = parse_callable_kind(rest.trim_start())?;
+        let (name, signature_tail) = parse_name_and_tail(after_kind);
+        let contracts = header_lines
+            .iter()
+            .skip(1)
+            .filter_map(|line| parse_contract_clause(line))
+            .collect();
+
+        Some(CallableItem::new(
+            kind,
+            visibility,
+            name.unwrap_or_default(),
+            signature_tail,
+            contracts,
+            body,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_state_item(&mut self) -> Option<StateItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing state",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the state body"],
+            );
+            return None;
+        }
+        let (visibility, rest) = parse_visibility_prefix(head.trim());
+        let name = rest.trim_start().strip_prefix("state")?.trim();
+        let (name, _) = parse_name_and_tail(name);
+        Some(StateItem::new(
+            visibility,
+            name.unwrap_or_default(),
+            parse_state_fields(&body),
             TextRange::new(start_line.start, end),
         ))
     }
@@ -1068,6 +1140,17 @@ fn looks_like_function_item(trimmed: &str) -> bool {
     rest.trim_start().starts_with("fn ")
 }
 
+fn looks_like_callable_item(trimmed: &str) -> bool {
+    let (_, rest) = parse_visibility_prefix(trimmed);
+    let rest = rest.trim_start();
+    rest.starts_with("reducer ") || rest.starts_with("view ")
+}
+
+fn looks_like_state_item(trimmed: &str) -> bool {
+    let (_, rest) = parse_visibility_prefix(trimmed);
+    rest.trim_start().starts_with("state ")
+}
+
 fn looks_like_enum_item(trimmed: &str) -> bool {
     let (_, rest) = parse_visibility_prefix(trimmed);
     rest.trim_start().starts_with("enum ")
@@ -1081,6 +1164,15 @@ fn looks_like_struct_item(trimmed: &str) -> bool {
 fn looks_like_type_alias(trimmed: &str) -> bool {
     let (_, rest) = parse_visibility_prefix(trimmed);
     rest.trim_start().starts_with("type ")
+}
+
+fn parse_callable_kind(input: &str) -> Option<(CallableKind, &str)> {
+    if let Some(rest) = input.strip_prefix("reducer") {
+        return Some((CallableKind::Reducer, rest.trim_start()));
+    }
+    input
+        .strip_prefix("view")
+        .map(|rest| (CallableKind::View, rest.trim_start()))
 }
 
 fn parse_flow_kind(input: &str) -> Option<(FlowKind, &str)> {
@@ -1388,6 +1480,27 @@ fn parse_struct_fields(body: &str) -> Vec<StructField> {
             parse_type_ref(ty.trim())
                 .ok()
                 .map(|ty| StructField::new(name.trim().to_owned(), ty))
+        })
+        .collect()
+}
+
+fn parse_state_fields(body: &str) -> Vec<StateField> {
+    body.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| line.trim_end_matches(',').trim())
+        .filter_map(|line| {
+            let (visibility, rest) = parse_visibility_prefix(line);
+            let (left, default) = rest.split_once('=')?;
+            let (name, ty) = left.split_once(':')?;
+            parse_type_ref(ty.trim()).ok().map(|ty| {
+                StateField::new(
+                    visibility,
+                    name.trim().to_owned(),
+                    ty,
+                    parse_expr_lossy(default.trim()),
+                )
+            })
         })
         .collect()
 }

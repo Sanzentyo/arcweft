@@ -56,6 +56,8 @@ pub enum Item {
     Attribute(Attribute),
     Flow(Flow),
     Function(FunctionItem),
+    Callable(CallableItem),
+    State(StateItem),
     Enum(EnumItem),
     Struct(StructItem),
     TypeAlias(TypeAliasItem),
@@ -146,6 +148,43 @@ pub struct FunctionItem {
     contracts: Vec<ContractClause>,
     body: String,
     range: TextRange,
+}
+
+/// Function-like top-level item such as `reducer` or `view`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallableItem {
+    kind: CallableKind,
+    visibility: Option<Visibility>,
+    name: String,
+    signature_tail: String,
+    contracts: Vec<ContractClause>,
+    body: String,
+    range: TextRange,
+}
+
+/// Function-like item category.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CallableKind {
+    Reducer,
+    View,
+}
+
+/// Root state declaration with typed fields and initializer expressions.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateItem {
+    visibility: Option<Visibility>,
+    name: String,
+    fields: Vec<StateField>,
+    range: TextRange,
+}
+
+/// One state field, optionally public, with its default expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateField {
+    visibility: Option<Visibility>,
+    name: String,
+    ty: TypeRef,
+    default: Expr,
 }
 
 /// Top-level algebraic data type declaration.
@@ -687,6 +726,120 @@ impl FunctionItem {
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+}
+
+impl CallableItem {
+    pub(crate) fn new(
+        kind: CallableKind,
+        visibility: Option<Visibility>,
+        name: String,
+        signature_tail: String,
+        contracts: Vec<ContractClause>,
+        body: String,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            kind,
+            visibility,
+            name,
+            signature_tail,
+            contracts,
+            body,
+            range,
+        }
+    }
+
+    pub const fn kind(&self) -> CallableKind {
+        self.kind
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn signature_tail(&self) -> &str {
+        &self.signature_tail
+    }
+
+    pub fn contracts(&self) -> &[ContractClause] {
+        &self.contracts
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl StateItem {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        name: String,
+        fields: Vec<StateField>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            name,
+            fields,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn fields(&self) -> &[StateField] {
+        &self.fields
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl StateField {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        name: String,
+        ty: TypeRef,
+        default: Expr,
+    ) -> Self {
+        Self {
+            visibility,
+            name,
+            ty,
+            default,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn ty(&self) -> &TypeRef {
+        &self.ty
+    }
+
+    pub const fn default(&self) -> &Expr {
+        &self.default
     }
 }
 

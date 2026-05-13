@@ -136,11 +136,13 @@ pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> 
                 Err(err) => errors.push(err),
             },
             Item::Attribute(_)
+            | Item::Callable(_)
             | Item::Enum(_)
             | Item::Function(_)
             | Item::Hook(_)
             | Item::MemoFn(_)
             | Item::Parser(_)
+            | Item::State(_)
             | Item::Struct(_)
             | Item::TypeAlias(_) => {}
             Item::Raw(raw) => errors.push(HirLowerError::new(

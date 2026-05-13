@@ -15,11 +15,12 @@ mod text;
 mod types;
 
 pub use ast::{
-    Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, ChoiceBlock, ChoiceOption, ContentCall,
-    ContractClause, DialogueToken, EntityRef, EnumItem, EnumVariant, Flow, FlowItem, FlowKind,
-    FunctionItem, HookItem, IfBlock, Item, LinePlan, LinePlanItem, MatchArm, MatchBlock, MemoFn,
-    ModuleDecl, ParserItem, Pattern, ScenarioCommand, SpeakerLine, Stmt, StructField, StructItem,
-    SyntaxTree, TextRange, TypeAliasItem, UseItem, Visibility, WikiLink,
+    Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, CallableItem, CallableKind, ChoiceBlock,
+    ChoiceOption, ContentCall, ContractClause, DialogueToken, EntityRef, EnumItem, EnumVariant,
+    Flow, FlowItem, FlowKind, FunctionItem, HookItem, IfBlock, Item, LinePlan, LinePlanItem,
+    MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, ScenarioCommand, SpeakerLine,
+    StateField, StateItem, Stmt, StructField, StructItem, SyntaxTree, TextRange, TypeAliasItem,
+    UseItem, Visibility, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -41,11 +42,12 @@ pub use types::{
 #[cfg(test)]
 mod tests {
     use super::{
-        AwaitBranchKind, BinaryOp, ContractClause, DialogueToken, EntityKind, Expr, FlowItem,
-        FlowKind, HirFlowItem, Item, LinePlanItem, NameRegistry, Pattern, Stmt, SymbolUseKind,
-        TypeCheckEnv, TypeKind, TypeRef, Visibility, collect_symbol_uses, lower_to_hir,
-        parse_dialogue_tokens, parse_fn_signature, parse_source, parse_stub, parse_type_ref,
-        registry_from_hir, typecheck_hir, validate_hir_references, validate_typecheck_ready,
+        AwaitBranchKind, BinaryOp, CallableKind, ContractClause, DialogueToken, EntityKind, Expr,
+        FlowItem, FlowKind, HirFlowItem, Item, LinePlanItem, NameRegistry, Pattern, Stmt,
+        SymbolUseKind, TypeCheckEnv, TypeKind, TypeRef, Visibility, collect_symbol_uses,
+        lower_to_hir, parse_dialogue_tokens, parse_fn_signature, parse_source, parse_stub,
+        parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
+        validate_typecheck_ready,
     };
 
     #[test]
@@ -500,6 +502,67 @@ where len(self) <= 16
         assert_eq!(alias.where_clauses().len(), 2);
 
         let hir = lower_to_hir(&tree).expect("syntax-only adt items do not block lowering");
+        assert!(hir.flows().is_empty());
+    }
+
+    #[test]
+    fn parses_documented_state_reducer_and_view_items() {
+        let tree = parse_source(
+            r"
+pub state GameState {
+    pub route: Ref<Flow> = #flow.opening
+    pub config: Config = Config {}
+    pub flags: Set<Flag> = {}
+    pub affection: Map<Ref<Character>, i32> = {}
+    pub current_bg: Option<ImageHandle> = None
+}
+
+pub reducer update(state: GameState, event: GameEvent) -> Result<Update<GameState>, GameError>
+requires state_is_valid
+{
+    match event {
+        _ => Ok(state.to_update())
+    }
+}
+
+pub view current_scene(state: GameState) -> Scene {
+    scene {
+        layer bg = image(#asset.bg.room)
+    }
+}
+",
+        )
+        .expect("state, reducer, and view parse");
+
+        let Item::State(state) = &tree.items()[0] else {
+            panic!("expected state item");
+        };
+        assert_eq!(state.visibility(), Some(Visibility::Public));
+        assert_eq!(state.name(), "GameState");
+        assert_eq!(state.fields().len(), 5);
+        assert_eq!(state.fields()[0].visibility(), Some(Visibility::Public));
+        assert_eq!(state.fields()[0].name(), "route");
+        assert!(
+            matches!(state.fields()[0].default(), Expr::EntityRef(entity) if entity.body() == "flow.opening")
+        );
+        assert!(matches!(state.fields()[1].default(), Expr::Raw(raw) if raw == "Config {}"));
+
+        let Item::Callable(reducer) = &tree.items()[1] else {
+            panic!("expected reducer item");
+        };
+        assert_eq!(reducer.kind(), CallableKind::Reducer);
+        assert_eq!(reducer.name(), "update");
+        assert!(reducer.signature_tail().contains("GameEvent"));
+        assert_eq!(reducer.contracts().len(), 1);
+        assert!(reducer.body().contains("match event"));
+
+        let Item::Callable(view) = &tree.items()[2] else {
+            panic!("expected view item");
+        };
+        assert_eq!(view.kind(), CallableKind::View);
+        assert_eq!(view.name(), "current_scene");
+
+        let hir = lower_to_hir(&tree).expect("syntax-only state/callable items do not block HIR");
         assert!(hir.flows().is_empty());
     }
 
