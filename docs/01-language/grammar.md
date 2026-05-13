@@ -107,7 +107,7 @@ AwaitPendingBlock := 'with' ':' Newline AwaitCase+
 
 `expr?` is the ordinary Rust-like postfix try operator for `Result` and `Option` expressions. `await` returns `Result<T, E>`. `try await` returns `T` and propagates errors using the same semantics as `(await ...)?`.
 `await? expr with:` is sugar for `try await expr with:`.
-The brace form is syntax sugar for the indentation form; formatters should prefer `with:` in hand-written code.
+The indentation form `with:` is syntax sugar for the canonical brace form `with { ... }`. Formatters may keep `with:` for scenario-like readability, but lowering should treat it as brace-block syntax.
 
 Only the following await grouping is rejected for ambiguity:
 

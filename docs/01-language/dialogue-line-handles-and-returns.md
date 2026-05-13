@@ -1,4 +1,4 @@
-# Dialogue Content Calls, `with:` Blocks, Line Return Values, and Scoped Handles
+# Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles
 
 Arcweft supports concise dialogue while preserving typed control over voice, BGM, stage objects, hooks, and cancellation.
 
@@ -24,7 +24,7 @@ with {
 }
 ```
 
-For script-like sections, the indentation form is also first-class:
+For script-like sections, `with:` is indentation sugar for the same block:
 
 ```awft
 speaker.say(args)[dialogue]
@@ -43,7 +43,7 @@ with:
         alice.stage.face(smile)
 ```
 
-This is equivalent to:
+This is equivalent to the canonical detailed form:
 
 ```awft
 alice.say()[
@@ -54,7 +54,7 @@ with:
         alice.stage.face(smile)
 ```
 
-The colon form remains the shortest syntax:
+The colon form is the shortest speaker-call sugar:
 
 ```awft
 alice:
@@ -64,7 +64,7 @@ with:
         alice.stage.face(smile)
 ```
 
-This is equivalent to:
+This is equivalent to the same canonical detailed form:
 
 ```awft
 alice.say()[
@@ -75,11 +75,11 @@ with:
         alice.stage.face(smile)
 ```
 
-All four forms produce the same typed `DialogueLine`.
+All four source forms produce the same typed `DialogueLine`; only the brace `with { ... }` and explicit `speaker.say()[...]` shape is canonical after syntax normalization.
 
 ---
 
-## Why `alice[...] with:` is reasonable
+## Why `alice[...] with {}` is reasonable
 
 It is realistic and useful because `alice[...]` is only interpreted as a dialogue content call when `alice` has type `Speaker`, `Ref<Character>`, or `SpeakerPreset` and appears in flow-item position.
 
@@ -109,9 +109,9 @@ The formatter may expand ambiguous cases to `alice.say()[...]`.
 
 ---
 
-## `with {}` and `with:`
+## `with {}` and `with:` sugar
 
-Both block forms are supported.
+Both block forms are supported. `with { ... }` is canonical; `with:` is syntax sugar for an indented source block.
 
 ```awft
 alice[おはよう。[p]]
@@ -127,20 +127,20 @@ with:
         alice.stage.face(smile)
 ```
 
-The two forms are equivalent. Project formatting controls the default.
+The two forms are equivalent after parsing. Project formatting controls the printed source style.
 
 ```toml
 [fmt.dialogue]
 line_plan_style = "indent"   # "indent" | "brace" | "preserve"
 ```
 
-`with:` begins a line-plan block only when it is aligned with the speaker line or content call. Inside dialogue text, `with:` is ordinary text unless escaped or parsed as part of a dialogue tag.
+`with:` begins a line-plan block only when it is aligned with the speaker line or content call. Inside dialogue text, `with:` is ordinary text unless escaped or parsed as part of a dialogue tag. Lowering should normalize it to the same representation as `with { ... }`.
 
 ---
 
-## Colon form with `with:`
+## Colon speaker sugar with `with:`
 
-The following is the preferred concise complex line:
+The following is a concise complex line. The `alice:` head is syntax sugar for a character dialogue call, and `with:` is syntax sugar for `with { ... }`.
 
 ```awft
 alice(voice=auto, face=smile):

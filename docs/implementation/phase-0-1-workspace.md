@@ -40,7 +40,7 @@ Dialogue surface model:
 - `CancelScope`
 - `LineExit`
 
-Supporting dialogue model types include speaker presets, voice references, content parts, line-plan steps, plan calls, and plan expressions. These are enough to represent the initial `alice2[...] with:` example as typed Rust data without implementing a parser.
+Supporting dialogue model types include speaker presets, voice references, content parts, line-plan steps, plan calls, and plan expressions. These are enough to represent the initial `alice2[...] with { ... }` example as typed Rust data without implementing a parser.
 
 Builder API:
 

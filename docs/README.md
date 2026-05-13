@@ -38,7 +38,7 @@
 - [Localization for Dialogue](01-language/localization-dialogue.md)
 - [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](01-language/dialogue-control-tags-and-ruby.md)
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](01-language/dialogue-calls-scopes-cancellation.md)
-- [Dialogue Content Calls, `with:` Blocks, Line Return Values, and Scoped Handles](01-language/dialogue-line-handles-and-returns.md)
+- [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles](01-language/dialogue-line-handles-and-returns.md)
 - [Dialogue Windows, Character Styles, and Read-State Hooks](01-language/dialogue-windows-and-hooks.md)
 - [Dialogue Character Methods, TextBox Targets, Interpolation, and Preload](01-language/dialogue-character-methods-and-textbox.md)
 - [TextBox Manifest](schemas/textbox-manifest.md)

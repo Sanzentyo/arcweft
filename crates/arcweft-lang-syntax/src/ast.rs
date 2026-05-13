@@ -445,7 +445,7 @@ pub struct DialogueTag {
     attrs: String,
 }
 
-/// `alice(args): ...` speaker line.
+/// `alice(args): ...` speaker-line sugar for a character dialogue call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SpeakerLine {
     speaker: String,
@@ -455,7 +455,7 @@ pub struct SpeakerLine {
     range: TextRange,
 }
 
-/// `alice.say(args)[...]` or `alice[...]` content call.
+/// Canonical `alice.say(args)[...]` content call, plus `alice[...]` shorthand.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContentCall {
     callee: String,
@@ -483,7 +483,7 @@ pub struct ChoiceOption {
     range: TextRange,
 }
 
-/// `with { ... }` or `with:` line plan.
+/// Canonical `with { ... }` line plan, plus `with:` indentation sugar.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LinePlan {
     style: BlockStyle,

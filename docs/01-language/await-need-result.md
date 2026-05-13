@@ -32,7 +32,7 @@ Type:
 Result<ImageHandle, AssetError>
 ```
 
-`with { ... }` is accepted as a compact syntax sugar for the same pending block. The formatter should rewrite user-authored code to `with:` when the block contains more than one clause or nested statements.
+`with { ... }` is the canonical block form. The indentation form `with:` is syntax sugar for the same block and may be used where scenario-style readability matters.
 
 Handle it explicitly:
 

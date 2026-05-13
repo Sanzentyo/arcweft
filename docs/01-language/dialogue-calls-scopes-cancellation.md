@@ -15,7 +15,7 @@ Related:
 - [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](dialogue-control-tags-and-ruby.md)
 - [Dialogue Windows, Character Styles, and Read-State Hooks](dialogue-windows-and-hooks.md)
 - [Dialogue Character Methods, Dialogue Windows, Speaker Presets, Interpolation, and Preload](dialogue-character-methods-and-textbox.md)
-- [Dialogue Content Calls, `with:` Blocks, Line Return Values, and Scoped Handles](dialogue-line-handles-and-returns.md)
+- [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles](dialogue-line-handles-and-returns.md)
 - [Character Stage / Sprite / Voice Timeline](../03-presentation/character-stage.md)
 - [Hooks and Memoization](hooks-and-memoization.md)
 - [Option / Result / Need / lifetime](types-and-effects.md)
@@ -44,7 +44,7 @@ speaker.say(args)[text] with { plan }
 
 with { plan } / with:
   Line-plan attachment for method, bracket, and colon forms.
-  Used when `speaker:` form needs the same `{ plan }` behavior.
+  `with { plan }` is canonical. `with:` is indentation sugar used when `speaker:` form needs the same plan behavior.
 ```
 
 `#` is not used for line options. `#` remains only an entity-reference marker. A line ID, window, voice, or hook reference is passed like any other option:
@@ -54,7 +54,7 @@ alice(id=#say.opening.greeting, window=#textbox.side, voice=auto, face=smile):
     おはよう。[p]
 ```
 
-`with` is reserved for attaching a line plan to colon sugar. Parentheses `(...)` are for options; brackets `[...]` are player-facing dialogue content; `with { ... }` or `with:` attaches the line plan. A bare trailing `{ ... }` after `]` remains accepted for compatibility, but the formatter prefers `with`.
+`with` is reserved for attaching a line plan to dialogue calls. Parentheses `(...)` are for options; brackets `[...]` are player-facing dialogue content; canonical `with { ... }` or indentation sugar `with:` attaches the line plan. A bare trailing `{ ... }` after `]` remains accepted for compatibility, but the formatter should make the attachment explicit with `with`.
 
 The older compact option style:
 
@@ -227,13 +227,13 @@ with {
 }
 ```
 
-This is useful when a line is generated or transformed by tools, but normal human-authored scripts should prefer either `alice:` or `alice.say()[...] with { ... }` / `with:`.
+This is useful when a line is generated or transformed by tools. Normalized output should prefer explicit `alice.say()[...] with { ... }`; `alice:` and `with:` remain source-level sugar for hand-written scripts.
 
 
 
 ---
 
-## Bracket speaker call and `with:` indentation form
+## Bracket speaker call and `with:` indentation sugar
 
 The following compact form is accepted and formatter-supported:
 
@@ -267,7 +267,7 @@ with:
         alice.stage.face(smile)
 ```
 
-`with:` starts a line plan only at the same indentation level as the dialogue call. Inside dialogue text it is ordinary text unless introduced by a control tag.
+`with:` starts a line plan only at the same indentation level as the dialogue call. Inside dialogue text it is ordinary text unless introduced by a control tag. Lowering normalizes it to `with { ... }`.
 
 The brace and indentation styles are equivalent:
 
@@ -282,7 +282,7 @@ with:
     at(0.42s): alice.stage.face(smile)
 ```
 
-See [Dialogue Content Calls, `with:` Blocks, Line Return Values, and Scoped Handles](dialogue-line-handles-and-returns.md) for return values and handle ownership.
+See [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles](dialogue-line-handles-and-returns.md) for output values and handle ownership.
 
 ---
 

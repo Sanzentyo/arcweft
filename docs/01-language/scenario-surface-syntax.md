@@ -141,9 +141,9 @@ This is a typed `flow`. The speaker lines and scenario commands are simply conci
 
 ---
 
-## Bracket and `with:` dialogue sugar
+## Dialogue call sugar
 
-Alongside `alice: ...`, Arcweft accepts bracket dialogue calls:
+The canonical detailed dialogue shape is an explicit character call. Arcweft also accepts bracket shorthand when the callee is a speaker, character reference, or speaker preset:
 
 ```awft
 alice[
@@ -151,7 +151,7 @@ alice[
 ]
 ```
 
-This is sugar for `alice.say()[...]`. A line plan can be attached with `with:`.
+This is sugar for `alice.say()[...]`. A line plan can be attached with canonical `with { ... }` or indentation sugar `with:`.
 
 ```awft
 alice[
@@ -162,7 +162,7 @@ with:
         alice.stage.face(smile)
 ```
 
-The same `with:` attachment works with colon syntax:
+The same line-plan attachment works with colon syntax:
 
 ```awft
 alice:
@@ -172,7 +172,9 @@ with:
         alice.stage.face(smile)
 ```
 
-Use the canonical method form when the line returns handles or values:
+Here `alice:` lowers to the same dialogue call as `alice.say()[...]`, and `with:` lowers to `with { ... }`.
+
+Use the canonical method form when the line exports handles or values:
 
 ```awft
 let (actor, voice) = alice.say(voice=auto)[

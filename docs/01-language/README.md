@@ -5,7 +5,7 @@
 - [Dialogue Character Methods, TextBox Targets, Interpolation, and Preload](dialogue-character-methods-and-textbox.md)
 - [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](dialogue-control-tags-and-ruby.md)
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](dialogue-calls-scopes-cancellation.md)
-- [Dialogue Content Calls, `with:` Blocks, Line Return Values, and Scoped Handles](dialogue-line-handles-and-returns.md)
+- [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles](dialogue-line-handles-and-returns.md)
 - [Dialogue Windows, Character Styles, and Read-State Hooks](dialogue-windows-and-hooks.md)
 - [Localization for Dialogue](localization-dialogue.md)
 - [ID と参照](ids-and-references.md)

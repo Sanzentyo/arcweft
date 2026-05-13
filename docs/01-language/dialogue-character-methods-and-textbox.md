@@ -7,7 +7,7 @@ Related:
 - [Flow-Integrated Scenario Syntax](scenario-surface-syntax.md)
 - [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](dialogue-control-tags-and-ruby.md)
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](dialogue-calls-scopes-cancellation.md)
-- [Dialogue Content Calls, `with:` Blocks, Line Return Values, and Scoped Handles](dialogue-line-handles-and-returns.md)
+- [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles](dialogue-line-handles-and-returns.md)
 - [Dialogue Windows, Character Styles, and Read-State Hooks](dialogue-windows-and-hooks.md)
 - [Localization for Dialogue](localization-dialogue.md)
 - [Character Stage / Sprite / Voice Timeline](../03-presentation/character-stage.md)
@@ -144,7 +144,7 @@ alice.say(face=smile, voice=auto)[
 ]
 ```
 
-When a line plan is needed, attach `with { ... }` or `with:`.
+When a line plan is needed, attach canonical `with { ... }` or indentation sugar `with:`.
 
 ```awft
 alice(face=smile, voice=auto)[
@@ -568,7 +568,7 @@ Hooks may read line context, speaker, dialogue window, read state, locale, and r
 
 ## Scoped line blocks
 
-`Character.say(...)[...]`, `with { ... }`, `with:`, and `at(...) { ... }` create lexical scopes.
+`Character.say(...)[...]`, `with { ... }`, `with:`, and `at(...) { ... }` create lexical scopes. `with:` normalizes to `with { ... }`.
 
 ```awft
 alice.say(voice=auto)[
