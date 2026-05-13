@@ -868,6 +868,10 @@ impl TypeChecker<'_> {
                 method,
                 args,
             } => self.check_method_call_expr(receiver, method, args),
+            Expr::Field { target, .. } => {
+                self.check_expr(target);
+                None
+            }
             Expr::DialogueCall { callee, .. } => {
                 self.check_expr(callee);
                 Some(TypeKind::Named("DialogueLine".to_owned()))
@@ -894,6 +898,10 @@ impl TypeChecker<'_> {
                 Some(TypeKind::Named(path.clone()))
             }
             Expr::Binary { lhs, op, rhs } => self.check_binary_expr(lhs, *op, rhs),
+            Expr::Closure { body, .. } => {
+                self.check_expr(body);
+                None
+            }
             Expr::Unary { op, expr } => Some(self.check_unary_expr(*op, expr)),
             Expr::Block { statements, value } => {
                 self.check_block_expr(statements, value.as_deref())

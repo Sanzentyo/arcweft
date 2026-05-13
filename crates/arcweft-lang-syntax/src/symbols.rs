@@ -568,6 +568,7 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
                 collect_expr(arg, uses);
             }
         }
+        Expr::Field { target, .. } => collect_expr(target, uses),
         Expr::DialogueCall { callee, .. } => collect_expr(callee, uses),
         Expr::Index { target, index } => {
             collect_expr(target, uses);
@@ -577,6 +578,7 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
             collect_expr(lhs, uses);
             collect_expr(rhs, uses);
         }
+        Expr::Closure { body, .. } => collect_expr(body, uses),
         Expr::Unary { expr, .. } | Expr::Try { expr } => collect_expr(expr, uses),
         Expr::Range { start, end, .. } => {
             if let Some(start) = start {

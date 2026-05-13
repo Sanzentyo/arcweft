@@ -48,9 +48,9 @@ mod tests {
     use super::{
         AwaitBranchKind, BinaryOp, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
         ComputationBlockKind, ContractClause, DialogueToken, EntityKind, Expr, FlowItem, FlowKind,
-        HirFlowItem, Item, LinePlanItem, Literal, NameRegistry, Pattern, SelectBranchHead, Stmt,
-        SymbolUseKind, TraitMember, TypeCheckEnv, TypeKind, TypeRef, UnaryOp,
-        VariantPatternPayload, Visibility, collect_symbol_uses, lower_to_hir,
+        HirFlowItem, Item, LinePlanItem, Literal, NameRegistry, Pattern, Placeholder,
+        SelectBranchHead, Stmt, SymbolUseKind, TraitMember, TypeCheckEnv, TypeKind, TypeRef,
+        UnaryOp, VariantPatternPayload, Visibility, collect_symbol_uses, lower_to_hir,
         parse_dialogue_tokens, parse_fn_signature, parse_source, parse_stub, parse_type_ref,
         registry_from_hir, typecheck_hir, validate_hir_references, validate_typecheck_ready,
     };
@@ -2224,6 +2224,16 @@ with {
         let method = super::parse_expr("choices.filter(_.enabled).map(_.label)")
             .expect("method chain parses");
         assert!(matches!(method, Expr::MethodCall { .. }));
+        let Expr::MethodCall { args, .. } = method else {
+            panic!("expected outer map call");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [Expr::Field {
+                target,
+                field
+            }] if matches!(target.as_ref(), Expr::Placeholder(Placeholder::Partial)) && field == "label"
+        ));
 
         let indexed =
             super::parse_expr("state.affection[#character.alice]").expect("index expr parses");
@@ -2238,6 +2248,20 @@ with {
 
         let placeholder = super::parse_expr("clamp(0, ^, 100)").expect("placeholder call parses");
         assert!(matches!(placeholder, Expr::Call { .. }));
+        let partial =
+            super::parse_expr("_.score >= ^").expect("partial comparison expression parses");
+        assert!(matches!(partial, Expr::Binary { .. }));
+
+        let generic_collect = super::parse_expr("visible_choices.collect<List<ChoiceView>>()")
+            .expect("generic method call parses");
+        assert!(matches!(
+            generic_collect,
+            Expr::MethodCall { method, .. } if method == "collect<List<ChoiceView>>"
+        ));
+
+        let context_closure = super::parse_expr(r#"load_bg(id).with_context(|| "failed")?"#)
+            .expect("closure argument parses");
+        assert!(matches!(context_closure, Expr::Try { .. }));
 
         let delimited = super::parse_expr("#<say.opening.dream_hint@sem:b3_9f2a1c>")
             .expect("delimited ref expr parses");

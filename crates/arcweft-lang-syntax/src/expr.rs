@@ -27,6 +27,10 @@ pub enum Expr {
         method: String,
         args: Vec<Expr>,
     },
+    Field {
+        target: Box<Expr>,
+        field: String,
+    },
     DialogueCall {
         callee: Box<Expr>,
         content: String,
@@ -55,6 +59,10 @@ pub enum Expr {
         lhs: Box<Expr>,
         op: BinaryOp,
         rhs: Box<Expr>,
+    },
+    Closure {
+        params: Vec<String>,
+        body: Box<Expr>,
     },
     Unary {
         op: UnaryOp,
@@ -179,6 +187,12 @@ fn parse_pipe(source: &str) -> Expr {
             rhs: Box::new(parse_pipe(rhs)),
         };
     }
+    if let Some((params, body)) = split_closure(source) {
+        return Expr::Closure {
+            params,
+            body: Box::new(parse_pipe(body)),
+        };
+    }
     if let Some((name, value)) = split_named_arg(source) {
         return Expr::NamedArg {
             name: name.to_owned(),
@@ -208,6 +222,9 @@ fn parse_binary(source: &str) -> Expr {
     }
     if let Some(range) = parse_range_expr(source) {
         return range;
+    }
+    if split_call(source).is_some() {
+        return parse_postfix(source);
     }
     for (needle, op) in [
         ("==", BinaryOp::Eq),
@@ -271,6 +288,12 @@ fn parse_postfix(source: &str) -> Expr {
             receiver: Box::new(parse_postfix(receiver)),
             method: method.to_owned(),
             args: parse_arg_list(args),
+        };
+    }
+    if let Some((target, field)) = split_placeholder_field(source) {
+        return Expr::Field {
+            target: Box::new(parse_postfix(target)),
+            field: field.to_owned(),
         };
     }
     if let Some((callee, args)) = split_call(source) {
@@ -476,6 +499,16 @@ fn split_method_call(source: &str) -> Option<(&str, &str, &str)> {
     Some((receiver, method, args))
 }
 
+fn split_placeholder_field(source: &str) -> Option<(&str, &str)> {
+    let dot = find_last_top_level_dot(source)?;
+    let target = source[..dot].trim();
+    let field = source[dot + 1..].trim();
+    if !matches!(target, "_" | "^") || field.is_empty() || !is_identifier(field) {
+        return None;
+    }
+    Some((target, field))
+}
+
 fn parse_arg_list(source: &str) -> Vec<Expr> {
     split_args(source).into_iter().map(parse_pipe).collect()
 }
@@ -536,6 +569,19 @@ fn split_top_level<'a>(source: &'a str, needle: &str) -> Option<(&'a str, &'a st
         }
     }
     None
+}
+
+fn split_closure(source: &str) -> Option<(Vec<String>, &str)> {
+    let rest = source.strip_prefix('|')?;
+    let close = rest.find('|')?;
+    let params = rest[..close]
+        .split(',')
+        .map(str::trim)
+        .filter(|param| !param.is_empty())
+        .map(str::to_owned)
+        .collect();
+    let body = rest[close + 1..].trim();
+    (!body.is_empty()).then_some((params, body))
 }
 
 fn split_named_arg(source: &str) -> Option<(&str, &str)> {
@@ -620,7 +666,7 @@ fn find_last_top_level_dot(source: &str) -> Option<usize> {
 fn is_path_like(source: &str) -> bool {
     source
         .chars()
-        .all(|ch| ch.is_alphanumeric() || matches!(ch, '_' | ':' | '.'))
+        .all(|ch| ch.is_alphanumeric() || matches!(ch, '_' | ':' | '.' | '<' | '>' | ','))
 }
 
 fn is_identifier(source: &str) -> bool {
