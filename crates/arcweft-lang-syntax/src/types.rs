@@ -1,6 +1,11 @@
 use thiserror::Error;
 
 use crate::ast::{DocBlock, Pattern, TextRange};
+use crate::cst::{
+    find_matching_angle_group, find_matching_punctuation, find_top_level_punctuation,
+    split_leading_ident, split_leading_lifetime, split_top_level_keyword_once,
+    split_top_level_punctuation, split_top_level_punctuation_once,
+};
 use crate::pattern::parse_pattern;
 
 /// Lifetime name used in Arcweft type syntax.
@@ -85,14 +90,9 @@ pub fn parse_fn_signature(source: &str) -> Result<FnSignature, TypeParseError> {
     let after_fn = source
         .strip_prefix("fn ")
         .ok_or_else(|| TypeParseError::new("expected `fn` signature"))?;
-    let name_end = after_fn
-        .char_indices()
-        .take_while(|(_, ch)| ch.is_alphanumeric() || *ch == '_')
-        .map(|(index, ch)| index + ch.len_utf8())
-        .last()
+    let (name, mut rest) = split_leading_ident(after_fn)
         .ok_or_else(|| TypeParseError::new("expected function name"))?;
-    let name = after_fn[..name_end].to_owned();
-    let mut rest = after_fn[name_end..].trim_start();
+    let name = name.to_owned();
     let generic_params = if let Some((params, tail)) = take_angle_group(rest) {
         rest = tail.trim_start();
         parse_generic_params(params)?
@@ -100,7 +100,7 @@ pub fn parse_fn_signature(source: &str) -> Result<FnSignature, TypeParseError> {
         Vec::new()
     };
     let (param_groups, mut rest) = parse_fn_param_groups(rest)?;
-    let (before_where, where_part) = split_keyword_top_level(rest.trim_start(), "where");
+    let (before_where, where_part) = split_top_level_keyword_once(rest.trim_start(), "where");
     rest = before_where.trim_start();
     let return_type = if let Some(tail) = rest.strip_prefix("->") {
         let ty = tail.trim();
@@ -132,16 +132,16 @@ pub fn parse_fn_signature(source: &str) -> Result<FnSignature, TypeParseError> {
 fn parse_fn_param_groups(source: &str) -> Result<(Vec<FnParamGroup>, &str), TypeParseError> {
     let mut rest = source.trim_start();
     let mut groups = Vec::new();
-    while let Some(inner) = rest.strip_prefix('(') {
-        let close = find_matching_paren(inner)
+    while rest.starts_with('(') {
+        let close = find_matching_punctuation(rest, 0, '(', ')')
             .ok_or_else(|| TypeParseError::new("unclosed parameter list"))?;
-        let params = split_top_level(&inner[..close], ',')
+        let params = split_top_level_punctuation(&rest[1..close], ',')
             .into_iter()
             .filter(|param| !param.is_empty())
             .map(parse_fn_param)
             .collect::<Result<Vec<_>, _>>()?;
         groups.push(FnParamGroup { params });
-        rest = inner[close + 1..].trim_start();
+        rest = rest[close + 1..].trim_start();
     }
     if groups.is_empty() {
         return Err(TypeParseError::new("expected parameter list"));
@@ -158,7 +158,7 @@ fn parse_fn_param(source: &str) -> Result<FnParam, TypeParseError> {
         });
     }
     let (doc, source) = take_param_doc(source);
-    let (pattern, ty) = split_top_level_once(source, ':')
+    let (pattern, ty) = split_top_level_punctuation_once(source, ':')
         .ok_or_else(|| TypeParseError::new("expected `pattern: Type` parameter"))?;
     Ok(FnParam {
         doc,
@@ -197,17 +197,8 @@ fn parse_type_atom(source: &str) -> TypeRef {
     }
     if let Some(rest) = source.strip_prefix('&') {
         let rest = rest.trim_start();
-        let (lifetime, inner) = if rest.starts_with('\'') {
-            let len = rest
-                .char_indices()
-                .take_while(|(_, ch)| ch.is_alphanumeric() || matches!(*ch, '\'' | '_'))
-                .map(|(index, ch)| index + ch.len_utf8())
-                .last()
-                .unwrap_or(0);
-            (
-                Some(parse_lifetime_name(&rest[..len])),
-                rest[len..].trim_start(),
-            )
+        let (lifetime, inner) = if let Some((lifetime, inner)) = split_leading_lifetime(rest) {
+            (Some(parse_lifetime_name(lifetime)), inner)
         } else {
             (None, rest)
         };
@@ -235,39 +226,24 @@ fn parse_type_atom(source: &str) -> TypeRef {
 }
 
 fn split_generic_type(source: &str) -> Option<(&str, &str)> {
-    let (base, args) = source.split_once('<')?;
-    let args = args.strip_suffix('>')?;
-    Some((base.trim(), args))
+    let open = find_top_level_punctuation(source, '<')?;
+    let close = find_matching_angle_group(source, open)?;
+    (close == source.len().saturating_sub(1))
+        .then_some((source[..open].trim(), &source[open + 1..close]))
 }
 
 fn split_type_args(source: &str) -> Vec<&str> {
-    split_top_level(source, ',')
+    split_top_level_punctuation(source, ',')
 }
 
 fn take_angle_group(source: &str) -> Option<(&str, &str)> {
-    let inner = source.strip_prefix('<')?;
-    let close = find_matching_angle(inner)?;
-    Some((&inner[..close], &inner[close + 1..]))
-}
-
-fn find_matching_angle(source: &str) -> Option<usize> {
-    let mut depth = 0_i32;
-    let mut previous = None;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '<' | '(' | '[' | '{' => depth += 1,
-            '>' if depth == 0 && previous != Some('-') => return Some(index),
-            '>' if previous != Some('-') => depth -= 1,
-            ')' | ']' | '}' => depth -= 1,
-            _ => {}
-        }
-        previous = Some(ch);
-    }
-    None
+    source.strip_prefix('<')?;
+    let close = find_matching_angle_group(source, 0)?;
+    Some((&source[1..close], &source[close + 1..]))
 }
 
 fn parse_generic_params(source: &str) -> Result<Vec<GenericParam>, TypeParseError> {
-    split_top_level(source, ',')
+    split_top_level_punctuation(source, ',')
         .into_iter()
         .map(|param| {
             let param = param.trim();
@@ -287,10 +263,10 @@ fn parse_where_clauses(source: &str) -> Result<Vec<WhereClause>, TypeParseError>
     if source.trim().is_empty() {
         return Err(TypeParseError::new("expected where clause predicate"));
     }
-    split_top_level(source, ',')
+    split_top_level_punctuation(source, ',')
         .into_iter()
         .map(|clause| {
-            let (subject, bounds) = split_top_level_once(clause, ':')
+            let (subject, bounds) = split_top_level_punctuation_once(clause, ':')
                 .ok_or_else(|| TypeParseError::new("expected `Type: Bound` where predicate"))?;
             let bounds = bounds
                 .split('+')
@@ -309,40 +285,6 @@ fn parse_where_clauses(source: &str) -> Result<Vec<WhereClause>, TypeParseError>
         .collect()
 }
 
-fn split_keyword_top_level<'a>(source: &'a str, keyword: &str) -> (&'a str, Option<&'a str>) {
-    let mut depth = 0_i32;
-    let mut in_string = false;
-    let mut previous = None;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '"' => in_string = !in_string,
-            '<' | '[' | '(' | '{' if !in_string => depth += 1,
-            '>' if !in_string && previous != Some('-') => depth -= 1,
-            ']' | ')' | '}' if !in_string => depth -= 1,
-            _ => {}
-        }
-        if depth == 0
-            && !in_string
-            && source[index..].starts_with(keyword)
-            && source[..index]
-                .chars()
-                .last()
-                .is_none_or(char::is_whitespace)
-            && source[index + keyword.len()..]
-                .chars()
-                .next()
-                .is_none_or(char::is_whitespace)
-        {
-            return (
-                &source[..index],
-                Some(source[index + keyword.len()..].trim()),
-            );
-        }
-        previous = Some(ch);
-    }
-    (source, None)
-}
-
 fn type_ref_has_whitespace_path(ty: &TypeRef) -> bool {
     match ty {
         TypeRef::Never => false,
@@ -352,65 +294,6 @@ fn type_ref_has_whitespace_path(ty: &TypeRef) -> bool {
         }
         TypeRef::Ref { inner, .. } | TypeRef::Slice(inner) => type_ref_has_whitespace_path(inner),
     }
-}
-
-fn find_matching_paren(source: &str) -> Option<usize> {
-    let mut depth = 0_i32;
-    let mut previous = None;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '(' | '<' | '[' | '{' => depth += 1,
-            ')' if depth == 0 => return Some(index),
-            '>' if previous != Some('-') => depth -= 1,
-            ')' | ']' | '}' => depth -= 1,
-            _ => {}
-        }
-        previous = Some(ch);
-    }
-    None
-}
-
-fn split_top_level(source: &str, delimiter: char) -> Vec<&str> {
-    let mut args = Vec::new();
-    let mut start = 0;
-    let mut depth = 0_i32;
-    let mut previous = None;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '<' | '[' | '(' | '{' => depth += 1,
-            '>' if previous != Some('-') => depth -= 1,
-            ']' | ')' | '}' => depth -= 1,
-            ch if ch == delimiter && depth == 0 => {
-                args.push(source[start..index].trim());
-                start = index + 1;
-            }
-            _ => {}
-        }
-        previous = Some(ch);
-    }
-    let tail = source[start..].trim();
-    if !tail.is_empty() {
-        args.push(tail);
-    }
-    args
-}
-
-fn split_top_level_once(source: &str, delimiter: char) -> Option<(&str, &str)> {
-    let mut depth = 0_i32;
-    let mut previous = None;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '<' | '[' | '(' | '{' => depth += 1,
-            '>' if previous != Some('-') => depth -= 1,
-            ']' | ')' | '}' => depth -= 1,
-            ch if ch == delimiter && depth == 0 => {
-                return Some((&source[..index], &source[index + ch.len_utf8()..]));
-            }
-            _ => {}
-        }
-        previous = Some(ch);
-    }
-    None
 }
 
 fn parse_lifetime_name(source: &str) -> LifetimeName {

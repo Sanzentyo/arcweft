@@ -3,7 +3,7 @@
 ## `if` as expression
 
 ```awft
-let face = if state.affection[#character.alice] >= 3 {
+let face = if state.affection[@character.alice] >= 3 {
     smile
 } else {
     worried
@@ -30,9 +30,9 @@ Value form:
 
 ```awft
 let route = if ready {
-    #flow.alice_intro
+    @flow.alice_intro
 } else {
-    #flow.alice_locked
+    @flow.alice_locked
 }
 ```
 
@@ -42,7 +42,7 @@ let route = if ready {
 if let .Some(route) = state.route_override {
     goto route
 } else {
-    goto #flow.title
+    goto @flow.title
 }
 ```
 
@@ -52,7 +52,7 @@ Value form:
 let route = if let .Some(route) = state.route_override {
     route
 } else {
-    #flow.title
+    @flow.title
 }
 ```
 
@@ -68,7 +68,7 @@ if let .Some(route) = state.route_override when route_available(route, state) {
 
 ```awft
 let .Some(route) = state.route_override else {
-    goto #flow.title
+    goto @flow.title
 }
 
 goto route
@@ -80,7 +80,7 @@ Allowed:
 
 ```awft
 return Err(.MissingRoute)
-goto #flow.title
+goto @flow.title
 break value
 continue
 panic "missing route"
@@ -90,7 +90,7 @@ Not allowed:
 
 ```awft
 let .Some(route) = maybe_route else {
-    #flow.title
+    @flow.title
 }
 ```
 
@@ -100,10 +100,10 @@ Use `match` for fallback values.
 
 ```awft
 let target = match selected.id {
-    #choice.opening.listen when state.affection[#character.alice] >= 3 => #flow.alice_intro
-    #choice.opening.listen => #flow.alice_locked
-    #choice.opening.silent => #flow.quiet_intro
-    _ => #flow.title
+    @choice.opening.listen when state.affection[@character.alice] >= 3 => @flow.alice_intro
+    @choice.opening.listen => @flow.alice_locked
+    @choice.opening.silent => @flow.quiet_intro
+    _ => @flow.title
 }
 ```
 
@@ -242,3 +242,4 @@ Range forms:
 ```
 
 `for` returns `Unit`. Use `loop` for value-producing loops.
+

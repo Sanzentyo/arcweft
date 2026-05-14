@@ -78,7 +78,7 @@ flow:
 
 ```awft
 let data = try await load() with {
-    pending p => scene #scene.loading { progress p.ratio }
+    pending p => scene @scene.loading { progress p.ratio }
 }
 ```
 

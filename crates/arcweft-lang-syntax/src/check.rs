@@ -1729,10 +1729,10 @@ fn is_dialogue_callee_type(ty: Option<&TypeKind>) -> bool {
 fn is_character_entity_literal(source: &str) -> bool {
     let trimmed = source.trim();
     trimmed
-        .strip_prefix("#<")
+        .strip_prefix("@<")
         .and_then(|inner| inner.strip_suffix('>'))
         .map_or_else(
-            || trimmed.strip_prefix("#character.").is_some(),
+            || trimmed.strip_prefix("@character.").is_some(),
             |inner| inner.starts_with("character."),
         )
 }

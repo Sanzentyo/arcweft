@@ -22,7 +22,7 @@ ensures result.affection[character] ==
 ## invariant
 
 ```awft
-pub invariant #inv.affection_bounds(state: GameState) {
+pub invariant @inv.affection_bounds(state: GameState) {
     forall c in CharacterId {
         0 <= state.affection[c] && state.affection[c] <= 100
     }
@@ -33,8 +33,8 @@ pub invariant #inv.affection_bounds(state: GameState) {
 
 ```awft
 pub reducer update(state: GameState, event: GameEvent) -> Result<Update<GameState>, GameError>
-requires invariant #inv.affection_bounds(state)
-ensures result.is_ok() => invariant #inv.affection_bounds(result.unwrap().state)
+requires invariant @inv.affection_bounds(state)
+ensures result.is_ok() => invariant @inv.affection_bounds(result.unwrap().state)
 {
     ...
 }
@@ -54,7 +54,7 @@ modifies state.affection[character]
 Effect contract:
 
 ```awft
-pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
+pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
 effects { asset.read, audio.play, ui.show }
 ensures no_effect network.request
 {
@@ -100,4 +100,5 @@ assume external_plugin_is_deterministic
 - Creusot / Verus bridge for Rust proof-oriented code
 - Property test generation
 - LLM counterexample explanation
+
 

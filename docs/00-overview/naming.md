@@ -170,17 +170,20 @@ engine 名は file、crate、CLI、protocol、packaging に使い、すべての
 
 ## Relative IDs in source
 
-`.suffix` is allowed only in ID-bearing source contexts where the expected
-entity family is known: dialogue line IDs, choice IDs, choice option IDs, and
-text-key overrides. It is not a general entity reference.
+`@.suffix`, `@..suffix`, and longer forms such as `@...suffix` are allowed only
+in ID-bearing source contexts where the expected entity family is known:
+dialogue line IDs, choice IDs, choice option IDs, and text-key overrides. They
+are not general entity references. `@.suffix` resolves in the current ID scope.
+Each extra dot walks one parent ID scope outward. The explicit readable form is
+`@super.suffix`, `@super.super.suffix`, and so on.
 
 ```awft
-alice(id=.greeting):
+alice(id=@.greeting):
     おはよう。[p]
 
 scope dream {
-    choice .first {
-        .listen "聞いてみる" -> #flow.alice_intro
+    choice @.first {
+        @.listen "聞いてみる" -> @flow.alice_intro
     }
 }
 ```
@@ -191,30 +194,29 @@ the flow and scope path directly.
 If the named scope path is empty, the scope segment is omitted.
 
 ```text
-id=.greeting
-  -> #say.opening.alice.greeting
+id=@.greeting
+  -> @say.opening.alice.greeting
 
-scope rain { alice(id=.comment): ... }
-  -> #say.opening.alice.rain.comment
-  -> #text.opening.alice.rain.comment
-  -> #voice.ja-JP.alice.opening.rain.comment
+scope rain { alice(id=@.comment): ... }
+  -> @say.opening.alice.rain.comment
+  -> @text.opening.alice.rain.comment
+  -> @voice.ja-JP.alice.opening.rain.comment
 
-choice .first
-  -> #choice.opening.dream.first
+choice @.first
+  -> @choice.opening.dream.first
 
-.listen
-  -> #choice.opening.dream.first.listen
+@.listen
+  -> @choice.opening.dream.first.listen
 ```
 
-For ordinary entity references, keep the `#domain.path` form:
+For ordinary entity references, keep the fully qualified `@domain.path` form:
 
 ```awft
-goto #flow.opening.next
+goto @flow.opening.next
 ```
 
-Do not write `goto .next`. If general relative entity references are added
-later, they should use an explicit marker such as `#.` rather than overloading
-bare `.suffix`.
+Do not write `goto @.next`. Relative IDs are not general references. Bare
+`.suffix` is not part of the core grammar.
 
 ## 予約名
 

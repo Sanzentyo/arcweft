@@ -8,7 +8,7 @@
 
 - `logos` 等で lexer。
 - `rowan` 互換の lossless CST。
-- コメント、空白、ID、`[[...]]` link、`#...` reference を保持。
+- コメント、空白、ID、`[[...]]` link、`@...` entity reference、`#[...]` attribute を保持。
 - recovery parser を優先し、LSP で壊れたファイルも扱う。
 
 実装順:
@@ -42,7 +42,7 @@ TokenKind
 ### 型
 
 ```text
-Primitive: Unit, Bool, i32, i64, f32, f64, String, Duration, Color
+Primitive: (), bool, String, explicit integer and float widths, Duration, Color, Ratio, Length, Angle
 ADT: struct, enum, newtype
 Generic: List<T>, Map<K,V>, Set<T>, Option<T>, Result<T,E>, Need<T,E>, Ref<T>
 Function: A -> B, curried function groups

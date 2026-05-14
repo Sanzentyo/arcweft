@@ -4,7 +4,7 @@
 
 ```awft
 let next: Option<Ref<Flow>> = None
-let next = Some(#flow.alice_intro)
+let next = Some(@flow.alice_intro)
 ```
 
 使用:
@@ -12,7 +12,7 @@ let next = Some(#flow.alice_intro)
 ```awft
 match next {
     Some(flow) => goto flow
-    None => goto #flow.title
+    None => goto @flow.title
 }
 ```
 
@@ -49,14 +49,14 @@ pub enum Need<T, E> {
 暗黙 force は禁止。
 
 ```awft
-let bg = asset.image(#asset.bg.room) // Need<ImageHandle, AssetError>
+let bg = asset.image(@asset.bg.room) // Need<ImageHandle, AssetError>
 ```
 
 flow で使うには:
 
 ```awft
-let bg = try await asset.image(#asset.bg.room) with {
-    pending p => scene #scene.loading { progress p.ratio }
+let bg = try await asset.image(@asset.bg.room) with {
+    pending p => scene @scene.loading { progress p.ratio }
 }
 ```
 
@@ -113,4 +113,5 @@ borrow bg.pixels() as pixels: &'asset [Rgba8] {
     let average = pixels.average_color()
 }
 ```
+
 

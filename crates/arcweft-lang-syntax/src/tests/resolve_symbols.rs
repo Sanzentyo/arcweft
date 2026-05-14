@@ -2,20 +2,19 @@ use super::support::*;
 
 #[test]
 fn validates_hir_entity_references_against_registry() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-flow #flow.opening opening {
-    choice #choice.opening.first {
-        #choice.opening.listen "聞く" -> #flow.alice_intro
+flow @flow.opening opening {
+    choice @choice.opening.first {
+        @choice.opening.listen "聞く" -> @flow.alice_intro
     }
 }
 
-flow #flow.alice_intro alice_intro {
-    goto #flow.opening
+flow @flow.alice_intro alice_intro {
+    goto @flow.opening
 }
 "#,
-    )
-    .expect("registry fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("registry fixture lowers");
     let registry = registry_from_hir(&hir);
 
@@ -24,14 +23,13 @@ flow #flow.alice_intro alice_intro {
 
 #[test]
 fn reports_unresolved_hir_entity_reference() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
-    goto #flow.missing
+flow @flow.opening opening {
+    goto @flow.missing
 }
 ",
-    )
-    .expect("missing ref fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("missing ref fixture lowers");
     let registry = NameRegistry::new().with_entity("flow.opening", EntityKind::Flow);
     let errors = validate_hir_references(&hir, &registry).expect_err("missing ref should fail");
@@ -41,22 +39,21 @@ flow #flow.opening opening {
 
 #[test]
 fn collects_hir_symbol_uses_for_type_checking_without_reparsing() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-flow #flow.opening opening {
+flow @flow.opening opening {
     let (actor, (_, voice)) = alice.say()[聞いて。[p]]
     alice[
         #[fmt("夢", color=blue)]を見た。[p]
     ]
     with:
         at(0.42s): alice.stage.face(worried)
-    choice #choice.opening.first {
-        #choice.opening.listen "聞く" if state.affection[#character.alice] >= 3 -> #flow.alice_intro
+    choice @choice.opening.first {
+        @choice.opening.listen "聞く" if state.affection[@character.alice] >= 3 -> @flow.alice_intro
     }
 }
 "#,
-    )
-    .expect("symbol fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("symbol fixture lowers");
     let uses = collect_symbol_uses(&hir);
 

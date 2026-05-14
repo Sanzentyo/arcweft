@@ -2,17 +2,16 @@ use super::support::*;
 
 #[test]
 fn parses_choice_block_inside_flow() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-flow #flow.opening opening {
-    choice #choice.opening.first {
-        #choice.opening.listen "聞いてみる" -> #flow.alice_intro
-        #choice.opening.silent "黙っている" -> #flow.quiet_intro
+flow @flow.opening opening {
+    choice @choice.opening.first {
+        @choice.opening.listen "聞いてみる" -> @flow.alice_intro
+        @choice.opening.silent "黙っている" -> @flow.quiet_intro
     }
 }
 "#,
-    )
-    .expect("choice block parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -29,32 +28,35 @@ flow #flow.opening opening {
 }
 
 #[test]
-fn rejects_old_at_choice_syntax() {
-    let errors = parse_source(
+fn rejects_sigiled_choice_keyword_syntax() {
+    let errors = parse_errors(
         r#"
-flow #flow.opening opening {
-    @choice #choice.opening.first {
-        #choice.opening.listen "聞いてみる" -> #flow.alice_intro
+flow @flow.opening opening {
+    @choice @choice.opening.first {
+        @choice.opening.listen "聞いてみる" -> @flow.alice_intro
     }
 }
 "#,
-    )
-    .expect_err("old @choice syntax is rejected");
+    );
 
     assert!(errors[0].message().contains("@choice"));
-    assert_eq!(errors[0].expected(), &["choice #choice.id { ... }"]);
+    assert!(
+        errors[0]
+            .expected()
+            .iter()
+            .any(|expected| expected == "choice @choice.id { ... }"),
+    );
 }
 
 #[test]
 fn parses_choice_option_with_condition() {
-    let tree = parse_source(
-            r#"
-choice #choice.opening.first {
-    #choice.opening.listen "聞いてみる" if state.affection[#character.alice] >= 3 -> #flow.alice_intro
+    let tree = parse_ok(
+        r#"
+choice @choice.opening.first {
+    @choice.opening.listen "聞いてみる" if state.affection[@character.alice] >= 3 -> @flow.alice_intro
 }
 "#,
-        )
-        .expect("choice option condition parses");
+    );
 
     let Item::FlowItem(FlowItem::Choice(choice)) = &tree.items()[0] else {
         panic!("expected choice");
@@ -73,12 +75,12 @@ choice #choice.opening.first {
 
 #[test]
 fn parses_choice_option_block_and_value_output() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-choice #choice.opening.first {
-    let can_enter_alice = state.affection[#character.alice] >= 3
+choice @choice.opening.first {
+    let can_enter_alice = state.affection[@character.alice] >= 3
 
-    option #choice.opening.listen {
+    option @choice.opening.listen {
         label = "聞いてみる"
         enabled = can_enter_alice
         visible = true
@@ -88,15 +90,14 @@ choice #choice.opening.first {
             badge = if can_enter_alice { None } else { Some("LOCKED") }
         }
         select {
-            goto #flow.alice_intro
+            goto @flow.alice_intro
         }
     }
 
-    #choice.opening.silent "黙っている" => #flow.quiet_intro
+    @choice.opening.silent "黙っている" => @flow.quiet_intro
 }
 "#,
-    )
-    .expect("rich choice block parses");
+    );
 
     let Item::FlowItem(FlowItem::Choice(choice)) = &tree.items()[0] else {
         panic!("expected choice");
@@ -121,9 +122,9 @@ choice #choice.opening.first {
 
 #[test]
 fn parses_dynamic_choice_options_from_for_loop() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-choice #choice.opening.routes {
+choice @choice.opening.routes {
     for route in opening_routes(state) {
         option route.choice_id {
             label = route.label
@@ -133,8 +134,7 @@ choice #choice.opening.routes {
     }
 }
 ",
-    )
-    .expect("dynamic choice options parse");
+    );
 
     let Item::FlowItem(FlowItem::Choice(choice)) = &tree.items()[0] else {
         panic!("expected choice");
@@ -146,21 +146,20 @@ choice #choice.opening.routes {
 
 #[test]
 fn parses_choice_match_items_and_collects_arm_options() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-choice #choice.opening.first {
+choice @choice.opening.first {
     match state.route_override {
         .Some(route) when route_enabled => {
-            .listen "聞いてみる" -> #flow.alice_intro
+            @.listen "聞いてみる" -> @flow.alice_intro
         }
         _ => {
-            .silent "黙っている" -> #flow.quiet_intro
+            @.silent "黙っている" -> @flow.quiet_intro
         }
     }
 }
 "#,
-    )
-    .expect("choice match item parses");
+    );
 
     let Item::FlowItem(FlowItem::Choice(choice)) = &tree.items()[0] else {
         panic!("expected choice");
@@ -198,16 +197,15 @@ choice #choice.opening.first {
 
 #[test]
 fn choice_body_raw_items_are_not_typecheck_ready() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
-    choice #choice.opening.first {
+flow @flow.opening opening {
+    choice @choice.opening.first {
         unknown choice body syntax
     }
 }
 ",
-    )
-    .expect("raw choice body item is preserved");
+    );
     let hir = lower_to_hir(&tree).expect("choice with raw item lowers");
     let errors = validate_typecheck_ready(&hir).expect_err("raw choice item is rejected");
 
@@ -221,28 +219,27 @@ flow #flow.opening opening {
 
 #[test]
 fn parses_choice_plan_option_in_sugar_label_key_and_value() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-choice #choice.opening.routes {
+choice @choice.opening.routes {
     option route in opening_routes(state) {
         id = route.choice_id
-        label(id=#text.choice.opening.route) = route.label
+        label(id=@text.choice.opening.route) = route.label
         value = route.target
         enabled = route.enabled
         select { out route.target }
     }
 }
 with {
-    window = #choice_window.main
+    window = @choice_window.main
     layout = vertical
-    default_focus = #choice.opening.listen
-    timeout 10s { select #choice.opening.silent }
-    cancel on input .BackToTitle { return Ok(FlowExit::Goto(#flow.title)) }
+    default_focus = @choice.opening.listen
+    timeout 10s { select @choice.opening.silent }
+    cancel on input .BackToTitle { return Ok(FlowExit::Goto(@flow.title)) }
     on select selected { log info "selected {id:?}" { id = selected.id } }
 }
 "#,
-    )
-    .expect("choice plan and option-in sugar parse");
+    );
 
     let Item::FlowItem(FlowItem::Choice(choice)) = &tree.items()[0] else {
         panic!("expected choice");
@@ -276,12 +273,12 @@ with {
 
 #[test]
 fn typechecks_dynamic_choice_option_fields_in_for_sugar() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-choice #choice.opening.routes {
+choice @choice.opening.routes {
     option route in opening_routes(state) {
         id = route.choice_id
-        label(id=#text.choice.opening.route) = route.label
+        label(id=@text.choice.opening.route) = route.label
         value = route.target
         enabled = route.enabled
         visible = route.visible
@@ -296,8 +293,7 @@ choice #choice.opening.routes {
     }
 }
 ",
-    )
-    .expect("dynamic choice option fixture parses");
+    );
 
     let hir = lower_to_hir(&tree).expect("dynamic choice option fixture lowers");
     validate_typecheck_ready(&hir).expect("dynamic choice option fixture is typecheck-ready");
@@ -312,14 +308,13 @@ choice #choice.opening.routes {
 
 #[test]
 fn rejects_dynamic_id_in_compact_choice_arm() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-choice #choice.opening.routes {
-    route.choice_id "Dynamic label" -> #flow.alice_intro
+choice @choice.opening.routes {
+    route.choice_id "Dynamic label" -> @flow.alice_intro
 }
 "#,
-    )
-    .expect("dynamic compact choice arm is preserved for recovery");
+    );
 
     let hir = lower_to_hir(&tree).expect("choice with dynamic compact arm lowers");
     let errors =
@@ -335,21 +330,20 @@ choice #choice.opening.routes {
 
 #[test]
 fn typechecks_choice_plan_structured_bodies() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-flow #flow.opening opening {
-    choice #choice.opening.first {
-        #choice.opening.listen "聞いてみる" -> #flow.alice_intro
+flow @flow.opening opening {
+    choice @choice.opening.first {
+        @choice.opening.listen "聞いてみる" -> @flow.alice_intro
     }
     with {
-        timeout 10s { select #choice.opening.listen }
-        cancel on input .BackToTitle { return Ok(FlowExit::Goto(#flow.title)) }
+        timeout 10s { select @choice.opening.listen }
+        cancel on input .BackToTitle { return Ok(FlowExit::Goto(@flow.title)) }
         on select selected { log info "selected {id:?}" { id = selected.id } }
     }
 }
 "#,
-    )
-    .expect("choice plan parses");
+    );
     let hir = lower_to_hir(&tree).expect("choice plan lowers");
     validate_typecheck_ready(&hir).expect("choice plan bodies have structured expressions");
     let env = TypeCheckEnv::new()
@@ -361,27 +355,26 @@ flow #flow.opening opening {
 
 #[test]
 fn typechecks_choice_option_select_block_statements() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-flow #flow.opening opening {
-    choice #choice.opening.first {
-        option #choice.opening.listen {
+flow @flow.opening opening {
+    choice @choice.opening.first {
+        option @choice.opening.listen {
             label = "聞いてみる"
             select {
                 if can_emit {
-                    emit GameEvent::ChoiceSelected { id = #choice.opening.listen }
+                    emit GameEvent::ChoiceSelected { id = @choice.opening.listen }
                 }
                 match selected_route {
                     .Some(route) => out route
-                    _ => out #flow.title
+                    _ => out @flow.title
                 }
             }
         }
     }
 }
 "#,
-    )
-    .expect("choice option select block parses");
+    );
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
@@ -412,31 +405,30 @@ flow #flow.opening opening {
                 TypeKind::Named("Option<Ref<Flow>>".to_owned()),
             ),
     )
-    .expect("choice option select block typechecks");
+    .expect("typecheck succeeds");
 }
 
 #[test]
 fn lowers_named_scope_and_relative_choice_ids() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
 mod crate::game::routes::opening
 use self::characters::{alice}
 use parent::common::{route_gate}
 
-flow #flow.opening opening {
+flow @flow.opening opening {
     scope dream {
-        choice .first {
-            .listen "聞いてみる" -> #flow.alice_intro
-            .silent "黙っている" -> #flow.quiet_intro
+        choice @.first {
+            @.listen "聞いてみる" -> @flow.alice_intro
+            @.silent "黙っている" -> @flow.quiet_intro
         }
     }
 }
 
-flow #flow.alice_intro alice_intro {}
-flow #flow.quiet_intro quiet_intro {}
+flow @flow.alice_intro alice_intro {}
+flow @flow.quiet_intro quiet_intro {}
 "#,
-    )
-    .expect("named scope and relative choice ids parse");
+    );
 
     assert_eq!(
         tree.module().expect("module").path(),
@@ -484,30 +476,28 @@ flow #flow.quiet_intro quiet_intro {}
         &hir,
         &TypeCheckEnv::new().with_symbol("can_enter", TypeKind::Bool),
     )
-    .expect("scoped relative choice HIR typechecks");
+    .expect("typecheck succeeds");
 }
 
 #[test]
 fn lowers_choice_expression_let_binding() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-flow #flow.opening opening {
-    let next_flow = choice .first {
-        .listen "聞いてみる" => #flow.alice_intro
-        .silent "黙っている" => #flow.quiet_intro
+flow @flow.opening opening {
+    let next_flow = choice @.first {
+        @.listen "聞いてみる" => @flow.alice_intro
+        @.silent "黙っている" => @flow.quiet_intro
     }
 
     goto next_flow
 }
-
-flow #flow.alice_intro alice_intro {
+flow @flow.alice_intro alice_intro {
 }
 
-flow #flow.quiet_intro quiet_intro {
+flow @flow.quiet_intro quiet_intro {
 }
 "#,
-    )
-    .expect("choice expression fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected source flow");
@@ -543,4 +533,46 @@ flow #flow.quiet_intro quiet_intro {
     validate_hir_references(&hir, &registry).expect("choice expression refs resolve");
     validate_typecheck_ready(&hir).expect("choice expression is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("choice expression typechecks");
+}
+
+#[test]
+fn lowers_current_and_parent_relative_choice_ids() {
+    let tree = parse_ok(
+        r#"
+flow @flow.opening opening {
+    scope outer {
+        scope inner {
+            choice @...first {
+                @.listen "聞いてみる" -> @flow.alice_intro
+            }
+        }
+    }
+}
+
+flow @flow.alice_intro alice_intro {}
+"#,
+    );
+
+    let hir = lower_to_hir(&tree).expect("parent relative choice ids lower");
+    let HirFlowItem::Scope(outer) = &hir.flows()[0].body()[0] else {
+        panic!("expected outer scope");
+    };
+    let HirFlowItem::Scope(inner) = &outer.body()[0] else {
+        panic!("expected inner scope");
+    };
+    let HirFlowItem::Choice(choice) = &inner.body()[0] else {
+        panic!("expected choice");
+    };
+
+    assert_eq!(
+        choice.id().expect("normalized choice id").body(),
+        "choice.opening.first"
+    );
+    assert_eq!(
+        choice.options()[0]
+            .id()
+            .expect("normalized option id")
+            .body(),
+        "choice.opening.first.listen"
+    );
 }

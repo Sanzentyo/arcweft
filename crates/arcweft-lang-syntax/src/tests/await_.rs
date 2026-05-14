@@ -2,15 +2,14 @@ use super::support::*;
 
 #[test]
 fn typechecks_task_fn_try_await_without_wait_view() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
 task fn load_bg_task() -> Image {
     let bg = try await load_bg()
     bg
 }
 ",
-    )
-    .expect("task function parses");
+    );
     let hir = lower_to_hir(&tree).expect("task function lowers");
     validate_typecheck_ready(&hir).expect("try await expression is structured");
 
@@ -26,14 +25,13 @@ task fn load_bg_task() -> Image {
 
 #[test]
 fn plain_await_expression_returns_result_in_task_fn() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
 task fn load_bg_result() -> Result<Image, AssetError> {
     await load_bg()
 }
 ",
-    )
-    .expect("task function parses");
+    );
     let hir = lower_to_hir(&tree).expect("task function lowers");
     assert!(matches!(
         hir.functions()[0].value(),
@@ -55,14 +53,13 @@ task fn load_bg_result() -> Result<Image, AssetError> {
 
 #[test]
 fn await_with_keeps_awaited_expression() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.loading loading {
-    try await load_opening_assets() with { pending p => scene #scene.loading { progress p.ratio } }
+flow @flow.loading loading {
+    try await load_opening_assets() with { pending p => scene @scene.loading { progress p.ratio } }
 }
 ",
-    )
-    .expect("await with parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -82,19 +79,18 @@ flow #flow.loading loading {
 
 #[test]
 fn await_with_keeps_wait_view_branches() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.loading loading {
+flow @flow.loading loading {
     await load_avatar() with {
-        pending p => scene #scene.loading { progress p.ratio }
+        pending p => scene @scene.loading { progress p.ratio }
         ready img => Image(img)
-        error _ => Icon(#asset.avatar_fallback)
-        denied _ => return Ok(FlowExit::Goto(#flow.title))
+        error _ => Icon(@asset.avatar_fallback)
+        denied _ => return Ok(FlowExit::Goto(@flow.title))
     }
 }
 ",
-    )
-    .expect("await branches parse");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -121,17 +117,16 @@ flow #flow.loading loading {
 
 #[test]
 fn try_await_accepts_indented_with_block() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.loading loading {
-    try await asset.image(#asset.bg.room) with:
+flow @flow.loading loading {
+    try await asset.image(@asset.bg.room) with:
         pending p:
-            scene #scene.loading:
+            scene @scene.loading:
                 progress p.ratio
 }
 ",
-    )
-    .expect("try await with colon block parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -151,14 +146,13 @@ flow #flow.loading loading {
 
 #[test]
 fn await_question_prefix_is_try_await_sugar() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.loading loading {
-    await? asset.image(#asset.bg.room) with { pending p => scene #scene.loading }
+flow @flow.loading loading {
+    await? asset.image(@asset.bg.room) with { pending p => scene @scene.loading }
 }
 ",
-    )
-    .expect("await? prefix sugar parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -175,15 +169,14 @@ flow #flow.loading loading {
 
 #[test]
 fn let_try_await_with_binds_ready_value_and_keeps_wait_view() {
-    let tree = parse_source(
-            r"
-flow #flow.loading loading {
+    let tree = parse_ok(
+        r"
+flow @flow.loading loading {
     let assets = try await load_opening_assets() with { pending p => p.ratio ready loaded => loaded.ready }
     let count = assets.count
 }
 ",
-        )
-        .expect("bound try-await wait-view parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -221,17 +214,16 @@ flow #flow.loading loading {
 
 #[test]
 fn let_plain_await_with_binds_result_value() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.loading loading {
+flow @flow.loading loading {
     let result = await load_opening_assets() with:
         pending p:
             p.ratio
     let display = result
 }
 ",
-    )
-    .expect("bound plain await wait-view parses");
+    );
     let hir = lower_to_hir(&tree).expect("bound plain await lowers");
 
     let env = TypeCheckEnv::new().with_function(
@@ -246,14 +238,13 @@ flow #flow.loading loading {
 
 #[test]
 fn await_with_variant_pending_pattern_binds_payload() {
-    let tree = parse_source(
-            r"
-flow #flow.loading loading {
+    let tree = parse_ok(
+        r"
+flow @flow.loading loading {
     try await run_activity() with { pending .Realizing(p) => p.ratio pending .Running(p) => p.ratio }
 }
 ",
-        )
-        .expect("variant pending patterns parse");
+    );
     let hir = lower_to_hir(&tree).expect("variant pending patterns lower");
 
     let env = TypeCheckEnv::new().with_function(
@@ -268,10 +259,10 @@ flow #flow.loading loading {
 
 #[test]
 fn let_try_await_with_accepts_multiline_context_before_with() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-flow #flow.loading loading {
-    let bg = try await asset.image(#asset.bg.room)
+flow @flow.loading loading {
+    let bg = try await asset.image(@asset.bg.room)
         .context("opening background failed")
     with:
         pending p:
@@ -279,8 +270,7 @@ flow #flow.loading loading {
     let display = bg.id
 }
 "#,
-    )
-    .expect("multiline contextual try-await parses");
+    );
 
     let hir = lower_to_hir(&tree).expect("multiline contextual try-await lowers");
     assert!(matches!(
@@ -307,18 +297,17 @@ flow #flow.loading loading {
 
 #[test]
 fn let_parenthesized_await_with_question_is_try_sugar() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.loading loading {
-    let bg = (await asset.image(#asset.bg.room) with:
+flow @flow.loading loading {
+    let bg = (await asset.image(@asset.bg.room) with:
         pending p:
             p.ratio
     )?
     let display = bg.id
 }
 ",
-    )
-    .expect("parenthesized await-with try parses");
+    );
 
     let hir = lower_to_hir(&tree).expect("parenthesized await-with lowers");
     assert!(matches!(
@@ -337,18 +326,17 @@ flow #flow.loading loading {
 
 #[test]
 fn let_parenthesized_await_with_context_after_block_typechecks() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-flow #flow.loading loading {
-    let bg = (await asset.image(#asset.bg.room) with:
+flow @flow.loading loading {
+    let bg = (await asset.image(@asset.bg.room) with:
         pending p:
             p.ratio
     ).context("opening background failed")?
     let display = bg.id
 }
 "#,
-    )
-    .expect("post-await context parses");
+    );
 
     let hir = lower_to_hir(&tree).expect("post-await context lowers");
     assert!(matches!(
@@ -374,14 +362,13 @@ flow #flow.loading loading {
 
 #[test]
 fn let_try_await_without_wait_view_stays_expression_await() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.loading loading {
+flow @flow.loading loading {
     let bg = try await load_bg()
 }
 ",
-    )
-    .expect("plain try-await binding parses");
+    );
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
@@ -399,14 +386,13 @@ flow #flow.loading loading {
 
 #[test]
 fn await_question_with_is_rejected_as_ambiguous() {
-    let errors = parse_source(
+    let errors = parse_errors(
         r"
-flow #flow.loading loading {
-    await load_opening_assets()? with { pending p => scene #scene.loading }
+flow @flow.loading loading {
+    await load_opening_assets()? with { pending p => scene @scene.loading }
 }
 ",
-    )
-    .expect_err("ambiguous await propagation is rejected");
+    );
     assert!(
         errors
             .iter()
@@ -416,16 +402,15 @@ flow #flow.loading loading {
 
 #[test]
 fn typecheck_rejects_borrow_block_across_await_boundary() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.borrow borrow {
+flow @flow.borrow borrow {
     borrow bg.pixels() as pixels: &'asset [Rgba8] {
-        try await load_avatar() with { pending p => scene #scene.loading { progress p.ratio } }
+        try await load_avatar() with { pending p => scene @scene.loading { progress p.ratio } }
     }
 }
 ",
-    )
-    .expect("borrow block await fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("borrow block await fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
@@ -452,15 +437,14 @@ flow #flow.borrow borrow {
 
 #[test]
 fn typecheck_rejects_borrow_across_await_boundary() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.borrow borrow {
+flow @flow.borrow borrow {
     let pixels: &'asset [Rgba8] = bg.pixels()
-    try await load_avatar() with { pending p => scene #scene.loading { progress p.ratio } }
+    try await load_avatar() with { pending p => scene @scene.loading { progress p.ratio } }
 }
 ",
-    )
-    .expect("borrow across await fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("borrow across await fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
@@ -487,19 +471,18 @@ flow #flow.borrow borrow {
 
 #[test]
 fn typechecks_await_wait_view_branches() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.loading loading {
+flow @flow.loading loading {
     try await load_avatar() with {
-        pending p => scene #scene.loading { progress p.ratio }
+        pending p => scene @scene.loading { progress p.ratio }
         ready img => Image(img)
-        error _ => Icon(#asset.avatar_fallback)
-        denied _ => return Ok(FlowExit::Goto(#flow.title))
+        error _ => Icon(@asset.avatar_fallback)
+        denied _ => return Ok(FlowExit::Goto(@flow.title))
     }
 }
 ",
-    )
-    .expect("await branch typecheck fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("await branch typecheck fixture lowers");
     let env = TypeCheckEnv::new()
         .with_function(

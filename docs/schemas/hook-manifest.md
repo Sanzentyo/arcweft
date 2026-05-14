@@ -66,15 +66,15 @@ pub enum HookMemoKind {
   "public_id": "hook.opening.choice_enable",
   "target": { "Entity": "choice.opening.listen" },
   "phase": "input.hit_test",
-  "check": { "OnChange": ["state.affection[#character.alice]"] },
-  "condition": "state.affection[#character.alice] >= 3",
+  "check": { "OnChange": ["state.affection[@character.alice]"] },
+  "condition": "state.affection[@character.alice] >= 3",
   "priority": 10,
   "purity": "Command",
   "effects": ["ui.enable", "log.debug"],
   "memo": {
     "kind": "ConditionOnly",
     "scope": "StateHash",
-    "key": ["state.affection[#character.alice]"]
+    "key": ["state.affection[@character.alice]"]
   }
 }
 ```

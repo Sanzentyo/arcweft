@@ -35,12 +35,12 @@ requires input.len() >= 6
 ## USB device
 
 ```awft
-pub usb #usb.lightgun: UsbRawDevice {
+pub usb @usb.lightgun: UsbRawDevice {
     permission = user_prompt
     filter { vendor_id = 0xCAFE; product_id = 0x4001 }
     claim interface 0
 
-    endpoint #usb.lightgun.input: InterruptIn {
+    endpoint @usb.lightgun.input: InterruptIn {
         address = 0x81
         packet = LightgunReport
         parser = parse_lightgun_report
@@ -52,8 +52,8 @@ pub usb #usb.lightgun: UsbRawDevice {
 ## Input map
 
 ```awft
-input_map #input.lightgun_map {
-    source #usb.lightgun.input
+input_map @input.lightgun_map {
+    source @usb.lightgun.input
 
     on report r when r.confidence >= 40 => {
         emit InputAction.PointerAim {
@@ -72,24 +72,24 @@ input_map #input.lightgun_map {
 ## Touch fallback
 
 ```awft
-layer #layer.touch_controls {
+layer @layer.touch_controls {
     z = 900
     kind = ui_overlay
     visibility = env.touch_available
     input { accepts = touch | pointer; capture = handled; pass_through = true }
 }
 
-pub virtual_controller #vc.shooter_touch: VirtualController {
-    layer = #layer.touch_controls
-    visible_when = env.touch_available && activity == #activity.shooting_gallery
-    output input_profile #input.shooter
+pub virtual_controller @vc.shooter_touch: VirtualController {
+    layer = @layer.touch_controls
+    visible_when = env.touch_available && activity == @activity.shooting_gallery
+    output input_profile @input.shooter
 
-    touch_surface #control.shooter.aim {
+    touch_surface @control.shooter.aim {
         rect = safe_area
         maps_to = pointer_aim(.LogicalViewport)
     }
 
-    button #control.shooter.fire {
+    button @control.shooter.fire {
         label = "FIRE"
         anchor = bottom_right
         margin = vec2(32, 32)
@@ -102,10 +102,10 @@ pub virtual_controller #vc.shooter_touch: VirtualController {
 ## Flow
 
 ```awft
-flow #flow.shooting_gallery_intro opening(state: GameState) -> Result<FlowExit, FlowError> {
+flow @flow.shooting_gallery_intro opening(state: GameState) -> Result<FlowExit, FlowError> {
     let gun =
-        try await usb.open(#usb.lightgun).optional() with {
-            pending p => scene #scene.usb_wait {
+        try await usb.open(@usb.lightgun).optional() with {
+            pending p => scene @scene.usb_wait {
                 text "専用コントローラーを探しています。タッチ操作でも遊べます。"
                 progress p.ratio
             }
@@ -113,17 +113,17 @@ flow #flow.shooting_gallery_intro opening(state: GameState) -> Result<FlowExit, 
         }
 
     let result =
-        await #<activity.shooting_gallery>.run({
+        await @<activity.shooting_gallery>.run({
             usb_lightgun = gun,
-            touch_controller = Some(#vc.shooter_touch),
+            touch_controller = Some(@vc.shooter_touch),
         })? with {
-            pending p => scene #scene.loading_activity { progress p.ratio }
+            pending p => scene @scene.loading_activity { progress p.ratio }
         }
 
     if result.score >= 1000 {
-        Ok(FlowExit::Goto(#flow.secret_route))
+        Ok(FlowExit::Goto(@flow.secret_route))
     } else {
-        Ok(FlowExit::Goto(#flow.normal_route))
+        Ok(FlowExit::Goto(@flow.normal_route))
     }
 }
 ```
@@ -131,13 +131,13 @@ flow #flow.shooting_gallery_intro opening(state: GameState) -> Result<FlowExit, 
 ## Test
 
 ```awft
-test #test.shooter_touch_fallback scenario {
-    start #flow.shooting_gallery_intro
-    deny_permission usb #usb.lightgun
+test @test.shooter_touch_fallback scenario {
+    start @flow.shooting_gallery_intro
+    deny_permission usb @usb.lightgun
 
-    wait object #control.shooter.fire visible
-    invoke #control.shooter.aim set_pointer { x = 0.5, y = 0.5 }
-    invoke #control.shooter.fire press
+    wait object @control.shooter.fire visible
+    invoke @control.shooter.aim set_pointer { x = 0.5, y = 0.5 }
+    invoke @control.shooter.fire press
 
     expect input_action ButtonDown(.Fire)
 }

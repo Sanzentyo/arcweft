@@ -66,7 +66,7 @@ fn has_affection_at_least(character: Ref<Character>, min: i32)(state: GameState)
     state.affection.get(character).unwrap_or(0) >= min
 }
 
-let alice_ready = has_affection_at_least(#character.alice, 3)
+let alice_ready = has_affection_at_least(@character.alice, 3)
 if state |> alice_ready { ... }
 ```
 
@@ -74,7 +74,7 @@ if state |> alice_ready { ... }
 
 ```awft
 let is_high = (_ >= 80)
-let add_alice = add_affection(#character.alice, 1)
+let add_alice = add_affection(@character.alice, 1)
 ```
 
 ## Seq と lazy pipeline
@@ -98,4 +98,5 @@ let images = await image_paths.traverse(asset.image).parallel(limit = 4)
 
 - `map`: pure / synchronous。
 - `traverse`: `Task` / `Need` を返す。
+
 

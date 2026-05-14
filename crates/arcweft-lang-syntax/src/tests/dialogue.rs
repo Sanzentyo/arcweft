@@ -2,15 +2,14 @@ use super::support::*;
 
 #[test]
 fn parses_fragment_as_flow_like_body() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-pub fragment #frag.alice_enters alice_enters: FlowFragment {
+pub fragment @frag.alice_enters alice_enters: FlowFragment {
     @show alice normal at=right fade=220ms
     alice: おはよう。[p]
 }
 ",
-    )
-    .expect("fragment parses");
+    );
 
     let Item::Flow(fragment) = &tree.items()[0] else {
         panic!("expected fragment as flow-like item");
@@ -26,8 +25,7 @@ pub fragment #frag.alice_enters alice_enters: FlowFragment {
 
 #[test]
 fn parses_colon_form_with_inline_bracket_content() {
-    let tree = parse_source("alice(voice=auto):[今日は少しだけ。[p]]")
-        .expect("colon inline bracket content parses as dialogue text");
+    let tree = parse_ok("alice(voice=auto):[今日は少しだけ。[p]]");
 
     let Item::FlowItem(FlowItem::SpeakerLine(line)) = &tree.items()[0] else {
         panic!("expected speaker line");
@@ -39,17 +37,16 @@ fn parses_colon_form_with_inline_bracket_content() {
 
 #[test]
 fn typechecks_character_method_and_speaker_preset_dialogue_callees() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
+flow @flow.opening opening {
     alice.say(voice=auto)[おはよう。[p]]
-    #<character.alice>.say(voice=auto)[おはよう。[p]]
+    @<character.alice>.say(voice=auto)[おはよう。[p]]
     alice2(voice=auto): おはよう。[p]
     alice2(voice=auto)[おはよう。[p]]
 }
 ",
-    )
-    .expect("dialogue callee fixture parses");
+    );
 
     let hir = lower_to_hir(&tree).expect("dialogue callee fixture lowers");
     let env = TypeCheckEnv::new()
@@ -69,17 +66,16 @@ flow #flow.opening opening {
 
 #[test]
 fn parses_bare_block_after_dialogue_as_unnamed_scope() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-flow #flow.opening opening {
+flow @flow.opening opening {
     alice.say()[おはよう。[p]] {
         let tmp = route_title(state.route)
         log info "tmp={tmp}" { tmp = tmp }
     }
 }
 "#,
-    )
-    .expect("dialogue followed by bare unnamed scope parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -102,14 +98,14 @@ flow #flow.opening opening {
 
 #[test]
 fn lowers_relative_dialogue_line_options() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
+flow @flow.opening opening {
     scope rain {
-        地の文(id=.sound):
+        地の文(id=@.sound):
             扉の向こうから、雨の音がした。[p]
 
-        alice(id=.comment, text_key=.comment_text, source_locale=en-US):
+        alice(id=@.comment, text_key=@.comment_text, source_locale=en-US):
             Good morning.[p]
 
         地の文:
@@ -117,8 +113,7 @@ flow #flow.opening opening {
     }
 }
 ",
-    )
-    .expect("relative dialogue options parse");
+    );
     let hir = lower_to_hir(&tree).expect("relative dialogue options lower");
     let HirFlowItem::Scope(scope) = &hir.flows()[0].body()[0] else {
         panic!("expected HIR scope");
@@ -169,22 +164,56 @@ flow #flow.opening opening {
             .with_symbol("地の文", TypeKind::Ref(EntityKind::Character))
             .with_symbol("alice", TypeKind::Ref(EntityKind::Character)),
     )
-    .expect("relative dialogue options typecheck");
+    .expect("typecheck succeeds");
+}
+
+#[test]
+fn lowers_at_relative_dialogue_line_options_with_parent_scopes() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    scope outer {
+        scope inner {
+            alice(id=@...shared, text_key=@super.inner_text):
+                Good morning.[p]
+        }
+    }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("at-relative dialogue options lower");
+    let HirFlowItem::Scope(outer) = &hir.flows()[0].body()[0] else {
+        panic!("expected outer scope");
+    };
+    let HirFlowItem::Scope(inner) = &outer.body()[0] else {
+        panic!("expected inner scope");
+    };
+    let HirFlowItem::Dialogue(alice) = &inner.body()[0] else {
+        panic!("expected alice line");
+    };
+
+    assert_eq!(
+        alice.id().expect("alice line id").body(),
+        "say.opening.alice.shared"
+    );
+    assert_eq!(
+        alice.text_key().expect("explicit text key").body(),
+        "text.opening.alice.outer.inner_text"
+    );
 }
 
 #[test]
 fn parses_character_content_call_with_brace_plan() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r##"
-alice.say(id=#say.opening.dream_hint, voice=auto)[
+alice.say(id=@say.opening.dream_hint, voice=auto)[
     今日は少しだけ、#[fmt("変な夢", color=rgb("#a8b5ff"))]を見たんだ。[p]
 ]
 with {
     at(0.42s) { alice.stage.face(worried, crossfade=120ms) }
 }
 "##,
-    )
-    .expect("content call parses");
+    );
 
     let Item::FlowItem(FlowItem::ContentCall(call)) = &tree.items()[0] else {
         panic!("expected content call");
@@ -194,7 +223,7 @@ with {
 }
 
 #[test]
-fn dialogue_tokenizer_covers_tags_ruby_expr_and_escapes() {
+fn dialogue_tokenizer_covers_content_interpolations_and_escapes() {
     let tokens = parse_dialogue_tokens(
         r#"今日は\｜少し、｜変な夢《へんなゆめ》#[fmt("夢", color=blue)][p][hook mark]"#,
     );
@@ -237,7 +266,7 @@ fn dialogue_tokenizer_normalizes_bracket_ruby_to_ruby_token() {
         tokens
             .iter()
             .all(|token| !matches!(token, DialogueToken::EndTag(name) if name == "ruby")),
-        "bracket ruby end tag should be consumed, got {tokens:?}"
+        "bracket ruby end interpolation should be consumed, got {tokens:?}"
     );
 }
 
@@ -302,7 +331,7 @@ fn dialogue_tokenizer_preserves_raw_spans_without_inner_parsing() {
 
 #[test]
 fn reports_unclosed_dialogue_content_block() {
-    let errors = parse_source("alice[おはよう。[p]").expect_err("unclosed content fails");
+    let errors = parse_errors("alice[おはよう。[p]");
     assert_eq!(errors.len(), 1);
     assert!(errors[0].message().contains("dialogue content"));
     assert_eq!(errors[0].expected(), &["]"]);
@@ -311,7 +340,7 @@ fn reports_unclosed_dialogue_content_block() {
 
 #[test]
 fn parses_dialogue_and_stream_function_kinds() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
 pub dialogue fn flash(color: Color) -> Content {
     Content::empty()
@@ -321,8 +350,7 @@ stream fn camera_frames() -> Source<VideoFrame, CameraError> {
     yield next_frame()
 }
 ",
-    )
-    .expect("dialogue and stream functions parse");
+    );
 
     let Item::Function(dialogue) = &tree.items()[0] else {
         panic!("expected dialogue function");

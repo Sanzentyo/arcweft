@@ -4,7 +4,7 @@ use crate::ast::{
     EnumItem, ExternModItem, Flow, FlowItem, FlowKind, FunctionItem, FunctionKind, HookItem,
     IfBlock, IfLetBlock, ImplItem, Item, LineArg, LinePlan, LoopBlock, MatchBlock, MemoFn,
     ParserItem, Pattern, ScopeBlock, ScopeExprBlock, SourceItem, SourceLocaleBlock, SpeakerLine,
-    StateItem, Stmt, StructItem, SyntaxTree, TextRange, TraitItem, TypeAliasItem, WhileBlock,
+    StateItem, Stmt, StructItem, TextRange, TraitItem, TypeAliasItem, TypedSyntaxTree, WhileBlock,
     WhileLetBlock,
 };
 use crate::expr::Expr;
@@ -281,7 +281,7 @@ pub struct HirLowerError {
 }
 
 /// Lowers a parsed syntax tree into HIR-facing structures.
-pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> {
+pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerError>> {
     let mut flows = Vec::new();
     let mut functions = Vec::new();
     let mut declarations = Vec::new();
@@ -742,7 +742,7 @@ fn normalize_choice_id(id: &EntityRef, context: &LowerContext) -> EntityRef {
         return id.clone();
     };
     let mut parts = vec!["choice".to_owned(), flow_slug.clone()];
-    parts.extend(context.scopes.iter().cloned());
+    parts.extend(relative_scopes(context, id).iter().cloned());
     parts.push(id.body().to_owned());
     EntityRef::new(parts.join("."), false, *id.range())
 }
@@ -753,7 +753,13 @@ fn normalize_option_id(id: &EntityRef, context: &LowerContext) -> EntityRef {
     }
     context.choice_stack.last().map_or_else(
         || id.clone(),
-        |choice| EntityRef::new(format!("{choice}.{}", id.body()), false, *id.range()),
+        |choice| {
+            EntityRef::new(
+                append_relative_suffix(choice, id.body(), id.relative_parent_depth()),
+                false,
+                *id.range(),
+            )
+        },
     )
 }
 
@@ -764,7 +770,11 @@ fn normalize_text_key_id(id: &EntityRef, context: &LowerContext) -> EntityRef {
     context.choice_stack.last().map_or_else(
         || id.clone(),
         |choice| {
-            let choice_path = choice.strip_prefix("choice.").unwrap_or(choice);
+            let normalized_choice = append_relative_suffix(choice, "", id.relative_parent_depth());
+            let choice_path = normalized_choice
+                .trim_end_matches('.')
+                .strip_prefix("choice.")
+                .unwrap_or(normalized_choice.trim_end_matches('.'));
             EntityRef::new(
                 format!("text.choice.{choice_path}.{}", id.body()),
                 false,
@@ -784,7 +794,7 @@ fn normalize_line_id(
         Some(id) if !id.is_relative() => Some(id.clone()),
         Some(id) => Some(build_line_entity_ref(
             speaker,
-            Some(id.body()),
+            Some(id),
             context,
             *id.range(),
         )?),
@@ -806,7 +816,7 @@ fn normalize_line_text_key(
             return Some(text_key.clone());
         };
         let mut parts = vec!["text".to_owned(), flow_slug.clone(), speaker];
-        parts.extend(context.scopes.iter().cloned());
+        parts.extend(relative_scopes(context, text_key).iter().cloned());
         parts.push(text_key.body().to_owned());
         return Some(EntityRef::new(parts.join("."), false, *text_key.range()));
     }
@@ -815,23 +825,54 @@ fn normalize_line_text_key(
 
 fn build_line_entity_ref(
     speaker: String,
-    explicit_suffix: Option<&str>,
+    explicit_id: Option<&EntityRef>,
     context: &mut LowerContext,
     range: TextRange,
 ) -> Option<EntityRef> {
     let flow_slug = context.flow_slug.as_ref()?;
     let mut parts = vec!["say".to_owned(), flow_slug.clone(), speaker];
-    parts.extend(context.scopes.iter().cloned());
+    if let Some(id) = explicit_id {
+        parts.extend(relative_scopes(context, id));
+    } else {
+        parts.extend(context.scopes.iter().cloned());
+    }
     let prefix = parts.join(".");
-    let suffix = explicit_suffix.map_or_else(
+    let suffix = explicit_id.map_or_else(
         || {
             let next = context.line_counters.entry(prefix.clone()).or_insert(0);
             *next += 1;
             format!("{next:03}")
         },
-        str::to_owned,
+        |id| id.body().to_owned(),
     );
     Some(EntityRef::new(format!("{prefix}.{suffix}"), false, range))
+}
+
+fn relative_scopes(context: &LowerContext, id: &EntityRef) -> Vec<String> {
+    context
+        .scopes
+        .iter()
+        .take(
+            context
+                .scopes
+                .len()
+                .saturating_sub(id.relative_parent_depth()),
+        )
+        .cloned()
+        .collect()
+}
+
+fn append_relative_suffix(base: &str, suffix: &str, parent_depth: usize) -> String {
+    let mut parts = base.split('.').map(str::to_owned).collect::<Vec<_>>();
+    for _ in 0..parent_depth {
+        if parts.len() > 1 {
+            parts.pop();
+        }
+    }
+    if !suffix.is_empty() {
+        parts.push(suffix.to_owned());
+    }
+    parts.join(".")
 }
 
 fn line_id_to_text_key(line_id: &str) -> String {
@@ -846,9 +887,9 @@ fn speaker_slug(speaker: &str) -> String {
         other => {
             let source = other
                 .trim()
-                .strip_prefix("#<")
+                .strip_prefix("@<")
                 .and_then(|inner| inner.strip_suffix('>'))
-                .or_else(|| other.trim().strip_prefix('#'))
+                .or_else(|| other.trim().strip_prefix('@'))
                 .unwrap_or(other)
                 .trim_end_matches(".say");
             source

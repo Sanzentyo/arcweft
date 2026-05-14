@@ -9,26 +9,35 @@ use crate::ast::{
     LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, RawItem,
     ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
     SourceItem, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StmtMatchArm,
-    StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
-    UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    StructField, StructItem, TextRange, TraitItem, TraitMember, TypeAliasItem, TypedSyntaxTree,
+    UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+};
+use crate::cst::{
+    CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstStructuredFlowBlockKind,
+    CstTopLevelItemKind, CstTopLevelLineKind, collect_wiki_link_ranges, find_matching_punctuation,
+    find_top_level_punctuation, punctuation_delta, split_first_string_literal,
+    split_leading_entity_ref_parts, split_leading_ident, split_leading_relative_id,
+    split_top_level_keyword_once, split_top_level_punctuation, split_top_level_punctuation_once,
+    split_top_level_punctuation_sequence_once, split_top_level_whitespace,
+    starts_leading_entity_ref, starts_leading_relative_id,
 };
 use crate::expr::{ComputationBlockKind, Expr, parse_expr};
 use crate::pattern::parse_pattern;
+use crate::source::ParsedSource;
 use crate::text::parse_dialogue_tokens;
 use crate::types::{parse_fn_signature, parse_type_ref};
+use crate::{CstLine, CstLineEvents, SyntaxNode, cst_lines};
 use arcweft_source::{SourceAnchor, SourceName};
 use thiserror::Error;
 
 /// Parses an Arcweft source string.
-pub fn parse_source(source: impl Into<String>) -> Result<SyntaxTree, Vec<ParseError>> {
+#[must_use]
+pub fn parse_source(source: impl Into<String>) -> ParsedSource {
     let source = source.into();
-    let mut parser = Parser::new(source);
-    parser.parse()
-}
-
-/// Compatibility entry point kept as a direct alias to the real parser.
-pub fn parse_stub(source: impl Into<String>) -> Result<SyntaxTree, Vec<ParseError>> {
-    parse_source(source)
+    let syntax = crate::cst::parse_cst(&source);
+    let mut parser = Parser::from_syntax(source.clone(), &syntax);
+    let (tree, errors) = parser.parse();
+    ParsedSource::new(source, syntax, tree, errors)
 }
 
 /// Syntax-level parse error with expected tokens and recovery suggestions.
@@ -49,13 +58,6 @@ pub struct RecoverySuggestion {
     message: String,
 }
 
-#[derive(Clone, Debug)]
-struct SourceLine {
-    text: String,
-    start: usize,
-    end: usize,
-}
-
 enum OptionalLabel {
     None,
     Some(String),
@@ -67,11 +69,26 @@ struct PendingDocLines {
     lines: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TopLevelDispatch {
+    line: CstTopLevelLineKind,
+    item: CstTopLevelItemKind,
+}
+
 impl OptionalLabel {
     fn into_option(self) -> Option<String> {
         match self {
             Self::None => None,
             Self::Some(label) => Some(label),
+        }
+    }
+}
+
+impl From<&CstLine> for TopLevelDispatch {
+    fn from(line: &CstLine) -> Self {
+        Self {
+            line: line.top_level_line_kind(),
+            item: line.top_level_item_kind(),
         }
     }
 }
@@ -94,7 +111,7 @@ type ContentCallParse = (
 
 struct Parser {
     source: String,
-    lines: Vec<SourceLine>,
+    events: CstLineEvents,
     index: usize,
     errors: Vec<ParseError>,
     pending_flow_items: Vec<FlowItem>,
@@ -127,10 +144,15 @@ impl PendingDocLines {
 
 impl Parser {
     fn new(source: String) -> Self {
-        let lines = split_lines(&source);
+        let syntax = crate::cst::parse_cst(&source);
+        Self::from_syntax(source, &syntax)
+    }
+
+    fn from_syntax(source: String, syntax: &SyntaxNode) -> Self {
+        let events = cst_lines(syntax);
         Self {
             source,
-            lines,
+            events,
             index: 0,
             errors: Vec::new(),
             pending_flow_items: Vec::new(),
@@ -138,15 +160,15 @@ impl Parser {
         }
     }
 
-    fn parse(&mut self) -> Result<SyntaxTree, Vec<ParseError>> {
+    fn parse(&mut self) -> (TypedSyntaxTree, Vec<ParseError>) {
         let mut module = None;
         let mut uses = Vec::new();
         let mut items = Vec::new();
         let wiki_links = collect_wiki_links(&self.source);
 
-        while self.index < self.lines.len() {
+        while self.index < self.events.len() {
             self.skip_blank_and_comments();
-            if self.index >= self.lines.len() {
+            if self.index >= self.events.len() {
                 break;
             }
             if let Some(doc) = self.take_doc_block() {
@@ -164,55 +186,68 @@ impl Parser {
             }
 
             let line = self.current().clone();
-            let trimmed = line.text.trim().to_owned();
+            let trimmed = line.trimmed().to_owned();
             let range = TextRange::new(line.start, line.end);
+            let dispatch = TopLevelDispatch::from(&line);
 
-            self.parse_top_level_line(&trimmed, range, &mut module, &mut uses, &mut items);
+            self.parse_top_level_line(
+                dispatch,
+                &trimmed,
+                range,
+                &mut module,
+                &mut uses,
+                &mut items,
+            );
         }
 
-        if self.errors.is_empty() {
-            Ok(SyntaxTree::new(
-                source_take(self),
-                module,
-                uses,
-                items,
-                wiki_links,
-            ))
-        } else {
-            Err(core::mem::take(&mut self.errors))
-        }
+        let tree = TypedSyntaxTree::new(source_take(self), module, uses, items, wiki_links);
+        (tree, core::mem::take(&mut self.errors))
     }
 
     fn parse_top_level_line(
         &mut self,
+        dispatch: TopLevelDispatch,
         trimmed: &str,
         range: TextRange,
         module: &mut Option<ModuleDecl>,
         uses: &mut Vec<UseItem>,
         items: &mut Vec<Item>,
     ) {
-        if let Some(item) = self.reject_old_memo_attribute(trimmed, range) {
-            self.reject_pending_doc(range);
-            items.push(item);
-        } else if let Some(attribute) = parse_attribute(trimmed, range) {
-            items.push(Item::Attribute(attribute));
-            self.index += 1;
-        } else if let Some(path) = trimmed.strip_prefix("mod ") {
-            self.reject_pending_doc(range);
-            if self.validate_module_path(path, range) {
-                *module = Some(ModuleDecl::new(normalize_module_path(path.trim()), range));
-            }
-            self.index += 1;
-        } else if is_use_line(trimmed) {
-            self.reject_pending_doc(range);
-            if let Some(use_item) = parse_use_line(trimmed, range) {
-                if self.validate_use_tree(use_item.tree(), range) {
-                    uses.push(use_item);
+        match dispatch.line {
+            CstTopLevelLineKind::OldMemoAttribute => {
+                if let Some(item) = self.reject_old_memo_attribute(trimmed, range) {
+                    self.reject_pending_doc(range);
+                    items.push(item);
                 }
             }
-            self.index += 1;
-        } else {
-            self.parse_top_level_item(trimmed, range, items);
+            CstTopLevelLineKind::Attribute => {
+                if let Some(attribute) = parse_attribute(trimmed, range) {
+                    items.push(Item::Attribute(attribute));
+                    self.index += 1;
+                } else {
+                    self.parse_top_level_item(dispatch.item, trimmed, range, items);
+                }
+            }
+            CstTopLevelLineKind::Module => {
+                let path = trimmed.strip_prefix("mod ").unwrap_or_default();
+                self.reject_pending_doc(range);
+                if self.validate_module_path(path, range) {
+                    *module = Some(ModuleDecl::new(normalize_module_path(path.trim()), range));
+                }
+                self.index += 1;
+            }
+            CstTopLevelLineKind::Use => {
+                self.reject_pending_doc(range);
+                if let Some(use_item) = parse_use_line(trimmed, range)
+                    && self.validate_use_tree(use_item.tree(), range)
+                {
+                    uses.push(use_item);
+                }
+                self.index += 1;
+            }
+            CstTopLevelLineKind::Item => {
+                self.parse_top_level_item(dispatch.item, trimmed, range, items);
+            }
         }
     }
 
@@ -220,7 +255,7 @@ impl Parser {
         if is_relative_id_path(path) {
             self.push_error(
                 range,
-                "module paths cannot use relative `.suffix` ID syntax",
+                "module paths cannot use relative ID syntax",
                 ["self::path", "super::path", "crate::path"],
                 Some(path.trim()),
                 ["use `self::`, `super::`, or `crate::` for module-relative paths"],
@@ -235,7 +270,7 @@ impl Parser {
         if is_relative_id_path(tree) {
             self.push_error(
                 range,
-                "use paths cannot use relative `.suffix` ID syntax",
+                "use paths cannot use relative ID syntax",
                 ["use self::path", "use super::path", "use crate::path"],
                 Some(tree.trim()),
                 ["use `self::`, `super::`, or `crate::` for module-relative imports"],
@@ -246,90 +281,70 @@ impl Parser {
         }
     }
 
-    fn parse_top_level_item(&mut self, trimmed: &str, range: TextRange, items: &mut Vec<Item>) {
-        if looks_like_flow(trimmed) {
-            if let Some(flow) = self.parse_flow() {
-                items.push(Item::Flow(flow));
+    fn parse_top_level_item(
+        &mut self,
+        kind: CstTopLevelItemKind,
+        trimmed: &str,
+        range: TextRange,
+        items: &mut Vec<Item>,
+    ) {
+        match kind {
+            CstTopLevelItemKind::Flow => {
+                if let Some(flow) = self.parse_flow() {
+                    items.push(Item::Flow(flow));
+                }
             }
-        } else if looks_like_function_item(trimmed) {
-            if let Some(function) = self.parse_function_item() {
-                items.push(Item::Function(function));
+            CstTopLevelItemKind::Function => {
+                if let Some(function) = self.parse_function_item() {
+                    items.push(Item::Function(function));
+                }
             }
-        } else if looks_like_callable_item(trimmed) {
-            self.reject_pending_doc(range);
-            if let Some(callable) = self.parse_callable_item() {
-                items.push(Item::Callable(callable));
+            CstTopLevelItemKind::FlowBodyItemOrRaw => {
+                self.parse_top_level_flow_item_or_raw(trimmed, range, items);
             }
-        } else if looks_like_state_item(trimmed) {
-            self.reject_pending_doc(range);
-            if let Some(state) = self.parse_state_item() {
-                items.push(Item::State(state));
+            kind => {
+                self.reject_pending_doc(range);
+                if let Some(item) = self.parse_classified_top_level_item(kind) {
+                    items.push(item);
+                }
             }
-        } else if looks_like_trait_item(trimmed) {
-            self.reject_pending_doc(range);
-            if let Some(trait_item) = self.parse_trait_item() {
-                items.push(Item::Trait(trait_item));
+        }
+    }
+
+    fn parse_classified_top_level_item(&mut self, kind: CstTopLevelItemKind) -> Option<Item> {
+        match kind {
+            CstTopLevelItemKind::Callable => self.parse_callable_item().map(Item::Callable),
+            CstTopLevelItemKind::State => self.parse_state_item().map(Item::State),
+            CstTopLevelItemKind::Trait => self.parse_trait_item().map(Item::Trait),
+            CstTopLevelItemKind::Impl => self.parse_impl_item().map(Item::Impl),
+            CstTopLevelItemKind::Enum => self.parse_enum_item().map(Item::Enum),
+            CstTopLevelItemKind::Struct => self.parse_struct_item().map(Item::Struct),
+            CstTopLevelItemKind::TypeAlias => self.parse_type_alias().map(Item::TypeAlias),
+            CstTopLevelItemKind::EntityDecl => self.parse_entity_decl_item().map(Item::EntityDecl),
+            CstTopLevelItemKind::ExternMod => self.parse_extern_mod_item().map(Item::ExternMod),
+            CstTopLevelItemKind::Hook => self.parse_hook().map(Item::Hook),
+            CstTopLevelItemKind::DialogueDefaults => {
+                self.parse_dialogue_defaults().map(Item::DialogueDefaults)
             }
-        } else if looks_like_impl_item(trimmed) {
-            self.reject_pending_doc(range);
-            if let Some(impl_item) = self.parse_impl_item() {
-                items.push(Item::Impl(impl_item));
-            }
-        } else if looks_like_enum_item(trimmed) {
-            self.reject_pending_doc(range);
-            if let Some(enum_item) = self.parse_enum_item() {
-                items.push(Item::Enum(enum_item));
-            }
-        } else if looks_like_struct_item(trimmed) {
-            self.reject_pending_doc(range);
-            if let Some(struct_item) = self.parse_struct_item() {
-                items.push(Item::Struct(struct_item));
-            }
-        } else if looks_like_type_alias(trimmed) {
-            self.reject_pending_doc(range);
-            if let Some(type_alias) = self.parse_type_alias() {
-                items.push(Item::TypeAlias(type_alias));
-            }
-        } else if looks_like_entity_decl_item(trimmed) {
-            self.reject_pending_doc(range);
-            if let Some(decl) = self.parse_entity_decl_item() {
-                items.push(Item::EntityDecl(decl));
-            }
-        } else if looks_like_extern_mod_item(trimmed) {
-            self.reject_pending_doc(range);
-            if let Some(item) = self.parse_extern_mod_item() {
-                items.push(Item::ExternMod(item));
-            }
-        } else if looks_like_hook(trimmed) {
-            self.reject_pending_doc(range);
-            if let Some(hook) = self.parse_hook() {
-                items.push(Item::Hook(hook));
-            }
-        } else if looks_like_dialogue_defaults(trimmed) {
-            self.reject_pending_doc(range);
-            if let Some(defaults) = self.parse_dialogue_defaults() {
-                items.push(Item::DialogueDefaults(defaults));
-            }
-        } else if looks_like_memo_fn(trimmed) {
-            self.reject_pending_doc(range);
-            if let Some(memo) = self.parse_memo_fn() {
-                items.push(Item::MemoFn(memo));
-            }
-        } else if looks_like_parser_item(trimmed) {
-            self.reject_pending_doc(range);
-            if let Some(parser) = self.parse_parser_item() {
-                items.push(Item::Parser(parser));
-            }
-        } else if looks_like_source_item(trimmed) {
-            self.reject_pending_doc(range);
-            if let Some(source) = self.parse_source_item() {
-                items.push(Item::Source(source));
-            }
-        } else if let Some(flow_item) = self.parse_flow_item_until_indent(0) {
-            self.reject_pending_doc(range);
+            CstTopLevelItemKind::MemoFn => self.parse_memo_fn().map(Item::MemoFn),
+            CstTopLevelItemKind::Parser => self.parse_parser_item().map(Item::Parser),
+            CstTopLevelItemKind::Source => self.parse_source_item().map(Item::Source),
+            CstTopLevelItemKind::Flow
+            | CstTopLevelItemKind::Function
+            | CstTopLevelItemKind::FlowBodyItemOrRaw => None,
+        }
+    }
+
+    fn parse_top_level_flow_item_or_raw(
+        &mut self,
+        trimmed: &str,
+        range: TextRange,
+        items: &mut Vec<Item>,
+    ) {
+        self.reject_pending_doc(range);
+        if let Some(flow_item) = self.parse_flow_item_until_indent(0) {
             items.push(Item::FlowItem(flow_item));
         } else {
-            self.reject_pending_doc(range);
             items.push(Item::Raw(RawItem::new(trimmed.to_owned(), None, range)));
             self.index += 1;
         }
@@ -558,8 +573,7 @@ impl Parser {
         }
         let (visibility, rest) = parse_visibility_prefix(head.trim());
         let rest = rest.trim_start().strip_prefix("trait")?.trim();
-        let (name, supertraits) = rest
-            .split_once(':')
+        let (name, supertraits) = split_top_level_punctuation_once(rest, ':')
             .map_or((rest, ""), |(name, traits)| (name.trim(), traits.trim()));
         Some(TraitItem::new(
             visibility,
@@ -586,11 +600,10 @@ impl Parser {
         let (visibility, rest) = parse_visibility_prefix(head.trim());
         let rest = rest.trim_start().strip_prefix("impl")?.trim();
         let (generics, rest) = parse_optional_angle_head(rest);
-        let (trait_name, target) = rest
-            .split_once(" for ")
-            .map_or((None, rest.trim()), |(trait_name, target)| {
-                (Some(trait_name.trim().to_owned()), target.trim())
-            });
+        let (maybe_trait, target) = split_top_level_keyword_once(rest, "for");
+        let (trait_name, target) = target.map_or((None, rest.trim()), |target| {
+            (Some(maybe_trait.trim().to_owned()), target.trim())
+        });
         Some(ImplItem::new(
             visibility,
             generics,
@@ -631,7 +644,7 @@ impl Parser {
         let mut raw = start_line.text.clone();
         let mut end = start_line.end;
         self.index += 1;
-        while self.index < self.lines.len() {
+        while self.index < self.events.len() {
             let line = self.current();
             let trimmed = line.text.trim();
             if !trimmed.starts_with("where ") {
@@ -647,7 +660,7 @@ impl Parser {
         let first = lines.next()?;
         let (visibility, rest) = parse_visibility_prefix(first);
         let rest = rest.trim_start().strip_prefix("type")?.trim();
-        let (name, target) = rest.split_once('=')?;
+        let (name, target) = split_top_level_binding(rest)?;
         let target = parse_type_ref(target.trim()).ok()?;
         let where_clauses = lines
             .filter_map(|line| line.strip_prefix("where "))
@@ -738,100 +751,26 @@ impl Parser {
     }
 
     fn take_flow_block(&mut self) -> (String, String, usize, bool) {
-        let start = self.index;
-        let mut header = String::new();
-        let mut end = self.current().end;
-
-        while self.index < self.lines.len() {
-            let line = self.current();
-            let trimmed = line.text.trim();
-            let is_body_line = trimmed == "{"
-                || (self.index == start
-                    && trimmed.contains('{')
-                    && !trimmed.starts_with("effects"));
-            if is_body_line {
-                break;
-            }
-            if !header.is_empty() {
-                header.push('\n');
-            }
-            header.push_str(&line.text);
-            end = line.end;
-            self.index += 1;
-        }
-        if self.index >= self.lines.len() {
-            return (header, String::new(), end, false);
-        }
-        let (body_head, body, end, ok) = self.take_brace_block();
-        if !body_head.is_empty() {
-            if !header.is_empty() {
-                header.push('\n');
-            }
-            header.push_str(&body_head);
-        }
-        (header, body, end, ok)
+        let event = self.events.collect_flow_block(self.index);
+        self.index = event.next_index;
+        (event.head, event.body, event.end, event.ok)
     }
 
     fn take_function_block(&mut self) -> (String, String, usize, bool) {
-        let start = self.index;
-        let mut text = String::new();
-        let mut end = self.current().end;
-        let mut depth = 0_i32;
-        let mut seen_open = false;
-        let mut seen_body_open = false;
-
-        while self.index < self.lines.len() {
-            let line = self.current();
-            let trimmed = line.text.trim();
-            if !text.is_empty() {
-                text.push('\n');
-            }
-            text.push_str(&line.text);
-            end = line.end;
-            if trimmed == "{" || line_has_unclosed_top_level_open(trimmed) {
-                seen_body_open = true;
-            }
-            for ch in line.text.chars() {
-                match ch {
-                    '{' => {
-                        depth += 1;
-                        seen_open = true;
-                    }
-                    '}' => depth -= 1,
-                    _ => {}
-                }
-            }
-            self.index += 1;
-            if seen_open && seen_body_open && depth == 0 {
-                break;
-            }
-        }
-
-        let Some(open) = find_body_open(&text) else {
-            self.index = start + 1;
-            return (text, String::new(), end, false);
-        };
-        let Some(close) = text.rfind('}') else {
-            return (text, String::new(), end, false);
-        };
-        if depth != 0 {
-            return (text, String::new(), end, false);
-        }
-        (
-            text[..open].trim().to_owned(),
-            text[open + 1..close].to_owned(),
-            end,
-            true,
-        )
+        self.take_block_event(CstBlockOpenRule::FunctionBodyOpen)
     }
 
     fn next_nonblank_line_is_brace(&self) -> bool {
-        self.lines
-            .iter()
-            .skip(self.index + 1)
-            .map(|line| line.text.trim())
-            .find(|trimmed| !trimmed.is_empty() && !trimmed.starts_with('#'))
-            .is_some_and(|trimmed| trimmed == "{")
+        for line in self.events.iter().skip(self.index + 1) {
+            if line.is_trivia() {
+                continue;
+            }
+            let trimmed = line.trimmed();
+            if !trimmed.starts_with('#') {
+                return trimmed == "{";
+            }
+        }
+        false
     }
 
     fn parse_hook(&mut self) -> Option<HookItem> {
@@ -1011,16 +950,17 @@ impl Parser {
                 if trimmed.is_empty() || trimmed.starts_with("//") {
                     return None;
                 }
-                let (name, value) = split_top_level_equals(trimmed).unwrap_or_else(|| {
-                    self.push_error(
-                        TextRange::new(start_line.start, start_line.start + trimmed.len()),
-                        "expected dialogue default assignment",
-                        ["name = expr"],
-                        Some(trimmed),
-                        ["write defaults as `name = value`"],
-                    );
-                    ("", "")
-                });
+                let (name, value) =
+                    split_top_level_punctuation_once(trimmed, '=').unwrap_or_else(|| {
+                        self.push_error(
+                            TextRange::new(start_line.start, start_line.start + trimmed.len()),
+                            "expected dialogue default assignment",
+                            ["name = expr"],
+                            Some(trimmed),
+                            ["write defaults as `name = value`"],
+                        );
+                        ("", "")
+                    });
                 (!name.trim().is_empty()).then(|| {
                     DialogueDefaultOption::new(
                         name.trim().to_owned(),
@@ -1159,7 +1099,7 @@ impl Parser {
             .trim_start()
             .strip_prefix("source")?
             .trim_start();
-        let (id, name, signature_tail) = if after_source.starts_with('#') {
+        let (id, name, signature_tail) = if after_source.starts_with('@') {
             let (id, rest) =
                 parse_optional_entity_ref(after_source, start_line.start, &mut self.errors);
             let (id, signature_tail) = id.map_or_else(
@@ -1189,11 +1129,11 @@ impl Parser {
     fn parse_flow_body(&mut self, body: &str, base_offset: usize) -> Vec<FlowItem> {
         let mut nested = Parser::new(body.to_owned());
         let mut items = Vec::new();
-        while !nested.pending_flow_items.is_empty() || nested.index < nested.lines.len() {
+        while !nested.pending_flow_items.is_empty() || nested.index < nested.events.len() {
             if nested.pending_flow_items.is_empty() {
                 nested.skip_blank_and_comments();
             }
-            if nested.pending_flow_items.is_empty() && nested.index >= nested.lines.len() {
+            if nested.pending_flow_items.is_empty() && nested.index >= nested.events.len() {
                 break;
             }
             if let Some(item) = nested.parse_flow_item_until_indent(0) {
@@ -1218,7 +1158,7 @@ impl Parser {
             return Some(item);
         }
         self.skip_blank_and_comments();
-        if self.index >= self.lines.len() {
+        if self.index >= self.events.len() {
             return None;
         }
         let line = self.current().clone();
@@ -1227,59 +1167,36 @@ impl Parser {
             return None;
         }
         let trimmed = line.text.trim();
+        let kind = line.flow_item_kind();
 
-        if trimmed.starts_with("@choice") {
-            return Some(FlowItem::Raw(self.reject_old_choice_syntax()));
+        match kind {
+            CstFlowItemKind::OldChoiceAttribute => {
+                return Some(FlowItem::Raw(self.reject_old_choice_syntax()));
+            }
+            CstFlowItemKind::StructuredBlock(kind) => {
+                return self.parse_structured_flow_block(kind);
+            }
+            CstFlowItemKind::Let(kind) => {
+                if matches!(kind, CstLetFlowItemKind::Plain)
+                    || matches!(kind, CstLetFlowItemKind::AwaitStart)
+                        && !self.has_multiline_await_with(indent)
+                {
+                    self.index += 1;
+                    return Some(FlowItem::Stmt(parse_stmt(trimmed)));
+                }
+                if let Some(item) = self.parse_let_flow_item(kind, indent) {
+                    return Some(item);
+                }
+            }
+            CstFlowItemKind::TypedStmt => {
+                self.index += 1;
+                return Some(FlowItem::Stmt(parse_stmt(trimmed)));
+            }
+            CstFlowItemKind::Include | CstFlowItemKind::AwaitWith | CstFlowItemKind::Other => {}
         }
-        if let Some(item) = self.parse_structured_flow_block(trimmed) {
-            return Some(item);
-        }
+
         if let Some(item) = self.parse_line_flow_item(&line, trimmed) {
             return Some(item);
-        }
-        // `choice` owns a brace block, so parse `let x = choice ... { ... }`
-        // before generic `let` handling can collapse it into a raw expression.
-        if is_let_choice_head(trimmed) {
-            return self.parse_let_choice().map(FlowItem::Stmt);
-        }
-        if is_let_dialogue_call_head(trimmed) {
-            return self.parse_let_dialogue_call().map(FlowItem::Stmt);
-        }
-        if is_let_scope_head(trimmed) {
-            return self.parse_let_scope().map(FlowItem::Stmt);
-        }
-        if is_let_computation_block_head(trimmed) {
-            return self.parse_let_computation_block().map(FlowItem::Stmt);
-        }
-        if is_let_memo_block_head(trimmed) {
-            return self.parse_let_memo_block().map(FlowItem::Stmt);
-        }
-        if is_let_block_head(trimmed) {
-            return self.parse_let_block().map(FlowItem::Stmt);
-        }
-        if is_let_loop_head(trimmed) {
-            return self.parse_let_loop().map(FlowItem::Stmt);
-        }
-        if is_let_await_with_head(trimmed)
-            || (is_let_await_start_head(trimmed) && self.has_multiline_await_with(indent))
-        {
-            return self.parse_let_await_with().map(FlowItem::Stmt);
-        }
-        if is_let_if_let_head(trimmed) {
-            return self.parse_let_if_let().map(FlowItem::Stmt);
-        }
-        if is_let_if_head(trimmed) {
-            return self.parse_let_if().map(FlowItem::Stmt);
-        }
-        if is_let_match_head(trimmed) {
-            return self.parse_let_match().map(FlowItem::Stmt);
-        }
-        if is_let_else_head(trimmed) {
-            return self.parse_let_else().map(FlowItem::Stmt);
-        }
-        if is_typed_stmt(trimmed) {
-            self.index += 1;
-            return Some(FlowItem::Stmt(parse_stmt(trimmed)));
         }
         if let Some(item) = self.parse_content_call_or_speaker_line() {
             return Some(item);
@@ -1288,7 +1205,31 @@ impl Parser {
         None
     }
 
-    fn parse_line_flow_item(&mut self, line: &SourceLine, trimmed: &str) -> Option<FlowItem> {
+    fn parse_let_flow_item(&mut self, kind: CstLetFlowItemKind, indent: usize) -> Option<FlowItem> {
+        match kind {
+            CstLetFlowItemKind::Choice => self.parse_let_choice().map(FlowItem::Stmt),
+            CstLetFlowItemKind::DialogueCall => self.parse_let_dialogue_call().map(FlowItem::Stmt),
+            CstLetFlowItemKind::Scope => self.parse_let_scope().map(FlowItem::Stmt),
+            CstLetFlowItemKind::ComputationBlock => {
+                self.parse_let_computation_block().map(FlowItem::Stmt)
+            }
+            CstLetFlowItemKind::MemoBlock => self.parse_let_memo_block().map(FlowItem::Stmt),
+            CstLetFlowItemKind::Block => self.parse_let_block().map(FlowItem::Stmt),
+            CstLetFlowItemKind::Loop => self.parse_let_loop().map(FlowItem::Stmt),
+            CstLetFlowItemKind::AwaitWith => self.parse_let_await_with().map(FlowItem::Stmt),
+            CstLetFlowItemKind::AwaitStart => self
+                .has_multiline_await_with(indent)
+                .then(|| self.parse_let_await_with().map(FlowItem::Stmt))
+                .flatten(),
+            CstLetFlowItemKind::IfLet => self.parse_let_if_let().map(FlowItem::Stmt),
+            CstLetFlowItemKind::If => self.parse_let_if().map(FlowItem::Stmt),
+            CstLetFlowItemKind::Match => self.parse_let_match().map(FlowItem::Stmt),
+            CstLetFlowItemKind::LetElse => self.parse_let_else().map(FlowItem::Stmt),
+            CstLetFlowItemKind::Plain => None,
+        }
+    }
+
+    fn parse_line_flow_item(&mut self, line: &CstLine, trimmed: &str) -> Option<FlowItem> {
         if let Some(command) = parse_scenario_command(trimmed, TextRange::new(line.start, line.end))
         {
             self.index += 1;
@@ -1310,7 +1251,7 @@ impl Parser {
             .flatten()
     }
 
-    fn parse_await_flow_item(&mut self, line: &SourceLine, trimmed: &str) -> Option<FlowItem> {
+    fn parse_await_flow_item(&mut self, line: &CstLine, trimmed: &str) -> Option<FlowItem> {
         if trimmed.contains('{') {
             let (head, body, _, ok) = self.take_brace_block();
             if ok {
@@ -1338,51 +1279,33 @@ impl Parser {
         None
     }
 
-    fn parse_structured_flow_block(&mut self, trimmed: &str) -> Option<FlowItem> {
-        if trimmed.starts_with("choice ") {
-            return self.parse_choice().map(FlowItem::Choice);
+    fn parse_structured_flow_block(
+        &mut self,
+        kind: CstStructuredFlowBlockKind,
+    ) -> Option<FlowItem> {
+        match kind {
+            CstStructuredFlowBlockKind::Choice => self.parse_choice().map(FlowItem::Choice),
+            CstStructuredFlowBlockKind::IfLet => self.parse_if_let_block().map(FlowItem::IfLet),
+            CstStructuredFlowBlockKind::If => self.parse_if_block().map(FlowItem::If),
+            CstStructuredFlowBlockKind::Match => self.parse_match_block().map(FlowItem::Match),
+            CstStructuredFlowBlockKind::Loop => self.parse_loop_block().map(FlowItem::Loop),
+            CstStructuredFlowBlockKind::WhileLet => {
+                self.parse_while_let_block().map(FlowItem::WhileLet)
+            }
+            CstStructuredFlowBlockKind::While => self.parse_while_block().map(FlowItem::While),
+            CstStructuredFlowBlockKind::For => self.parse_for_block().map(FlowItem::For),
+            CstStructuredFlowBlockKind::Select => self.parse_select_block().map(FlowItem::Select),
+            CstStructuredFlowBlockKind::Borrow => {
+                self.parse_borrow_block().map(FlowItem::BorrowBlock)
+            }
+            CstStructuredFlowBlockKind::SourceLocale => {
+                self.parse_source_locale_block().map(FlowItem::SourceLocale)
+            }
+            CstStructuredFlowBlockKind::BareScope => {
+                self.parse_bare_scope_block().map(FlowItem::Scope)
+            }
+            CstStructuredFlowBlockKind::Scope => self.parse_scope_block().map(FlowItem::Scope),
         }
-        if trimmed.starts_with("if let ") {
-            return self.parse_if_let_block().map(FlowItem::IfLet);
-        }
-        if trimmed.starts_with("if ") {
-            return self.parse_if_block().map(FlowItem::If);
-        }
-        if trimmed.starts_with("match ") {
-            return self.parse_match_block().map(FlowItem::Match);
-        }
-        if trimmed == "loop"
-            || trimmed.starts_with("loop ")
-            || labeled_head_tail(trimmed)
-                .is_some_and(|tail| tail == "loop" || tail.starts_with("loop "))
-        {
-            return self.parse_loop_block().map(FlowItem::Loop);
-        }
-        if trimmed.starts_with("while let ") {
-            return self.parse_while_let_block().map(FlowItem::WhileLet);
-        }
-        if trimmed.starts_with("while ") {
-            return self.parse_while_block().map(FlowItem::While);
-        }
-        if trimmed.starts_with("for ") {
-            return self.parse_for_block().map(FlowItem::For);
-        }
-        if trimmed.starts_with("select") {
-            return self.parse_select_block().map(FlowItem::Select);
-        }
-        if trimmed.starts_with("borrow ") {
-            return self.parse_borrow_block().map(FlowItem::BorrowBlock);
-        }
-        if trimmed.starts_with("source locale ") {
-            return self.parse_source_locale_block().map(FlowItem::SourceLocale);
-        }
-        if trimmed.starts_with('{') {
-            return self.parse_bare_scope_block().map(FlowItem::Scope);
-        }
-        if trimmed.starts_with("scope ") {
-            return self.parse_scope_block().map(FlowItem::Scope);
-        }
-        None
     }
 
     fn parse_choice(&mut self) -> Option<ChoiceBlock> {
@@ -1425,7 +1348,7 @@ impl Parser {
         }
 
         let rest = head.trim().strip_prefix("let")?.trim();
-        let (pattern, choice_head) = rest.split_once('=')?;
+        let (pattern, choice_head) = split_top_level_binding(rest)?;
         let choice_rest = choice_head.trim().strip_prefix("choice")?.trim();
         let (id, _) = parse_optional_id_ref(choice_rest, start_line.start, &mut self.errors);
         let items = parse_choice_items(&body, start_line.start, &mut self.errors);
@@ -1442,17 +1365,22 @@ impl Parser {
         let mut text = start.text.trim().to_owned();
         let mut cursor = self.index;
 
-        while bracket_delta(&text) > 0 && cursor + 1 < self.lines.len() {
+        while punctuation_delta(&text, '[', ']') > 0 && cursor + 1 < self.events.len() {
             cursor += 1;
             text.push('\n');
-            text.push_str(self.lines[cursor].text.trim_end());
+            text.push_str(self.events[cursor].text.trim_end());
         }
 
-        let rest = text.trim().strip_prefix("let")?.trim();
-        let (pattern, expr_text) = rest.split_once('=')?;
-        let expr_offset = text.find('=').map_or(0, |offset| offset + 1);
+        let trimmed = text.trim();
+        let (_, rest) = split_leading_ident(trimmed).filter(|(kw, _)| *kw == "let")?;
+        let (pattern, expr_text) = split_top_level_binding(rest)?;
+        let text_offset = text.len() - text.trim_start().len();
+        let after_let = &trimmed["let".len()..];
+        let rest_offset =
+            text_offset + "let".len() + after_let.len() - after_let.trim_start().len();
+        let expr_offset = rest_offset + find_top_level_punctuation(rest, '=')? + 1;
         let open = find_content_bracket(expr_text).map(|offset| expr_offset + offset)?;
-        let close = find_matching_square(&text, open)?;
+        let close = find_matching_punctuation(&text, open, '[', ']')?;
         let expr_source = text[expr_offset..=close].trim();
         let trailing = text[close + 1..].trim();
         let inline_plan = self.take_trailing_line_plan(trailing, close, &mut cursor, start.start);
@@ -1491,7 +1419,7 @@ impl Parser {
         }
 
         let rest = head.trim().strip_prefix("let")?.trim();
-        let (pattern, scope_head) = rest.split_once('=')?;
+        let (pattern, scope_head) = split_top_level_binding(rest)?;
         let name = parse_scope_head(scope_head.trim())?;
         let (statements, value) = parse_scope_expr_body(&body);
 
@@ -1520,7 +1448,7 @@ impl Parser {
             return None;
         }
         let rest = head.trim().strip_prefix("let")?.trim();
-        let (pattern, block_head) = rest.split_once('=')?;
+        let (pattern, block_head) = split_top_level_binding(rest)?;
         if !block_head.trim().is_empty() {
             return None;
         }
@@ -1545,7 +1473,7 @@ impl Parser {
             return None;
         }
         let rest = head.trim().strip_prefix("let")?.trim();
-        let (pattern, block_head) = rest.split_once('=')?;
+        let (pattern, block_head) = split_top_level_binding(rest)?;
         let kind = parse_computation_block_kind(block_head.trim())?;
         let (statements, value) = parse_scope_expr_body(&body);
 
@@ -1573,7 +1501,7 @@ impl Parser {
             return None;
         }
         let rest = head.trim().strip_prefix("let")?.trim();
-        let (pattern, block_head) = rest.split_once('=')?;
+        let (pattern, block_head) = split_top_level_binding(rest)?;
         let options = parse_memo_block_options(block_head.trim())?;
         let (statements, value) = parse_scope_expr_body(&body);
 
@@ -1602,7 +1530,7 @@ impl Parser {
         }
 
         let rest = head.trim().strip_prefix("let")?.trim();
-        let (pattern, loop_head) = rest.split_once('=')?;
+        let (pattern, loop_head) = split_top_level_binding(rest)?;
         let (label, loop_head) = split_optional_block_label(loop_head.trim());
         if loop_head != "loop" {
             return None;
@@ -1649,7 +1577,7 @@ impl Parser {
         };
 
         let rest = head.trim().strip_prefix("let")?.trim();
-        let (pattern, await_head) = rest.split_once('=')?;
+        let (pattern, await_head) = split_top_level_binding(rest)?;
         let await_source = body.map_or_else(
             || normalize_let_await_source(await_head.trim(), None),
             |body| {
@@ -1668,15 +1596,12 @@ impl Parser {
         })
     }
 
-    fn take_multiline_let_await_head(
-        &mut self,
-        start_line: &SourceLine,
-    ) -> (String, Option<String>) {
+    fn take_multiline_let_await_head(&mut self, start_line: &CstLine) -> (String, Option<String>) {
         let base_indent = indentation(&start_line.text);
         let mut head = start_line.text.trim().to_owned();
         self.index += 1;
 
-        while self.index < self.lines.len() {
+        while self.index < self.events.len() {
             let line = self.current().clone();
             let trimmed = line.text.trim();
             if trimmed.is_empty() {
@@ -1714,7 +1639,7 @@ impl Parser {
     }
 
     fn take_parenthesized_await_closing(&mut self) -> Option<String> {
-        if self.index >= self.lines.len() {
+        if self.index >= self.events.len() {
             return None;
         }
         let line = self.current().clone();
@@ -1727,7 +1652,7 @@ impl Parser {
     }
 
     fn has_multiline_await_with(&self, base_indent: usize) -> bool {
-        self.lines
+        self.events
             .iter()
             .skip(self.index + 1)
             .take_while(|line| {
@@ -1764,7 +1689,7 @@ impl Parser {
             Some,
         )?;
         let rest = head.trim().strip_prefix("let")?.trim();
-        let (pattern, if_head) = rest.split_once('=')?;
+        let (pattern, if_head) = split_top_level_binding(rest)?;
         let condition = if_head.trim().strip_prefix("if")?.trim();
 
         Some(Stmt::Let {
@@ -1798,9 +1723,9 @@ impl Parser {
             Some,
         )?;
         let rest = head.trim().strip_prefix("let")?.trim();
-        let (target_pattern, if_head) = rest.split_once('=')?;
+        let (target_pattern, if_head) = split_top_level_binding(rest)?;
         let if_let_head = if_head.trim().strip_prefix("if let")?.trim();
-        let (binding_pattern, value_and_guard) = if_let_head.split_once('=')?;
+        let (binding_pattern, value_and_guard) = split_top_level_binding(if_let_head)?;
         let (value, guard) = split_if_let_guard(value_and_guard);
 
         Some(Stmt::Let {
@@ -1829,7 +1754,7 @@ impl Parser {
             return None;
         }
         let rest = head.trim().strip_prefix("let")?.trim();
-        let (pattern, match_head) = rest.split_once('=')?;
+        let (pattern, match_head) = split_top_level_binding(rest)?;
         let scrutinee = match_head.trim().strip_prefix("match")?.trim();
 
         Some(Stmt::Let {
@@ -1843,7 +1768,7 @@ impl Parser {
 
     fn take_optional_else_block(&mut self, base: usize) -> Option<String> {
         self.skip_blank_and_comments();
-        if self.index >= self.lines.len() {
+        if self.index >= self.events.len() {
             self.push_error(
                 TextRange::new(base, self.previous_end()),
                 "value-producing if expression requires else",
@@ -1894,7 +1819,7 @@ impl Parser {
         }
 
         let rest = head.trim().strip_prefix("let")?.trim();
-        let (pattern, rhs) = rest.split_once('=')?;
+        let (pattern, rhs) = split_top_level_binding(rest)?;
         let expr = rhs.trim().strip_suffix("else")?.trim();
         Some(Stmt::LetElse {
             pattern: parse_pattern(pattern.trim()),
@@ -1973,7 +1898,7 @@ impl Parser {
 
     fn take_choice_plan_after_current(&mut self, base: usize) -> Option<ChoicePlan> {
         self.skip_blank_and_comments();
-        if self.index >= self.lines.len() {
+        if self.index >= self.events.len() {
             return None;
         }
         let line = self.current().clone();
@@ -2016,9 +1941,9 @@ impl Parser {
         self.push_error(
             TextRange::new(start_line.start, start_line.end),
             "`@choice` is not valid Arcweft syntax",
-            ["choice #choice.id { ... }"],
+            ["choice @choice.id { ... }"],
             Some(start_line.text.trim()),
-            ["remove `@` and write `choice #choice.id { ... }`"],
+            ["remove `@` from the keyword and write `choice @choice.id { ... }`"],
         );
         raw
     }
@@ -2059,12 +1984,9 @@ impl Parser {
             return None;
         }
         let rest = head.trim().strip_prefix("if let")?.trim();
-        let (pattern, expr_and_guard) = rest.split_once('=')?;
-        let (expr, guard) = expr_and_guard
-            .split_once(" when ")
-            .map_or((expr_and_guard.trim(), None), |(expr, guard)| {
-                (expr.trim(), Some(parse_expr_lossy(guard.trim())))
-            });
+        let (pattern, expr_and_guard) = split_top_level_binding(rest)?;
+        let (expr, guard) = split_top_level_keyword_once(expr_and_guard, "when");
+        let guard = guard.map(|guard| parse_expr_lossy(guard.trim()));
         Some(IfLetBlock::new(
             parse_pattern(pattern.trim()),
             parse_expr_lossy(expr),
@@ -2088,7 +2010,7 @@ impl Parser {
             return None;
         }
         let rest = head.trim().strip_prefix("borrow")?.trim();
-        let Some((source, binding)) = rest.split_once(" as ") else {
+        let (source, Some(binding)) = split_top_level_keyword_once(rest, "as") else {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "borrow block must bind a typed alias",
@@ -2098,7 +2020,7 @@ impl Parser {
             );
             return None;
         };
-        let Some((name, ty)) = binding.split_once(':') else {
+        let Some((name, ty)) = split_top_level_punctuation_once(binding, ':') else {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "borrow binding must declare a type",
@@ -2179,7 +2101,9 @@ impl Parser {
             return None;
         }
         let rest = head.trim().strip_prefix("for")?.trim();
-        let (pattern, source) = rest.split_once(" in ")?;
+        let (pattern, Some(source)) = split_top_level_keyword_once(rest, "in") else {
+            return None;
+        };
         let body_items = self.parse_flow_body(&body, start_line.start + head.len());
         Some(ForBlock::new(
             parse_pattern(pattern.trim()),
@@ -2224,12 +2148,9 @@ impl Parser {
             return None;
         }
         let rest = head.trim().strip_prefix("while let")?.trim();
-        let (pattern, expr_and_guard) = rest.split_once('=')?;
-        let (expr, guard) = expr_and_guard
-            .split_once(" when ")
-            .map_or((expr_and_guard.trim(), None), |(expr, guard)| {
-                (expr.trim(), Some(parse_expr_lossy(guard.trim())))
-            });
+        let (pattern, expr_and_guard) = split_top_level_binding(rest)?;
+        let (expr, guard) = split_top_level_keyword_once(expr_and_guard, "when");
+        let guard = guard.map(|guard| parse_expr_lossy(guard.trim()));
         Some(WhileLetBlock::new(
             parse_pattern(pattern.trim()),
             parse_expr_lossy(expr),
@@ -2311,15 +2232,15 @@ impl Parser {
         let mut end = start.end;
         let mut cursor = self.index;
 
-        while bracket_delta(&text) > 0 && cursor + 1 < self.lines.len() {
+        while punctuation_delta(&text, '[', ']') > 0 && cursor + 1 < self.events.len() {
             cursor += 1;
             text.push('\n');
-            text.push_str(self.lines[cursor].text.trim_end());
-            end = self.lines[cursor].end;
+            text.push_str(self.events[cursor].text.trim_end());
+            end = self.events[cursor].end;
         }
 
         let open = find_content_bracket(&text)?;
-        let Some(close) = find_matching_square(&text, open) else {
+        let Some(close) = find_matching_punctuation(&text, open, '[', ']') else {
             self.index = cursor + 1;
             self.push_error(
                 TextRange::new(start.start + open, end),
@@ -2331,7 +2252,7 @@ impl Parser {
             return None;
         };
         let before = text[..open].trim();
-        if before.is_empty() || before.starts_with('@') {
+        if before.is_empty() || before.starts_with('@') && !before.starts_with("@<") {
             return None;
         }
         let (callee, args) = split_call_head(before);
@@ -2373,13 +2294,13 @@ impl Parser {
         }
         if is_with_brace_head(trailing) {
             let mut block_text = trailing.to_owned();
-            while brace_delta(&block_text) > 0 && *cursor + 1 < self.lines.len() {
+            while punctuation_delta(&block_text, '{', '}') > 0 && *cursor + 1 < self.events.len() {
                 *cursor += 1;
                 block_text.push('\n');
-                block_text.push_str(self.lines[*cursor].text.trim_end());
+                block_text.push_str(self.events[*cursor].text.trim_end());
             }
             let (head, body) = split_brace_item(&block_text)?;
-            let range = TextRange::new(base + close_bracket + 1, self.lines[*cursor].end);
+            let range = TextRange::new(base + close_bracket + 1, self.events[*cursor].end);
             return Some(attach_line_plan_label(
                 parse_line_plan_body(BlockStyle::Brace, body, range),
                 parse_with_brace_label(head.trim()),
@@ -2411,10 +2332,10 @@ impl Parser {
         if !block_text.starts_with('{') {
             return None;
         }
-        while brace_delta(&block_text) > 0 && *cursor + 1 < self.lines.len() {
+        while punctuation_delta(&block_text, '{', '}') > 0 && *cursor + 1 < self.events.len() {
             *cursor += 1;
             block_text.push('\n');
-            block_text.push_str(self.lines[*cursor].text.trim_end());
+            block_text.push_str(self.events[*cursor].text.trim_end());
         }
         let (head, body) = split_brace_item(&block_text)?;
         if !head.trim().is_empty() {
@@ -2423,13 +2344,13 @@ impl Parser {
         Some(ScopeBlock::new(
             None,
             self.parse_flow_body(body, base + close_bracket + 1),
-            TextRange::new(base + close_bracket + 1, self.lines[*cursor].end),
+            TextRange::new(base + close_bracket + 1, self.events[*cursor].end),
         ))
     }
 
     fn take_optional_line_plan(&mut self) -> Option<LinePlan> {
         self.skip_blank_and_comments();
-        if self.index >= self.lines.len() {
+        if self.index >= self.events.len() {
             return None;
         }
         let line = self.current().clone();
@@ -2464,7 +2385,7 @@ impl Parser {
     fn take_indented_dialogue(&mut self, min_indent: usize, start: usize) -> DialogueContent {
         let mut raw = String::new();
         let mut end = start;
-        while self.index < self.lines.len() {
+        while self.index < self.events.len() {
             let line = self.current();
             if line.text.trim().is_empty() {
                 raw.push('\n');
@@ -2491,7 +2412,7 @@ impl Parser {
     fn take_indented_line_plan(&mut self, min_indent: usize, start: usize) -> LinePlan {
         let mut raw = String::new();
         let mut end = start;
-        while self.index < self.lines.len() {
+        while self.index < self.events.len() {
             let line = self.current();
             let trimmed = line.text.trim();
             if trimmed.is_empty() {
@@ -2514,7 +2435,7 @@ impl Parser {
 
     fn take_indented_await_body(&mut self, min_indent: usize) -> String {
         let mut raw = String::new();
-        while self.index < self.lines.len() {
+        while self.index < self.events.len() {
             let line = self.current();
             if line.text.trim().is_empty() {
                 raw.push('\n');
@@ -2534,68 +2455,29 @@ impl Parser {
     }
 
     fn take_brace_block(&mut self) -> (String, String, usize, bool) {
-        let start = self.index;
-        let mut text = String::new();
-        let mut end = self.current().end;
-        let mut depth = 0_i32;
-        let mut seen_open = false;
-
-        while self.index < self.lines.len() {
-            let line = self.current();
-            if !text.is_empty() {
-                text.push('\n');
-            }
-            text.push_str(&line.text);
-            end = line.end;
-            for ch in line.text.chars() {
-                match ch {
-                    '{' => {
-                        depth += 1;
-                        seen_open = true;
-                    }
-                    '}' => depth -= 1,
-                    _ => {}
-                }
-            }
-            self.index += 1;
-            if seen_open && depth == 0 {
-                break;
-            }
-        }
-
-        let Some(open) = text.find('{') else {
-            self.index = start + 1;
-            return (text, String::new(), end, false);
-        };
-        let Some(close) = text.rfind('}') else {
-            return (text, String::new(), end, false);
-        };
-        if depth != 0 {
-            return (text, String::new(), end, false);
-        }
-        (
-            text[..open].trim().to_owned(),
-            text[open + 1..close].to_owned(),
-            end,
-            true,
-        )
+        self.take_block_event(CstBlockOpenRule::FirstTopLevelOpen)
     }
 
-    fn current(&self) -> &SourceLine {
-        &self.lines[self.index]
+    fn take_block_event(&mut self, rule: CstBlockOpenRule) -> (String, String, usize, bool) {
+        let event = self.events.collect_brace_block(self.index, rule);
+        self.index = event.next_index;
+        (event.head, event.body, event.end, event.ok)
+    }
+
+    fn current(&self) -> &CstLine {
+        &self.events[self.index]
     }
 
     fn previous_end(&self) -> usize {
         self.index
             .checked_sub(1)
-            .and_then(|index| self.lines.get(index))
+            .and_then(|index| self.events.get(index))
             .map_or(0, |line| line.end)
     }
 
     fn skip_blank_and_comments(&mut self) {
-        while self.index < self.lines.len() {
-            let trimmed = self.current().text.trim();
-            if trimmed.is_empty() || (trimmed.starts_with("//") && !trimmed.starts_with("///")) {
+        while self.index < self.events.len() {
+            if self.current().is_trivia() {
                 self.index += 1;
             } else {
                 break;
@@ -2604,20 +2486,17 @@ impl Parser {
     }
 
     fn take_doc_block(&mut self) -> Option<DocBlock> {
-        let first = self.lines.get(self.index)?;
-        if !first.text.trim_start().starts_with("///") {
-            return None;
-        }
+        let first = self.events.get(self.index)?;
+        first.doc_comment_text()?;
         let start = first.start;
         let mut end = first.end;
         let mut lines = Vec::new();
-        while self.index < self.lines.len() {
+        while self.index < self.events.len() {
             let line = self.current();
-            let trimmed = line.text.trim_start();
-            let Some(text) = trimmed.strip_prefix("///") else {
+            let Some(text) = line.doc_comment_text() else {
                 break;
             };
-            lines.push(text.strip_prefix(' ').unwrap_or(text).to_owned());
+            lines.push(text.to_owned());
             end = line.end;
             self.index += 1;
         }
@@ -2735,51 +2614,11 @@ fn source_take(parser: &mut Parser) -> String {
     core::mem::take(&mut parser.source)
 }
 
-fn split_lines(source: &str) -> Vec<SourceLine> {
-    let mut lines = Vec::new();
-    let mut start = 0;
-    for segment in source.split_inclusive('\n') {
-        let end = start + segment.len();
-        lines.push(SourceLine {
-            text: segment.trim_end_matches(['\r', '\n']).to_owned(),
-            start,
-            end,
-        });
-        start = end;
-    }
-    if !source.ends_with('\n') && lines.is_empty() {
-        lines.push(SourceLine {
-            text: source.to_owned(),
-            start: 0,
-            end: source.len(),
-        });
-    }
-    lines
-}
-
 fn collect_wiki_links(source: &str) -> Vec<WikiLink> {
-    let mut links = Vec::new();
-    let mut cursor = 0;
-    while let Some(start_relative) = source[cursor..].find("[[") {
-        let start = cursor + start_relative;
-        let body_start = start + 2;
-        let Some(end_relative) = source[body_start..].find("]]") else {
-            break;
-        };
-        let end = body_start + end_relative;
-        links.push(WikiLink::new(
-            source[body_start..end].to_owned(),
-            TextRange::new(start, end + 2),
-        ));
-        cursor = end + 2;
-    }
-    links
-}
-
-fn is_use_line(trimmed: &str) -> bool {
-    let (_, rest) = parse_visibility_prefix(trimmed);
-    let rest = rest.trim_start();
-    rest.starts_with("use ") || rest.starts_with("lazy use ") || rest.starts_with("eager use ")
+    collect_wiki_link_ranges(source)
+        .into_iter()
+        .map(|(body, start, end)| WikiLink::new(body.to_owned(), TextRange::new(start, end)))
+        .collect()
 }
 
 fn parse_use_line(trimmed: &str, range: TextRange) -> Option<UseItem> {
@@ -2806,22 +2645,8 @@ fn normalize_module_path(path: &str) -> String {
 }
 
 fn is_relative_id_path(path: &str) -> bool {
-    path.trim_start().starts_with('.')
-}
-
-fn looks_like_flow(trimmed: &str) -> bool {
-    let (_, rest) = parse_visibility_prefix(trimmed);
-    let rest = rest.trim_start();
-    rest.starts_with("flow ") || rest.starts_with("fragment ")
-}
-
-fn looks_like_function_item(trimmed: &str) -> bool {
-    let (_, rest) = parse_visibility_prefix(trimmed);
-    let rest = rest.trim_start();
-    rest.starts_with("fn ")
-        || rest.starts_with("task fn ")
-        || rest.starts_with("dialogue fn ")
-        || rest.starts_with("stream fn ")
+    let trimmed = path.trim_start();
+    trimmed.starts_with('.') || trimmed.starts_with("@.") || trimmed.starts_with("@super.")
 }
 
 fn parse_function_kind_and_signature(source: &str) -> (FunctionKind, &str) {
@@ -2866,61 +2691,14 @@ fn split_function_header_lines<'a>(lines: &'a [&'a str]) -> Option<(String, Vec<
     (!signature.is_empty()).then(|| (signature.join("\n"), lines[end_index..].to_vec()))
 }
 
-fn looks_like_callable_item(trimmed: &str) -> bool {
-    let (_, rest) = parse_visibility_prefix(trimmed);
-    let rest = rest.trim_start();
-    rest.starts_with("reducer ") || rest.starts_with("view ")
-}
-
-fn looks_like_state_item(trimmed: &str) -> bool {
-    let (_, rest) = parse_visibility_prefix(trimmed);
-    rest.trim_start().starts_with("state ")
-}
-
-fn looks_like_trait_item(trimmed: &str) -> bool {
-    let (_, rest) = parse_visibility_prefix(trimmed);
-    rest.trim_start().starts_with("trait ")
-}
-
-fn looks_like_impl_item(trimmed: &str) -> bool {
-    let (_, rest) = parse_visibility_prefix(trimmed);
-    rest.trim_start().starts_with("impl")
-}
-
-fn looks_like_enum_item(trimmed: &str) -> bool {
-    let (_, rest) = parse_visibility_prefix(trimmed);
-    rest.trim_start().starts_with("enum ")
-}
-
-fn looks_like_struct_item(trimmed: &str) -> bool {
-    let (_, rest) = parse_visibility_prefix(trimmed);
-    rest.trim_start().starts_with("struct ")
-}
-
-fn looks_like_type_alias(trimmed: &str) -> bool {
-    let (_, rest) = parse_visibility_prefix(trimmed);
-    rest.trim_start().starts_with("type ")
-}
-
-fn looks_like_entity_decl_item(trimmed: &str) -> bool {
-    let (_, rest) = parse_visibility_prefix(trimmed);
-    let rest = rest.trim_start();
-    entity_decl_kind(rest).is_some()
-}
-
-fn looks_like_extern_mod_item(trimmed: &str) -> bool {
-    trimmed.trim_start().starts_with("extern ")
-}
-
 fn parse_extern_mod_head(head: &str) -> Option<(String, String, Option<String>)> {
     let rest = head.trim_start().strip_prefix("extern")?.trim_start();
-    let (abi, rest) = rest.split_once(" mod ")?;
-    let (path, source) = rest
-        .split_once(" from ")
-        .map_or((rest.trim(), None), |(path, source)| {
-            (path.trim(), Some(source.trim().to_owned()))
-        });
-    Some((abi.trim().to_owned(), path.to_owned(), source))
+    let (abi, Some(rest)) = split_top_level_keyword_once(rest, "mod") else {
+        return None;
+    };
+    let (path, source) = split_top_level_keyword_once(rest, "from");
+    let source = source.map(|source| source.trim().to_owned());
+    Some((abi.trim().to_owned(), path.trim().to_owned(), source))
 }
 
 fn entity_decl_kind(input: &str) -> Option<(EntityDeclKind, &str)> {
@@ -2995,32 +2773,6 @@ fn parse_flow_signature(
     parse_fn_signature(&format!("fn {}{}", name.unwrap_or("flow"), tail)).ok()
 }
 
-fn looks_like_hook(trimmed: &str) -> bool {
-    let (_, rest) = parse_visibility_prefix(trimmed);
-    rest.trim_start().starts_with("hook ")
-}
-
-fn looks_like_dialogue_defaults(trimmed: &str) -> bool {
-    let (_, rest) = parse_visibility_prefix(trimmed);
-    rest.trim_start().starts_with("dialogue defaults")
-}
-
-fn looks_like_memo_fn(trimmed: &str) -> bool {
-    let (_, rest) = parse_visibility_prefix(trimmed);
-    rest.trim_start().starts_with("memo fn ")
-}
-
-fn looks_like_parser_item(trimmed: &str) -> bool {
-    let (_, rest) = parse_visibility_prefix(trimmed);
-    rest.trim_start().starts_with("parser ")
-}
-
-fn looks_like_source_item(trimmed: &str) -> bool {
-    let (_, rest) = parse_visibility_prefix(trimmed);
-    let rest = rest.trim_start();
-    rest.starts_with("source ") && !rest.starts_with("source locale ")
-}
-
 fn parse_visibility_prefix(input: &str) -> (Option<Visibility>, &str) {
     let trimmed = input.trim_start();
     if let Some(rest) = trimmed.strip_prefix("pub(crate)") {
@@ -3039,8 +2791,9 @@ fn parse_optional_entity_ref<'a>(
     base: usize,
     errors: &mut Vec<ParseError>,
 ) -> (Option<EntityRef>, &'a str) {
-    if input.trim_start().starts_with('#') {
-        match parse_required_entity_ref(input.trim_start(), base, errors) {
+    let trimmed = input.trim_start();
+    if starts_leading_entity_ref(trimmed) {
+        match parse_required_entity_ref(trimmed, base, errors) {
             Some((entity, rest)) => (Some(entity), rest),
             None => (None, input),
         }
@@ -3055,13 +2808,13 @@ fn parse_optional_id_ref<'a>(
     errors: &mut Vec<ParseError>,
 ) -> (Option<EntityRef>, &'a str) {
     let trimmed = input.trim_start();
-    if trimmed.starts_with('#') {
-        parse_optional_entity_ref(trimmed, base, errors)
-    } else if trimmed.starts_with('.') {
+    if starts_leading_relative_id(trimmed) {
         match parse_required_id_ref(trimmed, base, errors) {
             Some((entity, rest)) => (Some(entity), rest),
             None => (None, input),
         }
+    } else if starts_leading_entity_ref(trimmed) {
+        parse_optional_entity_ref(trimmed, base, errors)
     } else {
         (None, input)
     }
@@ -3073,54 +2826,69 @@ fn parse_required_entity_ref<'a>(
     errors: &mut Vec<ParseError>,
 ) -> Option<(EntityRef, &'a str)> {
     let input = input.trim_start();
-    if let Some(rest) = input.strip_prefix("#<") {
-        let Some(end) = rest.find('>') else {
+    if input.starts_with("@<") {
+        let Some(entity_ref) = split_leading_entity_ref_parts(input) else {
             errors.push(simple_error(
                 base,
                 input.len(),
                 "unclosed delimited entity reference",
-                "#<...>",
+                "@<...>",
             ));
             return None;
         };
-        let body = &rest[..end];
-        if body.trim().is_empty() {
+        if !entity_ref.closed {
+            errors.push(simple_error(
+                base,
+                input.len(),
+                "unclosed delimited entity reference",
+                "@<...>",
+            ));
+            return None;
+        }
+        if entity_ref.body.trim().is_empty() {
             errors.push(simple_error(
                 base,
                 input.len(),
                 "empty entity reference",
-                "#foo.bar",
-            ));
-            return None;
-        }
-        return Some((
-            EntityRef::new(body.to_owned(), true, TextRange::new(base, base + end + 3)),
-            &rest[end + 1..],
-        ));
-    }
-    if let Some(rest) = input.strip_prefix('#') {
-        let len = rest
-            .char_indices()
-            .take_while(|(_, ch)| ch.is_alphanumeric() || matches!(ch, '.' | '_' | '-' | ':' | '/'))
-            .map(|(index, ch)| index + ch.len_utf8())
-            .last()
-            .unwrap_or(0);
-        if len == 0 {
-            errors.push(simple_error(
-                base,
-                input.len(),
-                "invalid entity reference",
-                "#foo.bar",
+                "@foo.bar",
             ));
             return None;
         }
         return Some((
             EntityRef::new(
-                rest[..len].to_owned(),
-                false,
-                TextRange::new(base, base + len + 1),
+                entity_ref.body.to_owned(),
+                true,
+                TextRange::new(base, base + entity_ref.raw.len()),
             ),
-            &rest[len..],
+            entity_ref.rest,
+        ));
+    }
+    if starts_leading_entity_ref(input) {
+        let Some(entity_ref) = split_leading_entity_ref_parts(input) else {
+            errors.push(simple_error(
+                base,
+                input.len(),
+                "invalid entity reference",
+                "@foo.bar",
+            ));
+            return None;
+        };
+        if entity_ref.body.is_empty() {
+            errors.push(simple_error(
+                base,
+                input.len(),
+                "invalid entity reference",
+                "@foo.bar",
+            ));
+            return None;
+        }
+        return Some((
+            EntityRef::new(
+                entity_ref.body.to_owned(),
+                false,
+                TextRange::new(base, base + entity_ref.raw.len()),
+            ),
+            entity_ref.rest,
         ));
     }
     None
@@ -3132,37 +2900,37 @@ fn parse_required_id_ref<'a>(
     errors: &mut Vec<ParseError>,
 ) -> Option<(EntityRef, &'a str)> {
     let input = input.trim_start();
-    if input.starts_with('#') {
+    if starts_leading_relative_id(input) {
+        let Some(relative) = split_leading_relative_id(input) else {
+            errors.push(simple_error(
+                base,
+                input.len(),
+                "relative id is missing a suffix",
+                "@.suffix",
+            ));
+            return None;
+        };
+        return Some((
+            EntityRef::new_relative_with_parent_depth(
+                relative.body.to_owned(),
+                relative.parent_depth,
+                TextRange::new(base, base + relative.marker_len + relative.body.len()),
+            ),
+            relative.rest,
+        ));
+    }
+    if starts_leading_entity_ref(input) {
         return parse_required_entity_ref(input, base, errors);
     }
-    let Some(rest) = input.strip_prefix('.') else {
+    {
         errors.push(simple_error(
             base,
             input.len(),
             "expected entity reference or relative id",
-            "#domain.path",
+            "@domain.path",
         ));
-        return None;
-    };
-    let len = rest
-        .char_indices()
-        .take_while(|(_, ch)| ch.is_alphanumeric() || matches!(ch, '.' | '_' | '-'))
-        .map(|(index, ch)| index + ch.len_utf8())
-        .last()
-        .unwrap_or(0);
-    if len == 0 {
-        errors.push(simple_error(
-            base,
-            input.len(),
-            "relative id is missing a suffix",
-            ".suffix",
-        ));
-        return None;
     }
-    Some((
-        EntityRef::new_relative(rest[..len].to_owned(), TextRange::new(base, base + len + 1)),
-        &rest[len..],
-    ))
+    None
 }
 
 fn simple_error(base: usize, len: usize, message: &str, expected: &str) -> ParseError {
@@ -3180,28 +2948,21 @@ fn simple_error(base: usize, len: usize, message: &str, expected: &str) -> Parse
 
 fn parse_name_and_tail(input: &str) -> (Option<String>, String) {
     let trimmed = input.trim_start();
-    let name_len = trimmed
-        .char_indices()
-        .take_while(|(_, ch)| ch.is_alphanumeric() || *ch == '_')
-        .map(|(index, ch)| index + ch.len_utf8())
-        .last()
-        .unwrap_or(0);
-    if name_len == 0 {
-        (None, trimmed.to_owned())
-    } else {
-        (
-            Some(trimmed[..name_len].to_owned()),
-            trimmed[name_len..].trim().to_owned(),
-        )
-    }
+    split_leading_ident(trimmed).map_or_else(
+        || (None, trimmed.to_owned()),
+        |(name, tail)| (Some(name.to_owned()), tail.trim().to_owned()),
+    )
 }
 
 fn parse_scenario_command(trimmed: &str, range: TextRange) -> Option<ScenarioCommand> {
     let rest = trimmed.strip_prefix('@')?;
+    if rest.starts_with('<') {
+        return None;
+    }
     if rest.starts_with("choice") {
         return None;
     }
-    let (name, args) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+    let (name, args) = split_leading_ident(rest).unwrap_or((rest, ""));
     Some(ScenarioCommand::new(
         name.to_owned(),
         parse_scenario_args(args.trim()),
@@ -3210,9 +2971,7 @@ fn parse_scenario_command(trimmed: &str, range: TextRange) -> Option<ScenarioCom
 }
 
 fn parse_word_scenario_command(trimmed: &str, range: TextRange) -> Option<ScenarioCommand> {
-    let (name, args) = trimmed
-        .split_once(char::is_whitespace)
-        .unwrap_or((trimmed, ""));
+    let (name, args) = split_leading_ident(trimmed).unwrap_or((trimmed, ""));
     if !matches!(
         name,
         "option" | "log" | "scene" | "text" | "progress" | "meter" | "stop" | "flush"
@@ -3234,30 +2993,7 @@ fn parse_scenario_args(args: &str) -> Vec<crate::expr::Expr> {
 }
 
 fn split_scenario_args(source: &str) -> Vec<&str> {
-    let mut args = Vec::new();
-    let mut start = 0;
-    let mut depth = 0_i32;
-    let mut in_string = false;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '"' => in_string = !in_string,
-            '(' | '[' | '{' if !in_string => depth += 1,
-            ')' | ']' | '}' if !in_string => depth -= 1,
-            ch if ch.is_whitespace() && depth == 0 && !in_string => {
-                let arg = source[start..index].trim();
-                if !arg.is_empty() {
-                    args.push(arg);
-                }
-                start = index + ch.len_utf8();
-            }
-            _ => {}
-        }
-    }
-    let tail = source[start..].trim();
-    if !tail.is_empty() {
-        args.push(tail);
-    }
-    args
+    split_top_level_whitespace(source)
 }
 
 fn parse_line_options(
@@ -3277,7 +3013,7 @@ fn parse_line_options(
     let mut style = None;
     let mut line_args = Vec::new();
     for arg in split_comma_args(args) {
-        let Some((name, value)) = split_top_level_equals(arg) else {
+        let Some((name, value)) = split_top_level_punctuation_once(arg, '=') else {
             errors.push(simple_error(
                 base,
                 arg.len(),
@@ -3329,84 +3065,8 @@ fn parse_line_options(
     })
 }
 
-fn find_body_open(source: &str) -> Option<usize> {
-    let mut depth = 0_i32;
-    let mut body_open = None;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '{' => {
-                if depth == 0 {
-                    body_open = Some(index);
-                }
-                depth += 1;
-            }
-            '}' => depth -= 1,
-            _ => {}
-        }
-    }
-    body_open
-}
-
-fn line_has_unclosed_top_level_open(source: &str) -> bool {
-    let mut depth = 0_i32;
-    let mut top_level_open = false;
-    for ch in source.chars() {
-        match ch {
-            '{' => {
-                if depth == 0 {
-                    top_level_open = true;
-                }
-                depth += 1;
-            }
-            '}' => depth -= 1,
-            _ => {}
-        }
-    }
-    top_level_open && depth > 0
-}
-
 fn split_comma_args(source: &str) -> Vec<&str> {
-    let mut args = Vec::new();
-    let mut start = 0;
-    let mut depth = 0_i32;
-    let mut in_string = false;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '"' => in_string = !in_string,
-            '(' | '[' | '{' if !in_string => depth += 1,
-            ')' | ']' | '}' if !in_string => depth -= 1,
-            ',' if depth == 0 && !in_string => {
-                let arg = source[start..index].trim();
-                if !arg.is_empty() {
-                    args.push(arg);
-                }
-                start = index + 1;
-            }
-            _ => {}
-        }
-    }
-    let tail = source[start..].trim();
-    if !tail.is_empty() {
-        args.push(tail);
-    }
-    args
-}
-
-fn split_top_level_equals(source: &str) -> Option<(&str, &str)> {
-    let mut depth = 0_i32;
-    let mut in_string = false;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '"' => in_string = !in_string,
-            '(' | '[' | '{' if !in_string => depth += 1,
-            ')' | ']' | '}' if !in_string => depth -= 1,
-            '=' if depth == 0 && !in_string => {
-                return Some((source[..index].trim(), source[index + 1..].trim()));
-            }
-            _ => {}
-        }
-    }
-    None
+    split_top_level_punctuation(source, ',')
 }
 
 fn parse_attribute(trimmed: &str, range: TextRange) -> Option<Attribute> {
@@ -3414,12 +3074,11 @@ fn parse_attribute(trimmed: &str, range: TextRange) -> Option<Attribute> {
     if rest.starts_with("choice") {
         return None;
     }
-    let open = rest.find('(')?;
-    if !rest.ends_with(')') {
-        return None;
-    }
+    let open = find_top_level_punctuation(rest, '(')?;
+    let close = find_matching_punctuation(rest, open, '(', ')')?;
+    (rest[close + ')'.len_utf8()..].trim().is_empty()).then_some(())?;
     let name = rest[..open].trim().to_owned();
-    let args = rest[open + 1..rest.len() - 1].trim();
+    let args = rest[open + 1..close].trim();
     Some(Attribute::new(
         name,
         (!args.is_empty()).then(|| args.to_owned()),
@@ -3507,16 +3166,10 @@ fn parse_enum_variants(body: &str) -> Vec<EnumVariant> {
                 return None;
             }
             let line = line.trim_end_matches(',').trim();
-            let name_len = line
-                .char_indices()
-                .take_while(|(_, ch)| ch.is_alphanumeric() || *ch == '_')
-                .map(|(index, ch)| index + ch.len_utf8())
-                .last()?;
-            let name = line[..name_len].to_owned();
-            let payload = line[name_len..].trim();
+            let (name, payload) = split_leading_ident(line)?;
             Some(EnumVariant::new(
                 docs.take(),
-                name,
+                name.to_owned(),
                 (!payload.is_empty()).then(|| payload.to_owned()),
             ))
         })
@@ -3536,7 +3189,7 @@ fn parse_struct_fields(body: &str) -> Vec<StructField> {
                 return None;
             }
             let line = line.trim_end_matches(',').trim();
-            let (name, ty) = line.split_once(':')?;
+            let (name, ty) = split_top_level_punctuation_once(line, ':')?;
             parse_type_ref(ty.trim())
                 .ok()
                 .map(|ty| StructField::new(docs.take(), name.trim().to_owned(), ty))
@@ -3558,8 +3211,8 @@ fn parse_state_fields(body: &str) -> Vec<StateField> {
             }
             let line = line.trim_end_matches(',').trim();
             let (visibility, rest) = parse_visibility_prefix(line);
-            let (left, default) = rest.split_once('=')?;
-            let (name, ty) = left.split_once(':')?;
+            let (left, default) = split_top_level_binding(rest)?;
+            let (name, ty) = split_top_level_punctuation_once(left, ':')?;
             parse_type_ref(ty.trim()).ok().map(|ty| {
                 StateField::new(
                     docs.take(),
@@ -3574,8 +3227,8 @@ fn parse_state_fields(body: &str) -> Vec<StateField> {
 }
 
 fn split_supertraits(source: &str) -> Vec<String> {
-    source
-        .split('+')
+    split_top_level_punctuation(source, '+')
+        .into_iter()
         .map(str::trim)
         .filter(|trait_name| !trait_name.is_empty())
         .map(str::to_owned)
@@ -3587,21 +3240,11 @@ fn parse_optional_angle_head(source: &str) -> (Option<String>, &str) {
     if !source.starts_with('<') {
         return (None, source);
     }
-    let mut depth = 0_i32;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '<' => depth += 1,
-            '>' => {
-                depth -= 1;
-                if depth == 0 {
-                    return (
-                        Some(source[..=index].to_owned()),
-                        source[index + ch.len_utf8()..].trim_start(),
-                    );
-                }
-            }
-            _ => {}
-        }
+    if let Some(close) = crate::cst::find_matching_angle_group(source, 0) {
+        return (
+            Some(source[..=close].to_owned()),
+            source[close + '>'.len_utf8()..].trim_start(),
+        );
     }
     (None, source)
 }
@@ -3617,8 +3260,8 @@ fn parse_trait_members(body: &str) -> Vec<TraitMember> {
 fn parse_trait_member(line: &str) -> TraitMember {
     let line = line.trim_end_matches(';').trim();
     if let Some(rest) = line.strip_prefix("type ") {
-        let (name, value) = rest.split_once('=').map_or((rest, None), |(name, value)| {
-            (name.trim(), parse_type_ref(value.trim()).ok())
+        let (name, value) = split_top_level_binding(rest).map_or((rest, None), |(name, value)| {
+            (name, parse_type_ref(value).ok())
         });
         let (name, params) = parse_associated_type_head(name.trim());
         return TraitMember::AssociatedType {
@@ -3646,9 +3289,9 @@ fn parse_impl_members(body: &str) -> Vec<ImplMember> {
 fn parse_impl_member(item: &str) -> ImplMember {
     let item = item.trim_end_matches(';').trim();
     if let Some(rest) = item.strip_prefix("type ") {
-        if let Some((name, value)) = rest.split_once('=') {
-            if let Ok(value) = parse_type_ref(value.trim()) {
-                let (name, params) = parse_associated_type_head(name.trim());
+        if let Some((name, value)) = split_top_level_binding(rest) {
+            if let Ok(value) = parse_type_ref(value) {
+                let (name, params) = parse_associated_type_head(name);
                 return ImplMember::AssociatedType {
                     name,
                     params,
@@ -3693,22 +3336,19 @@ fn parse_impl_member(item: &str) -> ImplMember {
 }
 
 fn parse_associated_type_head(source: &str) -> (String, Vec<String>) {
-    source.split_once('<').map_or_else(
-        || (source.to_owned(), Vec::new()),
-        |(name, params)| {
-            (
-                name.trim().to_owned(),
-                params
-                    .strip_suffix('>')
-                    .unwrap_or(params)
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|param| !param.is_empty())
-                    .map(str::to_owned)
-                    .collect(),
-            )
-        },
-    )
+    let Some(open) = find_top_level_punctuation(source, '<') else {
+        return (source.to_owned(), Vec::new());
+    };
+    let Some(close) = crate::cst::find_matching_angle_group(source, open) else {
+        return (source.to_owned(), Vec::new());
+    };
+    let params = split_top_level_punctuation(&source[open + '<'.len_utf8()..close], ',')
+        .into_iter()
+        .map(str::trim)
+        .filter(|param| !param.is_empty())
+        .map(str::to_owned)
+        .collect();
+    (source[..open].trim().to_owned(), params)
 }
 
 fn parse_choice_items(body: &str, base: usize, errors: &mut Vec<ParseError>) -> Vec<ChoiceItem> {
@@ -3762,7 +3402,7 @@ fn parse_choice_item(
     }
     if let Some((head, body)) = split_brace_item(trimmed) {
         if let Some(rest) = head.strip_prefix("option ") {
-            if let Some((pattern, source)) = rest.split_once(" in ") {
+            if let (pattern, Some(source)) = split_top_level_keyword_once(rest, "in") {
                 let option_head = format!("option {}", pattern.trim());
                 let Some(option) = parse_choice_option_block(&option_head, body, base, errors)
                 else {
@@ -3788,7 +3428,7 @@ fn parse_choice_item(
             });
         }
         if let Some(rest) = head.strip_prefix("for ") {
-            if let Some((pattern, source)) = rest.split_once(" in ") {
+            if let (pattern, Some(source)) = split_top_level_keyword_once(rest, "in") {
                 return Some(ChoiceItem::For {
                     pattern: parse_pattern(pattern.trim()),
                     source: parse_expr_lossy(source.trim()),
@@ -3815,7 +3455,8 @@ fn parse_choice_match_arms(
     collect_logical_block_items(body)
         .into_iter()
         .filter_map(|line| {
-            let (head, value) = line.trim().split_once("=>")?;
+            let (head, value) =
+                split_top_level_punctuation_sequence_once(line.trim(), &["=", ">"])?;
             let (pattern, guard) = split_pattern_guard(head.trim());
             let value = value.trim();
             let items = if let Some(block) = value
@@ -3839,9 +3480,10 @@ fn parse_choice_match_arms(
 }
 
 fn split_brace_item(source: &str) -> Option<(&str, &str)> {
-    let open = source.find('{')?;
-    let close = source.rfind('}')?;
-    (open < close).then(|| (source[..open].trim(), source[open + 1..close].trim()))
+    let open = find_top_level_punctuation(source, '{')?;
+    let close = find_matching_punctuation(source, open, '{', '}')?;
+    (source[close + '}'.len_utf8()..].trim().is_empty())
+        .then(|| (source[..open].trim(), source[open + 1..close].trim()))
 }
 
 fn parse_choice_plan_items(body: &str) -> Vec<ChoicePlanItem> {
@@ -3869,7 +3511,7 @@ fn parse_choice_plan_items(body: &str) -> Vec<ChoicePlanItem> {
                     };
                 }
             }
-            trimmed.split_once('=').map_or_else(
+            split_top_level_binding(trimmed).map_or_else(
                 || ChoicePlanItem::Raw(trimmed.to_owned()),
                 |(name, value)| ChoicePlanItem::Option {
                     name: name.trim().to_owned(),
@@ -3894,10 +3536,9 @@ fn parse_choice_arm_sugar(
     // blocks or `option pattern in expr { id = ... }` sugar.
     let id = id?;
     let rest = rest.trim();
-    let quote_start = rest.find('"')?;
-    let quote_end = rest[quote_start + 1..].find('"')? + quote_start + 1;
-    let label = rest[quote_start + 1..quote_end].to_owned();
-    let after_label = rest[quote_end + 1..].trim();
+    let (label, after_label) = split_first_string_literal(rest)?;
+    let label = label.to_owned();
+    let after_label = after_label.trim();
     let (enabled, action) = if let Some(condition_body) = after_label.strip_prefix("if ") {
         let (condition, action) = split_choice_condition_action(condition_body, base, errors)?;
         (
@@ -3935,12 +3576,13 @@ fn split_choice_condition_action<'a>(
     base: usize,
     errors: &mut Vec<ParseError>,
 ) -> Option<(&'a str, ChoiceAction)> {
-    if let Some((condition, target)) = source.split_once("->") {
+    if let Some((condition, target)) =
+        split_top_level_punctuation_sequence_once(source, &["-", ">"])
+    {
         let target = parse_required_entity_ref(target.trim(), base, errors)?.0;
         return Some((condition, ChoiceAction::Goto(target)));
     }
-    source
-        .split_once("=>")
+    split_top_level_punctuation_sequence_once(source, &["=", ">"])
         .map(|(condition, expr)| (condition, ChoiceAction::Out(parse_expr_lossy(expr.trim()))))
 }
 
@@ -3984,16 +3626,21 @@ fn parse_choice_option_block(
             label = trim_string_literal(value.trim()).unwrap_or_else(|| value.trim().to_owned());
         } else if let Some(value_expr) = trimmed.strip_prefix("id =") {
             id_expr = Some(parse_expr_lossy(value_expr.trim()));
-        } else if let Some(value_part) = trimmed.strip_prefix("label(") {
-            if let Some((key_part, expr_part)) = value_part.split_once(')') {
-                if let Some(text_key) = key_part.trim().strip_prefix("id=") {
+        } else if trimmed.starts_with("label(") {
+            if let Some(open) = find_top_level_punctuation(trimmed, '(')
+                && let Some(close) = find_matching_punctuation(trimmed, open, '(', ')')
+            {
+                let key_part = &trimmed[open + '('.len_utf8()..close];
+                if let Some((key, text_key)) = split_top_level_binding(key_part)
+                    && key.trim() == "id"
+                {
                     label_text_key = parse_required_id_ref(text_key.trim(), base, errors)
                         .map(|(entity, _)| entity);
                 }
-                let expr_part = expr_part
+                let expr_part = trimmed[close + ')'.len_utf8()..]
                     .trim()
                     .strip_prefix('=')
-                    .unwrap_or(expr_part)
+                    .unwrap_or(&trimmed[close + ')'.len_utf8()..])
                     .trim();
                 label = trim_string_literal(expr_part).unwrap_or_else(|| expr_part.to_owned());
             }
@@ -4045,7 +3692,7 @@ fn parse_choice_ui_fields(body: &str) -> Vec<ChoiceUiField> {
     body.lines()
         .map(str::trim)
         .filter_map(|line| {
-            let (name, value) = line.split_once('=')?;
+            let (name, value) = split_top_level_binding(line)?;
             Some(ChoiceUiField::new(
                 name.trim().to_owned(),
                 parse_expr_lossy(value.trim()),
@@ -4076,7 +3723,7 @@ fn parse_match_arms(body: &str, base: usize, errors: &mut Vec<ParseError>) -> Ve
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .filter_map(|line| {
-            let (head, item) = line.split_once("=>")?;
+            let (head, item) = split_top_level_punctuation_sequence_once(line, &["=", ">"])?;
             let (pattern, guard) = split_pattern_guard(head);
             let mut nested = Parser::new(item.trim().to_owned());
             let parsed = nested.parse_flow_item_until_indent(0).map_or_else(
@@ -4098,7 +3745,7 @@ fn parse_match_expr_arms(body: &str) -> Vec<crate::expr::MatchExprArm> {
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .filter_map(|line| {
-            let (head, value) = line.split_once("=>")?;
+            let (head, value) = split_top_level_punctuation_sequence_once(line, &["=", ">"])?;
             let (pattern, guard) = split_pattern_guard(head);
             Some(crate::expr::MatchExprArm::new(
                 parse_pattern(pattern.trim()),
@@ -4110,9 +3757,7 @@ fn parse_match_expr_arms(body: &str) -> Vec<crate::expr::MatchExprArm> {
 }
 
 fn split_pattern_guard(source: &str) -> (&str, Option<&str>) {
-    source
-        .split_once(" when ")
-        .map_or((source, None), |(pattern, guard)| (pattern, Some(guard)))
+    split_top_level_keyword_once(source, "when")
 }
 
 fn parse_match_arm_value(source: &str) -> crate::expr::Expr {
@@ -4175,7 +3820,7 @@ fn parse_select_branch_head(source: &str) -> SelectBranchHead {
     if let Some(rest) = source.strip_prefix("event ") {
         return SelectBranchHead::Event(parse_pattern(rest.trim()));
     }
-    if let Some((name, source)) = source.split_once('=') {
+    if let Some((name, source)) = split_top_level_binding(source) {
         let source = source.trim();
         let propagates_error = source.ends_with('?');
         return SelectBranchHead::Bind {
@@ -4217,79 +3862,27 @@ fn has_top_level_square(input: &str) -> bool {
 }
 
 fn find_top_level_colon(input: &str) -> Option<usize> {
-    let mut parens = 0_i32;
-    for (index, ch) in input.char_indices() {
-        match ch {
-            '(' => parens += 1,
-            ')' => parens -= 1,
-            ':' if parens == 0 => return Some(index),
-            _ => {}
-        }
-    }
-    None
+    find_top_level_punctuation(input, ':')
 }
 
 fn split_call_head(head: &str) -> (String, Option<String>) {
     let head = head.trim();
-    if let Some(open) = head.find('(') {
-        if head.ends_with(')') {
+    if let Some(open) = find_top_level_punctuation(head, '(') {
+        if let Some(close) = find_matching_punctuation(head, open, '(', ')')
+            && head[close + ')'.len_utf8()..].trim().is_empty()
+        {
             return (
                 head[..open].trim().to_owned(),
-                Some(head[open + 1..head.len() - 1].trim().to_owned()),
+                Some(head[open + 1..close].trim().to_owned()),
             );
         }
     }
     (head.to_owned(), None)
 }
 
-fn bracket_delta(text: &str) -> i32 {
-    text.chars().fold(0, |depth, ch| match ch {
-        '[' => depth + 1,
-        ']' => depth - 1,
-        _ => depth,
-    })
-}
-
-fn brace_delta(text: &str) -> i32 {
-    text.chars().fold(0, |depth, ch| match ch {
-        '{' => depth + 1,
-        '}' => depth - 1,
-        _ => depth,
-    })
-}
-
 fn find_content_bracket(text: &str) -> Option<usize> {
-    let mut parens = 0_i32;
-    let mut in_string = false;
-    for (index, ch) in text.char_indices() {
-        match ch {
-            '"' => in_string = !in_string,
-            '(' if !in_string => parens += 1,
-            ')' if !in_string => parens -= 1,
-            '[' if parens == 0 && !in_string && !text[..index].trim_end().ends_with('#') => {
-                return Some(index);
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-fn find_matching_square(text: &str, open: usize) -> Option<usize> {
-    let mut depth = 0_i32;
-    for (relative, ch) in text[open..].char_indices() {
-        match ch {
-            '[' => depth += 1,
-            ']' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(open + relative);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
+    let open = find_top_level_punctuation(text, '[')?;
+    (!text[..open].trim_end().ends_with('#')).then_some(open)
 }
 
 fn parse_line_plan_body(style: BlockStyle, body: &str, range: TextRange) -> LinePlan {
@@ -4373,7 +3966,7 @@ fn split_optional_block_label(head: &str) -> (Option<String>, &str) {
         let label = head
             .trim_start()
             .strip_prefix('\'')
-            .and_then(|rest| rest.split_once(':'))
+            .and_then(|rest| split_top_level_punctuation_once(rest, ':'))
             .map(|(label, _)| label.trim().to_owned())
             .unwrap_or_default();
         (Some(label), tail)
@@ -4382,7 +3975,7 @@ fn split_optional_block_label(head: &str) -> (Option<String>, &str) {
 
 fn labeled_head_tail(head: &str) -> Option<&str> {
     let rest = head.trim_start().strip_prefix('\'')?;
-    let (_, tail) = rest.split_once(':')?;
+    let (_, tail) = split_top_level_punctuation_once(rest, ':')?;
     Some(tail.trim_start())
 }
 
@@ -4403,7 +3996,7 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
         return LinePlanItem::Out(parse_expr_lossy(rest.trim()));
     }
     if let Some(rest) = line.strip_prefix("let ") {
-        if let Some((pattern, expr)) = rest.split_once('=') {
+        if let Some((pattern, expr)) = split_top_level_binding(rest) {
             return LinePlanItem::Let {
                 pattern: parse_pattern(pattern.trim()),
                 expr: parse_expr_lossy(expr.trim()),
@@ -4419,22 +4012,26 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
                 ));
             }
         }
-        let (trigger, action) = rest.split_once("=>").unwrap_or((rest, ""));
+        let (trigger, action) =
+            split_top_level_punctuation_sequence_once(rest, &["=", ">"]).unwrap_or((rest, ""));
         return LinePlanItem::CancelRule(CancelRuleSyntax::new(
             trigger.trim().to_owned(),
             parse_line_plan_cancel_action(action.trim()),
         ));
     }
-    if let Some(rest) = line.strip_prefix("at(") {
-        if let Some((anchor, body)) = rest.split_once(')') {
-            if body.trim_start().starts_with('[') {
-                return LinePlanItem::Raw(line.to_owned());
-            }
-            return LinePlanItem::TimedCue {
-                anchor: parse_expr_lossy(anchor.trim()),
-                body: parse_expr_lossy(normalize_timed_cue_body(body)),
-            };
+    if line.starts_with("at(")
+        && let Some(open) = find_top_level_punctuation(line, '(')
+        && let Some(close) = find_matching_punctuation(line, open, '(', ')')
+    {
+        let anchor = &line[open + '('.len_utf8()..close];
+        let body = &line[close + ')'.len_utf8()..];
+        if body.trim_start().starts_with('[') {
+            return LinePlanItem::Raw(line.to_owned());
         }
+        return LinePlanItem::TimedCue {
+            anchor: parse_expr_lossy(anchor.trim()),
+            body: parse_expr_lossy(normalize_timed_cue_body(body)),
+        };
     }
     if let Some(rest) = line.strip_prefix("start ") {
         return LinePlanItem::StartGroup(parse_line_plan_nested_items(rest.trim()));
@@ -4457,7 +4054,7 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
             expr: parse_expr_lossy(expr.trim()),
         };
     }
-    if let Some((name, value)) = split_top_level_equals(line) {
+    if let Some((name, value)) = split_top_level_punctuation_once(line, '=') {
         return LinePlanItem::Option {
             name: name.trim().to_owned(),
             value: parse_expr_lossy(value.trim()),
@@ -4478,7 +4075,7 @@ fn parse_line_plan_memo(source: &str) -> LinePlanItem {
     let options = parts
         .into_iter()
         .filter_map(|part| {
-            split_top_level_equals(part)
+            split_top_level_punctuation_once(part, '=')
                 .map(|(name, value)| (name.to_owned(), parse_expr_lossy(value)))
         })
         .collect();
@@ -4539,31 +4136,6 @@ fn is_await_with_head(trimmed: &str) -> bool {
         && (trimmed.contains(" with ") || trimmed.ends_with("with:"))
 }
 
-fn is_let_await_with_head(trimmed: &str) -> bool {
-    let Some(rest) = trimmed.strip_prefix("let ") else {
-        return false;
-    };
-    let Some((_, value)) = rest.split_once('=') else {
-        return false;
-    };
-    let value = value.trim();
-    is_await_with_head(value) || value.starts_with("(await ") && value.contains(" with")
-}
-
-fn is_let_await_start_head(trimmed: &str) -> bool {
-    let Some(rest) = trimmed.strip_prefix("let ") else {
-        return false;
-    };
-    let Some((_, value)) = rest.split_once('=') else {
-        return false;
-    };
-    let value = value.trim();
-    value.starts_with("await ")
-        || value.starts_with("try await ")
-        || value.starts_with("await? ")
-        || value.starts_with("(await ")
-}
-
 fn has_inline_brace_await_with(trimmed: &str) -> bool {
     (trimmed.contains(" with {") || trimmed.contains(" with{")) && trimmed.contains('{')
 }
@@ -4591,8 +4163,7 @@ fn normalize_let_await_source(head: &str, trailing: Option<&str>) -> String {
 
 fn normalize_parenthesized_await_source(source: &str) -> Option<String> {
     let source = source.trim();
-    let inner = source.strip_prefix('(')?;
-    let (await_part, postfix) = split_parenthesized_await_postfix(inner)?;
+    let (await_part, postfix) = split_parenthesized_await_postfix(source)?;
     let postfix = postfix.trim();
     let applies_try = postfix.ends_with('?');
     let context_call = postfix.trim_end_matches('?').strip_prefix(".context(");
@@ -4612,33 +4183,9 @@ fn normalize_parenthesized_await_source(source: &str) -> Option<String> {
 }
 
 fn split_parenthesized_await_postfix(source: &str) -> Option<(&str, &str)> {
-    let mut depth = 1_i32;
-    let mut in_string = false;
-    let mut escape = false;
-    for (index, ch) in source.char_indices() {
-        if in_string {
-            if escape {
-                escape = false;
-            } else if ch == '\\' {
-                escape = true;
-            } else if ch == '"' {
-                in_string = false;
-            }
-            continue;
-        }
-        match ch {
-            '"' => in_string = true,
-            '(' => depth += 1,
-            ')' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some((&source[..index], &source[index + 1..]));
-                }
-            }
-            _ => {}
-        }
-    }
-    None
+    source.strip_prefix('(')?;
+    let close = find_matching_punctuation(source, 0, '(', ')')?;
+    Some((&source[1..close], &source[close + ')'.len_utf8()..]))
 }
 
 fn insert_context_before_await_with(await_part: &str, args: &str) -> String {
@@ -4694,11 +4241,9 @@ fn parse_await_with(trimmed: &str, range: TextRange, errors: &mut Vec<ParseError
 }
 
 fn split_await_head(source: &str) -> (&str, &str) {
-    if let Some((expr, branches)) = source.split_once(" with:") {
-        return (expr, branches);
-    }
-    if let Some((expr, branches)) = source.split_once(" with ") {
-        return (expr, branches);
+    let (expr, branches) = split_top_level_keyword_once(source, "with");
+    if let Some(branches) = branches {
+        return (expr, branches.trim_start_matches(':').trim_start());
     }
     (source, "")
 }
@@ -4806,7 +4351,7 @@ fn split_await_branch_lines(source: &str) -> Vec<&str> {
 }
 
 fn parse_await_branch(line: &str) -> Option<AwaitBranch> {
-    let (head, body) = line.split_once("=>")?;
+    let (head, body) = split_top_level_punctuation_sequence_once(line, &["=", ">"])?;
     let mut parts = head.split_whitespace();
     let kind = match parts.next()? {
         "pending" => AwaitBranchKind::Pending,
@@ -4830,9 +4375,9 @@ fn parse_await_branch_body(body: &str) -> Vec<FlowItem> {
 
     let mut nested = Parser::new(body.to_owned());
     let mut items = Vec::new();
-    while nested.index < nested.lines.len() {
+    while nested.index < nested.events.len() {
         nested.skip_blank_and_comments();
-        if nested.index >= nested.lines.len() {
+        if nested.index >= nested.events.len() {
             break;
         }
         let before = nested.index;
@@ -4864,7 +4409,8 @@ fn parse_inline_await_branch_item(body: &str) -> FlowItem {
 
 fn parse_scene_command(body: &str) -> Option<ScenarioCommand> {
     let rest = body.strip_prefix("scene ")?;
-    let args = rest.split_once('{').map_or(rest, |(head, _)| head).trim();
+    let args = find_top_level_punctuation(rest, '{').map_or(rest, |open| &rest[..open]);
+    let args = args.trim();
     Some(ScenarioCommand::new(
         "scene".to_owned(),
         parse_scenario_args(args),
@@ -4896,32 +4442,6 @@ fn is_typed_stmt(trimmed: &str) -> bool {
                 | "continue"
         )
     )
-}
-
-fn is_let_choice_head(trimmed: &str) -> bool {
-    let Some(rest) = trimmed.strip_prefix("let ") else {
-        return false;
-    };
-    rest.split_once('=')
-        .is_some_and(|(_, expr)| expr.trim_start().starts_with("choice "))
-}
-
-fn is_let_dialogue_call_head(trimmed: &str) -> bool {
-    let Some(rest) = trimmed.strip_prefix("let ") else {
-        return false;
-    };
-    rest.split_once('=').is_some_and(|(_, expr)| {
-        let expr = expr.trim_start();
-        find_content_bracket(expr).is_some() && !expr.starts_with('[')
-    })
-}
-
-fn is_let_scope_head(trimmed: &str) -> bool {
-    let Some(rest) = trimmed.strip_prefix("let ") else {
-        return false;
-    };
-    rest.split_once('=')
-        .is_some_and(|(_, expr)| parse_scope_head(expr.trim_start()).is_some())
 }
 
 enum ParsedScopeName<'a> {
@@ -4957,31 +4477,6 @@ fn parse_scope_head(source: &str) -> Option<ParsedScopeName<'_>> {
     (!name.is_empty()).then_some(ParsedScopeName::Named(name))
 }
 
-fn is_let_block_head(trimmed: &str) -> bool {
-    let Some(rest) = trimmed.strip_prefix("let ") else {
-        return false;
-    };
-    rest.split_once('=')
-        .is_some_and(|(_, expr)| expr.trim().starts_with('{'))
-}
-
-fn is_let_computation_block_head(trimmed: &str) -> bool {
-    let Some(rest) = trimmed.strip_prefix("let ") else {
-        return false;
-    };
-    rest.split_once('=').is_some_and(|(_, expr)| {
-        matches!(expr.trim(), "result {" | "task {" | "seq {" | "stream {")
-    })
-}
-
-fn is_let_memo_block_head(trimmed: &str) -> bool {
-    let Some(rest) = trimmed.strip_prefix("let ") else {
-        return false;
-    };
-    rest.split_once('=')
-        .is_some_and(|(_, expr)| expr.trim_start().starts_with("memo("))
-}
-
 fn parse_memo_block_options(source: &str) -> Option<Vec<(String, Expr)>> {
     let args = source
         .trim()
@@ -4992,7 +4487,7 @@ fn parse_memo_block_options(source: &str) -> Option<Vec<(String, Expr)>> {
         split_comma_args(args)
             .into_iter()
             .filter_map(|part| {
-                split_top_level_equals(part)
+                split_top_level_punctuation_once(part, '=')
                     .map(|(name, value)| (name.trim().to_owned(), parse_expr_lossy(value.trim())))
             })
             .collect(),
@@ -5009,49 +4504,12 @@ fn parse_computation_block_kind(source: &str) -> Option<ComputationBlockKind> {
     }
 }
 
-fn is_let_loop_head(trimmed: &str) -> bool {
-    let Some(rest) = trimmed.strip_prefix("let ") else {
-        return false;
-    };
-    rest.split_once('=').is_some_and(|(_, expr)| {
-        let expr = expr.trim_start();
-        expr.starts_with("loop")
-            || labeled_head_tail(expr).is_some_and(|tail| tail.starts_with("loop"))
-    })
-}
-
-fn is_let_if_head(trimmed: &str) -> bool {
-    let Some(rest) = trimmed.strip_prefix("let ") else {
-        return false;
-    };
-    rest.split_once('=')
-        .is_some_and(|(_, expr)| expr.trim_start().starts_with("if "))
-}
-
-fn is_let_if_let_head(trimmed: &str) -> bool {
-    let Some(rest) = trimmed.strip_prefix("let ") else {
-        return false;
-    };
-    rest.split_once('=')
-        .is_some_and(|(_, expr)| expr.trim_start().starts_with("if let "))
-}
-
-fn is_let_match_head(trimmed: &str) -> bool {
-    let Some(rest) = trimmed.strip_prefix("let ") else {
-        return false;
-    };
-    rest.split_once('=')
-        .is_some_and(|(_, expr)| expr.trim_start().starts_with("match "))
+fn split_top_level_binding(source: &str) -> Option<(&str, &str)> {
+    split_top_level_punctuation_once(source, '=')
 }
 
 fn split_if_let_guard(source: &str) -> (&str, Option<&str>) {
-    source
-        .split_once(" when ")
-        .map_or((source, None), |(value, guard)| (value, Some(guard)))
-}
-
-fn is_let_else_head(trimmed: &str) -> bool {
-    trimmed.starts_with("let ") && trimmed.contains(" else") && trimmed.contains('{')
+    split_top_level_keyword_once(source, "when")
 }
 
 fn parse_scope_expr_body(body: &str) -> (Vec<Stmt>, Option<crate::expr::Expr>) {
@@ -5177,7 +4635,7 @@ fn parse_dialogue_call_expr_source(source: &str) -> Option<Expr> {
         });
     }
     let open = find_content_bracket(source)?;
-    let close = find_matching_square(source, open)?;
+    let close = find_matching_punctuation(source, open, '[', ']')?;
     if !source[close + 1..].trim().is_empty() {
         return None;
     }
@@ -5212,11 +4670,14 @@ fn contains_dialogue_expr(expr: &Expr) -> bool {
 }
 
 fn split_inline_dialogue_line_plan(source: &str) -> Option<(&str, &str)> {
-    [" with:", " with {", " with{", " with '", " with'"]
-        .into_iter()
-        .filter_map(|marker| source.find(marker).map(|index| (index, marker)))
-        .min_by_key(|(index, _)| *index)
-        .map(|(index, _)| (&source[..index], source[index + 1..].trim()))
+    let (head, tail) = split_top_level_keyword_once(source, "with");
+    let tail = tail?;
+    if matches!(tail.trim_start().chars().next(), Some(':' | '{' | '\'')) {
+        let head_end = head.trim_end().len();
+        Some((&source[..head_end], source[head_end..].trim_start()))
+    } else {
+        None
+    }
 }
 
 fn parse_inline_line_plan_source(source: &str) -> Option<LinePlan> {
@@ -5237,7 +4698,7 @@ fn parse_inline_line_plan_source(source: &str) -> Option<LinePlan> {
 
 fn parse_stmt(trimmed: &str) -> Stmt {
     if let Some(rest) = trimmed.strip_prefix("let ") {
-        if let Some((pattern, expr)) = rest.split_once('=') {
+        if let Some((pattern, expr)) = split_top_level_binding(rest) {
             return Stmt::Let {
                 pattern: parse_pattern(pattern.trim()),
                 expr: parse_expr_with_inline_line_plan(expr.trim()),
@@ -5249,7 +4710,7 @@ fn parse_stmt(trimmed: &str) -> Stmt {
         return stmt;
     }
     if let Some(rest) = trimmed.strip_prefix("ensure ") {
-        if let Some((condition, message)) = rest.split_once(',') {
+        if let Some((condition, message)) = split_top_level_punctuation_once(rest, ',') {
             return Stmt::Ensure {
                 condition: parse_expr_lossy(condition.trim()),
                 message: parse_expr_lossy(message.trim()),
@@ -5258,7 +4719,8 @@ fn parse_stmt(trimmed: &str) -> Stmt {
         return Stmt::Raw(trimmed.to_owned());
     }
     if let Some(rest) = trimmed.strip_prefix("signal ") {
-        if let Some((target, value)) = rest.split_once("<-") {
+        if let Some((target, value)) = split_top_level_punctuation_sequence_once(rest, &["<", "-"])
+        {
             return Stmt::Signal {
                 target: parse_expr_lossy(target.trim()),
                 value: parse_expr_lossy(value.trim()),
@@ -5270,7 +4732,7 @@ fn parse_stmt(trimmed: &str) -> Stmt {
         return parse_emit_stmt(rest.trim());
     }
     if let Some(rest) = trimmed.strip_prefix("on ") {
-        if let Some((head, action)) = rest.split_once("=>") {
+        if let Some((head, action)) = split_top_level_punctuation_sequence_once(rest, &["=", ">"]) {
             return Stmt::On {
                 head: head.trim().to_owned(),
                 body: vec![parse_stmt(action.trim())],
@@ -5282,14 +4744,9 @@ fn parse_stmt(trimmed: &str) -> Stmt {
         return stmt;
     }
     if let Some(rest) = trimmed.strip_prefix("log ") {
-        if let Some((level, args)) = rest.trim().split_once(' ') {
-            let message = args
-                .find('"')
-                .and_then(|start| args[start + 1..].find('"').map(|end| (start, end)))
-                .map_or_else(
-                    || args.trim().to_owned(),
-                    |(start, end)| args[start + 1..start + 1 + end].to_owned(),
-                );
+        if let Some((level, args)) = split_leading_ident(rest.trim()) {
+            let message = split_first_string_literal(args)
+                .map_or_else(|| args.trim().to_owned(), |(message, _)| message.to_owned());
             return Stmt::Expr(crate::expr::Expr::Call {
                 callee: Box::new(crate::expr::Expr::Path(format!("log.{level}"))),
                 args: vec![crate::expr::Expr::Literal(crate::expr::Literal::String(
@@ -5330,7 +4787,7 @@ fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {
         });
     }
     if let Some(rest) = head.strip_prefix("for ") {
-        let Some((pattern, source)) = rest.split_once(" in ") else {
+        let (pattern, Some(source)) = split_top_level_keyword_once(rest, "in") else {
             return Some(Stmt::Raw(trimmed.to_owned()));
         };
         return Some(Stmt::For {
@@ -5347,7 +4804,7 @@ fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {
 
 fn parse_braced_while_let_stmt(head: &str, body: &str) -> Option<Stmt> {
     let rest = head.strip_prefix("while let ")?;
-    let Some((pattern, expr_and_guard)) = rest.split_once('=') else {
+    let Some((pattern, expr_and_guard)) = split_top_level_binding(rest) else {
         return Some(Stmt::Raw(format!("{head} {{ {body} }}")));
     };
     let (expr, guard) = split_pattern_guard(expr_and_guard.trim());
@@ -5418,21 +4875,16 @@ fn split_optional_label_ref(input: &str) -> (Option<String>, &str) {
 }
 
 fn parse_label_ref(input: &str) -> Option<(String, &str)> {
-    let rest = input.strip_prefix('\'')?;
-    let len = rest
-        .char_indices()
-        .take_while(|(_, ch)| *ch == '_' || ch.is_ascii_alphanumeric())
-        .map(|(index, ch)| index + ch.len_utf8())
-        .last()
-        .unwrap_or(0);
-    (len > 0).then(|| (rest[..len].to_owned(), &rest[len..]))
+    let (label, rest) = crate::cst::split_leading_lifetime(input)?;
+    Some((label.trim_start_matches('\'').to_owned(), rest))
 }
 
 fn parse_stmt_match_arms(body: &str) -> Vec<StmtMatchArm> {
     collect_logical_block_items(body)
         .into_iter()
         .filter_map(|line| {
-            let (head, value) = line.trim().split_once("=>")?;
+            let (head, value) =
+                split_top_level_punctuation_sequence_once(line.trim(), &["=", ">"])?;
             let (pattern, guard) = split_pattern_guard(head.trim());
             let body = value
                 .trim()
@@ -5453,7 +4905,9 @@ fn parse_stmt_match_arms(body: &str) -> Vec<StmtMatchArm> {
 
 fn parse_emit_stmt(rest: &str) -> Stmt {
     if let Some(signal) = rest.strip_prefix("signal ") {
-        if let Some((target, value)) = signal.split_once("<-") {
+        if let Some((target, value)) =
+            split_top_level_punctuation_sequence_once(signal, &["<", "-"])
+        {
             return Stmt::Signal {
                 target: parse_expr_lossy(target.trim()),
                 value: parse_expr_lossy(value.trim()),
@@ -5474,9 +4928,9 @@ fn parse_emit_stmt(rest: &str) -> Stmt {
 
 fn parse_emit_fields(body: &str) -> Vec<(String, crate::expr::Expr)> {
     body.lines()
-        .flat_map(|line| line.split(','))
+        .flat_map(|line| split_top_level_punctuation(line, ','))
         .filter_map(|part| {
-            let (name, value) = part.trim().trim_end_matches(',').split_once('=')?;
+            let (name, value) = split_top_level_binding(part.trim().trim_end_matches(','))?;
             Some((name.trim().to_owned(), parse_expr_lossy(value.trim())))
         })
         .collect()

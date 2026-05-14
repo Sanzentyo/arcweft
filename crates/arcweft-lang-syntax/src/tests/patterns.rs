@@ -2,16 +2,15 @@ use super::support::*;
 
 #[test]
 fn flow_typed_statements_keep_patterns_and_exprs() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
+flow @flow.opening opening {
     let (actor, (_, voice)) = alice.say()[聞いて。[p]]
     return Ok(FlowExit::Done)
-    goto #flow.title
+    goto @flow.title
 }
 ",
-    )
-    .expect("typed flow statements parse");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -35,14 +34,13 @@ flow #flow.opening opening {
 
 #[test]
 fn typed_patterns_keep_lifetime_borrow_types() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.borrow borrow {
+flow @flow.borrow borrow {
     let pixels: &'asset [Rgba8] = bg.pixels()
 }
 ",
-    )
-    .expect("typed borrow pattern parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -61,19 +59,18 @@ flow #flow.borrow borrow {
 
 #[test]
 fn parses_documented_structured_pattern_shapes() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.patterns patterns {
+flow @flow.patterns patterns {
     let mut route = current_route
     let 42 = answer
-    let #choice.opening.listen = selected
+    let @choice.opening.listen = selected
     let TruckResult { score, rank, .. } = result
     let [first, ..rest] = items
     let ev .ChoiceSelected { id } = event
 }
 ",
-    )
-    .expect("structured pattern fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");

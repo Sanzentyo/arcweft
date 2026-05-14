@@ -3,7 +3,7 @@
 Arcweft is script-friendly: semicolons are not required for normal flow, dialogue, or scenario-style code.
 
 ```awft
-flow #flow.opening {
+flow @flow.opening {
     alice: おはよう。[p]
     alice: 今日はいい天気だね。[p]
 }
@@ -96,7 +96,7 @@ let _ = expr
 Use `let _ = expr` when discard is semantically important, especially with scoped handles:
 
 ```awft
-let _ = se.play(#se.page_start)
+let _ = se.play(@se.page_start)
 ```
 
 If the discarded value implements `CancelOnDrop`, discarding triggers drop/cancel behavior.
@@ -123,3 +123,4 @@ Handle/resource discard:
 ```
 
 Therefore Arcweft keeps `;`, but it is optional and uncommon in scripts.
+

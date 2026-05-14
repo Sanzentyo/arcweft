@@ -4,7 +4,8 @@ Arcweft does not define a separate `script` item. Ordinary visual-novel writing 
 
 A `flow` body may mix:
 
-- compact scenario statements such as `@bg`, `@show`, `alice:`, choices, and dialogue tags;
+- ordinary effectful function calls such as `bg(...)` and `show(...)`;
+- compact dialogue statements such as `alice:`, choices, and dialogue tags;
 - canonical character method calls such as `alice.say()[ ... ]` and `alice.move(...)`;
 - typed Arcweft statements such as `let`, `match`, `await ... with`, `Result`, contracts, and function calls.
 
@@ -49,10 +50,10 @@ With common options:
 
 ```awft
 alice.say(
-    id = #say.opening.greeting,
+    id = @say.opening.greeting,
     voice = auto,
     face = smile,
-    window = #textbox.0,
+    window = @textbox.side,
 )[
     おはよう。[p]
 ]
@@ -61,11 +62,11 @@ alice.say(
 `alice` is a character alias in scope. If a character is referenced directly by entity ID, use a delimited reference or parentheses before method access:
 
 ```awft
-#<character.alice>.say(voice=auto)[
+@<character.alice>.say(voice=auto)[
     おはよう。[p]
 ]
 
-(#character.alice).say(voice=auto)[
+(@character.alice).say(voice=auto)[
     おはよう。[p]
 ]
 ```
@@ -91,7 +92,7 @@ alice.say()[
 Options are written in parentheses and are the same as `say()` options:
 
 ```awft
-alice(id=#say.opening.greeting, face=smile, voice=auto):
+alice(id=@say.opening.greeting, face=smile, voice=auto):
     おはよう。[p]
 ```
 
@@ -99,7 +100,7 @@ is sugar for:
 
 ```awft
 alice.say(
-    id = #say.opening.greeting,
+    id = @say.opening.greeting,
     face = smile,
     voice = auto,
 )[
@@ -107,23 +108,25 @@ alice.say(
 ]
 ```
 
-`#` remains an entity-reference marker, not an option marker. Older compact option styles without parentheses are not part of the stable grammar and must be rejected by parser and tooling.
+`@` is the entity-reference marker. `#` is reserved for Rust-like attributes
+such as `#[derive(...)]`. Older compact option styles without parentheses are
+not part of the stable grammar.
 
 Line IDs may also be relative in the `id` option. Relative line IDs are resolved
 using the current flow, speaker, and named-scope path.
 
 ```awft
 scope rain {
-    alice(id=.comment, voice=auto):
+    alice(id=@.comment, voice=auto):
         雨、強くなってきたね。[p]
 }
 ```
 
 ```text
-alice(id=.comment)
-  -> #say.opening.alice.rain.comment
-  -> #text.opening.alice.rain.comment
-  -> #voice.ja-JP.alice.opening.rain.comment
+alice(id=@.comment)
+  -> @say.opening.alice.rain.comment
+  -> @text.opening.alice.rain.comment
+  -> @voice.ja-JP.alice.opening.rain.comment
 ```
 
 The long method form is preferred when the line has a custom window, timed cues, cancellation, local variables, or custom hooks.
@@ -138,28 +141,31 @@ mod crate::game::routes::opening
 use crate::game::prelude::*
 use self::characters::{alice}
 
-pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    @bg #asset.bg.room fade=300ms
-    @show alice normal at=center fade=200ms
+pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+    bg(@asset.bg.room, fade = 300ms)
+    show(@character.alice, .normal, at = .center, fade = 200ms)
 
     scope rain {
-        地の文(id=.sound):
+        地の文(id=@.sound):
             扉の向こうから、雨の音がした。[p]
 
-        alice(id=.comment, voice=auto):
+        alice(id=@.comment, voice=auto):
             雨、強くなってきたね。[p]
     }
 
     scope dream {
-        choice .first {
-            .listen "聞いてみる" -> #flow.alice_intro
-            .silent "黙っている" -> #flow.quiet_intro
+        choice @.first {
+            @.listen "聞いてみる" -> @flow.alice_intro
+            @.silent "黙っている" -> @flow.quiet_intro
         }
     }
 }
 ```
 
-This is a typed `flow`. The speaker lines and scenario commands are simply concise `FlowItem` forms. The `scope` names are lexical scopes and ID namespaces, so `.sound`, `.comment`, `.first`, `.listen`, and `.silent` normalize to stable fully qualified IDs.
+This is a typed `flow`. Speaker lines are concise `FlowItem` forms, while
+stage operations are normal effectful calls. The `scope` names are lexical
+scopes and ID namespaces, so `@.sound`, `@.comment`, `@.first`, `@.listen`, and
+`@.silent` normalize to stable fully qualified IDs.
 
 Named scopes make compact source IDs practical while keeping registry IDs
 stable and fully qualified.
@@ -167,13 +173,13 @@ stable and fully qualified.
 ```awft
 scope dream {
     let can_enter = {
-        let affection_ok = state.affection[#character.alice] >= 3
+        let affection_ok = state.affection[@character.alice] >= 3
         affection_ok
     }
 
-    choice .first {
-        .listen "聞いてみる" if can_enter -> #flow.alice_intro
-        .silent "黙っている" -> #flow.quiet_intro
+    choice @.first {
+        @.listen "聞いてみる" if can_enter -> @flow.alice_intro
+        @.silent "黙っている" -> @flow.quiet_intro
     }
 }
 ```
@@ -181,21 +187,21 @@ scope dream {
 The relative IDs normalize as follows:
 
 ```text
-#say.opening.narrator.rain.sound
-#text.opening.narrator.rain.sound
-#say.opening.alice.rain.comment
-#text.opening.alice.rain.comment
-#choice.opening.dream.first
-#choice.opening.dream.first.listen
-#text.choice.opening.dream.first.listen
+@say.opening.narrator.rain.sound
+@text.opening.narrator.rain.sound
+@say.opening.alice.rain.comment
+@text.opening.alice.rain.comment
+@choice.opening.dream.first
+@choice.opening.dream.first.listen
+@text.choice.opening.dream.first.listen
 ```
 
 If a relative line or choice ID appears outside a named scope, the scope segment
 is omitted:
 
 ```text
-alice(id=.greeting) -> #say.opening.alice.greeting
-choice .first       -> #choice.opening.first
+alice(id=@.greeting) -> @say.opening.alice.greeting
+choice @.first       -> @choice.opening.first
 ```
 
 
@@ -206,9 +212,9 @@ choice .first       -> #choice.opening.first
 The compact arm form is sugar. `->` advances the flow with `goto`; `=>` outputs a value from the choice expression.
 
 ```awft
-let next_flow = choice #choice.opening.first {
-    #choice.opening.listen "聞いてみる" => #flow.alice_intro
-    #choice.opening.silent "黙っている" => #flow.quiet_intro
+let next_flow = choice @choice.opening.first {
+    @choice.opening.listen "聞いてみる" => @flow.alice_intro
+    @choice.opening.silent "黙っている" => @flow.quiet_intro
 }
 
 goto next_flow
@@ -217,10 +223,10 @@ goto next_flow
 Use full `option` blocks when the UI needs visible/enabled state, disabled reasons, badges, hotkeys, or a multi-statement selected action.
 
 ```awft
-let can_enter_alice = state.affection[#character.alice] >= 3
+let can_enter_alice = state.affection[@character.alice] >= 3
 
-choice #choice.opening.first {
-    option #choice.opening.listen {
+choice @choice.opening.first {
+    option @choice.opening.listen {
         label = "聞いてみる"
         enabled = can_enter_alice
         visible = true
@@ -229,35 +235,35 @@ choice #choice.opening.first {
         ui {
             disabled_reason = if can_enter_alice { None } else { Some("アリスの好感度が足りません") }
             badge = if can_enter_alice { None } else { Some("LOCKED") }
-            style = if can_enter_alice { #style.choice.normal } else { #style.choice.locked }
+            style = if can_enter_alice { @style.choice.normal } else { @style.choice.locked }
         }
 
         select {
-            emit GameEvent::ChoiceSelected { id = #choice.opening.listen }
-            goto #flow.alice_intro
+            emit GameEvent::ChoiceSelected { id = @choice.opening.listen }
+            goto @flow.alice_intro
         }
     }
 
-    #choice.opening.silent "黙っている" -> #flow.quiet_intro
+    @choice.opening.silent "黙っている" -> @flow.quiet_intro
 }
 ```
 
 Inline arm `if` is enabled-state sugar. A block `if` controls whether an option exists at all.
 
 ```awft
-choice #choice.opening.first {
+choice @choice.opening.first {
     if state.flags.contains(.alice_route_discovered) {
-        #choice.opening.listen "聞いてみる" -> #flow.alice_intro
+        @choice.opening.listen "聞いてみる" -> @flow.alice_intro
     }
 
-    #choice.opening.silent "黙っている" -> #flow.quiet_intro
+    @choice.opening.silent "黙っている" -> @flow.quiet_intro
 }
 ```
 
 Dynamic options use ordinary `for` over lists, sequences, or sorted map entries.
 
 ```awft
-choice #choice.opening.routes {
+choice @choice.opening.routes {
     for route in opening_routes(state) {
         option route.choice_id {
             label = route.label
@@ -279,21 +285,21 @@ choice #choice.opening.routes {
 `choice ... with { ... }` attaches a choice lifecycle plan. `with:` is indentation sugar, as with dialogue line plans.
 
 ```awft
-choice #choice.opening.first {
-    #choice.opening.listen "聞いてみる" -> #flow.alice_intro
-    #choice.opening.silent "黙っている" -> #flow.quiet_intro
+choice @choice.opening.first {
+    @choice.opening.listen "聞いてみる" -> @flow.alice_intro
+    @choice.opening.silent "黙っている" -> @flow.quiet_intro
 }
 with {
-    window = #choice_window.main
+    window = @choice_window.main
     layout = vertical
-    default_focus = #choice.opening.listen
+    default_focus = @choice.opening.listen
 
     timeout 10s {
-        select #choice.opening.silent
+        select @choice.opening.silent
     }
 
     cancel on input .BackToTitle {
-        return Ok(FlowExit::Goto(#flow.title))
+        return Ok(FlowExit::Goto(@flow.title))
     }
 
     on select selected {
@@ -322,10 +328,10 @@ runtime `String` is displayable, but tools should warn when it is used where a
 localizable choice label is expected.
 
 ```awft
-choice #choice.opening.routes {
+choice @choice.opening.routes {
     option route in opening_routes(state) {
         id = route.choice_id
-        label(id=#text.choice.opening.route) = route.label
+        label(id=@text.choice.opening.route) = route.label
         value = route.target
         enabled = route.enabled
 
@@ -346,17 +352,17 @@ Relative option IDs are resolved under the current choice ID.
 
 ```awft
 scope dream {
-    choice .first {
-        .listen "聞いてみる" -> #flow.alice_intro
-        .silent "黙っている" -> #flow.quiet_intro
+    choice @.first {
+        @.listen "聞いてみる" -> @flow.alice_intro
+        @.silent "黙っている" -> @flow.quiet_intro
     }
 }
 ```
 
 ```text
-choice .first -> #choice.opening.dream.first
-.listen       -> #choice.opening.dream.first.listen
-.silent       -> #choice.opening.dream.first.silent
+choice @.first -> @choice.opening.dream.first
+@.listen       -> @choice.opening.dream.first.listen
+@.silent       -> @choice.opening.dream.first.silent
 ```
 
 ---
@@ -426,7 +432,7 @@ with:
 The `script` keyword is not part of Arcweft's scenario grammar.
 
 ```awft
-pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     alice: おはよう。[p]
 }
 ```
@@ -434,13 +440,13 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 Reusable scenario snippets use `fragment`:
 
 ```awft
-pub fragment #frag.alice_enters: FlowFragment {
-    @show alice normal at=right fade=220ms
-    @move alice to=center time=300ms ease=cubic.out
+pub fragment @frag.alice_enters: FlowFragment {
+    show(@character.alice, .normal, at = .right, fade = 220ms)
+    move(@character.alice, to = .center, time = 300ms, ease = cubic.out)
 }
 
-pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    include #frag.alice_enters
+pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+    include @frag.alice_enters
     alice: おはよう。[p]
 }
 ```
@@ -456,11 +462,11 @@ alice: おはよう。
 
 alice(face=smile): おはよう。
 
-alice(voice=#voice.alice.001): おはよう。
+alice(voice=@voice.alice.001): おはよう。
 
 alice(face=smile, voice=auto): おはよう。
 
-alice(id=#say.opening.001, face=smile, voice=#voice.alice.001):
+alice(id=@say.opening.001, face=smile, voice=@voice.alice.001):
     おはよう。
 ```
 
@@ -468,26 +474,26 @@ Meaning:
 
 | Form | Meaning |
 |---|---|
-| `alice:` | speaker is `#character.alice`; line ID, text key, voice, and window are inferred |
+| `alice:` | speaker is `@character.alice`; line ID, text key, voice, and window are inferred |
 | `face=smile` | expression cue before text display |
-| `voice=#voice...` | explicit voice binding |
+| `voice=@voice...` | explicit voice binding |
 | `voice=auto` | derive voice cue from line ID, locale, and speaker |
-| `id=#say...` | explicit line entity ID |
+| `id=@say...` | explicit line entity ID |
 
-The implicit window is `#textbox.0` unless the character, line, or project defaults override it.
+The implicit window is `@textbox.0` unless the character, line, or project defaults override it.
 
 Speaker presets are allowed in the same position:
 
 ```awft
-let alice2 = alice(face=smile, voice=auto, window=#textbox.side)
+let alice2 = alice(face=smile, voice=auto, window=@textbox.side)
 
 alice2: おはよう。[p]
 
-alice2(id=#say.opening.side_001):
+alice2(id=@say.opening.side_001):
     こっちのウィンドウで話すね。[p]
 ```
 
-Here `alice2` is a lexical speaker preset. It is not a new character and it does not mutate `#character.alice`.
+Here `alice2` is a lexical speaker preset. It is not a new character and it does not mutate `@character.alice`.
 
 ---
 
@@ -534,12 +540,12 @@ Outside dialogue text mode, `[...]` is not treated as a dialogue control tag. It
 Arcweft prelude defines a built-in narrator-like character:
 
 ```awft
-pub character #character.narrator narrator {
+pub character @character.narrator narrator {
     role = narration
     nameplate = hidden
     localizable_name = false
     dialogue_style {
-        window = #textbox.narrator
+        window = @textbox.narrator
     }
 }
 ```
@@ -574,27 +580,19 @@ window = "textbox.narrator"
 
 ---
 
-## Compact staging commands in flow bodies
+## Staging calls in flow bodies
 
-Scenario commands are line-oriented `FlowItem`s. They are available inside `flow` and `fragment` bodies.
-
-```awft
-@bg #asset.bg.school_evening fade=600ms
-@show alice normal at=center layer=characters fade=200ms
-@face alice smile crossfade=120ms
-@move alice to=left time=350ms ease=cubic.out
-@anim alice #anim.breath loop
-@hide alice fade=180ms
-```
-
-These are sugar over character/stage methods:
+Scenario staging is expressed as ordinary effectful calls inside `flow` and
+`fragment` bodies. The older `@bg` / `@show` command family is not part of the
+stable grammar; `@` is reserved for entity references.
 
 ```awft
-alice.show(expression=normal, at=center, layer=#layer.characters, fade=200ms)
-alice.face(smile, crossfade=120ms)
-alice.move(to=left, time=350ms, ease=cubic.out)
-alice.animate(#anim.breath, mode=loop)
-alice.hide(fade=180ms)
+bg(@asset.bg.school_evening, fade = 600ms)
+show(@character.alice, .normal, at = .center, layer = @layer.characters, fade = 200ms)
+face(@character.alice, .smile, crossfade = 120ms)
+move(@character.alice, to = .left, time = 350ms, ease = cubic.out)
+anim(@character.alice, @anim.breath, mode = .loop)
+hide(@character.alice, fade = 180ms)
 ```
 
 ---
@@ -602,23 +600,23 @@ alice.hide(fade=180ms)
 ## Complex line with method form
 
 ```awft
-alice.say(id=#say.opening.dream_hint, voice=auto, face=smile)[
+alice.say(id=@say.opening.dream_hint, voice=auto, face=smile)[
     今日は少しだけ、#[fmt("変な夢", color=rgb("#a8b5ff"))]を見たんだ。[p]
 ]
 with {
     reveal = voice
     cancel on input .SkipLine => continue
-    cancel on input .BackToTitle => goto #flow.title
+    cancel on input .BackToTitle => goto @flow.title
 
     at(0.42s) { alice.stage.face(worried, crossfade=120ms) }
-    at(end-250ms) { alice.stage.animate(#anim.breath.once) }
+    at(end-250ms) { alice.stage.animate(@anim.breath.once) }
 }
 ```
 
 Colon sugar can attach the same line plan with `with { ... }`:
 
 ```awft
-alice(id=#say.opening.dream_hint, voice=auto, face=smile):
+alice(id=@say.opening.dream_hint, voice=auto, face=smile):
     今日は少しだけ、#[fmt("変な夢", color=rgb("#a8b5ff"))]を見たんだ。[p]
 with {
     at(0.42s) { alice.stage.face(worried, crossfade=120ms) }

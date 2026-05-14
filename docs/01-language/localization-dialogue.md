@@ -44,17 +44,17 @@ show_inlay = true
 ## Source stays concise
 
 ```awft
-pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    @bg #asset.bg.room fade=300ms
-    @show alice smile at=center
+pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+    bg(@asset.bg.room, fade = 300ms)
+    show(@character.alice, .smile, at = .center)
 
     地の文: 扉の向こうから、雨の音がした。[p]
     alice: おはよう。[l]
     alice(voice=auto): 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 
-    choice #choice.opening.first {
-        #choice.opening.listen "聞いてみる" -> #flow.alice_intro
-        #choice.opening.silent "黙っている" -> #flow.quiet_intro
+    choice @choice.opening.first {
+        @choice.opening.listen "聞いてみる" -> @flow.alice_intro
+        @choice.opening.silent "黙っている" -> @flow.quiet_intro
     }
 }
 ```
@@ -63,13 +63,13 @@ LSP inlay view:
 
 ```text
 地の文: 扉の向こうから、雨の音がした。[p]
-        #say.opening.narrator.001 / text.opening.narrator.001
+        @say.opening.narrator.001 / text.opening.narrator.001
 
 alice: おはよう。[l]
-       #say.opening.alice.001 / text.opening.alice.001 / voice.ja-JP.alice.opening.001
+       @say.opening.alice.001 / text.opening.alice.001 / voice.ja-JP.alice.opening.001
 
 alice(voice=auto): 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
-                   #say.opening.alice.002 / text.opening.alice.002 / voice.ja-JP.alice.opening.002
+                   @say.opening.alice.002 / text.opening.alice.002 / voice.ja-JP.alice.opening.002
 ```
 
 ---
@@ -79,10 +79,10 @@ alice(voice=auto): 今日は少しだけ、｜変な夢《へんなゆめ》を�
 A dialogue line has separate identities:
 
 ```text
-LineId      #say.opening.alice.002        stable narrative line entity
-TextKey     #text.opening.alice.002       localization key
-VoiceKey    #voice.ja-JP.alice.opening.002  locale/speaker voice cue
-Speaker     #character.alice
+LineId      @say.opening.alice.002        stable narrative line entity
+TextKey     @text.opening.alice.002       localization key
+VoiceKey    @voice.ja-JP.alice.opening.002  locale/speaker voice cue
+Speaker     @character.alice
 ```
 
 `LineId` remains stable through text edits. `source_hash` changes and marks translations as stale.
@@ -91,8 +91,8 @@ The canonical dialogue form is `speaker.say(...)[...]`; `speaker(...):` is sugar
 
 ```awft
 alice.say(
-    id = #say.opening.alice.greeting,
-    text_key = #text.opening.alice.greeting,
+    id = @say.opening.alice.greeting,
+    text_key = @text.opening.alice.greeting,
     voice = auto,
     args = { player_name = state.player_name },
 )[
@@ -100,8 +100,8 @@ alice.say(
 ]
 
 alice(
-    id = #say.opening.alice.greeting,
-    text_key = #text.opening.alice.greeting,
+    id = @say.opening.alice.greeting,
+    text_key = @text.opening.alice.greeting,
     voice = auto,
     args = { player_name = state.player_name },
 ):
@@ -111,75 +111,75 @@ alice(
 `text_key` is optional. If omitted, it is derived from the narrative line ID:
 
 ```text
-id = #say.opening.alice.greeting
-  -> text_key = #text.opening.alice.greeting
-  -> voice_key = #voice.{runtime_locale}.alice.opening.greeting
+id = @say.opening.alice.greeting
+  -> text_key = @text.opening.alice.greeting
+  -> voice_key = @voice.{runtime_locale}.alice.opening.greeting
 ```
 
 Line IDs may be written as relative IDs when the surrounding flow and speaker
 provide the stable prefix:
 
 ```awft
-alice(id=.greeting, voice=auto):
+alice(id=@.greeting, voice=auto):
     おはよう。[p]
 
-地の文(id=.rain):
+地の文(id=@.rain):
     扉の向こうから、雨の音がした。[p]
 ```
 
-Relative line IDs normalize to full `#say...` IDs:
+Relative line IDs normalize to full `@say...` IDs:
 
 ```text
-alice(id=.greeting)
-  -> #say.opening.alice.greeting
-  -> #text.opening.alice.greeting
+alice(id=@.greeting)
+  -> @say.opening.alice.greeting
+  -> @text.opening.alice.greeting
 
-地の文(id=.rain)
-  -> #say.opening.narrator.rain
-  -> #text.opening.narrator.rain
+地の文(id=@.rain)
+  -> @say.opening.narrator.rain
+  -> @text.opening.narrator.rain
 ```
 
 Named `scope` blocks become part of generated and relative IDs:
 
 ```awft
 scope rain {
-    地の文(id=.sound):
+    地の文(id=@.sound):
         扉の向こうから、雨の音がした。[p]
 
-    alice(id=.comment):
+    alice(id=@.comment):
         雨、強くなってきたね。[p]
 }
 ```
 
 ```text
-#say.opening.narrator.rain.sound
-#text.opening.narrator.rain.sound
-#say.opening.alice.rain.comment
-#text.opening.alice.rain.comment
+@say.opening.narrator.rain.sound
+@text.opening.narrator.rain.sound
+@say.opening.alice.rain.comment
+@text.opening.alice.rain.comment
 ```
 
 If `id` is omitted, the generated stable ID still includes the named scope path:
 
 ```text
 scope rain { 地の文: ... }
-  -> #say.opening.narrator.rain.001
-  -> #text.opening.narrator.rain.001
+  -> @say.opening.narrator.rain.001
+  -> @text.opening.narrator.rain.001
 ```
 
 Narration is the built-in narrator speaker alias and accepts the same options:
 
 ```awft
-地の文(id=#say.opening.narrator.rain):
+地の文(id=@say.opening.narrator.rain):
     扉の向こうから、雨の音がした。[p]
 
-narrator(id=#say.opening.narrator.rain):
+narrator(id=@say.opening.narrator.rain):
     扉の向こうから、雨の音がした。[p]
 ```
 
 Locale is split into source locale and runtime locale. `source` in project config describes the language of text written directly in `.awft`. Runtime locale comes from engine state/config and is not normally a line option. Per-line `source_locale` is only for exceptional embedded-language lines:
 
 ```awft
-alice(id=#say.opening.alice.english_quote, source_locale=en-US):
+alice(id=@say.opening.alice.english_quote, source_locale=en-US):
     Good morning.[p]
 ```
 
@@ -187,7 +187,7 @@ For a scoped override, use a lexical source locale block:
 
 ```awft
 source locale en-US {
-    alice(id=#say.opening.alice.english_quote):
+    alice(id=@say.opening.alice.english_quote):
         Good morning.[p]
 }
 ```
@@ -240,8 +240,8 @@ flow = "flow.opening"
 Static choice labels are localization extraction targets. Their text key is derived from the choice option ID unless explicitly provided:
 
 ```text
-#choice.opening.listen
-  -> #text.choice.opening.listen
+@choice.opening.listen
+  -> @text.choice.opening.listen
 ```
 
 Dynamic option labels are extracted only when the label value is `LocalizedText`, `TextKey`, or rich text with a stable text key. Plain runtime `String` labels are displayed but are not extractable; LSP should report `CHOICE_DYNAMIC_LABEL_NOT_LOCALIZABLE` for user-facing strings that need translation.
@@ -318,22 +318,22 @@ CSV is intentionally simple. `.awftloc` is used for structured localization meta
 ```awft
 locale en-US from ja-JP {
     line text.opening.alice.001 {
-        speaker = #character.alice
+        speaker = @character.alice
         source = "おはよう。"
         text = "Good morning."
         status = translated
         source_hash = "b3:91a2..."
-        voice = #voice.en-US.alice.opening.001
-        context = #flow.opening
+        voice = @voice.en-US.alice.opening.001
+        context = @flow.opening
     }
 
     line text.opening.alice.002 {
-        speaker = #character.alice
+        speaker = @character.alice
         source = rich "今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。"
         text = "I had a strange dream today."
         status = draft
         source_hash = "b3:f8c0..."
-        voice = #voice.en-US.alice.opening.002
+        voice = @voice.en-US.alice.opening.002
 
         notes {
             translator = "Keep this line slightly ominous."
@@ -345,7 +345,7 @@ locale en-US from ja-JP {
         source = "聞いてみる"
         text = "Ask her about it"
         status = translated
-        context = #choice.opening.first
+        context = @choice.opening.first
     }
 }
 ```
@@ -452,7 +452,7 @@ text.opening.alice.002,en-US,I had a strange dream today.,voice.en-US.alice.open
 ```awft
 line text.opening.alice.002 {
     text = "I had a strange dream today."
-    voice = #voice.en-US.alice.opening.002
+    voice = @voice.en-US.alice.opening.002
 }
 ```
 
@@ -522,7 +522,7 @@ Inlay hints:
 
 ```text
 alice: おはよう。[l]
-       #say.opening.alice.001 / text.opening.alice.001 / en-US: translated / zh-CN: missing
+       @say.opening.alice.001 / text.opening.alice.001 / en-US: translated / zh-CN: missing
 ```
 
 Hover:
@@ -561,3 +561,4 @@ Diagnostics:
 - text too long for textbox
 - choice label exceeds layout constraints
 ```
+

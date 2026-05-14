@@ -2,7 +2,7 @@ use super::support::*;
 
 #[test]
 fn parses_expression_shapes_needed_by_hir_lowering() {
-    let pipe = parse_expr("state |> has_affection_at_least(#character.alice, 3)")
+    let pipe = parse_expr("state |> has_affection_at_least(@character.alice, 3)")
         .expect("pipe expr parses");
     assert!(matches!(pipe, Expr::Pipe { .. }));
 
@@ -19,7 +19,7 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
         }] if matches!(target.as_ref(), Expr::Placeholder(Placeholder::Partial)) && field == "label"
     ));
 
-    let indexed = parse_expr("state.affection[#character.alice]").expect("index expr parses");
+    let indexed = parse_expr("state.affection[@character.alice]").expect("index expr parses");
     assert!(matches!(indexed, Expr::Index { .. }));
 
     let dialogue_index =
@@ -38,7 +38,7 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
     assert!(matches!(list, Expr::List(items) if items.len() == 3));
     let empty_list = parse_expr("[]").expect("empty list expression parses");
     assert!(matches!(empty_list, Expr::List(items) if items.is_empty()));
-    let nested_list = parse_expr("[#stem.piano, fade(0.2s, [slow, fast])]")
+    let nested_list = parse_expr("[@stem.piano, fade(0.2s, [slow, fast])]")
         .expect("nested list expression parses");
     assert!(matches!(nested_list, Expr::List(items) if items.len() == 2));
     let record_literal =
@@ -59,7 +59,7 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
     assert!(matches!(context_closure, Expr::Try { .. }));
 
     let delimited =
-        parse_expr("#<say.opening.dream_hint@sem:b3_9f2a1c>").expect("delimited ref expr parses");
+        parse_expr("@<say.opening.dream_hint@sem:b3_9f2a1c>").expect("delimited ref expr parses");
     assert!(matches!(delimited, Expr::EntityRef(entity) if entity.is_delimited()));
 
     let range = parse_expr("0.0..=1.0").expect("inclusive float range parses");

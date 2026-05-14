@@ -99,7 +99,7 @@ context:
 trace:
   0: game/routes/opening.awft:12:14
      flow.opening
-     await asset.image(#asset.bg.room)?
+     await asset.image(@asset.bg.room)?
 
   1: game/routes/opening.awft:9:5
      say.opening.narration.001 / text.opening.narration.001
@@ -117,11 +117,11 @@ ids:
 `.context(...)` and `.with_context(...)` append context frames without discarding the original cause.
 
 ```awft
-let bg = try await asset.image(#asset.bg.room)
+let bg = try await asset.image(@asset.bg.room)
     .context("while loading opening background")
 with:
     pending p:
-        scene #scene.loading:
+        scene @scene.loading:
             progress p.ratio
 ```
 
@@ -130,9 +130,9 @@ with:
 Parenthesized whole-await context is valid but not preferred:
 
 ```awft
-let bg = (await asset.image(#asset.bg.room) with:
+let bg = (await asset.image(@asset.bg.room) with:
     pending p:
-        scene #scene.loading:
+        scene @scene.loading:
             progress p.ratio
 ).context("while loading opening background")?
 ```
@@ -140,9 +140,9 @@ let bg = (await asset.image(#asset.bg.room) with:
 Rejected:
 
 ```awft
-await asset.image(#asset.bg.room)? with:
+await asset.image(@asset.bg.room)? with:
     pending p:
-        scene #scene.loading
+        scene @scene.loading
 ```
 
 Use `try await asset.image(...) with:`, `await? asset.image(...) with:`, or the

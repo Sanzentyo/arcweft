@@ -7,23 +7,70 @@ This is a compact summary of the current Arcweft surface grammar. It is intentio
 ```text
 Ident        := /[A-Za-z_][A-Za-z0-9_]*/
 IdentPath    := Ident ('::' Ident)*
-EntityRef    := '#' Ident ('.' Ident)* | '#<' EntityBody '>'
-RelativeId   := '.' Ident ('.' Ident)*
+EntityRef    := '@' Ident ('.' Ident)* | '@<' EntityBody '>'
+RelativeId   := DotRelativeId | SuperRelativeId
+DotRelativeId:= '@' DotRun Ident ('.' Ident)*
+DotRun       := '.'+
+SuperRelativeId := '@super' ('.' 'super')* '.' Ident ('.' Ident)*
 String       := '"' ... '"'
+RawString    := 'r' '#'* '"' RawText '"' '#'* 
 Newline      := '\n'
 Comment      := '//' TextToEndOfLine
 DocComment   := '///' MarkdownTextToEndOfLine
+Attribute    := '#[' AttributePath AttributeArgs? ']'
 ```
 
-`#` is reserved for entity references and is never a comment introducer. `///`
-forms Markdown documentation comments; consecutive `///` lines attach to the
-next documentable declaration or field. `@` remains available for attributes
-and scenario commands such as `@bg`, but `choice` is a flow item and is written
-without `@`.
+`@` is reserved for entity references. `#` appears only as part of the `#[...]`
+attribute opener; it is not a comment introducer and not an entity-ref sigil.
+`///` forms Markdown documentation comments; consecutive `///` lines attach to
+the next documentable declaration or field. Scenario operations such as
+background changes are ordinary effectful function calls, not `@` commands.
 
 `RelativeId` is accepted only in ID-bearing contexts such as dialogue line IDs,
 choice IDs, option IDs, and text-key overrides. It is not a general entity
-reference; write `goto #flow.opening.next`, not `goto .next`.
+reference; write `goto @flow.opening.next`, not `goto .next`.
+`@.suffix` resolves in the current ID scope. Each extra dot walks one parent ID
+scope outward: `@..suffix` is one parent, `@...suffix` is two parents, and so
+on. The explicit spelling `@super.suffix` / `@super.super.suffix` is accepted
+as the readable equivalent. These forms are ID-context-only relative IDs, not
+general expression-level entity references. Bare `.suffix` and bare `..suffix`
+are not part of the core grammar; `..` already appears in range and
+rest-pattern syntax.
+
+## Literals and primitive spellings
+
+```text
+BoolLiteral      := 'true' | 'false'
+UnitLiteral      := '()'
+IntLiteral       := DecimalInt | HexInt | OctInt | BinInt
+IntSuffix        := 'i8' | 'i16' | 'i32' | 'i64' | 'i128'
+                  | 'u8' | 'u16' | 'u32' | 'u64' | 'u128'
+                  | 'isize' | 'usize'
+FloatLiteral     := Digits '.' Digits? Exponent? FloatSuffix?
+                  | Digits Exponent FloatSuffix?
+FloatSuffix      := 'f32' | 'f64'
+UnitNumber       := Number UnitSuffix
+UnitSuffix       := 'ns' | 'us' | 'ms' | 's' | 'min' | 'h'
+                  | '%' | 'px' | 'pt' | 'em' | 'rem' | 'vw' | 'vh'
+                  | 'deg' | 'rad' | 'turn'
+                  | 'db' | 'lufs' | 'bpm' | 'bars'
+```
+
+Examples:
+
+```awft
+10i32
+2.0f32
+100pt
+300ms
+85%
+-6db
+"#fff"
+```
+
+Unsuffixed numeric literals require an expected type from annotation or
+signature. There is no default `i32`/`f64` fallback, and there are no concrete
+`int`, `uint`, `float`, or `Number` primitive type names.
 
 ## Module items
 
@@ -59,7 +106,6 @@ FlowItem     :=
     LetStmt
   | LetElseStmt
   | ControlStmt
-  | ScenarioCommand
   | DialogueLine
   | ChoiceBlock
   | IfExpr
@@ -75,7 +121,6 @@ FlowItem     :=
 NamedScope      := 'scope' Ident? BlockExpr
 ScopeStmt       := NamedScope | Block
 ScopeExpr       := 'scope' Ident? BlockExpr
-ScenarioCommand := '@' Ident ScenarioArgs?
 ```
 
 `crate`, `self`, and `super` are canonical module-path roots. `parent` is a
@@ -165,18 +210,18 @@ Relative dialogue line IDs and text-key overrides resolve through the current
 flow, current speaker, and named scope path:
 
 ```text
-id=.suffix
-  -> #say.{flow}.{speaker}.{scope_path}.{suffix}
-  -> #say.{flow}.{speaker}.{suffix} when scope_path is empty
+id=@.suffix
+  -> @say.{flow}.{speaker}.{scope_path}.{suffix}
+  -> @say.{flow}.{speaker}.{suffix} when scope_path is empty
 ```
 
 ```text
-scope dream { choice .first { .listen "聞いてみる" -> #flow.alice_intro } }
+scope dream { choice @.first { @.listen "聞いてみる" -> @flow.alice_intro } }
 
-choice .first -> #choice.opening.dream.first
-.listen       -> #choice.opening.dream.first.listen
+choice @.first -> @choice.opening.dream.first
+@.listen       -> @choice.opening.dream.first.listen
 
-choice .first outside a scope -> #choice.opening.first
+choice @.first outside a scope -> @choice.opening.first
 ```
 
 ## Hooks
@@ -355,7 +400,7 @@ RangeExpr   := Expr? ('..' | '..=') Expr?
 ```
 
 Field access such as `state.affection` is structured as a field expression.
-Type and module paths use `::`; public IDs use the `#flow.opening` entity form.
+Type and module paths use `::`; public IDs use the `@flow.opening` entity form.
 
 ## Try operator and await
 

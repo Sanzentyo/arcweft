@@ -2,25 +2,24 @@ use super::support::*;
 
 #[test]
 fn lowers_edge_case_flow_to_hir_without_raw_reparse() {
-    let tree = parse_source(
-            r#"
-flow #flow.opening opening {
-    @bg #asset.bg.room fade=300ms
+    let tree = parse_ok(
+        r#"
+flow @flow.opening opening {
+    @bg @asset.bg.room fade=300ms
     let (actor, (_, voice)) = alice.say()[聞いて。[p]]
-    try await load_opening_assets() with { pending p => scene #scene.loading { progress p.ratio } }
+    try await load_opening_assets() with { pending p => scene @scene.loading { progress p.ratio } }
     alice[
         今日は｜変な夢《へんなゆめ》を見たんだ。[p]
     ]
     with:
         at(end-250ms): alice.stage.face(worried)
-    choice #choice.opening.first {
-        #choice.opening.listen "聞いてみる" if state.affection[#character.alice] >= 3 -> #flow.alice_intro
+    choice @choice.opening.first {
+        @choice.opening.listen "聞いてみる" if state.affection[@character.alice] >= 3 -> @flow.alice_intro
     }
-    goto #flow.title
+    goto @flow.title
 }
 "#,
-        )
-        .expect("edge flow parses");
+    );
 
     let hir = lower_to_hir(&tree).expect("edge flow lowers");
     let flow = &hir.flows()[0];
@@ -50,7 +49,7 @@ flow #flow.opening opening {
 
 #[test]
 fn lowering_rejects_unstructured_raw_items() {
-    let tree = parse_source("unknown top level syntax").expect("raw item is syntax-preserved");
+    let tree = parse_ok("unknown top level syntax");
     let errors = lower_to_hir(&tree).expect_err("raw item cannot lower");
     assert!(errors[0].message().contains("raw"));
 }

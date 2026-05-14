@@ -1,6 +1,6 @@
 # Dialogue Line Manifest Schema
 
-A dialogue line is the compiled unit connecting source text, localization key, speaker, textbox target, voice, control tags, interpolation, stage timeline, history, and agent observation.
+A dialogue line is the compiled unit connecting source text, localization key, speaker, textbox target, voice, control tags, dialogue interpolation, stage timeline, history, and agent observation.
 
 ```json
 {
@@ -90,11 +90,11 @@ A dialogue line is the compiled unit connecting source text, localization key, s
 | `textbox` | TextBox target; defaults to `textbox.0` |
 | `source_locale` | Locale of inline/source text |
 | `source_text` | Plain source text, without non-text control tags |
-| `source_rich_text` | Source rich text including ruby, interpolation, and permitted control tags |
+| `source_rich_text` | Source rich text including ruby, dialogue interpolation, and permitted control tags |
 | `source_hash` | Hash used for stale translation detection |
 
 `flow` and `scope_path` are recommended for generated manifests. They preserve
-the context used to resolve relative IDs such as `id=.comment` and to derive
+the context used to resolve relative IDs such as `id=@.comment` and to derive
 text/voice keys. Fully qualified `line_id` and `text_key` remain the stable
 registry identities.
 
@@ -102,9 +102,9 @@ Relative source IDs are resolved before manifest emission. Dialogue line IDs use
 the current flow, speaker, and named-scope path:
 
 ```text
-id=.suffix
-  -> #say.{flow}.{speaker}.{scope_path}.{suffix}
-  -> #say.{flow}.{speaker}.{suffix} when scope_path is empty
+id=@.suffix
+  -> @say.{flow}.{speaker}.{scope_path}.{suffix}
+  -> @say.{flow}.{speaker}.{suffix} when scope_path is empty
 ```
 
 The manifest should keep the resolver context as data so tooling can explain
@@ -147,7 +147,7 @@ Relative source IDs are normalized before entering the manifest:
 
 ```awft
 scope rain {
-    alice(id=.comment, voice=auto):
+    alice(id=@.comment, voice=auto):
         雨、強くなってきたね。[p]
 }
 ```
@@ -197,7 +197,7 @@ Custom textboxes are recorded by entity ID:
 
 ## Interpolations
 
-Runtime interpolation via `#[expr]` requires `DisplayText` unless explicitly wrapped by `fmt(...)`.
+Dialogue interpolation via `#[expr]` requires `DisplayText` unless explicitly wrapped by `fmt(...)`.
 
 ```json
 {

@@ -215,13 +215,13 @@ pub enum InputDisposition {
 ## DSL: layer input
 
 ```awft
-layer #layer.choices: Choice {
+layer @layer.choices: Choice {
     z = 200
     input = hit_test
     hit_test = ui_layout
 }
 
-layer #layer.modal.settings: Modal {
+layer @layer.modal.settings: Modal {
     z = 1000
     input = modal
     backdrop = consume
@@ -232,7 +232,7 @@ UI component:
 
 ```awft
 Button("閉じる")
-    .layer(#layer.modal.settings)
+    .layer(@layer.modal.settings)
     .agent_target(#ui.settings.close)
     .on_click {
         emit UiEvent.SettingsClosed
@@ -243,7 +243,7 @@ Activity:
 
 ```awft
 activity #activity.fps_arena FpsArena {
-    layer #layer.activity.fps {
+    layer @layer.activity.fps {
         input = capture_when_active
         keyboard = exclusive
         gamepad = exclusive
@@ -293,7 +293,7 @@ Agent や test は座標 click ではなく semantic action を優先する。
 
 ```awft
 SemanticAction::Invoke {
-    target: #choice.opening.listen,
+    target: @choice.opening.listen,
     action: "select",
     args: {},
 }
@@ -382,22 +382,22 @@ bbox_source = UiLayoutExact | UiBridgeApprox | BackendUnavailable
 
 ```awft
 test #test.modal_blocks_choices scenario {
-    start #flow.opening
+    start @flow.opening
     open_ui #ui.settings
 
-    click #choice.opening.listen
+    click @choice.opening.listen
     expect no_event GameEvent::ChoiceSelected
 
     click #ui.settings.close
-    click #choice.opening.listen
-    expect event GameEvent::ChoiceSelected { id: #choice.opening.listen }
+    click @choice.opening.listen
+    expect event GameEvent::ChoiceSelected { id: @choice.opening.listen }
 }
 ```
 
 ## Contracts
 
 ```awft
-layer #layer.modal.settings: Modal
+layer @layer.modal.settings: Modal
 ensures input.blocks_lower_layers
 ensures focus.trapped_within(self)
 {
@@ -409,7 +409,7 @@ Activity input 契約:
 
 ```awft
 activity #activity.fps_arena FpsArena
-requires input_layer(#layer.activity.fps).policy == CaptureWhenActive
+requires input_layer(@layer.activity.fps).policy == CaptureWhenActive
 ensures no_lower_layer_receives_keyboard_while_active
 {
     ...
@@ -431,14 +431,14 @@ AfterInputRoute
 例:
 
 ```awft
-hook #hook.modal_block_check
-on #layer.ui.modal
+hook @hook.modal_block_check
+on @layer.ui.modal
 phase AfterInputRoute
 when input.kind == .PointerDown
 check on event
 {
     if route.result == .BlockedBelow {
-        signal #signal.modal_blocked_input <- true
+        signal @signal.modal_blocked_input <- true
     }
 }
 ```
@@ -450,13 +450,13 @@ check on event
 Input routing の各 phase では hook を実行できる。`input.capture` hook は modal や drag capture、`input.target` hook は実際に hit した object、`input.bubble` hook は親 layer への伝播に使う。
 
 ```awft
-hook #hook.choice.hover
-on #choice.opening.listen
+hook @hook.choice.hover
+on @choice.opening.listen
 phase InputTarget
 check on input PointerMove
 when input.pointer.hovered
 {
-    emit UiCommand::SetHover { target = #choice.opening.listen, value = true }
+    emit UiCommand::SetHover { target = @choice.opening.listen, value = true }
 }
 ```
 
@@ -480,11 +480,11 @@ RawInputEvent
 例:
 
 ```awft
-hook #hook.choice.hit_trace
-on #layer.ui.choices
+hook @hook.choice.hit_trace
+on @layer.ui.choices
 phase InputHitTest
 check on input PointerMove
-when object.entity == #choice.opening.listen
+when object.entity == @choice.opening.listen
 {
     log debug "hit choice listen" {}
 }
@@ -498,22 +498,22 @@ when object.entity == #choice.opening.listen
 Layer は hook 対象である。描画・入力・layout・Agent 観測の各 phase に hook を付けられる。
 
 ```awft
-layer #layer.choices: Choice {
+layer @layer.choices: Choice {
     z = 550
     input = hit_test
     hit_test = ui_layout
 }
 
-hook #hook.layer.choices.pointer_enter
-on #layer.choices
+hook @hook.layer.choices.pointer_enter
+on @layer.choices
 phase InputTarget
 check on input PointerEnter
 {
-    signal #signal.hovered_layer <- Some(#layer.choices)
+    signal @signal.hovered_layer <- Some(@layer.choices)
 }
 
-hook #hook.layer.choices.layout_changed
-on #layer.choices
+hook @hook.layer.choices.layout_changed
+on @layer.choices
 phase AfterLayout
 check on change layout
 {
@@ -529,12 +529,12 @@ check on change layout
 Layer routing の各 phase は hook の trigger になる。
 
 ```awft
-hook #hook.choice_click
-on #choice.opening.listen
+hook @hook.choice_click
+on @choice.opening.listen
 phase InputTarget
 check on input PointerClick
 {
-    emit GameEvent::ChoiceSelected { id = #choice.opening.listen }
+    emit GameEvent::ChoiceSelected { id = @choice.opening.listen }
     stop_propagation
 }
 ```
@@ -546,7 +546,7 @@ check on input PointerClick
 Layered Input は Object Hook Runtime と接続する。`RoutedInputEvent` が生成されたあと、`OnInputTarget` phase の Hook が評価される。
 
 ```awft
-on #choice.opening.listen input click
+on @choice.opening.listen input click
 when enabled(self)
 {
     emit GameEvent::ChoiceSelected { id = self }
@@ -598,7 +598,7 @@ The touch virtual controller is a UI-owned input producer. It receives raw touch
 ```text
 Touch event
   -> LayerTree hit test
-  -> #layer.input.touch_controller
+  -> @layer.input.touch_controller
   -> VirtualControl state update
   -> InputAction / InputAxis
   -> routed to gameplay or narrative layer

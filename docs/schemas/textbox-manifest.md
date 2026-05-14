@@ -1,6 +1,6 @@
 # TextBox Manifest Schema
 
-A TextBox is the target object for dialogue output. If no target is specified, `#textbox.0` is used.
+A TextBox is the target object for dialogue output. If no target is specified, `@textbox.0` is used.
 
 ```json
 {

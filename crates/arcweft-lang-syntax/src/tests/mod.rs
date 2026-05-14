@@ -4,6 +4,7 @@ mod await_;
 mod choice;
 mod contracts;
 mod control_flow;
+mod cst;
 mod declarations;
 mod diagnostics;
 mod dialogue;

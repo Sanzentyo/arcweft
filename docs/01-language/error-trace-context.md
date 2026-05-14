@@ -94,7 +94,7 @@ context:
 trace:
   0: game/routes/opening.awft:12:14
      flow.opening
-     await asset.image(#asset.bg.room)
+     await asset.image(@asset.bg.room)
 
   1: game/routes/opening.awft:9:5
      say.opening.narration.001 / text.opening.narration.001
@@ -150,10 +150,10 @@ let bg = load_bg(id)
 Typed context:
 
 ```awft
-let voice = voice.load(#voice.alice.001)
+let voice = voice.load(@voice.alice.001)
     .context("voice load failed")
-    .field("speaker", #character.alice)
-    .field("line", #say.opening.001)?
+    .field("speaker", @character.alice)
+    .field("line", @say.opening.001)?
 ```
 
 On `Option<T>`:
@@ -170,11 +170,11 @@ This converts `None` to `Err(ArcError)` and attaches the context.
 Context can be attached to the `Need` before awaiting.
 
 ```awft
-let bg = try await asset.image(#asset.bg.room)
+let bg = try await asset.image(@asset.bg.room)
     .context("while loading opening background")
 with:
     pending p:
-        scene #scene.loading:
+        scene @scene.loading:
             progress p.ratio
 ```
 
@@ -183,9 +183,9 @@ This is preferred.
 The explicit parenthesized form is valid but not recommended for hand-written code:
 
 ```awft
-let bg = (await asset.image(#asset.bg.room) with:
+let bg = (await asset.image(@asset.bg.room) with:
     pending p:
-        scene #scene.loading:
+        scene @scene.loading:
             progress p.ratio
 ).context("while loading opening background")?
 ```
@@ -197,9 +197,9 @@ explicitly asks for prefix-`?` style.
 Rejected because postfix `?` groups with the expression before `with:`:
 
 ```awft
-await asset.image(#asset.bg.room)? with:
+await asset.image(@asset.bg.room)? with:
     pending p:
-        scene #scene.loading
+        scene @scene.loading
 ```
 
 ## Automatic source frames
@@ -278,3 +278,4 @@ crash/
   }
 }
 ```
+

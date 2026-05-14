@@ -27,9 +27,9 @@ Related:
 Use these roles consistently:
 
 ```text
-#foo.bar
+@foo.bar
   Entity reference only.
-  Example: #flow.opening, #say.opening.001, #textbox.0.
+  Example: @flow.opening, @say.opening.001, @textbox.0.
 
 speaker(args): text
   Compact dialogue sugar.
@@ -50,7 +50,7 @@ with { plan } / with:
 `#` is not used for line options. `#` remains only an entity-reference marker. A line ID, window, voice, or hook reference is passed like any other option:
 
 ```awft
-alice(id=#say.opening.greeting, window=#textbox.side, voice=auto, face=smile):
+alice(id=@say.opening.greeting, window=@textbox.side, voice=auto, face=smile):
     おはよう。[p]
 ```
 
@@ -65,11 +65,11 @@ Older compact option styles without parentheses are not part of the stable gramm
 A character can be called with line options to produce a reusable speaker preset. This is the preferred way to avoid repeating `voice`, `face`, `window`, and style options.
 
 ```awft
-let alice2 = alice(face=smile, voice=auto, window=#textbox.side)
+let alice2 = alice(face=smile, voice=auto, window=@textbox.side)
 
 alice2: おはよう。[p]
 
-alice2(id=#say.opening.side_001):
+alice2(id=@say.opening.side_001):
     こっちのウィンドウで話すね。[p]
 ```
 
@@ -78,15 +78,15 @@ then applying dialogue content: `alice2()[...]`. Per-line options refine the
 preset first, so `alice2(voice=auto): text` lowers to
 `alice2(voice=auto)[text]`, not to a forced character `.say(...)` call. The
 preset is a pure lexical value, so it can be passed to helper functions or kept
-local to a block without mutating `#character.alice`.
+local to a block without mutating `@character.alice`.
 ---
 
 ## Canonical form
 
 ```awft
 alice.say(
-    id = #say.opening.dream_hint,
-    window = #textbox.0,
+    id = @say.opening.dream_hint,
+    window = @textbox.0,
     voice = auto,
     face = smile,
 )[
@@ -98,7 +98,7 @@ with {
     }
 
     at(end-250ms) {
-        alice.stage.animate(#anim.breath.once)
+        alice.stage.animate(@anim.breath.once)
     }
 }
 ```
@@ -109,7 +109,7 @@ This creates and executes a `DialogueLine`.
 pub fn Character.say(
     self: Ref<Character>,
     id: Option<Ref<DialogueLine>> = None,
-    window: Ref<Textbox> = #textbox.0,
+    window: Ref<Textbox> = @textbox.0,
     voice: VoicePolicy = auto,
     face: Option<Expression> = None,
     style: Option<TextStylePatch> = None,
@@ -147,14 +147,14 @@ alice.say()[
 Line options go inside parentheses:
 
 ```awft
-alice(id=#say.opening.greeting, face=smile, voice=auto):
+alice(id=@say.opening.greeting, face=smile, voice=auto):
     おはよう。[p]
 ```
 
 which is sugar for:
 
 ```awft
-alice.say(id=#say.opening.greeting, face=smile, voice=auto)[
+alice.say(id=@say.opening.greeting, face=smile, voice=auto)[
     おはよう。[p]
 ]
 ```
@@ -311,7 +311,7 @@ with {
     cancel on input .BackToTitle {
         stop voice fade=80ms
         stop cues policy=cancel_pending
-        goto #flow.title
+        goto @flow.title
     }
 }
 ```
@@ -333,7 +333,7 @@ with {
         together {
             alice.stage.move(to=left, time=300ms, ease=quad.out)
             alice.stage.face(panic, crossfade=80ms)
-            se.play(#se.footstep_fast)
+            se.play(@se.footstep_fast)
         }
     }
 
@@ -357,7 +357,7 @@ at(+120ms) { alice.stage.mouth(open) }
 at(end-200ms) { alice.stage.move(to=left, time=260ms, ease=quad.out) }
 at(marker("soft_smile")) { alice.stage.face(smile, crossfade=100ms) }
 at(phoneme "a") { alice.stage.mouth(a) }
-at(char 12) { signal #signal.text_reveal_hit <- true }
+at(char 12) { signal @signal.text_reveal_hit <- true }
 ```
 
 Supported anchors:
@@ -395,7 +395,7 @@ This is sugar for a timeline event in the surrounding line. Prefer line-plan `at
 Audio can also be the outer call when a voice region controls nested text or cues:
 
 ```awft
-alice.voice(#voice.alice.opening.002).play()[
+alice.voice(@voice.alice.opening.002).play()[
     alice.say()[今日は少しだけ、変な夢を見たんだ。[p]]
 ]
 with {
@@ -436,12 +436,12 @@ with {
     cancel on input .BackToTitle {
         stop voice fade=80ms
         stop cues policy=cancel_pending
-        goto #flow.title
+        goto @flow.title
     }
 
-    cancel on signal #signal.route_forced {
+    cancel on signal @signal.route_forced {
         stop voice fade=120ms
-        goto signal_value(#signal.route_forced)
+        goto signal_value(@signal.route_forced)
     }
 }
 ```
@@ -454,7 +454,7 @@ let outcome = alice.say(voice=auto)[
 ]
 with {
     cancel on input .SkipLine => LineCancel::Skipped
-    cancel on input .BackToTitle => LineCancel::Goto(#flow.title)
+    cancel on input .BackToTitle => LineCancel::Goto(@flow.title)
 }
 
 match outcome {
@@ -588,7 +588,7 @@ use tag game::fx::{flash as flash_tag}
 A custom tag maps bracket syntax to a typed function.
 
 ```awft
-pub dialogue tag #tag.shake shake(
+pub dialogue tag @tag.shake shake(
     target: Ref<Character>,
     strength: f32 = 0.25,
     time: Duration = 180ms,
@@ -609,7 +609,7 @@ alice: きゃっ。[shake target=alice strength=0.4 time=160ms][p]
 Hook dispatch:
 
 ```awft
-alice: #[player_name]、聞いて。[hook #hook.dialogue.mark_important][p]
+alice: #[player_name]、聞いて。[hook @hook.dialogue.mark_important][p]
 ```
 
 Custom tag names cannot collide with reserved built-ins such as `p`, `l`, `ruby`, `call`, `hook`, `voice`, or `at`.
@@ -632,14 +632,14 @@ alice.say(face=smile, voice=auto)[
 ```
 
 ```awft
-alice(id=#say.opening.003, face=smile, voice=#voice.alice.003):
+alice(id=@say.opening.003, face=smile, voice=@voice.alice.003):
     ほら、ここ。覚えてる？[p]
 ```
 
 becomes conceptually:
 
 ```awft
-alice.say(id=#say.opening.003, face=smile, voice=#voice.alice.003)[
+alice.say(id=@say.opening.003, face=smile, voice=@voice.alice.003)[
     ほら、ここ。覚えてる？[p]
 ]
 ```
@@ -684,7 +684,7 @@ values; `return` exits the nearest `fn`, `task fn`, `parser`, or `flow`.
 
 ```awft
 let (actor, (face0, face1, voice)) = alice.say(
-    id=#say.opening.dream_hint,
+    id=@say.opening.dream_hint,
     voice=auto,
     face=smile,
 )[
@@ -721,6 +721,7 @@ BGM, subscriptions, hooks, and stage leases follow the same rule. To keep BGM be
 ```awft
 let bgm_handle = alice[始まるよ。[p]]
 with:
-    let scoped_bgm = bgm.play(#bgm.tension, scope=line, drop=fade(300ms))
+    let scoped_bgm = bgm.play(@bgm.tension, scope=line, drop=fade(300ms))
     out scoped_bgm.detach()
 ```
+

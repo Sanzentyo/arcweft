@@ -42,4 +42,4 @@ arcw ids materialize --write game/routes/
 Materialization resolves only ID-bearing contexts such as line IDs, text keys,
 choice IDs, and choice option IDs. It must not rewrite ordinary entity
 references, and it must not invent support for ambiguous forms such as
-`goto .next`.
+`goto @.next`.

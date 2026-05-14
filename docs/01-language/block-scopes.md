@@ -39,7 +39,7 @@ The same rule applies to richer control-flow expressions inside the block:
 
 ```awft
 let label = {
-    let affection = state.affection[#character.alice]
+    let affection = state.affection[@character.alice]
     if affection >= 3 {
         "聞いてみる"
     } else {
@@ -87,7 +87,7 @@ break expr
 Line plans and choice plans therefore use `out` for their own result values:
 
 ```awft
-let voice = alice(id=.greeting)[
+let voice = alice(id=@.greeting)[
     おはよう。[p]
 ]
 with:
@@ -105,10 +105,10 @@ diagnostic frame, trace frame, or LSP/debug region.
 
 ```awft
 scope rain {
-    地の文(id=.sound):
+    地の文(id=@.sound):
         扉の向こうから、雨の音がした。[p]
 
-    alice(id=.comment):
+    alice(id=@.comment):
         雨、強くなってきたね。[p]
 }
 ```
@@ -118,13 +118,13 @@ The name is also added to relative dialogue, choice, option, and text-key ID
 generation inside the block.
 
 ```text
-地の文(id=.sound)
-  -> #say.opening.narrator.rain.sound
-  -> #text.opening.narrator.rain.sound
+地の文(id=@.sound)
+  -> @say.opening.narrator.rain.sound
+  -> @text.opening.narrator.rain.sound
 
-alice(id=.comment)
-  -> #say.opening.alice.rain.comment
-  -> #text.opening.alice.rain.comment
+alice(id=@.comment)
+  -> @say.opening.alice.rain.comment
+  -> @text.opening.alice.rain.comment
 ```
 
 If a line ID is omitted, the generated stable slot still includes the current
@@ -138,8 +138,8 @@ scope rain {
 ```
 
 ```text
-#say.opening.narrator.rain.001
-#text.opening.narrator.rain.001
+@say.opening.narrator.rain.001
+@text.opening.narrator.rain.001
 ```
 
 Named scopes can nest, and the scope path is appended in order:
@@ -147,15 +147,15 @@ Named scopes can nest, and the scope path is appended in order:
 ```awft
 scope rain {
     scope window {
-        地の文(id=.rattle):
+        地の文(id=@.rattle):
             窓が小さく鳴った。[p]
     }
 }
 ```
 
 ```text
-#say.opening.narrator.rain.window.rattle
-#text.opening.narrator.rain.window.rattle
+@say.opening.narrator.rain.window.rattle
+@text.opening.narrator.rain.window.rattle
 ```
 
 `scope` can be used in expression position too. In that case, the final
@@ -163,8 +163,8 @@ expression is the value just like an ordinary `{ ... }` block.
 
 ```awft
 let can_enter = scope alice_route_check {
-    let affection_ok = state.affection[#character.alice] >= 3
-    let has_key = state.inventory.contains(#item.alice_key)
+    let affection_ok = state.affection[@character.alice] >= 3
+    let has_key = state.inventory.contains(@item.alice_key)
     affection_ok && has_key
 }
 ```
@@ -175,7 +175,7 @@ does not contribute an ID namespace segment.
 
 ```awft
 let can_enter = scope {
-    let affection_ok = state.affection[#character.alice] >= 3
+    let affection_ok = state.affection[@character.alice] >= 3
     affection_ok
 }
 ```
@@ -189,23 +189,23 @@ relative option IDs are then resolved under that normalized choice ID.
 
 ```awft
 scope dream {
-    choice .first {
-        .listen "聞いてみる" -> #flow.alice_intro
+    choice @.first {
+        @.listen "聞いてみる" -> @flow.alice_intro
     }
 }
 ```
 
 ```text
-choice .first -> #choice.opening.dream.first
-.listen       -> #choice.opening.dream.first.listen
+choice @.first -> @choice.opening.dream.first
+@.listen       -> @choice.opening.dream.first.listen
 ```
 
 When there is no named scope, the scope segment is omitted rather than emitted
 as an empty path component:
 
 ```text
-alice(id=.greeting) -> #say.opening.alice.greeting
-choice .first       -> #choice.opening.first
+alice(id=@.greeting) -> @say.opening.alice.greeting
+choice @.first       -> @choice.opening.first
 ```
 
 ## Borrow and lifetime

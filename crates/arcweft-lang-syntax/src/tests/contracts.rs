@@ -2,20 +2,19 @@ use super::support::*;
 
 #[test]
 fn parses_flow_contracts_before_body_block() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
+pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
 requires delta >= -100 && delta <= 100
 ensures check result.affection[character] >= 0
 requires progress in 0.0..=1.0
 effects { asset.read, ui.show }
 ensures no_effect network.request
 {
-    goto #flow.title
+    goto @flow.title
 }
 ",
-    )
-    .expect("flow contracts parse");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -41,7 +40,7 @@ ensures no_effect network.request
 
 #[test]
 fn parses_documented_contract_clauses_and_logical_ops() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
 pub fn add_affection(character: Ref<Character>, delta: i32)(state: GameState) -> GameState
 requires delta >= -100 && delta <= 100
@@ -54,8 +53,7 @@ assume external_plugin_is_deterministic
     state
 }
 ",
-    )
-    .expect("documented contracts parse");
+    );
 
     let Item::Function(function) = &tree.items()[0] else {
         panic!("expected function item");
@@ -93,7 +91,7 @@ assume external_plugin_is_deterministic
 
 #[test]
 fn parses_function_item_with_lifetimes_and_contracts() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
 pub fn first<'a>(xs: &'a [ChoiceView]) -> Option<&'a ChoiceView>
 requires xs.len() > 0
@@ -103,8 +101,7 @@ effects { asset.read }
     xs[0]
 }
 ",
-    )
-    .expect("function item parses");
+    );
 
     let Item::Function(function) = &tree.items()[0] else {
         panic!("expected function item");
@@ -134,19 +131,18 @@ effects { asset.read }
 
 #[test]
 fn typechecks_flow_contract_expressions() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
+pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
 requires delta >= -100 && delta <= 100
 ensures check result.affection[character] >= 0
 effects { asset.read, ui.show }
 ensures no_effect network.request
 {
-    goto #flow.title
+    goto @flow.title
 }
 ",
-    )
-    .expect("contract typecheck fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("contract typecheck fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol("delta", TypeKind::Int)

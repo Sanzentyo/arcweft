@@ -3,7 +3,7 @@
 ```awft
 mod game::ui::touch_controller
 
-pub layer #layer.input.touch_controller {
+pub layer @layer.input.touch_controller {
     z = 900
     render = true
     input = true
@@ -11,14 +11,14 @@ pub layer #layer.input.touch_controller {
     pass_through = true
 }
 
-pub virtual_controller #controller.touch_default: TouchController {
-    layer = #layer.input.touch_controller
+pub virtual_controller @controller.touch_default: TouchController {
+    layer = @layer.input.touch_controller
     visible_when = platform.touch_available || state.settings.force_touch_controller
     opacity = state.settings.touch_controller.opacity
     safe_area = true
 
     left {
-        joystick #control.left_stick {
+        joystick @control.left_stick {
             action_axis x = move_x
             action_axis y = move_y
             radius = 86
@@ -28,13 +28,13 @@ pub virtual_controller #controller.touch_default: TouchController {
     }
 
     right {
-        button #control.confirm {
+        button @control.confirm {
             label = "A"
             action = confirm
             position = anchor(.bottom_right, x = 96, y = 112)
         }
 
-        button #control.cancel {
+        button @control.cancel {
             label = "B"
             action = cancel
             position = anchor(.bottom_right, x = 170, y = 56)
@@ -46,9 +46,9 @@ pub virtual_controller #controller.touch_default: TouchController {
 ## Test
 
 ```awft
-test #test.touch_controller_confirm scenario {
-    start #flow.opening
-    invoke #control.confirm press
+test @test.touch_controller_confirm scenario {
+    start @flow.opening
+    invoke @control.confirm press
     expect event InputAction.confirm
 }
 ```

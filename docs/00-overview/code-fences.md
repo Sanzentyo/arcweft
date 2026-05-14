@@ -18,8 +18,8 @@ Plain pipeline/diagram:    ```text
 Arcweft の source extension は `.awft` なので、DSL 例は原則 `awft` fence を使う。
 
 ```awft
-pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    alice(id=#say.opening.001): おはよう。[p]
+pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+    alice(id=@say.opening.001): おはよう。[p]
     Ok(FlowExit::Done)
 }
 ```

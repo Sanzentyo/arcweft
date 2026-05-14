@@ -18,7 +18,7 @@ Examples:
 
 ```awft
 return Err(.MissingRoute)
-goto #flow.title
+goto @flow.title
 break route
 continue
 panic "invalid state"
@@ -34,7 +34,7 @@ Expression-oriented control flow requires a bottom type. Without it, these commo
 let route = if let .Some(route) = state.route_override {
     route
 } else {
-    goto #flow.title
+    goto @flow.title
 }
 ```
 
@@ -73,7 +73,7 @@ This applies to:
 
 ```awft
 return expr      # exits current fn / flow / parser / task fn
-goto #flow.x     # exits current flow segment with FlowExit::Goto
+goto @flow.x     # exits current flow segment with FlowExit::Goto
 break expr       # exits nearest loop; if loop-valued, contributes expr type
 continue         # starts next loop iteration
 panic "msg"      # runtime failure; type !
@@ -100,7 +100,7 @@ let route = loop {
     let event = wait_event()
     match event {
         .ChoiceSelected { id } => break route_for_choice(id)
-        .BackToTitle => break #flow.title
+        .BackToTitle => break @flow.title
         _ => continue
     }
 }
@@ -112,7 +112,7 @@ The `else` part must diverge.
 
 ```awft
 let .Some(route) = state.route_override else {
-    goto #flow.title
+    goto @flow.title
 }
 ```
 
@@ -120,7 +120,7 @@ Invalid:
 
 ```awft
 let .Some(route) = state.route_override else {
-    #flow.title
+    @flow.title
 }
 ```
 
@@ -166,3 +166,4 @@ this branch never returns
 ```
 
 rather than forcing users to understand bottom-type theory.
+

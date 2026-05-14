@@ -2,9 +2,9 @@ use super::support::*;
 
 #[test]
 fn typecheck_rejects_locals_escaping_named_and_bare_scopes() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
+flow @flow.opening opening {
     scope rain {
         let scoped_name = true
     }
@@ -22,8 +22,7 @@ flow #flow.opening opening {
     let from_unnamed_scope = unnamed_scope_name
 }
 ",
-    )
-    .expect("scope escape fixture parses");
+    );
 
     let hir = lower_to_hir(&tree).expect("scope escape fixture lowers");
     validate_typecheck_ready(&hir).expect("scope escape fixture is typecheck-ready");
@@ -55,25 +54,24 @@ flow #flow.opening opening {
 
 #[test]
 fn lowers_scope_expression_let_binding() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     let can_enter = scope alice_route_check {
-        let affection_ok = state.affection[#character.alice] >= 3
-        let has_key = state.inventory.contains(#item.alice_key)
+        let affection_ok = state.affection[@character.alice] >= 3
+        let has_key = state.inventory.contains(@item.alice_key)
         affection_ok && has_key
     }
 
     if can_enter {
-        goto #flow.alice_intro
+        goto @flow.alice_intro
     }
 }
 
-flow #flow.alice_intro alice_intro {
+flow @flow.alice_intro alice_intro {
 }
 ",
-    )
-    .expect("scope expression fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected source flow");
@@ -120,24 +118,23 @@ flow #flow.alice_intro alice_intro {
 
 #[test]
 fn lowers_unnamed_scope_expression_let_binding() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
+flow @flow.opening opening {
     let ready = scope {
         let local = true
         local
     }
 
     if ready {
-        goto #flow.next
+        goto @flow.next
     }
 }
 
-flow #flow.next next {
+flow @flow.next next {
 }
 ",
-    )
-    .expect("unnamed scope expression fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected source flow");
@@ -167,9 +164,9 @@ flow #flow.next next {
 
 #[test]
 fn parses_and_typechecks_plain_block_expression_binding() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.block_expr block_expr {
+flow @flow.block_expr block_expr {
     let total = {
         let a = 1
         let b = 2
@@ -177,8 +174,7 @@ flow #flow.block_expr block_expr {
     }
 }
 ",
-    )
-    .expect("plain block expression fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -201,21 +197,20 @@ flow #flow.block_expr block_expr {
 
 #[test]
 fn parses_and_typechecks_let_else_binding() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     let .Some(route) = state.route_override else {
-        goto #flow.title
+        goto @flow.title
     }
 
     goto route
 }
 
-flow #flow.title title {
+flow @flow.title title {
 }
 ",
-    )
-    .expect("let-else fixture parses");
+    );
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected source flow");
     };
@@ -244,19 +239,18 @@ flow #flow.title title {
 
 #[test]
 fn typecheck_rejects_non_diverging_let_else() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     let .Some(route) = state.route_override else {
-        #flow.title
+        @flow.title
     }
 }
 
-flow #flow.title title {
+flow @flow.title title {
 }
 ",
-    )
-    .expect("non-diverging let-else fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("non-diverging let-else fixture lowers");
     let env = TypeCheckEnv::new().with_symbol(
         "state.route_override",
@@ -279,7 +273,7 @@ fn typechecks_let_else_panic_and_fail_as_diverging() {
     ] {
         let source = format!(
             r"
-flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {{
+flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {{
     let .Some(route) = state.route_override else {{
         {diverging}
     }}
@@ -288,7 +282,7 @@ flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {{
 }}
 "
         );
-        let tree = parse_source(source).expect("diverging let-else fixture parses");
+        let tree = parse_ok(source);
         let hir = lower_to_hir(&tree).expect("diverging let-else fixture lowers");
         let env = TypeCheckEnv::new()
             .with_symbol(
@@ -302,18 +296,17 @@ flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {{
 
 #[test]
 fn parses_and_typechecks_bail_and_ensure_statements() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-flow #flow.validate validate {
+flow @flow.validate validate {
     ensure score >= 0, "score must be non-negative"
     if !valid {
         bail "invalid score"
     }
-    goto #flow.title
+    goto @flow.title
 }
 "#,
-    )
-    .expect("bail and ensure fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -332,19 +325,18 @@ flow #flow.validate validate {
 
 #[test]
 fn parses_and_typechecks_result_computation_block_binding() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-flow #flow.compute compute {
+flow @flow.compute compute {
     let route = result {
         let id = parse_choice_id(raw)?
         ensure id_valid, "choice id must be valid"
-        Ok(#flow.title)
+        Ok(@flow.title)
     }
-    goto #flow.title
+    goto @flow.title
 }
 "#,
-    )
-    .expect("result computation block fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -388,21 +380,20 @@ flow #flow.compute compute {
 
 #[test]
 fn parses_and_typechecks_stream_computation_block_binding() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.stream stream_example {
+flow @flow.stream stream_example {
     let levels = stream {
         for frame in frames {
             yield rms(frame)
         }
     }
-    goto #flow.title
+    goto @flow.title
 }
 
-flow #flow.title title {}
+flow @flow.title title {}
 ",
-    )
-    .expect("stream computation block fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -430,19 +421,18 @@ flow #flow.title title {}
             .with_symbol("frames", TypeKind::Named("Stream".to_owned()))
             .with_function("rms", TypeKind::Int),
     )
-    .expect("stream computation block typechecks");
+    .expect("typecheck succeeds");
 }
 
 #[test]
 fn typecheck_rejects_non_bool_ensure_condition() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-flow #flow.validate validate {
+flow @flow.validate validate {
     ensure score, "score must be non-negative"
 }
 "#,
-    )
-    .expect("non-bool ensure fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("non-bool ensure fixture lowers");
     let errors = typecheck_hir(
         &hir,
@@ -459,16 +449,15 @@ flow #flow.validate validate {
 
 #[test]
 fn parses_and_typechecks_while_loop() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.loading loading {
+flow @flow.loading loading {
     while loading {
         continue
     }
 }
 ",
-    )
-    .expect("while fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -489,21 +478,20 @@ flow #flow.loading loading {
         &hir,
         &TypeCheckEnv::new().with_symbol("loading", TypeKind::Bool),
     )
-    .expect("while block typechecks");
+    .expect("typecheck succeeds");
 }
 
 #[test]
 fn parses_and_typechecks_if_let_guard_block() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.branching branching {
+flow @flow.branching branching {
     if let .Some(route) = state.route_override when route_available {
         goto route
     }
 }
 ",
-    )
-    .expect("if-let fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -533,9 +521,9 @@ flow #flow.branching branching {
 
 #[test]
 fn parses_and_typechecks_value_if_expression_binding() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-flow #flow.branching branching {
+flow @flow.branching branching {
     let face = if ready {
         "smile"
     } else {
@@ -543,8 +531,7 @@ flow #flow.branching branching {
     }
 }
 "#,
-    )
-    .expect("value if expression fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -577,14 +564,14 @@ flow #flow.branching branching {
         &hir,
         &TypeCheckEnv::new().with_symbol("ready", TypeKind::Bool),
     )
-    .expect("value if expression typechecks");
+    .expect("typecheck succeeds");
 }
 
 #[test]
 fn typecheck_rejects_value_if_branch_type_mismatch() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-flow #flow.branching branching {
+flow @flow.branching branching {
     let face = if ready {
         "smile"
     } else {
@@ -592,8 +579,7 @@ flow #flow.branching branching {
     }
 }
 "#,
-    )
-    .expect("mismatched value if fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("mismatched value if fixture lowers");
     let errors = typecheck_hir(
         &hir,
@@ -609,18 +595,17 @@ flow #flow.branching branching {
 
 #[test]
 fn parses_and_typechecks_value_if_let_expression_binding() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.branching branching {
+flow @flow.branching branching {
     let route = if let .Some(route) = state.route_override when route_enabled {
         route
     } else {
-        #flow.title
+        @flow.title
     }
 }
 ",
-    )
-    .expect("value if-let expression fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -661,23 +646,22 @@ flow #flow.branching branching {
             )
             .with_symbol("route_enabled", TypeKind::Bool),
     )
-    .expect("value if-let expression typechecks");
+    .expect("typecheck succeeds");
 }
 
 #[test]
 fn typecheck_rejects_value_if_let_non_bool_guard() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.branching branching {
+flow @flow.branching branching {
     let route = if let .Some(route) = state.route_override when route_count {
         route
     } else {
-        #flow.title
+        @flow.title
     }
 }
 ",
-    )
-    .expect("non-bool value if-let fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("non-bool value if-let fixture lowers");
     let errors = typecheck_hir(
         &hir,
@@ -698,18 +682,17 @@ flow #flow.branching branching {
 
 #[test]
 fn parses_and_typechecks_value_match_expression_binding() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.branching branching {
+flow @flow.branching branching {
     let route = match selected {
-        #choice.opening.listen when can_listen => #flow.alice_intro
-        #choice.opening.silent => #flow.quiet_intro
-        _ => #flow.title
+        @choice.opening.listen when can_listen => @flow.alice_intro
+        @choice.opening.silent => @flow.quiet_intro
+        _ => @flow.title
     }
 }
 ",
-    )
-    .expect("value match expression fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -738,22 +721,21 @@ flow #flow.branching branching {
             .with_symbol("selected", TypeKind::Ref(EntityKind::ChoiceOption))
             .with_symbol("can_listen", TypeKind::Bool),
     )
-    .expect("value match expression typechecks");
+    .expect("typecheck succeeds");
 }
 
 #[test]
 fn typecheck_rejects_value_match_branch_type_mismatch() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-flow #flow.branching branching {
+flow @flow.branching branching {
     let route = match selected {
-        #choice.opening.listen => #flow.alice_intro
+        @choice.opening.listen => @flow.alice_intro
         _ => "fallback"
     }
 }
 "#,
-    )
-    .expect("mismatched value match fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("mismatched value match fixture lowers");
     let errors = typecheck_hir(
         &hir,
@@ -769,14 +751,13 @@ flow #flow.branching branching {
 
 #[test]
 fn parses_and_typechecks_postfix_try_expression() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.trying trying {
+flow @flow.trying trying {
     let config = load_config()?
 }
 ",
-    )
-    .expect("postfix try fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -803,19 +784,18 @@ flow #flow.trying trying {
             },
         ),
     )
-    .expect("postfix try expression typechecks");
+    .expect("typecheck succeeds");
 }
 
 #[test]
 fn parses_and_typechecks_prefix_try_expression() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.trying trying {
+flow @flow.trying trying {
     let config = try load_config()
 }
 ",
-    )
-    .expect("prefix try fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("prefix try fixture lowers");
     validate_typecheck_ready(&hir).expect("prefix try expression is typecheck-ready");
     typecheck_hir(
@@ -825,21 +805,20 @@ flow #flow.trying trying {
             TypeKind::Named("Result<Config, Error>".to_owned()),
         ),
     )
-    .expect("prefix try expression typechecks");
+    .expect("typecheck succeeds");
 }
 
 #[test]
 fn typecheck_rejects_non_bool_if_let_guard() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.branching branching {
+flow @flow.branching branching {
     if let .Some(route) = state.route_override when route_count {
         goto route
     }
 }
 ",
-    )
-    .expect("non-bool if-let guard fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("non-bool if-let guard fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol(
@@ -857,16 +836,15 @@ flow #flow.branching branching {
 
 #[test]
 fn parses_and_typechecks_while_let_loop() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.events events {
+flow @flow.events events {
     while let .Some(event) = next_event when event_ready {
         goto event
     }
 }
 ",
-    )
-    .expect("while-let fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -896,16 +874,15 @@ flow #flow.events events {
 
 #[test]
 fn typecheck_rejects_non_bool_while_condition() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.loading loading {
+flow @flow.loading loading {
     while loading_count {
         continue
     }
 }
 ",
-    )
-    .expect("non-bool while fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("non-bool while fixture lowers");
     let errors = typecheck_hir(
         &hir,
@@ -921,21 +898,20 @@ flow #flow.loading loading {
 
 #[test]
 fn parses_and_typechecks_loop_expression_binding() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
+flow @flow.opening opening {
     let next = 'events: loop {
-        break 'events #flow.title
+        break 'events @flow.title
     }
 
     goto next
 }
 
-flow #flow.title title {
+flow @flow.title title {
 }
 ",
-    )
-    .expect("loop expression fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -971,19 +947,18 @@ flow #flow.title title {
 
 #[test]
 fn typecheck_rejects_break_value_in_while() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.loading loading {
+flow @flow.loading loading {
     while is_loading {
-        break #flow.title
+        break @flow.title
     }
 }
 
-flow #flow.title title {
+flow @flow.title title {
 }
 ",
-    )
-    .expect("while break-value fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("while break-value fixture lowers");
     let errors = typecheck_hir(
         &hir,
@@ -999,14 +974,13 @@ flow #flow.title title {
 
 #[test]
 fn typecheck_rejects_break_outside_loop() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
+flow @flow.opening opening {
     break
 }
 ",
-    )
-    .expect("bare break fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("bare break fixture lowers");
     let errors =
         typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("break outside loops is rejected");
@@ -1019,12 +993,12 @@ flow #flow.opening opening {
 
 #[test]
 fn typecheck_rejects_unresolved_control_transfer_labels() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
+flow @flow.opening opening {
     let next = 'events: loop {
         if done {
-            break 'missing #flow.title
+            break 'missing @flow.title
         }
         continue 'missing
     }
@@ -1037,10 +1011,9 @@ flow #flow.opening opening {
     }
 }
 
-flow #flow.title title {}
+flow @flow.title title {}
 ",
-    )
-    .expect("unresolved label fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("unresolved label fixture lowers");
     validate_typecheck_ready(&hir).expect("unresolved label fixture is typecheck-ready");
     let errors = typecheck_hir(
@@ -1070,31 +1043,30 @@ flow #flow.title title {}
 
 #[test]
 fn parses_for_and_select_flow_blocks() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.stream stream {
+flow @flow.stream stream {
     for c in choices {
         option c.id c.label
     }
     select {
         audio = frames.next? => {
-            signal #signal.voice_level <- audio.rms
+            signal @signal.voice_level <- audio.rms
         }
 
         frame _ => {
-            scene #scene.listening
+            scene @scene.listening
             continue
         }
 
         event .Back => {
             close frames
-            return Ok(FlowExit::Goto(#flow.title))
+            return Ok(FlowExit::Goto(@flow.title))
         }
     }
 }
 ",
-    )
-    .expect("for and select parse");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -1138,16 +1110,15 @@ flow #flow.stream stream {
 
 #[test]
 fn parses_borrow_block_with_lifetime_binding() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.borrow borrow {
+flow @flow.borrow borrow {
     borrow bg.pixels() as pixels: &'asset [Rgba8] {
         let average = pixels.average_color()
     }
 }
 ",
-    )
-    .expect("borrow block parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -1178,15 +1149,14 @@ flow #flow.borrow borrow {
 #[test]
 fn typecheck_rejects_borrow_across_yield_spawn_and_defer_boundaries() {
     for boundary in ["yield frame", "spawn load_avatar()", "defer cleanup()"] {
-        let tree = parse_source(format!(
+        let tree = parse_ok(format!(
             r"
-flow #flow.borrow borrow {{
+flow @flow.borrow borrow {{
     let pixels: &'asset [Rgba8] = bg.pixels()
     {boundary}
 }}
 "
-        ))
-        .expect("borrow boundary fixture parses");
+        ));
         let hir = lower_to_hir(&tree).expect("borrow boundary fixture lowers");
         let env = TypeCheckEnv::new()
             .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
@@ -1211,20 +1181,19 @@ flow #flow.borrow borrow {{
 
 #[test]
 fn parses_if_and_match_flow_blocks_for_hir() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.branching branching {
+flow @flow.branching branching {
     if state.ready {
-        goto #flow.ready
+        goto @flow.ready
     }
     match next {
-        None => goto #flow.title
-        _ => goto #flow.fallback
+        None => goto @flow.title
+        _ => goto @flow.fallback
     }
 }
 ",
-    )
-    .expect("if and match parse");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -1241,20 +1210,19 @@ flow #flow.branching branching {
 
 #[test]
 fn typechecks_if_and_match_flow_blocks() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.branching branching {
+flow @flow.branching branching {
     if !state.ready {
-        goto #flow.ready
+        goto @flow.ready
     }
     match next {
-        None => goto #flow.title
-        _ => goto #flow.fallback
+        None => goto @flow.title
+        _ => goto @flow.fallback
     }
 }
 ",
-    )
-    .expect("if and match fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("if and match fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol("state.ready", TypeKind::Bool)
@@ -1265,17 +1233,16 @@ flow #flow.branching branching {
 
 #[test]
 fn typechecks_statement_match_arm_guards_and_bindings() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.branching branching {
+flow @flow.branching branching {
     match state.route_override {
         .Some(route) when route_enabled => goto route
-        _ => goto #flow.title
+        _ => goto @flow.title
     }
 }
 ",
-    )
-    .expect("guarded match fixture parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -1298,17 +1265,16 @@ flow #flow.branching branching {
 
 #[test]
 fn typecheck_rejects_statement_match_non_bool_guard() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.branching branching {
+flow @flow.branching branching {
     match state.route_override {
         .Some(route) when route_count => goto route
-        _ => goto #flow.title
+        _ => goto @flow.title
     }
 }
 ",
-    )
-    .expect("non-bool guarded match fixture parses");
+    );
     let hir = lower_to_hir(&tree).expect("non-bool guarded match fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol(

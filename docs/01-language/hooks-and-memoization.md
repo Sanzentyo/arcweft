@@ -30,16 +30,16 @@ hook は通常の callback ではない。全 hook は compile 時に `HookTable
 ## Hook の基本構文
 
 ```awft
-hook #hook.choice_listen_clicked
-on #choice.opening.listen
+hook @hook.choice_listen_clicked
+on @choice.opening.listen
 phase InputTarget
 check on input PointerClick
 when state.flags.contains(.input_enabled)
 priority 100
 effects { emit_event, log, input_disposition }
 {
-    emit GameEvent::ChoiceSelected { id = #choice.opening.listen }
-    log info "choice selected {id:?}" { id = #choice.opening.listen }
+    emit GameEvent::ChoiceSelected { id = @choice.opening.listen }
+    log info "choice selected {id:?}" { id = @choice.opening.listen }
     stop_propagation
 }
 ```
@@ -48,9 +48,9 @@ UI modifier 形式も許可するが、内部では hook に正規化する。
 
 ```awft
 Button("聞いてみる")
-    .agent_target(#choice.opening.listen)
+    .agent_target(@choice.opening.listen)
     .on_input(PointerClick) {
-        emit GameEvent::ChoiceSelected { id = #choice.opening.listen }
+        emit GameEvent::ChoiceSelected { id = @choice.opening.listen }
     }
 ```
 
@@ -59,19 +59,19 @@ Button("聞いてみる")
 ## Hook target
 
 ```awft
-on #choice.opening.listen
-on #layer.ui.modal
-on #character.alice
-on #activity.truck_game
-on #signal.loading_progress
-on #shader.post.crt
+on @choice.opening.listen
+on @layer.ui.modal
+on @character.alice
+on @activity.truck_game
+on @signal.loading_progress
+on @shader.post.crt
 ```
 
 query target も使える。
 
 ```awft
-hook #hook.disable_all_choices
-on query ChoiceOption where parent == #choice.opening.first
+hook @hook.disable_all_choices
+on query ChoiceOption where parent == @choice.opening.first
 phase StateChanged
 check on change state.ui.locked
 when state.ui.locked
@@ -118,20 +118,20 @@ pub enum HookPhase {
 例:
 
 ```awft
-hook #hook.alice_affection_watch
-on state .affection[#character.alice]
+hook @hook.alice_affection_watch
+on state .affection[@character.alice]
 phase StateChanged
 check on change
-when state.affection[#character.alice] >= 3
+when state.affection[@character.alice] >= 3
 once per save
 {
-    signal #signal.alice_route_unlocked <- true
+    signal @signal.alice_route_unlocked <- true
 }
 ```
 
 ```awft
-hook #hook.modal_blocks_world
-on #layer.ui.modal
+hook @hook.modal_blocks_world
+on @layer.ui.modal
 phase InputCapture
 check on input PointerClick
 when layer.visible
@@ -147,14 +147,14 @@ when layer.visible
 `when` は pure expression のみ。チェックタイミングは明示する。
 
 ```awft
-hook #hook.alice_route_unlock
-on state .affection[#character.alice]
+hook @hook.alice_route_unlock
+on state .affection[@character.alice]
 phase StateChanged
 check on change
-when state.affection[#character.alice] >= 3
+when state.affection[@character.alice] >= 3
 once per save
 {
-    signal #signal.alice_route_unlocked <- true
+    signal @signal.alice_route_unlocked <- true
 }
 ```
 
@@ -180,9 +180,9 @@ pub enum CheckPolicy {
 ```awft
 on check every frame
 on check every 10 ticks
-on check signal #signal.loading_progress
-on check layer #layer.ui.modal visibility_changed
-on check need #task.opening_assets ready
+on check signal @signal.loading_progress
+on check layer @layer.ui.modal visibility_changed
+on check need @task.opening_assets ready
 ```
 
 `every frame` は高コストになりやすいため、LSP は state/signal/layer-event への置換を提案する。
@@ -209,7 +209,7 @@ pub enum HookEffect {
 描画 phase では state mutation を禁止する。
 
 ```awft
-hook #hook.bad_render_mutation
+hook @hook.bad_render_mutation
 on before render
 {
     state.flags += .bad // error
@@ -219,8 +219,8 @@ on before render
 input hook は `InputDisposition` を返せる。
 
 ```awft
-hook #hook.choice_keyboard_select
-on #layer.choices
+hook @hook.choice_keyboard_select
+on @layer.choices
 phase InputTarget
 check on input KeyDown
 when event.key == .Enter && focus.target.is_choice
@@ -235,11 +235,11 @@ when event.key == .Enter && focus.target.is_choice
 ## once / debounce / throttle
 
 ```awft
-hook #hook.show_unlock_once
-on state .affection[#character.alice]
+hook @hook.show_unlock_once
+on state .affection[@character.alice]
 phase StateChanged
 check on change
-when state.affection[#character.alice] >= 3
+when state.affection[@character.alice] >= 3
 once per save
 {
     emit GameEvent::AliceRouteUnlocked
@@ -247,8 +247,8 @@ once per save
 ```
 
 ```awft
-hook #hook.log_progress_slowly
-on signal #signal.loading_progress changed
+hook @hook.log_progress_slowly
+on signal @signal.loading_progress changed
 throttle 250ms
 {
     log debug "loading {p:f32}" { p = signal.value }
@@ -256,7 +256,7 @@ throttle 250ms
 ```
 
 ```awft
-hook #hook.search_text_changed
+hook @hook.search_text_changed
 on state changed .ui.search_text
 debounce 300ms
 {
@@ -345,7 +345,7 @@ selected dependencies
 ```awft
 memo fn choice_enabled(state: GameState)(choice: ChoiceDef) -> Bool
 scope = scene
-key = (choice.id, state.affection[#character.alice])
+key = (choice.id, state.affection[@character.alice])
 {
     choice.condition(state)
 }
@@ -370,21 +370,21 @@ track = auto
 ## Invalidation
 
 ```awft
-hook #hook.locale_changed
-on signal #signal.locale changed
+hook @hook.locale_changed
+on signal @signal.locale changed
 {
     memo.invalidate namespace text
-    memo.invalidate entity #typeset.credits
+    memo.invalidate entity @typeset.credits
 }
 ```
 
 Layer cache invalidation:
 
 ```awft
-hook #hook.background_changed
+hook @hook.background_changed
 on state changed .current_bg
 {
-    memo.invalidate layer #layer.world.background
+    memo.invalidate layer @layer.world.background
 }
 ```
 
@@ -394,16 +394,16 @@ on state changed .current_bg
 
 ```awft
 task fn load_opening_assets() -> Result<OpeningAssets, AssetError> {
-    let assets = memo(scope=scene, key=#asset_pack.opening) {
+    let assets = memo(scope=scene, key=@asset_pack.opening) {
         load_opening_assets_task()
     }
     let bg = try await assets.bg with:
         pending p:
-            scene #scene.loading:
+            scene @scene.loading:
                 progress p.ratio
     let voice = try await assets.voice with:
         pending p:
-            scene #scene.loading:
+            scene @scene.loading:
                 progress p.ratio
     Ok(OpeningAssets { bg, voice })
 }
@@ -424,10 +424,10 @@ component SettingsPanel(props: SettingsProps) -> View {
 ```
 
 ```awft
-layer #layer.background: World {
+layer @layer.background: World {
     z = -1000
     cache = until invalidated
-    depends asset #asset.bg.room
+    depends asset @asset.bg.room
 }
 ```
 
@@ -468,3 +468,4 @@ memo_options:= ("scope" "=" memo_scope)? ("key" "=" expr_tuple)? ("depends" "=" 
 9. Need/Task は TaskKey で in-flight 合流し、memo cache と統合する。
 10. Agent/LSP/CLI から hook/memo を検査・可視化できる。
 ```
+

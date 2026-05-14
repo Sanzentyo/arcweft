@@ -59,12 +59,13 @@ normalizes to:
 mod super::shared
 ```
 
-Do not use `.name` relative ID syntax in module paths. `.name` is only for
-ID-bearing contexts such as dialogue line IDs and choice option IDs.
+Do not use `@.name` / `@..name` / `@super.name` relative ID syntax in module
+paths. Those forms are only for ID-bearing contexts such as dialogue line IDs
+and choice option IDs.
 
 ```awft
-alice(id=.greeting):        # relative dialogue line ID
-use self::characters::alice # module-relative import
+alice(id=@.greeting):       // relative dialogue line ID
+use self::characters::alice // module-relative import
 ```
 
 This is invalid:
@@ -114,8 +115,8 @@ eager use crate::game::generated::route_map::{RouteMap}
 import 時副作用は禁止。`eager use` は compile/cache/diagnostics の都合で使う。
 
 `lazy use` / `eager use` でも通常の `use` と同じ module-root 規則を使う。
-`.generated` のような `.suffix` relative ID 形式は import path ではなく ID
-文脈専用なので使わない。
+`@.generated` / `@..generated` / `@super.generated` のような relative ID 形式は import path
+ではなく ID 文脈専用なので使わない。
 
 ## ModuleItem
 

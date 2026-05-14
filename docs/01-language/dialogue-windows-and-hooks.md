@@ -19,8 +19,8 @@ Related:
 Arcweft prelude defines a global default dialogue textbox:
 
 ```awft
-pub textbox #textbox.0 default_textbox {
-    layer = #layer.ui.dialogue
+pub textbox @textbox.0 default_textbox {
+    layer = @layer.ui.dialogue
     position = bottom
     frame = rect(x=80, y=520, w=1120, h=160)
     page_policy = wait_then_clear
@@ -28,7 +28,7 @@ pub textbox #textbox.0 default_textbox {
 }
 ```
 
-When no window is specified, `#textbox.0` is used.
+When no window is specified, `@textbox.0` is used.
 
 ```awft
 alice.say()[おはよう。[p]]
@@ -36,7 +36,7 @@ alice.say()[おはよう。[p]]
 alice: おはよう。[p]
 ```
 
-Both update `#textbox.0` by default.
+Both update `@textbox.0` by default.
 
 ---
 
@@ -45,19 +45,19 @@ Both update `#textbox.0` by default.
 A project may replace the default window for all ordinary lines:
 
 ```awft
-pub textbox #textbox.main main_textbox {
-    layer = #layer.ui.dialogue
+pub textbox @textbox.main main_textbox {
+    layer = @layer.ui.dialogue
     position = bottom
     frame = rect(x=72, y=512, w=1136, h=174)
     page_policy = wait_then_scroll
 }
 
 dialogue defaults {
-    window = #textbox.main
+    window = @textbox.main
 }
 ```
 
-After this, speaker syntax uses `#textbox.main`:
+After this, speaker syntax uses `@textbox.main`:
 
 ```awft
 alice: ここは main_textbox に出る。[p]
@@ -70,8 +70,8 @@ alice: ここは main_textbox に出る。[p]
 Text windows can be addressed explicitly:
 
 ```awft
-pub textbox #textbox.side side_note {
-    layer = #layer.ui.overlay
+pub textbox @textbox.side side_note {
+    layer = @layer.ui.overlay
     position = right
     frame = rect(x=900, y=80, w=360, h=240)
     page_policy = append
@@ -81,7 +81,7 @@ pub textbox #textbox.side side_note {
 Use it from a line:
 
 ```awft
-narrator.say(window=#textbox.side)[
+narrator.say(window=@textbox.side)[
     右側の注釈ウィンドウに出る。[p]
 ]
 ```
@@ -89,11 +89,11 @@ narrator.say(window=#textbox.side)[
 Or use object style:
 
 ```awft
-#<textbox.side>.append()[
+@<textbox.side>.append()[
     注釈を追加する。
 ]
 
-#<textbox.side>.clear()
+@<textbox.side>.clear()
 ```
 
 Textbox methods are typed and effect-checked:
@@ -114,7 +114,7 @@ pub trait TextboxObject {
 Character definitions may include text colors and nameplate styles. This keeps ordinary dialogue concise.
 
 ```awft
-pub character #character.alice alice {
+pub character @character.alice alice {
     display_name ja-JP = "アリス"
     display_name en-US = "Alice"
 
@@ -150,15 +150,15 @@ The project may declare default hooks, reveal behavior, voice behavior, and text
 
 ```awft
 dialogue defaults {
-    window = #textbox.0
+    window = @textbox.0
     reveal = typewriter(speed=normal)
     voice = auto_if_available
 
     hooks {
-        before_text_resolve += #hook.dialogue.locale_text_substitution
-        before_text_style += #hook.dialogue.read_state_color
-        before_voice_resolve += #hook.dialogue.auto_voice_key
-        after_line_complete += #hook.dialogue.mark_line_read
+        before_text_resolve += @hook.dialogue.locale_text_substitution
+        before_text_style += @hook.dialogue.read_state_color
+        before_voice_resolve += @hook.dialogue.auto_voice_key
+        after_line_complete += @hook.dialogue.mark_line_read
     }
 }
 ```
@@ -166,7 +166,7 @@ dialogue defaults {
 Line-specific settings override defaults:
 
 ```awft
-alice.say(window=#textbox.side, reveal=instant)[
+alice.say(window=@textbox.side, reveal=instant)[
     ここだけ即時表示。[p]
 ]
 ```
@@ -180,13 +180,13 @@ A common pattern is changing line color depending on whether the line has been r
 Built-in hook:
 
 ```awft
-#hook.dialogue.read_state_color
+@hook.dialogue.read_state_color
 ```
 
 Conceptual behavior:
 
 ```awft
-hook #hook.dialogue.read_state_color
+hook @hook.dialogue.read_state_color
 on query DialogueLine
 phase before_text_style
 check on change ctx.line.read_state
@@ -203,7 +203,7 @@ Use globally:
 ```awft
 dialogue defaults {
     hooks {
-        before_text_style += #hook.dialogue.read_state_color
+        before_text_style += @hook.dialogue.read_state_color
     }
 }
 ```
@@ -211,7 +211,7 @@ dialogue defaults {
 Use locally:
 
 ```awft
-alice.say(hooks=[#hook.dialogue.read_state_color])[
+alice.say(hooks=[@hook.dialogue.read_state_color])[
     この行だけ既読色フックを明示する。[p]
 ]
 ```
@@ -258,7 +258,7 @@ Hooks are deterministic unless declared otherwise. Product builds may disable no
 Text windows can have contracts.
 
 ```awft
-pub textbox #textbox.0 default_textbox
+pub textbox @textbox.0 default_textbox
 ensures layout.width > 0
 ensures layout.height > 0
 ensures agent_observable == true
@@ -270,7 +270,7 @@ ensures agent_observable == true
 Line calls can assert that the active textbox is available:
 
 ```awft
-alice.say(window=#textbox.side)
+alice.say(window=@textbox.side)
 requires textbox.visible == true
 [
     side textbox text[p]
@@ -298,3 +298,4 @@ Text windows expose:
 ```
 
 This lets LLM debuggers inspect whether a line is visible, partially revealed, read/unread, or blocked by a wait tag.
+

@@ -17,6 +17,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://example.invalid/arcweft"
 
 [workspace.dependencies]
+rowan = "0.16.1"
 thiserror = "2.0.18"
 
 [workspace.lints.rust]

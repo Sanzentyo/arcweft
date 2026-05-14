@@ -7,9 +7,9 @@ Arcweft separates five kinds of control transfer.
 `return expr` leaves the nearest `fn`, `task fn`, `parser`, or `flow`.
 
 ```awft
-pub flow #flow.title title(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow @flow.title title(state: GameState) -> Result<FlowExit, FlowError> {
     if state.config.skip_title {
-        return Ok(FlowExit::Goto(#flow.opening))
+        return Ok(FlowExit::Goto(@flow.opening))
     }
 
     Ok(FlowExit::Done)
@@ -117,7 +117,7 @@ with:
         out .Skipped
 
     cancel on input .BackToTitle:
-        return Ok(FlowExit::Goto(#flow.title))
+        return Ok(FlowExit::Goto(@flow.title))
 ```
 
 `out` gives a line result. `return` leaves the flow. `goto` is flow-transition sugar.
@@ -134,3 +134,4 @@ with 'line {
 ```
 
 Diagnostics must state the continuation being exited, for example "this `return` exits flow `flow.opening`" or "this `out` exits line scope `'line`".
+

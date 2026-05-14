@@ -1,4 +1,8 @@
 use crate::ast::{EntityRef, LinePlan, Pattern, Stmt, TextRange};
+use crate::cst::{
+    find_last_top_level_punctuation, find_top_level_punctuation, split_leading_entity_ref_parts,
+    split_top_level_punctuation_once,
+};
 use arcweft_source::{SourceAnchor, SourceName};
 use thiserror::Error;
 
@@ -258,7 +262,7 @@ impl<'a> Lexer<'a> {
             }
             tokens.push(match ch {
                 '"' => self.lex_string(),
-                '#' => self.lex_entity(),
+                '@' => self.lex_entity(),
                 '0'..='9' => self.lex_number_or_duration(),
                 '_' => {
                     self.bump_char();
@@ -340,7 +344,7 @@ impl<'a> Lexer<'a> {
 
     fn lex_entity(&mut self) -> Token {
         let start = self.cursor;
-        if self.starts_with("#<") {
+        if self.starts_with("@<") {
             self.cursor += 2;
             while let Some(ch) = self.peek_char() {
                 self.bump_char();
@@ -899,23 +903,16 @@ fn parse_duration(source: &str) -> Option<Literal> {
 }
 
 fn parse_entity_expr(source: &str) -> Option<EntityRef> {
-    if let Some(body) = source
-        .strip_prefix("#<")
-        .and_then(|value| value.strip_suffix('>'))
-    {
-        return Some(EntityRef::new(
-            body.to_owned(),
-            true,
-            TextRange::new(0, source.len()),
-        ));
-    }
-    let body = source.strip_prefix('#')?;
-    if body.is_empty() || body.chars().any(char::is_whitespace) {
+    let entity_ref = split_leading_entity_ref_parts(source)?;
+    if entity_ref.body.is_empty() && !entity_ref.delimited {
         return None;
     }
-    Some(EntityRef::new(
-        body.to_owned(),
-        false,
+    if entity_ref.delimited && !entity_ref.closed {
+        return None;
+    }
+    (entity_ref.raw.len() == source.len()).then_some(EntityRef::new(
+        entity_ref.body.to_owned(),
+        entity_ref.delimited,
         TextRange::new(0, source.len()),
     ))
 }
@@ -930,30 +927,9 @@ fn split_bracket_postfix(source: &str) -> Option<(&str, &str)> {
     Some((target, &close[open + 1..]))
 }
 
-fn split_top_level<'a>(source: &'a str, needle: &str) -> Option<(&'a str, &'a str)> {
-    let mut depth = 0_i32;
-    let mut in_string = false;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '"' => in_string = !in_string,
-            '(' | '[' | '{' if !in_string => depth += 1,
-            ')' | ']' | '}' if !in_string => depth -= 1,
-            _ => {}
-        }
-        if depth == 0 && !in_string && source[index..].starts_with(needle) {
-            let lhs = source[..index].trim();
-            let rhs = source[index + needle.len()..].trim();
-            if !lhs.is_empty() && !rhs.is_empty() {
-                return Some((lhs, rhs));
-            }
-        }
-    }
-    None
-}
-
 fn split_closure(source: &str) -> Option<(Vec<String>, &str)> {
     let rest = source.strip_prefix('|')?;
-    let close = rest.find('|')?;
+    let close = find_top_level_punctuation(rest, '|')?;
     let params = rest[..close]
         .split(',')
         .map(str::trim)
@@ -965,7 +941,7 @@ fn split_closure(source: &str) -> Option<(Vec<String>, &str)> {
 }
 
 fn split_named_arg(source: &str) -> Option<(&str, &str)> {
-    let (name, value) = split_top_level(source, "=")?;
+    let (name, value) = split_top_level_punctuation_once(source, '=')?;
     if name.is_empty()
         || value.is_empty()
         || source.contains("==")
@@ -980,24 +956,7 @@ fn split_named_arg(source: &str) -> Option<(&str, &str)> {
 }
 
 fn find_last_top_level_open_bracket(source: &str) -> Option<usize> {
-    let mut paren_depth = 0_i32;
-    let mut bracket_depth = 0_i32;
-    let mut last = None;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '(' => paren_depth += 1,
-            ')' => paren_depth -= 1,
-            '[' => {
-                if paren_depth == 0 && bracket_depth == 0 {
-                    last = Some(index);
-                }
-                bracket_depth += 1;
-            }
-            ']' => bracket_depth -= 1,
-            _ => {}
-        }
-    }
-    last
+    find_last_top_level_punctuation(source, '[')
 }
 
 fn is_identifier(source: &str) -> bool {

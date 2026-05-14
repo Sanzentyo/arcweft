@@ -251,7 +251,7 @@ alice: まぶしい……[call flash(color=#ffffff, time=90ms)][p]
 Use `[hook]` for a declared hook:
 
 ```awft
-alice: [hook mark_keyword word="夢" color=#color.dream]変な夢[p]
+alice: [hook mark_keyword word="夢" color=@color.dream]変な夢[p]
 ```
 
 A dialogue-safe function must declare its effects:
@@ -270,7 +270,7 @@ effects { stage.flash }
 A custom hook:
 
 ```awft
-pub dialogue hook #hook.dialogue.mark_keyword mark_keyword(
+pub dialogue hook @hook.dialogue.mark_keyword mark_keyword(
     word: String,
     color: Color,
 ) -> Result<DialogueCue, TagError>
@@ -324,7 +324,7 @@ alice.say()[
 Character default colors are defined in the character declaration. Dialogue lines inherit them automatically.
 
 ```awft
-pub character #character.alice Alice {
+pub character @character.alice Alice {
     dialogue_style {
         text_color = rgb("#f7d7ff")
         name_color = rgb("#e070ff")
@@ -337,7 +337,7 @@ pub character #character.alice Alice {
 Built-in read/unread hook:
 
 ```awft
-pub dialogue defaults #dialogue.defaults {
+pub dialogue defaults @dialogue.defaults {
     read_state_style = builtin.read_state_color(
         unread = rgb("#ffffff"),
         read = rgb("#b8b8c0"),
@@ -348,7 +348,7 @@ pub dialogue defaults #dialogue.defaults {
 Custom hook:
 
 ```awft
-pub hook #hook.dialogue.read_color
+pub hook @hook.dialogue.read_color
 on query DialogueLine
 phase BeforeTextStyle
 check on change line.read_state
@@ -388,3 +388,4 @@ with {
 ```
 
 Line-plan variables are not visible after the line finishes. `at(...) { ... }` creates an even smaller cue-local scope.
+

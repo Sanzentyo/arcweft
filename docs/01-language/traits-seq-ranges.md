@@ -136,8 +136,8 @@ fn selected_route(state: GameState) -> Result<Ref<Flow>, GameError> {
 
 ```awft
 let bg =
-    try await asset.image(#asset.bg.room) with {
-        pending p => scene #scene.loading { progress p.ratio }
+    try await asset.image(@asset.bg.room) with {
+        pending p => scene @scene.loading { progress p.ratio }
     }
 ```
 
@@ -197,7 +197,7 @@ for i in 0..10 {
 ```awft
 requires progress in 0.0..=1.0
 
-render_shader #shader.transition.dissolve {
+render_shader @shader.transition.dissolve {
     params {
         progress = samples(0.0..=1.0, 32)
     }
@@ -219,7 +219,7 @@ pub trait Contains<T> {
 `Range<T>` と `RangeInclusive<T>` は `Contains<T>` を実装する。
 
 ```awft
-invariant #inv.affection_bounds(state) {
+invariant @inv.affection_bounds(state) {
     forall c in CharacterId {
         state.affection[c] in 0..=100
     }
@@ -235,7 +235,7 @@ let images =
     await image_ids
         .traverse(asset.image)
         .parallel(limit = 4)? with {
-            pending p => scene #scene.loading { progress p.ratio }
+            pending p => scene @scene.loading { progress p.ratio }
         }
 ```
 
@@ -257,7 +257,7 @@ let frames =
         .take(60)
         .record()
         .collect<List<CameraFrame>>() with {
-            pending p => scene #scene.capture_wait { progress p.ratio }
+            pending p => scene @scene.capture_wait { progress p.ratio }
         }
 ```
 
@@ -275,8 +275,8 @@ let route = result {
 
 ```awft
 let assets = task {
-    let bg = await asset.image(#asset.bg.room)?
-    let voice = await asset.audio(#asset.voice.alice.001)?
+    let bg = await asset.image(@asset.bg.room)?
+    let voice = await asset.audio(@asset.voice.alice.001)?
     Ok(OpeningAssets { bg, voice })
 }
 ```
@@ -332,3 +332,4 @@ Arcweft は曖昧な method resolution を避けるため、初期仕様では i
 4. blanket impl は core/prelude crate 中心
 5. user blanket impl は将来拡張
 ```
+

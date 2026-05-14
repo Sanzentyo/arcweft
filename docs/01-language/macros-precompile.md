@@ -7,8 +7,8 @@ macro choice_route($id, $label, $target) {
     option $id $label => goto $target
 }
 
-choice #choice.opening.first {
-    choice_route!(#choice.opening.listen, "聞いてみる", #flow.alice_intro)
+choice @choice.opening.first {
+    choice_route!(@choice.opening.listen, "聞いてみる", @flow.alice_intro)
 }
 ```
 
@@ -32,7 +32,7 @@ template route_gate(
     if state |> has_affection_at_least(character, required) {
         goto target
     } else {
-        goto #flow.locked
+        goto @flow.locked
     }
 }
 ```
@@ -47,7 +47,7 @@ extern precompile mod route_tools from wasm "tools/route_tools.wasm" {
     pub derive RouteCoverage
 }
 
-@generate_route_map(root = #flow.opening)
+@generate_route_map(root = @flow.opening)
 mod generated_routes
 ```
 
@@ -77,4 +77,5 @@ lazy use generated::route_map::{RouteMap}
 - macro expansion は source map を持つ。
 - generated entity にも EntityId を付ける。
 - Graph/RAG/JJ history は macro-generated item を追跡できる。
+
 

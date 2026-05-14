@@ -29,23 +29,23 @@ With options:
 
 ```awft
 alice.say(
-    id = #say.opening.greeting,
+    id = @say.opening.greeting,
     voice = auto,
     face = smile,
-    window = #textbox.0,
+    window = @textbox.0,
 )[
     おはよう。[p]
 ]
 ```
 
-Fully qualified entity references are allowed. Because `#character.alice.say` would be ambiguous as a single entity path, use `#<...>` or parentheses when calling a method on an entity reference:
+Fully qualified entity references are allowed. Because `@character.alice.say` would be ambiguous as a single entity path, use `@<...>` or parentheses when calling a method on an entity reference:
 
 ```awft
-#<character.alice>.say(voice=auto)[
+@<character.alice>.say(voice=auto)[
     おはよう。[p]
 ]
 
-(#character.alice).say(voice=auto)[
+(@character.alice).say(voice=auto)[
     おはよう。[p]
 ]
 ```
@@ -80,7 +80,7 @@ alice.say()[
 Options in parentheses become `say()` options:
 
 ```awft
-alice(id=#say.opening.greeting, face=smile, voice=auto):
+alice(id=@say.opening.greeting, face=smile, voice=auto):
     おはよう。[p]
 ```
 
@@ -88,7 +88,7 @@ is equivalent to:
 
 ```awft
 alice.say(
-    id = #say.opening.greeting,
+    id = @say.opening.greeting,
     face = smile,
     voice = auto,
 )[
@@ -107,7 +107,7 @@ The same rule applies to the built-in narrator aliases:
 is equivalent to:
 
 ```awft
-#<character.narrator>.say()[
+@<character.narrator>.say()[
     扉の向こうから、雨の音がした。[p]
 ]
 ```
@@ -171,22 +171,22 @@ display text immediately; it returns a **speaker preset** that carries default
 line options.
 
 ```awft
-let alice2 = alice(face=smile, voice=auto, window=#textbox.side)
+let alice2 = alice(face=smile, voice=auto, window=@textbox.side)
 
 alice2: おはよう。[p]
 
-alice2(id=#say.opening.side_001):
+alice2(id=@say.opening.side_001):
     こっちのウィンドウで話すね。[p]
 ```
 
 This is equivalent to:
 
 ```awft
-alice(face=smile, voice=auto, window=#textbox.side)[
+alice(face=smile, voice=auto, window=@textbox.side)[
     おはよう。[p]
 ]
 
-alice2(id=#say.opening.side_001)[
+alice2(id=@say.opening.side_001)[
     こっちのウィンドウで話すね。[p]
 ]
 ```
@@ -194,7 +194,7 @@ alice2(id=#say.opening.side_001)[
 Presets can be refined by calling them again. Later options override earlier options.
 
 ```awft
-let alice_side = alice(window=#textbox.side, voice=auto)
+let alice_side = alice(window=@textbox.side, voice=auto)
 let alice_worried = alice_side(face=worried)
 
 alice_worried: ……本当に、大丈夫？[p]
@@ -238,7 +238,7 @@ pub fn SpeakerPreset.say(self, options: SayOptions = {}) -> DialogueContentCall
 The `:` sugar accepts both `Ref<Character>` and `SpeakerPreset`.
 
 ```awft
-let phone_alice = alice(window=#textbox.phone_message, voice=auto)
+let phone_alice = alice(window=@textbox.phone_message, voice=auto)
 phone_alice: スマホに通知が届いた。[p]
 ```
 
@@ -259,7 +259,7 @@ let face = actor.face(smile)
 These handles can be memoized or preloaded:
 
 ```awft
-let actor = memo(scope=scene, key=(#character.alice, pose=normal, theme=env.theme.hash)) {
+let actor = memo(scope=scene, key=(@character.alice, pose=normal, theme=env.theme.hash)) {
     alice.stage.acquire(scope=line)
 }
 ```
@@ -267,10 +267,10 @@ let actor = memo(scope=scene, key=(#character.alice, pose=normal, theme=env.them
 A `preload next` block explicitly prepares assets for a future flow.
 
 ```awft
-preload next #flow.alice_intro:
-    alice.stage.prefetch(pose=normal, faces=[smile, worried], window=#textbox.0)
-    alice.voice_for(#say.alice_intro.001).preload()
-    bgm.prepare(#bgm.alice_theme)
+preload next @flow.alice_intro:
+    alice.stage.prefetch(pose=normal, faces=[smile, worried], window=@textbox.0)
+    alice.voice_for(@say.alice_intro.001).preload()
+    bgm.prepare(@bgm.alice_theme)
 ```
 
 Preload is a hint, not a hidden blocking operation. If the resource is not ready when used, the normal `Need<T, E>` pending rules still apply.
@@ -288,17 +288,17 @@ alice.say()[おはよう。[p]]
 is equivalent to:
 
 ```awft
-alice.say(window=#textbox.0)[おはよう。[p]]
+alice.say(window=@textbox.0)[おはよう。[p]]
 ```
 
 Built-in textboxes:
 
 | ID | Meaning |
 |---|---|
-| `#textbox.0` | Default main dialogue textbox |
-| `#textbox.main` | Alias of `#textbox.0` |
-| `#textbox.narrator` | Optional narration textbox; defaults to `#textbox.0` unless configured |
-| `#textbox.system` | System messages / debug messages |
+| `@textbox.0` | Default main dialogue textbox |
+| `@textbox.main` | Alias of `@textbox.0` |
+| `@textbox.narrator` | Optional narration textbox; defaults to `@textbox.0` unless configured |
+| `@textbox.system` | System messages / debug messages |
 
 Project default:
 
@@ -312,18 +312,18 @@ missing = "textbox.0"
 Custom dialogue windows can be declared as UI components or text surfaces:
 
 ```awft
-pub textbox #textbox.phone_message PhoneMessageBox {
-    layer = #layer.ui.messages
+pub textbox @textbox.phone_message PhoneMessageBox {
+    layer = @layer.ui.messages
     anchor = bottom_right
     width = 420
-    style = #style.phone_message
+    style = @style.phone_message
 }
 ```
 
 Use it from dialogue:
 
 ```awft
-alice.say(window=#textbox.phone_message, voice=auto)[
+alice.say(window=@textbox.phone_message, voice=auto)[
     スマホに通知が届いた。[p]
 ]
 ```
@@ -339,7 +339,7 @@ A dialogue window target is a stateful UI object. Updating a line in that textbo
 Characters can define default dialogue style, nameplate style, and voice/text policies.
 
 ```awft
-pub character #character.alice Alice {
+pub character @character.alice Alice {
     display_name ja-JP = "アリス"
     display_name en-US = "Alice"
 
@@ -348,13 +348,13 @@ pub character #character.alice Alice {
         name_color = rgb("#e070ff")
         unread_text_color = rgb("#ffffff")
         read_text_color = rgb("#c8c8d0")
-        window = #textbox.0
+        window = @textbox.0
     }
 
     voice {
         default_locale = ja-JP
-        speaker = #speaker.alice
-        tts_profile = #tts.alice
+        speaker = @speaker.alice
+        tts_profile = @tts.alice
     }
 }
 ```
@@ -384,8 +384,8 @@ alice.say(color=rgb("#ff8080"))[
 Common visual-novel patterns are built in.
 
 ```awft
-pub dialogue defaults #dialogue.defaults {
-    window = #textbox.0
+pub dialogue defaults @dialogue.defaults {
+    window = @textbox.0
     read_state_style = builtin.read_state_color(
         unread = rgb("#ffffff"),
         read = rgb("#b8b8c0"),
@@ -397,7 +397,7 @@ pub dialogue defaults #dialogue.defaults {
 Character-level override:
 
 ```awft
-pub character #character.alice Alice {
+pub character @character.alice Alice {
     dialogue_style {
         read_state_style = builtin.read_state_color(
             unread = rgb("#ffeaff"),
@@ -410,8 +410,8 @@ pub character #character.alice Alice {
 A custom hook can override or extend this behavior:
 
 ```awft
-pub hook #hook.dialogue.alice_read_color
-on query DialogueLine where line.speaker == #character.alice
+pub hook @hook.dialogue.alice_read_color
+on query DialogueLine where line.speaker == @character.alice
 phase BeforeTextStyle
 check on change line.read_state
 {
@@ -491,7 +491,7 @@ match state.player_nickname {
 `fmt(...)` can also wrap values into `Content` for hooks and custom tags:
 
 ```awft
-#[fmt(route_title(state.route), color=#color.accent)]
+#[fmt(route_title(state.route), color=@color.accent)]
 ```
 
 ### Interpolation vs localization placeholders
@@ -567,7 +567,7 @@ alice.say()[
 Custom hook:
 
 ```awft
-pub dialogue hook #hook.dialogue.mark_keyword mark_keyword(
+pub dialogue hook @hook.dialogue.mark_keyword mark_keyword(
     word: String,
     color: Color = rgb("#ffcc00"),
 ) -> Result<DialogueCue, TagError>
@@ -580,7 +580,7 @@ Use:
 
 ```awft
 alice.say()[
-    [hook mark_keyword word="夢" color=#color.dream]変な夢[p]
+    [hook mark_keyword word="夢" color=@color.dream]変な夢[p]
 ]
 ```
 
@@ -600,11 +600,11 @@ alice.say(voice=auto)[
 ]
 with {
 
-    let line_theme = #theme.dream
+    let line_theme = @theme.dream
 
     at(0.4s) {
 
-        let blink = #anim.blink.once
+        let blink = @anim.blink.once
 
         alice.stage.animate(blink)
 
@@ -640,13 +640,13 @@ alice.stage.hide(fade=180ms)
 When the instance matters:
 
 ```awft
-alice.stage(#stage.alice.main).move(to=left, time=300ms)
+alice.stage(@stage.alice.main).move(to=left, time=300ms)
 ```
 
 Fully qualified:
 
 ```awft
-#<character.alice>.stage(#stage.alice.main).face(worried)
+@<character.alice>.stage(@stage.alice.main).face(worried)
 ```
 
 The `@show`, `@face`, `@move`, and related commands are sugar over these methods:
@@ -668,7 +668,7 @@ alice.stage.show(smile, at=center, fade=200ms)
 Characters own preload and memoization policies for sprites, expressions, mouth parts, voice metadata, and composed render layers.
 
 ```awft
-pub character #character.alice Alice {
+pub character @character.alice Alice {
     preload_policy {
         sprites = on_flow_anticipate
         expressions = [normal, smile, worried]
@@ -688,7 +688,7 @@ Explicit preload:
 ```awft
 preload character alice {
     expressions [normal, smile, worried]
-    voices for flow #flow.alice_intro locale current
+    voices for flow @flow.alice_intro locale current
     sprites scale_buckets [1.0, 1.25]
 }
 ```
@@ -696,10 +696,10 @@ preload character alice {
 Preload for likely next flow:
 
 ```awft
-anticipate #flow.alice_intro {
+anticipate @flow.alice_intro {
     alice.preload(expressions=[smile, worried], voices=auto, sprites=true)
-    preload bg #asset.bg.room_evening
-    preload shader #shader.transition.dissolve
+    preload bg @asset.bg.room_evening
+    preload shader @shader.transition.dissolve
 }
 ```
 
@@ -713,7 +713,7 @@ anticipate #flow.alice_intro {
 1. `Character.say(...)[...]` is canonical for character-alias dialogue.
 2. `speaker:` is only sugar for applying dialogue content to a speaker value. For `Ref<Character>` this is `speaker.say()[...]`; for `SpeakerPreset` this is `speaker()[...]`.
 3. There is no `script` item and no script-lowering phase.
-4. A missing dialogue window target resolves to `#textbox.0`.
+4. A missing dialogue window target resolves to `@textbox.0`.
 5. `alice(options)` creates a lexical speaker preset; it does not display text until `:`, `[...]`, or `.say()[...]` is used.
 6. Text interpolation uses `DisplayText` or explicit `fmt(...)`.
 7. Runtime interpolation `#[expr]` is separate from localization placeholders `{name}`.
@@ -722,3 +722,4 @@ anticipate #flow.alice_intro {
 10. Character stage methods provide object-oriented sugar for show/face/move/animate/preload.
 11. Character preload and memoization policies are explicit and observable by Agent Debug Bus.
 ```
+

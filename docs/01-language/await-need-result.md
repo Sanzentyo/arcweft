@@ -20,9 +20,9 @@ Option<T>        presence/absence dimension
 `await need with:` waits for readiness and handles pending UI. It returns `Result<T, E>`.
 
 ```awft
-let bg_result = await asset.image(#asset.bg.room) with:
+let bg_result = await asset.image(@asset.bg.room) with:
     pending p:
-        scene #scene.loading:
+        scene @scene.loading:
             progress p.ratio
 ```
 
@@ -58,9 +58,9 @@ This ordinary postfix `?` is a core expression operator. It remains valid on any
 ```awft
 let config = load_config()?
 let route = state.route_override.context("missing route")?
-let bg = (await asset.image(#asset.bg.room) with:
+let bg = (await asset.image(@asset.bg.room) with:
     pending p:
-        scene #scene.loading
+        scene @scene.loading
 )?
 ```
 
@@ -80,9 +80,9 @@ The error arm has type `!`, so the whole expression has type `Image`.
 Writing this is technically valid but unpleasant:
 
 ```awft
-let bg = (await asset.image(#asset.bg.room) with:
+let bg = (await asset.image(@asset.bg.room) with:
     pending p:
-        scene #scene.loading:
+        scene @scene.loading:
             progress p.ratio
 )?
 ```
@@ -90,18 +90,18 @@ let bg = (await asset.image(#asset.bg.room) with:
 Therefore Arcweft's canonical user-facing form is:
 
 ```awft
-let bg = try await asset.image(#asset.bg.room) with:
+let bg = try await asset.image(@asset.bg.room) with:
     pending p:
-        scene #scene.loading:
+        scene @scene.loading:
             progress p.ratio
 ```
 
 Arcweft also accepts this equivalent prefix sugar:
 
 ```awft
-let bg = await? asset.image(#asset.bg.room) with:
+let bg = await? asset.image(@asset.bg.room) with:
     pending p:
-        scene #scene.loading:
+        scene @scene.loading:
             progress p.ratio
 ```
 
@@ -121,9 +121,9 @@ await? Need<T, E>      -> T
 Do not write:
 
 ```awft
-await asset.image(#asset.bg.room)? with:
+await asset.image(@asset.bg.room)? with:
     pending p:
-        scene #scene.loading
+        scene @scene.loading
 ```
 
 That shape is visually close to Rust, but in Arcweft it is ambiguous because `with:` belongs to the await operation. Arcweft rejects only this grouped form: `await expr? with:`. The ordinary postfix `?` remains valid elsewhere, including `(await expr with: ...)?`.
@@ -131,17 +131,17 @@ That shape is visually close to Rust, but in Arcweft it is ambiguous because `wi
 Use one of:
 
 ```awft
-let bg_result = await asset.image(#asset.bg.room) with:
+let bg_result = await asset.image(@asset.bg.room) with:
     pending p:
-        scene #scene.loading
+        scene @scene.loading
 
-let bg = try await asset.image(#asset.bg.room) with:
+let bg = try await asset.image(@asset.bg.room) with:
     pending p:
-        scene #scene.loading
+        scene @scene.loading
 
-let bg = await? asset.image(#asset.bg.room) with:
+let bg = await? asset.image(@asset.bg.room) with:
     pending p:
-        scene #scene.loading
+        scene @scene.loading
 ```
 
 Parenthesized `(await ...)?` remains valid for generated code or rare expression composition, but the formatter should prefer `try await`.
@@ -151,11 +151,11 @@ Parenthesized `(await ...)?` remains valid for generated code or rare expression
 Context can be attached to the `Need` before awaiting. The context is applied to the eventual error.
 
 ```awft
-let bg = try await asset.image(#asset.bg.room)
+let bg = try await asset.image(@asset.bg.room)
     .context("opening background failed")
 with:
     pending p:
-        scene #scene.loading:
+        scene @scene.loading:
             text "背景を読み込み中"
             progress p.ratio
 ```
@@ -165,9 +165,9 @@ This is preferred over parenthesizing the whole await.
 If the context must refer to the whole await operation, block form is allowed:
 
 ```awft
-let bg = (await asset.image(#asset.bg.room) with:
+let bg = (await asset.image(@asset.bg.room) with:
     pending p:
-        scene #scene.loading:
+        scene @scene.loading:
             progress p.ratio
 ).context("opening background failed")?
 ```
@@ -179,9 +179,9 @@ But user-authored code should normally use `try await`.
 Visible `flow` code must provide pending behavior.
 
 ```awft
-let voice = try await voice.load(#voice.alice.001) with:
+let voice = try await voice.load(@voice.alice.001) with:
     pending p:
-        scene #scene.loading_voice:
+        scene @scene.loading_voice:
             text "音声を読み込み中"
             progress p.ratio
 ```
@@ -192,8 +192,8 @@ Background `task fn` may use simpler await when not directly visible.
 
 ```awft
 task fn load_opening_assets() -> ArcResult<OpeningAssets> {
-    let bg = try await asset.image(#asset.bg.room)
-    let voice = try await asset.audio(#asset.voice.alice.001)
+    let bg = try await asset.image(@asset.bg.room)
+    let voice = try await asset.audio(@asset.voice.alice.001)
     Ok(OpeningAssets { bg, voice })
 }
 ```
@@ -225,3 +225,4 @@ await expr? with:
 - [Error, Trace, `?`, and Context](error-trace-context.md)
 - [Never / Bottom Type](never-bottom-type.md)
 - [Expression Control Flow](expression-control-flow.md)
+

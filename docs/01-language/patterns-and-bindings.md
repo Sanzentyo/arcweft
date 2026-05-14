@@ -10,7 +10,7 @@ x                    # binding
 mut x                # mutable local binding, advanced use
 42                   # literal
 "hello"              # literal string
-#choice.opening.listen # entity reference literal
+@choice.opening.listen # entity reference literal
 .Some(x)             # enum variant, type inferred
 .Ok(value)            # Result success
 .Err(err)             # Result error
@@ -59,7 +59,7 @@ field: name  binds field to a different local name
 ```awft
 match maybe_route {
     .Some(route) => goto route
-    .None => goto #flow.title
+    .None => goto @flow.title
 }
 ```
 
@@ -118,9 +118,9 @@ Arcweft uses `when` for pattern guards to align with hooks and contracts.
 
 ```awft
 match selected.id {
-    #choice.opening.listen when state.affection[#character.alice] >= 3 => #flow.alice_intro
-    #choice.opening.listen => #flow.alice_locked
-    _ => #flow.quiet_intro
+    @choice.opening.listen when state.affection[@character.alice] >= 3 => @flow.alice_intro
+    @choice.opening.listen => @flow.alice_locked
+    _ => @flow.quiet_intro
 }
 ```
 
@@ -149,8 +149,9 @@ For `let ... else`, bindings are visible after the statement because the else br
 
 ```awft
 let .Some(route) = state.route_override else {
-    goto #flow.title
+    goto @flow.title
 }
 
 goto route
 ```
+

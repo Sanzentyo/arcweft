@@ -32,9 +32,72 @@ This avoids having one pattern system for `match` and another for `let`.
 
 Phase 1 parser/HIR should carry the full pattern shape, including tuple, record, variant, list/rest, literal, entity-ref, mutable binding, and whole-pattern binding forms. Type checking may stage exhaustiveness and shape validation, but the syntax model should not collapse these patterns into raw strings.
 
-Arcweft does not use Rust's `name @ pattern` spelling. `@` remains available for
-attributes and scenario commands. Whole-pattern binding should use the
+Arcweft does not use Rust's `name @ pattern` spelling. `@` is reserved for
+entity references. Whole-pattern binding should use the
 `Ident Pattern` form only in unambiguous pattern positions.
+
+## Entity, attribute, and command syntax decision
+
+Arcweft reserves `@` for entity references and uses Rust-like outer attributes.
+The old `#entity` and `@command` shapes are not canonical grammar.
+
+```text
+EntityRef:
+  @flow.opening
+  @asset.bg.room
+  @<asset:bg/room.ktx2>
+
+Attribute:
+  #[derive(Clone, StableHash)]
+  #[link(Flow, @flow.opening)]
+
+Effectful scenario operation:
+  bg(@asset.bg.room, fade = 300ms)
+  show(@character.alice, .smile, at = .center)
+```
+
+`#` is used only as part of the `#[...]` attribute opener. Color values are not
+bare `#fff` tokens; they are string literals interpreted as `Color` only in an
+expected `Color` context.
+
+Scenario commands are ordinary effectful function calls. The parser should not
+carry migration-only branches for old `@bg`, `@show`, `@choice`, or `@memo`
+forms; migration belongs in formatter/CLI tooling.
+
+## Literal and primitive type decision
+
+Arcweft uses explicit-width numeric primitives and no default numeric fallback.
+
+```text
+Integers:
+  i8 i16 i32 i64 i128
+  u8 u16 u32 u64 u128
+  isize usize
+
+Floats:
+  f32 f64
+
+Other primitives:
+  () bool String Duration Color Ratio Length Angle
+```
+
+`int`, `uint`, `float`, and `Number` are not concrete standard primitive type
+names. Unsuffixed numeric literals require an expected type; otherwise use a
+suffix such as `10i32`, `2.0f32`, or `42usize`.
+
+Unit-number literals are first-class syntax and resolve by expected type:
+
+```awft
+let fade: Duration = 300ms
+let size: Length = 100pt
+let alpha: Ratio = 85%
+let theta: Angle = 90deg
+let gain = -6db
+let tempo = 92bpm
+```
+
+`"#fff"`, `"#ffff"`, `"#rrggbb"`, and `"#rrggbbaa"` remain ordinary string
+literals until the type checker sees an expected `Color`.
 
 ## Syntax canonicalization decision
 
@@ -108,7 +171,7 @@ Named lexical scopes use the `scope` keyword:
 
 ```awft
 scope rain {
-    alice(id=.comment):
+    alice(id=@.comment):
         雨、強くなってきたね。[p]
 }
 ```
@@ -121,21 +184,27 @@ the same scope expression with the name omitted; it creates a lexical scope and
 returns a value in expression position, but it does not add a segment to
 generated IDs.
 
-Relative `.suffix` IDs are accepted only in ID-bearing contexts where the
-entity family is known. They are not general entity references.
+Relative IDs use `@.suffix` for the current ID scope. Each extra dot walks one
+parent ID scope outward: `@..suffix` is one parent and `@...suffix` is two
+parents. The explicit readable spelling is also accepted:
+`@super.suffix`, `@super.super.suffix`, and so on. These forms are accepted only
+in ID-bearing contexts where the entity family is known, such as dialogue line
+IDs, choice IDs, option IDs, and text-key overrides. They are not general entity
+references. Bare `.suffix` is not part of the core grammar, and bare `..suffix`
+is not accepted because `..` already appears in range and rest-pattern syntax.
 
 ```text
-alice(id=.greeting)
-  -> #say.opening.alice.greeting
+alice(id=@.greeting)
+  -> @say.opening.alice.greeting
 
-alice(id=.comment)
-  -> #say.opening.alice.rain.comment
+alice(id=@.comment)
+  -> @say.opening.alice.rain.comment
 
-choice .first
-  -> #choice.opening.rain.first
+choice @.first
+  -> @choice.opening.rain.first
 
-.listen
-  -> #choice.opening.rain.first.listen
+@.listen
+  -> @choice.opening.rain.first.listen
 ```
 
 When the named scope path is empty, the scope segment is omitted. It is not
@@ -209,17 +278,17 @@ This is the most balanced choice after adding expression-oriented `if` / `match`
 `?` remains the ordinary Rust-like postfix propagation operator for `Result` and `Option`. Arcweft also reserves prefix `try expr` as a general propagation form equivalent to `expr?`; `try await` is the important readable specialization where `await` and pending handling must group before propagation.
 
 ```awft
-let bg_result = await asset.image(#asset.bg.room) with:
+let bg_result = await asset.image(@asset.bg.room) with:
     pending p:
-        scene #scene.loading
+        scene @scene.loading
 
-let bg = try await asset.image(#asset.bg.room) with:
+let bg = try await asset.image(@asset.bg.room) with:
     pending p:
-        scene #scene.loading
+        scene @scene.loading
 
-let bg = await? asset.image(#asset.bg.room) with:
+let bg = await? asset.image(@asset.bg.room) with:
     pending p:
-        scene #scene.loading
+        scene @scene.loading
 ```
 
 The parenthesized form `(await ... with: ...)?` is valid but not recommended for hand-written code.

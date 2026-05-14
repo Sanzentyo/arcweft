@@ -1,13 +1,32 @@
 pub(super) use crate::{
     AwaitBranchKind, BinaryOp, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
-    ComputationBlockKind, ContractClause, DialogueToken, EntityDeclKind, EntityKind, EntityRef,
-    Expr, FlowItem, FlowKind, FunctionKind, HirFlowItem, HirTopLevelDecl, ImplMember, Item,
-    LinePlanItem, Literal, NameRegistry, Pattern, Placeholder, SelectBranchHead, Stmt,
-    SymbolUseKind, TraitMember, TypeCheckEnv, TypeKind, TypeRef, UnaryOp, VariantPatternPayload,
-    Visibility, collect_symbol_uses, lower_to_hir, parse_dialogue_tokens, parse_expr,
-    parse_fn_signature, parse_source, parse_stub, parse_type_ref, registry_from_hir, typecheck_hir,
-    validate_hir_references, validate_typecheck_ready,
+    ComputationBlockKind, ContractClause, DialogueToken, EntityDeclKind, EntityKind, Expr,
+    FlowItem, FlowKind, FunctionKind, HirFlowItem, HirTopLevelDecl, ImplMember, Item, LinePlanItem,
+    Literal, NameRegistry, Pattern, Placeholder, SelectBranchHead, Stmt, SymbolUseKind,
+    TraitMember, TypeCheckEnv, TypeKind, TypeRef, UnaryOp, VariantPatternPayload, Visibility,
+    collect_symbol_uses, lower_to_hir, parse_dialogue_tokens, parse_expr, parse_fn_signature,
+    parse_source, parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
+    validate_typecheck_ready,
 };
+
+pub(super) fn parse_ok(source: impl Into<String>) -> crate::TypedSyntaxTree {
+    let parsed = parse_source(source);
+    assert!(
+        parsed.errors().is_empty(),
+        "expected source to parse without errors, got {:?}",
+        parsed.errors()
+    );
+    parsed.into_typed_tree()
+}
+
+pub(super) fn parse_errors(source: impl Into<String>) -> Vec<crate::ParseError> {
+    let parsed = parse_source(source);
+    assert!(
+        !parsed.errors().is_empty(),
+        "expected source to produce parse errors"
+    );
+    parsed.errors().to_vec()
+}
 
 pub(super) fn variant_tuple_binding(pattern: &Pattern, variant: &str, binding: &str) -> bool {
     matches!(

@@ -54,18 +54,18 @@ pub enum VirtualControlKind {
 ## DSL example
 
 ```awft
-pub virtual_controller #vc.truck_touch: VirtualController {
-    layer = #layer.touch_controls
-    visible_when = env.touch_available && activity == #activity.truck_game
-    output input_profile #input.truck_game
+pub virtual_controller @vc.truck_touch: VirtualController {
+    layer = @layer.touch_controls
+    visible_when = env.touch_available && activity == @activity.truck_game
+    output input_profile @input.truck_game
 
-    stick #control.truck.steer {
+    stick @control.truck.steer {
         anchor = bottom_left
         radius = 96
         maps_to = axis2(.Steer)
     }
 
-    button #control.truck.accelerate {
+    button @control.truck.accelerate {
         label = "ACCEL"
         anchor = bottom_right
         size = vec2(96, 96)

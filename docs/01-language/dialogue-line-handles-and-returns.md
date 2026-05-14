@@ -240,7 +240,7 @@ Line results can be destructured.
 
 ```awft
 let (line_alice, (face0, face1, voice)) = alice.say(
-    id=#say.opening.dream_hint,
+    id=@say.opening.dream_hint,
     voice=auto,
     face=smile,
 )[
@@ -308,7 +308,7 @@ Default policies:
 A returned handle lives in the receiving scope. When that scope ends, the handle is dropped. Binding it to `_` drops it immediately.
 
 ```awft
-let _ = bgm.play(#bgm.tension, scope=line, drop=fade(300ms))
+let _ = bgm.play(@bgm.tension, scope=line, drop=fade(300ms))
 // BGM is started and then immediately dropped, so it is faded/stopped immediately.
 // LSP warns because this is probably a mistake.
 ```
@@ -318,7 +318,7 @@ To persist BGM beyond the line, detach it or use a global scope explicitly.
 ```awft
 let bgm_handle = alice.say()[始まるよ。[p]]
 with:
-    let bgm = bgm.play(#bgm.tension, scope=line, drop=fade(300ms))
+    let bgm = bgm.play(@bgm.tension, scope=line, drop=fade(300ms))
     out bgm.detach()
 ```
 
@@ -348,10 +348,10 @@ Only values exported with `out` from the line plan can escape the line. Borrowed
 Characters expose object-like stage APIs. These APIs return handles that can be scoped, memoized, or preloaded.
 
 ```awft
-preload next #flow.alice_intro:
-    alice.stage.prefetch(pose=normal, faces=[smile, worried], window=#textbox.0)
-    alice.voice_for(#say.alice_intro.001).preload()
-    bgm.prepare(#bgm.alice_theme)
+preload next @flow.alice_intro:
+    alice.stage.prefetch(pose=normal, faces=[smile, worried], window=@textbox.0)
+    alice.voice_for(@say.alice_intro.001).preload()
+    bgm.prepare(@bgm.alice_theme)
 ```
 
 Within a line:
@@ -365,7 +365,7 @@ let face = actor.face(smile)
 The `memo=true` flag allows the stage proxy to reuse loaded sprite atlases, expression meshes, and text-layout assets when the same key is requested again.
 
 ```awft
-let actor = memo(scope=scene, key=(#character.alice, pose=normal, theme=env.theme.hash)) {
+let actor = memo(scope=scene, key=(@character.alice, pose=normal, theme=env.theme.hash)) {
     alice.stage.acquire(scope=line)
 }
 ```
@@ -430,3 +430,4 @@ let (_, cue) = alice.say()[おはよう。[p]] with:
 ```
 
 runs `drop_now` on the discarded voice handle immediately after destructuring, while `cue` remains owned by the surrounding scope.
+

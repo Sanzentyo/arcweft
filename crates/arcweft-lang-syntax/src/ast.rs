@@ -9,9 +9,9 @@ pub struct TextRange {
     end: usize,
 }
 
-/// Parsed `.awft` source with module/use headers and syntax items.
+/// Typed syntax view of an `.awft` source with module/use headers and items.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SyntaxTree {
+pub struct TypedSyntaxTree {
     source: String,
     module: Option<ModuleDecl>,
     uses: Vec<UseItem>,
@@ -89,12 +89,17 @@ pub struct RawItem {
     range: TextRange,
 }
 
-/// Entity reference such as `#flow.opening` or `#<flow.opening@sem:abc>`.
+/// Entity reference such as `@flow.opening` or `@<flow.opening@sem:abc>`.
+///
+/// Relative IDs share this storage while the parser migrates to a dedicated ID
+/// node. They are limited to ID-bearing contexts and carry the number of parent
+/// ID scopes walked by `@..` / `@super` forms.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EntityRef {
     body: String,
     delimited: bool,
     relative: bool,
+    relative_parent_depth: usize,
     range: TextRange,
 }
 
@@ -847,7 +852,7 @@ pub struct DialogueDefaultOption {
     range: TextRange,
 }
 
-/// `choice #choice.id { ... }` flow item with option rows.
+/// `choice @choice.id { ... }` flow item with option rows.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ChoiceBlock {
     id: Option<EntityRef>,
@@ -1088,7 +1093,7 @@ impl TextRange {
     }
 }
 
-impl SyntaxTree {
+impl TypedSyntaxTree {
     pub(crate) fn new(
         source: String,
         module: Option<ModuleDecl>,
@@ -1183,15 +1188,21 @@ impl EntityRef {
             body,
             delimited,
             relative: false,
+            relative_parent_depth: 0,
             range,
         }
     }
 
-    pub(crate) const fn new_relative(body: String, range: TextRange) -> Self {
+    pub(crate) const fn new_relative_with_parent_depth(
+        body: String,
+        parent_depth: usize,
+        range: TextRange,
+    ) -> Self {
         Self {
             body,
             delimited: false,
             relative: true,
+            relative_parent_depth: parent_depth,
             range,
         }
     }
@@ -1206,6 +1217,10 @@ impl EntityRef {
 
     pub const fn is_relative(&self) -> bool {
         self.relative
+    }
+
+    pub const fn relative_parent_depth(&self) -> usize {
+        self.relative_parent_depth
     }
 
     pub const fn range(&self) -> &TextRange {

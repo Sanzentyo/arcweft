@@ -5,23 +5,23 @@ mod game::routes::error_context_example
 
 use game::prelude::*
 
-pub flow #flow.error_context_example example(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow @flow.error_context_example example(state: GameState) -> Result<FlowExit, FlowError> {
     let route = state.route_override
         .context("missing route override for error_context_example")?
 
-    let bg = try await asset.image(#asset.bg.room)
+    let bg = try await asset.image(@asset.bg.room)
         .context("while loading opening background")
     with:
         pending p:
-            scene #scene.loading:
+            scene @scene.loading:
                 progress p.ratio
 
-    let voice = try await voice.load(#voice.alice.opening.001)
+    let voice = try await voice.load(@voice.alice.opening.001)
         .map_err(.Voice)
         .context("while loading Alice opening voice")
     with:
         pending p:
-            scene #scene.loading_voice:
+            scene @scene.loading_voice:
                 progress p.ratio
 
     alice.say(voice=voice)[

@@ -5,27 +5,27 @@ mod game::routes::control_flow_example
 
 use game::prelude::*
 
-pub flow #flow.control_flow_example example(state: GameState) -> Result<FlowExit, FlowError> {
-    let target = if state.affection[#character.alice] >= 3 {
-        #flow.alice_intro
+pub flow @flow.control_flow_example example(state: GameState) -> Result<FlowExit, FlowError> {
+    let target = if state.affection[@character.alice] >= 3 {
+        @flow.alice_intro
     } else {
-        #flow.alice_locked
+        @flow.alice_locked
     }
 
-    let selected = try await wait_choice(#choice.opening.first) with:
+    let selected = try await wait_choice(@choice.opening.first) with:
         pending p:
-            scene #scene.wait_choice:
+            scene @scene.wait_choice:
                 progress p.ratio
 
     let route = match selected.id {
-        #choice.opening.listen when state.affection[#character.alice] >= 3 => #flow.alice_intro
-        #choice.opening.listen => #flow.alice_locked
-        #choice.opening.silent => #flow.quiet_intro
+        @choice.opening.listen when state.affection[@character.alice] >= 3 => @flow.alice_intro
+        @choice.opening.listen => @flow.alice_locked
+        @choice.opening.silent => @flow.quiet_intro
         _ => target
     }
 
     let .Some(save) = state.current_save else {
-        goto #flow.new_game
+        goto @flow.new_game
     }
 
     while let .Some(event) = state.event_queue.pop_front() {
@@ -41,7 +41,7 @@ pub flow #flow.control_flow_example example(state: GameState) -> Result<FlowExit
 
         match event {
             .ChoiceSelected { id } => break route_for_choice(id)
-            .BackToTitle => break #flow.title
+            .BackToTitle => break @flow.title
             _ => continue
         }
     }

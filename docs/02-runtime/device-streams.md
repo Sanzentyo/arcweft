@@ -88,14 +88,14 @@ pub enum SourceEvent<T, E> {
 A `source` block is allowed, but it is declarative and policy-driven.
 
 ```awft
-pub source #source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
+pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     from capture.camera(#capture.face_camera)
     backpressure = latest
     replay = hash_only
     privacy = transient
 
     on item frame => yield frame
-    on disconnected => emit signal #signal.camera_connected <- false
+    on disconnected => emit signal @signal.camera_connected <- false
     on error e => log warn "camera stream error {err:?}" { err = e }
 }
 ```
@@ -115,11 +115,11 @@ User-visible flows must decide what to do while a source is being acquired.
 ```awft
 let mic =
     try await capture.microphone(#capture.player_microphone) with {
-        pending p => scene #scene.permission_wait {
+        pending p => scene @scene.permission_wait {
             text "マイクの許可を待っています"
             progress p.ratio
         }
-        denied _ => return Ok(FlowExit::Goto(#flow.mic_optional))
+        denied _ => return Ok(FlowExit::Goto(@flow.mic_optional))
     }
 
 let frames = source.audio_frames(mic)
@@ -130,19 +130,19 @@ Once acquired, stream items are consumed by `select`, `poll`, Activity input por
 ```awft
 select {
     audio = frames.next? => {
-        signal #signal.voice_level <- audio.rms
+        signal @signal.voice_level <- audio.rms
     }
 
     frame _ => {
-        scene #scene.listening {
-            meter #signal.voice_level
+        scene @scene.listening {
+            meter @signal.voice_level
         }
         continue
     }
 
     event .Back => {
         close frames
-        return Ok(FlowExit::Goto(#flow.title))
+        return Ok(FlowExit::Goto(@flow.title))
     }
 }
 ```
@@ -167,7 +167,7 @@ let reports =
 Every device stream can be replaced by a fixture source.
 
 ```rust
-pub source #source.test_camera_frames: Source<VideoFrameHandle, CaptureError> {
+pub source @source.test_camera_frames: Source<VideoFrameHandle, CaptureError> {
     from fixture.video("fixtures/camera/front_cam.webm")
     backpressure = exact
     replay = full

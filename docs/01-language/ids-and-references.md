@@ -16,20 +16,26 @@ SemanticHash 内容・意味のfingerprint
 通常:
 
 ```awft
-#flow.opening
-#choice.opening.listen
-#asset.bg.room
-#state.GameState.affection
+@flow.opening
+@choice.opening.listen
+@asset.bg.room
+@state.GameState.affection
 ```
 
 境界明示:
 
 ```awft
-#<activity.truck_game>.run(...)
-#<flow.alice_intro@jj:qtnqlkkm>
-#<say.opening.dream_hint@sem:b3_9f2a1c>
-#<ent:01J8X6K9XW4M9F2D7A1R8QZ6CN>
+@<activity.truck_game>.run(...)
+@<flow.alice_intro@jj:qtnqlkkm>
+@<say.opening.dream_hint@sem:b3_9f2a1c>
+@<ent:01J8X6K9XW4M9F2D7A1R8QZ6CN>
 ```
+
+`@` is a surface sigil only. The stored `PublicId` body does not include it:
+`@flow.opening` stores `flow.opening`.
+
+`#` is reserved for Rust-like attributes in the `#[...]` form and is not an
+entity-reference marker.
 
 コメント:
 
@@ -79,8 +85,8 @@ flow opening(state: GameState) {
 LSP 表示:
 
 ```text
-flow opening(...)   // #flow.opening
-say alice ...       // #say.opening.001
+flow opening(...)   // @flow.opening
+say alice ...       // @say.opening.001
 ```
 
 Code Action:
@@ -113,17 +119,32 @@ scope = "flow"
 
 ## 相対 ID と名前付き scope
 
-`.suffix` 形式の相対 ID は、ID を期待する文脈だけで使える。通常の
-entity reference ではないので、`goto .next` のような裸の相対参照は
-採用しない。flow や asset を参照する場合は完全な `#flow...` /
-`#asset...` を書く。
+`@.suffix` / `@..suffix` / `@...suffix` 形式の相対 ID は、ID を期待する
+文脈だけで使える。通常の entity reference ではないので、`goto @.next`
+のような相対参照を flow / asset 参照としては採用しない。flow や asset
+を参照する場合は完全な `@flow...` / `@asset...` を書く。
+
+Arcweft accepts two relative-ID spellings:
+
+```text
+@.suffix    current ID scope
+@..suffix   parent ID scope, analogous to `super::`
+@...suffix  grandparent ID scope
+@super.suffix
+            parent ID scope, explicit readable spelling
+@super.super.suffix
+            grandparent ID scope, explicit readable spelling
+```
+
+Bare `.suffix` is not part of the core grammar. Bare `..suffix` is also not
+accepted; `..` already has range/rest-pattern meanings.
 
 ```awft
-alice(id=.greeting):
+alice(id=@.greeting):
     おはよう。[p]
 
-choice .first {
-    .listen "聞いてみる" -> #flow.alice_intro
+choice @.first {
+    @.listen "聞いてみる" -> @flow.alice_intro
 }
 ```
 
@@ -131,10 +152,10 @@ choice .first {
 
 ```awft
 scope rain {
-    地の文(id=.sound):
+    地の文(id=@.sound):
         扉の向こうから、雨の音がした。[p]
 
-    alice(id=.comment):
+    alice(id=@.comment):
         雨、強くなってきたね。[p]
 }
 ```
@@ -143,96 +164,102 @@ scope rain {
 
 ```text
 line id:
-  id=.suffix
-    -> #say.{flow}.{speaker}.{scope_path}.{suffix}
-    -> #say.{flow}.{speaker}.{suffix}                 # scope_path が空の場合
+  id=@.suffix
+    -> @say.{flow}.{speaker}.{scope_path}.{suffix}
+    -> @say.{flow}.{speaker}.{suffix}                 # scope_path が空の場合
 
 omitted line id:
-  -> #say.{flow}.{speaker}.{scope_path}.{stable_slot}
-  -> #say.{flow}.{speaker}.{stable_slot}               # scope_path が空の場合
+  -> @say.{flow}.{speaker}.{scope_path}.{stable_slot}
+  -> @say.{flow}.{speaker}.{stable_slot}               # scope_path が空の場合
 
 omitted text key:
-  -> #text.{flow}.{speaker}.{scope_path}.{line_suffix_or_slot}
-  -> #text.{flow}.{speaker}.{line_suffix_or_slot}      # scope_path が空の場合
+  -> @text.{flow}.{speaker}.{scope_path}.{line_suffix_or_slot}
+  -> @text.{flow}.{speaker}.{line_suffix_or_slot}      # scope_path が空の場合
 
 voice key when voice=auto:
-  -> #voice.{locale}.{speaker}.{flow}.{scope_path}.{line_suffix_or_slot}
-  -> #voice.{locale}.{speaker}.{flow}.{line_suffix_or_slot}
+  -> @voice.{locale}.{speaker}.{flow}.{scope_path}.{line_suffix_or_slot}
+  -> @voice.{locale}.{speaker}.{flow}.{line_suffix_or_slot}
 
 choice id:
-  choice .suffix
-    -> #choice.{flow}.{scope_path}.{suffix}
-    -> #choice.{flow}.{suffix}                         # scope_path が空の場合
+  choice @.suffix
+    -> @choice.{flow}.{scope_path}.{suffix}
+    -> @choice.{flow}.{suffix}                         # scope_path が空の場合
 
 choice option id:
-  .suffix
+  @.suffix
     -> {current_choice_id}.{suffix}
+  @..suffix
+    -> {parent_choice_or_scope_id}.{suffix}
+  @...suffix
+    -> {grandparent_choice_or_scope_id}.{suffix}
+  @super.super.suffix
+    -> {grandparent_choice_or_scope_id}.{suffix}
 ```
 
 The same rule applies to both narration and character dialogue. The current
 speaker segment is inserted before the named-scope path for dialogue IDs:
 
 ```awft
-地の文(id=.rain):
+地の文(id=@.rain):
     扉の向こうから、雨の音がした。[p]
 
-alice(id=.greeting, voice=auto):
+alice(id=@.greeting, voice=auto):
     おはよう。[p]
 ```
 
 ```text
-地の文(id=.rain)
-  -> #say.opening.narrator.rain
-  -> #text.opening.narrator.rain
+地の文(id=@.rain)
+  -> @say.opening.narrator.rain
+  -> @text.opening.narrator.rain
 
-alice(id=.greeting, voice=auto)
-  -> #say.opening.alice.greeting
-  -> #text.opening.alice.greeting
-  -> #voice.ja-JP.alice.opening.greeting
+alice(id=@.greeting, voice=auto)
+  -> @say.opening.alice.greeting
+  -> @text.opening.alice.greeting
+  -> @voice.ja-JP.alice.opening.greeting
 ```
 
 名前付き scope がない場合、`scope_path` セグメントは空文字として残さず、
 ID から省略する。
 
 ```awft
-alice(id=.greeting):
+alice(id=@.greeting):
     おはよう。[p]
 
-choice .first {
-    .listen "聞いてみる" -> #flow.alice_intro
+choice @.first {
+    @.listen "聞いてみる" -> @flow.alice_intro
 }
 ```
 
 ```text
-alice(id=.greeting)
-  -> #say.opening.alice.greeting
-  -> #text.opening.alice.greeting
+alice(id=@.greeting)
+  -> @say.opening.alice.greeting
+  -> @text.opening.alice.greeting
 
-choice .first
-  -> #choice.opening.first
+choice @.first
+  -> @choice.opening.first
 
-.listen
-  -> #choice.opening.first.listen
+@.listen
+  -> @choice.opening.first.listen
 ```
 
 例:
 
 ```text
-地の文(id=.sound)
-  -> #say.opening.narrator.rain.sound
-  -> #text.opening.narrator.rain.sound
+地の文(id=@.sound)
+  -> @say.opening.narrator.rain.sound
+  -> @text.opening.narrator.rain.sound
 
-alice(id=.comment)
-  -> #say.opening.alice.rain.comment
-  -> #text.opening.alice.rain.comment
-  -> #voice.ja-JP.alice.opening.rain.comment
+alice(id=@.comment)
+  -> @say.opening.alice.rain.comment
+  -> @text.opening.alice.rain.comment
+  -> @voice.ja-JP.alice.opening.rain.comment
 
-choice .first
-  -> #choice.opening.rain.first
+choice @.first
+  -> @choice.opening.rain.first
 
-.listen
-  -> #choice.opening.rain.first.listen
-  -> #text.choice.opening.rain.first.listen
+@.listen
+  -> @choice.opening.rain.first.listen
+  -> @text.choice.opening.rain.first.listen
 ```
 
 When a line ID is omitted, the stable ordinal is generated under the same
@@ -247,8 +274,8 @@ scope rain {
 ```
 
 ```text
-#say.opening.narrator.rain.001
-#text.opening.narrator.rain.001
+@say.opening.narrator.rain.001
+@text.opening.narrator.rain.001
 ```
 
 `scope` は入れ子にでき、`scope_path` は外側から順に連結する。
@@ -256,15 +283,15 @@ scope rain {
 ```awft
 scope rain {
     scope window {
-        地の文(id=.rattle):
+        地の文(id=@.rattle):
             窓が小さく鳴った。[p]
     }
 }
 ```
 
 ```text
-#say.opening.narrator.rain.window.rattle
-#text.opening.narrator.rain.window.rattle
+@say.opening.narrator.rain.window.rattle
+@text.opening.narrator.rain.window.rattle
 ```
 
 `scope` は expression block としても使える。この場合も名前は trace / LSP
@@ -274,8 +301,8 @@ text key の namespace に使う。`scope` 式そのものの値は通常の `{ 
 
 ```awft
 let can_enter = scope alice_route_check {
-    let affection_ok = state.affection[#character.alice] >= 3
-    let has_key = state.inventory.contains(#item.alice_key)
+    let affection_ok = state.affection[@character.alice] >= 3
+    let has_key = state.inventory.contains(@item.alice_key)
     affection_ok && has_key
 }
 ```
@@ -285,33 +312,33 @@ ID に反映されるのは、その scope 内の ID-bearing construct だけで
 ```awft
 scope dream {
     let can_enter = {
-        let affection_ok = state.affection[#character.alice] >= 3
+        let affection_ok = state.affection[@character.alice] >= 3
         affection_ok
     }
 
-    choice .first {
-        .listen "聞いてみる" if can_enter -> #flow.alice_intro
-        .silent "黙っている" -> #flow.quiet_intro
+    choice @.first {
+        @.listen "聞いてみる" if can_enter -> @flow.alice_intro
+        @.silent "黙っている" -> @flow.quiet_intro
     }
 }
 ```
 
 ```text
-choice .first
-  -> #choice.opening.dream.first
+choice @.first
+  -> @choice.opening.dream.first
 
-.listen
-  -> #choice.opening.dream.first.listen
-  -> #text.choice.opening.dream.first.listen
+@.listen
+  -> @choice.opening.dream.first.listen
+  -> @text.choice.opening.dream.first.listen
 ```
 
-`.suffix` は module path には使わない。module / import の相対指定は
+`@.suffix` / `@..suffix` / `@super.suffix` は module path には使わない。module / import の相対指定は
 `self::`、`super::`、`crate::` を使う。`parent::` は `super::` の予約
 alias で、formatter は `super::` に正規化する。
 
 ```awft
-alice(id=.greeting):        # ID context
-use self::characters::alice # module path context
+alice(id=@.greeting):       // ID context
+use self::characters::alice // module path context
 ```
 
 Module and import roots are deliberately separate from relative IDs:

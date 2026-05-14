@@ -57,10 +57,71 @@ The builder API supports fluent construction of a dialogue line with speaker def
 
 Syntax parser:
 
-- `parse_source` and `parse_stub` now parse real `.awft` surface syntax into `SyntaxTree`.
+- `parse_source` returns `ParsedSource`, an always-available parsed-source
+  container with original source text, a lossless rowan CST, the current typed
+  `TypedSyntaxTree` view, recoverable parse diagnostics, a line index, and a
+  deterministic source hash. `parse_stub` has been removed.
+- The typed source model is intentionally named `TypedSyntaxTree` so it is not
+  confused with rowan `SyntaxNode` / CST ownership.
+- The lossless CST is built from `SyntaxKind`, `ArcweftLanguage`, and rowan
+  green nodes. It preserves whitespace, newlines, ordinary comments,
+  Markdown-doc comments, entity references, strings, punctuation, and fallback
+  text tokens so tooling can keep exact source text even when typed parsing
+  reports errors.
+- The current typed parser consumes `CstLineEvents`, a small newtype projected
+  from rowan `Line` nodes through `From<&SyntaxNode>`. Each line event carries a
+  `CstLineKind` (`Blank`, `Comment`, `DocComment`, `Code`) so trivia and doc
+  comments are classified by the CST/event layer rather than by repeated parser
+  string checks. Nested parser calls also rebuild CST before producing typed
+  views.
+- Balanced delimiter splitting, delimiter-depth recovery, top-level keyword
+  splitting, top-level whitespace splitting, top-level binding splitting,
+  leading identifier/lifetime/entity-ref/relative-id splitting, multi-token
+  punctuation sequence splitting, and matching punctuation are centralized in
+  the CST layer and are reused by the parser, expression parser, pattern
+  parser, and type parser. Current parser call sites use these helpers for
+  block recovery, line-plan cues, choice/action separators, `::` variant path
+  splitting, await grouping, await `with` heads, extern module headers, borrow
+  aliases, emit fields, scenario command args, labels, entity refs, and nested
+  pattern/type delimiters.
+- Parser-facing grammar delimiter decisions no longer live in local raw string
+  scans in `parser.rs`, `expr.rs`, `pattern.rs`, or `types.rs`. Raw character
+  scans remain inside the CST lexer and named CST text utilities, where they
+  tokenize source or implement wiki-link and string-literal extraction. New
+  grammar-level delimiter or keyword behavior should be added to the CST/event
+  layer first.
+- Top-level parsing now dispatches through a small `CstTopLevelLineKind` event
+  classification (`OldMemoAttribute`, `Attribute`, `Module`, `Use`, `Item`).
+  This is still an interim line-event bridge, but it keeps top-level routing
+  separate from the item builders and makes the remaining migration path toward
+  grammar-level rowan events more explicit.
+- Top-level item parsing now also uses a CST-owned `CstTopLevelItemKind`
+  classification for declaration families such as flows, functions, ADTs,
+  entity declarations, hooks, parser/source declarations, and the flow-item/raw
+  fallback. The classifier preserves current parser behavior while making the
+  next migration step a typed CST/event replacement rather than another
+  string-dispatch chain.
+- Flow-body parsing now starts from CST-owned `CstFlowItemKind`,
+  `CstStructuredFlowBlockKind`, and `CstLetFlowItemKind` classifications. The
+  typed parser still owns AST construction and semantic recovery, but syntax
+  family routing for structured blocks, special `let` forms, await wait-views,
+  includes, old `@choice` recovery, and generic typed statements no longer lives
+  as one parser-local string-dispatch chain.
+- Balanced brace-block collection now lives on `CstLineEvents` as a
+  `CstBlockEvent` collector. It covers ordinary first-top-level-open blocks and
+  function-body blocks, including body-open recovery, so flow/function/item
+  builders no longer maintain separate brace-depth scanners.
+- Flow-like block collection is also event-layer owned. It preserves contract
+  and `effects { ... }` prelude lines in the returned header before collecting
+  the following brace body, which keeps flow/callable/entity/source builders
+  from maintaining their own prelude scanners.
+- The `TypedSyntaxTree` view is still produced by the existing parser builder.
+  That builder remains a temporary compatibility point inside
+  `arcweft-lang-syntax`; future parser work should move it onto CST/event
+  parsing rather than growing the private line-splitting helpers.
 - The parser records module/use headers, attributes, wiki links, flows, fragments, flow items, scenario commands, speaker lines, content calls, choice blocks, hooks, memo functions, parser items, line plans, and dialogue tokens.
 - Bracket ruby spans such as `[ruby rt="..."]base[/ruby]` and function/content ruby such as `#[ruby("base", "ruby")]` normalize to the same `DialogueToken::Ruby` shape as natural Japanese ruby.
-- Dialogue raw spans and blocks such as `[raw]...[/raw]` tokenize as literal raw content, so inner `[p]` tags and `#[expr]` interpolations are not parsed until the raw span ends.
+- Dialogue raw spans and blocks such as `[raw]...[/raw]` tokenize as literal raw content, so inner `[p]` markers and `#[expr]` interpolations are not parsed until the raw span ends.
 - Diagnostics use structured `ParseError` values with spans, expected fragments, found text, recovery suggestions, and source anchors.
 - Parser and semantic diagnostics implement `std::error::Error` through `thiserror` while preserving structured fields such as `message`, `range`, and `anchor`.
 - Expression syntax now has a Pratt-style parser and an `Expr` AST for entity references, literals, tuples, calls, named arguments, method calls, indexes, field access, pipes, prefix `try`, postfix `?`, unary `!`/`-`, arithmetic operators, comparisons, and placeholders.
@@ -77,15 +138,15 @@ Syntax parser:
 - Top-level `hook`, `memo fn`, and `parser` declarations preserve structured body statements and final expressions in AST/HIR, including generic parser-combinator blocks such as `alt { ... }`. Hook headers now preserve canonical `when`, integer `priority`, `once`, and `effects` fields; legacy `check` headers are rejected.
 - Top-level `dialogue defaults` declarations parse as structured declarations with optional visibility/id and assignment expressions preserved for later dialogue style/window/voice/hook lowering.
 - Bodyless parser declarations such as `pub parser parse_player_command: Parser<PlayerCommand, ParseError>` are accepted and lower as parser declarations with empty bodies, matching the parser API declarations used in the language and device examples.
-- Top-level declarative `source` declarations such as `pub source #source.face_camera_frames: Source<VideoFrameHandle, CaptureError> { ... }` are parsed as structured syntax items with source IDs, signature tails, source policy statements, and `on ... => ...` event branches. HIR preserves them as declarations, readiness checking walks their structured statements, and minimal type checking validates the source ID family without implementing camera/audio/USB runtime backends.
+- Top-level declarative `source` declarations such as `pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> { ... }` are parsed as structured syntax items with source IDs, signature tails, source policy statements, and `on ... => ...` event branches. HIR preserves them as declarations, readiness checking walks their structured statements, and minimal type checking validates the source ID family without implementing camera/audio/USB runtime backends.
 - Function-like `source name() -> Source<T, E> { loop { ... yield ... } }` declarations also parse as source items. Typed statement bodies now preserve `loop`, `while`, `while let`, and `for` statements inside functions, parsers, memo functions, hooks, and source declarations so generator-style source examples can lower and typecheck without raw statement fragments.
 - Top-level `signal`, `character`, `layer`, `activity`, and `component` declarations from the presentation/runtime docs parse as structured entity declarations with visibility, entity ID, optional public name, signature tail, optional body, and source range. HIR preserves them as declarations, registers their entity IDs for name-resolution tests, and minimally checks that the public ID prefix matches the declaration family without implementing rendering, activity, camera, audio, or USB backends.
 - Top-level `extern rust mod ... from crate "..." { ... }` declarations from the module docs parse as structured external-module declarations with ABI, module path, import source, body text, and source range. HIR preserves them as syntax-level declarations for later Rust/WASM adapter work without implementing external runtime loading in Phase 0 / Phase 1.
 - Zero-copy `borrow expr as name: Type { ... }` blocks are parsed into AST/HIR, and the checker treats their non-`'static` lifetimes as active only inside the borrow body.
-- Dialogue `#[...]` expressions, record expressions, compact scenario command arguments, same-line and multiline timed-cue anchors/bodies, line-plan options, line-plan `let`/`out`, line-plan assertions, line-plan cancellation actions, line-plan expression items, nested `start`/`together` groups, choice option fields, choice lifecycle plans, source-locale blocks, and `await ... with` carry parsed expressions/statements for later type checking and HIR lowering.
+- Dialogue `#[...]` content interpolation, record expressions, compact scenario command arguments, same-line and multiline timed-cue anchors/bodies, line-plan options, line-plan `let`/`out`, line-plan assertions, line-plan cancellation actions, line-plan expression items, nested `start`/`together` groups, choice option fields, choice lifecycle plans, source-locale blocks, and `await ... with` carry parsed expressions/statements for later type checking and HIR lowering.
 - Line-plan memo declarations such as `memo rich_text key=(line.id, locale, theme.text_hash) cache=flow` preserve the memo name and typed option expressions for symbol collection and checking.
 - Line-plan cancellation command statements such as `stop voice fade=40ms` and `flush text instant` parse as structured command statements, and the checker allows `continue` inside line cancellation continuations as specified by the dialogue docs.
-- Choice syntax covers static arm sugar (`->` as `goto`, `=>` as `out`), full `option` blocks, `ui { ... }` state, structured `select { ... }` statement blocks, dynamic `for` options, `match`-gated option groups, `option pattern in expr` sugar, `label(id=#text...)`, `value = expr`, and `with { ... }` / `with:` choice plans.
+- Choice syntax covers static arm sugar (`->` as `goto`, `=>` as `out`), full `option` blocks, `ui { ... }` state, structured `select { ... }` statement blocks, dynamic `for` options, `match`-gated option groups, `option pattern in expr` sugar, `label(id=@text...)`, `value = expr`, and `with { ... }` / `with:` choice plans.
 - Choice HIR preserves the source choice-body item tree as well as the flattened option list, so `let`/`if`/`for`/`match` guards and raw malformed choice-body items participate in symbol collection, readiness checks, and minimal type checking.
 - Choice lifecycle plans parse option assignments, `timeout`, `cancel on`, `on select`, and `select` statements into structured expressions/statements for HIR readiness and minimal type checking.
 - Flow `let`/`return`/`goto`/`emit`/`bail`/`ensure` statements and statement-block `if`/`match` bodies now lower to structured `Stmt` and `Pattern` values instead of opaque strings.
@@ -103,17 +164,17 @@ Syntax parser:
 - Flow `while` and `while let` loops lower to structured HIR nodes. The minimal checker validates `while` conditions and `while-let` guards as `Bool`, keeps pattern bindings scoped to the loop body, and treats both loop forms as statement-oriented constructs.
 - `let PAT = EXPR else { ... }` parses as a structured statement, keeps the else body as typed statements, and the checker rejects else blocks that do not leave the current continuation. `return`, `goto`, `break`, `continue`, `panic`, and `fail` are recognized as diverging statements for this minimal checker.
 - Pattern syntax now preserves documented structured shapes including `mut` bindings, literals, entity-ref patterns, record/struct patterns with `..`, list/rest patterns, structured enum variant tuple/record payloads, and whole-pattern bindings such as `ev .ChoiceSelected { id }`.
-- Named `scope name { ... }` blocks lower to structured HIR nodes. Relative choice IDs such as `choice .first` and relative option IDs such as `.listen` normalize through the current flow and scope path during HIR lowering.
+- Named `scope name { ... }` blocks lower to structured HIR nodes. Relative choice IDs such as `choice @.first` and relative option IDs such as `@.listen` normalize through the current flow and scope path during HIR lowering.
 - `let name = scope name? { ... }` parses as a scope expression binding, preserves nested typed statements and final expression separately, and lets the checker infer the bound value while keeping inner locals scoped to the block. Omitting the name creates the same lexical/value scope without adding a generated-ID scope segment.
 - Plain `let name = { ... }` block expression bindings parse as structured expression blocks with scoped statements and an optional final value.
-- Dialogue call options are parsed as structured `LineOptions`: `id`, `text_key`, `voice`, `window`, `source_locale`, `hooks`, `style`, and additional named args are preserved without raw argument strings. Relative dialogue line IDs such as `alice(id=.comment)` normalize through the current flow, speaker, and scope path. When `id` is omitted, HIR lowering allocates a stable per-flow/speaker/scope ordinal such as `say.opening.narrator.rain.001`, and omitted `text_key` is derived from the normalized `say...` line ID.
-- Dialogue callee checking preserves the documented callee kind: `alice.say()[...]` resolves through `alice: Ref<Character>`, delimited character refs such as `#<character.alice>.say()[...]` generate the same speaker slug, and speaker presets such as `alice2(voice=auto):` / `alice2(voice=auto)[...]` resolve as callable `SpeakerPreset` values rather than being forced through `.say(...)`. Content-call line plans can attach on a following `with { ... }` / `with:` block or on the same line as `with { ... }` / `with: out ...`; line-result bindings such as `let handles = alice.say()[...] with: out (...)` and multiline `let handles = alice.say(...)[ ... ]` followed by `with:` preserve the plan on `Expr::DialogueCall` for symbol collection, HIR lowering, and type checking.
+- Dialogue call options are parsed as structured `LineOptions`: `id`, `text_key`, `voice`, `window`, `source_locale`, `hooks`, `style`, and additional named args are preserved without raw argument strings. Relative dialogue line IDs such as `alice(id=@.comment)` normalize through the current flow, speaker, and scope path. When `id` is omitted, HIR lowering allocates a stable per-flow/speaker/scope ordinal such as `say.opening.narrator.rain.001`, and omitted `text_key` is derived from the normalized `say...` line ID.
+- Dialogue callee checking preserves the documented callee kind: `alice.say()[...]` resolves through `alice: Ref<Character>`, delimited character refs such as `@<character.alice>.say()[...]` generate the same speaker slug, and speaker presets such as `alice2(voice=auto):` / `alice2(voice=auto)[...]` resolve as callable `SpeakerPreset` values rather than being forced through `.say(...)`. Content-call line plans can attach on a following `with { ... }` / `with:` block or on the same line as `with { ... }` / `with: out ...`; line-result bindings such as `let handles = alice.say()[...] with: out (...)` and multiline `let handles = alice.say(...)[ ... ]` followed by `with:` preserve the plan on `Expr::DialogueCall` for symbol collection, HIR lowering, and type checking.
 - Bare scopes parse as `scope { ... }`, the name-omitted sugar for `scope name { ... }`. Bare `{ ... }` blocks in flow bodies normalize one step further to that unnamed `scope { ... }` form. A trailing bare block after a dialogue content call, such as `alice.say()[...] { ... }`, is not attached as a line plan; line plans still require `with { ... }` or `with:`.
 - Type checking treats both bare `scope { ... }` blocks and named `scope name { ... }` blocks as local scopes, so temporary locals created inside them cannot be read after the block exits. Named scopes still contribute to generated relative IDs while the lowerer is inside that scope; unnamed scopes do not add an ID path segment.
-- `let name = choice ... { ... }` parses as a choice expression binding, lowers to HIR with normalized relative choice/option IDs, and the minimal checker can infer `Ref<Flow>` when every option uses `=> #flow...`.
+- `let name = choice ... { ... }` parses as a choice expression binding, lowers to HIR with normalized relative choice/option IDs, and the minimal checker can infer `Ref<Flow>` when every option uses `=> @flow...`.
 - Dynamic choice options now type-check their scoped fields in place: `option route in opening_routes(state) { id = route.choice_id; label = route.label; enabled = route.enabled; select { out route.target } }` binds `route` for the option body, validates boolean option state, checks label text keys, and keeps `select`/`out` expressions in the correct local scope. Compact choice arms require static option IDs; dynamic leading expressions such as `route.choice_id "..." -> ...` are preserved as raw recovery items and rejected before type checking.
-- Module and import paths accept `crate::`, `self::`, `super::`, and reserved `parent::` roots as source syntax, normalize parsed `parent::` roots to canonical `super::`, and reject relative `.suffix` ID syntax in `mod`/`use` paths so ID-relative notation stays limited to line, text-key, choice, and option contexts.
-- The documentation from `docs/reviews/pro_review4.md` is reflected in the language specs: ordinary `{ ... }` blocks remain value-producing in expression position; `scope name { ... }` is both lexical scope and ID namespace; `scope { ... }` is the bare scope sugar with the name omitted; `.suffix` IDs are limited to line, text-key, choice, and option contexts; module-relative paths use `self::`, `super::`, or `crate::`; and `parent::` is a reserved alias that formatter/canonicalizer work should normalize to `super::`.
+- Module and import paths accept `crate::`, `self::`, `super::`, and reserved `parent::` roots as source syntax, normalize parsed `parent::` roots to canonical `super::`, and reject relative `@.suffix` / `@..suffix` ID syntax in `mod`/`use` paths so ID-relative notation stays limited to line, text-key, choice, and option contexts.
+- The documentation from `docs/reviews/pro_review4.md` is reflected in the language specs: ordinary `{ ... }` blocks remain value-producing in expression position; `scope name { ... }` is both lexical scope and ID namespace; `scope { ... }` is the bare scope sugar with the name omitted; relative IDs are limited to line, text-key, choice, and option contexts; module-relative paths use `self::`, `super::`, or `crate::`; and `parent::` is a reserved alias that formatter/canonicalizer work should normalize to `super::`.
 - `await ... with` keeps `pending`/`ready`/`error`/`denied` branches as structured AST/HIR, and branch bodies participate in symbol collection and type checking.
 - Bound wait-view expressions such as `let assets = try await load_opening_assets() with { ... }` and `let result = await load_opening_assets() with:` lower to explicit await-binding HIR. The minimal checker validates the awaited expression as `Need<T, E>`, scopes wait-view branch patterns, and binds the outer pattern as `T` for `try await` / `await?` or `Result<T, E>` for plain `await`.
 - Bound wait-view parsing accepts documented multi-line context chains before `with:`, such as `let bg = try await asset.image(...)\n    .context(...)\nwith:`, while plain `let bg = try await load_bg()` without a wait-view remains a normal await expression binding.
@@ -149,12 +210,14 @@ Not implemented in this milestone:
 - inference, overload resolution, traits, generics, contracts, and effect checking
 - full nested-scope borrow lifetime analysis and precise borrow end tracking
 - full semantic expression resolution and type-directed ambiguity resolution
-- full choice expression type unification beyond the current `=> #flow...` case, lifecycle runtime execution, reactive option-state reevaluation, localization extraction, formatter/canonicalizer output, and LSP diagnostics for dynamic labels and unordered map-backed options
+- full choice expression type unification beyond the current `=> @flow...` case, lifecycle runtime execution, reactive option-state reevaluation, localization extraction, formatter/canonicalizer output, and LSP diagnostics for dynamic labels and unordered map-backed options
 - full localization extraction manifests and formatter/canonicalizer normalization for relative `.suffix` IDs
+- full migration of typed syntax construction from the current private
+  line-event parser builder to grammar-level CST/event parsing
 
 ## Verification
 
-Last verified during the review 7/8 direction and thiserror pass:
+Last verified during the CST helper migration pass:
 
 ```bash
 cargo fmt --check

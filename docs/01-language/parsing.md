@@ -65,8 +65,8 @@ where T: EntityKind
 
 ```text
 choice.opening.listen
-#choice.opening.listen
-#<choice.opening.listen@sem:b3_9f2a1c>
+@choice.opening.listen
+@<choice.opening.listen@sem:b3_9f2a1c>
 ```
 
 ## ParseError
@@ -93,4 +93,5 @@ ensures result.is_ok() => result.unwrap().width > 0
 ```
 
 borrow は await/yield を跨げない。
+
 

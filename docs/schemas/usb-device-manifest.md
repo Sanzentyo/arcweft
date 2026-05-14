@@ -70,12 +70,12 @@ Isochronous transfers are intentionally unsupported in the initial Arcweft USB l
 ## DSL example
 
 ```awft
-pub usb #usb.custom_lightgun: UsbRawDevice {
+pub usb @usb.custom_lightgun: UsbRawDevice {
     permission = user_prompt
     backend = auto
     filter { vendor_id = 0xCAFE; product_id = 0x4001 }
     claim interface 0
-    endpoint #usb.custom_lightgun.input: InterruptIn {
+    endpoint @usb.custom_lightgun.input: InterruptIn {
         address = 0x81
         packet = LightgunReport
         parser = parse_lightgun_report

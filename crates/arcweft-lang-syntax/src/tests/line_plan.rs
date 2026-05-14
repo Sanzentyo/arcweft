@@ -2,7 +2,7 @@ use super::support::*;
 
 #[test]
 fn parses_colon_speaker_with_indented_line_plan() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
 alice(voice=auto, face=smile):
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
@@ -11,8 +11,7 @@ with:
     cancel on input .SkipLine => continue
     out (actor, voice)
 ",
-    )
-    .expect("speaker line with line plan parses");
+    );
 
     let Item::FlowItem(FlowItem::SpeakerLine(line)) = &tree.items()[0] else {
         panic!("expected top-level speaker flow item");
@@ -32,7 +31,7 @@ with:
 
 #[test]
 fn parses_bracket_speaker_call_with_with_colon_plan() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
 alice[
     おはよう。[p]
@@ -40,8 +39,7 @@ alice[
 with:
     at(0.42s): alice.stage.face(smile)
 ",
-    )
-    .expect("bracket speaker call with with-colon plan parses");
+    );
 
     let Item::FlowItem(FlowItem::ContentCall(call)) = &tree.items()[0] else {
         panic!("expected content call");
@@ -60,16 +58,15 @@ with:
 
 #[test]
 fn parses_same_line_line_plan_attachments() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
+flow @flow.opening opening {
     alice.say()[聞いて。[p]] with: out (voice, face)
     alice.say()[もう一度。[p]] with 'line { out .Done }
     let handles = alice.say()[結果を返す。[p]] with: out (voice, face)
 }
 ",
-    )
-    .expect("same-line with attachments parse");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -111,9 +108,9 @@ flow #flow.opening opening {
 
 #[test]
 fn parses_multiline_line_result_binding_with_plan() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
+flow @flow.opening opening {
     let handles = alice.say(voice=auto)[
         今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
     ]
@@ -125,8 +122,7 @@ flow #flow.opening opening {
     ] with: out .Done
 }
 ",
-    )
-    .expect("multiline line result binding parses");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -165,9 +161,9 @@ flow #flow.opening opening {
     let hir = lower_to_hir(&tree).expect("multiline line result bindings lower");
     validate_typecheck_ready(&hir).expect("multiline line result bindings are typecheck-ready");
 
-    let check_tree = parse_source(
+    let check_tree = parse_ok(
         r"
-flow #flow.opening opening {
+flow @flow.opening opening {
     let handles = alice.say(voice=auto)[
         今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
     ]
@@ -184,8 +180,7 @@ flow #flow.opening opening {
         out Ok(())
 }
 ",
-    )
-    .expect("typecheck multiline line result binding parses");
+    );
     let check_hir =
         lower_to_hir(&check_tree).expect("typecheck multiline line result binding lowers");
     let env = TypeCheckEnv::new()
@@ -205,14 +200,13 @@ flow #flow.opening opening {
 
 #[test]
 fn rejects_at_bracket_timed_cue_as_raw_line_plan_item() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
 alice[おはよう。[p]]
 with:
     at(0.42s)[alice.stage.face(worried)]
 ",
-    )
-    .expect("old at bracket cue parses lossily");
+    );
 
     let Item::FlowItem(FlowItem::ContentCall(call)) = &tree.items()[0] else {
         panic!("expected content call");
@@ -232,14 +226,13 @@ with:
 
 #[test]
 fn reports_unclosed_line_plan_block_after_cue() {
-    let errors = parse_source(
+    let errors = parse_errors(
         r"
 alice[おはよう。[p]]
 with {
     at(0.42s) { alice.stage.face(worried)
 ",
-    )
-    .expect_err("unclosed line plan fails");
+    );
 
     assert_eq!(errors.len(), 1);
     assert!(errors[0].message().contains("line plan"));
@@ -248,7 +241,7 @@ with {
 
 #[test]
 fn line_plan_items_keep_typed_expressions() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
 alice:
     聞いて。[p]
@@ -257,8 +250,7 @@ with:
     let voice = line.voice_handle()
     out (actor, voice)
 ",
-    )
-    .expect("line plan exprs parse");
+    );
 
     let Item::FlowItem(FlowItem::SpeakerLine(line)) = &tree.items()[0] else {
         panic!("expected speaker line");
@@ -283,20 +275,19 @@ with:
 
 #[test]
 fn line_plan_cancel_actions_keep_typed_statements() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
+flow @flow.opening opening {
     alice[
         聞いて。[p]
     ]
     with 'line {
         cancel on input .SkipLine { out 'line .Skipped }
-        cancel on input .BackToTitle => goto #flow.title
+        cancel on input .BackToTitle => goto @flow.title
     }
 }
 ",
-    )
-    .expect("line plan cancel actions parse");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -330,14 +321,14 @@ flow #flow.opening opening {
             .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
             .with_symbol(".Skipped", TypeKind::Named("LineExit".to_owned())),
     )
-    .expect("line plan cancel actions typecheck");
+    .expect("typecheck succeeds");
 }
 
 #[test]
 fn line_plan_cancel_commands_keep_structured_arguments() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
+flow @flow.opening opening {
     alice[
         聞いて。[p]
     ]
@@ -350,8 +341,7 @@ flow #flow.opening opening {
     }
 }
 ",
-    )
-    .expect("line plan cancel commands parse");
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -379,14 +369,14 @@ flow #flow.opening opening {
             .with_symbol("text", TypeKind::Named("DialogueText".to_owned()))
             .with_symbol("instant", TypeKind::Named("FlushPolicy".to_owned())),
     )
-    .expect("line plan cancel commands typecheck");
+    .expect("typecheck succeeds");
 }
 
 #[test]
 fn line_plan_assertions_keep_typed_conditions() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
+flow @flow.opening opening {
     alice:
         聞いて。[p]
     with {
@@ -395,8 +385,7 @@ flow #flow.opening opening {
     }
 }
 ",
-    )
-    .expect("line plan assertions parse");
+    );
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
@@ -421,14 +410,14 @@ flow #flow.opening opening {
             .with_symbol("textbox_ready", TypeKind::Bool)
             .with_symbol("route_count", TypeKind::Int),
     )
-    .expect("line plan assertions typecheck");
+    .expect("typecheck succeeds");
 }
 
 #[test]
 fn line_plan_parallel_groups_keep_typed_items() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
+flow @flow.opening opening {
     alice:
         走って！[p]
     with {
@@ -442,8 +431,7 @@ flow #flow.opening opening {
     }
 }
 ",
-    )
-    .expect("line plan parallel groups parse");
+    );
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
@@ -473,14 +461,14 @@ flow #flow.opening opening {
             .with_function("cue_face", TypeKind::Unit)
             .with_function("cue_se", TypeKind::Unit),
     )
-    .expect("line plan parallel groups typecheck");
+    .expect("typecheck succeeds");
 }
 
 #[test]
 fn line_plan_memo_keeps_typed_options() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-flow #flow.opening opening {
+flow @flow.opening opening {
     alice:
         聞いて。[p]
     with {
@@ -488,8 +476,7 @@ flow #flow.opening opening {
     }
 }
 ",
-    )
-    .expect("line plan memo parses");
+    );
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
@@ -515,12 +502,12 @@ flow #flow.opening opening {
             .with_symbol("theme.text_hash", TypeKind::Named("TextHash".to_owned()))
             .with_symbol("flow", TypeKind::Named("CacheScope".to_owned())),
     )
-    .expect("line plan memo typechecks");
+    .expect("typecheck succeeds");
 }
 
 #[test]
 fn parses_multiline_timed_cue_body_as_expression() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
 alice[
     おはよう。[p]
@@ -529,8 +516,7 @@ with:
     at(0.42s):
         alice.stage.face(smile)
 ",
-    )
-    .expect("multiline timed cue parses");
+    );
 
     let Item::FlowItem(FlowItem::ContentCall(call)) = &tree.items()[0] else {
         panic!("expected content call");

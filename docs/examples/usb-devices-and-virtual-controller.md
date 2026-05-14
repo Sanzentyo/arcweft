@@ -15,7 +15,7 @@ Related docs:
 ```awft
 mod game::devices
 
-pub device #device.motion_sensor: UsbRaw {
+pub device @device.motion_sensor: UsbRaw {
     permission = user_prompt
 
     match {
@@ -28,7 +28,7 @@ pub device #device.motion_sensor: UsbRaw {
 
     parser input parse_motion_packet: Parser<MotionSample, DeviceParseError>
 
-    signal #signal.motion_sample: Stream<MotionSample>
+    signal @signal.motion_sample: Stream<MotionSample>
 
     emits {
         sample => GameEvent.Device(.Motion(sample.summary()))
@@ -40,7 +40,7 @@ pub enum KnobEvent {
     Press,
 }
 
-pub device #device.serial_knob: Serial {
+pub device @device.serial_knob: Serial {
     permission = user_prompt
     baud = 115200
 
@@ -60,12 +60,12 @@ pub device #device.serial_knob: Serial {
 ```awft
 mod game::ui::touch_controller
 
-pub virtual_controller #controller.default_touch {
+pub virtual_controller @controller.default_touch {
     visible when platform.touch_available || settings.force_touch_controls
-    layer = #layer.touch_controls
+    layer = @layer.touch_controls
 
     layout safe_area {
-        left = Stick #control.move {
+        left = Stick @control.move {
             anchor = bottom_left
             margin = 32
             radius = 92
@@ -73,16 +73,16 @@ pub virtual_controller #controller.default_touch {
             output = InputEvent.Axis2(.Move)
         }
 
-        right = ButtonCluster #control.actions {
+        right = ButtonCluster @control.actions {
             anchor = bottom_right
             margin = 32
             buttons = [
-                Button #control.action_a {
+                Button @control.action_a {
                     label = "A"
                     output down = InputEvent.ButtonDown(.ActionA)
                     output up = InputEvent.ButtonUp(.ActionA)
                 },
-                Button #control.menu {
+                Button @control.menu {
                     label = "≡"
                     output down = InputEvent.ButtonDown(.Menu)
                 }
@@ -97,23 +97,23 @@ pub virtual_controller #controller.default_touch {
 ## Flow usage
 
 ```awft
-pub flow #flow.device_setup setup_devices(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow @flow.device_setup setup_devices(state: GameState) -> Result<FlowExit, FlowError> {
     let sensor =
-        try await device.open(#device.motion_sensor) with {
-            pending p => scene #scene.device_wait {
+        try await device.open(@device.motion_sensor) with {
+            pending p => scene @scene.device_wait {
                 text "USBセンサーの許可を待っています"
                 progress p.ratio
             }
 
             denied _ => {
                 log warn "motion sensor denied"
-                return Ok(FlowExit::Goto(#flow.opening_without_sensor))
+                return Ok(FlowExit::Goto(@flow.opening_without_sensor))
             }
         }
 
-    signal #signal.device_ready <- true
+    signal @signal.device_ready <- true
 
-    Ok(FlowExit::Goto(#flow.opening))
+    Ok(FlowExit::Goto(@flow.opening))
 }
 ```
 
@@ -122,7 +122,7 @@ pub flow #flow.device_setup setup_devices(state: GameState) -> Result<FlowExit, 
 ## Layer integration
 
 ```awft
-layer #layer.touch_controls {
+layer @layer.touch_controls {
     kind = ui
     input = capture_if_hit
     visible = platform.touch_available || settings.force_touch_controls
@@ -150,6 +150,6 @@ wait signal signal.device_ready == true
 ```bash
 arcw device gen game/devices.awft
 arcw device check
-arcw device simulate #device.motion_sensor --fixture fixtures/devices/motion_sensor.ndjson
-arcw test #test.touch_controller_layout
+arcw device simulate @device.motion_sensor --fixture fixtures/devices/motion_sensor.ndjson
+arcw test @test.touch_controller_layout
 ```

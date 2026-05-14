@@ -1,5 +1,15 @@
+fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::TypedSyntaxTree {
+    let parsed = arcweft_lang_syntax::parse_source(source);
+    assert!(
+        parsed.errors().is_empty(),
+        "expected source to parse without errors, got {:?}",
+        parsed.errors()
+    );
+    parsed.into_typed_tree()
+}
+
 use arcweft_lang_syntax::{
-    Expr, FlowItem, GenericParam, HirTopLevelDecl, Item, TypeRef, parse_fn_signature, parse_source,
+    Expr, FlowItem, GenericParam, HirTopLevelDecl, Item, TypeRef, parse_fn_signature,
 };
 
 #[test]
@@ -39,12 +49,11 @@ fn function_signatures_reject_trailing_garbage() {
 
 #[test]
 fn dialogue_line_options_are_structured_not_raw_args() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r#"
-alice(id=#say.opening.dream_hint, text_key=#text.opening.dream_hint, voice=auto, window=#textbox.side, hooks=[#hook.dialogue.read_state_color], style=#style.dream, face=smile, source_locale="ja-JP"): 今日は少しだけ。[p]
+alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto, window=@textbox.side, hooks=[@hook.dialogue.read_state_color], style=@style.dream, face=smile, source_locale="ja-JP"): 今日は少しだけ。[p]
 "#,
-    )
-    .expect("structured dialogue options parse");
+    );
 
     let Item::FlowItem(FlowItem::SpeakerLine(line)) = &tree.items()[0] else {
         panic!("expected speaker line");
@@ -69,21 +78,20 @@ alice(id=#say.opening.dream_hint, text_key=#text.opening.dream_hint, voice=auto,
 
 #[test]
 fn hook_headers_keep_when_priority_once_and_effects() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-hook #hook.choice_visible
-on #choice.opening.listen
+hook @hook.choice_visible
+on @choice.opening.listen
 phase AfterLayout
 when choice_enabled(state)
 priority -5
 once
 effects signal.choice_visible, ui.patch
 {
-    signal #signal.choice_visible <- true
+    signal @signal.choice_visible <- true
 }
 ",
-    )
-    .expect("structured hook header parses");
+    );
 
     let Item::Hook(hook) = &tree.items()[0] else {
         panic!("expected hook");
@@ -96,16 +104,15 @@ effects signal.choice_visible, ui.patch
 
 #[test]
 fn dialogue_defaults_are_preserved_as_top_level_declarations() {
-    let tree = parse_source(
+    let tree = parse_ok(
         r"
-pub dialogue defaults #dialogue.defaults {
-    window = #textbox.0
+pub dialogue defaults @dialogue.defaults {
+    window = @textbox.0
     voice = auto
-    style = #style.dialogue.default
+    style = @style.dialogue.default
 }
 ",
-    )
-    .expect("dialogue defaults parse");
+    );
 
     let Item::DialogueDefaults(defaults) = &tree.items()[0] else {
         panic!("expected dialogue defaults");

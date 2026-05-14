@@ -1,7 +1,7 @@
 # Shader example
 
 ```awft
-pub shader #shader.post.crt: PostProcess
+pub shader @shader.post.crt: PostProcess
 capability { stage = fragment; storage_buffer = false; compute = false }
 params {
     curvature: f32 = 0.12

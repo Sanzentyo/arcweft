@@ -3,7 +3,7 @@
 ```awft
 mod game::devices
 
-pub device #device.usb.sensor: UsbDevice {
+pub device @device.usb.sensor: UsbDevice {
     permission = user_prompt
     backend = prefer(native_nusb, web_usb)
 
@@ -32,7 +32,7 @@ stream fn sensor_frames(dev: DevicePort<UsbDevice>) -> Source<SensorFrame, Senso
     }
 }
 
-pub device #device.hid.dial: HidDevice {
+pub device @device.hid.dial: HidDevice {
     permission = user_prompt
     backend = prefer(native_hidapi, web_hid)
 
@@ -47,26 +47,26 @@ pub device #device.hid.dial: HidDevice {
 Use in a flow:
 
 ```awft
-flow #flow.device_demo device_demo(state: GameState) -> Result<FlowExit, FlowError> {
+flow @flow.device_demo device_demo(state: GameState) -> Result<FlowExit, FlowError> {
     let dev =
-        try await device.usb(#device.usb.sensor) with {
-            pending _ => scene #scene.device_wait { text "USBセンサーを接続してください" }
-            denied _ => return Ok(FlowExit::Goto(#flow.device_optional))
+        try await device.usb(@device.usb.sensor) with {
+            pending _ => scene @scene.device_wait { text "USBセンサーを接続してください" }
+            denied _ => return Ok(FlowExit::Goto(@flow.device_optional))
         }
 
     let frames = sensor_frames(dev)
 
     select {
         sample = frames.next? => {
-            signal #signal.sensor_value <- sample.value
+            signal @signal.sensor_value <- sample.value
         }
 
         event .Back => {
-            return Ok(FlowExit::Goto(#flow.title))
+            return Ok(FlowExit::Goto(@flow.title))
         }
 
         frame _ => {
-            scene #scene.sensor_live {
+            scene @scene.sensor_live {
                 text "センサー入力を待機中"
             }
             continue

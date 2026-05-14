@@ -1,4 +1,9 @@
 use crate::ast::{EntityRef, Pattern, RecordPatternField, TextRange, VariantPatternPayload};
+use crate::cst::{
+    find_matching_punctuation, find_top_level_punctuation,
+    split_last_top_level_punctuation_sequence_once, split_leading_ident,
+    split_top_level_punctuation, split_top_level_punctuation_once,
+};
 use crate::expr::{Expr, parse_expr};
 use crate::types::parse_type_ref;
 
@@ -19,7 +24,7 @@ pub(crate) fn parse_pattern(source: &str) -> Pattern {
     {
         return Pattern::MutIdent(name.to_owned());
     }
-    if let Some((name, ty)) = source.split_once(':') {
+    if let Some((name, ty)) = split_top_level_punctuation_once(source, ':') {
         let name = name.trim();
         if is_pattern_ident(name)
             && let Ok(ty) = parse_type_ref(ty.trim())
@@ -76,26 +81,24 @@ pub(crate) fn parse_pattern(source: &str) -> Pattern {
 
 fn parse_entity_pattern(source: &str) -> Option<EntityRef> {
     let body = if let Some(body) = source
-        .strip_prefix("#<")
+        .strip_prefix("@<")
         .and_then(|value| value.strip_suffix('>'))
     {
         body
     } else {
-        source.strip_prefix('#')?
+        source.strip_prefix('@')?
     };
     (!body.trim().is_empty()).then(|| {
         EntityRef::new(
             body.trim().to_owned(),
-            source.starts_with("#<"),
+            source.starts_with("@<"),
             TextRange::new(0, source.len()),
         )
     })
 }
 
 fn split_whole_pattern(source: &str) -> Option<(&str, &str)> {
-    let (name, rest) = source.split_once(' ')?;
-    let name = name.trim();
-    let rest = rest.trim();
+    let (name, rest) = split_leading_ident(source)?;
     (is_pattern_ident(name)
         && !matches!(name, "mut")
         && !rest.is_empty()
@@ -126,7 +129,9 @@ fn parse_variant_pattern(source: &str) -> Option<Pattern> {
     let (head, payload) = split_variant_payload(source);
     let (path, name) = if let Some(name) = head.strip_prefix('.') {
         (None, name.trim())
-    } else if let Some((path, name)) = head.rsplit_once("::") {
+    } else if let Some((path, name)) =
+        split_last_top_level_punctuation_sequence_once(head, &[":", ":"])
+    {
         (Some(path.trim().to_owned()), name.trim())
     } else {
         return None;
@@ -142,12 +147,11 @@ fn parse_variant_pattern(source: &str) -> Option<Pattern> {
 }
 
 fn split_variant_payload(source: &str) -> (&str, Option<VariantPatternPayload>) {
-    if let Some(inner) = source.find('(').and_then(|open| {
-        source
-            .strip_suffix(')')
-            .map(|_| (open, &source[open + 1..source.len() - 1]))
-    }) {
-        let (open, inner) = inner;
+    if let Some(open) = find_top_level_punctuation(source, '(')
+        && let Some(close) = find_matching_punctuation(source, open, '(', ')')
+        && source[close + ')'.len_utf8()..].trim().is_empty()
+    {
+        let inner = &source[open + '('.len_utf8()..close];
         return (
             source[..open].trim(),
             Some(VariantPatternPayload::Tuple(
@@ -167,11 +171,7 @@ fn split_variant_payload(source: &str) -> (&str, Option<VariantPatternPayload>) 
                     rest = true;
                     return None;
                 }
-                let (name, pattern) = field
-                    .split_once(':')
-                    .map_or((field.trim(), field.trim()), |(name, pattern)| {
-                        (name.trim(), pattern.trim())
-                    });
+                let (name, pattern) = split_pattern_field(field);
                 is_pattern_ident(name)
                     .then(|| RecordPatternField::new(name, parse_pattern(pattern)))
             })
@@ -200,11 +200,7 @@ fn parse_record_pattern(source: &str) -> Option<Pattern> {
                 rest = true;
                 return None;
             }
-            let (name, pattern) = field
-                .split_once(':')
-                .map_or((field.trim(), field.trim()), |(name, pattern)| {
-                    (name.trim(), pattern.trim())
-                });
+            let (name, pattern) = split_pattern_field(field);
             is_pattern_ident(name).then(|| RecordPatternField::new(name, parse_pattern(pattern)))
         })
         .collect();
@@ -226,29 +222,19 @@ fn is_pattern_ident(source: &str) -> bool {
 }
 
 fn split_pattern_items(source: &str) -> Vec<&str> {
-    let mut items = Vec::new();
-    let mut start = 0;
-    let mut depth = 0_i32;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '(' | '[' | '{' => depth += 1,
-            ')' | ']' | '}' => depth -= 1,
-            ',' if depth == 0 => {
-                items.push(source[start..index].trim());
-                start = index + 1;
-            }
-            _ => {}
-        }
-    }
-    let tail = source[start..].trim();
-    if !tail.is_empty() {
-        items.push(tail);
-    }
-    items
+    split_top_level_punctuation(source, ',')
+}
+
+fn split_pattern_field(field: &str) -> (&str, &str) {
+    split_top_level_punctuation_once(field, ':')
+        .map_or((field.trim(), field.trim()), |(name, pattern)| {
+            (name.trim(), pattern.trim())
+        })
 }
 
 fn split_brace_item(source: &str) -> Option<(&str, &str)> {
-    let open = source.find('{')?;
-    let close = source.rfind('}')?;
-    (open < close).then(|| (source[..open].trim(), source[open + 1..close].trim()))
+    let open = find_top_level_punctuation(source, '{')?;
+    let close = find_matching_punctuation(source, open, '{', '}')?;
+    (source[close + '}'.len_utf8()..].trim().is_empty())
+        .then(|| (source[..open].trim(), source[open + 1..close].trim()))
 }

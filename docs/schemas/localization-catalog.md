@@ -28,13 +28,13 @@ key,locale,speaker,source_text,target_text,status,source_hash,voice,context,note
 ```awft
 locale en-US from ja-JP {
     line text.opening.alice.002 {
-        speaker = #character.alice
+        speaker = @character.alice
         source = rich "今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。"
         text = "I had a strange dream today."
         status = translated
         source_hash = "b3:f8c0..."
-        voice = #voice.en-US.alice.opening.002
-        context = #flow.opening
+        voice = @voice.en-US.alice.opening.002
+        context = @flow.opening
 
         notes {
             translator = "Keep ominous tone."

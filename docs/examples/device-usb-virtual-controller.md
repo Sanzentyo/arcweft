@@ -11,7 +11,7 @@ Related:
 ```awft
 mod game::devices::rhythm_pad
 
-pub device #device.rhythm_pad: UsbHid {
+pub device @device.rhythm_pad: UsbHid {
     permission = user_prompt
 
     usb {
@@ -41,9 +41,9 @@ pub device #device.rhythm_pad: UsbHid {
     }
 
     signals {
-        #signal.rhythm_pad.buttons <- input.buttons
-        #signal.rhythm_pad.axis <- vec2(input.x, input.y).normalize_i16()
-        #signal.rhythm_pad.pressure <- input.pressure
+        @signal.rhythm_pad.buttons <- input.buttons
+        @signal.rhythm_pad.axis <- vec2(input.x, input.y).normalize_i16()
+        @signal.rhythm_pad.pressure <- input.pressure
     }
 }
 ```
@@ -53,19 +53,19 @@ pub device #device.rhythm_pad: UsbHid {
 ```awft
 mod game::ui::mobile_controls
 
-pub controller #controller.mobile_default: VirtualTouchController {
-    layer = #layer.controls
+pub controller @controller.mobile_default: VirtualTouchController {
+    layer = @layer.controls
     visibility = when platform.touch_available
     safe_area = true
 
-    left_stick #control.left_stick {
+    left_stick @control.left_stick {
         position = bottom_left(x = 96, y = 96)
         radius = 72
         dead_zone = 0.12
         emits axis left
     }
 
-    button #control.action_a {
+    button @control.action_a {
         label = "A"
         position = bottom_right(x = 120, y = 112)
         radius = 44
@@ -73,7 +73,7 @@ pub controller #controller.mobile_default: VirtualTouchController {
         emits button A
     }
 
-    button #control.action_b {
+    button @control.action_b {
         label = "B"
         position = bottom_right(x = 214, y = 72)
         radius = 38
@@ -85,20 +85,20 @@ pub controller #controller.mobile_default: VirtualTouchController {
 ## Shared controller map
 
 ```awft
-pub controller_map #controller_map.action_game {
-    button Confirm <- any(button A, keyboard Enter, device #device.rhythm_pad.button(0))
-    button Cancel <- any(button B, keyboard Escape, device #device.rhythm_pad.button(1))
-    axis Move <- first_active(axis left, device #device.rhythm_pad.axis, keyboard_wasd())
+pub controller_map @controller_map.action_game {
+    button Confirm <- any(button A, keyboard Enter, device @device.rhythm_pad.button(0))
+    button Cancel <- any(button B, keyboard Escape, device @device.rhythm_pad.button(1))
+    axis Move <- first_active(axis left, device @device.rhythm_pad.axis, keyboard_wasd())
 }
 ```
 
 ## Flow usage
 
 ```awft
-pub flow #flow.enter_truck_game enter_truck_game(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow @flow.enter_truck_game enter_truck_game(state: GameState) -> Result<FlowExit, FlowError> {
     let pad =
-        try await device.open(#device.rhythm_pad).optional() with {
-            pending p => scene #scene.device_permission_wait {
+        try await device.open(@device.rhythm_pad).optional() with {
+            pending p => scene @scene.device_permission_wait {
                 text "USBコントローラーの接続を確認しています"
                 progress p.ratio
             }
@@ -107,12 +107,12 @@ pub flow #flow.enter_truck_game enter_truck_game(state: GameState) -> Result<Flo
         }
 
     let result =
-        await #<activity.truck_game>.run({
-            controller = #controller_map.action_game,
+        await @<activity.truck_game>.run({
+            controller = @controller_map.action_game,
             optional_device = pad,
-            virtual_controller = Some(#controller.mobile_default),
+            virtual_controller = Some(@controller.mobile_default),
         })? with {
-            pending p => scene #scene.loading_minigame {
+            pending p => scene @scene.loading_minigame {
                 text "ミニゲームを準備中"
                 progress p.ratio
             }
@@ -125,15 +125,15 @@ pub flow #flow.enter_truck_game enter_truck_game(state: GameState) -> Result<Flo
 ## Test
 
 ```awft
-test #test.mobile_controller_drives_truck scenario {
-    start #flow.enter_truck_game
+test @test.mobile_controller_drives_truck scenario {
+    start @flow.enter_truck_game
 
-    wait object #control.action_a visible
+    wait object @control.action_a visible
 
-    controller press #control.action_a for 8 frames
-    controller axis #control.left_stick = vec2(1.0, 0.0) for 60 frames
+    controller press @control.action_a for 8 frames
+    controller axis @control.left_stick = vec2(1.0, 0.0) for 60 frames
 
-    expect signal #signal.truck.speed > 10.0
+    expect signal @signal.truck.speed > 10.0
 }
 ```
 

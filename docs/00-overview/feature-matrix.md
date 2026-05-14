@@ -58,7 +58,7 @@
 |---|---:|---:|---:|---|
 | USB/HID device profiles | yes | WebUSB-limited | fixture | `nusb` preferred, `rusb` compatibility, `hidapi` for HID |
 | Device profile generator | yes | yes | yes | Generates typed parsers, writers, signals, tests, Agent metadata |
-| Virtual touch controller | yes | yes | yes | Native UI component on `#layer.controls` |
+| Virtual touch controller | yes | yes | yes | Native UI component on `@layer.controls` |
 | Physical/virtual controller map | yes | yes | yes | Merges touch, keyboard, gamepad, USB/HID |
 
 ## Device I/O / USB / Touch Controller
