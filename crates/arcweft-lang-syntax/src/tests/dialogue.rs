@@ -5,7 +5,7 @@ fn parses_fragment_as_flow_like_body() {
     let tree = parse_ok(
         r"
 pub fragment @frag.alice_enters alice_enters: FlowFragment {
-    @show alice normal at=right fade=220ms
+    show alice normal at=right fade=220ms
     alice: おはよう。[p]
 }
 ",
@@ -267,6 +267,37 @@ fn dialogue_tokenizer_normalizes_bracket_ruby_to_ruby_token() {
             .iter()
             .all(|token| !matches!(token, DialogueToken::EndTag(name) if name == "ruby")),
         "bracket ruby end interpolation should be consumed, got {tokens:?}"
+    );
+}
+
+#[test]
+fn lowers_narrator_aliases_and_family_relative_windows() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    scope rain {
+        ナレーション(id=@.voiceover, window=@textbox:.narrator):
+            扉の向こうから、雨の音がした。[p]
+    }
+}
+",
+    );
+
+    let hir = lower_to_hir(&tree).expect("narrator alias line lowers");
+    let HirFlowItem::Scope(scope) = &hir.flows()[0].body()[0] else {
+        panic!("expected scope");
+    };
+    let HirFlowItem::Dialogue(line) = &scope.body()[0] else {
+        panic!("expected dialogue");
+    };
+
+    assert_eq!(
+        line.id().expect("line id").body(),
+        "say.opening.narrator.rain.voiceover"
+    );
+    assert_eq!(
+        line.window().expect("window").body(),
+        "textbox.opening.rain.narrator"
     );
 }
 

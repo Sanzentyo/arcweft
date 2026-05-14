@@ -121,8 +121,19 @@ scope = "flow"
 
 `@.suffix` / `@..suffix` / `@...suffix` 形式の相対 ID は、ID を期待する
 文脈だけで使える。通常の entity reference ではないので、`goto @.next`
-のような相対参照を flow / asset 参照としては採用しない。flow や asset
-を参照する場合は完全な `@flow...` / `@asset...` を書く。
+のような相対参照を flow / asset 参照としては採用しない。
+
+一般の entity reference 文脈で相対参照したい場合は family を明示する。
+
+```awft
+goto @flow:.next
+include @frag:.intro
+window = @textbox:.side
+asset.load(@asset:.room)
+```
+
+つまり `@.suffix` は `IdRef::Relative`、`@flow:.suffix` は
+`EntityRefSyntax::FamilyRelative` として別の AST ノードになる。
 
 Arcweft accepts two relative-ID spellings:
 
@@ -138,6 +149,9 @@ Arcweft accepts two relative-ID spellings:
 
 Bare `.suffix` is not part of the core grammar. Bare `..suffix` is also not
 accepted; `..` already has range/rest-pattern meanings.
+
+Deep dot runs such as `@...suffix` are accepted, but formatter and LSP tooling
+should prefer the explicit spelling `@super.super.suffix` for authored code.
 
 ```awft
 alice(id=@.greeting):

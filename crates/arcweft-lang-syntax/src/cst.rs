@@ -62,7 +62,24 @@ pub struct CstLine {
 pub(crate) struct CstRelativeId<'a> {
     pub(crate) body: &'a str,
     pub(crate) parent_depth: usize,
+    pub(crate) spelling: CstRelativeIdSpelling,
     pub(crate) marker_len: usize,
+    pub(crate) rest: &'a str,
+}
+
+/// Source spelling used by a relative ID token.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CstRelativeIdSpelling {
+    DotRun,
+    SuperChain,
+}
+
+/// Family-qualified relative entity reference split from a source fragment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CstRelativeEntityRef<'a> {
+    pub(crate) raw: &'a str,
+    pub(crate) family: &'a str,
+    pub(crate) relative: CstRelativeId<'a>,
     pub(crate) rest: &'a str,
 }
 
@@ -95,7 +112,6 @@ pub enum CstLineKind {
 /// Top-level line event classification used before typed item construction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CstTopLevelLineKind {
-    OldMemoAttribute,
     Attribute,
     Module,
     Use,
@@ -127,7 +143,6 @@ pub(crate) enum CstTopLevelItemKind {
 /// Flow-body line classification before typed AST construction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CstFlowItemKind {
-    OldChoiceAttribute,
     StructuredBlock(CstStructuredFlowBlockKind),
     Include,
     AwaitWith,
@@ -506,9 +521,7 @@ fn classify_line(text: &str) -> CstLineKind {
 }
 
 fn classify_top_level_line(trimmed: &str) -> CstTopLevelLineKind {
-    if trimmed.starts_with("@memo") {
-        CstTopLevelLineKind::OldMemoAttribute
-    } else if trimmed.starts_with('@') {
+    if trimmed.starts_with("#[") {
         CstTopLevelLineKind::Attribute
     } else if trimmed.starts_with("mod ") {
         CstTopLevelLineKind::Module
@@ -657,9 +670,7 @@ fn looks_like_source_item(trimmed: &str) -> bool {
 }
 
 fn classify_flow_item(trimmed: &str) -> CstFlowItemKind {
-    if trimmed.starts_with("@choice") {
-        CstFlowItemKind::OldChoiceAttribute
-    } else if let Some(kind) = classify_structured_flow_block(trimmed) {
+    if let Some(kind) = classify_structured_flow_block(trimmed) {
         CstFlowItemKind::StructuredBlock(kind)
     } else if trimmed.starts_with("include ") {
         CstFlowItemKind::Include
@@ -1086,6 +1097,10 @@ pub(crate) fn split_leading_entity_ref_parts(source: &str) -> Option<CstEntityRe
         return None;
     }
     let raw = token.text();
+    if starts_family_relative_entity_ref(raw) || raw.starts_with("@.") || raw.starts_with("@super.")
+    {
+        return None;
+    }
     let rest = &source[token.end()..];
     let delimited = raw.starts_with("@<");
     let body = if delimited {
@@ -1106,6 +1121,57 @@ pub(crate) fn split_leading_entity_ref_parts(source: &str) -> Option<CstEntityRe
 /// Returns true when a fragment begins with an entity reference token.
 pub(crate) fn starts_leading_entity_ref(source: &str) -> bool {
     split_leading_entity_ref_parts(source).is_some()
+}
+
+/// Splits a leading family-qualified relative entity reference.
+pub(crate) fn split_leading_relative_entity_ref(source: &str) -> Option<CstRelativeEntityRef<'_>> {
+    let at = source.strip_prefix('@')?;
+    let family_len = take_while(at, |ch| ch.is_ascii_alphanumeric() || ch == '_');
+    if family_len == 0 || !at.get(family_len..)?.starts_with(":.") {
+        return None;
+    }
+    let family = &at[..family_len];
+    let relative_source = &at[family_len + ':'.len_utf8()..];
+    let dots = take_while(relative_source, |ch| ch == '.');
+    if dots == 0 {
+        return None;
+    }
+    let body_source = &relative_source[dots..];
+    let body_len = take_relative_id_body(body_source);
+    if body_len == 0 {
+        return None;
+    }
+    let relative = CstRelativeId {
+        body: &body_source[..body_len],
+        parent_depth: dots.saturating_sub(1),
+        spelling: CstRelativeIdSpelling::DotRun,
+        marker_len: dots,
+        rest: &body_source[body_len..],
+    };
+    let raw_len =
+        '@'.len_utf8() + family_len + ':'.len_utf8() + relative.marker_len + relative.body.len();
+    Some(CstRelativeEntityRef {
+        raw: &source[..raw_len],
+        family,
+        relative,
+        rest: &source[raw_len..],
+    })
+}
+
+fn starts_family_relative_entity_ref(raw: &str) -> bool {
+    let Some(at) = raw.strip_prefix('@') else {
+        return false;
+    };
+    let family_len = take_while(at, |ch| ch.is_ascii_alphanumeric() || ch == '_');
+    family_len > 0
+        && at
+            .get(family_len..)
+            .is_some_and(|tail| tail.starts_with(":."))
+}
+
+/// Returns true when a fragment begins with a family-qualified relative entity reference.
+pub(crate) fn starts_leading_relative_entity_ref(source: &str) -> bool {
+    split_leading_relative_entity_ref(source).is_some()
 }
 
 /// Returns true when a fragment begins with an ID-context relative ID marker.
@@ -1136,6 +1202,7 @@ fn split_dot_relative_id(source: &str) -> Option<CstRelativeId<'_>> {
     (body_len > 0).then(|| CstRelativeId {
         body: &body_source[..body_len],
         parent_depth: dot_run.saturating_sub(1),
+        spelling: CstRelativeIdSpelling::DotRun,
         marker_len,
         rest: &body_source[body_len..],
     })
@@ -1158,6 +1225,7 @@ fn split_super_relative_id(source: &str) -> Option<CstRelativeId<'_>> {
     (body_len > 0).then(|| CstRelativeId {
         body: &source[cursor..cursor + body_len],
         parent_depth: parents,
+        spelling: CstRelativeIdSpelling::SuperChain,
         marker_len: cursor,
         rest: &source[cursor + body_len..],
     })

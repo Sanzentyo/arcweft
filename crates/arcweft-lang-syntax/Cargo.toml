@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 arcweft-source = { path = "../arcweft-source" }
+blake3.workspace = true
 rowan.workspace = true
 thiserror.workspace = true
 

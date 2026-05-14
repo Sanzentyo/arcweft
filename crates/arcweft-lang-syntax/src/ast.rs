@@ -89,17 +89,49 @@ pub struct RawItem {
     range: TextRange,
 }
 
-/// Entity reference such as `@flow.opening` or `@<flow.opening@sem:abc>`.
-///
-/// Relative IDs share this storage while the parser migrates to a dedicated ID
-/// node. They are limited to ID-bearing contexts and carry the number of parent
-/// ID scopes walked by `@..` / `@super` forms.
+/// Absolute entity reference such as `@flow.opening` or `@<flow.opening@sem:abc>`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EntityRef {
     body: String,
     delimited: bool,
-    relative: bool,
-    relative_parent_depth: usize,
+    range: TextRange,
+}
+
+/// ID-bearing reference accepted by declaration-like ID positions.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IdRef {
+    Absolute(EntityRef),
+    Relative(RelativeId),
+}
+
+/// Relative ID suffix such as `@.greeting`, `@..shared`, or `@super.shared`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RelativeId {
+    suffix: String,
+    parent_depth: usize,
+    spelling: RelativeIdSpelling,
+    range: TextRange,
+}
+
+/// Source spelling used for a relative ID marker.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RelativeIdSpelling {
+    DotRun,
+    SuperChain,
+}
+
+/// Entity reference syntax before family-relative references are normalized.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EntityRefSyntax {
+    Absolute(EntityRef),
+    FamilyRelative(FamilyRelativeEntityRef),
+}
+
+/// Family-qualified relative entity reference such as `@flow:.next`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FamilyRelativeEntityRef {
+    family: String,
+    relative: RelativeId,
     range: TextRange,
 }
 
@@ -400,7 +432,7 @@ pub enum FlowItem {
     BorrowBlock(BorrowBlock),
     SourceLocale(SourceLocaleBlock),
     Scope(ScopeBlock),
-    Include(EntityRef),
+    Include(EntityRefSyntax),
     AwaitWith(AwaitWith),
     Raw(String),
 }
@@ -805,10 +837,10 @@ pub struct ContentCall {
 /// Structured dialogue line options parsed from the raw call argument list.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LineOptions {
-    id: Option<EntityRef>,
-    text_key: Option<EntityRef>,
+    id: Option<IdRef>,
+    text_key: Option<IdRef>,
     voice: Option<Expr>,
-    window: Option<EntityRef>,
+    window: Option<EntityRefSyntax>,
     source_locale: Option<String>,
     hooks: Vec<Expr>,
     style: Option<Expr>,
@@ -818,10 +850,10 @@ pub struct LineOptions {
 /// Internal initializer for structured dialogue line options.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct LineOptionsInit {
-    pub(crate) id: Option<EntityRef>,
-    pub(crate) text_key: Option<EntityRef>,
+    pub(crate) id: Option<IdRef>,
+    pub(crate) text_key: Option<IdRef>,
     pub(crate) voice: Option<Expr>,
-    pub(crate) window: Option<EntityRef>,
+    pub(crate) window: Option<EntityRefSyntax>,
     pub(crate) source_locale: Option<String>,
     pub(crate) hooks: Vec<Expr>,
     pub(crate) style: Option<Expr>,
@@ -855,7 +887,7 @@ pub struct DialogueDefaultOption {
 /// `choice @choice.id { ... }` flow item with option rows.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ChoiceBlock {
-    id: Option<EntityRef>,
+    id: Option<IdRef>,
     items: Vec<ChoiceItem>,
     options: Vec<ChoiceOption>,
     plan: Option<ChoicePlan>,
@@ -915,10 +947,10 @@ pub struct ChoiceMatchArm {
 /// One option in a choice block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ChoiceOption {
-    id: Option<EntityRef>,
+    id: Option<IdRef>,
     id_expr: Option<Expr>,
     label: String,
-    label_text_key: Option<EntityRef>,
+    label_text_key: Option<IdRef>,
     value: Option<Expr>,
     enabled: Option<Expr>,
     visible: Option<Expr>,
@@ -939,7 +971,7 @@ pub struct ChoiceUiField {
 /// Action performed by a selected choice option.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ChoiceAction {
-    Goto(EntityRef),
+    Goto(EntityRefSyntax),
     Out(Expr),
     SelectBlock(Vec<Stmt>),
     None,
@@ -1187,22 +1219,6 @@ impl EntityRef {
         Self {
             body,
             delimited,
-            relative: false,
-            relative_parent_depth: 0,
-            range,
-        }
-    }
-
-    pub(crate) const fn new_relative_with_parent_depth(
-        body: String,
-        parent_depth: usize,
-        range: TextRange,
-    ) -> Self {
-        Self {
-            body,
-            delimited: false,
-            relative: true,
-            relative_parent_depth: parent_depth,
             range,
         }
     }
@@ -1215,12 +1231,145 @@ impl EntityRef {
         self.delimited
     }
 
-    pub const fn is_relative(&self) -> bool {
-        self.relative
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl IdRef {
+    pub(crate) const fn absolute(entity: EntityRef) -> Self {
+        Self::Absolute(entity)
     }
 
-    pub const fn relative_parent_depth(&self) -> usize {
-        self.relative_parent_depth
+    pub(crate) const fn relative(relative: RelativeId) -> Self {
+        Self::Relative(relative)
+    }
+
+    pub fn body(&self) -> &str {
+        match self {
+            Self::Absolute(entity) => entity.body(),
+            Self::Relative(relative) => relative.suffix(),
+        }
+    }
+
+    pub const fn is_relative(&self) -> bool {
+        matches!(self, Self::Relative(_))
+    }
+
+    pub const fn relative_id(&self) -> Option<&RelativeId> {
+        match self {
+            Self::Absolute(_) => None,
+            Self::Relative(relative) => Some(relative),
+        }
+    }
+
+    pub const fn as_absolute(&self) -> Option<&EntityRef> {
+        match self {
+            Self::Absolute(entity) => Some(entity),
+            Self::Relative(_) => None,
+        }
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        match self {
+            Self::Absolute(entity) => entity.range(),
+            Self::Relative(relative) => relative.range(),
+        }
+    }
+}
+
+impl RelativeId {
+    pub(crate) const fn new(
+        suffix: String,
+        parent_depth: usize,
+        spelling: RelativeIdSpelling,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            suffix,
+            parent_depth,
+            spelling,
+            range,
+        }
+    }
+
+    pub fn suffix(&self) -> &str {
+        &self.suffix
+    }
+
+    pub const fn parent_depth(&self) -> usize {
+        self.parent_depth
+    }
+
+    pub const fn spelling(&self) -> RelativeIdSpelling {
+        self.spelling
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl EntityRefSyntax {
+    pub(crate) const fn absolute(entity: EntityRef) -> Self {
+        Self::Absolute(entity)
+    }
+
+    pub(crate) const fn family_relative(relative: FamilyRelativeEntityRef) -> Self {
+        Self::FamilyRelative(relative)
+    }
+
+    pub fn body(&self) -> &str {
+        match self {
+            Self::Absolute(entity) => entity.body(),
+            Self::FamilyRelative(relative) => relative.relative().suffix(),
+        }
+    }
+
+    pub const fn as_absolute(&self) -> Option<&EntityRef> {
+        match self {
+            Self::Absolute(entity) => Some(entity),
+            Self::FamilyRelative(_) => None,
+        }
+    }
+
+    pub const fn family_relative_ref(&self) -> Option<&FamilyRelativeEntityRef> {
+        match self {
+            Self::Absolute(_) => None,
+            Self::FamilyRelative(relative) => Some(relative),
+        }
+    }
+
+    pub const fn is_delimited(&self) -> bool {
+        match self {
+            Self::Absolute(entity) => entity.is_delimited(),
+            Self::FamilyRelative(_) => false,
+        }
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        match self {
+            Self::Absolute(entity) => entity.range(),
+            Self::FamilyRelative(relative) => relative.range(),
+        }
+    }
+}
+
+impl FamilyRelativeEntityRef {
+    pub(crate) const fn new(family: String, relative: RelativeId, range: TextRange) -> Self {
+        Self {
+            family,
+            relative,
+            range,
+        }
+    }
+
+    pub fn family(&self) -> &str {
+        &self.family
+    }
+
+    pub const fn relative(&self) -> &RelativeId {
+        &self.relative
     }
 
     pub const fn range(&self) -> &TextRange {
@@ -2186,7 +2335,7 @@ impl AwaitBranch {
 
 impl ChoiceOption {
     pub(crate) const fn new(
-        id: Option<EntityRef>,
+        id: Option<IdRef>,
         label: String,
         action: ChoiceAction,
         range: TextRange,
@@ -2217,7 +2366,7 @@ impl ChoiceOption {
         self
     }
 
-    pub(crate) fn with_label_text_key(mut self, text_key: EntityRef) -> Self {
+    pub(crate) fn with_label_text_key(mut self, text_key: IdRef) -> Self {
         self.label_text_key = Some(text_key);
         self
     }
@@ -2247,7 +2396,7 @@ impl ChoiceOption {
         self
     }
 
-    pub const fn id(&self) -> Option<&EntityRef> {
+    pub const fn id(&self) -> Option<&IdRef> {
         self.id.as_ref()
     }
 
@@ -2259,7 +2408,7 @@ impl ChoiceOption {
         &self.label
     }
 
-    pub const fn label_text_key(&self) -> Option<&EntityRef> {
+    pub const fn label_text_key(&self) -> Option<&IdRef> {
         self.label_text_key.as_ref()
     }
 
@@ -2295,7 +2444,7 @@ impl ChoiceOption {
         &self.action
     }
 
-    pub const fn target(&self) -> Option<&EntityRef> {
+    pub const fn target(&self) -> Option<&EntityRefSyntax> {
         match &self.action {
             ChoiceAction::Goto(target) => Some(target),
             _ => None,
@@ -2443,11 +2592,11 @@ impl LineOptions {
         }
     }
 
-    pub const fn id(&self) -> Option<&EntityRef> {
+    pub const fn id(&self) -> Option<&IdRef> {
         self.id.as_ref()
     }
 
-    pub const fn text_key(&self) -> Option<&EntityRef> {
+    pub const fn text_key(&self) -> Option<&IdRef> {
         self.text_key.as_ref()
     }
 
@@ -2455,7 +2604,7 @@ impl LineOptions {
         self.voice.as_ref()
     }
 
-    pub const fn window(&self) -> Option<&EntityRef> {
+    pub const fn window(&self) -> Option<&EntityRefSyntax> {
         self.window.as_ref()
     }
 
@@ -2542,7 +2691,7 @@ impl DialogueDefaultOption {
 
 impl ChoiceBlock {
     pub(crate) fn new(
-        id: Option<EntityRef>,
+        id: Option<IdRef>,
         items: Vec<ChoiceItem>,
         plan: Option<ChoicePlan>,
         range: TextRange,
@@ -2557,7 +2706,7 @@ impl ChoiceBlock {
         }
     }
 
-    pub const fn id(&self) -> Option<&EntityRef> {
+    pub const fn id(&self) -> Option<&IdRef> {
         self.id.as_ref()
     }
 

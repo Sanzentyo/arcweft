@@ -1,5 +1,6 @@
 use crate::ast::{
-    ContractClause, DialogueToken, EntityRef, ImplMember, LinePlan, LinePlanItem, Stmt, TraitMember,
+    ContractClause, DialogueToken, EntityRef, EntityRefSyntax, IdRef, ImplMember, LinePlan,
+    LinePlanItem, Stmt, TraitMember,
 };
 use crate::expr::Expr;
 use crate::lower::{HirFlowItem, HirModule, HirTopLevelDecl};
@@ -347,7 +348,7 @@ fn collect_choice_item(item: &crate::ast::ChoiceItem, uses: &mut Vec<SymbolUse>)
 
 fn collect_choice_option(option: &crate::ast::ChoiceOption, uses: &mut Vec<SymbolUse>) {
     if let Some(id) = option.id() {
-        push_entity(uses, id);
+        push_id_ref(uses, id);
     }
     if let Some(condition) = option.condition() {
         collect_expr(condition, uses);
@@ -356,10 +357,10 @@ fn collect_choice_option(option: &crate::ast::ChoiceOption, uses: &mut Vec<Symbo
         collect_expr(value, uses);
     }
     if let Some(text_key) = option.label_text_key() {
-        push_entity(uses, text_key);
+        push_id_ref(uses, text_key);
     }
     if let Some(target) = option.target() {
-        push_entity(uses, target);
+        push_entity_syntax(uses, target);
     }
     match option.action() {
         crate::ast::ChoiceAction::Out(expr) => collect_expr(expr, uses),
@@ -593,11 +594,11 @@ fn collect_unlowered_await_binding(await_with: &crate::ast::AwaitWith, uses: &mu
 
 fn collect_choice_stmt(choice: &crate::ast::ChoiceBlock, uses: &mut Vec<SymbolUse>) {
     if let Some(id) = choice.id() {
-        push_entity(uses, id);
+        push_id_ref(uses, id);
     }
     for option in choice.options() {
         if let Some(id) = option.id() {
-            push_entity(uses, id);
+            push_id_ref(uses, id);
         }
         if let Some(condition) = option.condition() {
             collect_expr(condition, uses);
@@ -606,14 +607,14 @@ fn collect_choice_stmt(choice: &crate::ast::ChoiceBlock, uses: &mut Vec<SymbolUs
             collect_expr(value, uses);
         }
         if let Some(text_key) = option.label_text_key() {
-            push_entity(uses, text_key);
+            push_id_ref(uses, text_key);
         }
         match option.action() {
             crate::ast::ChoiceAction::Out(expr) => collect_expr(expr, uses),
             crate::ast::ChoiceAction::SelectBlock(statements) => {
                 collect_stmt_block(statements, uses);
             }
-            crate::ast::ChoiceAction::Goto(target) => push_entity(uses, target),
+            crate::ast::ChoiceAction::Goto(target) => push_entity_syntax(uses, target),
             crate::ast::ChoiceAction::None => {}
         }
     }
@@ -670,7 +671,7 @@ fn collect_dialogue_content(tokens: &[DialogueToken], uses: &mut Vec<SymbolUse>)
 fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
     match expr {
         Expr::Literal(_) | Expr::Placeholder(_) => {}
-        Expr::EntityRef(entity) => push_entity(uses, entity),
+        Expr::EntityRef(entity) => push_entity_syntax(uses, entity),
         Expr::Path(path) => uses.push(SymbolUse::new(SymbolUseKind::Path, path.clone())),
         Expr::Tuple(items) | Expr::List(items) => {
             for item in items {
@@ -834,13 +835,22 @@ fn collect_match_expr(
 }
 
 fn push_entity(uses: &mut Vec<SymbolUse>, entity: &EntityRef) {
-    if entity.is_relative() {
-        return;
-    }
     uses.push(SymbolUse::new(
         SymbolUseKind::EntityRef,
         entity.body().to_owned(),
     ));
+}
+
+fn push_id_ref(uses: &mut Vec<SymbolUse>, id: &IdRef) {
+    if let IdRef::Absolute(entity) = id {
+        push_entity(uses, entity);
+    }
+}
+
+fn push_entity_syntax(uses: &mut Vec<SymbolUse>, entity: &EntityRefSyntax) {
+    if let EntityRefSyntax::Absolute(entity) = entity {
+        push_entity(uses, entity);
+    }
 }
 
 impl SymbolUse {

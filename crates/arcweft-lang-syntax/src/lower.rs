@@ -1,11 +1,11 @@
 use crate::ast::{
     Attribute, AwaitBranchKind, AwaitWith, BorrowBlock, CallableItem, ChoiceAction, ChoiceBlock,
     ChoicePlan, ContractClause, DialogueContent, DialogueDefaultsItem, EntityDeclItem, EntityRef,
-    EnumItem, ExternModItem, Flow, FlowItem, FlowKind, FunctionItem, FunctionKind, HookItem,
-    IfBlock, IfLetBlock, ImplItem, Item, LineArg, LinePlan, LoopBlock, MatchBlock, MemoFn,
-    ParserItem, Pattern, ScopeBlock, ScopeExprBlock, SourceItem, SourceLocaleBlock, SpeakerLine,
-    StateItem, Stmt, StructItem, TextRange, TraitItem, TypeAliasItem, TypedSyntaxTree, WhileBlock,
-    WhileLetBlock,
+    EntityRefSyntax, EnumItem, ExternModItem, Flow, FlowItem, FlowKind, FunctionItem, FunctionKind,
+    HookItem, IdRef, IfBlock, IfLetBlock, ImplItem, Item, LineArg, LinePlan, LoopBlock, MatchBlock,
+    MemoFn, ParserItem, Pattern, RelativeId, ScopeBlock, ScopeExprBlock, SourceItem,
+    SourceLocaleBlock, SpeakerLine, StateItem, Stmt, StructItem, TextRange, TraitItem,
+    TypeAliasItem, TypedSyntaxTree, WhileBlock, WhileLetBlock,
 };
 use crate::expr::Expr;
 use crate::types::FnSignature;
@@ -404,7 +404,7 @@ fn lower_flow_item_with_context(
     match item {
         FlowItem::Stmt(Stmt::LetChoice { pattern, choice }) => Ok(HirFlowItem::LetChoice {
             pattern: pattern.clone(),
-            choice: lower_choice(choice, context),
+            choice: lower_choice(choice, context)?,
         }),
         FlowItem::Stmt(Stmt::LetScope { pattern, scope }) => Ok(HirFlowItem::LetScope {
             pattern: pattern.clone(),
@@ -428,11 +428,11 @@ fn lower_flow_item_with_context(
         }),
         FlowItem::SpeakerLine(line) => Ok(HirFlowItem::Dialogue(Box::new(lower_speaker_line(
             line, context,
-        )))),
+        )?))),
         FlowItem::ContentCall(call) => Ok(HirFlowItem::Dialogue(Box::new(lower_content_call(
             call, context,
-        )))),
-        FlowItem::Choice(choice) => Ok(HirFlowItem::Choice(lower_choice(choice, context))),
+        )?))),
+        FlowItem::Choice(choice) => lower_choice(choice, context).map(HirFlowItem::Choice),
         FlowItem::If(block) => lower_if(block, context).map(HirFlowItem::If),
         FlowItem::IfLet(block) => lower_if_let(block, context).map(HirFlowItem::IfLet),
         FlowItem::Match(block) => lower_match(block, context).map(HirFlowItem::Match),
@@ -446,7 +446,9 @@ fn lower_flow_item_with_context(
             lower_source_locale(block, context).map(HirFlowItem::SourceLocale)
         }
         FlowItem::Scope(block) => lower_scope(block, context).map(HirFlowItem::Scope),
-        FlowItem::Include(entity) => Ok(HirFlowItem::Include(entity.clone())),
+        FlowItem::Include(entity) => {
+            normalize_entity_ref_syntax(entity, context).map(HirFlowItem::Include)
+        }
         FlowItem::AwaitWith(await_with) => {
             lower_await_with(await_with, context).map(HirFlowItem::Await)
         }
@@ -633,73 +635,102 @@ fn lower_match(block: &MatchBlock, context: &mut LowerContext) -> Result<HirMatc
     })
 }
 
-fn lower_speaker_line(line: &SpeakerLine, context: &mut LowerContext) -> HirDialogue {
+fn lower_speaker_line(
+    line: &SpeakerLine,
+    context: &mut LowerContext,
+) -> Result<HirDialogue, HirLowerError> {
     let speaker = speaker_slug(line.speaker());
-    let id = normalize_line_id(line.options().id(), speaker.clone(), context, *line.range());
-    HirDialogue {
+    let id = normalize_line_id(line.options().id(), speaker.clone(), context, *line.range())?;
+    let text_key =
+        normalize_line_text_key(line.options().text_key(), id.as_ref(), speaker, context)?;
+    let window = line
+        .options()
+        .window()
+        .map(|window| normalize_entity_ref_syntax(window, context))
+        .transpose()?;
+    Ok(HirDialogue {
         callee: line.speaker().to_owned(),
-        text_key: normalize_line_text_key(line.options().text_key(), id.as_ref(), speaker, context),
+        text_key,
         id,
         voice: line.options().voice().cloned(),
-        window: line.options().window().cloned(),
+        window,
         source_locale: line.options().source_locale().map(str::to_owned),
         hooks: line.options().hooks().to_vec(),
         style: line.options().style().cloned(),
         args: line.options().args().to_vec(),
         content: line.content().clone(),
         plan: line.plan().cloned(),
-    }
+    })
 }
 
-fn lower_content_call(call: &crate::ast::ContentCall, context: &mut LowerContext) -> HirDialogue {
+fn lower_content_call(
+    call: &crate::ast::ContentCall,
+    context: &mut LowerContext,
+) -> Result<HirDialogue, HirLowerError> {
     let speaker = content_callee_slug(call.callee());
-    let id = normalize_line_id(call.options().id(), speaker.clone(), context, *call.range());
-    HirDialogue {
+    let id = normalize_line_id(call.options().id(), speaker.clone(), context, *call.range())?;
+    let text_key =
+        normalize_line_text_key(call.options().text_key(), id.as_ref(), speaker, context)?;
+    let window = call
+        .options()
+        .window()
+        .map(|window| normalize_entity_ref_syntax(window, context))
+        .transpose()?;
+    Ok(HirDialogue {
         callee: call.callee().to_owned(),
-        text_key: normalize_line_text_key(call.options().text_key(), id.as_ref(), speaker, context),
+        text_key,
         id,
         voice: call.options().voice().cloned(),
-        window: call.options().window().cloned(),
+        window,
         source_locale: call.options().source_locale().map(str::to_owned),
         hooks: call.options().hooks().to_vec(),
         style: call.options().style().cloned(),
         args: call.options().args().to_vec(),
         content: call.content().clone(),
         plan: call.plan().cloned(),
-    }
+    })
 }
 
-fn lower_choice(choice: &ChoiceBlock, context: &mut LowerContext) -> HirChoice {
+fn lower_choice(
+    choice: &ChoiceBlock,
+    context: &mut LowerContext,
+) -> Result<HirChoice, HirLowerError> {
     let id = choice
         .id()
         .map(|id| normalize_choice_id(id, context))
-        .or_else(|| choice.id().cloned());
+        .transpose()?;
     if let Some(id) = &id {
         context.choice_stack.push(id.body().to_owned());
     }
     let options = choice
         .options()
         .iter()
-        .map(|option| HirChoiceOption {
-            id: option.id().map(|id| normalize_option_id(id, context)),
-            label: option.label().to_owned(),
-            condition: option.condition().cloned(),
-            action: option.action().clone(),
-            value: option.value().cloned(),
-            label_text_key: option
-                .label_text_key()
-                .map(|id| normalize_text_key_id(id, context)),
+        .map(|option| {
+            Ok(HirChoiceOption {
+                id: option
+                    .id()
+                    .map(|id| normalize_option_id(id, context))
+                    .transpose()?,
+                label: option.label().to_owned(),
+                condition: option.condition().cloned(),
+                action: normalize_choice_action(option.action(), context)?,
+                value: option.value().cloned(),
+                label_text_key: option
+                    .label_text_key()
+                    .map(|id| normalize_text_key_id(id, context))
+                    .transpose()?,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, HirLowerError>>()?;
     if choice.id().is_some() {
         context.choice_stack.pop();
     }
-    HirChoice {
+    Ok(HirChoice {
         id,
         items: choice.items().to_vec(),
         plan: choice.plan().cloned(),
         options,
-    }
+    })
 }
 
 fn lower_source_locale(
@@ -734,105 +765,160 @@ fn lower_scope(block: &ScopeBlock, context: &mut LowerContext) -> Result<HirScop
     })
 }
 
-fn normalize_choice_id(id: &EntityRef, context: &LowerContext) -> EntityRef {
-    if !id.is_relative() {
-        return id.clone();
+fn normalize_choice_action(
+    action: &ChoiceAction,
+    context: &LowerContext,
+) -> Result<ChoiceAction, HirLowerError> {
+    match action {
+        ChoiceAction::Goto(target) => normalize_entity_ref_syntax(target, context)
+            .map(EntityRefSyntax::absolute)
+            .map(ChoiceAction::Goto),
+        ChoiceAction::Out(expr) => Ok(ChoiceAction::Out(expr.clone())),
+        ChoiceAction::SelectBlock(body) => Ok(ChoiceAction::SelectBlock(body.clone())),
+        ChoiceAction::None => Ok(ChoiceAction::None),
     }
+}
+
+fn normalize_entity_ref_syntax(
+    entity: &EntityRefSyntax,
+    context: &LowerContext,
+) -> Result<EntityRef, HirLowerError> {
+    match entity {
+        EntityRefSyntax::Absolute(entity) => Ok(entity.clone()),
+        EntityRefSyntax::FamilyRelative(relative) => {
+            let Some(flow_slug) = &context.flow_slug else {
+                return Err(HirLowerError::new(
+                    "relative entity reference requires a flow context",
+                    Some(*relative.range()),
+                ));
+            };
+            let mut parts = vec![relative.family().to_owned(), flow_slug.clone()];
+            parts.extend(relative_scopes(context, relative.relative())?);
+            parts.push(relative.relative().suffix().to_owned());
+            Ok(EntityRef::new(parts.join("."), false, *relative.range()))
+        }
+    }
+}
+
+fn normalize_choice_id(id: &IdRef, context: &LowerContext) -> Result<EntityRef, HirLowerError> {
+    let IdRef::Relative(relative) = id else {
+        return Ok(id.as_absolute().expect("absolute id").clone());
+    };
     let Some(flow_slug) = &context.flow_slug else {
-        return id.clone();
+        return Err(HirLowerError::new(
+            "relative choice ID requires a flow context",
+            Some(*id.range()),
+        ));
     };
     let mut parts = vec!["choice".to_owned(), flow_slug.clone()];
-    parts.extend(relative_scopes(context, id).iter().cloned());
-    parts.push(id.body().to_owned());
-    EntityRef::new(parts.join("."), false, *id.range())
+    parts.extend(relative_scopes(context, relative)?);
+    parts.push(relative.suffix().to_owned());
+    Ok(EntityRef::new(parts.join("."), false, *id.range()))
 }
 
-fn normalize_option_id(id: &EntityRef, context: &LowerContext) -> EntityRef {
-    if !id.is_relative() {
-        return id.clone();
-    }
-    context.choice_stack.last().map_or_else(
-        || id.clone(),
-        |choice| {
-            EntityRef::new(
-                append_relative_suffix(choice, id.body(), id.relative_parent_depth()),
-                false,
-                *id.range(),
-            )
-        },
-    )
+fn normalize_option_id(id: &IdRef, context: &LowerContext) -> Result<EntityRef, HirLowerError> {
+    let IdRef::Relative(relative) = id else {
+        return Ok(id.as_absolute().expect("absolute id").clone());
+    };
+    let Some(choice) = context.choice_stack.last() else {
+        return Err(HirLowerError::new(
+            "relative option ID requires an enclosing choice",
+            Some(*id.range()),
+        ));
+    };
+    Ok(EntityRef::new(
+        append_relative_suffix(choice, relative.suffix(), relative.parent_depth())?,
+        false,
+        *id.range(),
+    ))
 }
 
-fn normalize_text_key_id(id: &EntityRef, context: &LowerContext) -> EntityRef {
-    if !id.is_relative() {
-        return id.clone();
-    }
-    context.choice_stack.last().map_or_else(
-        || id.clone(),
-        |choice| {
-            let normalized_choice = append_relative_suffix(choice, "", id.relative_parent_depth());
-            let choice_path = normalized_choice
-                .trim_end_matches('.')
-                .strip_prefix("choice.")
-                .unwrap_or(normalized_choice.trim_end_matches('.'));
-            EntityRef::new(
-                format!("text.choice.{choice_path}.{}", id.body()),
-                false,
-                *id.range(),
-            )
-        },
-    )
+fn normalize_text_key_id(id: &IdRef, context: &LowerContext) -> Result<EntityRef, HirLowerError> {
+    let IdRef::Relative(relative) = id else {
+        return Ok(id.as_absolute().expect("absolute id").clone());
+    };
+    let Some(choice) = context.choice_stack.last() else {
+        return Err(HirLowerError::new(
+            "relative choice text key requires an enclosing choice",
+            Some(*id.range()),
+        ));
+    };
+    let normalized_choice = append_relative_suffix(choice, "", relative.parent_depth())?;
+    let choice_path = normalized_choice
+        .trim_end_matches('.')
+        .strip_prefix("choice.")
+        .unwrap_or(normalized_choice.trim_end_matches('.'));
+    Ok(EntityRef::new(
+        format!("text.choice.{choice_path}.{}", relative.suffix()),
+        false,
+        *id.range(),
+    ))
 }
 
 fn normalize_line_id(
-    id: Option<&EntityRef>,
+    id: Option<&IdRef>,
     speaker: String,
     context: &mut LowerContext,
     range: TextRange,
-) -> Option<EntityRef> {
+) -> Result<Option<EntityRef>, HirLowerError> {
+    if context.flow_slug.is_none() && !matches!(id, Some(IdRef::Absolute(_))) {
+        return Ok(None);
+    }
     match id {
-        Some(id) if !id.is_relative() => Some(id.clone()),
-        Some(id) => Some(build_line_entity_ref(
+        Some(IdRef::Absolute(id)) => Ok(Some(id.clone())),
+        Some(IdRef::Relative(relative)) => Ok(Some(build_line_entity_ref(
             speaker,
-            Some(id),
+            Some(relative),
             context,
-            *id.range(),
-        )?),
-        None => Some(build_line_entity_ref(speaker, None, context, range)?),
+            *relative.range(),
+        )?)),
+        None => Ok(Some(build_line_entity_ref(speaker, None, context, range)?)),
     }
 }
 
 fn normalize_line_text_key(
-    text_key: Option<&EntityRef>,
+    text_key: Option<&IdRef>,
     line_id: Option<&EntityRef>,
     speaker: String,
     context: &LowerContext,
-) -> Option<EntityRef> {
+) -> Result<Option<EntityRef>, HirLowerError> {
     if let Some(text_key) = text_key {
-        if !text_key.is_relative() {
-            return Some(text_key.clone());
-        }
+        let IdRef::Relative(relative) = text_key else {
+            return Ok(Some(text_key.as_absolute().expect("absolute id").clone()));
+        };
         let Some(flow_slug) = &context.flow_slug else {
-            return Some(text_key.clone());
+            return Err(HirLowerError::new(
+                "relative text key requires a flow context",
+                Some(*text_key.range()),
+            ));
         };
         let mut parts = vec!["text".to_owned(), flow_slug.clone(), speaker];
-        parts.extend(relative_scopes(context, text_key).iter().cloned());
-        parts.push(text_key.body().to_owned());
-        return Some(EntityRef::new(parts.join("."), false, *text_key.range()));
+        parts.extend(relative_scopes(context, relative)?);
+        parts.push(relative.suffix().to_owned());
+        return Ok(Some(EntityRef::new(
+            parts.join("."),
+            false,
+            *text_key.range(),
+        )));
     }
-    line_id.map(|id| EntityRef::new(line_id_to_text_key(id.body()), false, *id.range()))
+    Ok(line_id.map(|id| EntityRef::new(line_id_to_text_key(id.body()), false, *id.range())))
 }
 
 fn build_line_entity_ref(
     speaker: String,
-    explicit_id: Option<&EntityRef>,
+    explicit_id: Option<&RelativeId>,
     context: &mut LowerContext,
     range: TextRange,
-) -> Option<EntityRef> {
-    let flow_slug = context.flow_slug.as_ref()?;
+) -> Result<EntityRef, HirLowerError> {
+    let Some(flow_slug) = context.flow_slug.as_ref() else {
+        return Err(HirLowerError::new(
+            "dialogue line ID requires a flow context",
+            Some(range),
+        ));
+    };
     let mut parts = vec!["say".to_owned(), flow_slug.clone(), speaker];
     if let Some(id) = explicit_id {
-        parts.extend(relative_scopes(context, id));
+        parts.extend(relative_scopes(context, id)?);
     } else {
         parts.extend(context.scopes.iter().cloned());
     }
@@ -843,36 +929,43 @@ fn build_line_entity_ref(
             *next += 1;
             format!("{next:03}")
         },
-        |id| id.body().to_owned(),
+        |id| id.suffix().to_owned(),
     );
-    Some(EntityRef::new(format!("{prefix}.{suffix}"), false, range))
+    Ok(EntityRef::new(format!("{prefix}.{suffix}"), false, range))
 }
 
-fn relative_scopes(context: &LowerContext, id: &EntityRef) -> Vec<String> {
-    context
-        .scopes
-        .iter()
-        .take(
-            context
-                .scopes
-                .len()
-                .saturating_sub(id.relative_parent_depth()),
-        )
-        .cloned()
-        .collect()
+fn relative_scopes(
+    context: &LowerContext,
+    relative: &RelativeId,
+) -> Result<Vec<String>, HirLowerError> {
+    let Some(take_len) = context.scopes.len().checked_sub(relative.parent_depth()) else {
+        return Err(HirLowerError::new(
+            "relative ID walks past the available ID scopes",
+            Some(*relative.range()),
+        ));
+    };
+    Ok(context.scopes.iter().take(take_len).cloned().collect())
 }
 
-fn append_relative_suffix(base: &str, suffix: &str, parent_depth: usize) -> String {
+fn append_relative_suffix(
+    base: &str,
+    suffix: &str,
+    parent_depth: usize,
+) -> Result<String, HirLowerError> {
     let mut parts = base.split('.').map(str::to_owned).collect::<Vec<_>>();
     for _ in 0..parent_depth {
-        if parts.len() > 1 {
-            parts.pop();
+        if parts.len() <= 1 {
+            return Err(HirLowerError::new(
+                "relative ID walks past the available ID scopes",
+                None,
+            ));
         }
+        parts.pop();
     }
     if !suffix.is_empty() {
         parts.push(suffix.to_owned());
     }
-    parts.join(".")
+    Ok(parts.join("."))
 }
 
 fn line_id_to_text_key(line_id: &str) -> String {
@@ -882,8 +975,10 @@ fn line_id_to_text_key(line_id: &str) -> String {
 }
 
 fn speaker_slug(speaker: &str) -> String {
-    match speaker {
-        "地の文" | "narrator" => "narrator".to_owned(),
+    match speaker.trim() {
+        "地の文" | "地文" | "ナレーター" | "ナレータ" | "ナレーション" | "語り" | "語り手"
+        | "narrator" | "Narrator" | "NARRATOR" | "VO" | "V.O." | "O.S." | "Offscreen"
+        | "Script" | "StageDirection" | "ト書き" | "脚本" => "narrator".to_owned(),
         other => {
             let source = other
                 .trim()
@@ -1098,7 +1193,7 @@ impl HirChoiceOption {
 
     pub const fn target(&self) -> Option<&EntityRef> {
         match &self.action {
-            ChoiceAction::Goto(target) => Some(target),
+            ChoiceAction::Goto(EntityRefSyntax::Absolute(target)) => Some(target),
             _ => None,
         }
     }
@@ -1279,8 +1374,11 @@ impl HirAwaitBranch {
 }
 
 impl HirLowerError {
-    fn new(message: String, range: Option<TextRange>) -> Self {
-        Self { message, range }
+    fn new(message: impl Into<String>, range: Option<TextRange>) -> Self {
+        Self {
+            message: message.into(),
+            range,
+        }
     }
 
     pub fn message(&self) -> &str {

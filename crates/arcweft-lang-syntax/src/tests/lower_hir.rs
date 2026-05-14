@@ -5,7 +5,7 @@ fn lowers_edge_case_flow_to_hir_without_raw_reparse() {
     let tree = parse_ok(
         r#"
 flow @flow.opening opening {
-    @bg @asset.bg.room fade=300ms
+    bg @asset.bg.room fade=300ms
     let (actor, (_, voice)) = alice.say()[聞いて。[p]]
     try await load_opening_assets() with { pending p => scene @scene.loading { progress p.ratio } }
     alice[

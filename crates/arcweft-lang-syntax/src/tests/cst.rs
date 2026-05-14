@@ -59,13 +59,13 @@ fn cst_line_events_classify_trivia_docs_and_code() {
 #[test]
 fn cst_line_events_classify_top_level_dispatch() {
     let root = crate::cst::parse_cst(
-        "@memo old\n@build tool\nmod game::routes\npub use crate::prelude::*\npub source @source.frames: Source<T, E> {}\nalice: hello\n",
+        "@memo old\n#[build(tool)]\nmod game::routes\npub use crate::prelude::*\npub source @source.frames: Source<T, E> {}\nalice: hello\n",
     );
     let lines = cst_lines(&root);
 
     assert_eq!(
         lines.get(0).map(CstLine::top_level_line_kind),
-        Some(CstTopLevelLineKind::OldMemoAttribute)
+        Some(CstTopLevelLineKind::Item)
     );
     assert_eq!(
         lines.get(1).map(CstLine::top_level_line_kind),
@@ -98,7 +98,7 @@ fn cst_line_events_classify_flow_item_dispatch() {
 
     assert_eq!(
         lines.get(0).map(CstLine::flow_item_kind),
-        Some(CstFlowItemKind::OldChoiceAttribute)
+        Some(CstFlowItemKind::Other)
     );
     assert_eq!(
         lines.get(1).map(CstLine::flow_item_kind),
@@ -149,7 +149,12 @@ fn successful_parse_exposes_typed_tree_and_hash() {
     let parsed = parse_source("alice: おはよう。[p]");
 
     assert!(parsed.is_ok());
-    assert_ne!(parsed.source_hash().get(), 0);
+    assert_eq!(parsed.source_hash().as_bytes().len(), 32);
+    assert_eq!(parsed.source_hash().to_string().len(), 64);
+    assert_eq!(
+        parsed.source_hash().to_hex(),
+        parsed.source_hash().to_string()
+    );
     assert!(matches!(parsed.typed_tree().items(), [Item::FlowItem(_)]));
 }
 
@@ -215,6 +220,8 @@ fn cst_leading_reference_helpers_keep_precise_tails() {
     let super_relative =
         split_leading_relative_id("@super.super.opening.next)").expect("super relative id");
     let bare_relative = split_leading_relative_id(".opening.next)");
+    let family_relative =
+        crate::cst::split_leading_relative_entity_ref("@flow:.next tail").expect("family relative");
 
     assert_eq!(lifetime, "'frame");
     assert_eq!(rest, "[u8]");
@@ -235,6 +242,11 @@ fn cst_leading_reference_helpers_keep_precise_tails() {
     assert_eq!(super_relative.parent_depth, 2);
     assert_eq!(super_relative.rest, ")");
     assert_eq!(bare_relative, None);
+    assert_eq!(family_relative.raw, "@flow:.next");
+    assert_eq!(family_relative.family, "flow");
+    assert_eq!(family_relative.relative.body, "next");
+    assert_eq!(family_relative.rest, " tail");
+    assert!(split_leading_entity_ref_parts("@flow:.next").is_none());
 }
 
 #[test]

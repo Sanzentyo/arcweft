@@ -3,10 +3,11 @@ use crate::ast::{
     CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceMatchArm,
     ChoiceOption, ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause,
     DialogueContent, DialogueDefaultOption, DialogueDefaultsItem, DocBlock, EntityDeclItem,
-    EntityDeclKind, EntityRef, EnumItem, EnumVariant, ExternModItem, Flow, FlowInit, FlowItem,
-    FlowKind, ForBlock, FunctionInit, FunctionItem, FunctionKind, HookInit, HookItem, IfBlock,
-    IfLetBlock, ImplItem, ImplMember, Item, LineArg, LineOptions, LineOptionsInit, LinePlan,
-    LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, RawItem,
+    EntityDeclKind, EntityRef, EntityRefSyntax, EnumItem, EnumVariant, ExternModItem,
+    FamilyRelativeEntityRef, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionInit,
+    FunctionItem, FunctionKind, HookInit, HookItem, IdRef, IfBlock, IfLetBlock, ImplItem,
+    ImplMember, Item, LineArg, LineOptions, LineOptionsInit, LinePlan, LinePlanItem, LoopBlock,
+    MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, RawItem, RelativeId, RelativeIdSpelling,
     ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
     SourceItem, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StmtMatchArm,
     StructField, StructItem, TextRange, TraitItem, TraitMember, TypeAliasItem, TypedSyntaxTree,
@@ -16,10 +17,11 @@ use crate::cst::{
     CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstStructuredFlowBlockKind,
     CstTopLevelItemKind, CstTopLevelLineKind, collect_wiki_link_ranges, find_matching_punctuation,
     find_top_level_punctuation, punctuation_delta, split_first_string_literal,
-    split_leading_entity_ref_parts, split_leading_ident, split_leading_relative_id,
-    split_top_level_keyword_once, split_top_level_punctuation, split_top_level_punctuation_once,
-    split_top_level_punctuation_sequence_once, split_top_level_whitespace,
-    starts_leading_entity_ref, starts_leading_relative_id,
+    split_leading_entity_ref_parts, split_leading_ident, split_leading_relative_entity_ref,
+    split_leading_relative_id, split_top_level_keyword_once, split_top_level_punctuation,
+    split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
+    split_top_level_whitespace, starts_leading_entity_ref, starts_leading_relative_entity_ref,
+    starts_leading_relative_id,
 };
 use crate::expr::{ComputationBlockKind, Expr, parse_expr};
 use crate::pattern::parse_pattern;
@@ -214,12 +216,6 @@ impl Parser {
         items: &mut Vec<Item>,
     ) {
         match dispatch.line {
-            CstTopLevelLineKind::OldMemoAttribute => {
-                if let Some(item) = self.reject_old_memo_attribute(trimmed, range) {
-                    self.reject_pending_doc(range);
-                    items.push(item);
-                }
-            }
             CstTopLevelLineKind::Attribute => {
                 if let Some(attribute) = parse_attribute(trimmed, range) {
                     items.push(Item::Attribute(attribute));
@@ -246,6 +242,20 @@ impl Parser {
                 self.index += 1;
             }
             CstTopLevelLineKind::Item => {
+                if trimmed.starts_with('@') {
+                    let message = if trimmed.starts_with("@memo") {
+                        "`@memo` is not valid Arcweft syntax"
+                    } else {
+                        "`@` does not start a top-level item"
+                    };
+                    self.push_error(
+                        range,
+                        message,
+                        ["fn name(...) { ... }", "#[attribute]"],
+                        Some(trimmed),
+                        ["use `#[...]` for attributes or an ordinary item keyword"],
+                    );
+                }
                 self.parse_top_level_item(dispatch.item, trimmed, range, items);
             }
         }
@@ -348,24 +358,6 @@ impl Parser {
             items.push(Item::Raw(RawItem::new(trimmed.to_owned(), None, range)));
             self.index += 1;
         }
-    }
-
-    fn reject_old_memo_attribute(&mut self, trimmed: &str, range: TextRange) -> Option<Item> {
-        if !trimmed.starts_with("@memo") {
-            return None;
-        }
-        self.push_error(
-            range,
-            "`@memo`-style memo attributes are not valid Arcweft syntax",
-            [
-                "memo fn name(...) -> Type",
-                "memo(scope=..., key=...) { ... }",
-            ],
-            Some(trimmed),
-            ["remove `@` and use a `memo fn` item or `memo(...) { ... }` block"],
-        );
-        self.index += 1;
-        Some(Item::Raw(RawItem::new(trimmed.to_owned(), None, range)))
     }
 
     fn parse_flow(&mut self) -> Option<Flow> {
@@ -933,7 +925,8 @@ impl Parser {
             .trim_start()
             .strip_prefix("dialogue defaults")?
             .trim_start();
-        let (id, tail) = parse_optional_id_ref(after_defaults, start_line.start, &mut self.errors);
+        let (id, tail) =
+            parse_optional_entity_ref(after_defaults, start_line.start, &mut self.errors);
         if !tail.trim().is_empty() {
             self.push_error(
                 TextRange::new(start_line.start, start_line.start + head.len()),
@@ -1170,9 +1163,6 @@ impl Parser {
         let kind = line.flow_item_kind();
 
         match kind {
-            CstFlowItemKind::OldChoiceAttribute => {
-                return Some(FlowItem::Raw(self.reject_old_choice_syntax()));
-            }
             CstFlowItemKind::StructuredBlock(kind) => {
                 return self.parse_structured_flow_block(kind);
             }
@@ -1230,10 +1220,19 @@ impl Parser {
     }
 
     fn parse_line_flow_item(&mut self, line: &CstLine, trimmed: &str) -> Option<FlowItem> {
-        if let Some(command) = parse_scenario_command(trimmed, TextRange::new(line.start, line.end))
-        {
-            self.index += 1;
-            return Some(FlowItem::ScenarioCommand(command));
+        if trimmed.starts_with('@') && !trimmed.contains('[') {
+            let message = if trimmed.starts_with("@choice") {
+                "`@choice` is not valid Arcweft syntax"
+            } else {
+                "`@` does not start a flow statement"
+            };
+            self.push_error(
+                TextRange::new(line.start, line.end),
+                message,
+                ["choice @choice.id { ... }", "bg(@asset.id)"],
+                Some(trimmed),
+                ["use an ordinary statement or function-call style command"],
+            );
         }
         if let Some(command) =
             parse_word_scenario_command(trimmed, TextRange::new(line.start, line.end))
@@ -1242,7 +1241,8 @@ impl Parser {
             return Some(FlowItem::ScenarioCommand(command));
         }
         if let Some(rest) = trimmed.strip_prefix("include ") {
-            let entity = parse_required_entity_ref(rest.trim(), line.start, &mut self.errors)?.0;
+            let entity =
+                parse_required_entity_ref_syntax(rest.trim(), line.start, &mut self.errors)?.0;
             self.index += 1;
             return Some(FlowItem::Include(entity));
         }
@@ -1923,29 +1923,6 @@ impl Parser {
             ));
         }
         None
-    }
-
-    fn reject_old_choice_syntax(&mut self) -> String {
-        let start_line = self.current().clone();
-        let raw = if start_line.text.contains('{') {
-            let (head, body, _, _) = self.take_brace_block();
-            if body.is_empty() {
-                head
-            } else {
-                format!("{head} {{ ... }}")
-            }
-        } else {
-            self.index += 1;
-            start_line.text.trim().to_owned()
-        };
-        self.push_error(
-            TextRange::new(start_line.start, start_line.end),
-            "`@choice` is not valid Arcweft syntax",
-            ["choice @choice.id { ... }"],
-            Some(start_line.text.trim()),
-            ["remove `@` from the keyword and write `choice @choice.id { ... }`"],
-        );
-        raw
     }
 
     fn parse_if_block(&mut self) -> Option<IfBlock> {
@@ -2806,15 +2783,21 @@ fn parse_optional_id_ref<'a>(
     input: &'a str,
     base: usize,
     errors: &mut Vec<ParseError>,
-) -> (Option<EntityRef>, &'a str) {
+) -> (Option<IdRef>, &'a str) {
     let trimmed = input.trim_start();
     if starts_leading_relative_id(trimmed) {
         match parse_required_id_ref(trimmed, base, errors) {
             Some((entity, rest)) => (Some(entity), rest),
             None => (None, input),
         }
+    } else if trimmed.starts_with('.') {
+        let _ = parse_required_id_ref(trimmed, base, errors);
+        (None, input)
     } else if starts_leading_entity_ref(trimmed) {
-        parse_optional_entity_ref(trimmed, base, errors)
+        match parse_required_entity_ref(trimmed, base, errors) {
+            Some((entity, rest)) => (Some(IdRef::absolute(entity)), rest),
+            None => (None, input),
+        }
     } else {
         (None, input)
     }
@@ -2894,11 +2877,54 @@ fn parse_required_entity_ref<'a>(
     None
 }
 
+fn parse_required_entity_ref_syntax<'a>(
+    input: &'a str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Option<(EntityRefSyntax, &'a str)> {
+    let input = input.trim_start();
+    if starts_leading_relative_id(input) {
+        errors.push(simple_error(
+            base,
+            input.len(),
+            "relative entity references must include a family",
+            "@flow:.suffix",
+        ));
+        return None;
+    }
+    if starts_leading_relative_entity_ref(input) {
+        let Some(relative_ref) = split_leading_relative_entity_ref(input) else {
+            errors.push(simple_error(
+                base,
+                input.len(),
+                "invalid relative entity reference",
+                "@flow:.suffix",
+            ));
+            return None;
+        };
+        let relative = relative_id_from_cst(
+            relative_ref.relative,
+            TextRange::new(
+                base + '@'.len_utf8() + relative_ref.family.len() + ':'.len_utf8(),
+                base + relative_ref.raw.len(),
+            ),
+        );
+        let entity = FamilyRelativeEntityRef::new(
+            relative_ref.family.to_owned(),
+            relative,
+            TextRange::new(base, base + relative_ref.raw.len()),
+        );
+        return Some((EntityRefSyntax::family_relative(entity), relative_ref.rest));
+    }
+    parse_required_entity_ref(input, base, errors)
+        .map(|(entity, rest)| (EntityRefSyntax::absolute(entity), rest))
+}
+
 fn parse_required_id_ref<'a>(
     input: &'a str,
     base: usize,
     errors: &mut Vec<ParseError>,
-) -> Option<(EntityRef, &'a str)> {
+) -> Option<(IdRef, &'a str)> {
     let input = input.trim_start();
     if starts_leading_relative_id(input) {
         let Some(relative) = split_leading_relative_id(input) else {
@@ -2910,17 +2936,24 @@ fn parse_required_id_ref<'a>(
             ));
             return None;
         };
+        let range = TextRange::new(base, base + relative.marker_len + relative.body.len());
         return Some((
-            EntityRef::new_relative_with_parent_depth(
-                relative.body.to_owned(),
-                relative.parent_depth,
-                TextRange::new(base, base + relative.marker_len + relative.body.len()),
-            ),
+            IdRef::relative(relative_id_from_cst(relative, range)),
             relative.rest,
         ));
     }
     if starts_leading_entity_ref(input) {
-        return parse_required_entity_ref(input, base, errors);
+        return parse_required_entity_ref(input, base, errors)
+            .map(|(entity, rest)| (IdRef::absolute(entity), rest));
+    }
+    if input.starts_with('.') {
+        errors.push(simple_error(
+            base,
+            input.len(),
+            "relative IDs must start with `@.`",
+            "@.suffix",
+        ));
+        return None;
     }
     {
         errors.push(simple_error(
@@ -2931,6 +2964,19 @@ fn parse_required_id_ref<'a>(
         ));
     }
     None
+}
+
+fn relative_id_from_cst(relative: crate::cst::CstRelativeId<'_>, range: TextRange) -> RelativeId {
+    let spelling = match relative.spelling {
+        crate::cst::CstRelativeIdSpelling::DotRun => RelativeIdSpelling::DotRun,
+        crate::cst::CstRelativeIdSpelling::SuperChain => RelativeIdSpelling::SuperChain,
+    };
+    RelativeId::new(
+        relative.body.to_owned(),
+        relative.parent_depth,
+        spelling,
+        range,
+    )
 }
 
 fn simple_error(base: usize, len: usize, message: &str, expected: &str) -> ParseError {
@@ -2954,27 +3000,20 @@ fn parse_name_and_tail(input: &str) -> (Option<String>, String) {
     )
 }
 
-fn parse_scenario_command(trimmed: &str, range: TextRange) -> Option<ScenarioCommand> {
-    let rest = trimmed.strip_prefix('@')?;
-    if rest.starts_with('<') {
-        return None;
-    }
-    if rest.starts_with("choice") {
-        return None;
-    }
-    let (name, args) = split_leading_ident(rest).unwrap_or((rest, ""));
-    Some(ScenarioCommand::new(
-        name.to_owned(),
-        parse_scenario_args(args.trim()),
-        range,
-    ))
-}
-
 fn parse_word_scenario_command(trimmed: &str, range: TextRange) -> Option<ScenarioCommand> {
     let (name, args) = split_leading_ident(trimmed).unwrap_or((trimmed, ""));
     if !matches!(
         name,
-        "option" | "log" | "scene" | "text" | "progress" | "meter" | "stop" | "flush"
+        "option"
+            | "log"
+            | "scene"
+            | "text"
+            | "progress"
+            | "meter"
+            | "stop"
+            | "flush"
+            | "bg"
+            | "show"
     ) {
         return None;
     }
@@ -3034,7 +3073,8 @@ fn parse_line_options(
                 voice = Some(parse_expr_lossy(value));
             }
             "window" => {
-                window = parse_required_entity_ref(value, base, errors).map(|(entity, _)| entity);
+                window =
+                    parse_required_entity_ref_syntax(value, base, errors).map(|(entity, _)| entity);
             }
             "source_locale" => {
                 source_locale = Some(value.to_owned());
@@ -3070,10 +3110,7 @@ fn split_comma_args(source: &str) -> Vec<&str> {
 }
 
 fn parse_attribute(trimmed: &str, range: TextRange) -> Option<Attribute> {
-    let rest = trimmed.strip_prefix('@')?;
-    if rest.starts_with("choice") {
-        return None;
-    }
+    let rest = trimmed.strip_prefix("#[")?.strip_suffix(']')?.trim();
     let open = find_top_level_punctuation(rest, '(')?;
     let close = find_matching_punctuation(rest, open, '(', ')')?;
     (rest[close + ')'.len_utf8()..].trim().is_empty()).then_some(())?;
@@ -3579,7 +3616,7 @@ fn split_choice_condition_action<'a>(
     if let Some((condition, target)) =
         split_top_level_punctuation_sequence_once(source, &["-", ">"])
     {
-        let target = parse_required_entity_ref(target.trim(), base, errors)?.0;
+        let target = parse_required_entity_ref_syntax(target.trim(), base, errors)?.0;
         return Some((condition, ChoiceAction::Goto(target)));
     }
     split_top_level_punctuation_sequence_once(source, &["=", ">"])
@@ -3592,7 +3629,7 @@ fn parse_choice_action(
     errors: &mut Vec<ParseError>,
 ) -> Option<ChoiceAction> {
     if let Some(target) = source.strip_prefix("->") {
-        return parse_required_entity_ref(target.trim(), base, errors)
+        return parse_required_entity_ref_syntax(target.trim(), base, errors)
             .map(|(entity, _)| ChoiceAction::Goto(entity));
     }
     source

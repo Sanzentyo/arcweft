@@ -193,6 +193,11 @@ IDs, choice IDs, option IDs, and text-key overrides. They are not general entity
 references. Bare `.suffix` is not part of the core grammar, and bare `..suffix`
 is not accepted because `..` already appears in range and rest-pattern syntax.
 
+General entity references stay family-qualified. Use `@flow:.next`,
+`@frag:.intro`, `@asset:.room`, or `@textbox:.side` when a reference should be
+relative to the current flow/scope but the entity family is not implied by an
+ID-bearing field. Unqualified `@.next` is rejected in those contexts.
+
 ```text
 alice(id=@.greeting)
   -> @say.opening.alice.greeting

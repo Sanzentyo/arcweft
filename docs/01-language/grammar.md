@@ -8,6 +8,8 @@ This is a compact summary of the current Arcweft surface grammar. It is intentio
 Ident        := /[A-Za-z_][A-Za-z0-9_]*/
 IdentPath    := Ident ('::' Ident)*
 EntityRef    := '@' Ident ('.' Ident)* | '@<' EntityBody '>'
+EntityRefSyntax := EntityRef | FamilyRelativeEntityRef
+FamilyRelativeEntityRef := '@' Ident ':' DotRun Ident ('.' Ident)*
 RelativeId   := DotRelativeId | SuperRelativeId
 DotRelativeId:= '@' DotRun Ident ('.' Ident)*
 DotRun       := '.'+
@@ -28,14 +30,18 @@ background changes are ordinary effectful function calls, not `@` commands.
 
 `RelativeId` is accepted only in ID-bearing contexts such as dialogue line IDs,
 choice IDs, option IDs, and text-key overrides. It is not a general entity
-reference; write `goto @flow.opening.next`, not `goto .next`.
+reference; write `goto @flow.opening.next`, not `goto .next`. In general
+entity-reference contexts, relative references must include an entity family:
+`@flow:.next`, `@frag:.intro`, `@asset:.room`, `@textbox:.side`.
 `@.suffix` resolves in the current ID scope. Each extra dot walks one parent ID
 scope outward: `@..suffix` is one parent, `@...suffix` is two parents, and so
 on. The explicit spelling `@super.suffix` / `@super.super.suffix` is accepted
 as the readable equivalent. These forms are ID-context-only relative IDs, not
 general expression-level entity references. Bare `.suffix` and bare `..suffix`
 are not part of the core grammar; `..` already appears in range and
-rest-pattern syntax.
+rest-pattern syntax. Deep dot runs such as `@...suffix` are accepted for
+generated or dense code, but authoring tools should prefer
+`@super.super.suffix`.
 
 ## Literals and primitive spellings
 

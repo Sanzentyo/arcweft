@@ -329,6 +329,26 @@ choice @choice.opening.routes {
 }
 
 #[test]
+fn rejects_bare_dot_ids_in_id_bearing_choice_contexts() {
+    let errors = parse_errors(
+        r#"
+flow @flow.opening opening {
+    choice .first {
+        .listen "聞いてみる" -> @flow.alice_intro
+    }
+}
+"#,
+    );
+
+    assert!(
+        errors.iter().any(|error| error
+            .message()
+            .contains("relative IDs must start with `@.`")),
+        "expected bare relative ID diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn typechecks_choice_plan_structured_bodies() {
     let tree = parse_ok(
         r#"

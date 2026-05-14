@@ -100,7 +100,7 @@ fn typechecks_edge_case_hir_with_explicit_environment() {
     let tree = parse_ok(
         r#"
 flow @flow.opening opening {
-    @show alice normal at=right fade=220ms
+    show alice normal at=right fade=220ms
     let (actor, (_, voice)) = alice.say(voice=auto)[聞いて。[p]]
     try await load_opening_assets() with { pending p => scene @scene.loading { progress p.ratio } }
     alice[

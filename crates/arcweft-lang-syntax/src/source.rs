@@ -3,7 +3,7 @@
 use crate::ast::TypedSyntaxTree;
 use crate::cst::SyntaxNode;
 use crate::parser::ParseError;
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 /// Fully parsed source file.
 ///
@@ -20,9 +20,19 @@ pub struct ParsedSource {
     source_hash: SourceHash,
 }
 
-/// Deterministic hash of source text used for cache keys.
+/// Deterministic content digest of source text used for cache keys.
+///
+/// The digest is BLAKE3 over the exact UTF-8 source bytes. It intentionally
+/// does not normalize line endings or Unicode forms; callers that need logical
+/// source equivalence should normalize before parsing.
+///
+/// BLAKE3 is heavier than a 64-bit non-cryptographic hash and adds a small
+/// dependency/bundle-size cost, including for wasm builds. The tradeoff is
+/// intentional: `SourceHash` is meant to be stable enough for cache keys,
+/// manifests, and future incremental parsing where accidental collisions are
+/// harder to justify than the modest implementation cost.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct SourceHash(u64);
+pub struct SourceHash([u8; Self::LEN]);
 
 /// Byte offsets of line starts for source-coordinate conversion.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -91,20 +101,36 @@ impl ParsedSource {
 }
 
 impl SourceHash {
+    /// Number of bytes in a source digest.
+    pub const LEN: usize = 32;
+
     fn new(source: &str) -> Self {
-        // FNV-1a keeps this crate Sans I/O and avoids adding a hashing crate for
-        // a cache key whose only requirement is deterministic stability.
-        const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-        const PRIME: u64 = 0x0000_0100_0000_01b3;
-        let hash = source.as_bytes().iter().fold(OFFSET, |hash, byte| {
-            (hash ^ u64::from(*byte)).wrapping_mul(PRIME)
-        });
-        Self(hash)
+        Self(*blake3::hash(source.as_bytes()).as_bytes())
     }
 
-    /// Raw stable hash value.
-    pub const fn get(self) -> u64 {
+    /// Raw stable digest bytes.
+    pub const fn as_bytes(self) -> [u8; Self::LEN] {
         self.0
+    }
+
+    /// Lowercase hexadecimal digest for manifests, logs, and cache filenames.
+    pub fn to_hex(self) -> String {
+        self.0
+            .iter()
+            .fold(String::with_capacity(Self::LEN * 2), |mut out, byte| {
+                use std::fmt::Write as _;
+                write!(&mut out, "{byte:02x}").expect("writing to String cannot fail");
+                out
+            })
+    }
+}
+
+impl fmt::Display for SourceHash {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for byte in self.0 {
+            write!(formatter, "{byte:02x}")?;
+        }
+        Ok(())
     }
 }
 

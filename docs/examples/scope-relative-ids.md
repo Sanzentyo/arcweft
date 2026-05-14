@@ -80,11 +80,14 @@ let can_enter = scope alice_route_check {
 
 Relative `.suffix` IDs are not module paths and are not general entity
 references. Module and import paths use `crate::`, `self::`, and `super::`.
+General references that need relative lookup must include the entity family.
 
 ```awft
 alice(id=@.greeting):        # relative ID context
 use self::characters::alice # module path context
 goto @flow.opening.next     # ordinary entity reference
+goto @flow:.next            # family-relative entity reference
+include @frag:.alice_enters # family-relative fragment reference
 ```
 
 `parent::` is reserved as an alias for `super::`, but canonical tooling should

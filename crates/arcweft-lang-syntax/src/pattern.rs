@@ -38,7 +38,7 @@ pub(crate) fn parse_pattern(source: &str) -> Pattern {
     if let Some(pattern) = parse_variant_pattern(source) {
         return pattern;
     }
-    if let Ok(Expr::EntityRef(entity)) = parse_expr(source) {
+    if let Ok(Expr::EntityRef(crate::ast::EntityRefSyntax::Absolute(entity))) = parse_expr(source) {
         return Pattern::Entity(entity);
     }
     if let Some(entity) = parse_entity_pattern(source) {

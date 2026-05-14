@@ -92,12 +92,15 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   and string-literal extraction. Future grammar behavior should continue to
   enter through CST helpers or grammar-level rowan events rather than parser
   module scans.
-- CST reference helpers now recognize `@...` / `@<...>` entity references and
-  ID-context relative forms including `@.suffix`, parent-dot forms such as
-  `@..suffix` / `@...suffix`, and explicit `@super...` spellings. The typed
-  parser carries relative parent-depth through `EntityRef` until HIR lowering,
-  where dialogue, text-key, and choice IDs normalize against the current flow,
-  speaker, choice, and named-scope stack.
+- CST reference helpers now keep absolute `EntityRef`, ID-context `IdRef`, and
+  family-relative `EntityRefSyntax` separate. `@.suffix`, `@..suffix`,
+  `@...suffix`, and `@super...` are accepted only in ID-bearing contexts;
+  general relative references use family-qualified forms such as `@flow:.next`
+  and `@textbox:.side`. HIR lowering normalizes these structured nodes against
+  the current flow, speaker, choice, and named-scope stack.
+- Old `@` command and attribute spellings are no longer treated as migration
+  syntax. Attributes are `#[...]`; scenario operations use ordinary command /
+  call spelling such as `bg @asset.bg.room ...` in the current parser layer.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure

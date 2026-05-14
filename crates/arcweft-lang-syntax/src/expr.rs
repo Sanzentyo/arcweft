@@ -1,7 +1,10 @@
-use crate::ast::{EntityRef, LinePlan, Pattern, Stmt, TextRange};
+use crate::ast::{
+    EntityRef, EntityRefSyntax, FamilyRelativeEntityRef, LinePlan, Pattern, RelativeId,
+    RelativeIdSpelling, Stmt, TextRange,
+};
 use crate::cst::{
     find_last_top_level_punctuation, find_top_level_punctuation, split_leading_entity_ref_parts,
-    split_top_level_punctuation_once,
+    split_leading_relative_entity_ref, split_top_level_punctuation_once,
 };
 use arcweft_source::{SourceAnchor, SourceName};
 use thiserror::Error;
@@ -14,7 +17,7 @@ use thiserror::Error;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Expr {
     Literal(Literal),
-    EntityRef(EntityRef),
+    EntityRef(EntityRefSyntax),
     Path(String),
     Placeholder(Placeholder),
     Tuple(Vec<Expr>),
@@ -224,7 +227,7 @@ pub fn parse_expr(source: &str) -> Result<Expr, ExprParseError> {
 enum Token {
     Ident(String),
     RelativePath(String),
-    Entity(EntityRef),
+    Entity(EntityRefSyntax),
     Literal(Literal),
     Underscore,
     Caret,
@@ -902,7 +905,32 @@ fn parse_duration(source: &str) -> Option<Literal> {
     })
 }
 
-fn parse_entity_expr(source: &str) -> Option<EntityRef> {
+fn parse_entity_expr(source: &str) -> Option<EntityRefSyntax> {
+    if let Some(relative_ref) = split_leading_relative_entity_ref(source) {
+        if relative_ref.raw.len() != source.len() {
+            return None;
+        }
+        let spelling = match relative_ref.relative.spelling {
+            crate::cst::CstRelativeIdSpelling::DotRun => RelativeIdSpelling::DotRun,
+            crate::cst::CstRelativeIdSpelling::SuperChain => RelativeIdSpelling::SuperChain,
+        };
+        let relative = RelativeId::new(
+            relative_ref.relative.body.to_owned(),
+            relative_ref.relative.parent_depth,
+            spelling,
+            TextRange::new(
+                '@'.len_utf8() + relative_ref.family.len() + ':'.len_utf8(),
+                source.len(),
+            ),
+        );
+        return Some(EntityRefSyntax::family_relative(
+            FamilyRelativeEntityRef::new(
+                relative_ref.family.to_owned(),
+                relative,
+                TextRange::new(0, source.len()),
+            ),
+        ));
+    }
     let entity_ref = split_leading_entity_ref_parts(source)?;
     if entity_ref.body.is_empty() && !entity_ref.delimited {
         return None;
@@ -910,11 +938,11 @@ fn parse_entity_expr(source: &str) -> Option<EntityRef> {
     if entity_ref.delimited && !entity_ref.closed {
         return None;
     }
-    (entity_ref.raw.len() == source.len()).then_some(EntityRef::new(
+    (entity_ref.raw.len() == source.len()).then_some(EntityRefSyntax::absolute(EntityRef::new(
         entity_ref.body.to_owned(),
         entity_ref.delimited,
         TextRange::new(0, source.len()),
-    ))
+    )))
 }
 
 fn split_bracket_postfix(source: &str) -> Option<(&str, &str)> {

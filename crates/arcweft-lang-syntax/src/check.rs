@@ -1,6 +1,6 @@
 use crate::ast::{
-    AwaitBranchKind, ContractClause, DialogueToken, EntityDeclKind, EntityRef, FlowKind,
-    LinePlanItem, Pattern, Stmt,
+    AwaitBranchKind, ContractClause, DialogueToken, EntityDeclKind, EntityRef, EntityRefSyntax,
+    FlowKind, IdRef, LinePlanItem, Pattern, Stmt,
 };
 use crate::expr::{BinaryOp, Expr, Literal};
 use crate::lower::{HirFlowItem, HirModule, HirTopLevelDecl};
@@ -918,18 +918,14 @@ impl TypeChecker<'_> {
     }
 
     fn check_choice_option(&mut self, option: &crate::ast::ChoiceOption) {
-        if let Some(id) = option.id() {
-            if !id.is_relative() {
-                self.expect_entity_kind(id, &EntityKind::ChoiceOption, "choice option id");
-            }
+        if let Some(IdRef::Absolute(id)) = option.id() {
+            self.expect_entity_kind(id, &EntityKind::ChoiceOption, "choice option id");
         }
         if let Some(id_expr) = option.id_expr() {
             self.check_expr(id_expr);
         }
-        if let Some(text_key) = option.label_text_key() {
-            if !text_key.is_relative() {
-                self.expect_entity_kind(text_key, &EntityKind::Text, "choice label text key");
-            }
+        if let Some(IdRef::Absolute(text_key)) = option.label_text_key() {
+            self.expect_entity_kind(text_key, &EntityKind::Text, "choice label text key");
         }
         if let Some(value) = option.value() {
             self.check_expr(value);
@@ -965,7 +961,9 @@ impl TypeChecker<'_> {
                 self.locals = outer_locals;
             }
             crate::ast::ChoiceAction::Goto(target) => {
-                self.expect_entity_kind(target, &EntityKind::Flow, "choice target");
+                if let EntityRefSyntax::Absolute(target) = target {
+                    self.expect_entity_kind(target, &EntityKind::Flow, "choice target");
+                }
             }
             crate::ast::ChoiceAction::None => {}
         }
@@ -1220,13 +1218,17 @@ impl TypeChecker<'_> {
     fn check_expr(&mut self, expr: &Expr) -> Option<TypeKind> {
         match expr {
             Expr::Literal(literal) => Some(literal_type(literal)),
-            Expr::EntityRef(entity) => entity_kind(entity).map(TypeKind::Ref).or_else(|| {
-                self.errors.push(TypeCheckError::new(format!(
-                    "unknown entity reference kind: {}",
-                    entity.body()
-                )));
-                None
-            }),
+            Expr::EntityRef(entity) => entity
+                .as_absolute()
+                .and_then(entity_kind)
+                .map(TypeKind::Ref)
+                .or_else(|| {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "unknown entity reference kind: {}",
+                        entity.body()
+                    )));
+                    None
+                }),
             Expr::Path(path) => self.locals.get(path).cloned().or_else(|| {
                 self.env.symbol_type(path).cloned().or_else(|| {
                     self.check_dotted_path_target(path).or_else(|| {
@@ -2101,7 +2103,10 @@ fn choice_output_type(choice: &crate::lower::HirChoice) -> Option<TypeKind> {
 
 fn simple_expr_type(expr: &Expr) -> Option<TypeKind> {
     match expr {
-        Expr::EntityRef(entity) => entity_kind(entity).map(TypeKind::Ref),
+        Expr::EntityRef(entity) => entity
+            .as_absolute()
+            .and_then(entity_kind)
+            .map(TypeKind::Ref),
         Expr::Literal(literal) => Some(literal_type(literal)),
         Expr::Tuple(items) => items
             .iter()

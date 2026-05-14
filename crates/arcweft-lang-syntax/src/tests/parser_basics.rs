@@ -18,7 +18,7 @@ mod game::routes::opening
 
 use game::prelude::*
  pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    @bg @asset.bg.room fade=300ms
+    bg @asset.bg.room fade=300ms
     include @frag.alice_enters
 }
 ",
@@ -52,7 +52,7 @@ fn parses_scenario_command_args_as_expressions() {
     let tree = parse_ok(
         r"
 flow @flow.opening opening {
-    @show alice normal at=right fade=220ms
+    show alice normal at=right fade=220ms
 }
 ",
     );
@@ -96,6 +96,46 @@ flow @<flow.alice_intro@sem:b3_9f2a1c> opening {
     };
     assert!(fragment.is_delimited());
     assert_eq!(fragment.body(), "frag.alice_enters@sem:f0_00aa");
+}
+
+#[test]
+fn lowers_family_relative_entity_refs_in_general_reference_contexts() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    scope prologue {
+        include @frag:.alice_enters
+    }
+}
+",
+    );
+
+    let hir = lower_to_hir(&tree).expect("family-relative include lowers");
+    let HirFlowItem::Scope(scope) = &hir.flows()[0].body()[0] else {
+        panic!("expected scope");
+    };
+    let HirFlowItem::Include(include) = &scope.body()[0] else {
+        panic!("expected include");
+    };
+    assert_eq!(include.body(), "frag.opening.prologue.alice_enters");
+}
+
+#[test]
+fn rejects_unqualified_relative_entity_refs_in_general_reference_contexts() {
+    let errors = parse_errors(
+        r"
+flow @flow.opening opening {
+    include @.next
+}
+",
+    );
+
+    assert!(
+        errors.iter().any(|error| error
+            .message()
+            .contains("relative entity references must include a family")),
+        "expected relative entity ref diagnostic, got {errors:?}"
+    );
 }
 
 #[test]
@@ -197,7 +237,7 @@ fn parses_attributes_and_wiki_links() {
     let tree = parse_ok(
         r"
 /// links to [[flow.alice_intro]]
-@derive(Debug)
+#[derive(Debug)]
     flow @flow.opening opening {}
 ",
     );

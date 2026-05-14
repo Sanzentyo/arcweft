@@ -62,6 +62,8 @@ mod super::shared
 Do not use `@.name` / `@..name` / `@super.name` relative ID syntax in module
 paths. Those forms are only for ID-bearing contexts such as dialogue line IDs
 and choice option IDs.
+Family-relative entity references such as `@flow:.next` are also expression /
+reference syntax, not module path syntax.
 
 ```awft
 alice(id=@.greeting):       // relative dialogue line ID

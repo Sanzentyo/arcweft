@@ -104,7 +104,7 @@ phase = input.target
 fn parses_documented_adt_items() {
     let tree = parse_ok(
         r"
-@derive(Clone, Debug, Format, Serialize, Eq)
+#[derive(Clone, Debug, Format, Serialize, Eq)]
 pub enum GameEvent {
     StartGame,
     ChoiceSelected { id: Ref<ChoiceOption> },
