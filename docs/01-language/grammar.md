@@ -67,9 +67,9 @@ FlowItem     :=
   | ScopeStmt
   | ExprStmt
 
-NamedScope      := 'scope' Ident BlockExpr
-ScopeStmt       := NamedScope
-ScopeExpr       := NamedScope
+NamedScope      := 'scope' Ident? BlockExpr
+ScopeStmt       := NamedScope | Block
+ScopeExpr       := 'scope' Ident BlockExpr
 ScenarioCommand := '@' Ident ScenarioArgs?
 ```
 
@@ -97,7 +97,9 @@ LineOption     := 'id' '=' (EntityRef | RelativeId)
 DialogueText   := TextUntilLineEnd | Newline IndentedText
 DialogueContent:= TextAndDialogueTags*
 
-LinePlanAttach := 'with' Block | 'with' ':' Newline IndentedItems
+LinePlanAttach := 'with' Block
+                | 'with' ':' Newline IndentedItems
+                | 'with' ':' LinePlanItem
 LinePlanItem   := LetStmt | TimedCue | CancelRule | OutStmt | ScopeStmt | ExprStmt
 OutStmt        := 'out' Expr
 ```
@@ -196,7 +198,7 @@ HookEffects:= 'effects' '{' Ident (',' Ident)* ','? '}'
 ```text
 Block          := '{' BlockItem* FinalExpr? '}'
 ExprBlock      := Block
-ScopeStmt      := 'scope' Ident BlockExpr
+ScopeStmt      := 'scope' Ident? BlockExpr | Block
 ScopeExpr      := 'scope' Ident BlockExpr
 StatementBlock := Block | ':' Newline IndentedItems
 LabeledBlock   := Label? Block
@@ -204,8 +206,8 @@ Label          := '\'' Ident ':'
 BlockItem      := LetStmt | LetElseStmt | ExprStmt | ControlStmt | ScenarioStmt | ScopeStmt
 ```
 
-In expression position, a block's final expression is its value. In statement position, a bare block creates a lexical scope and does not export a value; a non-`Unit` final expression must be discarded explicitly with `;` or `let _ = ...`.
-`scope name { ... }` behaves like a lexical block and also contributes `name` to relative line, text-key, choice, and option ID generation inside the block. In expression position, it returns the final expression just like `{ ... }`.
+In expression position, a block's final expression is its value. In statement position, a bare block is sugar for unnamed `scope { ... }`, creates a lexical scope, and does not export a value; a non-`Unit` final expression must be discarded explicitly with `;` or `let _ = ...`.
+`scope name { ... }` behaves like a lexical block and also contributes `name` to relative line, text-key, choice, and option ID generation inside the block. `scope { ... }` and bare statement `{ ... }` create the same lexical scope without adding an ID segment. In expression position, named `scope name { ... }` returns the final expression just like `{ ... }`.
 Only ID-bearing constructs inside the named scope use the scope path for ID generation; the scope expression's own value is just the final expression.
 
 ## Statement / expression list

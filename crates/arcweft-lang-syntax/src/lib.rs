@@ -460,6 +460,44 @@ flow #flow.opening opening {
     }
 
     #[test]
+    fn parses_same_line_line_plan_attachments() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    alice.say()[聞いて。[p]] with: out (voice, face)
+    alice.say()[もう一度。[p]] with 'line { out .Done }
+}
+",
+        )
+        .expect("same-line with attachments parse");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let [
+            FlowItem::ContentCall(inline_call),
+            FlowItem::ContentCall(brace_call),
+        ] = flow.body()
+        else {
+            panic!("expected content calls");
+        };
+        let inline_plan = inline_call.plan().expect("inline plan");
+        assert!(matches!(
+            inline_plan.items(),
+            [LinePlanItem::Out(Expr::Tuple(items))] if items.len() == 2
+        ));
+        let plan = brace_call.plan().expect("brace plan");
+        assert_eq!(plan.label(), Some("line"));
+        assert!(matches!(
+            plan.items(),
+            [LinePlanItem::Out(Expr::Path(path))] if path == ".Done"
+        ));
+
+        let hir = lower_to_hir(&tree).expect("same-line line plans lower");
+        validate_typecheck_ready(&hir).expect("same-line line plans are typecheck-ready");
+    }
+
+    #[test]
     fn typecheck_rejects_locals_escaping_named_and_bare_scopes() {
         let tree = parse_source(
             r"

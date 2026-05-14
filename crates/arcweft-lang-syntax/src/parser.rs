@@ -79,6 +79,7 @@ type ContentCallParse = (
     Option<String>,
     DialogueContent,
     usize,
+    Option<LinePlan>,
     Option<ScopeBlock>,
 );
 
@@ -1992,10 +1993,10 @@ impl Parser {
             )));
         }
 
-        if let Some((callee, args, content, consumed_end, trailing_block)) =
+        if let Some((callee, args, content, consumed_end, inline_plan, trailing_block)) =
             self.try_take_content_call()
         {
-            let plan = self.take_optional_line_plan();
+            let plan = inline_plan.or_else(|| self.take_optional_line_plan());
             if let Some(block) = trailing_block {
                 self.pending_flow_items.push(FlowItem::Scope(block));
             }
@@ -2043,7 +2044,12 @@ impl Parser {
         }
         let (callee, args) = split_call_head(before);
         let raw_content = text[open + 1..close].trim().to_owned();
-        let trailing_block = self.take_trailing_bare_scope(&text, close, &mut cursor, start.start);
+        let trailing = text[close + 1..].trim();
+        let inline_plan = self.take_trailing_line_plan(trailing, close, &mut cursor, start.start);
+        let trailing_block = inline_plan
+            .is_none()
+            .then(|| self.take_trailing_bare_scope(&text, close, &mut cursor, start.start))
+            .flatten();
         self.index = cursor + 1;
         let content = DialogueContent::new(
             raw_content.clone(),
@@ -2053,7 +2059,53 @@ impl Parser {
         let consumed_end = trailing_block
             .as_ref()
             .map_or(end, |block| block.range().end());
-        Some((callee, args, content, consumed_end, trailing_block))
+        Some((
+            callee,
+            args,
+            content,
+            consumed_end,
+            inline_plan,
+            trailing_block,
+        ))
+    }
+
+    fn take_trailing_line_plan(
+        &mut self,
+        trailing: &str,
+        close_bracket: usize,
+        cursor: &mut usize,
+        base: usize,
+    ) -> Option<LinePlan> {
+        if !trailing.starts_with("with") {
+            return None;
+        }
+        if is_with_brace_head(trailing) {
+            let mut block_text = trailing.to_owned();
+            while brace_delta(&block_text) > 0 && *cursor + 1 < self.lines.len() {
+                *cursor += 1;
+                block_text.push('\n');
+                block_text.push_str(self.lines[*cursor].text.trim_end());
+            }
+            let (head, body) = split_brace_item(&block_text)?;
+            let range = TextRange::new(base + close_bracket + 1, self.lines[*cursor].end);
+            return Some(attach_line_plan_label(
+                parse_line_plan_body(BlockStyle::Brace, body, range),
+                parse_with_brace_label(head.trim()),
+            ));
+        }
+        parse_inline_with_colon_plan(trailing).map(|(label, body)| {
+            attach_line_plan_label(
+                parse_line_plan_body(
+                    BlockStyle::Indent,
+                    body,
+                    TextRange::new(
+                        base + close_bracket + 1,
+                        base + close_bracket + 1 + trailing.len(),
+                    ),
+                ),
+                label,
+            )
+        })
     }
 
     fn take_trailing_bare_scope(
@@ -3803,6 +3855,17 @@ fn parse_with_indent_label(trimmed: &str) -> Option<OptionalLabel> {
     let label = trimmed.strip_prefix("with ")?.strip_suffix(':')?.trim();
     parse_label_ref(label)
         .and_then(|(label, tail)| tail.trim().is_empty().then_some(OptionalLabel::Some(label)))
+}
+
+fn parse_inline_with_colon_plan(trimmed: &str) -> Option<(Option<String>, &str)> {
+    let rest = trimmed.strip_prefix("with")?.trim_start();
+    if let Some(body) = rest.strip_prefix(':') {
+        let body = body.trim();
+        return (!body.is_empty()).then_some((None, body));
+    }
+    let (label, tail) = parse_label_ref(rest)?;
+    let body = tail.trim_start().strip_prefix(':')?.trim();
+    (!body.is_empty()).then_some((Some(label), body))
 }
 
 fn is_with_brace_head(trimmed: &str) -> bool {
