@@ -51,6 +51,17 @@ pub fn parse_dialogue_tokens(source: &str) -> Vec<DialogueToken> {
                 }
             }
             '[' => {
+                if let Some((ruby, consumed_to)) = parse_bracket_ruby(source, index) {
+                    flush_text(&mut text, &mut tokens);
+                    tokens.push(ruby);
+                    while chars
+                        .peek()
+                        .is_some_and(|(offset, _)| *offset < consumed_to)
+                    {
+                        let _ = chars.next();
+                    }
+                    continue;
+                }
                 if let Some((raw, consumed_to)) = parse_raw_span(source, index) {
                     flush_text(&mut text, &mut tokens);
                     tokens.push(DialogueToken::Raw(raw));
@@ -112,6 +123,38 @@ fn parse_natural_ruby(source: &str, start: usize) -> Option<(DialogueToken, usiz
         },
         consumed_to,
     ))
+}
+
+fn parse_bracket_ruby(source: &str, start: usize) -> Option<(DialogueToken, usize)> {
+    let after_open = source
+        .get(start..)?
+        .find(']')
+        .map(|close| start + close + 1)?;
+    let inside = source.get(start + 1..after_open - 1)?.trim();
+    let attrs = inside.strip_prefix("ruby")?.trim();
+    let ruby = parse_ruby_attr(attrs)?;
+    let tail = source.get(after_open..)?;
+    let close_relative = tail.find("[/ruby]")?;
+    let base_end = after_open + close_relative;
+    let base = source.get(after_open..base_end)?.trim();
+    if base.is_empty() {
+        return None;
+    }
+    Some((
+        DialogueToken::Ruby {
+            base: base.to_owned(),
+            ruby,
+        },
+        base_end + "[/ruby]".len(),
+    ))
+}
+
+fn parse_ruby_attr(attrs: &str) -> Option<String> {
+    let value = attrs.trim().strip_prefix("rt")?.trim_start();
+    let value = value.strip_prefix('=')?.trim_start();
+    let quoted = value.strip_prefix('"')?;
+    let end = quoted.find('"')?;
+    Some(quoted[..end].to_owned())
 }
 
 fn parse_raw_span(source: &str, start: usize) -> Option<(String, usize)> {

@@ -2785,6 +2785,30 @@ flow #flow.opening opening {}
     }
 
     #[test]
+    fn dialogue_tokenizer_normalizes_bracket_ruby_to_ruby_token() {
+        let tokens = parse_dialogue_tokens(
+            r#"今日は少しだけ、[ruby rt="へんなゆめ"]変な夢[/ruby]を見たんだ。[p]"#,
+        );
+
+        assert!(tokens.iter().any(
+            |token| matches!(token, DialogueToken::Ruby { base, ruby } if base == "変な夢" && ruby == "へんなゆめ")
+        ));
+        assert!(
+            tokens.iter().all(|token| !matches!(
+                token,
+                DialogueToken::Tag(tag) if tag.name() == "ruby"
+            )),
+            "bracket ruby should normalize to Ruby token, got {tokens:?}"
+        );
+        assert!(
+            tokens
+                .iter()
+                .all(|token| !matches!(token, DialogueToken::EndTag(name) if name == "ruby")),
+            "bracket ruby end tag should be consumed, got {tokens:?}"
+        );
+    }
+
+    #[test]
     fn dialogue_tokenizer_preserves_escaped_brackets_hash_and_braces() {
         let tokens = parse_dialogue_tokens(r"\[literal\] \#not_expr \{cue\}");
 
