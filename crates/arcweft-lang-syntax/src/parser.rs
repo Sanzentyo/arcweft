@@ -2,7 +2,7 @@ use crate::ast::{
     Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, BorrowBlock, CallableItem,
     CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceMatchArm,
     ChoiceOption, ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause,
-    DialogueContent, EntityDeclItem, EntityDeclKind, EntityRef, EnumItem, EnumVariant,
+    DialogueContent, DocBlock, EntityDeclItem, EntityDeclKind, EntityRef, EnumItem, EnumVariant,
     ExternModItem, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionInit, FunctionItem,
     FunctionKind, HookInit, HookItem, IfBlock, IfLetBlock, ImplItem, ImplMember, Item, LineOptions,
     LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem,
@@ -59,6 +59,12 @@ enum OptionalLabel {
     Some(String),
 }
 
+#[derive(Default)]
+struct PendingDocLines {
+    start_line: Option<usize>,
+    lines: Vec<String>,
+}
+
 impl OptionalLabel {
     fn into_option(self) -> Option<String> {
         match self {
@@ -90,6 +96,31 @@ struct Parser {
     index: usize,
     errors: Vec<ParseError>,
     pending_flow_items: Vec<FlowItem>,
+    pending_doc: Option<DocBlock>,
+}
+
+impl PendingDocLines {
+    fn push_if_doc(&mut self, line: &str, line_index: usize) -> bool {
+        let Some(text) = line.strip_prefix("///") else {
+            return false;
+        };
+        if self.start_line.is_none() {
+            self.start_line = Some(line_index);
+        }
+        self.lines
+            .push(text.strip_prefix(' ').unwrap_or(text).to_owned());
+        true
+    }
+
+    fn take(&mut self) -> Option<DocBlock> {
+        if self.lines.is_empty() {
+            return None;
+        }
+        let start = self.start_line.take().unwrap_or(0);
+        let end = start + self.lines.len();
+        let text = core::mem::take(&mut self.lines).join("\n");
+        Some(DocBlock::new(text, TextRange::new(start, end)))
+    }
 }
 
 impl Parser {
@@ -101,6 +132,7 @@ impl Parser {
             index: 0,
             errors: Vec::new(),
             pending_flow_items: Vec::new(),
+            pending_doc: None,
         }
     }
 
@@ -114,6 +146,19 @@ impl Parser {
             self.skip_blank_and_comments();
             if self.index >= self.lines.len() {
                 break;
+            }
+            if let Some(doc) = self.take_doc_block() {
+                if self.pending_doc.is_some() {
+                    self.push_error(
+                        *doc.range(),
+                        "documentation comment is not attached to an item",
+                        ["item declaration"],
+                        Some(doc.text()),
+                        ["move the `///` block directly before the item it documents"],
+                    );
+                }
+                self.pending_doc = Some(doc);
+                continue;
             }
 
             let line = self.current().clone();
@@ -145,16 +190,19 @@ impl Parser {
         items: &mut Vec<Item>,
     ) {
         if let Some(item) = self.reject_old_memo_attribute(trimmed, range) {
+            self.reject_pending_doc(range);
             items.push(item);
         } else if let Some(attribute) = parse_attribute(trimmed, range) {
             items.push(Item::Attribute(attribute));
             self.index += 1;
         } else if let Some(path) = trimmed.strip_prefix("mod ") {
+            self.reject_pending_doc(range);
             if self.validate_module_path(path, range) {
                 *module = Some(ModuleDecl::new(normalize_module_path(path.trim()), range));
             }
             self.index += 1;
         } else if is_use_line(trimmed) {
+            self.reject_pending_doc(range);
             if let Some(use_item) = parse_use_line(trimmed, range) {
                 if self.validate_use_tree(use_item.tree(), range) {
                     uses.push(use_item);
@@ -206,60 +254,75 @@ impl Parser {
                 items.push(Item::Function(function));
             }
         } else if looks_like_callable_item(trimmed) {
+            self.reject_pending_doc(range);
             if let Some(callable) = self.parse_callable_item() {
                 items.push(Item::Callable(callable));
             }
         } else if looks_like_state_item(trimmed) {
+            self.reject_pending_doc(range);
             if let Some(state) = self.parse_state_item() {
                 items.push(Item::State(state));
             }
         } else if looks_like_trait_item(trimmed) {
+            self.reject_pending_doc(range);
             if let Some(trait_item) = self.parse_trait_item() {
                 items.push(Item::Trait(trait_item));
             }
         } else if looks_like_impl_item(trimmed) {
+            self.reject_pending_doc(range);
             if let Some(impl_item) = self.parse_impl_item() {
                 items.push(Item::Impl(impl_item));
             }
         } else if looks_like_enum_item(trimmed) {
+            self.reject_pending_doc(range);
             if let Some(enum_item) = self.parse_enum_item() {
                 items.push(Item::Enum(enum_item));
             }
         } else if looks_like_struct_item(trimmed) {
+            self.reject_pending_doc(range);
             if let Some(struct_item) = self.parse_struct_item() {
                 items.push(Item::Struct(struct_item));
             }
         } else if looks_like_type_alias(trimmed) {
+            self.reject_pending_doc(range);
             if let Some(type_alias) = self.parse_type_alias() {
                 items.push(Item::TypeAlias(type_alias));
             }
         } else if looks_like_entity_decl_item(trimmed) {
+            self.reject_pending_doc(range);
             if let Some(decl) = self.parse_entity_decl_item() {
                 items.push(Item::EntityDecl(decl));
             }
         } else if looks_like_extern_mod_item(trimmed) {
+            self.reject_pending_doc(range);
             if let Some(item) = self.parse_extern_mod_item() {
                 items.push(Item::ExternMod(item));
             }
         } else if looks_like_hook(trimmed) {
+            self.reject_pending_doc(range);
             if let Some(hook) = self.parse_hook() {
                 items.push(Item::Hook(hook));
             }
         } else if looks_like_memo_fn(trimmed) {
+            self.reject_pending_doc(range);
             if let Some(memo) = self.parse_memo_fn() {
                 items.push(Item::MemoFn(memo));
             }
         } else if looks_like_parser_item(trimmed) {
+            self.reject_pending_doc(range);
             if let Some(parser) = self.parse_parser_item() {
                 items.push(Item::Parser(parser));
             }
         } else if looks_like_source_item(trimmed) {
+            self.reject_pending_doc(range);
             if let Some(source) = self.parse_source_item() {
                 items.push(Item::Source(source));
             }
         } else if let Some(flow_item) = self.parse_flow_item_until_indent(0) {
+            self.reject_pending_doc(range);
             items.push(Item::FlowItem(flow_item));
         } else {
+            self.reject_pending_doc(range);
             items.push(Item::Raw(RawItem::new(trimmed.to_owned(), None, range)));
             self.index += 1;
         }
@@ -284,6 +347,7 @@ impl Parser {
     }
 
     fn parse_flow(&mut self) -> Option<Flow> {
+        let doc = self.take_pending_doc();
         let start_line = self.current().clone();
         let header = start_line.text.trim();
         let (head, body, end, ok) = self.take_flow_block();
@@ -318,6 +382,7 @@ impl Parser {
         let body_items = self.parse_flow_body(&body, start_line.start + head.len());
 
         Some(Flow::new(FlowInit {
+            doc,
             kind,
             visibility,
             id,
@@ -331,6 +396,7 @@ impl Parser {
     }
 
     fn parse_function_item(&mut self) -> Option<FunctionItem> {
+        let doc = self.take_pending_doc();
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_function_block();
         if !ok {
@@ -349,8 +415,8 @@ impl Parser {
             .map(str::trim)
             .filter(|line| !line.is_empty())
             .collect::<Vec<_>>();
-        let first = header_lines.first().copied()?;
-        let (visibility, signature_text) = parse_visibility_prefix(first);
+        let (signature_head, contract_lines) = split_function_header_lines(&header_lines)?;
+        let (visibility, signature_text) = parse_visibility_prefix(&signature_head);
         let (kind, signature_text) = parse_function_kind_and_signature(signature_text.trim());
         let signature_text = signature_text.to_owned();
         let Ok(signature) = parse_fn_signature(&signature_text) else {
@@ -358,19 +424,19 @@ impl Parser {
                 TextRange::new(start_line.start, start_line.end),
                 "invalid function signature",
                 ["fn name<'a>(...)"],
-                Some(first),
+                Some(signature_head.as_str()),
                 ["write the function item with a valid `fn` signature head"],
             );
             return None;
         };
-        let contracts = header_lines
+        let contracts = contract_lines
             .iter()
-            .skip(1)
             .filter_map(|line| parse_contract_clause(line))
             .collect();
         let (body_statements, body_value) = parse_scope_expr_body(&body);
 
         Some(FunctionItem::new(FunctionInit {
+            doc,
             kind,
             visibility,
             signature,
@@ -1025,6 +1091,9 @@ impl Parser {
             return Some(item);
         }
         self.skip_blank_and_comments();
+        if self.index >= self.lines.len() {
+            return None;
+        }
         let line = self.current().clone();
         let indent = indentation(&line.text);
         if indent < min_indent {
@@ -1263,7 +1332,8 @@ impl Parser {
 
         self.index = cursor + 1;
         let plan = inline_plan.or_else(|| self.take_optional_line_plan());
-        let mut expr = parse_expr_lossy(expr_source);
+        let mut expr = parse_dialogue_call_expr_source(expr_source)
+            .unwrap_or_else(|| parse_expr_lossy(expr_source));
         let has_dialogue = if let Some(plan) = plan {
             attach_plan_to_dialogue_expr(&mut expr, plan)
         } else {
@@ -2400,11 +2470,50 @@ impl Parser {
     fn skip_blank_and_comments(&mut self) {
         while self.index < self.lines.len() {
             let trimmed = self.current().text.trim();
-            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///") {
+            if trimmed.is_empty() || (trimmed.starts_with("//") && !trimmed.starts_with("///")) {
                 self.index += 1;
             } else {
                 break;
             }
+        }
+    }
+
+    fn take_doc_block(&mut self) -> Option<DocBlock> {
+        let first = self.lines.get(self.index)?;
+        if !first.text.trim_start().starts_with("///") {
+            return None;
+        }
+        let start = first.start;
+        let mut end = first.end;
+        let mut lines = Vec::new();
+        while self.index < self.lines.len() {
+            let line = self.current();
+            let trimmed = line.text.trim_start();
+            let Some(text) = trimmed.strip_prefix("///") else {
+                break;
+            };
+            lines.push(text.strip_prefix(' ').unwrap_or(text).to_owned());
+            end = line.end;
+            self.index += 1;
+        }
+        Some(DocBlock::new(lines.join("\n"), TextRange::new(start, end)))
+    }
+
+    fn take_pending_doc(&mut self) -> Option<DocBlock> {
+        self.pending_doc.take()
+    }
+
+    fn reject_pending_doc(&mut self, fallback_range: TextRange) {
+        if let Some(doc) = self.pending_doc.take() {
+            self.push_error(
+                *doc.range(),
+                "documentation comment is not attached to a documentable item",
+                ["function or flow declaration"],
+                Some(doc.text()),
+                ["move the `///` block directly before a supported declaration"],
+            );
+        } else {
+            let _ = fallback_range;
         }
     }
 
@@ -2611,6 +2720,33 @@ fn parse_function_kind_and_signature(source: &str) -> (FunctionKind, &str) {
             .map(|signature| (kind, signature.trim_start()))
     })
     .unwrap_or((FunctionKind::Function, source))
+}
+
+fn split_function_header_lines<'a>(lines: &'a [&'a str]) -> Option<(String, Vec<&'a str>)> {
+    let mut signature = Vec::new();
+    let mut depth = 0_i32;
+    let mut end_index = None;
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if index > 0 && depth == 0 && parse_contract_clause(trimmed).is_some() {
+            end_index = Some(index);
+            break;
+        }
+        signature.push(trimmed);
+        for ch in trimmed.chars() {
+            match ch {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                _ => {}
+            }
+        }
+        if depth <= 0 && trimmed.contains(')') {
+            end_index = Some(index + 1);
+            break;
+        }
+    }
+    let end_index = end_index.unwrap_or(signature.len());
+    (!signature.is_empty()).then(|| (signature.join("\n"), lines[end_index..].to_vec()))
 }
 
 fn looks_like_callable_item(trimmed: &str) -> bool {
@@ -3200,11 +3336,18 @@ fn parse_contract_expr_list(source: &str) -> Vec<crate::expr::Expr> {
 }
 
 fn parse_enum_variants(body: &str) -> Vec<EnumVariant> {
+    let mut docs = PendingDocLines::default();
     body.lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(|line| line.trim_end_matches(',').trim())
-        .filter_map(|line| {
+        .enumerate()
+        .filter_map(|(line_index, line)| {
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            if docs.push_if_doc(line, line_index) {
+                return None;
+            }
+            let line = line.trim_end_matches(',').trim();
             let name_len = line
                 .char_indices()
                 .take_while(|(_, ch)| ch.is_alphanumeric() || *ch == '_')
@@ -3213,6 +3356,7 @@ fn parse_enum_variants(body: &str) -> Vec<EnumVariant> {
             let name = line[..name_len].to_owned();
             let payload = line[name_len..].trim();
             Some(EnumVariant::new(
+                docs.take(),
                 name,
                 (!payload.is_empty()).then(|| payload.to_owned()),
             ))
@@ -3221,30 +3365,45 @@ fn parse_enum_variants(body: &str) -> Vec<EnumVariant> {
 }
 
 fn parse_struct_fields(body: &str) -> Vec<StructField> {
+    let mut docs = PendingDocLines::default();
     body.lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(|line| line.trim_end_matches(',').trim())
-        .filter_map(|line| {
+        .enumerate()
+        .filter_map(|(line_index, line)| {
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            if docs.push_if_doc(line, line_index) {
+                return None;
+            }
+            let line = line.trim_end_matches(',').trim();
             let (name, ty) = line.split_once(':')?;
             parse_type_ref(ty.trim())
                 .ok()
-                .map(|ty| StructField::new(name.trim().to_owned(), ty))
+                .map(|ty| StructField::new(docs.take(), name.trim().to_owned(), ty))
         })
         .collect()
 }
 
 fn parse_state_fields(body: &str) -> Vec<StateField> {
+    let mut docs = PendingDocLines::default();
     body.lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(|line| line.trim_end_matches(',').trim())
-        .filter_map(|line| {
+        .enumerate()
+        .filter_map(|(line_index, line)| {
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            if docs.push_if_doc(line, line_index) {
+                return None;
+            }
+            let line = line.trim_end_matches(',').trim();
             let (visibility, rest) = parse_visibility_prefix(line);
             let (left, default) = rest.split_once('=')?;
             let (name, ty) = left.split_once(':')?;
             parse_type_ref(ty.trim()).ok().map(|ty| {
                 StateField::new(
+                    docs.take(),
                     visibility,
                     name.trim().to_owned(),
                     ty,
@@ -4812,9 +4971,10 @@ fn parse_source_stmt(trimmed: &str) -> Stmt {
 
 fn parse_expr_with_inline_line_plan(source: &str) -> Expr {
     let Some((expr_source, trailing_plan)) = split_inline_dialogue_line_plan(source) else {
-        return parse_expr_lossy(source);
+        return parse_dialogue_call_expr_source(source).unwrap_or_else(|| parse_expr_lossy(source));
     };
-    let mut expr = parse_expr_lossy(expr_source.trim());
+    let mut expr = parse_dialogue_call_expr_source(expr_source.trim())
+        .unwrap_or_else(|| parse_expr_lossy(expr_source.trim()));
     let Some(plan) = parse_inline_line_plan_source(trailing_plan) else {
         return parse_expr_lossy(source);
     };
@@ -4823,6 +4983,28 @@ fn parse_expr_with_inline_line_plan(source: &str) -> Expr {
     } else {
         parse_expr_lossy(source)
     }
+}
+
+fn parse_dialogue_call_expr_source(source: &str) -> Option<Expr> {
+    if let Some(rest) = source.trim().strip_prefix("try ") {
+        return Some(Expr::Try {
+            expr: Box::new(parse_dialogue_call_expr_source(rest.trim())?),
+        });
+    }
+    let open = find_content_bracket(source)?;
+    let close = find_matching_square(source, open)?;
+    if !source[close + 1..].trim().is_empty() {
+        return None;
+    }
+    let callee = source[..open].trim();
+    if callee.is_empty() {
+        return None;
+    }
+    Some(Expr::DialogueCall {
+        callee: Box::new(parse_expr_lossy(callee)),
+        content: source[open + 1..close].trim().to_owned(),
+        plan: None,
+    })
 }
 
 fn attach_plan_to_dialogue_expr(expr: &mut Expr, line_plan: LinePlan) -> bool {

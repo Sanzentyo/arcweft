@@ -11,10 +11,15 @@ EntityRef    := '#' Ident ('.' Ident)* | '#<' EntityBody '>'
 RelativeId   := '.' Ident ('.' Ident)*
 String       := '"' ... '"'
 Newline      := '\n'
-Comment      := '#' TextToEndOfLine
+Comment      := '//' TextToEndOfLine
+DocComment   := '///' MarkdownTextToEndOfLine
 ```
 
-`#` is reserved for entity references. `@` remains available for attributes and scenario commands such as `@bg`, but `choice` is a flow item and is written without `@`.
+`#` is reserved for entity references and is never a comment introducer. `///`
+forms Markdown documentation comments; consecutive `///` lines attach to the
+next documentable declaration or field. `@` remains available for attributes
+and scenario commands such as `@bg`, but `choice` is a flow item and is written
+without `@`.
 
 `RelativeId` is accepted only in ID-bearing contexts such as dialogue line IDs,
 choice IDs, option IDs, and text-key overrides. It is not a general entity
@@ -105,6 +110,11 @@ OutStmt        := 'out' Expr
 ```
 
 `with:` is indentation sugar for `with { ... }`. A bare `{ ... }` after a dialogue content block is an unnamed `scope` statement, not a line plan.
+
+In generic expression parsing, `target[expr]` is always an index/postfix
+expression. Dialogue content brackets are recognized only in dialogue-capable
+contexts such as flow items and line-result bindings where the callee is known
+to be a dialogue callee.
 
 ## Choice
 
@@ -310,6 +320,20 @@ Whole-pattern binding uses `Ident Pattern` only where the second token clearly
 starts a non-binding pattern, such as a variant, tuple, record, list, literal, or
 entity reference. `name @ pattern` is not part of Arcweft grammar.
 
+## Expression operators and postfixes
+
+```text
+PostfixExpr := PrimaryExpr ('?' | CallArgs | '.' Ident CallArgs? | '[' Expr ']')*
+PrefixExpr  := ('!' | '-') PrefixExpr | AwaitExpr | PostfixExpr
+BinaryExpr  := PrefixExpr BinaryOp PrefixExpr
+BinaryOp    := '*' | '/' | '%' | '+' | '-' | ComparisonOp | 'in' | '&&' | '||' | '|>' | '=>'
+ComparisonOp:= '==' | '!=' | '>=' | '<=' | '>' | '<'
+RangeExpr   := Expr? ('..' | '..=') Expr?
+```
+
+Field access such as `state.affection` is structured as a field expression.
+Type and module paths use `::`; public IDs use the `#flow.opening` entity form.
+
 ## Try operator and await
 
 ```text
@@ -337,7 +361,7 @@ Use `try await Expr AwaitPendingBlock`, `await? Expr AwaitPendingBlock`, or the 
 ## Never
 
 ```text
-NeverType := '!'
+NeverType := '!' | 'Never'
 DivergingExpr := ReturnStmt | GotoStmt | BreakStmt | ContinueStmt | PanicStmt | FailStmt
 ```
 

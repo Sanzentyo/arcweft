@@ -160,12 +160,16 @@ pub enum BinaryOp {
     Lt,
     Add,
     Sub,
+    Mul,
+    Div,
+    Rem,
 }
 
 /// Unary operator syntax.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UnaryOp {
     Not,
+    Neg,
 }
 
 /// Named computation block syntax such as `result { ... }`, `task { ... }`, `seq { ... }`, or `stream { ... }`.
@@ -190,321 +194,691 @@ pub fn parse_expr(source: &str) -> Result<Expr, ExprParseError> {
     if trimmed.is_empty() {
         return Err(ExprParseError::new("expected expression"));
     }
-    Ok(parse_pipe(trimmed))
-}
-
-fn parse_pipe(source: &str) -> Expr {
-    if let Some(rest) = source.strip_prefix("try await ") {
-        return Expr::Await {
-            expr: Box::new(parse_pipe(rest.trim())),
-            applies_try: true,
-        };
-    }
-    if let Some(rest) = source.strip_prefix("await? ") {
-        return Expr::Await {
-            expr: Box::new(parse_pipe(rest.trim())),
-            applies_try: true,
-        };
-    }
-    if let Some(rest) = source.strip_prefix("await ") {
-        return Expr::Await {
-            expr: Box::new(parse_pipe(rest.trim())),
-            applies_try: false,
-        };
-    }
-    if let Some(rest) = source.strip_prefix("try ") {
-        return Expr::Try {
-            expr: Box::new(parse_pipe(rest.trim())),
-        };
-    }
-    if let Some((lhs, rhs)) = split_top_level(source, "|>") {
-        return Expr::Pipe {
-            lhs: Box::new(parse_pipe(lhs)),
-            rhs: Box::new(parse_pipe(rhs)),
-        };
-    }
-    if let Some((params, body)) = split_closure(source) {
-        return Expr::Closure {
+    if let Some((params, body)) = split_closure(trimmed) {
+        return Ok(Expr::Closure {
             params,
-            body: Box::new(parse_pipe(body)),
-        };
-    }
-    if let Some((name, value)) = split_named_arg(source) {
-        return Expr::NamedArg {
-            name: name.to_owned(),
-            value: Box::new(parse_pipe(value)),
-        };
-    }
-    parse_binary(source)
-}
-
-fn parse_binary(source: &str) -> Expr {
-    if source.starts_with("#<") && source.ends_with('>') {
-        return parse_postfix(source);
-    }
-    for (needle, op) in [
-        ("=>", BinaryOp::Implies),
-        ("||", BinaryOp::Or),
-        ("&&", BinaryOp::And),
-        (" in ", BinaryOp::In),
-    ] {
-        if let Some((lhs, rhs)) = split_top_level(source, needle) {
-            return Expr::Binary {
-                lhs: Box::new(parse_binary(lhs)),
-                op,
-                rhs: Box::new(parse_binary(rhs)),
-            };
-        }
-    }
-    if let Some(range) = parse_range_expr(source) {
-        return range;
-    }
-    if split_call(source).is_some() {
-        return parse_postfix(source);
-    }
-    for (needle, op) in [
-        ("==", BinaryOp::Eq),
-        ("!=", BinaryOp::NotEq),
-        (">=", BinaryOp::Gte),
-        ("<=", BinaryOp::Lte),
-        (">", BinaryOp::Gt),
-        ("<", BinaryOp::Lt),
-    ] {
-        if let Some((lhs, rhs)) = split_top_level(source, needle) {
-            return Expr::Binary {
-                lhs: Box::new(parse_postfix(lhs)),
-                op,
-                rhs: Box::new(parse_postfix(rhs)),
-            };
-        }
-    }
-    for (needle, op) in [("+", BinaryOp::Add), ("-", BinaryOp::Sub)] {
-        if let Some((lhs, rhs)) = split_top_level_arithmetic(source, needle) {
-            return Expr::Binary {
-                lhs: Box::new(parse_postfix(lhs)),
-                op,
-                rhs: Box::new(parse_postfix(rhs)),
-            };
-        }
-    }
-    parse_postfix(source)
-}
-
-fn parse_postfix(source: &str) -> Expr {
-    let source = source.trim();
-    if let Some(inner) = source.strip_prefix('!') {
-        if !inner.trim().is_empty() {
-            return Expr::Unary {
-                op: UnaryOp::Not,
-                expr: Box::new(parse_postfix(inner.trim())),
-            };
-        }
-    }
-    if let Some(inner) = source.strip_suffix('?') {
-        if !inner.trim().is_empty() {
-            return Expr::Try {
-                expr: Box::new(parse_postfix(inner.trim())),
-            };
-        }
-    }
-    if let Some((target, content)) = split_bracket_postfix(source) {
-        if looks_like_index_expr(content) {
-            return Expr::Index {
-                target: Box::new(parse_postfix(target)),
-                index: Box::new(parse_pipe(content)),
-            };
-        }
-        return Expr::DialogueCall {
-            callee: Box::new(parse_postfix(target)),
-            content: content.to_owned(),
-            plan: None,
-        };
-    }
-    if let Some((receiver, method, args)) = split_method_call(source) {
-        return Expr::MethodCall {
-            receiver: Box::new(parse_postfix(receiver)),
-            method: method.to_owned(),
-            args: parse_arg_list(args),
-        };
-    }
-    if let Some((target, field)) = split_field_access(source) {
-        return Expr::Field {
-            target: Box::new(parse_postfix(target)),
-            field: field.to_owned(),
-        };
-    }
-    if let Some((callee, args)) = split_call(source) {
-        return Expr::Call {
-            callee: Box::new(parse_postfix(callee)),
-            args: parse_arg_list(args),
-        };
-    }
-    parse_atom(source)
-}
-
-fn parse_atom(source: &str) -> Expr {
-    let source = source.trim();
-    if source == "_" {
-        return Expr::Placeholder(Placeholder::Partial);
-    }
-    if source == "^" {
-        return Expr::Placeholder(Placeholder::PipeLeft);
-    }
-    if source == "true" {
-        return Expr::Literal(Literal::Bool(true));
-    }
-    if source == "false" {
-        return Expr::Literal(Literal::Bool(false));
-    }
-    if let Some(value) = parse_string(source) {
-        return Expr::Literal(Literal::String(value));
-    }
-    if let Some(value) = parse_duration(source) {
-        return Expr::Literal(value);
-    }
-    if let Ok(value) = source.parse::<i64>() {
-        return Expr::Literal(Literal::Int(value));
-    }
-    if is_float_literal(source) {
-        return Expr::Literal(Literal::Float(source.to_owned()));
-    }
-    if let Some(entity) = parse_entity_expr(source) {
-        return Expr::EntityRef(entity);
-    }
-    if let Some(items) = parse_list_expr(source) {
-        return Expr::List(items);
-    }
-    if let Some((path, fields)) = parse_record_expr(source) {
-        return Expr::Record { path, fields };
-    }
-    if let Some(fields) = parse_record_literal(source) {
-        return Expr::RecordLiteral(fields);
-    }
-    if let Some(inner) = source
-        .strip_prefix('(')
-        .and_then(|value| value.strip_suffix(')'))
-    {
-        if inner.trim().is_empty() {
-            return Expr::Tuple(Vec::new());
-        }
-        let args = split_args(inner);
-        if args.len() > 1 {
-            return Expr::Tuple(args.into_iter().map(parse_pipe).collect());
-        }
-        return parse_pipe(inner);
-    }
-    if is_path_like(source) {
-        return Expr::Path(source.to_owned());
-    }
-    Expr::Raw(source.to_owned())
-}
-
-fn parse_list_expr(source: &str) -> Option<Vec<Expr>> {
-    let inner = source.strip_prefix('[')?.strip_suffix(']')?;
-    if inner.trim().is_empty() {
-        return Some(Vec::new());
-    }
-    Some(split_args(inner).into_iter().map(parse_pipe).collect())
-}
-
-fn parse_record_expr(source: &str) -> Option<(String, Vec<(String, Expr)>)> {
-    let open = find_top_level_char(source, '{')?;
-    let close = source.rfind('}')?;
-    if open >= close || close != source.len() - 1 {
-        return None;
-    }
-    let path = source[..open].trim();
-    if path.is_empty() || !is_path_like(path) {
-        return None;
-    }
-    let fields = parse_record_fields(&source[open + 1..close])?;
-    Some((path.to_owned(), fields))
-}
-
-fn parse_record_literal(source: &str) -> Option<Vec<(String, Expr)>> {
-    let inner = source.strip_prefix('{')?.strip_suffix('}')?;
-    parse_record_fields(inner)
-}
-
-fn parse_record_fields(source: &str) -> Option<Vec<(String, Expr)>> {
-    if source.trim().is_empty() {
-        return Some(Vec::new());
-    }
-    source
-        .lines()
-        .flat_map(|line| line.split(','))
-        .map(|part| {
-            let part = part.trim().trim_end_matches(',');
-            if part.is_empty() {
-                return Some(None);
-            }
-            let (name, value) = part
-                .split_once('=')
-                .or_else(|| part.split_once(':'))
-                .map_or((part, part), |(name, value)| (name.trim(), value.trim()));
-            is_identifier(name).then(|| Some((name.to_owned(), parse_pipe(value))))
-        })
-        .collect::<Option<Vec<_>>>()
-        .map(|fields| fields.into_iter().flatten().collect())
-}
-
-fn parse_range_expr(source: &str) -> Option<Expr> {
-    if let Some((start, end)) = split_top_level_range(source, "..=") {
-        return Some(Expr::Range {
-            start: (!start.is_empty()).then(|| Box::new(parse_pipe(start))),
-            end: (!end.is_empty()).then(|| Box::new(parse_pipe(end))),
-            inclusive: true,
+            body: Box::new(parse_expr(body)?),
         });
     }
-    let (start, end) = split_top_level_range(source, "..")?;
-    Some(Expr::Range {
-        start: (!start.is_empty()).then(|| Box::new(parse_pipe(start))),
-        end: (!end.is_empty()).then(|| Box::new(parse_pipe(end))),
-        inclusive: false,
+    if let Some((name, value)) = split_named_arg(trimmed) {
+        return Ok(Expr::NamedArg {
+            name: name.to_owned(),
+            value: Box::new(parse_expr(value)?),
+        });
+    }
+    if let Some((target, index)) = split_bracket_postfix(trimmed) {
+        return Ok(Expr::Index {
+            target: Box::new(parse_expr(target)?),
+            index: Box::new(parse_expr(index).unwrap_or_else(|_| Expr::Raw(index.to_owned()))),
+        });
+    }
+    ExprParser::new(trimmed).parse()
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Token {
+    Ident(String),
+    RelativePath(String),
+    Entity(EntityRef),
+    Literal(Literal),
+    Underscore,
+    Caret,
+    LParen,
+    RParen,
+    LBracket,
+    RBracket,
+    LBrace,
+    RBrace,
+    Comma,
+    Dot,
+    Colon,
+    Question,
+    Bang,
+    Op(&'static str),
+    Eof,
+}
+
+struct Lexer<'a> {
+    source: &'a str,
+    cursor: usize,
+}
+
+impl<'a> Lexer<'a> {
+    fn new(source: &'a str) -> Self {
+        Self { source, cursor: 0 }
+    }
+
+    fn tokenize(mut self) -> Vec<Token> {
+        let mut tokens = Vec::new();
+        while let Some(ch) = self.peek_char() {
+            if ch.is_whitespace() {
+                self.bump_char();
+                continue;
+            }
+            tokens.push(match ch {
+                '"' => self.lex_string(),
+                '#' => self.lex_entity(),
+                '0'..='9' => self.lex_number_or_duration(),
+                '_' => {
+                    self.bump_char();
+                    Token::Underscore
+                }
+                '^' => {
+                    self.bump_char();
+                    Token::Caret
+                }
+                '(' => self.single(Token::LParen),
+                ')' => self.single(Token::RParen),
+                '[' => self.single(Token::LBracket),
+                ']' => self.single(Token::RBracket),
+                '{' => self.single(Token::LBrace),
+                '}' => self.single(Token::RBrace),
+                ',' => self.single(Token::Comma),
+                ':' => self.single(Token::Colon),
+                '?' => self.single(Token::Question),
+                '!' if self.starts_with("!=") => self.fixed_op("!=", 2),
+                '!' => self.single(Token::Bang),
+                '-' => self.fixed_op("-", 1),
+                '.' if self.starts_with("..=") => self.fixed_op("..=", 3),
+                '.' if self.starts_with("..") => self.fixed_op("..", 2),
+                '.' if self.dot_starts_relative_path() => self.lex_relative_path(),
+                '.' => self.single(Token::Dot),
+                '=' if self.starts_with("=>") => self.fixed_op("=>", 2),
+                '=' if self.starts_with("==") => self.fixed_op("==", 2),
+                '=' => self.fixed_op("=", 1),
+                '>' if self.starts_with(">=") => self.fixed_op(">=", 2),
+                '<' if self.starts_with("<=") => self.fixed_op("<=", 2),
+                '|' if self.starts_with("|>") => self.fixed_op("|>", 2),
+                '|' if self.starts_with("||") => self.fixed_op("||", 2),
+                '&' if self.starts_with("&&") => self.fixed_op("&&", 2),
+                '+' => self.fixed_op("+", 1),
+                '*' => self.fixed_op("*", 1),
+                '/' => self.fixed_op("/", 1),
+                '%' => self.fixed_op("%", 1),
+                '>' => self.fixed_op(">", 1),
+                '<' => self.fixed_op("<", 1),
+                _ if is_ident_start(ch) => self.lex_ident(),
+                _ => {
+                    self.bump_char();
+                    Token::Ident(ch.to_string())
+                }
+            });
+        }
+        tokens.push(Token::Eof);
+        tokens
+    }
+
+    fn single(&mut self, token: Token) -> Token {
+        self.bump_char();
+        token
+    }
+
+    fn fixed_op(&mut self, op: &'static str, len: usize) -> Token {
+        self.cursor += len;
+        Token::Op(op)
+    }
+
+    fn lex_string(&mut self) -> Token {
+        self.bump_char();
+        let start = self.cursor;
+        let mut escaped = false;
+        while let Some(ch) = self.peek_char() {
+            if ch == '"' && !escaped {
+                let value = self.source[start..self.cursor].to_owned();
+                self.bump_char();
+                return Token::Literal(Literal::String(value));
+            }
+            escaped = ch == '\\' && !escaped;
+            if ch != '\\' {
+                escaped = false;
+            }
+            self.bump_char();
+        }
+        Token::Literal(Literal::String(self.source[start..].to_owned()))
+    }
+
+    fn lex_entity(&mut self) -> Token {
+        let start = self.cursor;
+        if self.starts_with("#<") {
+            self.cursor += 2;
+            while let Some(ch) = self.peek_char() {
+                self.bump_char();
+                if ch == '>' {
+                    break;
+                }
+            }
+            let raw = &self.source[start..self.cursor];
+            return parse_entity_expr(raw)
+                .map_or_else(|| Token::Ident(raw.to_owned()), Token::Entity);
+        }
+        self.bump_char();
+        while let Some(ch) = self.peek_char() {
+            if ch.is_whitespace() || matches!(ch, ')' | ']' | '}' | ',' | '{' | '[' | '(') {
+                break;
+            }
+            self.bump_char();
+        }
+        let raw = &self.source[start..self.cursor];
+        parse_entity_expr(raw).map_or_else(|| Token::Ident(raw.to_owned()), Token::Entity)
+    }
+
+    fn lex_number_or_duration(&mut self) -> Token {
+        let start = self.cursor;
+        while let Some(ch) = self.peek_char() {
+            if ch.is_ascii_digit() {
+                self.bump_char();
+            } else {
+                break;
+            }
+        }
+        if self.peek_char() == Some('.')
+            && !self.starts_with("..")
+            && self
+                .source
+                .get(self.cursor + 1..)
+                .and_then(|tail| tail.chars().next())
+                .is_some_and(|ch| ch.is_ascii_digit())
+        {
+            self.bump_char();
+            while let Some(ch) = self.peek_char() {
+                if ch.is_ascii_digit() {
+                    self.bump_char();
+                } else {
+                    break;
+                }
+            }
+        }
+        if self.starts_with("ms") {
+            self.cursor += 2;
+        } else if self.starts_with("s") {
+            self.cursor += 1;
+        }
+        let raw = &self.source[start..self.cursor];
+        if let Some(duration) = parse_duration(raw) {
+            Token::Literal(duration)
+        } else if raw.contains('.') {
+            Token::Literal(Literal::Float(raw.to_owned()))
+        } else {
+            Token::Literal(Literal::Int(raw.parse().unwrap_or(0)))
+        }
+    }
+
+    fn lex_relative_path(&mut self) -> Token {
+        let start = self.cursor;
+        self.bump_char();
+        while let Some(ch) = self.peek_char() {
+            if is_ident_continue(ch) {
+                self.bump_char();
+            } else {
+                break;
+            }
+        }
+        Token::RelativePath(self.source[start..self.cursor].to_owned())
+    }
+
+    fn lex_ident(&mut self) -> Token {
+        let start = self.cursor;
+        self.bump_char();
+        while let Some(ch) = self.peek_char() {
+            if is_ident_continue(ch) {
+                self.bump_char();
+            } else if self.starts_with("::") {
+                self.cursor += 2;
+            } else {
+                break;
+            }
+        }
+        if self.peek_char() == Some('<') {
+            self.consume_angle_suffix();
+        }
+        let value = &self.source[start..self.cursor];
+        match value {
+            "true" => Token::Literal(Literal::Bool(true)),
+            "false" => Token::Literal(Literal::Bool(false)),
+            "in" => Token::Op("in"),
+            _ => Token::Ident(value.to_owned()),
+        }
+    }
+
+    fn peek_char(&self) -> Option<char> {
+        self.source.get(self.cursor..)?.chars().next()
+    }
+
+    fn bump_char(&mut self) {
+        if let Some(ch) = self.peek_char() {
+            self.cursor += ch.len_utf8();
+        }
+    }
+
+    fn starts_with(&self, value: &str) -> bool {
+        self.source[self.cursor..].starts_with(value)
+    }
+
+    fn dot_starts_relative_path(&self) -> bool {
+        let at_expr_start = self.cursor == 0
+            || self.source[..self.cursor]
+                .chars()
+                .next_back()
+                .is_some_and(|ch| ch.is_whitespace() || matches!(ch, '(' | '[' | '{' | ','));
+        at_expr_start
+            && self
+                .source
+                .get(self.cursor + 1..)
+                .and_then(|tail| tail.chars().next())
+                .is_some_and(is_ident_start)
+    }
+
+    fn consume_angle_suffix(&mut self) {
+        let mut depth = 0_i32;
+        while let Some(ch) = self.peek_char() {
+            match ch {
+                '<' => depth += 1,
+                '>' => {
+                    depth -= 1;
+                    self.bump_char();
+                    if depth == 0 {
+                        break;
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+            self.bump_char();
+        }
+    }
+}
+
+struct ExprParser {
+    tokens: Vec<Token>,
+    cursor: usize,
+}
+
+impl ExprParser {
+    fn new(source: &str) -> Self {
+        Self {
+            tokens: Lexer::new(source).tokenize(),
+            cursor: 0,
+        }
+    }
+
+    fn parse(mut self) -> Result<Expr, ExprParseError> {
+        let expr = self.parse_expr_bp(0)?;
+        if self.peek() != &Token::Eof {
+            return Err(ExprParseError::new(&format!(
+                "unexpected token after expression: {:?}",
+                self.peek()
+            )));
+        }
+        Ok(expr)
+    }
+
+    fn parse_expr_bp(&mut self, min_bp: u8) -> Result<Expr, ExprParseError> {
+        let mut lhs = self.parse_prefix()?;
+        loop {
+            lhs = match self.peek() {
+                Token::Question if min_bp <= 100 => {
+                    self.bump();
+                    Expr::Try {
+                        expr: Box::new(lhs),
+                    }
+                }
+                Token::LParen if min_bp <= 100 => {
+                    let args = self.parse_call_args()?;
+                    Expr::Call {
+                        callee: Box::new(lhs),
+                        args,
+                    }
+                }
+                Token::LBracket if min_bp <= 100 => {
+                    self.bump();
+                    let index = if self.peek() == &Token::RBracket {
+                        Expr::Tuple(Vec::new())
+                    } else {
+                        self.parse_expr_bp(0)?
+                    };
+                    self.expect(&Token::RBracket)?;
+                    Expr::Index {
+                        target: Box::new(lhs),
+                        index: Box::new(index),
+                    }
+                }
+                Token::Dot if min_bp <= 100 => {
+                    self.bump();
+                    let field = self.take_ident("expected field name after `.`")?;
+                    if self.peek() == &Token::LParen {
+                        let args = self.parse_call_args()?;
+                        Expr::MethodCall {
+                            receiver: Box::new(lhs),
+                            method: field,
+                            args,
+                        }
+                    } else {
+                        Expr::Field {
+                            target: Box::new(lhs),
+                            field,
+                        }
+                    }
+                }
+                Token::Op(".." | "..=") if min_bp <= 5 => {
+                    let inclusive = matches!(self.bump(), Token::Op("..="));
+                    let end = if matches!(
+                        self.peek(),
+                        Token::Eof | Token::Comma | Token::RParen | Token::RBracket | Token::RBrace
+                    ) {
+                        None
+                    } else {
+                        Some(Box::new(self.parse_expr_bp(5)?))
+                    };
+                    Expr::Range {
+                        start: Some(Box::new(lhs)),
+                        end,
+                        inclusive,
+                    }
+                }
+                Token::Op(op) => {
+                    let op = *op;
+                    let Some((left_bp, right_bp, binary)) = infix_binding_power(op) else {
+                        break;
+                    };
+                    if left_bp < min_bp {
+                        break;
+                    }
+                    self.bump();
+                    let rhs = self.parse_expr_bp(right_bp)?;
+                    if op == "|>" {
+                        Expr::Pipe {
+                            lhs: Box::new(lhs),
+                            rhs: Box::new(rhs),
+                        }
+                    } else {
+                        Expr::Binary {
+                            lhs: Box::new(lhs),
+                            op: binary,
+                            rhs: Box::new(rhs),
+                        }
+                    }
+                }
+                _ => break,
+            };
+        }
+        Ok(lhs)
+    }
+
+    fn parse_prefix(&mut self) -> Result<Expr, ExprParseError> {
+        match self.bump() {
+            Token::Ident(keyword) if keyword == "try" && self.peek_ident("await") => {
+                self.bump();
+                Ok(Expr::Await {
+                    expr: Box::new(self.parse_expr_bp(90)?),
+                    applies_try: true,
+                })
+            }
+            Token::Ident(keyword) if keyword == "await" => {
+                let applies_try = if self.peek() == &Token::Question {
+                    self.bump();
+                    true
+                } else {
+                    false
+                };
+                Ok(Expr::Await {
+                    expr: Box::new(self.parse_expr_bp(90)?),
+                    applies_try,
+                })
+            }
+            Token::Ident(keyword) if keyword == "try" => Ok(Expr::Try {
+                expr: Box::new(self.parse_expr_bp(90)?),
+            }),
+            Token::Bang => Ok(Expr::Unary {
+                op: UnaryOp::Not,
+                expr: Box::new(self.parse_expr_bp(90)?),
+            }),
+            Token::Op("-") => Ok(Expr::Unary {
+                op: UnaryOp::Neg,
+                expr: Box::new(self.parse_expr_bp(90)?),
+            }),
+            Token::Op(".." | "..=") => {
+                let inclusive = matches!(self.previous(), Some(Token::Op("..=")));
+                let end = if matches!(
+                    self.peek(),
+                    Token::Eof | Token::Comma | Token::RParen | Token::RBracket | Token::RBrace
+                ) {
+                    None
+                } else {
+                    Some(Box::new(self.parse_expr_bp(5)?))
+                };
+                Ok(Expr::Range {
+                    start: None,
+                    end,
+                    inclusive,
+                })
+            }
+            Token::Literal(literal) => Ok(Expr::Literal(literal)),
+            Token::Entity(entity) => Ok(Expr::EntityRef(entity)),
+            Token::Ident(path) => {
+                if self.peek() == &Token::LBrace {
+                    self.bump();
+                    return Ok(Expr::Record {
+                        path,
+                        fields: self.parse_record_fields()?,
+                    });
+                }
+                Ok(Expr::Path(path))
+            }
+            Token::RelativePath(path) => Ok(Expr::Path(path)),
+            Token::Underscore => Ok(Expr::Placeholder(Placeholder::Partial)),
+            Token::Caret => Ok(Expr::Placeholder(Placeholder::PipeLeft)),
+            Token::LParen => self.parse_tuple_or_group(),
+            Token::LBracket => self.parse_list(),
+            Token::LBrace => Ok(Expr::RecordLiteral(self.parse_record_fields()?)),
+            token => Err(ExprParseError::new(&format!(
+                "expected expression, found {token:?}"
+            ))),
+        }
+    }
+
+    fn parse_tuple_or_group(&mut self) -> Result<Expr, ExprParseError> {
+        if self.peek() == &Token::RParen {
+            self.bump();
+            return Ok(Expr::Tuple(Vec::new()));
+        }
+        let mut items = Vec::new();
+        loop {
+            items.push(self.parse_expr_bp(0)?);
+            match self.peek() {
+                Token::Comma => {
+                    self.bump();
+                    if self.peek() == &Token::RParen {
+                        self.bump();
+                        return Ok(Expr::Tuple(items));
+                    }
+                }
+                Token::RParen => {
+                    self.bump();
+                    return if items.len() == 1 {
+                        Ok(items.remove(0))
+                    } else {
+                        Ok(Expr::Tuple(items))
+                    };
+                }
+                _ => return Err(ExprParseError::new("expected `)` or `,` in tuple")),
+            }
+        }
+    }
+
+    fn parse_list(&mut self) -> Result<Expr, ExprParseError> {
+        let mut items = Vec::new();
+        if self.peek() == &Token::RBracket {
+            self.bump();
+            return Ok(Expr::List(items));
+        }
+        loop {
+            items.push(self.parse_expr_bp(0)?);
+            match self.peek() {
+                Token::Comma => {
+                    self.bump();
+                    if self.peek() == &Token::RBracket {
+                        self.bump();
+                        return Ok(Expr::List(items));
+                    }
+                }
+                Token::RBracket => {
+                    self.bump();
+                    return Ok(Expr::List(items));
+                }
+                _ => return Err(ExprParseError::new("expected `]` or `,` in list")),
+            }
+        }
+    }
+
+    fn parse_call_args(&mut self) -> Result<Vec<Expr>, ExprParseError> {
+        self.expect(&Token::LParen)?;
+        let mut args = Vec::new();
+        if self.peek() == &Token::RParen {
+            self.bump();
+            return Ok(args);
+        }
+        loop {
+            args.push(self.parse_arg_expr()?);
+            match self.peek() {
+                Token::Comma => {
+                    self.bump();
+                    if self.peek() == &Token::RParen {
+                        self.bump();
+                        return Ok(args);
+                    }
+                }
+                Token::RParen => {
+                    self.bump();
+                    return Ok(args);
+                }
+                _ => return Err(ExprParseError::new("expected `)` or `,` in argument list")),
+            }
+        }
+    }
+
+    fn parse_arg_expr(&mut self) -> Result<Expr, ExprParseError> {
+        if let (Token::Ident(name), Some(Token::Op("="))) =
+            (self.peek(), self.tokens.get(self.cursor + 1))
+        {
+            let name = name.clone();
+            self.bump();
+            self.bump();
+            return Ok(Expr::NamedArg {
+                name,
+                value: Box::new(self.parse_expr_bp(0)?),
+            });
+        }
+        if self.peek() == &Token::Op("||") {
+            self.bump();
+            return Ok(Expr::Closure {
+                params: Vec::new(),
+                body: Box::new(self.parse_expr_bp(0)?),
+            });
+        }
+        self.parse_expr_bp(0)
+    }
+
+    fn parse_record_fields(&mut self) -> Result<Vec<(String, Expr)>, ExprParseError> {
+        let mut fields = Vec::new();
+        if self.peek() == &Token::RBrace {
+            self.bump();
+            return Ok(fields);
+        }
+        loop {
+            let name = self.take_ident("expected record field name")?;
+            let value = if matches!(self.peek(), Token::Colon | Token::Op("=")) {
+                self.bump();
+                self.parse_expr_bp(0)?
+            } else {
+                Expr::Path(name.clone())
+            };
+            fields.push((name, value));
+            match self.peek() {
+                Token::Comma => {
+                    self.bump();
+                    if self.peek() == &Token::RBrace {
+                        self.bump();
+                        return Ok(fields);
+                    }
+                }
+                Token::RBrace => {
+                    self.bump();
+                    return Ok(fields);
+                }
+                _ => return Err(ExprParseError::new("expected `}` or `,` in record literal")),
+            }
+        }
+    }
+
+    fn take_ident(&mut self, message: &str) -> Result<String, ExprParseError> {
+        match self.bump() {
+            Token::Ident(name) | Token::RelativePath(name) => Ok(name),
+            _ => Err(ExprParseError::new(message)),
+        }
+    }
+
+    fn expect(&mut self, expected: &Token) -> Result<(), ExprParseError> {
+        let found = self.bump();
+        if &found == expected {
+            Ok(())
+        } else {
+            Err(ExprParseError::new(&format!(
+                "expected {expected:?}, found {found:?}"
+            )))
+        }
+    }
+
+    fn peek(&self) -> &Token {
+        self.tokens.get(self.cursor).unwrap_or(&Token::Eof)
+    }
+
+    fn peek_ident(&self, expected: &str) -> bool {
+        matches!(self.peek(), Token::Ident(value) if value == expected)
+    }
+
+    fn previous(&self) -> Option<&Token> {
+        self.cursor
+            .checked_sub(1)
+            .and_then(|index| self.tokens.get(index))
+    }
+
+    fn bump(&mut self) -> Token {
+        let token = self.peek().clone();
+        if !matches!(token, Token::Eof) {
+            self.cursor += 1;
+        }
+        token
+    }
+}
+
+fn infix_binding_power(op: &str) -> Option<(u8, u8, BinaryOp)> {
+    Some(match op {
+        "=>" => (10, 10, BinaryOp::Implies),
+        "|>" => (15, 16, BinaryOp::Implies),
+        "||" => (20, 21, BinaryOp::Or),
+        "&&" => (30, 31, BinaryOp::And),
+        "in" => (40, 5, BinaryOp::In),
+        "==" => (45, 46, BinaryOp::Eq),
+        "!=" => (45, 46, BinaryOp::NotEq),
+        ">=" => (45, 46, BinaryOp::Gte),
+        "<=" => (45, 46, BinaryOp::Lte),
+        ">" => (45, 46, BinaryOp::Gt),
+        "<" => (45, 46, BinaryOp::Lt),
+        "+" => (50, 51, BinaryOp::Add),
+        "-" => (50, 51, BinaryOp::Sub),
+        "*" => (60, 61, BinaryOp::Mul),
+        "/" => (60, 61, BinaryOp::Div),
+        "%" => (60, 61, BinaryOp::Rem),
+        _ => return None,
     })
 }
 
-fn parse_string(source: &str) -> Option<String> {
-    source
-        .strip_prefix('"')
-        .and_then(|value| value.strip_suffix('"'))
-        .map(str::to_owned)
+fn is_ident_start(ch: char) -> bool {
+    ch == '_' || ch.is_alphabetic()
 }
 
-fn find_top_level_char(source: &str, needle: char) -> Option<usize> {
-    let mut depth = 0_i32;
-    let mut in_string = false;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '"' => in_string = !in_string,
-            '(' | '[' if !in_string => depth += 1,
-            ')' | ']' if !in_string => depth -= 1,
-            _ => {}
-        }
-        if depth == 0 && !in_string && ch == needle {
-            return Some(index);
-        }
-    }
-    None
-}
-
-fn split_top_level_range<'a>(source: &'a str, needle: &str) -> Option<(&'a str, &'a str)> {
-    let mut depth = 0_i32;
-    let mut in_string = false;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '"' => in_string = !in_string,
-            '(' | '[' | '{' if !in_string => depth += 1,
-            ')' | ']' | '}' if !in_string => depth -= 1,
-            _ => {}
-        }
-        if depth == 0 && !in_string && source[index..].starts_with(needle) {
-            let lhs = source[..index].trim();
-            let rhs = source[index + needle.len()..].trim();
-            return Some((lhs, rhs));
-        }
-    }
-    None
+fn is_ident_continue(ch: char) -> bool {
+    ch == '_' || ch.is_alphanumeric()
 }
 
 fn parse_duration(source: &str) -> Option<Literal> {
@@ -545,46 +919,6 @@ fn parse_entity_expr(source: &str) -> Option<EntityRef> {
     ))
 }
 
-fn split_call(source: &str) -> Option<(&str, &str)> {
-    let close = source.strip_suffix(')')?;
-    let open = find_last_top_level_open_paren(close)?;
-    let callee = close[..open].trim();
-    if callee.is_empty() || callee.ends_with('.') {
-        return None;
-    }
-    Some((callee, &close[open + 1..]))
-}
-
-fn split_method_call(source: &str) -> Option<(&str, &str, &str)> {
-    let (callee, args) = split_call(source)?;
-    let dot = find_last_top_level_dot(callee)?;
-    let receiver = callee[..dot].trim();
-    let method = callee[dot + 1..].trim();
-    if receiver.is_empty() || method.is_empty() {
-        return None;
-    }
-    Some((receiver, method, args))
-}
-
-fn split_field_access(source: &str) -> Option<(&str, &str)> {
-    if source.starts_with('#') || is_float_literal(source) || parse_duration(source).is_some() {
-        return None;
-    }
-    let dot = find_last_top_level_dot(source)?;
-    let target = source[..dot].trim();
-    let field = source[dot + 1..].trim();
-    let target_can_have_field =
-        matches!(target, "_" | "^") || target.ends_with([')', ']']) || target.contains(')');
-    if !target_can_have_field || target.is_empty() || field.is_empty() || !is_identifier(field) {
-        return None;
-    }
-    Some((target, field))
-}
-
-fn parse_arg_list(source: &str) -> Vec<Expr> {
-    split_args(source).into_iter().map(parse_pipe).collect()
-}
-
 fn split_bracket_postfix(source: &str) -> Option<(&str, &str)> {
     let close = source.strip_suffix(']')?;
     let open = find_last_top_level_open_bracket(close)?;
@@ -593,33 +927,6 @@ fn split_bracket_postfix(source: &str) -> Option<(&str, &str)> {
         return None;
     }
     Some((target, &close[open + 1..]))
-}
-
-fn split_args(source: &str) -> Vec<&str> {
-    let mut args = Vec::new();
-    let mut start = 0;
-    let mut depth = 0_i32;
-    let mut in_string = false;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '"' => in_string = !in_string,
-            '(' | '[' | '{' if !in_string => depth += 1,
-            ')' | ']' | '}' if !in_string => depth -= 1,
-            ',' if depth == 0 && !in_string => {
-                let arg = source[start..index].trim();
-                if !arg.is_empty() {
-                    args.push(arg);
-                }
-                start = index + 1;
-            }
-            _ => {}
-        }
-    }
-    let tail = source[start..].trim();
-    if !tail.is_empty() {
-        args.push(tail);
-    }
-    args
 }
 
 fn split_top_level<'a>(source: &'a str, needle: &str) -> Option<(&'a str, &'a str)> {
@@ -671,35 +978,6 @@ fn split_named_arg(source: &str) -> Option<(&str, &str)> {
     Some((name, value))
 }
 
-fn split_top_level_arithmetic<'a>(source: &'a str, needle: &str) -> Option<(&'a str, &'a str)> {
-    if source.starts_with('#') {
-        return None;
-    }
-    let (lhs, rhs) = split_top_level(source, needle)?;
-    if lhs.is_empty() || rhs.is_empty() || lhs.ends_with(['e', 'E']) {
-        return None;
-    }
-    Some((lhs, rhs))
-}
-
-fn find_last_top_level_open_paren(source: &str) -> Option<usize> {
-    let mut depth = 0_i32;
-    let mut last = None;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '(' => {
-                if depth == 0 {
-                    last = Some(index);
-                }
-                depth += 1;
-            }
-            ')' => depth -= 1,
-            _ => {}
-        }
-    }
-    last
-}
-
 fn find_last_top_level_open_bracket(source: &str) -> Option<usize> {
     let mut paren_depth = 0_i32;
     let mut bracket_depth = 0_i32;
@@ -721,26 +999,6 @@ fn find_last_top_level_open_bracket(source: &str) -> Option<usize> {
     last
 }
 
-fn find_last_top_level_dot(source: &str) -> Option<usize> {
-    let mut depth = 0_i32;
-    let mut last = None;
-    for (index, ch) in source.char_indices() {
-        match ch {
-            '(' | '[' | '{' => depth += 1,
-            ')' | ']' | '}' => depth -= 1,
-            '.' if depth == 0 => last = Some(index),
-            _ => {}
-        }
-    }
-    last
-}
-
-fn is_path_like(source: &str) -> bool {
-    source
-        .chars()
-        .all(|ch| ch.is_alphanumeric() || matches!(ch, '_' | ':' | '.' | '<' | '>' | ','))
-}
-
 fn is_identifier(source: &str) -> bool {
     source
         .chars()
@@ -754,25 +1012,6 @@ fn is_numeric_duration(source: &str) -> bool {
         && source.chars().filter(|ch| *ch == '.').count() <= 1
         && source.chars().any(|ch| ch.is_ascii_digit())
         && source.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
-}
-
-fn is_float_literal(source: &str) -> bool {
-    !source.is_empty()
-        && source.chars().filter(|ch| *ch == '.').count() == 1
-        && source.chars().any(|ch| ch.is_ascii_digit())
-        && source.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
-}
-
-fn looks_like_index_expr(source: &str) -> bool {
-    let trimmed = source.trim();
-    trimmed.starts_with('#')
-        || trimmed.starts_with('"')
-        || trimmed == "_"
-        || trimmed == "^"
-        || trimmed == "true"
-        || trimmed == "false"
-        || trimmed.parse::<i64>().is_ok()
-        || is_path_like(trimmed)
 }
 
 impl ExprParseError {

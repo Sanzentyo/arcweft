@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crate::ast::Pattern;
+use crate::ast::{DocBlock, Pattern, TextRange};
 use crate::pattern::parse_pattern;
 
 /// Lifetime name used in Arcweft type syntax.
@@ -12,6 +12,7 @@ pub struct LifetimeName {
 /// Type syntax preserved for later borrow and suspension-boundary checks.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeRef {
+    Never,
     Path(String),
     Generic {
         base: String,
@@ -36,6 +37,7 @@ pub struct FnSignature {
 /// One function parameter pattern and type annotation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FnParam {
+    doc: Option<DocBlock>,
     pattern: Pattern,
     ty: TypeRef,
 }
@@ -115,19 +117,49 @@ fn parse_fn_params(source: &str) -> Result<(Vec<FnParam>, &str), TypeParseError>
 fn parse_fn_param(source: &str) -> Result<FnParam, TypeParseError> {
     if matches!(source.trim(), "self" | "&self" | "&mut self" | "mut self") {
         return Ok(FnParam {
+            doc: None,
             pattern: Pattern::Ident("self".to_owned()),
             ty: TypeRef::Path("Self".to_owned()),
         });
     }
+    let (doc, source) = take_param_doc(source);
     let (pattern, ty) = split_top_level_once(source, ':')
         .ok_or_else(|| TypeParseError::new("expected `pattern: Type` parameter"))?;
     Ok(FnParam {
+        doc,
         pattern: parse_pattern(pattern),
         ty: parse_type_ref(ty.trim())?,
     })
 }
 
+fn take_param_doc(source: &str) -> (Option<DocBlock>, &str) {
+    let mut docs = Vec::new();
+    let mut consumed = 0;
+    for line in source.lines() {
+        let trimmed = line.trim();
+        let Some(text) = trimmed.strip_prefix("///") else {
+            break;
+        };
+        docs.push(text.strip_prefix(' ').unwrap_or(text).to_owned());
+        consumed += line.len() + 1;
+    }
+    if docs.is_empty() {
+        return (None, source.trim());
+    }
+    let rest = source.get(consumed..).unwrap_or_default().trim();
+    (
+        Some(DocBlock::new(
+            docs.join("\n"),
+            TextRange::new(0, consumed.saturating_sub(1)),
+        )),
+        rest,
+    )
+}
+
 fn parse_type_atom(source: &str) -> TypeRef {
+    if matches!(source, "!" | "Never") {
+        return TypeRef::Never;
+    }
     if let Some(rest) = source.strip_prefix('&') {
         let rest = rest.trim_start();
         let (lifetime, inner) = if rest.starts_with('\'') {
@@ -272,6 +304,11 @@ impl FnSignature {
 }
 
 impl FnParam {
+    /// Markdown documentation attached to this parameter.
+    pub const fn doc(&self) -> Option<&DocBlock> {
+        self.doc.as_ref()
+    }
+
     /// Parameter binding pattern.
     pub const fn pattern(&self) -> &Pattern {
         &self.pattern

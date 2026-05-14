@@ -55,6 +55,7 @@ pub enum TypeKind {
     Named(String),
     Tuple(Vec<TypeKind>),
     Unit,
+    Never,
 }
 
 /// Method signature known to the parser-side semantic checker.
@@ -1238,10 +1239,7 @@ impl TypeChecker<'_> {
                 method,
                 args,
             } => self.check_method_call_expr(receiver, method, args),
-            Expr::Field { target, .. } => {
-                self.check_expr(target);
-                None
-            }
+            Expr::Field { target, field } => self.check_field_expr(expr, target, field),
             Expr::DialogueCall { callee, plan, .. } => {
                 Some(self.check_dialogue_call_expr(callee, plan.as_ref()))
             }
@@ -1401,6 +1399,17 @@ impl TypeChecker<'_> {
                 self.expect_expr_type(expr, &TypeKind::Bool, "not operand");
                 TypeKind::Bool
             }
+            crate::expr::UnaryOp::Neg => match self.check_expr(expr) {
+                Some(TypeKind::Int) => TypeKind::Int,
+                Some(TypeKind::Float) => TypeKind::Float,
+                Some(TypeKind::Duration) => TypeKind::Duration,
+                other => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "negation operand must be numeric or Duration, found {other:?}"
+                    )));
+                    TypeKind::Named("_".to_owned())
+                }
+            },
         }
     }
 
@@ -1449,6 +1458,23 @@ impl TypeChecker<'_> {
             .get(target)
             .cloned()
             .or_else(|| self.env.symbol_type(target).cloned())
+    }
+
+    fn check_field_expr(&mut self, expr: &Expr, target: &Expr, field: &str) -> Option<TypeKind> {
+        if let Some(path) = expr_path_label(expr) {
+            if let Some(ty) = self.locals.get(&path).cloned() {
+                return Some(ty);
+            }
+            if let Some(ty) = self.env.symbol_type(&path).cloned() {
+                return Some(ty);
+            }
+        }
+        if let Some(field_type) = well_known_field_type(field) {
+            self.check_expr(target);
+            return Some(field_type);
+        }
+        self.check_expr(target);
+        None
     }
 
     fn check_try_expr(&mut self, expr: &Expr) -> Option<TypeKind> {
@@ -1616,7 +1642,7 @@ impl TypeChecker<'_> {
             | BinaryOp::Lte
             | BinaryOp::Gt
             | BinaryOp::Lt => Some(TypeKind::Bool),
-            BinaryOp::Add | BinaryOp::Sub => {
+            BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem => {
                 if lhs_type == Some(TypeKind::Duration) && rhs_type == Some(TypeKind::Duration) {
                     Some(TypeKind::Duration)
                 } else if lhs_type == Some(TypeKind::Int) && rhs_type == Some(TypeKind::Int) {
@@ -1658,6 +1684,14 @@ fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
         "ent" => EntityKind::Other("ent".to_owned()),
         _ => return None,
     })
+}
+
+fn expr_path_label(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(path) => Some(path.clone()),
+        Expr::Field { target, field } => Some(format!("{}.{}", expr_path_label(target)?, field)),
+        _ => None,
+    }
 }
 
 fn entity_kind_for_decl(kind: EntityDeclKind) -> EntityKind {
@@ -2103,12 +2137,13 @@ fn collect_type_lifetimes(ty: &TypeRef, lifetimes: &mut Vec<String>) {
             }
         }
         TypeRef::Slice(inner) => collect_type_lifetimes(inner, lifetimes),
-        TypeRef::Path(_) => {}
+        TypeRef::Never | TypeRef::Path(_) => {}
     }
 }
 
 fn type_ref_kind(ty: &TypeRef) -> TypeKind {
     match ty {
+        TypeRef::Never => TypeKind::Never,
         TypeRef::Path(path) => named_type_label(path),
         TypeRef::Generic { base, args } if base == "Result" && args.len() == 2 => {
             TypeKind::Result {
@@ -2126,6 +2161,7 @@ fn type_ref_kind(ty: &TypeRef) -> TypeKind {
 
 fn type_ref_label(ty: &TypeRef) -> String {
     match ty {
+        TypeRef::Never => "Never".to_owned(),
         TypeRef::Path(path) => path.clone(),
         TypeRef::Generic { base, args } => format!(
             "{base}<{}>",

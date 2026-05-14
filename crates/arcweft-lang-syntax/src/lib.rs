@@ -18,7 +18,7 @@ mod types;
 pub use ast::{
     Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, CallableItem, CallableKind, ChoiceAction,
     ChoiceBlock, ChoiceItem, ChoiceMatchArm, ChoiceOption, ChoicePlan, ChoicePlanItem, ContentCall,
-    ContractClause, DialogueToken, EntityDeclItem, EntityDeclKind, EntityRef, EnumItem,
+    ContractClause, DialogueToken, DocBlock, EntityDeclItem, EntityDeclKind, EntityRef, EnumItem,
     EnumVariant, ExternModItem, Flow, FlowItem, FlowKind, ForBlock, FunctionItem, FunctionKind,
     HookItem, IfBlock, IfLetBlock, ImplItem, ImplMember, Item, LineOptions, LinePlan, LinePlanItem,
     LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RecordPatternField,

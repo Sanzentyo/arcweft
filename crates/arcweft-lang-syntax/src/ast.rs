@@ -35,6 +35,13 @@ pub struct UseItem {
     range: TextRange,
 }
 
+/// Markdown documentation comment collected from consecutive `///` lines.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocBlock {
+    text: String,
+    range: TextRange,
+}
+
 /// Arcweft visibility qualifier.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Visibility {
@@ -108,6 +115,7 @@ pub struct Attribute {
 /// Flow item with typed header and parsed flow body.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Flow {
+    doc: Option<DocBlock>,
     kind: FlowKind,
     visibility: Option<Visibility>,
     id: Option<EntityRef>,
@@ -122,6 +130,7 @@ pub struct Flow {
 /// Internal initializer for a flow-like item.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FlowInit {
+    pub(crate) doc: Option<DocBlock>,
     pub(crate) kind: FlowKind,
     pub(crate) visibility: Option<Visibility>,
     pub(crate) id: Option<EntityRef>,
@@ -150,6 +159,7 @@ pub enum ContractClause {
 /// Top-level function item with parsed signature head and contract clauses.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionItem {
+    doc: Option<DocBlock>,
     kind: FunctionKind,
     visibility: Option<Visibility>,
     signature: FnSignature,
@@ -211,6 +221,7 @@ pub struct ExternModItem {
 /// Internal initializer for a function item.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FunctionInit {
+    pub(crate) doc: Option<DocBlock>,
     pub(crate) kind: FunctionKind,
     pub(crate) visibility: Option<Visibility>,
     pub(crate) signature: FnSignature,
@@ -253,6 +264,7 @@ pub struct StateItem {
 /// One state field, optionally public, with its default expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StateField {
+    doc: Option<DocBlock>,
     visibility: Option<Visibility>,
     name: String,
     ty: TypeRef,
@@ -324,6 +336,7 @@ pub struct EnumItem {
 /// One enum variant row, preserving payload syntax for later lowering.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnumVariant {
+    doc: Option<DocBlock>,
     name: String,
     payload: Option<String>,
 }
@@ -340,6 +353,7 @@ pub struct StructItem {
 /// One `name: Type` struct field.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StructField {
+    doc: Option<DocBlock>,
     name: String,
     ty: TypeRef,
 }
@@ -1166,6 +1180,22 @@ impl WikiLink {
     }
 }
 
+impl DocBlock {
+    pub(crate) const fn new(text: String, range: TextRange) -> Self {
+        Self { text, range }
+    }
+
+    /// Markdown text without the leading `///` markers.
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// Source range covered by the whole doc block.
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
 impl Attribute {
     pub(crate) const fn new(name: String, args: Option<String>, range: TextRange) -> Self {
         Self { name, args, range }
@@ -1187,6 +1217,7 @@ impl Attribute {
 impl Flow {
     pub(crate) fn new(init: FlowInit) -> Self {
         Self {
+            doc: init.doc,
             kind: init.kind,
             visibility: init.visibility,
             id: init.id,
@@ -1201,6 +1232,10 @@ impl Flow {
 
     pub const fn kind(&self) -> FlowKind {
         self.kind
+    }
+
+    pub const fn doc(&self) -> Option<&DocBlock> {
+        self.doc.as_ref()
     }
 
     pub const fn visibility(&self) -> Option<Visibility> {
@@ -1239,6 +1274,7 @@ impl Flow {
 impl FunctionItem {
     pub(crate) fn new(init: FunctionInit) -> Self {
         Self {
+            doc: init.doc,
             kind: init.kind,
             visibility: init.visibility,
             signature: init.signature,
@@ -1253,6 +1289,10 @@ impl FunctionItem {
 
     pub const fn kind(&self) -> FunctionKind {
         self.kind
+    }
+
+    pub const fn doc(&self) -> Option<&DocBlock> {
+        self.doc.as_ref()
     }
 
     pub const fn visibility(&self) -> Option<Visibility> {
@@ -1460,12 +1500,14 @@ impl StateItem {
 
 impl StateField {
     pub(crate) const fn new(
+        doc: Option<DocBlock>,
         visibility: Option<Visibility>,
         name: String,
         ty: TypeRef,
         default: Expr,
     ) -> Self {
         Self {
+            doc,
             visibility,
             name,
             ty,
@@ -1475,6 +1517,10 @@ impl StateField {
 
     pub const fn visibility(&self) -> Option<Visibility> {
         self.visibility
+    }
+
+    pub const fn doc(&self) -> Option<&DocBlock> {
+        self.doc.as_ref()
     }
 
     pub fn name(&self) -> &str {
@@ -1611,8 +1657,12 @@ impl EnumItem {
 }
 
 impl EnumVariant {
-    pub(crate) const fn new(name: String, payload: Option<String>) -> Self {
-        Self { name, payload }
+    pub(crate) const fn new(doc: Option<DocBlock>, name: String, payload: Option<String>) -> Self {
+        Self { doc, name, payload }
+    }
+
+    pub const fn doc(&self) -> Option<&DocBlock> {
+        self.doc.as_ref()
     }
 
     pub fn name(&self) -> &str {
@@ -1657,8 +1707,12 @@ impl StructItem {
 }
 
 impl StructField {
-    pub(crate) const fn new(name: String, ty: TypeRef) -> Self {
-        Self { name, ty }
+    pub(crate) const fn new(doc: Option<DocBlock>, name: String, ty: TypeRef) -> Self {
+        Self { doc, name, ty }
+    }
+
+    pub const fn doc(&self) -> Option<&DocBlock> {
+        self.doc.as_ref()
     }
 
     pub fn name(&self) -> &str {

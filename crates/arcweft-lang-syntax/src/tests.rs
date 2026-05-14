@@ -24,6 +24,20 @@ fn ident_pattern(pattern: &Pattern, expected: &str) -> bool {
     matches!(pattern, Pattern::Ident(name) if name == expected)
 }
 
+fn expr_path_eq(expr: &Expr, expected: &str) -> bool {
+    match expr {
+        Expr::Path(path) => path == expected,
+        Expr::Field { target, field } => {
+            expected
+                .rsplit_once('.')
+                .is_some_and(|(prefix, expected_field)| {
+                    expected_field == field && expr_path_eq(target, prefix)
+                })
+        }
+        _ => false,
+    }
+}
+
 #[test]
 fn stub_is_now_real_source_parser() {
     let tree = parse_stub("alice: おはよう。[p]").expect("speaker line parses");
@@ -158,7 +172,7 @@ assume external_plugin_is_deterministic
     ));
     assert!(matches!(
         &function.contracts()[1],
-        ContractClause::NoEffect(Expr::Path(path)) if path == "network.request"
+        ContractClause::NoEffect(expr) if expr_path_eq(expr, "network.request")
     ));
     assert!(matches!(
         &function.contracts()[2],
@@ -780,7 +794,7 @@ choice #choice.opening.first {
     let ChoiceItem::Match { expr, arms } = &choice.items()[0] else {
         panic!("expected choice match item");
     };
-    assert!(matches!(expr, Expr::Path(path) if path == "state.route_override"));
+    assert!(expr_path_eq(expr, "state.route_override"));
     assert_eq!(arms.len(), 2);
     assert!(arms[0].guard().is_some());
     assert!(matches!(
@@ -1450,7 +1464,7 @@ flow #flow.title title {
         panic!("expected structured let-else");
     };
     assert!(variant_tuple_binding(pattern, "Some", "route"));
-    assert!(matches!(expr, Expr::Path(path) if path == "state.route_override"));
+    assert!(expr_path_eq(expr, "state.route_override"));
     assert!(matches!(else_body.as_slice(), [Stmt::Goto(_)]));
 
     let hir = lower_to_hir(&tree).expect("let-else fixture lowers");
@@ -1780,7 +1794,7 @@ flow #flow.branching branching {
         panic!("expected if-let block");
     };
     assert!(variant_tuple_binding(block.pattern(), "Some", "route"));
-    assert!(matches!(block.expr(), Expr::Path(path) if path == "state.route_override"));
+    assert!(expr_path_eq(block.expr(), "state.route_override"));
     assert!(block.guard().is_some());
 
     let hir = lower_to_hir(&tree).expect("if-let fixture lowers");
@@ -1909,7 +1923,7 @@ flow #flow.branching branching {
     };
     assert_eq!(pattern, &Pattern::Ident("route".to_owned()));
     assert!(variant_tuple_binding(binding.as_ref(), "Some", "route"));
-    assert!(matches!(expr.as_ref(), Expr::Path(path) if path == "state.route_override"));
+    assert!(expr_path_eq(expr.as_ref(), "state.route_override"));
     assert!(matches!(
         then_branch.as_ref(),
         Expr::Block {
@@ -2905,9 +2919,9 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
         super::parse_expr("state.affection[#character.alice]").expect("index expr parses");
     assert!(matches!(indexed, Expr::Index { .. }));
 
-    let dialogue_call =
-        super::parse_expr("alice.say()[聞いて。[p]]").expect("dialogue call expr parses");
-    assert!(matches!(dialogue_call, Expr::DialogueCall { .. }));
+    let dialogue_index =
+        super::parse_expr("alice.say()[聞いて。[p]]").expect("bracket postfix expr parses");
+    assert!(matches!(dialogue_index, Expr::Index { .. }));
 
     let timeline_offset = super::parse_expr("end-250ms").expect("timeline offset parses");
     assert!(matches!(timeline_offset, Expr::Binary { .. }));
@@ -4321,7 +4335,7 @@ flow #flow.branching branching {
         panic!("expected flow");
     };
     assert!(
-        matches!(&flow.body()[0], FlowItem::If(block) if matches!(block.condition(), Expr::Path(path) if path == "state.ready"))
+        matches!(&flow.body()[0], FlowItem::If(block) if expr_path_eq(block.condition(), "state.ready"))
     );
     assert!(matches!(&flow.body()[1], FlowItem::Match(block) if block.arms().len() == 2));
 
