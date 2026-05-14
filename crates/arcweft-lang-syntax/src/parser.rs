@@ -1198,13 +1198,13 @@ impl Parser {
 
         let rest = head.trim().strip_prefix("let")?.trim();
         let (pattern, scope_head) = rest.split_once('=')?;
-        let name = scope_head.trim().strip_prefix("scope")?.trim();
+        let name = parse_scope_head(scope_head.trim())?;
         let (statements, value) = parse_scope_expr_body(&body);
 
         Some(Stmt::LetScope {
             pattern: parse_pattern(pattern.trim()),
             scope: ScopeExprBlock::new(
-                name.to_owned(),
+                name.as_option().map(str::to_owned),
                 statements,
                 value,
                 TextRange::new(start_line.start, end),
@@ -4423,7 +4423,40 @@ fn is_let_scope_head(trimmed: &str) -> bool {
         return false;
     };
     rest.split_once('=')
-        .is_some_and(|(_, expr)| expr.trim_start().starts_with("scope "))
+        .is_some_and(|(_, expr)| parse_scope_head(expr.trim_start()).is_some())
+}
+
+enum ParsedScopeName<'a> {
+    Named(&'a str),
+    Unnamed,
+}
+
+impl<'a> ParsedScopeName<'a> {
+    const fn as_option(&self) -> Option<&'a str> {
+        match self {
+            Self::Named(name) => Some(name),
+            Self::Unnamed => None,
+        }
+    }
+}
+
+fn parse_scope_head(source: &str) -> Option<ParsedScopeName<'_>> {
+    let rest = source.strip_prefix("scope")?;
+    if rest
+        .chars()
+        .next()
+        .is_some_and(|ch| !(ch.is_whitespace() || ch == '{'))
+    {
+        return None;
+    }
+
+    let rest = rest.trim_start();
+    if rest.is_empty() || rest.starts_with('{') {
+        return Some(ParsedScopeName::Unnamed);
+    }
+
+    let name = rest.trim();
+    (!name.is_empty()).then_some(ParsedScopeName::Named(name))
 }
 
 fn is_let_block_head(trimmed: &str) -> bool {

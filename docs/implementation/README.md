@@ -22,8 +22,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
 The implementation notes track accepted syntax decisions from `docs/reviews/` when
 they affect parser, HIR, formatter, LSP, or CLI work.
 
-- `pro_review4.md`: adopted value-producing `{ ... }` blocks, named `scope`
-  blocks for relative ID namespaces, `.suffix` IDs only in ID-bearing contexts,
+- `pro_review4.md`: adopted value-producing `{ ... }` blocks, `scope name { ... }`
+  blocks for relative ID namespaces, unnamed `scope { ... }` as name-omitted
+  sugar, `.suffix` IDs only in ID-bearing contexts,
   `self::` / `super::` / `crate::` module-path roots, reserved `parent::`
   normalization, and explicit sugar expansion for `with:`, speaker colon lines,
   speaker-preset calls, and `await?`.
@@ -32,7 +33,7 @@ The stable specification locations for the `pro_review4.md` decisions are:
 
 - `docs/00-overview/decisions.md`: canonicalization and high-level language decisions.
 - `docs/00-overview/naming.md`: relative ID naming rules.
-- `docs/01-language/block-scopes.md`: value-producing blocks and named `scope` blocks.
+- `docs/01-language/block-scopes.md`: value-producing blocks and named/unnamed `scope` blocks.
 - `docs/01-language/ids-and-references.md`: `.suffix` relative IDs and module-path roots.
 - `docs/01-language/grammar.md`: grammar summary for `scope`, relative IDs, module paths, and await grouping.
 - `docs/01-language/scenario-surface-syntax.md`: dialogue, choice, and scenario-facing sugar examples.

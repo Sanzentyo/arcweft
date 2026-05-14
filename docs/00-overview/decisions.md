@@ -115,7 +115,9 @@ scope rain {
 The scope name contributes to relative line, text-key, choice, and option ID
 generation inside the block. It is also a diagnostic, trace, and LSP/debug name.
 `scope name { ... }` can be used in expression position and returns the final
-expression just like `{ ... }`.
+expression just like `{ ... }`. `scope { ... }` is the same scope form with the
+name omitted; it creates a lexical scope and returns a value in expression
+position, but it does not add a segment to generated IDs.
 
 Relative `.suffix` IDs are accepted only in ID-bearing contexts where the
 entity family is known. They are not general entity references.

@@ -1239,7 +1239,7 @@ flow #flow.alice_intro alice_intro {
             panic!("expected AST scope expression binding");
         };
         assert_eq!(pattern, &Pattern::Ident("can_enter".to_owned()));
-        assert_eq!(scope.name(), "alice_route_check");
+        assert_eq!(scope.name(), Some("alice_route_check"));
         assert_eq!(scope.statements().len(), 2);
         assert!(scope.value().is_some());
 
@@ -1248,7 +1248,7 @@ flow #flow.alice_intro alice_intro {
             panic!("expected HIR scope expression binding");
         };
         assert_eq!(pattern, &Pattern::Ident("can_enter".to_owned()));
-        assert_eq!(scope.name(), "alice_route_check");
+        assert_eq!(scope.name(), Some("alice_route_check"));
         assert_eq!(scope.statements().len(), 2);
         assert!(scope.value().is_some());
 
@@ -1273,6 +1273,53 @@ flow #flow.alice_intro alice_intro {
                 TypeKind::Int,
             );
         typecheck_hir(&hir, &env).expect("scope expression typechecks");
+    }
+
+    #[test]
+    fn lowers_unnamed_scope_expression_let_binding() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    let ready = scope {
+        let local = true
+        local
+    }
+
+    if ready {
+        goto #flow.next
+    }
+}
+
+flow #flow.next next {
+}
+",
+        )
+        .expect("unnamed scope expression fixture parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected source flow");
+        };
+        let FlowItem::Stmt(Stmt::LetScope { pattern, scope }) = &flow.body()[0] else {
+            panic!("expected AST scope expression binding");
+        };
+        assert_eq!(pattern, &Pattern::Ident("ready".to_owned()));
+        assert_eq!(scope.name(), None);
+        assert_eq!(scope.statements().len(), 1);
+        assert!(scope.value().is_some());
+
+        let hir = lower_to_hir(&tree).expect("unnamed scope expression fixture lowers");
+        let HirFlowItem::LetScope { pattern, scope } = &hir.flows()[0].body()[0] else {
+            panic!("expected HIR scope expression binding");
+        };
+        assert_eq!(pattern, &Pattern::Ident("ready".to_owned()));
+        assert_eq!(scope.name(), None);
+        assert_eq!(scope.statements().len(), 1);
+        assert!(scope.value().is_some());
+
+        let registry = registry_from_hir(&hir);
+        validate_hir_references(&hir, &registry).expect("unnamed scope expression refs resolve");
+        validate_typecheck_ready(&hir).expect("unnamed scope expression is typecheck-ready");
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect("unnamed scope expression typechecks");
     }
 
     #[test]

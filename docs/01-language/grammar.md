@@ -69,7 +69,7 @@ FlowItem     :=
 
 NamedScope      := 'scope' Ident? BlockExpr
 ScopeStmt       := NamedScope | Block
-ScopeExpr       := 'scope' Ident BlockExpr
+ScopeExpr       := 'scope' Ident? BlockExpr
 ScenarioCommand := '@' Ident ScenarioArgs?
 ```
 
@@ -199,7 +199,7 @@ HookEffects:= 'effects' '{' Ident (',' Ident)* ','? '}'
 Block          := '{' BlockItem* FinalExpr? '}'
 ExprBlock      := Block
 ScopeStmt      := 'scope' Ident? BlockExpr | Block
-ScopeExpr      := 'scope' Ident BlockExpr
+ScopeExpr      := 'scope' Ident? BlockExpr
 StatementBlock := Block | ':' Newline IndentedItems
 LabeledBlock   := Label? Block
 Label          := '\'' Ident ':'
@@ -207,7 +207,7 @@ BlockItem      := LetStmt | LetElseStmt | ExprStmt | ControlStmt | ScenarioStmt 
 ```
 
 In expression position, a block's final expression is its value. In statement position, a bare block is sugar for unnamed `scope { ... }`, creates a lexical scope, and does not export a value; a non-`Unit` final expression must be discarded explicitly with `;` or `let _ = ...`.
-`scope name { ... }` behaves like a lexical block and also contributes `name` to relative line, text-key, choice, and option ID generation inside the block. `scope { ... }` and bare statement `{ ... }` create the same lexical scope without adding an ID segment. In expression position, named `scope name { ... }` returns the final expression just like `{ ... }`.
+`scope name { ... }` behaves like a lexical block and also contributes `name` to relative line, text-key, choice, and option ID generation inside the block. `scope { ... }` is the same form with the name omitted, and a bare statement `{ ... }` is sugar for that unnamed scope. Unnamed scopes do not add an ID segment. In expression position, both `scope name { ... }` and `scope { ... }` return the final expression just like `{ ... }`.
 Only ID-bearing constructs inside the named scope use the scope path for ID generation; the scope expression's own value is just the final expression.
 
 ## Statement / expression list

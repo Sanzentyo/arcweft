@@ -150,10 +150,10 @@ pub struct HirScope {
     body: Vec<HirFlowItem>,
 }
 
-/// HIR-facing named scope expression.
+/// HIR-facing scope expression. Named scopes also affect generated relative IDs.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirScopeExpr {
-    name: String,
+    name: Option<String>,
     statements: Vec<Stmt>,
     value: Option<Expr>,
 }
@@ -468,13 +468,17 @@ fn lower_await_with(
 }
 
 fn lower_scope_expr(scope: &ScopeExprBlock, context: &mut LowerContext) -> HirScopeExpr {
-    context.scopes.push(scope.name().to_owned());
+    if let Some(name) = scope.name() {
+        context.scopes.push(name.to_owned());
+    }
     let lowered = HirScopeExpr {
-        name: scope.name().to_owned(),
+        name: scope.name().map(str::to_owned),
         statements: scope.statements().to_vec(),
         value: scope.value().cloned(),
     };
-    context.scopes.pop();
+    if scope.name().is_some() {
+        context.scopes.pop();
+    }
     lowered
 }
 
@@ -971,8 +975,8 @@ impl HirScope {
 }
 
 impl HirScopeExpr {
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 
     pub fn statements(&self) -> &[Stmt] {

@@ -167,6 +167,17 @@ let can_enter = scope alice_route_check {
 }
 ```
 
+The name may be omitted. `scope { ... }` is an unnamed scope expression: it has
+the same lexical and value-producing behavior, but it does not contribute an ID
+namespace segment.
+
+```awft
+let can_enter = scope {
+    let affection_ok = state.affection[#character.alice] >= 3
+    affection_ok
+}
+```
+
 Only ID-bearing constructs inside the named scope use the scope path for ID
 generation. The value of the scope expression is still only its final
 expression.

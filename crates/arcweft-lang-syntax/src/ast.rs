@@ -399,10 +399,10 @@ pub struct ScopeBlock {
     range: TextRange,
 }
 
-/// `scope name { ... }` used in expression position.
+/// `scope name? { ... }` used in expression position.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScopeExprBlock {
-    name: String,
+    name: Option<String>,
     statements: Vec<Stmt>,
     value: Option<Expr>,
     range: TextRange,
@@ -2449,7 +2449,7 @@ impl ScopeBlock {
 
 impl ScopeExprBlock {
     pub(crate) const fn new(
-        name: String,
+        name: Option<String>,
         statements: Vec<Stmt>,
         value: Option<Expr>,
         range: TextRange,
@@ -2462,8 +2462,8 @@ impl ScopeExprBlock {
         }
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 
     pub fn statements(&self) -> &[Stmt] {
