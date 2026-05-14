@@ -28,6 +28,10 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `self::` / `super::` / `crate::` module-path roots, reserved `parent::`
   normalization, and explicit sugar expansion for `with:`, speaker colon lines,
   speaker-preset calls, and `await?`.
+- `pro_review5.md`: adopted structured function signatures with generic params,
+  curried parameter groups and `where` clauses; structured hook headers
+  (`when`, `priority`, `once`, `effects`); structured dialogue line options; and
+  a parsed `dialogue defaults` top-level declaration.
 
 The stable specification locations for the `pro_review4.md` decisions are:
 

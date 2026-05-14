@@ -1,10 +1,11 @@
 use crate::ast::{
     Attribute, AwaitBranchKind, AwaitWith, BorrowBlock, CallableItem, ChoiceAction, ChoiceBlock,
-    ChoicePlan, ContractClause, DialogueContent, EntityDeclItem, EntityRef, EnumItem,
-    ExternModItem, Flow, FlowItem, FlowKind, FunctionItem, FunctionKind, HookItem, IfBlock,
-    IfLetBlock, ImplItem, Item, LinePlan, LoopBlock, MatchBlock, MemoFn, ParserItem, Pattern,
-    ScopeBlock, ScopeExprBlock, SourceItem, SourceLocaleBlock, SpeakerLine, StateItem, Stmt,
-    StructItem, SyntaxTree, TextRange, TraitItem, TypeAliasItem, WhileBlock, WhileLetBlock,
+    ChoicePlan, ContractClause, DialogueContent, DialogueDefaultsItem, EntityDeclItem, EntityRef,
+    EnumItem, ExternModItem, Flow, FlowItem, FlowKind, FunctionItem, FunctionKind, HookItem,
+    IfBlock, IfLetBlock, ImplItem, Item, LineArg, LinePlan, LoopBlock, MatchBlock, MemoFn,
+    ParserItem, Pattern, ScopeBlock, ScopeExprBlock, SourceItem, SourceLocaleBlock, SpeakerLine,
+    StateItem, Stmt, StructItem, SyntaxTree, TextRange, TraitItem, TypeAliasItem, WhileBlock,
+    WhileLetBlock,
 };
 use crate::expr::Expr;
 use crate::types::FnSignature;
@@ -56,6 +57,7 @@ pub enum HirTopLevelDecl {
     Enum(EnumItem),
     EntityDecl(EntityDeclItem),
     ExternMod(ExternModItem),
+    DialogueDefaults(DialogueDefaultsItem),
     Struct(StructItem),
     TypeAlias(TypeAliasItem),
     Hook(HookItem),
@@ -68,7 +70,7 @@ pub enum HirTopLevelDecl {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HirFlowItem {
     Stmt(Stmt),
-    Dialogue(HirDialogue),
+    Dialogue(Box<HirDialogue>),
     Choice(HirChoice),
     LetChoice {
         pattern: Pattern,
@@ -109,10 +111,14 @@ pub enum HirFlowItem {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirDialogue {
     callee: String,
-    args: Option<String>,
     id: Option<EntityRef>,
     text_key: Option<EntityRef>,
+    voice: Option<Expr>,
+    window: Option<EntityRef>,
     source_locale: Option<String>,
+    hooks: Vec<Expr>,
+    style: Option<Expr>,
+    args: Vec<LineArg>,
     content: DialogueContent,
     plan: Option<LinePlan>,
 }
@@ -307,6 +313,9 @@ pub fn lower_to_hir(tree: &SyntaxTree) -> Result<HirModule, Vec<HirLowerError>> 
             Item::ExternMod(item) => {
                 declarations.push(HirTopLevelDecl::ExternMod(item.clone()));
             }
+            Item::DialogueDefaults(item) => {
+                declarations.push(HirTopLevelDecl::DialogueDefaults(item.clone()));
+            }
             Item::Hook(item) => {
                 declarations.push(HirTopLevelDecl::Hook(item.clone()));
             }
@@ -416,8 +425,12 @@ fn lower_flow_item_with_context(
             name: command.name().to_owned(),
             args: command.args().to_vec(),
         }),
-        FlowItem::SpeakerLine(line) => Ok(HirFlowItem::Dialogue(lower_speaker_line(line, context))),
-        FlowItem::ContentCall(call) => Ok(HirFlowItem::Dialogue(lower_content_call(call, context))),
+        FlowItem::SpeakerLine(line) => Ok(HirFlowItem::Dialogue(Box::new(lower_speaker_line(
+            line, context,
+        )))),
+        FlowItem::ContentCall(call) => Ok(HirFlowItem::Dialogue(Box::new(lower_content_call(
+            call, context,
+        )))),
         FlowItem::Choice(choice) => Ok(HirFlowItem::Choice(lower_choice(choice, context))),
         FlowItem::If(block) => lower_if(block, context).map(HirFlowItem::If),
         FlowItem::IfLet(block) => lower_if_let(block, context).map(HirFlowItem::IfLet),
@@ -624,10 +637,14 @@ fn lower_speaker_line(line: &SpeakerLine, context: &mut LowerContext) -> HirDial
     let id = normalize_line_id(line.options().id(), speaker.clone(), context, *line.range());
     HirDialogue {
         callee: line.speaker().to_owned(),
-        args: line.args().map(str::to_owned),
         text_key: normalize_line_text_key(line.options().text_key(), id.as_ref(), speaker, context),
         id,
+        voice: line.options().voice().cloned(),
+        window: line.options().window().cloned(),
         source_locale: line.options().source_locale().map(str::to_owned),
+        hooks: line.options().hooks().to_vec(),
+        style: line.options().style().cloned(),
+        args: line.options().args().to_vec(),
         content: line.content().clone(),
         plan: line.plan().cloned(),
     }
@@ -638,10 +655,14 @@ fn lower_content_call(call: &crate::ast::ContentCall, context: &mut LowerContext
     let id = normalize_line_id(call.options().id(), speaker.clone(), context, *call.range());
     HirDialogue {
         callee: call.callee().to_owned(),
-        args: call.args().map(str::to_owned),
         text_key: normalize_line_text_key(call.options().text_key(), id.as_ref(), speaker, context),
         id,
+        voice: call.options().voice().cloned(),
+        window: call.options().window().cloned(),
         source_locale: call.options().source_locale().map(str::to_owned),
+        hooks: call.options().hooks().to_vec(),
+        style: call.options().style().cloned(),
+        args: call.options().args().to_vec(),
         content: call.content().clone(),
         plan: call.plan().cloned(),
     }
@@ -927,10 +948,6 @@ impl HirDialogue {
         &self.callee
     }
 
-    pub fn args(&self) -> Option<&str> {
-        self.args.as_deref()
-    }
-
     pub const fn id(&self) -> Option<&EntityRef> {
         self.id.as_ref()
     }
@@ -939,8 +956,28 @@ impl HirDialogue {
         self.text_key.as_ref()
     }
 
+    pub const fn voice(&self) -> Option<&Expr> {
+        self.voice.as_ref()
+    }
+
+    pub const fn window(&self) -> Option<&EntityRef> {
+        self.window.as_ref()
+    }
+
     pub fn source_locale(&self) -> Option<&str> {
         self.source_locale.as_deref()
+    }
+
+    pub fn hooks(&self) -> &[Expr] {
+        &self.hooks
+    }
+
+    pub const fn style(&self) -> Option<&Expr> {
+        self.style.as_ref()
+    }
+
+    pub fn args(&self) -> &[LineArg] {
+        &self.args
     }
 
     pub const fn content(&self) -> &DialogueContent {

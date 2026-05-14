@@ -51,7 +51,7 @@ Item         :=
 ## Flow and fragments
 
 ```text
-FlowDecl     := Visibility 'flow' EntityRef Ident? ParamList? ReturnType? Contract* FlowBody
+FlowDecl     := Visibility 'flow' EntityRef Ident? GenericParams? ParamGroup* ReturnType? Contract* FlowBody
 FragmentDecl := Visibility 'fragment' EntityRef Ident? (':' Type)? Contract* FlowBody
 FlowBody     := '{' FlowItem* '}'
 
@@ -95,7 +95,7 @@ LineOption     := 'id' '=' (EntityRef | RelativeId)
                 | 'text_key' '=' (EntityRef | RelativeId)
                 | 'voice' '=' Expr
                 | 'window' '=' EntityRef
-                | 'args' '=' RecordExpr
+                | Ident '=' Expr
                 | 'source_locale' '=' Locale
                 | 'hooks' '=' ListExpr
                 | 'style' '=' Expr
@@ -182,11 +182,13 @@ choice .first outside a scope -> #choice.opening.first
 ## Hooks
 
 ```text
+DialogueDefaultsDecl :=
+    Visibility? 'dialogue' 'defaults' (EntityRef | RelativeId)? Block
+
 HookDecl   :=
     Visibility 'hook' EntityRef
     HookTarget
     HookPhase
-    HookCheck?
     HookWhen?
     HookPriority?
     HookOnce?
@@ -196,12 +198,33 @@ HookDecl   :=
 HookTarget := 'on' HookTargetExpr
 HookTargetExpr := EntityRef | 'state' StatePath | 'signal' EntityRef | 'query' Type WhereClause?
 HookPhase  := 'phase' Ident
-HookCheck  := 'check' CheckPolicy
 HookWhen   := 'when' Expr
 HookPriority := 'priority' Int
-HookOnce   := 'once' OncePolicy?
-HookEffects:= 'effects' '{' Ident (',' Ident)* ','? '}'
+HookOnce   := 'once'
+HookEffects:= 'effects' Expr (',' Expr)*
 ```
+
+`check` is not part of the canonical hook header. Use `when` for conditions.
+Dialogue defaults preserve structured assignment expressions for later style,
+window, voice, hook, and localization lowering.
+
+## Functions
+
+```text
+FunctionDecl  := Visibility? FunctionKind Ident GenericParams? ParamGroup+ ReturnType? WhereClause? Contract* Block
+FunctionKind  := 'fn' | 'task fn' | 'dialogue fn' | 'stream fn'
+GenericParams := '<' GenericParam (',' GenericParam)* ','? '>'
+GenericParam  := Lifetime | IdentPath
+ParamGroup    := '(' Param (',' Param)* ','? ')'
+Param         := DocComment* Pattern ':' Type | 'self' | '&self' | '&mut self' | 'mut self'
+ReturnType    := '->' Type
+WhereClause   := 'where' WherePredicate (',' WherePredicate)* ','?
+WherePredicate:= Type ':' Type ('+' Type)*
+```
+
+Multiple `ParamGroup` entries are curried parameter groups and are preserved as
+separate syntax groups. Unexpected tokens after the return type or where clause
+are syntax errors.
 
 ## Blocks and scopes
 

@@ -75,7 +75,10 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
     assert_eq!(flow.kind(), FlowKind::Flow);
     assert_eq!(flow.id().expect("flow id").body(), "flow.opening");
     let signature = flow.signature().expect("flow signature");
-    assert!(ident_pattern(signature.params()[0].pattern(), "state"));
+    assert!(ident_pattern(
+        signature.param_groups()[0].params()[0].pattern(),
+        "state"
+    ));
     assert_eq!(flow.body().len(), 2);
     assert!(
         matches!(&flow.body()[0], FlowItem::ScenarioCommand(command) if command.args().len() == 2)
@@ -379,7 +382,7 @@ fn parses_colon_form_with_inline_bracket_content() {
         panic!("expected speaker line");
     };
     assert_eq!(line.speaker(), "alice");
-    assert_eq!(line.args(), Some("voice=auto"));
+    assert!(matches!(line.options().voice(), Some(Expr::Path(path)) if path == "auto"));
     assert_eq!(line.content().raw(), "[今日は少しだけ。[p]]");
 }
 
@@ -2401,7 +2404,10 @@ fn parses_documented_hook_memo_and_parser_items() {
 hook #hook.choice_visible
 on #choice.opening.listen
 phase AfterLayout
-check every frame
+when every_frame
+priority 10
+once
+effects signal.choice_visible
 {
     signal #signal.choice_visible <- true
 }
@@ -2422,6 +2428,10 @@ pub parser parse_player_command: Parser<PlayerCommand, ParseError> {
     let Item::Hook(hook) = &tree.items()[0] else {
         panic!("expected hook item");
     };
+    assert!(hook.when().is_some());
+    assert_eq!(hook.priority(), Some(10));
+    assert!(hook.once());
+    assert_eq!(hook.effects().len(), 1);
     assert!(matches!(hook.body_statements(), [Stmt::Signal { .. }]));
 
     let Item::MemoFn(memo) = &tree.items()[1] else {
@@ -2672,8 +2682,9 @@ pub impl<T> Mappable for Option<T> {
         TraitMember::Function { signature }
             if signature.name() == "map"
                 && signature
-                    .params()
+                    .param_groups()
                     .first()
+                    .and_then(|group| group.params().first())
                     .is_some_and(|param| ident_pattern(param.pattern(), "self"))
     ));
 
@@ -2712,8 +2723,9 @@ pub impl<T> Mappable for Option<T> {
         }
             if signature.name() == "map"
                 && signature
-                    .params()
+                    .param_groups()
                     .first()
+                    .and_then(|group| group.params().first())
                     .is_some_and(|param| ident_pattern(param.pattern(), "self"))
                 && body.contains("match self")
                 && body_statements.is_empty()
@@ -3006,8 +3018,17 @@ fn parses_lifetime_type_syntax_for_borrow_checks() {
         parse_fn_signature("fn first<'a>(xs: &'a [ChoiceView]) -> Option<&'a ChoiceView>")
             .expect("fn signature lifetimes parse");
     assert_eq!(signature.name(), "first");
-    assert_eq!(signature.lifetimes()[0].name(), "a");
-    assert!(ident_pattern(signature.params()[0].pattern(), "xs"));
+    assert_eq!(
+        signature.generic_params()[0]
+            .as_lifetime()
+            .expect("lifetime generic")
+            .name(),
+        "a"
+    );
+    assert!(ident_pattern(
+        signature.param_groups()[0].params()[0].pattern(),
+        "xs"
+    ));
     assert!(signature.return_type().is_some());
 }
 
@@ -3018,12 +3039,12 @@ fn parses_and_typechecks_function_parameter_destructuring() {
         )
         .expect("destructured function parameters parse");
     assert!(matches!(
-        signature.params()[0].pattern(),
+        signature.param_groups()[0].params()[0].pattern(),
         Pattern::Record { path: Some(path), fields, rest }
             if path == "TruckResult" && fields.len() == 2 && *rest
     ));
     assert!(matches!(
-        signature.params()[1].pattern(),
+        signature.param_groups()[0].params()[1].pattern(),
         Pattern::List { items, rest }
             if matches!(items.as_slice(), [Pattern::Ident(name)] if name == "first")
                 && rest.as_deref() == Some("rest")
@@ -3050,8 +3071,14 @@ fn parses_self_receiver_and_function_type_parameters() {
     let signature = parse_fn_signature("fn map<B>(self, f: Self::Item -> B) -> Self::Mapped<B>")
         .expect("trait method signature parses");
     assert_eq!(signature.name(), "map");
-    assert!(ident_pattern(signature.params()[0].pattern(), "self"));
-    assert!(ident_pattern(signature.params()[1].pattern(), "f"));
+    assert!(ident_pattern(
+        signature.param_groups()[0].params()[0].pattern(),
+        "self"
+    ));
+    assert!(ident_pattern(
+        signature.param_groups()[0].params()[1].pattern(),
+        "f"
+    ));
     assert!(
         matches!(signature.return_type(), Some(TypeRef::Generic { base, .. }) if base == "Self::Mapped")
     );
@@ -3077,7 +3104,13 @@ effects { asset.read }
     };
     assert_eq!(function.visibility(), Some(Visibility::Public));
     assert_eq!(function.signature().name(), "first");
-    assert_eq!(function.signature().lifetimes()[0].name(), "a");
+    assert_eq!(
+        function.signature().generic_params()[0]
+            .as_lifetime()
+            .expect("lifetime generic")
+            .name(),
+        "a"
+    );
     assert!(function.signature_text().contains("Option<&'a ChoiceView>"));
     assert_eq!(function.contracts().len(), 3);
     assert!(matches!(

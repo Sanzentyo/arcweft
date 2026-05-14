@@ -2,14 +2,15 @@ use crate::ast::{
     Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, BorrowBlock, CallableItem,
     CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceMatchArm,
     ChoiceOption, ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause,
-    DialogueContent, DocBlock, EntityDeclItem, EntityDeclKind, EntityRef, EnumItem, EnumVariant,
-    ExternModItem, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionInit, FunctionItem,
-    FunctionKind, HookInit, HookItem, IfBlock, IfLetBlock, ImplItem, ImplMember, Item, LineOptions,
-    LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem,
-    RawItem, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch,
-    SelectBranchHead, SourceItem, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt,
-    StmtMatchArm, StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember,
-    TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    DialogueContent, DialogueDefaultOption, DialogueDefaultsItem, DocBlock, EntityDeclItem,
+    EntityDeclKind, EntityRef, EnumItem, EnumVariant, ExternModItem, Flow, FlowInit, FlowItem,
+    FlowKind, ForBlock, FunctionInit, FunctionItem, FunctionKind, HookInit, HookItem, IfBlock,
+    IfLetBlock, ImplItem, ImplMember, Item, LineArg, LineOptions, LineOptionsInit, LinePlan,
+    LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, RawItem,
+    ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
+    SourceItem, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StmtMatchArm,
+    StructField, StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
+    UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 use crate::expr::{ComputationBlockKind, Expr, parse_expr};
 use crate::pattern::parse_pattern;
@@ -302,6 +303,11 @@ impl Parser {
             self.reject_pending_doc(range);
             if let Some(hook) = self.parse_hook() {
                 items.push(Item::Hook(hook));
+            }
+        } else if looks_like_dialogue_defaults(trimmed) {
+            self.reject_pending_doc(range);
+            if let Some(defaults) = self.parse_dialogue_defaults() {
+                items.push(Item::DialogueDefaults(defaults));
             }
         } else if looks_like_memo_fn(trimmed) {
             self.reject_pending_doc(range);
@@ -863,10 +869,55 @@ impl Parser {
             .find_map(|line| line.strip_prefix("phase ").map(str::trim))
             .unwrap_or_default()
             .to_owned();
-        let check = header_lines
-            .iter()
-            .find_map(|line| line.strip_prefix("check ").map(str::trim))
-            .map(str::to_owned);
+        let mut when = None;
+        let mut priority = None;
+        let mut once = false;
+        let mut effects = Vec::new();
+        for line in header_lines.iter().skip(1) {
+            if let Some(expr) = line.strip_prefix("when ").map(str::trim) {
+                if when.replace(parse_expr_lossy(expr)).is_some() {
+                    self.push_duplicate_hook_header_error("when", start_line.start, line);
+                }
+            } else if let Some(value) = line.strip_prefix("priority ").map(str::trim) {
+                match value.parse::<i64>() {
+                    Ok(value) if priority.replace(value).is_none() => {}
+                    Ok(_) => {
+                        self.push_duplicate_hook_header_error("priority", start_line.start, line);
+                    }
+                    Err(_) => self.push_error(
+                        TextRange::new(start_line.start, start_line.start + line.len()),
+                        "hook priority must be an integer",
+                        ["priority 0"],
+                        Some(line),
+                        ["write priority as a signed integer"],
+                    ),
+                }
+            } else if let Some(value) = line.strip_prefix("once").map(str::trim) {
+                if once {
+                    self.push_duplicate_hook_header_error("once", start_line.start, line);
+                }
+                once = true;
+                if !value.is_empty() && value != "true" {
+                    self.push_error(
+                        TextRange::new(start_line.start, start_line.start + line.len()),
+                        "hook `once` does not take a value in this grammar",
+                        ["once"],
+                        Some(line),
+                        ["remove the value after `once`"],
+                    );
+                }
+            } else if let Some(values) = line.strip_prefix("effects ").map(str::trim) {
+                effects.extend(split_comma_args(values).into_iter().map(parse_expr_lossy));
+            } else if line.starts_with("check ") {
+                self.push_error(
+                    TextRange::new(start_line.start, start_line.start + line.len()),
+                    "`check` is not valid hook condition syntax",
+                    ["when expr"],
+                    Some(line),
+                    ["write hook conditions with `when`"],
+                );
+            }
+        }
         let body_statements = parse_stmt_lines(&body);
 
         Some(HookItem::new(HookInit {
@@ -874,11 +925,24 @@ impl Parser {
             id,
             target,
             phase,
-            check,
+            when,
+            priority,
+            once,
+            effects,
             body,
             body_statements,
             range: TextRange::new(start_line.start, end),
         }))
+    }
+
+    fn push_duplicate_hook_header_error(&mut self, name: &str, base: usize, line: &str) {
+        self.push_error(
+            TextRange::new(base, base + line.len()),
+            &format!("duplicate hook `{name}` header"),
+            [name],
+            Some(line),
+            ["keep only one header with this name"],
+        );
     }
 
     fn reject_old_hook_header_syntax(&mut self, header_lines: &[&str], base: usize) {
@@ -909,6 +973,68 @@ impl Parser {
                 );
             }
         }
+    }
+
+    fn parse_dialogue_defaults(&mut self) -> Option<DialogueDefaultsItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing dialogue defaults",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the dialogue defaults body"],
+            );
+            return None;
+        }
+        let (visibility, rest) = parse_visibility_prefix(head.trim());
+        let after_defaults = rest
+            .trim_start()
+            .strip_prefix("dialogue defaults")?
+            .trim_start();
+        let (id, tail) = parse_optional_id_ref(after_defaults, start_line.start, &mut self.errors);
+        if !tail.trim().is_empty() {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.start + head.len()),
+                "unexpected tokens after dialogue defaults header",
+                ["{"],
+                Some(tail.trim()),
+                ["move defaults into the declaration body"],
+            );
+        }
+        let options = body
+            .lines()
+            .filter_map(|line| {
+                let trimmed = line.trim();
+                if trimmed.is_empty() || trimmed.starts_with("//") {
+                    return None;
+                }
+                let (name, value) = split_top_level_equals(trimmed).unwrap_or_else(|| {
+                    self.push_error(
+                        TextRange::new(start_line.start, start_line.start + trimmed.len()),
+                        "expected dialogue default assignment",
+                        ["name = expr"],
+                        Some(trimmed),
+                        ["write defaults as `name = value`"],
+                    );
+                    ("", "")
+                });
+                (!name.trim().is_empty()).then(|| {
+                    DialogueDefaultOption::new(
+                        name.trim().to_owned(),
+                        parse_expr_lossy(value.trim()),
+                        TextRange::new(start_line.start, start_line.start + trimmed.len()),
+                    )
+                })
+            })
+            .collect();
+        Some(DialogueDefaultsItem::new(
+            visibility,
+            id,
+            options,
+            TextRange::new(start_line.start, end),
+        ))
     }
 
     fn parse_memo_fn(&mut self) -> Option<MemoFn> {
@@ -2152,7 +2278,6 @@ impl Parser {
             let plan = self.take_optional_line_plan();
             return Some(FlowItem::SpeakerLine(SpeakerLine::new(
                 speaker,
-                args.clone(),
                 parse_line_options(args.as_deref(), line.start, &mut self.errors),
                 content,
                 plan,
@@ -2169,7 +2294,6 @@ impl Parser {
             }
             return Some(FlowItem::ContentCall(ContentCall::new(
                 callee,
-                args.clone(),
                 parse_line_options(args.as_deref(), line.start, &mut self.errors),
                 content,
                 plan,
@@ -2883,6 +3007,11 @@ fn looks_like_hook(trimmed: &str) -> bool {
     rest.trim_start().starts_with("hook ")
 }
 
+fn looks_like_dialogue_defaults(trimmed: &str) -> bool {
+    let (_, rest) = parse_visibility_prefix(trimmed);
+    rest.trim_start().starts_with("dialogue defaults")
+}
+
 fn looks_like_memo_fn(trimmed: &str) -> bool {
     let (_, rest) = parse_visibility_prefix(trimmed);
     rest.trim_start().starts_with("memo fn ")
@@ -3148,26 +3277,63 @@ fn parse_line_options(
     };
     let mut id = None;
     let mut text_key = None;
+    let mut voice = None;
+    let mut window = None;
     let mut source_locale = None;
+    let mut hooks = Vec::new();
+    let mut style = None;
+    let mut line_args = Vec::new();
     for arg in split_comma_args(args) {
         let Some((name, value)) = split_top_level_equals(arg) else {
+            errors.push(simple_error(
+                base,
+                arg.len(),
+                "expected named dialogue line option",
+                "name = expr",
+            ));
             continue;
         };
+        let value = value.trim();
         match name.trim() {
             "id" => {
-                id = parse_required_id_ref(value.trim(), base, errors).map(|(entity, _)| entity);
+                id = parse_required_id_ref(value, base, errors).map(|(entity, _)| entity);
             }
             "text_key" => {
-                text_key =
-                    parse_required_id_ref(value.trim(), base, errors).map(|(entity, _)| entity);
+                text_key = parse_required_id_ref(value, base, errors).map(|(entity, _)| entity);
+            }
+            "voice" => {
+                voice = Some(parse_expr_lossy(value));
+            }
+            "window" => {
+                window = parse_required_entity_ref(value, base, errors).map(|(entity, _)| entity);
             }
             "source_locale" => {
-                source_locale = Some(value.trim().to_owned());
+                source_locale = Some(value.to_owned());
             }
-            _ => {}
+            "hooks" => {
+                let expr = parse_expr_lossy(value);
+                if let Expr::List(items) = expr {
+                    hooks.extend(items);
+                } else {
+                    hooks.push(expr);
+                }
+            }
+            "style" => {
+                style = Some(parse_expr_lossy(value));
+            }
+            name => line_args.push(LineArg::new(name.to_owned(), parse_expr_lossy(value))),
         }
     }
-    LineOptions::new(id, text_key, source_locale)
+    LineOptions::new(LineOptionsInit {
+        id,
+        text_key,
+        voice,
+        window,
+        source_locale,
+        hooks,
+        style,
+        args: line_args,
+    })
 }
 
 fn find_body_open(source: &str) -> Option<usize> {
@@ -4030,7 +4196,7 @@ fn parse_select_branch_head(source: &str) -> SelectBranchHead {
 
 fn split_speaker_line(trimmed: &str) -> Option<(String, Option<String>, &str)> {
     let colon = find_top_level_colon(trimmed)?;
-    if trimmed[..colon].contains('[') || trimmed[..colon].contains("->") {
+    if has_top_level_square(&trimmed[..colon]) || trimmed[..colon].contains("->") {
         return None;
     }
     let head = trimmed[..colon].trim();
@@ -4040,6 +4206,21 @@ fn split_speaker_line(trimmed: &str) -> Option<(String, Option<String>, &str)> {
     }
     let (speaker, args) = split_call_head(head);
     Some((speaker, args, content))
+}
+
+fn has_top_level_square(input: &str) -> bool {
+    let mut depth = 0_i32;
+    let mut in_string = false;
+    for ch in input.chars() {
+        match ch {
+            '"' => in_string = !in_string,
+            '[' if depth == 0 && !in_string => return true,
+            '(' | '{' | '[' if !in_string => depth += 1,
+            ')' | '}' | ']' if !in_string => depth -= 1,
+            _ => {}
+        }
+    }
+    false
 }
 
 fn find_top_level_colon(input: &str) -> Option<usize> {
@@ -4085,9 +4266,20 @@ fn brace_delta(text: &str) -> i32 {
 }
 
 fn find_content_bracket(text: &str) -> Option<usize> {
-    text.char_indices()
-        .find(|(index, ch)| *ch == '[' && !text[..*index].trim_end().ends_with('#'))
-        .map(|(index, _)| index)
+    let mut parens = 0_i32;
+    let mut in_string = false;
+    for (index, ch) in text.char_indices() {
+        match ch {
+            '"' => in_string = !in_string,
+            '(' if !in_string => parens += 1,
+            ')' if !in_string => parens -= 1,
+            '[' if parens == 0 && !in_string && !text[..index].trim_end().ends_with('#') => {
+                return Some(index);
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn find_matching_square(text: &str, open: usize) -> Option<usize> {

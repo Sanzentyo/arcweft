@@ -18,14 +18,15 @@ mod types;
 pub use ast::{
     Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, CallableItem, CallableKind, ChoiceAction,
     ChoiceBlock, ChoiceItem, ChoiceMatchArm, ChoiceOption, ChoicePlan, ChoicePlanItem, ContentCall,
-    ContractClause, DialogueToken, DocBlock, EntityDeclItem, EntityDeclKind, EntityRef, EnumItem,
-    EnumVariant, ExternModItem, Flow, FlowItem, FlowKind, ForBlock, FunctionItem, FunctionKind,
-    HookItem, IfBlock, IfLetBlock, ImplItem, ImplMember, Item, LineOptions, LinePlan, LinePlanItem,
-    LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RecordPatternField,
-    ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
-    SourceItem, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField,
-    StructItem, SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem,
-    VariantPatternPayload, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    ContractClause, DialogueDefaultOption, DialogueDefaultsItem, DialogueToken, DocBlock,
+    EntityDeclItem, EntityDeclKind, EntityRef, EnumItem, EnumVariant, ExternModItem, Flow,
+    FlowItem, FlowKind, ForBlock, FunctionItem, FunctionKind, HookItem, IfBlock, IfLetBlock,
+    ImplItem, ImplMember, Item, LineArg, LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm,
+    MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RecordPatternField, ScenarioCommand,
+    ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceItem,
+    SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField, StructItem,
+    SyntaxTree, TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, VariantPatternPayload,
+    Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
@@ -42,7 +43,8 @@ pub use resolve::{NameRegistry, NameResolutionError, registry_from_hir, validate
 pub use symbols::{SymbolUse, SymbolUseKind, collect_symbol_uses};
 pub use text::parse_dialogue_tokens;
 pub use types::{
-    FnSignature, LifetimeName, TypeParseError, TypeRef, parse_fn_signature, parse_type_ref,
+    FnParamGroup, FnSignature, GenericParam, LifetimeName, TypeParseError, TypeRef, WhereClause,
+    parse_fn_signature, parse_type_ref,
 };
 
 #[cfg(test)]

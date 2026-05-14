@@ -109,7 +109,7 @@ pub fn open_route(
         "Opens a route."
     );
     assert_eq!(
-        function.signature().params()[0]
+        function.signature().param_groups()[0].params()[0]
             .doc()
             .expect("param doc")
             .text(),

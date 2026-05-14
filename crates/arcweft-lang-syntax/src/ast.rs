@@ -73,6 +73,7 @@ pub enum Item {
     EntityDecl(EntityDeclItem),
     ExternMod(ExternModItem),
     Hook(HookItem),
+    DialogueDefaults(DialogueDefaultsItem),
     MemoFn(MemoFn),
     Parser(ParserItem),
     Source(SourceItem),
@@ -780,7 +781,6 @@ pub struct DialogueTag {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SpeakerLine {
     speaker: String,
-    args: Option<String>,
     options: LineOptions,
     content: DialogueContent,
     plan: Option<LinePlan>,
@@ -791,7 +791,6 @@ pub struct SpeakerLine {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContentCall {
     callee: String,
-    args: Option<String>,
     options: LineOptions,
     content: DialogueContent,
     plan: Option<LinePlan>,
@@ -803,7 +802,49 @@ pub struct ContentCall {
 pub struct LineOptions {
     id: Option<EntityRef>,
     text_key: Option<EntityRef>,
+    voice: Option<Expr>,
+    window: Option<EntityRef>,
     source_locale: Option<String>,
+    hooks: Vec<Expr>,
+    style: Option<Expr>,
+    args: Vec<LineArg>,
+}
+
+/// Internal initializer for structured dialogue line options.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct LineOptionsInit {
+    pub(crate) id: Option<EntityRef>,
+    pub(crate) text_key: Option<EntityRef>,
+    pub(crate) voice: Option<Expr>,
+    pub(crate) window: Option<EntityRef>,
+    pub(crate) source_locale: Option<String>,
+    pub(crate) hooks: Vec<Expr>,
+    pub(crate) style: Option<Expr>,
+    pub(crate) args: Vec<LineArg>,
+}
+
+/// Non-reserved line option preserved as a named argument.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LineArg {
+    name: String,
+    value: Expr,
+}
+
+/// Global dialogue default declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DialogueDefaultsItem {
+    visibility: Option<Visibility>,
+    id: Option<EntityRef>,
+    options: Vec<DialogueDefaultOption>,
+    range: TextRange,
+}
+
+/// One assignment inside a `dialogue defaults` declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DialogueDefaultOption {
+    name: String,
+    value: Expr,
+    range: TextRange,
 }
 
 /// `choice #choice.id { ... }` flow item with option rows.
@@ -960,7 +1001,10 @@ pub struct HookItem {
     id: EntityRef,
     target: String,
     phase: String,
-    check: Option<String>,
+    when: Option<Expr>,
+    priority: Option<i64>,
+    once: bool,
+    effects: Vec<Expr>,
     body: String,
     body_statements: Vec<Stmt>,
     range: TextRange,
@@ -973,7 +1017,10 @@ pub(crate) struct HookInit {
     pub(crate) id: EntityRef,
     pub(crate) target: String,
     pub(crate) phase: String,
-    pub(crate) check: Option<String>,
+    pub(crate) when: Option<Expr>,
+    pub(crate) priority: Option<i64>,
+    pub(crate) once: bool,
+    pub(crate) effects: Vec<Expr>,
     pub(crate) body: String,
     pub(crate) body_statements: Vec<Stmt>,
     pub(crate) range: TextRange,
@@ -2294,7 +2341,6 @@ impl DialogueTag {
 impl SpeakerLine {
     pub(crate) const fn new(
         speaker: String,
-        args: Option<String>,
         options: LineOptions,
         content: DialogueContent,
         plan: Option<LinePlan>,
@@ -2302,7 +2348,6 @@ impl SpeakerLine {
     ) -> Self {
         Self {
             speaker,
-            args,
             options,
             content,
             plan,
@@ -2312,10 +2357,6 @@ impl SpeakerLine {
 
     pub fn speaker(&self) -> &str {
         &self.speaker
-    }
-
-    pub fn args(&self) -> Option<&str> {
-        self.args.as_deref()
     }
 
     pub const fn options(&self) -> &LineOptions {
@@ -2338,7 +2379,6 @@ impl SpeakerLine {
 impl ContentCall {
     pub(crate) const fn new(
         callee: String,
-        args: Option<String>,
         options: LineOptions,
         content: DialogueContent,
         plan: Option<LinePlan>,
@@ -2346,7 +2386,6 @@ impl ContentCall {
     ) -> Self {
         Self {
             callee,
-            args,
             options,
             content,
             plan,
@@ -2356,10 +2395,6 @@ impl ContentCall {
 
     pub fn callee(&self) -> &str {
         &self.callee
-    }
-
-    pub fn args(&self) -> Option<&str> {
-        self.args.as_deref()
     }
 
     pub const fn options(&self) -> &LineOptions {
@@ -2380,15 +2415,16 @@ impl ContentCall {
 }
 
 impl LineOptions {
-    pub(crate) const fn new(
-        id: Option<EntityRef>,
-        text_key: Option<EntityRef>,
-        source_locale: Option<String>,
-    ) -> Self {
+    pub(crate) fn new(init: LineOptionsInit) -> Self {
         Self {
-            id,
-            text_key,
-            source_locale,
+            id: init.id,
+            text_key: init.text_key,
+            voice: init.voice,
+            window: init.window,
+            source_locale: init.source_locale,
+            hooks: init.hooks,
+            style: init.style,
+            args: init.args,
         }
     }
 
@@ -2400,8 +2436,92 @@ impl LineOptions {
         self.text_key.as_ref()
     }
 
+    pub const fn voice(&self) -> Option<&Expr> {
+        self.voice.as_ref()
+    }
+
+    pub const fn window(&self) -> Option<&EntityRef> {
+        self.window.as_ref()
+    }
+
     pub fn source_locale(&self) -> Option<&str> {
         self.source_locale.as_deref()
+    }
+
+    pub fn hooks(&self) -> &[Expr] {
+        &self.hooks
+    }
+
+    pub const fn style(&self) -> Option<&Expr> {
+        self.style.as_ref()
+    }
+
+    pub fn args(&self) -> &[LineArg] {
+        &self.args
+    }
+}
+
+impl LineArg {
+    pub(crate) const fn new(name: String, value: Expr) -> Self {
+        Self { name, value }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn value(&self) -> &Expr {
+        &self.value
+    }
+}
+
+impl DialogueDefaultsItem {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        id: Option<EntityRef>,
+        options: Vec<DialogueDefaultOption>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            id,
+            options,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub const fn id(&self) -> Option<&EntityRef> {
+        self.id.as_ref()
+    }
+
+    pub fn options(&self) -> &[DialogueDefaultOption] {
+        &self.options
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl DialogueDefaultOption {
+    pub(crate) const fn new(name: String, value: Expr, range: TextRange) -> Self {
+        Self { name, value, range }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn value(&self) -> &Expr {
+        &self.value
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
     }
 }
 
@@ -2633,7 +2753,10 @@ impl HookItem {
             id: init.id,
             target: init.target,
             phase: init.phase,
-            check: init.check,
+            when: init.when,
+            priority: init.priority,
+            once: init.once,
+            effects: init.effects,
             body: init.body,
             body_statements: init.body_statements,
             range: init.range,
@@ -2656,8 +2779,20 @@ impl HookItem {
         &self.phase
     }
 
-    pub fn check(&self) -> Option<&str> {
-        self.check.as_deref()
+    pub const fn when(&self) -> Option<&Expr> {
+        self.when.as_ref()
+    }
+
+    pub const fn priority(&self) -> Option<i64> {
+        self.priority
+    }
+
+    pub const fn once(&self) -> bool {
+        self.once
+    }
+
+    pub fn effects(&self) -> &[Expr] {
+        &self.effects
     }
 
     pub fn body(&self) -> &str {

@@ -163,8 +163,10 @@ impl TypeChecker<'_> {
             self.locals.clear();
             self.loop_stack.clear();
             if let Some(signature) = flow.signature() {
-                for param in signature.params() {
-                    self.bind_function_param(param.pattern(), &type_ref_kind(param.ty()));
+                for group in signature.param_groups() {
+                    for param in group.params() {
+                        self.bind_function_param(param.pattern(), &type_ref_kind(param.ty()));
+                    }
                 }
             }
             if let Some(id) = flow.id() {
@@ -184,8 +186,10 @@ impl TypeChecker<'_> {
             self.active_borrows.clear();
             self.locals.clear();
             self.loop_stack.clear();
-            for param in function.signature().params() {
-                self.bind_function_param(param.pattern(), &type_ref_kind(param.ty()));
+            for group in function.signature().param_groups() {
+                for param in group.params() {
+                    self.bind_function_param(param.pattern(), &type_ref_kind(param.ty()));
+                }
             }
             for contract in function.contracts() {
                 self.check_contract_clause(contract);
@@ -212,6 +216,7 @@ impl TypeChecker<'_> {
     fn check_top_level_decl(&mut self, declaration: &HirTopLevelDecl) {
         match declaration {
             HirTopLevelDecl::Attribute(_)
+            | HirTopLevelDecl::DialogueDefaults(_)
             | HirTopLevelDecl::Enum(_)
             | HirTopLevelDecl::ExternMod(_)
             | HirTopLevelDecl::Impl(_)

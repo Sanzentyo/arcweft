@@ -59,6 +59,7 @@ pub fn collect_symbol_uses(module: &HirModule) -> Vec<SymbolUse> {
 fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUse>) {
     match declaration {
         HirTopLevelDecl::Attribute(_)
+        | HirTopLevelDecl::DialogueDefaults(_)
         | HirTopLevelDecl::Enum(_)
         | HirTopLevelDecl::ExternMod(_)
         | HirTopLevelDecl::Struct(_) => {}
