@@ -511,6 +511,87 @@ flow #flow.opening opening {
     }
 
     #[test]
+    fn parses_multiline_line_result_binding_with_plan() {
+        let tree = parse_source(
+            r"
+flow #flow.opening opening {
+    let handles = alice.say(voice=auto)[
+        今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    ]
+    with:
+        out true
+
+    let result = try alice.say()[
+        もう一度。[p]
+    ] with: out .Done
+}
+",
+        )
+        .expect("multiline line result binding parses");
+
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let [
+            FlowItem::Stmt(Stmt::Let {
+                expr:
+                    Expr::DialogueCall {
+                        plan: Some(bound_plan),
+                        ..
+                    },
+                ..
+            }),
+            FlowItem::Stmt(Stmt::Let {
+                expr: Expr::Try { expr },
+                ..
+            }),
+        ] = flow.body()
+        else {
+            panic!("expected multiline dialogue result bindings");
+        };
+        assert!(matches!(
+            bound_plan.items(),
+            [LinePlanItem::Out(Expr::Literal(
+                crate::expr::Literal::Bool(true)
+            ))]
+        ));
+        assert!(matches!(
+            expr.as_ref(),
+            Expr::DialogueCall {
+                plan: Some(plan),
+                ..
+            } if matches!(plan.items(), [LinePlanItem::Out(Expr::Path(path))] if path == ".Done")
+        ));
+
+        let hir = lower_to_hir(&tree).expect("multiline line result bindings lower");
+        validate_typecheck_ready(&hir).expect("multiline line result bindings are typecheck-ready");
+
+        let check_tree = parse_source(
+            r"
+flow #flow.opening opening {
+    let handles = alice.say(voice=auto)[
+        今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    ]
+    with:
+        out true
+}
+",
+        )
+        .expect("typecheck multiline line result binding parses");
+        let check_hir =
+            lower_to_hir(&check_tree).expect("typecheck multiline line result binding lowers");
+        let env = TypeCheckEnv::new()
+            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol("auto", TypeKind::Named("VoicePolicy".to_owned()))
+            .with_method(
+                TypeKind::Ref(EntityKind::Character),
+                "say",
+                TypeKind::Named("DialogueLine".to_owned()),
+            );
+        typecheck_hir(&check_hir, &env).expect("multiline line result binding typechecks");
+    }
+
+    #[test]
     fn typecheck_rejects_locals_escaping_named_and_bare_scopes() {
         let tree = parse_source(
             r"

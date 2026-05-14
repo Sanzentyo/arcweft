@@ -990,6 +990,9 @@ impl Parser {
         if is_let_choice_head(trimmed) {
             return self.parse_let_choice().map(FlowItem::Stmt);
         }
+        if is_let_dialogue_call_head(trimmed) {
+            return self.parse_let_dialogue_call().map(FlowItem::Stmt);
+        }
         if is_let_scope_head(trimmed) {
             return self.parse_let_scope().map(FlowItem::Stmt);
         }
@@ -1179,6 +1182,44 @@ impl Parser {
         Some(Stmt::LetChoice {
             pattern: parse_pattern(pattern.trim()),
             choice: ChoiceBlock::new(id, items, plan, TextRange::new(start_line.start, end)),
+        })
+    }
+
+    fn parse_let_dialogue_call(&mut self) -> Option<Stmt> {
+        let start = self.current().clone();
+        let mut text = start.text.trim().to_owned();
+        let mut cursor = self.index;
+
+        while bracket_delta(&text) > 0 && cursor + 1 < self.lines.len() {
+            cursor += 1;
+            text.push('\n');
+            text.push_str(self.lines[cursor].text.trim_end());
+        }
+
+        let rest = text.trim().strip_prefix("let")?.trim();
+        let (pattern, expr_text) = rest.split_once('=')?;
+        let expr_offset = text.find('=').map_or(0, |offset| offset + 1);
+        let open = find_content_bracket(expr_text).map(|offset| expr_offset + offset)?;
+        let close = find_matching_square(&text, open)?;
+        let expr_source = text[expr_offset..=close].trim();
+        let trailing = text[close + 1..].trim();
+        let inline_plan = self.take_trailing_line_plan(trailing, close, &mut cursor, start.start);
+
+        self.index = cursor + 1;
+        let plan = inline_plan.or_else(|| self.take_optional_line_plan());
+        let mut expr = parse_expr_lossy(expr_source);
+        let has_dialogue = if let Some(plan) = plan {
+            attach_plan_to_dialogue_expr(&mut expr, plan)
+        } else {
+            contains_dialogue_expr(&expr)
+        };
+        if !has_dialogue {
+            return None;
+        }
+
+        Some(Stmt::Let {
+            pattern: parse_pattern(pattern.trim()),
+            expr,
         })
     }
 
@@ -4418,6 +4459,16 @@ fn is_let_choice_head(trimmed: &str) -> bool {
         .is_some_and(|(_, expr)| expr.trim_start().starts_with("choice "))
 }
 
+fn is_let_dialogue_call_head(trimmed: &str) -> bool {
+    let Some(rest) = trimmed.strip_prefix("let ") else {
+        return false;
+    };
+    rest.split_once('=').is_some_and(|(_, expr)| {
+        let expr = expr.trim_start();
+        find_content_bracket(expr).is_some() && !expr.starts_with('[')
+    })
+}
+
 fn is_let_scope_head(trimmed: &str) -> bool {
     let Some(rest) = trimmed.strip_prefix("let ") else {
         return false;
@@ -4664,11 +4715,29 @@ fn parse_expr_with_inline_line_plan(source: &str) -> Expr {
     let Some(plan) = parse_inline_line_plan_source(trailing_plan) else {
         return parse_expr_lossy(source);
     };
-    if let Expr::DialogueCall { plan: slot, .. } = &mut expr {
-        *slot = Some(plan);
+    if attach_plan_to_dialogue_expr(&mut expr, plan) {
         expr
     } else {
         parse_expr_lossy(source)
+    }
+}
+
+fn attach_plan_to_dialogue_expr(expr: &mut Expr, line_plan: LinePlan) -> bool {
+    match expr {
+        Expr::DialogueCall { plan, .. } => {
+            *plan = Some(line_plan);
+            true
+        }
+        Expr::Try { expr } => attach_plan_to_dialogue_expr(expr, line_plan),
+        _ => false,
+    }
+}
+
+fn contains_dialogue_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::DialogueCall { .. } => true,
+        Expr::Try { expr } => contains_dialogue_expr(expr),
+        _ => false,
     }
 }
 
