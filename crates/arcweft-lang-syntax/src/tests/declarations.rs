@@ -1,0 +1,731 @@
+use super::support::*;
+
+#[test]
+fn parses_documented_hook_memo_and_parser_items() {
+    let tree = parse_source(
+        r#"
+hook #hook.choice_visible
+on #choice.opening.listen
+phase AfterLayout
+when every_frame
+priority 10
+once
+effects signal.choice_visible
+{
+    signal #signal.choice_visible <- true
+}
+
+memo fn route_title(route: Ref<Flow>) -> String
+scope = session
+{
+    registry.flow(route).title
+}
+
+pub parser parse_player_command: Parser<PlayerCommand, ParseError> {
+    alt { "advance" => PlayerCommand::Advance }
+}
+"#,
+    )
+    .expect("hook, memo, and parser items parse");
+
+    let Item::Hook(hook) = &tree.items()[0] else {
+        panic!("expected hook item");
+    };
+    assert!(hook.when().is_some());
+    assert_eq!(hook.priority(), Some(10));
+    assert!(hook.once());
+    assert_eq!(hook.effects().len(), 1);
+    assert!(matches!(hook.body_statements(), [Stmt::Signal { .. }]));
+
+    let Item::MemoFn(memo) = &tree.items()[1] else {
+        panic!("expected memo item");
+    };
+    assert!(memo.body_statements().is_empty());
+    assert!(matches!(memo.body_value(), Some(Expr::Field { .. })));
+
+    let Item::Parser(parser) = &tree.items()[2] else {
+        panic!("expected parser item");
+    };
+    assert!(parser.body_statements().is_empty());
+    assert!(matches!(parser.body_value(), Some(Expr::NamedBlock { name, .. }) if name == "alt"));
+
+    let hir = lower_to_hir(&tree).expect("hook, memo, and parser items lower");
+    validate_typecheck_ready(&hir).expect("hook, memo, and parser bodies are structured");
+}
+
+#[test]
+fn rejects_old_memo_attribute_and_cache_option() {
+    let errors = parse_source(
+        r"
+@memo(scope = scene)
+fn route_title(route: Ref<Flow>) -> String {
+    registry.flow(route).title
+}
+
+memo fn route_graph(root: Ref<Flow>) -> RouteGraph
+cache session
+{
+    build_route_graph(root)
+}
+",
+    )
+    .expect_err("old memo syntax is rejected");
+
+    assert!(errors.iter().any(|error| error.message().contains("@memo")));
+    assert!(errors.iter().any(|error| error.message().contains("cache")));
+}
+
+#[test]
+fn rejects_old_hook_header_syntax() {
+    let errors = parse_source(
+        r"
+hook #hook.choice_click
+for #choice.opening.listen
+on input target PointerClick
+phase = input.target
+{
+    stop_propagation
+}
+",
+    )
+    .expect_err("old hook syntax is rejected");
+
+    assert!(errors.iter().any(|error| error.message().contains("for")));
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("phase ="))
+    );
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("on input target"))
+    );
+}
+
+#[test]
+fn parses_documented_adt_items() {
+    let tree = parse_source(
+        r"
+@derive(Clone, Debug, Format, Serialize, Eq)
+pub enum GameEvent {
+    StartGame,
+    ChoiceSelected { id: Ref<ChoiceOption> },
+}
+
+pub struct SettingsInput {
+    text_speed: f32,
+    master_volume: f32,
+}
+
+pub type PlayerName = String
+where len(self) >= 1
+where len(self) <= 16
+",
+    )
+    .expect("adt items parse");
+
+    assert!(matches!(&tree.items()[0], Item::Attribute(_)));
+    let Item::Enum(event) = &tree.items()[1] else {
+        panic!("expected enum item");
+    };
+    assert_eq!(event.visibility(), Some(Visibility::Public));
+    assert_eq!(event.name(), "GameEvent");
+    assert_eq!(event.variants().len(), 2);
+    assert_eq!(event.variants()[1].name(), "ChoiceSelected");
+    assert_eq!(
+        event.variants()[1].payload(),
+        Some("{ id: Ref<ChoiceOption> }")
+    );
+
+    let Item::Struct(settings) = &tree.items()[2] else {
+        panic!("expected struct item");
+    };
+    assert_eq!(settings.fields().len(), 2);
+    assert_eq!(settings.fields()[0].name(), "text_speed");
+
+    let Item::TypeAlias(alias) = &tree.items()[3] else {
+        panic!("expected type alias item");
+    };
+    assert_eq!(alias.name(), "PlayerName");
+    assert!(matches!(alias.target(), TypeRef::Path(path) if path == "String"));
+    assert_eq!(alias.where_clauses().len(), 2);
+
+    let hir = lower_to_hir(&tree).expect("syntax-only adt items do not block lowering");
+    assert!(hir.flows().is_empty());
+    assert!(matches!(
+        hir.declarations(),
+        [
+            HirTopLevelDecl::Attribute(_),
+            HirTopLevelDecl::Enum(_),
+            HirTopLevelDecl::Struct(_),
+            HirTopLevelDecl::TypeAlias(_)
+        ]
+    ));
+}
+
+#[test]
+fn parses_documented_state_reducer_and_view_items() {
+    let tree = parse_source(
+        r"
+pub state GameState {
+    pub route: Ref<Flow> = #flow.opening
+    pub config: Config = Config {}
+    pub flags: Set<Flag> = {}
+    pub affection: Map<Ref<Character>, i32> = {}
+    pub current_bg: Option<ImageHandle> = None
+}
+
+pub reducer update(state: GameState, event: GameEvent) -> Result<Update<GameState>, GameError>
+requires state_is_valid
+{
+    match event {
+        _ => Ok(state.to_update())
+    }
+}
+
+pub view current_scene(state: GameState) -> Scene {
+    scene {
+        layer bg = image(#asset.bg.room)
+    }
+}
+",
+    )
+    .expect("state, reducer, and view parse");
+
+    let Item::State(state) = &tree.items()[0] else {
+        panic!("expected state item");
+    };
+    assert_eq!(state.visibility(), Some(Visibility::Public));
+    assert_eq!(state.name(), "GameState");
+    assert_eq!(state.fields().len(), 5);
+    assert_eq!(state.fields()[0].visibility(), Some(Visibility::Public));
+    assert_eq!(state.fields()[0].name(), "route");
+    assert!(
+        matches!(state.fields()[0].default(), Expr::EntityRef(entity) if entity.body() == "flow.opening")
+    );
+    assert!(matches!(
+        state.fields()[1].default(),
+        Expr::Record { path, fields } if path == "Config" && fields.is_empty()
+    ));
+
+    let Item::Callable(reducer) = &tree.items()[1] else {
+        panic!("expected reducer item");
+    };
+    assert_eq!(reducer.kind(), CallableKind::Reducer);
+    assert_eq!(reducer.name(), "update");
+    assert!(reducer.signature_tail().contains("GameEvent"));
+    assert_eq!(reducer.contracts().len(), 1);
+    assert!(reducer.body().contains("match event"));
+
+    let Item::Callable(view) = &tree.items()[2] else {
+        panic!("expected view item");
+    };
+    assert_eq!(view.kind(), CallableKind::View);
+    assert_eq!(view.name(), "current_scene");
+
+    let hir = lower_to_hir(&tree).expect("syntax-only state/callable items do not block HIR");
+    assert!(hir.flows().is_empty());
+    validate_typecheck_ready(&hir).expect("state defaults lower without raw expressions");
+    assert!(matches!(
+        hir.declarations(),
+        [
+            HirTopLevelDecl::State(_),
+            HirTopLevelDecl::Callable(_),
+            HirTopLevelDecl::Callable(_)
+        ]
+    ));
+}
+
+#[test]
+fn parses_documented_trait_and_impl_items() {
+    let tree = parse_source(
+        r"
+pub trait Mappable {
+    type Item
+    type Mapped<B>
+    fn map<B>(self, f: Self::Item -> B) -> Self::Mapped<B>
+}
+
+pub trait Ord: Eq {}
+
+pub impl<T> Mappable for Option<T> {
+    type Item = T
+    type Mapped<B> = Option<B>
+
+    fn map<B>(self, f: T -> B) -> Option<B> {
+        match self {
+            Some(x) => Some(f(x)),
+            None => None,
+        }
+    }
+}
+",
+    )
+    .expect("trait and impl items parse");
+
+    let Item::Trait(mappable) = &tree.items()[0] else {
+        panic!("expected trait item");
+    };
+    assert_eq!(mappable.visibility(), Some(Visibility::Public));
+    assert_eq!(mappable.name(), "Mappable");
+    assert_eq!(mappable.members().len(), 3);
+    assert!(matches!(
+        &mappable.members()[0],
+        TraitMember::AssociatedType { name, params, value: None }
+            if name == "Item" && params.is_empty()
+    ));
+    assert!(matches!(
+        &mappable.members()[1],
+        TraitMember::AssociatedType { name, params, value: None }
+            if name == "Mapped" && params == &["B".to_owned()]
+    ));
+    assert!(matches!(
+        &mappable.members()[2],
+        TraitMember::Function { signature }
+            if signature.name() == "map"
+                && signature
+                    .param_groups()
+                    .first()
+                    .and_then(|group| group.params().first())
+                    .is_some_and(|param| ident_pattern(param.pattern(), "self"))
+    ));
+
+    let Item::Trait(ord) = &tree.items()[1] else {
+        panic!("expected second trait item");
+    };
+    assert_eq!(ord.supertraits(), &["Eq".to_owned()]);
+
+    let Item::Impl(impl_item) = &tree.items()[2] else {
+        panic!("expected impl item");
+    };
+    assert_eq!(impl_item.visibility(), Some(Visibility::Public));
+    assert_eq!(impl_item.generics(), Some("<T>"));
+    assert_eq!(impl_item.trait_name(), Some("Mappable"));
+    assert_eq!(impl_item.target(), "Option<T>");
+    assert_eq!(impl_item.members().len(), 3);
+    assert!(matches!(
+        &impl_item.members()[0],
+        ImplMember::AssociatedType { name, params, value }
+            if name == "Item" && params.is_empty() && matches!(value, TypeRef::Path(path) if path == "T")
+    ));
+    assert!(matches!(
+        &impl_item.members()[1],
+        ImplMember::AssociatedType { name, params, value }
+            if name == "Mapped"
+                && params == &["B".to_owned()]
+                && matches!(value, TypeRef::Generic { base, args } if base == "Option" && args.len() == 1)
+    ));
+    assert!(matches!(
+        &impl_item.members()[2],
+        ImplMember::Function {
+            signature,
+            body,
+            body_statements,
+            body_value,
+        }
+            if signature.name() == "map"
+                && signature
+                    .param_groups()
+                    .first()
+                    .and_then(|group| group.params().first())
+                    .is_some_and(|param| ident_pattern(param.pattern(), "self"))
+                && body.contains("match self")
+                && body_statements.is_empty()
+                && matches!(body_value, Some(Expr::Match { .. }))
+    ));
+    assert!(impl_item.body().contains("Some(x)"));
+
+    let hir = lower_to_hir(&tree).expect("syntax-only trait/impl items do not block HIR");
+    assert!(hir.flows().is_empty());
+    assert!(matches!(
+        hir.declarations(),
+        [
+            HirTopLevelDecl::Trait(_),
+            HirTopLevelDecl::Trait(_),
+            HirTopLevelDecl::Impl(_)
+        ]
+    ));
+}
+
+#[test]
+fn parses_lifetime_type_syntax_for_borrow_checks() {
+    let borrowed_slice = parse_type_ref("&'asset [Rgba8]").expect("borrowed slice type parses");
+    assert!(matches!(
+        borrowed_slice,
+        TypeRef::Ref {
+            lifetime: Some(ref lifetime),
+            inner,
+        } if lifetime.name() == "asset" && matches!(inner.as_ref(), TypeRef::Slice(_))
+    ));
+
+    let option_borrow =
+        parse_type_ref("Option<&'a ChoiceView>").expect("generic borrowed type parses");
+    assert!(matches!(option_borrow, TypeRef::Generic { .. }));
+
+    let signature =
+        parse_fn_signature("fn first<'a>(xs: &'a [ChoiceView]) -> Option<&'a ChoiceView>")
+            .expect("fn signature lifetimes parse");
+    assert_eq!(signature.name(), "first");
+    assert_eq!(
+        signature.generic_params()[0]
+            .as_lifetime()
+            .expect("lifetime generic")
+            .name(),
+        "a"
+    );
+    assert!(ident_pattern(
+        signature.param_groups()[0].params()[0].pattern(),
+        "xs"
+    ));
+    assert!(signature.return_type().is_some());
+}
+
+#[test]
+fn parses_and_typechecks_function_parameter_destructuring() {
+    let signature = parse_fn_signature(
+            "fn summarize(TruckResult { score, rank, .. }: TruckResult, [first, ..rest]: List<Route>) -> Unit",
+        )
+        .expect("destructured function parameters parse");
+    assert!(matches!(
+        signature.param_groups()[0].params()[0].pattern(),
+        Pattern::Record { path: Some(path), fields, rest }
+            if path == "TruckResult" && fields.len() == 2 && *rest
+    ));
+    assert!(matches!(
+        signature.param_groups()[0].params()[1].pattern(),
+        Pattern::List { items, rest }
+            if matches!(items.as_slice(), [Pattern::Ident(name)] if name == "first")
+                && rest.as_deref() == Some("rest")
+    ));
+
+    let tree = parse_source(
+        r"
+fn summarize(TruckResult { score, rank, .. }: TruckResult, [first, ..rest]: List<Route>) -> Unit {
+    let _ = score
+    let _ = rank
+    let _ = first
+    let _ = rest
+}
+",
+    )
+    .expect("function parameter destructuring fixture parses");
+    let hir = lower_to_hir(&tree).expect("function parameter destructuring lowers");
+    validate_typecheck_ready(&hir).expect("function parameter destructuring is typecheck-ready");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("destructured parameters bind locals");
+}
+
+#[test]
+fn parses_self_receiver_and_function_type_parameters() {
+    let signature = parse_fn_signature("fn map<B>(self, f: Self::Item -> B) -> Self::Mapped<B>")
+        .expect("trait method signature parses");
+    assert_eq!(signature.name(), "map");
+    assert!(ident_pattern(
+        signature.param_groups()[0].params()[0].pattern(),
+        "self"
+    ));
+    assert!(ident_pattern(
+        signature.param_groups()[0].params()[1].pattern(),
+        "f"
+    ));
+    assert!(
+        matches!(signature.return_type(), Some(TypeRef::Generic { base, .. }) if base == "Self::Mapped")
+    );
+}
+
+#[test]
+fn parses_task_fn_as_structured_function_item() {
+    let tree = parse_source(
+        r"
+task fn load_opening_assets() -> ArcResult<OpeningAssets> {
+    let bg = try await load_bg()
+    Ok(OpeningAssets { bg })
+}
+",
+    )
+    .expect("task function parses");
+
+    let Item::Function(function) = &tree.items()[0] else {
+        panic!("expected task function item");
+    };
+    assert_eq!(function.kind(), FunctionKind::Task);
+    assert_eq!(function.signature().name(), "load_opening_assets");
+    assert_eq!(
+        function.signature_text(),
+        "fn load_opening_assets() -> ArcResult<OpeningAssets>"
+    );
+    assert!(matches!(
+        function.body_statements()[0],
+        Stmt::Let {
+            expr: Expr::Await {
+                applies_try: true,
+                ..
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        function.body_value(),
+        Some(Expr::Call { callee, .. }) if matches!(callee.as_ref(), Expr::Path(path) if path == "Ok")
+    ));
+
+    let hir = lower_to_hir(&tree).expect("task function lowers");
+    assert_eq!(hir.functions().len(), 1);
+    assert_eq!(hir.functions()[0].kind(), FunctionKind::Task);
+    validate_typecheck_ready(&hir).expect("task function body has structured expressions");
+}
+
+#[test]
+fn top_level_function_items_do_not_block_hir_lowering() {
+    let tree = parse_source(
+        r"
+fn label<'a>(choice: &'a ChoiceView) -> &'a DisplayText {
+    choice.label
+}
+
+flow #flow.opening opening {
+    goto #flow.title
+}
+",
+    )
+    .expect("function and flow parse");
+
+    let hir = lower_to_hir(&tree).expect("function and flow lower");
+    assert_eq!(hir.functions().len(), 1);
+    assert_eq!(hir.functions()[0].name(), "label");
+    assert_eq!(hir.flows().len(), 1);
+    assert_eq!(hir.flows()[0].id().expect("flow id").body(), "flow.opening");
+}
+
+#[test]
+fn typechecks_structured_function_body_for_hir_readiness() {
+    let tree = parse_source(
+        r"
+fn load_score() -> i32 {
+    let score = read_score()?
+    score
+}
+",
+    )
+    .expect("function body parses");
+    let hir = lower_to_hir(&tree).expect("function lowers");
+
+    assert_eq!(hir.functions().len(), 1);
+    assert!(matches!(
+        hir.functions()[0].statements()[0],
+        Stmt::Let {
+            expr: Expr::Try { .. },
+            ..
+        }
+    ));
+    validate_typecheck_ready(&hir).expect("function body has structured expressions");
+
+    let env = TypeCheckEnv::new().with_function(
+        "read_score",
+        TypeKind::Result {
+            ok: Box::new(TypeKind::Int),
+            error: Box::new(TypeKind::Named("ScoreError".to_owned())),
+        },
+    );
+    typecheck_hir(&hir, &env).expect("function body typechecks");
+}
+
+#[test]
+fn parses_lowers_and_typechecks_documented_source_item() {
+    let tree = parse_source(
+        r#"
+pub source #source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
+    from capture.camera(#capture.face_camera)
+    backpressure = latest
+    replay = hash_only
+    privacy = transient
+
+    on item frame => yield frame
+    on disconnected => emit signal #signal.camera_connected <- false
+    on error e => log warn "camera stream error {err:?}" { err = e }
+}
+"#,
+    )
+    .expect("documented source item parses");
+    let Item::Source(source) = &tree.items()[0] else {
+        panic!("expected source item");
+    };
+    assert_eq!(
+        source.id().map(EntityRef::body),
+        Some("source.face_camera_frames")
+    );
+    assert!(source.signature_tail().contains("Source<VideoFrameHandle"));
+    assert!(source.body_statements().iter().any(|stmt| matches!(
+        stmt,
+        Stmt::On { head, body }
+            if head == "item frame" && matches!(body.as_slice(), [Stmt::Yield(_)])
+    )));
+    assert!(source.body_statements().iter().any(|stmt| matches!(
+        stmt,
+        Stmt::On { head, body }
+            if head == "disconnected" && matches!(body.as_slice(), [Stmt::Signal { .. }])
+    )));
+
+    let hir = lower_to_hir(&tree).expect("documented source item lowers");
+    assert!(matches!(
+        hir.declarations(),
+        [HirTopLevelDecl::Source(source)] if source.id().is_some()
+    ));
+    validate_typecheck_ready(&hir).expect("source item is typecheck-ready");
+    let env = TypeCheckEnv::new()
+        .with_symbol("capture", TypeKind::Named("CaptureApi".to_owned()))
+        .with_symbol("latest", TypeKind::Named("BackpressurePolicy".to_owned()))
+        .with_symbol("hash_only", TypeKind::Named("ReplayPolicy".to_owned()))
+        .with_symbol("transient", TypeKind::Named("PrivacyPolicy".to_owned()))
+        .with_method(
+            TypeKind::Named("CaptureApi".to_owned()),
+            "camera",
+            TypeKind::Named("CaptureStream".to_owned()),
+        )
+        .with_function("log.warn", TypeKind::Unit);
+    typecheck_hir(&hir, &env).expect("documented source item typechecks");
+}
+
+#[test]
+fn parses_function_like_source_with_loop_yield_body() {
+    let tree = parse_source(
+        r"
+source camera_frames() -> Source<VideoFrame, CameraError> {
+    loop {
+        let frame = await camera.next_frame()
+        yield frame
+    }
+}
+",
+    )
+    .expect("function-like source parses");
+    let Item::Source(source) = &tree.items()[0] else {
+        panic!("expected source item");
+    };
+    assert_eq!(source.name(), Some("camera_frames"));
+    assert!(matches!(
+        source.body_statements(),
+        [Stmt::Loop { body }] if matches!(body.as_slice(), [Stmt::Let { .. }, Stmt::Yield(_)])
+    ));
+
+    let hir = lower_to_hir(&tree).expect("function-like source lowers");
+    validate_typecheck_ready(&hir).expect("function-like source is typecheck-ready");
+    let env = TypeCheckEnv::new()
+        .with_symbol("camera", TypeKind::Named("Camera".to_owned()))
+        .with_method(
+            TypeKind::Named("Camera".to_owned()),
+            "next_frame",
+            TypeKind::Need {
+                ready: Box::new(TypeKind::Named("VideoFrame".to_owned())),
+                error: Box::new(TypeKind::Named("CameraError".to_owned())),
+            },
+        );
+    typecheck_hir(&hir, &env).expect("function-like source typechecks");
+}
+
+#[test]
+fn parses_entity_declarations_used_by_presentation_docs() {
+    let tree = parse_source(
+        r"
+pub signal #signal.microphone_level: Watch<f32>
+
+pub character #character.alice Alice {
+    role = main
+    nameplate = visible
+}
+
+pub layer #layer.ui.game: NativeUi {
+    phase = Ui
+    z = 500
+}
+
+activity #activity.truck_game TruckGame {
+    mode = embedded
+}
+
+component #ui.settings SettingsPanel(config: Binding<Config>) -> View {
+    SettingsView(config)
+}
+",
+    )
+    .expect("entity declarations parse");
+    let kinds = tree
+        .items()
+        .iter()
+        .map(|item| match item {
+            Item::EntityDecl(item) => item.kind(),
+            other => panic!("expected entity declaration, got {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        kinds,
+        [
+            EntityDeclKind::Signal,
+            EntityDeclKind::Character,
+            EntityDeclKind::Layer,
+            EntityDeclKind::Activity,
+            EntityDeclKind::Component,
+        ]
+    );
+
+    let hir = lower_to_hir(&tree).expect("entity declarations lower");
+    validate_typecheck_ready(&hir).expect("entity declarations are typecheck-ready");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("entity declarations typecheck");
+
+    let registry = registry_from_hir(&hir);
+    validate_hir_references(&hir, &registry).expect("declaration ids register themselves");
+}
+
+#[test]
+fn parses_bodyless_parser_declarations_from_docs() {
+    let tree = parse_source(
+        r"
+pub parser parse_player_command: Parser<PlayerCommand, ParseError>
+pub parser parse_image_header<'a>: Parser<ImageHeader<'a>, ParseError>
+",
+    )
+    .expect("bodyless parser declarations parse");
+    assert_eq!(tree.items().len(), 2);
+    for item in tree.items() {
+        let Item::Parser(parser) = item else {
+            panic!("expected parser declaration");
+        };
+        assert!(parser.body().is_empty());
+        assert!(parser.body_statements().is_empty());
+        assert!(parser.signature_tail().contains("Parser<"));
+    }
+
+    let hir = lower_to_hir(&tree).expect("bodyless parser declarations lower");
+    validate_typecheck_ready(&hir).expect("bodyless parser declarations are typecheck-ready");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("bodyless parser declarations typecheck");
+}
+
+#[test]
+fn parses_extern_rust_module_declaration_from_docs() {
+    let tree = parse_source(
+        r#"
+extern rust mod mini_games::truck from crate "truck_game" {
+    pub event TruckEvent
+    pub type TruckResult
+    pub fn score_to_rank(score: i32) -> Rank
+    pub activity truck_game: Activity<TruckInput, TruckResult>
+}
+"#,
+    )
+    .expect("extern rust module parses");
+    let Item::ExternMod(item) = &tree.items()[0] else {
+        panic!("expected extern module item");
+    };
+    assert_eq!(item.abi(), "rust");
+    assert_eq!(item.path(), "mini_games::truck");
+    assert_eq!(item.source(), Some(r#"crate "truck_game""#));
+    assert!(item.body().contains("pub activity truck_game"));
+
+    let hir = lower_to_hir(&tree).expect("extern rust module lowers");
+    assert!(matches!(
+        hir.declarations(),
+        [HirTopLevelDecl::ExternMod(_)]
+    ));
+    validate_typecheck_ready(&hir).expect("extern module is typecheck-ready");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("extern module typechecks");
+}
