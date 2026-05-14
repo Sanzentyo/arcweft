@@ -51,6 +51,17 @@ pub fn parse_dialogue_tokens(source: &str) -> Vec<DialogueToken> {
                 }
             }
             '[' => {
+                if let Some((raw, consumed_to)) = parse_raw_span(source, index) {
+                    flush_text(&mut text, &mut tokens);
+                    tokens.push(DialogueToken::Raw(raw));
+                    while chars
+                        .peek()
+                        .is_some_and(|(offset, _)| *offset < consumed_to)
+                    {
+                        let _ = chars.next();
+                    }
+                    continue;
+                }
                 if let Some((tag, consumed_to)) = parse_tag(source, index + 1) {
                     flush_text(&mut text, &mut tokens);
                     tokens.push(tag);
@@ -101,6 +112,18 @@ fn parse_natural_ruby(source: &str, start: usize) -> Option<(DialogueToken, usiz
         },
         consumed_to,
     ))
+}
+
+fn parse_raw_span(source: &str, start: usize) -> Option<(String, usize)> {
+    let raw_body_start = start + "[raw]".len();
+    if !source.get(start..)?.starts_with("[raw]") {
+        return None;
+    }
+    let tail = source.get(raw_body_start..)?;
+    let close_relative = tail.find("[/raw]")?;
+    let raw_body_end = raw_body_start + close_relative;
+    let consumed_to = raw_body_end + "[/raw]".len();
+    Some((source[raw_body_start..raw_body_end].to_owned(), consumed_to))
 }
 
 fn take_balanced_bracket(source: &str, start: usize) -> Option<(String, usize)> {

@@ -59,6 +59,7 @@ Syntax parser:
 
 - `parse_source` and `parse_stub` now parse real `.awft` surface syntax into `SyntaxTree`.
 - The parser records module/use headers, attributes, wiki links, flows, fragments, flow items, scenario commands, speaker lines, content calls, choice blocks, hooks, memo functions, parser items, line plans, and dialogue tokens.
+- Dialogue raw spans and blocks such as `[raw]...[/raw]` tokenize as literal raw content, so inner `[p]` tags and `#[expr]` interpolations are not parsed until the raw span ends.
 - Diagnostics use structured `ParseError` values with spans, expected fragments, found text, recovery suggestions, and source anchors.
 - Parser and semantic diagnostics implement `Display` and `std::error::Error` directly without external error-derive dependencies.
 - Expression syntax now has an `Expr` AST for entity references, literals, tuples, calls, named arguments, method calls, dialogue calls, indexes, pipes, unary `!`, binary comparisons, and placeholders.

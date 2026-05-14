@@ -2801,6 +2801,31 @@ flow #flow.opening opening {}
     }
 
     #[test]
+    fn dialogue_tokenizer_preserves_raw_spans_without_inner_parsing() {
+        let tokens = parse_dialogue_tokens("[raw]これは[p]も#[expr]も文字。[/raw][p]");
+
+        assert!(matches!(
+            &tokens[0],
+            DialogueToken::Raw(raw) if raw == "これは[p]も#[expr]も文字。"
+        ));
+        assert!(
+            tokens[..1]
+                .iter()
+                .all(|token| !matches!(token, DialogueToken::Tag(_) | DialogueToken::Expr(_)))
+        );
+        assert!(matches!(
+            tokens.last(),
+            Some(DialogueToken::Tag(tag)) if tag.name() == "p"
+        ));
+
+        let block = parse_dialogue_tokens("[raw]\n[p] も文字として表示する。\n[/raw]");
+        assert!(matches!(
+            &block[0],
+            DialogueToken::Raw(raw) if raw.contains("[p] も文字")
+        ));
+    }
+
+    #[test]
     fn reports_unclosed_flow_block() {
         let errors = parse_source("flow #flow.bad bad {").expect_err("unclosed block fails");
         assert_eq!(errors.len(), 1);

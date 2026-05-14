@@ -745,6 +745,7 @@ pub struct DialogueContent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DialogueToken {
     Text(String),
+    Raw(String),
     Tag(DialogueTag),
     EndTag(String),
     Expr(Expr),
