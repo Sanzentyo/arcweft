@@ -309,6 +309,7 @@ impl Parser {
         let (id, after_id) =
             parse_optional_entity_ref(after_flow, start_line.start, &mut self.errors);
         let (name, signature_tail) = parse_name_and_tail(after_id.trim());
+        let signature = parse_flow_signature(name.as_deref(), &signature_tail);
         let contracts = header_lines
             .iter()
             .skip(1)
@@ -322,6 +323,7 @@ impl Parser {
             id,
             name,
             signature_tail,
+            signature,
             contracts,
             body: body_items,
             range: TextRange::new(start_line.start, end),
@@ -2727,6 +2729,17 @@ fn parse_flow_kind(input: &str) -> Option<(FlowKind, &str)> {
     input
         .strip_prefix("fragment")
         .map(|rest| (FlowKind::Fragment, rest.trim_start()))
+}
+
+fn parse_flow_signature(
+    name: Option<&str>,
+    signature_tail: &str,
+) -> Option<crate::types::FnSignature> {
+    let tail = signature_tail.trim();
+    if !(tail.starts_with('(') || tail.starts_with('<')) {
+        return None;
+    }
+    parse_fn_signature(&format!("fn {}{}", name.unwrap_or("flow"), tail)).ok()
 }
 
 fn looks_like_hook(trimmed: &str) -> bool {

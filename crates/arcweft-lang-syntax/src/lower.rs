@@ -30,6 +30,7 @@ pub struct HirFlow {
     kind: FlowKind,
     id: Option<EntityRef>,
     name: Option<String>,
+    signature: Option<FnSignature>,
     contracts: Vec<ContractClause>,
     body: Vec<HirFlowItem>,
 }
@@ -376,6 +377,7 @@ fn lower_flow(flow: &Flow) -> Result<HirFlow, HirLowerError> {
         kind: flow.kind(),
         id: flow.id().cloned(),
         name: flow.name().map(str::to_owned),
+        signature: flow.signature().cloned(),
         contracts: flow.contracts().to_vec(),
         body,
     })
@@ -879,6 +881,10 @@ impl HirFlow {
 
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
+    }
+
+    pub const fn signature(&self) -> Option<&FnSignature> {
+        self.signature.as_ref()
     }
 
     pub fn body(&self) -> &[HirFlowItem] {

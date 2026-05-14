@@ -161,6 +161,11 @@ impl TypeChecker<'_> {
             self.active_borrows.clear();
             self.locals.clear();
             self.loop_stack.clear();
+            if let Some(signature) = flow.signature() {
+                for param in signature.params() {
+                    self.bind_function_param(param.pattern(), &type_ref_kind(param.ty()));
+                }
+            }
             if let Some(id) = flow.id() {
                 match flow.kind() {
                     FlowKind::Flow => self.expect_entity_kind(id, &EntityKind::Flow, "flow id"),

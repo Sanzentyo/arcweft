@@ -113,6 +113,7 @@ pub struct Flow {
     id: Option<EntityRef>,
     name: Option<String>,
     signature_tail: String,
+    signature: Option<crate::types::FnSignature>,
     contracts: Vec<ContractClause>,
     body: Vec<FlowItem>,
     range: TextRange,
@@ -126,6 +127,7 @@ pub(crate) struct FlowInit {
     pub(crate) id: Option<EntityRef>,
     pub(crate) name: Option<String>,
     pub(crate) signature_tail: String,
+    pub(crate) signature: Option<crate::types::FnSignature>,
     pub(crate) contracts: Vec<ContractClause>,
     pub(crate) body: Vec<FlowItem>,
     pub(crate) range: TextRange,
@@ -1190,6 +1192,7 @@ impl Flow {
             id: init.id,
             name: init.name,
             signature_tail: init.signature_tail,
+            signature: init.signature,
             contracts: init.contracts,
             body: init.body,
             range: init.range,
@@ -1214,6 +1217,10 @@ impl Flow {
 
     pub fn signature_tail(&self) -> &str {
         &self.signature_tail
+    }
+
+    pub const fn signature(&self) -> Option<&crate::types::FnSignature> {
+        self.signature.as_ref()
     }
 
     pub fn contracts(&self) -> &[ContractClause] {

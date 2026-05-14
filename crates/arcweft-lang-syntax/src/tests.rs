@@ -60,11 +60,29 @@ pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
     assert_eq!(flow.visibility(), Some(Visibility::Public));
     assert_eq!(flow.kind(), FlowKind::Flow);
     assert_eq!(flow.id().expect("flow id").body(), "flow.opening");
+    let signature = flow.signature().expect("flow signature");
+    assert!(ident_pattern(signature.params()[0].pattern(), "state"));
     assert_eq!(flow.body().len(), 2);
     assert!(
         matches!(&flow.body()[0], FlowItem::ScenarioCommand(command) if command.args().len() == 2)
     );
     assert!(matches!(&flow.body()[1], FlowItem::Include(_)));
+}
+
+#[test]
+fn typechecks_flow_signature_parameters_as_locals() {
+    let tree = parse_source(
+        r"
+pub flow #flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+    let _ = state
+}
+",
+    )
+    .expect("flow signature fixture parses");
+    let hir = lower_to_hir(&tree).expect("flow signature fixture lowers");
+    assert!(hir.flows()[0].signature().is_some());
+    validate_typecheck_ready(&hir).expect("flow signature fixture is typecheck-ready");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("flow parameters bind as locals");
 }
 
 #[test]
