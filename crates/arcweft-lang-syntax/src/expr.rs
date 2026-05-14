@@ -1,4 +1,4 @@
-use crate::ast::{EntityRef, Pattern, Stmt, TextRange};
+use crate::ast::{EntityRef, LinePlan, Pattern, Stmt, TextRange};
 use arcweft_source::{SourceAnchor, SourceName};
 use core::fmt;
 
@@ -35,6 +35,7 @@ pub enum Expr {
     DialogueCall {
         callee: Box<Expr>,
         content: String,
+        plan: Option<LinePlan>,
     },
     Index {
         target: Box<Expr>,
@@ -316,6 +317,7 @@ fn parse_postfix(source: &str) -> Expr {
         return Expr::DialogueCall {
             callee: Box::new(parse_postfix(target)),
             content: content.to_owned(),
+            plan: None,
         };
     }
     if let Some((receiver, method, args)) = split_method_call(source) {

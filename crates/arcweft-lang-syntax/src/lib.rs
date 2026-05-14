@@ -466,6 +466,7 @@ flow #flow.opening opening {
 flow #flow.opening opening {
     alice.say()[聞いて。[p]] with: out (voice, face)
     alice.say()[もう一度。[p]] with 'line { out .Done }
+    let handles = alice.say()[結果を返す。[p]] with: out (voice, face)
 }
 ",
         )
@@ -477,9 +478,17 @@ flow #flow.opening opening {
         let [
             FlowItem::ContentCall(inline_call),
             FlowItem::ContentCall(brace_call),
+            FlowItem::Stmt(Stmt::Let {
+                expr:
+                    Expr::DialogueCall {
+                        plan: Some(bound_plan),
+                        ..
+                    },
+                ..
+            }),
         ] = flow.body()
         else {
-            panic!("expected content calls");
+            panic!("expected content calls and line result binding");
         };
         let inline_plan = inline_call.plan().expect("inline plan");
         assert!(matches!(
@@ -491,6 +500,10 @@ flow #flow.opening opening {
         assert!(matches!(
             plan.items(),
             [LinePlanItem::Out(Expr::Path(path))] if path == ".Done"
+        ));
+        assert!(matches!(
+            bound_plan.items(),
+            [LinePlanItem::Out(Expr::Tuple(items))] if items.len() == 2
         ));
 
         let hir = lower_to_hir(&tree).expect("same-line line plans lower");

@@ -1177,9 +1177,8 @@ impl TypeChecker<'_> {
                 self.check_expr(target);
                 None
             }
-            Expr::DialogueCall { callee, .. } => {
-                self.check_expr(callee);
-                Some(TypeKind::Named("DialogueLine".to_owned()))
+            Expr::DialogueCall { callee, plan, .. } => {
+                Some(self.check_dialogue_call_expr(callee, plan.as_ref()))
             }
             Expr::Index { target, index } => self.check_index_expr(target, index),
             Expr::Pipe { lhs, rhs } => {
@@ -1245,6 +1244,22 @@ impl TypeChecker<'_> {
                 None
             }
         }
+    }
+
+    fn check_dialogue_call_expr(
+        &mut self,
+        callee: &Expr,
+        plan: Option<&crate::ast::LinePlan>,
+    ) -> TypeKind {
+        self.check_expr(callee);
+        if let Some(plan) = plan {
+            self.line_label_stack.push(plan.label().map(str::to_owned));
+            for item in plan.items() {
+                self.check_line_plan_item(item);
+            }
+            self.line_label_stack.pop();
+        }
+        TypeKind::Named("DialogueLine".to_owned())
     }
 
     fn check_tuple_expr(&mut self, items: &[Expr]) -> TypeKind {

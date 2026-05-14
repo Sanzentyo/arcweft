@@ -1,5 +1,5 @@
 use crate::ast::{
-    ContractClause, DialogueToken, EntityRef, ImplMember, LinePlanItem, Stmt, TraitMember,
+    ContractClause, DialogueToken, EntityRef, ImplMember, LinePlan, LinePlanItem, Stmt, TraitMember,
 };
 use crate::expr::Expr;
 use crate::lower::{HirFlowItem, HirModule, HirTopLevelDecl};
@@ -698,7 +698,9 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
             }
         }
         Expr::Field { target, .. } => collect_expr(target, uses),
-        Expr::DialogueCall { callee, .. } => collect_expr(callee, uses),
+        Expr::DialogueCall { callee, plan, .. } => {
+            collect_dialogue_call_expr(callee, plan.as_ref(), uses);
+        }
         Expr::Index { target, index } => {
             collect_expr(target, uses);
             collect_expr(index, uses);
@@ -762,6 +764,15 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
         ),
         Expr::Match { scrutinee, arms } => collect_match_expr(scrutinee, arms, uses),
         Expr::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
+    }
+}
+
+fn collect_dialogue_call_expr(callee: &Expr, plan: Option<&LinePlan>, uses: &mut Vec<SymbolUse>) {
+    collect_expr(callee, uses);
+    if let Some(plan) = plan {
+        for item in plan.items() {
+            collect_line_plan_item(item, uses);
+        }
     }
 }
 

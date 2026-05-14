@@ -4623,12 +4623,52 @@ fn parse_source_stmt(trimmed: &str) -> Stmt {
     parse_stmt(trimmed)
 }
 
+fn parse_expr_with_inline_line_plan(source: &str) -> Expr {
+    let Some((expr_source, trailing_plan)) = split_inline_dialogue_line_plan(source) else {
+        return parse_expr_lossy(source);
+    };
+    let mut expr = parse_expr_lossy(expr_source.trim());
+    let Some(plan) = parse_inline_line_plan_source(trailing_plan) else {
+        return parse_expr_lossy(source);
+    };
+    if let Expr::DialogueCall { plan: slot, .. } = &mut expr {
+        *slot = Some(plan);
+        expr
+    } else {
+        parse_expr_lossy(source)
+    }
+}
+
+fn split_inline_dialogue_line_plan(source: &str) -> Option<(&str, &str)> {
+    [" with:", " with {", " with{", " with '", " with'"]
+        .into_iter()
+        .filter_map(|marker| source.find(marker).map(|index| (index, marker)))
+        .min_by_key(|(index, _)| *index)
+        .map(|(index, _)| (&source[..index], source[index + 1..].trim()))
+}
+
+fn parse_inline_line_plan_source(source: &str) -> Option<LinePlan> {
+    if is_with_brace_head(source) {
+        let (head, body) = split_brace_item(source)?;
+        return Some(attach_line_plan_label(
+            parse_line_plan_body(BlockStyle::Brace, body, TextRange::new(0, source.len())),
+            parse_with_brace_label(head.trim()),
+        ));
+    }
+    parse_inline_with_colon_plan(source).map(|(label, body)| {
+        attach_line_plan_label(
+            parse_line_plan_body(BlockStyle::Indent, body, TextRange::new(0, source.len())),
+            label,
+        )
+    })
+}
+
 fn parse_stmt(trimmed: &str) -> Stmt {
     if let Some(rest) = trimmed.strip_prefix("let ") {
         if let Some((pattern, expr)) = rest.split_once('=') {
             return Stmt::Let {
                 pattern: parse_pattern(pattern.trim()),
-                expr: parse_expr_lossy(expr.trim()),
+                expr: parse_expr_with_inline_line_plan(expr.trim()),
             };
         }
         return Stmt::Raw(trimmed.to_owned());
