@@ -12,7 +12,7 @@ Implemented workspace members:
 - `crates/arcweft-lang-syntax`
 - `crates/arcweft-cli`
 
-The workspace is intentionally dependency-light. Backend features are declared but empty in `arcweft-core` so adapter crates can be added later without changing the core boundary.
+The workspace is intentionally dependency-light. `arcweft-core` keeps only placeholder non-JIT adapter feature flags and has no Cranelift/Wasmtime dependency or Cranelift feature. Native JIT belongs in a future `arcweft-lang-jit-cranelift` adapter selected by player/build crates.
 
 ## Implemented Types
 
@@ -62,7 +62,7 @@ Syntax parser:
 - Bracket ruby spans such as `[ruby rt="..."]base[/ruby]` and function/content ruby such as `#[ruby("base", "ruby")]` normalize to the same `DialogueToken::Ruby` shape as natural Japanese ruby.
 - Dialogue raw spans and blocks such as `[raw]...[/raw]` tokenize as literal raw content, so inner `[p]` tags and `#[expr]` interpolations are not parsed until the raw span ends.
 - Diagnostics use structured `ParseError` values with spans, expected fragments, found text, recovery suggestions, and source anchors.
-- Parser and semantic diagnostics implement `Display` and `std::error::Error` directly without external error-derive dependencies.
+- Parser and semantic diagnostics implement `std::error::Error` through `thiserror` while preserving structured fields such as `message`, `range`, and `anchor`.
 - Expression syntax now has a Pratt-style parser and an `Expr` AST for entity references, literals, tuples, calls, named arguments, method calls, indexes, field access, pipes, prefix `try`, postfix `?`, unary `!`/`-`, arithmetic operators, comparisons, and placeholders.
 - Generic expression brackets are always `Expr::Index`; dialogue content brackets become `Expr::DialogueCall` only in dialogue-capable parser contexts such as flow content calls and line-result bindings.
 - Expression syntax also preserves float literals, half-open/inclusive ranges, and `in` membership expressions used by documented contracts.
@@ -130,7 +130,7 @@ Syntax parser:
 - `validate_typecheck_ready` rejects lowered HIR that still contains raw expression fragments before the future type checker sees it.
 - `typecheck_hir` provides a minimal semantic checker over HIR with an explicit environment. It validates flow/fragment entity reference families, dialogue callees, `Need<T, E>` awaits, `Duration` timeline anchors, indexed expressions, calls, and methods for parser/HIR integration tests.
 - Typed let patterns and borrow blocks preserve borrow types, and the checker rejects non-`'static` borrowed values crossing `await`, `yield`, `spawn`, and `defer` suspension boundaries.
-- Parser/HIR integration tests now live in `crates/arcweft-lang-syntax/src/tests.rs`, keeping the public crate surface in `src/lib.rs` separate from the syntax coverage suite.
+- Parser/HIR integration tests live under `crates/arcweft-lang-syntax/src/tests/`, keeping the public crate surface in `src/lib.rs` separate from the syntax coverage suite.
 
 ## Deferred
 
@@ -154,16 +154,16 @@ Not implemented in this milestone:
 
 ## Verification
 
-Last verified during the Phase 0 / Phase 1 workspace pass:
+Last verified during the review 7/8 direction and thiserror pass:
 
 ```bash
-cargo fmt
+cargo fmt --check
 cargo clippy --workspace --all-targets --all-features
 cargo test --workspace
 ```
 
 Result:
 
-- `cargo fmt`: passed
+- `cargo fmt --check`: passed
 - `cargo clippy --workspace --all-targets --all-features`: passed
 - `cargo test --workspace`: passed

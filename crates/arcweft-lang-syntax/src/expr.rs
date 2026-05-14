@@ -1,6 +1,6 @@
 use crate::ast::{EntityRef, LinePlan, Pattern, Stmt, TextRange};
 use arcweft_source::{SourceAnchor, SourceName};
-use core::fmt;
+use thiserror::Error;
 
 /// Expression syntax preserved for type checking and HIR lowering.
 ///
@@ -182,7 +182,8 @@ pub enum ComputationBlockKind {
 }
 
 /// Expression parse error.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("{message}")]
 pub struct ExprParseError {
     message: String,
     anchor: SourceAnchor,
@@ -1053,11 +1054,3 @@ impl MatchExprArm {
         &self.value
     }
 }
-
-impl fmt::Display for ExprParseError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for ExprParseError {}

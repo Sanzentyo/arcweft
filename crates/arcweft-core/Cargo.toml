@@ -14,7 +14,6 @@ audio = []
 capture-camera = []
 usb = []
 mcp = []
-jit-cranelift = []
 
 [dependencies]
 arcweft-dialogue = { path = "../arcweft-dialogue" }

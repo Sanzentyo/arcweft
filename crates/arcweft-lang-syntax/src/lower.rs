@@ -9,8 +9,8 @@ use crate::ast::{
 };
 use crate::expr::Expr;
 use crate::types::FnSignature;
-use core::fmt;
 use std::collections::HashMap;
+use thiserror::Error;
 
 /// HIR-facing module produced from parsed surface syntax.
 ///
@@ -273,7 +273,8 @@ pub struct HirAwaitBranch {
 }
 
 /// Lowering failure for syntax that is still too raw for HIR.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("{message}")]
 pub struct HirLowerError {
     message: String,
     range: Option<TextRange>,
@@ -1249,11 +1250,3 @@ impl HirLowerError {
         self.range.as_ref()
     }
 }
-
-impl fmt::Display for HirLowerError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for HirLowerError {}

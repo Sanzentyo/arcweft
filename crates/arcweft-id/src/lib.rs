@@ -1,17 +1,24 @@
 use core::fmt;
 use core::str::FromStr;
+use thiserror::Error;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("{kind}")]
 pub struct IdError {
     kind: IdErrorKind,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum IdErrorKind {
+    #[error("identifier must not be empty")]
     Empty,
+    #[error("identifier value must not include a leading # reference marker")]
     StartsWithReferenceMarker,
+    #[error("identifier must not contain whitespace")]
     ContainsWhitespace,
+    #[error("identifier must not contain control characters")]
     ContainsControl,
+    #[error("identifier uses a reserved Arcweft prefix")]
     ReservedPrefix,
 }
 
@@ -24,26 +31,6 @@ impl IdError {
         Self { kind }
     }
 }
-
-impl fmt::Display for IdError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.kind {
-            IdErrorKind::Empty => f.write_str("identifier must not be empty"),
-            IdErrorKind::StartsWithReferenceMarker => {
-                f.write_str("identifier value must not include a leading # reference marker")
-            }
-            IdErrorKind::ContainsWhitespace => {
-                f.write_str("identifier must not contain whitespace")
-            }
-            IdErrorKind::ContainsControl => {
-                f.write_str("identifier must not contain control characters")
-            }
-            IdErrorKind::ReservedPrefix => f.write_str("identifier uses a reserved Arcweft prefix"),
-        }
-    }
-}
-
-impl std::error::Error for IdError {}
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EntityId(String);

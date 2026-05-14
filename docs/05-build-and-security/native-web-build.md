@@ -1,5 +1,14 @@
 # native / web build
 
+Arcweft runtime target strategy:
+
+- Typed IR / bytecode VM is the semantic source of truth.
+- Native product ships an AOT compiled player plus an embedded `.awfb` / bytecode / asset bundle.
+- Web product ships an AOT compiled Wasm player plus a bytecode / asset bundle.
+- Native Cranelift JIT is optional and limited to pure deterministic functions.
+- Wasmtime is a native plugin/activity sandbox backend, not the main runtime.
+- Full script AOT through generated Rust or generated Wasm helpers is a later release backend.
+
 ## Native
 
 ```text
@@ -17,9 +26,11 @@ Feature:
 ```toml
 native = ["native-st", "wgpu-render", "audio-native"]
 native-mt = ["tokio", "rayon"]
-native-jit = ["cranelift"]
+native-jit = ["arcweft-lang-jit-cranelift"]
 servo-ui = ["servo"]
 ```
+
+The native player reads bundles and assets through platform adapters. Core/runtime data structures only receive decoded bytes, manifests, bytecode, task results, and input events.
 
 ## Web
 
@@ -57,7 +68,10 @@ dist/web/
   arcweft_player_st.wasm
   arcweft_player_mt.wasm
   loader.js
+  game.awfb
 ```
+
+The browser player does not use runtime JIT or Wasmtime. It runs the same bytecode VM compiled to Wasm, with browser adapters for fetch/cache/storage, WebAudio, DOM UI, and WebGPU/WebGL. Future build-time AOT Wasm helpers may be emitted for pure functions, but flow/dialogue/choice/Need semantics remain VM-defined.
 
 ## WebGPU / WebGL fallback
 

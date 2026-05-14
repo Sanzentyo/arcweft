@@ -9,10 +9,12 @@ pub trait Activity {
     fn manifest() -> ActivityManifest where Self: Sized;
     fn mount(&mut self, ctx: MountContext<'_>) -> Result<MountResult, ActivityError>;
     fn step(&mut self, input: FrameInputView<'_>, output: FrameOutputWriter<'_>) -> StepStatus;
-    fn save(&self, out: SaveWriter<'_>) -> Result<()>;
-    fn load(&mut self, input: SaveReader<'_>) -> Result<()>;
+    fn snapshot(&self) -> Result<ActivitySnapshot, ActivityError>;
+    fn restore(&mut self, snapshot: ActivitySnapshotRef<'_>) -> Result<(), ActivityError>;
 }
 ```
+
+Activity snapshot は Sans I/O data。Activity は path を開かず、host adapter が snapshot bytes の serialize、compress、encrypt、file write、cloud sync を担当する。
 
 ## Mode
 
@@ -70,4 +72,3 @@ RenderCommand::DrawMesh {
 ```
 
 Trusted Activity のみ直接 wgpu callback を許可する。
-

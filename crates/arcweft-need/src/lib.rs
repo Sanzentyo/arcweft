@@ -1,15 +1,8 @@
-use core::fmt;
+use thiserror::Error;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("progress ratio must be finite and in the range 0.0..=1.0")]
 pub struct ProgressError;
-
-impl fmt::Display for ProgressError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("progress ratio must be finite and in the range 0.0..=1.0")
-    }
-}
-
-impl std::error::Error for ProgressError {}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Progress {

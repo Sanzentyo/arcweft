@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 arcweft-id = { path = "../arcweft-id" }
 arcweft-source = { path = "../arcweft-source" }
+thiserror.workspace = true
 
 [lib]
 path = "src/lib.rs"

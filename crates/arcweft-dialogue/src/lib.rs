@@ -1,7 +1,7 @@
 use arcweft_id::{PublicId, TextKey};
 use arcweft_source::SourceAnchor;
-use core::fmt;
 use core::time::Duration;
+use thiserror::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SpeakerRef {
@@ -221,13 +221,15 @@ pub struct LinePlanBuilder {
     output: Option<OutPayload>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("{kind}")]
 pub struct DialogueBuildError {
     kind: DialogueBuildErrorKind,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum DialogueBuildErrorKind {
+    #[error("dialogue line content is required")]
     MissingContent,
 }
 
@@ -730,18 +732,6 @@ impl DialogueBuildError {
         self.kind
     }
 }
-
-impl fmt::Display for DialogueBuildError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.kind {
-            DialogueBuildErrorKind::MissingContent => {
-                f.write_str("dialogue line content is required")
-            }
-        }
-    }
-}
-
-impl std::error::Error for DialogueBuildError {}
 
 #[cfg(test)]
 mod tests;

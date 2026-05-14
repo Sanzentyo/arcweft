@@ -17,7 +17,7 @@ use crate::pattern::parse_pattern;
 use crate::text::parse_dialogue_tokens;
 use crate::types::{parse_fn_signature, parse_type_ref};
 use arcweft_source::{SourceAnchor, SourceName};
-use core::fmt;
+use thiserror::Error;
 
 /// Parses an Arcweft source string.
 pub fn parse_source(source: impl Into<String>) -> Result<SyntaxTree, Vec<ParseError>> {
@@ -32,7 +32,8 @@ pub fn parse_stub(source: impl Into<String>) -> Result<SyntaxTree, Vec<ParseErro
 }
 
 /// Syntax-level parse error with expected tokens and recovery suggestions.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("{message}")]
 pub struct ParseError {
     range: TextRange,
     expected: Vec<String>,
@@ -2729,14 +2730,6 @@ impl RecoverySuggestion {
         &self.message
     }
 }
-
-impl fmt::Display for ParseError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for ParseError {}
 
 fn source_take(parser: &mut Parser) -> String {
     core::mem::take(&mut parser.source)

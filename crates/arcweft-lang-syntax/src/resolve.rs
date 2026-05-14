@@ -2,8 +2,8 @@ use crate::ast::EntityDeclKind;
 use crate::check::EntityKind;
 use crate::lower::{HirFlowItem, HirModule, HirTopLevelDecl};
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
-use core::fmt;
 use std::collections::HashMap;
+use thiserror::Error;
 
 /// Entity registry used by parser/HIR integration tests.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -12,7 +12,8 @@ pub struct NameRegistry {
 }
 
 /// Name-resolution failure for entity references.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("{message}")]
 pub struct NameResolutionError {
     message: String,
 }
@@ -211,11 +212,3 @@ impl NameResolutionError {
         &self.message
     }
 }
-
-impl fmt::Display for NameResolutionError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for NameResolutionError {}

@@ -1,6 +1,8 @@
 # Cranelift JIT
 
-Cranelift JIT は native-only の最適化 backend として導入する。VM が正規実行系であり、JIT は pure / deterministic な関数に限定する。
+Cranelift JIT は `arcweft-lang-jit-cranelift` に置く native-only の最適化 backend として導入する。VM が正規実行系であり、JIT は pure / deterministic な関数に限定する。
+
+`arcweft-core` は Cranelift に依存せず、`jit-cranelift` feature も持たない。product feature 名は `native-jit` とし、native player が `arcweft-lang-jit-cranelift` adapter を選択する。
 
 ## 対象
 
@@ -18,10 +20,15 @@ JIT対象:
 JIT対象外:
 
 - flow controlそのもの
+- dialogue line execution
+- choice / select
+- `Need` / `await` / cancellation
 - effect発行
 - asset/audio/shader load
 - wasm call
 - UI操作
+- plugin call
+- save / load
 - string-heavy処理
 - debug build中の複雑な関数
 
@@ -31,14 +38,11 @@ JIT対象外:
 pub enum ExecBackend {
     Vm(BytecodeVm),
     #[cfg(feature = "native-jit")]
-    Cranelift(CraneliftBackend),
-}
-
-pub struct CraneliftBackend {
-    module: cranelift_jit::JITModule,
-    cache: HashMap<FunctionHash, CompiledFn>,
+    Cranelift(arcweft_lang_jit_cranelift::CraneliftBackend),
 }
 ```
+
+The VM must remain available as fallback whenever JIT compilation is pending, rejected, or failed.
 
 ## IR lowering
 
@@ -111,5 +115,5 @@ jit
 - JIT code は engine internal only。
 - user/mod script では VM が正。
 - native product では feature flag で有効化。
-- web では JIT 無効。VM / wasm / browser wasm backend を使用。
-
+- web では runtime JIT 無効。AOT compiled Wasm player + bytecode VM を使用し、必要なら将来の build-time AOT Wasm helper として扱う。
+- Wasmtime は plugin/activity sandbox 用であり、JIT backend ではない。

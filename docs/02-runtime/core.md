@@ -2,6 +2,8 @@
 
 `arcweft-core` は副作用を実行しない。入力を受け取り、次の状態と要求を返す。
 
+Core が扱う program、bytecode、manifest reference、save snapshot、diagnostic、trace はすべて pure data。Core は path を開かず、filesystem、network、wall-clock、GPU/audio/device handle、Wasm runtime、Cranelift runtime を保持しない。外部 adapter は bytes/string へ serialize された bundle や task result を `FrameInput` / `TaskEvent` として渡す。
+
 ```rust
 pub struct Engine {
     world: World,
@@ -31,6 +33,8 @@ pub struct FrameOutput {
 
 ## EffectRequest
 
+`EffectRequest` は実行済みの副作用ではなく、host adapter への要求である。たとえば `SaveCheckpoint` は checkpoint data を作る要求であり、実際の file write、compression、encryption、cloud sync は build/player/CLI adapter が行う。
+
 ```rust
 pub enum EffectRequest {
     EnsureAsset(AssetRequest),
@@ -56,6 +60,8 @@ pub enum EffectRequest {
 - replay は `FrameInput` 列と task/audio/ui result を記録。
 
 ## Flow fiber
+
+Flow/dialogue/choice/`Need`/effect emission は bytecode VM が意味論の正本として処理する。Cranelift JIT や generated Rust/Wasm は pure function の最適化または release packaging backend であり、FlowFiber の control transfer や awaiting semantics を置き換えない。
 
 ```rust
 pub enum FlowFiber {

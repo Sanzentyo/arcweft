@@ -34,6 +34,8 @@ arcweft-lang-hir
 arcweft-lang-ir
 arcweft-lang-vm
 arcweft-lang-lsp
+arcweft-lang-jit-cranelift
+arcweft-lang-aot-rust
 arcweft-id
 arcweft-ref
 arcweft-graph
@@ -54,14 +56,14 @@ arcweft-plugin-rust-macros
 arcweft-plugin-dylib
 arcweft-plugin-process
 arcweft-plugin-wasm
-arcweft-wasm
+arcweft-wasm-abi
+arcweft-wasm-tools
 arcweft-wasm-wasmtime
-arcweft-wasm-wasmi
+arcweft-wasm-browser
 arcweft-memory
 arcweft-ipc
 arcweft-ipc-iceoryx
 arcweft-ipc-mmap
-arcweft-lang-jit
 arcweft-hook-runtime
 arcweft-memo-runtime
 ```
@@ -150,11 +152,16 @@ arcweft-jj
 ## 依存ルール
 
 - `arcweft-core` は wgpu / audio / Servo / DOM / filesystem / network / Cranelift / Wasmtime に依存しない。
+- Data-format crate は Sans I/O を保つ。manifest、schema、bytecode、bundle、save snapshot は構造体と bytes/string codec までを担当し、path read/write、network、clock、backend resource 確保は CLI / build / player adapter に置く。
 - UI / shader / audio / Activity は `Command` / `TaskSpec` / `Need` / `EffectRequest` を介する。
 - Hook は phase ごとの構造化 action を返し、直接 host API を呼ばない。
 - Memoization は pure computation または TaskKey deduplication に限定し、cache は決定性に影響してはならない。
 - unsafe は `arcweft-memory`、`arcweft-plugin-*`、`arcweft-render`、`arcweft-audio-*` の境界に閉じ込める。
 - `arcweft-agent-protocol` は CLI / MCP / test / LLM が共通利用する。
+- `arcweft-lang-syntax` は rowan-compatible な lossless CST を所有する。`SyntaxKind`、`TokenKind`、green tree、`SyntaxNode`、source text / line index、error-tolerant `ParsedSource` をここに集約し、typed AST / HIR は CST 上の semantic view または lowering result として扱う。
+- `parse_source` は最終的に `ParsedSource { syntax, ast, errors, file_hash, line_index }` のように常に tree と diagnostics を返す。`Result<SyntaxTree, Vec<ParseError>>` と行単位 parser は短期 MVP であり、これ以上 `split_top_level` 型の ad hoc parser を拡張しない。
+- Cranelift は `arcweft-lang-jit-cranelift` の native-only 最適化 backend に閉じ込める。`arcweft-core` に `jit-cranelift` feature や Cranelift 依存を置かない。
+- Wasmtime は `arcweft-wasm-wasmtime` の native plugin/activity sandbox 用 adapter であり、Arcweft runtime の主実行系ではない。WIT ABI は `arcweft-wasm-abi`、Wasm validation/generation/inspection は `arcweft-wasm-tools` が担当する。
 
 - Capture devices are permissioned live sources; scripts and Activities consume granted ports, not raw device APIs.
 - USB/HID/Serial/Gamepad are also permissioned DevicePorts and expose typed Source streams.

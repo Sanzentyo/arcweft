@@ -26,6 +26,15 @@ extern rust mod mini_games::truck from crate "truck_game" {
 
 ## WASM plugin
 
+WASM is a plugin/activity sandbox format, not Arcweft's primary script runtime.
+Arcweft scripts lower to Typed IR / bytecode and run on the VM. A native player may
+use `arcweft-wasm-wasmtime` for sandboxed plugin calls; a browser player uses its
+own Wasm player build and browser APIs, not Wasmtime.
+
+The plugin ABI is described with WIT in `arcweft-wasm-abi`. Validation,
+component generation, and inspection live in `arcweft-wasm-tools`; host execution
+adapters stay outside `arcweft-core`.
+
 ```rust
 wasm plugin affection_ai from "plugins/affection_ai.wasm" {
     abi = "wit:arcweft:plugin/affection@0.1.0"
@@ -47,4 +56,3 @@ wasm plugin affection_ai from "plugins/affection_ai.wasm" {
 - fuel / memory / call time limit。
 - WASI preopen なしがデフォルト。
 - Activity から直接 engine state を mutate しない。
-

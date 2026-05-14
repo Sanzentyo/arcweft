@@ -1,5 +1,11 @@
 # schemas
 
+Schemas describe Arcweft data formats, not I/O APIs. A schema may define JSON,
+TOML, binary, or manifest shape, but reading from files, writing files, network
+fetch, bundle embedding, and platform storage belong to CLI/build/player
+adapters. Schema crates should expose typed data and deterministic validation
+over strings or byte slices.
+
 - [Agent Protocol](agent-protocol.md)
 - [GraphPatch](graph-patch.md)
 - [Module Manifest](module-manifest.md)

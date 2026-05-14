@@ -38,6 +38,7 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - Use Jujutsu (`jj`) for repository state when available; prefer `jj status`, `jj diff`, and `jj describe` over equivalent Git commands for local workflow reporting.
 - Keep `arcweft-core` Sans I/O.
 - Do not add GPU, filesystem, network, Servo, Wasmtime, CPAL, camera, or OS dependencies to `arcweft-core`.
+- Keep data-format crates Sans I/O. Manifests, schemas, bytecode, bundles, save snapshots, and debug traces should expose typed data plus deterministic bytes/string codecs; path reads/writes, network, clocks, embedding, signing, and platform storage belong in CLI/build/player adapters.
 - Put backend-specific dependencies behind feature flags and adapter crates.
 - Prefer typed APIs over stringly typed APIs.
 - Prefer deterministic runtime behavior.
@@ -59,6 +60,7 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - Prefer private modules and explicit `pub use` exports.
 - Add tests for each new crate's core behavior.
 - Add snapshot/golden tests only when deterministic.
+- Use `thiserror` for Rust error types across the workspace unless there is a clear reason to hand-write `Display` / `std::error::Error`; preserve structured fields such as `kind`, `range`, `anchor`, and `message`.
 
 ## Initial implementation order
 

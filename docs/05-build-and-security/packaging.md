@@ -1,5 +1,12 @@
 # Packaging and product flags
 
+Packaging is split into two layers:
+
+- Bundle format crates define Sans I/O data structures and deterministic codecs over `&[u8]`, `Vec<u8>`, and manifest strings.
+- CLI/build/player adapters perform filesystem reads/writes, embedding, compression selection, signing, upload, and platform storage.
+
+`.awfb` is a portable data artifact. Opening a path, watching a directory, fetching a remote bundle, or writing a crash report is never part of `arcweft-core` or the bundle data model.
+
 ## Feature flags
 
 ```toml
@@ -8,7 +15,7 @@ default = ["vm", "wgpu-render", "audio-basic"]
 
 native = ["native-st", "wgpu-render", "audio-native"]
 native-mt = ["tokio", "rayon"]
-native-jit = ["cranelift"]
+native-jit = ["arcweft-lang-jit-cranelift"]
 web = ["web-st", "dom-ui", "audio-web"]
 web-mt = ["web-workers", "wasm-bindgen-rayon"]
 
@@ -66,4 +73,3 @@ bug-report/
   audio-state.json
   diagnostics.json
 ```
-

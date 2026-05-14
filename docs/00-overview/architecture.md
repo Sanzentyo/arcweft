@@ -18,25 +18,29 @@ Game Source / Bundle
         │
         ▼
 Compiler / Tooling
-  CST → HIR → Typed Graph → IR → Bytecode/JIT/Bundle
+  lossless CST → typed AST/HIR → Typed IR → Bytecode/Bundle
   contracts / parser / shader / audio / UI / graph / RAG
+  optional native JIT / generated Rust / generated Wasm helpers
         │
         ▼
-Sans I/O Core
+Sans I/O Core / Typed IR VM
   Engine::step(FrameInput) -> FrameOutput
+  bytecode interpreter is the semantic source of truth
   deterministic state machine
   no GPU / no FS / no wall-clock / no raw network
         │
-        ├── Task Scheduler / Need runtime
-        ├── Activity host
-        ├── WASM / Rust plugin host
-        ├── Cranelift JIT backend
-        ├── wgpu renderer
-        ├── Render / Input LayerTree
-        ├── Game Native UI renderer
-        ├── Servo / DOM HTML UI backend
-        ├── Audio mixer / spatial / TTS / BGM graph
-        └── Agent Debug Bus / MCP / CLI
+        ▼
+Host / Adapter Layer
+  Task runner / Need executors
+  Activity host
+  WASM / Rust plugin host
+  native-only Cranelift pure-function tier
+  wgpu renderer
+  Render / Input LayerTree
+  Game Native UI renderer
+  Servo / DOM HTML UI backend
+  Audio mixer / spatial / TTS / BGM graph
+  Agent Debug Bus / MCP / CLI
 ```
 
 ## 主要な境界
@@ -50,6 +54,18 @@ Engine::step(input: FrameInput) -> FrameOutput
 ```
 
 `FrameOutput` は命令を実行しない。実行すべきことを `Command` / `EffectRequest` / `TaskSpec` として返す。
+
+### Data format も Sans I/O
+
+`.awft` source、lossless CST、AST/HIR、Typed IR、bytecode、manifest、schema、save snapshot、`.awfb` bundle はデータ形式であり、filesystem や network を直接触らない。
+
+Data-format crate は Rust 構造体と encode/decode を `&str` / `&[u8]` / `Vec<u8>` の上で提供する。path を開く、環境変数を見る、wall-clock を読む、backend resource を確保する処理は `arcweft-cli`、build tool、native/web player adapter に置く。
+
+### VM が意味論の正本
+
+Arcweft Typed IR と bytecode VM が実行意味論の正本になる。Cranelift JIT、generated Rust、generated Wasm helper は最適化または配布形式であり、flow、dialogue、choice、`Need`、effect 発行の意味論を置き換えない。
+
+Native product の基本形は AOT compiled player + embedded `.awfb` / bytecode bundle。Web product の基本形は AOT compiled Wasm player + bytecode bundle。完全 AOT の generated Rust/Wasm は後段の release backend として扱う。
 
 ### 時間がかかるものは `Need<T, E>`
 
@@ -65,10 +81,12 @@ asset load、shader compile、lazy use realization、Activity instantiate、TTS 
 pub trait Activity {
     fn mount(&mut self, ctx: MountContext<'_>) -> Result<MountResult, ActivityError>;
     fn step(&mut self, input: FrameInputView<'_>, out: FrameOutputWriter<'_>) -> StepStatus;
-    fn save(&self, out: SaveWriter<'_>) -> Result<()>;
-    fn load(&mut self, input: SaveReader<'_>) -> Result<()>;
+    fn snapshot(&self) -> Result<ActivitySnapshot, ActivityError>;
+    fn restore(&mut self, snapshot: ActivitySnapshotRef<'_>) -> Result<(), ActivityError>;
 }
 ```
+
+Snapshot は pure data。serialize、compress、encrypt、file write は host / packaging adapter の責務であり、Activity や core が path を開かない。
 
 ### Layer は描画と入力の共通境界
 
