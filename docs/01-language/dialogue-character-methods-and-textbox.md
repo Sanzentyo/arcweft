@@ -649,10 +649,11 @@ Fully qualified:
 @<character.alice>.stage(@stage.alice.main).face(worried)
 ```
 
-The `@show`, `@face`, `@move`, and related commands are sugar over these methods:
+Character staging uses ordinary effectful calls and methods. There is no
+separate `@show`, `@face`, or `@move` command family.
 
 ```awft
-@show alice smile at=center fade=200ms
+show(@character.alice, .smile, at = .center, fade = 200ms)
 ```
 
 is sugar for:
@@ -698,8 +699,8 @@ Preload for likely next flow:
 ```awft
 anticipate @flow.alice_intro {
     alice.preload(expressions=[smile, worried], voices=auto, sprites=true)
-    preload bg @asset.bg.room_evening
-    preload shader @shader.transition.dissolve
+    asset.preload(@asset.bg.room_evening)
+    shader.preload(@shader.transition.dissolve)
 }
 ```
 

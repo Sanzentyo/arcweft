@@ -1234,6 +1234,14 @@ impl Parser {
                 ["use an ordinary statement or function-call style command"],
             );
         }
+        if self.reject_legacy_scenario_call(trimmed, TextRange::new(line.start, line.end)) {
+            self.index += 1;
+            return Some(FlowItem::Raw(trimmed.to_owned()));
+        }
+        if is_expression_statement_call(trimmed) {
+            self.index += 1;
+            return Some(FlowItem::Stmt(Stmt::Expr(parse_expr_lossy(trimmed))));
+        }
         if let Some(command) =
             parse_word_scenario_command(trimmed, TextRange::new(line.start, line.end))
         {
@@ -1249,6 +1257,26 @@ impl Parser {
         is_await_with_head(trimmed)
             .then(|| self.parse_await_flow_item(line, trimmed))
             .flatten()
+    }
+
+    fn reject_legacy_scenario_call(&mut self, trimmed: &str, range: TextRange) -> bool {
+        let Some((name, tail)) = split_leading_ident(trimmed) else {
+            return false;
+        };
+        if !matches!(name, "bg" | "show") || tail.trim_start().starts_with('(') {
+            return false;
+        }
+        self.push_error(
+            range,
+            "scenario staging uses canonical function-call syntax",
+            [
+                "bg(@asset.id, fade = 300ms)",
+                "show(@character.alice, .normal)",
+            ],
+            Some(trimmed),
+            ["rewrite this as an ordinary effectful call"],
+        );
+        true
     }
 
     fn parse_await_flow_item(&mut self, line: &CstLine, trimmed: &str) -> Option<FlowItem> {
@@ -2926,6 +2954,30 @@ fn parse_required_id_ref<'a>(
     errors: &mut Vec<ParseError>,
 ) -> Option<(IdRef, &'a str)> {
     let input = input.trim_start();
+    if starts_leading_relative_entity_ref(input) {
+        let Some(relative_ref) = split_leading_relative_entity_ref(input) else {
+            errors.push(simple_error(
+                base,
+                input.len(),
+                "invalid family-relative id",
+                "@family:.suffix",
+            ));
+            return None;
+        };
+        let relative = relative_id_from_cst(
+            relative_ref.relative,
+            TextRange::new(
+                base + '@'.len_utf8() + relative_ref.family.len() + ':'.len_utf8(),
+                base + relative_ref.raw.len(),
+            ),
+        );
+        let entity = FamilyRelativeEntityRef::new(
+            relative_ref.family.to_owned(),
+            relative,
+            TextRange::new(base, base + relative_ref.raw.len()),
+        );
+        return Some((IdRef::family_relative(entity), relative_ref.rest));
+    }
     if starts_leading_relative_id(input) {
         let Some(relative) = split_leading_relative_id(input) else {
             errors.push(simple_error(
@@ -3004,16 +3056,7 @@ fn parse_word_scenario_command(trimmed: &str, range: TextRange) -> Option<Scenar
     let (name, args) = split_leading_ident(trimmed).unwrap_or((trimmed, ""));
     if !matches!(
         name,
-        "option"
-            | "log"
-            | "scene"
-            | "text"
-            | "progress"
-            | "meter"
-            | "stop"
-            | "flush"
-            | "bg"
-            | "show"
+        "option" | "log" | "scene" | "text" | "progress" | "meter" | "stop" | "flush"
     ) {
         return None;
     }
@@ -3033,6 +3076,18 @@ fn parse_scenario_args(args: &str) -> Vec<crate::expr::Expr> {
 
 fn split_scenario_args(source: &str) -> Vec<&str> {
     split_top_level_whitespace(source)
+}
+
+fn is_expression_statement_call(trimmed: &str) -> bool {
+    let Some((_, tail)) = split_leading_ident(trimmed) else {
+        return false;
+    };
+    if find_top_level_punctuation(trimmed, ':').is_some()
+        || find_top_level_punctuation(trimmed, '[').is_some()
+    {
+        return false;
+    }
+    tail.trim_start().starts_with('(') && crate::expr::parse_expr(trimmed).is_ok()
 }
 
 fn parse_line_options(

@@ -29,8 +29,11 @@ the next documentable declaration or field. Scenario operations such as
 background changes are ordinary effectful function calls, not `@` commands.
 
 `RelativeId` is accepted only in ID-bearing contexts such as dialogue line IDs,
-choice IDs, option IDs, and text-key overrides. It is not a general entity
-reference; write `goto @flow.opening.next`, not `goto .next`. In general
+choice IDs, option IDs, and text-key overrides. ID-bearing contexts may also
+accept family-relative spelling such as `@say:.greeting` or `@choice:.first`,
+but hand-written code should prefer the shorter `@.greeting` form there. It is
+not a general entity reference; write `goto @flow.opening.next` or the
+recommended family-relative `goto @flow:.next`, not `goto .next`. In general
 entity-reference contexts, relative references must include an entity family:
 `@flow:.next`, `@frag:.intro`, `@asset:.room`, `@textbox:.side`.
 `@.suffix` resolves in the current ID scope. Each extra dot walks one parent ID
@@ -141,9 +144,9 @@ DialogueLine :=
 
 CallArgs       := '(' NamedArg (',' NamedArg)* ','? ')'
 NamedArg       := Ident '=' Expr
-RelativeLineId := RelativeId
-LineOption     := 'id' '=' (EntityRef | RelativeId)
-                | 'text_key' '=' (EntityRef | RelativeId)
+RelativeLineId := RelativeId | FamilyRelativeEntityRef
+LineOption     := 'id' '=' (EntityRef | RelativeId | FamilyRelativeEntityRef)
+                | 'text_key' '=' (EntityRef | RelativeId | FamilyRelativeEntityRef)
                 | 'voice' '=' Expr
                 | 'window' '=' EntityRef
                 | Ident '=' Expr
@@ -175,12 +178,12 @@ ChoiceBody  := '{' ChoiceItem* '}' | ':' Newline IndentedItems
 ChoiceItem  := LetStmt | IfExpr | MatchExpr | ForStmt | OptionItem | OptionForSugar | ChoiceArm
 
 OptionItem  := 'option' OptionId OptionBody
-ChoiceId    := EntityRef | RelativeId
+ChoiceId    := EntityRef | RelativeId | FamilyRelativeEntityRef
 OptionId    := StaticOptionId | Expr
-StaticOptionId := EntityRef | RelativeId
+StaticOptionId := EntityRef | RelativeId | FamilyRelativeEntityRef
 OptionBody  := '{' OptionField* '}' | ':' Newline IndentedItems
 OptionField := 'label' '=' Expr
-             | 'label' '(' 'id' '=' (EntityRef | RelativeId) ')' '=' Expr
+             | 'label' '(' 'id' '=' (EntityRef | RelativeId | FamilyRelativeEntityRef) ')' '=' Expr
              | 'value' '=' Expr
              | 'visible' '=' Expr
              | 'enabled' '=' Expr

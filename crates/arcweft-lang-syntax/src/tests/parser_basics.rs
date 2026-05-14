@@ -18,7 +18,7 @@ mod game::routes::opening
 
 use game::prelude::*
  pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    bg @asset.bg.room fade=300ms
+    bg(@asset.bg.room, fade = 300ms)
     include @frag.alice_enters
 }
 ",
@@ -41,18 +41,19 @@ use game::prelude::*
         "state"
     ));
     assert_eq!(flow.body().len(), 2);
-    assert!(
-        matches!(&flow.body()[0], FlowItem::ScenarioCommand(command) if command.args().len() == 2)
-    );
+    assert!(matches!(
+        &flow.body()[0],
+        FlowItem::Stmt(Stmt::Expr(Expr::Call { .. }))
+    ));
     assert!(matches!(&flow.body()[1], FlowItem::Include(_)));
 }
 
 #[test]
-fn parses_scenario_command_args_as_expressions() {
+fn parses_staging_calls_as_expression_statements() {
     let tree = parse_ok(
         r"
 flow @flow.opening opening {
-    show alice normal at=right fade=220ms
+    show(@character.alice, .normal, at = .right, fade = 220ms)
 }
 ",
     );
@@ -60,19 +61,36 @@ flow @flow.opening opening {
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
-    let FlowItem::ScenarioCommand(command) = &flow.body()[0] else {
-        panic!("expected scenario command");
+    let FlowItem::Stmt(Stmt::Expr(Expr::Call { callee, args })) = &flow.body()[0] else {
+        panic!("expected call statement");
     };
-    assert_eq!(command.name(), "show");
-    assert!(matches!(&command.args()[0], Expr::Path(path) if path == "alice"));
+    assert!(matches!(callee.as_ref(), Expr::Path(path) if path == "show"));
+    assert!(matches!(&args[0], Expr::EntityRef(_)));
     assert!(matches!(
-        &command.args()[2],
-        Expr::NamedArg { name, value } if name == "at" && matches!(value.as_ref(), Expr::Path(path) if path == "right")
+        &args[2],
+        Expr::NamedArg { name, value } if name == "at" && matches!(value.as_ref(), Expr::Path(path) if path == ".right")
     ));
     assert!(matches!(
-        &command.args()[3],
+        &args[3],
         Expr::NamedArg { name, value } if name == "fade" && matches!(value.as_ref(), Expr::Literal(_))
     ));
+}
+
+#[test]
+fn rejects_legacy_staging_command_sugar() {
+    let errors = parse_errors(
+        r"
+flow @flow.opening opening {
+    bg @asset.bg.room fade=300ms
+}
+",
+    );
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("canonical function-call syntax")),
+        "expected canonical call diagnostic, got {errors:?}"
+    );
 }
 
 #[test]

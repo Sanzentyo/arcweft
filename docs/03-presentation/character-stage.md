@@ -78,16 +78,18 @@ alice.sprite(smile).preload()
 alice.prefetch(flow=#flow.alice_intro, lines=6)
 ```
 
-The `@show`, `@face`, `@move`, `@scale`, `@rotate`, and `@anim` forms are scenario sugar over the object API.
+Character staging uses ordinary calls and object methods. There is no
+separate `@show`, `@face`, `@move`, `@scale`, `@rotate`, or `@anim` command
+family.
 
 ```awft
-@show alice smile at=center fade=200ms
+show(@character.alice, .smile, at = .center, fade = 200ms)
 ```
 
 means:
 
 ```awft
-alice.stage.show(smile, at=center, fade=200ms)
+alice.stage.show(.smile, at = .center, fade = 200ms)
 ```
 
 Object methods are effect-checked. `stage` methods affect the character stage object, `sprite` and `voice` methods return handles or `Need<...>` values, and `prefetch` schedules preload tasks.
@@ -95,9 +97,9 @@ Object methods are effect-checked. `stage` methods affect the character stage ob
 ## Show / hide
 
 ```awft
-@show alice smile at=center fade=200ms
-@show alice worried at=(0.35, 0.92) scale=1.05 z=10
-@hide alice fade=180ms
+show(@character.alice, .smile, at = .center, fade = 200ms)
+show(@character.alice, .worried, at = (0.35, 0.92), scale = 1.05, z = 10)
+hide(@character.alice, fade = 180ms)
 ```
 
 Object equivalent:
@@ -109,9 +111,9 @@ alice.stage.show(smile, at=center, fade=200ms)
 ## Face and pose change
 
 ```awft
-@face alice worried crossfade=120ms
-@pose alice hands_front time=160ms
-@mouth alice closed
+face(@character.alice, .worried, crossfade = 120ms)
+pose(@character.alice, .hands_front, time = 160ms)
+mouth(@character.alice, .closed)
 ```
 
 Expression changes are patch operations on sprite parts. They do not recreate the entire character object.
@@ -119,11 +121,11 @@ Expression changes are patch operations on sprite parts. They do not recreate th
 ## Movement and transform
 
 ```awft
-@move alice to=left time=350ms ease=cubic.out
-@move alice by=(-0.08, 0.0) time=200ms
-@scale alice 1.08 time=240ms
-@rotate alice -2deg time=180ms
-@transform alice {
+move(@character.alice, to = .left, time = 350ms, ease = cubic.out)
+move(@character.alice, by = (-0.08, 0.0), time = 200ms)
+scale(@character.alice, 1.08, time = 240ms)
+rotate(@character.alice, -2deg, time = 180ms)
+transform(@character.alice) {
     position = (0.30, 0.92)
     scale = (1.04, 1.04)
     skew = (0deg, 0deg)
@@ -307,12 +309,12 @@ alice.stage(#stage.alice.main).move(to=left, time=300ms)
 #<character.alice>.stage(#stage.alice.sub).face(smile)
 ```
 
-Scenario commands are sugar over this API:
+Ordinary calls are sugar over this API:
 
 ```awft
-@show alice smile at=center fade=200ms
-@face alice worried crossfade=120ms
-@move alice to=left time=350ms ease=cubic.out
+show(@character.alice, .smile, at = .center, fade = 200ms)
+face(@character.alice, .worried, crossfade = 120ms)
+move(@character.alice, to = .left, time = 350ms, ease = cubic.out)
 ```
 
 The object-style API is allowed because it preserves Arcweft's deterministic state model:
@@ -357,8 +359,8 @@ Read-ahead for a likely next flow:
 ```awft
 anticipate #flow.alice_intro {
     alice.preload(expressions=[smile, worried], voices=auto, sprites=true)
-    preload bg #asset.bg.room_evening
-    preload shader #shader.transition.dissolve
+    asset.preload(@asset.bg.room_evening)
+    shader.preload(@shader.transition.dissolve)
 }
 ```
 

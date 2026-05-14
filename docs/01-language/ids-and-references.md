@@ -123,7 +123,26 @@ scope = "flow"
 文脈だけで使える。通常の entity reference ではないので、`goto @.next`
 のような相対参照を flow / asset 参照としては採用しない。
 
+ID を期待する文脈では、一貫性のため family-relative spelling も使える。
+ただし手書きでは短い `@.suffix` を推奨する。
+
+```awft
+alice(id=@.greeting):
+    おはよう。[p]
+
+alice(id=@say:.greeting):
+    おはよう。[p]  # allowed, but formatter may prefer id=@.greeting
+
+choice @choice:.first {
+    @choice:.listen "聞く" -> @flow:.listen
+}
+```
+
 一般の entity reference 文脈で相対参照したい場合は family を明示する。
+同じ flow / fragment / asset family の中を相対参照する場合は、
+absolute ID を手で連結するより `@flow:.next` のような
+family-relative form を推奨する。family が明示されるので、ID を宣言する
+`@.suffix` と値として参照する `@flow:.suffix` が混ざらない。
 
 ```awft
 goto @flow:.next
@@ -132,8 +151,9 @@ window = @textbox:.side
 asset.load(@asset:.room)
 ```
 
-つまり `@.suffix` は `IdRef::Relative`、`@flow:.suffix` は
-`EntityRefSyntax::FamilyRelative` として別の AST ノードになる。
+つまり `@.suffix` は `IdRef::Relative`、参照文脈の `@flow:.suffix` は
+`EntityRefSyntax::FamilyRelative`、ID 文脈の `@say:.suffix` /
+`@choice:.suffix` は family 付きの `IdRef` として別の AST ノードになる。
 
 Arcweft accepts two relative-ID spellings:
 
@@ -152,6 +172,10 @@ accepted; `..` already has range/rest-pattern meanings.
 
 Deep dot runs such as `@...suffix` are accepted, but formatter and LSP tooling
 should prefer the explicit spelling `@super.super.suffix` for authored code.
+
+TODO(lint): `@...suffix` remains valid syntax for generated code and compact
+authoring, but lint/formatter tooling should recommend `@super.super.suffix`
+when the parent depth is greater than one.
 
 ```awft
 alice(id=@.greeting):
@@ -234,6 +258,22 @@ alice(id=@.greeting, voice=auto)
 
 名前付き scope がない場合、`scope_path` セグメントは空文字として残さず、
 ID から省略する。
+
+## Module path, flow ID, and scope hierarchy
+
+Relative ID lowering currently uses the enclosing flow ID plus named `scope`
+segments. For example, `flow @flow.opening` and `scope rain` produce
+`say.opening.alice.rain.greeting` for `alice(id=@.greeting)`.
+
+`mod game::routes::opening` is a source/module hierarchy, not automatically part
+of public entity IDs today. This keeps public IDs stable when files move.
+However, projects may choose a policy that requires module paths and entity IDs
+to line up, such as `mod game::routes::opening` containing `@flow.opening`.
+
+TODO(lint): add an ID policy lint pass that can compare module path, flow or
+fragment ID, named scopes, and generated relative IDs. It should report IDs that
+do not follow a configured hierarchy, while keeping the core parser/HIR Sans
+I/O and policy-neutral.
 
 ```awft
 alice(id=@.greeting):

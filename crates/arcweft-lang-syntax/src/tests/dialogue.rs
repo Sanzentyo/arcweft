@@ -5,7 +5,7 @@ fn parses_fragment_as_flow_like_body() {
     let tree = parse_ok(
         r"
 pub fragment @frag.alice_enters alice_enters: FlowFragment {
-    show alice normal at=right fade=220ms
+    show(@character.alice, .normal, at = .right, fade = 220ms)
     alice: おはよう。[p]
 }
 ",
@@ -19,7 +19,10 @@ pub fragment @frag.alice_enters alice_enters: FlowFragment {
         fragment.id().expect("fragment id").body(),
         "frag.alice_enters"
     );
-    assert!(matches!(&fragment.body()[0], FlowItem::ScenarioCommand(_)));
+    assert!(matches!(
+        &fragment.body()[0],
+        FlowItem::Stmt(Stmt::Expr(Expr::Call { .. }))
+    ));
     assert!(matches!(&fragment.body()[1], FlowItem::SpeakerLine(_)));
 }
 
@@ -267,6 +270,36 @@ fn dialogue_tokenizer_normalizes_bracket_ruby_to_ruby_token() {
             .iter()
             .all(|token| !matches!(token, DialogueToken::EndTag(name) if name == "ruby")),
         "bracket ruby end interpolation should be consumed, got {tokens:?}"
+    );
+}
+
+#[test]
+fn lowers_family_relative_dialogue_id_declarations() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    scope dream {
+        alice(id=@say:.hint, text_key=@text:.hint):
+            今日は少しだけ。[p]
+    }
+}
+",
+    );
+
+    let hir = lower_to_hir(&tree).expect("family-relative dialogue IDs lower");
+    let HirFlowItem::Scope(scope) = &hir.flows()[0].body()[0] else {
+        panic!("expected scope");
+    };
+    let HirFlowItem::Dialogue(line) = &scope.body()[0] else {
+        panic!("expected dialogue");
+    };
+    assert_eq!(
+        line.id().expect("line id").body(),
+        "say.opening.alice.dream.hint"
+    );
+    assert_eq!(
+        line.text_key().expect("text key").body(),
+        "text.opening.alice.dream.hint"
     );
 }
 

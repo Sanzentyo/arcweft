@@ -25,8 +25,8 @@ preload next @flow.alice_intro {
 }
 
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    @bg @asset.bg.room fade=300ms
-    @show alice normal at=center fade=200ms
+    bg(@asset.bg.room, fade = 300ms)
+    show(@character.alice, .normal, at = .center, fade = 200ms)
 
     地の文: 扉の向こうから、雨の音がした。[p]
 

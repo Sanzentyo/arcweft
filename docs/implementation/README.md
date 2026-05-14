@@ -94,13 +94,15 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   module scans.
 - CST reference helpers now keep absolute `EntityRef`, ID-context `IdRef`, and
   family-relative `EntityRefSyntax` separate. `@.suffix`, `@..suffix`,
-  `@...suffix`, and `@super...` are accepted only in ID-bearing contexts;
+  `@...suffix`, `@super...`, and ID-context family forms such as
+  `@say:.suffix` / `@choice:.suffix` are accepted in ID-bearing contexts;
   general relative references use family-qualified forms such as `@flow:.next`
   and `@textbox:.side`. HIR lowering normalizes these structured nodes against
   the current flow, speaker, choice, and named-scope stack.
 - Old `@` command and attribute spellings are no longer treated as migration
-  syntax. Attributes are `#[...]`; scenario operations use ordinary command /
-  call spelling such as `bg @asset.bg.room ...` in the current parser layer.
+  syntax. Attributes are `#[...]`; staging operations use canonical ordinary
+  calls such as `bg(@asset.bg.room, fade = 300ms)` and
+  `show(@character.alice, .normal)`.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure

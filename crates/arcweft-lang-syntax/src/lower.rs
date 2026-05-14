@@ -173,6 +173,11 @@ struct LowerContext {
     line_counters: HashMap<String, usize>,
 }
 
+// TODO(lint): Module paths and named `scope` blocks should both be available to
+// the ID policy checker. Today lowering derives relative IDs from the current
+// flow ID and named scopes only; a later lint pass should compare generated IDs
+// against the source module path and report IDs that break the project hierarchy.
+
 /// HIR-facing if block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirIf {
@@ -792,6 +797,9 @@ fn normalize_entity_ref_syntax(
                     Some(*relative.range()),
                 ));
             };
+            // Family-relative refs are the recommended spelling for reference
+            // positions (`@flow:.next`, `@frag:.intro`) because the family keeps
+            // lookup separate from ID-bearing `@.suffix` declaration contexts.
             let mut parts = vec![relative.family().to_owned(), flow_slug.clone()];
             parts.extend(relative_scopes(context, relative.relative())?);
             parts.push(relative.relative().suffix().to_owned());
@@ -801,8 +809,13 @@ fn normalize_entity_ref_syntax(
 }
 
 fn normalize_choice_id(id: &IdRef, context: &LowerContext) -> Result<EntityRef, HirLowerError> {
-    let IdRef::Relative(relative) = id else {
-        return Ok(id.as_absolute().expect("absolute id").clone());
+    let relative = match id {
+        IdRef::Absolute(id) => return Ok(id.clone()),
+        IdRef::Relative(relative) => relative,
+        IdRef::FamilyRelative(relative) => {
+            ensure_id_family(relative.family(), "choice", relative.range())?;
+            relative.relative()
+        }
     };
     let Some(flow_slug) = &context.flow_slug else {
         return Err(HirLowerError::new(
@@ -817,8 +830,13 @@ fn normalize_choice_id(id: &IdRef, context: &LowerContext) -> Result<EntityRef, 
 }
 
 fn normalize_option_id(id: &IdRef, context: &LowerContext) -> Result<EntityRef, HirLowerError> {
-    let IdRef::Relative(relative) = id else {
-        return Ok(id.as_absolute().expect("absolute id").clone());
+    let relative = match id {
+        IdRef::Absolute(id) => return Ok(id.clone()),
+        IdRef::Relative(relative) => relative,
+        IdRef::FamilyRelative(relative) => {
+            ensure_id_family(relative.family(), "choice", relative.range())?;
+            relative.relative()
+        }
     };
     let Some(choice) = context.choice_stack.last() else {
         return Err(HirLowerError::new(
@@ -834,8 +852,13 @@ fn normalize_option_id(id: &IdRef, context: &LowerContext) -> Result<EntityRef, 
 }
 
 fn normalize_text_key_id(id: &IdRef, context: &LowerContext) -> Result<EntityRef, HirLowerError> {
-    let IdRef::Relative(relative) = id else {
-        return Ok(id.as_absolute().expect("absolute id").clone());
+    let relative = match id {
+        IdRef::Absolute(id) => return Ok(id.clone()),
+        IdRef::Relative(relative) => relative,
+        IdRef::FamilyRelative(relative) => {
+            ensure_id_family(relative.family(), "text", relative.range())?;
+            relative.relative()
+        }
     };
     let Some(choice) = context.choice_stack.last() else {
         return Err(HirLowerError::new(
@@ -872,6 +895,15 @@ fn normalize_line_id(
             context,
             *relative.range(),
         )?)),
+        Some(IdRef::FamilyRelative(relative)) => {
+            ensure_id_family(relative.family(), "say", relative.range())?;
+            Ok(Some(build_line_entity_ref(
+                speaker,
+                Some(relative.relative()),
+                context,
+                *relative.range(),
+            )?))
+        }
         None => Ok(Some(build_line_entity_ref(speaker, None, context, range)?)),
     }
 }
@@ -883,8 +915,13 @@ fn normalize_line_text_key(
     context: &LowerContext,
 ) -> Result<Option<EntityRef>, HirLowerError> {
     if let Some(text_key) = text_key {
-        let IdRef::Relative(relative) = text_key else {
-            return Ok(Some(text_key.as_absolute().expect("absolute id").clone()));
+        let relative = match text_key {
+            IdRef::Absolute(text_key) => return Ok(Some(text_key.clone())),
+            IdRef::Relative(relative) => relative,
+            IdRef::FamilyRelative(relative) => {
+                ensure_id_family(relative.family(), "text", relative.range())?;
+                relative.relative()
+            }
         };
         let Some(flow_slug) = &context.flow_slug else {
             return Err(HirLowerError::new(
@@ -902,6 +939,17 @@ fn normalize_line_text_key(
         )));
     }
     Ok(line_id.map(|id| EntityRef::new(line_id_to_text_key(id.body()), false, *id.range())))
+}
+
+fn ensure_id_family(found: &str, expected: &str, range: &TextRange) -> Result<(), HirLowerError> {
+    if found == expected {
+        Ok(())
+    } else {
+        Err(HirLowerError::new(
+            format!("relative ID family `{found}` is not valid here; expected `{expected}`"),
+            Some(*range),
+        ))
+    }
 }
 
 fn build_line_entity_ref(
@@ -938,6 +986,9 @@ fn relative_scopes(
     context: &LowerContext,
     relative: &RelativeId,
 ) -> Result<Vec<String>, HirLowerError> {
+    // TODO(lint): `@...suffix` is accepted for machine output and compact
+    // authoring, but hand-written source should be nudged toward explicit
+    // `@super.super.suffix` once a lint/formatter layer exists.
     let Some(take_len) = context.scopes.len().checked_sub(relative.parent_depth()) else {
         return Err(HirLowerError::new(
             "relative ID walks past the available ID scopes",

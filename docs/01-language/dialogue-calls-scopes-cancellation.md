@@ -645,13 +645,13 @@ alice.say(id=@say.opening.003, face=smile, voice=@voice.alice.003)[
 ```
 
 ```awft
-@face alice worried crossfade=120ms
+face(@character.alice, .worried, crossfade = 120ms)
 ```
 
 becomes:
 
 ```awft
-alice.stage.face(worried, crossfade=120ms)
+alice.stage.face(.worried, crossfade = 120ms)
 ```
 
 ```awft

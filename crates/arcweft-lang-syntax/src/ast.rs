@@ -102,6 +102,7 @@ pub struct EntityRef {
 pub enum IdRef {
     Absolute(EntityRef),
     Relative(RelativeId),
+    FamilyRelative(FamilyRelativeEntityRef),
 }
 
 /// Relative ID suffix such as `@.greeting`, `@..shared`, or `@super.shared`.
@@ -779,7 +780,12 @@ pub enum AwaitBranchKind {
     Denied,
 }
 
-/// Compact `@bg`, `@show`, and similar scenario command.
+/// Line-oriented scenario command retained for non-call DSL blocks.
+///
+/// Staging operations such as `bg(...)` and `show(...)` are ordinary
+/// expression calls, not `ScenarioCommand`s. This node remains for the small
+/// set of statement-like wait-view and UI DSL rows that have no call-shaped
+/// canonical form yet.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScenarioCommand {
     name: String,
@@ -1245,28 +1251,41 @@ impl IdRef {
         Self::Relative(relative)
     }
 
+    pub(crate) const fn family_relative(relative: FamilyRelativeEntityRef) -> Self {
+        Self::FamilyRelative(relative)
+    }
+
     pub fn body(&self) -> &str {
         match self {
             Self::Absolute(entity) => entity.body(),
             Self::Relative(relative) => relative.suffix(),
+            Self::FamilyRelative(relative) => relative.relative().suffix(),
         }
     }
 
     pub const fn is_relative(&self) -> bool {
-        matches!(self, Self::Relative(_))
+        matches!(self, Self::Relative(_) | Self::FamilyRelative(_))
     }
 
     pub const fn relative_id(&self) -> Option<&RelativeId> {
         match self {
             Self::Absolute(_) => None,
             Self::Relative(relative) => Some(relative),
+            Self::FamilyRelative(relative) => Some(relative.relative()),
         }
     }
 
     pub const fn as_absolute(&self) -> Option<&EntityRef> {
         match self {
             Self::Absolute(entity) => Some(entity),
-            Self::Relative(_) => None,
+            Self::Relative(_) | Self::FamilyRelative(_) => None,
+        }
+    }
+
+    pub const fn family_relative_ref(&self) -> Option<&FamilyRelativeEntityRef> {
+        match self {
+            Self::Absolute(_) | Self::Relative(_) => None,
+            Self::FamilyRelative(relative) => Some(relative),
         }
     }
 
@@ -1274,6 +1293,7 @@ impl IdRef {
         match self {
             Self::Absolute(entity) => entity.range(),
             Self::Relative(relative) => relative.range(),
+            Self::FamilyRelative(relative) => relative.range(),
         }
     }
 }

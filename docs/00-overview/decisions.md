@@ -64,6 +64,11 @@ Scenario commands are ordinary effectful function calls. The parser should not
 carry migration-only branches for old `@bg`, `@show`, `@choice`, or `@memo`
 forms; migration belongs in formatter/CLI tooling.
 
+General relative entity references should use family-qualified syntax such as
+`@flow:.next` or `@asset:.room`. ID-bearing contexts may also accept
+family-qualified forms such as `@say:.greeting`, but hand-written declarations
+should normally use the shorter `@.greeting` style.
+
 ## Literal and primitive type decision
 
 Arcweft uses explicit-width numeric primitives and no default numeric fallback.

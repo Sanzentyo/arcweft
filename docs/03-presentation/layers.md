@@ -289,9 +289,9 @@ layer が省略された場合は default layer に入る。
 
 ```awft
 scene {
-    background image(#asset.bg.room) // desugar: layer #layer.world.background
-    show alice                       // desugar: layer #layer.world.characters
-    choice { ... }                   // desugar: layer #layer.ui.game
+    background(image(@asset.bg.room))             // desugar: layer @layer.world.background
+    show(@character.alice, .normal)               // desugar: layer @layer.world.characters
+    choice { ... }                                // desugar: layer @layer.ui.game
 }
 ```
 

@@ -100,7 +100,7 @@ fn typechecks_edge_case_hir_with_explicit_environment() {
     let tree = parse_ok(
         r#"
 flow @flow.opening opening {
-    show alice normal at=right fade=220ms
+    show(@character.alice, .normal, at = .right, fade = 220ms)
     let (actor, (_, voice)) = alice.say(voice=auto)[聞いて。[p]]
     try await load_opening_assets() with { pending p => scene @scene.loading { progress p.ratio } }
     alice[
@@ -121,6 +121,8 @@ flow @flow.opening opening {
         .with_symbol("alice.stage", TypeKind::Named("StageActor".to_owned()))
         .with_symbol("auto", TypeKind::Named("VoicePolicy".to_owned()))
         .with_symbol("blue", TypeKind::Named("Color".to_owned()))
+        .with_symbol(".normal", TypeKind::Named("Pose".to_owned()))
+        .with_symbol(".right", TypeKind::Named("StagePosition".to_owned()))
         .with_symbol("normal", TypeKind::Named("Pose".to_owned()))
         .with_symbol("right", TypeKind::Named("StagePosition".to_owned()))
         .with_symbol("worried", TypeKind::Named("Face".to_owned()))
@@ -129,6 +131,7 @@ flow @flow.opening opening {
             "state.affection",
             TypeKind::Named("Map<Ref<Character>, Int>".to_owned()),
         )
+        .with_function("show", TypeKind::Unit)
         .with_function("fmt", TypeKind::DisplayText)
         .with_function(
             "load_opening_assets",
