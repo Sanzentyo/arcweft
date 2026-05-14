@@ -574,6 +574,15 @@ flow #flow.opening opening {
     ]
     with:
         out true
+
+    let result = try alice.say(voice=auto)[
+        キャンセルできる行です。[p]
+    ]
+    with:
+        cancel on input .SkipLine:
+            out Err(LineCancel::Skipped)
+
+        out Ok(())
 }
 ",
         )
@@ -583,6 +592,10 @@ flow #flow.opening opening {
         let env = TypeCheckEnv::new()
             .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
             .with_symbol("auto", TypeKind::Named("VoicePolicy".to_owned()))
+            .with_symbol(
+                "LineCancel::Skipped",
+                TypeKind::Named("LineCancel".to_owned()),
+            )
             .with_method(
                 TypeKind::Ref(EntityKind::Character),
                 "say",

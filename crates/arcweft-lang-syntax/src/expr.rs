@@ -384,6 +384,9 @@ fn parse_atom(source: &str) -> Expr {
         .strip_prefix('(')
         .and_then(|value| value.strip_suffix(')'))
     {
+        if inner.trim().is_empty() {
+            return Expr::Tuple(Vec::new());
+        }
         let args = split_args(inner);
         if args.len() > 1 {
             return Expr::Tuple(args.into_iter().map(parse_pipe).collect());

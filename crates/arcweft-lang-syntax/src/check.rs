@@ -556,11 +556,10 @@ impl TypeChecker<'_> {
             | Stmt::Select(expr) => {
                 self.check_expr(expr);
             }
-            Stmt::Out { label, expr } => self.check_out_stmt(label.as_deref(), expr),
-            Stmt::Ensure { condition, message } => {
-                self.expect_expr_type(condition, &TypeKind::Bool, "ensure condition");
-                self.check_expr(message);
+            Stmt::Out { label, expr } => {
+                self.check_out_stmt(label.as_deref(), expr);
             }
+            Stmt::Ensure { condition, message } => self.check_ensure_stmt(condition, message),
             Stmt::Goto(expr) => {
                 self.expect_expr_type(expr, &TypeKind::Ref(EntityKind::Flow), "goto destination");
             }
@@ -786,7 +785,7 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_out_stmt(&mut self, label: Option<&str>, expr: &Expr) {
+    fn check_out_stmt(&mut self, label: Option<&str>, expr: &Expr) -> Option<TypeKind> {
         if let Some(label) = label
             && !self
                 .line_label_stack
@@ -798,7 +797,12 @@ impl TypeChecker<'_> {
                 "out label `'{label}` does not name an active line-plan scope"
             )));
         }
-        self.check_expr(expr);
+        self.check_expr(expr)
+    }
+
+    fn check_ensure_stmt(&mut self, condition: &Expr, message: &Expr) {
+        self.expect_expr_type(condition, &TypeKind::Bool, "ensure condition");
+        self.check_expr(message);
     }
 
     fn resolve_loop_label(&self, label: Option<&str>) -> Option<usize> {
@@ -1074,43 +1078,96 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_line_plan_item(&mut self, item: &LinePlanItem) {
-        match item {
-            LinePlanItem::Option { value, .. }
-            | LinePlanItem::Let { expr: value, .. }
-            | LinePlanItem::Out(value) => {
-                self.check_expr(value);
+    fn check_line_plan_output_type(&mut self, plan: &crate::ast::LinePlan) -> Option<TypeKind> {
+        self.line_label_stack.push(plan.label().map(str::to_owned));
+        let mut output = None;
+        for item in plan.items() {
+            if let Some(item_output) = self.check_line_plan_item(item) {
+                output = Some(match output {
+                    Some(current) => merge_line_output(current, &item_output, &mut self.errors),
+                    None => item_output,
+                });
             }
+        }
+        self.line_label_stack.pop();
+        output
+    }
+
+    fn check_line_plan_item(&mut self, item: &LinePlanItem) -> Option<TypeKind> {
+        match item {
+            LinePlanItem::Option { value, .. } => {
+                self.check_expr(value);
+                None
+            }
+            LinePlanItem::Let { pattern, expr } => {
+                let ty = self.check_expr(expr);
+                for (name, ty) in let_else_bindings(pattern, ty.as_ref()) {
+                    self.locals.insert(name, ty);
+                }
+                None
+            }
+            LinePlanItem::Out(value) => self.check_expr(value),
             LinePlanItem::TimedCue { anchor, body } => {
                 self.expect_expr_type(anchor, &TypeKind::Duration, "timeline anchor");
                 self.check_expr(body);
+                None
             }
             LinePlanItem::CancelRule(rule) => {
                 self.line_cancel_depth += 1;
+                let mut output = None;
                 for stmt in rule.action() {
-                    self.check_stmt(stmt);
+                    let stmt_output = if let Stmt::Out { label, expr } = stmt {
+                        self.check_out_stmt(label.as_deref(), expr)
+                    } else {
+                        self.check_stmt(stmt);
+                        None
+                    };
+                    if let Some(stmt_output) = stmt_output {
+                        output = Some(match output {
+                            Some(current) => {
+                                merge_line_output(current, &stmt_output, &mut self.errors)
+                            }
+                            None => stmt_output,
+                        });
+                    }
                 }
                 self.line_cancel_depth -= 1;
+                output
             }
             LinePlanItem::Assert { expr, .. } => {
                 self.expect_expr_type(expr, &TypeKind::Bool, "line-plan assertion");
+                None
             }
             LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
+                let mut output = None;
                 for item in items {
-                    self.check_line_plan_item(item);
+                    if let Some(item_output) = self.check_line_plan_item(item) {
+                        output = Some(match output {
+                            Some(current) => {
+                                merge_line_output(current, &item_output, &mut self.errors)
+                            }
+                            None => item_output,
+                        });
+                    }
                 }
+                output
             }
             LinePlanItem::Memo { options, .. } => {
                 for (_, value) in options {
                     self.check_expr(value);
                 }
+                None
             }
             LinePlanItem::Expr(expr) => {
                 self.check_expr(expr);
+                None
             }
-            LinePlanItem::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
-                "raw line-plan item is not type-checkable: {raw}"
-            ))),
+            LinePlanItem::Raw(raw) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "raw line-plan item is not type-checkable: {raw}"
+                )));
+                None
+            }
         }
     }
 
@@ -1252,17 +1309,14 @@ impl TypeChecker<'_> {
         plan: Option<&crate::ast::LinePlan>,
     ) -> TypeKind {
         self.check_expr(callee);
-        if let Some(plan) = plan {
-            self.line_label_stack.push(plan.label().map(str::to_owned));
-            for item in plan.items() {
-                self.check_line_plan_item(item);
-            }
-            self.line_label_stack.pop();
-        }
-        TypeKind::Named("DialogueLine".to_owned())
+        plan.and_then(|plan| self.check_line_plan_output_type(plan))
+            .unwrap_or(TypeKind::Unit)
     }
 
     fn check_tuple_expr(&mut self, items: &[Expr]) -> TypeKind {
+        if items.is_empty() {
+            return TypeKind::Unit;
+        }
         TypeKind::Tuple(
             items
                 .iter()
@@ -1307,10 +1361,23 @@ impl TypeChecker<'_> {
     }
 
     fn check_call_expr(&mut self, callee: &Expr, args: &[Expr]) -> Option<TypeKind> {
-        for arg in args {
-            self.check_expr(arg);
-        }
+        let arg_types = args
+            .iter()
+            .map(|arg| self.check_expr(arg))
+            .collect::<Vec<_>>();
         if let Expr::Path(name) = callee {
+            if name == "Ok" {
+                return Some(TypeKind::Result {
+                    ok: Box::new(first_arg_type(&arg_types)),
+                    error: Box::new(TypeKind::Named("_".to_owned())),
+                });
+            }
+            if name == "Err" {
+                return Some(TypeKind::Result {
+                    ok: Box::new(TypeKind::Named("_".to_owned())),
+                    error: Box::new(first_arg_type(&arg_types)),
+                });
+            }
             return self.env.function_type(name).cloned().or_else(|| {
                 self.errors
                     .push(TypeCheckError::new(format!("unknown function `{name}`")));
@@ -1772,6 +1839,70 @@ fn result_ok_type(name: &str) -> Option<TypeKind> {
         .and_then(|value| value.strip_suffix('>'))?;
     let ok = inner.split_once(',').map_or(inner, |(ok, _)| ok).trim();
     Some(named_type_label(ok))
+}
+
+fn first_arg_type(types: &[Option<TypeKind>]) -> TypeKind {
+    types
+        .first()
+        .and_then(Clone::clone)
+        .unwrap_or(TypeKind::Unit)
+}
+
+fn merge_line_output(
+    current: TypeKind,
+    next: &TypeKind,
+    errors: &mut Vec<TypeCheckError>,
+) -> TypeKind {
+    if &current == next {
+        return current;
+    }
+    if let Some(merged) = merge_result_types(&current, next) {
+        return merged;
+    }
+    errors.push(TypeCheckError::new(format!(
+        "line-plan out expressions must have the same type, found {current:?} and {next:?}"
+    )));
+    current
+}
+
+fn merge_result_types(left: &TypeKind, right: &TypeKind) -> Option<TypeKind> {
+    let (
+        TypeKind::Result {
+            ok: left_ok,
+            error: left_error,
+        },
+        TypeKind::Result {
+            ok: right_ok,
+            error: right_error,
+        },
+    ) = (left, right)
+    else {
+        return None;
+    };
+
+    let ok = merge_placeholder_type(left_ok, right_ok)?;
+    let error = merge_placeholder_type(left_error, right_error)?;
+    Some(TypeKind::Result {
+        ok: Box::new(ok),
+        error: Box::new(error),
+    })
+}
+
+fn merge_placeholder_type(left: &TypeKind, right: &TypeKind) -> Option<TypeKind> {
+    if left == right {
+        return Some(left.clone());
+    }
+    if is_placeholder_type(left) {
+        return Some(right.clone());
+    }
+    if is_placeholder_type(right) {
+        return Some(left.clone());
+    }
+    None
+}
+
+fn is_placeholder_type(ty: &TypeKind) -> bool {
+    matches!(ty, TypeKind::Named(name) if name == "_")
 }
 
 fn named_type_label(name: &str) -> TypeKind {
