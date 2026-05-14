@@ -1,5 +1,5 @@
 use crate::ast::{DialogueTag, DialogueToken};
-use crate::expr::{Expr, parse_expr};
+use crate::expr::{Expr, Literal, parse_expr};
 
 /// Parses dialogue-text mode into tokens.
 ///
@@ -39,7 +39,7 @@ pub fn parse_dialogue_tokens(source: &str) -> Vec<DialogueToken> {
                 let _ = chars.next();
                 if let Some((expr, consumed_to)) = take_balanced_bracket(source, index + 2) {
                     flush_text(&mut text, &mut tokens);
-                    tokens.push(DialogueToken::Expr(parse_dialogue_expr_lossy(&expr)));
+                    tokens.push(parse_dialogue_expr_token(&expr));
                     while chars
                         .peek()
                         .is_some_and(|(offset, _)| *offset < consumed_to)
@@ -210,4 +210,29 @@ fn parse_tag(source: &str, start: usize) -> Option<(DialogueToken, usize)> {
 
 fn parse_dialogue_expr_lossy(source: &str) -> Expr {
     parse_expr(source).unwrap_or_else(|_| Expr::Raw(source.to_owned()))
+}
+
+fn parse_dialogue_expr_token(source: &str) -> DialogueToken {
+    let expr = parse_dialogue_expr_lossy(source);
+    function_ruby_token(&expr).unwrap_or(DialogueToken::Expr(expr))
+}
+
+fn function_ruby_token(expr: &Expr) -> Option<DialogueToken> {
+    let Expr::Call { callee, args } = expr else {
+        return None;
+    };
+    if !matches!(callee.as_ref(), Expr::Path(path) if path == "ruby") {
+        return None;
+    }
+    let [
+        Expr::Literal(Literal::String(base)),
+        Expr::Literal(Literal::String(ruby)),
+    ] = args.as_slice()
+    else {
+        return None;
+    };
+    Some(DialogueToken::Ruby {
+        base: base.to_owned(),
+        ruby: ruby.to_owned(),
+    })
 }
