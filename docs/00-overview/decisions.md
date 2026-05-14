@@ -88,7 +88,7 @@ await? expr with { ... }
 
 Formatters should preserve `with:` by default in hand-written scenario files. LSP and CLI may offer an explicit expansion action that rewrites sugar to canonical form.
 
-`speaker.say()[text] { ... }` is not a line-plan attachment. A bare trailing `{ ... }` after a dialogue call is parsed as a separate lexical block/scope, so line plans must use `with { ... }` or `with:`.
+`speaker.say()[text] { ... }` is not a line-plan attachment. A bare trailing `{ ... }` after a dialogue call is parsed as a separate unnamed `scope`, so line plans must use `with { ... }` or `with:`.
 
 ## Scope and relative ID decision
 
@@ -97,9 +97,11 @@ expression position. Statement-oriented bodies such as flow bodies, line plans,
 choice plans, `while`, and `for` do not export their final expression; they use
 explicit transfer such as `return`, `out`, or `break`.
 
-As a statement, a bare `{ ... }` is only a lexical scope. As an expression, its
-final expression determines the block value unless that value is discarded with
-`;` or `let _ = ...`.
+As a statement, a bare `{ ... }` is syntactic sugar for `scope` with the name
+omitted. It is lexical and does not add a scope segment to generated IDs. As an
+expression, ordinary `{ ... }` remains a value-producing block whose final
+expression determines the value unless that value is discarded with `;` or
+`let _ = ...`.
 
 Named lexical scopes use the `scope` keyword:
 

@@ -50,8 +50,9 @@ let label = {
 
 Here the block has type `String`.
 
-When a bare `{ ... }` appears as a statement, it is still a lexical scope. Its
-locals do not escape, and any final non-`Unit` value must be explicitly
+When a bare `{ ... }` appears as a statement, it is syntactic sugar for `scope`
+with the name omitted. Its locals do not escape, it does not add a segment to
+generated relative IDs, and any final non-`Unit` value must be explicitly
 discarded.
 
 ```awft
@@ -93,10 +94,12 @@ with:
     out voice
 ```
 
-## Named scope
+## Scope
 
-Use `scope name { ... }` when a lexical block should also name an ID namespace,
-diagnostic frame, trace frame, or LSP/debug region.
+The canonical statement form is `scope name? { ... }`. A bare statement
+`{ ... }` is the same scope form with `name` omitted. Use `scope name { ... }`
+when a lexical block should also name an ID namespace, diagnostic frame, trace
+frame, or LSP/debug region.
 
 ```awft
 scope rain {

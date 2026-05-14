@@ -4,13 +4,12 @@ use crate::ast::{
     ChoiceOption, ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause,
     DialogueContent, EntityDeclItem, EntityDeclKind, EntityRef, EnumItem, EnumVariant,
     ExternModItem, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionInit, FunctionItem,
-    FunctionKind, HookInit, HookItem, IfBlock, IfLetBlock, ImplItem, ImplMember, Item,
-    LexicalBlock, LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn,
-    ModuleDecl, ParserItem, Pattern, RawItem, RecordPatternField, ScenarioCommand, ScopeBlock,
-    ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceItem, SourceLocaleBlock,
-    SpeakerLine, StateField, StateItem, Stmt, StmtMatchArm, StructField, StructItem, SyntaxTree,
-    TextRange, TraitItem, TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock,
-    WhileLetBlock, WikiLink,
+    FunctionKind, HookInit, HookItem, IfBlock, IfLetBlock, ImplItem, ImplMember, Item, LineOptions,
+    LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem,
+    Pattern, RawItem, RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock,
+    SelectBranch, SelectBranchHead, SourceItem, SourceLocaleBlock, SpeakerLine, StateField,
+    StateItem, Stmt, StmtMatchArm, StructField, StructItem, SyntaxTree, TextRange, TraitItem,
+    TraitMember, TypeAliasItem, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 use crate::expr::{ComputationBlockKind, Expr, parse_expr};
 use crate::text::parse_dialogue_tokens;
@@ -80,7 +79,7 @@ type ContentCallParse = (
     Option<String>,
     DialogueContent,
     usize,
-    Option<LexicalBlock>,
+    Option<ScopeBlock>,
 );
 
 struct Parser {
@@ -1122,7 +1121,7 @@ impl Parser {
             return self.parse_source_locale_block().map(FlowItem::SourceLocale);
         }
         if trimmed.starts_with('{') {
-            return self.parse_lexical_block().map(FlowItem::Block);
+            return self.parse_bare_scope_block().map(FlowItem::Scope);
         }
         if trimmed.starts_with("scope ") {
             return self.parse_scope_block().map(FlowItem::Scope);
@@ -1644,7 +1643,8 @@ impl Parser {
             );
             return None;
         }
-        let name = head.trim().strip_prefix("scope")?.trim().to_owned();
+        let name = head.trim().strip_prefix("scope")?.trim();
+        let name = (!name.is_empty()).then(|| name.to_owned());
         let body = self.parse_flow_body(&body, start_line.start + head.len());
         Some(ScopeBlock::new(
             name,
@@ -1653,23 +1653,24 @@ impl Parser {
         ))
     }
 
-    fn parse_lexical_block(&mut self) -> Option<LexicalBlock> {
+    fn parse_bare_scope_block(&mut self) -> Option<ScopeBlock> {
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();
         if !ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
-                "unclosed block while parsing lexical block",
+                "unclosed block while parsing unnamed scope",
                 ["}"],
                 Some(start_line.text.trim()),
-                ["insert a closing `}` for the lexical block"],
+                ["insert a closing `}` for the unnamed scope block"],
             );
             return None;
         }
         if !head.trim().is_empty() {
             return None;
         }
-        Some(LexicalBlock::new(
+        Some(ScopeBlock::new(
+            None,
             self.parse_flow_body(&body, start_line.start),
             TextRange::new(start_line.start, end),
         ))
@@ -1996,7 +1997,7 @@ impl Parser {
         {
             let plan = self.take_optional_line_plan();
             if let Some(block) = trailing_block {
-                self.pending_flow_items.push(FlowItem::Block(block));
+                self.pending_flow_items.push(FlowItem::Scope(block));
             }
             return Some(FlowItem::ContentCall(ContentCall::new(
                 callee,
@@ -2042,8 +2043,7 @@ impl Parser {
         }
         let (callee, args) = split_call_head(before);
         let raw_content = text[open + 1..close].trim().to_owned();
-        let trailing_block =
-            self.take_trailing_lexical_block(&text, close, &mut cursor, start.start);
+        let trailing_block = self.take_trailing_bare_scope(&text, close, &mut cursor, start.start);
         self.index = cursor + 1;
         let content = DialogueContent::new(
             raw_content.clone(),
@@ -2056,13 +2056,13 @@ impl Parser {
         Some((callee, args, content, consumed_end, trailing_block))
     }
 
-    fn take_trailing_lexical_block(
+    fn take_trailing_bare_scope(
         &mut self,
         text: &str,
         close_bracket: usize,
         cursor: &mut usize,
         base: usize,
-    ) -> Option<LexicalBlock> {
+    ) -> Option<ScopeBlock> {
         let mut block_text = text[close_bracket + 1..].trim().to_owned();
         if !block_text.starts_with('{') {
             return None;
@@ -2076,7 +2076,8 @@ impl Parser {
         if !head.trim().is_empty() {
             return None;
         }
-        Some(LexicalBlock::new(
+        Some(ScopeBlock::new(
+            None,
             self.parse_flow_body(body, base + close_bracket + 1),
             TextRange::new(base + close_bracket + 1, self.lines[*cursor].end),
         ))

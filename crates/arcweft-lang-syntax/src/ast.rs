@@ -377,7 +377,6 @@ pub enum FlowItem {
     Select(SelectBlock),
     BorrowBlock(BorrowBlock),
     SourceLocale(SourceLocaleBlock),
-    Block(LexicalBlock),
     Scope(ScopeBlock),
     Include(EntityRef),
     AwaitWith(AwaitWith),
@@ -392,17 +391,10 @@ pub struct SourceLocaleBlock {
     range: TextRange,
 }
 
-/// Bare `{ ... }` lexical block used as a statement.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LexicalBlock {
-    body: Vec<FlowItem>,
-    range: TextRange,
-}
-
-/// `scope name { ... }` lexical block that also names generated IDs.
+/// `scope name { ... }` lexical block, plus bare `{ ... }` sugar with no name.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScopeBlock {
-    name: String,
+    name: Option<String>,
     body: Vec<FlowItem>,
     range: TextRange,
 }
@@ -2437,27 +2429,13 @@ impl SourceLocaleBlock {
     }
 }
 
-impl LexicalBlock {
-    pub(crate) const fn new(body: Vec<FlowItem>, range: TextRange) -> Self {
-        Self { body, range }
-    }
-
-    pub fn body(&self) -> &[FlowItem] {
-        &self.body
-    }
-
-    pub const fn range(&self) -> &TextRange {
-        &self.range
-    }
-}
-
 impl ScopeBlock {
-    pub(crate) const fn new(name: String, body: Vec<FlowItem>, range: TextRange) -> Self {
+    pub(crate) const fn new(name: Option<String>, body: Vec<FlowItem>, range: TextRange) -> Self {
         Self { name, body, range }
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 
     pub fn body(&self) -> &[FlowItem] {

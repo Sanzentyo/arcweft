@@ -426,7 +426,7 @@ flow #flow.opening opening {
     }
 
     #[test]
-    fn parses_bare_block_after_dialogue_as_lexical_scope() {
+    fn parses_bare_block_after_dialogue_as_unnamed_scope() {
         let tree = parse_source(
             r#"
 flow #flow.opening opening {
@@ -437,23 +437,25 @@ flow #flow.opening opening {
 }
 "#,
         )
-        .expect("dialogue followed by bare lexical block parses");
+        .expect("dialogue followed by bare unnamed scope parses");
 
         let Item::Flow(flow) = &tree.items()[0] else {
             panic!("expected flow");
         };
-        let [FlowItem::ContentCall(call), FlowItem::Block(block)] = flow.body() else {
-            panic!("expected dialogue call followed by lexical block");
+        let [FlowItem::ContentCall(call), FlowItem::Scope(block)] = flow.body() else {
+            panic!("expected dialogue call followed by unnamed scope");
         };
         assert!(call.plan().is_none());
+        assert_eq!(block.name(), None);
         assert_eq!(block.body().len(), 2);
 
         let hir = lower_to_hir(&tree).expect("dialogue plus bare block lowers");
-        let [HirFlowItem::Dialogue(dialogue), HirFlowItem::Block(block)] = hir.flows()[0].body()
+        let [HirFlowItem::Dialogue(dialogue), HirFlowItem::Scope(block)] = hir.flows()[0].body()
         else {
-            panic!("expected HIR dialogue followed by lexical block");
+            panic!("expected HIR dialogue followed by unnamed scope");
         };
         assert!(dialogue.plan().is_none());
+        assert_eq!(block.name(), None);
         assert_eq!(block.body().len(), 2);
     }
 
@@ -470,8 +472,13 @@ flow #flow.opening opening {
         let block_name = true
     }
 
+    scope {
+        let unnamed_scope_name = true
+    }
+
     let from_scope = scoped_name
     let from_block = block_name
+    let from_unnamed_scope = unnamed_scope_name
 }
 ",
         )
@@ -496,6 +503,12 @@ flow #flow.opening opening {
                 .iter()
                 .any(|message| message.contains("unknown symbol `block_name`")),
             "expected block_name to be unavailable outside block, got {messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("unknown symbol `unnamed_scope_name`")),
+            "expected unnamed_scope_name to be unavailable outside explicit unnamed scope, got {messages:?}"
         );
     }
 
@@ -953,7 +966,7 @@ flow #flow.quiet_intro quiet_intro {}
         let FlowItem::Scope(scope) = &flow.body()[0] else {
             panic!("expected named scope");
         };
-        assert_eq!(scope.name(), "dream");
+        assert_eq!(scope.name(), Some("dream"));
         let FlowItem::Choice(choice) = &scope.body()[0] else {
             panic!("expected scoped choice");
         };

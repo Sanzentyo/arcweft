@@ -30,10 +30,11 @@ pub enum Stmt {
 }
 ```
 
-`ScopeExpr` / `ScopeStmt` represent `scope name { ... }`. They behave like
-lexical blocks for evaluation and type checking. The name is carried in HIR so
-diagnostics, trace frames, LSP/debug views, and ID generation can recover the
-author-visible scope path.
+`ScopeExpr` / `ScopeStmt` represent `scope name? { ... }`; a bare statement
+`{ ... }` lowers as the same scope node with no name. Scope nodes behave like
+lexical blocks for evaluation and type checking. When present, the name is
+carried in HIR so diagnostics, trace frames, LSP/debug views, and ID generation
+can recover the author-visible scope path.
 
 ## Type checking
 
@@ -48,6 +49,7 @@ statement position:
 
 named scope:
   same typing as block; name does not change the value type
+  omitted name creates no generated-ID scope segment
 ```
 
 `if`:

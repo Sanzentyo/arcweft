@@ -342,9 +342,6 @@ impl TypeChecker<'_> {
             HirFlowItem::SourceLocale(block) => {
                 self.check_flow_items(block.body());
             }
-            HirFlowItem::Block(block) => {
-                self.check_scoped_flow_items(block.body());
-            }
             HirFlowItem::Scope(block) => {
                 self.check_scoped_flow_items(block.body());
             }

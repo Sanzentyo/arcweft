@@ -102,7 +102,7 @@ LinePlanItem   := LetStmt | TimedCue | CancelRule | OutStmt | ScopeStmt | ExprSt
 OutStmt        := 'out' Expr
 ```
 
-`with:` is indentation sugar for `with { ... }`. A bare `{ ... }` after a dialogue content block is a normal lexical scope, not a line plan.
+`with:` is indentation sugar for `with { ... }`. A bare `{ ... }` after a dialogue content block is an unnamed `scope` statement, not a line plan.
 
 ## Choice
 
