@@ -50,10 +50,11 @@ let label = {
 
 Here the block has type `String`.
 
-When a bare `{ ... }` appears as a statement, it is syntactic sugar for `scope`
-with the name omitted. Its locals do not escape, it does not add a segment to
-generated relative IDs, and any final non-`Unit` value must be explicitly
-discarded.
+`scope { ... }` is a bare scope: syntactic sugar for `scope name { ... }` with
+the `name` part omitted. When a bare `{ ... }` appears as a statement, it is a
+second sugar layer for that unnamed `scope { ... }` form. Its locals do not
+escape, it does not add a segment to generated relative IDs, and any final
+non-`Unit` value must be explicitly discarded.
 
 ```awft
 {
@@ -96,10 +97,11 @@ with:
 
 ## Scope
 
-The canonical statement form is `scope name? { ... }`. A bare statement
-`{ ... }` is the same scope form with `name` omitted. Use `scope name { ... }`
-when a lexical block should also name an ID namespace, diagnostic frame, trace
-frame, or LSP/debug region.
+The canonical statement form is `scope name { ... }`. The bare scope form
+`scope { ... }` is the same construct with `name` omitted. A bare statement
+`{ ... }` then normalizes to that unnamed `scope { ... }`. Use
+`scope name { ... }` when a lexical block should also name an ID namespace,
+diagnostic frame, trace frame, or LSP/debug region.
 
 ```awft
 scope rain {
@@ -167,9 +169,9 @@ let can_enter = scope alice_route_check {
 }
 ```
 
-The name may be omitted. `scope { ... }` is an unnamed scope expression: it has
-the same lexical and value-producing behavior, but it does not contribute an ID
-namespace segment.
+The name may be omitted. `scope { ... }` is the bare scope expression: it has
+the same lexical and value-producing behavior as `scope name { ... }`, but it
+does not contribute an ID namespace segment.
 
 ```awft
 let can_enter = scope {

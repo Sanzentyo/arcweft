@@ -97,11 +97,12 @@ expression position. Statement-oriented bodies such as flow bodies, line plans,
 choice plans, `while`, and `for` do not export their final expression; they use
 explicit transfer such as `return`, `out`, or `break`.
 
-As a statement, a bare `{ ... }` is syntactic sugar for `scope` with the name
-omitted. It is lexical and does not add a scope segment to generated IDs. As an
-expression, ordinary `{ ... }` remains a value-producing block whose final
-expression determines the value unless that value is discarded with `;` or
-`let _ = ...`.
+`scope { ... }` is a bare scope: syntactic sugar for `scope name { ... }` with
+the `name` part omitted. It is lexical and does not add a scope segment to
+generated IDs. As a statement, a bare `{ ... }` is one more sugar layer for
+that unnamed `scope { ... }` form. As an expression, ordinary `{ ... }`
+remains a value-producing block whose final expression determines the value
+unless that value is discarded with `;` or `let _ = ...`.
 
 Named lexical scopes use the `scope` keyword:
 
@@ -115,9 +116,10 @@ scope rain {
 The scope name contributes to relative line, text-key, choice, and option ID
 generation inside the block. It is also a diagnostic, trace, and LSP/debug name.
 `scope name { ... }` can be used in expression position and returns the final
-expression just like `{ ... }`. `scope { ... }` is the same scope form with the
-name omitted; it creates a lexical scope and returns a value in expression
-position, but it does not add a segment to generated IDs.
+expression just like `{ ... }`. The bare scope form `scope { ... }` is exactly
+the same scope expression with the name omitted; it creates a lexical scope and
+returns a value in expression position, but it does not add a segment to
+generated IDs.
 
 Relative `.suffix` IDs are accepted only in ID-bearing contexts where the
 entity family is known. They are not general entity references.
