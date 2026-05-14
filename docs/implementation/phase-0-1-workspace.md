@@ -68,7 +68,7 @@ Syntax parser:
 - Pipeline and helper-call expressions preserve `_`/`^` placeholders, placeholder field access such as `_.enabled`, generic method names such as `collect<List<T>>()`, and closure arguments such as `with_context(|| "...")` without falling back to raw expressions.
 - List expressions such as `[normal, smile, worried]`, `[]`, and nested call arguments parse as structured `Expr::List` nodes and participate in symbol collection and minimal type checking. Bare record/map literals such as `{ player_name = state.player_name }` and `{}` parse as structured `Expr::RecordLiteral` nodes for dialogue args and state defaults.
 - Type syntax now has `TypeRef`/`LifetimeName` support for lifetime-bearing borrow types such as `&'asset [Rgba8]`, and function signature lifetime parameters such as `fn first<'a>(...)`.
-- Top-level `fn`, `task fn`, `dialogue fn`, and `stream fn` items are parsed as structured syntax items with visibility, lifetime-bearing signature heads, parameter patterns/types, return types, contract clauses, source ranges, original body text, structured body statements, and optional final block expression. HIR lowering now carries the function kind and body, and the minimal checker walks their contracts, parameters, statements, final value, and return type for parser/typecheck-readiness coverage.
+- Top-level `fn`, `task fn`, `dialogue fn`, and `stream fn` items are parsed as structured syntax items with visibility, lifetime-bearing signature heads, shared `Pattern` AST parameter bindings/types, return types, contract clauses, source ranges, original body text, structured body statements, and optional final block expression. HIR lowering now carries the function kind and body, and the minimal checker walks their contracts, destructured parameters, statements, final value, and return type for parser/typecheck-readiness coverage.
 - Top-level ADT declarations (`enum`, `struct`, `type`) are parsed as structured syntax items with visibility, variant/field/type information, type-alias `where` clauses, and HIR declaration preservation.
 - Top-level `state`, `reducer`, and `view` declarations are parsed as structured syntax items. State fields keep visibility, type, and default expressions; reducers/views keep signature tails, contracts, bodies, source ranges, and HIR declaration preservation.
 - Top-level `trait` and `impl` declarations are parsed as structured syntax items. Trait members keep associated type information, including GAT-style associated type parameters such as `type Mapped<B>`, and structured function signatures, including `self` receivers. Impl items keep generics, trait target, implementation target, original body text, source ranges, HIR declaration preservation, associated type assignments such as `type Mapped<B> = Option<B>`, and function member signatures with structured body statements/final expressions for later lowering.
@@ -126,6 +126,7 @@ Syntax parser:
 - `validate_typecheck_ready` rejects lowered HIR that still contains raw expression fragments before the future type checker sees it.
 - `typecheck_hir` provides a minimal semantic checker over HIR with an explicit environment. It validates flow/fragment entity reference families, dialogue callees, `Need<T, E>` awaits, `Duration` timeline anchors, indexed expressions, calls, and methods for parser/HIR integration tests.
 - Typed let patterns and borrow blocks preserve borrow types, and the checker rejects non-`'static` borrowed values crossing `await`, `yield`, `spawn`, and `defer` suspension boundaries.
+- Parser/HIR integration tests now live in `crates/arcweft-lang-syntax/src/tests.rs`, keeping the public crate surface in `src/lib.rs` separate from the syntax coverage suite.
 
 ## Deferred
 
@@ -139,7 +140,7 @@ Not implemented in this milestone:
 - MCP / agent protocol runtime
 - Cranelift JIT
 - full HIR ownership/region model
-- full function signature parameter destructuring, generic substitution, and effect-aware return checking
+- full generic substitution and effect-aware return checking
 - full type environment, name resolution, and type checking
 - inference, overload resolution, traits, generics, contracts, and effect checking
 - full nested-scope borrow lifetime analysis and precise borrow end tracking

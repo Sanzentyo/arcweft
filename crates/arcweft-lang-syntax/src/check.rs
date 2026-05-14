@@ -179,10 +179,7 @@ impl TypeChecker<'_> {
             self.locals.clear();
             self.loop_stack.clear();
             for param in function.signature().params() {
-                if is_local_ident(param.pattern()) {
-                    self.locals
-                        .insert(param.pattern().to_owned(), type_ref_kind(param.ty()));
-                }
+                self.bind_function_param(param.pattern(), &type_ref_kind(param.ty()));
             }
             for contract in function.contracts() {
                 self.check_contract_clause(contract);
@@ -414,6 +411,12 @@ impl TypeChecker<'_> {
                 self.check_line_plan_item(item);
             }
             self.line_label_stack.pop();
+        }
+    }
+
+    fn bind_function_param(&mut self, pattern: &Pattern, ty: &TypeKind) {
+        for (name, binding_ty) in pattern_bindings_with_fallback(pattern, ty) {
+            self.locals.insert(name, binding_ty);
         }
     }
 
@@ -1772,10 +1775,16 @@ fn let_else_bindings(pattern: &Pattern, expr_type: Option<&TypeKind>) -> Vec<(St
             .iter()
             .flat_map(|item| let_else_bindings(item, None))
             .collect(),
-        Pattern::List { items, .. } => items
-            .iter()
-            .flat_map(|item| let_else_bindings(item, None))
-            .collect(),
+        Pattern::List { items, rest } => {
+            let mut bindings = items
+                .iter()
+                .flat_map(|item| let_else_bindings(item, None))
+                .collect::<Vec<_>>();
+            if let Some(rest) = rest.as_ref().filter(|name| is_local_ident(name)) {
+                bindings.push((rest.to_owned(), TypeKind::Unit));
+            }
+            bindings
+        }
         Pattern::Record { fields, .. } => fields
             .iter()
             .flat_map(|field| let_else_bindings(field.pattern(), None))
@@ -1790,6 +1799,74 @@ fn let_else_bindings(pattern: &Pattern, expr_type: Option<&TypeKind>) -> Vec<(St
         }
         Pattern::Typed { name, ty } => vec![(name.to_owned(), type_ref_kind(ty))],
         Pattern::Literal(_) | Pattern::Entity(_) | Pattern::Discard | Pattern::Raw(_) => Vec::new(),
+    }
+}
+
+fn pattern_bindings_with_fallback(
+    pattern: &Pattern,
+    fallback: &TypeKind,
+) -> Vec<(String, TypeKind)> {
+    let mut bindings = let_else_bindings(pattern, Some(fallback));
+    for name in collect_pattern_binding_names(pattern) {
+        if !bindings.iter().any(|(bound, _)| bound == &name) {
+            bindings.push((name, TypeKind::Unit));
+        }
+    }
+    bindings
+}
+
+fn collect_pattern_binding_names(pattern: &Pattern) -> Vec<String> {
+    match pattern {
+        Pattern::Ident(name) | Pattern::MutIdent(name) if is_local_ident(name) => {
+            vec![name.to_owned()]
+        }
+        Pattern::Tuple(items) => items
+            .iter()
+            .flat_map(collect_pattern_binding_names)
+            .collect(),
+        Pattern::List { items, rest } => {
+            let mut names = items
+                .iter()
+                .flat_map(collect_pattern_binding_names)
+                .collect::<Vec<_>>();
+            if let Some(rest) = rest.as_ref().filter(|name| is_local_ident(name)) {
+                names.push(rest.to_owned());
+            }
+            names
+        }
+        Pattern::Record { fields, .. } => fields
+            .iter()
+            .flat_map(|field| collect_pattern_binding_names(field.pattern()))
+            .collect(),
+        Pattern::Variant { payload, .. } => payload
+            .iter()
+            .flat_map(|payload| match payload {
+                crate::ast::VariantPatternPayload::Tuple(items) => items
+                    .iter()
+                    .flat_map(collect_pattern_binding_names)
+                    .collect::<Vec<_>>(),
+                crate::ast::VariantPatternPayload::Record { fields, .. } => fields
+                    .iter()
+                    .flat_map(|field| collect_pattern_binding_names(field.pattern()))
+                    .collect(),
+            })
+            .collect(),
+        Pattern::Whole { name, pattern } => {
+            let mut names = is_local_ident(name)
+                .then(|| name.to_owned())
+                .into_iter()
+                .collect::<Vec<_>>();
+            names.extend(collect_pattern_binding_names(pattern));
+            names
+        }
+        Pattern::Typed { name, .. } if is_local_ident(name) => vec![name.to_owned()],
+        Pattern::Literal(_)
+        | Pattern::Entity(_)
+        | Pattern::Discard
+        | Pattern::Raw(_)
+        | Pattern::Typed { .. }
+        | Pattern::Ident(_)
+        | Pattern::MutIdent(_) => Vec::new(),
     }
 }
 

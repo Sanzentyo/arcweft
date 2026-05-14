@@ -1,5 +1,8 @@
 use core::fmt;
 
+use crate::ast::Pattern;
+use crate::pattern::parse_pattern;
+
 /// Lifetime name used in Arcweft type syntax.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LifetimeName {
@@ -33,7 +36,7 @@ pub struct FnSignature {
 /// One function parameter pattern and type annotation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FnParam {
-    pattern: String,
+    pattern: Pattern,
     ty: TypeRef,
 }
 
@@ -112,14 +115,14 @@ fn parse_fn_params(source: &str) -> Result<(Vec<FnParam>, &str), TypeParseError>
 fn parse_fn_param(source: &str) -> Result<FnParam, TypeParseError> {
     if matches!(source.trim(), "self" | "&self" | "&mut self" | "mut self") {
         return Ok(FnParam {
-            pattern: source.trim().to_owned(),
+            pattern: Pattern::Ident("self".to_owned()),
             ty: TypeRef::Path("Self".to_owned()),
         });
     }
     let (pattern, ty) = split_top_level_once(source, ':')
         .ok_or_else(|| TypeParseError::new("expected `pattern: Type` parameter"))?;
     Ok(FnParam {
-        pattern: pattern.trim().to_owned(),
+        pattern: parse_pattern(pattern),
         ty: parse_type_ref(ty.trim())?,
     })
 }
@@ -270,7 +273,7 @@ impl FnSignature {
 
 impl FnParam {
     /// Parameter binding pattern.
-    pub fn pattern(&self) -> &str {
+    pub const fn pattern(&self) -> &Pattern {
         &self.pattern
     }
 
