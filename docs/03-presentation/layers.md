@@ -295,6 +295,26 @@ scene {
 }
 ```
 
+Presentation calls that register visible values also choose a target/slot. The
+default target is `@target.scene`; `bg(...)` writes
+`@slot.background.default`, and `show(@character.alice, ...)` writes
+`@slot.character.alice.default`. If a scene needs parallel backgrounds,
+reflections, split-screen layers, or multiple copies of a character, the slot
+or target must be explicit.
+
+```awft
+let far = bg(@asset.bg.city_far, slot = @slot.background.far)
+let near = bg(@asset.bg.city_near, slot = @slot.background.near)
+
+let alice = show(@character.alice, .normal, target = @target.scene, slot = @slot.character.alice.main)
+let alice_shadow = show(@character.alice, .shadow, target = @target.scene, slot = @slot.character.alice.shadow)
+```
+
+Slots are typed option-like cells. Setting a slot returns the previous value if
+one was present; `ref bg(...)` / `ref show(...)` read a slot without changing
+ownership; `clear bg(...)` / `hide(...)` clear the slot and return the removed
+value if present.
+
 ## HTML / Servo / DOM layer
 
 HTML/CSS UI は Game Native UI とは別の `HtmlUi` layer として扱う。

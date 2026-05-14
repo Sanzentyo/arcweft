@@ -103,6 +103,11 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   syntax. Attributes are `#[...]`; staging operations use canonical ordinary
   calls such as `bg(@asset.bg.room, fade = 300ms)` and
   `show(@character.alice, .normal)`.
+- `arcweft-dialogue` contains the current Sans I/O model for scoped
+  presentation handles. `bg(...)` and `show(...)` return typed
+  `PresentationHandle<T>` values registered against a `PresentationTarget`,
+  `PresentationSlot`, and `PresentationScope`; slots behave like typed
+  static-option cells and expose read-only `SlotRef<T>` plus clear operations.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure

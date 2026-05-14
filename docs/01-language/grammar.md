@@ -130,6 +130,11 @@ FlowItem     :=
 NamedScope      := 'scope' Ident? BlockExpr
 ScopeStmt       := NamedScope | Block
 ScopeExpr       := 'scope' Ident? BlockExpr
+
+StagingExpr     := StagingSet | StagingRef | StagingClear
+StagingSet      := ('bg' | 'show') CallArgs
+StagingRef      := 'ref' ('bg' | 'show') CallArgs
+StagingClear    := 'clear' 'bg' CallArgs | 'hide' CallArgs
 ```
 
 `crate`, `self`, and `super` are canonical module-path roots. `parent` is a

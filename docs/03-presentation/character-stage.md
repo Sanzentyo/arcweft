@@ -102,11 +102,37 @@ show(@character.alice, .worried, at = (0.35, 0.92), scale = 1.05, z = 10)
 hide(@character.alice, fade = 180ms)
 ```
 
+`show(...)` returns a `StageHandle<CharacterSurface>`. The visible stage object
+and the handle have the same scope lifetime by default. When the handle is
+dropped at scope exit, the runtime clears the registered slot unless the handle
+was detached or moved to a longer scope.
+
 Object equivalent:
 
 ```awft
 alice.stage.show(smile, at=center, fade=200ms)
 ```
+
+The default target and slot are:
+
+```text
+target = @target.scene
+slot   = @slot.character.{character}.default
+```
+
+Multiple instances of a character require explicit slots:
+
+```awft
+let alice_main = show(@character.alice, .smile, slot = @slot.character.alice.main)
+let alice_mirror = show(@character.alice, .worried, slot = @slot.character.alice.mirror)
+
+let current_main = ref show(@character.alice, slot = @slot.character.alice.main)
+let removed_main = hide(@character.alice, slot = @slot.character.alice.main)
+```
+
+`ref show(...)` only reads the slot. It does not create or retain a stage
+object. `hide(...)` is the clear operation paired with `show(...)`; it returns
+the removed handle/value when the slot was occupied.
 
 ## Face and pose change
 

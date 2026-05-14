@@ -595,6 +595,58 @@ anim(@character.alice, @anim.breath, mode = .loop)
 hide(@character.alice, fade = 180ms)
 ```
 
+`bg(...)` and `show(...)` return scope-bound handles. The lifetime of the
+visible presentation value is the lifetime of the returned handle unless the
+handle is explicitly detached, moved into another scope, or cleared through the
+matching clear API.
+
+```awft
+scope opening_view {
+    let room = bg(@asset.bg.school_evening, fade = 600ms)
+    let alice_on_stage = show(@character.alice, .normal, at = .center)
+
+    alice: おはよう。[p]
+}
+# room and alice_on_stage leave scope here; their registered values are cleared.
+```
+
+Every presentation value is registered in a typed target/slot pair. A slot is a
+static-option-like cell: setting it replaces and returns the previous value if
+one existed, reading it does not change it, and clearing it returns the current
+value if present.
+
+```awft
+let previous_bg = bg(@asset.bg.room, target = @target.scene, slot = @slot.bg.main)
+let current_bg = ref bg(target = @target.scene, slot = @slot.bg.main)
+let cleared_bg = clear bg(target = @target.scene, slot = @slot.bg.main)
+```
+
+Defaults:
+
+```text
+bg(asset)
+  target = @target.scene
+  slot   = @slot.background.default
+
+show(character, expression)
+  target = @target.scene
+  slot   = @slot.character.{character}.default
+```
+
+If more than one background or one instance of the same character must coexist,
+the author must specify a different `target` or `slot`:
+
+```awft
+let far = bg(@asset.bg.city_far, slot = @slot.background.far)
+let near = bg(@asset.bg.city_near, slot = @slot.background.near)
+
+let alice_main = show(@character.alice, .smile, slot = @slot.character.alice.main)
+let alice_reflection = show(@character.alice, .sad, slot = @slot.character.alice.reflection)
+```
+
+The `ref` forms are read-only. They do not create a new visible object and they
+do not extend the current handle lifetime.
+
 ---
 
 ## Complex line with method form
