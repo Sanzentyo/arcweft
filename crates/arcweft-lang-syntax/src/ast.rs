@@ -77,7 +77,7 @@ pub enum Item {
     MemoFn(MemoFn),
     Parser(ParserItem),
     Source(SourceItem),
-    FlowItem(FlowItem),
+    FlowItem(Box<FlowItem>),
     Raw(RawItem),
 }
 

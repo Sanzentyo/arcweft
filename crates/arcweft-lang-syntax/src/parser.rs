@@ -353,7 +353,7 @@ impl Parser {
     ) {
         self.reject_pending_doc(range);
         if let Some(flow_item) = self.parse_flow_item_until_indent(0) {
-            items.push(Item::FlowItem(flow_item));
+            items.push(Item::FlowItem(Box::new(flow_item)));
         } else {
             items.push(Item::Raw(RawItem::new(trimmed.to_owned(), None, range)));
             self.index += 1;
@@ -1237,6 +1237,10 @@ impl Parser {
         if self.reject_legacy_scenario_call(trimmed, TextRange::new(line.start, line.end)) {
             self.index += 1;
             return Some(FlowItem::Raw(trimmed.to_owned()));
+        }
+        if let Some(expr) = parse_presentation_special_call(trimmed) {
+            self.index += 1;
+            return Some(FlowItem::Stmt(Stmt::Expr(expr)));
         }
         if is_expression_statement_call(trimmed) {
             self.index += 1;
@@ -4194,6 +4198,9 @@ fn parse_line_plan_cancel_action(action: &str) -> Vec<Stmt> {
 }
 
 fn parse_expr_lossy(source: &str) -> crate::expr::Expr {
+    if let Some(expr) = parse_presentation_special_call(source) {
+        return expr;
+    }
     if let Some((head, body)) = split_brace_item(source) {
         let name = head.trim();
         if is_plain_block_callee(name) {
@@ -4201,6 +4208,29 @@ fn parse_expr_lossy(source: &str) -> crate::expr::Expr {
         }
     }
     parse_expr(source).unwrap_or_else(|_| crate::expr::Expr::Raw(source.to_owned()))
+}
+
+fn parse_presentation_special_call(source: &str) -> Option<crate::expr::Expr> {
+    let trimmed = source.trim();
+    let (callee, call_source) = if let Some(rest) = trimmed.strip_prefix("ref bg") {
+        ("ref.bg", rest)
+    } else if let Some(rest) = trimmed.strip_prefix("ref show") {
+        ("ref.show", rest)
+    } else if let Some(rest) = trimmed.strip_prefix("clear bg") {
+        ("clear.bg", rest)
+    } else {
+        return None;
+    };
+    if !call_source.trim_start().starts_with('(') {
+        return None;
+    }
+    let crate::expr::Expr::Call { args, .. } = parse_expr_lossy(&format!("_{call_source}")) else {
+        return None;
+    };
+    Some(crate::expr::Expr::Call {
+        callee: Box::new(crate::expr::Expr::Path(callee.to_owned())),
+        args,
+    })
 }
 
 fn is_plain_block_callee(source: &str) -> bool {
@@ -4834,6 +4864,9 @@ fn parse_stmt(trimmed: &str) -> Stmt {
     }
     if let Some(stmt) = parse_braced_stmt(trimmed) {
         return stmt;
+    }
+    if let Some(expr) = parse_presentation_special_call(trimmed) {
+        return Stmt::Expr(expr);
     }
     if let Some(rest) = trimmed.strip_prefix("log ") {
         if let Some((level, args)) = split_leading_ident(rest.trim()) {

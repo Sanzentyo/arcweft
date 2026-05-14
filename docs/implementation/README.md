@@ -104,10 +104,25 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   calls such as `bg(@asset.bg.room, fade = 300ms)` and
   `show(@character.alice, .normal)`.
 - `arcweft-dialogue` contains the current Sans I/O model for scoped
-  presentation handles. `bg(...)` and `show(...)` return typed
+  dialogue lines, speaker presets, content, line plans, and the dialogue-side
+  adapter helpers for character presentation calls.
+- `arcweft-presentation` contains the Sans I/O model for scoped presentation
+  handles. `bg(...)` and `show(...)` return typed
   `PresentationHandle<T>` values registered against a `PresentationTarget`,
   `PresentationSlot`, and `PresentationScope`; slots behave like typed
   static-option cells and expose read-only `SlotRef<T>` plus clear operations.
+  `PresentationRegistry<T>` enforces scope lifetime at the data-model level by
+  clearing registered slots when `exit_scope` is called.
+- `arcweft-lang-syntax` now recognizes presentation set/read/clear calls as
+  type-checkable syntax: `bg(...)`, `show(...)`, `ref bg(...)`,
+  `ref show(...)`, `clear bg(...)`, and `hide(...)`. The checker validates
+  `@target.*`, family-correct `@slot.background.*` /
+  `@slot.character.*` usage, and reports simultaneous default slot handles
+  that should be given explicit slots.
+- Syntax-level ID policy linting exists as `lint_id_policy`. It currently
+  reports deep dot-run relative IDs such as `@...suffix` and flow IDs whose
+  tail does not match the module tail. Further hierarchy checks should build on
+  this pass rather than parser diagnostics.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure

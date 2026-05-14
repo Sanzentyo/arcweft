@@ -616,9 +616,9 @@ one existed, reading it does not change it, and clearing it returns the current
 value if present.
 
 ```awft
-let previous_bg = bg(@asset.bg.room, target = @target.scene, slot = @slot.bg.main)
-let current_bg = ref bg(target = @target.scene, slot = @slot.bg.main)
-let cleared_bg = clear bg(target = @target.scene, slot = @slot.bg.main)
+let previous_bg = bg(@asset.bg.room, target = @target.scene, slot = @slot.background.main)
+let current_bg = ref bg(target = @target.scene, slot = @slot.background.main)
+let cleared_bg = clear bg(target = @target.scene, slot = @slot.background.main)
 ```
 
 Defaults:
@@ -646,6 +646,11 @@ let alice_reflection = show(@character.alice, .sad, slot = @slot.character.alice
 
 The `ref` forms are read-only. They do not create a new visible object and they
 do not extend the current handle lifetime.
+
+The syntax checker treats these as presentation-aware calls, not legacy
+scenario commands. It validates target and slot families and warns when multiple
+live handles use the same default slot in one lexical scope; use explicit slots
+for simultaneous values.
 
 ---
 

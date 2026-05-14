@@ -8,6 +8,7 @@ mod ast;
 mod check;
 mod cst;
 mod expr;
+mod lint;
 mod lower;
 mod parser;
 mod pattern;
@@ -39,6 +40,7 @@ pub use cst::{
     SyntaxKind, SyntaxNode, SyntaxToken, TextSize, cst_lines,
 };
 pub use expr::{BinaryOp, ComputationBlockKind, Expr, Literal, Placeholder, UnaryOp, parse_expr};
+pub use lint::{SyntaxLint, SyntaxLintCode, lint_id_policy};
 pub use lower::{
     HirAwait, HirAwaitBranch, HirBorrow, HirChoice, HirChoiceOption, HirDialogue, HirFlow,
     HirFlowItem, HirFor, HirIf, HirIfLet, HirLoop, HirLowerError, HirMatch, HirMatchArm, HirModule,

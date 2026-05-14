@@ -21,6 +21,7 @@ name = "arcweft-dialogue"
 version = "0.1.0"
 dependencies = [
  "arcweft-id",
+ "arcweft-presentation",
  "arcweft-source",
  "thiserror",
 ]
@@ -47,6 +48,13 @@ name = "arcweft-need"
 version = "0.1.0"
 dependencies = [
  "thiserror",
+]
+
+[[package]]
+name = "arcweft-presentation"
+version = "0.1.0"
+dependencies = [
+ "arcweft-id",
 ]
 
 [[package]]

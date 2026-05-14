@@ -8,6 +8,7 @@ Implemented workspace members:
 - `crates/arcweft-id`
 - `crates/arcweft-source`
 - `crates/arcweft-need`
+- `crates/arcweft-presentation`
 - `crates/arcweft-dialogue`
 - `crates/arcweft-lang-syntax`
 - `crates/arcweft-cli`
@@ -54,6 +55,24 @@ Builder API:
 - `CancelOnDrop`
 
 The builder API supports fluent construction of a dialogue line with speaker defaults, line id, lossy dialogue content parsing, timeline cues, and input cancellation rules.
+
+Presentation model:
+
+- `PresentationScope`
+- `PresentationTarget`
+- `PresentationSlot`
+- `PresentationHandle<T>`
+- `SlotRef<T>`
+- `SlotValue<T>`
+- `ClearPresentation<T>`
+- `PresentationRegistry<T>`
+- `BackgroundSurface`
+- `CharacterSurface`
+
+`arcweft-presentation` owns these Sans I/O types. `PresentationRegistry<T>`
+enforces scope lifetime by removing registered values for a scope when
+`exit_scope` is called. `arcweft-dialogue` keeps only dialogue-specific adapter
+helpers that turn `SpeakerRef` into presentation character IDs.
 
 Syntax parser:
 
@@ -190,6 +209,15 @@ Syntax parser:
 - `registry_from_hir` and `validate_hir_references` provide minimal name resolution over HIR declarations and entity references.
 - `validate_typecheck_ready` rejects lowered HIR that still contains raw expression fragments before the future type checker sees it.
 - `typecheck_hir` provides a minimal semantic checker over HIR with an explicit environment. It validates flow/fragment entity reference families, dialogue callees, `Need<T, E>` awaits, `Duration` timeline anchors, indexed expressions, calls, and methods for parser/HIR integration tests.
+- Presentation calls are parsed and checked through the same AST/HIR/typecheck
+  path. `bg(...)`, `show(...)`, `ref bg(...)`, `ref show(...)`,
+  `clear bg(...)`, and `hide(...)` are recognized as presentation calls; the
+  checker validates `@target.*`, family-correct `@slot.background.*` /
+  `@slot.character.*`, typed handle/ref/clear return shapes, and duplicate
+  default-slot handles in one lexical scope.
+- `lint_id_policy` provides the first syntax-level ID policy pass. It reports
+  accepted-but-discouraged deep dot-run relative IDs such as `@...suffix` and
+  obvious module/flow tail mismatches.
 - Typed let patterns and borrow blocks preserve borrow types, and the checker rejects non-`'static` borrowed values crossing `await`, `yield`, `spawn`, and `defer` suspension boundaries.
 - Parser/HIR integration tests live under `crates/arcweft-lang-syntax/src/tests/`, keeping the public crate surface in `src/lib.rs` separate from the syntax coverage suite.
 

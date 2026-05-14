@@ -72,6 +72,7 @@ arcweft-memo-runtime
 
 ```text
 arcweft-render
+arcweft-presentation
 arcweft-layer-core
 arcweft-layer-input
 arcweft-layer-hooks
@@ -152,6 +153,10 @@ arcweft-jj
 ## 依存ルール
 
 - `arcweft-core` は wgpu / audio / Servo / DOM / filesystem / network / Cranelift / Wasmtime に依存しない。
+- `arcweft-presentation` は `bg(...)` / `show(...)` が返す scope-bound
+  presentation handles、typed target/slot refs、clear operations、scope exit
+  cleanup registry を持つ Sans I/O data/model crate とする。renderer、
+  filesystem、asset loading、windowing、clock には依存しない。
 - Data-format crate は Sans I/O を保つ。manifest、schema、bytecode、bundle、save snapshot は構造体と bytes/string codec までを担当し、path read/write、network、clock、backend resource 確保は CLI / build / player adapter に置く。
 - UI / shader / audio / Activity は `Command` / `TaskSpec` / `Need` / `EffectRequest` を介する。
 - Hook は phase ごとの構造化 action を返し、直接 host API を呼ばない。

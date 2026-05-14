@@ -6,7 +6,7 @@ fn stub_is_now_real_source_parser() {
     assert_eq!(tree.items().len(), 1);
     assert!(matches!(
         &tree.items()[0],
-        Item::FlowItem(FlowItem::SpeakerLine(_))
+        Item::FlowItem(item) if matches!(item.as_ref(), FlowItem::SpeakerLine(_))
     ));
 }
 
@@ -167,7 +167,10 @@ source locale en-US {
 ",
     );
 
-    let Item::FlowItem(FlowItem::SourceLocale(block)) = &tree.items()[0] else {
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected source locale block");
+    };
+    let FlowItem::SourceLocale(block) = item.as_ref() else {
         panic!("expected source locale block");
     };
     assert_eq!(block.locale(), "en-US");
@@ -190,6 +193,35 @@ fn rejects_relative_id_syntax_in_module_and_use_paths() {
             "expected relative-id diagnostic for {source:?}, got {errors:?}"
         );
     }
+}
+
+#[test]
+fn lints_deep_dot_run_relative_ids_and_module_flow_mismatch() {
+    let tree = parse_ok(
+        r"
+mod game::routes::opening
+
+flow @flow.title title {
+    scope outer {
+        scope inner {
+            alice(id=@...shared): おはよう。[p]
+        }
+    }
+}
+",
+    );
+    let lints = lint_id_policy(&tree);
+
+    assert!(
+        lints
+            .iter()
+            .any(|lint| lint.code() == SyntaxLintCode::DeepDotRunRelativeId)
+    );
+    assert!(
+        lints
+            .iter()
+            .any(|lint| lint.code() == SyntaxLintCode::FlowIdModuleMismatch)
+    );
 }
 
 #[test]

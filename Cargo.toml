@@ -5,6 +5,7 @@ members = [
     "crates/arcweft-id",
     "crates/arcweft-lang-syntax",
     "crates/arcweft-need",
+    "crates/arcweft-presentation",
     "crates/arcweft-source",
     "crates/arcweft-cli",
 ]

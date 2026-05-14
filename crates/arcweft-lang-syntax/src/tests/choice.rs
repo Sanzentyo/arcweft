@@ -58,7 +58,10 @@ choice @choice.opening.first {
 "#,
     );
 
-    let Item::FlowItem(FlowItem::Choice(choice)) = &tree.items()[0] else {
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected choice");
+    };
+    let FlowItem::Choice(choice) = item.as_ref() else {
         panic!("expected choice");
     };
     let option = &choice.options()[0];
@@ -99,7 +102,10 @@ choice @choice.opening.first {
 "#,
     );
 
-    let Item::FlowItem(FlowItem::Choice(choice)) = &tree.items()[0] else {
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected choice");
+    };
+    let FlowItem::Choice(choice) = item.as_ref() else {
         panic!("expected choice");
     };
     assert_eq!(choice.items().len(), 3);
@@ -136,7 +142,10 @@ choice @choice.opening.routes {
 ",
     );
 
-    let Item::FlowItem(FlowItem::Choice(choice)) = &tree.items()[0] else {
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected choice");
+    };
+    let FlowItem::Choice(choice) = item.as_ref() else {
         panic!("expected choice");
     };
     assert!(matches!(&choice.items()[0], ChoiceItem::For { .. }));
@@ -161,7 +170,10 @@ choice @choice.opening.first {
 "#,
     );
 
-    let Item::FlowItem(FlowItem::Choice(choice)) = &tree.items()[0] else {
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected choice");
+    };
+    let FlowItem::Choice(choice) = item.as_ref() else {
         panic!("expected choice");
     };
     let ChoiceItem::Match { expr, arms } = &choice.items()[0] else {
@@ -241,7 +253,10 @@ with {
 "#,
     );
 
-    let Item::FlowItem(FlowItem::Choice(choice)) = &tree.items()[0] else {
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected choice");
+    };
+    let FlowItem::Choice(choice) = item.as_ref() else {
         panic!("expected choice");
     };
     let plan = choice.plan().expect("choice plan");

@@ -315,6 +315,12 @@ one was present; `ref bg(...)` / `ref show(...)` read a slot without changing
 ownership; `clear bg(...)` / `hide(...)` clear the slot and return the removed
 value if present.
 
+The core handle and slot model lives in the Sans I/O `arcweft-presentation`
+crate. Render adapters consume the resulting state but do not own the data
+format. The syntax/typecheck layer validates that background calls use
+`@slot.background.*`, character calls use `@slot.character.*`, and targets use
+`@target.*`.
+
 ## HTML / Servo / DOM layer
 
 HTML/CSS UI は Game Native UI とは別の `HtmlUi` layer として扱う。

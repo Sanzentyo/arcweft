@@ -30,6 +30,8 @@ pub enum EntityKind {
     Scene,
     Source,
     Layer,
+    Slot,
+    Target,
     Other(String),
 }
 
@@ -124,6 +126,7 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
         loop_stack: Vec::new(),
         line_label_stack: Vec::new(),
         line_cancel_depth: 0,
+        active_presentation_defaults: HashMap::new(),
     };
     checker.check_module(module);
     if checker.errors.is_empty() {
@@ -141,6 +144,7 @@ struct TypeChecker<'a> {
     loop_stack: Vec<LoopContext>,
     line_label_stack: Vec<Option<String>>,
     line_cancel_depth: usize,
+    active_presentation_defaults: HashMap<String, String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -164,6 +168,7 @@ impl TypeChecker<'_> {
             self.active_borrows.clear();
             self.locals.clear();
             self.loop_stack.clear();
+            self.active_presentation_defaults.clear();
             if let Some(signature) = flow.signature() {
                 for group in signature.param_groups() {
                     for param in group.params() {
@@ -188,6 +193,7 @@ impl TypeChecker<'_> {
             self.active_borrows.clear();
             self.locals.clear();
             self.loop_stack.clear();
+            self.active_presentation_defaults.clear();
             for group in function.signature().param_groups() {
                 for param in group.params() {
                     self.bind_function_param(param.pattern(), &type_ref_kind(param.ty()));
@@ -377,8 +383,10 @@ impl TypeChecker<'_> {
 
     fn check_scoped_flow_items(&mut self, items: &[HirFlowItem]) {
         let outer_locals = self.locals.clone();
+        let outer_presentation_defaults = self.active_presentation_defaults.clone();
         self.check_flow_items(items);
         self.locals = outer_locals;
+        self.active_presentation_defaults = outer_presentation_defaults;
     }
 
     fn check_choice_binding(&mut self, pattern: &Pattern, choice: &crate::lower::HirChoice) {
@@ -639,6 +647,16 @@ impl TypeChecker<'_> {
     fn check_let_stmt(&mut self, pattern: &Pattern, expr: &Expr) {
         let ty = self.check_expr(expr);
         if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), ty) {
+            if let Some(slot_family) = default_presentation_slot_family(expr) {
+                if let Some(previous) = self
+                    .active_presentation_defaults
+                    .insert(slot_family.to_owned(), name.to_owned())
+                {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "presentation `{slot_family}` default slot already has live handle `{previous}`; use an explicit `slot = @slot.{slot_family}.name` for simultaneous values"
+                    )));
+                }
+            }
             self.locals.insert(name.to_owned(), ty);
         }
         collect_borrow_lifetimes(pattern, &mut self.active_borrows);
@@ -1376,11 +1394,14 @@ impl TypeChecker<'_> {
     }
 
     fn check_call_expr(&mut self, callee: &Expr, args: &[Expr]) -> Option<TypeKind> {
-        let arg_types = args
-            .iter()
-            .map(|arg| self.check_expr(arg))
-            .collect::<Vec<_>>();
         if let Expr::Path(name) = callee {
+            if let Some(ty) = self.check_presentation_call(name, args) {
+                return Some(ty);
+            }
+            let arg_types = args
+                .iter()
+                .map(|arg| self.check_expr(arg))
+                .collect::<Vec<_>>();
             if name == "Ok" {
                 return Some(TypeKind::Result {
                     ok: Box::new(first_arg_type(&arg_types)),
@@ -1399,7 +1420,156 @@ impl TypeChecker<'_> {
                 None
             });
         }
+        for arg in args {
+            self.check_expr(arg);
+        }
         self.check_expr(callee)
+    }
+
+    fn check_presentation_call(&mut self, name: &str, args: &[Expr]) -> Option<TypeKind> {
+        match name {
+            "bg" => {
+                self.check_positional_entity_arg(args, 0, &EntityKind::Asset, "bg asset");
+                self.check_presentation_named_args(args, "background");
+                Some(TypeKind::Named(
+                    "PresentationHandle<BackgroundSurface>".to_owned(),
+                ))
+            }
+            "show" => {
+                self.check_positional_entity_arg(args, 0, &EntityKind::Character, "show character");
+                self.check_presentation_named_args(args, "character");
+                Some(TypeKind::Named(
+                    "PresentationHandle<CharacterSurface>".to_owned(),
+                ))
+            }
+            "ref.bg" => {
+                self.check_presentation_named_args(args, "background");
+                Some(TypeKind::Named("SlotRef<BackgroundSurface>".to_owned()))
+            }
+            "ref.show" => {
+                self.check_positional_entity_arg(
+                    args,
+                    0,
+                    &EntityKind::Character,
+                    "ref show character",
+                );
+                self.check_presentation_named_args(args, "character");
+                Some(TypeKind::Named("SlotRef<CharacterSurface>".to_owned()))
+            }
+            "clear.bg" => {
+                self.check_presentation_named_args(args, "background");
+                self.active_presentation_defaults.remove("background");
+                Some(TypeKind::Named("Option<BackgroundSurface>".to_owned()))
+            }
+            "hide" => {
+                self.check_positional_entity_arg(args, 0, &EntityKind::Character, "hide character");
+                self.check_presentation_named_args(args, "character");
+                self.active_presentation_defaults.remove("character");
+                Some(TypeKind::Named("Option<CharacterSurface>".to_owned()))
+            }
+            _ => None,
+        }
+    }
+
+    fn check_positional_entity_arg(
+        &mut self,
+        args: &[Expr],
+        index: usize,
+        expected: &EntityKind,
+        context: &str,
+    ) {
+        let Some(arg) = args
+            .iter()
+            .filter(|arg| !matches!(arg, Expr::NamedArg { .. }))
+            .nth(index)
+        else {
+            self.errors.push(TypeCheckError::new(format!(
+                "{context} argument is required"
+            )));
+            return;
+        };
+        match arg {
+            Expr::EntityRef(entity) => match entity.as_absolute().and_then(entity_kind) {
+                Some(kind) if &kind == expected => {}
+                actual => self.errors.push(TypeCheckError::new(format!(
+                    "{context} must be a {expected:?} reference, found {actual:?}"
+                ))),
+            },
+            Expr::Path(path) if self.locals.get(path) == Some(&TypeKind::Ref(expected.clone())) => {
+            }
+            Expr::Path(path)
+                if self.env.symbol_type(path) == Some(&TypeKind::Ref(expected.clone())) => {}
+            other => {
+                self.check_expr(other);
+                self.errors.push(TypeCheckError::new(format!(
+                    "{context} must be a {expected:?} reference"
+                )));
+            }
+        }
+    }
+
+    fn check_presentation_named_args(&mut self, args: &[Expr], slot_family: &str) {
+        for arg in args {
+            let Expr::NamedArg { name, value } = arg else {
+                continue;
+            };
+            match name.as_str() {
+                "target" => self.expect_entity_expr_kind(value, &EntityKind::Target, "target"),
+                "slot" => self.expect_slot_family(value, slot_family),
+                "scope" => self.expect_entity_expr_kind(
+                    value,
+                    &EntityKind::Other("scope".to_owned()),
+                    "scope",
+                ),
+                _ => {
+                    self.check_expr(value);
+                }
+            }
+        }
+    }
+
+    fn expect_entity_expr_kind(&mut self, expr: &Expr, expected: &EntityKind, context: &str) {
+        match expr {
+            Expr::EntityRef(entity) => match entity.as_absolute().and_then(entity_kind) {
+                Some(kind) if &kind == expected => {}
+                actual => self.errors.push(TypeCheckError::new(format!(
+                    "presentation {context} must be a {expected:?} reference, found {actual:?}"
+                ))),
+            },
+            other => {
+                self.check_expr(other);
+                self.errors.push(TypeCheckError::new(format!(
+                    "presentation {context} must be an entity reference"
+                )));
+            }
+        }
+    }
+
+    fn expect_slot_family(&mut self, expr: &Expr, slot_family: &str) {
+        match expr {
+            Expr::EntityRef(entity) => {
+                let Some(entity) = entity.as_absolute() else {
+                    self.errors.push(TypeCheckError::new(
+                        "presentation slot must be an absolute slot reference".to_owned(),
+                    ));
+                    return;
+                };
+                if entity_kind(entity) != Some(EntityKind::Slot)
+                    || !entity.body().starts_with(&format!("slot.{slot_family}."))
+                {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "presentation slot `{}` must be in `@slot.{slot_family}.*`",
+                        entity.body()
+                    )));
+                }
+            }
+            other => {
+                self.check_expr(other);
+                self.errors.push(TypeCheckError::new(
+                    "presentation slot must be an entity reference".to_owned(),
+                ));
+            }
+        }
     }
 
     fn check_unary_expr(&mut self, op: crate::expr::UnaryOp, expr: &Expr) -> TypeKind {
@@ -1690,6 +1860,9 @@ fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
         "scene" => EntityKind::Scene,
         "source" => EntityKind::Source,
         "layer" => EntityKind::Layer,
+        "slot" => EntityKind::Slot,
+        "target" => EntityKind::Target,
+        "scope" => EntityKind::Other("scope".to_owned()),
         "ent" => EntityKind::Other("ent".to_owned()),
         _ => return None,
     })
@@ -2115,6 +2288,23 @@ fn simple_expr_type(expr: &Expr) -> Option<TypeKind> {
             .map(TypeKind::Tuple),
         Expr::List(_) => Some(TypeKind::Named("List".to_owned())),
         Expr::RecordLiteral(_) => Some(TypeKind::Named("Record".to_owned())),
+        _ => None,
+    }
+}
+
+fn default_presentation_slot_family(expr: &Expr) -> Option<&'static str> {
+    let Expr::Call { callee, args } = expr else {
+        return None;
+    };
+    if args
+        .iter()
+        .any(|arg| matches!(arg, Expr::NamedArg { name, .. } if name == "slot"))
+    {
+        return None;
+    }
+    match callee.as_ref() {
+        Expr::Path(name) if name == "bg" => Some("background"),
+        Expr::Path(name) if name == "show" => Some("character"),
         _ => None,
     }
 }

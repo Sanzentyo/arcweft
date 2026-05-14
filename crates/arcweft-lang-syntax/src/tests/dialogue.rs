@@ -30,7 +30,10 @@ pub fragment @frag.alice_enters alice_enters: FlowFragment {
 fn parses_colon_form_with_inline_bracket_content() {
     let tree = parse_ok("alice(voice=auto):[今日は少しだけ。[p]]");
 
-    let Item::FlowItem(FlowItem::SpeakerLine(line)) = &tree.items()[0] else {
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected speaker line");
+    };
+    let FlowItem::SpeakerLine(line) = item.as_ref() else {
         panic!("expected speaker line");
     };
     assert_eq!(line.speaker(), "alice");
@@ -218,7 +221,10 @@ with {
 "##,
     );
 
-    let Item::FlowItem(FlowItem::ContentCall(call)) = &tree.items()[0] else {
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected content call");
+    };
+    let FlowItem::ContentCall(call) = item.as_ref() else {
         panic!("expected content call");
     };
     assert_eq!(call.callee(), "alice.say");

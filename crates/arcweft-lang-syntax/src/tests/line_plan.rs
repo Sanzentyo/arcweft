@@ -13,7 +13,10 @@ with:
 ",
     );
 
-    let Item::FlowItem(FlowItem::SpeakerLine(line)) = &tree.items()[0] else {
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected top-level speaker flow item");
+    };
+    let FlowItem::SpeakerLine(line) = item.as_ref() else {
         panic!("expected top-level speaker flow item");
     };
     assert_eq!(line.speaker(), "alice");
@@ -41,7 +44,10 @@ with:
 ",
     );
 
-    let Item::FlowItem(FlowItem::ContentCall(call)) = &tree.items()[0] else {
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected content call");
+    };
+    let FlowItem::ContentCall(call) = item.as_ref() else {
         panic!("expected content call");
     };
     assert_eq!(call.callee(), "alice");
@@ -208,7 +214,10 @@ with:
 ",
     );
 
-    let Item::FlowItem(FlowItem::ContentCall(call)) = &tree.items()[0] else {
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected content call");
+    };
+    let FlowItem::ContentCall(call) = item.as_ref() else {
         panic!("expected content call");
     };
     let plan = call.plan().expect("line plan");
@@ -252,7 +261,10 @@ with:
 ",
     );
 
-    let Item::FlowItem(FlowItem::SpeakerLine(line)) = &tree.items()[0] else {
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected speaker line");
+    };
+    let FlowItem::SpeakerLine(line) = item.as_ref() else {
         panic!("expected speaker line");
     };
     let plan = line.plan().expect("line plan");
@@ -518,7 +530,10 @@ with:
 ",
     );
 
-    let Item::FlowItem(FlowItem::ContentCall(call)) = &tree.items()[0] else {
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected content call");
+    };
+    let FlowItem::ContentCall(call) = item.as_ref() else {
         panic!("expected content call");
     };
     let plan = call.plan().expect("line plan");

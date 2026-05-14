@@ -159,6 +159,64 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn typechecks_presentation_handle_calls_and_slot_refs() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    let room = bg(@asset.bg.room, target = @target.scene, slot = @slot.background.main)
+    let alice_on_stage = show(@character.alice, .normal, slot = @slot.character.alice.main)
+    let current_room = ref bg(target = @target.scene, slot = @slot.background.main)
+    let cleared_room = clear bg(target = @target.scene, slot = @slot.background.main)
+    let current_alice = ref show(@character.alice, slot = @slot.character.alice.main)
+    let hidden_alice = hide(@character.alice, slot = @slot.character.alice.main)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("presentation fixture lowers");
+
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("presentation calls typecheck");
+}
+
+#[test]
+fn typecheck_rejects_presentation_slot_family_mismatch() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    let room = bg(@asset.bg.room, slot = @slot.character.alice.main)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("presentation slot fixture lowers");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("wrong slot family");
+
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("@slot.background.*"))
+    );
+}
+
+#[test]
+fn typecheck_requires_explicit_slots_for_simultaneous_defaults() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    let room = bg(@asset.bg.room)
+    let evening = bg(@asset.bg.evening)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("presentation default fixture lowers");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("duplicate default slot");
+
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("default slot already has live handle")
+    }));
+}
+
+#[test]
 fn typechecks_fragment_hir_and_include_target() {
     let tree = parse_ok(
         r"

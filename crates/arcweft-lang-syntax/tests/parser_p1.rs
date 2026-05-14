@@ -55,7 +55,10 @@ alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto,
 "#,
     );
 
-    let Item::FlowItem(FlowItem::SpeakerLine(line)) = &tree.items()[0] else {
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected speaker line");
+    };
+    let FlowItem::SpeakerLine(line) = item.as_ref() else {
         panic!("expected speaker line");
     };
     let options = line.options();
