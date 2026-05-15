@@ -4,7 +4,7 @@ use super::support::*;
 fn parses_colon_speaker_with_indented_line_plan() {
     let tree = parse_ok(
         r"
-alice(voice=auto, face=smile):
+alice(voice=auto, look=smile):
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 with:
     at(0.42s): alice.stage.face(worried)
@@ -283,6 +283,128 @@ with:
         &plan.items()[2],
         LinePlanItem::Out(Expr::Tuple(_))
     ));
+}
+
+#[test]
+fn parses_line_marks_handlers_threads_and_lifetime_registry() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    alice(focus=.soft)[待って。[mark .release_focus][p]]
+    with:
+        init:
+            'line.focus.main <- acquire_focus()
+            wait mark .release_focus
+        on .release_focus:
+            'line.focus |> drop
+            out .Released
+        thread motion:
+            wait 0.35s
+            tick_motion()
+            finally { cleanup_motion() }
+}
+",
+    );
+
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    let FlowItem::ContentCall(call) = &flow.body()[0] else {
+        panic!("expected content call");
+    };
+    assert!(call.content().tokens().iter().any(
+        |token| matches!(token, DialogueToken::Mark(mark) if mark.name() == ".release_focus")
+    ));
+    let plan = call.plan().expect("line plan");
+    assert!(matches!(&plan.items()[0], LinePlanItem::Init(_)));
+    assert!(matches!(&plan.items()[1], LinePlanItem::On { .. }));
+    assert!(matches!(
+        &plan.items()[2],
+        LinePlanItem::Thread {
+            name: Some(name),
+            body,
+            finally,
+        } if name == "motion" && body.len() == 2 && finally.len() == 1
+    ));
+
+    let hir = lower_to_hir(&tree).expect("line plan fixture lowers");
+    validate_typecheck_ready(&hir).expect("line plan fixture is typecheck-ready");
+    typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new()
+            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol(".soft", TypeKind::Named("FocusPolicy".to_owned()))
+            .with_symbol(".Released", TypeKind::Named("LineExit".to_owned()))
+            .with_function("acquire_focus", TypeKind::Named("FocusHandle".to_owned()))
+            .with_function("tick_motion", TypeKind::Unit)
+            .with_function("cleanup_motion", TypeKind::Unit),
+    )
+    .expect("line plan fixture typechecks");
+}
+
+#[test]
+fn rejects_duplicate_marks_missing_handlers_and_local_hook_tags() {
+    let duplicate = parse_ok(
+        r"
+flow @flow.opening opening {
+    alice[重複。[mark .x][mark .x][p]]
+}
+",
+    );
+    let duplicate_hir = lower_to_hir(&duplicate).expect("duplicate mark fixture lowers");
+    let duplicate_errors = typecheck_hir(
+        &duplicate_hir,
+        &TypeCheckEnv::new().with_symbol("alice", TypeKind::Ref(EntityKind::Character)),
+    )
+    .expect_err("duplicate marks are rejected");
+    assert!(
+        duplicate_errors
+            .iter()
+            .any(|error| error.message().contains("duplicate dialogue mark"))
+    );
+
+    let missing = parse_ok(
+        r"
+flow @flow.opening opening {
+    alice[待って。[p]]
+    with:
+        on .missing:
+            out .Missing
+}
+",
+    );
+    let missing_hir = lower_to_hir(&missing).expect("missing mark fixture lowers");
+    let missing_errors = typecheck_hir(
+        &missing_hir,
+        &TypeCheckEnv::new()
+            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_symbol(".Missing", TypeKind::Named("LineExit".to_owned())),
+    )
+    .expect_err("missing handler mark is rejected");
+    assert!(missing_errors.iter().any(|error| {
+        error
+            .message()
+            .contains("does not name a `[mark .missing]`")
+    }));
+
+    let hook = parse_ok(
+        r"
+flow @flow.opening opening {
+    alice[古い記法。[hook old][p]]
+}
+",
+    );
+    let hook_hir = lower_to_hir(&hook).expect("hook fixture lowers");
+    let hook_errors = typecheck_hir(
+        &hook_hir,
+        &TypeCheckEnv::new().with_symbol("alice", TypeKind::Ref(EntityKind::Character)),
+    )
+    .expect_err("local hook tag is rejected");
+    assert!(
+        hook_errors
+            .iter()
+            .any(|error| error.message().contains("`[hook ...]` syntax was removed"))
+    );
 }
 
 #[test]

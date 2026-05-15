@@ -52,7 +52,7 @@ When a character is shown, the runtime creates a stage object:
 ```text
 StageObject<CharacterSprite>
   entity: #character.alice
-  instance: #stage.alice.main
+  instance: @stage.alice.main
   layer: #layer.characters
   transform: position / scale / rotation / skew
   expression: smile
@@ -72,8 +72,8 @@ alice.stage.show(smile, at=center, fade=200ms)
 alice.stage.face(worried, crossfade=120ms)
 alice.stage.move(to=left, time=300ms, ease=quad.out)
 alice.stage.scale(1.08, time=240ms)
-alice.stage.animate(#anim.breath.loop)
-alice.voice(#voice.alice.001).play()
+alice.stage.animate(@anim.breath.loop)
+alice.voice(@voice.alice.001).play()
 alice.sprite(smile).preload()
 alice.prefetch(flow=#flow.alice_intro, lines=6)
 ```
@@ -165,9 +165,9 @@ Transforms are deterministic animation tracks sampled from logical time.
 ## Animation commands
 
 ```awft
-@anim alice #anim.breath loop
-@anim alice #anim.step_forward once
-@stop_anim alice #anim.breath
+anim(@character.alice, @anim.breath, mode=loop)
+anim(@character.alice, @anim.step_forward, mode=once)
+stop_anim(@character.alice, @anim.breath)
 ```
 
 Animations can target transform, opacity, sprite part selection, shader params, or vector/text effects.
@@ -177,13 +177,13 @@ Animations can target transform, opacity, sprite part selection, shader params, 
 Dialogue line timeline:
 
 ```awft
-alice.say(id=#say.opening.003, face=smile, voice=auto)[
+alice.say(id=@say.opening.003, look=smile, voice=auto)[
     ほら、ここ。覚えてる？[p]
-] {
+] with {
     at(0.15s) { alice.stage.face(normal, crossfade=80ms) }
     at(0.45s) { alice.stage.move(by=(0.04, 0.0), time=180ms) }
     at(marker("soft_smile")) { alice.stage.face(smile, crossfade=100ms) }
-    at(end-120ms) { alice.stage.animate(#anim.breath.once) }
+    at(end-120ms) { alice.stage.animate(@anim.breath.once) }
 }
 ```
 
@@ -192,7 +192,7 @@ The scheduler drives the timeline from the voice cue if present. If the voice is
 ## Lip sync
 
 ```awft
-alice.say(id=#say.opening.004, voice=#voice.alice.004, lipsync=auto)[
+alice.say(id=@say.opening.004, voice=@voice.alice.004, lipsync=auto)[
     夢の中では、君もそこにいた。[p]
 ]
 ```
@@ -209,9 +209,9 @@ Lip-sync modes:
 Manual mouth timeline:
 
 ```awft
-alice.say(id=#say.opening.005, voice=auto, lipsync=manual)[
+alice.say(id=@say.opening.005, voice=auto, lipsync=manual)[
     あのね。[p]
-] {
+] with {
     at(phoneme "a") { alice.stage.mouth(a) }
     at(phoneme "o") { alice.stage.mouth(o) }
     at(end) { alice.stage.mouth(closed) }
@@ -324,15 +324,15 @@ alice.mouth(closed)
 alice.move(to=left, time=350ms, ease=cubic.out)
 alice.scale(1.08, time=240ms)
 alice.rotate(-2deg, time=180ms)
-alice.animate(#anim.breath, mode=loop)
+alice.animate(@anim.breath, mode=loop)
 alice.hide(fade=180ms)
 ```
 
 When a stage instance must be specified explicitly:
 
 ```awft
-alice.stage(#stage.alice.main).move(to=left, time=300ms)
-#<character.alice>.stage(#stage.alice.sub).face(smile)
+alice.stage(@stage.alice.main).move(to=left, time=300ms)
+@<character.alice>.stage(@stage.alice.sub).face(smile)
 ```
 
 Ordinary calls are sugar over this API:
@@ -451,7 +451,7 @@ alice.say(voice=auto)[
     at(0.15s) { alice.stage.face(normal, crossfade=80ms) }
     at(0.45s) { alice.stage.move(by=(0.04, 0.0), time=180ms) }
     at(marker("soft_smile")) { alice.stage.face(smile, crossfade=100ms) }
-    at(end-120ms) { alice.stage.animate(#anim.breath.once) }
+    at(end-120ms) { alice.stage.animate(@anim.breath.once) }
 }
 ```
 
@@ -498,7 +498,7 @@ A flow can declare what to preload for likely next flows.
 preload next #flow.alice_intro {
     alice.prefetch(flow=#flow.alice_intro, lines=6)
     alice.sprite(smile).preload()
-    alice.voice_for(#say.alice_intro.001).preload()
+    alice.voice_for(@say.alice_intro.001).preload()
     asset.image(#asset.bg.room_evening)
 }
 ```

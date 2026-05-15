@@ -6,7 +6,7 @@ use crate::expr::{BinaryOp, Expr, Literal};
 use crate::lower::{HirFlowItem, HirModule, HirTopLevelDecl};
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 use crate::types::TypeRef;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
 /// Entity family inferred from an Arcweft public id prefix.
@@ -127,6 +127,9 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
         line_label_stack: Vec::new(),
         line_cancel_depth: 0,
         active_presentation_defaults: HashMap::new(),
+        line_mark_stack: Vec::new(),
+        lifetime_guarantees: HashSet::new(),
+        dropped_lifetime_keys: HashSet::new(),
     };
     checker.check_module(module);
     if checker.errors.is_empty() {
@@ -145,6 +148,9 @@ struct TypeChecker<'a> {
     line_label_stack: Vec<Option<String>>,
     line_cancel_depth: usize,
     active_presentation_defaults: HashMap<String, String>,
+    line_mark_stack: Vec<HashSet<String>>,
+    lifetime_guarantees: HashSet<String>,
+    dropped_lifetime_keys: HashSet<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -169,6 +175,9 @@ impl TypeChecker<'_> {
             self.locals.clear();
             self.loop_stack.clear();
             self.active_presentation_defaults.clear();
+            self.line_mark_stack.clear();
+            self.lifetime_guarantees.clear();
+            self.dropped_lifetime_keys.clear();
             if let Some(signature) = flow.signature() {
                 for group in signature.param_groups() {
                     for param in group.params() {
@@ -425,12 +434,30 @@ impl TypeChecker<'_> {
         if let Some(text_key) = dialogue.text_key() {
             self.expect_entity_kind(text_key, &EntityKind::Text, "dialogue text key");
         }
-        self.check_dialogue_content(dialogue.content().tokens());
+        if let Some(look) = dialogue.look() {
+            self.check_expr(look);
+        }
+        if let Some(stage) = dialogue.stage() {
+            self.check_expr(stage);
+        }
+        if let Some(portrait) = dialogue.portrait() {
+            self.check_expr(portrait);
+        }
+        if let Some(focus) = dialogue.focus() {
+            self.check_expr(focus);
+            self.lifetime_guarantees.insert("line.focus".to_owned());
+        }
+        if let Some(cleanup) = dialogue.cleanup() {
+            self.check_expr(cleanup);
+        }
+        let marks = self.check_dialogue_content(dialogue.content().tokens());
         if let Some(plan) = dialogue.plan() {
             self.line_label_stack.push(plan.label().map(str::to_owned));
+            self.line_mark_stack.push(marks);
             for item in plan.items() {
                 self.check_line_plan_item(item);
             }
+            self.line_mark_stack.pop();
             self.line_label_stack.pop();
         }
     }
@@ -551,26 +578,10 @@ impl TypeChecker<'_> {
                 expr,
                 else_body,
             } => self.check_let_else_stmt(pattern, expr, else_body),
-            Stmt::LetChoice { .. } => {
-                self.errors.push(TypeCheckError::new(
-                    "choice expression binding must be lowered before type checking".to_owned(),
-                ));
-            }
-            Stmt::LetScope { .. } => {
-                self.errors.push(TypeCheckError::new(
-                    "scope expression binding must be lowered before type checking".to_owned(),
-                ));
-            }
-            Stmt::LetLoop { .. } => {
-                self.errors.push(TypeCheckError::new(
-                    "loop expression binding must be lowered before type checking".to_owned(),
-                ));
-            }
-            Stmt::LetAwait { .. } => {
-                self.errors.push(TypeCheckError::new(
-                    "await expression binding must be lowered before type checking".to_owned(),
-                ));
-            }
+            Stmt::LetChoice { .. }
+            | Stmt::LetScope { .. }
+            | Stmt::LetLoop { .. }
+            | Stmt::LetAwait { .. } => self.reject_unlowered_stmt_binding(stmt),
             Stmt::Return(expr)
             | Stmt::Close(expr)
             | Stmt::Expr(expr)
@@ -591,39 +602,15 @@ impl TypeChecker<'_> {
                 self.reject_active_borrows("suspension boundary");
                 self.check_expr(expr);
             }
-            Stmt::Signal { target, value } => {
-                self.check_expr(target);
-                self.check_expr(value);
-            }
-            Stmt::Emit { event, fields } => {
-                self.check_expr(event);
-                for (_, value) in fields {
-                    self.check_expr(value);
-                }
-            }
-            Stmt::On { body, .. } => {
-                let outer_locals = self.locals.clone();
-                self.bind_on_head_locals(stmt);
-                for stmt in body {
-                    self.check_stmt(stmt);
-                }
-                self.locals = outer_locals;
-            }
-            Stmt::Command(command) => {
-                for arg in command.args() {
-                    self.check_expr(arg);
-                }
-            }
+            Stmt::Signal { target, value } => self.check_two_exprs(target, value),
+            Stmt::LifetimeSet { target, expr } => self.check_lifetime_set_stmt(target, expr),
+            Stmt::Wait(target) => self.check_wait_stmt(target),
+            Stmt::Emit { event, fields } => self.check_emit_stmt(event, fields),
+            Stmt::On { body, .. } => self.check_on_stmt(stmt, body),
+            Stmt::Command(command) => self.check_command_stmt(command),
             Stmt::If { condition, body } => self.check_if_stmt(condition, body),
             Stmt::Loop { body } => self.check_stmt_loop(body),
-            Stmt::While { condition, body } => {
-                self.expect_expr_type(condition, &TypeKind::Bool, "while condition");
-                self.with_statement_loop(|this| {
-                    for stmt in body {
-                        this.check_stmt(stmt);
-                    }
-                });
-            }
+            Stmt::While { condition, body } => self.check_stmt_while(condition, body),
             Stmt::WhileLet {
                 pattern,
                 expr,
@@ -642,6 +629,55 @@ impl TypeChecker<'_> {
                 "raw statement is not type-checkable: {raw}"
             ))),
         }
+    }
+
+    fn reject_unlowered_stmt_binding(&mut self, stmt: &Stmt) {
+        let kind = match stmt {
+            Stmt::LetChoice { .. } => "choice",
+            Stmt::LetScope { .. } => "scope",
+            Stmt::LetLoop { .. } => "loop",
+            Stmt::LetAwait { .. } => "await",
+            _ => return,
+        };
+        self.errors.push(TypeCheckError::new(format!(
+            "{kind} expression binding must be lowered before type checking"
+        )));
+    }
+
+    fn check_two_exprs(&mut self, first: &Expr, second: &Expr) {
+        self.check_expr(first);
+        self.check_expr(second);
+    }
+
+    fn check_emit_stmt(&mut self, event: &Expr, fields: &[(String, Expr)]) {
+        self.check_expr(event);
+        for (_, value) in fields {
+            self.check_expr(value);
+        }
+    }
+
+    fn check_on_stmt(&mut self, stmt: &Stmt, body: &[Stmt]) {
+        let outer_locals = self.locals.clone();
+        self.bind_on_head_locals(stmt);
+        for stmt in body {
+            self.check_stmt(stmt);
+        }
+        self.locals = outer_locals;
+    }
+
+    fn check_command_stmt(&mut self, command: &crate::ast::ScenarioCommand) {
+        for arg in command.args() {
+            self.check_expr(arg);
+        }
+    }
+
+    fn check_stmt_while(&mut self, condition: &Expr, body: &[Stmt]) {
+        self.expect_expr_type(condition, &TypeKind::Bool, "while condition");
+        self.with_statement_loop(|this| {
+            for stmt in body {
+                this.check_stmt(stmt);
+            }
+        });
     }
 
     fn check_let_stmt(&mut self, pattern: &Pattern, expr: &Expr) {
@@ -1127,6 +1163,28 @@ impl TypeChecker<'_> {
 
     fn check_line_plan_item(&mut self, item: &LinePlanItem) -> Option<TypeKind> {
         match item {
+            LinePlanItem::Init(statements) => {
+                for stmt in statements {
+                    self.check_stmt(stmt);
+                }
+                None
+            }
+            LinePlanItem::Thread { body, finally, .. } => {
+                for stmt in body {
+                    self.check_stmt(stmt);
+                }
+                for stmt in finally {
+                    self.check_stmt(stmt);
+                }
+                None
+            }
+            LinePlanItem::On { trigger, body } => {
+                self.check_line_on_trigger(trigger);
+                for stmt in body {
+                    self.check_stmt(stmt);
+                }
+                None
+            }
             LinePlanItem::Option { value, .. } => {
                 self.check_expr(value);
                 None
@@ -1203,12 +1261,139 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_dialogue_content(&mut self, tokens: &[DialogueToken]) {
+    fn check_line_on_trigger(&mut self, trigger: &Expr) {
+        if let Expr::Path(name) = trigger
+            && name.starts_with('.')
+        {
+            if !self
+                .line_mark_stack
+                .last()
+                .is_some_and(|marks| marks.contains(name))
+            {
+                self.errors.push(TypeCheckError::new(format!(
+                    "line-local handler trigger `{name}` does not name a `[mark {name}]` in this dialogue line"
+                )));
+            }
+            return;
+        }
+        self.check_expr(trigger);
+    }
+
+    fn check_dialogue_content(&mut self, tokens: &[DialogueToken]) -> HashSet<String> {
+        let mut marks = HashSet::new();
         for token in tokens {
-            if let DialogueToken::Expr(expr) = token {
+            match token {
+                DialogueToken::Expr(expr) => {
+                    self.check_expr(expr);
+                }
+                DialogueToken::Mark(mark) => {
+                    if !marks.insert(mark.name().to_owned()) {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "duplicate dialogue mark `{}` in line content",
+                            mark.name()
+                        )));
+                    }
+                }
+                DialogueToken::Tag(tag) if tag.name() == "hook" => {
+                    self.errors.push(TypeCheckError::new(
+                        "local dialogue `[hook ...]` syntax was removed; use `[mark .name]` with `with: on .name:`".to_owned(),
+                    ));
+                }
+                DialogueToken::Tag(_)
+                | DialogueToken::Text(_)
+                | DialogueToken::Raw(_)
+                | DialogueToken::EndTag(_)
+                | DialogueToken::Ruby { .. }
+                | DialogueToken::Escape(_) => {}
+            }
+        }
+        marks
+    }
+
+    fn check_lifetime_set_stmt(&mut self, target: &Expr, expr: &Expr) {
+        self.check_expr(expr);
+        let Some(key) = lifetime_key(target) else {
+            self.errors.push(TypeCheckError::new(
+                "lifetime registry assignment target must be `'scope.key`".to_owned(),
+            ));
+            self.check_expr(target);
+            return;
+        };
+        self.lifetime_guarantees.insert(key);
+    }
+
+    fn check_wait_stmt(&mut self, target: &crate::ast::WaitTarget) {
+        match target {
+            crate::ast::WaitTarget::Duration(expr) => {
+                self.expect_expr_type(expr, &TypeKind::Duration, "wait duration");
+            }
+            crate::ast::WaitTarget::Mark(name) => {
+                if !self
+                    .line_mark_stack
+                    .last()
+                    .is_some_and(|marks| marks.contains(name))
+                {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "wait mark `{name}` does not name a mark in this dialogue line"
+                    )));
+                }
+            }
+            crate::ast::WaitTarget::Expr(expr) => {
                 self.check_expr(expr);
             }
         }
+    }
+
+    fn check_lifetime_path_expr(
+        &mut self,
+        lifetime: &str,
+        path: &[String],
+        optional: bool,
+    ) -> Option<TypeKind> {
+        let key = lifetime_path_key(lifetime, path);
+        if self.dropped_lifetime_keys.contains(&key) {
+            self.errors.push(TypeCheckError::new(format!(
+                "lifetime registry key `{key}` was already dropped"
+            )));
+            return None;
+        }
+        let value = lifetime_value_type(&key);
+        if optional || self.lifetime_guarantees.contains(&key) {
+            return Some(if optional {
+                TypeKind::Named(format!("Option<{value}>"))
+            } else {
+                TypeKind::Named(value)
+            });
+        }
+        self.errors.push(TypeCheckError::new(format!(
+            "lifetime registry key `{key}` is not statically guaranteed; use `{key}?` or initialize it first"
+        )));
+        Some(TypeKind::Named(format!("Option<{value}>")))
+    }
+
+    fn check_lifetime_pipe(&mut self, lhs: &Expr, rhs: &Expr) -> Option<()> {
+        let key = lifetime_key(lhs)?;
+        match rhs {
+            Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional" | "on_drop") => {
+                self.drop_lifetime_key(&key);
+                Some(())
+            }
+            Expr::Call { callee, .. } if matches!(callee.as_ref(), Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional" | "on_drop")) =>
+            {
+                self.drop_lifetime_key(&key);
+                Some(())
+            }
+            _ => None,
+        }
+    }
+
+    fn drop_lifetime_key(&mut self, key: &str) {
+        if !self.dropped_lifetime_keys.insert(key.to_owned()) {
+            self.errors.push(TypeCheckError::new(format!(
+                "lifetime registry key `{key}` was dropped more than once"
+            )));
+        }
+        self.lifetime_guarantees.remove(key);
     }
 
     fn expect_entity_kind(&mut self, entity: &EntityRef, expected: &EntityKind, context: &str) {
@@ -1236,26 +1421,13 @@ impl TypeChecker<'_> {
     fn check_expr(&mut self, expr: &Expr) -> Option<TypeKind> {
         match expr {
             Expr::Literal(literal) => Some(literal_type(literal)),
-            Expr::EntityRef(entity) => entity
-                .as_absolute()
-                .and_then(entity_kind)
-                .map(TypeKind::Ref)
-                .or_else(|| {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "unknown entity reference kind: {}",
-                        entity.body()
-                    )));
-                    None
-                }),
-            Expr::Path(path) => self.locals.get(path).cloned().or_else(|| {
-                self.env.symbol_type(path).cloned().or_else(|| {
-                    self.check_dotted_path_target(path).or_else(|| {
-                        self.errors
-                            .push(TypeCheckError::new(format!("unknown symbol `{path}`")));
-                        None
-                    })
-                })
-            }),
+            Expr::EntityRef(entity) => self.check_entity_ref_expr(entity),
+            Expr::LifetimePath {
+                lifetime,
+                path,
+                optional,
+            } => self.check_lifetime_path_expr(lifetime, path, *optional),
+            Expr::Path(path) => self.check_path_expr(path),
             Expr::Placeholder(_) => None,
             Expr::Tuple(items) => Some(self.check_tuple_expr(items)),
             Expr::List(items) => Some(self.check_list_expr(items)),
@@ -1271,23 +1443,14 @@ impl TypeChecker<'_> {
                 Some(self.check_dialogue_call_expr(callee, plan.as_ref()))
             }
             Expr::Index { target, index } => self.check_index_expr(target, index),
-            Expr::Pipe { lhs, rhs } => {
-                self.check_expr(lhs);
-                self.check_expr(rhs)
-            }
+            Expr::Pipe { lhs, rhs } => self.check_pipe_expr(lhs, rhs),
             Expr::Try { expr } => self.check_try_expr(expr),
             Expr::Await { expr, applies_try } => self.check_await_expr(expr, *applies_try),
             Expr::Range { start, end, .. } => {
                 Some(self.check_range_expr(start.as_deref(), end.as_deref()))
             }
-            Expr::Record { path, fields } => {
-                self.check_record_fields(fields);
-                Some(TypeKind::Named(path.clone()))
-            }
-            Expr::RecordLiteral(fields) => {
-                self.check_record_fields(fields);
-                Some(TypeKind::Named("Record".to_owned()))
-            }
+            Expr::Record { path, fields } => Some(self.check_record_expr(path, fields)),
+            Expr::RecordLiteral(fields) => Some(self.check_record_literal_expr(fields)),
             Expr::Binary { lhs, op, rhs } => self.check_binary_expr(lhs, *op, rhs),
             Expr::Closure { body, .. } => {
                 self.check_expr(body);
@@ -1334,6 +1497,50 @@ impl TypeChecker<'_> {
                 None
             }
         }
+    }
+
+    fn check_entity_ref_expr(&mut self, entity: &EntityRefSyntax) -> Option<TypeKind> {
+        entity
+            .as_absolute()
+            .and_then(entity_kind)
+            .map(TypeKind::Ref)
+            .or_else(|| {
+                self.errors.push(TypeCheckError::new(format!(
+                    "unknown entity reference kind: {}",
+                    entity.body()
+                )));
+                None
+            })
+    }
+
+    fn check_path_expr(&mut self, path: &str) -> Option<TypeKind> {
+        self.locals.get(path).cloned().or_else(|| {
+            self.env.symbol_type(path).cloned().or_else(|| {
+                self.check_dotted_path_target(path).or_else(|| {
+                    self.errors
+                        .push(TypeCheckError::new(format!("unknown symbol `{path}`")));
+                    None
+                })
+            })
+        })
+    }
+
+    fn check_pipe_expr(&mut self, lhs: &Expr, rhs: &Expr) -> Option<TypeKind> {
+        if self.check_lifetime_pipe(lhs, rhs).is_some() {
+            return Some(TypeKind::Unit);
+        }
+        self.check_expr(lhs);
+        self.check_expr(rhs)
+    }
+
+    fn check_record_expr(&mut self, path: &str, fields: &[(String, Expr)]) -> TypeKind {
+        self.check_record_fields(fields);
+        TypeKind::Named(path.to_owned())
+    }
+
+    fn check_record_literal_expr(&mut self, fields: &[(String, Expr)]) -> TypeKind {
+        self.check_record_fields(fields);
+        TypeKind::Named("Record".to_owned())
     }
 
     fn check_dialogue_call_expr(
@@ -1873,6 +2080,30 @@ fn expr_path_label(expr: &Expr) -> Option<String> {
         Expr::Path(path) => Some(path.clone()),
         Expr::Field { target, field } => Some(format!("{}.{}", expr_path_label(target)?, field)),
         _ => None,
+    }
+}
+
+fn lifetime_key(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::LifetimePath { lifetime, path, .. } => Some(lifetime_path_key(lifetime, path)),
+        _ => None,
+    }
+}
+
+fn lifetime_path_key(lifetime: &str, path: &[String]) -> String {
+    let mut key = lifetime.to_owned();
+    for part in path {
+        key.push('.');
+        key.push_str(part);
+    }
+    key
+}
+
+fn lifetime_value_type(key: &str) -> String {
+    if key == "line.focus" || key.starts_with("line.focus.") {
+        "FocusHandle".to_owned()
+    } else {
+        "LifetimeValue".to_owned()
     }
 }
 

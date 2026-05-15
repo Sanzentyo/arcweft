@@ -42,6 +42,35 @@ fn parses_colon_form_with_inline_bracket_content() {
 }
 
 #[test]
+fn parses_positional_look_and_extended_line_options() {
+    let tree = parse_ok(
+        "alice(smile, voice=auto, stage=.main, portrait=.bust, focus=.soft, cleanup=.line):[おはよう。[p]]",
+    );
+
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected speaker line");
+    };
+    let FlowItem::SpeakerLine(line) = item.as_ref() else {
+        panic!("expected speaker line");
+    };
+    assert!(matches!(line.options().look(), Some(Expr::Path(path)) if path == "smile"));
+    assert!(matches!(line.options().stage(), Some(Expr::Path(path)) if path == ".main"));
+    assert!(matches!(line.options().portrait(), Some(Expr::Path(path)) if path == ".bust"));
+    assert!(matches!(line.options().focus(), Some(Expr::Path(path)) if path == ".soft"));
+    assert!(matches!(line.options().cleanup(), Some(Expr::Path(path)) if path == ".line"));
+}
+
+#[test]
+fn rejects_removed_face_line_option() {
+    let errors = parse_errors("alice(face=smile):[おはよう。[p]]");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("`face` is not a canonical"))
+    );
+}
+
+#[test]
 fn typechecks_character_method_and_speaker_preset_dialogue_callees() {
     let tree = parse_ok(
         r"
@@ -234,7 +263,7 @@ with {
 #[test]
 fn dialogue_tokenizer_covers_content_interpolations_and_escapes() {
     let tokens = parse_dialogue_tokens(
-        r#"今日は\｜少し、｜変な夢《へんなゆめ》#[fmt("夢", color=blue)][p][hook mark]"#,
+        r#"今日は\｜少し、｜変な夢《へんなゆめ》#[fmt("夢", color=blue)][p][mark .release]"#,
     );
 
     assert!(tokens.iter().any(|token| matches!(token, DialogueToken::Ruby { base, ruby } if base == "変な夢" && ruby == "へんなゆめ")));
@@ -251,7 +280,7 @@ fn dialogue_tokenizer_covers_content_interpolations_and_escapes() {
     assert!(
         tokens
             .iter()
-            .any(|token| matches!(token, DialogueToken::Tag(tag) if tag.name() == "hook"))
+            .any(|token| matches!(token, DialogueToken::Mark(mark) if mark.name() == ".release"))
     );
 }
 

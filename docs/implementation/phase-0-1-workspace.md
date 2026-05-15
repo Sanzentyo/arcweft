@@ -56,6 +56,10 @@ Builder API:
 
 The builder API supports fluent construction of a dialogue line with speaker defaults, line id, lossy dialogue content parsing, timeline cues, and input cancellation rules.
 
+Dialogue options now use `look` for the line expression/portrait default. The
+previous `face` option is not preserved as a compatibility API in unfinished
+parser/dialogue code.
+
 Presentation model:
 
 - `PresentationScope`
@@ -141,6 +145,10 @@ Syntax parser:
 - The parser records module/use headers, attributes, wiki links, flows, fragments, flow items, scenario commands, speaker lines, content calls, choice blocks, hooks, memo functions, parser items, line plans, and dialogue tokens.
 - Bracket ruby spans such as `[ruby rt="..."]base[/ruby]` and function/content ruby such as `#[ruby("base", "ruby")]` normalize to the same `DialogueToken::Ruby` shape as natural Japanese ruby.
 - Dialogue raw spans and blocks such as `[raw]...[/raw]` tokenize as literal raw content, so inner `[p]` markers and `#[expr]` interpolations are not parsed until the raw span ends.
+- Dialogue markers such as `[mark .release_focus]` tokenize as structured
+  `DialogueToken::Mark` values. The checker rejects duplicate line marks,
+  removed local hook tags, and `with: on .name:` handlers that do not match a
+  mark in the same line.
 - Diagnostics use structured `ParseError` values with spans, expected fragments, found text, recovery suggestions, and source anchors.
 - Parser and semantic diagnostics implement `std::error::Error` through `thiserror` while preserving structured fields such as `message`, `range`, and `anchor`.
 - Expression syntax now has a Pratt-style parser and an `Expr` AST for entity references, literals, tuples, calls, named arguments, method calls, indexes, field access, pipes, prefix `try`, postfix `?`, unary `!`/`-`, arithmetic operators, comparisons, and placeholders.
@@ -186,7 +194,21 @@ Syntax parser:
 - Named `scope name { ... }` blocks lower to structured HIR nodes. Relative choice IDs such as `choice @.first` and relative option IDs such as `@.listen` normalize through the current flow and scope path during HIR lowering.
 - `let name = scope name? { ... }` parses as a scope expression binding, preserves nested typed statements and final expression separately, and lets the checker infer the bound value while keeping inner locals scoped to the block. Omitting the name creates the same lexical/value scope without adding a generated-ID scope segment.
 - Plain `let name = { ... }` block expression bindings parse as structured expression blocks with scoped statements and an optional final value.
-- Dialogue call options are parsed as structured `LineOptions`: `id`, `text_key`, `voice`, `window`, `source_locale`, `hooks`, `style`, and additional named args are preserved without raw argument strings. Relative dialogue line IDs such as `alice(id=@.comment)` normalize through the current flow, speaker, and scope path. When `id` is omitted, HIR lowering allocates a stable per-flow/speaker/scope ordinal such as `say.opening.narrator.rain.001`, and omitted `text_key` is derived from the normalized `say...` line ID.
+- Dialogue call options are parsed as structured `LineOptions`: `id`,
+  `text_key`, `voice`, `look`, `stage`, `portrait`, `focus`, `cleanup`,
+  `window`, `source_locale`, `hooks`, `style`, and additional named args are
+  preserved without raw argument strings. The first positional line option maps
+  to `look`; removed `face` line options produce parser diagnostics. Relative
+  dialogue line IDs such as `alice(id=@.comment)` normalize through the current
+  flow, speaker, and scope path. When `id` is omitted, HIR lowering allocates a
+  stable per-flow/speaker/scope ordinal such as
+  `say.opening.narrator.rain.001`, and omitted `text_key` is derived from the
+  normalized `say...` line ID.
+- Line plans preserve `init`, `thread name` / trailing `finally`, local
+  `on .mark` handlers, `wait mark .name`, duration waits, and `'line.* <- expr`
+  lifetime registry writes as structured statements/items. The current checker
+  validates guaranteed and optional lifetime reads at a minimal level and
+  reports double-drop/use-after-drop cases for line registry keys.
 - Dialogue callee checking preserves the documented callee kind: `alice.say()[...]` resolves through `alice: Ref<Character>`, delimited character refs such as `@<character.alice>.say()[...]` generate the same speaker slug, and speaker presets such as `alice2(voice=auto):` / `alice2(voice=auto)[...]` resolve as callable `SpeakerPreset` values rather than being forced through `.say(...)`. Content-call line plans can attach on a following `with { ... }` / `with:` block or on the same line as `with { ... }` / `with: out ...`; line-result bindings such as `let handles = alice.say()[...] with: out (...)` and multiline `let handles = alice.say(...)[ ... ]` followed by `with:` preserve the plan on `Expr::DialogueCall` for symbol collection, HIR lowering, and type checking.
 - Bare scopes parse as `scope { ... }`, the name-omitted sugar for `scope name { ... }`. Bare `{ ... }` blocks in flow bodies normalize one step further to that unnamed `scope { ... }` form. A trailing bare block after a dialogue content call, such as `alice.say()[...] { ... }`, is not attached as a line plan; line plans still require `with { ... }` or `with:`.
 - Type checking treats both bare `scope { ... }` blocks and named `scope name { ... }` blocks as local scopes, so temporary locals created inside them cannot be read after the block exits. Named scopes still contribute to generated relative IDs while the lowerer is inside that scope; unnamed scopes do not add an ID path segment.
@@ -233,6 +255,8 @@ Not implemented in this milestone:
 - MCP / agent protocol runtime
 - Cranelift JIT
 - full HIR ownership/region model
+- full VM lowering/execution for line task groups and adapter-side effect
+  requests beyond the current Sans I/O data model
 - full generic substitution and effect-aware return checking
 - full type environment, name resolution, and type checking
 - inference, overload resolution, traits, generics, contracts, and effect checking

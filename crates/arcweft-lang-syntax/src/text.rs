@@ -1,4 +1,4 @@
-use crate::ast::{DialogueTag, DialogueToken};
+use crate::ast::{DialogueTag, DialogueToken, LineMark};
 use crate::expr::{Expr, Literal, parse_expr};
 
 /// Parses dialogue-text mode into tokens.
@@ -202,6 +202,9 @@ fn parse_tag(source: &str, start: usize) -> Option<(DialogueToken, usize)> {
     let mut parts = trimmed.splitn(2, char::is_whitespace);
     let name = parts.next().unwrap_or_default().to_owned();
     let attrs = parts.next().unwrap_or_default().trim().to_owned();
+    if name == "mark" && !attrs.is_empty() {
+        return Some((DialogueToken::Mark(LineMark::new(attrs)), consumed_to));
+    }
     Some((
         DialogueToken::Tag(DialogueTag::new(name, attrs)),
         consumed_to,

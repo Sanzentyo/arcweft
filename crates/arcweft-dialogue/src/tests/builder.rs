@@ -7,7 +7,7 @@ fn builder_api_builds_dialogue_line_from_concise_call_shape()
 -> Result<(), Box<dyn std::error::Error>> {
     let alice = SpeakerPreset::new(character("alice"))
         .voice(VoicePolicy::Auto)
-        .face("smile")
+        .look("smile")
         .window(textbox("side"));
 
     let line = alice

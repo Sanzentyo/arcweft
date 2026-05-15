@@ -632,6 +632,13 @@ pub enum Stmt {
         target: Expr,
         value: Expr,
     },
+    /// `'line.key <- expr` stores a scoped handle in the named lifetime registry.
+    LifetimeSet {
+        target: Expr,
+        expr: Expr,
+    },
+    /// `wait mark .name` or `wait 0.35s` waits inside a line-local task.
+    Wait(WaitTarget),
     Emit {
         event: Expr,
         fields: Vec<(String, Expr)>,
@@ -685,6 +692,14 @@ pub enum Stmt {
     },
     Expr(Expr),
     Raw(String),
+}
+
+/// Target accepted by a structured `wait` statement.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum WaitTarget {
+    Duration(Expr),
+    Mark(String),
+    Expr(Expr),
 }
 
 /// Pattern syntax used by `let` and line-plan return destructuring.
@@ -807,17 +822,24 @@ pub enum DialogueToken {
     Text(String),
     Raw(String),
     Tag(DialogueTag),
+    Mark(LineMark),
     EndTag(String),
     Expr(Expr),
     Ruby { base: String, ruby: String },
     Escape(char),
 }
 
-/// Bracket tag such as `[p]`, `[hook ...]`, or `[ruby rt="..."]`.
+/// Bracket tag such as `[p]`, `[wait ...]`, or `[ruby rt="..."]`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogueTag {
     name: String,
     attrs: String,
+}
+
+/// Zero-width marker emitted by `[mark .name]` inside dialogue text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LineMark {
+    name: String,
 }
 
 /// `alice(args): ...` speaker-line sugar for a character dialogue call.
@@ -846,6 +868,11 @@ pub struct LineOptions {
     id: Option<IdRef>,
     text_key: Option<IdRef>,
     voice: Option<Expr>,
+    look: Option<Expr>,
+    stage: Option<Expr>,
+    portrait: Option<Expr>,
+    focus: Option<Expr>,
+    cleanup: Option<Expr>,
     window: Option<EntityRefSyntax>,
     source_locale: Option<String>,
     hooks: Vec<Expr>,
@@ -859,6 +886,11 @@ pub(crate) struct LineOptionsInit {
     pub(crate) id: Option<IdRef>,
     pub(crate) text_key: Option<IdRef>,
     pub(crate) voice: Option<Expr>,
+    pub(crate) look: Option<Expr>,
+    pub(crate) stage: Option<Expr>,
+    pub(crate) portrait: Option<Expr>,
+    pub(crate) focus: Option<Expr>,
+    pub(crate) cleanup: Option<Expr>,
     pub(crate) window: Option<EntityRefSyntax>,
     pub(crate) source_locale: Option<String>,
     pub(crate) hooks: Vec<Expr>,
@@ -1002,6 +1034,19 @@ pub enum BlockStyle {
 /// Item allowed inside a line plan.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LinePlanItem {
+    /// `init { ... }` / `init:` setup statements that run before reveal.
+    Init(Vec<Stmt>),
+    /// `thread name { ... finally { ... } }` line-scoped child task.
+    Thread {
+        name: Option<String>,
+        body: Vec<Stmt>,
+        finally: Vec<Stmt>,
+    },
+    /// `on .mark { ... }` line-local mark/event handler.
+    On {
+        trigger: Expr,
+        body: Vec<Stmt>,
+    },
     Option {
         name: String,
         value: Expr,
@@ -2522,6 +2567,16 @@ impl DialogueTag {
     }
 }
 
+impl LineMark {
+    pub(crate) fn new(name: String) -> Self {
+        Self { name }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 impl SpeakerLine {
     pub(crate) const fn new(
         speaker: String,
@@ -2604,6 +2659,11 @@ impl LineOptions {
             id: init.id,
             text_key: init.text_key,
             voice: init.voice,
+            look: init.look,
+            stage: init.stage,
+            portrait: init.portrait,
+            focus: init.focus,
+            cleanup: init.cleanup,
             window: init.window,
             source_locale: init.source_locale,
             hooks: init.hooks,
@@ -2622,6 +2682,26 @@ impl LineOptions {
 
     pub const fn voice(&self) -> Option<&Expr> {
         self.voice.as_ref()
+    }
+
+    pub const fn look(&self) -> Option<&Expr> {
+        self.look.as_ref()
+    }
+
+    pub const fn stage(&self) -> Option<&Expr> {
+        self.stage.as_ref()
+    }
+
+    pub const fn portrait(&self) -> Option<&Expr> {
+        self.portrait.as_ref()
+    }
+
+    pub const fn focus(&self) -> Option<&Expr> {
+        self.focus.as_ref()
+    }
+
+    pub const fn cleanup(&self) -> Option<&Expr> {
+        self.cleanup.as_ref()
     }
 
     pub const fn window(&self) -> Option<&EntityRefSyntax> {

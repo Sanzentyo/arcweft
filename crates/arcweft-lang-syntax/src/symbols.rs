@@ -538,6 +538,11 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         }
         | Stmt::Select(expr)
         | Stmt::Out { expr, .. } => collect_expr(expr, uses),
+        Stmt::LifetimeSet { target, expr } => {
+            collect_expr(target, uses);
+            collect_expr(expr, uses);
+        }
+        Stmt::Wait(target) => collect_wait_target(target, uses),
         Stmt::Emit { event, fields } => {
             collect_expr(event, uses);
             for (_, value) in fields {
@@ -637,6 +642,15 @@ fn collect_stmt_match(
 
 fn collect_line_plan_item(item: &LinePlanItem, uses: &mut Vec<SymbolUse>) {
     match item {
+        LinePlanItem::Init(statements) => collect_stmt_block(statements, uses),
+        LinePlanItem::Thread { body, finally, .. } => {
+            collect_stmt_block(body, uses);
+            collect_stmt_block(finally, uses);
+        }
+        LinePlanItem::On { trigger, body } => {
+            collect_expr(trigger, uses);
+            collect_stmt_block(body, uses);
+        }
         LinePlanItem::Option { value, .. }
         | LinePlanItem::Let { expr: value, .. }
         | LinePlanItem::Out(value) => collect_expr(value, uses),
@@ -668,9 +682,18 @@ fn collect_dialogue_content(tokens: &[DialogueToken], uses: &mut Vec<SymbolUse>)
     }
 }
 
+fn collect_wait_target(target: &crate::ast::WaitTarget, uses: &mut Vec<SymbolUse>) {
+    match target {
+        crate::ast::WaitTarget::Duration(expr) | crate::ast::WaitTarget::Expr(expr) => {
+            collect_expr(expr, uses);
+        }
+        crate::ast::WaitTarget::Mark(_) => {}
+    }
+}
+
 fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
     match expr {
-        Expr::Literal(_) | Expr::Placeholder(_) => {}
+        Expr::Literal(_) | Expr::Placeholder(_) | Expr::LifetimePath { .. } => {}
         Expr::EntityRef(entity) => push_entity_syntax(uses, entity),
         Expr::Path(path) => uses.push(SymbolUse::new(SymbolUseKind::Path, path.clone())),
         Expr::Tuple(items) | Expr::List(items) => {

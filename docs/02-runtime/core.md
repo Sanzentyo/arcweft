@@ -27,6 +27,7 @@ pub struct FrameOutput {
     pub ui: UiSpec,
     pub audio: AudioDesiredState,
     pub effects: Vec<EffectRequest>,
+    pub line_effects: Vec<LineEffectRequest>,
     pub diagnostics: Vec<RuntimeDiagnostic>,
 }
 ```
@@ -51,6 +52,39 @@ pub enum EffectRequest {
     Signal(SignalUpdate),
 }
 ```
+
+## Dialogue line task groups
+
+A dialogue `with` block lowers to a line-scoped task group. This model stays
+Sans I/O: `thread name:` creates a child task in VM/runtime data, not an OS
+thread. Presentation, audio, wait, and signal work is emitted as effect requests
+for adapters to perform at frame boundaries.
+
+```rust
+pub struct LineTaskGroup {
+    pub children: Vec<LineChildTask>,
+    pub cleanup: LineCleanupPolicy,
+}
+
+pub struct LineChildTask {
+    pub name: Option<String>,
+    pub body: Vec<LineEffectRequest>,
+    pub finally: Vec<LineEffectRequest>,
+}
+
+pub enum LineEffectRequest {
+    RegisterHandle { key: String, handle: String },
+    DropHandle { key: String },
+    WaitMark(String),
+    Wait(LogicalDuration),
+    EmitSignal(String),
+}
+```
+
+Line lifetime registry paths such as `'line.focus` are static keys owned by the
+line scope. Guaranteed keys can be read directly; optional reads use
+`'line.focus?`. Drop operations remove registered values and run their adapter
+cleanup policy through emitted requests.
 
 ## Determinism
 

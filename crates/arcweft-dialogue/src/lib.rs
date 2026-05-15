@@ -33,7 +33,7 @@ pub struct SayOptions {
     pub id: Option<PublicId>,
     pub text_key: Option<TextKey>,
     pub voice: Option<VoicePolicy>,
-    pub face: Option<PublicId>,
+    pub look: Option<PublicId>,
     pub text_box: Option<TextBoxRef>,
 }
 
@@ -293,8 +293,8 @@ pub fn line_id(name: &str) -> PublicId {
     PublicId::try_new(name).expect("line id helper requires a valid public id")
 }
 
-fn expression(name: &str) -> PublicId {
-    domain_id("expression", name)
+fn look_id(name: &str) -> PublicId {
+    domain_id("look", name)
 }
 
 fn domain_id(domain: &str, name: &str) -> PublicId {
@@ -371,7 +371,7 @@ impl SayOptions {
             id: None,
             text_key: None,
             voice: None,
-            face: None,
+            look: None,
             text_box: None,
         }
     }
@@ -383,8 +383,8 @@ impl SayOptions {
     }
 
     #[must_use]
-    pub fn with_face(mut self, face: PublicId) -> Self {
-        self.face = Some(face);
+    pub fn with_look(mut self, look: PublicId) -> Self {
+        self.look = Some(look);
         self
     }
 
@@ -399,7 +399,7 @@ impl SayOptions {
             id: override_options.id.or(self.id),
             text_key: override_options.text_key.or(self.text_key),
             voice: override_options.voice.or(self.voice),
-            face: override_options.face.or(self.face),
+            look: override_options.look.or(self.look),
             text_box: override_options.text_box.or(self.text_box),
         }
     }
@@ -426,8 +426,8 @@ impl SpeakerPreset {
     }
 
     #[must_use]
-    pub fn face(mut self, face: &str) -> Self {
-        self.options.face = Some(expression(face));
+    pub fn look(mut self, look: &str) -> Self {
+        self.options.look = Some(look_id(look));
         self
     }
 
@@ -613,8 +613,8 @@ impl DialogueLineBuilder {
     }
 
     #[must_use]
-    pub fn face(mut self, face: &str) -> Self {
-        self.options.face = Some(expression(face));
+    pub fn look(mut self, look: &str) -> Self {
+        self.options.look = Some(look_id(look));
         self
     }
 

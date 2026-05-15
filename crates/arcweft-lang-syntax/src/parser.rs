@@ -3102,66 +3102,110 @@ fn parse_line_options(
     let Some(args) = args else {
         return LineOptions::default();
     };
-    let mut id = None;
-    let mut text_key = None;
-    let mut voice = None;
-    let mut window = None;
-    let mut source_locale = None;
-    let mut hooks = Vec::new();
-    let mut style = None;
-    let mut line_args = Vec::new();
+    let mut state = LineOptionsParseState::default();
+    let mut consumed_positional_look = false;
     for arg in split_comma_args(args) {
         let Some((name, value)) = split_top_level_punctuation_once(arg, '=') else {
-            errors.push(simple_error(
-                base,
-                arg.len(),
-                "expected named dialogue line option",
-                "name = expr",
-            ));
+            if consumed_positional_look {
+                errors.push(simple_error(
+                    base,
+                    arg.len(),
+                    "only the first positional dialogue line option may be used as `look`",
+                    "look = expr",
+                ));
+                continue;
+            }
+            consumed_positional_look = true;
+            state.look = Some(parse_expr_lossy(arg.trim()));
             continue;
         };
-        let value = value.trim();
-        match name.trim() {
-            "id" => {
-                id = parse_required_id_ref(value, base, errors).map(|(entity, _)| entity);
-            }
-            "text_key" => {
-                text_key = parse_required_id_ref(value, base, errors).map(|(entity, _)| entity);
-            }
-            "voice" => {
-                voice = Some(parse_expr_lossy(value));
-            }
-            "window" => {
-                window =
-                    parse_required_entity_ref_syntax(value, base, errors).map(|(entity, _)| entity);
-            }
-            "source_locale" => {
-                source_locale = Some(value.to_owned());
-            }
-            "hooks" => {
-                let expr = parse_expr_lossy(value);
-                if let Expr::List(items) = expr {
-                    hooks.extend(items);
-                } else {
-                    hooks.push(expr);
-                }
-            }
-            "style" => {
-                style = Some(parse_expr_lossy(value));
-            }
-            name => line_args.push(LineArg::new(name.to_owned(), parse_expr_lossy(value))),
-        }
+        parse_named_line_option(
+            &mut state,
+            name.trim(),
+            value.trim(),
+            arg.len(),
+            base,
+            errors,
+        );
     }
     LineOptions::new(LineOptionsInit {
-        id,
-        text_key,
-        voice,
-        window,
-        source_locale,
-        hooks,
-        style,
-        args: line_args,
+        id: state.id,
+        text_key: state.text_key,
+        voice: state.voice,
+        look: state.look,
+        stage: state.stage,
+        portrait: state.portrait,
+        focus: state.focus,
+        cleanup: state.cleanup,
+        window: state.window,
+        source_locale: state.source_locale,
+        hooks: state.hooks,
+        style: state.style,
+        args: state.line_args,
     })
+}
+
+#[derive(Default)]
+struct LineOptionsParseState {
+    id: Option<IdRef>,
+    text_key: Option<IdRef>,
+    voice: Option<Expr>,
+    look: Option<Expr>,
+    stage: Option<Expr>,
+    portrait: Option<Expr>,
+    focus: Option<Expr>,
+    cleanup: Option<Expr>,
+    window: Option<EntityRefSyntax>,
+    source_locale: Option<String>,
+    hooks: Vec<Expr>,
+    style: Option<Expr>,
+    line_args: Vec<LineArg>,
+}
+
+fn parse_named_line_option(
+    state: &mut LineOptionsParseState,
+    name: &str,
+    value: &str,
+    arg_len: usize,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) {
+    match name {
+        "id" => state.id = parse_required_id_ref(value, base, errors).map(|(entity, _)| entity),
+        "text_key" => {
+            state.text_key = parse_required_id_ref(value, base, errors).map(|(entity, _)| entity);
+        }
+        "voice" => state.voice = Some(parse_expr_lossy(value)),
+        "look" => state.look = Some(parse_expr_lossy(value)),
+        "face" => errors.push(simple_error(
+            base,
+            arg_len,
+            "`face` is not a canonical dialogue line option",
+            "use `look = expr` or the first positional look option",
+        )),
+        "stage" => state.stage = Some(parse_expr_lossy(value)),
+        "portrait" => state.portrait = Some(parse_expr_lossy(value)),
+        "focus" => state.focus = Some(parse_expr_lossy(value)),
+        "cleanup" => state.cleanup = Some(parse_expr_lossy(value)),
+        "window" => {
+            state.window =
+                parse_required_entity_ref_syntax(value, base, errors).map(|(entity, _)| entity);
+        }
+        "source_locale" => state.source_locale = Some(value.to_owned()),
+        "hooks" => push_line_hooks(&mut state.hooks, parse_expr_lossy(value)),
+        "style" => state.style = Some(parse_expr_lossy(value)),
+        name => state
+            .line_args
+            .push(LineArg::new(name.to_owned(), parse_expr_lossy(value))),
+    }
+}
+
+fn push_line_hooks(hooks: &mut Vec<Expr>, expr: Expr) {
+    if let Expr::List(items) = expr {
+        hooks.extend(items);
+    } else {
+        hooks.push(expr);
+    }
 }
 
 fn split_comma_args(source: &str) -> Vec<&str> {
@@ -4011,6 +4055,24 @@ fn parse_line_plan_body(style: BlockStyle, body: &str, range: TextRange) -> Line
             items.push(parse_line_plan_item(&format!("{trimmed} {body}")));
             continue;
         }
+        if let Some(head) = line_plan_colon_head(trimmed) {
+            let cue_indent = indentation(line);
+            let mut body_lines = Vec::new();
+            index += 1;
+            while index < lines.len() {
+                let child = &lines[index];
+                let child_trimmed = child.trim();
+                if !child_trimmed.is_empty() && indentation(child.as_str()) <= cue_indent {
+                    break;
+                }
+                if !child_trimmed.is_empty() {
+                    body_lines.push(child.as_str());
+                }
+                index += 1;
+            }
+            items.push(parse_line_plan_colon_item(head, &body_lines.join("\n")));
+            continue;
+        }
         items.push(parse_line_plan_item(trimmed));
         index += 1;
     }
@@ -4079,8 +4141,52 @@ fn is_multiline_timed_cue_header(line: &str) -> bool {
     line.starts_with("at(") && line.ends_with(':')
 }
 
+fn line_plan_colon_head(line: &str) -> Option<&str> {
+    let head = line.strip_suffix(':')?.trim();
+    (head == "init" || head == "finally" || head.starts_with("thread") || head.starts_with("on "))
+        .then_some(head)
+}
+
+fn parse_line_plan_colon_item(head: &str, body: &str) -> LinePlanItem {
+    if head == "init" {
+        return LinePlanItem::Init(parse_stmt_lines(body));
+    }
+    if let Some(rest) = head.strip_prefix("thread") {
+        let (body, finally) = parse_thread_stmt_body(body);
+        return LinePlanItem::Thread {
+            name: nonempty_string(rest.trim()),
+            body,
+            finally,
+        };
+    }
+    if let Some(rest) = head.strip_prefix("on ") {
+        return LinePlanItem::On {
+            trigger: parse_expr_lossy(rest.trim()),
+            body: parse_stmt_lines(body),
+        };
+    }
+    LinePlanItem::Raw(format!("{head}:\n{body}"))
+}
+
 fn parse_line_plan_item(line: &str) -> LinePlanItem {
     if let Some((head, body)) = split_brace_item(line) {
+        if head == "init" {
+            return LinePlanItem::Init(parse_stmt_lines(body));
+        }
+        if let Some(rest) = head.strip_prefix("thread") {
+            let (body, finally) = parse_thread_stmt_body(body);
+            return LinePlanItem::Thread {
+                name: nonempty_string(rest.trim()),
+                body,
+                finally,
+            };
+        }
+        if let Some(rest) = head.strip_prefix("on ") {
+            return LinePlanItem::On {
+                trigger: parse_expr_lossy(rest.trim()),
+                body: parse_stmt_lines(body),
+            };
+        }
         if head == "start" {
             return LinePlanItem::StartGroup(parse_line_plan_nested_items(body));
         }
@@ -4160,6 +4266,30 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
         return LinePlanItem::Expr(expr);
     }
     LinePlanItem::Raw(line.to_owned())
+}
+
+fn parse_thread_stmt_body(body: &str) -> (Vec<Stmt>, Vec<Stmt>) {
+    let mut normal = Vec::new();
+    let mut finally = Vec::new();
+    for item in collect_logical_block_items(body) {
+        let trimmed = item.trim();
+        if let Some((head, block_body)) = split_brace_item(trimmed)
+            && head == "finally"
+        {
+            finally.extend(parse_stmt_lines(block_body));
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("finally:") {
+            finally.extend(parse_stmt_lines(rest.trim()));
+            continue;
+        }
+        normal.push(parse_stmt(trimmed));
+    }
+    (normal, finally)
+}
+
+fn nonempty_string(source: &str) -> Option<String> {
+    (!source.is_empty()).then(|| source.to_owned())
 }
 
 fn parse_line_plan_memo(source: &str) -> LinePlanItem {
@@ -4819,6 +4949,17 @@ fn parse_inline_line_plan_source(source: &str) -> Option<LinePlan> {
 }
 
 fn parse_stmt(trimmed: &str) -> Stmt {
+    if let Some((target, expr)) = split_top_level_punctuation_sequence_once(trimmed, &["<", "-"])
+        && target.trim_start().starts_with('\'')
+    {
+        return Stmt::LifetimeSet {
+            target: parse_expr_lossy(target.trim()),
+            expr: parse_expr_lossy(expr.trim()),
+        };
+    }
+    if let Some(rest) = trimmed.strip_prefix("wait ") {
+        return parse_wait_stmt(rest.trim());
+    }
     if let Some(rest) = trimmed.strip_prefix("let ") {
         if let Some((pattern, expr)) = split_top_level_binding(rest) {
             return Stmt::Let {
@@ -4887,6 +5028,19 @@ fn parse_stmt(trimmed: &str) -> Stmt {
         return Stmt::Raw(trimmed.to_owned());
     }
     Stmt::Expr(parse_expr_lossy(trimmed))
+}
+
+fn parse_wait_stmt(rest: &str) -> Stmt {
+    if let Some(name) = rest.strip_prefix("mark ") {
+        return Stmt::Wait(crate::ast::WaitTarget::Mark(name.trim().to_owned()));
+    }
+    let expr = parse_expr_lossy(rest);
+    match expr {
+        Expr::Literal(crate::expr::Literal::Duration { .. }) => {
+            Stmt::Wait(crate::ast::WaitTarget::Duration(expr))
+        }
+        _ => Stmt::Wait(crate::ast::WaitTarget::Expr(expr)),
+    }
 }
 
 fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {

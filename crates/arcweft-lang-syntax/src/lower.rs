@@ -114,6 +114,11 @@ pub struct HirDialogue {
     id: Option<EntityRef>,
     text_key: Option<EntityRef>,
     voice: Option<Expr>,
+    look: Option<Expr>,
+    stage: Option<Expr>,
+    portrait: Option<Expr>,
+    focus: Option<Expr>,
+    cleanup: Option<Expr>,
     window: Option<EntityRef>,
     source_locale: Option<String>,
     hooks: Vec<Expr>,
@@ -658,6 +663,11 @@ fn lower_speaker_line(
         text_key,
         id,
         voice: line.options().voice().cloned(),
+        look: line.options().look().cloned(),
+        stage: line.options().stage().cloned(),
+        portrait: line.options().portrait().cloned(),
+        focus: line.options().focus().cloned(),
+        cleanup: line.options().cleanup().cloned(),
         window,
         source_locale: line.options().source_locale().map(str::to_owned),
         hooks: line.options().hooks().to_vec(),
@@ -686,6 +696,11 @@ fn lower_content_call(
         text_key,
         id,
         voice: call.options().voice().cloned(),
+        look: call.options().look().cloned(),
+        stage: call.options().stage().cloned(),
+        portrait: call.options().portrait().cloned(),
+        focus: call.options().focus().cloned(),
+        cleanup: call.options().cleanup().cloned(),
         window,
         source_locale: call.options().source_locale().map(str::to_owned),
         hooks: call.options().hooks().to_vec(),
@@ -1146,6 +1161,26 @@ impl HirDialogue {
 
     pub const fn voice(&self) -> Option<&Expr> {
         self.voice.as_ref()
+    }
+
+    pub const fn look(&self) -> Option<&Expr> {
+        self.look.as_ref()
+    }
+
+    pub const fn stage(&self) -> Option<&Expr> {
+        self.stage.as_ref()
+    }
+
+    pub const fn portrait(&self) -> Option<&Expr> {
+        self.portrait.as_ref()
+    }
+
+    pub const fn focus(&self) -> Option<&Expr> {
+        self.focus.as_ref()
+    }
+
+    pub const fn cleanup(&self) -> Option<&Expr> {
+        self.cleanup.as_ref()
     }
 
     pub const fn window(&self) -> Option<&EntityRef> {

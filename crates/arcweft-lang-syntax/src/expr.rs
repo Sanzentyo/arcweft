@@ -18,6 +18,11 @@ use thiserror::Error;
 pub enum Expr {
     Literal(Literal),
     EntityRef(EntityRefSyntax),
+    LifetimePath {
+        lifetime: String,
+        path: Vec<String>,
+        optional: bool,
+    },
     Path(String),
     Placeholder(Placeholder),
     Tuple(Vec<Expr>),
@@ -228,6 +233,11 @@ enum Token {
     Ident(String),
     RelativePath(String),
     Entity(EntityRefSyntax),
+    LifetimePath {
+        lifetime: String,
+        path: Vec<String>,
+        optional: bool,
+    },
     Literal(Literal),
     Underscore,
     Caret,
@@ -266,6 +276,7 @@ impl<'a> Lexer<'a> {
             tokens.push(match ch {
                 '"' => self.lex_string(),
                 '@' => self.lex_entity(),
+                '\'' => self.lex_lifetime_path(),
                 '0'..='9' => self.lex_number_or_duration(),
                 '_' => {
                     self.bump_char();
@@ -368,6 +379,50 @@ impl<'a> Lexer<'a> {
         }
         let raw = &self.source[start..self.cursor];
         parse_entity_expr(raw).map_or_else(|| Token::Ident(raw.to_owned()), Token::Entity)
+    }
+
+    fn lex_lifetime_path(&mut self) -> Token {
+        self.bump_char();
+        let lifetime_start = self.cursor;
+        while let Some(ch) = self.peek_char() {
+            if is_ident_continue(ch) {
+                self.bump_char();
+            } else {
+                break;
+            }
+        }
+        let lifetime = self.source[lifetime_start..self.cursor].to_owned();
+        let mut path = Vec::new();
+        while self.peek_char() == Some('.') {
+            self.bump_char();
+            let part_start = self.cursor;
+            while let Some(ch) = self.peek_char() {
+                if is_ident_continue(ch) {
+                    self.bump_char();
+                } else {
+                    break;
+                }
+            }
+            if part_start == self.cursor {
+                break;
+            }
+            path.push(self.source[part_start..self.cursor].to_owned());
+        }
+        let optional = if self.peek_char() == Some('?') {
+            self.bump_char();
+            true
+        } else {
+            false
+        };
+        if lifetime.is_empty() || path.is_empty() {
+            Token::Ident(format!("'{lifetime}"))
+        } else {
+            Token::LifetimePath {
+                lifetime,
+                path,
+                optional,
+            }
+        }
     }
 
     fn lex_number_or_duration(&mut self) -> Token {
@@ -662,6 +717,15 @@ impl ExprParser {
             }
             Token::Literal(literal) => Ok(Expr::Literal(literal)),
             Token::Entity(entity) => Ok(Expr::EntityRef(entity)),
+            Token::LifetimePath {
+                lifetime,
+                path,
+                optional,
+            } => Ok(Expr::LifetimePath {
+                lifetime,
+                path,
+                optional,
+            }),
             Token::Ident(path) => {
                 if self.peek() == &Token::LBrace {
                     self.bump();

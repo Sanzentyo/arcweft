@@ -1,4 +1,4 @@
-# Dialogue Control Tags, Ruby, Interpolation, and Inline Hooks
+# Dialogue Control Tags, Ruby, Interpolation, and Line Marks
 
 Arcweft supports KAG-like bracket tags inside dialogue text, but the feature is deliberately scoped. `[...]` tags are special only in dialogue text mode: speaker lines, narrator lines, indented dialogue bodies, and `Character.say(...)[ ... ]` content blocks.
 
@@ -45,7 +45,8 @@ Arcweft has four tag-like forms in dialogue text:
 | `[p]`, `[l]`, `[r]` | short built-in control tags |
 | `[ruby rt="..."]...[/ruby]` | enclosing rich-text/control tags |
 | `#[expr]`, `#[fmt(...)]` | pure content interpolation |
-| `[call ...]`, `[hook ...]` | dialogue-safe function or hook dispatch |
+| `[call ...]` | dialogue-safe function dispatch |
+| `[mark .name]` | zero-width line-local marker for `with` handlers and waits |
 
 Double brackets are not dialogue tags:
 
@@ -82,7 +83,7 @@ A module may still define a qualified function such as `my_tags::p`, but it cann
 | `show`, `hide` | stage visibility cue |
 | `move`, `scale`, `rotate` | transform cue |
 | `anim`, `shake` | animation cue |
-| `hook` | dispatch a declared hook |
+| `mark` | zero-width line-local marker |
 | `at` | timed cue shorthand inside dialogue text |
 | `call` | call an allowed dialogue function/tag |
 | `signal` | emit/set a public signal if capability allows it |
@@ -214,7 +215,7 @@ Built-in implementations include common scalar types, `String`, `LocalizedText`,
 #[fmt(state.nickname, none="名無し")]
 ```
 
-Pure interpolation cannot emit commands, mutate state, play audio, or trigger stage effects. Use `[call]`, `[hook]`, or line-plan `at(...) { ... }` for side-effecting dialogue behavior.
+Pure interpolation cannot emit commands, mutate state, play audio, or trigger stage effects. Use `[call]`, `[mark .name]` plus `with: on .name:`, or line-plan `at(...) { ... }` for side-effecting dialogue behavior.
 
 ---
 
@@ -240,7 +241,7 @@ Translation import checks that required placeholders are present and well-typed.
 
 ---
 
-## Dialogue-safe calls and hooks
+## Dialogue-safe calls and line marks
 
 Use `[call]` for a dialogue-safe function:
 
@@ -248,10 +249,13 @@ Use `[call]` for a dialogue-safe function:
 alice: まぶしい……[call flash(color=#ffffff, time=90ms)][p]
 ```
 
-Use `[hook]` for a declared hook:
+Use `[mark .name]` to place a zero-width local marker in the line. Handlers live in the line plan; this keeps text markup separate from effectful behavior.
 
 ```awft
-alice: [hook mark_keyword word="夢" color=@color.dream]変な夢[p]
+alice: 変な夢[mark .keyword][p]
+with:
+    on .keyword:
+        mark_keyword(word="夢", color=@color.dream)
 ```
 
 A dialogue-safe function must declare its effects:
@@ -267,10 +271,10 @@ effects { stage.flash }
 }
 ```
 
-A custom hook:
+A dialogue-safe function used by the handler:
 
 ```awft
-pub dialogue hook @hook.dialogue.mark_keyword mark_keyword(
+pub dialogue fn mark_keyword(
     word: String,
     color: Color,
 ) -> Result<DialogueCue, TagError>
@@ -278,6 +282,8 @@ pub dialogue hook @hook.dialogue.mark_keyword mark_keyword(
     Ok(DialogueCue::StyleRange { word, color })
 }
 ```
+
+`[hook ...]`, `#[hook ...]`, `#[mark ...]`, and local `hook name:` blocks are not valid line-local syntax. Top-level `hook @hook...` declarations still exist for engine phase hooks, but dialogue text uses `[mark .name]` and line-plan `on .name:` handlers.
 
 ---
 

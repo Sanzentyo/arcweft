@@ -12,7 +12,7 @@ fn models_speaker_preset_and_line_plan_out() {
 
     let alice2 = alice.preset(
         DialogueOptions::empty()
-            .with_face(smile.clone())
+            .with_look(smile.clone())
             .with_voice(VoiceRef::Auto)
             .with_text_box(textbox),
     );
@@ -78,7 +78,7 @@ fn models_speaker_preset_and_line_plan_out() {
     );
 
     assert_eq!(line.speaker().id().as_str(), "character.alice");
-    assert_eq!(line.options().face.as_ref(), Some(&smile));
+    assert_eq!(line.options().look.as_ref(), Some(&smile));
     assert!(matches!(line.options().voice, Some(VoiceRef::Auto)));
     assert_eq!(line.plan().steps().len(), 4);
     assert!(line.plan().output().is_some());

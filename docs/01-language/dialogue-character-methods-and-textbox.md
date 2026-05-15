@@ -31,7 +31,7 @@ With options:
 alice.say(
     id = @say.opening.greeting,
     voice = auto,
-    face = smile,
+    look = smile,
     window = @textbox.0,
 )[
     おはよう。[p]
@@ -80,7 +80,7 @@ alice.say()[
 Options in parentheses become `say()` options:
 
 ```awft
-alice(id=@say.opening.greeting, face=smile, voice=auto):
+alice(id=@say.opening.greeting, look=smile, voice=auto):
     おはよう。[p]
 ```
 
@@ -89,14 +89,28 @@ is equivalent to:
 ```awft
 alice.say(
     id = @say.opening.greeting,
-    face = smile,
+    look = smile,
     voice = auto,
 )[
     おはよう。[p]
 ]
 ```
 
-`#` remains an entity-reference marker. It is not used as a special option list marker.
+`@` is the entity-reference marker. It is not used as a special option list marker.
+
+The canonical expression/portrait option is `look`. The first positional option is shorthand for `look`, so `alice(smile, voice=auto):` and `alice(look=smile, voice=auto):` are equivalent. `face` is not a line option; stage APIs may still use methods such as `alice.stage.face(...)` for model parts.
+
+Built-in line options include:
+
+```text
+look      default expression/portrait look for this line
+stage     stage surface or stage policy
+portrait  portrait surface or portrait policy
+focus     focus profile; `focus=.soft` statically guarantees `'line.focus`
+cleanup   cleanup profile for line-scoped handles and child tasks
+voice     voice policy
+window    textbox target
+```
 
 The same rule applies to the built-in narrator aliases:
 
@@ -140,11 +154,11 @@ Options still use the parenthesized speaker-preset call or the canonical
 `.say(...)` call.
 
 ```awft
-alice(face=smile, voice=auto)[
+alice(look=smile, voice=auto)[
     おはよう。[p]
 ]
 
-alice.say(face=smile, voice=auto)[
+alice.say(look=smile, voice=auto)[
     おはよう。[p]
 ]
 ```
@@ -152,7 +166,7 @@ alice.say(face=smile, voice=auto)[
 When a line plan is needed, attach canonical `with { ... }` or indentation sugar `with:`.
 
 ```awft
-alice(face=smile, voice=auto)[
+alice(look=smile, voice=auto)[
     おはよう。[p]
 ]
 with:
@@ -171,7 +185,7 @@ display text immediately; it returns a **speaker preset** that carries default
 line options.
 
 ```awft
-let alice2 = alice(face=smile, voice=auto, window=@textbox.side)
+let alice2 = alice(look=smile, voice=auto, window=@textbox.side)
 
 alice2: おはよう。[p]
 
@@ -182,7 +196,7 @@ alice2(id=@say.opening.side_001):
 This is equivalent to:
 
 ```awft
-alice(face=smile, voice=auto, window=@textbox.side)[
+alice(look=smile, voice=auto, window=@textbox.side)[
     おはよう。[p]
 ]
 
@@ -195,7 +209,7 @@ Presets can be refined by calling them again. Later options override earlier opt
 
 ```awft
 let alice_side = alice(window=@textbox.side, voice=auto)
-let alice_worried = alice_side(face=worried)
+let alice_worried = alice_side(look=worried)
 
 alice_worried: ……本当に、大丈夫？[p]
 ```
@@ -556,7 +570,7 @@ alice.say()[
 
 ## Hooks inside dialogue text
 
-`#[...]` is for safe expression/content insertion. Side-effecting hooks use `[hook ...]` or `[call ...]`.
+`#[...]` is for safe expression/content insertion. Side-effecting local line behavior uses `[mark .name]` with `with: on .name:` or a dialogue-safe `[call ...]`.
 
 ```awft
 alice.say()[
@@ -580,7 +594,10 @@ Use:
 
 ```awft
 alice.say()[
-    [hook mark_keyword word="夢" color=@color.dream]変な夢[p]
+    変な夢[mark .keyword][p]
+with:
+    on .keyword:
+        mark_keyword(word="夢", color=@color.dream)
 ]
 ```
 
@@ -718,7 +735,7 @@ anticipate @flow.alice_intro {
 5. `alice(options)` creates a lexical speaker preset; it does not display text until `:`, `[...]`, or `.say()[...]` is used.
 6. Text interpolation uses `DisplayText` or explicit `fmt(...)`.
 7. Runtime interpolation `#[expr]` is separate from localization placeholders `{name}`.
-8. Dialogue hooks use `[hook ...]` / `[call ...]`; pure content insertion uses `#[...]`.
+8. Dialogue text uses `[mark .name]` with line-plan `on .name:` handlers or `[call ...]`; pure content insertion uses `#[...]`.
 9. Characters define default text/name colors and may attach read/unread style hooks.
 10. Character stage methods provide object-oriented sugar for show/face/move/animate/preload.
 11. Character preload and memoization policies are explicit and observable by Agent Debug Bus.

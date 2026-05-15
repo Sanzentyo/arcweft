@@ -7,7 +7,7 @@ character.say(args...)[dialogue_content]
 with { line_plan }
 ```
 
-The square bracket block is the player-facing dialogue content. The optional `with` block is a **line plan**: timed cues, cancellation, scoped variables, memoization, hooks, and parallel presentation work that belongs to that line.
+The square bracket block is the player-facing dialogue content. The optional `with` block is a **line plan**: setup, timed cues, line-local handlers, cancellation, scoped variables, memoization, and parallel presentation work that belongs to that line.
 
 Related:
 
@@ -47,10 +47,10 @@ with { plan } / with:
   `with { plan }` is canonical. `with:` is indentation sugar used when `speaker:` form needs the same plan behavior.
 ```
 
-`#` is not used for line options. `#` remains only an entity-reference marker. A line ID, window, voice, or hook reference is passed like any other option:
+`@` is the entity-reference marker. A line ID, window, voice, or hook reference is passed like any other option:
 
 ```awft
-alice(id=@say.opening.greeting, window=@textbox.side, voice=auto, face=smile):
+alice(id=@say.opening.greeting, window=@textbox.side, voice=auto, look=smile):
     おはよう。[p]
 ```
 
@@ -62,10 +62,10 @@ Older compact option styles without parentheses are not part of the stable gramm
 
 ## Speaker presets
 
-A character can be called with line options to produce a reusable speaker preset. This is the preferred way to avoid repeating `voice`, `face`, `window`, and style options.
+A character can be called with line options to produce a reusable speaker preset. This is the preferred way to avoid repeating `voice`, `look`, `window`, and style options.
 
 ```awft
-let alice2 = alice(face=smile, voice=auto, window=@textbox.side)
+let alice2 = alice(look=smile, voice=auto, window=@textbox.side)
 
 alice2: おはよう。[p]
 
@@ -88,7 +88,7 @@ alice.say(
     id = @say.opening.dream_hint,
     window = @textbox.0,
     voice = auto,
-    face = smile,
+    look = smile,
 )[
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 ]
@@ -111,7 +111,7 @@ pub fn Character.say(
     id: Option<Ref<DialogueLine>> = None,
     window: Ref<Textbox> = @textbox.0,
     voice: VoicePolicy = auto,
-    face: Option<Expression> = None,
+    look: Option<Expression> = None,
     style: Option<TextStylePatch> = None,
     hooks: List<Ref<Hook>> = [],
 ) -> DialogueContentCall
@@ -147,14 +147,14 @@ alice.say()[
 Line options go inside parentheses:
 
 ```awft
-alice(id=@say.opening.greeting, face=smile, voice=auto):
+alice(id=@say.opening.greeting, look=smile, voice=auto):
     おはよう。[p]
 ```
 
 which is sugar for:
 
 ```awft
-alice.say(id=@say.opening.greeting, face=smile, voice=auto)[
+alice.say(id=@say.opening.greeting, look=smile, voice=auto)[
     おはよう。[p]
 ]
 ```
@@ -180,7 +180,7 @@ narrator.say()[
 Because dialogue text may contain `{player_name}` localization placeholders, a raw `{ ... }` after `speaker:` is not used directly. Attach line-plan behavior with `with { ... }`.
 
 ```awft
-alice(voice=auto, face=smile):
+alice(voice=auto, look=smile):
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 with {
     at(0.42s) {
@@ -198,7 +198,7 @@ with {
 Equivalent canonical form:
 
 ```awft
-alice.say(voice=auto, face=smile)[
+alice.say(voice=auto, look=smile)[
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 ]
 with {
@@ -317,6 +317,42 @@ with {
 ```
 
 Line plan statements are scoped to the line and cannot leak variables outward.
+
+`init` runs before reveal begins. `thread name` creates a line-scoped child task
+owned by the line task group; it is a Sans I/O runtime task, not an OS thread.
+`finally` is allowed only as the trailing cleanup section of a `thread`.
+Line-local events use `[mark .name]` in text and `on .name` in the line plan.
+
+```awft
+alice.say(look=smile, focus=.soft)[
+    今日は少しだけ、変な夢を見たんだ。[mark .release_focus][p]
+]
+with:
+    init:
+        'line.focus.main <- acquire_focus()
+
+    on .release_focus:
+        'line.focus |> drop
+        out .Released
+
+    thread motion:
+        wait mark .release_focus
+        wait 0.35s
+        alice.stage.face(worried)
+        finally {
+            cleanup_motion()
+        }
+```
+
+Line lifetime registry paths use the same lifetime sigil as scope labels:
+`'line.focus` is a guaranteed value only when the checker can prove the key was
+registered, while `'line.focus?` is optional and returns an `Option`-like value.
+`focus=.soft` guarantees the default `'line.focus`; explicit keys such as
+`'line.focus.main` become guaranteed after an assignment with `<-`.
+
+`cleanup` is a line option/profile. `cleanup on ...:` is not part of the line
+plan grammar; use `thread ... finally { ... }`, cancellation rules, or explicit
+drop operations.
 
 ---
 
@@ -514,12 +550,16 @@ Allowed in dialogue content:
 - `#[expr]` expressions returning Content/String/Option/Result or Display-compatible values
 - `fmt(expr, ...)`
 - dialogue-safe function calls
-- hook dispatches
+- `[mark .name]` zero-width line-local markers
 ```
 
 Allowed in line plan blocks:
 
 ```text
+- init blocks
+- thread blocks with trailing finally cleanup
+- line-local `on .mark:` handlers
+- `wait mark .name` and duration waits
 - line options
 - cancellation rules
 - at(...) cue blocks
@@ -609,37 +649,40 @@ alice: きゃっ。[shake target=alice strength=0.4 time=160ms][p]
 Hook dispatch:
 
 ```awft
-alice: #[player_name]、聞いて。[hook @hook.dialogue.mark_important][p]
+alice: #[player_name]、聞いて。[mark .important][p]
+with:
+    on .important:
+        mark_important()
 ```
 
-Custom tag names cannot collide with reserved built-ins such as `p`, `l`, `ruby`, `call`, `hook`, `voice`, or `at`.
+Custom tag names cannot collide with reserved built-ins such as `p`, `l`, `ruby`, `call`, `mark`, `voice`, or `at`.
 
 ---
 
 ## Desugaring summary
 
 ```awft
-alice(face=smile, voice=auto):
+alice(look=smile, voice=auto):
     おはよう。[p]
 ```
 
 becomes conceptually:
 
 ```awft
-alice.say(face=smile, voice=auto)[
+alice.say(look=smile, voice=auto)[
     おはよう。[p]
 ]
 ```
 
 ```awft
-alice(id=@say.opening.003, face=smile, voice=@voice.alice.003):
+alice(id=@say.opening.003, look=smile, voice=@voice.alice.003):
     ほら、ここ。覚えてる？[p]
 ```
 
 becomes conceptually:
 
 ```awft
-alice.say(id=@say.opening.003, face=smile, voice=@voice.alice.003)[
+alice.say(id=@say.opening.003, look=smile, voice=@voice.alice.003)[
     ほら、ここ。覚えてる？[p]
 ]
 ```
@@ -686,7 +729,7 @@ values; `return` exits the nearest `fn`, `task fn`, `parser`, or `flow`.
 let (actor, (face0, face1, voice)) = alice.say(
     id=@say.opening.dream_hint,
     voice=auto,
-    face=smile,
+    look=smile,
 )[
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 ]

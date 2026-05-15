@@ -92,38 +92,38 @@ pub enum AudioCommand {
 ## Cue
 
 ```awft
-pub cue #cue.se.click from "audio/se/click.ogg" {
-    bus = #bus.se
+pub cue @cue.se.click from "audio/se/click.ogg" {
+    bus = @bus.se
     loudness = -18 LUFS
 }
 
-pub cue #cue.voice.alice.001 from "audio/voice/alice/001.ogg" {
-    bus = #bus.voice
-    character = #character.alice
+pub cue @cue.voice.alice.001 from "audio/voice/alice/001.ogg" {
+    bus = @bus.voice
+    character = @character.alice
     transcript = "おはよう。"
-    subtitle = #say.opening.greeting
+    subtitle = @say.opening.greeting
 }
 ```
 
 ## Mixer / Bus
 
 ```awft
-pub audio bus #bus.master { volume = 1.0 }
-pub audio bus #bus.bgm parent #bus.master { volume = 0.8 }
-pub audio bus #bus.voice parent #bus.master { volume = 1.0 }
-pub audio bus #bus.se parent #bus.master { volume = 0.9 }
+pub audio bus @bus.master { volume = 1.0 }
+pub audio bus @bus.bgm parent @bus.master { volume = 0.8 }
+pub audio bus @bus.voice parent @bus.master { volume = 1.0 }
+pub audio bus @bus.se parent @bus.master { volume = 0.9 }
 ```
 
 Mixer snapshot:
 
 ```awft
 pub mixer snapshot #mix.dialogue {
-    #bus.bgm.volume = -8db over 300ms
-    #bus.voice.volume = 0db
+    @bus.bgm.volume = -8db over 300ms
+    @bus.voice.volume = 0db
 }
 
 pub mixer snapshot #mix.normal {
-    #bus.bgm.volume = 0db over 600ms
+    @bus.bgm.volume = 0db over 600ms
 }
 ```
 
@@ -131,8 +131,8 @@ Ducking:
 
 ```awft
 pub ducking #duck.voice_over_bgm {
-    trigger = #bus.voice
-    target = #bus.bgm
+    trigger = @bus.voice
+    target = @bus.bgm
     amount = -6db
     attack = 120ms
     release = 500ms
@@ -142,22 +142,22 @@ pub ducking #duck.voice_over_bgm {
 ## BGM 再生
 
 ```awft
-pub bgm #bgm.alice_theme {
-    bus = #bus.bgm
-    stem #stem.piano from "audio/bgm/alice/piano.ogg"
-    stem #stem.strings from "audio/bgm/alice/strings.ogg"
+pub bgm @bgm.alice_theme {
+    bus = @bus.bgm
+    stem @stem.piano from "audio/bgm/alice/piano.ogg"
+    stem @stem.strings from "audio/bgm/alice/strings.ogg"
 
-    section #music.intro {
-        stems = [#stem.piano]
+    section @music.intro {
+        stems = [@stem.piano]
         loop = 0s..16s
     }
 
-    section #music.main {
-        stems = [#stem.piano, #stem.strings]
+    section @music.main {
+        stems = [@stem.piano, @stem.strings]
         loop = 16s..64s
     }
 
-    transition #music.intro -> #music.main {
+    transition @music.intro -> @music.main {
         quantize = bar
         crossfade = 2bars
     }
@@ -167,30 +167,30 @@ pub bgm #bgm.alice_theme {
 使用:
 
 ```awft
-command audio.ensure_bgm(#bgm.alice_theme) {
-    section = #music.intro
+command audio.ensure_bgm(@bgm.alice_theme) {
+    section = @music.intro
     fade_in = 1s
 }
 
-command audio.bgm_section(#bgm.alice_theme, #music.main)
+command audio.bgm_section(@bgm.alice_theme, @music.main)
 ```
 
 ## Adaptive music
 
 ```awft
-pub music state #music_state.alice_theme {
+pub music state @music_state.alice_theme {
     intensity: f32 = 0.0
     danger: bool = false
 }
 
-pub adaptive bgm #bgm.truck_chase {
-    stem #stem.base from "audio/bgm/truck/base.ogg"
-    stem #stem.drums from "audio/bgm/truck/drums.ogg"
-    stem #stem.danger from "audio/bgm/truck/danger.ogg"
+pub adaptive bgm @bgm.truck_chase {
+    stem @stem.base from "audio/bgm/truck/base.ogg"
+    stem @stem.drums from "audio/bgm/truck/drums.ogg"
+    stem @stem.danger from "audio/bgm/truck/danger.ogg"
 
     rule {
-        if state.intensity > 0.5 { enable #stem.drums fade 2bars }
-        if state.danger { enable #stem.danger fade 1bar }
+        if state.intensity > 0.5 { enable @stem.drums fade 2bars }
+        if state.danger { enable @stem.danger fade 1bar }
     }
 }
 ```
@@ -199,7 +199,7 @@ Activity からは `MusicStateUpdate` を出す。
 
 ```awft
 EffectRequest::Audio(AudioCommand::SetMusicState {
-    bgm: #bgm.truck_chase,
+    bgm: @bgm.truck_chase,
     key: "intensity",
     value: result.speed_ratio,
 })
@@ -210,12 +210,12 @@ EffectRequest::Audio(AudioCommand::SetMusicState {
 BGM を完全にAI生成する前提ではなく、まずはゲーム内で使える「作曲データ・編曲データ・ループ/ステム定義」を扱う。
 
 ```awft
-pub music pattern #music.pattern.soft_piano {
+pub music pattern @music.pattern.soft_piano {
     tempo = 92bpm
     key = A_minor
     meter = 4/4
 
-    track piano instrument #instrument.piano {
+    track piano instrument @instrument.piano {
         bar 1: chord Am arp up velocity 64
         bar 2: chord F  arp up velocity 60
         bar 3: chord C  arp up velocity 60
@@ -223,8 +223,8 @@ pub music pattern #music.pattern.soft_piano {
     }
 }
 
-pub bgm #bgm.generated.alice_theme compose {
-    use pattern #music.pattern.soft_piano
+pub bgm @bgm.generated.alice_theme compose {
+    use pattern @music.pattern.soft_piano
     arrange {
         intro bars 1..4
         loop main bars 1..16
@@ -237,8 +237,8 @@ pub bgm #bgm.generated.alice_theme compose {
 生成系は `Need<Result<AudioHandle, AudioError>, TaskError>`。
 
 ```awft
-let bgm = try await compose_bgm(#bgm.generated.alice_theme) with {
-    pending p => scene #scene.loading_audio { text "BGMを生成中"; progress p.ratio }
+let bgm = try await compose_bgm(@bgm.generated.alice_theme) with {
+    pending p => scene @scene.loading_audio { text "BGMを生成中"; progress p.ratio }
 }
 ```
 
@@ -247,8 +247,8 @@ let bgm = try await compose_bgm(#bgm.generated.alice_theme) with {
 TTS は `SpeechRequest` として扱い、同期イベントを返す。
 
 ```awft
-pub voice profile #voice.alice.tts {
-    character = #character.alice
+pub voice profile @voice.alice.tts {
+    character = @character.alice
     provider = "local"      // local / web / external / product-config
     language = "ja-JP"
     style = "soft"
@@ -260,8 +260,8 @@ pub voice profile #voice.alice.tts {
 読み上げ:
 
 ```awft
-let speech = try await tts.speak(#voice.alice.tts, "おはよう。") with {
-    pending p => scene #scene.loading_voice { progress p.ratio }
+let speech = try await tts.speak(@voice.alice.tts, "おはよう。") with {
+    pending p => scene @scene.loading_voice { progress p.ratio }
 }
 
 play voice speech.audio
@@ -282,7 +282,7 @@ pub struct TtsResult {
 字幕・口パク・表情同期に使う。
 
 ```awft
-say alice "おはよう。" with tts #voice.alice.tts {
+say alice "おはよう。" with tts @voice.alice.tts {
     fallback = subtitle_only
     cache = true
 }
@@ -303,7 +303,7 @@ pub spatial source #audio_source.truck_engine {
     radius = 2.0
     attenuation = inverse_square
     doppler = true
-    bus = #bus.se
+    bus = @bus.se
 }
 ```
 
@@ -341,7 +341,7 @@ ensures loudness in -24LUFS..-14LUFS
 BGM:
 
 ```awft
-pub bgm #bgm.alice_theme
+pub bgm @bgm.alice_theme
 ensures all sections have loop_points
 ensures no stem clips
 ```
@@ -354,7 +354,7 @@ pub signal #signal.audio_bus_levels: Watch<Map<Ref<AudioBus>, f32>>
 pub signal #signal.tts_progress: Watch<f32>
 
 log info "bgm section changed {bgm:?} -> {section:?}" {
-    bgm = #bgm.alice_theme,
+    bgm = @bgm.alice_theme,
     section = #music.main,
 }
 ```
@@ -363,13 +363,13 @@ log info "bgm section changed {bgm:?} -> {section:?}" {
 
 ```awft
 test #test.bgm_loop_points audio {
-    render_audio #bgm.alice_theme section #music.main duration 64bars
+    render_audio @bgm.alice_theme section @music.main duration 64bars
     assert no_clicks_at_loop
     assert loudness in -24LUFS..-14LUFS
 }
 
 test #test.tts_alice_subtitle_sync audio {
-    let tts = synthesize_now #voice.alice.tts "おはよう。"?
+    let tts = synthesize_now @voice.alice.tts "おはよう。"?
     assert tts.duration > 0s
     assert tts.transcript == "おはよう。"
     assert tts.visemes.len() > 0
@@ -404,4 +404,3 @@ arcweft.audio_wait_until_finished
 4. `arcweft-audio-tts` で provider trait と cache を実装。
 5. native/web backend を adapter として分離。
 6. Agent/test/bench から観測できるように signal/metric を出す。
-

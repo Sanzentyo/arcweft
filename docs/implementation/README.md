@@ -50,6 +50,12 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   Relative IDs are unified on `@.suffix`, parent-dot forms such as
   `@..suffix` / `@...suffix`, and explicit `@super...` forms; bare `.suffix`
   is not part of the core grammar.
+- `pro_review11.md`: adopted canonical dialogue `look` line options, extended
+  `stage` / `portrait` / `focus` / `cleanup` line options, `[mark .name]`
+  zero-width dialogue markers, line-plan `on .name:` handlers, line-scoped
+  `thread` / trailing `finally`, `wait mark` / duration waits, and `'line.*`
+  lifetime registry paths with optional `?` reads. Local dialogue `[hook ...]`
+  and `#[hook ...]` syntax is removed; top-level engine hooks remain.
 
 ## Current Direction
 
@@ -119,6 +125,17 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `@target.*`, family-correct `@slot.background.*` /
   `@slot.character.*` usage, and reports simultaneous default slot handles
   that should be given explicit slots.
+- Dialogue syntax now parses `look`, `stage`, `portrait`, `focus`, and
+  `cleanup` as first-class line options. The first positional line option maps
+  to `look`; `face` is rejected as a line option while stage methods such as
+  `alice.stage.face(...)` remain ordinary calls.
+- Dialogue text now tokenizes `[mark .name]` into a structured marker token.
+  The checker rejects duplicate marks, rejects local `[hook ...]`, and verifies
+  marker-triggered line-plan `on .name:` handlers against marks in the same
+  line.
+- Line plans now preserve `init`, `thread name` with trailing `finally`, `on`
+  handlers, `wait` statements, and `'line.* <- expr` lifetime registry writes
+  as structured AST/HIR-checkable syntax.
 - Syntax-level ID policy linting exists as `lint_id_policy`. It currently
   reports deep dot-run relative IDs such as `@...suffix` and flow IDs whose
   tail does not match the module tail. Further hierarchy checks should build on
