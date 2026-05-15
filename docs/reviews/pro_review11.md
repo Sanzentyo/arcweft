@@ -1,543 +1,253 @@
-# Arcweft: line lifetime registry, inline marks, VM threads, cleanup, and drop
+# Arcweft: generic `thread`, line lifetime registry, inline marks, cleanup, and drop
 
 ## 0. Goal
 
 This document specifies how Arcweft should integrate:
 
-- dialogue line lifetimes,
-- `'line.*` lifetime registry access,
-- built-in common visual-novel line effects such as focus,
-- `init:`, `thread:`, `finally:`, and line event handlers,
-- inline text marks,
+- a generic `thread` construct usable outside dialogue `with:`,
+- dialogue `with:` as a line-scoped specialization of generic structured concurrency,
+- `'line.*` lifetime-registry access,
+- built-in common visual-novel effects such as focus, portrait changes, voice, skip cleanup,
+- `init:`, `thread:`, `finally:`, and `on ...:` inside line plans,
+- inline dialogue marks,
 - deterministic VM-level concurrent execution,
 - guaranteed logical cleanup,
-- `drop`, `on_drop`, and typestate-like handle states,
+- `drop`, `on_drop`, `expose`, typestate-like handle states,
 - current implementation and docs changes required in `Sanzentyo/arcweft`.
 
-This is not a backwards-compatibility plan. The implementation is still in progress, so this document explicitly says which old spellings should be deleted.
+This is not a backwards-compatibility plan. The implementation is still in progress, so old forms may be explicitly deleted.
 
 ---
 
-## 1. Main decisions
+## 1. Main answer: should `thread` be generic?
 
-### 1.1 Use `'line.*`, not `line.*`, for lifetime registry values
+Yes.
 
-Use:
+`thread` should be a generic structured-concurrency construct in the Arcweft VM, not a feature tied only to dialogue `with:`.
 
-```awft
-'line.focus |> drop
-```
-
-Do not use:
-
-```awft
-line.focus |> drop
-```
-
-Reason:
-
-- `line.focus` looks like a normal object field.
-- The value is actually coming from the current line lifetime registry.
-- Arcweft already uses apostrophe syntax for lifetime-like labels in several contexts, so `'line.focus` communicates “this value is scoped to the line lifetime”.
-
-Examples:
-
-```awft
-alice(.smile, focus = .soft):
-    聞いて。[mark .release_focus]
-with:
-    on .release_focus:
-        'line.focus |> drop
-```
-
-Named focus handles:
-
-```awft
-alice(.smile, focus = { main = .soft, bg = .background_dim }):
-    聞いて。[mark .release_main]
-with:
-    on .release_main:
-        'line.focus.main |> drop
-```
-
-### 1.2 Registry keys are `Option<T>` unless statically guaranteed
-
-Lifetime registry access has two forms:
-
-```awft
-'line.focus
-'line.focus?
-```
-
-Rules:
+However, it should have different **parent lifetimes** depending on where it appears.
 
 ```text
-If the key is statically guaranteed:
-  'line.focus : FocusHandle
+thread in flow body
+  parent = current flow fiber / lexical flow scope
 
-If the key is not statically guaranteed:
-  'line.focus : Option<FocusHandle>
-  or require explicit optional access: 'line.focus?
+thread in a named `scope`
+  parent = that lexical scope
+
+thread inside dialogue `with:`
+  parent = current dialogue line lifetime `'line`
+
+thread inside `on .mark:`
+  parent = the current line, spawned at event time
+
+thread in task fn
+  parent = that task function call
+
+thread in pure fn
+  disallowed unless the fn is explicitly effectful
 ```
 
-Recommended source rule:
-
-```text
-- Non-optional access is allowed only when the checker can prove the key exists.
-- If not provable, the source must write `?` or use a safe accessor.
-```
-
-Examples:
-
-```awft
-alice(.smile, focus = .soft):
-    聞いて。[mark .release_focus]
-with:
-    on .release_focus:
-        'line.focus |> drop
-```
-
-`focus = .soft` is unconditional and profile resolution guarantees a focus handle.  
-Therefore `'line.focus` is non-optional.
-
-Conditional focus:
-
-```awft
-alice(.smile):
-    聞いて。[mark .release_focus]
-with:
-    init:
-        if state.flags.focus_alice {
-            'line.focus <- stage.focus(target = alice) |> on_drop(release(120ms))
-        }
-
-    on .release_focus:
-        if let Some(f) = 'line.focus? {
-            f |> drop
-        }
-```
-
-Here `'line.focus?` is `Option<FocusHandle>`.
-
-A compile error should be emitted for unsafe non-optional access:
-
-```awft
-on .release_focus:
-    'line.focus |> drop
-```
-
-Diagnostic:
-
-```text
-error: lifetime key `'line.focus` is not statically guaranteed
-help: use `'line.focus?` and handle Option<FocusHandle>
-```
-
-### 1.3 Delete local `hook` syntax
-
-Do not use local `hook` syntax inside dialogue text or `with:`.
-
-Delete these forms:
-
-```awft
-[hook release_focus]
-hook release_focus:
-    ...
-```
-
-Use:
-
-```awft
-[mark .release_focus]
-on .release_focus:
-    ...
-```
-
-Top-level `hook` declarations remain a different feature for object/runtime hooks. This document removes only dialogue-local hook marker/handler syntax.
-
-### 1.4 Decide `[]` vs `#[...]`
-
-Use `[]` for dialogue control tags.
-
-Use `#[...]` only for expression interpolation / pure content insertion.
-
-```text
-[p]                   page wait
-[r]                   hard line break
-[mark .release_focus] zero-width line marker
-[call flash(...)]     dialogue-safe call, if retained by tag system
-
-#[player_name]        expression interpolation
-#[fmt(score)]         formatting expression
-```
-
-Delete:
-
-```awft
-#[mark .release_focus]
-#[hook release_focus]
-```
-
-Reason:
-
-- `#[...]` already means expression/content insertion in dialogue text.
-- Markers are timeline/control tags, so they belong to `[]`.
-
-### 1.5 `[mark]` is useful and should stay
-
-It is possible to avoid custom marks by using built-in anchors such as page numbers or word indices:
-
-```awft
-on text.page(1):
-    ...
-on text.reveal.word(3):
-    ...
-```
-
-But this is fragile for localization and editing. A named mark is more stable.
-
-Therefore keep:
-
-```awft
-[mark .release_focus]
-```
-
-Marker names should be relative IDs within the line marker namespace. The leading dot is recommended.
-
-```awft
-[mark .release_focus]
-on .release_focus:
-    ...
-```
-
-Allowing bare `[mark release_focus]` would be easy, but it conflicts with the relative-ID style and is less explicit. Prefer dot form.
+So `with:` should not define a special kind of thread.  
+It should only provide a convenient parent scope and event timeline.
 
 ---
 
-## 2. Default common visual-novel options
+## 2. Generic `thread` forms
 
-Common visual-novel effects should be built in as standard line options, not forced into `with init:`.
+### 2.1 Statement form
 
-### 2.1 Recommended built-in line options
-
-```text
-look
-  Character look patch. First positional argument maps to this.
-
-stage
-  Stage-only look patch.
-
-portrait
-  Text-window portrait/icon-only look patch.
-
-voice
-  Dialogue voice source or auto policy.
-
-focus
-  Built-in focus effect.
-
-cleanup
-  Line cleanup policy.
-
-window
-  Dialogue window / textbox.
-
-reveal
-  Text reveal policy.
-
-skip
-  Skip behavior policy.
-
-auto_mouth
-  Lipsync / mouth-control policy.
-
-camera
-  Optional camera framing or focus target.
-
-ducking
-  Audio ducking policy while this line is active.
-
-id
-text_key
-source_locale
-hooks
-style
-args
-```
-
-### 2.2 `focus = .soft`
-
-`focus = .soft` means:
-
-```text
-Use the built-in focus profile `.soft`.
-Create a line-owned FocusHandle.
-Store it under `'line.focus`.
-Apply its enter effect when the line starts.
-Drop/release it during line cleanup unless dropped earlier.
-```
-
-Example profile:
+A `thread` statement creates a scoped VM child task and registers it under the current parent scope.
 
 ```awft
-pub focus profile @focus.soft {
-    target = speaker
-    others = .blur(8px) & .dim(35%)
-    enter = 180ms
-    release = 120ms
-    cleanup_visual = snap
+thread preload_next:
+    asset.preload(@asset.bg.school.classroom_day)
+    alice.preload(look = .smile, voices = auto)
+```
+
+Default parent:
+
+```text
+nearest runtime scope:
+  line > lexical scope > flow > task fn
+```
+
+If a statement-form thread has no explicit handle, the parent scope owns it and applies parent cleanup policy when the scope exits.
+
+### 2.2 Named statement form
+
+```awft
+thread motion:
+    alice.stage.apply(.motion.nod)
+    wait 0.35s
+    alice.stage.apply(.stage.expr.smile)
+```
+
+Thread name is used for:
+
+```text
+- diagnostics
+- Agent/debug tree
+- deterministic ordering
+- optional handle path if exposed
+```
+
+### 2.3 Expression form
+
+For explicit joining or result capture:
+
+```awft
+let t = thread compute_score {
+    route_score(state)
 }
+
+let score = await t
 ```
 
-The short line:
+`thread { ... }` expression returns a `ThreadHandle<T>` or `Need<T, ThreadError>`-like value. The exact runtime type can be chosen later, but semantically it is a joinable VM task.
+
+Recommended type direction:
 
 ```awft
-alice(.smile, focus = .soft):
-    聞いて。[p]
+ThreadHandle<T, E = ThreadError>
 ```
 
-is conceptually:
+or:
 
 ```awft
-alice(.smile):
-    聞いて。[p]
-with:
-    init:
-        'line.focus <-
-            stage.focus(
-                target = alice,
-                others = .blur(8px) & .dim(35%),
-            )
-            |> on_drop(release(120ms))
+Need<T, ThreadError>
 ```
 
-But authors should not have to write this for common cases.
+If it uses `Need`, existing `await ... with` machinery can handle thread joining.
 
-### 2.3 Built-in profiles should be extensible
+### 2.4 Detached form
 
-Projects can define profiles:
+Detached threads must be explicit.
 
 ```awft
-pub focus profile @focus.confession {
-    target = speaker
-    others = .blur(12px) & .dim(45%)
-    enter = 240ms
-    release = 180ms
-}
+thread detached analytics:
+    telemetry.record(route_id)
 ```
 
-Then use:
+Detached thread requirements:
 
-```awft
-alice(.embarrassed, focus = @focus.confession):
-    えっと……。[p]
+```text
+- cannot capture non-static borrowed values
+- cannot capture line-owned handles
+- cannot capture MustDrop values unless detached/moved with explicit policy
+- must require capability such as effects { thread.detach }
 ```
 
-Expected-type shorthand:
+Default `thread` is scoped, not detached.
+
+---
+
+## 3. Relationship to existing `spawn`
+
+The current AST has `Stmt::Spawn(Expr)`.
+
+This document recommends:
+
+```text
+thread
+  structured VM child task with parent lifetime and guaranteed finalization.
+
+spawn
+  either deprecated, or reserved for explicit detached/unstructured task requests.
+```
+
+Recommended migration:
 
 ```awft
-alice(.embarrassed, focus = .confession):
-    えっと……。[p]
+spawn expr
+```
+
+should become one of:
+
+```awft
+thread:
+    expr
+```
+
+or:
+
+```awft
+thread detached:
+    expr
+```
+
+depending on whether the previous `spawn` was meant to be structured or detached.
+
+Parser/checker should eventually warn:
+
+```text
+warning: `spawn` is ambiguous; use `thread:` or `thread detached:`
 ```
 
 ---
 
-## 3. Stage look vs portrait look
+## 4. `with:` as a line-scoped specialization
 
-Standing sprite / Live2D stage display and text-window portrait icon are distinct.
-
-A look patch can affect:
-
-```text
-stage
-  Standing sprite, Live2D model, 3D model, stage pose, motion, etc.
-
-portrait
-  Text-window face icon, nameplate icon, bust-up portrait.
-
-both
-  Common named look, such as `.smile`, may affect both stage and portrait.
-```
-
-Examples:
+Inside dialogue:
 
 ```awft
-alice(.smile):
-    おはよう。[p]
-```
-
-May apply:
-
-```text
-.stage.expr.smile
-.portrait.icon.smile
-```
-
-Stage only:
-
-```awft
-alice(stage = .expr.worried):
-    ……大丈夫。[p]
-```
-
-Portrait only:
-
-```awft
-alice(portrait = .icon.wink):
-    ひみつだよ。[p]
-```
-
-Explicit combined form:
-
-```awft
-alice(.stage.expr.angry & .portrait.icon.smile):
-    怒ってないよ。[p]
-```
-
-Use only `&` as the look-patch merge operator.
-
-```awft
-.smile & .casual & .motion.nod
-```
-
-`+`, `|`, and `||` are not used for patch composition.
-
----
-
-## 4. Inline marks and `with on`
-
-### 4.1 Marker tag
-
-```awft
-[mark .release_focus]
-```
-
-This is a zero-width timeline mark. It is not displayed.
-
-### 4.2 Handler
-
-```awft
+alice(.smile, voice = auto, focus = .soft):
+    聞いて。[mark .release_focus]
 with:
+    thread motion:
+        alice.stage.apply(.motion.nod)
+
     on .release_focus:
         'line.focus |> drop
 ```
 
-### 4.3 Marker-only usage
+The `thread motion:` here is not a special "with-thread" construct.  
+It is a normal `thread` whose parent scope happens to be `'line`.
 
-A marker can exist without a handler if it is used by tooling, tests, transcript sync, or a thread wait.
-
-```awft
-alice:
-    聞いて。[mark .important_beat]
-```
-
-No error.
-
-An unused mark may be linted if the project enables:
-
-```toml
-[lint.dialogue]
-unused_marks = "warn"
-```
-
-### 4.4 Handler without marker
-
-This is an error unless the trigger is not a marker.
-
-```awft
-with:
-    on .missing_marker:
-        ...
-```
-
-Diagnostic:
+Line-scoped defaults:
 
 ```text
-error: marker handler `.missing_marker` has no matching `[mark .missing_marker]`
-help: add `[mark .missing_marker]` to the dialogue text
-help: or use an event trigger such as `on line.end:`
-```
-
-### 4.5 Duplicate marks
-
-Duplicate marker names in one line are error by default.
-
-```awft
-聞いて。[mark .a]
-もう一度。[mark .a]
-```
-
-Diagnostic:
-
-```text
-error: duplicate line mark `.a`
-help: use `.a1` and `.a2`, or define an indexed mark policy explicitly
-```
-
-If repeatable marks are desired, require explicit repeatability:
-
-```awft
-[mark .beat repeat]
-```
-
-Then the handler must accept an index:
-
-```awft
-on .beat(i):
-    debug_log("beat {i}")
-```
-
-This can be deferred; default should be duplicate-error.
-
-### 4.6 Localization edge case
-
-Marks are semantic timeline anchors. Localized variants must preserve required marks.
-
-If source locale has:
-
-```awft
-聞いて。[mark .release_focus]
-```
-
-and target locale omits `.release_focus`, localization check should fail or warn according to policy:
-
-```text
-error: localized text for @text... is missing required mark `.release_focus`
-```
-
-Required marks are those referenced by:
-
-```text
-- `on .mark`
-- `wait mark .mark`
-- test assertions
-- generated voice marker bindings
+parent scope     = current dialogue line
+cleanup policy   = line cleanup profile
+registry access  = `'line.*`
+start time       = after `init:` and at line start unless spawned from an event handler
+finalization     = before line scope closes
 ```
 
 ---
 
-## 5. `init:`, `thread:`, `finally:`
+## 5. `init:` inside `with:`
 
-### 5.1 `init:`
+`init:` is only a line-plan section, not a general flow construct.
 
-`init:` runs synchronously before:
+It runs synchronously before:
 
 ```text
 - dialogue content reveal
 - line voice playback
-- user threads
+- user line threads
 - marker traversal
 - visible line-start effects
 ```
 
+Common effects should not require `init:`.
+
+Use line options:
+
 ```awft
-alice(.smile):
+alice(.smile, focus = .soft):
+    聞いて。[p]
+```
+
+Use `init:` only for conditional or advanced setup:
+
+```awft
+alice(.smile, cleanup = .fast_skip):
     聞いて。[mark .release_focus]
 with:
     init:
         if state.flags.focus_alice {
             'line.focus <-
-                stage.focus(target = alice)
+                stage.focus(target = alice, others = .blur(8px) & .dim(35%))
                 |> on_drop(release(120ms))
         }
 
@@ -547,11 +257,11 @@ with:
         }
 ```
 
-`init:` is useful for conditional setup. It should not be required for common effects such as `focus = .soft`.
+---
 
-### 5.2 `thread:`
+## 6. `thread:` inside `with:`
 
-`thread:` creates a real VM child task scoped to the line.
+Line threads are spawned after `init:` completes.
 
 ```awft
 alice(.smile, voice = auto):
@@ -569,7 +279,153 @@ with:
 
 Multiple `thread:` blocks may run concurrently.
 
-### 5.3 `finally:`
+If a `thread:` appears inside `on .mark:`, it is spawned at marker time:
+
+```awft
+with:
+    on .release_focus:
+        thread release_fx:
+            alice.stage.apply(.motion.look_back)
+            wait 0.2s
+            'line.focus |> drop
+```
+
+The spawned thread is still owned by the line unless declared `detached`.
+
+---
+
+## 7. VM execution model
+
+Arcweft core is Sans I/O. The VM computes state and effect requests; it does not directly perform GPU/audio/filesystem/OS effects.
+
+A line is a structured VM task group:
+
+```text
+LineTask
+├─ InitTask
+├─ ContentTask
+├─ VoiceTask
+├─ UserThreadTask[]
+├─ EventHandlerTask[]
+├─ TimedCueTask[]
+└─ CleanupTask
+```
+
+A flow can also have structured task groups:
+
+```text
+FlowFiber
+├─ MainFlowTask
+├─ ScopedThreadTask[]
+├─ AwaitContinuation[]
+└─ CleanupTask
+```
+
+Required runtime properties:
+
+```text
+- deterministic logical clock
+- stable ordering of simultaneous effects
+- no direct side effects in core
+- effect requests only
+- replayable FrameInput / FrameOutput
+- child tasks cannot outlive the parent scope unless explicitly detached
+```
+
+Effect order for the same logical tick:
+
+```text
+1. logical time
+2. parent scope order
+3. event source order
+4. thread declaration order
+5. per-task sequence number
+```
+
+---
+
+## 8. Rust-inspired structured concurrency
+
+`thread` follows Rust-like scoped concurrency.
+
+```text
+- A scope owns all non-detached threads spawned inside it.
+- A child thread cannot outlive its parent scope by accident.
+- Live child threads are joined/cancelled/finalized at parent cleanup.
+- Captured values must be safe to send/share across VM tasks.
+- Unique MustDrop handles cannot be captured by multiple live threads.
+- `finally:` discharges moved MustDrop values.
+```
+
+### 8.1 Move into a thread
+
+```awft
+with:
+    init:
+        let lease =
+            alice.stage.lease()
+            |> on_drop(release)
+
+    thread motion:
+        let lease = move lease
+        alice.stage.apply(.motion.nod)
+
+        finally:
+            lease |> drop
+```
+
+After `move lease`, the outer `lease` is unavailable.
+
+### 8.2 Shared handle
+
+```awft
+with:
+    init:
+        let focus =
+            stage.focus(target = alice)
+            |> on_drop(release(120ms))
+            |> share
+
+    thread a:
+        focus.request(.dim(30%))
+
+    thread b:
+        focus.request(.blur(8px))
+```
+
+A unique handle cannot be implicitly shared.
+
+### 8.3 Capture edge cases
+
+Disallowed by default:
+
+```awft
+with:
+    init:
+        let focus =
+            stage.focus(target = alice)
+            |> on_drop(release(120ms))
+
+    thread a:
+        focus.request(.blur(8px))
+
+    on .release_focus:
+        focus |> drop
+```
+
+Reason: thread `a` may use `focus` after the marker handler drops it.
+
+Diagnostic:
+
+```text
+error: thread `a` may use `focus` after another handler drops it
+help: move `focus` into the thread and drop it in `finally:`
+help: or convert it to a shared/cancellable handle
+```
+
+---
+
+## 9. `finally:`
 
 `finally:` is thread-local guaranteed finalization.
 
@@ -595,127 +451,223 @@ thread motion:
 - goto
 - return
 - error propagation
-- line cleanup
+- parent scope cleanup
 ```
 
-`finally:` should be the last section in a thread.
+Rules:
+
+```text
+- `finally:` must be the last section in a thread.
+- `finally:` cannot spawn non-detached scoped threads.
+- `finally:` cannot wait for arbitrary input/signal.
+- `finally:` cannot await unbounded work.
+- `finally:` can drop, detach, log, update exposed state, and emit bounded cleanup requests.
+```
 
 ---
 
-## 6. VM execution model
+## 10. Lifetime registry access
 
-Arcweft core is Sans I/O: it does not directly perform filesystem, GPU, audio, device, or OS effects. It computes state and effect requests.
+### 10.1 Use `'line.*`
 
-A line is a structured VM task group.
+Use:
 
-```text
-LineTask
-├─ InitTask
-├─ ContentTask
-├─ VoiceTask
-├─ UserThreadTask[]
-├─ EventHandlerTask[]
-├─ TimedCueTask[]
-└─ CleanupTask
+```awft
+'line.focus |> drop
 ```
 
-The VM may execute independent tasks in parallel, but effect outputs are collected into deterministic frame-boundary outputs.
+Do not use:
 
-Required properties:
-
-```text
-- deterministic logical clock
-- stable ordering of simultaneous effects
-- no direct side effects in core
-- effect requests only
-- replayable FrameInput / FrameOutput
-- child tasks cannot outlive the line unless explicitly detached
+```awft
+line.focus |> drop
 ```
 
-This aligns with the existing runtime direction that Flow/dialogue/choice/Need/effect emission are processed by the bytecode VM, while the core emits `FrameOutput` and `EffectRequest` data rather than executing side effects directly.
+`'line.focus` means the value is stored in the current line lifetime registry.
+
+### 10.2 Optional keys
+
+If a key is not statically guaranteed:
+
+```awft
+'line.focus? : Option<FocusHandle>
+```
+
+If statically guaranteed:
+
+```awft
+'line.focus : FocusHandle
+```
+
+Static guarantee examples:
+
+```awft
+alice(.smile, focus = .soft):
+    聞いて。[mark .release_focus]
+with:
+    on .release_focus:
+        'line.focus |> drop
+```
+
+Conditional key:
+
+```awft
+alice(.smile):
+    聞いて。[mark .release_focus]
+with:
+    init:
+        if state.flags.focus_alice {
+            'line.focus <-
+                stage.focus(target = alice)
+                |> on_drop(release(120ms))
+        }
+
+    on .release_focus:
+        if let Some(f) = 'line.focus? {
+            f |> drop
+        }
+```
+
+Unsafe:
+
+```awft
+on .release_focus:
+    'line.focus |> drop
+```
+
+if `focus` is conditional.
+
+Diagnostic:
+
+```text
+error: lifetime key `'line.focus` is not statically guaranteed
+help: use `'line.focus?` and handle Option<FocusHandle>
+```
+
+### 10.3 Generic lifetime registries
+
+Inside other scopes, use their lifetime names only when they exist.
+
+Examples:
+
+```awft
+'flow.preload_task
+'scene.bgm
+'thread.cache
+```
+
+But do not invent them implicitly. A registry exists only if the runtime scope defines one.
+
+Line registry is special because every dialogue line has one.
 
 ---
 
-## 7. Structured concurrency rules
+## 11. Inline marks and `on`
 
-`thread:` follows Rust-like structured concurrency.
+### 11.1 Marker tag
+
+Use `[]` for dialogue control tags:
+
+```awft
+[mark .release_focus]
+```
+
+Use `#[...]` only for expression interpolation:
+
+```awft
+#[player_name]
+#[fmt(score)]
+```
+
+Delete these forms:
+
+```awft
+[hook release_focus]
+#[hook release_focus]
+#[mark release_focus]
+hook release_focus:
+```
+
+### 11.2 Handler
+
+```awft
+with:
+    on .release_focus:
+        'line.focus |> drop
+```
+
+### 11.3 Marker without handler
+
+Allowed, because marks are useful for:
 
 ```text
-- A line owns all threads spawned in its `with:` block.
-- Child threads cannot outlive the line by accident.
-- Live child threads are cancelled/joined during line cleanup according to cleanup policy.
-- Captured values must be thread-safe or moved.
-- Unique MustDrop handles cannot be captured by multiple live threads.
-- `finally:` must discharge moved MustDrop values.
+- transcript anchors
+- test anchors
+- voice marker matching
+- future tool-generated handlers
+- `wait mark .name` in threads
 ```
 
-### 7.1 Move into thread
+Optional lint:
+
+```text
+warning: unused mark `.release_focus`
+```
+
+### 11.4 Handler without marker
+
+Error:
 
 ```awft
 with:
-    init:
-        let lease =
-            alice.stage.lease()
-            |> on_drop(release)
-
-    thread motion:
-        let lease = move lease
-        alice.stage.apply(.motion.nod)
-
-        finally:
-            lease |> drop
-```
-
-After `move lease`, the outer `lease` is unavailable.
-
-### 7.2 Shared handle
-
-```awft
-with:
-    init:
-        let focus =
-            stage.focus(target = alice)
-            |> on_drop(release(120ms))
-            |> share
-
-    thread a:
-        focus.request(.dim(30%))
-
-    thread b:
-        focus.request(.blur(8px))
-```
-
-A unique handle cannot be implicitly shared.
-
-### 7.3 Conflict detection
-
-Concurrent writes to the same exclusive axis should warn or error.
-
-```awft
-with:
-    thread a:
-        alice.stage.apply(.stage.expr.smile)
-
-    thread b:
-        alice.stage.apply(.stage.expr.worried)
+    on .missing:
+        ...
 ```
 
 Diagnostic:
 
 ```text
-warning: concurrent writes to exclusive axis `alice.stage.expr`
-help: sequence them with `wait`, use one thread, or give an explicit ordering policy
+error: marker handler `.missing` has no matching `[mark .missing]`
+help: add `[mark .missing]` to the dialogue text
+help: or use a non-marker trigger such as `on line.end:`
 ```
+
+### 11.5 Duplicate markers
+
+Default: duplicate marker names in one line are errors.
+
+```awft
+[mark .beat]
+...
+[mark .beat]
+```
+
+Diagnostic:
+
+```text
+error: duplicate mark `.beat` in one dialogue line
+```
+
+If repeatable marks are needed, add explicit repeat syntax later.
 
 ---
 
-## 8. Cleanup policy
+## 12. Line cleanup policy
 
-Cleanup is line option or project default, not a `with:` statement.
+Cleanup is a line option or project default, not a `with:` statement.
 
 ```awft
 alice(.smile, cleanup = .fast_skip):
     聞いて。[p]
+```
+
+Project default:
+
+```toml
+[dialogue.cleanup.default]
+pending_marks = "run"
+visual = "snap"
+audio = "stop_now"
+threads = "cancel"
 ```
 
 Profile:
@@ -729,14 +681,18 @@ pub cleanup profile @cleanup.fast_skip {
 }
 ```
 
-Project default:
+Detailed line override:
 
-```toml
-[dialogue.cleanup.default]
-pending_marks = "run"
-visual = "snap"
-audio = "stop_now"
-threads = "cancel"
+```awft
+alice(
+    .smile,
+    cleanup = {
+        skip = .fast_skip,
+        cancel = .snap_and_stop,
+        threads = .cancel,
+    },
+):
+    聞いて。[p]
 ```
 
 Fields:
@@ -768,21 +724,74 @@ threads
 Cleanup order:
 
 ```text
-1. Enter line cleanup mode.
-2. Process pending mark handlers according to `pending_marks`.
-3. Cancel/join live threads according to `threads`.
+1. Enter cleanup mode for the parent scope.
+2. Process pending marks according to `pending_marks`.
+3. Cancel/join live child threads according to `threads`.
 4. Run every cancelled thread's `finally:`.
-5. Drop line-owned handles from lifetime registries, e.g. `'line.focus`.
-6. Drop any remaining MustDrop locals in reverse creation order.
-7. Unregister line-local handlers, subscriptions, exposed state.
-8. Close the line lifetime.
+5. Drop owned handles in lifetime registries.
+6. Drop remaining MustDrop locals in reverse creation order.
+7. Unregister handlers, subscriptions, exposed state.
+8. Close the scope.
 ```
 
 ---
 
-## 9. Drop, `on_drop`, and typestate
+## 13. Focus as a built-in line option
 
-### 9.1 `on_drop`
+Common focus should not require `init:`.
+
+```awft
+alice(.smile, focus = .soft):
+    聞いて。[p]
+```
+
+`focus = .soft` means:
+
+```text
+- Resolve `.soft` as a FocusProfile.
+- Create a line-owned FocusHandle before presentation begins.
+- Store it at `'line.focus`.
+- Apply enter behavior at line start.
+- Apply release behavior on drop / cleanup.
+```
+
+Focus profile:
+
+```awft
+pub focus profile @focus.soft {
+    target = speaker
+    others = .blur(8px) & .dim(35%)
+    enter = 180ms
+    release = 120ms
+    cleanup_visual = snap
+}
+```
+
+Early release:
+
+```awft
+alice(.smile, focus = .soft, cleanup = .fast_skip):
+    聞いて。[mark .release_focus]
+with:
+    on .release_focus:
+        'line.focus |> drop
+```
+
+Multiple focus handles:
+
+```awft
+alice(.smile, focus = { main = .soft, bg = .background_dim }):
+    聞いて。[mark .release_main]
+with:
+    on .release_main:
+        'line.focus.main |> drop
+```
+
+---
+
+## 14. Drop and decorators
+
+### 14.1 `on_drop`
 
 ```awft
 let focus =
@@ -790,9 +799,20 @@ let focus =
     |> on_drop(release(120ms))
 ```
 
-`on_drop` attaches drop policy metadata.
+`on_drop` attaches policy metadata.
 
-### 9.2 `drop`
+### 14.2 `expose`
+
+```awft
+let focus =
+    stage.focus(target = alice)
+    |> on_drop(release(120ms))
+    |> expose(@state.opening.alice_focus)
+```
+
+### 14.3 `drop`
+
+`drop` is a compiler intrinsic.
 
 ```awft
 'line.focus |> drop
@@ -805,21 +825,21 @@ Preferred source style:
 'line.focus |> drop
 ```
 
-Override policy:
+Override drop policy:
 
 ```awft
 'line.focus |> drop(release(40ms))
 ```
 
-### 9.3 Type-state semantics
+### 14.4 Typestate semantics
 
-`drop` should be modelled as typestate/capability transition, not dynamic trait mutation.
+Drop should be represented as a typestate transition.
 
 ```text
 FocusHandle<Live> |> drop -> FocusHandle<Dropped>
 ```
 
-The dropped value cannot be used again.
+Use-after-drop is an error:
 
 ```awft
 'line.focus |> drop
@@ -832,92 +852,157 @@ Diagnostic:
 error: use of dropped value `'line.focus`
 ```
 
-The uploaded typestate/capability note argues for modelling operations as type-level state transitions rather than dynamically adding traits. This document follows that direction.
+### 14.5 `let _ = value`
 
-### 9.4 Idempotent logical cleanup
+Plain values may be discarded.
 
-Runtime cleanup must be logically idempotent.
-
-If marker cleanup and finalizer both attempt to drop the same value:
+MustDrop values should reject `let _ = ...`.
 
 ```awft
-on .release_focus:
-    'line.focus |> drop
-```
-
-then line cleanup sees `'line.focus` as already dropped and does not execute a second physical cleanup.
-
-However, explicit double drop in the same reachable code path is an error:
-
-```awft
-on .release_focus:
-    'line.focus |> drop
-    'line.focus |> drop
+let _ = stage.focus(target = alice)
 ```
 
 Diagnostic:
 
 ```text
-error: value `'line.focus` is already dropped
+error: MustDrop value should be explicitly dropped or scoped
+help: use `value |> drop`, `drop(value)`, or attach `|> on_drop(...)`
 ```
 
 ---
 
-## 10. `[]` and `#[...]` final rule
+## 15. Stage look, portrait look, and focus
 
-### Dialogue control tags: `[]`
-
-Allowed in dialogue text:
+Stage and portrait are separate targets.
 
 ```awft
-[p]
-[r]
-[l]
-[mark .release_focus]
-[raw]...[/raw]
-[ruby rt="..."]...[/ruby]
-[call flash(color = "#fff")]
+alice(.smile):
+    おはよう。[p]
 ```
 
-### Expression interpolation: `#[...]`
+A common look may affect both stage and portrait.
 
-Allowed:
+Stage only:
 
 ```awft
-#[player_name]
-#[fmt(score)]
-#[route_title(state.route)]
+alice(stage = .expr.worried):
+    ……大丈夫。[p]
 ```
 
-### Deleted forms
-
-Delete these from docs and examples:
+Portrait only:
 
 ```awft
-[hook a1]
-#[hook a1]
-#[mark a1]
-hook a1:
+alice(portrait = .icon.wink):
+    ひみつだよ。[p]
 ```
 
-If local event handling is needed:
+Combined:
 
 ```awft
-[mark .a1]
+alice(.stage.expr.angry & .portrait.icon.smile):
+    怒ってないよ。[p]
+```
+
+Use only `&` as the patch merge operator.
+
+```awft
+.smile & .casual & .motion.nod
+```
+
+`+`, `|`, and `||` are not used for patch composition.
+
+---
+
+## 16. Grammar summary
+
+### 16.1 Generic flow-level thread
+
+```text
+ThreadStmt =
+  "thread" ThreadModifiers? ThreadName? ":" IndentedBlock
+
+ThreadExpr =
+  "thread" ThreadModifiers? ThreadName? "{" Block "}"
+```
+
+Modifiers:
+
+```text
+detached
+```
+
+Examples:
+
+```awft
+thread preload:
+    ...
+
+let t = thread compute {
+    ...
+}
+```
+
+### 16.2 Line `with:` items
+
+```text
+WithItem =
+    InitBlock
+  | ThreadBlock
+  | OnBlock
+  | AtBlock
+  | Let
+  | Out
+  | Expr
+```
+
+Examples:
+
+```awft
 with:
-    on .a1:
+    init:
         ...
+
+    thread:
+        ...
+
+    thread motion:
+        ...
+        finally:
+            ...
+
+    on .release_focus:
+        ...
+
+    on input.SkipLine:
+        ...
+
+    at(0.42s):
+        ...
+
+    let x = ...
+
+    out value
 ```
 
-If global/object hook is needed, use top-level `hook`.
+### 16.3 Deleted forms
+
+Do not implement:
+
+```awft
+using ...
+state 'line focus drop = ...
+scope focus_fx until hook release_focus:
+cleanup on skip:
+hook release_focus:
+[hook release_focus]
+#[mark release_focus]
+```
 
 ---
 
-## 11. Current Arcweft implementation gaps
+## 17. Current implementation gaps in `Sanzentyo/arcweft`
 
-The following are concrete differences from the current repository.
-
-### 11.1 AST line options
+### 17.1 AST
 
 Current `LineOptions` has:
 
@@ -932,7 +1017,7 @@ style
 args
 ```
 
-It does not yet have:
+Needed additions:
 
 ```text
 look
@@ -942,59 +1027,53 @@ focus
 cleanup
 ```
 
-Add these to `LineOptions` and `LineOptionsInit`.
+Current `DialogueToken` has:
 
-### 11.2 Dialogue tokens
-
-Current `DialogueToken` has `Text`, `Raw`, `Tag`, `EndTag`, `Expr`, `Ruby`, and `Escape`.
-
-It does not yet have a structured mark token.
-
-Add:
-
-```rust
-DialogueToken::Mark(LineMark)
+```text
+Text
+Raw
+Tag
+EndTag
+Expr
+Ruby
+Escape
 ```
 
-or keep it as `Tag` but require a semantic lowering pass that recognizes `Tag { name: "mark" }`.
+Needed addition:
 
-Recommended: add `Mark`, because marker matching is semantic and should not be hidden in generic tags.
+```text
+Mark(LineMark)
+```
 
-### 11.3 Parser line options
+or a semantic pass that recognizes `Tag { name = "mark" }`.
 
-Current `parse_line_options` expects named options and reports unnamed line options as errors.
+Recommended: add `Mark`.
+
+### 17.2 Parser
 
 Needed changes:
 
 ```text
-- first positional option -> look
-- `face` compatibility alias may be deleted or rewritten to `look`
-- parse `focus = ...`
-- parse `cleanup = ...`
-- parse `stage = ...`
-- parse `portrait = ...`
-```
-
-### 11.4 Parser line plan items
-
-Current line-plan parsing handles existing plan items such as `out`, `let`, `cancel`, `at`, `start`, `together`, `memo`, assertions, and expression fallback.
-
-Needed changes:
-
-```text
-- add `init:`
-- add `thread name:`
-- add `finally:` inside thread
-- add `on trigger:`
+- first positional line option -> look
+- parse focus/cleanup/stage/portrait options
+- parse `[mark .name]`
+- parse generic `thread` in flow/statement/expression contexts
+- parse `init:`, `thread:`, `finally:`, `on ...:` inside line plans
 - remove local `hook name:`
-- remove `cleanup on ...:` from line plan grammar
+- remove `cleanup on ...:` as line-plan item
 ```
 
-### 11.5 Expression parser
+### 17.3 Expression parser
 
-`'line.focus` needs expression support.
+Needed expression support:
 
-Possible AST:
+```awft
+'line.focus
+'line.focus?
+'line.focus.main
+```
+
+Potential AST:
 
 ```rust
 Expr::LifetimePath {
@@ -1004,23 +1083,24 @@ Expr::LifetimePath {
 }
 ```
 
-Examples:
+Careful conflict:
 
 ```awft
-'line.focus
-'line.focus?
-'line.focus.main
+out 'label expr
+break 'label expr
+continue 'label
 ```
 
-Careful with existing label syntax such as `out 'label expr`. In expression position, apostrophe path is lifetime registry access. In control-transfer syntax, apostrophe before an identifier remains a label.
+In control-transfer statement position, apostrophe labels remain labels.  
+In expression position, apostrophe path is lifetime registry access.
 
-### 11.6 Type checker
+### 17.4 Checker
 
-Need new semantic checks:
+Needed checks:
 
 ```text
 - lifetime registry guaranteed-key analysis
-- Option typing for unproven keys
+- Option typing for unproven registry keys
 - MustDrop tracking
 - use-after-drop
 - double-drop
@@ -1030,84 +1110,117 @@ Need new semantic checks:
 - pending mark cleanup traversal
 ```
 
-### 11.7 Runtime / VM
+### 17.5 VM runtime
 
-Current design docs say Arcweft core is Sans I/O and emits `EffectRequest` / desired state, and that Flow/dialogue/choice/Need/effect emission are VM semantics.
+Needed runtime model:
 
-The new `thread:` model must be implemented as VM child fibers/tasks inside this Sans I/O core. It must not introduce direct OS threads or direct side effects in `arcweft-core`.
+```text
+- VM child task groups
+- line task group
+- deterministic effect merge
+- scoped thread finalization
+- cleanup policy execution
+- pending marker traversal
+```
+
+Core must remain Sans I/O: no direct OS/GPU/audio side effects.
 
 ---
 
-## 12. Required docs changes
-
-Update these docs.
+## 18. Required docs changes
 
 ### `docs/01-language/dialogue-character-methods-and-textbox.md`
 
-- Replace `face` canonical option with `look`.
-- Add `stage`, `portrait`, `focus`, `cleanup`.
-- Make `alice(.smile):` mean `alice(look = .smile):`.
-- Use `'line.focus`, not `line.focus`.
-- Delete local `[hook ...]` examples.
-- Use `[mark .name]` + `on .name:`.
+Update:
+
+```text
+- face -> look
+- add stage/portrait/focus/cleanup
+- use `'line.focus`, not `line.focus`
+- remove local `[hook ...]`
+- add `[mark .name]` + `on .name:`
+```
 
 ### `docs/01-language/dialogue-calls-scopes-cancellation.md`
 
-- Remove `stop voice fade=...`.
-- Use `voice_handle |> drop(stop_now)` or `voice_handle.stop(...)` depending on final API.
-- Add `init:`, `thread:`, `finally:`, `on`.
-- Remove `hook a1:`.
-- Remove `cleanup on skip:` from `with:` examples.
-- Move cleanup policy into line options or profile declarations.
+Update:
+
+```text
+- add `init:`
+- add `thread:`
+- add `finally:`
+- add `on ...:`
+- remove `hook a1:`
+- remove `cleanup on skip:`
+- move cleanup policy into line options/profiles
+```
 
 ### `docs/01-language/dialogue-control-tags-and-ruby.md`
 
-- Clearly separate `[]` tags and `#[...]` interpolation.
-- Add `[mark .name]`.
-- Delete `[hook name]` if present.
-- Keep `[call ...]` only if dialogue-safe side-effect tags remain part of the language.
-- Define escaping for literal `[mark ...]`.
+Update:
+
+```text
+- define `[mark .name]`
+- define `[]` as dialogue control tags
+- define `#[...]` as expression interpolation only
+- delete `[hook name]` local marker usage
+```
 
 ### `docs/02-runtime/core.md`
 
-- Add line task group model.
-- Add VM child task model for `thread:`.
-- State that thread outputs are normalized into deterministic `FrameOutput`.
-- State that core remains Sans I/O.
+Update:
+
+```text
+- add generic VM task group model
+- add scoped `thread`
+- state that `thread` outputs are deterministic effect requests
+- retain Sans I/O boundary
+```
 
 ### `docs/02-runtime/hooks-memoization.md`
 
-- Clarify distinction between top-level runtime hooks and line-local `on` handlers.
-- Do not treat line-local `on` as global HookTable entries unless lowering wants a scoped `HookRecord` variant.
-- Ensure line-local handlers cannot directly mutate state outside allowed outputs.
+Update:
+
+```text
+- distinguish top-level runtime hooks from line-local `on` handlers
+- do not treat line-local `on` as global HookTable entries unless lowered as scoped hook records
+```
 
 ### `docs/03-presentation/character-stage.md`
 
-- Distinguish stage look and portrait look.
-- Add `CharacterPatch` / `LookPatch` with `&`.
-- Add focus profiles.
-- Add Live2D stage axes / motions / params.
-- Replace `#` entity refs with `@` refs.
+Update:
+
+```text
+- separate stage look and portrait look
+- add `LookPatch` / `CharacterPatch`
+- add focus profile
+- add Live2D motion/param support
+- use @ refs, not # refs
+```
 
 ### `docs/03-presentation/audio.md`
 
-- Replace `play voice ...` with `voice(...)` / `alice.voice(...)`.
-- Replace `#voice`, `#bus`, `#bgm` with `@voice`, `@bus`, `@bgm`.
-- Clarify dialogue `voice = ...` vs standalone `voice(...)`.
+Update:
+
+```text
+- replace `play voice ...` with `voice(...)` / `alice.voice(...)`
+- replace # refs with @ refs
+- distinguish dialogue voice option from standalone voice playback
+```
 
 ---
 
-## 13. Edge cases
+## 19. Edge cases
 
-### 13.1 Mark in raw text
+### 19.1 Mark in raw text
 
 ```awft
 [raw][mark .x][/raw]
 ```
 
-This is text, not a marker.
+This is text, not a mark.
 
-### 13.2 Escaped mark
+### 19.2 Escaped mark
 
 ```awft
 \[mark .x]
@@ -1115,150 +1228,78 @@ This is text, not a marker.
 
 This is literal text.
 
-### 13.3 Marker inside interpolated expression
+### 19.3 Mark inside interpolation
 
 ```awft
-#[some_content_with_mark]
+#[some_content]
 ```
 
-Marks returned from runtime content are not static line marks unless explicitly typed as `ContentWithMarks` and accepted by localization/extraction tooling. Default: not allowed as static markers.
+Static marks inside runtime-generated content are not recognized unless the expression has an explicit `ContentWithMarks` type. Default: no static mark.
 
-### 13.4 Conditional marker text
+### 19.4 Localized text missing required mark
 
-If a mark exists only in conditional text, handlers depending on it must treat it as potentially pending or absent.
-
-Preferred: keep marks in statically authored text.
-
-### 13.5 Multiple locales
-
-Required marks must exist in all localized variants unless the handler is declared locale-optional.
+If source has:
 
 ```awft
-on .release_focus optional:
-    ...
+[mark .release_focus]
 ```
 
-This can be deferred; default should require marks across locales.
+and localized text omits it, fail or warn according to policy.
 
-### 13.6 Optional lifetime keys
+Recommended default:
 
-```awft
-'line.focus?
+```text
+error if mark is referenced by `on .release_focus` or `wait mark .release_focus`
 ```
 
-is `Option<FocusHandle>`.
+### 19.5 Handler without mark
 
-Unsafe:
+Error unless trigger is non-marker.
 
-```awft
-'line.focus |> drop
-```
+### 19.6 Duplicate mark
 
-if focus is conditional.
+Error by default.
 
-### 13.7 Dropping optional values
+### 19.7 Optional registry drop
 
-Allowed:
+Prefer explicit handling:
 
 ```awft
-'line.focus? |> drop
-```
-
-This should mean:
-
-```awft
-if let Some(v) = 'line.focus? {
-    v |> drop
+if let Some(f) = 'line.focus? {
+    f |> drop
 }
 ```
 
-But this implicit Option behavior may hide mistakes. Safer rule:
-
-```text
-drop(Option<T>) is allowed only when T: MustDrop and the call is explicitly written as `drop_optional`.
-```
-
-Recommended:
+Do not silently define `drop(Option<T>)` unless the function is named explicitly, e.g.:
 
 ```awft
 'line.focus? |> drop_optional
 ```
 
-### 13.8 Thread and Option
+### 19.8 Thread captures line key and cleanup drops it
 
-If a thread captures an optional handle:
+Unsafe unless shared/cancellable.
 
-```awft
-thread fx:
-    if let Some(f) = 'line.focus? {
-        f.request(...)
-    }
-```
+### 19.9 Detached thread captures line key
 
-The checker must ensure the handle cannot be dropped concurrently by another thread unless it is shared or the access is mediated.
+Error.
 
-### 13.9 Mark handler drops value while thread uses it
+### 19.10 `finally:` awaits unbounded Need
 
-```awft
-thread fx:
-    wait 1s
-    'line.focus.request(...)
+Error.
 
-on .release_focus:
-    'line.focus |> drop
-```
+### 19.11 `thread` in pure function
 
-This is unsafe unless `'line.focus` is a shared handle with cancellation-aware methods.
+Error unless function is effectful.
 
-Diagnostic:
+### 19.12 `thread` in `init:`
 
-```text
-error: thread `fx` may use `'line.focus` after handler `.release_focus` drops it
-help: move the handle into the thread and drop it in `finally:`
-help: or use a shared/cancellable handle
-```
-
-### 13.10 Cleanup visual/audio suppression
-
-Even if `visual = ignore` or `audio = ignore`, ownership cleanup still happens. The effect request emission is suppressed, not the logical drop.
-
-### 13.11 `finally:` starts new thread
-
-Disallow by default.
-
-```awft
-finally:
-    thread cleanup_fx:
-        ...
-```
-
-Diagnostic:
-
-```text
-error: `finally:` cannot spawn line-scoped threads
-```
-
-Allow only explicit detached tasks with capability.
-
-### 13.12 `finally:` awaits long Need
-
-Disallow unless bounded.
-
-```awft
-finally:
-    let r = await long_task()
-```
-
-Diagnostic:
-
-```text
-error: `finally:` cannot await unbounded work
-help: use a bounded cleanup request or detach an explicit task
-```
+Top-level `thread` declarations inside `with:` start after `init:`.  
+A nested `thread` expression inside `init:` should either be disallowed or scheduled after `init:` completes. Recommended: disallow nested line threads in `init:` for phase 1.
 
 ---
 
-## 14. Recommended final style
+## 20. Recommended source examples
 
 ### Simple
 
@@ -1304,7 +1345,7 @@ with:
         }
 ```
 
-### Concurrent behavior
+### Concurrent behavior in a line
 
 ```awft
 alice(.smile, voice = auto, focus = .soft, cleanup = .fast_skip):
@@ -1327,39 +1368,42 @@ with:
         'line.focus |> drop
 ```
 
-### Thread-owned handle
+### Flow-level generic thread
 
 ```awft
-alice(.smile, cleanup = .fast_skip):
-    聞いて。[mark .release_focus]
-with:
-    init:
-        let lease =
-            alice.stage.lease()
-            |> on_drop(release)
+flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+    thread preload_next:
+        asset.preload(@asset.bg.school.classroom_day)
+        alice.preload(look = .smile, voices = auto)
 
-    thread motion:
-        let lease = move lease
-        alice.stage.apply(.motion.nod)
-        wait mark .release_focus
-        alice.stage.apply(.stage.expr.smile)
+    bg(@asset.bg.school.classroom_day)
+    alice(.smile): おはよう。[p]
+}
+```
 
-        finally:
-            lease |> drop
+### Joinable thread expression
+
+```awft
+let score_task = thread compute_score {
+    route_score(state)
+}
+
+let score = await score_task
 ```
 
 ---
 
-## 15. Implementation order
+## 21. Implementation order
 
-1. Update docs to delete `[hook]` and local `hook`.
-2. Add `[mark .name]` to dialogue token model.
-3. Add `'line.*` lifetime registry expression syntax.
-4. Add `look`, `stage`, `portrait`, `focus`, `cleanup` to `LineOptions`.
-5. Add `init:`, `thread:`, `finally:`, and `on ...:` to line plan AST/parser.
-6. Add VM line task group model.
-7. Add cleanup profiles and line cleanup policy.
-8. Add typechecker pass for lifetime registry key guarantees and Option access.
-9. Add MustDrop/drop checker with typestate semantics.
-10. Add thread capture and concurrent-effect conflict checks.
-11. Update presentation/audio docs and resource IDs.
+1. Decide `spawn` migration strategy.
+2. Add generic `thread` AST and parser support.
+3. Add line-plan `init:`, `thread:`, `finally:`, `on ...:`.
+4. Add `[mark .name]` to dialogue text model.
+5. Add `'line.*` lifetime registry expression syntax.
+6. Add `look`, `stage`, `portrait`, `focus`, `cleanup` to `LineOptions`.
+7. Add VM task group model and scoped cleanup.
+8. Add cleanup profiles.
+9. Add typechecker pass for registry key guarantees and `Option`.
+10. Add MustDrop/drop checker with typestate semantics.
+11. Add thread capture and concurrent-effect conflict checks.
+12. Update docs listed above.
