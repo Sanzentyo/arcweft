@@ -320,28 +320,38 @@ Line plan statements are scoped to the line and cannot leak variables outward.
 
 `init` runs before reveal begins. `thread name` creates a line-scoped child task
 owned by the line task group; it is a Sans I/O runtime task, not an OS thread.
-`finally` is allowed only as the trailing cleanup section of a `thread`.
+Thread-local cleanup uses `defer { ... }`; line-wide cleanup uses a line-level
+`finally { ... }` item in the `with` block.
 Line-local events use `[mark .name]` in text and `on .name` in the line plan.
 
 ```awft
 alice.say(look=smile, focus=.soft)[
     今日は少しだけ、変な夢を見たんだ。[mark .release_focus][p]
 ]
-with:
-    init:
+with {
+    init {
         'line.focus.main <- acquire_focus()
+    }
 
-    on .release_focus:
+    on .release_focus {
         'line.focus |> drop
         out .Released
+    }
 
-    thread motion:
+    thread motion {
         wait mark .release_focus
         wait 0.35s
         alice.stage.face(worried)
-        finally {
+
+        defer {
             cleanup_motion()
         }
+    }
+
+    finally {
+        cleanup_line()
+    }
+}
 ```
 
 Line lifetime registry paths use the same lifetime sigil as scope labels:
@@ -351,8 +361,8 @@ registered, while `'line.focus?` is optional and returns an `Option`-like value.
 `'line.focus.main` become guaranteed after an assignment with `<-`.
 
 `cleanup` is a line option/profile. `cleanup on ...:` is not part of the line
-plan grammar; use `thread ... finally { ... }`, cancellation rules, or explicit
-drop operations.
+plan grammar; use `defer { ... }` inside scoped work, line-level
+`finally { ... }`, cancellation rules, or explicit drop operations.
 
 ---
 
@@ -557,7 +567,8 @@ Allowed in line plan blocks:
 
 ```text
 - init blocks
-- thread blocks with trailing finally cleanup
+- line-scoped `thread` blocks with scoped `defer` cleanup
+- line-level `finally` cleanup
 - line-local `on .mark:` handlers
 - `wait mark .name` and duration waits
 - line options

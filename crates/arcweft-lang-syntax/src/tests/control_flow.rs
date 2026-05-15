@@ -1147,8 +1147,12 @@ flow @flow.borrow borrow {
 }
 
 #[test]
-fn typecheck_rejects_borrow_across_yield_spawn_and_defer_boundaries() {
-    for boundary in ["yield frame", "spawn load_avatar()", "defer cleanup()"] {
+fn typecheck_rejects_borrow_across_yield_thread_and_defer_boundaries() {
+    for boundary in [
+        "yield frame",
+        "thread load_avatar { load_avatar() }",
+        "defer cleanup()",
+    ] {
         let tree = parse_ok(format!(
             r"
 flow @flow.borrow borrow {{

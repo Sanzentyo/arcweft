@@ -301,7 +301,9 @@ flow @flow.opening opening {
         thread motion:
             wait 0.35s
             tick_motion()
-            finally { cleanup_motion() }
+            defer { cleanup_motion() }
+        finally:
+            cleanup_line()
 }
 ",
     );
@@ -320,12 +322,9 @@ flow @flow.opening opening {
     assert!(matches!(&plan.items()[1], LinePlanItem::On { .. }));
     assert!(matches!(
         &plan.items()[2],
-        LinePlanItem::Thread {
-            name: Some(name),
-            body,
-            finally,
-        } if name == "motion" && body.len() == 2 && finally.len() == 1
+        LinePlanItem::Thread(thread) if thread.name() == Some("motion") && thread.body().len() == 3
     ));
+    assert!(matches!(&plan.items()[3], LinePlanItem::Finally(body) if body.len() == 1));
 
     let hir = lower_to_hir(&tree).expect("line plan fixture lowers");
     validate_typecheck_ready(&hir).expect("line plan fixture is typecheck-ready");
@@ -337,9 +336,108 @@ flow @flow.opening opening {
             .with_symbol(".Released", TypeKind::Named("LineExit".to_owned()))
             .with_function("acquire_focus", TypeKind::Named("FocusHandle".to_owned()))
             .with_function("tick_motion", TypeKind::Unit)
-            .with_function("cleanup_motion", TypeKind::Unit),
+            .with_function("cleanup_motion", TypeKind::Unit)
+            .with_function("cleanup_line", TypeKind::Unit),
     )
     .expect("line plan fixture typechecks");
+}
+
+#[test]
+fn parses_flat_line_plan_thread_defer_and_finally() {
+    let tree = parse_ok(
+        r"
+flow @flow.flat flat {
+=== line alice(.smile, focus = .soft) ===
+聞いて。[mark .release_focus]
+
+=== with ===
+=== thread motion ===
+wait 0.35s
+=== defer ===
+cleanup_motion()
+=== /defer ===
+=== /thread ===
+
+=== on .release_focus ===
+'line.focus |> drop
+=== /on ===
+
+=== finally ===
+cleanup_line()
+=== /finally ===
+=== /with ===
+=== /line ===
+}
+",
+    );
+
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
+        panic!("expected flat speaker line");
+    };
+    let plan = line.plan().expect("flat line plan");
+    assert_eq!(plan.style(), BlockStyle::Flat);
+    assert!(
+        matches!(&plan.items()[0], LinePlanItem::Thread(thread) if thread.name() == Some("motion"))
+    );
+    assert!(matches!(&plan.items()[1], LinePlanItem::On { .. }));
+    assert!(matches!(&plan.items()[2], LinePlanItem::Finally(body) if body.len() == 1));
+}
+
+#[test]
+fn parses_flat_flow_thread_and_scope_blocks() {
+    let tree = parse_ok(
+        r"
+flow @flow.flat flat {
+=== thread detached preload_next ===
+asset.preload(@asset.bg.school_classroom)
+=== /thread ===
+
+=== scope ===
+let tmp = compute()
+use_tmp(tmp)
+=== /scope ===
+}
+",
+    );
+
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    assert!(
+        matches!(&flow.body()[0], FlowItem::Stmt(Stmt::Thread(thread)) if thread.is_detached() && thread.name() == Some("preload_next"))
+    );
+    assert!(matches!(&flow.body()[1], FlowItem::Scope(scope) if scope.name().is_none()));
+}
+
+#[test]
+fn rejects_removed_spawn_and_malformed_flat_fences() {
+    for (source, message) in [
+        (
+            "flow @flow.x x { spawn load_avatar() }",
+            "`spawn` was removed",
+        ),
+        (
+            "flow @flow.x x {\n=== thread worker ===\nfoo()\n=== /scope ===\n}",
+            "flat fence close mismatch",
+        ),
+        (
+            "flow @flow.x x {\n=== line alice ===\nhello\n}",
+            "missing close fence `=== /line ===`",
+        ),
+        (
+            "flow @flow.x x {\n=== ===\nfoo()\n=== / ===\n}",
+            "unsupported flat fence head",
+        ),
+    ] {
+        let errors = parse_errors(source);
+        assert!(
+            errors.iter().any(|error| error.message().contains(message)),
+            "expected `{message}` in {errors:?}"
+        );
+    }
 }
 
 #[test]

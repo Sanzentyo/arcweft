@@ -236,7 +236,7 @@ CameraPreview(#capture.face_camera)
     .agent_target(#ui.camera_preview)
 ```
 
-For zero-copy or borrowed frame paths, lifetimes follow the existing borrow rules: `VideoFrameRef<'frame>` cannot cross `await`, `yield`, or `spawn` boundaries. If a frame must outlive the callback/frame scope, it must become an owned frame handle.
+For zero-copy or borrowed frame paths, lifetimes follow the existing borrow rules: `VideoFrameRef<'frame>` cannot cross `await`, `yield`, or `thread` boundaries. If a frame must outlive the callback/frame scope, it must become an owned frame handle.
 
 ## Activity integration
 

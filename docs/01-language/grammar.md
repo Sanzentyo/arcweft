@@ -164,11 +164,27 @@ DialogueContent:= TextAndDialogueTags*
 LinePlanAttach := 'with' Block
                 | 'with' ':' Newline IndentedItems
                 | 'with' ':' LinePlanItem
-LinePlanItem   := LetStmt | TimedCue | CancelRule | OutStmt | ScopeStmt | ExprStmt
+                | FlatWith
+FlatWith       := '=== with ===' FlatLinePlanItem* '=== /with ==='
+LinePlanItem   := InitBlock | ThreadBlock | DeferBlock | OnBlock | FinallyBlock
+                | LetStmt | TimedCue | CancelRule | OutStmt | ScopeStmt | ExprStmt
+InitBlock      := 'init' Block | 'init' ':' Newline IndentedItems
+ThreadBlock    := 'thread' ThreadModifier? Ident? Block
+                | 'thread' ThreadModifier? Ident? ':' Newline IndentedItems
+ThreadModifier := 'detached'
+DeferBlock     := 'defer' Block | 'defer' ':' Newline IndentedItems
+OnBlock        := 'on' Expr Block | 'on' Expr ':' Newline IndentedItems
+FinallyBlock   := 'finally' Block | 'finally' ':' Newline IndentedItems
 OutStmt        := 'out' Expr
+FlatLine       := '=== line' DialogueCallee '===' DialogueContent FlatWith? '=== /line ==='
+FlatThread     := '=== thread' ThreadModifier? Ident? '===' Item* '=== /thread ==='
+FlatDefer      := '=== defer ===' Item* '=== /defer ==='
+FlatScope      := '=== scope' Ident? '===' Item* '=== /scope ==='
 ```
 
-`with:` is indentation sugar for `with { ... }`. A bare `{ ... }` after a dialogue content block is an unnamed `scope` statement, not a line plan.
+`with:` is indentation sugar for `with { ... }`. Flat fences are authoring
+sugar and require explicit closing fences. A bare `{ ... }` after a dialogue
+content block is an unnamed `scope` statement, not a line plan.
 
 In generic expression parsing, `target[expr]` is always an index/postfix
 expression. Dialogue content brackets are recognized only in dialogue-capable

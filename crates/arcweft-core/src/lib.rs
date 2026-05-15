@@ -41,15 +41,20 @@ pub struct RuntimeDiagnostic {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LineTaskGroup {
     pub children: Vec<LineChildTask>,
+    pub finally: Vec<LineEffectRequest>,
     pub cleanup: LineCleanupPolicy,
 }
 
-/// A child task declared by `thread name:` inside a line plan.
+/// A child task declared by `thread name { ... }` inside a line plan.
+///
+/// Thread-local cleanup is modeled as a scoped defer stack, not as line-level
+/// `finally`. That keeps cancellation semantics identical for flow, handler,
+/// and line-plan threads.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LineChildTask {
     pub name: Option<String>,
     pub body: Vec<LineEffectRequest>,
-    pub finally: Vec<LineEffectRequest>,
+    pub defer_stack: Vec<Vec<LineEffectRequest>>,
 }
 
 /// Declarative cleanup policy applied when the line scope exits.

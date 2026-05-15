@@ -204,11 +204,14 @@ Syntax parser:
   stable per-flow/speaker/scope ordinal such as
   `say.opening.narrator.rain.001`, and omitted `text_key` is derived from the
   normalized `say...` line ID.
-- Line plans preserve `init`, `thread name` / trailing `finally`, local
-  `on .mark` handlers, `wait mark .name`, duration waits, and `'line.* <- expr`
-  lifetime registry writes as structured statements/items. The current checker
-  validates guaranteed and optional lifetime reads at a minimal level and
-  reports double-drop/use-after-drop cases for line registry keys.
+- Line plans preserve `init`, generic `thread name` blocks, scoped
+  `defer { ... }`, line-level `finally`, local `on .mark` handlers,
+  `wait mark .name`, duration waits, and `'line.* <- expr` lifetime registry
+  writes as structured statements/items. The parser accepts canonical
+  `with { ... }`, indentation sugar `with:`, and flat `=== with ===` fences
+  over the same model; `spawn` is rejected in favor of `thread`. The current
+  checker validates guaranteed and optional lifetime reads at a minimal level
+  and reports double-drop/use-after-drop cases for line registry keys.
 - Dialogue callee checking preserves the documented callee kind: `alice.say()[...]` resolves through `alice: Ref<Character>`, delimited character refs such as `@<character.alice>.say()[...]` generate the same speaker slug, and speaker presets such as `alice2(voice=auto):` / `alice2(voice=auto)[...]` resolve as callable `SpeakerPreset` values rather than being forced through `.say(...)`. Content-call line plans can attach on a following `with { ... }` / `with:` block or on the same line as `with { ... }` / `with: out ...`; line-result bindings such as `let handles = alice.say()[...] with: out (...)` and multiline `let handles = alice.say(...)[ ... ]` followed by `with:` preserve the plan on `Expr::DialogueCall` for symbol collection, HIR lowering, and type checking.
 - Bare scopes parse as `scope { ... }`, the name-omitted sugar for `scope name { ... }`. Bare `{ ... }` blocks in flow bodies normalize one step further to that unnamed `scope { ... }` form. A trailing bare block after a dialogue content call, such as `alice.say()[...] { ... }`, is not attached as a line plan; line plans still require `with { ... }` or `with:`.
 - Type checking treats both bare `scope { ... }` blocks and named `scope name { ... }` blocks as local scopes, so temporary locals created inside them cannot be read after the block exits. Named scopes still contribute to generated relative IDs while the lowerer is inside that scope; unnamed scopes do not add an ID path segment.
@@ -240,7 +243,7 @@ Syntax parser:
 - `lint_id_policy` provides the first syntax-level ID policy pass. It reports
   accepted-but-discouraged deep dot-run relative IDs such as `@...suffix` and
   obvious module/flow tail mismatches.
-- Typed let patterns and borrow blocks preserve borrow types, and the checker rejects non-`'static` borrowed values crossing `await`, `yield`, `spawn`, and `defer` suspension boundaries.
+- Typed let patterns and borrow blocks preserve borrow types, and the checker rejects non-`'static` borrowed values crossing `await`, `yield`, `thread`, and `defer` suspension boundaries.
 - Parser/HIR integration tests live under `crates/arcweft-lang-syntax/src/tests/`, keeping the public crate surface in `src/lib.rs` separate from the syntax coverage suite.
 
 ## Deferred

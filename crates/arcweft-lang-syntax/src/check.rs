@@ -454,6 +454,17 @@ impl TypeChecker<'_> {
         if let Some(plan) = dialogue.plan() {
             self.line_label_stack.push(plan.label().map(str::to_owned));
             self.line_mark_stack.push(marks);
+            if plan
+                .items()
+                .iter()
+                .filter(|item| matches!(item, LinePlanItem::Finally(_)))
+                .count()
+                > 1
+            {
+                self.errors.push(TypeCheckError::new(
+                    "duplicate line `finally` block; combine finalizers into one block".to_owned(),
+                ));
+            }
             for item in plan.items() {
                 self.check_line_plan_item(item);
             }
@@ -598,7 +609,19 @@ impl TypeChecker<'_> {
             Stmt::Goto(expr) => {
                 self.expect_expr_type(expr, &TypeKind::Ref(EntityKind::Flow), "goto destination");
             }
-            Stmt::Spawn(expr) | Stmt::Defer(expr) | Stmt::Yield(expr) => {
+            Stmt::Thread(thread) => {
+                self.reject_active_borrows("thread suspension boundary");
+                for stmt in thread.body() {
+                    self.check_stmt(stmt);
+                }
+            }
+            Stmt::DeferBlock(statements) => {
+                self.reject_active_borrows("defer cleanup boundary");
+                for stmt in statements {
+                    self.check_stmt(stmt);
+                }
+            }
+            Stmt::Defer(expr) | Stmt::Yield(expr) => {
                 self.reject_active_borrows("suspension boundary");
                 self.check_expr(expr);
             }
@@ -1163,19 +1186,14 @@ impl TypeChecker<'_> {
 
     fn check_line_plan_item(&mut self, item: &LinePlanItem) -> Option<TypeKind> {
         match item {
-            LinePlanItem::Init(statements) => {
-                for stmt in statements {
-                    self.check_stmt(stmt);
-                }
-                None
+            LinePlanItem::Init(statements)
+            | LinePlanItem::Finally(statements)
+            | LinePlanItem::Stmt(Stmt::DeferBlock(statements)) => {
+                self.check_line_plan_statements(statements)
             }
-            LinePlanItem::Thread { body, finally, .. } => {
-                for stmt in body {
-                    self.check_stmt(stmt);
-                }
-                for stmt in finally {
-                    self.check_stmt(stmt);
-                }
+            LinePlanItem::Thread(thread) => self.check_line_plan_statements(thread.body()),
+            LinePlanItem::Stmt(stmt) => {
+                self.check_stmt(stmt);
                 None
             }
             LinePlanItem::On { trigger, body } => {
@@ -1259,6 +1277,13 @@ impl TypeChecker<'_> {
                 None
             }
         }
+    }
+
+    fn check_line_plan_statements(&mut self, statements: &[Stmt]) -> Option<TypeKind> {
+        for stmt in statements {
+            self.check_stmt(stmt);
+        }
+        None
     }
 
     fn check_line_on_trigger(&mut self, trigger: &Expr) {

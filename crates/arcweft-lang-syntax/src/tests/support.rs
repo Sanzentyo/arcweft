@@ -1,5 +1,5 @@
 pub(super) use crate::{
-    AwaitBranchKind, BinaryOp, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
+    AwaitBranchKind, BinaryOp, BlockStyle, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
     ComputationBlockKind, ContractClause, DialogueToken, EntityDeclKind, EntityKind, Expr,
     FlowItem, FlowKind, FunctionKind, HirFlowItem, HirTopLevelDecl, ImplMember, Item, LinePlanItem,
     Literal, NameRegistry, Pattern, Placeholder, SelectBranchHead, Stmt, SymbolUseKind,

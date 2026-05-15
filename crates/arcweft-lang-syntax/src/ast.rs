@@ -616,7 +616,10 @@ pub enum Stmt {
         expr: Expr,
     },
     Goto(Expr),
-    Spawn(Expr),
+    /// `thread name { ... }` / `thread name:` scoped VM child task.
+    Thread(ThreadBlock),
+    /// `defer { ... }` cleanup block registered on the current runtime scope.
+    DeferBlock(Vec<Stmt>),
     Defer(Expr),
     Yield(Expr),
     Panic(Expr),
@@ -694,6 +697,20 @@ pub enum Stmt {
     Raw(String),
 }
 
+/// A scoped VM child task owned by the nearest runtime scope.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ThreadBlock {
+    modifiers: Vec<ThreadModifier>,
+    name: Option<String>,
+    body: Vec<Stmt>,
+}
+
+/// Modifier attached to a `thread` block.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ThreadModifier {
+    Detached,
+}
+
 /// Target accepted by a structured `wait` statement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WaitTarget {
@@ -767,6 +784,44 @@ impl RecordPatternField {
 
     pub const fn pattern(&self) -> &Pattern {
         &self.pattern
+    }
+}
+
+impl ThreadBlock {
+    pub(crate) fn new(
+        modifiers: Vec<ThreadModifier>,
+        name: Option<String>,
+        body: Vec<Stmt>,
+    ) -> Self {
+        Self {
+            modifiers,
+            name,
+            body,
+        }
+    }
+
+    pub fn modifiers(&self) -> &[ThreadModifier] {
+        &self.modifiers
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn body(&self) -> &[Stmt] {
+        &self.body
+    }
+
+    pub fn is_detached(&self) -> bool {
+        self.modifiers.contains(&ThreadModifier::Detached)
+    }
+}
+
+impl ThreadModifier {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Detached => "detached",
+        }
     }
 }
 
@@ -1029,6 +1084,7 @@ pub struct LinePlan {
 pub enum BlockStyle {
     Brace,
     Indent,
+    Flat,
 }
 
 /// Item allowed inside a line plan.
@@ -1036,17 +1092,15 @@ pub enum BlockStyle {
 pub enum LinePlanItem {
     /// `init { ... }` / `init:` setup statements that run before reveal.
     Init(Vec<Stmt>),
-    /// `thread name { ... finally { ... } }` line-scoped child task.
-    Thread {
-        name: Option<String>,
-        body: Vec<Stmt>,
-        finally: Vec<Stmt>,
-    },
+    /// `thread name { ... }` child task scoped to this line.
+    Thread(ThreadBlock),
     /// `on .mark { ... }` line-local mark/event handler.
     On {
         trigger: Expr,
         body: Vec<Stmt>,
     },
+    /// `finally { ... }` line-final block that runs once during line cleanup.
+    Finally(Vec<Stmt>),
     Option {
         name: String,
         value: Expr,
@@ -1055,6 +1109,8 @@ pub enum LinePlanItem {
         pattern: Pattern,
         expr: Expr,
     },
+    /// Statement item such as `defer { ... }` preserved in a line plan.
+    Stmt(Stmt),
     Out(Expr),
     CancelRule(CancelRuleSyntax),
     TimedCue {

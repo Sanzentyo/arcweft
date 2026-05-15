@@ -489,7 +489,6 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         Stmt::Let { expr, .. }
         | Stmt::Return(expr)
         | Stmt::Goto(expr)
-        | Stmt::Spawn(expr)
         | Stmt::Defer(expr)
         | Stmt::Yield(expr)
         | Stmt::Panic(expr)
@@ -530,9 +529,9 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
                 format!("loop expression with {} body items", block.body().len()),
             ));
         }
-        Stmt::LetAwait { await_with, .. } => {
-            collect_unlowered_await_binding(await_with, uses);
-        }
+        Stmt::LetAwait { await_with, .. } => collect_unlowered_await_binding(await_with, uses),
+        Stmt::Thread(thread) => collect_stmt_block(thread.body(), uses),
+        Stmt::DeferBlock(statements) => collect_stmt_block(statements, uses),
         Stmt::Break {
             expr: Some(expr), ..
         }
@@ -642,15 +641,15 @@ fn collect_stmt_match(
 
 fn collect_line_plan_item(item: &LinePlanItem, uses: &mut Vec<SymbolUse>) {
     match item {
-        LinePlanItem::Init(statements) => collect_stmt_block(statements, uses),
-        LinePlanItem::Thread { body, finally, .. } => {
-            collect_stmt_block(body, uses);
-            collect_stmt_block(finally, uses);
+        LinePlanItem::Init(statements) | LinePlanItem::Finally(statements) => {
+            collect_stmt_block(statements, uses);
         }
+        LinePlanItem::Thread(thread) => collect_stmt_block(thread.body(), uses),
         LinePlanItem::On { trigger, body } => {
             collect_expr(trigger, uses);
             collect_stmt_block(body, uses);
         }
+        LinePlanItem::Stmt(stmt) => collect_stmt(stmt, uses),
         LinePlanItem::Option { value, .. }
         | LinePlanItem::Let { expr: value, .. }
         | LinePlanItem::Out(value) => collect_expr(value, uses),

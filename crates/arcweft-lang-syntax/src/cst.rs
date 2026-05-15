@@ -163,6 +163,8 @@ pub(crate) enum CstStructuredFlowBlockKind {
     While,
     For,
     Select,
+    Thread,
+    Defer,
     Borrow,
     SourceLocale,
     BareScope,
@@ -704,13 +706,17 @@ fn classify_structured_flow_block(trimmed: &str) -> Option<CstStructuredFlowBloc
         Some(CstStructuredFlowBlockKind::For)
     } else if trimmed.starts_with("select") {
         Some(CstStructuredFlowBlockKind::Select)
+    } else if trimmed.starts_with("thread ") || matches!(trimmed, "thread" | "thread:") {
+        Some(CstStructuredFlowBlockKind::Thread)
+    } else if trimmed.starts_with("defer ") || matches!(trimmed, "defer" | "defer:") {
+        Some(CstStructuredFlowBlockKind::Defer)
     } else if trimmed.starts_with("borrow ") {
         Some(CstStructuredFlowBlockKind::Borrow)
     } else if trimmed.starts_with("source locale ") {
         Some(CstStructuredFlowBlockKind::SourceLocale)
     } else if trimmed.starts_with('{') {
         Some(CstStructuredFlowBlockKind::BareScope)
-    } else if trimmed.starts_with("scope ") {
+    } else if trimmed.starts_with("scope ") || matches!(trimmed, "scope" | "scope:") {
         Some(CstStructuredFlowBlockKind::Scope)
     } else {
         None
@@ -818,7 +824,7 @@ fn is_typed_stmt(trimmed: &str) -> bool {
                 | "return"
                 | "out"
                 | "goto"
-                | "spawn"
+                | "thread"
                 | "defer"
                 | "yield"
                 | "panic"

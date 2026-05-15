@@ -19,17 +19,18 @@ mod text;
 mod types;
 
 pub use ast::{
-    Attribute, AwaitBranch, AwaitBranchKind, BorrowBlock, CallableItem, CallableKind, ChoiceAction,
-    ChoiceBlock, ChoiceItem, ChoiceMatchArm, ChoiceOption, ChoicePlan, ChoicePlanItem, ContentCall,
-    ContractClause, DialogueDefaultOption, DialogueDefaultsItem, DialogueToken, DocBlock,
-    EntityDeclItem, EntityDeclKind, EntityRef, EnumItem, EnumVariant, ExternModItem, Flow,
-    FlowItem, FlowKind, ForBlock, FunctionItem, FunctionKind, HookItem, IfBlock, IfLetBlock,
-    ImplItem, ImplMember, Item, LineArg, LineOptions, LinePlan, LinePlanItem, LoopBlock, MatchArm,
-    MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RecordPatternField, ScenarioCommand,
-    ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceItem,
-    SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField, StructItem,
-    TextRange, TraitItem, TraitMember, TypeAliasItem, TypedSyntaxTree, UseItem,
-    VariantPatternPayload, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    Attribute, AwaitBranch, AwaitBranchKind, BlockStyle, BorrowBlock, CallableItem, CallableKind,
+    ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceMatchArm, ChoiceOption, ChoicePlan,
+    ChoicePlanItem, ContentCall, ContractClause, DialogueDefaultOption, DialogueDefaultsItem,
+    DialogueToken, DocBlock, EntityDeclItem, EntityDeclKind, EntityRef, EnumItem, EnumVariant,
+    ExternModItem, Flow, FlowItem, FlowKind, ForBlock, FunctionItem, FunctionKind, HookItem,
+    IfBlock, IfLetBlock, ImplItem, ImplMember, Item, LineArg, LineOptions, LinePlan, LinePlanItem,
+    LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern, RecordPatternField,
+    ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
+    SourceItem, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StructField,
+    StructItem, TextRange, ThreadBlock, ThreadModifier, TraitItem, TraitMember, TypeAliasItem,
+    TypedSyntaxTree, UseItem, VariantPatternPayload, Visibility, WhileBlock, WhileLetBlock,
+    WikiLink,
 };
 pub use check::{
     EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,

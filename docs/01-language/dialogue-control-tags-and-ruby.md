@@ -34,6 +34,10 @@ alice.say(voice=auto)[
 
 Only in those text regions, and in typed `fn(args)[content]` content blocks whose declared content type is dialogue/rich text, are `[...]`, `[/...]`, and `#[...]` interpreted as dialogue markup. In normal typed code, brackets keep their normal meaning.
 
+Inside a flat-fence `=== line ... ===` block, a physical text line beginning
+with `===` is parsed as a fence. Escape it as `\===` when the literal text
+must start with three equals signs.
+
 ---
 
 ## Tag families

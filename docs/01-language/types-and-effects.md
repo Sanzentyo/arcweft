@@ -67,7 +67,7 @@ let bg = try await asset.image(@asset.bg.room) with {
 - `await`
 - `yield frame`
 - `select`
-- `spawn`
+- `thread`
 - `defer`
 - `lazy let` capture
 

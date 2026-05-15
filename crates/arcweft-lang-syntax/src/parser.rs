@@ -10,8 +10,9 @@ use crate::ast::{
     MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, RawItem, RelativeId, RelativeIdSpelling,
     ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
     SourceItem, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StmtMatchArm,
-    StructField, StructItem, TextRange, TraitItem, TraitMember, TypeAliasItem, TypedSyntaxTree,
-    UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    StructField, StructItem, TextRange, ThreadBlock, ThreadModifier, TraitItem, TraitMember,
+    TypeAliasItem, TypedSyntaxTree, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock,
+    WikiLink,
 };
 use crate::cst::{
     CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstStructuredFlowBlockKind,
@@ -63,6 +64,13 @@ pub struct RecoverySuggestion {
 enum OptionalLabel {
     None,
     Some(String),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct FlatFence<'a> {
+    kind: &'a str,
+    head: &'a str,
+    close: bool,
 }
 
 #[derive(Default)]
@@ -1188,6 +1196,9 @@ impl Parser {
         if let Some(item) = self.parse_line_flow_item(&line, trimmed) {
             return Some(item);
         }
+        if let Some(item) = self.parse_flat_flow_item(&line, trimmed) {
+            return Some(item);
+        }
         if let Some(item) = self.parse_content_call_or_speaker_line() {
             return Some(item);
         }
@@ -1220,6 +1231,17 @@ impl Parser {
     }
 
     fn parse_line_flow_item(&mut self, line: &CstLine, trimmed: &str) -> Option<FlowItem> {
+        if trimmed.starts_with("spawn ") {
+            self.push_error(
+                TextRange::new(line.start, line.end),
+                "`spawn` was removed; use `thread` or `thread detached`",
+                ["thread { ... }", "thread detached { ... }"],
+                Some(trimmed),
+                ["rewrite this unstructured task as a scoped thread"],
+            );
+            self.index += 1;
+            return Some(FlowItem::Raw(trimmed.to_owned()));
+        }
         if trimmed.starts_with('@') && !trimmed.contains('[') {
             let message = if trimmed.starts_with("@choice") {
                 "`@choice` is not valid Arcweft syntax"
@@ -1261,6 +1283,119 @@ impl Parser {
         is_await_with_head(trimmed)
             .then(|| self.parse_await_flow_item(line, trimmed))
             .flatten()
+    }
+
+    fn parse_flat_flow_item(&mut self, line: &CstLine, trimmed: &str) -> Option<FlowItem> {
+        let fence = parse_flat_fence(trimmed)?;
+        if fence.close {
+            self.push_error(
+                TextRange::new(line.start, line.end),
+                "flat close fence has no matching open fence",
+                ["=== kind ==="],
+                Some(trimmed),
+                ["remove this close fence or add the missing open fence"],
+            );
+            self.index += 1;
+            return Some(FlowItem::Raw(trimmed.to_owned()));
+        }
+        match fence.kind {
+            "line" => Some(self.parse_flat_line(line, fence.head)),
+            "thread" => {
+                let body = self.take_flat_block_body("thread", line.start);
+                let head = format!("thread {}", fence.head).trim().to_owned();
+                Some(FlowItem::Stmt(Stmt::Thread(parse_thread_block(
+                    &head, &body,
+                ))))
+            }
+            "defer" => {
+                let body = self.take_flat_block_body("defer", line.start);
+                Some(FlowItem::Stmt(Stmt::DeferBlock(parse_stmt_lines(&body))))
+            }
+            "scope" => {
+                let body = self.take_flat_block_body("scope", line.start);
+                let name = nonempty_string(fence.head.trim());
+                let items = self.parse_flow_body(&body, line.start);
+                Some(FlowItem::Scope(ScopeBlock::new(
+                    name,
+                    items,
+                    TextRange::new(line.start, self.previous_end()),
+                )))
+            }
+            _ => {
+                self.push_error(
+                    TextRange::new(line.start, line.end),
+                    "unsupported flat fence head in flow body",
+                    ["line", "thread", "defer", "scope"],
+                    Some(trimmed),
+                    ["use a supported flat block head"],
+                );
+                self.index += 1;
+                Some(FlowItem::Raw(trimmed.to_owned()))
+            }
+        }
+    }
+
+    fn parse_flat_line(&mut self, line: &CstLine, head: &str) -> FlowItem {
+        self.index += 1;
+        let mut raw_content = String::new();
+        let mut plan = None;
+        let mut closed = false;
+        while self.index < self.events.len() {
+            let current = self.current().clone();
+            let trimmed = current.text.trim();
+            if let Some(fence) = parse_flat_fence(trimmed) {
+                if fence.close {
+                    if fence.kind != "line" {
+                        self.push_flat_close_mismatch("line", &current);
+                    }
+                    self.index += 1;
+                    closed = true;
+                    break;
+                }
+                if fence.kind == "with" {
+                    let body = self.take_flat_block_body("with", current.start);
+                    plan = Some(parse_line_plan_body(
+                        BlockStyle::Flat,
+                        &body,
+                        TextRange::new(current.start, self.previous_end()),
+                    ));
+                    continue;
+                }
+            }
+            if !raw_content.is_empty() {
+                raw_content.push('\n');
+            }
+            let text = current.text.trim_end();
+            if let Some(rest) = current.text.trim_start().strip_prefix("\\===") {
+                let leading = current.text.len() - current.text.trim_start().len();
+                raw_content.push_str(&current.text[..leading]);
+                raw_content.push_str("===");
+                raw_content.push_str(rest.trim_end());
+            } else {
+                raw_content.push_str(text);
+            }
+            self.index += 1;
+        }
+        if !closed {
+            self.errors.push(simple_error(
+                line.start,
+                line.end.saturating_sub(line.start),
+                "missing close fence `=== /line ===`",
+                "=== /line ===",
+            ));
+        }
+        let (speaker, args) = split_call_head(head.trim());
+        FlowItem::SpeakerLine(SpeakerLine::new(
+            speaker,
+            parse_line_options(args.as_deref(), line.start, &mut self.errors),
+            DialogueContent::new(
+                raw_content.clone(),
+                parse_dialogue_tokens(&raw_content),
+                TextRange::new(line.start, self.previous_end()),
+            ),
+            plan,
+            TextRange::new(line.start, self.previous_end()),
+        ))
     }
 
     fn reject_legacy_scenario_call(&mut self, trimmed: &str, range: TextRange) -> bool {
@@ -1327,6 +1462,8 @@ impl Parser {
             CstStructuredFlowBlockKind::While => self.parse_while_block().map(FlowItem::While),
             CstStructuredFlowBlockKind::For => self.parse_for_block().map(FlowItem::For),
             CstStructuredFlowBlockKind::Select => self.parse_select_block().map(FlowItem::Select),
+            CstStructuredFlowBlockKind::Thread => self.parse_thread_flow_stmt(),
+            CstStructuredFlowBlockKind::Defer => self.parse_defer_flow_stmt(),
             CstStructuredFlowBlockKind::Borrow => {
                 self.parse_borrow_block().map(FlowItem::BorrowBlock)
             }
@@ -1884,6 +2021,18 @@ impl Parser {
 
     fn parse_scope_block(&mut self) -> Option<ScopeBlock> {
         let start_line = self.current().clone();
+        if start_line.text.trim().ends_with(':') {
+            self.index += 1;
+            let body = self.take_indented_await_body(indentation(&start_line.text) + 1);
+            let head = start_line.text.trim().trim_end_matches(':').trim();
+            let name = parse_scope_head(head)?.as_option().map(str::to_owned);
+            let body = self.parse_flow_body(&body, start_line.start + head.len());
+            return Some(ScopeBlock::new(
+                name,
+                body,
+                TextRange::new(start_line.start, self.previous_end()),
+            ));
+        }
         let (head, body, end, ok) = self.take_brace_block();
         if !ok {
             self.push_error(
@@ -1903,6 +2052,59 @@ impl Parser {
             body,
             TextRange::new(start_line.start, end),
         ))
+    }
+
+    fn parse_thread_flow_stmt(&mut self) -> Option<FlowItem> {
+        let start_line = self.current().clone();
+        let trimmed = start_line.text.trim();
+        if trimmed.ends_with(':') {
+            self.index += 1;
+            let body = self.take_indented_await_body(indentation(&start_line.text) + 1);
+            let head = trimmed.trim_end_matches(':').trim();
+            let thread = parse_thread_block(head, &body);
+            return Some(FlowItem::Stmt(Stmt::Thread(thread)));
+        }
+        let (head, body, _, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing thread",
+                ["}"],
+                Some(trimmed),
+                ["insert a closing `}` for the thread block"],
+            );
+            return None;
+        }
+        Some(FlowItem::Stmt(Stmt::Thread(parse_thread_block(
+            head.trim(),
+            &body,
+        ))))
+    }
+
+    fn parse_defer_flow_stmt(&mut self) -> Option<FlowItem> {
+        let start_line = self.current().clone();
+        let trimmed = start_line.text.trim();
+        if trimmed.ends_with(':') || trimmed == "defer" {
+            self.index += 1;
+            let body = self.take_indented_await_body(indentation(&start_line.text) + 1);
+            return Some(FlowItem::Stmt(Stmt::DeferBlock(parse_stmt_lines(&body))));
+        }
+        if trimmed.starts_with("defer ") && !trimmed.contains('{') {
+            self.index += 1;
+            return Some(FlowItem::Stmt(parse_stmt(trimmed)));
+        }
+        let (head, body, _, ok) = self.take_brace_block();
+        if ok && head.trim() == "defer" {
+            return Some(FlowItem::Stmt(Stmt::DeferBlock(parse_stmt_lines(&body))));
+        }
+        self.push_error(
+            TextRange::new(start_line.start, start_line.end),
+            "unclosed block while parsing defer",
+            ["}"],
+            Some(trimmed),
+            ["insert a closing `}` for the defer block"],
+        );
+        None
     }
 
     fn parse_bare_scope_block(&mut self) -> Option<ScopeBlock> {
@@ -2364,6 +2566,17 @@ impl Parser {
         }
         let line = self.current().clone();
         let trimmed = line.text.trim();
+        if let Some(fence) = parse_flat_fence(trimmed)
+            && !fence.close
+            && fence.kind == "with"
+        {
+            let body = self.take_flat_block_body("with", line.start);
+            return Some(parse_line_plan_body(
+                BlockStyle::Flat,
+                &body,
+                TextRange::new(line.start, self.previous_end()),
+            ));
+        }
         if let Some(label) = parse_with_indent_label(trimmed) {
             self.index += 1;
             let plan = self.take_indented_line_plan(indentation(&line.text) + 1, line.start);
@@ -2389,6 +2602,64 @@ impl Parser {
             ));
         }
         None
+    }
+
+    fn take_flat_block_body(&mut self, expected_kind: &str, start: usize) -> String {
+        // Consume the opening fence. Nested flat blocks are immediately converted
+        // to brace-form source so the existing block parsers remain the single
+        // source of AST construction rules.
+        self.index += 1;
+        let mut body = String::new();
+        while self.index < self.events.len() {
+            let line = self.current().clone();
+            let trimmed = line.text.trim();
+            if let Some(fence) = parse_flat_fence(trimmed) {
+                if fence.close {
+                    if fence.kind != expected_kind {
+                        self.push_flat_close_mismatch(expected_kind, &line);
+                    }
+                    self.index += 1;
+                    return body;
+                }
+                let nested_kind = fence.kind.to_owned();
+                let nested_head = fence.head.trim().to_owned();
+                let nested_body = self.take_flat_block_body(&nested_kind, line.start);
+                if !body.is_empty() {
+                    body.push('\n');
+                }
+                let canonical_head = if nested_head.is_empty() {
+                    nested_kind
+                } else {
+                    format!("{nested_kind} {nested_head}")
+                };
+                body.push_str(&canonical_head);
+                body.push_str(" {\n");
+                body.push_str(&nested_body);
+                body.push_str("\n}");
+                continue;
+            }
+            if !body.is_empty() {
+                body.push('\n');
+            }
+            body.push_str(line.text.trim_end());
+            self.index += 1;
+        }
+        self.errors.push(simple_error(
+            start,
+            expected_kind.len(),
+            &format!("missing close fence `=== /{expected_kind} ===`"),
+            &format!("=== /{expected_kind} ==="),
+        ));
+        body
+    }
+
+    fn push_flat_close_mismatch(&mut self, expected_kind: &str, line: &CstLine) {
+        self.errors.push(simple_error(
+            line.start,
+            line.end.saturating_sub(line.start),
+            &format!("flat fence close mismatch; expected `=== /{expected_kind} ===`"),
+            &format!("=== /{expected_kind} ==="),
+        ));
     }
 
     fn take_indented_dialogue(&mut self, min_indent: usize, start: usize) -> DialogueContent {
@@ -4143,21 +4414,27 @@ fn is_multiline_timed_cue_header(line: &str) -> bool {
 
 fn line_plan_colon_head(line: &str) -> Option<&str> {
     let head = line.strip_suffix(':')?.trim();
-    (head == "init" || head == "finally" || head.starts_with("thread") || head.starts_with("on "))
-        .then_some(head)
+    (head == "init"
+        || head == "finally"
+        || head == "defer"
+        || head.starts_with("thread")
+        || head.starts_with("on ")
+        || head.starts_with("scope"))
+    .then_some(head)
 }
 
 fn parse_line_plan_colon_item(head: &str, body: &str) -> LinePlanItem {
     if head == "init" {
         return LinePlanItem::Init(parse_stmt_lines(body));
     }
+    if head == "finally" {
+        return LinePlanItem::Finally(parse_stmt_lines(body));
+    }
+    if head == "defer" {
+        return LinePlanItem::Stmt(Stmt::DeferBlock(parse_stmt_lines(body)));
+    }
     if let Some(rest) = head.strip_prefix("thread") {
-        let (body, finally) = parse_thread_stmt_body(body);
-        return LinePlanItem::Thread {
-            name: nonempty_string(rest.trim()),
-            body,
-            finally,
-        };
+        return LinePlanItem::Thread(parse_thread_block(&format!("thread{rest}"), body));
     }
     if let Some(rest) = head.strip_prefix("on ") {
         return LinePlanItem::On {
@@ -4165,33 +4442,16 @@ fn parse_line_plan_colon_item(head: &str, body: &str) -> LinePlanItem {
             body: parse_stmt_lines(body),
         };
     }
+    if head.starts_with("scope") {
+        return LinePlanItem::Stmt(Stmt::Expr(parse_named_block_expr(head, body)));
+    }
     LinePlanItem::Raw(format!("{head}:\n{body}"))
 }
 
 fn parse_line_plan_item(line: &str) -> LinePlanItem {
     if let Some((head, body)) = split_brace_item(line) {
-        if head == "init" {
-            return LinePlanItem::Init(parse_stmt_lines(body));
-        }
-        if let Some(rest) = head.strip_prefix("thread") {
-            let (body, finally) = parse_thread_stmt_body(body);
-            return LinePlanItem::Thread {
-                name: nonempty_string(rest.trim()),
-                body,
-                finally,
-            };
-        }
-        if let Some(rest) = head.strip_prefix("on ") {
-            return LinePlanItem::On {
-                trigger: parse_expr_lossy(rest.trim()),
-                body: parse_stmt_lines(body),
-            };
-        }
-        if head == "start" {
-            return LinePlanItem::StartGroup(parse_line_plan_nested_items(body));
-        }
-        if head == "together" {
-            return LinePlanItem::TogetherGroup(parse_line_plan_nested_items(body));
+        if let Some(item) = parse_line_plan_braced_item(head, body) {
+            return item;
         }
     }
     if let Some(rest) = line.strip_prefix("out ") {
@@ -4204,6 +4464,9 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
                 expr: parse_expr_lossy(expr.trim()),
             };
         }
+    }
+    if let Some(rest) = line.strip_prefix("defer ") {
+        return LinePlanItem::Stmt(Stmt::Defer(parse_expr_lossy(rest.trim())));
     }
     if let Some(rest) = line.strip_prefix("cancel on ") {
         if let Some((head, body)) = split_brace_item(line) {
@@ -4268,24 +4531,54 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
     LinePlanItem::Raw(line.to_owned())
 }
 
-fn parse_thread_stmt_body(body: &str) -> (Vec<Stmt>, Vec<Stmt>) {
-    let mut normal = Vec::new();
-    let mut finally = Vec::new();
-    for item in collect_logical_block_items(body) {
-        let trimmed = item.trim();
-        if let Some((head, block_body)) = split_brace_item(trimmed)
-            && head == "finally"
-        {
-            finally.extend(parse_stmt_lines(block_body));
-            continue;
-        }
-        if let Some(rest) = trimmed.strip_prefix("finally:") {
-            finally.extend(parse_stmt_lines(rest.trim()));
-            continue;
-        }
-        normal.push(parse_stmt(trimmed));
+fn parse_line_plan_braced_item(head: &str, body: &str) -> Option<LinePlanItem> {
+    if head == "init" {
+        return Some(LinePlanItem::Init(parse_stmt_lines(body)));
     }
-    (normal, finally)
+    if head == "finally" {
+        return Some(LinePlanItem::Finally(parse_stmt_lines(body)));
+    }
+    if head == "defer" {
+        return Some(LinePlanItem::Stmt(Stmt::DeferBlock(parse_stmt_lines(body))));
+    }
+    if let Some(rest) = head.strip_prefix("thread") {
+        return Some(LinePlanItem::Thread(parse_thread_block(
+            &format!("thread{rest}"),
+            body,
+        )));
+    }
+    if let Some(rest) = head.strip_prefix("on ") {
+        return Some(LinePlanItem::On {
+            trigger: parse_expr_lossy(rest.trim()),
+            body: parse_stmt_lines(body),
+        });
+    }
+    if head == "start" {
+        return Some(LinePlanItem::StartGroup(parse_line_plan_nested_items(body)));
+    }
+    if head == "together" {
+        return Some(LinePlanItem::TogetherGroup(parse_line_plan_nested_items(
+            body,
+        )));
+    }
+    if head.starts_with("scope") {
+        return Some(LinePlanItem::Stmt(Stmt::Expr(parse_named_block_expr(
+            head, body,
+        ))));
+    }
+    None
+}
+
+fn parse_thread_block(head: &str, body: &str) -> ThreadBlock {
+    let rest = head.trim().strip_prefix("thread").unwrap_or(head).trim();
+    let mut modifiers = Vec::new();
+    let mut parts = rest.split_whitespace().collect::<Vec<_>>();
+    if matches!(parts.first(), Some(&"detached")) {
+        modifiers.push(ThreadModifier::Detached);
+        parts.remove(0);
+    }
+    let name = nonempty_string(&parts.join(" "));
+    ThreadBlock::new(modifiers, name, parse_stmt_lines(body))
 }
 
 fn nonempty_string(source: &str) -> Option<String> {
@@ -4681,7 +4974,7 @@ fn is_typed_stmt(trimmed: &str) -> bool {
                 | "return"
                 | "out"
                 | "goto"
-                | "spawn"
+                | "thread"
                 | "defer"
                 | "yield"
                 | "panic"
@@ -4727,6 +5020,32 @@ fn parse_scope_head(source: &str) -> Option<ParsedScopeName<'_>> {
 
     let name = rest.trim();
     (!name.is_empty()).then_some(ParsedScopeName::Named(name))
+}
+
+fn parse_flat_fence(source: &str) -> Option<FlatFence<'_>> {
+    let trimmed = source.trim();
+    let inner = trimmed.strip_prefix("===")?.strip_suffix("===")?.trim();
+    if inner.is_empty() {
+        return Some(FlatFence {
+            kind: "",
+            head: "",
+            close: false,
+        });
+    }
+    if let Some(close) = inner.strip_prefix('/') {
+        let kind = close.split_whitespace().next().unwrap_or_default();
+        return Some(FlatFence {
+            kind,
+            head: close.trim(),
+            close: true,
+        });
+    }
+    let (kind, head) = split_leading_ident(inner).unwrap_or((inner, ""));
+    Some(FlatFence {
+        kind,
+        head: head.trim(),
+        close: false,
+    })
 }
 
 fn parse_memo_block_options(source: &str) -> Option<Vec<(String, Expr)>> {
@@ -4969,6 +5288,12 @@ fn parse_stmt(trimmed: &str) -> Stmt {
         }
         return Stmt::Raw(trimmed.to_owned());
     }
+    if trimmed.starts_with("defer ")
+        && trimmed.contains('{')
+        && let Some(stmt) = parse_braced_stmt(trimmed)
+    {
+        return stmt;
+    }
     if let Some(stmt) = parse_control_transfer_stmt(trimmed) {
         return stmt;
     }
@@ -5045,6 +5370,15 @@ fn parse_wait_stmt(rest: &str) -> Stmt {
 
 fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {
     let (head, body) = split_brace_item(trimmed)?;
+    if head.starts_with("thread") {
+        return Some(Stmt::Thread(parse_thread_block(head, body)));
+    }
+    if head == "defer" {
+        return Some(Stmt::DeferBlock(parse_stmt_lines(body)));
+    }
+    if head.starts_with("scope") {
+        return Some(Stmt::Expr(parse_named_block_expr(head, body)));
+    }
     if let Some(condition) = head.strip_prefix("if ") {
         return Some(Stmt::If {
             condition: parse_expr_lossy(condition.trim()),
@@ -5130,7 +5464,6 @@ fn parse_control_transfer_stmt(trimmed: &str) -> Option<Stmt> {
     [
         ("return ", Stmt::Return as fn(Expr) -> Stmt),
         ("goto ", Stmt::Goto),
-        ("spawn ", Stmt::Spawn),
         ("defer ", Stmt::Defer),
         ("yield ", Stmt::Yield),
         ("panic ", Stmt::Panic),

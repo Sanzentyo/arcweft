@@ -53,7 +53,7 @@ Borrow: &'a T, &'a mut T
 
 - unification table は `ena` 系で実装。
 - region/lifetime は初期は小さな自前 solver。
-- `await` / `yield` / `spawn` を suspension boundary としてマーク。
+- `await` / `yield` / `thread` を suspension boundary としてマーク。
 - borrow が boundary を跨ぐ場合は compile error。
 
 ## 3. Core runtime

@@ -63,13 +63,14 @@ for adapters to perform at frame boundaries.
 ```rust
 pub struct LineTaskGroup {
     pub children: Vec<LineChildTask>,
+    pub finally: Vec<LineEffectRequest>,
     pub cleanup: LineCleanupPolicy,
 }
 
 pub struct LineChildTask {
     pub name: Option<String>,
     pub body: Vec<LineEffectRequest>,
-    pub finally: Vec<LineEffectRequest>,
+    pub defer_stack: Vec<Vec<LineEffectRequest>>,
 }
 
 pub enum LineEffectRequest {
@@ -85,6 +86,12 @@ Line lifetime registry paths such as `'line.focus` are static keys owned by the
 line scope. Guaranteed keys can be read directly; optional reads use
 `'line.focus?`. Drop operations remove registered values and run their adapter
 cleanup policy through emitted requests.
+
+Line-level `finally` runs after line-scoped child tasks are cancelled/joined and
+their defer stacks have run, but before any remaining automatic line-registry
+drops. Thread-local cleanup is represented by `defer { ... }`, so flow-level
+threads, line-plan threads, and handler tasks share the same scoped cleanup
+model.
 
 ## Determinism
 

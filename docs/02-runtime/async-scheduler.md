@@ -14,7 +14,10 @@ pub struct TaskSpec {
 }
 ```
 
-`spawn` ではなく `ensure_task` を使い、同じ task key は合流する。
+Runtime adapter tasks are created through `ensure_task`; same-key tasks join
+instead of creating duplicate backend work. Arcweft source-level `thread`
+blocks are VM-scoped fibers and lower to effect requests rather than directly
+creating OS tasks.
 
 ```rust
 pub trait TaskHost {
@@ -91,4 +94,3 @@ AwaitView(load_avatar(user)) {
     error _ => Icon(#vector.avatar_fallback)
 }
 ```
-
