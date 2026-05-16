@@ -137,6 +137,8 @@ pub(crate) enum CstTopLevelItemKind {
     MemoFn,
     Proof,
     TrustedAxiom,
+    Test,
+    Bench,
     Parser,
     Source,
     FlowBodyItemOrRaw,
@@ -570,6 +572,10 @@ fn classify_top_level_item(trimmed: &str) -> CstTopLevelItemKind {
         CstTopLevelItemKind::Proof
     } else if looks_like_trusted_axiom_item(trimmed) {
         CstTopLevelItemKind::TrustedAxiom
+    } else if looks_like_test_item(trimmed) {
+        CstTopLevelItemKind::Test
+    } else if looks_like_bench_item(trimmed) {
+        CstTopLevelItemKind::Bench
     } else if looks_like_parser_item(trimmed) {
         CstTopLevelItemKind::Parser
     } else if looks_like_source_item(trimmed) {
@@ -693,6 +699,14 @@ fn looks_like_proof_item(trimmed: &str) -> bool {
 
 fn looks_like_trusted_axiom_item(trimmed: &str) -> bool {
     visible_head(trimmed).starts_with("trusted axiom ")
+}
+
+fn looks_like_test_item(trimmed: &str) -> bool {
+    visible_head(trimmed).starts_with("test ")
+}
+
+fn looks_like_bench_item(trimmed: &str) -> bool {
+    visible_head(trimmed).starts_with("bench ")
 }
 
 fn looks_like_parser_item(trimmed: &str) -> bool {

@@ -2,6 +2,15 @@
 
 ## Agent Debug Bus
 
+Verifier, CLI, and LSP diagnostics use the same stable JSON shape that future
+Agent tools will embed into `Observation.diagnostics`. This means an Agent can
+see an obligation id, source span, related proof/audit ids, and available
+actions before the renderer/MCP runtime exists.
+
+Runtime observation and action are still Phase 2. The Phase 1.5 connection point
+is the shared diagnostic/action schema produced by `arcweft-verify` and consumed
+by CLI/LSP.
+
 ```awft
 pub trait AgentDebugBus {
     fn observe(&mut self, req: ObserveRequest) -> Result<Observation, AgentError>;
@@ -137,4 +146,3 @@ pub struct AgentPermissions {
 ```
 
 Product mode は token、audit log、debug indicator、redaction 必須。
-

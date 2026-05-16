@@ -1,18 +1,19 @@
 use crate::ast::{
-    Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, BorrowBlock, CallableItem,
-    CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceMatchArm,
-    ChoiceOption, ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause,
-    DeferOutcome, DialogueContent, DialogueDefaultOption, DialogueDefaultsItem, DocBlock,
-    EntityDeclItem, EntityDeclKind, EntityRef, EntityRefSyntax, EnumItem, EnumVariant,
+    Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BenchItem, BlockStyle, BorrowBlock,
+    CallableItem, CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem,
+    ChoiceMatchArm, ChoiceOption, ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall,
+    ContractClause, DeferOutcome, DialogueContent, DialogueDefaultOption, DialogueDefaultsItem,
+    DocBlock, EntityDeclItem, EntityDeclKind, EntityRef, EntityRefSyntax, EnumItem, EnumVariant,
     ExternModItem, FamilyRelativeEntityRef, Flow, FlowInit, FlowItem, FlowKind, ForBlock,
     FunctionInit, FunctionItem, FunctionKind, HookInit, HookItem, IdRef, IfBlock, IfLetBlock,
     ImplItem, ImplMember, Item, LineArg, LineOptions, LineOptionsInit, LinePlan, LinePlanItem,
     LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, ProofItem, RawItem,
     RelativeId, RelativeIdSpelling, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock,
     SelectBranch, SelectBranchHead, SourceItem, SourceLocaleBlock, SpeakerLine, StateField,
-    StateItem, Stmt, StmtMatchArm, StructField, StructItem, TextRange, ThreadBlock, ThreadModifier,
-    TraitItem, TraitMember, TriggerPattern, TrustedAxiomItem, TypeAliasItem, TypedSyntaxTree,
-    UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    StateItem, Stmt, StmtMatchArm, StructField, StructItem, TestItem, TestKind, TextRange,
+    ThreadBlock, ThreadModifier, TraitItem, TraitMember, TriggerPattern, TrustedAxiomItem,
+    TypeAliasItem, TypedSyntaxTree, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock,
+    WikiLink,
 };
 use crate::cst::{
     CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstStructuredFlowBlockKind,
@@ -350,6 +351,8 @@ impl Parser {
             CstTopLevelItemKind::TrustedAxiom => {
                 self.parse_trusted_axiom_item().map(Item::TrustedAxiom)
             }
+            CstTopLevelItemKind::Test => self.parse_test_item().map(Item::Test),
+            CstTopLevelItemKind::Bench => self.parse_bench_item().map(Item::Bench),
             CstTopLevelItemKind::Parser => self.parse_parser_item().map(Item::Parser),
             CstTopLevelItemKind::Source => self.parse_source_item().map(Item::Source),
             CstTopLevelItemKind::Flow
@@ -738,6 +741,61 @@ impl Parser {
             );
         }
         Some(TrustedAxiomItem::new(
+            id,
+            body,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_test_item(&mut self) -> Option<TestItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing test item",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the test body"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("test")?.trim();
+        let (id, rest) = parse_required_id_ref(rest, start_line.start, &mut self.errors)?;
+        let kind = parse_test_kind(rest.trim(), start_line.start, head.len(), &mut self.errors)?;
+        Some(TestItem::new(
+            id,
+            kind,
+            body,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_bench_item(&mut self) -> Option<BenchItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing bench item",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the bench body"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("bench")?.trim();
+        let (id, rest) = parse_required_id_ref(rest, start_line.start, &mut self.errors)?;
+        if !rest.trim().is_empty() {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.start + head.len()),
+                "unexpected text after bench id",
+                ["{"],
+                Some(rest.trim()),
+                ["move bench configuration into the bench body"],
+            );
+        }
+        Some(BenchItem::new(
             id,
             body,
             TextRange::new(start_line.start, end),
@@ -3462,6 +3520,39 @@ fn relative_id_from_cst(relative: crate::cst::CstRelativeId<'_>, range: TextRang
         spelling,
         range,
     )
+}
+
+fn parse_test_kind(
+    rest: &str,
+    base: usize,
+    head_len: usize,
+    errors: &mut Vec<ParseError>,
+) -> Option<TestKind> {
+    let Some((kind, trailing)) = split_leading_ident(rest) else {
+        errors.push(simple_error(
+            base,
+            head_len,
+            "test item is missing a test kind",
+            "test @test.id scenario { ... }",
+        ));
+        return None;
+    };
+    if !trailing.trim().is_empty() {
+        errors.push(simple_error(
+            base,
+            head_len,
+            "unexpected text after test kind",
+            "test @test.id scenario { ... }",
+        ));
+        return None;
+    }
+    Some(match kind {
+        "scenario" => TestKind::Scenario,
+        "visual" => TestKind::Visual,
+        "audio" => TestKind::Audio,
+        "fixture" => TestKind::Fixture,
+        custom => TestKind::Custom(custom.to_owned()),
+    })
 }
 
 fn simple_error(base: usize, len: usize, message: &str, expected: &str) -> ParseError {

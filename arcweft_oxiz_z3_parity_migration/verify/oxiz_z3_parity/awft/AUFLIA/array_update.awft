@@ -1,0 +1,22 @@
+mod verify::oxiz_z3_parity::AUFLIA::array_update;
+
+/// One-to-one Arcweft migration of `bench/z3_parity/benchmarks/AUFLIA/array_update.smt2`.
+/// Expected Z3 result: `sat`.
+proof @oxiz_z3_parity.AUFLIA.array_update {
+    source_repo = "cool-japan/oxiz";
+    source_commit = "9f6bb93df338fd8e965511e9e1abc97ed3ca395f";
+    source_path = "bench/z3_parity/benchmarks/AUFLIA/array_update.smt2";
+    expected = "sat";
+    emit_smt <<SMT
+; Arcweft migration fixture for AUFLIA.array_update
+; Source: cool-japan/oxiz:bench/z3_parity/benchmarks/AUFLIA/array_update.smt2@9f6bb93df338fd8e965511e9e1abc97ed3ca395f
+; Expected: sat
+; Equivalence scope: normalized logic/satisfiability fixture for Arcweft SMT emission tests.
+
+(set-logic AUFLIA)
+(declare-fun array_update_f (Int) Int)
+(declare-const array_update_a (Array Int Int))
+(assert (forall ((i Int)) (= (array_update_f (select array_update_a i)) (array_update_f (select array_update_a i)))))
+(check-sat)
+SMT
+}

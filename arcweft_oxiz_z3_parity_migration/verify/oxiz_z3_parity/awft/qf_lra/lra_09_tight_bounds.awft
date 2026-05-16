@@ -1,0 +1,23 @@
+mod verify::oxiz_z3_parity::qf_lra::lra_09_tight_bounds;
+
+/// One-to-one Arcweft migration of `bench/z3_parity/benchmarks/qf_lra/lra_09_tight_bounds.smt2`.
+/// Expected Z3 result: `sat`.
+proof @oxiz_z3_parity.qf_lra.lra_09_tight_bounds {
+    source_repo = "cool-japan/oxiz";
+    source_commit = "9f6bb93df338fd8e965511e9e1abc97ed3ca395f";
+    source_path = "bench/z3_parity/benchmarks/qf_lra/lra_09_tight_bounds.smt2";
+    expected = "sat";
+    emit_smt <<SMT
+; Arcweft migration fixture for qf_lra.lra_09_tight_bounds
+; Source: cool-japan/oxiz:bench/z3_parity/benchmarks/qf_lra/lra_09_tight_bounds.smt2@9f6bb93df338fd8e965511e9e1abc97ed3ca395f
+; Expected: sat
+; Equivalence scope: normalized logic/satisfiability fixture for Arcweft SMT emission tests.
+
+(set-logic QF_LRA)
+(declare-const lra_09_tight_bounds_x Real)
+(declare-const lra_09_tight_bounds_y Real)
+(assert (<= (+ lra_09_tight_bounds_x (* 2.0 lra_09_tight_bounds_y)) 9.0))
+(assert (> lra_09_tight_bounds_x (- 1.0)))
+(check-sat)
+SMT
+}

@@ -1,0 +1,11 @@
+; Arcweft migration fixture for QF_NIRA.qf_nira_basic_sat
+; Source: cool-japan/oxiz:bench/z3_parity/benchmarks/QF_NIRA/qf_nira_basic_sat.smt2@9f6bb93df338fd8e965511e9e1abc97ed3ca395f
+; Expected: sat
+; Equivalence scope: normalized logic/satisfiability fixture for Arcweft SMT emission tests.
+
+(set-logic QF_NIRA)
+(declare-const qf_nira_basic_sat_i Int)
+(declare-const qf_nira_basic_sat_r Real)
+(assert (>= (* qf_nira_basic_sat_i qf_nira_basic_sat_i) 0))
+(assert (>= (* qf_nira_basic_sat_r qf_nira_basic_sat_r) 0.0))
+(check-sat)

@@ -46,6 +46,16 @@ pub fn registry_from_hir(module: &HirModule) -> NameRegistry {
             HirTopLevelDecl::EntityDecl(item) => {
                 registry.insert(item.id().body(), entity_decl_registry_kind(item.kind()));
             }
+            HirTopLevelDecl::Test(item) => {
+                if let Some(id) = item.id().as_absolute() {
+                    registry.insert(id.body(), EntityKind::Test);
+                }
+            }
+            HirTopLevelDecl::Bench(item) => {
+                if let Some(id) = item.id().as_absolute() {
+                    registry.insert(id.body(), EntityKind::Bench);
+                }
+            }
             _ => {}
         }
     }

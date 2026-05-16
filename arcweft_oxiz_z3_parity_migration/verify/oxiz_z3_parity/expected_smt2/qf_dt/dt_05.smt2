@@ -1,0 +1,10 @@
+; Arcweft migration fixture for qf_dt.dt_05
+; Source: cool-japan/oxiz:bench/z3_parity/benchmarks/qf_dt/dt_05.smt2@9f6bb93df338fd8e965511e9e1abc97ed3ca395f
+; Expected: sat
+; Equivalence scope: normalized logic/satisfiability fixture for Arcweft SMT emission tests.
+
+(set-logic QF_DT)
+(declare-datatypes ((dt_05_Box 0)) (((dt_05_box (dt_05_val Int)))))
+(declare-const dt_05_b dt_05_Box)
+(assert (= dt_05_b dt_05_b))
+(check-sat)

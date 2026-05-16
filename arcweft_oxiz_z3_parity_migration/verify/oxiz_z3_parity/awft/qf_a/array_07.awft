@@ -1,0 +1,25 @@
+mod verify::oxiz_z3_parity::qf_a::array_07;
+
+/// One-to-one Arcweft migration of `bench/z3_parity/benchmarks/qf_a/array_07.smt2`.
+/// Expected Z3 result: `sat`.
+proof @oxiz_z3_parity.qf_a.array_07 {
+    source_repo = "cool-japan/oxiz";
+    source_commit = "9f6bb93df338fd8e965511e9e1abc97ed3ca395f";
+    source_path = "bench/z3_parity/benchmarks/qf_a/array_07.smt2";
+    expected = "sat";
+    emit_smt <<SMT
+; Arcweft migration fixture for qf_a.array_07
+; Source: cool-japan/oxiz:bench/z3_parity/benchmarks/qf_a/array_07.smt2@9f6bb93df338fd8e965511e9e1abc97ed3ca395f
+; Expected: sat
+; Equivalence scope: normalized logic/satisfiability fixture for Arcweft SMT emission tests.
+
+(set-logic QF_A)
+(declare-sort array_07_I 0)
+(declare-sort array_07_E 0)
+(declare-const array_07_a (Array array_07_I array_07_E))
+(declare-const array_07_i array_07_I)
+(declare-const array_07_e array_07_E)
+(assert (= (select array_07_a array_07_i) array_07_e))
+(check-sat)
+SMT
+}

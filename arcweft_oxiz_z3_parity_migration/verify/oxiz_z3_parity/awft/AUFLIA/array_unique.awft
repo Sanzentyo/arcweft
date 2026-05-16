@@ -1,0 +1,24 @@
+mod verify::oxiz_z3_parity::AUFLIA::array_unique;
+
+/// One-to-one Arcweft migration of `bench/z3_parity/benchmarks/AUFLIA/array_unique.smt2`.
+/// Expected Z3 result: `unsat`.
+proof @oxiz_z3_parity.AUFLIA.array_unique {
+    source_repo = "cool-japan/oxiz";
+    source_commit = "9f6bb93df338fd8e965511e9e1abc97ed3ca395f";
+    source_path = "bench/z3_parity/benchmarks/AUFLIA/array_unique.smt2";
+    expected = "unsat";
+    emit_smt <<SMT
+; Arcweft migration fixture for AUFLIA.array_unique
+; Source: cool-japan/oxiz:bench/z3_parity/benchmarks/AUFLIA/array_unique.smt2@9f6bb93df338fd8e965511e9e1abc97ed3ca395f
+; Expected: unsat
+; Equivalence scope: normalized logic/satisfiability fixture for Arcweft SMT emission tests.
+
+(set-logic AUFLIA)
+(declare-fun array_unique_f (Int) Int)
+(declare-const array_unique_a (Array Int Int))
+(assert (forall ((i Int)) (= (array_unique_f (select array_unique_a i)) (array_unique_f (select array_unique_a i)))))
+(declare-const array_unique_k Int)
+(assert (not (= (array_unique_f (select array_unique_a array_unique_k)) (array_unique_f (select array_unique_a array_unique_k)))))
+(check-sat)
+SMT
+}

@@ -64,6 +64,17 @@ assert_some state.current_bg
 
 ## Test
 
+`test` is a top-level declaration. The canonical form is:
+
+```text
+test ID KIND { ... }
+```
+
+`KIND` is a test adapter category such as `scenario`, `visual`, `audio`, or
+`fixture`. Parser/HIR support treats the body as command-like test plan rows and
+exposes it through the Sans I/O test manifest; actual execution is delegated to
+headless/player adapters.
+
 ```awft
 test @test.opening_listen_route scenario {
     start @flow.opening
@@ -91,6 +102,17 @@ test @test.opening_choices_visual visual {
 ```
 
 ## Bench
+
+`bench` is a top-level declaration. The canonical form is:
+
+```text
+bench ID { ... }
+```
+
+Bench bodies use command-like sections such as `setup`, `measure`, `assert`,
+and `report`. The language layer preserves these sections for tooling; timing,
+offline rendering/audio, allocation counters, and perf collection are backend
+adapter responsibilities.
 
 ```awft
 bench @bench.opening_pipeline {

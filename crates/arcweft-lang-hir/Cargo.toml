@@ -1,0 +1,16 @@
+[package]
+name = "arcweft-lang-hir"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true

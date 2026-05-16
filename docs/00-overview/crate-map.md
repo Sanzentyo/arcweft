@@ -146,7 +146,11 @@ arcweft-agent-mcp
 arcweft-agent-cli
 arcweft-cli
 arcweft-debug
+arcweft-lang-hir
+arcweft-lang-lsp
 arcweft-verify
+arcweft-verify-z3
+arcweft-verify-oxiz
 arcweft-jj
 ```
 
@@ -164,6 +168,11 @@ arcweft-jj
 - unsafe は `arcweft-memory`、`arcweft-plugin-*`、`arcweft-render`、`arcweft-audio-*` の境界に閉じ込める。
 - `arcweft-agent-protocol` は CLI / MCP / test / LLM が共通利用する。
 - `arcweft-lang-syntax` は rowan-compatible な lossless CST を所有する。`SyntaxKind`、`TokenKind`、green tree、`SyntaxNode`、source text / line index、error-tolerant `ParsedSource` をここに集約し、typed AST / HIR は CST 上の semantic view または lowering result として扱う。
+- `arcweft-lang-hir` は parser-owned HIR の公開境界であり、semantic passes、verifier、CLI、LSP はこの crate を入力境界にする。
+- `arcweft-verify` は Sans I/O の検証中核で、proof obligation、audit manifest、SMT problem、tool diagnostics schema を所有する。ファイルI/O、process起動、watch、editor transport は持たない。
+- `arcweft-verify-z3` は外部 Z3 process adapter、`arcweft-verify-oxiz` は pure Rust OxiZ adapter とする。solver依存は `arcweft-verify` や `arcweft-core` に入れない。
+- `arcweft-lang-lsp` は transportなしの LSP helper crate とし、`arcweft-verify` report から diagnostics / code actions を作る。
+- `arcweft-test` は `test` / `bench` 宣言を HIR から Sans I/O manifest に変換する。ファイルI/O、clock、renderer/audio driving、benchmark timers、headless player 実行は CLI / player / adapter crate に置く。
 - `parse_source` は `ParsedSource { syntax, typed_tree, errors, source_hash, line_index }` のように常に lossless CST と diagnostics を返す。typed source model は `TypedSyntaxTree` として CST / rowan `SyntaxNode` と区別する。内部の行単位 parser は短期 MVP であり、delimiter recovery、top-level punctuation / keyword split、binding split、multi-token punctuation sequence split などの構文走査は CST helper へ集約し、これ以上 `split_top_level` 型の ad hoc parser を拡張しない。
 - Cranelift は `arcweft-lang-jit-cranelift` の native-only 最適化 backend に閉じ込める。`arcweft-core` に `jit-cranelift` feature や Cranelift 依存を置かない。
 - Wasmtime は `arcweft-wasm-wasmtime` の native plugin/activity sandbox 用 adapter であり、Arcweft runtime の主実行系ではない。WIT ABI は `arcweft-wasm-abi`、Wasm validation/generation/inspection は `arcweft-wasm-tools` が担当する。

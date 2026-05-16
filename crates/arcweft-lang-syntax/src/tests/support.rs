@@ -3,10 +3,10 @@ pub(super) use crate::{
     ComputationBlockKind, ContractClause, DeferOutcome, DialogueToken, EntityDeclKind, EntityKind,
     Expr, FlowItem, FlowKind, FunctionKind, HirFlowItem, HirTopLevelDecl, ImplMember, Item,
     LifetimeScopeKind, LinePlanItem, Literal, NameRegistry, Pattern, Placeholder, SelectBranchHead,
-    Stmt, SymbolUseKind, SyntaxLintCode, TraitMember, TypeCheckEnv, TypeKind, TypeRef, UnaryOp,
-    VariantPatternPayload, Visibility, collect_symbol_uses, lint_id_policy, lower_line_task_groups,
-    lower_to_hir, parse_dialogue_tokens, parse_expr, parse_fn_signature, parse_source,
-    parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
+    Stmt, SymbolUseKind, SyntaxLintCode, TestKind, TraitMember, TypeCheckEnv, TypeKind, TypeRef,
+    UnaryOp, VariantPatternPayload, Visibility, collect_symbol_uses, lint_id_policy,
+    lower_line_task_groups, lower_to_hir, parse_dialogue_tokens, parse_expr, parse_fn_signature,
+    parse_source, parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
     validate_typecheck_ready,
 };
 pub(super) use arcweft_core::{

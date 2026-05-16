@@ -59,15 +59,26 @@ arcweft/audioCuePreview
 
 ## Agent-oriented JSON
 
-CLI/LSP は machine-readable diagnostics を出す。
+CLI/LSP は `arcweft-verify` の machine-readable diagnostics を共有する。
 
 ```json
 {
-  "code": "E_PENDING_UNHANDLED",
-  "message": "Need<ImageHandle, AssetError> must be awaited with pending branch",
-  "span": { "file": "game/routes/opening.awft", "start": 120, "end": 155 },
-  "suggestions": [
-    { "title": "Wrap with await-with pending branch" }
+  "id": "diagnostic.obligation.0001",
+  "severity": "error",
+  "message": "lifetime promotion to `'flow` requires proof or audit",
+  "source": { "start": 120, "end": 155 },
+  "obligation": "obligation.0001",
+  "related_ids": ["'flow"],
+  "actions": [
+    {
+      "id": "action.generate_proof_stub",
+      "label": "Generate proof stub",
+      "kind": "generate_proof_stub"
+    }
   ]
 }
 ```
+
+`arcweft-lang-lsp` is a Sans I/O helper crate. It converts verifier reports into
+`lsp-types` diagnostics and code actions. A transport server can wrap this
+crate later without changing verifier semantics.

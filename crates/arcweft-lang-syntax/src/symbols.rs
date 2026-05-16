@@ -66,6 +66,8 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
         | HirTopLevelDecl::Proof(_)
         | HirTopLevelDecl::Struct(_)
         | HirTopLevelDecl::TrustedAxiom(_) => {}
+        HirTopLevelDecl::Test(item) => push_id_ref(uses, item.id()),
+        HirTopLevelDecl::Bench(item) => push_id_ref(uses, item.id()),
         HirTopLevelDecl::Impl(item) => {
             for member in item.members() {
                 match member {

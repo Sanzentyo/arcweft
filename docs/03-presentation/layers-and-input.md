@@ -634,7 +634,7 @@ test @test.choice_layer_receives_input scenario {
 visual:
 
 ```awft
-visual test @test.layer_order_opening {
+test @test.layer_order_opening visual {
     start @flow.opening
     capture image overlay as "opening_layers.png"
     assert_layer_above @layer.textbox @layer.characters

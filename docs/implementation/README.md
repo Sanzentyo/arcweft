@@ -177,15 +177,19 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   choice runtime IR, source/stream backpressure IR, hook/memo runtime tables,
   save/replay traces, activities, and layered input routing remain TODOs beyond
   the current line-plan Sans I/O subset.
-- `pro_review14.md`: adopted proof-aware lifetime/thread/drop direction.
+- `pro_review14.md` / `pro_review15.md`: adopted proof-aware
+  lifetime/thread/drop direction and Agent-friendly tooling diagnostics.
   Formal `proof @proof.*` items, `trusted axiom @axiom.*` declarations,
   explicit proof references such as `proof = @proof.id`, and audited
   `unsafe lifetime @unsafe.*` regions with required `reason` and `SAFETY`
-  documentation are the accepted design. The syntax crate now preserves proof
-  and trusted-axiom items as HIR metadata and parses `unsafe lifetime` audit
-  blocks as structured statements with checker validation for `reason` and
-  `SAFETY` docs. Obligation generation, proof certificates, trusted-axiom
-  manifests, and release policy enforcement remain TODOs for compiler/tooling.
+  documentation are the accepted design. The syntax crate preserves proof and
+  trusted-axiom items as HIR metadata and parses `unsafe lifetime` audit blocks
+  as structured statements. `arcweft-lang-hir` is now the public HIR facade.
+  `arcweft-verify` generates obligations and shared JSON diagnostics for
+  lifetime promotion, unsafe audits, upper-lifetime writes, thread capture,
+  MustDrop discharge, trusted assumptions, and raw syntax. Solver dependencies
+  are isolated in `arcweft-verify-z3` and `arcweft-verify-oxiz`; CLI/LSP consume
+  verifier reports rather than reimplementing validation.
 - `Char` / `TextCluster` are now part of the accepted primitive model. `Char`
   is a Unicode scalar value and is not a visual character; `TextCluster` is the
   display/reveal/ruby/effect unit. The syntax crate parses `"x"c` char
@@ -195,6 +199,12 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   Capacity is non-observable and may be a no-op on constrained/Wasm targets.
   The syntax checker recognizes these methods for `List<T>`, `String`, and
   `Bytes`.
+- Top-level `test @test.* KIND { ... }` and `bench @bench.* { ... }` are now
+  parsed as structured declarations and lowered into HIR metadata. The
+  `arcweft-test` crate extracts a Sans I/O manifest, and `arcw test` /
+  `arcw bench` list those declarations in human or JSON form. Actual scenario,
+  visual, audio, fixture, and performance execution remains a player/headless
+  adapter TODO.
 - Remaining P2 semantic work is deeper than syntax readiness: full all-paths
   `MustDrop` discharge, promotion proof rules, `unsafe lifetime` audit regions,
   deterministic concurrent write conflict checking, and join-result typing for

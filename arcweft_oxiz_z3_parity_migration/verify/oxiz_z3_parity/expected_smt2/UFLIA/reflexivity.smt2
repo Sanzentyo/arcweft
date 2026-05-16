@@ -1,0 +1,9 @@
+; Arcweft migration fixture for UFLIA.reflexivity
+; Source: cool-japan/oxiz:bench/z3_parity/benchmarks/UFLIA/reflexivity.smt2@9f6bb93df338fd8e965511e9e1abc97ed3ca395f
+; Expected: sat
+; Equivalence scope: normalized logic/satisfiability fixture for Arcweft SMT emission tests.
+
+(set-logic UFLIA)
+(declare-fun reflexivity_f (Int) Int)
+(assert (forall ((x Int)) (= (reflexivity_f x) (reflexivity_f x))))
+(check-sat)

@@ -29,6 +29,8 @@ pub enum EntityKind {
     Signal,
     Scene,
     Source,
+    Test,
+    Bench,
     Layer,
     Voice,
     Se,
@@ -292,6 +294,16 @@ impl TypeChecker<'_> {
             | HirTopLevelDecl::Struct(_)
             | HirTopLevelDecl::Trait(_)
             | HirTopLevelDecl::TrustedAxiom(_) => {}
+            HirTopLevelDecl::Test(item) => {
+                if let Some(id) = item.id().as_absolute() {
+                    self.expect_entity_kind(id, &EntityKind::Test, "test id");
+                }
+            }
+            HirTopLevelDecl::Bench(item) => {
+                if let Some(id) = item.id().as_absolute() {
+                    self.expect_entity_kind(id, &EntityKind::Bench, "bench id");
+                }
+            }
             HirTopLevelDecl::EntityDecl(item) => {
                 self.expect_entity_kind(
                     item.id(),
@@ -1810,6 +1822,18 @@ impl TypeChecker<'_> {
             if let Some(ty) = self.check_presentation_call(name, args) {
                 return Some(ty);
             }
+            if matches!(name.as_str(), "promote" | "promote_unchecked") {
+                for arg in args
+                    .iter()
+                    .filter(|arg| matches!(arg, Expr::NamedArg { .. }))
+                {
+                    self.check_expr(arg);
+                }
+                return Some(TypeKind::Named("Promoted".to_owned()));
+            }
+            if name == "assume" {
+                return Some(TypeKind::Unit);
+            }
             let arg_types = args
                 .iter()
                 .map(|arg| self.check_expr(arg))
@@ -2312,6 +2336,8 @@ fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
         "signal" => EntityKind::Signal,
         "scene" => EntityKind::Scene,
         "source" => EntityKind::Source,
+        "test" => EntityKind::Test,
+        "bench" => EntityKind::Bench,
         "layer" => EntityKind::Layer,
         "voice" => EntityKind::Voice,
         "se" => EntityKind::Se,

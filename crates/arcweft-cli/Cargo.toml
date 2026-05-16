@@ -7,7 +7,14 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-test = { path = "../arcweft-test" }
+arcweft-verify = { path = "../arcweft-verify" }
+arcweft-verify-oxiz = { path = "../arcweft-verify-oxiz" }
+arcweft-verify-z3 = { path = "../arcweft-verify-z3" }
+serde.workspace = true
+serde_json.workspace = true
 
 [[bin]]
 name = "arcw"

@@ -1,0 +1,23 @@
+mod verify::oxiz_z3_parity::QF_NIRA::qf_nira_product_sat;
+
+/// One-to-one Arcweft migration of `bench/z3_parity/benchmarks/QF_NIRA/qf_nira_product_sat.smt2`.
+/// Expected Z3 result: `sat`.
+proof @oxiz_z3_parity.QF_NIRA.qf_nira_product_sat {
+    source_repo = "cool-japan/oxiz";
+    source_commit = "9f6bb93df338fd8e965511e9e1abc97ed3ca395f";
+    source_path = "bench/z3_parity/benchmarks/QF_NIRA/qf_nira_product_sat.smt2";
+    expected = "sat";
+    emit_smt <<SMT
+; Arcweft migration fixture for QF_NIRA.qf_nira_product_sat
+; Source: cool-japan/oxiz:bench/z3_parity/benchmarks/QF_NIRA/qf_nira_product_sat.smt2@9f6bb93df338fd8e965511e9e1abc97ed3ca395f
+; Expected: sat
+; Equivalence scope: normalized logic/satisfiability fixture for Arcweft SMT emission tests.
+
+(set-logic QF_NIRA)
+(declare-const qf_nira_product_sat_i Int)
+(declare-const qf_nira_product_sat_r Real)
+(assert (>= (* qf_nira_product_sat_i qf_nira_product_sat_i) 0))
+(assert (>= (* qf_nira_product_sat_r qf_nira_product_sat_r) 0.0))
+(check-sat)
+SMT
+}

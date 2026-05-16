@@ -48,6 +48,18 @@ Backends:
 - runtime contract checks
 - property test generator
 
+The verifier core remains Sans I/O. Concrete solver integrations live in
+adapter crates:
+
+```text
+arcweft-verify       Proof IR, obligations, policies, diagnostics, SMT problem
+arcweft-verify-z3    external Z3 process adapter
+arcweft-verify-oxiz  pure Rust OxiZ adapter
+```
+
+CLI and build tooling choose an adapter. `arcweft-core`, parser, HIR, and the
+verifier core must not spawn processes or depend on native solver libraries.
+
 ## CLI
 
 ```bash
@@ -57,6 +69,17 @@ arcw verify game/main.awft --cross-check z3,oxiz
 arcw verify game/main.awft --emit-smt out/proofs
 arcw verify activity mini_games/truck --kani
 arcw verify game/main.awft --emit-obligations out/proofs
+```
+
+Current implementation supports:
+
+```bash
+arcw verify game/main.awft --backend emit --json
+arcw verify game/main.awft --backend oxiz
+arcw verify game/main.awft --backend z3 --solver-command z3
+arcw verify game/main.awft --emit-obligations obligations.json
+arcw verify game/main.awft --emit-smt out/proofs
+arcw unsafe game/main.awft --json
 ```
 
 ## Source proof items and unsafe audits
@@ -80,6 +103,12 @@ Verification must collect:
 Release verification should reject undisclosed audited unsafe and unproven
 non-trivial lifetime promotion, thread capture, global mutation, and MustDrop
 override obligations.
+
+The first semantic pass generates obligations for lifetime promotion,
+`unsafe lifetime`, upper-lifetime registry writes, thread capture, trusted
+assumptions, `Raw` syntax that reached HIR-facing analysis, and MustDrop
+registry values such as `'line.focus` that are not explicitly dropped or
+transferred.
 
 ## Counterexample
 

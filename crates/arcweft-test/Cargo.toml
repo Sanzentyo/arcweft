@@ -1,0 +1,17 @@
+[package]
+name = "arcweft-test"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arcweft-lang-hir = { path = "../arcweft-lang-hir" }
+serde.workspace = true
+
+[dev-dependencies]
+arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+
+[lints]
+workspace = true

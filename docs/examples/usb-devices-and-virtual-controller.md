@@ -152,5 +152,5 @@ wait signal signal.device_ready == true
 arcw device gen game/devices.awft
 arcw device check
 arcw device simulate @device.motion_sensor --fixture fixtures/devices/motion_sensor.ndjson
-arcw test @test.touch_controller_layout
+arcw test game/controllers/touch_controller.awft
 ```

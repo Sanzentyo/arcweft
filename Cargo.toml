@@ -3,10 +3,16 @@ members = [
     "crates/arcweft-core",
     "crates/arcweft-dialogue",
     "crates/arcweft-id",
+    "crates/arcweft-lang-hir",
+    "crates/arcweft-lang-lsp",
     "crates/arcweft-lang-syntax",
     "crates/arcweft-need",
     "crates/arcweft-presentation",
     "crates/arcweft-source",
+    "crates/arcweft-test",
+    "crates/arcweft-verify",
+    "crates/arcweft-verify-oxiz",
+    "crates/arcweft-verify-z3",
     "crates/arcweft-cli",
 ]
 resolver = "3"
@@ -19,7 +25,11 @@ repository = "https://example.invalid/arcweft"
 
 [workspace.dependencies]
 blake3 = "1.8.5"
+lsp-types = "0.97.0"
+oxiz-solver = "0.2.1"
 rowan = "0.16.1"
+serde = "1.0.228"
+serde_json = "1.0.149"
 thiserror = "2.0.18"
 
 [workspace.lints.rust]

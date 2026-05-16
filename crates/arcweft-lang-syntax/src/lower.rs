@@ -1,11 +1,12 @@
 use crate::ast::{
-    Attribute, AwaitBranchKind, AwaitWith, BorrowBlock, CallableItem, ChoiceAction, ChoiceBlock,
-    ChoicePlan, ContractClause, DialogueContent, DialogueDefaultsItem, EntityDeclItem, EntityRef,
-    EntityRefSyntax, EnumItem, ExternModItem, Flow, FlowItem, FlowKind, FunctionItem, FunctionKind,
-    HookItem, IdRef, IfBlock, IfLetBlock, ImplItem, Item, LineArg, LinePlan, LoopBlock, MatchBlock,
-    MemoFn, ParserItem, Pattern, ProofItem, RelativeId, ScopeBlock, ScopeExprBlock, SourceItem,
-    SourceLocaleBlock, SpeakerLine, StateItem, Stmt, StructItem, TextRange, TraitItem,
-    TrustedAxiomItem, TypeAliasItem, TypedSyntaxTree, WhileBlock, WhileLetBlock,
+    Attribute, AwaitBranchKind, AwaitWith, BenchItem, BorrowBlock, CallableItem, ChoiceAction,
+    ChoiceBlock, ChoicePlan, ContractClause, DialogueContent, DialogueDefaultsItem, EntityDeclItem,
+    EntityRef, EntityRefSyntax, EnumItem, ExternModItem, Flow, FlowItem, FlowKind, FunctionItem,
+    FunctionKind, HookItem, IdRef, IfBlock, IfLetBlock, ImplItem, Item, LineArg, LinePlan,
+    LoopBlock, MatchBlock, MemoFn, ParserItem, Pattern, ProofItem, RelativeId, ScopeBlock,
+    ScopeExprBlock, SourceItem, SourceLocaleBlock, SpeakerLine, StateItem, Stmt, StructItem,
+    TestItem, TextRange, TraitItem, TrustedAxiomItem, TypeAliasItem, TypedSyntaxTree, WhileBlock,
+    WhileLetBlock,
 };
 use crate::expr::Expr;
 use crate::types::FnSignature;
@@ -64,6 +65,8 @@ pub enum HirTopLevelDecl {
     MemoFn(MemoFn),
     Proof(ProofItem),
     TrustedAxiom(TrustedAxiomItem),
+    Test(TestItem),
+    Bench(BenchItem),
     Parser(ParserItem),
     Source(SourceItem),
 }
@@ -343,6 +346,12 @@ pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerErr
             }
             Item::TrustedAxiom(item) => {
                 declarations.push(HirTopLevelDecl::TrustedAxiom(item.clone()));
+            }
+            Item::Test(item) => {
+                declarations.push(HirTopLevelDecl::Test(item.clone()));
+            }
+            Item::Bench(item) => {
+                declarations.push(HirTopLevelDecl::Bench(item.clone()));
             }
             Item::Parser(item) => {
                 declarations.push(HirTopLevelDecl::Parser(item.clone()));
