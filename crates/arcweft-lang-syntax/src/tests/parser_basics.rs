@@ -34,7 +34,14 @@ use game::prelude::*
     };
     assert_eq!(flow.visibility(), Some(Visibility::Public));
     assert_eq!(flow.kind(), FlowKind::Flow);
-    assert_eq!(flow.id().expect("flow id").body(), "flow.opening");
+    assert_eq!(
+        flow.id()
+            .expect("flow id")
+            .as_absolute()
+            .expect("absolute flow id")
+            .body(),
+        "flow.opening"
+    );
     let signature = flow.signature().expect("flow signature");
     assert!(ident_pattern(
         signature.param_groups()[0].params()[0].pattern(),
@@ -46,6 +53,71 @@ use game::prelude::*
         FlowItem::Stmt(Stmt::Expr(Expr::Call { .. }))
     ));
     assert!(matches!(&flow.body()[1], FlowItem::Include(_)));
+}
+
+#[test]
+fn flow_relative_decl_ids_normalize_like_implicit_names() {
+    let tree = parse_ok(
+        r"
+flow @.opening {
+    alice(id=@.hello): おはよう。[p]
+}
+
+flow @. prologue {
+}
+
+flow @flow:. routed {
+}
+
+flow named {
+    alice(id=@.hello): おはよう。[p]
+}
+
+fragment @frag:.intro {
+}
+
+fragment @frag:. shared {
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("relative flow ids lower");
+
+    assert_eq!(hir.flows()[0].id().expect("flow id").body(), "flow.opening");
+    assert_eq!(hir.flows()[0].name(), Some("opening"));
+    assert_eq!(
+        hir.flows()[1].id().expect("empty marker flow id").body(),
+        "flow.prologue"
+    );
+    assert_eq!(hir.flows()[1].name(), Some("prologue"));
+    assert_eq!(
+        hir.flows()[2]
+            .id()
+            .expect("empty family marker flow id")
+            .body(),
+        "flow.routed"
+    );
+    assert_eq!(
+        hir.flows()[3].id().expect("implicit flow id").body(),
+        "flow.named"
+    );
+    assert_eq!(
+        hir.flows()[4].id().expect("fragment id").body(),
+        "fragment.intro"
+    );
+    assert_eq!(
+        hir.flows()[5]
+            .id()
+            .expect("empty marker fragment id")
+            .body(),
+        "fragment.shared"
+    );
+    let HirFlowItem::Dialogue(line) = &hir.flows()[0].body()[0] else {
+        panic!("expected dialogue");
+    };
+    assert_eq!(
+        line.id().expect("line id").body(),
+        "say.opening.alice.hello"
+    );
 }
 
 #[test]
@@ -106,7 +178,11 @@ flow @<flow.alice_intro@sem:b3_9f2a1c> opening {
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
-    let id = flow.id().expect("flow id");
+    let id = flow
+        .id()
+        .expect("flow id")
+        .as_absolute()
+        .expect("absolute flow id");
     assert!(id.is_delimited());
     assert_eq!(id.body(), "flow.alice_intro@sem:b3_9f2a1c");
     let FlowItem::Include(fragment) = &flow.body()[0] else {

@@ -127,6 +127,16 @@ ID を期待する文脈では、一貫性のため family-relative spelling も
 ただし手書きでは短い `@.suffix` を推奨する。
 
 ```awft
+flow @.opening {
+    goto @flow:.next
+}
+
+flow @flow:.next {
+}
+
+character @.alice Alice as alice {
+}
+
 alice(id=@.greeting):
     おはよう。[p]
 
@@ -137,6 +147,16 @@ choice @choice:.first {
     @choice:.listen "聞く" -> @flow:.listen
 }
 ```
+
+宣言そのものが family を決める場合、`@.suffix` はその宣言 family に
+正規化される。`flow @.opening` と `flow @flow:.opening` は
+`flow.opening` を宣言し、`character @.alice` と
+`character @character:.alice` は `character.alice` を宣言する。空の
+`@.` / `@family:.` marker も宣言位置では使える。その場合は後続の宣言名を
+suffix として使い、`flow @. opening { ... }`、`flow @flow:. opening { ... }`、
+`character @. alice Alice { ... }` はそれぞれ `flow.opening` /
+`flow.opening` / `character.alice` を宣言する。ID を書かずに
+`flow opening { ... }` と書いた場合も同じ暗黙 ID `flow.opening` を持つ。
 
 一般の entity reference 文脈で相対参照したい場合は family を明示する。
 同じ flow / fragment / asset family の中を相対参照する場合は、

@@ -401,8 +401,9 @@ fn lower_function(function: &FunctionItem) -> HirFunction {
 }
 
 fn lower_flow(flow: &Flow) -> Result<HirFlow, HirLowerError> {
+    let id = normalize_flow_decl_id(flow)?;
     let mut context = LowerContext {
-        flow_slug: flow.id().map(flow_slug_from_entity),
+        flow_slug: id.as_ref().map(flow_slug_from_entity),
         ..LowerContext::default()
     };
     let body = flow
@@ -412,12 +413,44 @@ fn lower_flow(flow: &Flow) -> Result<HirFlow, HirLowerError> {
         .collect::<Result<Vec<_>, _>>()?;
     Ok(HirFlow {
         kind: flow.kind(),
-        id: flow.id().cloned(),
+        id,
         name: flow.name().map(str::to_owned),
         signature: flow.signature().cloned(),
         contracts: flow.contracts().to_vec(),
         body,
     })
+}
+
+fn normalize_flow_decl_id(flow: &Flow) -> Result<Option<EntityRef>, HirLowerError> {
+    let family = flow_decl_family(flow.kind());
+    match flow.id() {
+        Some(IdRef::Absolute(id)) => Ok(Some(id.clone())),
+        Some(IdRef::Relative(relative)) => Ok(Some(EntityRef::new(
+            format!("{family}.{}", relative.suffix()),
+            false,
+            *relative.range(),
+        ))),
+        Some(IdRef::FamilyRelative(relative)) => {
+            if !flow_decl_family_matches(flow.kind(), relative.family()) {
+                return Err(HirLowerError::new(
+                    format!(
+                        "{} declaration cannot use `{}` family-relative id",
+                        flow_decl_family(flow.kind()),
+                        relative.family()
+                    ),
+                    Some(*relative.range()),
+                ));
+            }
+            Ok(Some(EntityRef::new(
+                format!("{family}.{}", relative.relative().suffix()),
+                false,
+                *relative.range(),
+            )))
+        }
+        None => Ok(flow
+            .name()
+            .map(|name| EntityRef::new(format!("{family}.{name}"), false, *flow.range()))),
+    }
 }
 
 fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
@@ -1055,6 +1088,20 @@ fn line_id_to_text_key(line_id: &str) -> String {
     line_id
         .strip_prefix("say.")
         .map_or_else(|| format!("text.{line_id}"), |tail| format!("text.{tail}"))
+}
+
+fn flow_decl_family(kind: FlowKind) -> &'static str {
+    match kind {
+        FlowKind::Flow => "flow",
+        FlowKind::Fragment => "fragment",
+    }
+}
+
+fn flow_decl_family_matches(kind: FlowKind, family: &str) -> bool {
+    match kind {
+        FlowKind::Flow => family == "flow",
+        FlowKind::Fragment => matches!(family, "fragment" | "frag"),
+    }
 }
 
 fn speaker_slug(speaker: &str) -> String {

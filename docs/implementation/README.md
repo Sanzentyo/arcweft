@@ -205,6 +205,14 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `arcw bench` list those declarations in human or JSON form. Actual scenario,
   visual, audio, fixture, and performance execution remains a player/headless
   adapter TODO.
+- Declaration ID positions whose family is known now accept current-scope and
+  family-relative IDs. `flow @.opening`, `flow @flow:.opening`, and bare
+  `flow opening` normalize to `flow.opening`; declarations such as
+  `character @.alice`, `hook @.visible`, `source @source:.events`, and
+  `dialogue defaults @dialogue:.opening` follow the same rule. Empty declaration
+  markers are accepted when a declaration name follows them: `flow @. opening`,
+  `flow @flow:. opening`, `character @. alice Alice`, `signal @signal:. ready`,
+  and `source @source:. metrics()` normalize through that following name.
 - Remaining P2 semantic work is deeper than syntax readiness: full all-paths
   `MustDrop` discharge, promotion proof rules, `unsafe lifetime` audit regions,
   deterministic concurrent write conflict checking, and join-result typing for

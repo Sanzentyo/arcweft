@@ -308,7 +308,7 @@ impl ObligationCollector {
         for declaration in module.declarations() {
             match declaration {
                 HirTopLevelDecl::Proof(proof) => {
-                    let id = id_ref_label(proof.id());
+                    let id = id_ref_label(proof.id(), "proof");
                     self.known_proofs.insert(id.clone());
                     self.report.proofs.push(ProofSummary {
                         id,
@@ -316,7 +316,7 @@ impl ObligationCollector {
                     });
                 }
                 HirTopLevelDecl::TrustedAxiom(axiom) => {
-                    let id = id_ref_label(axiom.id());
+                    let id = id_ref_label(axiom.id(), "axiom");
                     self.known_axioms.insert(id.clone());
                     self.report.trusted_axioms.push(TrustedAxiomSummary {
                         id,
@@ -783,7 +783,7 @@ impl ObligationCollector {
         has_safety_doc: bool,
         body: &[Stmt],
     ) {
-        let id = id_ref_label(id);
+        let id = id_ref_label(id, "unsafe");
         if let Some(reason) = reason {
             self.collect_expr(reason);
         }
@@ -1088,9 +1088,14 @@ fn span_from_range(range: &TextRange) -> SourceSpan {
     }
 }
 
-fn id_ref_label(id: &IdRef) -> String {
-    id.as_absolute()
-        .map_or_else(|| id.body().to_owned(), |entity| entity.body().to_owned())
+fn id_ref_label(id: &IdRef, default_family: &str) -> String {
+    match id {
+        IdRef::Absolute(entity) => entity.body().to_owned(),
+        IdRef::Relative(relative) => format!("{default_family}.{}", relative.suffix()),
+        IdRef::FamilyRelative(relative) => {
+            format!("{}.{}", relative.family(), relative.relative().suffix())
+        }
+    }
 }
 
 fn proof_arg(args: &[Expr]) -> Option<String> {

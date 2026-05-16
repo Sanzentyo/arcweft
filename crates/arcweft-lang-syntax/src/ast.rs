@@ -204,7 +204,7 @@ pub struct Flow {
     doc: Option<DocBlock>,
     kind: FlowKind,
     visibility: Option<Visibility>,
-    id: Option<EntityRef>,
+    id: Option<IdRef>,
     name: Option<String>,
     signature_tail: String,
     signature: Option<crate::types::FnSignature>,
@@ -219,7 +219,7 @@ pub(crate) struct FlowInit {
     pub(crate) doc: Option<DocBlock>,
     pub(crate) kind: FlowKind,
     pub(crate) visibility: Option<Visibility>,
-    pub(crate) id: Option<EntityRef>,
+    pub(crate) id: Option<IdRef>,
     pub(crate) name: Option<String>,
     pub(crate) signature_tail: String,
     pub(crate) signature: Option<crate::types::FnSignature>,
@@ -1683,7 +1683,7 @@ impl Flow {
         self.visibility
     }
 
-    pub const fn id(&self) -> Option<&EntityRef> {
+    pub const fn id(&self) -> Option<&IdRef> {
         self.id.as_ref()
     }
 

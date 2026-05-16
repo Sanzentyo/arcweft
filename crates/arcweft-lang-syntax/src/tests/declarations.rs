@@ -587,6 +587,74 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn declaration_relative_ids_normalize_to_their_decl_family() {
+    let tree = parse_ok(
+        r"
+character @.alice Alice as alice {
+}
+
+character @. bob Bob as bob {
+}
+
+signal @signal:.current_flow: Watch<Ref<Flow>>
+
+signal @signal:. ready: Watch<bool>
+
+hook @.choice_visible {
+    on choice.visible
+    phase after
+}
+
+dialogue defaults @dialogue:.opening {
+    window = @textbox.side
+}
+
+source @source:.events() {
+    yield event
+}
+
+source @source:. metrics() {
+    yield event
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("relative declaration ids lower");
+
+    assert!(matches!(
+        &hir.declarations()[0],
+        HirTopLevelDecl::EntityDecl(item) if item.id().body() == "character.alice"
+    ));
+    assert!(matches!(
+        &hir.declarations()[1],
+        HirTopLevelDecl::EntityDecl(item) if item.id().body() == "character.bob"
+    ));
+    assert!(matches!(
+        &hir.declarations()[2],
+        HirTopLevelDecl::EntityDecl(item) if item.id().body() == "signal.current_flow"
+    ));
+    assert!(matches!(
+        &hir.declarations()[3],
+        HirTopLevelDecl::EntityDecl(item) if item.id().body() == "signal.ready"
+    ));
+    assert!(matches!(
+        &hir.declarations()[4],
+        HirTopLevelDecl::Hook(item) if item.id().body() == "hook.choice_visible"
+    ));
+    assert!(matches!(
+        &hir.declarations()[5],
+        HirTopLevelDecl::DialogueDefaults(item) if item.id().is_some_and(|id| id.body() == "dialogue.opening")
+    ));
+    assert!(matches!(
+        &hir.declarations()[6],
+        HirTopLevelDecl::Source(item) if item.id().is_some_and(|id| id.body() == "source.events")
+    ));
+    assert!(matches!(
+        &hir.declarations()[7],
+        HirTopLevelDecl::Source(item) if item.id().is_some_and(|id| id.body() == "source.metrics")
+    ));
+}
+
+#[test]
 fn typechecks_structured_function_body_for_hir_readiness() {
     let tree = parse_ok(
         r"

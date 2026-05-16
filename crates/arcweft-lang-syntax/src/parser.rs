@@ -400,9 +400,14 @@ impl Parser {
         let first = header_lines.first().copied()?;
         let (visibility, after_visibility) = parse_visibility_prefix(first);
         let (kind, after_flow) = parse_flow_kind(after_visibility.trim_start())?;
-        let (id, after_id) =
-            parse_optional_entity_ref(after_flow, start_line.start, &mut self.errors);
+        let (id, after_id) = parse_optional_decl_id_ref(
+            after_flow,
+            flow_decl_family(kind),
+            start_line.start,
+            &mut self.errors,
+        );
         let (name, signature_tail) = parse_name_and_tail(after_id.trim());
+        let name = name.or_else(|| implicit_flow_name_from_id(id.as_ref()));
         let signature = parse_flow_signature(name.as_deref(), &signature_tail);
         let contracts = header_lines
             .iter()
@@ -925,17 +930,15 @@ impl Parser {
             .trim_start()
             .strip_prefix("hook")?
             .trim_start();
-        let (id, _) = parse_required_entity_ref(after_hook, start_line.start, &mut self.errors)?;
-        let target = header_lines
-            .iter()
-            .find_map(|line| line.strip_prefix("on ").map(str::trim))
-            .unwrap_or_default()
-            .to_owned();
-        let phase = header_lines
-            .iter()
-            .find_map(|line| line.strip_prefix("phase ").map(str::trim))
-            .unwrap_or_default()
-            .to_owned();
+        let (id, _) = parse_required_decl_entity_ref_without_name_marker(
+            after_hook,
+            "hook",
+            "hook declaration marker needs an explicit hook name suffix",
+            start_line.start,
+            &mut self.errors,
+        )?;
+        let target = find_header_value(&header_lines, "on ");
+        let phase = find_header_value(&header_lines, "phase ");
         let mut when = None;
         let mut priority = None;
         let mut once = false;
@@ -1060,8 +1063,12 @@ impl Parser {
             .trim_start()
             .strip_prefix("dialogue defaults")?
             .trim_start();
-        let (id, tail) =
-            parse_optional_entity_ref(after_defaults, start_line.start, &mut self.errors);
+        let (id, tail) = parse_optional_decl_entity_ref(
+            after_defaults,
+            "dialogue",
+            start_line.start,
+            &mut self.errors,
+        );
         if !tail.trim().is_empty() {
             self.push_error(
                 TextRange::new(start_line.start, start_line.start + head.len()),
@@ -1228,16 +1235,38 @@ impl Parser {
             .strip_prefix("source")?
             .trim_start();
         let (id, name, signature_tail) = if after_source.starts_with('@') {
-            let (id, rest) =
-                parse_optional_entity_ref(after_source, start_line.start, &mut self.errors);
-            let (id, signature_tail) = id.map_or_else(
-                || (None, rest.trim().to_owned()),
-                |id| {
+            match parse_required_decl_entity_ref_or_marker(
+                after_source,
+                "source",
+                start_line.start,
+                &mut self.errors,
+            )? {
+                (DeclEntityId::Entity(id), rest) => {
                     let (id, tail) = normalize_trailing_colon_id(id, rest);
-                    (Some(id), tail.trim().to_owned())
-                },
-            );
-            (id, None, signature_tail)
+                    (Some(id), None, tail.trim().to_owned())
+                }
+                (DeclEntityId::NameMarker(marker), rest) => {
+                    let (name, tail) = parse_name_and_tail(rest);
+                    let Some(name_value) = name.as_deref() else {
+                        self.errors.push(simple_error(
+                            marker.range.start(),
+                            marker.range.end() - marker.range.start(),
+                            "source declaration marker needs a following source name",
+                            "@source:. name()",
+                        ));
+                        return None;
+                    };
+                    (
+                        Some(EntityRef::new(
+                            format!("source.{name_value}"),
+                            false,
+                            marker.range,
+                        )),
+                        name,
+                        tail,
+                    )
+                }
+            }
         } else {
             let (name, tail) = parse_name_and_tail(after_source);
             (None, name, tail)
@@ -3188,6 +3217,25 @@ fn entity_decl_kind(input: &str) -> Option<(EntityDeclKind, &str)> {
     })
 }
 
+fn entity_decl_family(kind: EntityDeclKind) -> &'static str {
+    match kind {
+        EntityDeclKind::Character => "character",
+        EntityDeclKind::Component => "component",
+        EntityDeclKind::Activity => "activity",
+        EntityDeclKind::Signal => "signal",
+        EntityDeclKind::Layer => "layer",
+        EntityDeclKind::Textbox => "textbox",
+        EntityDeclKind::Voice => "voice",
+        EntityDeclKind::Se => "se",
+        EntityDeclKind::Bgm => "bgm",
+        EntityDeclKind::AudioBus => "bus",
+        EntityDeclKind::MixerSnapshot => "mix",
+        EntityDeclKind::Ducking => "duck",
+        EntityDeclKind::Motion => "motion",
+        EntityDeclKind::Rig => "rig",
+    }
+}
+
 fn parse_entity_decl_head(
     head: &str,
     base: usize,
@@ -3199,8 +3247,28 @@ fn parse_entity_decl_head(
         .strip_prefix("surface ")
         .unwrap_or(rest.trim_start());
     let (kind, rest) = entity_decl_kind(rest.trim_start())?;
-    let (id, rest) = parse_required_entity_ref(rest, base, errors)?;
-    let (id, rest) = normalize_trailing_colon_id(id, rest);
+    let family = entity_decl_family(kind);
+    let (parsed_id, rest) = parse_required_decl_entity_ref_or_marker(rest, family, base, errors)?;
+    let (id, rest) = match parsed_id {
+        DeclEntityId::Entity(id) => normalize_trailing_colon_id(id, rest),
+        DeclEntityId::NameMarker(marker) => {
+            let rest = rest.trim();
+            let (name, _) = parse_name_and_tail(rest);
+            let Some(name) = name.as_deref() else {
+                errors.push(simple_error(
+                    marker.range.start(),
+                    marker.range.end() - marker.range.start(),
+                    "relative declaration marker needs a following declaration name",
+                    &format!("@{family}:. name"),
+                ));
+                return None;
+            };
+            (
+                EntityRef::new(format!("{family}.{name}"), false, marker.range),
+                rest.to_owned(),
+            )
+        }
+    };
     let rest = rest.trim();
     let (name, signature_tail) = parse_name_and_tail(rest);
     let (signature_tail, surface_alias) = split_surface_alias(signature_tail);
@@ -3258,6 +3326,21 @@ fn parse_flow_kind(input: &str) -> Option<(FlowKind, &str)> {
         .map(|rest| (FlowKind::Fragment, rest.trim_start()))
 }
 
+fn flow_decl_family(kind: FlowKind) -> &'static str {
+    match kind {
+        FlowKind::Flow => "flow",
+        FlowKind::Fragment => "fragment",
+    }
+}
+
+fn find_header_value(lines: &[&str], prefix: &str) -> String {
+    lines
+        .iter()
+        .find_map(|line| line.strip_prefix(prefix).map(str::trim))
+        .unwrap_or_default()
+        .to_owned()
+}
+
 fn parse_flow_signature(
     name: Option<&str>,
     signature_tail: &str,
@@ -3267,6 +3350,14 @@ fn parse_flow_signature(
         return None;
     }
     parse_fn_signature(&format!("fn {}{}", name.unwrap_or("flow"), tail)).ok()
+}
+
+fn implicit_flow_name_from_id(id: Option<&IdRef>) -> Option<String> {
+    match id? {
+        IdRef::Relative(relative) => Some(relative.suffix().to_owned()),
+        IdRef::FamilyRelative(relative) => Some(relative.relative().suffix().to_owned()),
+        IdRef::Absolute(_) => None,
+    }
 }
 
 fn parse_visibility_prefix(input: &str) -> (Option<Visibility>, &str) {
@@ -3298,6 +3389,101 @@ fn parse_optional_entity_ref<'a>(
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct EmptyDeclRelativeMarker {
+    range: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum DeclEntityId {
+    Entity(EntityRef),
+    NameMarker(EmptyDeclRelativeMarker),
+}
+
+fn parse_optional_decl_id_ref<'a>(
+    input: &'a str,
+    family: &str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> (Option<IdRef>, &'a str) {
+    let trimmed = input.trim_start();
+    if let Some((marker_family, marker_len, rest)) = split_empty_decl_relative_marker(trimmed) {
+        if marker_family.is_some_and(|actual| !decl_family_matches(family, actual)) {
+            errors.push(simple_error(
+                base,
+                marker_len,
+                "family-relative declaration marker uses the wrong family",
+                &format!("@{family}:. name"),
+            ));
+        }
+        return (None, rest);
+    }
+    if starts_leading_relative_id(trimmed) || starts_leading_relative_entity_ref(trimmed) {
+        return match parse_required_id_ref(trimmed, base, errors) {
+            Some((id, rest)) => {
+                if let IdRef::FamilyRelative(relative) = &id {
+                    if !decl_family_matches(family, relative.family()) {
+                        errors.push(simple_error(
+                            relative.range().start(),
+                            relative.range().end() - relative.range().start(),
+                            "family-relative declaration id uses the wrong family",
+                            &format!("@{family}:.suffix"),
+                        ));
+                    }
+                }
+                (Some(id), rest)
+            }
+            None => (None, input),
+        };
+    }
+    let (id, rest) = parse_optional_id_ref(input, base, errors);
+    let Some(id) = id else {
+        return (None, rest);
+    };
+    match &id {
+        IdRef::FamilyRelative(relative) if !decl_family_matches(family, relative.family()) => {
+            errors.push(simple_error(
+                relative.range().start(),
+                relative.range().end() - relative.range().start(),
+                "family-relative declaration id uses the wrong family",
+                &format!("@{family}:.suffix"),
+            ));
+        }
+        _ => {}
+    }
+    (Some(id), rest)
+}
+
+fn parse_optional_decl_entity_ref<'a>(
+    input: &'a str,
+    family: &str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> (Option<EntityRef>, &'a str) {
+    let trimmed = input.trim_start();
+    if let Some((marker_family, marker_len, rest)) = split_empty_decl_relative_marker(trimmed) {
+        if marker_family.is_some_and(|actual| !decl_family_matches(family, actual)) {
+            errors.push(simple_error(
+                base,
+                marker_len,
+                "family-relative declaration marker uses the wrong family",
+                &format!("@{family}:. name"),
+            ));
+        }
+        return (None, rest);
+    }
+    if starts_leading_relative_id(trimmed) || starts_leading_relative_entity_ref(trimmed) {
+        match parse_required_id_ref(trimmed, base, errors)
+            .and_then(|(id, rest)| normalize_decl_id_ref(id, family, errors).map(|id| (id, rest)))
+        {
+            Some((entity, rest)) => (Some(entity), rest),
+            None => (None, input),
+        }
+    } else {
+        parse_optional_entity_ref(input, base, errors)
+    }
+}
+
 fn parse_optional_id_ref<'a>(
     input: &'a str,
     base: usize,
@@ -3320,6 +3506,140 @@ fn parse_optional_id_ref<'a>(
     } else {
         (None, input)
     }
+}
+
+fn parse_required_decl_entity_ref<'a>(
+    input: &'a str,
+    family: &str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Option<(EntityRef, &'a str)> {
+    let input = input.trim_start();
+    if starts_leading_relative_id(input) || starts_leading_relative_entity_ref(input) {
+        let (id, rest) = parse_required_id_ref(input, base, errors)?;
+        let entity = normalize_decl_id_ref(id, family, errors)?;
+        Some((entity, rest))
+    } else {
+        parse_required_entity_ref(input, base, errors)
+    }
+}
+
+fn parse_required_decl_entity_ref_or_marker<'a>(
+    input: &'a str,
+    family: &str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Option<(DeclEntityId, &'a str)> {
+    let input = input.trim_start();
+    if let Some((marker_family, marker_len, rest)) = split_empty_decl_relative_marker(input) {
+        if marker_family.is_some_and(|actual| !decl_family_matches(family, actual)) {
+            errors.push(simple_error(
+                base,
+                marker_len,
+                "family-relative declaration marker uses the wrong family",
+                &format!("@{family}:. name"),
+            ));
+            return None;
+        }
+        return Some((
+            DeclEntityId::NameMarker(EmptyDeclRelativeMarker {
+                range: TextRange::new(base, base + marker_len),
+            }),
+            rest,
+        ));
+    }
+    parse_required_decl_entity_ref(input, family, base, errors)
+        .map(|(entity, rest)| (DeclEntityId::Entity(entity), rest))
+}
+
+fn parse_required_decl_entity_ref_without_name_marker<'a>(
+    input: &'a str,
+    family: &str,
+    marker_message: &str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Option<(EntityRef, &'a str)> {
+    match parse_required_decl_entity_ref_or_marker(input, family, base, errors)? {
+        (DeclEntityId::Entity(id), rest) => Some((id, rest)),
+        (DeclEntityId::NameMarker(marker), _) => {
+            errors.push(simple_error(
+                marker.range.start(),
+                marker.range.end() - marker.range.start(),
+                marker_message,
+                &format!("@{family}:.suffix"),
+            ));
+            None
+        }
+    }
+}
+
+fn normalize_decl_id_ref(
+    id: IdRef,
+    family: &str,
+    errors: &mut Vec<ParseError>,
+) -> Option<EntityRef> {
+    match id {
+        IdRef::Absolute(entity) => Some(entity),
+        IdRef::Relative(relative) => Some(EntityRef::new(
+            format!("{family}.{}", relative.suffix()),
+            false,
+            *relative.range(),
+        )),
+        IdRef::FamilyRelative(relative) => {
+            if !decl_family_matches(family, relative.family()) {
+                errors.push(simple_error(
+                    relative.range().start(),
+                    relative.range().end() - relative.range().start(),
+                    "family-relative declaration id uses the wrong family",
+                    &format!("@{family}:.suffix"),
+                ));
+                return None;
+            }
+            Some(EntityRef::new(
+                format!("{family}.{}", relative.relative().suffix()),
+                false,
+                *relative.range(),
+            ))
+        }
+    }
+}
+
+fn decl_family_matches(expected: &str, actual: &str) -> bool {
+    expected == actual || expected == "fragment" && actual == "frag"
+}
+
+fn split_empty_decl_relative_marker(source: &str) -> Option<(Option<&str>, usize, &str)> {
+    if let Some(rest) = source.strip_prefix("@.") {
+        return (!rest.starts_with(is_decl_relative_suffix_start)).then_some((
+            None,
+            "@.".len(),
+            rest,
+        ));
+    }
+    let at = source.strip_prefix('@')?;
+    let family_len = take_decl_marker_while(at, |ch| ch.is_ascii_alphanumeric() || ch == '_');
+    if family_len == 0 {
+        return None;
+    }
+    let marker = at.get(family_len..)?.strip_prefix(":.")?;
+    (!marker.starts_with(is_decl_relative_suffix_start)).then_some((
+        Some(&at[..family_len]),
+        '@'.len_utf8() + family_len + ":.".len(),
+        marker,
+    ))
+}
+
+fn take_decl_marker_while(source: &str, predicate: impl Fn(char) -> bool) -> usize {
+    source
+        .char_indices()
+        .take_while(|(_, ch)| predicate(*ch))
+        .map(|(index, ch)| index + ch.len_utf8())
+        .last()
+        .unwrap_or(0)
+}
+
+fn is_decl_relative_suffix_start(ch: char) -> bool {
+    ch == '_' || ch.is_alphabetic()
 }
 
 fn parse_required_entity_ref<'a>(

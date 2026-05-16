@@ -68,7 +68,7 @@ pub fn collect_script_tests(module: &HirModule) -> ScriptTestManifest {
 
 fn script_test(item: &TestItem) -> ScriptTest {
     ScriptTest {
-        id: id_ref_label(item.id()),
+        id: id_ref_label(item.id(), "test"),
         kind: item.kind().as_str().to_owned(),
         steps: command_rows(item.body()),
         source: span(item.range()),
@@ -77,7 +77,7 @@ fn script_test(item: &TestItem) -> ScriptTest {
 
 fn script_bench(item: &BenchItem) -> ScriptBench {
     ScriptBench {
-        id: id_ref_label(item.id()),
+        id: id_ref_label(item.id(), "bench"),
         sections: command_rows(item.body())
             .into_iter()
             .map(|step| BenchSection {
@@ -107,12 +107,12 @@ fn command_rows(body: &str) -> Vec<ScriptStep> {
         .collect()
 }
 
-fn id_ref_label(id: &IdRef) -> String {
+fn id_ref_label(id: &IdRef, default_family: &str) -> String {
     match id {
         IdRef::Absolute(entity) => entity.body().to_owned(),
-        IdRef::Relative(relative) => relative.suffix().to_owned(),
+        IdRef::Relative(relative) => format!("{default_family}.{}", relative.suffix()),
         IdRef::FamilyRelative(relative) => {
-            format!("{}:{}", relative.family(), relative.relative().suffix())
+            format!("{}.{}", relative.family(), relative.relative().suffix())
         }
     }
 }

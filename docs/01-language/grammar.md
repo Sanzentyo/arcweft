@@ -32,6 +32,13 @@ background changes are ordinary effectful function calls, not `@` commands.
 choice IDs, option IDs, and text-key overrides. ID-bearing contexts may also
 accept family-relative spelling such as `@say:.greeting` or `@choice:.first`,
 but hand-written code should prefer the shorter `@.greeting` form there. It is
+also accepted in declaration ID positions whose family is known from the
+declaration keyword, such as `flow @.opening`, `flow @flow:.opening`, and
+`character @.alice`. Empty declaration markers `@.` and `@family:.` are also
+accepted when a declaration name follows them, so `flow @. opening` and
+`character @. alice Alice` use that following name as the family-local suffix.
+These normalize to the declaration family, and named flow declarations without
+an explicit ID use the same implicit ID as `@.name`. It is
 not a general entity reference; write `goto @flow.opening.next` or the
 recommended family-relative `goto @flow:.next`, not `goto .next`. In general
 entity-reference contexts, relative references must include an entity family:
