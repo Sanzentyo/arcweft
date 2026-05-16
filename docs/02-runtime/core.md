@@ -49,8 +49,21 @@ pub struct FlowFiber {
     pub line_cursor: usize,
     pub cursor: Option<FlowCursor>,
     pub pending_ops: VecDeque<FlowOp>,
+    pub frames: Vec<RuntimeFrame>,
     pub env: RuntimeEnv,
     pub status: FlowFiberStatus,
+}
+
+pub enum RuntimeFrameKind {
+    Scope,
+    Loop { body: Vec<FlowOp> },
+    While { condition: RuntimeExpr, body: Vec<FlowOp> },
+    WhileLet {
+        pattern: RuntimePattern,
+        expr: RuntimeExpr,
+        guard: Option<RuntimeExpr>,
+        body: Vec<FlowOp>,
+    },
 }
 
 pub struct FrameInput {
@@ -80,6 +93,12 @@ Phase 1.8 の `Engine` は structured control-flow runtime slice であり、ま
 `If` / `IfLet` / `Match` / `Loop` / `While` / `WhileLet` / `For` は
 `RuntimeValue` / `RuntimeExpr` / `RuntimePattern` と `RuntimeEnv` で評価され、
 選択された block は `pending_ops` queue に積まれて次 frame 以降で実行される。
+`FlowFiber::frames` は lexical scope と loop continuation を明示的に保持し、
+`break` / `continue` が body 内の残り op と scope-local binding を破棄して
+最も近い loop/while/while-let continuation へ移るために使われる。
+`FrameInput::external_values` は ambient input として root runtime scope に束縛される。
+branch / match / while-let pattern binding は選択された block scope にだけ束縛され、
+guard 評価後や block 終了後には外側へ漏れない。
 `Goto` / `GotoExpr` / `Return` / `ReturnExpr` は `FlowFiber` の cursor/status を更新する。
 実 thread、wall-clock、renderer、audio、device、filesystem は adapter 側の責務である。
 `ScopeExit::Completed | Cancelled | Failed` は outcome-guarded `defer` stack の

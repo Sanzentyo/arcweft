@@ -212,10 +212,17 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   fiber status. `--value` injects pure runtime bindings such as
   `ready=true`, `count=3`, or `route=@flow.next`; the CLI owns filesystem I/O
   and runtime execution remains Sans I/O.
+- The Phase 1.8 runtime now has an explicit `FlowFiber` frame stack for lexical
+  scopes and loop continuations. `break` and `continue` discard queued body ops,
+  pop body-local scopes, and transfer to the nearest loop/while/while-let frame.
+  Branch, match, and while-let pattern bindings are scoped to the selected body;
+  guard evaluation uses temporary bindings and restores the previous runtime
+  environment. `FrameInput::external_values` bind into the root runtime scope so
+  ambient per-frame values are not lost when a nested scope exits.
 - Gap audit result: broad runtime docs still exceed the implemented core. Full
   story VM value execution, complete expression evaluation, source adapter
   execution, hook/memo runtime tables, save/replay traces, activities, layered
-  input routing, and complete control-flow loop/match execution remain TODOs
+  input routing, and value-producing `break expr` result slots remain TODOs
   beyond the current flow/runtime Sans I/O subset.
 - `pro_review14.md` / `pro_review15.md`: adopted proof-aware
   lifetime/thread/drop direction and Agent-friendly tooling diagnostics.

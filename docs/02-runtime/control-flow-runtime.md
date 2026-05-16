@@ -168,28 +168,35 @@ The scope path affects only generated or relative line, text-key, choice, and
 option IDs created inside the scope. It does not change ordinary entity
 references, local variable lookup, or the value returned by the block.
 
-`loop` lowers to a block with a loop-exit slot.
+`loop` lowers to a runtime loop frame plus scoped body operations. The frame is
+the continuation target for `break` and `continue`; the body scope is popped
+before either transfer, so body-local bindings do not leak.
 
 ```text
-LoopStart
-  body
-  Jump LoopStart
-LoopBreak(value) -> write exit slot, jump LoopEnd
-LoopEnd -> read exit slot
+PushLoopFrame(body)
+  EnterScope
+    body
+  ExitScope
+  LoopNext(body)
+Break(value?) -> pop body scopes, discard queued body ops, pop loop frame
+Continue -> pop body scopes, discard queued body ops, enqueue LoopNext(body)
 ```
 
-`while let` lowers to repeated match:
+`while` and `while let` use the same frame stack. `while let` keeps successful
+pattern bindings in the body scope only; guard evaluation receives temporary
+bindings and restores the outer environment before the selected body is queued.
 
-```awft
-loop {
-    match expr {
-        PAT when guard => body
-        _ => break
-    }
-}
+```text
+PushWhileLetFrame(pattern, expr, guard, body)
+  EnterScope
+    Bind(pattern bindings)
+    body
+  ExitScope
+  WhileLetNext(pattern, expr, guard, body)
 ```
 
-but type checking keeps `while let` as Unit.
+Type checking still keeps `while` and `while let` as `Unit`; only `loop` can
+produce a value through `break expr`.
 
 ## Replay
 

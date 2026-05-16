@@ -12,7 +12,7 @@ pub mod prelude {
     pub use arcweft_source::{SourceAnchor, SourceName, SourcePosition};
 }
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -237,6 +237,7 @@ pub struct RuntimeFlow {
 /// One deterministic operation in a lowered flow program.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FlowOp {
+    Bind(Vec<RuntimeBinding>),
     Let {
         pattern: RuntimePattern,
         expr: RuntimeExpr,
@@ -277,11 +278,24 @@ pub enum FlowOp {
     Loop {
         body: Vec<FlowOp>,
     },
+    LoopNext {
+        body: Vec<FlowOp>,
+    },
     While {
         condition: RuntimeExpr,
         body: Vec<FlowOp>,
     },
+    WhileNext {
+        condition: RuntimeExpr,
+        body: Vec<FlowOp>,
+    },
     WhileLet {
+        pattern: RuntimePattern,
+        expr: RuntimeExpr,
+        guard: Option<RuntimeExpr>,
+        body: Vec<FlowOp>,
+    },
+    WhileLetNext {
         pattern: RuntimePattern,
         expr: RuntimeExpr,
         guard: Option<RuntimeExpr>,
@@ -312,6 +326,8 @@ pub struct RuntimeMatchArm {
     pub guard: Option<RuntimeExpr>,
     pub ops: Vec<FlowOp>,
 }
+
+type RuntimeMatchSelection = Option<(Vec<RuntimeBinding>, Vec<FlowOp>)>;
 
 /// Runtime choice option visible to adapters and selectable from `FrameInput`.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -356,8 +372,34 @@ pub struct FlowFiber {
     pub line_cursor: usize,
     pub cursor: Option<FlowCursor>,
     pub pending_ops: VecDeque<FlowOp>,
+    pub frames: Vec<RuntimeFrame>,
     pub env: RuntimeEnv,
     pub status: FlowFiberStatus,
+}
+
+/// Runtime stack frame used to make scope exit and loop transfer explicit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeFrame {
+    pub kind: RuntimeFrameKind,
+}
+
+/// Structured frame kind for the minimal flow executor.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeFrameKind {
+    Scope,
+    Loop {
+        body: Vec<FlowOp>,
+    },
+    While {
+        condition: RuntimeExpr,
+        body: Vec<FlowOp>,
+    },
+    WhileLet {
+        pattern: RuntimePattern,
+        expr: RuntimeExpr,
+        guard: Option<RuntimeExpr>,
+        body: Vec<FlowOp>,
+    },
 }
 
 /// Position in a lowered flow program.
@@ -431,6 +473,8 @@ pub enum RuntimeEvalError {
     UnsupportedUnary { op: &'static str, value: String },
     #[error("pattern did not match {0}")]
     PatternMismatch(String),
+    #[error("pattern binds `{0}` more than once")]
+    DuplicateBinding(String),
     #[error("loop control `{0}` reached a non-loop runtime context")]
     MisplacedLoopControl(&'static str),
 }
@@ -1003,6 +1047,12 @@ impl RuntimeEnv {
         }
     }
 
+    pub fn set_root(&mut self, name: impl Into<String>, value: RuntimeValue) {
+        if let Some(scope) = self.scopes.first_mut() {
+            scope.insert(name.into(), value);
+        }
+    }
+
     pub fn get(&self, name: &str) -> Option<&RuntimeValue> {
         self.scopes.iter().rev().find_map(|scope| scope.get(name))
     }
@@ -1010,6 +1060,12 @@ impl RuntimeEnv {
     pub fn bind_all(&mut self, bindings: impl IntoIterator<Item = RuntimeBinding>) {
         for binding in bindings {
             self.set(binding.name, binding.value);
+        }
+    }
+
+    pub fn bind_all_root(&mut self, bindings: impl IntoIterator<Item = RuntimeBinding>) {
+        for binding in bindings {
+            self.set_root(binding.name, binding.value);
         }
     }
 }
@@ -1020,6 +1076,7 @@ impl Default for FlowFiber {
             line_cursor: 0,
             cursor: None,
             pending_ops: VecDeque::new(),
+            frames: Vec::new(),
             env: RuntimeEnv::default(),
             status: FlowFiberStatus::Done(FlowExit::Done),
         }
@@ -1070,6 +1127,7 @@ impl Engine {
                 line_cursor: 0,
                 cursor,
                 pending_ops: VecDeque::new(),
+                frames: Vec::new(),
                 env: RuntimeEnv::default(),
                 status,
             },
@@ -1084,7 +1142,7 @@ impl Engine {
         let mut output = FrameOutput::default();
         self.fiber
             .env
-            .bind_all(input.external_values.iter().cloned());
+            .bind_all_root(input.external_values.iter().cloned());
         let events = normalize_task_events(std::mem::take(&mut input.task_events));
         output
             .diagnostics
@@ -1231,6 +1289,10 @@ impl Engine {
             (op, Some(next))
         };
         match op {
+            FlowOp::Bind(bindings) => {
+                self.fiber.env.bind_all(bindings);
+                self.advance_if_needed(next);
+            }
             FlowOp::Let { pattern, expr } => {
                 self.evaluate_let(&pattern, &expr, output);
                 self.advance_if_needed(next);
@@ -1318,20 +1380,20 @@ impl Engine {
                 then_ops,
                 else_ops,
             } => match self.evaluate_if_let(&pattern, &expr, guard.as_ref()) {
-                Ok(true) => {
+                Ok(Some(bindings)) => {
                     self.advance_if_needed(next);
-                    self.push_scoped_ops(then_ops);
+                    self.push_scoped_ops_with_bindings(bindings, then_ops);
                 }
-                Ok(false) => {
+                Ok(None) => {
                     self.advance_if_needed(next);
                     self.push_scoped_ops(else_ops);
                 }
                 Err(error) => self.fail_eval(error, output),
             },
             FlowOp::Match { scrutinee, arms } => match self.evaluate_match(&scrutinee, &arms) {
-                Ok(Some(ops)) => {
+                Ok(Some((bindings, ops))) => {
                     self.advance_if_needed(next);
-                    self.push_scoped_ops(ops);
+                    self.push_scoped_ops_with_bindings(bindings, ops);
                 }
                 Ok(None) => self.fail_eval(
                     RuntimeEvalError::PatternMismatch(expr_runtime_label(&scrutinee)),
@@ -1341,19 +1403,35 @@ impl Engine {
             },
             FlowOp::Loop { body } => {
                 self.advance_if_needed(next);
-                self.push_ops(vec![FlowOp::Loop { body: body.clone() }]);
-                self.push_scoped_ops(body);
+                self.fiber.frames.push(RuntimeFrame {
+                    kind: RuntimeFrameKind::Loop { body: body.clone() },
+                });
+                self.push_loop_iteration(body);
+            }
+            FlowOp::LoopNext { body } => {
+                self.push_loop_iteration(body);
             }
             FlowOp::While { condition, body } => match self.evaluate_bool(&condition) {
                 Ok(true) => {
-                    self.advance_if_needed(next.clone());
-                    self.push_ops(vec![FlowOp::While {
-                        condition: condition.clone(),
-                        body: body.clone(),
-                    }]);
-                    self.push_scoped_ops(body);
+                    self.advance_if_needed(next);
+                    self.fiber.frames.push(RuntimeFrame {
+                        kind: RuntimeFrameKind::While {
+                            condition: condition.clone(),
+                            body: body.clone(),
+                        },
+                    });
+                    self.push_while_iteration(condition, body);
                 }
                 Ok(false) => self.advance_if_needed(next),
+                Err(error) => self.fail_eval(error, output),
+            },
+            FlowOp::WhileNext { condition, body } => match self.evaluate_bool(&condition) {
+                Ok(true) => {
+                    self.push_while_iteration(condition, body);
+                }
+                Ok(false) => {
+                    self.pop_loop_frame();
+                }
                 Err(error) => self.fail_eval(error, output),
             },
             FlowOp::WhileLet {
@@ -1362,17 +1440,33 @@ impl Engine {
                 guard,
                 body,
             } => match self.evaluate_if_let(&pattern, &expr, guard.as_ref()) {
-                Ok(true) => {
-                    self.advance_if_needed(next.clone());
-                    self.push_ops(vec![FlowOp::WhileLet {
-                        pattern: pattern.clone(),
-                        expr: expr.clone(),
-                        guard: guard.clone(),
-                        body: body.clone(),
-                    }]);
-                    self.push_scoped_ops(body);
+                Ok(Some(bindings)) => {
+                    self.advance_if_needed(next);
+                    self.fiber.frames.push(RuntimeFrame {
+                        kind: RuntimeFrameKind::WhileLet {
+                            pattern: pattern.clone(),
+                            expr: expr.clone(),
+                            guard: guard.clone(),
+                            body: body.clone(),
+                        },
+                    });
+                    self.push_while_let_iteration(pattern, expr, guard, body, bindings);
                 }
-                Ok(false) => self.advance_if_needed(next),
+                Ok(None) => self.advance_if_needed(next),
+                Err(error) => self.fail_eval(error, output),
+            },
+            FlowOp::WhileLetNext {
+                pattern,
+                expr,
+                guard,
+                body,
+            } => match self.evaluate_if_let(&pattern, &expr, guard.as_ref()) {
+                Ok(Some(bindings)) => {
+                    self.push_while_let_iteration(pattern, expr, guard, body, bindings);
+                }
+                Ok(None) => {
+                    self.pop_loop_frame();
+                }
                 Err(error) => self.fail_eval(error, output),
             },
             FlowOp::For {
@@ -1417,12 +1511,18 @@ impl Engine {
                         Err(error) => self.fail_eval(error, output),
                     }
                 }
-                self.fiber.pending_ops.clear();
-                self.advance_if_needed(next);
+                if self.break_nearest_loop() {
+                    self.advance_if_needed(next);
+                } else {
+                    self.fail_eval(RuntimeEvalError::MisplacedLoopControl("break"), output);
+                }
             }
             FlowOp::Continue => {
-                self.fiber.pending_ops.clear();
-                self.advance_if_needed(next);
+                if self.continue_nearest_loop(output) {
+                    self.advance_if_needed(next);
+                } else {
+                    self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
+                }
             }
             FlowOp::Goto(target) => self.goto(target, output),
             FlowOp::GotoExpr(expr) => match self.evaluate_entity_target(&expr) {
@@ -1442,10 +1542,13 @@ impl Engine {
             }
             FlowOp::EnterScope => {
                 self.fiber.env.push_scope();
+                self.fiber.frames.push(RuntimeFrame {
+                    kind: RuntimeFrameKind::Scope,
+                });
                 self.advance_if_needed(next);
             }
             FlowOp::ExitScope => {
-                self.fiber.env.pop_scope();
+                self.pop_scope_frame();
                 self.advance_if_needed(next);
             }
             FlowOp::Noop => {
@@ -1466,13 +1569,145 @@ impl Engine {
         }
     }
 
-    fn push_scoped_ops(&mut self, mut ops: Vec<FlowOp>) {
+    fn scoped_ops(mut ops: Vec<FlowOp>) -> Vec<FlowOp> {
         if ops.is_empty() {
-            return;
+            return Vec::new();
         }
         ops.insert(0, FlowOp::EnterScope);
         ops.push(FlowOp::ExitScope);
+        ops
+    }
+
+    fn push_scoped_ops(&mut self, ops: Vec<FlowOp>) {
+        self.push_ops(Self::scoped_ops(ops));
+    }
+
+    fn push_scoped_ops_with_bindings(
+        &mut self,
+        bindings: Vec<RuntimeBinding>,
+        mut ops: Vec<FlowOp>,
+    ) {
+        if bindings.is_empty() && ops.is_empty() {
+            return;
+        }
+        ops.insert(0, FlowOp::Bind(bindings));
+        self.push_scoped_ops(ops);
+    }
+
+    fn push_loop_iteration(&mut self, body: Vec<FlowOp>) {
+        let mut ops = Self::scoped_ops(body.clone());
+        ops.push(FlowOp::LoopNext { body });
         self.push_ops(ops);
+    }
+
+    fn push_while_iteration(&mut self, condition: RuntimeExpr, body: Vec<FlowOp>) {
+        let mut ops = Self::scoped_ops(body.clone());
+        ops.push(FlowOp::WhileNext { condition, body });
+        self.push_ops(ops);
+    }
+
+    fn push_while_let_iteration(
+        &mut self,
+        pattern: RuntimePattern,
+        expr: RuntimeExpr,
+        guard: Option<RuntimeExpr>,
+        body: Vec<FlowOp>,
+        bindings: Vec<RuntimeBinding>,
+    ) {
+        let mut scoped = body.clone();
+        scoped.insert(0, FlowOp::Bind(bindings));
+        let mut ops = Self::scoped_ops(scoped);
+        ops.push(FlowOp::WhileLetNext {
+            pattern,
+            expr,
+            guard,
+            body,
+        });
+        self.push_ops(ops);
+    }
+
+    fn pop_scope_frame(&mut self) {
+        if matches!(
+            self.fiber.frames.last(),
+            Some(RuntimeFrame {
+                kind: RuntimeFrameKind::Scope
+            })
+        ) {
+            self.fiber.frames.pop();
+            self.fiber.env.pop_scope();
+        }
+    }
+
+    fn pop_scope_frames_until_loop(&mut self) {
+        while matches!(
+            self.fiber.frames.last(),
+            Some(RuntimeFrame {
+                kind: RuntimeFrameKind::Scope
+            })
+        ) {
+            self.pop_scope_frame();
+        }
+    }
+
+    fn pop_loop_frame(&mut self) -> Option<RuntimeFrameKind> {
+        self.pop_scope_frames_until_loop();
+        match self.fiber.frames.pop() {
+            Some(RuntimeFrame {
+                kind:
+                    kind @ (RuntimeFrameKind::Loop { .. }
+                    | RuntimeFrameKind::While { .. }
+                    | RuntimeFrameKind::WhileLet { .. }),
+            }) => Some(kind),
+            _ => None,
+        }
+    }
+
+    fn discard_pending_until_loop_next(&mut self) {
+        while let Some(op) = self.fiber.pending_ops.pop_front() {
+            if matches!(
+                op,
+                FlowOp::LoopNext { .. } | FlowOp::WhileNext { .. } | FlowOp::WhileLetNext { .. }
+            ) {
+                break;
+            }
+        }
+    }
+
+    fn break_nearest_loop(&mut self) -> bool {
+        self.discard_pending_until_loop_next();
+        self.pop_loop_frame().is_some()
+    }
+
+    fn continue_nearest_loop(&mut self, output: &mut FrameOutput) -> bool {
+        self.pop_scope_frames_until_loop();
+        self.discard_pending_until_loop_next();
+        let Some(kind) = self.fiber.frames.last().map(|frame| frame.kind.clone()) else {
+            return false;
+        };
+        match kind {
+            RuntimeFrameKind::Loop { body } => self.push_loop_iteration(body),
+            RuntimeFrameKind::While { condition, body } => {
+                self.push_ops(vec![FlowOp::WhileNext { condition, body }]);
+            }
+            RuntimeFrameKind::WhileLet {
+                pattern,
+                expr,
+                guard,
+                body,
+            } => {
+                self.push_ops(vec![FlowOp::WhileLetNext {
+                    pattern,
+                    expr,
+                    guard,
+                    body,
+                }]);
+            }
+            RuntimeFrameKind::Scope => {
+                self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
+                return false;
+            }
+        }
+        true
     }
 
     fn evaluate_let(
@@ -1501,41 +1736,50 @@ impl Engine {
         pattern: &RuntimePattern,
         expr: &RuntimeExpr,
         guard: Option<&RuntimeExpr>,
-    ) -> Result<bool, RuntimeEvalError> {
+    ) -> Result<Option<Vec<RuntimeBinding>>, RuntimeEvalError> {
         let value = self.evaluate_expr(expr)?;
-        let previous = self.fiber.env.clone();
-        if !self.try_bind_pattern(pattern, &value)? {
+        let Some(bindings) = match_runtime_pattern(pattern, &value)? else {
+            return Ok(None);
+        };
+        if let Some(guard) = guard {
+            let previous = self.fiber.env.clone();
+            self.fiber.env.bind_all(bindings.clone());
+            let matched = self.evaluate_bool(guard);
             self.fiber.env = previous;
-            return Ok(false);
+            let matched = matched?;
+            if !matched {
+                return Ok(None);
+            }
         }
-        if let Some(guard) = guard
-            && !self.evaluate_bool(guard)?
-        {
-            self.fiber.env = previous;
-            return Ok(false);
-        }
-        Ok(true)
+        Ok(Some(bindings))
     }
 
     fn evaluate_match(
         &mut self,
         scrutinee: &RuntimeExpr,
         arms: &[RuntimeMatchArm],
-    ) -> Result<Option<Vec<FlowOp>>, RuntimeEvalError> {
+    ) -> Result<RuntimeMatchSelection, RuntimeEvalError> {
         let value = self.evaluate_expr(scrutinee)?;
         for arm in arms {
-            let previous = self.fiber.env.clone();
-            if !self.try_bind_pattern(&arm.pattern, &value)? {
-                self.fiber.env = previous;
+            let Some(bindings) = match_runtime_pattern(&arm.pattern, &value)? else {
                 continue;
-            }
+            };
+            let previous = self.fiber.env.clone();
+            self.fiber.env.bind_all(bindings.clone());
             if let Some(guard) = arm.guard.as_ref()
-                && !self.evaluate_bool(guard)?
+                && !match self.evaluate_bool(guard) {
+                    Ok(matched) => matched,
+                    Err(error) => {
+                        self.fiber.env = previous;
+                        return Err(error);
+                    }
+                }
             {
                 self.fiber.env = previous;
                 continue;
             }
-            return Ok(Some(arm.ops.clone()));
+            self.fiber.env = previous;
+            return Ok(Some((bindings, arm.ops.clone())));
         }
         Ok(None)
     }
@@ -1619,27 +1863,41 @@ impl Engine {
                     self.evaluate_expr(else_expr)
                 }
             }
-            RuntimeExpr::Match { scrutinee, arms } => {
-                let value = self.evaluate_expr(scrutinee)?;
-                for arm in arms {
-                    let previous = self.fiber.env.clone();
-                    if !self.try_bind_pattern(&arm.pattern, &value)? {
-                        self.fiber.env = previous;
-                        continue;
-                    }
-                    if let Some(guard) = arm.guard.as_ref()
-                        && !self.evaluate_bool(guard)?
-                    {
-                        self.fiber.env = previous;
-                        continue;
-                    }
-                    return self.evaluate_expr(&arm.value);
-                }
-                Err(RuntimeEvalError::PatternMismatch(runtime_value_label(
-                    &value,
-                )))
-            }
+            RuntimeExpr::Match { scrutinee, arms } => self.evaluate_match_expr(scrutinee, arms),
         }
+    }
+
+    fn evaluate_match_expr(
+        &mut self,
+        scrutinee: &RuntimeExpr,
+        arms: &[RuntimeExprMatchArm],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let value = self.evaluate_expr(scrutinee)?;
+        for arm in arms {
+            let Some(bindings) = match_runtime_pattern(&arm.pattern, &value)? else {
+                continue;
+            };
+            let previous = self.fiber.env.clone();
+            self.fiber.env.bind_all(bindings);
+            if let Some(guard) = arm.guard.as_ref()
+                && !match self.evaluate_bool(guard) {
+                    Ok(matched) => matched,
+                    Err(error) => {
+                        self.fiber.env = previous;
+                        return Err(error);
+                    }
+                }
+            {
+                self.fiber.env = previous;
+                continue;
+            }
+            let result = self.evaluate_expr(&arm.value);
+            self.fiber.env = previous;
+            return result;
+        }
+        Err(RuntimeEvalError::PatternMismatch(runtime_value_label(
+            &value,
+        )))
     }
 
     fn evaluate_bool(&mut self, expr: &RuntimeExpr) -> Result<bool, RuntimeEvalError> {
@@ -1759,10 +2017,21 @@ fn match_runtime_pattern(
 ) -> Result<Option<Vec<RuntimeBinding>>, RuntimeEvalError> {
     let mut bindings = Vec::new();
     if collect_pattern_bindings(pattern, value, &mut bindings)? {
+        reject_duplicate_bindings(&bindings)?;
         Ok(Some(bindings))
     } else {
         Ok(None)
     }
+}
+
+fn reject_duplicate_bindings(bindings: &[RuntimeBinding]) -> Result<(), RuntimeEvalError> {
+    let mut seen = BTreeSet::<&str>::new();
+    for binding in bindings {
+        if !seen.insert(binding.name.as_str()) {
+            return Err(RuntimeEvalError::DuplicateBinding(binding.name.clone()));
+        }
+    }
+    Ok(())
 }
 
 fn collect_pattern_bindings(
@@ -2534,9 +2803,17 @@ mod tests {
                 target: FlowRuntimeId("flow.match".to_owned())
             }]
         );
-        assert!(engine.step(FrameInput::default()).flow_events.is_empty());
-        assert!(engine.step(FrameInput::default()).flow_events.is_empty());
-        let matched = engine.step(FrameInput::default());
+        let mut matched = FrameOutput::default();
+        for _ in 0..6 {
+            matched = engine.step(FrameInput::default());
+            if matched
+                .flow_events
+                .iter()
+                .any(|event| matches!(event, FlowEvent::Return { .. }))
+            {
+                break;
+            }
+        }
 
         assert_eq!(
             matched.flow_events,
@@ -2544,6 +2821,177 @@ mod tests {
                 value: "ready".to_owned()
             }]
         );
+    }
+
+    #[test]
+    fn loop_break_exits_to_next_flow_op_without_running_remaining_body() {
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.loop".to_owned())),
+            vec![RuntimeFlow {
+                id: FlowRuntimeId("flow.loop".to_owned()),
+                ops: vec![
+                    FlowOp::Loop {
+                        body: vec![
+                            FlowOp::Break(None),
+                            FlowOp::Return("unreachable".to_owned()),
+                        ],
+                    },
+                    FlowOp::Return("done".to_owned()),
+                ],
+            }],
+            Vec::new(),
+        )
+        .expect("loop plan is valid");
+        let mut engine = Engine::new(plan);
+
+        for _ in 0..3 {
+            engine.step(FrameInput::default());
+        }
+        let output = engine.step(FrameInput::default());
+
+        assert_eq!(
+            output.flow_events,
+            vec![FlowEvent::Return {
+                value: "done".to_owned()
+            }]
+        );
+    }
+
+    #[test]
+    fn while_continue_reruns_condition_and_skips_remaining_body() {
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.while".to_owned())),
+            vec![RuntimeFlow {
+                id: FlowRuntimeId("flow.while".to_owned()),
+                ops: vec![
+                    FlowOp::While {
+                        condition: RuntimeExpr::Local("keep".to_owned()),
+                        body: vec![FlowOp::Continue, FlowOp::Return("unreachable".to_owned())],
+                    },
+                    FlowOp::Return("done".to_owned()),
+                ],
+            }],
+            Vec::new(),
+        )
+        .expect("while plan is valid");
+        let mut engine = Engine::new(plan);
+        let keep_true = RuntimeBinding {
+            name: "keep".to_owned(),
+            value: RuntimeValue::Bool(true),
+        };
+        let keep_false = RuntimeBinding {
+            name: "keep".to_owned(),
+            value: RuntimeValue::Bool(false),
+        };
+
+        engine.step(FrameInput {
+            external_values: vec![keep_true],
+            ..FrameInput::default()
+        });
+        engine.step(FrameInput::default());
+        engine.step(FrameInput {
+            external_values: vec![keep_false],
+            ..FrameInput::default()
+        });
+        let mut output = FrameOutput::default();
+        for _ in 0..6 {
+            output = engine.step(FrameInput::default());
+            if output
+                .flow_events
+                .iter()
+                .any(|event| matches!(event, FlowEvent::Return { .. }))
+            {
+                break;
+            }
+        }
+
+        assert_eq!(
+            output.flow_events,
+            vec![FlowEvent::Return {
+                value: "done".to_owned()
+            }]
+        );
+    }
+
+    #[test]
+    fn branch_pattern_bindings_do_not_leak_after_branch_scope() {
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.branch".to_owned())),
+            vec![RuntimeFlow {
+                id: FlowRuntimeId("flow.branch".to_owned()),
+                ops: vec![
+                    FlowOp::IfLet {
+                        pattern: RuntimePattern::Variant {
+                            path: None,
+                            name: "Some".to_owned(),
+                            payload: Some(Box::new(RuntimePattern::Ident("route".to_owned()))),
+                        },
+                        expr: RuntimeExpr::Local("opt".to_owned()),
+                        guard: None,
+                        then_ops: vec![FlowOp::Noop],
+                        else_ops: Vec::new(),
+                    },
+                    FlowOp::GotoExpr(RuntimeExpr::Local("route".to_owned())),
+                ],
+            }],
+            Vec::new(),
+        )
+        .expect("branch plan is valid");
+        let mut engine = Engine::new(plan);
+
+        engine.step(FrameInput {
+            external_values: vec![RuntimeBinding {
+                name: "opt".to_owned(),
+                value: RuntimeValue::Variant {
+                    path: None,
+                    name: "Some".to_owned(),
+                    payload: Some(Box::new(RuntimeValue::EntityRef("flow.next".to_owned()))),
+                },
+            }],
+            ..FrameInput::default()
+        });
+        for _ in 0..4 {
+            engine.step(FrameInput::default());
+        }
+        let output = engine.step(FrameInput::default());
+
+        assert!(output.diagnostics.iter().any(|diagnostic| {
+            diagnostic
+                .message
+                .contains("unknown runtime binding `route`")
+        }));
+    }
+
+    #[test]
+    fn duplicate_pattern_bindings_fail_before_env_mutation() {
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.dup".to_owned())),
+            vec![RuntimeFlow {
+                id: FlowRuntimeId("flow.dup".to_owned()),
+                ops: vec![FlowOp::Let {
+                    pattern: RuntimePattern::Tuple(vec![
+                        RuntimePattern::Ident("x".to_owned()),
+                        RuntimePattern::Ident("x".to_owned()),
+                    ]),
+                    expr: RuntimeExpr::Tuple(vec![
+                        RuntimeExpr::Value(RuntimeValue::Int(1)),
+                        RuntimeExpr::Value(RuntimeValue::Int(2)),
+                    ]),
+                }],
+            }],
+            Vec::new(),
+        )
+        .expect("duplicate pattern plan is valid");
+        let mut engine = Engine::new(plan);
+
+        let output = engine.step(FrameInput::default());
+
+        assert!(output.diagnostics.iter().any(|diagnostic| {
+            diagnostic
+                .message
+                .contains("pattern binds `x` more than once")
+        }));
+        assert!(engine.fiber().env.get("x").is_none());
     }
 
     #[test]
