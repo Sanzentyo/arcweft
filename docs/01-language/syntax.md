@@ -147,7 +147,7 @@ check every frame
 when object.visible && object.enabled
 effects { signal_write, assert }
 {
-    signal @signal.choice_visible <- true
+    signal.set(@signal.choice_visible, true)
     debug_assert object.bbox.area > 0
 }
 
@@ -170,7 +170,7 @@ check on change
 when object.visible
 once
 {
-    signal @signal.choice_visible <- true
+    signal.set(@signal.choice_visible, true)
 }
 ```
 

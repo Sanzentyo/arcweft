@@ -106,7 +106,7 @@ fn parses_bare_block_after_dialogue_as_unnamed_scope() {
 flow @flow.opening opening {
     alice.say()[おはよう。[p]] {
         let tmp = route_title(state.route)
-        log info "tmp={tmp}" { tmp = tmp }
+        log.info("tmp={tmp}", tmp = tmp)
     }
 }
 "#,

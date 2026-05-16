@@ -90,19 +90,20 @@ pub component @ui.touch_controller TouchControllerView(
     ZStack {
         VirtualJoystick(@control.left_stick)
             .agent_target(@control.left_stick)
-            .on_axis |axis| emit InputEvent.Axis {
+            .on_axis |axis| event.emit(
+                InputEvent.Axis,
                 x = axis.x,
                 y = axis.y,
                 source = @controller.touch_default,
-            }
+            )
 
         VirtualButton("A")
             .agent_target(@control.confirm)
-            .on_press { emit InputEvent.Action(.confirm) }
+            .on_press { event.emit(InputEvent.Action(.confirm)) }
 
         VirtualButton("B")
             .agent_target(@control.cancel)
-            .on_press { emit InputEvent.Action(.cancel) }
+            .on_press { event.emit(InputEvent.Action(.cancel)) }
     }
     .layer(@layer.input.touch_controller)
     .hit_test(.opaque_controls_only)

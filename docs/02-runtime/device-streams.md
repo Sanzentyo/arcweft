@@ -95,8 +95,8 @@ pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     privacy = transient
 
     on item frame => yield frame
-    on disconnected => emit signal @signal.camera_connected <- false
-    on error e => log warn "camera stream error {err:?}" { err = e }
+    on disconnected => signal.set(@signal.camera_connected, false)
+    on error e => log.warn("camera stream error {err:?}", err = e)
 }
 ```
 
@@ -130,7 +130,7 @@ Once acquired, stream items are consumed by `select`, `poll`, Activity input por
 ```awft
 select {
     audio = frames.next? => {
-        signal @signal.voice_level <- audio.rms
+        signal.set(@signal.voice_level, audio.rms)
     }
 
     frame _ => {

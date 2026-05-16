@@ -542,12 +542,6 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
             collect_expr(expr, uses);
         }
         Stmt::Wait(target) => collect_wait_target(target, uses),
-        Stmt::Emit { event, fields } => {
-            collect_expr(event, uses);
-            for (_, value) in fields {
-                collect_expr(value, uses);
-            }
-        }
         Stmt::On { body, .. } | Stmt::Loop { body } => collect_stmt_block(body, uses),
         Stmt::Command(command) => {
             for arg in command.args() {

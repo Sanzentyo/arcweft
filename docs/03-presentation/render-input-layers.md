@@ -776,7 +776,7 @@ on @layer.choices
 phase InputTarget
 check on input PointerEnter
 {
-    signal @signal.hovered_layer <- Some(@layer.choices)
+    signal.set(@signal.hovered_layer, Some(@layer.choices))
 }
 
 hook @hook.layer.choices.layout_changed
@@ -784,7 +784,7 @@ on @layer.choices
 phase AfterLayout
 check on change layout
 {
-    log debug "choices layer layout changed"
+    log.debug("choices layer layout changed")
 }
 ```
 

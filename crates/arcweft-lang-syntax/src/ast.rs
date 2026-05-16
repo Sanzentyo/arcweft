@@ -652,10 +652,6 @@ pub enum Stmt {
     },
     /// `wait mark .name` or `wait 0.35s` waits inside a line-local task.
     Wait(WaitTarget),
-    Emit {
-        event: Expr,
-        fields: Vec<(String, Expr)>,
-    },
     /// `on head => stmt` event branch used by source and plan-like bodies.
     On {
         head: String,

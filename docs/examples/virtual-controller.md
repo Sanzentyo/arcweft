@@ -58,7 +58,7 @@ test @test.virtual_controller_confirm scenario {
 
     invoke @control.confirm press
 
-    expect log info contains "confirm pressed"
+    expect log.info contains "confirm pressed"
     expect signal @signal.last_input == InputAction.Confirm
 }
 ```

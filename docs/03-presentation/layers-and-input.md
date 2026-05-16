@@ -459,7 +459,7 @@ UI widget の `on_click` は、hit region と semantic action へ lowering さ�
 ```awft
 Button("閉じる")
     .agent_target(@ui.settings.close)
-    .on_click { emit UiEvent.SettingsClosed }
+    .on_click { event.emit(UiEvent.SettingsClosed) }
 ```
 
 lowering:
@@ -675,7 +675,7 @@ phase InputCapture
 check on input KeyDown
 when input.key == .Escape
 {
-    emit UiEvent::CloseModal
+    event.emit(UiEvent::CloseModal)
     consume input
 }
 ```
@@ -698,7 +698,7 @@ layer @layer.choices: Choice {
     phase InputTarget
     check on input PointerEnter
     {
-        signal @signal.hovered_layer <- Some(@layer.choices)
+        signal.set(@signal.hovered_layer, Some(@layer.choices))
     }
 
     hook @hook.layer.choices.layout_changed
@@ -706,7 +706,7 @@ layer @layer.choices: Choice {
     phase AfterLayout
     check on change layout
     {
-        log debug "choices layer layout changed"
+        log.debug("choices layer layout changed")
     }
 }
 ```
@@ -725,7 +725,7 @@ check on change visibility
 when visible(self)
 once per scene
 {
-    log info "choice layer appeared"
+    log.info("choice layer appeared")
 }
 
 hook @hook.modal_opened
@@ -735,7 +735,7 @@ check on change visibility
 when visible(self)
 effects { signal_write }
 {
-    signal @signal.modal_open <- Some(self)
+    signal.set(@signal.modal_open, Some(self))
 }
 ```
 

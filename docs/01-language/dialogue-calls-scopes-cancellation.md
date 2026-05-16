@@ -408,7 +408,7 @@ at(+120ms) { alice.stage.mouth(open) }
 at(end-200ms) { alice.stage.move(to=left, time=260ms, ease=quad.out) }
 at(marker("soft_smile")) { alice.stage.look(smile, crossfade=100ms) }
 at(phoneme "a") { alice.stage.mouth(a) }
-at(char 12) { signal @signal.text_reveal_hit <- true }
+at(char 12) { signal.set(@signal.text_reveal_hit, true) }
 ```
 
 Supported anchors:

@@ -22,7 +22,7 @@ Statement form:
 
 ```awft
 if state.flags.contains(.debug) {
-    log info "debug mode"
+    log.info("debug mode")
 }
 ```
 
@@ -224,7 +224,7 @@ Arcweft supports iterator/range loops as statement loops.
 
 ```awft
 for i in 0..10 {
-    log debug "i={i}" { i = i }
+    log.debug("i={i}", i = i)
 }
 
 for i in 0..=10 {
@@ -242,4 +242,3 @@ Range forms:
 ```
 
 `for` returns `Unit`. Use `loop` for value-producing loops.
-

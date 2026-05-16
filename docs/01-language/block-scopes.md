@@ -59,7 +59,7 @@ non-`Unit` value must be explicitly discarded.
 ```awft
 {
     let tmp = route_title(state.route)
-    log debug "route={tmp}" { tmp = tmp };
+    log.debug("route={tmp}", tmp = tmp);
 }
 ```
 

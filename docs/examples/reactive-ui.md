@@ -17,9 +17,8 @@ ensures result.has_action("select")
     .corner_radius(8)
     .on_click {
         if choice.enabled {
-            emit GameEvent::ChoiceSelected { id = choice.id }
+            event.emit(GameEvent::ChoiceSelected, id = choice.id)
         }
     }
 }
 ```
-

@@ -63,6 +63,12 @@ for adapters to perform at frame boundaries.
 ```rust
 pub struct LineTaskGroup {
     pub init: Vec<LineEffectRequest>,
+    pub options: Vec<LineOptionRequest>,
+    pub bindings: Vec<LineBindingRequest>,
+    pub out: Vec<LineOutRequest>,
+    pub cancel_rules: Vec<LineCancelRuleRequest>,
+    pub memo: Vec<LineMemoRequest>,
+    pub assertions: Vec<LineAssertionRequest>,
     pub init_defer_stack: Vec<Vec<LineEffectRequest>>,
     pub children: Vec<LineChildTask>,
     pub defer_stack: Vec<Vec<LineEffectRequest>>,
@@ -81,7 +87,24 @@ pub enum LineEffectRequest {
     DropHandle { key: String },
     WaitMark(String),
     Wait(LogicalDuration),
-    EmitSignal(String),
+    Call(RuntimeCall),
+    Log(RuntimeLog),
+    SignalWrite(RuntimeAssignment),
+    MetricWrite(RuntimeAssignment),
+    EmitEvent(RuntimeEvent),
+    Command(RuntimeCommand),
+    Out(LineOutRequest),
+    Return(String),
+    Goto(String),
+    Yield(String),
+    Panic(String),
+    Fail(String),
+    Bail(String),
+    Ensure { condition: String, message: String },
+    Close(String),
+    Select(String),
+    Break { label: Option<String>, value: Option<String> },
+    Continue { label: Option<String> },
 }
 ```
 
@@ -100,11 +123,21 @@ wait mark .x                -> LineEffectRequest::WaitMark(".x")
 wait 0.35s                  -> LineEffectRequest::Wait(...)
 'line.key <- expr           -> LineEffectRequest::RegisterHandle
 'line.key |> drop           -> LineEffectRequest::DropHandle
-call-like expression stmt   -> LineEffectRequest::EmitSignal
+call-like expression stmt   -> LineEffectRequest::Call
+log.info(...)               -> LineEffectRequest::Log
+signal.set(target, value)   -> LineEffectRequest::SignalWrite
+metric.set(target, value)   -> LineEffectRequest::MetricWrite
+event.emit(Event, fields)   -> LineEffectRequest::EmitEvent
+out expr                    -> LineEffectRequest::Out and LineTaskGroup.out
+cancel on ... { ... }       -> LineTaskGroup.cancel_rules
+memo name(...)              -> LineTaskGroup.memo
+assert expr                 -> LineTaskGroup.assertions
 ```
 
-Unsupported or raw line-plan statements fail lowering. They are not reparsed,
-silently accepted, or dropped from the runtime plan.
+Raw line-plan statements fail lowering. They are not reparsed, silently accepted,
+or dropped from the runtime plan. Phase 1.5 keeps expression payloads as stable
+labels inside Sans I/O data; later HIR execution work should replace those labels
+with typed expression/runtime nodes without changing the effect categories.
 
 `defer` is not thread-specific syntax. It registers cleanup on the current
 runtime scope. In the Phase 1.5 line-plan model, the line scope, `init` scope,

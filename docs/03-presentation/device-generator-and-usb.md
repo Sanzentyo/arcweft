@@ -252,7 +252,7 @@ let pad =
         }
 
         denied e => {
-            log warn "USB device denied: {e:?}" { e = e }
+            log.warn("USB device denied: {e:?}", e = e)
             return Ok(FlowExit::Goto(@flow.device_optional))
         }
     }

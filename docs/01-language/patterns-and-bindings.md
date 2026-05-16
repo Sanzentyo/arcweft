@@ -102,7 +102,7 @@ by a non-binding pattern in contexts where this is unambiguous.
 ```awft
 match event {
     ev .ChoiceSelected { id } => {
-        log info "choice event {ev:?}" { ev = ev }
+        log.info("choice event {ev:?}", ev = ev)
         handle_choice(id)
     }
     _ => ()
@@ -154,4 +154,3 @@ let .Some(route) = state.route_override else {
 
 goto route
 ```
-

@@ -671,7 +671,6 @@ impl TypeChecker<'_> {
             Stmt::Signal { target, value } => self.check_two_exprs(target, value),
             Stmt::LifetimeSet { target, expr } => self.check_lifetime_set_stmt(target, expr),
             Stmt::Wait(target) => self.check_wait_stmt(target),
-            Stmt::Emit { event, fields } => self.check_emit_stmt(event, fields),
             Stmt::On { body, .. } => self.check_on_stmt(stmt, body),
             Stmt::Command(command) => self.check_command_stmt(command),
             Stmt::If { condition, body } => self.check_if_stmt(condition, body),
@@ -713,13 +712,6 @@ impl TypeChecker<'_> {
     fn check_two_exprs(&mut self, first: &Expr, second: &Expr) {
         self.check_expr(first);
         self.check_expr(second);
-    }
-
-    fn check_emit_stmt(&mut self, event: &Expr, fields: &[(String, Expr)]) {
-        self.check_expr(event);
-        for (_, value) in fields {
-            self.check_expr(value);
-        }
     }
 
     fn check_on_stmt(&mut self, stmt: &Stmt, body: &[Stmt]) {
@@ -1927,6 +1919,20 @@ impl TypeChecker<'_> {
         method: &str,
         args: &[Expr],
     ) -> Option<TypeKind> {
+        if let Expr::Path(receiver_path) = receiver {
+            let dotted = format!("{receiver_path}.{method}");
+            if let Some(ty) = self
+                .env
+                .function_type(&dotted)
+                .cloned()
+                .or_else(|| well_known_runtime_method_type(&dotted))
+            {
+                for arg in args {
+                    self.check_expr(arg);
+                }
+                return Some(ty);
+            }
+        }
         let receiver_type = self.check_expr(receiver);
         for arg in args {
             self.check_expr(arg);
@@ -2523,6 +2529,11 @@ fn result_ok_type(name: &str) -> Option<TypeKind> {
         .and_then(|value| value.strip_suffix('>'))?;
     let ok = inner.split_once(',').map_or(inner, |(ok, _)| ok).trim();
     Some(named_type_label(ok))
+}
+
+fn well_known_runtime_method_type(name: &str) -> Option<TypeKind> {
+    (name.starts_with("log.") || matches!(name, "signal.set" | "metric.set" | "event.emit"))
+        .then_some(TypeKind::Unit)
 }
 
 fn first_arg_type(types: &[Option<TypeKind>]) -> TypeKind {

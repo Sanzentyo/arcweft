@@ -105,7 +105,7 @@ Syntax parser:
   parser, and type parser. Current parser call sites use these helpers for
   block recovery, line-plan cues, choice/action separators, `::` variant path
   splitting, await grouping, await `with` heads, extern module headers, borrow
-  aliases, emit fields, scenario command args, labels, entity refs, and nested
+  aliases, event fields, scenario command args, labels, entity refs, and nested
   pattern/type delimiters.
 - Parser-facing grammar delimiter decisions no longer live in local raw string
   scans in `parser.rs`, `expr.rs`, `pattern.rs`, or `types.rs`. Raw character
@@ -173,10 +173,17 @@ Syntax parser:
 - Dialogue `#[...]` content interpolation, record expressions, compact scenario command arguments, same-line and multiline timed-cue anchors/bodies, line-plan options, line-plan `let`/`out`, line-plan assertions, line-plan cancellation actions, line-plan expression items, nested `start`/`together` groups, choice option fields, choice lifecycle plans, source-locale blocks, and `await ... with` carry parsed expressions/statements for later type checking and HIR lowering.
 - Line-plan memo declarations such as `memo rich_text key=(line.id, locale, theme.text_hash) cache=flow` preserve the memo name and typed option expressions for symbol collection and checking.
 - Line-plan cancellation command statements such as `stop voice fade=40ms` and `flush text instant` parse as structured command statements, and the checker allows `continue` inside line cancellation continuations as specified by the dialogue docs.
+- Canonical runtime observation uses ordinary calls: `log.info(...)`,
+  `log.debug(...)`, `log.warn(...)`, `signal.set(target, value)`, and
+  `metric.set(target, value)`, and `event.emit(Event, fields)`.
+- Phase 1.5 line-plan lowering preserves line options, `let`, `out`,
+  cancellation rules, memo directives, assertions, structured log calls,
+  signal writes, metric writes, `event.emit(...)` calls, scenario commands, and
+  ordinary effect calls as typed `arcweft-core` runtime request categories.
 - Choice syntax covers static arm sugar (`->` as `goto`, `=>` as `out`), full `option` blocks, `ui { ... }` state, structured `select { ... }` statement blocks, dynamic `for` options, `match`-gated option groups, `option pattern in expr` sugar, `label(id=@text...)`, `value = expr`, and `with { ... }` / `with:` choice plans.
 - Choice HIR preserves the source choice-body item tree as well as the flattened option list, so `let`/`if`/`for`/`match` guards and raw malformed choice-body items participate in symbol collection, readiness checks, and minimal type checking.
 - Choice lifecycle plans parse option assignments, `timeout`, `cancel on`, `on select`, and `select` statements into structured expressions/statements for HIR readiness and minimal type checking.
-- Flow `let`/`return`/`goto`/`emit`/`bail`/`ensure` statements and statement-block `if`/`match` bodies now lower to structured `Stmt` and `Pattern` values instead of opaque strings.
+- Flow `let`/`return`/`goto`/`bail`/`ensure` statements and statement-block `if`/`match` bodies now lower to structured `Stmt` and `Pattern` values instead of opaque strings.
 - Flow declarations preserve parsed parameter/return signatures through AST and HIR, and flow parameters are bound as locals during minimal type checking.
 - Flow `if` and `match` blocks lower to structured HIR nodes, and their nested flow items participate in symbol collection and type checking. Statement-style `match` arms preserve `when` guards, validate them as `Bool`, and scope supported pattern bindings to the selected arm body.
 - Flow `if let PAT = EXPR when GUARD { ... }` blocks lower to structured HIR nodes. The checker validates guard expressions as `Bool`, binds supported option payload patterns only inside the if-let body, and keeps outer locals unchanged afterward.
@@ -260,6 +267,10 @@ Not implemented in this milestone:
 - full HIR ownership/region model
 - full VM lowering/execution for line task groups and adapter-side effect
   requests beyond the current Sans I/O data model
+- full `FrameInput`/`FrameOutput` event envelopes, flow-fiber lowering,
+  `await with` execution IR, choice runtime IR, source/stream backpressure IR,
+  hook/memo runtime tables, save/replay traces, activities, and layered input
+  routing
 - full generic substitution and effect-aware return checking
 - full type environment, name resolution, and type checking
 - inference, overload resolution, traits, generics, contracts, and effect checking

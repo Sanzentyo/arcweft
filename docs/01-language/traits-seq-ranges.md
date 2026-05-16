@@ -188,7 +188,7 @@ Range 記法を標準で持つ。
 
 ```awft
 for i in 0..10 {
-    log debug "i={i}" { i = i }
+    log.debug("i={i}", i = i)
 }
 ```
 
@@ -332,4 +332,3 @@ Arcweft は曖昧な method resolution を避けるため、初期仕様では i
 4. blanket impl は core/prelude crate 中心
 5. user blanket impl は将来拡張
 ```
-

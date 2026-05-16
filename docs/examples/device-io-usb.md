@@ -58,7 +58,7 @@ flow @flow.device_demo device_demo(state: GameState) -> Result<FlowExit, FlowErr
 
     select {
         sample = frames.next? => {
-            signal @signal.sensor_value <- sample.value
+            signal.set(@signal.sensor_value, sample.value)
         }
 
         event .Back => {

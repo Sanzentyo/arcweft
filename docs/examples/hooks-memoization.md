@@ -21,8 +21,8 @@ memo condition scope = state key = [state.affection[@character.alice]]
 when alice_route_ready(state)
 effects { ui.enable, log.debug }
 {
-    emit UiCommand::EnableTarget { target = @choice.opening.listen }
-    log debug "listen choice enabled" {}
+    event.emit(UiCommand::EnableTarget, target = @choice.opening.listen)
+    log.debug("listen choice enabled")
 }
 
 pub hook @hook.opening.listen_hover
@@ -32,11 +32,12 @@ check every frame
 when input.pointer.hovered
 effects { ui.style }
 {
-    emit UiCommand::SetClass {
+    event.emit(
+        UiCommand::SetClass,
         target = @choice.opening.listen,
         class = "hover",
         enabled = true,
-    }
+    )
 }
 
 pub hook @hook.opening.listen_agent_note

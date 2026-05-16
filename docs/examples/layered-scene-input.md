@@ -62,7 +62,7 @@ component @ui.settings SettingsPanel(config: Binding<Config>) -> View {
 
         Button("閉じる")
             .agent_target(@ui.settings.close)
-            .on_click { emit UiEvent.SettingsClosed }
+            .on_click { event.emit(UiEvent.SettingsClosed) }
     }
     .layer(@layer.settings_modal)
 }

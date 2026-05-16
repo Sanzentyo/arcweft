@@ -1051,7 +1051,7 @@ flow @flow.stream stream {
     }
     select {
         audio = frames.next? => {
-            signal @signal.voice_level <- audio.rms
+            signal.set(@signal.voice_level, audio.rms)
         }
 
         frame _ => {

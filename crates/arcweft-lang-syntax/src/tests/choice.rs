@@ -248,7 +248,7 @@ with {
     default_focus = @choice.opening.listen
     timeout 10s { select @choice.opening.silent }
     cancel on input .BackToTitle { return Ok(FlowExit::Goto(@flow.title)) }
-    on select selected { log info "selected {id:?}" { id = selected.id } }
+    on select selected { log.info("selected {id:?}", id = selected.id) }
 }
 "#,
     );
@@ -277,7 +277,7 @@ with {
     assert!(matches!(
         &plan.items()[5],
         ChoicePlanItem::OnSelect { body, .. }
-            if matches!(body.first(), Some(Stmt::Expr(Expr::Call { .. })))
+            if matches!(body.first(), Some(Stmt::Expr(Expr::MethodCall { .. })))
     ));
     assert!(matches!(&choice.items()[0], ChoiceItem::For { .. }));
     let option = &choice.options()[0];
@@ -374,7 +374,7 @@ flow @flow.opening opening {
     with {
         timeout 10s { select @choice.opening.listen }
         cancel on input .BackToTitle { return Ok(FlowExit::Goto(@flow.title)) }
-        on select selected { log info "selected {id:?}" { id = selected.id } }
+        on select selected { log.info("selected {id:?}", id = selected.id) }
     }
 }
 "#,
@@ -398,7 +398,7 @@ flow @flow.opening opening {
             label = "聞いてみる"
             select {
                 if can_emit {
-                    emit GameEvent::ChoiceSelected { id = @choice.opening.listen }
+                    event.emit(GameEvent::ChoiceSelected, id = @choice.opening.listen)
                 }
                 match selected_route {
                     .Some(route) => out route

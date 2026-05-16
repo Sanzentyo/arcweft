@@ -28,7 +28,7 @@ pub component @ui.settings SettingsPanel(
 
         Button("閉じる")
             .agent_target(@ui.settings.close)
-            .on_click { emit UiEvent.SettingsClosed }
+            .on_click { event.emit(UiEvent.SettingsClosed) }
     }
     .padding(24)
     .background(.panel)

@@ -1,7 +1,12 @@
 use crate::ast::{EntityRef, LinePlan, LinePlanItem, Stmt, WaitTarget};
 use crate::expr::{DurationUnit, Expr, Literal};
 use crate::lower::{HirDialogue, HirFlowItem, HirModule};
-use arcweft_core::{LineChildTask, LineEffectRequest, LineTaskGroup, LogicalDuration};
+use arcweft_core::{
+    LineAssertionRequest, LineBindingRequest, LineCancelRuleRequest, LineChildTask,
+    LineEffectRequest, LineMemoRequest, LineOptionRequest, LineOutRequest, LineTaskGroup,
+    LogicalDuration, RuntimeAssignment, RuntimeCall, RuntimeCommand, RuntimeEvent, RuntimeField,
+    RuntimeLog,
+};
 use thiserror::Error;
 
 /// Runtime task plan produced from one checked dialogue line plan.
@@ -143,14 +148,38 @@ fn lower_line_plan_item(
         LinePlanItem::Expr(expr) => {
             group.init.extend(lower_expr_effect(expr, errors));
         }
-        LinePlanItem::Option { name, .. } => push_unsupported_item(errors, "option", name),
-        LinePlanItem::Let { .. } => push_unsupported_item(errors, "let", ""),
-        LinePlanItem::Out(_) => push_unsupported_item(errors, "out", ""),
-        LinePlanItem::CancelRule(rule) => {
-            push_unsupported_item(errors, "cancel rule", rule.trigger());
+        LinePlanItem::Option { name, value } => group.options.push(LineOptionRequest {
+            name: name.clone(),
+            value: expr_label(value),
+        }),
+        LinePlanItem::Let { pattern, expr } => group.bindings.push(LineBindingRequest {
+            pattern: pattern_label(pattern),
+            value: expr_label(expr),
+        }),
+        LinePlanItem::Out(expr) => {
+            let out = LineOutRequest {
+                label: None,
+                value: expr_label(expr),
+            };
+            group.init.push(LineEffectRequest::Out(out.clone()));
+            group.out.push(out);
         }
-        LinePlanItem::Memo { name, .. } => push_unsupported_item(errors, "memo", name),
-        LinePlanItem::Assert { .. } => push_unsupported_item(errors, "assert", ""),
+        LinePlanItem::CancelRule(rule) => {
+            group.cancel_rules.push(LineCancelRuleRequest {
+                trigger: rule.trigger().to_owned(),
+                action: lower_scoped_stmt_list(rule.action(), errors).into_effects(),
+            });
+        }
+        LinePlanItem::Memo { name, options } => group.memo.push(LineMemoRequest {
+            name: name.clone(),
+            options: runtime_fields(options),
+        }),
+        LinePlanItem::Assert { debug, expr } => {
+            group.assertions.push(LineAssertionRequest {
+                debug: *debug,
+                expr: expr_label(expr),
+            });
+        }
         LinePlanItem::Raw(raw) => errors.push(LinePlanLowerError::new(format!(
             "raw line-plan item cannot be lowered: {raw}"
         ))),
@@ -196,6 +225,14 @@ fn lower_child_task(
 struct LoweredScope {
     body: Vec<LineEffectRequest>,
     defer_stack: Vec<Vec<LineEffectRequest>>,
+}
+
+impl LoweredScope {
+    fn into_effects(self) -> Vec<LineEffectRequest> {
+        let mut effects = self.body;
+        effects.extend(flatten_defer_stack(self.defer_stack));
+        effects
+    }
 }
 
 fn lower_line_scope_stmt(
@@ -271,8 +308,38 @@ fn lower_stmt(stmt: &Stmt, errors: &mut Vec<LinePlanLowerError>) -> Vec<LineEffe
                 Vec::new()
             }
         }
+        Stmt::Signal { target, value } => vec![LineEffectRequest::SignalWrite(RuntimeAssignment {
+            target: expr_label(target),
+            value: expr_label(value),
+        })],
         Stmt::Expr(expr) => lower_expr_effect(expr, errors),
-        Stmt::Command(command) => vec![LineEffectRequest::EmitSignal(command.name().to_owned())],
+        Stmt::Command(command) => vec![LineEffectRequest::Command(RuntimeCommand {
+            name: command.name().to_owned(),
+            args: command.args().iter().map(expr_label).collect(),
+        })],
+        Stmt::Out { label, expr } => vec![LineEffectRequest::Out(LineOutRequest {
+            label: label.clone(),
+            value: expr_label(expr),
+        })],
+        Stmt::Return(expr) => vec![LineEffectRequest::Return(expr_label(expr))],
+        Stmt::Goto(expr) => vec![LineEffectRequest::Goto(expr_label(expr))],
+        Stmt::Yield(expr) => vec![LineEffectRequest::Yield(expr_label(expr))],
+        Stmt::Panic(expr) => vec![LineEffectRequest::Panic(expr_label(expr))],
+        Stmt::Fail(expr) => vec![LineEffectRequest::Fail(expr_label(expr))],
+        Stmt::Bail(expr) => vec![LineEffectRequest::Bail(expr_label(expr))],
+        Stmt::Ensure { condition, message } => vec![LineEffectRequest::Ensure {
+            condition: expr_label(condition),
+            message: expr_label(message),
+        }],
+        Stmt::Close(expr) => vec![LineEffectRequest::Close(expr_label(expr))],
+        Stmt::Select(expr) => vec![LineEffectRequest::Select(expr_label(expr))],
+        Stmt::Break { label, expr } => vec![LineEffectRequest::Break {
+            label: label.clone(),
+            value: expr.as_ref().map(expr_label),
+        }],
+        Stmt::Continue { label } => vec![LineEffectRequest::Continue {
+            label: label.clone(),
+        }],
         Stmt::DeferBlock(_) | Stmt::Defer(_) => {
             errors.push(LinePlanLowerError::new(
                 "`defer` must be lowered through a scoped statement list".to_owned(),
@@ -316,7 +383,7 @@ fn lower_expr_effect(expr: &Expr, errors: &mut Vec<LinePlanLowerError>) -> Vec<L
         expr,
         Expr::Call { .. } | Expr::MethodCall { .. } | Expr::Path(_)
     ) {
-        return vec![LineEffectRequest::EmitSignal(expr_label(expr))];
+        return vec![runtime_call_effect(expr)];
     }
     errors.push(LinePlanLowerError::new(format!(
         "unsupported line-plan expression for runtime lowering: {}",
@@ -350,15 +417,113 @@ fn append_expr_scope(
     }
 }
 
-fn push_unsupported_item(errors: &mut Vec<LinePlanLowerError>, kind: &str, detail: &str) {
-    let suffix = if detail.is_empty() {
-        String::new()
-    } else {
-        format!(" `{detail}`")
-    };
-    errors.push(LinePlanLowerError::new(format!(
-        "line-plan {kind}{suffix} is not supported by Phase 1.5 runtime lowering"
-    )));
+fn runtime_fields(fields: &[(String, Expr)]) -> Vec<RuntimeField> {
+    fields
+        .iter()
+        .map(|(name, value)| RuntimeField {
+            name: name.clone(),
+            value: expr_label(value),
+        })
+        .collect()
+}
+
+fn runtime_call(expr: &Expr) -> RuntimeCall {
+    match expr {
+        Expr::Call { callee, args } => RuntimeCall {
+            callee: expr_label(callee),
+            args: args.iter().map(expr_label).collect(),
+        },
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => RuntimeCall {
+            callee: format!("{}.{}", expr_label(receiver), method),
+            args: args.iter().map(expr_label).collect(),
+        },
+        Expr::Path(path) => RuntimeCall {
+            callee: path.clone(),
+            args: Vec::new(),
+        },
+        other => RuntimeCall {
+            callee: expr_label(other),
+            args: Vec::new(),
+        },
+    }
+}
+
+fn runtime_call_effect(expr: &Expr) -> LineEffectRequest {
+    let call = runtime_call(expr);
+    if let Some(log) = runtime_log_call(&call) {
+        return LineEffectRequest::Log(log);
+    }
+    if let Some(write) = runtime_assignment_call(&call, "signal.set") {
+        return LineEffectRequest::SignalWrite(write);
+    }
+    if let Some(write) = runtime_assignment_call(&call, "metric.set") {
+        return LineEffectRequest::MetricWrite(write);
+    }
+    if let Some(event) = runtime_event_call(&call) {
+        return LineEffectRequest::EmitEvent(event);
+    }
+    LineEffectRequest::Call(call)
+}
+
+fn runtime_log_call(call: &RuntimeCall) -> Option<RuntimeLog> {
+    let level = call.callee.strip_prefix("log.")?;
+    let (message, rest) = call.args.split_first()?;
+    Some(RuntimeLog {
+        level: level.to_owned(),
+        message: message.trim_matches('"').to_owned(),
+        fields: rest
+            .iter()
+            .enumerate()
+            .map(|(idx, value)| RuntimeField {
+                name: named_arg_label(value).unwrap_or_else(|| format!("arg{idx}")),
+                value: named_arg_value(value).unwrap_or_else(|| value.clone()),
+            })
+            .collect(),
+    })
+}
+
+fn runtime_assignment_call(call: &RuntimeCall, callee: &str) -> Option<RuntimeAssignment> {
+    if call.callee != callee || call.args.len() < 2 {
+        return None;
+    }
+    Some(RuntimeAssignment {
+        target: call.args[0].clone(),
+        value: call.args[1].clone(),
+    })
+}
+
+fn runtime_event_call(call: &RuntimeCall) -> Option<RuntimeEvent> {
+    if call.callee != "event.emit" {
+        return None;
+    }
+    let (event, rest) = call.args.split_first()?;
+    Some(RuntimeEvent {
+        event: event.clone(),
+        fields: rest
+            .iter()
+            .enumerate()
+            .map(|(idx, value)| RuntimeField {
+                name: named_arg_label(value).unwrap_or_else(|| format!("arg{idx}")),
+                value: named_arg_value(value).unwrap_or_else(|| value.clone()),
+            })
+            .collect(),
+    })
+}
+
+fn named_arg_label(value: &str) -> Option<String> {
+    value.split_once(" = ").map(|(name, _)| name.to_owned())
+}
+
+fn named_arg_value(value: &str) -> Option<String> {
+    value.split_once(" = ").map(|(_, value)| value.to_owned())
+}
+
+fn pattern_label(pattern: &crate::ast::Pattern) -> String {
+    format!("{pattern:?}")
 }
 
 fn is_drop_intrinsic(expr: &Expr) -> bool {
@@ -404,6 +569,7 @@ fn expr_label(expr: &Expr) -> String {
         Expr::Path(path) => path.clone(),
         Expr::EntityRef(entity) => format!("@{}", entity.body()),
         Expr::Literal(literal) => literal_label(literal),
+        Expr::NamedArg { name, value } => format!("{name} = {}", expr_label(value)),
         Expr::Call { callee, args } => format!(
             "{}({})",
             expr_label(callee),

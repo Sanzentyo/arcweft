@@ -91,7 +91,7 @@ priority -5
 once
 effects signal.choice_visible, ui.patch
 {
-    signal @signal.choice_visible <- true
+    signal.set(@signal.choice_visible, true)
 }
 ",
     );

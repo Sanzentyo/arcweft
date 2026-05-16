@@ -30,7 +30,7 @@ pub flow @flow.control_flow_example example(state: GameState) -> Result<FlowExit
 
     while let .Some(event) = state.event_queue.pop_front() {
         match event {
-            .ChoiceSelected { id } => log info "choice {id:?}" { id = id }
+            .ChoiceSelected { id } => log.info("choice {id:?}", id = id)
             .Ui { event: ui_event } => handle_ui(ui_event)
             _ => ()
         }
@@ -62,6 +62,6 @@ fn score_bonus(score: i32) -> i32 {
 }
 
 fn debug_score(score: i32) -> Unit {
-    log info "score={score}" { score = score };
+    log.info("score={score}", score = score);
 }
 ```

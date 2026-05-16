@@ -3370,7 +3370,7 @@ fn parse_word_scenario_command(trimmed: &str, range: TextRange) -> Option<Scenar
     let (name, args) = split_leading_ident(trimmed).unwrap_or((trimmed, ""));
     if !matches!(
         name,
-        "option" | "log" | "scene" | "text" | "progress" | "meter" | "stop" | "flush"
+        "option" | "scene" | "text" | "progress" | "meter" | "stop" | "flush"
     ) {
         return None;
     }
@@ -3393,15 +3393,15 @@ fn split_scenario_args(source: &str) -> Vec<&str> {
 }
 
 fn is_expression_statement_call(trimmed: &str) -> bool {
-    let Some((_, tail)) = split_leading_ident(trimmed) else {
-        return false;
-    };
     if find_top_level_punctuation(trimmed, ':').is_some()
         || find_top_level_punctuation(trimmed, '[').is_some()
     {
         return false;
     }
-    tail.trim_start().starts_with('(') && crate::expr::parse_expr(trimmed).is_ok()
+    matches!(
+        crate::expr::parse_expr(trimmed),
+        Ok(Expr::Call { .. } | Expr::MethodCall { .. })
+    )
 }
 
 fn parse_line_options(
@@ -4558,6 +4558,9 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
             expr: parse_expr_lossy(expr.trim()),
         };
     }
+    if is_line_plan_statement(line) {
+        return LinePlanItem::Stmt(parse_stmt(line));
+    }
     if let Some((name, value)) = split_top_level_punctuation_once(line, '=') {
         return LinePlanItem::Option {
             name: name.trim().to_owned(),
@@ -4568,6 +4571,27 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
         return LinePlanItem::Expr(expr);
     }
     LinePlanItem::Raw(line.to_owned())
+}
+
+fn is_line_plan_statement(line: &str) -> bool {
+    matches!(
+        line.split_whitespace().next(),
+        Some(
+            "signal"
+                | "wait"
+                | "return"
+                | "goto"
+                | "yield"
+                | "panic"
+                | "fail"
+                | "bail"
+                | "ensure"
+                | "close"
+                | "select"
+                | "break"
+                | "continue"
+        )
+    )
 }
 
 fn parse_line_plan_braced_item(head: &str, body: &str) -> Option<LinePlanItem> {
@@ -5355,9 +5379,6 @@ fn parse_stmt(trimmed: &str) -> Stmt {
         }
         return Stmt::Raw(trimmed.to_owned());
     }
-    if let Some(rest) = trimmed.strip_prefix("emit ") {
-        return parse_emit_stmt(rest.trim());
-    }
     if let Some(rest) = trimmed.strip_prefix("on ") {
         if let Some((head, action)) = split_top_level_punctuation_sequence_once(rest, &["=", ">"]) {
             return Stmt::On {
@@ -5372,18 +5393,6 @@ fn parse_stmt(trimmed: &str) -> Stmt {
     }
     if let Some(expr) = parse_presentation_special_call(trimmed) {
         return Stmt::Expr(expr);
-    }
-    if let Some(rest) = trimmed.strip_prefix("log ") {
-        if let Some((level, args)) = split_leading_ident(rest.trim()) {
-            let message = split_first_string_literal(args)
-                .map_or_else(|| args.trim().to_owned(), |(message, _)| message.to_owned());
-            return Stmt::Expr(crate::expr::Expr::Call {
-                callee: Box::new(crate::expr::Expr::Path(format!("log.{level}"))),
-                args: vec![crate::expr::Expr::Literal(crate::expr::Literal::String(
-                    message,
-                ))],
-            });
-        }
     }
     if let Some(command) = parse_word_scenario_command(trimmed, TextRange::new(0, trimmed.len())) {
         return Stmt::Command(command);
@@ -5550,39 +5559,6 @@ fn parse_stmt_match_arms(body: &str) -> Vec<StmtMatchArm> {
                 guard.map(|guard| parse_expr_lossy(guard.trim())),
                 body,
             ))
-        })
-        .collect()
-}
-
-fn parse_emit_stmt(rest: &str) -> Stmt {
-    if let Some(signal) = rest.strip_prefix("signal ") {
-        if let Some((target, value)) =
-            split_top_level_punctuation_sequence_once(signal, &["<", "-"])
-        {
-            return Stmt::Signal {
-                target: parse_expr_lossy(target.trim()),
-                value: parse_expr_lossy(value.trim()),
-            };
-        }
-    }
-    if let Some((head, body)) = split_brace_item(rest) {
-        return Stmt::Emit {
-            event: parse_expr_lossy(head.trim()),
-            fields: parse_emit_fields(body),
-        };
-    }
-    Stmt::Emit {
-        event: parse_expr_lossy(rest),
-        fields: Vec::new(),
-    }
-}
-
-fn parse_emit_fields(body: &str) -> Vec<(String, crate::expr::Expr)> {
-    body.lines()
-        .flat_map(|line| split_top_level_punctuation(line, ','))
-        .filter_map(|part| {
-            let (name, value) = split_top_level_binding(part.trim().trim_end_matches(','))?;
-            Some((name.trim().to_owned(), parse_expr_lossy(value.trim())))
         })
         .collect()
 }

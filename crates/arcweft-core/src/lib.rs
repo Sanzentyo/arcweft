@@ -42,6 +42,18 @@ pub struct RuntimeDiagnostic {
 pub struct LineTaskGroup {
     /// Effects that run before line reveal and child tasks start.
     pub init: Vec<LineEffectRequest>,
+    /// Line option assignments such as `voice = auto`.
+    pub options: Vec<LineOptionRequest>,
+    /// Bindings introduced by `let PAT = EXPR` in a line plan.
+    pub bindings: Vec<LineBindingRequest>,
+    /// Values exported from the line plan with `out`.
+    pub out: Vec<LineOutRequest>,
+    /// Cancellation branches attached to this line.
+    pub cancel_rules: Vec<LineCancelRuleRequest>,
+    /// Memoization directives local to this line plan.
+    pub memo: Vec<LineMemoRequest>,
+    /// Runtime-checkable assertions attached to this line plan.
+    pub assertions: Vec<LineAssertionRequest>,
     /// Cleanup registered by `defer` inside the init scope.
     pub init_defer_stack: Vec<Vec<LineEffectRequest>>,
     /// Line-scoped child tasks such as `thread` and `on .mark` handlers.
@@ -64,6 +76,48 @@ pub struct LineChildTask {
     pub name: Option<String>,
     pub body: Vec<LineEffectRequest>,
     pub defer_stack: Vec<Vec<LineEffectRequest>>,
+}
+
+/// Option assignment preserved from a line plan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LineOptionRequest {
+    pub name: String,
+    pub value: String,
+}
+
+/// Binding preserved from a line plan before full HIR execution exists.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LineBindingRequest {
+    pub pattern: String,
+    pub value: String,
+}
+
+/// `out` value exported from a line plan or cancel branch.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LineOutRequest {
+    pub label: Option<String>,
+    pub value: String,
+}
+
+/// Runtime representation of `cancel on ... { ... }`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LineCancelRuleRequest {
+    pub trigger: String,
+    pub action: Vec<LineEffectRequest>,
+}
+
+/// Line-local memo directive.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LineMemoRequest {
+    pub name: String,
+    pub options: Vec<RuntimeField>,
+}
+
+/// Runtime-checkable line assertion.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LineAssertionRequest {
+    pub debug: bool,
+    pub expr: String,
 }
 
 /// Declarative cleanup policy applied when the line scope exits.
@@ -103,11 +157,86 @@ pub enum AudioCleanup {
 /// Effect request emitted by core runtime without performing the effect itself.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LineEffectRequest {
-    RegisterHandle { key: String, handle: String },
-    DropHandle { key: String },
+    RegisterHandle {
+        key: String,
+        handle: String,
+    },
+    DropHandle {
+        key: String,
+    },
     WaitMark(String),
     Wait(LogicalDuration),
-    EmitSignal(String),
+    Call(RuntimeCall),
+    Log(RuntimeLog),
+    SignalWrite(RuntimeAssignment),
+    MetricWrite(RuntimeAssignment),
+    EmitEvent(RuntimeEvent),
+    Command(RuntimeCommand),
+    Out(LineOutRequest),
+    Return(String),
+    Goto(String),
+    Yield(String),
+    Panic(String),
+    Fail(String),
+    Bail(String),
+    Ensure {
+        condition: String,
+        message: String,
+    },
+    Close(String),
+    Select(String),
+    Break {
+        label: Option<String>,
+        value: Option<String>,
+    },
+    Continue {
+        label: Option<String>,
+    },
+}
+
+/// Call-shaped runtime request. The runtime adapter decides whether the callee
+/// maps to presentation, audio, state, or user code.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeCall {
+    pub callee: String,
+    pub args: Vec<String>,
+}
+
+/// Structured log request preserved for defmt-style template interning later.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeLog {
+    pub level: String,
+    pub message: String,
+    pub fields: Vec<RuntimeField>,
+}
+
+/// Assignment-like runtime request used by signal and metric updates.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeAssignment {
+    pub target: String,
+    pub value: String,
+}
+
+/// Structured event emission request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeEvent {
+    pub event: String,
+    pub fields: Vec<RuntimeField>,
+}
+
+/// Statement-like command retained until the command family is canonicalized as
+/// ordinary calls.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeCommand {
+    pub name: String,
+    pub args: Vec<String>,
+}
+
+/// Named expression payload preserved in runtime IR without performing I/O.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeField {
+    pub name: String,
+    pub value: String,
 }
 
 impl LogicalDuration {

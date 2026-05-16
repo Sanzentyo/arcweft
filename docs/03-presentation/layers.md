@@ -490,9 +490,7 @@ on @layer.ui.game
 phase AfterLayout
 check on change layer.layout_hash
 {
-    log debug "ui layer bbox={bbox:?}" {
-        bbox = object.bbox,
-    }
+    log.debug("ui layer bbox={bbox:?}", bbox = object.bbox)
 }
 ```
 
@@ -557,7 +555,7 @@ check on event
 when layer(@layer.overlay.modal).visible
 effects { signal }
 {
-    signal @signal.input_blocked <- true
+    signal.set(@signal.input_blocked, true)
 }
 ```
 
@@ -594,9 +592,7 @@ on layer @layer.debug.agent
 at after_render
 check every 30 frames
 {
-    log debug "debug layer visible={visible:bool}" {
-        visible = layer.visible,
-    }
+    log.debug("debug layer visible={visible:bool}", visible = layer.visible)
 }
 ```
 

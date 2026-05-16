@@ -56,14 +56,15 @@ input_map @input.lightgun_map {
     source @usb.lightgun.input
 
     on report r when r.confidence >= 40 => {
-        emit InputAction.PointerAim {
+        event.emit(
+            InputAction.PointerAim,
             x = r.x.normalized(0..1920),
             y = r.y.normalized(0..1080),
             space = .LogicalViewport,
-        }
+        )
 
         if r.trigger {
-            emit InputAction.ButtonDown(.Fire)
+            event.emit(InputAction.ButtonDown(.Fire))
         }
     }
 }

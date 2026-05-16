@@ -180,7 +180,7 @@ let mic =
         }
 
         denied e => {
-            log warn "microphone permission denied: {e:?}" { e = e }
+            log.warn("microphone permission denied: {e:?}", e = e)
             return Ok(FlowExit::Goto(@flow.no_mic_fallback))
         }
     }

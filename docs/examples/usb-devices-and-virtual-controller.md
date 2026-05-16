@@ -106,12 +106,12 @@ pub flow @flow.device_setup setup_devices(state: GameState) -> Result<FlowExit, 
             }
 
             denied _ => {
-                log warn "motion sensor denied"
+                log.warn("motion sensor denied")
                 return Ok(FlowExit::Goto(@flow.opening_without_sensor))
             }
         }
 
-    signal @signal.device_ready <- true
+    signal.set(@signal.device_ready, true)
 
     Ok(FlowExit::Goto(@flow.opening))
 }

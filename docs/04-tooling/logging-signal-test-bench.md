@@ -5,9 +5,7 @@
 defmt 風に、format string を compile-time intern し、実行時は template id と typed args だけを送る。
 
 ```awft
-log info "selected choice {choice:?}" {
-    choice = selected.id,
-}
+log.info("selected choice {choice:?}", choice = selected.id)
 ```
 
 LogFrame:
@@ -37,9 +35,9 @@ pub metric gauge @metric.frame_time_ms: f32
 更新:
 
 ```awft
-signal @signal.current_flow <- @flow.opening
-signal @signal.loading_progress <- p.ratio
-metric @metric.frame_time_ms <- frame_time.ms()
+signal.set(@signal.current_flow, @flow.opening)
+signal.set(@signal.loading_progress, p.ratio)
+metric.set(@metric.frame_time_ms, frame_time.ms())
 ```
 
 Signal kind:
@@ -70,7 +68,7 @@ assert_some state.current_bg
 test @test.opening_listen_route scenario {
     start @flow.opening
 
-    expect log info contains "enter flow"
+    expect log.info contains "enter flow"
     expect signal @signal.current_flow == @flow.opening
 
     wait object @choice.opening.listen visible
@@ -152,6 +150,6 @@ bench @bench.memo_hit_rate {
     measure iterations = 10000 {
         opening_choices().map(choice_to_view(state)).collect<List<ChoiceView>>()
     }
-    assert metric @metric.memo_hit_rate >= 0.95
+    assert metric.value(@metric.memo_hit_rate) >= 0.95
 }
 ```

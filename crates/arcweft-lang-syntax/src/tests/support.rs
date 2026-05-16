@@ -9,7 +9,9 @@ pub(super) use crate::{
     parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
     validate_typecheck_ready,
 };
-pub(super) use arcweft_core::LineEffectRequest;
+pub(super) use arcweft_core::{
+    LineEffectRequest, LineOutRequest, RuntimeAssignment, RuntimeCall, RuntimeLog,
+};
 
 pub(super) fn parse_ok(source: impl Into<String>) -> crate::TypedSyntaxTree {
     let parsed = parse_source(source);

@@ -141,7 +141,7 @@ let panel =
         }
 
         denied _ => {
-            log warn "USB device permission denied"
+            log.warn("USB device permission denied")
             return Ok(FlowExit::Goto(@flow.no_usb_fallback))
         }
     }

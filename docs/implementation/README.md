@@ -82,7 +82,7 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   parsing uses those CST helpers for multiline delimiter recovery, `let`/type
   binding splits, associated-type generic heads, pattern guard splits,
   multi-token separators such as `=>` / `->` / `<-` / `::`, `borrow ... as ...`,
-  await grouping, await `with` heads, extern module headers, emit fields,
+  await grouping, await `with` heads, extern module headers, event fields,
   scenario command args, labels, entity refs, and shared pattern/type delimiter
   parsing.
 - Balanced brace-block collection for ordinary blocks and function-body blocks
@@ -127,6 +127,12 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `@target.*`, family-correct `@slot.background.*` /
   `@slot.character.*` usage, and reports simultaneous default slot handles
   that should be given explicit slots.
+- Runtime observation APIs are ordinary call syntax. `log.info(...)`,
+  `log.debug(...)`, `log.warn(...)`, `signal.set(target, value)`,
+  `metric.set(target, value)`, and `event.emit(Event, fields)` parse as normal
+  method calls; line-plan runtime lowering recognizes those well-known calls
+  and emits typed Sans I/O `LineEffectRequest::Log`, `SignalWrite`,
+  `MetricWrite`, and `EmitEvent` records.
 - Dialogue syntax now parses `look`, `stage`, `portrait`, `focus`, and
   `cleanup` as first-class line options. The first positional line option maps
   to `look`; `face` is rejected as a line option while stage methods such as
@@ -159,6 +165,16 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `arcweft-core::LineTaskGroup` values without renderer/audio/device backends.
   Scoped `defer` lowers as cleanup on the current runtime scope rather than as
   thread-only syntax.
+- Phase 1.5 line-plan lowering now preserves line options, line-local `let`
+  bindings, `out`, `cancel on`, memo directives, assertions, structured logs,
+  signal writes, metric writes, `event.emit(...)` calls, scenario commands, and
+  ordinary calls as typed runtime IR categories rather than dropping them or
+  collapsing them into a stringly signal placeholder.
+- Gap audit result: broad runtime docs still exceed the implemented core. Full
+  `FrameInput`/`FrameOutput`, flow-fiber lowering, `await with` execution IR,
+  choice runtime IR, source/stream backpressure IR, hook/memo runtime tables,
+  save/replay traces, activities, and layered input routing remain TODOs beyond
+  the current line-plan Sans I/O subset.
 - Remaining P2 semantic work is deeper than syntax readiness: full all-paths
   `MustDrop` discharge, promotion proof rules, `unsafe lifetime` audit regions,
   deterministic concurrent write conflict checking, and join-result typing for

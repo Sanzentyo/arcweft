@@ -239,7 +239,7 @@ choice @choice.opening.first {
         }
 
         select {
-            emit GameEvent::ChoiceSelected { id = @choice.opening.listen }
+            event.emit(GameEvent::ChoiceSelected, id = @choice.opening.listen)
             goto @flow.alice_intro
         }
     }
@@ -303,7 +303,7 @@ with {
     }
 
     on select selected {
-        log info "selected choice {id:?}" { id = selected.id }
+        log.info("selected choice {id:?}", id = selected.id)
     }
 }
 ```

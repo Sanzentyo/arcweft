@@ -12,7 +12,7 @@ priority 10
 once
 effects signal.choice_visible
 {
-    signal @signal.choice_visible <- true
+    signal.set(@signal.choice_visible, true)
 }
 
 memo fn route_title(route: Ref<Flow>) -> String
@@ -34,7 +34,10 @@ pub parser parse_player_command: Parser<PlayerCommand, ParseError> {
     assert_eq!(hook.priority(), Some(10));
     assert!(hook.once());
     assert_eq!(hook.effects().len(), 1);
-    assert!(matches!(hook.body_statements(), [Stmt::Signal { .. }]));
+    assert!(matches!(
+        hook.body_statements(),
+        [Stmt::Expr(Expr::MethodCall { .. })]
+    ));
 
     let Item::MemoFn(memo) = &tree.items()[1] else {
         panic!("expected memo item");
@@ -587,8 +590,8 @@ pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     privacy = transient
 
     on item frame => yield frame
-    on disconnected => emit signal @signal.camera_connected <- false
-    on error e => log warn "camera stream error {err:?}" { err = e }
+    on disconnected => signal.set(@signal.camera_connected, false)
+    on error e => log.warn("camera stream error {err:?}", err = e)
 }
 "#,
     );
@@ -605,7 +608,7 @@ pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     assert!(source.body_statements().iter().any(|stmt| matches!(
         stmt,
         Stmt::On { head, body }
-            if head == "disconnected" && matches!(body.as_slice(), [Stmt::Signal { .. }])
+            if head == "disconnected" && matches!(body.as_slice(), [Stmt::Expr(Expr::MethodCall { .. })])
     )));
 
     let hir = lower_to_hir(&tree).expect("documented source item lowers");

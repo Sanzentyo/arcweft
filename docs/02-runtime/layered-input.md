@@ -235,7 +235,7 @@ Button("閉じる")
     .layer(@layer.modal.settings)
     .agent_target(@ui.settings.close)
     .on_click {
-        emit UiEvent.SettingsClosed
+        event.emit(UiEvent.SettingsClosed)
     }
 ```
 
@@ -438,7 +438,7 @@ when input.kind == .PointerDown
 check on event
 {
     if route.result == .BlockedBelow {
-        signal @signal.modal_blocked_input <- true
+        signal.set(@signal.modal_blocked_input, true)
     }
 }
 ```
@@ -456,7 +456,7 @@ phase InputTarget
 check on input PointerMove
 when input.pointer.hovered
 {
-    emit UiCommand::SetHover { target = @choice.opening.listen, value = true }
+    event.emit(UiCommand::SetHover, target = @choice.opening.listen, value = true)
 }
 ```
 
@@ -486,7 +486,7 @@ phase InputHitTest
 check on input PointerMove
 when object.entity == @choice.opening.listen
 {
-    log debug "hit choice listen" {}
+    log.debug("hit choice listen")
 }
 ```
 
@@ -509,7 +509,7 @@ on @layer.choices
 phase InputTarget
 check on input PointerEnter
 {
-    signal @signal.hovered_layer <- Some(@layer.choices)
+    signal.set(@signal.hovered_layer, Some(@layer.choices))
 }
 
 hook @hook.layer.choices.layout_changed
@@ -517,7 +517,7 @@ on @layer.choices
 phase AfterLayout
 check on change layout
 {
-    log debug "choices layer layout changed"
+    log.debug("choices layer layout changed")
 }
 ```
 
@@ -534,7 +534,7 @@ on @choice.opening.listen
 phase InputTarget
 check on input PointerClick
 {
-    emit GameEvent::ChoiceSelected { id = @choice.opening.listen }
+    event.emit(GameEvent::ChoiceSelected, id = @choice.opening.listen)
     stop_propagation
 }
 ```
@@ -549,7 +549,7 @@ Layered Input は Object Hook Runtime と接続する。`RoutedInputEvent` が�
 on @choice.opening.listen input click
 when enabled(self)
 {
-    emit GameEvent::ChoiceSelected { id = self }
+    event.emit(GameEvent::ChoiceSelected, id = self)
 }
 ```
 

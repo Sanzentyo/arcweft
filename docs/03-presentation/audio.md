@@ -350,10 +350,11 @@ pub signal @signal.current_bgm: Watch<Ref<Bgm>>
 pub signal @signal.audio_bus_levels: Watch<Map<Ref<AudioBus>, f32>>
 pub signal @signal.tts_progress: Watch<f32>
 
-log info "bgm section changed {bgm:?} -> {section:?}" {
+log.info(
+    "bgm section changed {bgm:?} -> {section:?}",
     bgm = @bgm.alice_theme,
     section = @music.main,
-}
+)
 ```
 
 ## Test

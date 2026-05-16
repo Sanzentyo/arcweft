@@ -48,7 +48,7 @@ pub surface character @character.alice Alice as alice {
 flow @flow.unsupported unsupported {
     @<character.alice>.say[待って。[p]]
     with:
-        skip = true
+        @bad raw item
 }
 ",
     );
@@ -64,7 +64,7 @@ flow @flow.unsupported unsupported {
         "unsupported line plan item must fail"
     );
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("line-plan option `skip`"),
+        String::from_utf8_lossy(&output.stderr).contains("raw expression"),
         "stderr should explain the unsupported line-plan item"
     );
 }

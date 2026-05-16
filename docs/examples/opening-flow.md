@@ -7,8 +7,8 @@ use crate::game::prelude::*
 use super::logic::affection::{has_affection_at_least}
 
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    signal @signal.current_flow <- @flow.opening
-    log info "enter flow {flow:?}" { flow = @flow.opening }
+    signal.set(@signal.current_flow, @flow.opening)
+    log.info("enter flow {flow:?}", flow = @flow.opening)
 
     preload opening {
         asset.image(@asset.bg.room)
