@@ -3,9 +3,9 @@ use crate::ast::{
     ChoicePlan, ContractClause, DialogueContent, DialogueDefaultsItem, EntityDeclItem, EntityRef,
     EntityRefSyntax, EnumItem, ExternModItem, Flow, FlowItem, FlowKind, FunctionItem, FunctionKind,
     HookItem, IdRef, IfBlock, IfLetBlock, ImplItem, Item, LineArg, LinePlan, LoopBlock, MatchBlock,
-    MemoFn, ParserItem, Pattern, RelativeId, ScopeBlock, ScopeExprBlock, SourceItem,
+    MemoFn, ParserItem, Pattern, ProofItem, RelativeId, ScopeBlock, ScopeExprBlock, SourceItem,
     SourceLocaleBlock, SpeakerLine, StateItem, Stmt, StructItem, TextRange, TraitItem,
-    TypeAliasItem, TypedSyntaxTree, WhileBlock, WhileLetBlock,
+    TrustedAxiomItem, TypeAliasItem, TypedSyntaxTree, WhileBlock, WhileLetBlock,
 };
 use crate::expr::Expr;
 use crate::types::FnSignature;
@@ -62,6 +62,8 @@ pub enum HirTopLevelDecl {
     TypeAlias(TypeAliasItem),
     Hook(HookItem),
     MemoFn(MemoFn),
+    Proof(ProofItem),
+    TrustedAxiom(TrustedAxiomItem),
     Parser(ParserItem),
     Source(SourceItem),
 }
@@ -335,6 +337,12 @@ pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerErr
             }
             Item::MemoFn(item) => {
                 declarations.push(HirTopLevelDecl::MemoFn(item.clone()));
+            }
+            Item::Proof(item) => {
+                declarations.push(HirTopLevelDecl::Proof(item.clone()));
+            }
+            Item::TrustedAxiom(item) => {
+                declarations.push(HirTopLevelDecl::TrustedAxiom(item.clone()));
             }
             Item::Parser(item) => {
                 declarations.push(HirTopLevelDecl::Parser(item.clone()));

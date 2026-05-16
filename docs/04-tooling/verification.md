@@ -56,7 +56,30 @@ arcw verify game/main.awft --solver oxiz
 arcw verify game/main.awft --cross-check z3,oxiz
 arcw verify game/main.awft --emit-smt out/proofs
 arcw verify activity mini_games/truck --kani
+arcw verify game/main.awft --emit-obligations out/proofs
 ```
+
+## Source proof items and unsafe audits
+
+Arcweft source can contain formal proof items and audited unsafe lifetime
+regions. See
+[Proofs and Unsafe Lifetime Audits](../01-language/proofs-and-unsafe-audits.md)
+for the surface syntax.
+
+Verification must collect:
+
+```text
+- generated proof obligations
+- proof item bodies
+- proof references such as proof = @proof.id
+- trusted axiom declarations
+- unsafe lifetime audit blocks
+- assume clauses and their reasons/axioms
+```
+
+Release verification should reject undisclosed audited unsafe and unproven
+non-trivial lifetime promotion, thread capture, global mutation, and MustDrop
+override obligations.
 
 ## Counterexample
 
@@ -72,4 +95,3 @@ arcw verify activity mini_games/truck --kani
   "suggestion": "Clamp affection after addition"
 }
 ```
-

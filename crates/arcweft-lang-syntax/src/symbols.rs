@@ -63,7 +63,9 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
         | HirTopLevelDecl::DialogueDefaults(_)
         | HirTopLevelDecl::Enum(_)
         | HirTopLevelDecl::ExternMod(_)
-        | HirTopLevelDecl::Struct(_) => {}
+        | HirTopLevelDecl::Proof(_)
+        | HirTopLevelDecl::Struct(_)
+        | HirTopLevelDecl::TrustedAxiom(_) => {}
         HirTopLevelDecl::Impl(item) => {
             for member in item.members() {
                 match member {
@@ -543,6 +545,12 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         }
         Stmt::Wait(target) => collect_wait_target(target, uses),
         Stmt::On { body, .. } | Stmt::Loop { body } => collect_stmt_block(body, uses),
+        Stmt::UnsafeLifetime { reason, body, .. } => {
+            if let Some(reason) = reason {
+                collect_expr(reason, uses);
+            }
+            collect_stmt_block(body, uses);
+        }
         Stmt::Command(command) => {
             for arg in command.args() {
                 collect_expr(arg, uses);

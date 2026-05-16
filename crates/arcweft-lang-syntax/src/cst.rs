@@ -135,6 +135,8 @@ pub(crate) enum CstTopLevelItemKind {
     Hook,
     DialogueDefaults,
     MemoFn,
+    Proof,
+    TrustedAxiom,
     Parser,
     Source,
     FlowBodyItemOrRaw,
@@ -166,6 +168,7 @@ pub(crate) enum CstStructuredFlowBlockKind {
     Thread,
     Defer,
     Borrow,
+    UnsafeLifetime,
     SourceLocale,
     BareScope,
     Scope,
@@ -563,6 +566,10 @@ fn classify_top_level_item(trimmed: &str) -> CstTopLevelItemKind {
         CstTopLevelItemKind::DialogueDefaults
     } else if looks_like_memo_fn(trimmed) {
         CstTopLevelItemKind::MemoFn
+    } else if looks_like_proof_item(trimmed) {
+        CstTopLevelItemKind::Proof
+    } else if looks_like_trusted_axiom_item(trimmed) {
+        CstTopLevelItemKind::TrustedAxiom
     } else if looks_like_parser_item(trimmed) {
         CstTopLevelItemKind::Parser
     } else if looks_like_source_item(trimmed) {
@@ -680,6 +687,14 @@ fn looks_like_memo_fn(trimmed: &str) -> bool {
     visible_head(trimmed).starts_with("memo fn ")
 }
 
+fn looks_like_proof_item(trimmed: &str) -> bool {
+    visible_head(trimmed).starts_with("proof ")
+}
+
+fn looks_like_trusted_axiom_item(trimmed: &str) -> bool {
+    visible_head(trimmed).starts_with("trusted axiom ")
+}
+
 fn looks_like_parser_item(trimmed: &str) -> bool {
     visible_head(trimmed).starts_with("parser ")
 }
@@ -730,6 +745,8 @@ fn classify_structured_flow_block(trimmed: &str) -> Option<CstStructuredFlowBloc
         Some(CstStructuredFlowBlockKind::Defer)
     } else if trimmed.starts_with("borrow ") {
         Some(CstStructuredFlowBlockKind::Borrow)
+    } else if trimmed.starts_with("unsafe lifetime ") {
+        Some(CstStructuredFlowBlockKind::UnsafeLifetime)
     } else if trimmed.starts_with("source locale ") {
         Some(CstStructuredFlowBlockKind::SourceLocale)
     } else if trimmed.starts_with('{') {
@@ -852,6 +869,7 @@ fn is_typed_stmt(trimmed: &str) -> bool {
                 | "fail"
                 | "bail"
                 | "ensure"
+                | "unsafe"
                 | "signal"
                 | "close"
                 | "break"

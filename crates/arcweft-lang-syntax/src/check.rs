@@ -50,10 +50,23 @@ pub enum TypeKind {
     Int,
     Float,
     String,
+    Char,
+    TextCluster,
     Duration,
     Range,
     DisplayText,
     Ref(EntityKind),
+    List(Box<TypeKind>),
+    Slice(Box<TypeKind>),
+    Seq(Box<TypeKind>),
+    Map {
+        key: Box<TypeKind>,
+        value: Box<TypeKind>,
+    },
+    BorrowRef {
+        lifetime: Option<LifetimeScopeKind>,
+        inner: Box<TypeKind>,
+    },
     Need {
         ready: Box<TypeKind>,
         error: Box<TypeKind>,
@@ -275,8 +288,10 @@ impl TypeChecker<'_> {
             | HirTopLevelDecl::Enum(_)
             | HirTopLevelDecl::ExternMod(_)
             | HirTopLevelDecl::Impl(_)
+            | HirTopLevelDecl::Proof(_)
             | HirTopLevelDecl::Struct(_)
-            | HirTopLevelDecl::Trait(_) => {}
+            | HirTopLevelDecl::Trait(_)
+            | HirTopLevelDecl::TrustedAxiom(_) => {}
             HirTopLevelDecl::EntityDecl(item) => {
                 self.expect_entity_kind(
                     item.id(),
@@ -662,6 +677,12 @@ impl TypeChecker<'_> {
             Stmt::LifetimeSet { target, expr } => self.check_lifetime_set_stmt(target, expr),
             Stmt::Wait(target) => self.check_wait_stmt(target),
             Stmt::On { body, .. } => self.check_on_stmt(stmt, body),
+            Stmt::UnsafeLifetime {
+                reason,
+                has_safety_doc,
+                body,
+                ..
+            } => self.check_unsafe_lifetime_stmt(reason.as_ref(), *has_safety_doc, body),
             Stmt::Command(command) => self.check_command_stmt(command),
             Stmt::If { condition, body } => self.check_if_stmt(condition, body),
             Stmt::Loop { body } => self.check_stmt_loop(body),
@@ -713,6 +734,29 @@ impl TypeChecker<'_> {
         self.locals = outer_locals;
     }
 
+    fn check_unsafe_lifetime_stmt(
+        &mut self,
+        reason: Option<&Expr>,
+        has_safety_doc: bool,
+        body: &[Stmt],
+    ) {
+        if let Some(reason) = reason {
+            self.check_expr(reason);
+        } else {
+            self.errors.push(TypeCheckError::new(
+                "unsafe lifetime block requires a reason".to_owned(),
+            ));
+        }
+        if !has_safety_doc {
+            self.errors.push(TypeCheckError::new(
+                "unsafe lifetime block requires a SAFETY doc comment".to_owned(),
+            ));
+        }
+        for stmt in body {
+            self.check_stmt(stmt);
+        }
+    }
+
     fn check_command_stmt(&mut self, command: &crate::ast::ScenarioCommand) {
         for arg in command.args() {
             self.check_expr(arg);
@@ -732,18 +776,30 @@ impl TypeChecker<'_> {
         let ty = self
             .check_expr(expr)
             .or_else(|| annotation.map(type_ref_kind));
-        if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), ty) {
-            if let Some(slot_family) = default_presentation_slot_family(expr) {
-                if let Some(previous) = self
-                    .active_presentation_defaults
-                    .insert(slot_family.to_owned(), name.to_owned())
-                {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "presentation `{slot_family}` default slot already has live handle `{previous}`; use an explicit `slot = @slot.{slot_family}.name` for simultaneous values"
-                    )));
+        if let (Some(annotation), Some(actual)) = (annotation, ty.as_ref()) {
+            let expected = type_ref_kind(annotation);
+            if &expected != actual {
+                self.errors.push(TypeCheckError::new(format!(
+                    "let annotation expects {expected:?}, but expression has {actual:?}"
+                )));
+            }
+        }
+        if let Some(ty) = ty {
+            if let Some(name) = ident_pattern_name(pattern) {
+                if let Some(slot_family) = default_presentation_slot_family(expr) {
+                    if let Some(previous) = self
+                        .active_presentation_defaults
+                        .insert(slot_family.to_owned(), name.to_owned())
+                    {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "presentation `{slot_family}` default slot already has live handle `{previous}`; use an explicit `slot = @slot.{slot_family}.name` for simultaneous values"
+                        )));
+                    }
                 }
             }
-            self.locals.insert(name.to_owned(), ty);
+            for (name, binding_ty) in pattern_bindings_with_fallback(pattern, &ty) {
+                self.locals.insert(name, binding_ty);
+            }
         }
         collect_borrow_lifetimes(pattern, &mut self.active_borrows);
         if let Some(annotation) = annotation {
@@ -1705,10 +1761,20 @@ impl TypeChecker<'_> {
     }
 
     fn check_list_expr(&mut self, items: &[Expr]) -> TypeKind {
+        let mut item_type = None;
         for item in items {
-            self.check_expr(item);
+            let next_type = self.check_expr(item).unwrap_or(TypeKind::Unit);
+            match &item_type {
+                Some(existing) if existing != &next_type => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "list items must have the same type, found {existing:?} and {next_type:?}"
+                    )));
+                }
+                Some(_) => {}
+                None => item_type = Some(next_type),
+            }
         }
-        TypeKind::Named("List".to_owned())
+        TypeKind::List(Box::new(item_type.unwrap_or(TypeKind::Unit)))
     }
 
     fn check_memo_block_expr(
@@ -1974,6 +2040,7 @@ impl TypeChecker<'_> {
             self.env
                 .method_type(&receiver_type, method)
                 .cloned()
+                .or_else(|| well_known_capacity_method_type(&receiver_type, method, args.len()))
                 .or_else(|| {
                     self.errors.push(TypeCheckError::new(format!(
                         "unknown method `{method}` on {receiver_type:?}"
@@ -1987,12 +2054,14 @@ impl TypeChecker<'_> {
         let target_type = self.check_expr(target);
         self.check_expr(index);
         target_type.and_then(|target_type| {
-            self.env.index_type(&target_type).cloned().or_else(|| {
-                self.errors.push(TypeCheckError::new(format!(
-                    "type {target_type:?} is not indexable"
-                )));
-                None
-            })
+            collection_index_type(&target_type)
+                .or_else(|| self.env.index_type(&target_type).cloned())
+                .or_else(|| {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "type {target_type:?} is not indexable"
+                    )));
+                    None
+                })
         })
     }
 
@@ -2312,6 +2381,7 @@ fn entity_kind_for_decl(kind: EntityDeclKind) -> EntityKind {
 fn literal_type(literal: &Literal) -> TypeKind {
     match literal {
         Literal::String(_) => TypeKind::String,
+        Literal::Char { .. } => TypeKind::Char,
         Literal::Int(_) => TypeKind::Int,
         Literal::Float(_) => TypeKind::Float,
         Literal::Bool(_) => TypeKind::Bool,
@@ -2377,6 +2447,9 @@ fn ident_pattern_name(pattern: &Pattern) -> Option<&str> {
 
 fn iter_item_type(source_type: Option<&TypeKind>) -> TypeKind {
     match source_type {
+        Some(TypeKind::List(item) | TypeKind::Seq(item) | TypeKind::Slice(item)) => {
+            item.as_ref().clone()
+        }
         Some(TypeKind::Named(name)) if name.starts_with("List<") && name.ends_with('>') => {
             TypeKind::Named(name[5..name.len() - 1].to_owned())
         }
@@ -2565,6 +2638,9 @@ fn result_ok_type(name: &str) -> Option<TypeKind> {
 }
 
 fn well_known_runtime_method_type(name: &str) -> Option<TypeKind> {
+    if let Some(ty) = well_known_static_capacity_method_type(name) {
+        return Some(ty);
+    }
     (name.starts_with("log.")
         || matches!(
             name,
@@ -2581,6 +2657,43 @@ fn well_known_runtime_method_type(name: &str) -> Option<TypeKind> {
                 | "cues.stop"
         ))
     .then_some(TypeKind::Unit)
+}
+
+fn well_known_static_capacity_method_type(name: &str) -> Option<TypeKind> {
+    match name {
+        "List.with_capacity" => Some(TypeKind::List(Box::new(TypeKind::Named("_".to_owned())))),
+        "String.with_capacity" => Some(TypeKind::String),
+        "Bytes.with_capacity" => Some(TypeKind::Named("Bytes".to_owned())),
+        _ => None,
+    }
+}
+
+fn well_known_capacity_method_type(
+    receiver: &TypeKind,
+    method: &str,
+    arg_count: usize,
+) -> Option<TypeKind> {
+    if !is_reservable_type(receiver) {
+        return None;
+    }
+    match (method, arg_count) {
+        ("reserve" | "shrink_to", 1) | ("shrink", 0) => Some(TypeKind::Unit),
+        _ => None,
+    }
+}
+
+fn is_reservable_type(ty: &TypeKind) -> bool {
+    matches!(ty, TypeKind::List(_) | TypeKind::String)
+        || matches!(ty, TypeKind::Named(name) if name == "Bytes")
+}
+
+fn collection_index_type(target_type: &TypeKind) -> Option<TypeKind> {
+    match target_type {
+        TypeKind::List(item) | TypeKind::Slice(item) => Some(item.as_ref().clone()),
+        TypeKind::Map { value, .. } => Some(value.as_ref().clone()),
+        TypeKind::String => Some(TypeKind::TextCluster),
+        _ => None,
+    }
 }
 
 fn first_arg_type(types: &[Option<TypeKind>]) -> TypeKind {
@@ -2653,6 +2766,8 @@ fn named_type_label(name: &str) -> TypeKind {
         "i32" | "i64" | "usize" | "Int" => TypeKind::Int,
         "f32" | "f64" | "Float" => TypeKind::Float,
         "String" => TypeKind::String,
+        "char" | "Char" => TypeKind::Char,
+        "TextCluster" => TypeKind::TextCluster,
         "Duration" => TypeKind::Duration,
         "()" | "Unit" => TypeKind::Unit,
         other => TypeKind::Named(other.to_owned()),
@@ -2730,7 +2845,13 @@ fn simple_expr_type(expr: &Expr) -> Option<TypeKind> {
             .map(simple_expr_type)
             .collect::<Option<Vec<_>>>()
             .map(TypeKind::Tuple),
-        Expr::List(_) => Some(TypeKind::Named("List".to_owned())),
+        Expr::List(items) => {
+            let item = items
+                .first()
+                .and_then(simple_expr_type)
+                .unwrap_or(TypeKind::Unit);
+            Some(TypeKind::List(Box::new(item)))
+        }
         Expr::RecordLiteral(_) => Some(TypeKind::Named("Record".to_owned())),
         _ => None,
     }
@@ -2791,6 +2912,16 @@ fn type_ref_kind(ty: &TypeRef) -> TypeKind {
     match ty {
         TypeRef::Never => TypeKind::Never,
         TypeRef::Path(path) => named_type_label(path),
+        TypeRef::Generic { base, args } if base == "List" && args.len() == 1 => {
+            TypeKind::List(Box::new(type_ref_kind(&args[0])))
+        }
+        TypeRef::Generic { base, args } if base == "Seq" && args.len() == 1 => {
+            TypeKind::Seq(Box::new(type_ref_kind(&args[0])))
+        }
+        TypeRef::Generic { base, args } if base == "Map" && args.len() == 2 => TypeKind::Map {
+            key: Box::new(type_ref_kind(&args[0])),
+            value: Box::new(type_ref_kind(&args[1])),
+        },
         TypeRef::Generic { base, args } if base == "Result" && args.len() == 2 => {
             TypeKind::Result {
                 ok: Box::new(type_ref_kind(&args[0])),
@@ -2801,7 +2932,14 @@ fn type_ref_kind(ty: &TypeRef) -> TypeKind {
             ready: Box::new(type_ref_kind(&args[0])),
             error: Box::new(type_ref_kind(&args[1])),
         },
-        _ => TypeKind::Named(type_ref_label(ty)),
+        TypeRef::Ref { lifetime, inner } => TypeKind::BorrowRef {
+            lifetime: lifetime
+                .as_ref()
+                .map(|lifetime| LifetimeScopeKind::parse(lifetime.name())),
+            inner: Box::new(type_ref_kind(inner)),
+        },
+        TypeRef::Slice(inner) => TypeKind::Slice(Box::new(type_ref_kind(inner))),
+        TypeRef::Generic { .. } => TypeKind::Named(type_ref_label(ty)),
     }
 }
 

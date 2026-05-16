@@ -27,11 +27,11 @@ pub use ast::{
     EnumItem, EnumVariant, ExternModItem, Flow, FlowItem, FlowKind, ForBlock, FunctionItem,
     FunctionKind, HookItem, IfBlock, IfLetBlock, ImplItem, ImplMember, Item, LineArg, LineOptions,
     LinePlan, LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem,
-    Pattern, RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock,
-    SelectBranch, SelectBranchHead, SourceItem, SourceLocaleBlock, SpeakerLine, StateField,
-    StateItem, Stmt, StructField, StructItem, TextRange, ThreadBlock, ThreadModifier, TraitItem,
-    TraitMember, TriggerPattern, TypeAliasItem, TypedSyntaxTree, UseItem, VariantPatternPayload,
-    Visibility, WhileBlock, WhileLetBlock, WikiLink,
+    Pattern, ProofItem, RecordPatternField, ScenarioCommand, ScopeBlock, ScopeExprBlock,
+    SelectBlock, SelectBranch, SelectBranchHead, SourceItem, SourceLocaleBlock, SpeakerLine,
+    StateField, StateItem, Stmt, StructField, StructItem, TextRange, ThreadBlock, ThreadModifier,
+    TraitItem, TraitMember, TriggerPattern, TrustedAxiomItem, TypeAliasItem, TypedSyntaxTree,
+    UseItem, VariantPatternPayload, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 pub use check::{
     EntityKind, HandleState, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind,

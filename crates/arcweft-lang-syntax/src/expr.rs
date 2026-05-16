@@ -139,6 +139,7 @@ pub struct MatchExprArm {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Literal {
     String(String),
+    Char { raw: String, value: char },
     Int(i64),
     Float(String),
     Bool(bool),
@@ -326,6 +327,7 @@ enum Token {
     Entity(EntityRefSyntax),
     LifetimePath { key: LifetimeKey, optional: bool },
     Literal(Literal),
+    Invalid(String),
     Underscore,
     Caret,
     LParen,
@@ -361,7 +363,7 @@ impl<'a> Lexer<'a> {
                 continue;
             }
             tokens.push(match ch {
-                '"' => self.lex_string(),
+                '"' => self.lex_string_or_char(),
                 '@' => self.lex_entity(),
                 '\'' => self.lex_lifetime_path(),
                 '0'..='9' => self.lex_number_or_duration(),
@@ -425,7 +427,8 @@ impl<'a> Lexer<'a> {
         Token::Op(op)
     }
 
-    fn lex_string(&mut self) -> Token {
+    fn lex_string_or_char(&mut self) -> Token {
+        let literal_start = self.cursor;
         self.bump_char();
         let start = self.cursor;
         let mut escaped = false;
@@ -433,6 +436,19 @@ impl<'a> Lexer<'a> {
             if ch == '"' && !escaped {
                 let value = self.source[start..self.cursor].to_owned();
                 self.bump_char();
+                if self.starts_with("c")
+                    && self
+                        .source
+                        .get(self.cursor + 'c'.len_utf8()..)
+                        .is_none_or(char_literal_suffix_boundary)
+                {
+                    self.bump_char();
+                    let raw = self.source[literal_start..self.cursor].to_owned();
+                    return match decode_char_literal(&value) {
+                        Ok(value) => Token::Literal(Literal::Char { raw, value }),
+                        Err(message) => Token::Invalid(message),
+                    };
+                }
                 return Token::Literal(Literal::String(value));
             }
             escaped = ch == '\\' && !escaped;
@@ -804,6 +820,7 @@ impl ExprParser {
                 })
             }
             Token::Literal(literal) => Ok(Expr::Literal(literal)),
+            Token::Invalid(message) => Err(ExprParseError::new(&message)),
             Token::Entity(entity) => Ok(Expr::EntityRef(entity)),
             Token::LifetimePath { key, optional } => Ok(Expr::LifetimePath { key, optional }),
             Token::Ident(path) => {
@@ -1087,11 +1104,13 @@ fn token_source(token: &Token) -> String {
             format!("'{}{}", key.as_dotted(), if *optional { "?" } else { "" })
         }
         Token::Literal(Literal::String(value)) => format!("\"{value}\""),
+        Token::Literal(Literal::Char { raw, .. }) => raw.clone(),
         Token::Literal(Literal::Int(value)) => value.to_string(),
         Token::Literal(Literal::Bool(value)) => value.to_string(),
         Token::Literal(Literal::Duration { amount, unit }) => {
             format!("{amount}{}", duration_unit_suffix(*unit))
         }
+        Token::Invalid(message) => message.clone(),
         Token::Underscore => "_".to_owned(),
         Token::Caret => "^".to_owned(),
         Token::LParen => "(".to_owned(),
@@ -1240,6 +1259,56 @@ fn is_numeric_duration(source: &str) -> bool {
         && source.chars().filter(|ch| *ch == '.').count() <= 1
         && source.chars().any(|ch| ch.is_ascii_digit())
         && source.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
+}
+
+fn char_literal_suffix_boundary(tail: &str) -> bool {
+    tail.chars()
+        .next()
+        .is_none_or(|ch| ch.is_whitespace() || matches!(ch, ')' | ']' | '}' | ',' | ';'))
+}
+
+fn decode_char_literal(source: &str) -> Result<char, String> {
+    let mut chars = source.chars();
+    let value = match chars.next() {
+        Some('\\') => decode_char_escape(&mut chars)?,
+        Some(value) => value,
+        None => return Err("char literal must contain exactly one Unicode scalar value".to_owned()),
+    };
+    if chars.next().is_some() {
+        return Err("char literal must contain exactly one Unicode scalar value".to_owned());
+    }
+    Ok(value)
+}
+
+fn decode_char_escape(chars: &mut core::str::Chars<'_>) -> Result<char, String> {
+    match chars.next() {
+        Some('n') => Ok('\n'),
+        Some('r') => Ok('\r'),
+        Some('t') => Ok('\t'),
+        Some('0') => Ok('\0'),
+        Some('\\') => Ok('\\'),
+        Some('"') => Ok('"'),
+        Some('u') => decode_unicode_escape(chars),
+        Some(other) => Err(format!("unsupported char escape `\\{other}`")),
+        None => Err("unterminated char escape".to_owned()),
+    }
+}
+
+fn decode_unicode_escape(chars: &mut core::str::Chars<'_>) -> Result<char, String> {
+    if chars.next() != Some('{') {
+        return Err("unicode char escape must use `\\u{...}`".to_owned());
+    }
+    let mut digits = String::new();
+    for ch in chars.by_ref() {
+        if ch == '}' {
+            let value = u32::from_str_radix(&digits, 16)
+                .map_err(|_| "invalid unicode char escape".to_owned())?;
+            return char::from_u32(value)
+                .ok_or_else(|| "unicode char escape is not a valid scalar value".to_owned());
+        }
+        digits.push(ch);
+    }
+    Err("unterminated unicode char escape".to_owned())
 }
 
 impl ExprParseError {

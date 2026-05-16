@@ -51,6 +51,7 @@
 - [Character Stage / Sprite / Voice Timeline](03-presentation/character-stage.md)
 - [Touch Virtual Controller](03-presentation/touch-virtual-controller.md)
 - [Hooks and Memoization](01-language/hooks-and-memoization.md)
+- [Proofs and Unsafe Lifetime Audits](01-language/proofs-and-unsafe-audits.md)
 - [Runtime Hooks and Memoization](02-runtime/hooks-memoization.md)
 - [Runtime Notes: Control Flow, Patterns, and Loops](02-runtime/control-flow-runtime.md)
 - [USB Device Manifest](schemas/usb-device-manifest.md)

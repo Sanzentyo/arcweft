@@ -8,6 +8,8 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
 
     let method = parse_expr("choices.filter(_.enabled).map(_.label)").expect("method chain parses");
     assert!(matches!(method, Expr::MethodCall { .. }));
+    let mutating_method = parse_expr("nums.reserve(4)").expect("mutating method call parses");
+    assert!(matches!(mutating_method, Expr::MethodCall { method, .. } if method == "reserve"));
     let Expr::MethodCall { args, .. } = method else {
         panic!("expected outer map call");
     };
@@ -109,4 +111,40 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
 
     let thread = parse_expr("thread compute { route_score(state) }").expect("thread expr parses");
     assert!(matches!(thread, Expr::Thread { block } if block.name() == Some("compute")));
+}
+
+#[test]
+fn parses_char_literal_suffixes() {
+    let ascii = parse_expr(r#""a"c"#).expect("ascii char literal parses");
+    assert!(matches!(
+        ascii,
+        Expr::Literal(Literal::Char {
+            raw,
+            value: 'a'
+        }) if raw == "\"a\"c"
+    ));
+
+    let escaped = parse_expr(r#""\n"c"#).expect("escaped char literal parses");
+    assert!(matches!(
+        escaped,
+        Expr::Literal(Literal::Char { value: '\n', .. })
+    ));
+
+    let unicode = parse_expr(r#""💡"c"#).expect("unicode scalar char literal parses");
+    assert!(matches!(
+        unicode,
+        Expr::Literal(Literal::Char { value: '💡', .. })
+    ));
+
+    for invalid in ["\"\"c", r#""ab"c"#, r#""e\u{301}"c"#, r#""🇯🇵"c"#] {
+        let error = parse_expr(invalid).expect_err("invalid char literal is rejected");
+        assert!(
+            error
+                .to_string()
+                .contains("exactly one Unicode scalar value"),
+            "{invalid} produced {error}"
+        );
+    }
+
+    assert!(parse_expr(r#""a"cat"#).is_err());
 }

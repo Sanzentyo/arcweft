@@ -172,6 +172,56 @@ for c in choices {
 }
 ```
 
+## Capacity and reservable collections
+
+Capacity is an allocation hint, not semantic state. Standard containers may
+reserve or shrink storage for performance, but programs must not branch on the
+current capacity and stable data formats must not serialize capacity.
+
+```awft
+pub trait WithCapacity {
+    fn with_capacity(capacity: usize) -> Self
+}
+
+pub trait Reservable {
+    fn reserve(&mut self, additional: usize) -> Unit
+    fn shrink(&mut self) -> Unit
+    fn shrink_to(&mut self, min_capacity: usize) -> Unit
+}
+```
+
+MVP standard implementors:
+
+```text
+List<T>
+String
+Bytes
+```
+
+Non-owning or streaming views do not implement these traits:
+
+```text
+Slice<T>
+Seq<T>
+Source<T, E>
+TextCluster
+```
+
+Examples:
+
+```awft
+let names = List<String>.with_capacity(8)
+names.reserve(4)
+names.shrink_to(2)
+
+let line = String.with_capacity(64)
+line.shrink()
+```
+
+The runtime may treat these calls as no-ops in constrained targets such as
+Wasm, embedded players, or deterministic replay modes. That is valid because
+capacity is deliberately non-observable.
+
 ## Range notation
 
 Range 記法を標準で持つ。

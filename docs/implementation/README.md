@@ -177,6 +177,24 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   choice runtime IR, source/stream backpressure IR, hook/memo runtime tables,
   save/replay traces, activities, and layered input routing remain TODOs beyond
   the current line-plan Sans I/O subset.
+- `pro_review14.md`: adopted proof-aware lifetime/thread/drop direction.
+  Formal `proof @proof.*` items, `trusted axiom @axiom.*` declarations,
+  explicit proof references such as `proof = @proof.id`, and audited
+  `unsafe lifetime @unsafe.*` regions with required `reason` and `SAFETY`
+  documentation are the accepted design. The syntax crate now preserves proof
+  and trusted-axiom items as HIR metadata and parses `unsafe lifetime` audit
+  blocks as structured statements with checker validation for `reason` and
+  `SAFETY` docs. Obligation generation, proof certificates, trusted-axiom
+  manifests, and release policy enforcement remain TODOs for compiler/tooling.
+- `Char` / `TextCluster` are now part of the accepted primitive model. `Char`
+  is a Unicode scalar value and is not a visual character; `TextCluster` is the
+  display/reveal/ruby/effect unit. The syntax crate parses `"x"c` char
+  literals and typechecks `Char` separately from `String`.
+- Capacity traits are accepted for owning collections: `WithCapacity` and
+  `Reservable` expose `with_capacity`, `reserve`, `shrink`, and `shrink_to`.
+  Capacity is non-observable and may be a no-op on constrained/Wasm targets.
+  The syntax checker recognizes these methods for `List<T>`, `String`, and
+  `Bytes`.
 - Remaining P2 semantic work is deeper than syntax readiness: full all-paths
   `MustDrop` discharge, promotion proof rules, `unsafe lifetime` audit regions,
   deterministic concurrent write conflict checking, and join-result typing for

@@ -26,6 +26,7 @@
 - [State / Event / Reducer / Flow / View](state-flow-reducer.md)
 - [ADT と pattern matching](adt.md)
 - [契約プログラミング](contracts.md)
+- [Proofs and Unsafe Lifetime Audits](proofs-and-unsafe-audits.md)
 - [入力パース](parsing.md)
 - [macro / template / precompile](macros-precompile.md)
 - [Hooks and Memoization](hooks-and-memoization.md)

@@ -7,12 +7,12 @@ use crate::ast::{
     ExternModItem, FamilyRelativeEntityRef, Flow, FlowInit, FlowItem, FlowKind, ForBlock,
     FunctionInit, FunctionItem, FunctionKind, HookInit, HookItem, IdRef, IfBlock, IfLetBlock,
     ImplItem, ImplMember, Item, LineArg, LineOptions, LineOptionsInit, LinePlan, LinePlanItem,
-    LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, RawItem, RelativeId,
-    RelativeIdSpelling, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch,
-    SelectBranchHead, SourceItem, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt,
-    StmtMatchArm, StructField, StructItem, TextRange, ThreadBlock, ThreadModifier, TraitItem,
-    TraitMember, TriggerPattern, TypeAliasItem, TypedSyntaxTree, UseItem, UseMode, Visibility,
-    WhileBlock, WhileLetBlock, WikiLink,
+    LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, ProofItem, RawItem,
+    RelativeId, RelativeIdSpelling, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock,
+    SelectBranch, SelectBranchHead, SourceItem, SourceLocaleBlock, SpeakerLine, StateField,
+    StateItem, Stmt, StmtMatchArm, StructField, StructItem, TextRange, ThreadBlock, ThreadModifier,
+    TraitItem, TraitMember, TriggerPattern, TrustedAxiomItem, TypeAliasItem, TypedSyntaxTree,
+    UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock, WikiLink,
 };
 use crate::cst::{
     CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstStructuredFlowBlockKind,
@@ -346,6 +346,10 @@ impl Parser {
                 self.parse_dialogue_defaults().map(Item::DialogueDefaults)
             }
             CstTopLevelItemKind::MemoFn => self.parse_memo_fn().map(Item::MemoFn),
+            CstTopLevelItemKind::Proof => self.parse_proof_item().map(Item::Proof),
+            CstTopLevelItemKind::TrustedAxiom => {
+                self.parse_trusted_axiom_item().map(Item::TrustedAxiom)
+            }
             CstTopLevelItemKind::Parser => self.parse_parser_item().map(Item::Parser),
             CstTopLevelItemKind::Source => self.parse_source_item().map(Item::Source),
             CstTopLevelItemKind::Flow
@@ -674,6 +678,68 @@ impl Parser {
             name.trim().to_owned(),
             target,
             where_clauses,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_proof_item(&mut self) -> Option<ProofItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing proof item",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the proof body"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("proof")?.trim();
+        let (id, rest) = parse_required_id_ref(rest, start_line.start, &mut self.errors)?;
+        if !rest.trim().is_empty() {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.start + head.len()),
+                "unexpected text after proof id",
+                ["{"],
+                Some(rest.trim()),
+                ["move proof clauses into the proof body"],
+            );
+        }
+        Some(ProofItem::new(
+            id,
+            body,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_trusted_axiom_item(&mut self) -> Option<TrustedAxiomItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing trusted axiom item",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the trusted axiom body"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("trusted axiom")?.trim();
+        let (id, rest) = parse_required_id_ref(rest, start_line.start, &mut self.errors)?;
+        if !rest.trim().is_empty() {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.start + head.len()),
+                "unexpected text after trusted axiom id",
+                ["{"],
+                Some(rest.trim()),
+                ["move axiom metadata into the trusted axiom body"],
+            );
+        }
+        Some(TrustedAxiomItem::new(
+            id,
+            body,
             TextRange::new(start_line.start, end),
         ))
     }
@@ -1205,6 +1271,15 @@ impl Parser {
         if let Some(item) = self.parse_content_call_or_speaker_line() {
             return Some(item);
         }
+        // Keep typed statements from falling back to Raw when the coarse CST
+        // classifier misses a surface form. This is especially important for
+        // discard bindings such as `let _ = handle.reserve(n)`, where the
+        // binding pattern is meaningful even though it does not introduce a
+        // named local.
+        if is_typed_stmt(trimmed) {
+            self.index += 1;
+            return Some(FlowItem::Stmt(parse_stmt(trimmed)));
+        }
 
         None
     }
@@ -1473,6 +1548,7 @@ impl Parser {
             CstStructuredFlowBlockKind::Borrow => {
                 self.parse_borrow_block().map(FlowItem::BorrowBlock)
             }
+            CstStructuredFlowBlockKind::UnsafeLifetime => self.parse_unsafe_lifetime_flow_stmt(),
             CstStructuredFlowBlockKind::SourceLocale => {
                 self.parse_source_locale_block().map(FlowItem::SourceLocale)
             }
@@ -2130,6 +2206,27 @@ impl Parser {
             ["insert a closing `}` for the defer block"],
         );
         None
+    }
+
+    fn parse_unsafe_lifetime_flow_stmt(&mut self) -> Option<FlowItem> {
+        let start_line = self.current().clone();
+        let (head, body, _, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing unsafe lifetime",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the unsafe lifetime block"],
+            );
+            return None;
+        }
+        Some(FlowItem::Stmt(parse_unsafe_lifetime_block(
+            &head,
+            &body,
+            start_line.start,
+            &mut self.errors,
+        )))
     }
 
     fn parse_bare_scope_block(&mut self) -> Option<ScopeBlock> {
@@ -5355,9 +5452,13 @@ fn parse_dialogue_call_expr_source(source: &str) -> Option<Expr> {
     if callee.is_empty() {
         return None;
     }
+    let content = source[open + 1..close].trim();
+    if crate::expr::parse_expr(content).is_ok() {
+        return None;
+    }
     Some(Expr::DialogueCall {
         callee: Box::new(parse_expr_lossy(callee)),
-        content: source[open + 1..close].trim().to_owned(),
+        content: content.to_owned(),
         plan: None,
     })
 }
@@ -5464,6 +5565,12 @@ fn parse_stmt(trimmed: &str) -> Stmt {
         }
         return Stmt::Raw(trimmed.to_owned());
     }
+    if trimmed.starts_with("unsafe lifetime ")
+        && trimmed.contains('{')
+        && let Some(stmt) = parse_unsafe_lifetime_inline(trimmed)
+    {
+        return stmt;
+    }
     if let Some(stmt) = parse_braced_stmt(trimmed) {
         return stmt;
     }
@@ -5494,6 +5601,10 @@ fn parse_wait_stmt(rest: &str) -> Stmt {
 
 fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {
     let (head, body) = split_brace_item(trimmed)?;
+    if head.starts_with("unsafe lifetime ") {
+        let mut errors = Vec::new();
+        return Some(parse_unsafe_lifetime_block(head, body, 0, &mut errors));
+    }
     if head.starts_with("thread") {
         return Some(Stmt::Thread(parse_thread_block(head, body)));
     }
@@ -5540,6 +5651,67 @@ fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {
         expr: parse_expr_lossy(expr.trim()),
         arms: parse_stmt_match_arms(body),
     })
+}
+
+fn parse_unsafe_lifetime_inline(trimmed: &str) -> Option<Stmt> {
+    let (head, body) = split_brace_item(trimmed)?;
+    if !head.starts_with("unsafe lifetime ") {
+        return None;
+    }
+    let mut errors = Vec::new();
+    Some(parse_unsafe_lifetime_block(head, body, 0, &mut errors))
+}
+
+fn parse_unsafe_lifetime_block(
+    head: &str,
+    body: &str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Stmt {
+    let mut lines = head.lines().map(str::trim).filter(|line| !line.is_empty());
+    let first = lines.next().unwrap_or(head.trim());
+    let rest = first
+        .trim_start()
+        .strip_prefix("unsafe lifetime")
+        .unwrap_or_default()
+        .trim();
+    let (id, trailing) = parse_required_id_ref(rest, base, errors).unwrap_or_else(|| {
+        (
+            IdRef::relative(crate::ast::RelativeId::new(
+                "missing".to_owned(),
+                0,
+                RelativeIdSpelling::DotRun,
+                TextRange::new(base, base),
+            )),
+            "",
+        )
+    });
+    let inline_reason = split_top_level_keyword_once(trailing.trim(), "reason")
+        .1
+        .and_then(|tail| split_top_level_binding(tail.trim()).map(|(_, expr)| expr.trim()));
+    let reason = inline_reason
+        .or_else(|| {
+            lines.find_map(|line| {
+                line.strip_prefix("reason").and_then(|tail| {
+                    split_top_level_binding(tail.trim()).map(|(_, expr)| expr.trim())
+                })
+            })
+        })
+        .map(parse_expr_lossy);
+    let has_safety_doc = body
+        .lines()
+        .any(|line| line.trim_start().starts_with("/// SAFETY"));
+    let executable_body = body
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("///"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    Stmt::UnsafeLifetime {
+        id,
+        reason,
+        has_safety_doc,
+        body: parse_stmt_lines(&executable_body),
+    }
 }
 
 fn parse_braced_while_let_stmt(head: &str, body: &str) -> Option<Stmt> {

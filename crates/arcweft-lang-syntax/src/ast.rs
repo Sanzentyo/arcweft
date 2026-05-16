@@ -75,6 +75,8 @@ pub enum Item {
     Hook(HookItem),
     DialogueDefaults(DialogueDefaultsItem),
     MemoFn(MemoFn),
+    Proof(ProofItem),
+    TrustedAxiom(TrustedAxiomItem),
     Parser(ParserItem),
     Source(SourceItem),
     FlowItem(Box<FlowItem>),
@@ -86,6 +88,22 @@ pub enum Item {
 pub struct RawItem {
     head: String,
     body: Option<String>,
+    range: TextRange,
+}
+
+/// Top-level `proof @proof.id { ... }` item kept for verifier lowering.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProofItem {
+    id: IdRef,
+    body: String,
+    range: TextRange,
+}
+
+/// Top-level `trusted axiom @axiom.id { ... }` declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrustedAxiomItem {
+    id: IdRef,
+    body: String,
     range: TextRange,
 }
 
@@ -663,6 +681,13 @@ pub enum Stmt {
     /// `on head => stmt` event branch used by source and plan-like bodies.
     On {
         trigger: TriggerPattern,
+        body: Vec<Stmt>,
+    },
+    /// `unsafe lifetime @unsafe.id reason = "..." { ... }` audit region.
+    UnsafeLifetime {
+        id: IdRef,
+        reason: Option<Expr>,
+        has_safety_doc: bool,
         body: Vec<Stmt>,
     },
     Command(ScenarioCommand),
@@ -3394,6 +3419,42 @@ impl RawItem {
 
     pub fn body(&self) -> Option<&str> {
         self.body.as_deref()
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl ProofItem {
+    pub(crate) const fn new(id: IdRef, body: String, range: TextRange) -> Self {
+        Self { id, body, range }
+    }
+
+    pub const fn id(&self) -> &IdRef {
+        &self.id
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl TrustedAxiomItem {
+    pub(crate) const fn new(id: IdRef, body: String, range: TextRange) -> Self {
+        Self { id, body, range }
+    }
+
+    pub const fn id(&self) -> &IdRef {
+        &self.id
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
     }
 
     pub const fn range(&self) -> &TextRange {

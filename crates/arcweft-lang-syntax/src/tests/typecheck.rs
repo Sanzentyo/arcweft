@@ -361,3 +361,91 @@ flow @flow.thread_expr thread_expr {
         .with_function("route_score", TypeKind::Int);
     typecheck_hir(&hir, &env).expect("thread expression typechecks");
 }
+
+#[test]
+fn typechecks_char_literal_and_rejects_string_annotation_mismatch() {
+    let ok = parse_ok(
+        r#"
+flow @flow.char_literal char_literal {
+    let ch: Char = "あ"c
+}
+"#,
+    );
+    let hir = lower_to_hir(&ok).expect("char literal fixture lowers");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("char literal typechecks");
+
+    let bad = parse_ok(
+        r#"
+flow @flow.char_literal_bad char_literal_bad {
+    let ch: Char = "a"
+}
+"#,
+    );
+    let hir = lower_to_hir(&bad).expect("string literal fixture lowers");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("string is not Char");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("let annotation expects Char"))
+    );
+}
+
+#[test]
+fn typechecks_structured_collection_and_capacity_trait_methods() {
+    let tree = parse_ok(
+        r"
+flow @flow.collections collections {
+    let nums: List<i32> = [1, 2, 3]
+    let first: i32 = nums[0]
+    let _ = nums.reserve(4)
+    let _ = nums.shrink()
+    let _ = nums.shrink_to(1)
+    let text = String.with_capacity(16)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("collection fixture lowers");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("collection fixture typechecks");
+}
+
+#[test]
+fn typechecks_unsafe_lifetime_audit_block_shape() {
+    let tree = parse_ok(
+        r#"
+flow @flow.audit audit {
+    unsafe lifetime @unsafe.cache_last_line
+    reason = "owned summary is cloned before line scope exits"
+    {
+        /// SAFETY:
+        /// The summary is owned and no line-scoped handle escapes.
+        let summary: String = "ok"
+        let _ = summary
+    }
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("unsafe lifetime block lowers as a structured stmt");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("audit metadata is complete");
+
+    let tree = parse_ok(
+        r#"
+flow @flow.audit audit {
+    unsafe lifetime @unsafe.cache_last_line {
+        let summary: String = "ok"
+    }
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("unsafe lifetime block lowers");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("audit metadata is required");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("requires a reason"))
+    );
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("SAFETY doc comment"))
+    );
+}

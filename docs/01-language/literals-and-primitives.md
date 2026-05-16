@@ -29,6 +29,8 @@ Floats:
 
 Engine primitives:
   String
+  Char
+  TextCluster
   Duration
   Color
   Ratio
@@ -93,6 +95,50 @@ add_affection(3u32)   // error: no implicit numeric conversion
 
 Arcweft does not perform implicit widening, narrowing, or integer-to-float
 conversion.
+
+## Char and TextCluster
+
+`Char` is the low-level Unicode scalar value type. It is intentionally close to
+Rust's `char` and is useful for parser, tokenizer, normalization, and low-level
+text processing.
+
+`Char` is not a visual character.
+
+`TextCluster` is the Arcweft text unit used for display, reveal, ruby, and text
+effects. It can be based on Unicode grapheme clusters, but it is not specified
+as exactly UAX #29 grapheme clustering. The engine may group or split text
+units for variation selectors, combining marks, emoji sequences, vertical text,
+ruby bases, localization, and presentation effects.
+
+```text
+Char:
+  Unicode scalar value
+
+TextCluster:
+  display/reveal/ruby/effect text unit
+```
+
+Single-character literals use a Rust-like string body with a `c` suffix. The
+body must decode to exactly one Unicode scalar value.
+
+```awft
+let a: Char = "a"c
+let newline: Char = "\n"c
+let light: Char = "💡"c
+let hiragana: Char = "\u{3042}"c
+```
+
+Rejected forms:
+
+```awft
+let empty: Char = ""c
+let two_scalars: Char = "ab"c
+let combining_sequence: Char = "e\u{301}"c
+let flag_sequence: Char = "🇯🇵"c
+```
+
+Use `String` or `TextCluster` APIs for display text units. A one-scalar `Char`
+literal does not imply that the value occupies one player-visible glyph cell.
 
 ## Unit-Number Literals
 
@@ -214,6 +260,7 @@ Recommended syntax shapes:
 ```rust
 pub enum Literal {
     String(StringLiteral),
+    Char(CharLiteral),
     Int(IntLiteral),
     Float(FloatLiteral),
     Bool(bool),
@@ -235,6 +282,11 @@ pub struct FloatLiteral {
 pub struct UnitNumberLiteral {
     pub raw_number: String,
     pub suffix: UnitSuffix,
+}
+
+pub struct CharLiteral {
+    pub raw: String,
+    pub value: char,
 }
 ```
 

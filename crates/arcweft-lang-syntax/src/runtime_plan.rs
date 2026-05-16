@@ -643,6 +643,7 @@ fn expr_label(expr: &Expr) -> String {
 fn literal_label(literal: &Literal) -> String {
     match literal {
         Literal::String(value) => format!("\"{value}\""),
+        Literal::Char { raw, .. } => raw.clone(),
         Literal::Int(value) => value.to_string(),
         Literal::Float(value) => value.clone(),
         Literal::Bool(value) => value.to_string(),
