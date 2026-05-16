@@ -186,11 +186,20 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `SourcePolicy`, `BackpressurePolicy`, `ReplayPolicy`, and `SourceEvent`.
   These are pure data contracts for host adapters; no Tokio/Rayon/filesystem,
   device, audio, or GPU runtime is linked into core.
+- Phase 1.6 runtime spine work has started in `arcweft-core`: `RuntimePlan`,
+  `Engine`, `FlowFiber`, and `run_line_task_group` can step lowered line task
+  graphs over `FrameInput` into `FrameOutput` without performing I/O. The spine
+  emits child `TaskSpec`s and deterministic line effects, runs scope cleanup
+  stacks, and leaves actual native/cooperative/web execution to adapters.
+- `arcw plan <file.awft> [--json]` now exposes lowered line task graph metadata
+  for CLI, LSP, and Agent inspection. Runtime parallel conflicts are also
+  surfaced as verifier obligations so direct verifier users can see the same
+  class of graph conflict as `arcw check`.
 - Gap audit result: broad runtime docs still exceed the implemented core. Full
-  engine stepping over `FrameInput`/`FrameOutput`, flow-fiber lowering,
-  `await with` execution IR, choice runtime IR, source adapter execution,
-  hook/memo runtime tables, save/replay traces, activities, and layered input
-  routing remain TODOs beyond the current line-plan Sans I/O subset.
+  story VM execution, `await with` execution IR, choice runtime IR, source
+  adapter execution, hook/memo runtime tables, save/replay traces, activities,
+  and layered input routing remain TODOs beyond the current line-plan Sans I/O
+  subset.
 - `pro_review14.md` / `pro_review15.md`: adopted proof-aware
   lifetime/thread/drop direction and Agent-friendly tooling diagnostics.
   Formal `proof @proof.*` items, `trusted axiom @axiom.*` declarations,
@@ -228,9 +237,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `flow @flow:. opening`, `character @. alice Alice`, `signal @signal:. ready`,
   and `source @source:. metrics()` normalize through that following name.
 - Remaining P2 semantic work is deeper than syntax readiness: full all-paths
-  `MustDrop` discharge, promotion proof rules, `unsafe lifetime` audit regions,
-  deterministic concurrent write conflict checking, and join-result typing for
-  threads are TODOs for the compiler/HIR layer.
+  `MustDrop` discharge, promotion proof rules, richer `unsafe lifetime` audit
+  region validation, non-line-plan concurrent write checking, and join-result
+  typing for threads are TODOs for the compiler/HIR layer.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure

@@ -6,10 +6,17 @@ Core が扱う program、bytecode、manifest reference、save snapshot、diagnos
 
 ```rust
 pub struct Engine {
-    world: World,
-    program: ProgramId,
-    deterministic_clock: LogicalClock,
-    flows: FlowSet,
+    plan: RuntimePlan,
+    fiber: FlowFiber,
+}
+
+pub struct RuntimePlan {
+    pub line_task_groups: Vec<LineTaskGroup>,
+}
+
+pub struct FlowFiber {
+    pub current_line: usize,
+    pub status: FlowFiberStatus,
 }
 
 pub struct FrameInput {
@@ -29,6 +36,13 @@ pub struct FrameOutput {
     pub cancel_requests: Vec<CancelScopeId>,
 }
 ```
+
+Phase 1.6 の `Engine` は最小 runtime spine であり、まだ完全な story VM ではない。
+`Engine::step(FrameInput) -> FrameOutput` は lowered line task group を順番に
+進め、即時 effect、child task request、cancel request、diagnostic だけを返す。
+実 thread、wall-clock、renderer、audio、device、filesystem は adapter 側の責務である。
+`ScopeExit::Completed | Cancelled | Failed` は outcome-guarded `defer` stack の
+選択に使う。
 
 ## EffectRequest
 
@@ -167,6 +181,11 @@ task triggers so scheduling and replay can reason about when a child task starts
 obvious deterministic conflicts such as two children writing the same signal or
 line `out` value unless the effect category is append-only, such as structured
 logs or event emission.
+
+The minimal runtime spine treats child tasks as Sans I/O requests. When a child
+trigger is ready, the engine emits a `TaskSpec` and also exposes the child scope
+body as deterministic effect data for tests and future adapters. Native workers,
+cooperative jobs, and web workers consume those requests outside `arcweft-core`.
 
 Raw line-plan statements fail lowering. They are not reparsed, silently accepted,
 or dropped from the runtime plan. Phase 1.5 keeps expression payloads as stable

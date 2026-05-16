@@ -1,6 +1,10 @@
+use arcweft_core::{
+    LineEffectRequest, LineTaskGroup, LineTaskNode, LineTaskScope, LineTaskTrigger,
+};
 use arcweft_lang_syntax::{
-    TypeCheckEnv, lint_id_policy, lower_line_task_groups, lower_to_hir, parse_source,
-    registry_from_hir, typecheck_hir, validate_hir_references, validate_typecheck_ready,
+    LoweredLineTaskGroup, TypeCheckEnv, lint_id_policy, lower_line_task_groups, lower_to_hir,
+    parse_source, registry_from_hir, typecheck_hir, validate_hir_references,
+    validate_typecheck_ready,
 };
 use arcweft_test::{ScriptTestManifest, collect_script_tests};
 use arcweft_verify::{
@@ -37,6 +41,7 @@ fn run(args: &[OsString]) -> Result<(), ExitCode> {
         [command, path] if command == "check" => check(&PathBuf::from(path)),
         [command, rest @ ..] if command == "verify" => verify_command(rest),
         [command, rest @ ..] if command == "unsafe" => unsafe_command(rest),
+        [command, rest @ ..] if command == "plan" => runtime_plan_command(rest),
         [command, rest @ ..] if command == "test" => script_test_command(rest),
         [command, rest @ ..] if command == "bench" => script_bench_command(rest),
         [command, ..] => {
@@ -44,6 +49,34 @@ fn run(args: &[OsString]) -> Result<(), ExitCode> {
             print_help();
             Err(ExitCode::from(2))
         }
+    }
+}
+
+fn runtime_plan_command(args: &[OsString]) -> Result<(), ExitCode> {
+    let options = ScriptPlanOptions::parse(args, "plan")?;
+    let checked = load_and_check(&options.path)?;
+    let report = RuntimePlanReport::from_checked(&checked);
+    if options.json {
+        print_json(&report)
+    } else {
+        for line in &report.lines {
+            println!(
+                "{} {} {} task_node={} child_task(s)={} effect(s)={}",
+                line.flow_id.as_deref().unwrap_or("-"),
+                line.line_id.as_deref().unwrap_or("-"),
+                line.callee,
+                line.root.kind,
+                line.child_tasks,
+                line.effects
+            );
+        }
+        println!(
+            "ok: {} ({} line task group(s), {} verifier obligation(s))",
+            options.path.display(),
+            report.lines.len(),
+            report.verifier_obligations
+        );
+        Ok(())
     }
 }
 
@@ -111,7 +144,7 @@ fn check(path: &Path) -> Result<(), ExitCode> {
         "ok: {} ({} flow(s), {} line task group(s), {} warning(s), {} obligation(s))",
         path.display(),
         checked.hir.flows().len(),
-        checked.line_task_groups,
+        checked.line_task_groups.len(),
         checked.syntax_warnings,
         report.obligations.len()
     );
@@ -182,7 +215,7 @@ fn unsafe_command(args: &[OsString]) -> Result<(), ExitCode> {
 struct CheckedModule {
     hir: arcweft_lang_hir::HirModule,
     syntax_warnings: usize,
-    line_task_groups: usize,
+    line_task_groups: Vec<LoweredLineTaskGroup>,
 }
 
 fn load_and_check(path: &Path) -> Result<CheckedModule, ExitCode> {
@@ -238,7 +271,7 @@ fn load_and_check(path: &Path) -> Result<CheckedModule, ExitCode> {
     }
 
     let line_task_groups = match lower_line_task_groups(&hir) {
-        Ok(groups) => groups.len(),
+        Ok(groups) => groups,
         Err(errors) => {
             for error in errors {
                 eprintln!("error: {}", error.message());
@@ -477,6 +510,231 @@ fn print_help() {
         "  arcw verify <file.awft> --emit-obligations obligations.json --emit-smt out/proofs"
     );
     eprintln!("  arcw unsafe <file.awft> [--json]");
+    eprintln!("  arcw plan <file.awft> [--json]");
     eprintln!("  arcw test <file.awft> [--json]");
     eprintln!("  arcw bench <file.awft> [--json]");
+}
+
+#[derive(serde::Serialize)]
+struct RuntimePlanReport {
+    lines: Vec<RuntimeLinePlanSummary>,
+    verifier_diagnostics: usize,
+    verifier_obligations: usize,
+}
+
+#[derive(serde::Serialize)]
+struct RuntimeLinePlanSummary {
+    flow_id: Option<String>,
+    line_id: Option<String>,
+    callee: String,
+    child_tasks: usize,
+    effects: usize,
+    root: RuntimeNodeSummary,
+    options: usize,
+    bindings: usize,
+    out: usize,
+    cancel_rules: usize,
+    memo: usize,
+    assertions: usize,
+}
+
+#[derive(serde::Serialize)]
+struct RuntimeScopeSummary {
+    node: Box<RuntimeNodeSummary>,
+    defer_count: usize,
+    completed_defer_count: usize,
+    cancelled_defer_count: usize,
+    failed_defer_count: usize,
+}
+
+#[derive(serde::Serialize)]
+struct RuntimeNodeSummary {
+    kind: String,
+    children: Vec<RuntimeNodeSummary>,
+    task: Option<Box<RuntimeTaskSummary>>,
+    effect: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct RuntimeTaskSummary {
+    id: String,
+    key: Option<String>,
+    name: Option<String>,
+    trigger: String,
+    priority: i32,
+    join_policy: String,
+    cancel_policy: String,
+    scope: Box<RuntimeScopeSummary>,
+}
+
+impl RuntimePlanReport {
+    fn from_checked(checked: &CheckedModule) -> Self {
+        let verification = verify_module(
+            &checked.hir,
+            VerificationPolicy {
+                mode: VerificationMode::Dev,
+                backend: BackendKind::Emit,
+            },
+        );
+        Self {
+            lines: checked
+                .line_task_groups
+                .iter()
+                .map(RuntimeLinePlanSummary::from_lowered)
+                .collect(),
+            verifier_diagnostics: verification.diagnostics.len(),
+            verifier_obligations: verification.obligations.len(),
+        }
+    }
+}
+
+impl RuntimeLinePlanSummary {
+    fn from_lowered(line: &LoweredLineTaskGroup) -> Self {
+        let group = line.group();
+        let root = node_summary(&group.root.node);
+        Self {
+            flow_id: line.flow_id().map(|id| id.body().to_owned()),
+            line_id: line.line_id().map(|id| id.body().to_owned()),
+            callee: line.callee().to_owned(),
+            child_tasks: count_child_tasks(group),
+            effects: count_effects(group),
+            root,
+            options: group.options.len(),
+            bindings: group.bindings.len(),
+            out: group.out.len(),
+            cancel_rules: group.cancel_rules.len(),
+            memo: group.memo.len(),
+            assertions: group.assertions.len(),
+        }
+    }
+}
+
+fn scope_summary(scope: &LineTaskScope) -> RuntimeScopeSummary {
+    RuntimeScopeSummary {
+        node: Box::new(node_summary(&scope.node)),
+        defer_count: scope.defer_stack.len(),
+        completed_defer_count: scope.completed_defer_stack.len(),
+        cancelled_defer_count: scope.cancelled_defer_stack.len(),
+        failed_defer_count: scope.failed_defer_stack.len(),
+    }
+}
+
+fn node_summary(node: &LineTaskNode) -> RuntimeNodeSummary {
+    match node {
+        LineTaskNode::Seq(children) => node_children_summary("seq", children),
+        LineTaskNode::Start(children) => node_children_summary("start", children),
+        LineTaskNode::Parallel { children, .. } => node_children_summary("parallel", children),
+        LineTaskNode::Child(task) => RuntimeNodeSummary {
+            kind: "child".to_owned(),
+            children: Vec::new(),
+            task: Some(Box::new(RuntimeTaskSummary {
+                id: task.id.0.clone(),
+                key: task.key.as_ref().map(|key| key.0.clone()),
+                name: task.name.clone(),
+                trigger: trigger_label(&task.trigger),
+                priority: task.priority.0,
+                join_policy: format!("{:?}", task.join_policy),
+                cancel_policy: format!("{:?}", task.cancel_policy),
+                scope: Box::new(scope_summary(&task.scope)),
+            })),
+            effect: None,
+        },
+        LineTaskNode::Effect(effect) => RuntimeNodeSummary {
+            kind: "effect".to_owned(),
+            children: Vec::new(),
+            task: None,
+            effect: Some(effect_label(effect)),
+        },
+    }
+}
+
+fn node_children_summary(kind: &str, children: &[LineTaskNode]) -> RuntimeNodeSummary {
+    RuntimeNodeSummary {
+        kind: kind.to_owned(),
+        children: children.iter().map(node_summary).collect(),
+        task: None,
+        effect: None,
+    }
+}
+
+fn trigger_label(trigger: &LineTaskTrigger) -> String {
+    match trigger {
+        LineTaskTrigger::Immediate => "immediate".to_owned(),
+        LineTaskTrigger::Mark(name) => format!("mark {name}"),
+        LineTaskTrigger::Delay(duration) => format!("delay {}ns", duration.as_nanos()),
+    }
+}
+
+fn effect_label(effect: &LineEffectRequest) -> String {
+    match effect {
+        LineEffectRequest::RegisterHandle { key, .. } => format!("register {key}"),
+        LineEffectRequest::DropHandle { key } => format!("drop {key}"),
+        LineEffectRequest::WaitMark(mark) => format!("wait mark {mark}"),
+        LineEffectRequest::Wait(duration) => format!("wait {}ns", duration.as_nanos()),
+        LineEffectRequest::Call(call) => format!("call {}", call.callee),
+        LineEffectRequest::Log(log) => format!("log.{}", log.level),
+        LineEffectRequest::SignalWrite(write) => format!("signal.set {}", write.target),
+        LineEffectRequest::MetricWrite(write) => format!("metric.set {}", write.target),
+        LineEffectRequest::EmitEvent(event) => format!("event.emit {}", event.event),
+        LineEffectRequest::Command(command) => format!("command {}", command.name),
+        LineEffectRequest::Out(_) => "out".to_owned(),
+        LineEffectRequest::Return(_) => "return".to_owned(),
+        LineEffectRequest::Goto(_) => "goto".to_owned(),
+        LineEffectRequest::Yield(_) => "yield".to_owned(),
+        LineEffectRequest::Panic(_) => "panic".to_owned(),
+        LineEffectRequest::Fail(_) => "fail".to_owned(),
+        LineEffectRequest::Bail(_) => "bail".to_owned(),
+        LineEffectRequest::Ensure { .. } => "ensure".to_owned(),
+        LineEffectRequest::Close(_) => "close".to_owned(),
+        LineEffectRequest::Select(_) => "select".to_owned(),
+        LineEffectRequest::Break { .. } => "break".to_owned(),
+        LineEffectRequest::Continue { .. } => "continue".to_owned(),
+    }
+}
+
+fn count_child_tasks(group: &LineTaskGroup) -> usize {
+    count_child_tasks_in_node(&group.root.node)
+}
+
+fn count_child_tasks_in_node(node: &LineTaskNode) -> usize {
+    match node {
+        LineTaskNode::Seq(children)
+        | LineTaskNode::Start(children)
+        | LineTaskNode::Parallel { children, .. } => {
+            children.iter().map(count_child_tasks_in_node).sum()
+        }
+        LineTaskNode::Child(task) => 1 + count_child_tasks_in_node(&task.scope.node),
+        LineTaskNode::Effect(_) => 0,
+    }
+}
+
+fn count_effects(group: &LineTaskGroup) -> usize {
+    count_effects_in_scope(&group.root)
+}
+
+fn count_effects_in_scope(scope: &LineTaskScope) -> usize {
+    count_effects_in_node(&scope.node)
+        + scope.defer_stack.iter().map(Vec::len).sum::<usize>()
+        + scope
+            .completed_defer_stack
+            .iter()
+            .map(Vec::len)
+            .sum::<usize>()
+        + scope
+            .cancelled_defer_stack
+            .iter()
+            .map(Vec::len)
+            .sum::<usize>()
+        + scope.failed_defer_stack.iter().map(Vec::len).sum::<usize>()
+}
+
+fn count_effects_in_node(node: &LineTaskNode) -> usize {
+    match node {
+        LineTaskNode::Seq(children) | LineTaskNode::Start(children) => {
+            children.iter().map(count_effects_in_node).sum()
+        }
+        LineTaskNode::Parallel { children, .. } => children.iter().map(count_effects_in_node).sum(),
+        LineTaskNode::Child(task) => count_effects_in_scope(&task.scope),
+        LineTaskNode::Effect(_) => 1,
+    }
 }

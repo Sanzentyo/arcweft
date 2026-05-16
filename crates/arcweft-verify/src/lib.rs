@@ -12,6 +12,7 @@ use arcweft_lang_hir::{
 };
 use arcweft_lang_syntax::{
     EntityRefSyntax, Expr, LifetimeKey, LifetimeScopeKind, ThreadBlock, TriggerPattern,
+    lower_line_task_groups,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashSet};
@@ -77,6 +78,7 @@ pub enum ProofObligationKind {
     UpperLifetimeWrite,
     TrustedAssumption,
     RawSyntax,
+    RuntimeConflict,
 }
 
 /// How an obligation is discharged, or why it still needs attention.
@@ -302,6 +304,20 @@ impl ObligationCollector {
         }
         self.collect_flow_items(module.top_level_items());
         self.collect_must_drop_obligations();
+        self.collect_runtime_plan_obligations(module);
+    }
+
+    fn collect_runtime_plan_obligations(&mut self, module: &HirModule) {
+        if let Err(errors) = lower_line_task_groups(module) {
+            for error in errors {
+                self.add_obligation(
+                    ProofObligationKind::RuntimeConflict,
+                    format!("runtime plan conflict: {}", error.message()),
+                    None,
+                    &ProofDischarge::Missing,
+                );
+            }
+        }
     }
 
     fn collect_declarations(&mut self, module: &HirModule) {
@@ -1056,6 +1072,9 @@ impl ObligationCollector {
         if kind == ProofObligationKind::RawSyntax {
             return Severity::Error;
         }
+        if kind == ProofObligationKind::RuntimeConflict {
+            return Severity::Error;
+        }
         match self.policy.mode {
             VerificationMode::Dev => Severity::Warning,
             VerificationMode::Test
@@ -1167,6 +1186,7 @@ fn obligation_predicate(kind: ProofObligationKind) -> &'static str {
         ProofObligationKind::UpperLifetimeWrite => "upper_lifetime_write_safe",
         ProofObligationKind::TrustedAssumption => "trusted_assumption",
         ProofObligationKind::RawSyntax => "raw_syntax_absent",
+        ProofObligationKind::RuntimeConflict => "runtime_conflict_absent",
     }
 }
 
@@ -1197,7 +1217,9 @@ fn actions_for(kind: ProofObligationKind, discharge: &ProofDischarge) -> Vec<Too
             label: "Generate unsafe lifetime audit scaffold".to_owned(),
             kind: ToolActionKind::GenerateUnsafeAudit,
         }],
-        ProofObligationKind::TrustedAssumption | ProofObligationKind::RawSyntax => Vec::new(),
+        ProofObligationKind::TrustedAssumption
+        | ProofObligationKind::RawSyntax
+        | ProofObligationKind::RuntimeConflict => Vec::new(),
     }
 }
 
@@ -1288,6 +1310,30 @@ mod tests {
             obligation.discharge,
             ProofDischarge::AuditedUnsafe { .. }
         )));
+    }
+
+    #[test]
+    fn runtime_parallel_conflict_is_verifier_obligation() {
+        let report = report(
+            r"
+flow @flow.conflict conflict {
+    alice[待って。[p]]
+    with {
+        together {
+            signal.set(@signal.current_flow, @flow.a)
+            signal.set(@signal.current_flow, @flow.b)
+        }
+    }
+}
+",
+            VerificationMode::Dev,
+        );
+
+        assert!(report.has_errors());
+        assert!(report.obligations.iter().any(|obligation| {
+            obligation.kind == ProofObligationKind::RuntimeConflict
+                && obligation.message.contains("parallel resource conflict")
+        }));
     }
 
     #[test]

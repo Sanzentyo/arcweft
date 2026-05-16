@@ -44,6 +44,49 @@ pub struct RuntimeDiagnostic {
     pub message: String,
 }
 
+/// Pure runtime program consumed by the minimal Sans I/O engine.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RuntimePlan {
+    pub line_task_groups: Vec<LineTaskGroup>,
+}
+
+/// Minimal deterministic engine over `FrameInput` and `FrameOutput`.
+///
+/// This is intentionally a data-model executor, not a backend runtime. It does
+/// not spawn threads, read clocks, play audio, render frames, or perform file
+/// I/O. It only advances a cursor through lowered line task groups and returns
+/// effect/task requests for adapters or tests to observe.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Engine {
+    plan: RuntimePlan,
+    fiber: FlowFiber,
+}
+
+/// Current flow execution cursor.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct FlowFiber {
+    pub current_line: usize,
+    pub status: FlowFiberStatus,
+}
+
+/// High-level flow status for the minimal runtime spine.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum FlowFiberStatus {
+    #[default]
+    Running,
+    Waiting,
+    Done,
+}
+
+/// Scope exit reason used to select outcome-guarded cleanup stacks.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ScopeExit {
+    #[default]
+    Completed,
+    Cancelled,
+    Failed,
+}
+
 /// Sans I/O runtime model for a dialogue line's scoped task group.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LineTaskGroup {
@@ -538,6 +581,164 @@ impl Default for LogicalDuration {
     }
 }
 
+impl RuntimePlan {
+    pub fn new(line_task_groups: Vec<LineTaskGroup>) -> Self {
+        Self { line_task_groups }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.line_task_groups.is_empty()
+    }
+}
+
+impl Engine {
+    pub fn new(plan: RuntimePlan) -> Self {
+        let status = if plan.is_empty() {
+            FlowFiberStatus::Done
+        } else {
+            FlowFiberStatus::Running
+        };
+        Self {
+            plan,
+            fiber: FlowFiber {
+                current_line: 0,
+                status,
+            },
+        }
+    }
+
+    pub const fn fiber(&self) -> &FlowFiber {
+        &self.fiber
+    }
+
+    pub fn step(&mut self, mut input: FrameInput) -> FrameOutput {
+        let mut output = FrameOutput::default();
+        let events = normalize_task_events(std::mem::take(&mut input.task_events));
+        output
+            .diagnostics
+            .extend(events.iter().map(|event| RuntimeDiagnostic {
+                message: format!(
+                    "task {} sequence {} delivered",
+                    event.task_id.0, event.sequence.0
+                ),
+            }));
+
+        let Some(group) = self.plan.line_task_groups.get(self.fiber.current_line) else {
+            self.fiber.status = FlowFiberStatus::Done;
+            return output;
+        };
+        output.merge(run_line_task_group(group, &input, ScopeExit::Completed));
+        self.fiber.current_line += 1;
+        if self.fiber.current_line >= self.plan.line_task_groups.len() {
+            self.fiber.status = FlowFiberStatus::Done;
+        }
+        output
+    }
+}
+
+impl FrameOutput {
+    fn merge(&mut self, other: Self) {
+        self.diagnostics.extend(other.diagnostics);
+        self.line_effects.extend(other.line_effects);
+        self.task_requests.extend(other.task_requests);
+        self.cancel_requests.extend(other.cancel_requests);
+    }
+}
+
+/// Runs one line task group to its immediate Sans I/O requests.
+///
+/// Child tasks are represented both as `TaskSpec`s and as scoped effect bodies
+/// so tests and future adapters can inspect the deterministic body plan without
+/// requiring a native scheduler.
+pub fn run_line_task_group(
+    group: &LineTaskGroup,
+    input: &FrameInput,
+    exit: ScopeExit,
+) -> FrameOutput {
+    let mut output = FrameOutput::default();
+    run_scope(&group.root, input, exit, &mut output);
+    output
+}
+
+fn run_scope(scope: &LineTaskScope, input: &FrameInput, exit: ScopeExit, output: &mut FrameOutput) {
+    run_node(&scope.node, input, output);
+    output
+        .line_effects
+        .extend(flatten_defer_stack(&scope.defer_stack));
+    output
+        .line_effects
+        .extend(flatten_defer_stack(outcome_defer_stack(scope, exit)));
+}
+
+fn run_node(node: &LineTaskNode, input: &FrameInput, output: &mut FrameOutput) {
+    match node {
+        LineTaskNode::Seq(nodes) | LineTaskNode::Start(nodes) => {
+            for node in nodes {
+                run_node(node, input, output);
+            }
+        }
+        LineTaskNode::Parallel { children, .. } => {
+            for child in children {
+                run_node(child, input, output);
+            }
+        }
+        LineTaskNode::Child(task) => run_child_task(task, input, output),
+        LineTaskNode::Effect(effect) => output.line_effects.push(effect.clone()),
+    }
+}
+
+fn run_child_task(task: &LineChildTask, input: &FrameInput, output: &mut FrameOutput) {
+    if !trigger_is_ready(&task.trigger, input) {
+        return;
+    }
+    output.task_requests.push(task_spec(task));
+    run_scope(&task.scope, input, ScopeExit::Completed, output);
+}
+
+fn trigger_is_ready(trigger: &LineTaskTrigger, input: &FrameInput) -> bool {
+    match trigger {
+        LineTaskTrigger::Immediate => true,
+        LineTaskTrigger::Mark(name) => input.input_events.iter().any(|event| {
+            (event.kind == "mark" && event.payload.as_deref() == Some(name.as_str()))
+                || event.kind == format!("mark:{name}")
+        }),
+        LineTaskTrigger::Delay(duration) => input.dt.as_nanos() >= duration.as_nanos(),
+    }
+}
+
+fn task_spec(task: &LineChildTask) -> TaskSpec {
+    let key = task
+        .key
+        .clone()
+        .unwrap_or_else(|| TaskKey(task.id.0.clone()));
+    TaskSpec {
+        id: task.id.clone(),
+        key,
+        class: TaskClass::LocalUi,
+        priority: task.priority,
+        cancel_scope: CancelScopeId("line".to_owned()),
+        policy: TaskPolicy::JoinSameKey,
+        source: TaskSource {
+            label: task
+                .name
+                .clone()
+                .unwrap_or_else(|| "anonymous line task".to_owned()),
+        },
+    }
+}
+
+fn outcome_defer_stack(scope: &LineTaskScope, exit: ScopeExit) -> &[Vec<LineEffectRequest>] {
+    match exit {
+        ScopeExit::Completed => &scope.completed_defer_stack,
+        ScopeExit::Cancelled => &scope.cancelled_defer_stack,
+        ScopeExit::Failed => &scope.failed_defer_stack,
+    }
+}
+
+fn flatten_defer_stack(stack: &[Vec<LineEffectRequest>]) -> Vec<LineEffectRequest> {
+    stack.iter().rev().flatten().cloned().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -605,5 +806,79 @@ mod tests {
             }
         ));
         assert_eq!(policy.replay, ReplayPolicy::HashOnly);
+    }
+
+    fn call(name: &str) -> LineEffectRequest {
+        LineEffectRequest::Call(RuntimeCall {
+            callee: name.to_owned(),
+            args: Vec::new(),
+        })
+    }
+
+    #[test]
+    fn engine_steps_line_task_groups_as_sans_io_effects() {
+        let group = LineTaskGroup {
+            root: LineTaskScope {
+                node: LineTaskNode::Seq(vec![LineTaskNode::Effect(call("line_start"))]),
+                defer_stack: vec![vec![call("line_defer")]],
+                completed_defer_stack: vec![vec![call("line_completed")]],
+                ..LineTaskScope::default()
+            },
+            ..LineTaskGroup::default()
+        };
+        let mut engine = Engine::new(RuntimePlan::new(vec![group]));
+
+        let output = engine.step(FrameInput::default());
+
+        assert_eq!(
+            output.line_effects,
+            vec![
+                call("line_start"),
+                call("line_defer"),
+                call("line_completed")
+            ]
+        );
+        assert_eq!(engine.fiber().status, FlowFiberStatus::Done);
+    }
+
+    #[test]
+    fn child_task_triggers_emit_task_request_and_scoped_body() {
+        let child = LineChildTask {
+            id: TaskId("line.task.0.mark".to_owned()),
+            key: Some(TaskKey("line.task.mark".to_owned())),
+            name: Some("mark".to_owned()),
+            trigger: LineTaskTrigger::Mark(".seen".to_owned()),
+            priority: TaskPriority(7),
+            join_policy: ChildJoinPolicy::Join,
+            cancel_policy: ChildCancelPolicy::CancelAndJoin,
+            scope: Box::new(LineTaskScope {
+                node: LineTaskNode::Seq(vec![LineTaskNode::Effect(call("handler"))]),
+                defer_stack: vec![vec![call("handler_defer")]],
+                ..LineTaskScope::default()
+            }),
+        };
+        let group = LineTaskGroup {
+            root: LineTaskScope {
+                node: LineTaskNode::Seq(vec![LineTaskNode::Child(child)]),
+                ..LineTaskScope::default()
+            },
+            ..LineTaskGroup::default()
+        };
+        let input = FrameInput {
+            input_events: vec![InputEvent {
+                kind: "mark".to_owned(),
+                payload: Some(".seen".to_owned()),
+            }],
+            ..FrameInput::default()
+        };
+
+        let output = run_line_task_group(&group, &input, ScopeExit::Completed);
+
+        assert_eq!(output.task_requests.len(), 1);
+        assert_eq!(output.task_requests[0].priority, TaskPriority(7));
+        assert_eq!(
+            output.line_effects,
+            vec![call("handler"), call("handler_defer")]
+        );
     }
 }

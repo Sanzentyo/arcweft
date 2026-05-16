@@ -45,6 +45,7 @@ arcw verify game/routes/opening.awft --backend z3 --solver-command z3
 arcw verify game/routes/opening.awft --emit-obligations obligations.json
 arcw verify game/routes/opening.awft --emit-smt out/proofs
 arcw unsafe game/routes/opening.awft --json
+arcw plan game/routes/opening.awft --json
 arcw test game/routes/opening.awft --json
 arcw bench game/routes/opening.awft --json
 ```
@@ -68,6 +69,23 @@ z3    use the external Z3 process adapter
 JSON output is shared with LSP and future Agent tooling. Diagnostics include a
 stable diagnostic id, obligation id, severity, source span when available,
 related ids, and code-action descriptors.
+
+## Runtime Plan Inspection
+
+`arcw plan <file.awft> [--json]` exposes the lowered Sans I/O line task graph.
+It runs the same parse, HIR, typecheck, verifier, and line-plan lowering path as
+`arcw check`, then prints a compact line/task summary. JSON output contains each
+line plan's flow id, line id, callee, root node kind, child task count, effect
+count, trigger labels, cleanup-stack counts, and verifier diagnostic/obligation
+counts.
+
+```bash
+arcw plan game/routes/opening.awft
+arcw plan game/routes/opening.awft --json
+```
+
+This is an inspection command, not an executor. It performs file I/O only in the
+CLI adapter and does not start renderer/audio/device backends.
 
 ## Test / Bench
 

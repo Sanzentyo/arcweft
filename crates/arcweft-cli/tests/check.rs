@@ -158,6 +158,46 @@ flow @flow.audit audit {
 }
 
 #[test]
+fn plan_json_lists_runtime_task_graph() {
+    let path = temp_awft(
+        "runtime-plan",
+        r#"
+pub surface character @character.alice Alice as alice {
+}
+
+flow @flow.plan plan {
+    @<character.alice>.say[待って。[mark .release][p]]
+    with:
+        thread motion:
+            wait 0.1s
+        on .release:
+            log.info("release")
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("plan")
+        .arg(&path)
+        .arg("--json")
+        .output()
+        .expect("arcw plan runs");
+
+    assert!(
+        output.status.success(),
+        "plan listing should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"lines\"")
+            && stdout.contains("\"child_tasks\": 2")
+            && stdout.contains("mark .release"),
+        "plan JSON should include runtime graph metadata: {stdout}"
+    );
+}
+
+#[test]
 fn test_json_lists_script_tests() {
     let path = temp_awft(
         "script-test",
