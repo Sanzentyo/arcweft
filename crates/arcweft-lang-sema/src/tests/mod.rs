@@ -15,4 +15,5 @@ mod patterns;
 mod resolve_symbols;
 mod runtime_plan;
 mod script_tests;
+mod semantic;
 mod typecheck;

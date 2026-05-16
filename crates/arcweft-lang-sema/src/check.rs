@@ -3141,6 +3141,11 @@ impl TypeCheckEnv {
     fn index_type(&self, target: &TypeKind) -> Option<&TypeKind> {
         self.indexes.get(target)
     }
+
+    /// Returns whether the environment grants a named effect or state capability.
+    pub fn has_capability(&self, capability: &str) -> bool {
+        self.capabilities.contains(capability)
+    }
 }
 
 impl TypeCheckError {

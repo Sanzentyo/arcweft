@@ -69,6 +69,35 @@ flow @flow.conflict conflict {
 }
 
 #[test]
+fn semantic_thread_join_conflict_is_verifier_obligation() {
+    let report = report(
+        r#"
+flow @flow.thread_join thread_join {
+    thread worker {
+        out 1
+        out "bad"
+    }
+}
+"#,
+        VerificationMode::Test,
+    );
+
+    assert!(report.has_errors());
+    assert!(report.obligations.iter().any(|obligation| {
+        obligation.kind == ProofObligationKind::ThreadJoinTyping
+            && obligation.discharge == ProofDischarge::Missing
+    }));
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.obligation.as_deref().is_some_and(|id| {
+            report
+                .obligations
+                .iter()
+                .any(|obligation| obligation.id == id)
+        })
+    }));
+}
+
+#[test]
 fn smt_lib_is_stable() {
     let problem = SmtProblem {
         name: "p".to_owned(),

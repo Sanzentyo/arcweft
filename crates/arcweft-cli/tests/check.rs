@@ -125,6 +125,40 @@ flow @flow.verify verify {
 }
 
 #[test]
+fn verify_json_reports_semantic_thread_join_conflict() {
+    let path = temp_awft(
+        "verify-thread-join",
+        r#"
+flow @flow.thread_join thread_join {
+    thread worker {
+        out 1
+        out "bad"
+    }
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("verify")
+        .arg(&path)
+        .arg("--mode")
+        .arg("test")
+        .arg("--json")
+        .output()
+        .expect("arcw verify runs");
+
+    assert!(
+        !output.status.success(),
+        "semantic thread join conflict should fail test-mode verification"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("thread join result branches must produce one compatible type"),
+        "JSON report should include the semantic thread-join obligation: {stdout}"
+    );
+}
+
+#[test]
 fn unsafe_json_lists_audit_regions() {
     let path = temp_awft(
         "unsafe-audit",

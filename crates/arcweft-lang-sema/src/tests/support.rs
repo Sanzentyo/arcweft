@@ -1,6 +1,8 @@
 pub(super) use crate::{
-    EntityKind, NameRegistry, SymbolUseKind, TypeCheckEnv, TypeKind, collect_symbol_uses,
-    registry_from_hir, typecheck_hir, validate_hir_references, validate_typecheck_ready,
+    EntityKind, NameRegistry, SemanticDischarge, SemanticMode, SemanticObligationKind,
+    SemanticPolicy, SemanticReport, SymbolUseKind, TypeCheckEnv, TypeKind, analyze_semantics,
+    collect_symbol_uses, registry_from_hir, typecheck_hir, validate_hir_references,
+    validate_typecheck_ready,
 };
 pub(super) use arcweft_core::{
     FlowOp, FlowRuntimeId, LineEffectRequest, LineOutRequest, LineTaskNode, LineTaskTrigger,

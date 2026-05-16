@@ -104,11 +104,18 @@ Release verification should reject undisclosed audited unsafe and unproven
 non-trivial lifetime promotion, thread capture, global mutation, and MustDrop
 override obligations.
 
-The first semantic pass generates obligations for lifetime promotion,
-`unsafe lifetime`, upper-lifetime registry writes, thread capture, trusted
-assumptions, `Raw` syntax that reached HIR-facing analysis, and MustDrop
-registry values such as `'line.focus` that are not explicitly dropped or
-transferred.
+The first semantic pass lives in `arcweft-lang-sema::analyze_semantics` and
+returns a structured `SemanticReport`. `arcweft-verify` merges that report into
+the shared verifier JSON used by CLI, LSP, and Agent tooling. It generates
+obligations for lifetime promotion, `unsafe lifetime`, upper-lifetime registry
+writes, thread capture, thread join result typing, trusted assumptions, `Raw`
+syntax that reached HIR-facing analysis, sibling thread write conflicts, and
+MustDrop registry values such as `'line.focus` that are not explicitly dropped
+or transferred.
+
+This pass is intentionally conservative. It is the verifier/tooling spine for
+Phase 1.9, not the final all-path CFG/type solver. Later compiler passes should
+refine or discharge these obligations rather than bypassing the verifier report.
 
 ## Counterexample
 

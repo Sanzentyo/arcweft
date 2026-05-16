@@ -4,13 +4,22 @@
 
 Implemented workspace members:
 
+- `crates/arcweft`
 - `crates/arcweft-core`
+- `crates/arcweft-dialogue`
 - `crates/arcweft-id`
-- `crates/arcweft-source`
+- `crates/arcweft-lang-hir`
+- `crates/arcweft-lang-sema`
+- `crates/arcweft-lang-syntax`
 - `crates/arcweft-need`
 - `crates/arcweft-presentation`
-- `crates/arcweft-dialogue`
-- `crates/arcweft-lang-syntax`
+- `crates/arcweft-runtime-plan`
+- `crates/arcweft-source`
+- `crates/arcweft-test`
+- `crates/arcweft-verify`
+- `crates/arcweft-verify-lsp`
+- `crates/arcweft-verify-oxiz`
+- `crates/arcweft-verify-z3`
 - `crates/arcweft-cli`
 
 The workspace is intentionally dependency-light. `arcweft-core` keeps only placeholder non-JIT adapter feature flags and has no Cranelift/Wasmtime dependency or Cranelift feature. Native JIT belongs in a future `arcweft-lang-jit-cranelift` adapter selected by player/build crates.
@@ -253,8 +262,17 @@ Syntax parser:
 - `lint_id_policy` provides the first syntax-level ID policy pass. It reports
   accepted-but-discouraged deep dot-run relative IDs such as `@...suffix` and
   obvious module/flow tail mismatches.
+- `analyze_semantics` in `arcweft-lang-sema` produces the first structured
+  `SemanticReport`. The pass is conservative and spans HIR plus syntax
+  statements: lifetime promotion, audited unsafe regions, upper-lifetime writes,
+  MustDrop discharge for line focus handles, thread capture, thread join
+  result-shape conflicts, raw syntax, trusted assumptions, and simple sibling
+  thread write conflicts are surfaced as typed obligations for verifier, CLI,
+  and LSP tooling.
 - Typed let patterns and borrow blocks preserve borrow types, and the checker rejects non-`'static` borrowed values crossing `await`, `yield`, `thread`, and `defer` suspension boundaries.
-- Parser/HIR integration tests live under `crates/arcweft-lang-syntax/src/tests/`, keeping the public crate surface in `src/lib.rs` separate from the syntax coverage suite.
+- Parser/HIR/sema integration tests live under `crates/arcweft-lang-sema/src/tests/`
+  while syntax crate unit coverage stays with `arcweft-lang-syntax`; this keeps
+  the public crate surfaces separate from broad grammar and semantic coverage.
 
 ## Deferred
 
@@ -286,7 +304,7 @@ Not implemented in this milestone:
 
 ## Verification
 
-Last verified during the CST helper migration pass:
+Last verified during the semantic verification spine implementation:
 
 ```bash
 cargo fmt --check
@@ -299,3 +317,7 @@ Result:
 - `cargo fmt --check`: passed
 - `cargo clippy --workspace --all-targets --all-features`: passed
 - `cargo test --workspace`: passed
+- `cargo tree -p arcweft-core --edges normal`: passed; no renderer/audio/device
+  dependency entered core.
+- `cargo tree -p arcweft-lang-syntax --edges normal`: passed; syntax remains on
+  rowan, blake3, thiserror, and `arcweft-source`.

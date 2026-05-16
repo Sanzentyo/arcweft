@@ -11,9 +11,14 @@ use arcweft_lang_hir::{
     HirWhile, HirWhileLet, IdRef, LifetimeKey, LifetimeScopeKind, LinePlan, LinePlanItem, Stmt,
     TextRange, ThreadBlock, TriggerPattern,
 };
+use arcweft_lang_sema::{
+    SemanticDiagnostic, SemanticDischarge, SemanticMode, SemanticObligation,
+    SemanticObligationKind, SemanticPolicy, SemanticReport, SemanticSeverity, TypeCheckEnv,
+    analyze_semantics,
+};
 use arcweft_runtime_plan::lower_line_task_groups;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use thiserror::Error;
 
 /// Stable source span used by verifier diagnostics and Agent/LSP tooling.
@@ -73,6 +78,7 @@ pub enum ProofObligationKind {
     UnsafeLifetimeAudit,
     MustDropDischarge,
     ThreadCapture,
+    ThreadJoinTyping,
     UpperLifetimeWrite,
     TrustedAssumption,
     RawSyntax,
@@ -225,7 +231,16 @@ pub trait SmtBackend {
 pub fn verify_module(module: &HirModule, policy: VerificationPolicy) -> VerificationReport {
     let mut collector = ObligationCollector::new(policy);
     collector.collect_module(module);
-    collector.finish()
+    let semantic_report = analyze_semantics(
+        module,
+        &TypeCheckEnv::new(),
+        SemanticPolicy {
+            mode: semantic_mode(policy.mode),
+        },
+    );
+    let mut report = collector.finish();
+    merge_semantic_report(&mut report, semantic_report);
+    report
 }
 
 /// Emits a compact SMT-LIB 2 script for a solver-neutral problem.
@@ -261,6 +276,175 @@ impl VerificationReport {
 
     pub fn unsafe_audit_count(&self) -> usize {
         self.unsafe_audits.len()
+    }
+}
+
+fn merge_semantic_report(report: &mut VerificationReport, semantic: SemanticReport) {
+    for proof in semantic.proofs {
+        if !report.proofs.iter().any(|existing| existing.id == proof.id) {
+            report.proofs.push(ProofSummary {
+                id: proof.id,
+                source: SourceSpan {
+                    start: proof.source.start,
+                    end: proof.source.end,
+                },
+            });
+        }
+    }
+    for axiom in semantic.trusted_axioms {
+        if !report
+            .trusted_axioms
+            .iter()
+            .any(|existing| existing.id == axiom.id)
+        {
+            report.trusted_axioms.push(TrustedAxiomSummary {
+                id: axiom.id,
+                source: SourceSpan {
+                    start: axiom.source.start,
+                    end: axiom.source.end,
+                },
+            });
+        }
+    }
+    for audit in semantic.unsafe_audits {
+        if !report
+            .unsafe_audits
+            .iter()
+            .any(|existing| existing.id == audit.id)
+        {
+            report.unsafe_audits.push(UnsafeAuditSummary {
+                id: audit.id,
+                source: audit.source.map(|source| SourceSpan {
+                    start: source.start,
+                    end: source.end,
+                }),
+                has_reason: audit.has_reason,
+                has_safety_doc: audit.has_safety_doc,
+            });
+        }
+    }
+    let mut id_map = BTreeMap::new();
+    for obligation in semantic.obligations {
+        let (semantic_id, verification_id) = merge_semantic_obligation(report, obligation);
+        id_map.insert(semantic_id, verification_id);
+    }
+    for diagnostic in semantic.diagnostics {
+        merge_semantic_diagnostic(report, diagnostic, &id_map);
+    }
+    report
+        .diagnostics
+        .sort_by(|left, right| left.id.cmp(&right.id));
+}
+
+fn merge_semantic_obligation(
+    report: &mut VerificationReport,
+    obligation: SemanticObligation,
+) -> (String, String) {
+    let semantic_id = obligation.id.clone();
+    let kind = proof_kind(obligation.kind);
+    if let Some(existing) = report.obligations.iter().find(|existing| {
+        existing.kind == kind
+            && existing.subject == obligation.subject
+            && existing.message == obligation.message
+    }) {
+        return (semantic_id, existing.id.clone());
+    }
+    let id = format!("obligation.{:04}", report.obligations.len() + 1);
+    let verification_id = id.clone();
+    let discharge = proof_discharge(obligation.discharge);
+    let subject = obligation.subject;
+    let smt = Some(SmtProblem {
+        name: id.clone(),
+        assertions: vec![ProofExpr::App {
+            name: obligation_predicate(kind).to_owned(),
+            args: subject
+                .as_ref()
+                .map(|subject| vec![ProofExpr::Var(subject.clone())])
+                .unwrap_or_default(),
+        }],
+    });
+    report.obligations.push(ProofObligation {
+        id,
+        kind,
+        message: obligation.message,
+        subject,
+        source: obligation.source.map(|source| SourceSpan {
+            start: source.start,
+            end: source.end,
+        }),
+        discharge,
+        smt,
+    });
+
+    (semantic_id, verification_id)
+}
+
+fn merge_semantic_diagnostic(
+    report: &mut VerificationReport,
+    diagnostic: SemanticDiagnostic,
+    id_map: &BTreeMap<String, String>,
+) {
+    if report
+        .diagnostics
+        .iter()
+        .any(|existing| existing.message == diagnostic.message)
+    {
+        return;
+    }
+    let obligation = diagnostic
+        .obligation
+        .and_then(|id| id_map.get(&id).cloned());
+    report.diagnostics.push(VerificationDiagnostic {
+        id: format!("diagnostic.{}", diagnostic.id),
+        severity: severity(diagnostic.severity),
+        message: diagnostic.message,
+        source: diagnostic.source.map(|source| SourceSpan {
+            start: source.start,
+            end: source.end,
+        }),
+        obligation,
+        related_ids: diagnostic.related_ids,
+        actions: Vec::new(),
+    });
+}
+
+fn semantic_mode(mode: VerificationMode) -> SemanticMode {
+    match mode {
+        VerificationMode::Dev => SemanticMode::Dev,
+        VerificationMode::Test => SemanticMode::Test,
+        VerificationMode::Release => SemanticMode::Release,
+    }
+}
+
+fn proof_kind(kind: SemanticObligationKind) -> ProofObligationKind {
+    match kind {
+        SemanticObligationKind::LifetimePromotion => ProofObligationKind::LifetimePromotion,
+        SemanticObligationKind::UnsafeLifetimeAudit => ProofObligationKind::UnsafeLifetimeAudit,
+        SemanticObligationKind::MustDropDischarge => ProofObligationKind::MustDropDischarge,
+        SemanticObligationKind::ThreadCapture => ProofObligationKind::ThreadCapture,
+        SemanticObligationKind::ThreadJoinTyping => ProofObligationKind::ThreadJoinTyping,
+        SemanticObligationKind::UpperLifetimeWrite => ProofObligationKind::UpperLifetimeWrite,
+        SemanticObligationKind::TrustedAssumption => ProofObligationKind::TrustedAssumption,
+        SemanticObligationKind::RawSyntax => ProofObligationKind::RawSyntax,
+        SemanticObligationKind::RuntimeConflict => ProofObligationKind::RuntimeConflict,
+    }
+}
+
+fn proof_discharge(discharge: SemanticDischarge) -> ProofDischarge {
+    match discharge {
+        SemanticDischarge::Automatic => ProofDischarge::Automatic,
+        SemanticDischarge::FormalProof { id } => ProofDischarge::FormalProof { id },
+        SemanticDischarge::AuditedUnsafe { id } => ProofDischarge::AuditedUnsafe { id },
+        SemanticDischarge::TrustedAxiom { id } => ProofDischarge::TrustedAxiom { id },
+        SemanticDischarge::Missing => ProofDischarge::Missing,
+    }
+}
+
+fn severity(severity: SemanticSeverity) -> Severity {
+    match severity {
+        SemanticSeverity::Info => Severity::Info,
+        SemanticSeverity::Warning => Severity::Warning,
+        SemanticSeverity::Error => Severity::Error,
     }
 }
 
@@ -1181,6 +1365,7 @@ fn obligation_predicate(kind: ProofObligationKind) -> &'static str {
         ProofObligationKind::UnsafeLifetimeAudit => "unsafe_audit_complete",
         ProofObligationKind::MustDropDischarge => "must_drop_discharged",
         ProofObligationKind::ThreadCapture => "thread_capture_safe",
+        ProofObligationKind::ThreadJoinTyping => "thread_join_result_typed",
         ProofObligationKind::UpperLifetimeWrite => "upper_lifetime_write_safe",
         ProofObligationKind::TrustedAssumption => "trusted_assumption",
         ProofObligationKind::RawSyntax => "raw_syntax_absent",
@@ -1196,6 +1381,7 @@ fn actions_for(kind: ProofObligationKind, discharge: &ProofDischarge) -> Vec<Too
         ProofObligationKind::LifetimePromotion
         | ProofObligationKind::MustDropDischarge
         | ProofObligationKind::ThreadCapture
+        | ProofObligationKind::ThreadJoinTyping
         | ProofObligationKind::UpperLifetimeWrite => {
             vec![
                 ToolAction {
