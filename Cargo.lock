@@ -60,6 +60,7 @@ dependencies = [
  "arcweft-id",
  "arcweft-need",
  "arcweft-source",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

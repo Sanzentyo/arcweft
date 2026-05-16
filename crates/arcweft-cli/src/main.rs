@@ -1,9 +1,10 @@
 use arcweft_core::{
-    LineEffectRequest, LineTaskGroup, LineTaskNode, LineTaskScope, LineTaskTrigger,
+    Engine, FlowEvent, FlowFiberStatus, FrameInput, LineEffectRequest, LineTaskGroup, LineTaskNode,
+    LineTaskScope, LineTaskTrigger, TaskSpec,
 };
 use arcweft_lang_syntax::{
-    LoweredLineTaskGroup, TypeCheckEnv, lint_id_policy, lower_line_task_groups, lower_to_hir,
-    parse_source, registry_from_hir, typecheck_hir, validate_hir_references,
+    LoweredLineTaskGroup, TypeCheckEnv, lint_id_policy, lower_line_task_groups, lower_runtime_plan,
+    lower_to_hir, parse_source, registry_from_hir, typecheck_hir, validate_hir_references,
     validate_typecheck_ready,
 };
 use arcweft_test::{ScriptTestManifest, collect_script_tests};
@@ -42,6 +43,7 @@ fn run(args: &[OsString]) -> Result<(), ExitCode> {
         [command, rest @ ..] if command == "verify" => verify_command(rest),
         [command, rest @ ..] if command == "unsafe" => unsafe_command(rest),
         [command, rest @ ..] if command == "plan" => runtime_plan_command(rest),
+        [command, rest @ ..] if command == "run" => runtime_run_command(rest),
         [command, rest @ ..] if command == "test" => script_test_command(rest),
         [command, rest @ ..] if command == "bench" => script_bench_command(rest),
         [command, ..] => {
@@ -75,6 +77,62 @@ fn runtime_plan_command(args: &[OsString]) -> Result<(), ExitCode> {
             options.path.display(),
             report.lines.len(),
             report.verifier_obligations
+        );
+        Ok(())
+    }
+}
+
+fn runtime_run_command(args: &[OsString]) -> Result<(), ExitCode> {
+    let options = RuntimeRunOptions::parse(args)?;
+    let checked = load_and_check(&options.path)?;
+    let plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
+        for error in errors {
+            eprintln!("error: {}", error.message());
+        }
+        ExitCode::FAILURE
+    })?;
+    let mut engine = Engine::new(plan);
+    let mut frames = Vec::new();
+    for frame_index in 0..options.frames {
+        let output = engine.step(FrameInput::default());
+        let summary = RuntimeFrameRunSummary::from_output(frame_index, output);
+        let done = matches!(
+            engine.fiber().status,
+            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+        );
+        frames.push(summary);
+        if done {
+            break;
+        }
+    }
+    let report = RuntimeRunReport {
+        frames,
+        final_status: flow_status_label(&engine.fiber().status),
+    };
+    if options.json {
+        print_json(&report)
+    } else {
+        for frame in &report.frames {
+            println!(
+                "frame {}: {} flow event(s), {} effect(s), {} task request(s), {} diagnostic(s)",
+                frame.index,
+                frame.flow_events.len(),
+                frame.line_effects.len(),
+                frame.task_requests.len(),
+                frame.diagnostics.len()
+            );
+            for event in &frame.flow_events {
+                println!("  event {event}");
+            }
+            for effect in &frame.line_effects {
+                println!("  effect {effect}");
+            }
+        }
+        println!(
+            "ok: {} ({} frame(s), final_status={})",
+            options.path.display(),
+            report.frames.len(),
+            report.final_status
         );
         Ok(())
     }
@@ -304,6 +362,13 @@ struct ScriptPlanOptions {
     json: bool,
 }
 
+#[derive(Clone, Debug)]
+struct RuntimeRunOptions {
+    path: PathBuf,
+    frames: usize,
+    json: bool,
+}
+
 impl ScriptPlanOptions {
     fn parse(args: &[OsString], command: &str) -> Result<Self, ExitCode> {
         let Some(path) = args.first() else {
@@ -323,6 +388,38 @@ impl ScriptPlanOptions {
                     return Err(ExitCode::from(2));
                 }
             }
+        }
+        Ok(options)
+    }
+}
+
+impl RuntimeRunOptions {
+    fn parse(args: &[OsString]) -> Result<Self, ExitCode> {
+        let Some(path) = args.first() else {
+            eprintln!("error: run requires <file.awft>");
+            print_help();
+            return Err(ExitCode::from(2));
+        };
+        let mut options = Self {
+            path: PathBuf::from(path),
+            frames: 1,
+            json: false,
+        };
+        let mut index = 1;
+        while index < args.len() {
+            let flag = args[index].to_string_lossy();
+            match flag.as_ref() {
+                "--json" => options.json = true,
+                "--frames" => {
+                    index += 1;
+                    options.frames = parse_usize_arg(args.get(index), "--frames")?;
+                }
+                other => {
+                    eprintln!("error: unknown run option `{other}`");
+                    return Err(ExitCode::from(2));
+                }
+            }
+            index += 1;
         }
         Ok(options)
     }
@@ -435,6 +532,14 @@ fn parse_string_arg(arg: Option<&OsString>, flag: &str) -> Result<String, ExitCo
         })
 }
 
+fn parse_usize_arg(arg: Option<&OsString>, flag: &str) -> Result<usize, ExitCode> {
+    let value = parse_string_arg(arg, flag)?;
+    value.parse::<usize>().map_err(|error| {
+        eprintln!("error: {flag} requires a positive integer: {error}");
+        ExitCode::from(2)
+    })
+}
+
 fn print_human_diagnostics(report: &VerificationReport) {
     for diagnostic in &report.diagnostics {
         eprintln!("{:?}: {}", diagnostic.severity, diagnostic.message);
@@ -511,6 +616,7 @@ fn print_help() {
     );
     eprintln!("  arcw unsafe <file.awft> [--json]");
     eprintln!("  arcw plan <file.awft> [--json]");
+    eprintln!("  arcw run <file.awft> [--frames N] [--json]");
     eprintln!("  arcw test <file.awft> [--json]");
     eprintln!("  arcw bench <file.awft> [--json]");
 }
@@ -689,6 +795,78 @@ fn effect_label(effect: &LineEffectRequest) -> String {
         LineEffectRequest::Select(_) => "select".to_owned(),
         LineEffectRequest::Break { .. } => "break".to_owned(),
         LineEffectRequest::Continue { .. } => "continue".to_owned(),
+    }
+}
+
+#[derive(serde::Serialize)]
+struct RuntimeRunReport {
+    frames: Vec<RuntimeFrameRunSummary>,
+    final_status: String,
+}
+
+#[derive(serde::Serialize)]
+struct RuntimeFrameRunSummary {
+    index: usize,
+    diagnostics: Vec<String>,
+    flow_events: Vec<String>,
+    line_effects: Vec<String>,
+    task_requests: Vec<String>,
+}
+
+impl RuntimeFrameRunSummary {
+    fn from_output(index: usize, output: arcweft_core::FrameOutput) -> Self {
+        Self {
+            index,
+            diagnostics: output
+                .diagnostics
+                .into_iter()
+                .map(|diagnostic| diagnostic.message)
+                .collect(),
+            flow_events: output.flow_events.iter().map(flow_event_label).collect(),
+            line_effects: output.line_effects.iter().map(effect_label).collect(),
+            task_requests: output
+                .task_requests
+                .iter()
+                .map(task_request_label)
+                .collect(),
+        }
+    }
+}
+
+fn flow_event_label(event: &FlowEvent) -> String {
+    match event {
+        FlowEvent::DialogueLine { line } => format!("dialogue {}", line.0),
+        FlowEvent::LineCancelled { trigger } => format!("line_cancelled {trigger}"),
+        FlowEvent::ChoicePresented { id } => {
+            format!("choice_presented {}", id.as_deref().unwrap_or("-"))
+        }
+        FlowEvent::ChoiceSelected { id, option } => {
+            format!("choice_selected {} {option}", id.as_deref().unwrap_or("-"))
+        }
+        FlowEvent::AwaitStarted { need, task } => format!("await_started {} {}", need.0, task.0),
+        FlowEvent::AwaitReady { need, value } => format!("await_ready {} {value}", need.0),
+        FlowEvent::AwaitProgress { need, progress } => {
+            format!("await_progress {} {progress}", need.0)
+        }
+        FlowEvent::Goto { target } => format!("goto {}", target.0),
+        FlowEvent::Return { value } => format!("return {value}"),
+        FlowEvent::Done => "done".to_owned(),
+    }
+}
+
+fn task_request_label(task: &TaskSpec) -> String {
+    format!("{} key={} class={:?}", task.id.0, task.key.0, task.class)
+}
+
+fn flow_status_label(status: &FlowFiberStatus) -> String {
+    match status {
+        FlowFiberStatus::Running => "running".to_owned(),
+        FlowFiberStatus::Waiting(state) => format!("waiting {}", state.target.task.0),
+        FlowFiberStatus::Choice(state) => {
+            format!("choice {}", state.id.as_deref().unwrap_or("-"))
+        }
+        FlowFiberStatus::Done(exit) => format!("done {exit:?}"),
+        FlowFiberStatus::Failed(message) => format!("failed {message}"),
     }
 }
 

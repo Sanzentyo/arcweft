@@ -11,11 +11,29 @@ pub struct Engine {
 }
 
 pub struct RuntimePlan {
+    pub entry_flow: Option<FlowRuntimeId>,
+    pub flows: Vec<RuntimeFlow>,
     pub line_task_groups: Vec<LineTaskGroup>,
 }
 
+pub struct RuntimeFlow {
+    pub id: FlowRuntimeId,
+    pub ops: Vec<FlowOp>,
+}
+
+pub enum FlowOp {
+    Dialogue { line: RuntimeLineId, task_group: usize },
+    Choice { id: Option<String>, options: Vec<ChoiceRuntimeOption> },
+    Await { target: AwaitTarget, pending: Vec<LineEffectRequest> },
+    Goto(FlowRuntimeId),
+    Return(String),
+    Effect(LineEffectRequest),
+    Noop,
+}
+
 pub struct FlowFiber {
-    pub current_line: usize,
+    pub line_cursor: usize,
+    pub cursor: Option<FlowCursor>,
     pub status: FlowFiberStatus,
 }
 
@@ -31,15 +49,18 @@ pub struct FrameInput {
 
 pub struct FrameOutput {
     pub diagnostics: Vec<RuntimeDiagnostic>,
+    pub flow_events: Vec<FlowEvent>,
     pub line_effects: Vec<LineEffectRequest>,
     pub task_requests: Vec<TaskSpec>,
     pub cancel_requests: Vec<CancelScopeId>,
 }
 ```
 
-Phase 1.6 の `Engine` は最小 runtime spine であり、まだ完全な story VM ではない。
-`Engine::step(FrameInput) -> FrameOutput` は lowered line task group を順番に
-進め、即時 effect、child task request、cancel request、diagnostic だけを返す。
+Phase 1.7 の `Engine` は最小 flow runtime slice であり、まだ完全な story VM ではない。
+`Engine::step(FrameInput) -> FrameOutput` は lowered flow op を 1 frame に
+最大 1 つ進める。`Dialogue` は line task group を実行し、`Choice` は入力待ち、
+`Await` は `TaskSpec` を出して `TaskEvent` で再開、`Goto` / `Return` は
+`FlowFiber` の cursor/status を更新する。
 実 thread、wall-clock、renderer、audio、device、filesystem は adapter 側の責務である。
 `ScopeExit::Completed | Cancelled | Failed` は outcome-guarded `defer` stack の
 選択に使う。
@@ -186,6 +207,26 @@ The minimal runtime spine treats child tasks as Sans I/O requests. When a child
 trigger is ready, the engine emits a `TaskSpec` and also exposes the child scope
 body as deterministic effect data for tests and future adapters. Native workers,
 cooperative jobs, and web workers consume those requests outside `arcweft-core`.
+
+Flow-level execution now has a small Sans I/O vertical slice. HIR runtime
+lowering converts checked flows to `RuntimeFlow` / `FlowOp` data, while dialogue
+line plans continue to lower to `LineTaskGroup` and are referenced by index from
+`FlowOp::Dialogue`.
+
+```text
+dialogue line              -> FlowOp::Dialogue + LineTaskGroup
+choice                     -> FlowOp::Choice + ChoiceRuntimeOption list
+await ... with             -> FlowOp::Await + pending LineEffectRequest list
+goto @flow.x               -> FlowOp::Goto("flow.x")
+return expr                -> FlowOp::Return(label)
+out / log / signal / call  -> FlowOp::Effect or line effect
+cancel on input .SkipLine  -> line cancel rule selected from FrameInput
+```
+
+This slice is intentionally strict: runtime lowering errors on unsupported flow
+items instead of converting them to `Noop`. Expression values are still stable
+labels in the runtime data; the later typed VM/HIR evaluator should replace
+those labels with typed value nodes.
 
 Raw line-plan statements fail lowering. They are not reparsed, silently accepted,
 or dropped from the runtime plan. Phase 1.5 keeps expression payloads as stable

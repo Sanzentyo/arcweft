@@ -20,6 +20,7 @@ arcweft-dialogue = { path = "../arcweft-dialogue" }
 arcweft-id = { path = "../arcweft-id" }
 arcweft-need = { path = "../arcweft-need" }
 arcweft-source = { path = "../arcweft-source" }
+thiserror.workspace = true
 
 [lib]
 path = "src/lib.rs"

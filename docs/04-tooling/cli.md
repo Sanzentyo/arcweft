@@ -46,6 +46,7 @@ arcw verify game/routes/opening.awft --emit-obligations obligations.json
 arcw verify game/routes/opening.awft --emit-smt out/proofs
 arcw unsafe game/routes/opening.awft --json
 arcw plan game/routes/opening.awft --json
+arcw run game/routes/opening.awft --frames 4 --json
 arcw test game/routes/opening.awft --json
 arcw bench game/routes/opening.awft --json
 ```
@@ -86,6 +87,29 @@ arcw plan game/routes/opening.awft --json
 
 This is an inspection command, not an executor. It performs file I/O only in the
 CLI adapter and does not start renderer/audio/device backends.
+
+## Runtime Dry Run
+
+`arcw run <file.awft> [--frames N] [--json]` is the first headless execution
+entry point. It uses the same parse, HIR, reference validation, typecheck, and
+line-plan lowering path as `arcw check`, then lowers checked flows to
+`arcweft-core::RuntimePlan` and steps `Engine` for up to `N` frames.
+
+```bash
+arcw run game/routes/opening.awft --frames 8
+arcw run game/routes/opening.awft --frames 8 --json
+```
+
+The command is still Sans I/O at the runtime layer. The CLI reads the source
+file and prints a report; `arcweft-core` only consumes `FrameInput` and returns
+`FrameOutput`. The report includes per-frame flow events, line effects, task
+requests, diagnostics, and the final fiber status.
+
+Current runtime lowering is strict and intentionally incomplete. It supports
+the Phase 1.7 flow slice: dialogue lines, line task groups, `choice`, `await
+with`, `goto`, `return`, `out`, ordinary call-shaped effects, and line
+`cancel on` rules. Unsupported flow syntax fails with a runtime-lowering error
+instead of being silently dropped.
 
 ## Test / Bench
 

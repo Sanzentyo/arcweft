@@ -1,14 +1,17 @@
 use crate::ast::{
-    DeferOutcome, EntityRef, LinePlan, LinePlanItem, Pattern, Stmt, TriggerPattern, WaitTarget,
+    AwaitBranchKind, ChoiceAction, DeferOutcome, EntityRef, EntityRefSyntax, LinePlan,
+    LinePlanItem, Pattern, Stmt, TriggerPattern, WaitTarget,
 };
 use crate::expr::{DurationUnit, Expr, Literal};
-use crate::lower::{HirDialogue, HirFlowItem, HirModule};
+use crate::lower::{HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlowItem, HirModule};
 use arcweft_core::{
-    ChildCancelPolicy, ChildJoinPolicy, ConflictPolicy, LineAssertionRequest, LineBindingRequest,
-    LineCancelRuleRequest, LineChildTask, LineEffectRequest, LineMemoRequest, LineOptionRequest,
-    LineOutRequest, LineTaskGroup, LineTaskNode, LineTaskScope, LineTaskTrigger, LogicalDuration,
-    ParallelPolicy, ResourceAccess, ResourceAccessMode, RuntimeAssignment, RuntimeCall,
-    RuntimeCommand, RuntimeEvent, RuntimeField, RuntimeLog, TaskId, TaskKey, TaskPriority,
+    AwaitTarget, ChildCancelPolicy, ChildJoinPolicy, ChoiceRuntimeOption, ConflictPolicy, FlowOp,
+    FlowRuntimeId, LineAssertionRequest, LineBindingRequest, LineCancelRuleRequest, LineChildTask,
+    LineEffectRequest, LineMemoRequest, LineOptionRequest, LineOutRequest, LineTaskGroup,
+    LineTaskNode, LineTaskScope, LineTaskTrigger, LogicalDuration, NeedId, ParallelPolicy,
+    ResourceAccess, ResourceAccessMode, RuntimeAssignment, RuntimeCall, RuntimeCommand,
+    RuntimeEvent, RuntimeField, RuntimeFlow, RuntimeLineId, RuntimeLog, RuntimePlan, TaskId,
+    TaskKey, TaskPriority,
 };
 use thiserror::Error;
 
@@ -44,6 +47,263 @@ pub fn lower_line_task_groups(
         Ok(lowerer.groups)
     } else {
         Err(lowerer.errors)
+    }
+}
+
+/// Error produced while converting HIR flows to the executable runtime plan.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("{message}")]
+pub struct RuntimePlanLowerError {
+    message: String,
+}
+
+/// Lowers checked HIR flows to the Sans I/O core runtime program.
+///
+/// This pass is intentionally stricter than `lower_line_task_groups`: it must
+/// not silently skip flow syntax because the engine would otherwise execute a
+/// different story than the source describes.
+pub fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<RuntimePlanLowerError>> {
+    let mut lowerer = FlowRuntimeLowerer {
+        line_task_groups: Vec::new(),
+        errors: Vec::new(),
+    };
+    let flows = module
+        .flows()
+        .iter()
+        .enumerate()
+        .map(|(index, flow)| lowerer.lower_flow(index, flow))
+        .collect::<Vec<_>>();
+    if !module.top_level_items().is_empty() {
+        lowerer.errors.push(RuntimePlanLowerError::new(
+            "top-level flow items are not executable by the flow runtime yet",
+        ));
+    }
+    if !lowerer.errors.is_empty() {
+        return Err(lowerer.errors);
+    }
+    let entry = flows.first().map(|flow| flow.id.clone());
+    RuntimePlan::new(entry, flows, lowerer.line_task_groups)
+        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
+}
+
+struct FlowRuntimeLowerer {
+    line_task_groups: Vec<LineTaskGroup>,
+    errors: Vec<RuntimePlanLowerError>,
+}
+
+impl FlowRuntimeLowerer {
+    fn lower_flow(&mut self, index: usize, flow: &crate::lower::HirFlow) -> RuntimeFlow {
+        let id = flow.id().map_or_else(
+            || FlowRuntimeId(format!("flow.{}", flow.name().unwrap_or("anonymous"))),
+            flow_runtime_id,
+        );
+        let ops = self.lower_flow_items(&id, flow.body(), index);
+        RuntimeFlow { id, ops }
+    }
+
+    fn lower_flow_items(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        items: &[HirFlowItem],
+        flow_index: usize,
+    ) -> Vec<FlowOp> {
+        let mut ops = Vec::new();
+        for item in items {
+            match item {
+                HirFlowItem::Dialogue(dialogue) => {
+                    ops.push(self.lower_runtime_dialogue(flow_id, flow_index, dialogue));
+                }
+                HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
+                    ops.push(self.lower_choice(choice));
+                }
+                HirFlowItem::Await(await_with) | HirFlowItem::LetAwait { await_with, .. } => {
+                    ops.push(self.lower_await(await_with));
+                }
+                HirFlowItem::Stmt(stmt) => {
+                    ops.extend(self.lower_flow_stmt(stmt));
+                }
+                HirFlowItem::Scope(scope) => {
+                    ops.extend(self.lower_flow_items(flow_id, scope.body(), flow_index));
+                }
+                HirFlowItem::Scenario { name, args } => {
+                    ops.push(FlowOp::Effect(LineEffectRequest::Command(RuntimeCommand {
+                        name: name.clone(),
+                        args: args.iter().map(expr_label).collect(),
+                    })));
+                }
+                other => {
+                    self.errors.push(RuntimePlanLowerError::new(format!(
+                        "unsupported flow item for runtime lowering: {other:?}"
+                    )));
+                }
+            }
+        }
+        ops
+    }
+
+    fn lower_runtime_dialogue(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        dialogue: &HirDialogue,
+    ) -> FlowOp {
+        let group = if let Some(plan) = dialogue.plan() {
+            match lower_line_plan(plan) {
+                Ok(group) => group,
+                Err(errors) => {
+                    self.errors.extend(
+                        errors
+                            .into_iter()
+                            .map(|error| RuntimePlanLowerError::new(error.message().to_owned())),
+                    );
+                    LineTaskGroup::default()
+                }
+            }
+        } else {
+            LineTaskGroup::default()
+        };
+        let task_group = self.line_task_groups.len();
+        self.line_task_groups.push(group);
+        let line = dialogue.id().map_or_else(
+            || RuntimeLineId(format!("{}.line.{task_group}", flow_id.0)),
+            |id| RuntimeLineId(id.body().to_owned()),
+        );
+        let _ = flow_index;
+        FlowOp::Dialogue { line, task_group }
+    }
+
+    fn lower_choice(&mut self, choice: &HirChoice) -> FlowOp {
+        FlowOp::Choice {
+            id: choice.id().map(|id| id.body().to_owned()),
+            options: choice
+                .options()
+                .iter()
+                .map(|option| self.lower_choice_option(option))
+                .collect(),
+        }
+    }
+
+    fn lower_choice_option(&mut self, option: &HirChoiceOption) -> ChoiceRuntimeOption {
+        let mut effects = Vec::new();
+        let mut out = None;
+        let mut target = option.target().map(flow_runtime_id);
+        match option.action() {
+            ChoiceAction::Goto(target_ref) => {
+                if let EntityRefSyntax::Absolute(target_ref) = target_ref {
+                    target = Some(flow_runtime_id(target_ref));
+                }
+            }
+            ChoiceAction::Out(expr) => {
+                out = Some(LineOutRequest {
+                    label: None,
+                    value: expr_label(expr),
+                });
+            }
+            ChoiceAction::SelectBlock(statements) => {
+                effects.extend(self.lower_flow_statements(statements));
+            }
+            ChoiceAction::None => {}
+        }
+        ChoiceRuntimeOption {
+            id: option.id().map(|id| id.body().to_owned()),
+            label: option.label().to_owned(),
+            target,
+            out,
+            effects,
+        }
+    }
+
+    fn lower_await(&mut self, await_with: &HirAwait) -> FlowOp {
+        let label = expr_label(await_with.expr());
+        let task_name = sanitize_task_id_part(&label);
+        let pending = await_with
+            .branches()
+            .iter()
+            .filter(|branch| branch.kind() == AwaitBranchKind::Pending)
+            .flat_map(|branch| self.lower_pending_flow_items(branch.body()))
+            .collect();
+        FlowOp::Await {
+            target: AwaitTarget {
+                need: NeedId(format!("need.await.{task_name}")),
+                task: TaskId(format!("task.await.{task_name}")),
+            },
+            pending,
+        }
+    }
+
+    fn lower_pending_flow_items(&mut self, items: &[HirFlowItem]) -> Vec<LineEffectRequest> {
+        items
+            .iter()
+            .flat_map(|item| match item {
+                HirFlowItem::Stmt(stmt) => self.lower_flow_statements(std::slice::from_ref(stmt)),
+                HirFlowItem::Scenario { name, args } => {
+                    vec![LineEffectRequest::Command(RuntimeCommand {
+                        name: name.clone(),
+                        args: args.iter().map(expr_label).collect(),
+                    })]
+                }
+                other => {
+                    self.errors.push(RuntimePlanLowerError::new(format!(
+                        "unsupported await pending item for runtime lowering: {other:?}"
+                    )));
+                    Vec::new()
+                }
+            })
+            .collect()
+    }
+
+    fn lower_flow_stmt(&mut self, stmt: &Stmt) -> Vec<FlowOp> {
+        match stmt {
+            Stmt::Goto(expr) => vec![FlowOp::Goto(FlowRuntimeId(flow_target_label(expr)))],
+            Stmt::Return(expr) => vec![FlowOp::Return(expr_label(expr))],
+            Stmt::Expr(expr) => vec![FlowOp::Effect(runtime_call_effect(expr))],
+            Stmt::Out { label, expr } => {
+                vec![FlowOp::Effect(LineEffectRequest::Out(LineOutRequest {
+                    label: label.clone(),
+                    value: expr_label(expr),
+                }))]
+            }
+            Stmt::Command(command) => {
+                vec![FlowOp::Effect(LineEffectRequest::Command(RuntimeCommand {
+                    name: command.name().to_owned(),
+                    args: command.args().iter().map(expr_label).collect(),
+                }))]
+            }
+            other => {
+                self.errors.push(RuntimePlanLowerError::new(format!(
+                    "unsupported flow statement for runtime lowering: {other:?}"
+                )));
+                Vec::new()
+            }
+        }
+    }
+
+    fn lower_flow_statements(&mut self, statements: &[Stmt]) -> Vec<LineEffectRequest> {
+        let mut line_lowerer = LinePlanGraphLowerer::default();
+        let effects = statements
+            .iter()
+            .flat_map(|statement| line_lowerer.lower_stmt(statement))
+            .collect::<Vec<_>>();
+        self.errors.extend(
+            line_lowerer
+                .errors
+                .into_iter()
+                .map(|error| RuntimePlanLowerError::new(error.message().to_owned())),
+        );
+        effects
+    }
+}
+
+impl RuntimePlanLowerError {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+
+    /// Human-readable runtime lowering diagnostic.
+    pub fn message(&self) -> &str {
+        &self.message
     }
 }
 
@@ -566,6 +826,17 @@ fn sanitize_task_id_part(name: &str) -> String {
             }
         })
         .collect()
+}
+
+fn flow_runtime_id(id: &EntityRef) -> FlowRuntimeId {
+    FlowRuntimeId(id.body().to_owned())
+}
+
+fn flow_target_label(expr: &Expr) -> String {
+    match expr {
+        Expr::EntityRef(entity) => entity.body().to_owned(),
+        other => expr_label(other),
+    }
 }
 
 fn node_accesses(node: &LineTaskNode) -> Vec<ResourceAccess> {

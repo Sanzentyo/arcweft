@@ -120,3 +120,19 @@ AwaitView(load_avatar(user)) {
     error _ => Icon(@vector.avatar_fallback)
 }
 ```
+
+In the Phase 1.7 Sans I/O runtime slice, `await ... with` lowers to a
+`FlowOp::Await` containing an `AwaitTarget` and pending effects. Entering the op
+emits a `TaskSpec` and switches `FlowFiberStatus` to `Waiting`. The runtime
+resumes only when a matching `TaskEvent` arrives in a later `FrameInput`.
+
+```text
+TaskEventKind::Ready(value)    -> resume the flow after the await op
+TaskEventKind::Progress(value) -> keep waiting and emit an await-progress event
+TaskEventKind::Err(error)      -> mark the fiber failed
+TaskEventKind::Cancelled       -> mark the fiber failed
+```
+
+Actual asset loading, worker execution, clocks, renderer progress UI, and audio
+work remain outside `arcweft-core`. Core only produces deterministic task
+requests and consumes deterministic task events.

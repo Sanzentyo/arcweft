@@ -358,3 +358,94 @@ flow @flow.append append {
 
     lower_line_task_groups(&hir).expect("append-only effects do not conflict");
 }
+
+#[test]
+fn lowers_flow_dialogue_goto_return_to_runtime_plan() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    alice[待って。[p]]
+    with:
+        out .Done
+    goto @flow.next
+}
+
+flow @flow.next next {
+    return Ok(FlowExit::Done)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("flow fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
+
+    assert_eq!(
+        plan.entry_flow,
+        Some(FlowRuntimeId("flow.opening".to_owned()))
+    );
+    assert_eq!(plan.line_task_groups.len(), 1);
+    assert_eq!(plan.flows.len(), 2);
+    assert!(matches!(
+        &plan.flows[0].ops[0],
+        FlowOp::Dialogue { task_group: 0, .. }
+    ));
+    assert_eq!(
+        plan.flows[0].ops[1],
+        FlowOp::Goto(FlowRuntimeId("flow.next".to_owned()))
+    );
+    assert!(
+        matches!(&plan.flows[1].ops[0], FlowOp::Return(value) if value == "Ok(FlowExit::Done)")
+    );
+}
+
+#[test]
+fn lowers_choice_and_await_to_runtime_plan() {
+    let tree = parse_ok(
+        r#"
+flow @flow.loading loading {
+    try await load_opening_assets() with { pending p => progress.set(p.ratio) }
+    choice @choice.opening.first {
+        @choice.opening.listen "聞いてみる" -> @flow.alice_intro
+    }
+}
+
+flow @flow.alice_intro alice_intro {
+    return Ok(FlowExit::Done)
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("choice-await fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("choice-await runtime plan lowers");
+
+    assert!(matches!(&plan.flows[0].ops[0], FlowOp::Await { pending, .. } if pending.len() == 1));
+    let FlowOp::Choice { id, options } = &plan.flows[0].ops[1] else {
+        panic!("expected choice op");
+    };
+    assert_eq!(id.as_deref(), Some("choice.opening.first"));
+    assert_eq!(options[0].id.as_deref(), Some("choice.opening.listen"));
+    assert_eq!(
+        options[0].target,
+        Some(FlowRuntimeId("flow.alice_intro".to_owned()))
+    );
+}
+
+#[test]
+fn runtime_plan_lowering_rejects_unsupported_flow_items() {
+    let tree = parse_ok(
+        r"
+flow @flow.typed typed {
+    let route = @flow.next
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("unsupported runtime fixture lowers to HIR");
+
+    let errors = lower_runtime_plan(&hir).expect_err("unsupported item is explicit");
+
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("unsupported flow statement"))
+    );
+}

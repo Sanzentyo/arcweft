@@ -12,6 +12,8 @@ pub mod prelude {
     pub use arcweft_source::{SourceAnchor, SourceName, SourcePosition};
 }
 
+use thiserror::Error;
+
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TickId(pub u64);
 
@@ -34,6 +36,7 @@ pub struct FrameInput {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct FrameOutput {
     pub diagnostics: Vec<RuntimeDiagnostic>,
+    pub flow_events: Vec<FlowEvent>,
     pub line_effects: Vec<LineEffectRequest>,
     pub task_requests: Vec<TaskSpec>,
     pub cancel_requests: Vec<CancelScopeId>,
@@ -47,7 +50,70 @@ pub struct RuntimeDiagnostic {
 /// Pure runtime program consumed by the minimal Sans I/O engine.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RuntimePlan {
+    pub entry_flow: Option<FlowRuntimeId>,
+    pub flows: Vec<RuntimeFlow>,
     pub line_task_groups: Vec<LineTaskGroup>,
+}
+
+/// Runtime identifier for a lowered flow.
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct FlowRuntimeId(pub String);
+
+/// Runtime identifier for a lowered dialogue line.
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeLineId(pub String);
+
+/// Lowered flow program.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RuntimeFlow {
+    pub id: FlowRuntimeId,
+    pub ops: Vec<FlowOp>,
+}
+
+/// One deterministic operation in a lowered flow program.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FlowOp {
+    Dialogue {
+        line: RuntimeLineId,
+        task_group: usize,
+    },
+    Choice {
+        id: Option<String>,
+        options: Vec<ChoiceRuntimeOption>,
+    },
+    Await {
+        target: AwaitTarget,
+        pending: Vec<LineEffectRequest>,
+    },
+    Goto(FlowRuntimeId),
+    Return(String),
+    Effect(LineEffectRequest),
+    Noop,
+}
+
+/// Runtime choice option visible to adapters and selectable from `FrameInput`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChoiceRuntimeOption {
+    pub id: Option<String>,
+    pub label: String,
+    pub target: Option<FlowRuntimeId>,
+    pub out: Option<LineOutRequest>,
+    pub effects: Vec<LineEffectRequest>,
+}
+
+/// Replay-observable flow event emitted by the core runtime.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FlowEvent {
+    DialogueLine { line: RuntimeLineId },
+    LineCancelled { trigger: String },
+    ChoicePresented { id: Option<String> },
+    ChoiceSelected { id: Option<String>, option: String },
+    AwaitStarted { need: NeedId, task: TaskId },
+    AwaitReady { need: NeedId, value: String },
+    AwaitProgress { need: NeedId, progress: String },
+    Goto { target: FlowRuntimeId },
+    Return { value: String },
+    Done,
 }
 
 /// Minimal deterministic engine over `FrameInput` and `FrameOutput`.
@@ -63,19 +129,57 @@ pub struct Engine {
 }
 
 /// Current flow execution cursor.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FlowFiber {
-    pub current_line: usize,
+    pub line_cursor: usize,
+    pub cursor: Option<FlowCursor>,
     pub status: FlowFiberStatus,
 }
 
+/// Position in a lowered flow program.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FlowCursor {
+    pub flow: FlowRuntimeId,
+    pub op_index: usize,
+}
+
 /// High-level flow status for the minimal runtime spine.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FlowFiberStatus {
-    #[default]
     Running,
-    Waiting,
+    Waiting(AwaitState),
+    Choice(ChoiceState),
+    Done(FlowExit),
+    Failed(String),
+}
+
+/// Suspended `await ... with` state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AwaitState {
+    pub target: AwaitTarget,
+    pub resume: FlowCursor,
+}
+
+/// Suspended choice state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChoiceState {
+    pub id: Option<String>,
+    pub options: Vec<ChoiceRuntimeOption>,
+    pub resume: FlowCursor,
+}
+
+/// Terminal flow result observed by the minimal runtime.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FlowExit {
     Done,
+    Return(String),
+}
+
+/// Error returned by checked runtime-plan construction helpers.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum RuntimePlanError {
+    #[error("entry flow `{0}` does not exist in runtime plan")]
+    MissingEntryFlow(String),
 }
 
 /// Scope exit reason used to select outcome-guarded cleanup stacks.
@@ -582,26 +686,87 @@ impl Default for LogicalDuration {
 }
 
 impl RuntimePlan {
-    pub fn new(line_task_groups: Vec<LineTaskGroup>) -> Self {
-        Self { line_task_groups }
+    pub fn new(
+        entry_flow: Option<FlowRuntimeId>,
+        flows: Vec<RuntimeFlow>,
+        line_task_groups: Vec<LineTaskGroup>,
+    ) -> Result<Self, RuntimePlanError> {
+        if let Some(entry) = entry_flow.as_ref()
+            && !flows.iter().any(|flow| flow.id == *entry)
+        {
+            return Err(RuntimePlanError::MissingEntryFlow(entry.0.clone()));
+        }
+        Ok(Self {
+            entry_flow,
+            flows,
+            line_task_groups,
+        })
+    }
+
+    pub fn lines_only(line_task_groups: Vec<LineTaskGroup>) -> Self {
+        Self {
+            entry_flow: None,
+            flows: Vec::new(),
+            line_task_groups,
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.line_task_groups.is_empty()
+        self.flows.is_empty() && self.line_task_groups.is_empty()
+    }
+
+    pub fn entry_cursor(&self) -> Option<FlowCursor> {
+        self.entry_flow.as_ref().map(|flow| FlowCursor {
+            flow: flow.clone(),
+            op_index: 0,
+        })
+    }
+}
+
+impl Default for FlowFiber {
+    fn default() -> Self {
+        Self {
+            line_cursor: 0,
+            cursor: None,
+            status: FlowFiberStatus::Done(FlowExit::Done),
+        }
+    }
+}
+
+impl FlowCursor {
+    fn advanced(&self) -> Self {
+        Self {
+            flow: self.flow.clone(),
+            op_index: self.op_index + 1,
+        }
+    }
+}
+
+impl From<&str> for FlowRuntimeId {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl From<&str> for RuntimeLineId {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
     }
 }
 
 impl Engine {
     pub fn new(plan: RuntimePlan) -> Self {
+        let cursor = plan.entry_cursor();
         let status = if plan.is_empty() {
-            FlowFiberStatus::Done
+            FlowFiberStatus::Done(FlowExit::Done)
         } else {
             FlowFiberStatus::Running
         };
         Self {
             plan,
             fiber: FlowFiber {
-                current_line: 0,
+                line_cursor: 0,
+                cursor,
                 status,
             },
         }
@@ -623,25 +788,278 @@ impl Engine {
                 ),
             }));
 
-        let Some(group) = self.plan.line_task_groups.get(self.fiber.current_line) else {
-            self.fiber.status = FlowFiberStatus::Done;
+        if self.resume_suspended(&input, &events, &mut output) {
             return output;
-        };
-        output.merge(run_line_task_group(group, &input, ScopeExit::Completed));
-        self.fiber.current_line += 1;
-        if self.fiber.current_line >= self.plan.line_task_groups.len() {
-            self.fiber.status = FlowFiberStatus::Done;
+        }
+        if !matches!(self.fiber.status, FlowFiberStatus::Running) {
+            return output;
+        }
+        if self.fiber.cursor.is_some() {
+            self.step_flow(&input, &mut output);
+        } else {
+            self.step_line_only(&input, &mut output);
         }
         output
+    }
+
+    fn resume_suspended(
+        &mut self,
+        input: &FrameInput,
+        events: &[TaskEvent],
+        output: &mut FrameOutput,
+    ) -> bool {
+        match self.fiber.status.clone() {
+            FlowFiberStatus::Waiting(state) => {
+                self.resume_await_state(state, events, output);
+                true
+            }
+            FlowFiberStatus::Choice(state) => {
+                self.resume_choice_state(state, input, output);
+                true
+            }
+            FlowFiberStatus::Running | FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_) => {
+                false
+            }
+        }
+    }
+
+    fn resume_await_state(
+        &mut self,
+        state: AwaitState,
+        events: &[TaskEvent],
+        output: &mut FrameOutput,
+    ) {
+        let Some(event) = events
+            .iter()
+            .find(|event| event.task_id == state.target.task)
+            .cloned()
+        else {
+            self.fiber.status = FlowFiberStatus::Waiting(state);
+            return;
+        };
+        match event.kind {
+            TaskEventKind::Ready(value) => {
+                output.flow_events.push(FlowEvent::AwaitReady {
+                    need: state.target.need,
+                    value,
+                });
+                self.fiber.cursor = Some(state.resume);
+                self.fiber.status = FlowFiberStatus::Running;
+            }
+            TaskEventKind::Progress(progress) => {
+                output.flow_events.push(FlowEvent::AwaitProgress {
+                    need: state.target.need.clone(),
+                    progress,
+                });
+                self.fiber.status = FlowFiberStatus::Waiting(state);
+            }
+            TaskEventKind::Err(error) => {
+                self.fiber.status = FlowFiberStatus::Failed(error.clone());
+                output.diagnostics.push(RuntimeDiagnostic {
+                    message: format!("await task {} failed: {error}", state.target.task.0),
+                });
+            }
+            TaskEventKind::Cancelled => {
+                let message = format!("await task {} was cancelled", state.target.task.0);
+                self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                output.diagnostics.push(RuntimeDiagnostic { message });
+            }
+        }
+    }
+
+    fn resume_choice_state(
+        &mut self,
+        state: ChoiceState,
+        input: &FrameInput,
+        output: &mut FrameOutput,
+    ) {
+        let Some(option) = state
+            .options
+            .iter()
+            .find(|option| input_selects_choice(input, option))
+            .cloned()
+        else {
+            self.fiber.status = FlowFiberStatus::Choice(state);
+            return;
+        };
+        let selected = option.id.clone().unwrap_or_else(|| option.label.clone());
+        output.flow_events.push(FlowEvent::ChoiceSelected {
+            id: state.id.clone(),
+            option: selected,
+        });
+        output.line_effects.extend(option.effects.clone());
+        if let Some(out) = option.out {
+            output.line_effects.push(LineEffectRequest::Out(out));
+        }
+        if let Some(target) = option.target {
+            self.goto(target, output);
+        } else {
+            self.fiber.cursor = Some(state.resume);
+            self.fiber.status = FlowFiberStatus::Running;
+        }
+    }
+
+    fn step_flow(&mut self, input: &FrameInput, output: &mut FrameOutput) {
+        let Some(cursor) = self.fiber.cursor.clone() else {
+            return;
+        };
+        let Some(op) = self
+            .plan
+            .flows
+            .iter()
+            .find(|flow| flow.id == cursor.flow)
+            .and_then(|flow| flow.ops.get(cursor.op_index))
+            .cloned()
+        else {
+            self.finish(output);
+            return;
+        };
+        let next = cursor.advanced();
+        match op {
+            FlowOp::Dialogue { line, task_group } => {
+                output.flow_events.push(FlowEvent::DialogueLine { line });
+                let Some(group) = self.plan.line_task_groups.get(task_group) else {
+                    self.fiber.status =
+                        FlowFiberStatus::Failed(format!("missing line task group {task_group}"));
+                    return;
+                };
+                output.merge(run_line_task_group_for_input(group, input));
+                if !self.apply_control_effects(output) {
+                    self.fiber.cursor = Some(next);
+                }
+            }
+            FlowOp::Choice { id, options } => {
+                output
+                    .flow_events
+                    .push(FlowEvent::ChoicePresented { id: id.clone() });
+                self.fiber.status = FlowFiberStatus::Choice(ChoiceState {
+                    id,
+                    options,
+                    resume: next,
+                });
+            }
+            FlowOp::Await { target, pending } => {
+                output.flow_events.push(FlowEvent::AwaitStarted {
+                    need: target.need.clone(),
+                    task: target.task.clone(),
+                });
+                output.line_effects.extend(pending);
+                output.task_requests.push(await_task_spec(&target));
+                self.fiber.status = FlowFiberStatus::Waiting(AwaitState {
+                    target,
+                    resume: next,
+                });
+            }
+            FlowOp::Goto(target) => self.goto(target, output),
+            FlowOp::Return(value) => self.return_value(value, output),
+            FlowOp::Effect(effect) => {
+                output.line_effects.push(effect);
+                if !self.apply_control_effects(output) {
+                    self.fiber.cursor = Some(next);
+                }
+            }
+            FlowOp::Noop => {
+                self.fiber.cursor = Some(next);
+            }
+        }
+    }
+
+    fn step_line_only(&mut self, input: &FrameInput, output: &mut FrameOutput) {
+        let Some(group) = self.plan.line_task_groups.get(self.fiber.line_cursor) else {
+            self.finish(output);
+            return;
+        };
+        output.merge(run_line_task_group_for_input(group, input));
+        self.fiber.line_cursor += 1;
+        if self.fiber.line_cursor >= self.plan.line_task_groups.len() {
+            self.finish(output);
+        }
+    }
+
+    fn apply_control_effects(&mut self, output: &mut FrameOutput) -> bool {
+        let Some(control) = output.line_effects.iter().find_map(control_from_effect) else {
+            return false;
+        };
+        match control {
+            FlowControl::Goto(target) => self.goto(FlowRuntimeId(target), output),
+            FlowControl::Return(value) => self.return_value(value, output),
+            FlowControl::Failed(message) => self.fiber.status = FlowFiberStatus::Failed(message),
+        }
+        true
+    }
+
+    fn goto(&mut self, target: FlowRuntimeId, output: &mut FrameOutput) {
+        output.flow_events.push(FlowEvent::Goto {
+            target: target.clone(),
+        });
+        self.fiber.cursor = Some(FlowCursor {
+            flow: target,
+            op_index: 0,
+        });
+        self.fiber.status = FlowFiberStatus::Running;
+    }
+
+    fn return_value(&mut self, value: String, output: &mut FrameOutput) {
+        output.flow_events.push(FlowEvent::Return {
+            value: value.clone(),
+        });
+        self.fiber.status = FlowFiberStatus::Done(FlowExit::Return(value));
+    }
+
+    fn finish(&mut self, output: &mut FrameOutput) {
+        output.flow_events.push(FlowEvent::Done);
+        self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
     }
 }
 
 impl FrameOutput {
     fn merge(&mut self, other: Self) {
         self.diagnostics.extend(other.diagnostics);
+        self.flow_events.extend(other.flow_events);
         self.line_effects.extend(other.line_effects);
         self.task_requests.extend(other.task_requests);
         self.cancel_requests.extend(other.cancel_requests);
+    }
+}
+
+enum FlowControl {
+    Goto(String),
+    Return(String),
+    Failed(String),
+}
+
+fn control_from_effect(effect: &LineEffectRequest) -> Option<FlowControl> {
+    match effect {
+        LineEffectRequest::Goto(target) => Some(FlowControl::Goto(target.clone())),
+        LineEffectRequest::Return(value) => Some(FlowControl::Return(value.clone())),
+        LineEffectRequest::Panic(message)
+        | LineEffectRequest::Fail(message)
+        | LineEffectRequest::Bail(message) => Some(FlowControl::Failed(message.clone())),
+        _ => None,
+    }
+}
+
+fn input_selects_choice(input: &FrameInput, option: &ChoiceRuntimeOption) -> bool {
+    input.input_events.iter().any(|event| {
+        let Some(payload) = event.payload.as_deref() else {
+            return false;
+        };
+        matches!(event.kind.as_str(), "choice" | "select")
+            && (option.id.as_deref() == Some(payload) || option.label == payload)
+    })
+}
+
+fn await_task_spec(target: &AwaitTarget) -> TaskSpec {
+    TaskSpec {
+        id: target.task.clone(),
+        key: TaskKey(target.task.0.clone()),
+        class: TaskClass::Background,
+        priority: TaskPriority(0),
+        cancel_scope: CancelScopeId("flow".to_owned()),
+        policy: TaskPolicy::JoinSameKey,
+        source: TaskSource {
+            label: format!("await {}", target.need.0),
+        },
     }
 }
 
@@ -660,8 +1078,43 @@ pub fn run_line_task_group(
     output
 }
 
+fn run_line_task_group_for_input(group: &LineTaskGroup, input: &FrameInput) -> FrameOutput {
+    if let Some(rule) = group
+        .cancel_rules
+        .iter()
+        .find(|rule| input_matches_trigger(input, &rule.trigger))
+    {
+        let mut output = FrameOutput::default();
+        output.flow_events.push(FlowEvent::LineCancelled {
+            trigger: rule.trigger.clone(),
+        });
+        output.line_effects.extend(rule.action.clone());
+        run_scope_cleanup(&group.root, ScopeExit::Cancelled, &mut output);
+        output
+    } else {
+        run_line_task_group(group, input, ScopeExit::Completed)
+    }
+}
+
+fn input_matches_trigger(input: &FrameInput, trigger: &str) -> bool {
+    input.input_events.iter().any(|event| {
+        if event.kind == trigger {
+            return true;
+        }
+        let Some(payload) = event.payload.as_deref() else {
+            return false;
+        };
+        trigger == format!("{} {payload}", event.kind)
+            || trigger == format!("{}:{payload}", event.kind)
+    })
+}
+
 fn run_scope(scope: &LineTaskScope, input: &FrameInput, exit: ScopeExit, output: &mut FrameOutput) {
     run_node(&scope.node, input, output);
+    run_scope_cleanup(scope, exit, output);
+}
+
+fn run_scope_cleanup(scope: &LineTaskScope, exit: ScopeExit, output: &mut FrameOutput) {
     output
         .line_effects
         .extend(flatten_defer_stack(&scope.defer_stack));
@@ -826,7 +1279,7 @@ mod tests {
             },
             ..LineTaskGroup::default()
         };
-        let mut engine = Engine::new(RuntimePlan::new(vec![group]));
+        let mut engine = Engine::new(RuntimePlan::lines_only(vec![group]));
 
         let output = engine.step(FrameInput::default());
 
@@ -838,7 +1291,216 @@ mod tests {
                 call("line_completed")
             ]
         );
-        assert_eq!(engine.fiber().status, FlowFiberStatus::Done);
+        assert_eq!(engine.fiber().status, FlowFiberStatus::Done(FlowExit::Done));
+    }
+
+    #[test]
+    fn engine_steps_flow_ops_and_applies_goto() {
+        let group = LineTaskGroup {
+            root: LineTaskScope {
+                node: LineTaskNode::Seq(vec![LineTaskNode::Effect(call("opening_line"))]),
+                ..LineTaskScope::default()
+            },
+            ..LineTaskGroup::default()
+        };
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.opening".to_owned())),
+            vec![
+                RuntimeFlow {
+                    id: FlowRuntimeId("flow.opening".to_owned()),
+                    ops: vec![
+                        FlowOp::Dialogue {
+                            line: RuntimeLineId("say.opening.001".to_owned()),
+                            task_group: 0,
+                        },
+                        FlowOp::Goto(FlowRuntimeId("flow.next".to_owned())),
+                    ],
+                },
+                RuntimeFlow {
+                    id: FlowRuntimeId("flow.next".to_owned()),
+                    ops: vec![FlowOp::Return("Ok(FlowExit::Done)".to_owned())],
+                },
+            ],
+            vec![group],
+        )
+        .expect("flow plan is valid");
+        let mut engine = Engine::new(plan);
+
+        let first = engine.step(FrameInput::default());
+        assert_eq!(first.line_effects, vec![call("opening_line")]);
+        assert!(matches!(
+            first.flow_events.as_slice(),
+            [FlowEvent::DialogueLine { .. }]
+        ));
+
+        let second = engine.step(FrameInput::default());
+        assert_eq!(
+            second.flow_events,
+            vec![FlowEvent::Goto {
+                target: FlowRuntimeId("flow.next".to_owned())
+            }]
+        );
+
+        let third = engine.step(FrameInput::default());
+        assert_eq!(
+            third.flow_events,
+            vec![FlowEvent::Return {
+                value: "Ok(FlowExit::Done)".to_owned()
+            }]
+        );
+        assert!(matches!(
+            engine.fiber().status,
+            FlowFiberStatus::Done(FlowExit::Return(_))
+        ));
+    }
+
+    #[test]
+    fn engine_waits_for_choice_input() {
+        let option = ChoiceRuntimeOption {
+            id: Some("choice.listen".to_owned()),
+            label: "Listen".to_owned(),
+            target: Some(FlowRuntimeId("flow.listen".to_owned())),
+            out: None,
+            effects: Vec::new(),
+        };
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.opening".to_owned())),
+            vec![
+                RuntimeFlow {
+                    id: FlowRuntimeId("flow.opening".to_owned()),
+                    ops: vec![FlowOp::Choice {
+                        id: Some("choice.opening".to_owned()),
+                        options: vec![option],
+                    }],
+                },
+                RuntimeFlow {
+                    id: FlowRuntimeId("flow.listen".to_owned()),
+                    ops: vec![FlowOp::Return("listen".to_owned())],
+                },
+            ],
+            Vec::new(),
+        )
+        .expect("choice plan is valid");
+        let mut engine = Engine::new(plan);
+
+        let presented = engine.step(FrameInput::default());
+        assert_eq!(
+            presented.flow_events,
+            vec![FlowEvent::ChoicePresented {
+                id: Some("choice.opening".to_owned())
+            }]
+        );
+        assert!(matches!(engine.fiber().status, FlowFiberStatus::Choice(_)));
+
+        let selected = engine.step(FrameInput {
+            input_events: vec![InputEvent {
+                kind: "choice".to_owned(),
+                payload: Some("choice.listen".to_owned()),
+            }],
+            ..FrameInput::default()
+        });
+        assert_eq!(
+            selected.flow_events,
+            vec![
+                FlowEvent::ChoiceSelected {
+                    id: Some("choice.opening".to_owned()),
+                    option: "choice.listen".to_owned()
+                },
+                FlowEvent::Goto {
+                    target: FlowRuntimeId("flow.listen".to_owned())
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn engine_waits_for_await_task_event() {
+        let target = AwaitTarget {
+            need: NeedId("need.bg".to_owned()),
+            task: TaskId("task.bg".to_owned()),
+        };
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.opening".to_owned())),
+            vec![RuntimeFlow {
+                id: FlowRuntimeId("flow.opening".to_owned()),
+                ops: vec![
+                    FlowOp::Await {
+                        target: target.clone(),
+                        pending: vec![call("show_loading")],
+                    },
+                    FlowOp::Return("ready".to_owned()),
+                ],
+            }],
+            Vec::new(),
+        )
+        .expect("await plan is valid");
+        let mut engine = Engine::new(plan);
+
+        let waiting = engine.step(FrameInput::default());
+        assert_eq!(waiting.line_effects, vec![call("show_loading")]);
+        assert_eq!(waiting.task_requests[0].id, target.task);
+        assert!(matches!(engine.fiber().status, FlowFiberStatus::Waiting(_)));
+
+        let ready = engine.step(FrameInput {
+            task_events: vec![TaskEvent {
+                logical_epoch: LogicalEpoch(0),
+                task_id: TaskId("task.bg".to_owned()),
+                sequence: TaskSequence(0),
+                kind: TaskEventKind::Ready("bg_handle".to_owned()),
+            }],
+            ..FrameInput::default()
+        });
+        assert!(ready.flow_events.iter().any(|event| matches!(
+            event,
+            FlowEvent::AwaitReady { value, .. } if value == "bg_handle"
+        )));
+        assert!(matches!(engine.fiber().status, FlowFiberStatus::Running));
+    }
+
+    #[test]
+    fn line_cancel_rule_replaces_normal_line_body() {
+        let group = LineTaskGroup {
+            root: LineTaskScope {
+                node: LineTaskNode::Seq(vec![LineTaskNode::Effect(call("normal"))]),
+                cancelled_defer_stack: vec![vec![call("cancel_cleanup")]],
+                ..LineTaskScope::default()
+            },
+            cancel_rules: vec![LineCancelRuleRequest {
+                trigger: "input .SkipLine".to_owned(),
+                action: vec![LineEffectRequest::Out(LineOutRequest {
+                    label: None,
+                    value: ".Skipped".to_owned(),
+                })],
+            }],
+            ..LineTaskGroup::default()
+        };
+        let output = run_line_task_group_for_input(
+            &group,
+            &FrameInput {
+                input_events: vec![InputEvent {
+                    kind: "input".to_owned(),
+                    payload: Some(".SkipLine".to_owned()),
+                }],
+                ..FrameInput::default()
+            },
+        );
+
+        assert_eq!(
+            output.flow_events,
+            vec![FlowEvent::LineCancelled {
+                trigger: "input .SkipLine".to_owned()
+            }]
+        );
+        assert_eq!(
+            output.line_effects,
+            vec![
+                LineEffectRequest::Out(LineOutRequest {
+                    label: None,
+                    value: ".Skipped".to_owned()
+                }),
+                call("cancel_cleanup")
+            ]
+        );
     }
 
     #[test]

@@ -198,6 +198,45 @@ flow @flow.plan plan {
 }
 
 #[test]
+fn run_json_steps_runtime_plan() {
+    let path = temp_awft(
+        "runtime-run",
+        r"
+pub surface character @character.alice Alice as alice {
+}
+
+flow @flow.run run {
+    @<character.alice>.say[待って。[p]]
+    with:
+        out .Done
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--frames")
+        .arg("2")
+        .arg("--json")
+        .output()
+        .expect("arcw run runs");
+
+    assert!(
+        output.status.success(),
+        "runtime dry-run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"flow_events\"")
+            && stdout.contains("dialogue")
+            && stdout.contains("done"),
+        "run JSON should include frame events and final status: {stdout}"
+    );
+}
+
+#[test]
 fn test_json_lists_script_tests() {
     let path = temp_awft(
         "script-test",

@@ -5,13 +5,13 @@ pub(super) use crate::{
     LifetimeScopeKind, LinePlanItem, Literal, NameRegistry, Pattern, Placeholder, SelectBranchHead,
     Stmt, SymbolUseKind, SyntaxLintCode, TestKind, TraitMember, TypeCheckEnv, TypeKind, TypeRef,
     UnaryOp, VariantPatternPayload, Visibility, collect_symbol_uses, lint_id_policy,
-    lower_line_task_groups, lower_to_hir, parse_dialogue_tokens, parse_expr, parse_fn_signature,
-    parse_source, parse_type_ref, registry_from_hir, typecheck_hir, validate_hir_references,
-    validate_typecheck_ready,
+    lower_line_task_groups, lower_runtime_plan, lower_to_hir, parse_dialogue_tokens, parse_expr,
+    parse_fn_signature, parse_source, parse_type_ref, registry_from_hir, typecheck_hir,
+    validate_hir_references, validate_typecheck_ready,
 };
 pub(super) use arcweft_core::{
-    LineEffectRequest, LineOutRequest, LineTaskNode, LineTaskTrigger, RuntimeAssignment,
-    RuntimeCall, RuntimeLog,
+    FlowOp, FlowRuntimeId, LineEffectRequest, LineOutRequest, LineTaskNode, LineTaskTrigger,
+    RuntimeAssignment, RuntimeCall, RuntimeLog,
 };
 
 pub(super) fn parse_ok(source: impl Into<String>) -> crate::TypedSyntaxTree {
