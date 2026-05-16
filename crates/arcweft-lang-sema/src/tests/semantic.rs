@@ -53,6 +53,82 @@ flow @flow.must_drop must_drop {
 }
 
 #[test]
+fn semantic_cfg_requires_must_drop_discharge_on_every_branch() {
+    let report = semantic_report(
+        r"
+flow @flow.branch_drop branch_drop {
+    alice[待って。[p]]
+    with:
+        init:
+            let focus = 'line.focus?
+            if should_release {
+                defer { 'line.focus |> drop_optional }
+            }
+}
+",
+        &TypeCheckEnv::new(),
+    );
+
+    assert!(report.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::MustDropDischarge
+            && obligation.discharge == SemanticDischarge::Missing
+            && obligation.subject.as_deref() == Some("line.focus")
+    }));
+}
+
+#[test]
+fn semantic_cfg_applies_defer_outcomes_to_cancel_paths() {
+    let completed_only = semantic_report(
+        r"
+flow @flow.cancel_cleanup cancel_cleanup {
+    alice[待って。[p]]
+    with:
+        init:
+            let focus = 'line.focus?
+        defer on completed:
+            'line.focus |> drop_optional
+        cancel on input .SkipLine { out .Skipped }
+}
+",
+        &TypeCheckEnv::new(),
+    );
+
+    assert!(completed_only.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::MustDropDischarge
+            && obligation.discharge == SemanticDischarge::Missing
+            && obligation.subject.as_deref() == Some("line.focus")
+    }));
+
+    let completed_and_cancelled = semantic_report(
+        r"
+flow @flow.cancel_cleanup cancel_cleanup {
+    alice[待って。[p]]
+    with:
+        init:
+            let focus = 'line.focus?
+        defer on completed:
+            'line.focus |> drop_optional
+        defer on cancelled:
+            'line.focus |> drop_optional
+        cancel on input .SkipLine { out .Skipped }
+}
+",
+        &TypeCheckEnv::new(),
+    );
+
+    assert!(
+        !completed_and_cancelled
+            .obligations
+            .iter()
+            .any(|obligation| {
+                obligation.kind == SemanticObligationKind::MustDropDischarge
+                    && obligation.discharge == SemanticDischarge::Missing
+                    && obligation.subject.as_deref() == Some("line.focus")
+            })
+    );
+}
+
+#[test]
 fn semantic_pass_requires_capability_for_upper_lifetime_writes() {
     let source = r"
 flow @flow.registry registry {
@@ -78,6 +154,31 @@ flow @flow.registry registry {
 }
 
 #[test]
+fn semantic_pass_accepts_known_formal_proof_reference() {
+    let report = semantic_report(
+        r"
+proof @proof.line_summary_to_flow {
+    check no_lifetime_below(LineSummary, 'flow)
+}
+
+flow @flow.proven proven {
+    let summary = promote('flow, proof = @proof.line_summary_to_flow)
+}
+",
+        &TypeCheckEnv::new(),
+    );
+
+    assert!(report.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::LifetimePromotion
+            && matches!(
+                obligation.discharge,
+                SemanticDischarge::FormalProof { ref id }
+                    if id == "proof.line_summary_to_flow"
+            )
+    }));
+}
+
+#[test]
 fn semantic_pass_reports_thread_join_result_type_conflicts() {
     let report = semantic_report(
         r#"
@@ -94,6 +195,32 @@ flow @flow.thread_join thread_join {
     assert!(report.obligations.iter().any(|obligation| {
         obligation.kind == SemanticObligationKind::ThreadJoinTyping
             && obligation.discharge == SemanticDischarge::Missing
+    }));
+}
+
+#[test]
+fn semantic_pass_reports_line_child_task_write_conflicts() {
+    let report = semantic_report(
+        r"
+flow @flow.line_conflict line_conflict {
+    alice[待って。[p]]
+    with:
+        thread left:
+            signal.set(@signal.current_flow, @flow.a)
+        thread right:
+            signal.set(@signal.current_flow, @flow.b)
+}
+",
+        &TypeCheckEnv::new(),
+    );
+
+    assert!(report.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::RuntimeConflict
+            && obligation.discharge == SemanticDischarge::Missing
+            && obligation
+                .subject
+                .as_deref()
+                .is_some_and(|subject| subject.contains("signal.current_flow"))
     }));
 }
 

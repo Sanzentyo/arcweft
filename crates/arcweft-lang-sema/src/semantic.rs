@@ -1,4 +1,5 @@
 use crate::check::TypeCheckEnv;
+mod facts;
 use arcweft_lang_hir::{
     ChoicePlanItem, Expr, HirAwait, HirBorrow, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf,
     HirIfLet, HirLoop, HirMatch, HirModule, HirScope, HirScopeExpr, HirSelect, HirTopLevelDecl,
@@ -6,7 +7,10 @@ use arcweft_lang_hir::{
     Stmt, TextRange, ThreadBlock, TriggerPattern,
 };
 use arcweft_lang_syntax::{Literal, LoopBlock, SelectBranchHead};
+use facts::{BlockFlow, DeferredCleanup, ExitReason, FlowFacts, transfer_reason};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+
+type FlowState = FlowFacts;
 
 /// Semantic verification mode selected by compiler, CLI, or LSP tooling.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -132,11 +136,6 @@ pub fn analyze_semantics(
     analyzer.finish()
 }
 
-#[derive(Clone, Debug, Default)]
-struct FlowState {
-    live_must_drop: HashSet<LifetimeKey>,
-}
-
 struct SemanticAnalyzer<'a> {
     env: &'a TypeCheckEnv,
     policy: SemanticPolicy,
@@ -145,6 +144,7 @@ struct SemanticAnalyzer<'a> {
     unsafe_stack: Vec<String>,
     known_proofs: BTreeSet<String>,
     known_axioms: BTreeSet<String>,
+    reported_must_drop: HashSet<String>,
 }
 
 impl<'a> SemanticAnalyzer<'a> {
@@ -160,22 +160,22 @@ impl<'a> SemanticAnalyzer<'a> {
             unsafe_stack: Vec::new(),
             known_proofs: BTreeSet::new(),
             known_axioms: BTreeSet::new(),
+            reported_must_drop: HashSet::new(),
         }
     }
 
     fn collect_module(&mut self, module: &HirModule) {
         self.collect_declarations(module);
         for flow in module.flows() {
-            let mut state = FlowState::default();
-            self.collect_flow_items(flow.body(), &mut state);
-            self.finish_scope(state);
+            let flow = self.analyze_flow_items(flow.body(), vec![FlowFacts::default()]);
+            self.finish_block_flow(flow, ExitReason::Completed);
         }
         for function in module.functions() {
             self.collect_function(function);
         }
-        let mut top_level = FlowState::default();
-        self.collect_flow_items(module.top_level_items(), &mut top_level);
-        self.finish_scope(top_level);
+        let top_level =
+            self.analyze_flow_items(module.top_level_items(), vec![FlowFacts::default()]);
+        self.finish_block_flow(top_level, ExitReason::Completed);
     }
 
     fn collect_declarations(&mut self, module: &HirModule) {
@@ -209,12 +209,115 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn collect_function(&mut self, function: &HirFunction) {
-        self.collect_stmt_list(function.statements());
+        let mut flow = self.analyze_stmts(
+            function.statements(),
+            vec![FlowFacts::default()],
+            ExitReason::Completed,
+        );
         if let Some(value) = function.value() {
-            let mut state = FlowState::default();
-            self.collect_expr(value, &mut state);
-            self.finish_scope(state);
+            for facts in &mut flow.fallthrough {
+                self.collect_expr(value, facts);
+            }
         }
+        self.finish_block_flow(flow, ExitReason::Completed);
+    }
+
+    fn analyze_flow_items(&mut self, items: &[HirFlowItem], initial: Vec<FlowFacts>) -> BlockFlow {
+        let mut fallthrough = initial;
+        let mut exits = Vec::new();
+        let mut sibling_writes = BTreeMap::<String, String>::new();
+
+        for item in items {
+            if fallthrough.is_empty() {
+                break;
+            }
+            if let HirFlowItem::Stmt(Stmt::Thread(thread)) = item {
+                self.check_sibling_thread_conflicts(thread, &mut sibling_writes);
+            }
+
+            let mut next = Vec::new();
+            for facts in fallthrough {
+                let flow = self.analyze_flow_item(item, facts);
+                next.extend(flow.fallthrough);
+                exits.extend(flow.exits);
+            }
+            fallthrough = next;
+        }
+
+        BlockFlow { fallthrough, exits }
+    }
+
+    fn analyze_flow_item(&mut self, item: &HirFlowItem, mut facts: FlowFacts) -> BlockFlow {
+        match item {
+            HirFlowItem::Stmt(stmt) => self.analyze_stmt(stmt, facts, ExitReason::Completed),
+            HirFlowItem::If(block) => {
+                self.collect_expr(block.condition(), &mut facts);
+                let mut flow = BlockFlow::from_fallthrough(facts.clone());
+                flow.append(self.analyze_flow_items(block.body(), vec![facts]));
+                flow
+            }
+            HirFlowItem::IfLet(block) => {
+                self.collect_expr(block.expr(), &mut facts);
+                if let Some(guard) = block.guard() {
+                    self.collect_expr(guard, &mut facts);
+                }
+                let mut flow = BlockFlow::from_fallthrough(facts.clone());
+                flow.append(self.analyze_flow_items(block.body(), vec![facts]));
+                flow
+            }
+            HirFlowItem::Match(block) => {
+                self.collect_expr(block.expr(), &mut facts);
+                let mut flow = BlockFlow::default();
+                for arm in block.arms() {
+                    let mut arm_facts = facts.clone();
+                    if let Some(guard) = arm.guard() {
+                        self.collect_expr(guard, &mut arm_facts);
+                    }
+                    flow.append(self.analyze_flow_items(arm.body(), vec![arm_facts]));
+                }
+                if flow.fallthrough.is_empty() && flow.exits.is_empty() {
+                    flow.fallthrough.push(facts);
+                }
+                flow
+            }
+            HirFlowItem::Loop(block) | HirFlowItem::LetLoop { block, .. } => {
+                self.analyze_loop_flow_items(block.body(), facts)
+            }
+            HirFlowItem::While(block) => {
+                self.collect_expr(block.condition(), &mut facts);
+                self.analyze_loop_flow_items(block.body(), facts)
+            }
+            HirFlowItem::WhileLet(block) => {
+                self.collect_expr(block.expr(), &mut facts);
+                if let Some(guard) = block.guard() {
+                    self.collect_expr(guard, &mut facts);
+                }
+                self.analyze_loop_flow_items(block.body(), facts)
+            }
+            HirFlowItem::For(block) => {
+                self.collect_expr(block.source(), &mut facts);
+                self.analyze_loop_flow_items(block.body(), facts)
+            }
+            HirFlowItem::Dialogue(dialogue) => {
+                for arg in dialogue.args() {
+                    self.collect_expr(arg.value(), &mut facts);
+                }
+                if let Some(plan) = dialogue.plan() {
+                    self.collect_line_plan(plan);
+                }
+                BlockFlow::from_fallthrough(facts)
+            }
+            _ => {
+                self.collect_flow_item(item, &mut facts);
+                BlockFlow::from_fallthrough(facts)
+            }
+        }
+    }
+
+    fn analyze_loop_flow_items(&mut self, body: &[HirFlowItem], facts: FlowFacts) -> BlockFlow {
+        let mut flow = BlockFlow::from_fallthrough(facts.clone());
+        flow.append(self.analyze_flow_items(body, vec![facts]));
+        flow
     }
 
     fn collect_flow_items(&mut self, items: &[HirFlowItem], state: &mut FlowState) {
@@ -268,9 +371,168 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn collect_stmt_list(&mut self, stmts: &[Stmt]) {
-        let mut state = FlowState::default();
-        self.collect_stmts(stmts, &mut state);
-        self.finish_scope(state);
+        let flow = self.analyze_stmts(stmts, vec![FlowFacts::default()], ExitReason::Completed);
+        self.finish_block_flow(flow, ExitReason::Completed);
+    }
+
+    fn analyze_stmts(
+        &mut self,
+        stmts: &[Stmt],
+        initial: Vec<FlowFacts>,
+        context: ExitReason,
+    ) -> BlockFlow {
+        let mut fallthrough = initial;
+        let mut exits = Vec::new();
+        let mut sibling_writes = BTreeMap::<String, String>::new();
+
+        for stmt in stmts {
+            if fallthrough.is_empty() {
+                break;
+            }
+            if let Stmt::Thread(thread) = stmt {
+                self.check_sibling_thread_conflicts(thread, &mut sibling_writes);
+            }
+
+            let mut next = Vec::new();
+            for facts in fallthrough {
+                let flow = self.analyze_stmt(stmt, facts, context);
+                next.extend(flow.fallthrough);
+                exits.extend(flow.exits);
+            }
+            fallthrough = next;
+        }
+
+        BlockFlow { fallthrough, exits }
+    }
+
+    fn analyze_stmt(
+        &mut self,
+        stmt: &Stmt,
+        mut facts: FlowFacts,
+        context: ExitReason,
+    ) -> BlockFlow {
+        if let Some(reason) = transfer_reason(stmt, context) {
+            self.collect_transfer_stmt_expr(stmt, &mut facts);
+            return BlockFlow::from_exit(reason, facts);
+        }
+
+        match stmt {
+            Stmt::LetElse {
+                expr, else_body, ..
+            } => {
+                self.collect_expr(expr, &mut facts);
+                let mut flow = BlockFlow::from_fallthrough(facts.clone());
+                flow.exits
+                    .extend(self.analyze_stmts(else_body, vec![facts], context).exits);
+                flow
+            }
+            Stmt::If { condition, body } => {
+                self.collect_expr(condition, &mut facts);
+                let mut flow = BlockFlow::from_fallthrough(facts.clone());
+                flow.append(self.analyze_stmts(body, vec![facts], context));
+                flow
+            }
+            Stmt::Match { expr, arms } => {
+                self.collect_expr(expr, &mut facts);
+                let mut flow = BlockFlow::default();
+                for arm in arms {
+                    let mut arm_facts = facts.clone();
+                    if let Some(guard) = arm.guard() {
+                        self.collect_expr(guard, &mut arm_facts);
+                    }
+                    flow.append(self.analyze_stmts(arm.body(), vec![arm_facts], context));
+                }
+                if flow.fallthrough.is_empty() && flow.exits.is_empty() {
+                    flow.fallthrough.push(facts);
+                }
+                flow
+            }
+            Stmt::Loop { body } => self.analyze_loop_stmts(body, facts, context),
+            Stmt::While { condition, body } => {
+                self.collect_expr(condition, &mut facts);
+                self.analyze_loop_stmts(body, facts, context)
+            }
+            Stmt::WhileLet {
+                expr, guard, body, ..
+            } => {
+                self.collect_expr(expr, &mut facts);
+                if let Some(guard) = guard {
+                    self.collect_expr(guard, &mut facts);
+                }
+                self.analyze_loop_stmts(body, facts, context)
+            }
+            Stmt::For { source, body, .. } => {
+                self.collect_expr(source, &mut facts);
+                self.analyze_loop_stmts(body, facts, context)
+            }
+            Stmt::DeferBlock {
+                outcome,
+                statements,
+            } => {
+                facts.register_cleanup(DeferredCleanup::new(
+                    *outcome,
+                    drop_keys_in_stmts(statements),
+                ));
+                self.inspect_cleanup_stmts(statements);
+                BlockFlow::from_fallthrough(facts)
+            }
+            Stmt::Defer { outcome, expr } => {
+                facts.register_cleanup(DeferredCleanup::new(*outcome, drop_keys_in_expr(expr)));
+                self.inspect_cleanup_expr(expr);
+                BlockFlow::from_fallthrough(facts)
+            }
+            Stmt::Thread(thread) => {
+                self.collect_thread(thread);
+                BlockFlow::from_fallthrough(facts)
+            }
+            Stmt::On { trigger, body } => {
+                self.collect_trigger(trigger, &mut facts);
+                let flow = self.analyze_stmts(body, vec![FlowFacts::default()], context);
+                self.finish_block_flow(flow, context);
+                BlockFlow::from_fallthrough(facts)
+            }
+            Stmt::UnsafeLifetime {
+                id,
+                reason,
+                has_safety_doc,
+                body,
+            } => {
+                self.collect_unsafe_lifetime(id, reason.as_ref(), *has_safety_doc, body);
+                BlockFlow::from_fallthrough(facts)
+            }
+            _ => {
+                self.collect_stmt(stmt, &mut facts);
+                BlockFlow::from_fallthrough(facts)
+            }
+        }
+    }
+
+    fn analyze_loop_stmts(
+        &mut self,
+        body: &[Stmt],
+        facts: FlowFacts,
+        context: ExitReason,
+    ) -> BlockFlow {
+        let mut flow = BlockFlow::from_fallthrough(facts.clone());
+        flow.append(self.analyze_stmts(body, vec![facts], context));
+        flow
+    }
+
+    fn collect_transfer_stmt_expr(&mut self, stmt: &Stmt, facts: &mut FlowFacts) {
+        match stmt {
+            Stmt::Return(expr)
+            | Stmt::Close(expr)
+            | Stmt::Goto(expr)
+            | Stmt::Yield(expr)
+            | Stmt::Panic(expr)
+            | Stmt::Fail(expr)
+            | Stmt::Bail(expr)
+            | Stmt::Out { expr, .. }
+            | Stmt::Break {
+                expr: Some(expr), ..
+            } => self.collect_expr(expr, facts),
+            _ => {}
+        }
     }
 
     fn collect_stmts(&mut self, stmts: &[Stmt], state: &mut FlowState) {
@@ -312,7 +574,10 @@ impl<'a> SemanticAnalyzer<'a> {
             | Stmt::Yield(expr)
             | Stmt::Defer { expr, .. }
             | Stmt::Let { expr, .. }
-            | Stmt::Out { expr, .. } => self.collect_expr(expr, state),
+            | Stmt::Out { expr, .. }
+            | Stmt::Break {
+                expr: Some(expr), ..
+            } => self.collect_expr(expr, state),
             Stmt::Ensure { condition, message } => {
                 self.collect_expr(condition, state);
                 self.collect_expr(message, state);
@@ -390,12 +655,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     state.live_must_drop.extend(arm_state.live_must_drop);
                 }
             }
-            Stmt::Break { expr, .. } => {
-                if let Some(expr) = expr {
-                    self.collect_expr(expr, state);
-                }
-            }
-            Stmt::Continue { .. } => {}
+            Stmt::Break { expr: None, .. } | Stmt::Continue { .. } => {}
             Stmt::Raw(raw) => self.add_raw_obligation(format!("raw statement: {raw}"), None),
         }
     }
@@ -415,7 +675,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.collect_choice_plan_item(item);
             }
         }
-        self.finish_scope(state);
+        self.finish_scope(&state);
     }
 
     fn collect_choice_syntax(&mut self, choice: &arcweft_lang_hir::ChoiceBlock) {
@@ -445,50 +705,98 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.add_raw_obligation(format!("raw choice plan item: {raw}"), None);
             }
         }
-        self.finish_scope(state);
+        self.finish_scope(&state);
     }
 
     fn collect_line_plan(&mut self, plan: &LinePlan) {
-        for item in plan.items() {
-            self.collect_line_plan_item(item);
-        }
+        self.check_line_plan_child_conflicts(plan.items(), false);
+        let flow = self.analyze_line_plan_items(plan.items(), vec![FlowFacts::default()]);
+        self.finish_block_flow(flow, ExitReason::Completed);
     }
 
-    fn collect_line_plan_item(&mut self, item: &LinePlanItem) {
-        let mut state = FlowState::default();
+    fn analyze_line_plan_items(
+        &mut self,
+        items: &[LinePlanItem],
+        initial: Vec<FlowFacts>,
+    ) -> BlockFlow {
+        let mut fallthrough = initial;
+        let mut exits = Vec::new();
+
+        for item in items {
+            if fallthrough.is_empty() {
+                break;
+            }
+            let mut next = Vec::new();
+            for facts in fallthrough {
+                let flow = self.analyze_line_plan_item(item, facts);
+                next.extend(flow.fallthrough);
+                exits.extend(flow.exits);
+            }
+            fallthrough = next;
+        }
+
+        BlockFlow { fallthrough, exits }
+    }
+
+    fn analyze_line_plan_item(&mut self, item: &LinePlanItem, mut facts: FlowFacts) -> BlockFlow {
         match item {
-            LinePlanItem::Init(stmts) => self.collect_stmts(stmts, &mut state),
-            LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
-                for item in items {
-                    self.collect_line_plan_item(item);
-                }
+            LinePlanItem::Init(stmts) => {
+                self.analyze_stmts(stmts, vec![facts], ExitReason::Completed)
             }
-            LinePlanItem::Thread(thread) => self.collect_thread(thread),
-            LinePlanItem::On { trigger, body } => {
-                self.collect_trigger(trigger, &mut state);
-                self.collect_stmts(body, &mut state);
+            LinePlanItem::Stmt(stmt) => self.analyze_stmt(stmt, facts, ExitReason::Completed),
+            LinePlanItem::Out(value) => {
+                self.collect_expr(value, &mut facts);
+                BlockFlow::from_exit(ExitReason::Completed, facts)
             }
-            LinePlanItem::Option { value, .. }
-            | LinePlanItem::Let { expr: value, .. }
-            | LinePlanItem::Out(value)
-            | LinePlanItem::Assert { expr: value, .. }
-            | LinePlanItem::Expr(value) => self.collect_expr(value, &mut state),
-            LinePlanItem::Stmt(stmt) => self.collect_stmt(stmt, &mut state),
-            LinePlanItem::CancelRule(rule) => self.collect_stmts(rule.action(), &mut state),
+            LinePlanItem::Let { expr, .. }
+            | LinePlanItem::Option { value: expr, .. }
+            | LinePlanItem::Assert { expr, .. }
+            | LinePlanItem::Expr(expr) => {
+                self.collect_expr(expr, &mut facts);
+                BlockFlow::from_fallthrough(facts)
+            }
             LinePlanItem::TimedCue { anchor, body } => {
-                self.collect_expr(anchor, &mut state);
-                self.collect_expr(body, &mut state);
+                self.collect_expr(anchor, &mut facts);
+                self.collect_expr(body, &mut facts);
+                BlockFlow::from_fallthrough(facts)
             }
             LinePlanItem::Memo { options, .. } => {
                 for (_, value) in options {
-                    self.collect_expr(value, &mut state);
+                    self.collect_expr(value, &mut facts);
                 }
+                BlockFlow::from_fallthrough(facts)
+            }
+            LinePlanItem::CancelRule(rule) => {
+                let flow =
+                    self.analyze_stmts(rule.action(), vec![facts.clone()], ExitReason::Cancelled);
+                self.finish_block_flow(flow, ExitReason::Cancelled);
+                BlockFlow::from_fallthrough(facts)
+            }
+            LinePlanItem::Thread(thread) => {
+                self.collect_thread(thread);
+                BlockFlow::from_fallthrough(facts)
+            }
+            LinePlanItem::On { trigger, body } => {
+                self.collect_trigger(trigger, &mut facts);
+                let flow =
+                    self.analyze_stmts(body, vec![FlowFacts::default()], ExitReason::Completed);
+                self.finish_block_flow(flow, ExitReason::Completed);
+                BlockFlow::from_fallthrough(facts)
+            }
+            LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
+                self.check_line_plan_child_conflicts(
+                    items,
+                    matches!(item, LinePlanItem::TogetherGroup(_)),
+                );
+                let flow = self.analyze_line_plan_items(items, vec![FlowFacts::default()]);
+                self.finish_block_flow(flow, ExitReason::Completed);
+                BlockFlow::from_fallthrough(facts)
             }
             LinePlanItem::Raw(raw) => {
                 self.add_raw_obligation(format!("raw line plan item: {raw}"), None);
+                BlockFlow::from_fallthrough(facts)
             }
         }
-        self.finish_scope(state);
     }
 
     #[expect(
@@ -501,7 +809,7 @@ impl<'a> SemanticAnalyzer<'a> {
             Expr::Raw(raw) => self.add_raw_obligation(format!("raw expression: {raw}"), None),
             Expr::LifetimePath { key, .. } => {
                 if is_must_drop_key(key) {
-                    state.live_must_drop.insert(key.clone());
+                    state.add_must_drop(key.clone());
                 }
             }
             Expr::Tuple(items) | Expr::List(items) => {
@@ -667,7 +975,7 @@ impl<'a> SemanticAnalyzer<'a> {
             "promote_unchecked" => self.add_promote_obligation(args, true),
             "drop" | "drop_optional" | "on_drop" => {
                 if let Expr::LifetimePath { key, .. } = receiver {
-                    state.live_must_drop.remove(key);
+                    state.remove_must_drop(key);
                     for arg in args {
                         self.collect_expr(arg, state);
                     }
@@ -728,8 +1036,11 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn collect_thread(&mut self, thread: &ThreadBlock) {
-        let mut body_state = FlowState::default();
-        self.collect_stmts(thread.body(), &mut body_state);
+        let body_flow = self.analyze_stmts(
+            thread.body(),
+            vec![FlowFacts::default()],
+            ExitReason::Completed,
+        );
         let output_types = out_type_labels(thread.body());
         if output_types.len() > 1 {
             self.add_obligation(
@@ -739,7 +1050,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 SemanticDischarge::Missing,
             );
         }
-        if thread.is_detached() || !body_state.live_must_drop.is_empty() {
+        if thread.is_detached() || body_flow.has_touched_must_drop() {
             self.add_obligation(
                 SemanticObligationKind::ThreadCapture,
                 "thread capture must not move borrowed or MustDrop state across its scope"
@@ -755,7 +1066,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 SemanticDischarge::Automatic,
             );
         }
-        self.finish_scope(body_state);
+        self.finish_block_flow(body_flow, ExitReason::Completed);
     }
 
     fn check_sibling_thread_conflicts(
@@ -779,6 +1090,40 @@ impl<'a> SemanticAnalyzer<'a> {
                 );
             }
         }
+    }
+
+    fn check_line_plan_child_conflicts(&mut self, items: &[LinePlanItem], include_all: bool) {
+        let mut sibling_writes = BTreeMap::<String, String>::new();
+        for (index, item) in items.iter().enumerate() {
+            if !include_all && !is_line_plan_child_item(item) {
+                continue;
+            }
+            let child_name = line_plan_child_name(item, index);
+            for key in write_keys_in_line_plan_item(item) {
+                if let Some(previous) = sibling_writes.insert(key.clone(), child_name.clone()) {
+                    self.add_obligation(
+                        SemanticObligationKind::RuntimeConflict,
+                        format!(
+                            "concurrent write conflict on `{key}` between line child tasks `{previous}` and `{child_name}`"
+                        ),
+                        Some(key),
+                        SemanticDischarge::Missing,
+                    );
+                }
+            }
+        }
+    }
+
+    fn inspect_cleanup_stmts(&mut self, statements: &[Stmt]) {
+        let mut facts = FlowFacts::default();
+        for statement in statements {
+            self.collect_stmt(statement, &mut facts);
+        }
+    }
+
+    fn inspect_cleanup_expr(&mut self, expr: &Expr) {
+        let mut facts = FlowFacts::default();
+        self.collect_expr(expr, &mut facts);
     }
 
     fn collect_unsafe_lifetime(
@@ -811,9 +1156,9 @@ impl<'a> SemanticAnalyzer<'a> {
             discharge,
         );
         self.unsafe_stack.push(id);
-        self.collect_stmts(body, &mut state);
+        let flow = self.analyze_stmts(body, vec![state], ExitReason::Completed);
         self.unsafe_stack.pop();
-        self.finish_scope(state);
+        self.finish_block_flow(flow, ExitReason::Completed);
     }
 
     fn collect_lifetime_write(&mut self, target: &Expr) {
@@ -843,7 +1188,7 @@ impl<'a> SemanticAnalyzer<'a> {
             return false;
         };
         if is_drop_expr(rhs) {
-            state.live_must_drop.remove(key);
+            state.remove_must_drop(key);
             return true;
         }
         false
@@ -852,7 +1197,7 @@ impl<'a> SemanticAnalyzer<'a> {
     fn collect_drop_args(args: &[Expr], state: &mut FlowState) {
         for arg in args {
             if let Expr::LifetimePath { key, .. } = arg {
-                state.live_must_drop.remove(key);
+                state.remove_must_drop(key);
             }
         }
     }
@@ -897,7 +1242,7 @@ impl<'a> SemanticAnalyzer<'a> {
         if let Some(value) = scope.value() {
             self.collect_expr(value, &mut state);
         }
-        self.finish_scope(state);
+        self.finish_scope(&state);
     }
 
     fn collect_scope_expr_syntax(&mut self, scope: &arcweft_lang_hir::ScopeExprBlock) {
@@ -906,13 +1251,13 @@ impl<'a> SemanticAnalyzer<'a> {
         if let Some(value) = scope.value() {
             self.collect_expr(value, &mut state);
         }
-        self.finish_scope(state);
+        self.finish_scope(&state);
     }
 
     fn collect_loop(&mut self, block: &HirLoop) {
         let mut state = FlowState::default();
         self.collect_flow_items(block.body(), &mut state);
-        self.finish_scope(state);
+        self.finish_scope(&state);
     }
 
     fn collect_loop_syntax(&mut self, block: &LoopBlock) {
@@ -920,7 +1265,7 @@ impl<'a> SemanticAnalyzer<'a> {
         for item in block.body() {
             self.collect_flow_item_syntax(item, &mut state);
         }
-        self.finish_scope(state);
+        self.finish_scope(&state);
     }
 
     fn collect_if(&mut self, block: &HirIf, state: &mut FlowState) {
@@ -982,13 +1327,13 @@ impl<'a> SemanticAnalyzer<'a> {
         for branch in await_with.branches() {
             self.collect_flow_items(branch.body(), &mut state);
         }
-        self.finish_scope(state);
+        self.finish_scope(&state);
     }
 
     fn collect_await_syntax(&mut self, await_with: &arcweft_lang_hir::AwaitWith) {
         let mut state = FlowState::default();
         self.collect_expr(await_with.expr(), &mut state);
-        self.finish_scope(state);
+        self.finish_scope(&state);
     }
 
     fn collect_select(&mut self, block: &HirSelect) {
@@ -1007,20 +1352,20 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             self.collect_flow_items(branch.body(), &mut state);
         }
-        self.finish_scope(state);
+        self.finish_scope(&state);
     }
 
     fn collect_borrow(&mut self, block: &HirBorrow) {
         let mut state = FlowState::default();
         self.collect_expr(block.source(), &mut state);
         self.collect_flow_items(block.body(), &mut state);
-        self.finish_scope(state);
+        self.finish_scope(&state);
     }
 
     fn collect_scope(&mut self, block: &HirScope) {
         let mut state = FlowState::default();
         self.collect_flow_items(block.body(), &mut state);
-        self.finish_scope(state);
+        self.finish_scope(&state);
     }
 
     fn collect_flow_item_syntax(
@@ -1037,15 +1382,31 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn finish_scope(&mut self, state: FlowState) {
-        for key in state.live_must_drop {
+    fn finish_scope(&mut self, state: &FlowState) {
+        self.finish_facts(state, ExitReason::Completed);
+    }
+
+    fn finish_block_flow(&mut self, flow: BlockFlow, fallthrough_reason: ExitReason) {
+        for facts in flow.fallthrough {
+            self.finish_facts(&facts, fallthrough_reason);
+        }
+        for exit in flow.exits {
+            self.finish_facts(&exit.facts, exit.reason);
+        }
+    }
+
+    fn finish_facts(&mut self, facts: &FlowFacts, reason: ExitReason) {
+        for key in facts.live_after_cleanup(reason) {
+            let label = key.as_dotted();
+            if !self.reported_must_drop.insert(label.clone()) {
+                continue;
+            }
             self.add_obligation(
                 SemanticObligationKind::MustDropDischarge,
                 format!(
-                    "MustDrop lifetime value `{}` must be explicitly dropped or transferred",
-                    key.as_dotted()
+                    "MustDrop lifetime value `{label}` must be explicitly dropped or transferred"
                 ),
-                Some(key.as_dotted()),
+                Some(label),
                 SemanticDischarge::Missing,
             );
         }
@@ -1220,6 +1581,180 @@ fn write_keys_in_stmts(stmts: &[Stmt]) -> BTreeSet<String> {
         collect_stmt_write_keys(stmt, &mut keys);
     }
     keys
+}
+
+fn write_keys_in_line_plan_item(item: &LinePlanItem) -> BTreeSet<String> {
+    let mut keys = BTreeSet::new();
+    collect_line_plan_item_write_keys(item, &mut keys);
+    keys
+}
+
+fn collect_line_plan_item_write_keys(item: &LinePlanItem, keys: &mut BTreeSet<String>) {
+    match item {
+        LinePlanItem::Init(stmts) => {
+            for stmt in stmts {
+                collect_stmt_write_keys(stmt, keys);
+            }
+        }
+        LinePlanItem::Thread(thread) => {
+            for stmt in thread.body() {
+                collect_stmt_write_keys(stmt, keys);
+            }
+        }
+        LinePlanItem::On { body, .. } => {
+            for stmt in body {
+                collect_stmt_write_keys(stmt, keys);
+            }
+        }
+        LinePlanItem::Stmt(stmt) => collect_stmt_write_keys(stmt, keys),
+        LinePlanItem::TimedCue { body, .. } | LinePlanItem::Expr(body) => {
+            collect_expr_write_keys(body, keys);
+        }
+        LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
+            for item in items {
+                collect_line_plan_item_write_keys(item, keys);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn line_plan_child_name(item: &LinePlanItem, index: usize) -> String {
+    match item {
+        LinePlanItem::Thread(thread) => thread
+            .name()
+            .map_or_else(|| format!("thread#{index}"), str::to_owned),
+        LinePlanItem::On { .. } => format!("on#{index}"),
+        LinePlanItem::TimedCue { .. } => format!("at#{index}"),
+        LinePlanItem::StartGroup(_) => format!("start#{index}"),
+        LinePlanItem::TogetherGroup(_) => format!("together#{index}"),
+        _ => format!("item#{index}"),
+    }
+}
+
+fn is_line_plan_child_item(item: &LinePlanItem) -> bool {
+    matches!(
+        item,
+        LinePlanItem::Thread(_)
+            | LinePlanItem::On { .. }
+            | LinePlanItem::TimedCue { .. }
+            | LinePlanItem::StartGroup(_)
+            | LinePlanItem::TogetherGroup(_)
+    )
+}
+
+fn drop_keys_in_stmts(stmts: &[Stmt]) -> HashSet<LifetimeKey> {
+    let mut keys = HashSet::new();
+    for stmt in stmts {
+        collect_stmt_drop_keys(stmt, &mut keys);
+    }
+    keys
+}
+
+fn collect_stmt_drop_keys(stmt: &Stmt, keys: &mut HashSet<LifetimeKey>) {
+    match stmt {
+        Stmt::Expr(expr) | Stmt::Defer { expr, .. } => collect_expr_drop_keys(expr, keys),
+        Stmt::DeferBlock { statements, .. }
+        | Stmt::If {
+            body: statements, ..
+        }
+        | Stmt::Loop { body: statements }
+        | Stmt::While {
+            body: statements, ..
+        }
+        | Stmt::WhileLet {
+            body: statements, ..
+        }
+        | Stmt::For {
+            body: statements, ..
+        }
+        | Stmt::On {
+            body: statements, ..
+        }
+        | Stmt::UnsafeLifetime {
+            body: statements, ..
+        } => {
+            for stmt in statements {
+                collect_stmt_drop_keys(stmt, keys);
+            }
+        }
+        Stmt::Match { arms, .. } => {
+            for arm in arms {
+                for stmt in arm.body() {
+                    collect_stmt_drop_keys(stmt, keys);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn drop_keys_in_expr(expr: &Expr) -> HashSet<LifetimeKey> {
+    let mut keys = HashSet::new();
+    collect_expr_drop_keys(expr, &mut keys);
+    keys
+}
+
+fn collect_expr_drop_keys(expr: &Expr, keys: &mut HashSet<LifetimeKey>) {
+    match expr {
+        Expr::Pipe { lhs, rhs } if is_drop_expr(rhs) => {
+            if let Expr::LifetimePath { key, .. } = lhs.as_ref() {
+                keys.insert(key.clone());
+            }
+            collect_expr_drop_keys(rhs, keys);
+        }
+        Expr::Call { callee, args } if matches!(callee.as_ref(), Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional" | "on_drop")) => {
+            for arg in args {
+                if let Expr::LifetimePath { key, .. } = arg {
+                    keys.insert(key.clone());
+                }
+            }
+        }
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } if matches!(method.as_str(), "drop" | "drop_optional" | "on_drop") => {
+            if let Expr::LifetimePath { key, .. } = receiver.as_ref() {
+                keys.insert(key.clone());
+            }
+            for arg in args {
+                collect_expr_drop_keys(arg, keys);
+            }
+        }
+        Expr::Call { callee, args } => {
+            collect_expr_drop_keys(callee, keys);
+            for arg in args {
+                collect_expr_drop_keys(arg, keys);
+            }
+        }
+        Expr::Tuple(items) | Expr::List(items) => {
+            for item in items {
+                collect_expr_drop_keys(item, keys);
+            }
+        }
+        Expr::NamedArg { value, .. }
+        | Expr::Field { target: value, .. }
+        | Expr::Try { expr: value }
+        | Expr::Await { expr: value, .. }
+        | Expr::Unary { expr: value, .. } => collect_expr_drop_keys(value, keys),
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_expr_drop_keys(receiver, keys);
+            for arg in args {
+                collect_expr_drop_keys(arg, keys);
+            }
+        }
+        Expr::Binary { lhs, rhs, .. }
+        | Expr::Pipe { lhs, rhs }
+        | Expr::Index {
+            target: lhs,
+            index: rhs,
+        } => {
+            collect_expr_drop_keys(lhs, keys);
+            collect_expr_drop_keys(rhs, keys);
+        }
+        _ => {}
+    }
 }
 
 fn collect_stmt_write_keys(stmt: &Stmt, keys: &mut BTreeSet<String>) {

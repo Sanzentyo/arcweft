@@ -159,6 +159,45 @@ flow @flow.thread_join thread_join {
 }
 
 #[test]
+fn verify_json_respects_semantic_defer_cancel_discharge() {
+    let path = temp_awft(
+        "verify-cancel-defer",
+        r"
+pub surface character @character.alice Alice as alice {
+}
+
+flow @flow.cancel_cleanup cancel_cleanup {
+    @<character.alice>.say[待って。[p]]
+    with:
+        init:
+            'line.focus <- true
+        defer on completed:
+            'line.focus |> drop_optional
+        defer on cancelled:
+            'line.focus |> drop_optional
+        cancel on input .SkipLine { out .Skipped }
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("verify")
+        .arg(&path)
+        .arg("--mode")
+        .arg("test")
+        .arg("--json")
+        .output()
+        .expect("arcw verify runs");
+
+    assert!(
+        output.status.success(),
+        "completed and cancelled defers should discharge line focus, stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn unsafe_json_lists_audit_regions() {
     let path = temp_awft(
         "unsafe-audit",

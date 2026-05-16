@@ -64,7 +64,7 @@ flow @flow.conflict conflict {
     assert!(report.has_errors());
     assert!(report.obligations.iter().any(|obligation| {
         obligation.kind == ProofObligationKind::RuntimeConflict
-            && obligation.message.contains("parallel resource conflict")
+            && obligation.message.contains("write conflict")
     }));
 }
 
@@ -94,6 +94,32 @@ flow @flow.thread_join thread_join {
                 .iter()
                 .any(|obligation| obligation.id == id)
         })
+    }));
+}
+
+#[test]
+fn semantic_cfg_discharge_is_not_overridden_by_verifier_scan() {
+    let report = report(
+        r"
+flow @flow.cancel_cleanup cancel_cleanup {
+    alice[待って。[p]]
+    with:
+        init:
+            let focus = 'line.focus?
+        defer on completed:
+            'line.focus |> drop_optional
+        defer on cancelled:
+            'line.focus |> drop_optional
+        cancel on input .SkipLine { out .Skipped }
+}
+",
+        VerificationMode::Test,
+    );
+
+    assert!(!report.obligations.iter().any(|obligation| {
+        obligation.kind == ProofObligationKind::MustDropDischarge
+            && obligation.discharge == ProofDischarge::Missing
+            && obligation.subject.as_deref() == Some("line.focus")
     }));
 }
 

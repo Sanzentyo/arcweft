@@ -263,12 +263,14 @@ Syntax parser:
   accepted-but-discouraged deep dot-run relative IDs such as `@...suffix` and
   obvious module/flow tail mismatches.
 - `analyze_semantics` in `arcweft-lang-sema` produces the first structured
-  `SemanticReport`. The pass is conservative and spans HIR plus syntax
-  statements: lifetime promotion, audited unsafe regions, upper-lifetime writes,
-  MustDrop discharge for line focus handles, thread capture, thread join
-  result-shape conflicts, raw syntax, trusted assumptions, and simple sibling
-  thread write conflicts are surfaced as typed obligations for verifier, CLI,
-  and LSP tooling.
+  `SemanticReport`. The pass spans HIR plus syntax statements and now carries
+  path-sensitive `FlowFacts` through blocks, branches, line plans, cancellation
+  rules, and thread bodies. Lifetime promotion, audited unsafe regions,
+  upper-lifetime writes, MustDrop discharge for line focus handles, thread
+  capture, thread join result-shape conflicts, raw syntax, trusted assumptions,
+  and sibling thread / line child task write conflicts are surfaced as typed
+  obligations for verifier, CLI, and LSP tooling. Scoped `defer` is applied by
+  outcome, so completed-only cleanup does not discharge cancellation paths.
 - Typed let patterns and borrow blocks preserve borrow types, and the checker rejects non-`'static` borrowed values crossing `await`, `yield`, `thread`, and `defer` suspension boundaries.
 - Parser/HIR/sema integration tests live under `crates/arcweft-lang-sema/src/tests/`
   while syntax crate unit coverage stays with `arcweft-lang-syntax`; this keeps
@@ -295,7 +297,8 @@ Not implemented in this milestone:
 - full generic substitution and effect-aware return checking
 - full type environment, name resolution, and type checking
 - inference, overload resolution, traits, generics, contracts, and effect checking
-- full nested-scope borrow lifetime analysis and precise borrow end tracking
+- fixed-point loop CFG, full nested-scope borrow lifetime analysis, and precise
+  borrow end tracking
 - full semantic expression resolution and type-directed ambiguity resolution
 - full choice expression type unification beyond the current `=> @flow...` case, lifecycle runtime execution, reactive option-state reevaluation, localization extraction, formatter/canonicalizer output, and LSP diagnostics for dynamic labels and unordered map-backed options
 - full localization extraction manifests and formatter/canonicalizer normalization for relative `.suffix` IDs
@@ -304,7 +307,7 @@ Not implemented in this milestone:
 
 ## Verification
 
-Last verified during the semantic verification spine implementation:
+Last verified during the CFG-aware semantic verification implementation:
 
 ```bash
 cargo fmt --check

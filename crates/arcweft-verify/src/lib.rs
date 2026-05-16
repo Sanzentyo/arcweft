@@ -280,6 +280,8 @@ impl VerificationReport {
 }
 
 fn merge_semantic_report(report: &mut VerificationReport, semantic: SemanticReport) {
+    remove_collector_semantic_obligations(report);
+
     for proof in semantic.proofs {
         if !report.proofs.iter().any(|existing| existing.id == proof.id) {
             report.proofs.push(ProofSummary {
@@ -334,6 +336,42 @@ fn merge_semantic_report(report: &mut VerificationReport, semantic: SemanticRepo
     report
         .diagnostics
         .sort_by(|left, right| left.id.cmp(&right.id));
+}
+
+fn remove_collector_semantic_obligations(report: &mut VerificationReport) {
+    let removed: BTreeSet<String> = report
+        .obligations
+        .iter()
+        .filter(|obligation| is_semantic_owned_kind(obligation.kind))
+        .map(|obligation| obligation.id.clone())
+        .collect();
+    if removed.is_empty() {
+        return;
+    }
+    report
+        .obligations
+        .retain(|obligation| !removed.contains(&obligation.id));
+    report.diagnostics.retain(|diagnostic| {
+        diagnostic
+            .obligation
+            .as_ref()
+            .is_none_or(|id| !removed.contains(id))
+    });
+}
+
+fn is_semantic_owned_kind(kind: ProofObligationKind) -> bool {
+    matches!(
+        kind,
+        ProofObligationKind::LifetimePromotion
+            | ProofObligationKind::UnsafeLifetimeAudit
+            | ProofObligationKind::MustDropDischarge
+            | ProofObligationKind::ThreadCapture
+            | ProofObligationKind::ThreadJoinTyping
+            | ProofObligationKind::UpperLifetimeWrite
+            | ProofObligationKind::TrustedAssumption
+            | ProofObligationKind::RawSyntax
+            | ProofObligationKind::RuntimeConflict
+    )
 }
 
 fn merge_semantic_obligation(

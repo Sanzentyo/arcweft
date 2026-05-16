@@ -163,12 +163,16 @@ arcweft-verify-oxiz
   pure Rust OxiZ adapter boundary
 ```
 
-The verifier generates obligations for lifetime promotion, unsafe lifetime
-audits, upper-lifetime registry writes, thread capture, trusted assumptions,
-raw syntax that reaches semantic analysis, and MustDrop registry values such as
+The semantic verifier generates obligations for lifetime promotion, unsafe
+lifetime audits, upper-lifetime registry writes, thread capture, thread join
+typing, trusted assumptions, raw syntax that reaches semantic analysis, sibling
+thread or line child task write conflicts, and MustDrop registry values such as
 `'line.focus`.
 
-Full proof body checking and precise all-path MustDrop typestate remain future
-semantic work. CLI/LSP already consume the verifier report schema, so future
-proof discharge improvements should be added to `arcweft-verify` rather than
-duplicated in tools.
+The current pass is CFG-aware for blocks, branches, line plans, cancellation
+rules, and scoped `defer` outcomes. Completed-only cleanup does not discharge a
+cancelled path; cancellation cleanup must use `defer on cancelled` or an
+unqualified `defer`. Full proof body checking, fixed-point loop analysis, and
+type-directed proof discharge remain future semantic work. CLI/LSP already
+consume the verifier report schema, so future proof discharge improvements
+should be added to `arcweft-verify` rather than duplicated in tools.

@@ -239,14 +239,16 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   documentation are the accepted design. The syntax crate preserves proof and
   trusted-axiom items as HIR metadata and parses `unsafe lifetime` audit blocks
   as structured statements. `arcweft-lang-hir` is now the public HIR facade.
-  `arcweft-lang-sema` now owns the first `SemanticReport` pass for conservative
-  lifetime/drop/thread/write analysis. `arcweft-verify` merges that report with
-  verifier obligations and shared JSON diagnostics for lifetime promotion,
-  unsafe audits, upper-lifetime writes, thread capture, thread join typing,
-  MustDrop discharge, trusted assumptions, raw syntax, and simple runtime write
-  conflicts. Solver dependencies are isolated in `arcweft-verify-z3` and
-  `arcweft-verify-oxiz`; CLI/LSP consume verifier reports rather than
-  reimplementing validation.
+  `arcweft-lang-sema` now owns the first `SemanticReport` pass for CFG-aware
+  lifetime/drop/thread/write analysis. The pass carries path-sensitive
+  `FlowFacts`, applies `defer` cleanup by completed/cancelled/failed outcome,
+  and prefers semantic-owned obligations over the older verifier scan.
+  `arcweft-verify` merges that report with shared JSON diagnostics for lifetime
+  promotion, unsafe audits, upper-lifetime writes, thread capture, thread join
+  typing, MustDrop discharge, trusted assumptions, raw syntax, and simple
+  runtime write conflicts. Solver dependencies are isolated in
+  `arcweft-verify-z3` and `arcweft-verify-oxiz`; CLI/LSP consume verifier
+  reports rather than reimplementing validation.
 - `Char` / `TextCluster` are now part of the accepted primitive model. `Char`
   is a Unicode scalar value and is not a visual character; `TextCluster` is the
   display/reveal/ruby/effect unit. The syntax crate parses `"x"c` char
@@ -270,11 +272,11 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   markers are accepted when a declaration name follows them: `flow @. opening`,
   `flow @flow:. opening`, `character @. alice Alice`, `signal @signal:. ready`,
   and `source @source:. metrics()` normalize through that following name.
-- Remaining P2 semantic work is now refinement of the semantic report rather
-  than missing surface coverage: full CFG/all-path `MustDrop` discharge,
-  type-directed promotion proof rules, richer `unsafe lifetime` audit region
-  validation, precise capability/effect checking, and complete thread result
-  inference remain TODOs for the compiler/HIR layer.
+- Remaining P2 semantic work is now refinement rather than missing surface
+  coverage: full fixed-point loop CFG, type-directed promotion proof rules,
+  richer `unsafe lifetime` audit region validation, precise capability/effect
+  checking, and complete thread result inference remain TODOs for the
+  compiler/HIR layer.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure
