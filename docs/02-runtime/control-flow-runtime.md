@@ -116,6 +116,45 @@ Never-returning function
 
 ## Interpreter/VM lowering
 
+The current Rust runtime slice lowers checked HIR into pure data:
+
+```rust
+pub enum RuntimeExpr {
+    Value(RuntimeValue),
+    Local(String),
+    EntityRef(String),
+    Tuple(Vec<RuntimeExpr>),
+    List(Vec<RuntimeExpr>),
+    Record(Vec<RuntimeFieldExpr>),
+    Variant { path: Option<String>, name: String, payload: Option<Box<RuntimeExpr>> },
+    Field { target: Box<RuntimeExpr>, field: String },
+    Unary { op: RuntimeUnaryOp, expr: Box<RuntimeExpr> },
+    Binary { lhs: Box<RuntimeExpr>, op: RuntimeBinaryOp, rhs: Box<RuntimeExpr> },
+    If { condition: Box<RuntimeExpr>, then_expr: Box<RuntimeExpr>, else_expr: Box<RuntimeExpr> },
+    Match { scrutinee: Box<RuntimeExpr>, arms: Vec<RuntimeExprMatchArm> },
+}
+
+pub enum RuntimePattern {
+    Ident(String),
+    MutIdent(String),
+    Discard,
+    Literal(RuntimeValue),
+    Entity(String),
+    Tuple(Vec<RuntimePattern>),
+    Record { path: Option<String>, fields: Vec<RuntimeRecordPatternField>, rest: bool },
+    List { items: Vec<RuntimePattern>, rest: Option<String> },
+    Variant { path: Option<String>, name: String, payload: Option<Box<RuntimePattern>> },
+    Whole { name: String, pattern: Box<RuntimePattern> },
+    Typed { name: String, ty: String },
+}
+```
+
+This evaluator is deliberately small and Sans I/O. It handles deterministic
+bool/int/string/entity/list/tuple/record/variant values, structured bindings,
+and explicit external bindings from `FrameInput`. Function calls, overloads,
+numeric unit coercions, and full type-directed evaluation remain semantic/HIR
+work before this runtime layer.
+
 `scope name { ... }` lowers to the same control-flow shape as a lexical block,
 plus a scope-name push/pop around ID-bearing constructs and trace/debug frames.
 

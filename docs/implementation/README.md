@@ -186,26 +186,32 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `SourcePolicy`, `BackpressurePolicy`, `ReplayPolicy`, and `SourceEvent`.
   These are pure data contracts for host adapters; no Tokio/Rayon/filesystem,
   device, audio, or GPU runtime is linked into core.
-- Phase 1.7 runtime spine work has started in `arcweft-core`: `RuntimePlan`,
-  `RuntimeFlow`, `FlowOp`, `Engine`, `FlowFiber`, and `run_line_task_group`
-  can step lowered flow/dialogue task graphs over `FrameInput` into
-  `FrameOutput` without performing I/O. The spine emits child/await
-  `TaskSpec`s and deterministic line effects, runs scope cleanup stacks, and
-  leaves actual native/cooperative/web execution to adapters.
+- Phase 1.8 structured runtime work has started in `arcweft-core`:
+  `RuntimePlan`, `RuntimeFlow`, `FlowOp`, `RuntimeValue`, `RuntimeExpr`,
+  `RuntimePattern`, `RuntimeEnv`, `Engine`, `FlowFiber`, and
+  `run_line_task_group` can step lowered flow/dialogue task graphs over
+  `FrameInput` into `FrameOutput` without performing I/O. The spine emits
+  child/await `TaskSpec`s and deterministic line effects, evaluates
+  let/let-else, if/if-let, match, loop/while/while-let/for, scope, goto, and
+  return runtime nodes, runs scope cleanup stacks, and leaves actual
+  native/cooperative/web execution to adapters.
 - `arcweft-lang-syntax` now exposes `lower_runtime_plan`, which converts
-  checked HIR flows to core `RuntimePlan` data for the Phase 1.7 execution
-  slice. Runtime lowering supports dialogue, `choice`, `await with`, `goto`,
-  `return`, flow-level ordinary effects, `out`, and line `cancel on` rules.
-  Unsupported executable flow items fail lowering explicitly instead of being
-  converted to `Noop`.
+  checked HIR flows to core `RuntimePlan` data for the Phase 1.8 execution
+  slice. Runtime lowering supports dialogue, `choice`, `await with`, typed
+  `let`, `let else`, structured `if`, `if let`, `match`, `loop`, `while`,
+  `while let`, `for`, `scope`, dynamic `goto`, dynamic `return`, flow-level
+  ordinary effects, `out`, and line `cancel on` rules. Unsupported executable
+  flow items fail lowering explicitly instead of being converted to `Noop`.
 - `arcw plan <file.awft> [--json]` now exposes lowered line task graph metadata
   for CLI, LSP, and Agent inspection. Runtime parallel conflicts are also
   surfaced as verifier obligations so direct verifier users can see the same
   class of graph conflict as `arcw check`.
-- `arcw run <file.awft> [--frames N] [--json]` now performs a deterministic
-  dry run through the Phase 1.7 flow runtime slice and reports per-frame flow
-  events, effects, task requests, diagnostics, and final fiber status. The CLI
-  owns filesystem I/O; runtime execution remains Sans I/O.
+- `arcw run <file.awft> [--frames N] [--value name=value] [--json]` now
+  performs a deterministic dry run through the Phase 1.8 flow runtime slice and
+  reports per-frame flow events, effects, task requests, diagnostics, and final
+  fiber status. `--value` injects pure runtime bindings such as
+  `ready=true`, `count=3`, or `route=@flow.next`; the CLI owns filesystem I/O
+  and runtime execution remains Sans I/O.
 - Gap audit result: broad runtime docs still exceed the implemented core. Full
   story VM value execution, complete expression evaluation, source adapter
   execution, hook/memo runtime tables, save/replay traces, activities, layered

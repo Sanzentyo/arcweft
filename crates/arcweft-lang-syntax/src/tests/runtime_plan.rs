@@ -389,13 +389,8 @@ flow @flow.next next {
         &plan.flows[0].ops[0],
         FlowOp::Dialogue { task_group: 0, .. }
     ));
-    assert_eq!(
-        plan.flows[0].ops[1],
-        FlowOp::Goto(FlowRuntimeId("flow.next".to_owned()))
-    );
-    assert!(
-        matches!(&plan.flows[1].ops[0], FlowOp::Return(value) if value == "Ok(FlowExit::Done)")
-    );
+    assert!(matches!(&plan.flows[0].ops[1], FlowOp::GotoExpr(_)));
+    assert!(matches!(&plan.flows[1].ops[0], FlowOp::ReturnExpr(_)));
 }
 
 #[test]
@@ -431,21 +426,51 @@ flow @flow.alice_intro alice_intro {
 }
 
 #[test]
-fn runtime_plan_lowering_rejects_unsupported_flow_items() {
+fn runtime_plan_lowering_preserves_let_and_dynamic_goto() {
     let tree = parse_ok(
         r"
 flow @flow.typed typed {
     let route = @flow.next
+    goto route
+}
+
+flow @flow.next next {
+    return Ok(FlowExit::Done)
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("unsupported runtime fixture lowers to HIR");
+    let hir = lower_to_hir(&tree).expect("runtime fixture lowers to HIR");
 
-    let errors = lower_runtime_plan(&hir).expect_err("unsupported item is explicit");
+    let plan = lower_runtime_plan(&hir).expect("typed runtime fixture lowers");
 
-    assert!(
-        errors
-            .iter()
-            .any(|error| error.message().contains("unsupported flow statement"))
+    assert!(matches!(&plan.flows[0].ops[0], FlowOp::Let { .. }));
+    assert!(matches!(&plan.flows[0].ops[1], FlowOp::GotoExpr(_)));
+}
+
+#[test]
+fn runtime_plan_lowering_preserves_structured_if_and_match() {
+    let tree = parse_ok(
+        r#"
+flow @flow.structured structured {
+    if ready {
+        goto @flow.ready
+    }
+
+    match route {
+        @flow.ready => return "ready"
+        _ => return "fallback"
+    }
+}
+
+flow @flow.ready ready {
+    return "done"
+}
+"#,
     );
+    let hir = lower_to_hir(&tree).expect("structured runtime fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("structured runtime plan lowers");
+
+    assert!(matches!(&plan.flows[0].ops[0], FlowOp::If { .. }));
+    assert!(matches!(&plan.flows[0].ops[1], FlowOp::Match { .. }));
 }

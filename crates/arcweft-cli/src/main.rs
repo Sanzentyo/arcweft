@@ -1,6 +1,6 @@
 use arcweft_core::{
     Engine, FlowEvent, FlowFiberStatus, FrameInput, LineEffectRequest, LineTaskGroup, LineTaskNode,
-    LineTaskScope, LineTaskTrigger, TaskSpec,
+    LineTaskScope, LineTaskTrigger, RuntimeBinding, RuntimeValue, TaskSpec,
 };
 use arcweft_lang_syntax::{
     LoweredLineTaskGroup, TypeCheckEnv, lint_id_policy, lower_line_task_groups, lower_runtime_plan,
@@ -94,7 +94,10 @@ fn runtime_run_command(args: &[OsString]) -> Result<(), ExitCode> {
     let mut engine = Engine::new(plan);
     let mut frames = Vec::new();
     for frame_index in 0..options.frames {
-        let output = engine.step(FrameInput::default());
+        let output = engine.step(FrameInput {
+            external_values: options.values.clone(),
+            ..FrameInput::default()
+        });
         let summary = RuntimeFrameRunSummary::from_output(frame_index, output);
         let done = matches!(
             engine.fiber().status,
@@ -366,6 +369,7 @@ struct ScriptPlanOptions {
 struct RuntimeRunOptions {
     path: PathBuf,
     frames: usize,
+    values: Vec<RuntimeBinding>,
     json: bool,
 }
 
@@ -403,6 +407,7 @@ impl RuntimeRunOptions {
         let mut options = Self {
             path: PathBuf::from(path),
             frames: 1,
+            values: Vec::new(),
             json: false,
         };
         let mut index = 1;
@@ -414,6 +419,12 @@ impl RuntimeRunOptions {
                     index += 1;
                     options.frames = parse_usize_arg(args.get(index), "--frames")?;
                 }
+                "--value" => {
+                    index += 1;
+                    options
+                        .values
+                        .push(parse_runtime_binding(args.get(index), "--value")?);
+                }
                 other => {
                     eprintln!("error: unknown run option `{other}`");
                     return Err(ExitCode::from(2));
@@ -422,6 +433,39 @@ impl RuntimeRunOptions {
             index += 1;
         }
         Ok(options)
+    }
+}
+
+fn parse_runtime_binding(value: Option<&OsString>, flag: &str) -> Result<RuntimeBinding, ExitCode> {
+    let Some(value) = value else {
+        eprintln!("error: {flag} requires name=value");
+        return Err(ExitCode::from(2));
+    };
+    let value = value.to_string_lossy();
+    let Some((name, raw)) = value.split_once('=') else {
+        eprintln!("error: {flag} requires name=value");
+        return Err(ExitCode::from(2));
+    };
+    if name.is_empty() {
+        eprintln!("error: {flag} binding name must not be empty");
+        return Err(ExitCode::from(2));
+    }
+    Ok(RuntimeBinding {
+        name: name.to_owned(),
+        value: parse_runtime_value(raw),
+    })
+}
+
+fn parse_runtime_value(raw: &str) -> RuntimeValue {
+    match raw {
+        "true" => RuntimeValue::Bool(true),
+        "false" => RuntimeValue::Bool(false),
+        "()" => RuntimeValue::Unit,
+        value if value.starts_with('@') => RuntimeValue::EntityRef(value[1..].to_owned()),
+        value => value.parse::<i64>().map_or_else(
+            |_| RuntimeValue::String(value.to_owned()),
+            RuntimeValue::Int,
+        ),
     }
 }
 
@@ -616,7 +660,7 @@ fn print_help() {
     );
     eprintln!("  arcw unsafe <file.awft> [--json]");
     eprintln!("  arcw plan <file.awft> [--json]");
-    eprintln!("  arcw run <file.awft> [--frames N] [--json]");
+    eprintln!("  arcw run <file.awft> [--frames N] [--value name=value] [--json]");
     eprintln!("  arcw test <file.awft> [--json]");
     eprintln!("  arcw bench <file.awft> [--json]");
 }

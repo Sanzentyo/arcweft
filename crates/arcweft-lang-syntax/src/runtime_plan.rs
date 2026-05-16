@@ -2,16 +2,17 @@ use crate::ast::{
     AwaitBranchKind, ChoiceAction, DeferOutcome, EntityRef, EntityRefSyntax, LinePlan,
     LinePlanItem, Pattern, Stmt, TriggerPattern, WaitTarget,
 };
-use crate::expr::{DurationUnit, Expr, Literal};
+use crate::expr::{BinaryOp, DurationUnit, Expr, Literal, UnaryOp};
 use crate::lower::{HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlowItem, HirModule};
 use arcweft_core::{
     AwaitTarget, ChildCancelPolicy, ChildJoinPolicy, ChoiceRuntimeOption, ConflictPolicy, FlowOp,
     FlowRuntimeId, LineAssertionRequest, LineBindingRequest, LineCancelRuleRequest, LineChildTask,
     LineEffectRequest, LineMemoRequest, LineOptionRequest, LineOutRequest, LineTaskGroup,
     LineTaskNode, LineTaskScope, LineTaskTrigger, LogicalDuration, NeedId, ParallelPolicy,
-    ResourceAccess, ResourceAccessMode, RuntimeAssignment, RuntimeCall, RuntimeCommand,
-    RuntimeEvent, RuntimeField, RuntimeFlow, RuntimeLineId, RuntimeLog, RuntimePlan, TaskId,
-    TaskKey, TaskPriority,
+    ResourceAccess, ResourceAccessMode, RuntimeAssignment, RuntimeBinaryOp, RuntimeCall,
+    RuntimeCommand, RuntimeEvent, RuntimeExpr, RuntimeExprMatchArm, RuntimeField, RuntimeFieldExpr,
+    RuntimeFlow, RuntimeLineId, RuntimeLog, RuntimeMatchArm, RuntimePattern, RuntimePlan,
+    RuntimeRecordPatternField, RuntimeUnaryOp, RuntimeValue, TaskId, TaskKey, TaskPriority,
 };
 use thiserror::Error;
 
@@ -123,7 +124,68 @@ impl FlowRuntimeLowerer {
                     ops.extend(self.lower_flow_stmt(stmt));
                 }
                 HirFlowItem::Scope(scope) => {
-                    ops.extend(self.lower_flow_items(flow_id, scope.body(), flow_index));
+                    ops.push(FlowOp::Scope(self.lower_flow_items(
+                        flow_id,
+                        scope.body(),
+                        flow_index,
+                    )));
+                }
+                HirFlowItem::If(block) => {
+                    ops.push(FlowOp::If {
+                        condition: lower_runtime_expr(block.condition()),
+                        then_ops: self.lower_flow_items(flow_id, block.body(), flow_index),
+                        else_ops: Vec::new(),
+                    });
+                }
+                HirFlowItem::IfLet(block) => {
+                    ops.push(FlowOp::IfLet {
+                        pattern: lower_runtime_pattern(block.pattern()),
+                        expr: lower_runtime_expr(block.expr()),
+                        guard: block.guard().map(lower_runtime_expr),
+                        then_ops: self.lower_flow_items(flow_id, block.body(), flow_index),
+                        else_ops: Vec::new(),
+                    });
+                }
+                HirFlowItem::Match(block) => {
+                    let arms = block
+                        .arms()
+                        .iter()
+                        .map(|arm| RuntimeMatchArm {
+                            pattern: lower_runtime_pattern(arm.pattern()),
+                            guard: arm.guard().map(lower_runtime_expr),
+                            ops: self.lower_flow_items(flow_id, arm.body(), flow_index),
+                        })
+                        .collect();
+                    ops.push(FlowOp::Match {
+                        scrutinee: lower_runtime_expr(block.expr()),
+                        arms,
+                    });
+                }
+                HirFlowItem::Loop(block) => {
+                    ops.push(FlowOp::Loop {
+                        body: self.lower_flow_items(flow_id, block.body(), flow_index),
+                    });
+                }
+                HirFlowItem::While(block) => {
+                    ops.push(FlowOp::While {
+                        condition: lower_runtime_expr(block.condition()),
+                        body: self.lower_flow_items(flow_id, block.body(), flow_index),
+                    });
+                }
+                HirFlowItem::WhileLet(block) => {
+                    ops.push(FlowOp::WhileLet {
+                        pattern: lower_runtime_pattern(block.pattern()),
+                        expr: lower_runtime_expr(block.expr()),
+                        guard: block.guard().map(lower_runtime_expr),
+                        body: self.lower_flow_items(flow_id, block.body(), flow_index),
+                    });
+                }
+                HirFlowItem::For(block) => {
+                    ops.push(FlowOp::For {
+                        pattern: lower_runtime_pattern(block.pattern()),
+                        source: lower_runtime_expr(block.source()),
+                        body: self.lower_flow_items(flow_id, block.body(), flow_index),
+                    });
                 }
                 HirFlowItem::Scenario { name, args } => {
                     ops.push(FlowOp::Effect(LineEffectRequest::Command(RuntimeCommand {
@@ -254,8 +316,22 @@ impl FlowRuntimeLowerer {
 
     fn lower_flow_stmt(&mut self, stmt: &Stmt) -> Vec<FlowOp> {
         match stmt {
-            Stmt::Goto(expr) => vec![FlowOp::Goto(FlowRuntimeId(flow_target_label(expr)))],
-            Stmt::Return(expr) => vec![FlowOp::Return(expr_label(expr))],
+            Stmt::Let { pattern, expr, .. } => vec![FlowOp::Let {
+                pattern: lower_runtime_pattern(pattern),
+                expr: lower_runtime_expr(expr),
+            }],
+            Stmt::LetElse {
+                pattern,
+                expr,
+                else_body,
+                ..
+            } => vec![FlowOp::LetElse {
+                pattern: lower_runtime_pattern(pattern),
+                expr: lower_runtime_expr(expr),
+                else_ops: self.lower_flow_stmt_list(else_body),
+            }],
+            Stmt::Goto(expr) => vec![FlowOp::GotoExpr(lower_runtime_expr(expr))],
+            Stmt::Return(expr) => vec![FlowOp::ReturnExpr(lower_runtime_expr(expr))],
             Stmt::Expr(expr) => vec![FlowOp::Effect(runtime_call_effect(expr))],
             Stmt::Out { label, expr } => {
                 vec![FlowOp::Effect(LineEffectRequest::Out(LineOutRequest {
@@ -269,6 +345,53 @@ impl FlowRuntimeLowerer {
                     args: command.args().iter().map(expr_label).collect(),
                 }))]
             }
+            Stmt::If { condition, body } => vec![FlowOp::If {
+                condition: lower_runtime_expr(condition),
+                then_ops: self.lower_flow_stmt_list(body),
+                else_ops: Vec::new(),
+            }],
+            Stmt::Loop { body } => vec![FlowOp::Loop {
+                body: self.lower_flow_stmt_list(body),
+            }],
+            Stmt::While { condition, body } => vec![FlowOp::While {
+                condition: lower_runtime_expr(condition),
+                body: self.lower_flow_stmt_list(body),
+            }],
+            Stmt::WhileLet {
+                pattern,
+                expr,
+                guard,
+                body,
+            } => vec![FlowOp::WhileLet {
+                pattern: lower_runtime_pattern(pattern),
+                expr: lower_runtime_expr(expr),
+                guard: guard.as_ref().map(lower_runtime_expr),
+                body: self.lower_flow_stmt_list(body),
+            }],
+            Stmt::For {
+                pattern,
+                source,
+                body,
+            } => vec![FlowOp::For {
+                pattern: lower_runtime_pattern(pattern),
+                source: lower_runtime_expr(source),
+                body: self.lower_flow_stmt_list(body),
+            }],
+            Stmt::Match { expr, arms } => vec![FlowOp::Match {
+                scrutinee: lower_runtime_expr(expr),
+                arms: arms
+                    .iter()
+                    .map(|arm| RuntimeMatchArm {
+                        pattern: lower_runtime_pattern(arm.pattern()),
+                        guard: arm.guard().map(lower_runtime_expr),
+                        ops: self.lower_flow_stmt_list(arm.body()),
+                    })
+                    .collect(),
+            }],
+            Stmt::Break { expr, .. } => {
+                vec![FlowOp::Break(expr.as_ref().map(lower_runtime_expr))]
+            }
+            Stmt::Continue { .. } => vec![FlowOp::Continue],
             other => {
                 self.errors.push(RuntimePlanLowerError::new(format!(
                     "unsupported flow statement for runtime lowering: {other:?}"
@@ -276,6 +399,13 @@ impl FlowRuntimeLowerer {
                 Vec::new()
             }
         }
+    }
+
+    fn lower_flow_stmt_list(&mut self, statements: &[Stmt]) -> Vec<FlowOp> {
+        statements
+            .iter()
+            .flat_map(|statement| self.lower_flow_stmt(statement))
+            .collect()
     }
 
     fn lower_flow_statements(&mut self, statements: &[Stmt]) -> Vec<LineEffectRequest> {
@@ -832,13 +962,6 @@ fn flow_runtime_id(id: &EntityRef) -> FlowRuntimeId {
     FlowRuntimeId(id.body().to_owned())
 }
 
-fn flow_target_label(expr: &Expr) -> String {
-    match expr {
-        Expr::EntityRef(entity) => entity.body().to_owned(),
-        other => expr_label(other),
-    }
-}
-
 fn node_accesses(node: &LineTaskNode) -> Vec<ResourceAccess> {
     match node {
         LineTaskNode::Seq(nodes) | LineTaskNode::Start(nodes) => {
@@ -936,6 +1059,187 @@ fn accesses_conflict(left: &ResourceAccess, right: &ResourceAccess) -> bool {
         return false;
     }
     true
+}
+
+fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
+    match expr {
+        Expr::Literal(literal) => RuntimeExpr::Value(lower_runtime_literal(literal)),
+        Expr::EntityRef(entity) => RuntimeExpr::EntityRef(entity.body().to_owned()),
+        Expr::Path(path) => RuntimeExpr::Local(path.clone()),
+        Expr::Tuple(items) => RuntimeExpr::Tuple(items.iter().map(lower_runtime_expr).collect()),
+        Expr::List(items) => RuntimeExpr::List(items.iter().map(lower_runtime_expr).collect()),
+        Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => RuntimeExpr::Record(
+            fields
+                .iter()
+                .map(|(name, value)| RuntimeFieldExpr {
+                    name: name.clone(),
+                    value: lower_runtime_expr(value),
+                })
+                .collect(),
+        ),
+        Expr::Field { target, field } => RuntimeExpr::Field {
+            target: Box::new(lower_runtime_expr(target)),
+            field: field.clone(),
+        },
+        Expr::Unary { op, expr } => RuntimeExpr::Unary {
+            op: lower_runtime_unary_op(*op),
+            expr: Box::new(lower_runtime_expr(expr)),
+        },
+        Expr::Binary { lhs, op, rhs } => {
+            if let Some(op) = lower_runtime_binary_op(*op) {
+                RuntimeExpr::Binary {
+                    lhs: Box::new(lower_runtime_expr(lhs)),
+                    op,
+                    rhs: Box::new(lower_runtime_expr(rhs)),
+                }
+            } else {
+                RuntimeExpr::Value(RuntimeValue::String(expr_label(expr)))
+            }
+        }
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => RuntimeExpr::If {
+            condition: Box::new(lower_runtime_expr(condition)),
+            then_expr: Box::new(lower_runtime_expr(then_branch)),
+            else_expr: Box::new(
+                else_branch
+                    .as_deref()
+                    .map_or(RuntimeExpr::Value(RuntimeValue::Unit), lower_runtime_expr),
+            ),
+        },
+        Expr::Match { scrutinee, arms } => RuntimeExpr::Match {
+            scrutinee: Box::new(lower_runtime_expr(scrutinee)),
+            arms: arms
+                .iter()
+                .map(|arm| RuntimeExprMatchArm {
+                    pattern: lower_runtime_pattern(arm.pattern()),
+                    guard: arm.guard().map(lower_runtime_expr),
+                    value: lower_runtime_expr(arm.value()),
+                })
+                .collect(),
+        },
+        Expr::Call { .. } | Expr::MethodCall { .. } => {
+            RuntimeExpr::Value(RuntimeValue::String(expr_label(expr)))
+        }
+        Expr::NamedArg { value, .. } => lower_runtime_expr(value),
+        Expr::Try { expr }
+        | Expr::Await { expr, .. }
+        | Expr::Index { target: expr, .. }
+        | Expr::Pipe { lhs: expr, .. } => lower_runtime_expr(expr),
+        _ => RuntimeExpr::Value(RuntimeValue::String(expr_label(expr))),
+    }
+}
+
+fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
+    match literal {
+        Literal::String(value) => RuntimeValue::String(value.clone()),
+        Literal::Char { value, .. } => RuntimeValue::Char(*value),
+        Literal::Int(value) => RuntimeValue::Int(*value),
+        Literal::Float(value) => RuntimeValue::Float(value.clone()),
+        Literal::Bool(value) => RuntimeValue::Bool(*value),
+        Literal::Duration { .. } => duration_expr(&Expr::Literal(literal.clone())).map_or_else(
+            || RuntimeValue::String(literal_label(literal)),
+            RuntimeValue::Duration,
+        ),
+    }
+}
+
+fn lower_runtime_pattern(pattern: &Pattern) -> RuntimePattern {
+    match pattern {
+        Pattern::Ident(name) => RuntimePattern::Ident(name.clone()),
+        Pattern::MutIdent(name) => RuntimePattern::MutIdent(name.clone()),
+        Pattern::Discard => RuntimePattern::Discard,
+        Pattern::Literal(expr) => match lower_runtime_expr(expr) {
+            RuntimeExpr::Value(value) => RuntimePattern::Literal(value),
+            RuntimeExpr::EntityRef(entity) => RuntimePattern::Entity(entity),
+            _ => RuntimePattern::Literal(RuntimeValue::String(expr_label(expr))),
+        },
+        Pattern::Entity(entity) => RuntimePattern::Entity(entity.body().to_owned()),
+        Pattern::Tuple(items) => {
+            RuntimePattern::Tuple(items.iter().map(lower_runtime_pattern).collect())
+        }
+        Pattern::Record { path, fields, rest } => RuntimePattern::Record {
+            path: path.clone(),
+            fields: fields
+                .iter()
+                .map(|field| RuntimeRecordPatternField {
+                    name: field.name().to_owned(),
+                    pattern: lower_runtime_pattern(field.pattern()),
+                })
+                .collect(),
+            rest: *rest,
+        },
+        Pattern::List { items, rest } => RuntimePattern::List {
+            items: items.iter().map(lower_runtime_pattern).collect(),
+            rest: rest.clone(),
+        },
+        Pattern::Variant {
+            path,
+            name,
+            payload,
+        } => RuntimePattern::Variant {
+            path: path.clone(),
+            name: name.clone(),
+            payload: payload
+                .as_ref()
+                .map(|payload| Box::new(lower_runtime_variant_payload(payload))),
+        },
+        Pattern::Whole { name, pattern } => RuntimePattern::Whole {
+            name: name.clone(),
+            pattern: Box::new(lower_runtime_pattern(pattern)),
+        },
+        Pattern::Typed { name, ty } => RuntimePattern::Typed {
+            name: name.clone(),
+            ty: format!("{ty:?}"),
+        },
+        Pattern::Raw(raw) => RuntimePattern::Literal(RuntimeValue::String(raw.clone())),
+    }
+}
+
+fn lower_runtime_variant_payload(payload: &crate::ast::VariantPatternPayload) -> RuntimePattern {
+    match payload {
+        crate::ast::VariantPatternPayload::Tuple(items) => {
+            RuntimePattern::Tuple(items.iter().map(lower_runtime_pattern).collect())
+        }
+        crate::ast::VariantPatternPayload::Record { fields, rest } => RuntimePattern::Record {
+            path: None,
+            fields: fields
+                .iter()
+                .map(|field| RuntimeRecordPatternField {
+                    name: field.name().to_owned(),
+                    pattern: lower_runtime_pattern(field.pattern()),
+                })
+                .collect(),
+            rest: *rest,
+        },
+    }
+}
+
+fn lower_runtime_unary_op(op: UnaryOp) -> RuntimeUnaryOp {
+    match op {
+        UnaryOp::Not => RuntimeUnaryOp::Not,
+        UnaryOp::Neg => RuntimeUnaryOp::Neg,
+    }
+}
+
+fn lower_runtime_binary_op(op: BinaryOp) -> Option<RuntimeBinaryOp> {
+    Some(match op {
+        BinaryOp::Eq => RuntimeBinaryOp::Eq,
+        BinaryOp::NotEq => RuntimeBinaryOp::Ne,
+        BinaryOp::Lt => RuntimeBinaryOp::Lt,
+        BinaryOp::Lte => RuntimeBinaryOp::Le,
+        BinaryOp::Gt => RuntimeBinaryOp::Gt,
+        BinaryOp::Gte => RuntimeBinaryOp::Ge,
+        BinaryOp::Add => RuntimeBinaryOp::Add,
+        BinaryOp::Sub => RuntimeBinaryOp::Sub,
+        BinaryOp::Mul => RuntimeBinaryOp::Mul,
+        BinaryOp::Div => RuntimeBinaryOp::Div,
+        BinaryOp::And => RuntimeBinaryOp::And,
+        BinaryOp::Or => RuntimeBinaryOp::Or,
+        BinaryOp::Implies | BinaryOp::In | BinaryOp::Merge | BinaryOp::Rem => return None,
+    })
 }
 
 fn runtime_fields(fields: &[(String, Expr)]) -> Vec<RuntimeField> {

@@ -22,11 +22,25 @@ pub struct RuntimeFlow {
 }
 
 pub enum FlowOp {
+    Let { pattern: RuntimePattern, expr: RuntimeExpr },
+    LetElse { pattern: RuntimePattern, expr: RuntimeExpr, else_ops: Vec<FlowOp> },
     Dialogue { line: RuntimeLineId, task_group: usize },
     Choice { id: Option<String>, options: Vec<ChoiceRuntimeOption> },
     Await { target: AwaitTarget, pending: Vec<LineEffectRequest> },
+    If { condition: RuntimeExpr, then_ops: Vec<FlowOp>, else_ops: Vec<FlowOp> },
+    IfLet { pattern: RuntimePattern, expr: RuntimeExpr, guard: Option<RuntimeExpr>, then_ops: Vec<FlowOp>, else_ops: Vec<FlowOp> },
+    Match { scrutinee: RuntimeExpr, arms: Vec<RuntimeMatchArm> },
+    Loop { body: Vec<FlowOp> },
+    While { condition: RuntimeExpr, body: Vec<FlowOp> },
+    WhileLet { pattern: RuntimePattern, expr: RuntimeExpr, guard: Option<RuntimeExpr>, body: Vec<FlowOp> },
+    For { pattern: RuntimePattern, source: RuntimeExpr, body: Vec<FlowOp> },
+    Scope(Vec<FlowOp>),
+    Break(Option<RuntimeExpr>),
+    Continue,
     Goto(FlowRuntimeId),
+    GotoExpr(RuntimeExpr),
     Return(String),
+    ReturnExpr(RuntimeExpr),
     Effect(LineEffectRequest),
     Noop,
 }
@@ -34,12 +48,15 @@ pub enum FlowOp {
 pub struct FlowFiber {
     pub line_cursor: usize,
     pub cursor: Option<FlowCursor>,
+    pub pending_ops: VecDeque<FlowOp>,
+    pub env: RuntimeEnv,
     pub status: FlowFiberStatus,
 }
 
 pub struct FrameInput {
     pub tick: TickId,
     pub dt: LogicalDuration,
+    pub external_values: Vec<RuntimeBinding>,
     pub input_events: Vec<InputEvent>,
     pub task_events: Vec<TaskEvent>,
     pub ui_events: Vec<UiEvent>,
@@ -56,11 +73,14 @@ pub struct FrameOutput {
 }
 ```
 
-Phase 1.7 の `Engine` は最小 flow runtime slice であり、まだ完全な story VM ではない。
+Phase 1.8 の `Engine` は structured control-flow runtime slice であり、まだ完全な story VM ではない。
 `Engine::step(FrameInput) -> FrameOutput` は lowered flow op を 1 frame に
 最大 1 つ進める。`Dialogue` は line task group を実行し、`Choice` は入力待ち、
-`Await` は `TaskSpec` を出して `TaskEvent` で再開、`Goto` / `Return` は
-`FlowFiber` の cursor/status を更新する。
+`Await` は `TaskSpec` を出して `TaskEvent` で再開する。`Let` / `LetElse` /
+`If` / `IfLet` / `Match` / `Loop` / `While` / `WhileLet` / `For` は
+`RuntimeValue` / `RuntimeExpr` / `RuntimePattern` と `RuntimeEnv` で評価され、
+選択された block は `pending_ops` queue に積まれて次 frame 以降で実行される。
+`Goto` / `GotoExpr` / `Return` / `ReturnExpr` は `FlowFiber` の cursor/status を更新する。
 実 thread、wall-clock、renderer、audio、device、filesystem は adapter 側の責務である。
 `ScopeExit::Completed | Cancelled | Failed` は outcome-guarded `defer` stack の
 選択に使う。
@@ -217,8 +237,13 @@ line plans continue to lower to `LineTaskGroup` and are referenced by index from
 dialogue line              -> FlowOp::Dialogue + LineTaskGroup
 choice                     -> FlowOp::Choice + ChoiceRuntimeOption list
 await ... with             -> FlowOp::Await + pending LineEffectRequest list
-goto @flow.x               -> FlowOp::Goto("flow.x")
-return expr                -> FlowOp::Return(label)
+let / let else             -> FlowOp::Let / FlowOp::LetElse
+if / if let / match        -> structured FlowOp nodes with RuntimePattern arms
+loop / while / while let   -> structured FlowOp nodes
+for PAT in EXPR            -> FlowOp::For over RuntimeValue::List
+scope / bare block         -> FlowOp::Scope
+goto @flow.x / goto route  -> FlowOp::GotoExpr
+return expr                -> FlowOp::ReturnExpr
 out / log / signal / call  -> FlowOp::Effect or line effect
 cancel on input .SkipLine  -> line cancel rule selected from FrameInput
 ```

@@ -12,6 +12,7 @@ pub mod prelude {
     pub use arcweft_source::{SourceAnchor, SourceName, SourcePosition};
 }
 
+use std::collections::{BTreeMap, VecDeque};
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -26,6 +27,7 @@ pub struct LogicalDuration {
 pub struct FrameInput {
     pub tick: TickId,
     pub dt: LogicalDuration,
+    pub external_values: Vec<RuntimeBinding>,
     pub input_events: Vec<InputEvent>,
     pub task_events: Vec<TaskEvent>,
     pub ui_events: Vec<UiEvent>,
@@ -45,6 +47,168 @@ pub struct FrameOutput {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeDiagnostic {
     pub message: String,
+}
+
+/// Named value provided by adapters or earlier runtime operations.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeBinding {
+    pub name: String,
+    pub value: RuntimeValue,
+}
+
+/// Deterministic value domain used by the Sans I/O flow runtime.
+///
+/// Floats are preserved as source strings until a later numeric semantic pass
+/// chooses exact representation and unit rules. That keeps this runtime model
+/// deterministic across native and wasm targets.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeValue {
+    Unit,
+    Bool(bool),
+    Int(i64),
+    Float(String),
+    String(String),
+    Char(char),
+    Duration(LogicalDuration),
+    EntityRef(String),
+    Tuple(Vec<RuntimeValue>),
+    List(Vec<RuntimeValue>),
+    Record(Vec<RuntimeFieldValue>),
+    Variant {
+        path: Option<String>,
+        name: String,
+        payload: Option<Box<RuntimeValue>>,
+    },
+}
+
+/// One field inside a runtime record value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeFieldValue {
+    pub name: String,
+    pub value: RuntimeValue,
+}
+
+/// Expression subset executable by the Sans I/O flow runtime.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeExpr {
+    Value(RuntimeValue),
+    Local(String),
+    EntityRef(String),
+    Tuple(Vec<RuntimeExpr>),
+    List(Vec<RuntimeExpr>),
+    Record(Vec<RuntimeFieldExpr>),
+    Variant {
+        path: Option<String>,
+        name: String,
+        payload: Option<Box<RuntimeExpr>>,
+    },
+    Field {
+        target: Box<RuntimeExpr>,
+        field: String,
+    },
+    Unary {
+        op: RuntimeUnaryOp,
+        expr: Box<RuntimeExpr>,
+    },
+    Binary {
+        lhs: Box<RuntimeExpr>,
+        op: RuntimeBinaryOp,
+        rhs: Box<RuntimeExpr>,
+    },
+    If {
+        condition: Box<RuntimeExpr>,
+        then_expr: Box<RuntimeExpr>,
+        else_expr: Box<RuntimeExpr>,
+    },
+    Match {
+        scrutinee: Box<RuntimeExpr>,
+        arms: Vec<RuntimeExprMatchArm>,
+    },
+}
+
+/// One value-producing `match` arm in a runtime expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeExprMatchArm {
+    pub pattern: RuntimePattern,
+    pub guard: Option<RuntimeExpr>,
+    pub value: RuntimeExpr,
+}
+
+/// One field inside a runtime record expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeFieldExpr {
+    pub name: String,
+    pub value: RuntimeExpr,
+}
+
+/// Unary operator supported by the Sans I/O expression evaluator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeUnaryOp {
+    Not,
+    Neg,
+}
+
+/// Binary operator supported by the Sans I/O expression evaluator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeBinaryOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    And,
+    Or,
+}
+
+/// Pattern subset executable by the Sans I/O flow runtime.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimePattern {
+    Ident(String),
+    MutIdent(String),
+    Discard,
+    Literal(RuntimeValue),
+    Entity(String),
+    Tuple(Vec<RuntimePattern>),
+    Record {
+        path: Option<String>,
+        fields: Vec<RuntimeRecordPatternField>,
+        rest: bool,
+    },
+    List {
+        items: Vec<RuntimePattern>,
+        rest: Option<String>,
+    },
+    Variant {
+        path: Option<String>,
+        name: String,
+        payload: Option<Box<RuntimePattern>>,
+    },
+    Whole {
+        name: String,
+        pattern: Box<RuntimePattern>,
+    },
+    Typed {
+        name: String,
+        ty: String,
+    },
+}
+
+/// One field inside a runtime record pattern.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeRecordPatternField {
+    pub name: String,
+    pub pattern: RuntimePattern,
+}
+
+/// Lexical value environment for structured flow execution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeEnv {
+    scopes: Vec<BTreeMap<String, RuntimeValue>>,
 }
 
 /// Pure runtime program consumed by the minimal Sans I/O engine.
@@ -73,6 +237,15 @@ pub struct RuntimeFlow {
 /// One deterministic operation in a lowered flow program.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FlowOp {
+    Let {
+        pattern: RuntimePattern,
+        expr: RuntimeExpr,
+    },
+    LetElse {
+        pattern: RuntimePattern,
+        expr: RuntimeExpr,
+        else_ops: Vec<FlowOp>,
+    },
     Dialogue {
         line: RuntimeLineId,
         task_group: usize,
@@ -85,10 +258,59 @@ pub enum FlowOp {
         target: AwaitTarget,
         pending: Vec<LineEffectRequest>,
     },
+    If {
+        condition: RuntimeExpr,
+        then_ops: Vec<FlowOp>,
+        else_ops: Vec<FlowOp>,
+    },
+    IfLet {
+        pattern: RuntimePattern,
+        expr: RuntimeExpr,
+        guard: Option<RuntimeExpr>,
+        then_ops: Vec<FlowOp>,
+        else_ops: Vec<FlowOp>,
+    },
+    Match {
+        scrutinee: RuntimeExpr,
+        arms: Vec<RuntimeMatchArm>,
+    },
+    Loop {
+        body: Vec<FlowOp>,
+    },
+    While {
+        condition: RuntimeExpr,
+        body: Vec<FlowOp>,
+    },
+    WhileLet {
+        pattern: RuntimePattern,
+        expr: RuntimeExpr,
+        guard: Option<RuntimeExpr>,
+        body: Vec<FlowOp>,
+    },
+    For {
+        pattern: RuntimePattern,
+        source: RuntimeExpr,
+        body: Vec<FlowOp>,
+    },
+    Scope(Vec<FlowOp>),
+    Break(Option<RuntimeExpr>),
+    Continue,
     Goto(FlowRuntimeId),
+    GotoExpr(RuntimeExpr),
     Return(String),
+    ReturnExpr(RuntimeExpr),
     Effect(LineEffectRequest),
+    EnterScope,
+    ExitScope,
     Noop,
+}
+
+/// One executable `match` arm in the runtime flow model.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeMatchArm {
+    pub pattern: RuntimePattern,
+    pub guard: Option<RuntimeExpr>,
+    pub ops: Vec<FlowOp>,
 }
 
 /// Runtime choice option visible to adapters and selectable from `FrameInput`.
@@ -133,6 +355,8 @@ pub struct Engine {
 pub struct FlowFiber {
     pub line_cursor: usize,
     pub cursor: Option<FlowCursor>,
+    pub pending_ops: VecDeque<FlowOp>,
+    pub env: RuntimeEnv,
     pub status: FlowFiberStatus,
 }
 
@@ -180,6 +404,35 @@ pub enum FlowExit {
 pub enum RuntimePlanError {
     #[error("entry flow `{0}` does not exist in runtime plan")]
     MissingEntryFlow(String),
+}
+
+/// Error produced while evaluating runtime expressions.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum RuntimeEvalError {
+    #[error("unknown runtime binding `{0}`")]
+    UnknownBinding(String),
+    #[error("expected bool expression, found {0}")]
+    ExpectedBool(String),
+    #[error("expected integer expression, found {0}")]
+    ExpectedInt(String),
+    #[error("expected entity reference expression, found {0}")]
+    ExpectedEntityRef(String),
+    #[error("expected list expression, found {0}")]
+    ExpectedList(String),
+    #[error("field `{field}` does not exist on {value}")]
+    MissingField { field: String, value: String },
+    #[error("operator `{op}` is not supported for {lhs} and {rhs}")]
+    UnsupportedBinary {
+        op: &'static str,
+        lhs: String,
+        rhs: String,
+    },
+    #[error("operator `{op}` is not supported for {value}")]
+    UnsupportedUnary { op: &'static str, value: String },
+    #[error("pattern did not match {0}")]
+    PatternMismatch(String),
+    #[error("loop control `{0}` reached a non-loop runtime context")]
+    MisplacedLoopControl(&'static str),
 }
 
 /// Scope exit reason used to select outcome-guarded cleanup stacks.
@@ -723,11 +976,51 @@ impl RuntimePlan {
     }
 }
 
+impl Default for RuntimeEnv {
+    fn default() -> Self {
+        Self {
+            scopes: vec![BTreeMap::new()],
+        }
+    }
+}
+
+impl RuntimeEnv {
+    pub fn push_scope(&mut self) {
+        self.scopes.push(BTreeMap::new());
+    }
+
+    pub fn pop_scope(&mut self) {
+        if self.scopes.len() > 1 {
+            self.scopes.pop();
+        } else if let Some(scope) = self.scopes.last_mut() {
+            scope.clear();
+        }
+    }
+
+    pub fn set(&mut self, name: impl Into<String>, value: RuntimeValue) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(name.into(), value);
+        }
+    }
+
+    pub fn get(&self, name: &str) -> Option<&RuntimeValue> {
+        self.scopes.iter().rev().find_map(|scope| scope.get(name))
+    }
+
+    pub fn bind_all(&mut self, bindings: impl IntoIterator<Item = RuntimeBinding>) {
+        for binding in bindings {
+            self.set(binding.name, binding.value);
+        }
+    }
+}
+
 impl Default for FlowFiber {
     fn default() -> Self {
         Self {
             line_cursor: 0,
             cursor: None,
+            pending_ops: VecDeque::new(),
+            env: RuntimeEnv::default(),
             status: FlowFiberStatus::Done(FlowExit::Done),
         }
     }
@@ -738,6 +1031,15 @@ impl FlowCursor {
         Self {
             flow: self.flow.clone(),
             op_index: self.op_index + 1,
+        }
+    }
+}
+
+impl Default for FlowCursor {
+    fn default() -> Self {
+        Self {
+            flow: FlowRuntimeId(String::new()),
+            op_index: 0,
         }
     }
 }
@@ -767,6 +1069,8 @@ impl Engine {
             fiber: FlowFiber {
                 line_cursor: 0,
                 cursor,
+                pending_ops: VecDeque::new(),
+                env: RuntimeEnv::default(),
                 status,
             },
         }
@@ -778,6 +1082,9 @@ impl Engine {
 
     pub fn step(&mut self, mut input: FrameInput) -> FrameOutput {
         let mut output = FrameOutput::default();
+        self.fiber
+            .env
+            .bind_all(input.external_values.iter().cloned());
         let events = normalize_task_events(std::mem::take(&mut input.task_events));
         output
             .diagnostics
@@ -899,23 +1206,58 @@ impl Engine {
         }
     }
 
+    // Keep the opcode dispatcher contiguous while the Phase 1 runtime surface is
+    // still changing; extracting each arm now would obscure grammar coverage.
+    #[allow(clippy::too_many_lines)]
     fn step_flow(&mut self, input: &FrameInput, output: &mut FrameOutput) {
-        let Some(cursor) = self.fiber.cursor.clone() else {
-            return;
+        let (op, next) = if let Some(op) = self.fiber.pending_ops.pop_front() {
+            (op, None)
+        } else {
+            let Some(cursor) = self.fiber.cursor.clone() else {
+                return;
+            };
+            let Some(op) = self
+                .plan
+                .flows
+                .iter()
+                .find(|flow| flow.id == cursor.flow)
+                .and_then(|flow| flow.ops.get(cursor.op_index))
+                .cloned()
+            else {
+                self.finish(output);
+                return;
+            };
+            let next = cursor.advanced();
+            (op, Some(next))
         };
-        let Some(op) = self
-            .plan
-            .flows
-            .iter()
-            .find(|flow| flow.id == cursor.flow)
-            .and_then(|flow| flow.ops.get(cursor.op_index))
-            .cloned()
-        else {
-            self.finish(output);
-            return;
-        };
-        let next = cursor.advanced();
         match op {
+            FlowOp::Let { pattern, expr } => {
+                self.evaluate_let(&pattern, &expr, output);
+                self.advance_if_needed(next);
+            }
+            FlowOp::LetElse {
+                pattern,
+                expr,
+                else_ops,
+            } => {
+                match self.evaluate_expr(&expr).and_then(|value| {
+                    self.try_bind_pattern(&pattern, &value)
+                        .map(|matched| (matched, value))
+                }) {
+                    Ok((true, _)) => self.advance_if_needed(next),
+                    Ok((false, value)) => {
+                        self.advance_if_needed(next);
+                        self.push_ops(else_ops);
+                        output.diagnostics.push(RuntimeDiagnostic {
+                            message: format!(
+                                "let-else pattern did not match {}",
+                                runtime_value_label(&value)
+                            ),
+                        });
+                    }
+                    Err(error) => self.fail_eval(error, output),
+                }
+            }
             FlowOp::Dialogue { line, task_group } => {
                 output.flow_events.push(FlowEvent::DialogueLine { line });
                 let Some(group) = self.plan.line_task_groups.get(task_group) else {
@@ -925,7 +1267,7 @@ impl Engine {
                 };
                 output.merge(run_line_task_group_for_input(group, input));
                 if !self.apply_control_effects(output) {
-                    self.fiber.cursor = Some(next);
+                    self.advance_if_needed(next);
                 }
             }
             FlowOp::Choice { id, options } => {
@@ -935,7 +1277,9 @@ impl Engine {
                 self.fiber.status = FlowFiberStatus::Choice(ChoiceState {
                     id,
                     options,
-                    resume: next,
+                    resume: next
+                        .or_else(|| self.fiber.cursor.clone())
+                        .unwrap_or_default(),
                 });
             }
             FlowOp::Await { target, pending } => {
@@ -947,21 +1291,389 @@ impl Engine {
                 output.task_requests.push(await_task_spec(&target));
                 self.fiber.status = FlowFiberStatus::Waiting(AwaitState {
                     target,
-                    resume: next,
+                    resume: next
+                        .or_else(|| self.fiber.cursor.clone())
+                        .unwrap_or_default(),
                 });
             }
+            FlowOp::If {
+                condition,
+                then_ops,
+                else_ops,
+            } => match self.evaluate_bool(&condition) {
+                Ok(true) => {
+                    self.advance_if_needed(next);
+                    self.push_scoped_ops(then_ops);
+                }
+                Ok(false) => {
+                    self.advance_if_needed(next);
+                    self.push_scoped_ops(else_ops);
+                }
+                Err(error) => self.fail_eval(error, output),
+            },
+            FlowOp::IfLet {
+                pattern,
+                expr,
+                guard,
+                then_ops,
+                else_ops,
+            } => match self.evaluate_if_let(&pattern, &expr, guard.as_ref()) {
+                Ok(true) => {
+                    self.advance_if_needed(next);
+                    self.push_scoped_ops(then_ops);
+                }
+                Ok(false) => {
+                    self.advance_if_needed(next);
+                    self.push_scoped_ops(else_ops);
+                }
+                Err(error) => self.fail_eval(error, output),
+            },
+            FlowOp::Match { scrutinee, arms } => match self.evaluate_match(&scrutinee, &arms) {
+                Ok(Some(ops)) => {
+                    self.advance_if_needed(next);
+                    self.push_scoped_ops(ops);
+                }
+                Ok(None) => self.fail_eval(
+                    RuntimeEvalError::PatternMismatch(expr_runtime_label(&scrutinee)),
+                    output,
+                ),
+                Err(error) => self.fail_eval(error, output),
+            },
+            FlowOp::Loop { body } => {
+                self.advance_if_needed(next);
+                self.push_ops(vec![FlowOp::Loop { body: body.clone() }]);
+                self.push_scoped_ops(body);
+            }
+            FlowOp::While { condition, body } => match self.evaluate_bool(&condition) {
+                Ok(true) => {
+                    self.advance_if_needed(next.clone());
+                    self.push_ops(vec![FlowOp::While {
+                        condition: condition.clone(),
+                        body: body.clone(),
+                    }]);
+                    self.push_scoped_ops(body);
+                }
+                Ok(false) => self.advance_if_needed(next),
+                Err(error) => self.fail_eval(error, output),
+            },
+            FlowOp::WhileLet {
+                pattern,
+                expr,
+                guard,
+                body,
+            } => match self.evaluate_if_let(&pattern, &expr, guard.as_ref()) {
+                Ok(true) => {
+                    self.advance_if_needed(next.clone());
+                    self.push_ops(vec![FlowOp::WhileLet {
+                        pattern: pattern.clone(),
+                        expr: expr.clone(),
+                        guard: guard.clone(),
+                        body: body.clone(),
+                    }]);
+                    self.push_scoped_ops(body);
+                }
+                Ok(false) => self.advance_if_needed(next),
+                Err(error) => self.fail_eval(error, output),
+            },
+            FlowOp::For {
+                pattern,
+                source,
+                body,
+            } => {
+                self.advance_if_needed(next);
+                match self.evaluate_expr(&source) {
+                    Ok(RuntimeValue::List(items)) => {
+                        let mut ops = Vec::new();
+                        for item in items {
+                            ops.push(FlowOp::EnterScope);
+                            ops.push(FlowOp::Let {
+                                pattern: pattern.clone(),
+                                expr: RuntimeExpr::Value(item),
+                            });
+                            ops.extend(body.clone());
+                            ops.push(FlowOp::ExitScope);
+                        }
+                        self.push_ops(ops);
+                    }
+                    Ok(value) => {
+                        self.fail_eval(
+                            RuntimeEvalError::ExpectedList(runtime_value_label(&value)),
+                            output,
+                        );
+                    }
+                    Err(error) => self.fail_eval(error, output),
+                }
+            }
+            FlowOp::Scope(ops) => {
+                self.advance_if_needed(next);
+                self.push_scoped_ops(ops);
+            }
+            FlowOp::Break(expr) => {
+                if let Some(expr) = expr {
+                    match self.evaluate_expr(&expr) {
+                        Ok(value) => output.diagnostics.push(RuntimeDiagnostic {
+                            message: format!("break {}", runtime_value_label(&value)),
+                        }),
+                        Err(error) => self.fail_eval(error, output),
+                    }
+                }
+                self.fiber.pending_ops.clear();
+                self.advance_if_needed(next);
+            }
+            FlowOp::Continue => {
+                self.fiber.pending_ops.clear();
+                self.advance_if_needed(next);
+            }
             FlowOp::Goto(target) => self.goto(target, output),
+            FlowOp::GotoExpr(expr) => match self.evaluate_entity_target(&expr) {
+                Ok(target) => self.goto(FlowRuntimeId(target), output),
+                Err(error) => self.fail_eval(error, output),
+            },
             FlowOp::Return(value) => self.return_value(value, output),
+            FlowOp::ReturnExpr(expr) => match self.evaluate_expr(&expr) {
+                Ok(value) => self.return_value(runtime_value_label(&value), output),
+                Err(error) => self.fail_eval(error, output),
+            },
             FlowOp::Effect(effect) => {
                 output.line_effects.push(effect);
                 if !self.apply_control_effects(output) {
-                    self.fiber.cursor = Some(next);
+                    self.advance_if_needed(next);
                 }
             }
+            FlowOp::EnterScope => {
+                self.fiber.env.push_scope();
+                self.advance_if_needed(next);
+            }
+            FlowOp::ExitScope => {
+                self.fiber.env.pop_scope();
+                self.advance_if_needed(next);
+            }
             FlowOp::Noop => {
-                self.fiber.cursor = Some(next);
+                self.advance_if_needed(next);
             }
         }
+    }
+
+    fn advance_if_needed(&mut self, next: Option<FlowCursor>) {
+        if let Some(next) = next {
+            self.fiber.cursor = Some(next);
+        }
+    }
+
+    fn push_ops(&mut self, ops: Vec<FlowOp>) {
+        for op in ops.into_iter().rev() {
+            self.fiber.pending_ops.push_front(op);
+        }
+    }
+
+    fn push_scoped_ops(&mut self, mut ops: Vec<FlowOp>) {
+        if ops.is_empty() {
+            return;
+        }
+        ops.insert(0, FlowOp::EnterScope);
+        ops.push(FlowOp::ExitScope);
+        self.push_ops(ops);
+    }
+
+    fn evaluate_let(
+        &mut self,
+        pattern: &RuntimePattern,
+        expr: &RuntimeExpr,
+        output: &mut FrameOutput,
+    ) {
+        match self.evaluate_expr(expr).and_then(|value| {
+            self.try_bind_pattern(pattern, &value)
+                .map(|matched| (matched, value))
+        }) {
+            Ok((true, _)) => {}
+            Ok((false, value)) => {
+                self.fail_eval(
+                    RuntimeEvalError::PatternMismatch(runtime_value_label(&value)),
+                    output,
+                );
+            }
+            Err(error) => self.fail_eval(error, output),
+        }
+    }
+
+    fn evaluate_if_let(
+        &mut self,
+        pattern: &RuntimePattern,
+        expr: &RuntimeExpr,
+        guard: Option<&RuntimeExpr>,
+    ) -> Result<bool, RuntimeEvalError> {
+        let value = self.evaluate_expr(expr)?;
+        let previous = self.fiber.env.clone();
+        if !self.try_bind_pattern(pattern, &value)? {
+            self.fiber.env = previous;
+            return Ok(false);
+        }
+        if let Some(guard) = guard
+            && !self.evaluate_bool(guard)?
+        {
+            self.fiber.env = previous;
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
+    fn evaluate_match(
+        &mut self,
+        scrutinee: &RuntimeExpr,
+        arms: &[RuntimeMatchArm],
+    ) -> Result<Option<Vec<FlowOp>>, RuntimeEvalError> {
+        let value = self.evaluate_expr(scrutinee)?;
+        for arm in arms {
+            let previous = self.fiber.env.clone();
+            if !self.try_bind_pattern(&arm.pattern, &value)? {
+                self.fiber.env = previous;
+                continue;
+            }
+            if let Some(guard) = arm.guard.as_ref()
+                && !self.evaluate_bool(guard)?
+            {
+                self.fiber.env = previous;
+                continue;
+            }
+            return Ok(Some(arm.ops.clone()));
+        }
+        Ok(None)
+    }
+
+    fn evaluate_expr(&mut self, expr: &RuntimeExpr) -> Result<RuntimeValue, RuntimeEvalError> {
+        match expr {
+            RuntimeExpr::Value(value) => Ok(value.clone()),
+            RuntimeExpr::Local(name) => self
+                .fiber
+                .env
+                .get(name)
+                .cloned()
+                .ok_or_else(|| RuntimeEvalError::UnknownBinding(name.clone())),
+            RuntimeExpr::EntityRef(target) => Ok(RuntimeValue::EntityRef(target.clone())),
+            RuntimeExpr::Tuple(items) => items
+                .iter()
+                .map(|item| self.evaluate_expr(item))
+                .collect::<Result<Vec<_>, _>>()
+                .map(RuntimeValue::Tuple),
+            RuntimeExpr::List(items) => items
+                .iter()
+                .map(|item| self.evaluate_expr(item))
+                .collect::<Result<Vec<_>, _>>()
+                .map(RuntimeValue::List),
+            RuntimeExpr::Record(fields) => fields
+                .iter()
+                .map(|field| {
+                    Ok(RuntimeFieldValue {
+                        name: field.name.clone(),
+                        value: self.evaluate_expr(&field.value)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(RuntimeValue::Record),
+            RuntimeExpr::Variant {
+                path,
+                name,
+                payload,
+            } => Ok(RuntimeValue::Variant {
+                path: path.clone(),
+                name: name.clone(),
+                payload: payload
+                    .as_ref()
+                    .map(|expr| self.evaluate_expr(expr).map(Box::new))
+                    .transpose()?,
+            }),
+            RuntimeExpr::Field { target, field } => {
+                let value = self.evaluate_expr(target)?;
+                match value {
+                    RuntimeValue::Record(fields) => fields
+                        .into_iter()
+                        .find(|candidate| candidate.name == *field)
+                        .map(|field| field.value)
+                        .ok_or_else(|| RuntimeEvalError::MissingField {
+                            field: field.clone(),
+                            value: "record".to_owned(),
+                        }),
+                    value => Err(RuntimeEvalError::MissingField {
+                        field: field.clone(),
+                        value: runtime_value_label(&value),
+                    }),
+                }
+            }
+            RuntimeExpr::Unary { op, expr } => {
+                let value = self.evaluate_expr(expr)?;
+                evaluate_unary(*op, value)
+            }
+            RuntimeExpr::Binary { lhs, op, rhs } => {
+                let lhs = self.evaluate_expr(lhs)?;
+                let rhs = self.evaluate_expr(rhs)?;
+                evaluate_binary(lhs, *op, rhs)
+            }
+            RuntimeExpr::If {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                if self.evaluate_bool(condition)? {
+                    self.evaluate_expr(then_expr)
+                } else {
+                    self.evaluate_expr(else_expr)
+                }
+            }
+            RuntimeExpr::Match { scrutinee, arms } => {
+                let value = self.evaluate_expr(scrutinee)?;
+                for arm in arms {
+                    let previous = self.fiber.env.clone();
+                    if !self.try_bind_pattern(&arm.pattern, &value)? {
+                        self.fiber.env = previous;
+                        continue;
+                    }
+                    if let Some(guard) = arm.guard.as_ref()
+                        && !self.evaluate_bool(guard)?
+                    {
+                        self.fiber.env = previous;
+                        continue;
+                    }
+                    return self.evaluate_expr(&arm.value);
+                }
+                Err(RuntimeEvalError::PatternMismatch(runtime_value_label(
+                    &value,
+                )))
+            }
+        }
+    }
+
+    fn evaluate_bool(&mut self, expr: &RuntimeExpr) -> Result<bool, RuntimeEvalError> {
+        match self.evaluate_expr(expr)? {
+            RuntimeValue::Bool(value) => Ok(value),
+            value => Err(RuntimeEvalError::ExpectedBool(runtime_value_label(&value))),
+        }
+    }
+
+    fn evaluate_entity_target(&mut self, expr: &RuntimeExpr) -> Result<String, RuntimeEvalError> {
+        match self.evaluate_expr(expr)? {
+            RuntimeValue::EntityRef(target) | RuntimeValue::String(target) => Ok(target),
+            value => Err(RuntimeEvalError::ExpectedEntityRef(runtime_value_label(
+                &value,
+            ))),
+        }
+    }
+
+    fn try_bind_pattern(
+        &mut self,
+        pattern: &RuntimePattern,
+        value: &RuntimeValue,
+    ) -> Result<bool, RuntimeEvalError> {
+        let Some(bindings) = match_runtime_pattern(pattern, value)? else {
+            return Ok(false);
+        };
+        self.fiber.env.bind_all(bindings);
+        Ok(true)
+    }
+
+    fn fail_eval(&mut self, error: impl std::fmt::Display, output: &mut FrameOutput) {
+        let message = error.to_string();
+        self.fiber.status = FlowFiberStatus::Failed(message.clone());
+        output.diagnostics.push(RuntimeDiagnostic { message });
     }
 
     fn step_line_only(&mut self, input: &FrameInput, output: &mut FrameOutput) {
@@ -989,6 +1701,7 @@ impl Engine {
     }
 
     fn goto(&mut self, target: FlowRuntimeId, output: &mut FrameOutput) {
+        self.fiber.pending_ops.clear();
         output.flow_events.push(FlowEvent::Goto {
             target: target.clone(),
         });
@@ -1000,6 +1713,7 @@ impl Engine {
     }
 
     fn return_value(&mut self, value: String, output: &mut FrameOutput) {
+        self.fiber.pending_ops.clear();
         output.flow_events.push(FlowEvent::Return {
             value: value.clone(),
         });
@@ -1036,6 +1750,275 @@ fn control_from_effect(effect: &LineEffectRequest) -> Option<FlowControl> {
         | LineEffectRequest::Fail(message)
         | LineEffectRequest::Bail(message) => Some(FlowControl::Failed(message.clone())),
         _ => None,
+    }
+}
+
+fn match_runtime_pattern(
+    pattern: &RuntimePattern,
+    value: &RuntimeValue,
+) -> Result<Option<Vec<RuntimeBinding>>, RuntimeEvalError> {
+    let mut bindings = Vec::new();
+    if collect_pattern_bindings(pattern, value, &mut bindings)? {
+        Ok(Some(bindings))
+    } else {
+        Ok(None)
+    }
+}
+
+fn collect_pattern_bindings(
+    pattern: &RuntimePattern,
+    value: &RuntimeValue,
+    bindings: &mut Vec<RuntimeBinding>,
+) -> Result<bool, RuntimeEvalError> {
+    match pattern {
+        RuntimePattern::Ident(name)
+        | RuntimePattern::MutIdent(name)
+        | RuntimePattern::Typed { name, .. } => {
+            bindings.push(RuntimeBinding {
+                name: name.clone(),
+                value: value.clone(),
+            });
+            Ok(true)
+        }
+        RuntimePattern::Discard => Ok(true),
+        RuntimePattern::Literal(expected) => Ok(expected == value),
+        RuntimePattern::Entity(expected) => {
+            Ok(matches!(value, RuntimeValue::EntityRef(actual) if actual == expected))
+        }
+        RuntimePattern::Tuple(patterns) => {
+            let RuntimeValue::Tuple(values) = value else {
+                return Ok(false);
+            };
+            if patterns.len() != values.len() {
+                return Ok(false);
+            }
+            collect_pattern_list(patterns, values, bindings)
+        }
+        RuntimePattern::Record { fields, rest, .. } => {
+            let RuntimeValue::Record(values) = value else {
+                return Ok(false);
+            };
+            if !rest && fields.len() != values.len() {
+                return Ok(false);
+            }
+            for field in fields {
+                let Some(value_field) =
+                    values.iter().find(|candidate| candidate.name == field.name)
+                else {
+                    return Ok(false);
+                };
+                if !collect_pattern_bindings(&field.pattern, &value_field.value, bindings)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
+        RuntimePattern::List { items, rest } => {
+            let RuntimeValue::List(values) = value else {
+                return Ok(false);
+            };
+            if rest.is_none() && items.len() != values.len() {
+                return Ok(false);
+            }
+            if rest.is_some() && items.len() > values.len() {
+                return Ok(false);
+            }
+            if !collect_pattern_list(items, &values[..items.len()], bindings)? {
+                return Ok(false);
+            }
+            if let Some(name) = rest {
+                bindings.push(RuntimeBinding {
+                    name: name.clone(),
+                    value: RuntimeValue::List(values[items.len()..].to_vec()),
+                });
+            }
+            Ok(true)
+        }
+        RuntimePattern::Variant {
+            path,
+            name,
+            payload,
+        } => {
+            let RuntimeValue::Variant {
+                path: actual_path,
+                name: actual_name,
+                payload: actual_payload,
+            } = value
+            else {
+                return Ok(false);
+            };
+            if path != actual_path || name != actual_name {
+                return Ok(false);
+            }
+            match (payload, actual_payload) {
+                (Some(pattern), Some(value)) => collect_pattern_bindings(pattern, value, bindings),
+                (None, None | Some(_)) => Ok(true),
+                (Some(_), None) => Ok(false),
+            }
+        }
+        RuntimePattern::Whole { name, pattern } => {
+            if !collect_pattern_bindings(pattern, value, bindings)? {
+                return Ok(false);
+            }
+            bindings.push(RuntimeBinding {
+                name: name.clone(),
+                value: value.clone(),
+            });
+            Ok(true)
+        }
+    }
+}
+
+fn collect_pattern_list(
+    patterns: &[RuntimePattern],
+    values: &[RuntimeValue],
+    bindings: &mut Vec<RuntimeBinding>,
+) -> Result<bool, RuntimeEvalError> {
+    for (pattern, value) in patterns.iter().zip(values) {
+        if !collect_pattern_bindings(pattern, value, bindings)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn evaluate_unary(
+    op: RuntimeUnaryOp,
+    value: RuntimeValue,
+) -> Result<RuntimeValue, RuntimeEvalError> {
+    match (op, value) {
+        (RuntimeUnaryOp::Not, RuntimeValue::Bool(value)) => Ok(RuntimeValue::Bool(!value)),
+        (RuntimeUnaryOp::Neg, RuntimeValue::Int(value)) => Ok(RuntimeValue::Int(-value)),
+        (op, value) => Err(RuntimeEvalError::UnsupportedUnary {
+            op: runtime_unary_op_label(op),
+            value: runtime_value_label(&value),
+        }),
+    }
+}
+
+fn evaluate_binary(
+    lhs: RuntimeValue,
+    op: RuntimeBinaryOp,
+    rhs: RuntimeValue,
+) -> Result<RuntimeValue, RuntimeEvalError> {
+    match op {
+        RuntimeBinaryOp::Eq => Ok(RuntimeValue::Bool(lhs == rhs)),
+        RuntimeBinaryOp::Ne => Ok(RuntimeValue::Bool(lhs != rhs)),
+        RuntimeBinaryOp::And => match (lhs, rhs) {
+            (RuntimeValue::Bool(lhs), RuntimeValue::Bool(rhs)) => {
+                Ok(RuntimeValue::Bool(lhs && rhs))
+            }
+            (lhs, rhs) => unsupported_binary(op, &lhs, &rhs),
+        },
+        RuntimeBinaryOp::Or => match (lhs, rhs) {
+            (RuntimeValue::Bool(lhs), RuntimeValue::Bool(rhs)) => {
+                Ok(RuntimeValue::Bool(lhs || rhs))
+            }
+            (lhs, rhs) => unsupported_binary(op, &lhs, &rhs),
+        },
+        RuntimeBinaryOp::Lt | RuntimeBinaryOp::Le | RuntimeBinaryOp::Gt | RuntimeBinaryOp::Ge => {
+            match (lhs, rhs) {
+                (RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)) => {
+                    Ok(RuntimeValue::Bool(match op {
+                        RuntimeBinaryOp::Lt => lhs < rhs,
+                        RuntimeBinaryOp::Le => lhs <= rhs,
+                        RuntimeBinaryOp::Gt => lhs > rhs,
+                        RuntimeBinaryOp::Ge => lhs >= rhs,
+                        _ => unreachable!(),
+                    }))
+                }
+                (lhs, rhs) => unsupported_binary(op, &lhs, &rhs),
+            }
+        }
+        RuntimeBinaryOp::Add
+        | RuntimeBinaryOp::Sub
+        | RuntimeBinaryOp::Mul
+        | RuntimeBinaryOp::Div => match (lhs, rhs) {
+            (RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)) => Ok(RuntimeValue::Int(match op {
+                RuntimeBinaryOp::Add => lhs + rhs,
+                RuntimeBinaryOp::Sub => lhs - rhs,
+                RuntimeBinaryOp::Mul => lhs * rhs,
+                RuntimeBinaryOp::Div => lhs / rhs,
+                _ => unreachable!(),
+            })),
+            (lhs, rhs) => unsupported_binary(op, &lhs, &rhs),
+        },
+    }
+}
+
+fn unsupported_binary(
+    op: RuntimeBinaryOp,
+    lhs: &RuntimeValue,
+    rhs: &RuntimeValue,
+) -> Result<RuntimeValue, RuntimeEvalError> {
+    Err(RuntimeEvalError::UnsupportedBinary {
+        op: runtime_binary_op_label(op),
+        lhs: runtime_value_label(lhs),
+        rhs: runtime_value_label(rhs),
+    })
+}
+
+fn runtime_unary_op_label(op: RuntimeUnaryOp) -> &'static str {
+    match op {
+        RuntimeUnaryOp::Not => "!",
+        RuntimeUnaryOp::Neg => "-",
+    }
+}
+
+fn runtime_binary_op_label(op: RuntimeBinaryOp) -> &'static str {
+    match op {
+        RuntimeBinaryOp::Eq => "==",
+        RuntimeBinaryOp::Ne => "!=",
+        RuntimeBinaryOp::Lt => "<",
+        RuntimeBinaryOp::Le => "<=",
+        RuntimeBinaryOp::Gt => ">",
+        RuntimeBinaryOp::Ge => ">=",
+        RuntimeBinaryOp::Add => "+",
+        RuntimeBinaryOp::Sub => "-",
+        RuntimeBinaryOp::Mul => "*",
+        RuntimeBinaryOp::Div => "/",
+        RuntimeBinaryOp::And => "&&",
+        RuntimeBinaryOp::Or => "||",
+    }
+}
+
+fn expr_runtime_label(expr: &RuntimeExpr) -> String {
+    match expr {
+        RuntimeExpr::Value(value) => runtime_value_label(value),
+        RuntimeExpr::Local(name) => name.clone(),
+        RuntimeExpr::EntityRef(target) => format!("@{target}"),
+        RuntimeExpr::Tuple(items) => format!("tuple/{}", items.len()),
+        RuntimeExpr::List(items) => format!("list/{}", items.len()),
+        RuntimeExpr::Record(fields) => format!("record/{}", fields.len()),
+        RuntimeExpr::Variant { name, .. } => format!(".{name}"),
+        RuntimeExpr::Field { field, .. } => format!(".{field}"),
+        RuntimeExpr::Unary { op, .. } => runtime_unary_op_label(*op).to_owned(),
+        RuntimeExpr::Binary { op, .. } => runtime_binary_op_label(*op).to_owned(),
+        RuntimeExpr::If { .. } => "if".to_owned(),
+        RuntimeExpr::Match { .. } => "match".to_owned(),
+    }
+}
+
+fn runtime_value_label(value: &RuntimeValue) -> String {
+    match value {
+        RuntimeValue::Unit => "()".to_owned(),
+        RuntimeValue::Bool(value) => value.to_string(),
+        RuntimeValue::Int(value) => value.to_string(),
+        RuntimeValue::Float(value)
+        | RuntimeValue::String(value)
+        | RuntimeValue::EntityRef(value) => value.clone(),
+        RuntimeValue::Char(value) => value.to_string(),
+        RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
+        RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
+        RuntimeValue::List(values) => format!("list/{}", values.len()),
+        RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
+        RuntimeValue::Variant { name, payload, .. } => {
+            if payload.is_some() {
+                format!(".{name}(...)")
+            } else {
+                format!(".{name}")
+            }
+        }
     }
 }
 
@@ -1455,6 +2438,112 @@ mod tests {
             FlowEvent::AwaitReady { value, .. } if value == "bg_handle"
         )));
         assert!(matches!(engine.fiber().status, FlowFiberStatus::Running));
+    }
+
+    #[test]
+    fn engine_binds_runtime_values_and_gotos_entity_refs() {
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.opening".to_owned())),
+            vec![
+                RuntimeFlow {
+                    id: FlowRuntimeId("flow.opening".to_owned()),
+                    ops: vec![
+                        FlowOp::Let {
+                            pattern: RuntimePattern::Ident("route".to_owned()),
+                            expr: RuntimeExpr::EntityRef("flow.next".to_owned()),
+                        },
+                        FlowOp::GotoExpr(RuntimeExpr::Local("route".to_owned())),
+                    ],
+                },
+                RuntimeFlow {
+                    id: FlowRuntimeId("flow.next".to_owned()),
+                    ops: vec![FlowOp::Return("done".to_owned())],
+                },
+            ],
+            Vec::new(),
+        )
+        .expect("flow plan is valid");
+        let mut engine = Engine::new(plan);
+
+        assert!(engine.step(FrameInput::default()).flow_events.is_empty());
+        let goto = engine.step(FrameInput::default());
+
+        assert_eq!(
+            goto.flow_events,
+            vec![FlowEvent::Goto {
+                target: FlowRuntimeId("flow.next".to_owned())
+            }]
+        );
+    }
+
+    #[test]
+    fn engine_runs_if_and_match_blocks_from_runtime_values() {
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.opening".to_owned())),
+            vec![
+                RuntimeFlow {
+                    id: FlowRuntimeId("flow.opening".to_owned()),
+                    ops: vec![FlowOp::If {
+                        condition: RuntimeExpr::Local("ready".to_owned()),
+                        then_ops: vec![FlowOp::Goto(FlowRuntimeId("flow.match".to_owned()))],
+                        else_ops: vec![FlowOp::Return("wait".to_owned())],
+                    }],
+                },
+                RuntimeFlow {
+                    id: FlowRuntimeId("flow.match".to_owned()),
+                    ops: vec![FlowOp::Match {
+                        scrutinee: RuntimeExpr::Local("route".to_owned()),
+                        arms: vec![
+                            RuntimeMatchArm {
+                                pattern: RuntimePattern::Entity("flow.ready".to_owned()),
+                                guard: None,
+                                ops: vec![FlowOp::Return("ready".to_owned())],
+                            },
+                            RuntimeMatchArm {
+                                pattern: RuntimePattern::Discard,
+                                guard: None,
+                                ops: vec![FlowOp::Return("fallback".to_owned())],
+                            },
+                        ],
+                    }],
+                },
+            ],
+            Vec::new(),
+        )
+        .expect("flow plan is valid");
+        let mut engine = Engine::new(plan);
+
+        let first = engine.step(FrameInput {
+            external_values: vec![
+                RuntimeBinding {
+                    name: "ready".to_owned(),
+                    value: RuntimeValue::Bool(true),
+                },
+                RuntimeBinding {
+                    name: "route".to_owned(),
+                    value: RuntimeValue::EntityRef("flow.ready".to_owned()),
+                },
+            ],
+            ..FrameInput::default()
+        });
+        assert!(first.flow_events.is_empty());
+        assert!(engine.step(FrameInput::default()).flow_events.is_empty());
+        assert_eq!(
+            engine.step(FrameInput::default()).flow_events,
+            vec![FlowEvent::Goto {
+                target: FlowRuntimeId("flow.match".to_owned())
+            }]
+        );
+        assert!(engine.step(FrameInput::default()).flow_events.is_empty());
+        assert!(engine.step(FrameInput::default()).flow_events.is_empty());
+        let matched = engine.step(FrameInput::default());
+
+        assert_eq!(
+            matched.flow_events,
+            vec![FlowEvent::Return {
+                value: "ready".to_owned()
+            }]
+        );
     }
 
     #[test]

@@ -90,13 +90,15 @@ CLI adapter and does not start renderer/audio/device backends.
 
 ## Runtime Dry Run
 
-`arcw run <file.awft> [--frames N] [--json]` is the first headless execution
-entry point. It uses the same parse, HIR, reference validation, typecheck, and
-line-plan lowering path as `arcw check`, then lowers checked flows to
-`arcweft-core::RuntimePlan` and steps `Engine` for up to `N` frames.
+`arcw run <file.awft> [--frames N] [--value name=value] [--json]` is the first
+headless execution entry point. It uses the same parse, HIR, reference
+validation, typecheck, and line-plan lowering path as `arcw check`, then lowers
+checked flows to `arcweft-core::RuntimePlan` and steps `Engine` for up to `N`
+frames.
 
 ```bash
 arcw run game/routes/opening.awft --frames 8
+arcw run game/routes/opening.awft --frames 8 --value ready=true --value route=@flow.next
 arcw run game/routes/opening.awft --frames 8 --json
 ```
 
@@ -105,11 +107,14 @@ file and prints a report; `arcweft-core` only consumes `FrameInput` and returns
 `FrameOutput`. The report includes per-frame flow events, line effects, task
 requests, diagnostics, and the final fiber status.
 
-Current runtime lowering is strict and intentionally incomplete. It supports
-the Phase 1.7 flow slice: dialogue lines, line task groups, `choice`, `await
-with`, `goto`, `return`, `out`, ordinary call-shaped effects, and line
-`cancel on` rules. Unsupported flow syntax fails with a runtime-lowering error
-instead of being silently dropped.
+Current runtime lowering is strict and still intentionally bounded. It supports
+the Phase 1.8 flow slice: dialogue lines, line task groups, `choice`, `await
+with`, `let`, `let else`, `if`, `if let`, `match`, `loop`, `while`,
+`while let`, `for`, `scope`, dynamic `goto`, dynamic `return`, `out`, ordinary
+call-shaped effects, and line `cancel on` rules. `--value` injects pure
+`RuntimeValue` bindings into `FrameInput`; this is for deterministic CLI/LSP
+inspection, not host I/O. Unsupported flow syntax fails with a runtime-lowering
+error instead of being silently dropped.
 
 ## Test / Bench
 
