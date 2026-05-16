@@ -22,8 +22,8 @@ Option<T>        presence/absence dimension
 ```awft
 let bg_result = await asset.image(@asset.bg.room) with:
     pending p:
-        scene @scene.loading:
-            progress p.ratio
+        scene.show(@scene.loading)
+        progress.set(p.ratio)
 ```
 
 Type:
@@ -60,7 +60,7 @@ let config = load_config()?
 let route = state.route_override.context("missing route")?
 let bg = (await asset.image(@asset.bg.room) with:
     pending p:
-        scene @scene.loading
+        scene.show(@scene.loading)
 )?
 ```
 
@@ -82,8 +82,8 @@ Writing this is technically valid but unpleasant:
 ```awft
 let bg = (await asset.image(@asset.bg.room) with:
     pending p:
-        scene @scene.loading:
-            progress p.ratio
+        scene.show(@scene.loading)
+        progress.set(p.ratio)
 )?
 ```
 
@@ -92,8 +92,8 @@ Therefore Arcweft's canonical user-facing form is:
 ```awft
 let bg = try await asset.image(@asset.bg.room) with:
     pending p:
-        scene @scene.loading:
-            progress p.ratio
+        scene.show(@scene.loading)
+        progress.set(p.ratio)
 ```
 
 Arcweft also accepts this equivalent prefix sugar:
@@ -101,8 +101,8 @@ Arcweft also accepts this equivalent prefix sugar:
 ```awft
 let bg = await? asset.image(@asset.bg.room) with:
     pending p:
-        scene @scene.loading:
-            progress p.ratio
+        scene.show(@scene.loading)
+        progress.set(p.ratio)
 ```
 
 Meaning:
@@ -123,7 +123,7 @@ Do not write:
 ```awft
 await asset.image(@asset.bg.room)? with:
     pending p:
-        scene @scene.loading
+        scene.show(@scene.loading)
 ```
 
 That shape is visually close to Rust, but in Arcweft it is ambiguous because `with:` belongs to the await operation. Arcweft rejects only this grouped form: `await expr? with:`. The ordinary postfix `?` remains valid elsewhere, including `(await expr with: ...)?`.
@@ -133,15 +133,13 @@ Use one of:
 ```awft
 let bg_result = await asset.image(@asset.bg.room) with:
     pending p:
-        scene @scene.loading
-
+        scene.show(@scene.loading)
 let bg = try await asset.image(@asset.bg.room) with:
     pending p:
-        scene @scene.loading
-
+        scene.show(@scene.loading)
 let bg = await? asset.image(@asset.bg.room) with:
     pending p:
-        scene @scene.loading
+        scene.show(@scene.loading)
 ```
 
 Parenthesized `(await ...)?` remains valid for generated code or rare expression composition, but the formatter should prefer `try await`.
@@ -155,9 +153,9 @@ let bg = try await asset.image(@asset.bg.room)
     .context("opening background failed")
 with:
     pending p:
-        scene @scene.loading:
-            text "背景を読み込み中"
-            progress p.ratio
+        scene.show(@scene.loading)
+        text.show("背景を読み込み中")
+        progress.set(p.ratio)
 ```
 
 This is preferred over parenthesizing the whole await.
@@ -167,8 +165,8 @@ If the context must refer to the whole await operation, block form is allowed:
 ```awft
 let bg = (await asset.image(@asset.bg.room) with:
     pending p:
-        scene @scene.loading:
-            progress p.ratio
+        scene.show(@scene.loading)
+        progress.set(p.ratio)
 ).context("opening background failed")?
 ```
 
@@ -181,9 +179,9 @@ Visible `flow` code must provide pending behavior.
 ```awft
 let voice = try await voice.load(@voice.alice.001) with:
     pending p:
-        scene @scene.loading_voice:
-            text "音声を読み込み中"
-            progress p.ratio
+        scene.show(@scene.loading_voice)
+        text.show("音声を読み込み中")
+        progress.set(p.ratio)
 ```
 
 ## Await in task fn
@@ -225,4 +223,3 @@ await expr? with:
 - [Error, Trace, `?`, and Context](error-trace-context.md)
 - [Never / Bottom Type](never-bottom-type.md)
 - [Expression Control Flow](expression-control-flow.md)
-

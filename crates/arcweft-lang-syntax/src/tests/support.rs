@@ -1,7 +1,7 @@
 pub(super) use crate::{
     AwaitBranchKind, BinaryOp, BlockStyle, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
-    ComputationBlockKind, ContractClause, DialogueToken, EntityDeclKind, EntityKind, Expr,
-    FlowItem, FlowKind, FunctionKind, HirFlowItem, HirTopLevelDecl, ImplMember, Item,
+    ComputationBlockKind, ContractClause, DeferOutcome, DialogueToken, EntityDeclKind, EntityKind,
+    Expr, FlowItem, FlowKind, FunctionKind, HirFlowItem, HirTopLevelDecl, ImplMember, Item,
     LifetimeScopeKind, LinePlanItem, Literal, NameRegistry, Pattern, Placeholder, SelectBranchHead,
     Stmt, SymbolUseKind, SyntaxLintCode, TraitMember, TypeCheckEnv, TypeKind, TypeRef, UnaryOp,
     VariantPatternPayload, Visibility, collect_symbol_uses, lint_id_policy, lower_line_task_groups,

@@ -174,8 +174,8 @@ let bg = try await asset.image(@asset.bg.room)
     .context("while loading opening background")
 with:
     pending p:
-        scene @scene.loading:
-            progress p.ratio
+        scene.show(@scene.loading)
+        progress.set(p.ratio)
 ```
 
 This is preferred.
@@ -185,8 +185,8 @@ The explicit parenthesized form is valid but not recommended for hand-written co
 ```awft
 let bg = (await asset.image(@asset.bg.room) with:
     pending p:
-        scene @scene.loading:
-            progress p.ratio
+        scene.show(@scene.loading)
+        progress.set(p.ratio)
 ).context("while loading opening background")?
 ```
 
@@ -199,7 +199,7 @@ Rejected because postfix `?` groups with the expression before `with:`:
 ```awft
 await asset.image(@asset.bg.room)? with:
     pending p:
-        scene @scene.loading
+        scene.show(@scene.loading)
 ```
 
 ## Automatic source frames

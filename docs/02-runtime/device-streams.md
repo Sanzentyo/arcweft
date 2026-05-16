@@ -115,9 +115,10 @@ User-visible flows must decide what to do while a source is being acquired.
 ```awft
 let mic =
     try await capture.microphone(@capture.player_microphone) with {
-        pending p => scene @scene.permission_wait {
-            text "マイクの許可を待っています"
-            progress p.ratio
+        pending p => {
+            scene.show(@scene.permission_wait)
+            text.show("マイクの許可を待っています")
+            progress.set(p.ratio)
         }
         denied _ => return Ok(FlowExit::Goto(@flow.mic_optional))
     }
@@ -134,9 +135,8 @@ select {
     }
 
     frame _ => {
-        scene @scene.listening {
-            meter @signal.voice_level
-        }
+        scene.show(@scene.listening)
+        meter.show(source = @signal.voice_level)
         continue
     }
 

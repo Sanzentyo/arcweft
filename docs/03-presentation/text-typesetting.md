@@ -70,7 +70,7 @@ pub typeset @typeset.credits typst {
 
 ```awft
 let doc = try await typeset(@typeset.credits) with {
-    pending p => scene @scene.loading_typeset { text "組版中"; progress p.ratio }
+    pending p => { scene.show(@scene.loading_typeset); text.show("組版中"); progress.set(p.ratio) }
 }
 
 TypesetView(doc).scroll()

@@ -100,9 +100,10 @@ pub virtual_controller @controller.default_touch {
 pub flow @flow.device_setup setup_devices(state: GameState) -> Result<FlowExit, FlowError> {
     let sensor =
         try await device.open(@device.motion_sensor) with {
-            pending p => scene @scene.device_wait {
-                text "USBセンサーの許可を待っています"
-                progress p.ratio
+            pending p => {
+                scene.show(@scene.device_wait)
+                text.show("USBセンサーの許可を待っています")
+                progress.set(p.ratio)
             }
 
             denied _ => {

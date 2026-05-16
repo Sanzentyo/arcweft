@@ -267,7 +267,8 @@ pub layer @layer.debug.agent: Debug {
 Scene では layer に content を差し込む。
 
 ```awft
-scene @scene.opening {
+scene.show(@scene.opening)
+scope {
     layer @layer.world.background {
         image(@asset.bg.room).fit(cover)
     }

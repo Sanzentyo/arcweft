@@ -246,9 +246,10 @@ Opening a device is `Need<Result<DevicePort, DeviceError>, TaskError>` and must 
 ```awft
 let pad =
     try await device.open(@device.rhythm_pad) with {
-        pending p => scene @scene.device_permission_wait {
-            text "USBデバイスの接続許可を待っています"
-            progress p.ratio
+        pending p => {
+            scene.show(@scene.device_permission_wait)
+            text.show("USBデバイスの接続許可を待っています")
+            progress.set(p.ratio)
         }
 
         denied e => {

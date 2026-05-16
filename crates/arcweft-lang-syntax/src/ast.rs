@@ -591,11 +591,13 @@ pub struct BorrowBlock {
 pub enum Stmt {
     Let {
         pattern: Pattern,
+        ty: Option<TypeRef>,
         expr: Expr,
     },
     /// `let PAT = EXPR else { ... }` binding whose else block must diverge.
     LetElse {
         pattern: Pattern,
+        ty: Option<TypeRef>,
         expr: Expr,
         else_body: Vec<Stmt>,
     },
@@ -629,8 +631,14 @@ pub enum Stmt {
     /// `thread name { ... }` / `thread name:` scoped VM child task.
     Thread(ThreadBlock),
     /// `defer { ... }` cleanup block registered on the current runtime scope.
-    DeferBlock(Vec<Stmt>),
-    Defer(Expr),
+    DeferBlock {
+        outcome: DeferOutcome,
+        statements: Vec<Stmt>,
+    },
+    Defer {
+        outcome: DeferOutcome,
+        expr: Expr,
+    },
     Yield(Expr),
     Panic(Expr),
     Fail(Expr),
@@ -654,7 +662,7 @@ pub enum Stmt {
     Wait(WaitTarget),
     /// `on head => stmt` event branch used by source and plan-like bodies.
     On {
-        head: String,
+        trigger: TriggerPattern,
         body: Vec<Stmt>,
     },
     Command(ScenarioCommand),
@@ -1004,10 +1012,22 @@ pub struct ChoicePlan {
 /// Item inside a choice lifecycle plan.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ChoicePlanItem {
-    Option { name: String, value: Expr },
-    Timeout { duration: Expr, body: Vec<Stmt> },
-    Cancel { trigger: String, body: Vec<Stmt> },
-    OnSelect { pattern: Pattern, body: Vec<Stmt> },
+    Option {
+        name: String,
+        value: Expr,
+    },
+    Timeout {
+        duration: Expr,
+        body: Vec<Stmt>,
+    },
+    Cancel {
+        trigger: TriggerPattern,
+        body: Vec<Stmt>,
+    },
+    OnSelect {
+        pattern: Pattern,
+        body: Vec<Stmt>,
+    },
     Raw(String),
 }
 
@@ -1102,11 +1122,9 @@ pub enum LinePlanItem {
     Thread(ThreadBlock),
     /// `on .mark { ... }` line-local mark/event handler.
     On {
-        trigger: Expr,
+        trigger: TriggerPattern,
         body: Vec<Stmt>,
     },
-    /// `finally { ... }` line-final block that runs once during line cleanup.
-    Finally(Vec<Stmt>),
     Option {
         name: String,
         value: Expr,
@@ -1140,8 +1158,39 @@ pub enum LinePlanItem {
 /// Parsed cancellation syntax.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CancelRuleSyntax {
-    trigger: String,
+    trigger: TriggerPattern,
     action: Vec<Stmt>,
+}
+
+/// Shared trigger syntax used by `on`, `cancel on`, and hook-like filters.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TriggerPattern {
+    Input(Pattern),
+    Event(Pattern),
+    Signal {
+        target: Expr,
+        value: Option<Pattern>,
+    },
+    Timeout(Expr),
+    Mark(Pattern),
+    Select(Pattern),
+    Task(Pattern),
+    Scope(Pattern),
+    Expr(Expr),
+}
+
+/// Exit outcome guard attached to scoped cleanup.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DeferOutcome {
+    /// Run for completed, cancelled, and failed scope exits.
+    #[default]
+    Always,
+    /// Run only when the scope exits normally.
+    Completed,
+    /// Run only when the scope exits through a cancellation path.
+    Cancelled,
+    /// Run only when the scope exits through a failure path.
+    Failed,
 }
 
 /// Hook item syntax.
@@ -3066,16 +3115,59 @@ impl LinePlan {
 }
 
 impl CancelRuleSyntax {
-    pub(crate) const fn new(trigger: String, action: Vec<Stmt>) -> Self {
+    pub(crate) const fn new(trigger: TriggerPattern, action: Vec<Stmt>) -> Self {
         Self { trigger, action }
     }
 
-    pub fn trigger(&self) -> &str {
+    pub const fn trigger(&self) -> &TriggerPattern {
         &self.trigger
     }
 
     pub fn action(&self) -> &[Stmt] {
         &self.action
+    }
+}
+
+impl TriggerPattern {
+    pub fn label(&self) -> String {
+        match self {
+            Self::Input(pattern) => format!("input {}", pattern_label(pattern)),
+            Self::Event(pattern) => format!("event {}", pattern_label(pattern)),
+            Self::Signal { target, value } => value.as_ref().map_or_else(
+                || format!("signal {}", expr_label(target)),
+                |value| format!("signal {} {}", expr_label(target), pattern_label(value)),
+            ),
+            Self::Timeout(expr) => format!("timeout {}", expr_label(expr)),
+            Self::Mark(pattern) => format!("mark {}", pattern_label(pattern)),
+            Self::Select(pattern) => format!("select {}", pattern_label(pattern)),
+            Self::Task(pattern) => format!("task {}", pattern_label(pattern)),
+            Self::Scope(pattern) => format!("scope {}", pattern_label(pattern)),
+            Self::Expr(expr) => expr_label(expr),
+        }
+    }
+}
+
+fn expr_label(expr: &Expr) -> String {
+    match expr {
+        Expr::Path(path) => path.clone(),
+        Expr::EntityRef(entity) => entity.body().to_owned(),
+        Expr::Literal(literal) => format!("{literal:?}"),
+        _ => format!("{expr:?}"),
+    }
+}
+
+fn pattern_label(pattern: &Pattern) -> String {
+    match pattern {
+        Pattern::Ident(name) | Pattern::MutIdent(name) => name.clone(),
+        Pattern::Variant { name, .. } if name.starts_with('.') => name.clone(),
+        Pattern::Variant {
+            path: None,
+            name,
+            payload: None,
+        } => format!(".{name}"),
+        Pattern::Entity(entity) => entity.body().to_owned(),
+        Pattern::Discard => "_".to_owned(),
+        _ => format!("{pattern:?}"),
     }
 }
 

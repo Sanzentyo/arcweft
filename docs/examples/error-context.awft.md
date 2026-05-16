@@ -13,16 +13,16 @@ pub flow @flow.error_context_example example(state: GameState) -> Result<FlowExi
         .context("while loading opening background")
     with:
         pending p:
-            scene @scene.loading:
-                progress p.ratio
+            scene.show(@scene.loading)
+            progress.set(p.ratio)
 
     let voice = try await voice.load(@voice.alice.opening.001)
         .map_err(.Voice)
         .context("while loading Alice opening voice")
     with:
         pending p:
-            scene @scene.loading_voice:
-                progress p.ratio
+            scene.show(@scene.loading_voice)
+            progress.set(p.ratio)
 
     alice.say(voice=voice)[
         読み込みが完了しました。[p]

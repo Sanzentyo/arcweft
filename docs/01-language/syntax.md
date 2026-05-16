@@ -61,8 +61,8 @@ image(@asset.bg.room)
 ```awft
 let result = try await @<activity.truck_game>.run(input) with:
     pending p:
-        scene @scene.loading:
-            progress p.ratio
+        scene.show(@scene.loading)
+        progress.set(p.ratio)
 
 @<say.opening.dream_hint@sem:b3_9f2a1c>
 @<asset:bg/room.ktx2>
@@ -113,12 +113,14 @@ flow 内では、時間のかかる処理に待機時の表示が必須。
 
 ```awft
 let assets = try await load_opening_assets() with {
-    pending p => scene @scene.loading {
-        text "Openingを準備中"
-        progress p.ratio
+    pending p => {
+        scene.show(@scene.loading)
+        text.show("Openingを準備中")
+        progress.set(p.ratio)
     }
-    timeout 3s => scene @scene.loading_slow {
-        text "少し時間がかかっています"
+    timeout 3s => {
+        scene.show(@scene.loading_slow)
+        text.show("少し時間がかかっています")
     }
 }
 ```

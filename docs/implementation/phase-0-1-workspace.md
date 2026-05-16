@@ -172,7 +172,10 @@ Syntax parser:
 - Zero-copy `borrow expr as name: Type { ... }` blocks are parsed into AST/HIR, and the checker treats their non-`'static` lifetimes as active only inside the borrow body.
 - Dialogue `#[...]` content interpolation, record expressions, compact scenario command arguments, same-line and multiline timed-cue anchors/bodies, line-plan options, line-plan `let`/`out`, line-plan assertions, line-plan cancellation actions, line-plan expression items, nested `start`/`together` groups, choice option fields, choice lifecycle plans, source-locale blocks, and `await ... with` carry parsed expressions/statements for later type checking and HIR lowering.
 - Line-plan memo declarations such as `memo rich_text key=(line.id, locale, theme.text_hash) cache=flow` preserve the memo name and typed option expressions for symbol collection and checking.
-- Line-plan cancellation command statements such as `stop voice fade=40ms` and `flush text instant` parse as structured command statements, and the checker allows `continue` inside line cancellation continuations as specified by the dialogue docs.
+- Line-plan cancellation uses canonical ordinary calls such as
+  `voice.stop(fade = 40ms)`, `cues.stop(policy = .CancelPending)`, and
+  `text.flush(mode = .Instant)`; the checker allows `continue` inside line
+  cancellation continuations as specified by the dialogue docs.
 - Canonical runtime observation uses ordinary calls: `log.info(...)`,
   `log.debug(...)`, `log.warn(...)`, `signal.set(target, value)`, and
   `metric.set(target, value)`, and `event.emit(Event, fields)`.
@@ -212,7 +215,7 @@ Syntax parser:
   `say.opening.narrator.rain.001`, and omitted `text_key` is derived from the
   normalized `say...` line ID.
 - Line plans preserve `init`, generic `thread name` blocks, scoped
-  `defer { ... }`, line-level `finally`, local `on .mark` handlers,
+  `defer { ... }`, `defer on completed|cancelled|failed`, local `on .mark` handlers,
   `wait mark .name`, duration waits, and `'line.* <- expr` lifetime registry
   writes as structured statements/items. The parser accepts canonical
   `with { ... }`, indentation sugar `with:`, and flat `=== with ===` fences
@@ -232,7 +235,7 @@ Syntax parser:
 - Try-line syntax now type-checks the documented `try alice.say(...)[ ... ] with:` shape when line-plan branches return `Ok(...)` / `Err(...)` through `out`. The minimal checker treats those constructors as `Result` values, merges placeholder `Ok`/`Err` result sides, unwraps the `try` expression to the success type, and treats `()` as `Unit`.
 - Parenthesized await-with forms documented for generated or composed code, including `let bg = (await asset.image(...) with: ...)?` and `let bg = (await asset.image(...) with: ...).context(...)?`, lower to explicit await-binding HIR with `applies_try`.
 - Wait-view branch patterns include structured variant payloads, so documented activity forms such as `pending .Realizing(p) => ... p.ratio` bind the payload inside only that branch.
-- The minimal checker accepts dotted member access on scoped locals in wait-view bodies, so documented forms such as `pending p => ... progress p.ratio` validate without requiring `p.ratio` to be registered as a global symbol.
+- The minimal checker accepts dotted member access on scoped locals in wait-view bodies, so documented forms such as `pending p => ... progress.set(p.ratio)` validate without requiring `p.ratio` to be registered as a global symbol.
 - Background task-style `await expr`, `try await expr`, and `await? expr` without a wait-view block parse as structured expression AST. The minimal checker requires the awaited expression to have `Need<T, E>` type, returns `Result<T, E>` for plain `await`, and unwraps to `T` for `try await` / `await?`.
 - Ordinary Rust-like propagation syntax is represented in expression AST. `expr?` and prefix `try expr` parse as structured try expressions, participate in symbol collection, and the minimal checker unwraps `Result<T, E>`-like types while rejecting non-result expressions.
 - Flow/function contract clauses (`requires`, `ensures`, `invariant`, `assume`, `reads`, `effects`, `no_effect`, `modifies`, `decreases`) are parsed separately from the body and participate in symbol collection and type checking where applicable.

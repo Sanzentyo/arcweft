@@ -17,7 +17,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
     }
 
     let assets = try await load_opening_assets() with {
-        pending p => scene @scene.loading { progress p.ratio }
+        pending p => scene.show(@scene.loading); progress.set(p.ratio)
     }
 
     scene { background image(assets.bg) }

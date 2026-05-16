@@ -98,9 +98,10 @@ pub controller_map @controller_map.action_game {
 pub flow @flow.enter_truck_game enter_truck_game(state: GameState) -> Result<FlowExit, FlowError> {
     let pad =
         try await device.open(@device.rhythm_pad).optional() with {
-            pending p => scene @scene.device_permission_wait {
-                text "USBコントローラーの接続を確認しています"
-                progress p.ratio
+            pending p => {
+                scene.show(@scene.device_permission_wait)
+                text.show("USBコントローラーの接続を確認しています")
+                progress.set(p.ratio)
             }
 
             denied _ => None
@@ -112,9 +113,10 @@ pub flow @flow.enter_truck_game enter_truck_game(state: GameState) -> Result<Flo
             optional_device = pad,
             virtual_controller = Some(@controller.mobile_default),
         })? with {
-            pending p => scene @scene.loading_minigame {
-                text "ミニゲームを準備中"
-                progress p.ratio
+            pending p => {
+                scene.show(@scene.loading_minigame)
+                text.show("ミニゲームを準備中")
+                progress.set(p.ratio)
             }
         }
 

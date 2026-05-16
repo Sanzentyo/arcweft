@@ -399,12 +399,12 @@ task fn load_opening_assets() -> Result<OpeningAssets, AssetError> {
     }
     let bg = try await assets.bg with:
         pending p:
-            scene @scene.loading:
-                progress p.ratio
+            scene.show(@scene.loading)
+            progress.set(p.ratio)
     let voice = try await assets.voice with:
         pending p:
-            scene @scene.loading:
-                progress p.ratio
+            scene.show(@scene.loading)
+            progress.set(p.ratio)
     Ok(OpeningAssets { bg, voice })
 }
 ```

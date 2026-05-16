@@ -56,7 +56,7 @@ fn await_with_keeps_awaited_expression() {
     let tree = parse_ok(
         r"
 flow @flow.loading loading {
-    try await load_opening_assets() with { pending p => scene @scene.loading { progress p.ratio } }
+    try await load_opening_assets() with { pending p => progress.set(p.ratio) }
 }
 ",
     );
@@ -74,7 +74,10 @@ flow @flow.loading loading {
     ));
     let pending = await_with.pending().expect("pending branch");
     assert_eq!(pending.kind(), AwaitBranchKind::Pending);
-    assert!(matches!(pending.body()[0], FlowItem::ScenarioCommand(_)));
+    assert!(matches!(
+        pending.body()[0],
+        FlowItem::Stmt(Stmt::Expr(Expr::MethodCall { .. }))
+    ));
 }
 
 #[test]
@@ -83,7 +86,7 @@ fn await_with_keeps_wait_view_branches() {
         r"
 flow @flow.loading loading {
     await load_avatar() with {
-        pending p => scene @scene.loading { progress p.ratio }
+        pending p => progress.set(p.ratio)
         ready img => Image(img)
         error _ => Icon(@asset.avatar_fallback)
         denied _ => return Ok(FlowExit::Goto(@flow.title))
@@ -122,8 +125,7 @@ fn try_await_accepts_indented_with_block() {
 flow @flow.loading loading {
     try await asset.image(@asset.bg.room) with:
         pending p:
-            scene @scene.loading:
-                progress p.ratio
+            progress.set(p.ratio)
 }
 ",
     );
@@ -141,7 +143,10 @@ flow @flow.loading loading {
     ));
     let pending = await_with.pending().expect("pending branch");
     assert_eq!(pending.body().len(), 1);
-    assert!(matches!(pending.body()[0], FlowItem::ScenarioCommand(_)));
+    assert!(matches!(
+        pending.body()[0],
+        FlowItem::Stmt(Stmt::Expr(Expr::MethodCall { .. }))
+    ));
 }
 
 #[test]
@@ -149,7 +154,7 @@ fn await_question_prefix_is_try_await_sugar() {
     let tree = parse_ok(
         r"
 flow @flow.loading loading {
-    await? asset.image(@asset.bg.room) with { pending p => scene @scene.loading }
+    await? asset.image(@asset.bg.room) with { pending p => scene.show(@scene.loading) }
 }
 ",
     );
@@ -389,7 +394,7 @@ fn await_question_with_is_rejected_as_ambiguous() {
     let errors = parse_errors(
         r"
 flow @flow.loading loading {
-    await load_opening_assets()? with { pending p => scene @scene.loading }
+    await load_opening_assets()? with { pending p => scene.show(@scene.loading) }
 }
 ",
     );
@@ -406,7 +411,7 @@ fn typecheck_rejects_borrow_block_across_await_boundary() {
         r"
 flow @flow.borrow borrow {
     borrow bg.pixels() as pixels: &'asset [Rgba8] {
-        try await load_avatar() with { pending p => scene @scene.loading { progress p.ratio } }
+        try await load_avatar() with { pending p => progress.set(p.ratio) }
     }
 }
 ",
@@ -441,7 +446,7 @@ fn typecheck_rejects_borrow_across_await_boundary() {
         r"
 flow @flow.borrow borrow {
     let pixels: &'asset [Rgba8] = bg.pixels()
-    try await load_avatar() with { pending p => scene @scene.loading { progress p.ratio } }
+    try await load_avatar() with { pending p => progress.set(p.ratio) }
 }
 ",
     );
@@ -475,7 +480,7 @@ fn typechecks_await_wait_view_branches() {
         r"
 flow @flow.loading loading {
     try await load_avatar() with {
-        pending p => scene @scene.loading { progress p.ratio }
+        pending p => progress.set(p.ratio)
         ready img => Image(img)
         error _ => Icon(@asset.avatar_fallback)
         denied _ => return Ok(FlowExit::Goto(@flow.title))

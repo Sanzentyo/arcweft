@@ -174,9 +174,10 @@ Starting capture returns a `Need` and therefore must define a pending UI in a pl
 ```awft
 let mic =
     try await capture.microphone(@capture.player_microphone) with {
-        pending p => scene @scene.permission_wait {
-            text "マイクの許可を待っています"
-            progress p.ratio
+        pending p => {
+            scene.show(@scene.permission_wait)
+            text.show("マイクの許可を待っています")
+            progress.set(p.ratio)
         }
 
         denied e => {
@@ -191,9 +192,10 @@ Camera capture is the same:
 ```awft
 let cam =
     try await capture.camera(@capture.face_camera) with {
-        pending p => scene @scene.permission_wait {
-            text "カメラの許可を待っています"
-            progress p.ratio
+        pending p => {
+            scene.show(@scene.permission_wait)
+            text.show("カメラの許可を待っています")
+            progress.set(p.ratio)
         }
 
         denied _ => return Ok(FlowExit::Goto(@flow.camera_optional))
@@ -261,7 +263,7 @@ let result =
     await #<activity.voice_minigame>.run({
         mic = capture.stream(@capture.player_microphone),
     })? with {
-        pending p => scene @scene.voice_game_loading { progress p.ratio }
+        pending p => scene.show(@scene.voice_game_loading); progress.set(p.ratio)
     }
 ```
 

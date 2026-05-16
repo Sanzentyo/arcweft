@@ -20,6 +20,7 @@ flow @flow.opening opening {
         FlowItem::Stmt(Stmt::Let {
             pattern: Pattern::Tuple(_),
             expr: Expr::DialogueCall { .. },
+            ..
         })
     ));
     assert!(matches!(
@@ -48,12 +49,10 @@ flow @flow.borrow borrow {
     assert!(matches!(
         &flow.body()[0],
         FlowItem::Stmt(Stmt::Let {
-            pattern: Pattern::Typed {
-                ty: TypeRef::Ref { .. },
-                ..
-            },
+            pattern: Pattern::Ident(name),
+            ty: Some(TypeRef::Ref { .. }),
             ..
-        })
+        }) if name == "pixels"
     ));
 }
 

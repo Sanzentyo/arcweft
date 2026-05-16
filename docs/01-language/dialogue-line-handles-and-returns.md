@@ -166,7 +166,7 @@ with:
 
     cancel on input .SkipLine:
         'line.voice |> drop(stop_now)
-        flush text instant
+        text.flush(mode = .Instant)
         continue
 ```
 
@@ -182,7 +182,7 @@ with:
 
     cancel on input .SkipLine:
         'line.voice |> drop(stop_now)
-        flush text instant
+        text.flush(mode = .Instant)
         continue
 ```
 
@@ -430,4 +430,3 @@ let (_, cue) = alice.say()[おはよう。[p]] with:
 ```
 
 runs `drop_now` on the discarded voice handle immediately after destructuring, while `cue` remains owned by the surrounding scope.
-

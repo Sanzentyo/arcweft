@@ -54,8 +54,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
 - `pro_review11.md`: adopted canonical dialogue `look` line options, extended
   `stage` / `portrait` / `focus` / `cleanup` line options, `[mark .name]`
   zero-width dialogue markers, line-plan `on .name:` handlers, generic
-  line-scoped `thread` blocks, scoped `defer { ... }`, line-level `finally`,
-  flat `=== ... ===` fence sugar, `wait mark` / duration waits, and `'line.*`
+  line-scoped `thread` blocks, scoped `defer { ... }`, outcome-guarded
+  `defer on completed|cancelled|failed`, flat `=== ... ===` fence sugar,
+  `wait mark` / duration waits, and `'line.*`
   lifetime registry paths with optional `?` reads. Local dialogue `[hook ...]`
   and `#[hook ...]` syntax is removed; top-level engine hooks remain.
 
@@ -142,10 +143,11 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   marker-triggered line-plan `on .name:` handlers against marks in the same
   line.
 - Line plans now preserve `init`, generic `thread name` blocks, scoped
-  `defer { ... }`, line-level `finally`, `on` handlers, `wait` statements, and
-  `'line.* <- expr` lifetime registry writes as structured AST/HIR-checkable
-  syntax. `with:` and flat `=== with ===` blocks are source sugar over the same
-  line-plan model; `spawn` is rejected in favor of `thread`.
+  `defer { ... }`, outcome-guarded `defer on completed|cancelled|failed`, `on`
+  handlers, `wait` statements, and `'line.* <- expr` lifetime registry writes
+  as structured AST/HIR-checkable syntax. Line cleanup now uses `defer` rather
+  than a separate cleanup construct; `with:` and flat `=== with ===` blocks are source sugar over the
+  same line-plan model; `spawn` is rejected in favor of `thread`.
 - Syntax-level ID policy linting exists as `lint_id_policy`. It currently
   reports deep dot-run relative IDs such as `@...suffix` and flow IDs whose
   tail does not match the module tail. Further hierarchy checks should build on

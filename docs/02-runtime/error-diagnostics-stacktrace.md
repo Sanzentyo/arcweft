@@ -121,8 +121,8 @@ let bg = try await asset.image(@asset.bg.room)
     .context("while loading opening background")
 with:
     pending p:
-        scene @scene.loading:
-            progress p.ratio
+        scene.show(@scene.loading)
+        progress.set(p.ratio)
 ```
 
 `context` can be attached before `try await`; the context is applied to the eventual error stored in `Need<T, E>`.
@@ -132,8 +132,8 @@ Parenthesized whole-await context is valid but not preferred:
 ```awft
 let bg = (await asset.image(@asset.bg.room) with:
     pending p:
-        scene @scene.loading:
-            progress p.ratio
+        scene.show(@scene.loading)
+        progress.set(p.ratio)
 ).context("while loading opening background")?
 ```
 
@@ -142,7 +142,7 @@ Rejected:
 ```awft
 await asset.image(@asset.bg.room)? with:
     pending p:
-        scene @scene.loading
+        scene.show(@scene.loading)
 ```
 
 Use `try await asset.image(...) with:`, `await? asset.image(...) with:`, or the

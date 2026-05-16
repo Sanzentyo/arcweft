@@ -602,13 +602,13 @@ pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     assert!(source.signature_tail().contains("Source<VideoFrameHandle"));
     assert!(source.body_statements().iter().any(|stmt| matches!(
         stmt,
-        Stmt::On { head, body }
-            if head == "item frame" && matches!(body.as_slice(), [Stmt::Yield(_)])
+        Stmt::On { trigger, body }
+            if trigger.label().contains("frame") && matches!(body.as_slice(), [Stmt::Yield(_)])
     )));
     assert!(source.body_statements().iter().any(|stmt| matches!(
         stmt,
-        Stmt::On { head, body }
-            if head == "disconnected" && matches!(body.as_slice(), [Stmt::Expr(Expr::MethodCall { .. })])
+        Stmt::On { trigger, body }
+            if trigger.label().contains("disconnected") && matches!(body.as_slice(), [Stmt::Expr(Expr::MethodCall { .. })])
     )));
 
     let hir = lower_to_hir(&tree).expect("documented source item lowers");

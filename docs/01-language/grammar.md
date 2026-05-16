@@ -166,15 +166,27 @@ LinePlanAttach := 'with' Block
                 | 'with' ':' LinePlanItem
                 | FlatWith
 FlatWith       := '=== with ===' FlatLinePlanItem* '=== /with ==='
-LinePlanItem   := InitBlock | ThreadBlock | DeferBlock | OnBlock | FinallyBlock
+LinePlanItem   := InitBlock | ThreadBlock | DeferBlock | OnBlock
                 | LetStmt | TimedCue | CancelRule | OutStmt | ScopeStmt | ExprStmt
 InitBlock      := 'init' Block | 'init' ':' Newline IndentedItems
 ThreadBlock    := 'thread' ThreadModifier? Ident? Block
                 | 'thread' ThreadModifier? Ident? ':' Newline IndentedItems
 ThreadModifier := 'detached'
-DeferBlock     := 'defer' Block | 'defer' ':' Newline IndentedItems
-OnBlock        := 'on' Expr Block | 'on' Expr ':' Newline IndentedItems
-FinallyBlock   := 'finally' Block | 'finally' ':' Newline IndentedItems
+DeferBlock     := 'defer' DeferOutcome? Block
+                | 'defer' DeferOutcome? ':' Newline IndentedItems
+DeferOutcome   := 'on' ('completed' | 'cancelled' | 'failed')
+OnBlock        := 'on' TriggerPattern Block
+                | 'on' TriggerPattern ':' Newline IndentedItems
+CancelRule     := 'cancel' 'on' TriggerPattern Block
+                | 'cancel' 'on' TriggerPattern '=>' ControlStmt
+TriggerPattern := 'input' Pattern
+                | 'event' Pattern
+                | 'signal' Expr Pattern?
+                | 'timeout' Expr
+                | 'mark' Pattern
+                | 'select' Pattern
+                | 'task' Pattern
+                | 'scope' Pattern
 OutStmt        := 'out' Expr
 FlatLine       := '=== line' DialogueCallee '===' DialogueContent FlatWith? '=== /line ==='
 FlatThread     := '=== thread' ThreadModifier? Ident? '===' Item* '=== /thread ==='

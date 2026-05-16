@@ -1,6 +1,6 @@
 use crate::ast::{
     AwaitBranchKind, ContractClause, DialogueToken, EntityDeclKind, EntityRef, EntityRefSyntax,
-    FlowKind, IdRef, LinePlanItem, Pattern, Stmt,
+    FlowKind, IdRef, LinePlanItem, Pattern, Stmt, TriggerPattern,
 };
 use crate::expr::{BinaryOp, Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind, Literal};
 use crate::lower::{HirFlowItem, HirModule, HirTopLevelDecl};
@@ -496,17 +496,6 @@ impl TypeChecker<'_> {
             self.line_label_stack.push(plan.label().map(str::to_owned));
             self.line_mark_stack.push(marks);
             self.available_lifetimes.push(LifetimeScopeKind::Line);
-            if plan
-                .items()
-                .iter()
-                .filter(|item| matches!(item, LinePlanItem::Finally(_)))
-                .count()
-                > 1
-            {
-                self.errors.push(TypeCheckError::new(
-                    "duplicate line `finally` block; combine finalizers into one block".to_owned(),
-                ));
-            }
             for item in plan.items() {
                 self.check_line_plan_item(item);
             }
@@ -626,12 +615,13 @@ impl TypeChecker<'_> {
 
     fn check_stmt(&mut self, stmt: &Stmt) {
         match stmt {
-            Stmt::Let { pattern, expr } => self.check_let_stmt(pattern, expr),
+            Stmt::Let { pattern, ty, expr } => self.check_let_stmt(pattern, ty.as_ref(), expr),
             Stmt::LetElse {
                 pattern,
+                ty,
                 expr,
                 else_body,
-            } => self.check_let_else_stmt(pattern, expr, else_body),
+            } => self.check_let_else_stmt(pattern, ty.as_ref(), expr, else_body),
             Stmt::LetChoice { .. }
             | Stmt::LetScope { .. }
             | Stmt::LetLoop { .. }
@@ -658,13 +648,13 @@ impl TypeChecker<'_> {
                     self.check_stmt(stmt);
                 }
             }
-            Stmt::DeferBlock(statements) => {
+            Stmt::DeferBlock { statements, .. } => {
                 self.reject_active_borrows("defer cleanup boundary");
                 for stmt in statements {
                     self.check_stmt(stmt);
                 }
             }
-            Stmt::Defer(expr) | Stmt::Yield(expr) => {
+            Stmt::Defer { expr, .. } | Stmt::Yield(expr) => {
                 self.reject_active_borrows("suspension boundary");
                 self.check_expr(expr);
             }
@@ -738,8 +728,10 @@ impl TypeChecker<'_> {
         });
     }
 
-    fn check_let_stmt(&mut self, pattern: &Pattern, expr: &Expr) {
-        let ty = self.check_expr(expr);
+    fn check_let_stmt(&mut self, pattern: &Pattern, annotation: Option<&TypeRef>, expr: &Expr) {
+        let ty = self
+            .check_expr(expr)
+            .or_else(|| annotation.map(type_ref_kind));
         if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), ty) {
             if let Some(slot_family) = default_presentation_slot_family(expr) {
                 if let Some(previous) = self
@@ -754,31 +746,47 @@ impl TypeChecker<'_> {
             self.locals.insert(name.to_owned(), ty);
         }
         collect_borrow_lifetimes(pattern, &mut self.active_borrows);
-    }
-
-    fn bind_on_head_locals(&mut self, stmt: &Stmt) {
-        let Stmt::On { head, .. } = stmt else {
-            return;
-        };
-        let mut parts = head.split_whitespace();
-        let Some(kind) = parts.next() else {
-            return;
-        };
-        let Some(binding) = parts.next_back() else {
-            return;
-        };
-        let ty = match kind {
-            "item" => TypeKind::Named("SourceItem".to_owned()),
-            "error" => TypeKind::Named("SourceError".to_owned()),
-            _ => return,
-        };
-        if is_local_ident(binding) {
-            self.locals.insert(binding.to_owned(), ty);
+        if let Some(annotation) = annotation {
+            collect_type_lifetimes(annotation, &mut self.active_borrows);
         }
     }
 
-    fn check_let_else_stmt(&mut self, pattern: &Pattern, expr: &Expr, else_body: &[Stmt]) {
-        let expr_type = self.check_expr(expr);
+    fn bind_on_head_locals(&mut self, stmt: &Stmt) {
+        let Stmt::On { trigger, .. } = stmt else {
+            return;
+        };
+        let pattern = match trigger {
+            TriggerPattern::Input(pattern)
+            | TriggerPattern::Event(pattern)
+            | TriggerPattern::Mark(pattern)
+            | TriggerPattern::Select(pattern)
+            | TriggerPattern::Task(pattern)
+            | TriggerPattern::Scope(pattern) => Some(pattern),
+            TriggerPattern::Signal { value, .. } => value.as_ref(),
+            TriggerPattern::Timeout(_) | TriggerPattern::Expr(_) => None,
+        };
+        if let Some(pattern) = pattern {
+            for (name, ty) in let_else_bindings(pattern, None) {
+                self.locals.insert(name, ty);
+            }
+            if let Pattern::Ident(name) = pattern
+                && is_local_ident(name)
+            {
+                self.locals.entry(name.to_owned()).or_insert(TypeKind::Unit);
+            }
+        }
+    }
+
+    fn check_let_else_stmt(
+        &mut self,
+        pattern: &Pattern,
+        annotation: Option<&TypeRef>,
+        expr: &Expr,
+        else_body: &[Stmt],
+    ) {
+        let expr_type = self
+            .check_expr(expr)
+            .or_else(|| annotation.map(type_ref_kind));
         for stmt in else_body {
             self.check_stmt(stmt);
         }
@@ -791,6 +799,9 @@ impl TypeChecker<'_> {
             self.locals.insert(name, ty);
         }
         collect_borrow_lifetimes(pattern, &mut self.active_borrows);
+        if let Some(annotation) = annotation {
+            collect_type_lifetimes(annotation, &mut self.active_borrows);
+        }
     }
 
     fn check_if_stmt(&mut self, condition: &Expr, body: &[Stmt]) {
@@ -1222,8 +1233,7 @@ impl TypeChecker<'_> {
     fn check_line_plan_item(&mut self, item: &LinePlanItem) -> Option<TypeKind> {
         match item {
             LinePlanItem::Init(statements)
-            | LinePlanItem::Finally(statements)
-            | LinePlanItem::Stmt(Stmt::DeferBlock(statements)) => {
+            | LinePlanItem::Stmt(Stmt::DeferBlock { statements, .. }) => {
                 self.check_line_plan_statements(statements)
             }
             LinePlanItem::Thread(thread) => self.check_thread_body(thread.body()),
@@ -1334,22 +1344,37 @@ impl TypeChecker<'_> {
         output
     }
 
-    fn check_line_on_trigger(&mut self, trigger: &Expr) {
-        if let Expr::Path(name) = trigger
-            && name.starts_with('.')
-        {
-            if !self
-                .line_mark_stack
-                .last()
-                .is_some_and(|marks| marks.contains(name))
-            {
-                self.errors.push(TypeCheckError::new(format!(
-                    "line-local handler trigger `{name}` does not name a `[mark {name}]` in this dialogue line"
-                )));
+    fn check_line_on_trigger(&mut self, trigger: &TriggerPattern) {
+        match trigger {
+            TriggerPattern::Mark(pattern) => {
+                if let Pattern::Variant { name, .. } | Pattern::Ident(name) = pattern {
+                    let mark = if name.starts_with('.') {
+                        name.clone()
+                    } else {
+                        format!(".{name}")
+                    };
+                    if !self
+                        .line_mark_stack
+                        .last()
+                        .is_some_and(|marks| marks.contains(&mark))
+                    {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "line-local handler trigger `{mark}` does not name a `[mark {mark}]` in this dialogue line"
+                        )));
+                    }
+                }
             }
-            return;
+            TriggerPattern::Signal { target, .. }
+            | TriggerPattern::Timeout(target)
+            | TriggerPattern::Expr(target) => {
+                self.check_expr(target);
+            }
+            TriggerPattern::Input(_)
+            | TriggerPattern::Event(_)
+            | TriggerPattern::Select(_)
+            | TriggerPattern::Task(_)
+            | TriggerPattern::Scope(_) => {}
         }
-        self.check_expr(trigger);
     }
 
     fn check_dialogue_content(&mut self, tokens: &[DialogueToken]) -> HashSet<String> {
@@ -1617,6 +1642,14 @@ impl TypeChecker<'_> {
         self.locals.get(path).cloned().or_else(|| {
             self.env.symbol_type(path).cloned().or_else(|| {
                 self.check_dotted_path_target(path).or_else(|| {
+                    // Short enum-variant expressions such as `.Instant` rely
+                    // on expected type resolution in the full checker. The
+                    // Phase 1 checker preserves unknown short variants as
+                    // variant values after registered symbols and patch names
+                    // had a chance to resolve.
+                    if path.starts_with('.') {
+                        return Some(TypeKind::Named("Variant".to_owned()));
+                    }
                     self.errors
                         .push(TypeCheckError::new(format!("unknown symbol `{path}`")));
                     None
@@ -2532,8 +2565,22 @@ fn result_ok_type(name: &str) -> Option<TypeKind> {
 }
 
 fn well_known_runtime_method_type(name: &str) -> Option<TypeKind> {
-    (name.starts_with("log.") || matches!(name, "signal.set" | "metric.set" | "event.emit"))
-        .then_some(TypeKind::Unit)
+    (name.starts_with("log.")
+        || matches!(
+            name,
+            "signal.set"
+                | "metric.set"
+                | "event.emit"
+                | "scene.show"
+                | "scene.clear"
+                | "progress.set"
+                | "meter.show"
+                | "text.show"
+                | "text.flush"
+                | "voice.stop"
+                | "cues.stop"
+        ))
+    .then_some(TypeKind::Unit)
 }
 
 fn first_arg_type(types: &[Option<TypeKind>]) -> TypeKind {

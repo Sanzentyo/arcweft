@@ -137,7 +137,7 @@ fn selected_route(state: GameState) -> Result<Ref<Flow>, GameError> {
 ```awft
 let bg =
     try await asset.image(@asset.bg.room) with {
-        pending p => scene @scene.loading { progress p.ratio }
+        pending p => scene.show(@scene.loading); progress.set(p.ratio)
     }
 ```
 
@@ -235,7 +235,7 @@ let images =
     await image_ids
         .traverse(asset.image)
         .parallel(limit = 4)? with {
-            pending p => scene @scene.loading { progress p.ratio }
+            pending p => scene.show(@scene.loading); progress.set(p.ratio)
         }
 ```
 
@@ -257,7 +257,7 @@ let frames =
         .take(60)
         .record()
         .collect<List<CameraFrame>>() with {
-            pending p => scene @scene.capture_wait { progress p.ratio }
+            pending p => scene.show(@scene.capture_wait); progress.set(p.ratio)
         }
 ```
 

@@ -232,7 +232,8 @@ layer @layer.modal: Modal {
 Scene 内で layer を使う。
 
 ```awft
-scene @scene.opening {
+scene.show(@scene.opening)
+scope {
     layer @layer.background {
         image @asset.bg.room fit cover
     }
@@ -254,7 +255,8 @@ scene @scene.opening {
 短く書く場合:
 
 ```awft
-scene @scene.opening {
+scene.show(@scene.opening)
+scope {
     background layer @layer.background image(@asset.bg.room)
     character layer @layer.characters sprite(@asset.char.alice.default).at(center)
     ui layer @layer.dialogue TextBox(current_text())

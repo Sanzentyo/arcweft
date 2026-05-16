@@ -102,7 +102,7 @@ fn typechecks_edge_case_hir_with_explicit_environment() {
 flow @flow.opening opening {
     show(@character.alice, .normal, at = .right, fade = 220ms)
     let (actor, (_, voice)) = alice.say(voice=auto)[聞いて。[p]]
-    try await load_opening_assets() with { pending p => scene @scene.loading { progress p.ratio } }
+    try await load_opening_assets() with { pending p => progress.set(p.ratio) }
     alice[
         #[fmt("夢", color=blue)]を見た。[p]
     ]

@@ -14,8 +14,8 @@ pub flow @flow.control_flow_example example(state: GameState) -> Result<FlowExit
 
     let selected = try await wait_choice(@choice.opening.first) with:
         pending p:
-            scene @scene.wait_choice:
-                progress p.ratio
+            scene.show(@scene.wait_choice)
+            progress.set(p.ratio)
 
     let route = match selected.id {
         @choice.opening.listen when state.affection[@character.alice] >= 3 => @flow.alice_intro

@@ -189,7 +189,7 @@ with {
 
     cancel on input .SkipLine {
         'line.voice |> drop(stop_now)
-        flush text instant
+        text.flush(mode = .Instant)
         continue
     }
 }
@@ -208,7 +208,7 @@ with {
 
     cancel on input .SkipLine {
         'line.voice |> drop(stop_now)
-        flush text instant
+        text.flush(mode = .Instant)
         continue
     }
 }
@@ -310,7 +310,7 @@ with {
 
     cancel on input .BackToTitle {
         'line.voice |> drop(stop_now)
-        stop cues policy=cancel_pending
+        cues.stop(policy = .CancelPending)
         goto @flow.title
     }
 }
@@ -321,8 +321,9 @@ Line plan statements are scoped to the line and cannot leak variables outward.
 `init` runs before reveal begins. `thread name` creates a line-scoped child task
 owned by the line task group; it is a Sans I/O runtime task, not an OS thread.
 Scoped cleanup uses `defer { ... }` on the current runtime scope. Line-wide
-cleanup may use either a line-scope `defer` or a line-level `finally { ... }`
-item in the `with` block.
+cleanup is also modeled as line-scope `defer`. Use `defer on completed`,
+`defer on cancelled`, or `defer on failed` when cleanup should run only for a
+specific scope-exit outcome.
 Line-local events use `[mark .name]` in text and `on .name` in the line plan.
 Registered `defer` blocks run when their owning scope exits, including normal
 completion, early control transfer, line cancellation, and child-task
@@ -353,8 +354,16 @@ with {
         }
     }
 
-    finally {
+    defer {
         cleanup_line()
+    }
+
+    defer on completed {
+        metric.increment(@metric.line_completed)
+    }
+
+    defer on cancelled {
+        metric.increment(@metric.line_cancelled)
     }
 }
 ```
@@ -367,7 +376,7 @@ registered, while `'line.focus?` is optional and returns an `Option`-like value.
 
 `cleanup` is a line option/profile. `cleanup on ...:` is not part of the line
 plan grammar; use `defer { ... }` in the relevant runtime scope, line-level
-`finally { ... }`, cancellation rules, or explicit drop operations.
+`defer { ... }`, cancellation rules, or explicit drop operations.
 
 ---
 
@@ -480,13 +489,13 @@ alice.say(voice=auto)[
 with {
     cancel on input .SkipLine {
         'line.voice |> drop(stop_now)
-        flush text instant
+        text.flush(mode = .Instant)
         continue
     }
 
     cancel on input .BackToTitle {
         'line.voice |> drop(stop_now)
-        stop cues policy=cancel_pending
+        cues.stop(policy = .CancelPending)
         goto @flow.title
     }
 
@@ -573,7 +582,7 @@ Allowed in line plan blocks:
 ```text
 - init blocks
 - scoped `defer` cleanup on line, init, thread, and handler scopes
-- line-level `finally` cleanup
+- line-scope `defer` cleanup
 - line-local `on .mark:` handlers
 - `wait mark .name` and duration waits
 - line options

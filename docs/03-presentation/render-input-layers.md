@@ -391,7 +391,8 @@ layer @layer.confirm_dialog phase Modal z 900 {
 ### scene layer
 
 ```awft
-scene @scene.opening {
+scene.show(@scene.opening)
+scope {
     layer @layer.bg phase Background z 0 {
         input none
         image @asset.bg.room fit cover

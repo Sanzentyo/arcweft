@@ -72,7 +72,9 @@ pub struct LineTaskGroup {
     pub init_defer_stack: Vec<Vec<LineEffectRequest>>,
     pub children: Vec<LineChildTask>,
     pub defer_stack: Vec<Vec<LineEffectRequest>>,
-    pub finally: Vec<LineEffectRequest>,
+    pub completed_defer_stack: Vec<Vec<LineEffectRequest>>,
+    pub cancelled_defer_stack: Vec<Vec<LineEffectRequest>>,
+    pub failed_defer_stack: Vec<Vec<LineEffectRequest>>,
     pub cleanup: LineCleanupPolicy,
 }
 
@@ -105,6 +107,7 @@ pub enum LineEffectRequest {
     Select(String),
     Break { label: Option<String>, value: Option<String> },
     Continue { label: Option<String> },
+    DeferOn { outcome: String, effects: Vec<LineEffectRequest> },
 }
 ```
 
@@ -116,9 +119,11 @@ defer in init               -> LineTaskGroup.init_defer_stack
 thread name { ... }         -> LineTaskGroup.children
 defer in thread/on handler  -> LineChildTask.defer_stack
 defer in line scope         -> LineTaskGroup.defer_stack
+defer on completed          -> LineTaskGroup.completed_defer_stack
+defer on cancelled          -> LineTaskGroup.cancelled_defer_stack
+defer on failed             -> LineTaskGroup.failed_defer_stack
 at(0.35s) { ... }           -> child task that waits 0.35s, then runs body
 on .mark { ... }            -> child task that waits for .mark, then runs body
-finally { ... }             -> LineTaskGroup.finally
 wait mark .x                -> LineEffectRequest::WaitMark(".x")
 wait 0.35s                  -> LineEffectRequest::Wait(...)
 'line.key <- expr           -> LineEffectRequest::RegisterHandle
@@ -141,11 +146,12 @@ with typed expression/runtime nodes without changing the effect categories.
 
 `defer` is not thread-specific syntax. It registers cleanup on the current
 runtime scope. In the Phase 1.5 line-plan model, the line scope, `init` scope,
-thread scopes, and event-handler scopes each have a cleanup stack. Defers inside
-`finally` are lowered into the end of the finalizer body in reverse registration
-order because `finally` itself is already cleanup code. A registered `defer`
-must run when its owning scope exits, including normal completion, early control
-transfer, line cancellation, and child-task cancellation.
+thread scopes, and event-handler scopes each have a cleanup stack. A bare
+`defer` must run when its owning scope exits, including normal completion,
+early control transfer, line cancellation, and child-task cancellation.
+Outcome-guarded forms `defer on completed`, `defer on cancelled`, and
+`defer on failed` are kept in separate deterministic stacks so adapters can run
+only the cleanup appropriate for the scope exit.
 
 Lifetime registry paths are typed static keys, not stringly dynamic maps.
 The core model keeps the data Sans I/O; host backends receive deterministic
@@ -204,13 +210,14 @@ replay-safe serialization when the target is `session`, `global`, or
 it requires an explicit `unsafe lifetime` region, a reason string, and a project
 capability. It cannot bypass determinism or the Sans I/O boundary.
 
-Line-level `finally` runs after line-scoped child tasks are cancelled/joined and
-their defer stacks have run, but before any remaining automatic line-registry
-drops. Scoped cleanup is represented by `defer { ... }`, so flow-level threads,
-line-plan threads, handler tasks, and ordinary lexical runtime scopes share the
-same cleanup model. The VM must treat cancellation as scope exit for cleanup:
-child task cancellation first unwinds that task's defer stack, then the line
-task group proceeds to line-level finalization.
+Line-level cleanup is represented by line-scope `defer`; there is no separate
+line-plan cleanup keyword. Bare `defer` runs after line-scoped child tasks are
+cancelled/joined and their defer stacks have run, but before any remaining
+automatic line-registry drops. Flow-level threads, line-plan threads, handler
+tasks, and ordinary lexical runtime scopes share the same cleanup model. The VM
+must treat cancellation as scope exit for cleanup: child task cancellation first
+unwinds that task's defer stack, then the line task group runs the matching
+line-scope defer stacks.
 
 ## Determinism
 

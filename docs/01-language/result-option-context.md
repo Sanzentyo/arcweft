@@ -140,8 +140,8 @@ let bg = try await asset.image(@asset.bg.room)
     .context("opening background failed")
 with:
     pending p:
-        scene @scene.loading:
-            progress p.ratio
+        scene.show(@scene.loading)
+        progress.set(p.ratio)
 ```
 
 Equivalent explicit form:
@@ -151,8 +151,8 @@ let bg_result = await asset.image(@asset.bg.room)
     .context("opening background failed")
 with:
     pending p:
-        scene @scene.loading:
-            progress p.ratio
+        scene.show(@scene.loading)
+        progress.set(p.ratio)
 
 let bg = bg_result?
 ```
@@ -165,8 +165,8 @@ let bg = await? asset.image(@asset.bg.room)
     .context("opening background failed")
 with:
     pending p:
-        scene @scene.loading:
-            progress p.ratio
+        scene.show(@scene.loading)
+        progress.set(p.ratio)
 ```
 
 Rejected because `with:` belongs to the await operation and the postfix grouping
@@ -175,7 +175,7 @@ is ambiguous:
 ```awft
 await asset.image(@asset.bg.room)? with:
     pending p:
-        scene @scene.loading
+        scene.show(@scene.loading)
 ```
 
 ## `bail`, `ensure`, and `fail`

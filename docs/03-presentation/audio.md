@@ -234,7 +234,7 @@ pub bgm @bgm.generated.alice_theme compose {
 
 ```awft
 let bgm = try await compose_bgm(@bgm.generated.alice_theme) with {
-    pending p => scene @scene.loading_audio { text "BGMを生成中"; progress p.ratio }
+    pending p => { scene.show(@scene.loading_audio); text.show("BGMを生成中"); progress.set(p.ratio) }
 }
 ```
 
@@ -257,7 +257,7 @@ pub voice profile @voice.alice.tts {
 
 ```awft
 let speech = try await tts.speak(@voice.alice.tts, "おはよう。") with {
-    pending p => scene @scene.loading_voice { progress p.ratio }
+    pending p => scene.show(@scene.loading_voice); progress.set(p.ratio)
 }
 
 voice(speech.audio, speaker = alice)

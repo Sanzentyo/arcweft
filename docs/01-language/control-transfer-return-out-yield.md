@@ -113,7 +113,7 @@ Dialogue `cancel on ...` branches may use `return`, `out`, `goto`, or `continue`
 alice[長い台詞です。[p]]
 with:
     cancel on input .SkipLine:
-        flush text instant
+        text.flush(mode = .Instant)
         out .Skipped
 
     cancel on input .BackToTitle:
@@ -128,10 +128,9 @@ with:
 alice.say()[長い台詞です。[p]]
 with 'line {
     cancel on input .SkipLine:
-        flush text instant
+        text.flush(mode = .Instant)
         out 'line .Skipped
 }
 ```
 
 Diagnostics must state the continuation being exited, for example "this `return` exits flow `flow.opening`" or "this `out` exits line scope `'line`".
-

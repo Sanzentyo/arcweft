@@ -135,9 +135,10 @@ pub device @device.primary_gamepad: Gamepad {
 ```awft
 let panel =
     try await device.usb(@device.light_panel) with {
-        pending p => scene @scene.usb_permission_wait {
-            text "USB ライトパネルの許可を待っています"
-            progress p.ratio
+        pending p => {
+            scene.show(@scene.usb_permission_wait)
+            text.show("USB ライトパネルの許可を待っています")
+            progress.set(p.ratio)
         }
 
         denied _ => {

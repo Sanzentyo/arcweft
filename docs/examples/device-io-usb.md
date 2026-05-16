@@ -50,7 +50,7 @@ Use in a flow:
 flow @flow.device_demo device_demo(state: GameState) -> Result<FlowExit, FlowError> {
     let dev =
         try await device.usb(@device.usb.sensor) with {
-            pending _ => scene @scene.device_wait { text "USBセンサーを接続してください" }
+            pending _ => scene.show(@scene.device_wait); text.show("USBセンサーを接続してください")
             denied _ => return Ok(FlowExit::Goto(@flow.device_optional))
         }
 
@@ -66,8 +66,9 @@ flow @flow.device_demo device_demo(state: GameState) -> Result<FlowExit, FlowErr
         }
 
         frame _ => {
-            scene @scene.sensor_live {
-                text "センサー入力を待機中"
+            scene.show(@scene.sensor_live)
+            scope {
+                text.show("センサー入力を待機中")
             }
             continue
         }

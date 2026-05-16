@@ -36,7 +36,8 @@ Scene での利用:
 
 ```awft
 flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    scene @scene.opening {
+    scene.show(@scene.opening)
+    scope {
         layer @layer.world.background {
             image(@asset.bg.room).fit(cover)
         }

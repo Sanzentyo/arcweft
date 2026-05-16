@@ -27,7 +27,7 @@ with:
     let LinePlanItem::CancelRule(rule) = &plan.items()[1] else {
         panic!("expected cancel rule");
     };
-    assert_eq!(rule.trigger(), "input .SkipLine");
+    assert!(rule.trigger().label().contains("SkipLine"));
     assert!(matches!(rule.action(), [Stmt::Continue { label: None }]));
     assert!(matches!(&plan.items()[2], LinePlanItem::Out(_)));
 }
@@ -302,7 +302,7 @@ flow @flow.opening opening {
             wait 0.35s
             tick_motion()
             defer { cleanup_motion() }
-        finally:
+        defer:
             cleanup_line()
 }
 ",
@@ -324,7 +324,13 @@ flow @flow.opening opening {
         &plan.items()[2],
         LinePlanItem::Thread(thread) if thread.name() == Some("motion") && thread.body().len() == 3
     ));
-    assert!(matches!(&plan.items()[3], LinePlanItem::Finally(body) if body.len() == 1));
+    assert!(matches!(
+        &plan.items()[3],
+        LinePlanItem::Stmt(Stmt::DeferBlock {
+            outcome: DeferOutcome::Always,
+            statements
+        }) if statements.len() == 1
+    ));
 
     let hir = lower_to_hir(&tree).expect("line plan fixture lowers");
     validate_typecheck_ready(&hir).expect("line plan fixture is typecheck-ready");
@@ -343,7 +349,7 @@ flow @flow.opening opening {
 }
 
 #[test]
-fn parses_flat_line_plan_thread_defer_and_finally() {
+fn parses_flat_line_plan_thread_and_defer() {
     let tree = parse_ok(
         r"
 flow @flow.flat flat {
@@ -362,9 +368,9 @@ cleanup_motion()
 'line.focus |> drop
 === /on ===
 
-=== finally ===
+=== defer ===
 cleanup_line()
-=== /finally ===
+=== /defer ===
 === /with ===
 === /line ===
 }
@@ -383,7 +389,13 @@ cleanup_line()
         matches!(&plan.items()[0], LinePlanItem::Thread(thread) if thread.name() == Some("motion"))
     );
     assert!(matches!(&plan.items()[1], LinePlanItem::On { .. }));
-    assert!(matches!(&plan.items()[2], LinePlanItem::Finally(body) if body.len() == 1));
+    assert!(matches!(
+        &plan.items()[2],
+        LinePlanItem::Stmt(Stmt::DeferBlock {
+            outcome: DeferOutcome::Always,
+            statements
+        }) if statements.len() == 1
+    ));
 }
 
 #[test]
@@ -566,8 +578,8 @@ flow @flow.opening opening {
     ]
     with {
         cancel on input .SkipLine {
-            stop voice fade=40ms
-            flush text instant
+            voice.stop(fade = 40ms)
+            text.flush(mode = .Instant)
             continue
         }
     }
@@ -587,8 +599,11 @@ flow @flow.opening opening {
     };
     assert!(matches!(
         rule.action(),
-        [Stmt::Command(stop), Stmt::Command(flush), Stmt::Continue { label: None }]
-            if stop.name() == "stop" && flush.name() == "flush"
+        [
+            Stmt::Expr(Expr::MethodCall { method: stop, .. }),
+            Stmt::Expr(Expr::MethodCall { method: flush, .. }),
+            Stmt::Continue { label: None }
+        ] if stop == "stop" && flush == "flush"
     ));
 
     let hir = lower_to_hir(&tree).expect("line plan cancel commands lower");
@@ -598,8 +613,7 @@ flow @flow.opening opening {
         &TypeCheckEnv::new()
             .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
             .with_symbol("voice", TypeKind::Named("VoiceHandle".to_owned()))
-            .with_symbol("text", TypeKind::Named("DialogueText".to_owned()))
-            .with_symbol("instant", TypeKind::Named("FlushPolicy".to_owned())),
+            .with_symbol("text", TypeKind::Named("DialogueText".to_owned())),
     )
     .expect("typecheck succeeds");
 }

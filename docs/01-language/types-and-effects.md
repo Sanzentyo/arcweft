@@ -56,7 +56,7 @@ flow で使うには:
 
 ```awft
 let bg = try await asset.image(@asset.bg.room) with {
-    pending p => scene @scene.loading { progress p.ratio }
+    pending p => scene.show(@scene.loading); progress.set(p.ratio)
 }
 ```
 

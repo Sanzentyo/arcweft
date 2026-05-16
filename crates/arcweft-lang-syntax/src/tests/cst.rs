@@ -272,17 +272,16 @@ fn cst_punctuation_sequence_split_ignores_nested_operators() {
 
 #[test]
 fn cst_whitespace_split_ignores_nested_text_and_strings() {
-    let parts = split_top_level_whitespace(
-        r#"scene @scene.loading text("a b") progress { ratio = p.ratio }"#,
-    );
+    let parts =
+        split_top_level_whitespace(r#"call @scene.loading text("a b") config { ratio = p.ratio }"#);
 
     assert_eq!(
         parts,
         vec![
-            "scene",
+            "call",
             "@scene.loading",
             r#"text("a b")"#,
-            "progress",
+            "config",
             "{ ratio = p.ratio }"
         ]
     );

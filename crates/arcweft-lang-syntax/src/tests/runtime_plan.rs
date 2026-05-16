@@ -46,9 +46,9 @@ flow @flow.opening opening {
             'line.focus.main |> drop
             defer { cleanup_handler() }
         defer { cleanup_line_scope() }
-        finally:
+        defer on completed:
             cleanup_line()
-            defer { cleanup_finally_probe() }
+            defer { cleanup_completed_probe() }
 }
 ",
     );
@@ -111,11 +111,11 @@ flow @flow.opening opening {
         vec![vec![call("cleanup_handler", &[])]]
     );
     assert_eq!(
-        group.finally,
-        vec![
+        group.completed_defer_stack,
+        vec![vec![
             call("cleanup_line", &[]),
-            call("cleanup_finally_probe", &[])
-        ]
+            call("cleanup_completed_probe", &[])
+        ]]
     );
 }
 

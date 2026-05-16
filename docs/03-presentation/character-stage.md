@@ -302,8 +302,8 @@ alice.say(voice=auto)[
 ] {
     cancel on input .SkipLine {
         'line.voice |> drop(stop_now)
-        stop cues policy=complete_current
-        flush text instant
+        cues.stop(policy = .CompleteCurrent)
+        text.flush(mode = .Instant)
         continue
     }
 }
@@ -313,9 +313,9 @@ Cue cancellation policies:
 
 | Policy | Meaning |
 |---|---|
-| `cancel_pending` | cancel all cues not yet started |
-| `complete_current` | finish currently active transition, cancel future cues |
-| `snap_to_final` | apply final transform/look immediately |
+| `.CancelPending` | cancel all cues not yet started |
+| `.CompleteCurrent` | finish currently active transition, cancel future cues |
+| `.SnapToFinal` | apply final transform/look immediately |
 | `keep_running` | do not cancel stage cues |
 
 
@@ -489,7 +489,7 @@ The object API hides the memo function behind concise calls:
 
 ```awft
 let smile = try await alice.sprite(smile) with {
-    pending p => scene @scene.loading_sprite { progress p.ratio }
+    pending p => scene.show(@scene.loading_sprite); progress.set(p.ratio)
 }
 
 alice.stage.show(smile, at=center)

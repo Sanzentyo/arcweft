@@ -78,9 +78,10 @@ pub struct Watch<T> {
 ```awft
 let usb =
     try await device.usb(@device.light_panel) with {
-        pending p => scene @scene.device_permission_wait {
-            text "USB デバイスの許可を待っています"
-            progress p.ratio
+        pending p => {
+            scene.show(@scene.device_permission_wait)
+            text.show("USB デバイスの許可を待っています")
+            progress.set(p.ratio)
         }
 
         denied _ => return Ok(FlowExit::Goto(@flow.device_optional))
@@ -119,7 +120,7 @@ Use a granted capture handle instead:
 ```awft
 let mic =
     try await capture.microphone(@capture.player_microphone) with {
-        pending p => scene @scene.permission_wait { progress p.ratio }
+        pending p => scene.show(@scene.permission_wait); progress.set(p.ratio)
     }
 
 let level_stream = rms_level(mic.frames())

@@ -1,4 +1,6 @@
-use crate::ast::{EntityRef, LinePlan, LinePlanItem, Stmt, WaitTarget};
+use crate::ast::{
+    DeferOutcome, EntityRef, LinePlan, LinePlanItem, Pattern, Stmt, TriggerPattern, WaitTarget,
+};
 use crate::expr::{DurationUnit, Expr, Literal};
 use crate::lower::{HirDialogue, HirFlowItem, HirModule};
 use arcweft_core::{
@@ -122,17 +124,12 @@ fn lower_line_plan_item(
                 .push(lower_child_task(thread.name(), thread.body(), errors));
         }
         LinePlanItem::On { trigger, body } => {
-            let mut task = lower_child_task(Some(&expr_label(trigger)), body, errors);
-            if let Expr::Path(name) = trigger {
-                task.body
-                    .insert(0, LineEffectRequest::WaitMark(name.clone()));
+            let trigger_name = trigger_child_name(trigger);
+            let mut task = lower_child_task(Some(&trigger_name), body, errors);
+            if let Some(name) = trigger_mark_name(trigger) {
+                task.body.insert(0, LineEffectRequest::WaitMark(name));
             }
             group.children.push(task);
-        }
-        LinePlanItem::Finally(statements) => {
-            let scope = lower_scoped_stmt_list(statements, errors);
-            group.finally.extend(scope.body);
-            group.finally.extend(flatten_defer_stack(scope.defer_stack));
         }
         LinePlanItem::Stmt(stmt) => {
             lower_line_scope_stmt(stmt, group, errors);
@@ -166,7 +163,7 @@ fn lower_line_plan_item(
         }
         LinePlanItem::CancelRule(rule) => {
             group.cancel_rules.push(LineCancelRuleRequest {
-                trigger: rule.trigger().to_owned(),
+                trigger: rule.trigger().label(),
                 action: lower_scoped_stmt_list(rule.action(), errors).into_effects(),
             });
         }
@@ -241,16 +238,62 @@ fn lower_line_scope_stmt(
     errors: &mut Vec<LinePlanLowerError>,
 ) {
     match stmt {
-        Stmt::DeferBlock(statements) => {
-            group
-                .defer_stack
-                .push(lower_cleanup_block(statements, errors));
+        Stmt::DeferBlock {
+            outcome,
+            statements,
+        } => {
+            push_defer_block(*outcome, lower_cleanup_block(statements, errors), group);
         }
-        Stmt::Defer(expr) => {
-            group.defer_stack.push(lower_expr_effect(expr, errors));
+        Stmt::Defer { outcome, expr } => {
+            push_defer_block(*outcome, lower_expr_effect(expr, errors), group);
         }
         other => group.init.extend(lower_stmt(other, errors)),
     }
+}
+
+fn push_defer_block(
+    outcome: DeferOutcome,
+    effects: Vec<LineEffectRequest>,
+    group: &mut LineTaskGroup,
+) {
+    match outcome {
+        DeferOutcome::Always => group.defer_stack.push(effects),
+        DeferOutcome::Completed => group.completed_defer_stack.push(effects),
+        DeferOutcome::Cancelled => group.cancelled_defer_stack.push(effects),
+        DeferOutcome::Failed => group.failed_defer_stack.push(effects),
+    }
+}
+
+fn outcome_effects(
+    outcome: DeferOutcome,
+    effects: Vec<LineEffectRequest>,
+) -> Vec<LineEffectRequest> {
+    if matches!(outcome, DeferOutcome::Always) {
+        effects
+    } else {
+        vec![LineEffectRequest::DeferOn {
+            outcome: match outcome {
+                DeferOutcome::Always => "always",
+                DeferOutcome::Completed => "completed",
+                DeferOutcome::Cancelled => "cancelled",
+                DeferOutcome::Failed => "failed",
+            }
+            .to_owned(),
+            effects,
+        }]
+    }
+}
+
+fn trigger_mark_name(trigger: &TriggerPattern) -> Option<String> {
+    match trigger {
+        TriggerPattern::Mark(Pattern::Variant { name, .. }) => Some(format!(".{name}")),
+        TriggerPattern::Mark(Pattern::Ident(name)) => Some(name.clone()),
+        _ => None,
+    }
+}
+
+fn trigger_child_name(trigger: &TriggerPattern) -> String {
+    trigger_mark_name(trigger).unwrap_or_else(|| trigger.label())
 }
 
 fn lower_scoped_stmt_list(
@@ -262,13 +305,19 @@ fn lower_scoped_stmt_list(
         match statement {
             // `defer` is scoped cleanup, not a thread-only construct. The
             // caller decides which runtime scope owns the resulting stack.
-            Stmt::DeferBlock(statements) => {
+            Stmt::DeferBlock {
+                outcome,
+                statements,
+            } => {
+                scope.defer_stack.push(outcome_effects(
+                    *outcome,
+                    lower_cleanup_block(statements, errors),
+                ));
+            }
+            Stmt::Defer { outcome, expr } => {
                 scope
                     .defer_stack
-                    .push(lower_cleanup_block(statements, errors));
-            }
-            Stmt::Defer(expr) => {
-                scope.defer_stack.push(lower_expr_effect(expr, errors));
+                    .push(outcome_effects(*outcome, lower_expr_effect(expr, errors)));
             }
             other => scope.body.extend(lower_stmt(other, errors)),
         }
@@ -340,7 +389,7 @@ fn lower_stmt(stmt: &Stmt, errors: &mut Vec<LinePlanLowerError>) -> Vec<LineEffe
         Stmt::Continue { label } => vec![LineEffectRequest::Continue {
             label: label.clone(),
         }],
-        Stmt::DeferBlock(_) | Stmt::Defer(_) => {
+        Stmt::DeferBlock { .. } | Stmt::Defer { .. } => {
             errors.push(LinePlanLowerError::new(
                 "`defer` must be lowered through a scoped statement list".to_owned(),
             ));

@@ -60,8 +60,12 @@ pub struct LineTaskGroup {
     pub children: Vec<LineChildTask>,
     /// Cleanup registered directly on the line scope.
     pub defer_stack: Vec<Vec<LineEffectRequest>>,
-    /// Explicit line-level finalizer effects.
-    pub finally: Vec<LineEffectRequest>,
+    /// Cleanup registered with `defer on completed`.
+    pub completed_defer_stack: Vec<Vec<LineEffectRequest>>,
+    /// Cleanup registered with `defer on cancelled`.
+    pub cancelled_defer_stack: Vec<Vec<LineEffectRequest>>,
+    /// Cleanup registered with `defer on failed`.
+    pub failed_defer_stack: Vec<Vec<LineEffectRequest>>,
     /// Automatic cleanup policy for line-owned handles and child tasks.
     pub cleanup: LineCleanupPolicy,
 }
@@ -191,6 +195,10 @@ pub enum LineEffectRequest {
     },
     Continue {
         label: Option<String>,
+    },
+    DeferOn {
+        outcome: String,
+        effects: Vec<LineEffectRequest>,
     },
 }
 

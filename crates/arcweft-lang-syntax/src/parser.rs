@@ -2,17 +2,17 @@ use crate::ast::{
     Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BlockStyle, BorrowBlock, CallableItem,
     CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceMatchArm,
     ChoiceOption, ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall, ContractClause,
-    DialogueContent, DialogueDefaultOption, DialogueDefaultsItem, DocBlock, EntityDeclItem,
-    EntityDeclKind, EntityRef, EntityRefSyntax, EnumItem, EnumVariant, ExternModItem,
-    FamilyRelativeEntityRef, Flow, FlowInit, FlowItem, FlowKind, ForBlock, FunctionInit,
-    FunctionItem, FunctionKind, HookInit, HookItem, IdRef, IfBlock, IfLetBlock, ImplItem,
-    ImplMember, Item, LineArg, LineOptions, LineOptionsInit, LinePlan, LinePlanItem, LoopBlock,
-    MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, RawItem, RelativeId, RelativeIdSpelling,
-    ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead,
-    SourceItem, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StmtMatchArm,
-    StructField, StructItem, TextRange, ThreadBlock, ThreadModifier, TraitItem, TraitMember,
-    TypeAliasItem, TypedSyntaxTree, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock,
-    WikiLink,
+    DeferOutcome, DialogueContent, DialogueDefaultOption, DialogueDefaultsItem, DocBlock,
+    EntityDeclItem, EntityDeclKind, EntityRef, EntityRefSyntax, EnumItem, EnumVariant,
+    ExternModItem, FamilyRelativeEntityRef, Flow, FlowInit, FlowItem, FlowKind, ForBlock,
+    FunctionInit, FunctionItem, FunctionKind, HookInit, HookItem, IdRef, IfBlock, IfLetBlock,
+    ImplItem, ImplMember, Item, LineArg, LineOptions, LineOptionsInit, LinePlan, LinePlanItem,
+    LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, RawItem, RelativeId,
+    RelativeIdSpelling, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch,
+    SelectBranchHead, SourceItem, SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt,
+    StmtMatchArm, StructField, StructItem, TextRange, ThreadBlock, ThreadModifier, TraitItem,
+    TraitMember, TriggerPattern, TypeAliasItem, TypedSyntaxTree, UseItem, UseMode, Visibility,
+    WhileBlock, WhileLetBlock, WikiLink,
 };
 use crate::cst::{
     CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstStructuredFlowBlockKind,
@@ -1312,7 +1312,10 @@ impl Parser {
             }
             "defer" => {
                 let body = self.take_flat_block_body("defer", line.start);
-                Some(FlowItem::Stmt(Stmt::DeferBlock(parse_stmt_lines(&body))))
+                Some(FlowItem::Stmt(Stmt::DeferBlock {
+                    outcome: DeferOutcome::Always,
+                    statements: parse_stmt_lines(&body),
+                }))
             }
             "scope" => {
                 let body = self.take_flat_block_body("scope", line.start);
@@ -1570,10 +1573,8 @@ impl Parser {
             return None;
         }
 
-        Some(Stmt::Let {
-            pattern: parse_pattern(pattern.trim()),
-            expr,
-        })
+        let (pattern, ty) = parse_binding_pattern(pattern);
+        Some(Stmt::Let { pattern, ty, expr })
     }
 
     fn parse_let_scope(&mut self) -> Option<Stmt> {
@@ -1625,8 +1626,10 @@ impl Parser {
             return None;
         }
 
+        let (pattern, ty) = parse_binding_pattern(pattern);
         Some(Stmt::Let {
-            pattern: parse_pattern(pattern.trim()),
+            pattern,
+            ty,
             expr: parse_block_expr(&body),
         })
     }
@@ -1649,8 +1652,10 @@ impl Parser {
         let kind = parse_computation_block_kind(block_head.trim())?;
         let (statements, value) = parse_scope_expr_body(&body);
 
+        let (pattern, ty) = parse_binding_pattern(pattern);
         Some(Stmt::Let {
-            pattern: parse_pattern(pattern.trim()),
+            pattern,
+            ty,
             expr: Expr::ComputationBlock {
                 kind,
                 statements,
@@ -1677,8 +1682,10 @@ impl Parser {
         let options = parse_memo_block_options(block_head.trim())?;
         let (statements, value) = parse_scope_expr_body(&body);
 
+        let (pattern, ty) = parse_binding_pattern(pattern);
         Some(Stmt::Let {
-            pattern: parse_pattern(pattern.trim()),
+            pattern,
+            ty,
             expr: Expr::MemoBlock {
                 options,
                 statements,
@@ -1864,8 +1871,10 @@ impl Parser {
         let (pattern, if_head) = split_top_level_binding(rest)?;
         let condition = if_head.trim().strip_prefix("if")?.trim();
 
+        let (pattern, ty) = parse_binding_pattern(pattern);
         Some(Stmt::Let {
-            pattern: parse_pattern(pattern.trim()),
+            pattern,
+            ty,
             expr: crate::expr::Expr::If {
                 condition: Box::new(parse_expr_lossy(condition)),
                 then_branch: Box::new(parse_block_expr(&then_body)),
@@ -1900,8 +1909,10 @@ impl Parser {
         let (binding_pattern, value_and_guard) = split_top_level_binding(if_let_head)?;
         let (value, guard) = split_if_let_guard(value_and_guard);
 
+        let (target_pattern, ty) = parse_binding_pattern(target_pattern);
         Some(Stmt::Let {
-            pattern: parse_pattern(target_pattern.trim()),
+            pattern: target_pattern,
+            ty,
             expr: crate::expr::Expr::IfLet {
                 pattern: Box::new(parse_pattern(binding_pattern.trim())),
                 expr: Box::new(parse_expr_lossy(value.trim())),
@@ -1929,8 +1940,10 @@ impl Parser {
         let (pattern, match_head) = split_top_level_binding(rest)?;
         let scrutinee = match_head.trim().strip_prefix("match")?.trim();
 
+        let (pattern, ty) = parse_binding_pattern(pattern);
         Some(Stmt::Let {
-            pattern: parse_pattern(pattern.trim()),
+            pattern,
+            ty,
             expr: crate::expr::Expr::Match {
                 scrutinee: Box::new(parse_expr_lossy(scrutinee)),
                 arms: parse_match_expr_arms(&body),
@@ -1993,8 +2006,10 @@ impl Parser {
         let rest = head.trim().strip_prefix("let")?.trim();
         let (pattern, rhs) = split_top_level_binding(rest)?;
         let expr = rhs.trim().strip_suffix("else")?.trim();
+        let (pattern, ty) = parse_binding_pattern(pattern);
         Some(Stmt::LetElse {
-            pattern: parse_pattern(pattern.trim()),
+            pattern,
+            ty,
             expr: parse_expr_lossy(expr),
             else_body: parse_stmt_lines(&body),
         })
@@ -2090,15 +2105,22 @@ impl Parser {
         if trimmed.ends_with(':') || trimmed == "defer" {
             self.index += 1;
             let body = self.take_indented_await_body(indentation(&start_line.text) + 1);
-            return Some(FlowItem::Stmt(Stmt::DeferBlock(parse_stmt_lines(&body))));
+            return Some(FlowItem::Stmt(Stmt::DeferBlock {
+                outcome: parse_defer_outcome(trimmed.trim_end_matches(':'))
+                    .unwrap_or(DeferOutcome::Always),
+                statements: parse_stmt_lines(&body),
+            }));
         }
         if trimmed.starts_with("defer ") && !trimmed.contains('{') {
             self.index += 1;
             return Some(FlowItem::Stmt(parse_stmt(trimmed)));
         }
         let (head, body, _, ok) = self.take_brace_block();
-        if ok && head.trim() == "defer" {
-            return Some(FlowItem::Stmt(Stmt::DeferBlock(parse_stmt_lines(&body))));
+        if ok && let Some(outcome) = parse_defer_outcome(head.trim()) {
+            return Some(FlowItem::Stmt(Stmt::DeferBlock {
+                outcome,
+                statements: parse_stmt_lines(&body),
+            }));
         }
         self.push_error(
             TextRange::new(start_line.start, start_line.end),
@@ -3368,10 +3390,7 @@ fn parse_name_and_tail(input: &str) -> (Option<String>, String) {
 
 fn parse_word_scenario_command(trimmed: &str, range: TextRange) -> Option<ScenarioCommand> {
     let (name, args) = split_leading_ident(trimmed).unwrap_or((trimmed, ""));
-    if !matches!(
-        name,
-        "option" | "scene" | "text" | "progress" | "meter" | "stop" | "flush"
-    ) {
+    if name != "option" {
         return None;
     }
     Some(ScenarioCommand::new(
@@ -3386,6 +3405,78 @@ fn parse_scenario_args(args: &str) -> Vec<crate::expr::Expr> {
         .into_iter()
         .map(parse_expr_lossy)
         .collect()
+}
+
+fn parse_binding_pattern(source: &str) -> (crate::ast::Pattern, Option<crate::types::TypeRef>) {
+    split_top_level_punctuation_once(source, ':').map_or_else(
+        || (parse_pattern(source.trim()), None),
+        |(pattern, ty)| {
+            let parsed_ty = parse_type_ref(ty.trim()).ok();
+            (parse_pattern(pattern.trim()), parsed_ty)
+        },
+    )
+}
+
+fn parse_trigger_pattern(source: &str) -> TriggerPattern {
+    let source = source.trim();
+    if let Some(rest) = source.strip_prefix("input ") {
+        return TriggerPattern::Input(parse_pattern(rest.trim()));
+    }
+    if let Some(rest) = source.strip_prefix("event ") {
+        return TriggerPattern::Event(parse_pattern(rest.trim()));
+    }
+    if let Some(rest) = source.strip_prefix("item ") {
+        return TriggerPattern::Event(parse_pattern(rest.trim()));
+    }
+    if let Some(rest) = source.strip_prefix("error ") {
+        return TriggerPattern::Event(parse_pattern(rest.trim()));
+    }
+    if source == "disconnected" {
+        return TriggerPattern::Event(parse_pattern(source));
+    }
+    if let Some(rest) = source.strip_prefix("signal ") {
+        let mut parts = split_top_level_whitespace(rest);
+        let target = parts.first().map_or_else(
+            || Expr::Raw(rest.to_owned()),
+            |target| parse_expr_lossy(target),
+        );
+        let value = (parts.len() > 1)
+            .then(|| parse_pattern(parts.drain(1..).collect::<Vec<_>>().join(" ").trim()));
+        return TriggerPattern::Signal { target, value };
+    }
+    if let Some(rest) = source.strip_prefix("timeout ") {
+        return TriggerPattern::Timeout(parse_expr_lossy(rest.trim()));
+    }
+    if let Some(rest) = source.strip_prefix("mark ") {
+        return TriggerPattern::Mark(parse_pattern(rest.trim()));
+    }
+    if let Some(rest) = source.strip_prefix("select ") {
+        return TriggerPattern::Select(parse_pattern(rest.trim()));
+    }
+    if let Some(rest) = source.strip_prefix("task ") {
+        return TriggerPattern::Task(parse_pattern(rest.trim()));
+    }
+    if let Some(rest) = source.strip_prefix("scope ") {
+        return TriggerPattern::Scope(parse_pattern(rest.trim()));
+    }
+    if source.starts_with('.') {
+        return TriggerPattern::Mark(parse_pattern(source));
+    }
+    TriggerPattern::Expr(parse_expr_lossy(source))
+}
+
+fn parse_defer_outcome(head: &str) -> Option<DeferOutcome> {
+    let rest = head.trim().strip_prefix("defer")?.trim();
+    if rest.is_empty() {
+        return Some(DeferOutcome::Always);
+    }
+    let outcome = rest.strip_prefix("on")?.trim();
+    match outcome {
+        "completed" => Some(DeferOutcome::Completed),
+        "cancelled" => Some(DeferOutcome::Cancelled),
+        "failed" => Some(DeferOutcome::Failed),
+        _ => None,
+    }
 }
 
 fn split_scenario_args(source: &str) -> Vec<&str> {
@@ -3846,7 +3937,7 @@ fn parse_choice_item(
 ) -> Option<ChoiceItem> {
     if trimmed.starts_with("let ") {
         return Some(match parse_stmt(trimmed) {
-            Stmt::Let { pattern, expr } => ChoiceItem::Let { pattern, expr },
+            Stmt::Let { pattern, expr, .. } => ChoiceItem::Let { pattern, expr },
             _ => ChoiceItem::Raw(trimmed.to_owned()),
         });
     }
@@ -3950,7 +4041,7 @@ fn parse_choice_plan_items(body: &str) -> Vec<ChoicePlanItem> {
                 }
                 if let Some(trigger) = head.strip_prefix("cancel on ") {
                     return ChoicePlanItem::Cancel {
-                        trigger: trigger.trim().to_owned(),
+                        trigger: parse_trigger_pattern(trigger.trim()),
                         body: parse_stmt_lines(block_body.trim()),
                     };
                 }
@@ -4454,8 +4545,7 @@ fn is_multiline_timed_cue_header(line: &str) -> bool {
 fn line_plan_colon_head(line: &str) -> Option<&str> {
     let head = line.strip_suffix(':')?.trim();
     (head == "init"
-        || head == "finally"
-        || head == "defer"
+        || parse_defer_outcome(head).is_some()
         || head.starts_with("thread")
         || head.starts_with("on ")
         || head.starts_with("scope"))
@@ -4466,18 +4556,18 @@ fn parse_line_plan_colon_item(head: &str, body: &str) -> LinePlanItem {
     if head == "init" {
         return LinePlanItem::Init(parse_stmt_lines(body));
     }
-    if head == "finally" {
-        return LinePlanItem::Finally(parse_stmt_lines(body));
-    }
-    if head == "defer" {
-        return LinePlanItem::Stmt(Stmt::DeferBlock(parse_stmt_lines(body)));
+    if let Some(outcome) = parse_defer_outcome(head) {
+        return LinePlanItem::Stmt(Stmt::DeferBlock {
+            outcome,
+            statements: parse_stmt_lines(body),
+        });
     }
     if let Some(rest) = head.strip_prefix("thread") {
         return LinePlanItem::Thread(parse_thread_block(&format!("thread{rest}"), body));
     }
     if let Some(rest) = head.strip_prefix("on ") {
         return LinePlanItem::On {
-            trigger: parse_expr_lossy(rest.trim()),
+            trigger: parse_trigger_pattern(rest.trim()),
             body: parse_stmt_lines(body),
         };
     }
@@ -4505,13 +4595,19 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
         }
     }
     if let Some(rest) = line.strip_prefix("defer ") {
-        return LinePlanItem::Stmt(Stmt::Defer(parse_expr_lossy(rest.trim())));
+        if rest.trim_start().starts_with("on ") {
+            return LinePlanItem::Raw(line.to_owned());
+        }
+        return LinePlanItem::Stmt(Stmt::Defer {
+            outcome: DeferOutcome::Always,
+            expr: parse_expr_lossy(rest.trim()),
+        });
     }
     if let Some(rest) = line.strip_prefix("cancel on ") {
         if let Some((head, body)) = split_brace_item(line) {
             if let Some(trigger) = head.strip_prefix("cancel on ") {
                 return LinePlanItem::CancelRule(CancelRuleSyntax::new(
-                    trigger.trim().to_owned(),
+                    parse_trigger_pattern(trigger.trim()),
                     parse_stmt_lines(body.trim()),
                 ));
             }
@@ -4519,7 +4615,7 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
         let (trigger, action) =
             split_top_level_punctuation_sequence_once(rest, &["=", ">"]).unwrap_or((rest, ""));
         return LinePlanItem::CancelRule(CancelRuleSyntax::new(
-            trigger.trim().to_owned(),
+            parse_trigger_pattern(trigger.trim()),
             parse_line_plan_cancel_action(action.trim()),
         ));
     }
@@ -4598,11 +4694,11 @@ fn parse_line_plan_braced_item(head: &str, body: &str) -> Option<LinePlanItem> {
     if head == "init" {
         return Some(LinePlanItem::Init(parse_stmt_lines(body)));
     }
-    if head == "finally" {
-        return Some(LinePlanItem::Finally(parse_stmt_lines(body)));
-    }
-    if head == "defer" {
-        return Some(LinePlanItem::Stmt(Stmt::DeferBlock(parse_stmt_lines(body))));
+    if let Some(outcome) = parse_defer_outcome(head) {
+        return Some(LinePlanItem::Stmt(Stmt::DeferBlock {
+            outcome,
+            statements: parse_stmt_lines(body),
+        }));
     }
     if let Some(rest) = head.strip_prefix("thread") {
         return Some(LinePlanItem::Thread(parse_thread_block(
@@ -4612,7 +4708,7 @@ fn parse_line_plan_braced_item(head: &str, body: &str) -> Option<LinePlanItem> {
     }
     if let Some(rest) = head.strip_prefix("on ") {
         return Some(LinePlanItem::On {
-            trigger: parse_expr_lossy(rest.trim()),
+            trigger: parse_trigger_pattern(rest.trim()),
             body: parse_stmt_lines(body),
         });
     }
@@ -4977,10 +5073,6 @@ fn parse_await_branch(line: &str) -> Option<AwaitBranch> {
 }
 
 fn parse_await_branch_body(body: &str) -> Vec<FlowItem> {
-    if let Some(command) = parse_scene_command(body.trim()) {
-        return vec![FlowItem::ScenarioCommand(command)];
-    }
-
     let mut nested = Parser::new(body.to_owned());
     let mut items = Vec::new();
     while nested.index < nested.events.len() {
@@ -5006,24 +5098,10 @@ fn parse_await_branch_body(body: &str) -> Vec<FlowItem> {
 }
 
 fn parse_inline_await_branch_item(body: &str) -> FlowItem {
-    if let Some(command) = parse_scene_command(body) {
-        return FlowItem::ScenarioCommand(command);
-    }
     let mut nested = Parser::new(body.to_owned());
     nested
         .parse_flow_item_until_indent(0)
         .unwrap_or_else(|| FlowItem::Stmt(parse_stmt(body)))
-}
-
-fn parse_scene_command(body: &str) -> Option<ScenarioCommand> {
-    let rest = body.strip_prefix("scene ")?;
-    let args = find_top_level_punctuation(rest, '{').map_or(rest, |open| &rest[..open]);
-    let args = args.trim();
-    Some(ScenarioCommand::new(
-        "scene".to_owned(),
-        parse_scenario_args(args),
-        TextRange::new(0, body.len()),
-    ))
 }
 
 fn is_typed_stmt(trimmed: &str) -> bool {
@@ -5344,8 +5422,10 @@ fn parse_stmt(trimmed: &str) -> Stmt {
     }
     if let Some(rest) = trimmed.strip_prefix("let ") {
         if let Some((pattern, expr)) = split_top_level_binding(rest) {
+            let (pattern, ty) = parse_binding_pattern(pattern);
             return Stmt::Let {
-                pattern: parse_pattern(pattern.trim()),
+                pattern,
+                ty,
                 expr: parse_expr_with_inline_line_plan(expr.trim()),
             };
         }
@@ -5356,6 +5436,12 @@ fn parse_stmt(trimmed: &str) -> Stmt {
         && let Some(stmt) = parse_braced_stmt(trimmed)
     {
         return stmt;
+    }
+    if let Some(rest) = trimmed.strip_prefix("defer ") {
+        return Stmt::Defer {
+            outcome: DeferOutcome::Always,
+            expr: parse_expr_lossy(rest.trim()),
+        };
     }
     if let Some(stmt) = parse_control_transfer_stmt(trimmed) {
         return stmt;
@@ -5369,20 +5455,10 @@ fn parse_stmt(trimmed: &str) -> Stmt {
         }
         return Stmt::Raw(trimmed.to_owned());
     }
-    if let Some(rest) = trimmed.strip_prefix("signal ") {
-        if let Some((target, value)) = split_top_level_punctuation_sequence_once(rest, &["<", "-"])
-        {
-            return Stmt::Signal {
-                target: parse_expr_lossy(target.trim()),
-                value: parse_expr_lossy(value.trim()),
-            };
-        }
-        return Stmt::Raw(trimmed.to_owned());
-    }
     if let Some(rest) = trimmed.strip_prefix("on ") {
         if let Some((head, action)) = split_top_level_punctuation_sequence_once(rest, &["=", ">"]) {
             return Stmt::On {
-                head: head.trim().to_owned(),
+                trigger: parse_trigger_pattern(head.trim()),
                 body: vec![parse_stmt(action.trim())],
             };
         }
@@ -5421,8 +5497,11 @@ fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {
     if head.starts_with("thread") {
         return Some(Stmt::Thread(parse_thread_block(head, body)));
     }
-    if head == "defer" {
-        return Some(Stmt::DeferBlock(parse_stmt_lines(body)));
+    if let Some(outcome) = parse_defer_outcome(head) {
+        return Some(Stmt::DeferBlock {
+            outcome,
+            statements: parse_stmt_lines(body),
+        });
     }
     if head.starts_with("scope") {
         return Some(Stmt::Expr(parse_named_block_expr(head, body)));
@@ -5512,7 +5591,6 @@ fn parse_control_transfer_stmt(trimmed: &str) -> Option<Stmt> {
     [
         ("return ", Stmt::Return as fn(Expr) -> Stmt),
         ("goto ", Stmt::Goto),
-        ("defer ", Stmt::Defer),
         ("yield ", Stmt::Yield),
         ("panic ", Stmt::Panic),
         ("fail ", Stmt::Fail),

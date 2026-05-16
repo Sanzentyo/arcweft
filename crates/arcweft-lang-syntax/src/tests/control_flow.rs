@@ -182,6 +182,7 @@ flow @flow.block_expr block_expr {
     let FlowItem::Stmt(Stmt::Let {
         pattern,
         expr: Expr::Block { statements, value },
+        ..
     }) = &flow.body()[0]
     else {
         panic!("expected let binding with block expression");
@@ -218,6 +219,7 @@ flow @flow.title title {
         pattern,
         expr,
         else_body,
+        ..
     }) = &flow.body()[0]
     else {
         panic!("expected structured let-else");
@@ -544,6 +546,7 @@ flow @flow.branching branching {
                 then_branch,
                 else_branch: Some(_),
             },
+        ..
     }) = &flow.body()[0]
     else {
         panic!("expected let binding with value if expression");
@@ -620,6 +623,7 @@ flow @flow.branching branching {
                 then_branch,
                 else_branch: Some(_),
             },
+        ..
     }) = &flow.body()[0]
     else {
         panic!("expected let binding with value if-let expression");
@@ -700,6 +704,7 @@ flow @flow.branching branching {
     let FlowItem::Stmt(Stmt::Let {
         pattern,
         expr: Expr::Match { scrutinee, arms },
+        ..
     }) = &flow.body()[0]
     else {
         panic!("expected let binding with value match expression");
@@ -765,6 +770,7 @@ flow @flow.trying trying {
     let FlowItem::Stmt(Stmt::Let {
         pattern,
         expr: Expr::Try { expr },
+        ..
     }) = &flow.body()[0]
     else {
         panic!("expected let binding with postfix try expression");
@@ -1055,7 +1061,7 @@ flow @flow.stream stream {
         }
 
         frame _ => {
-            scene @scene.listening
+            scene.show(@scene.listening)
             continue
         }
 

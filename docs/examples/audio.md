@@ -33,7 +33,7 @@ flow @flow.voice_demo demo(state: GameState) -> Result<FlowExit, FlowError> {
     command audio.ensure_bgm(@bgm.alice_theme) { section = @music.intro; fade_in = 1s }
 
     let speech = try await tts.speak(@voice.alice.tts, "おはよう。") with {
-        pending p => scene @scene.loading_voice { progress p.ratio }
+        pending p => scene.show(@scene.loading_voice); progress.set(p.ratio)
     }
 
     voice(speech.audio, speaker = alice)

@@ -411,7 +411,8 @@ layer @layer.modal: Modal {
 ### scene 内の layer 使用
 
 ```awft
-scene @scene.opening {
+scene.show(@scene.opening)
+scope {
     layer @layer.background {
         image(@asset.bg.room).fit(cover)
     }

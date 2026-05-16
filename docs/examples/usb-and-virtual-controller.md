@@ -106,9 +106,10 @@ pub virtual_controller @vc.shooter_touch: VirtualController {
 flow @flow.shooting_gallery_intro opening(state: GameState) -> Result<FlowExit, FlowError> {
     let gun =
         try await usb.open(@usb.lightgun).optional() with {
-            pending p => scene @scene.usb_wait {
-                text "専用コントローラーを探しています。タッチ操作でも遊べます。"
-                progress p.ratio
+            pending p => {
+                scene.show(@scene.usb_wait)
+                text.show("専用コントローラーを探しています。タッチ操作でも遊べます。")
+                progress.set(p.ratio)
             }
             denied _ => None
         }
@@ -118,7 +119,7 @@ flow @flow.shooting_gallery_intro opening(state: GameState) -> Result<FlowExit, 
             usb_lightgun = gun,
             touch_controller = Some(@vc.shooter_touch),
         })? with {
-            pending p => scene @scene.loading_activity { progress p.ratio }
+            pending p => scene.show(@scene.loading_activity); progress.set(p.ratio)
         }
 
     if result.score >= 1000 {

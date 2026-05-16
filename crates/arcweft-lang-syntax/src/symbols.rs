@@ -489,12 +489,12 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         Stmt::Let { expr, .. }
         | Stmt::Return(expr)
         | Stmt::Goto(expr)
-        | Stmt::Defer(expr)
         | Stmt::Yield(expr)
         | Stmt::Panic(expr)
         | Stmt::Fail(expr)
         | Stmt::Bail(expr)
         | Stmt::Close(expr)
+        | Stmt::Defer { expr, .. }
         | Stmt::Expr(expr) => {
             collect_expr(expr, uses);
         }
@@ -531,7 +531,7 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         }
         Stmt::LetAwait { await_with, .. } => collect_unlowered_await_binding(await_with, uses),
         Stmt::Thread(thread) => collect_stmt_block(thread.body(), uses),
-        Stmt::DeferBlock(statements) => collect_stmt_block(statements, uses),
+        Stmt::DeferBlock { statements, .. } => collect_stmt_block(statements, uses),
         Stmt::Break {
             expr: Some(expr), ..
         }
@@ -635,12 +635,12 @@ fn collect_stmt_match(
 
 fn collect_line_plan_item(item: &LinePlanItem, uses: &mut Vec<SymbolUse>) {
     match item {
-        LinePlanItem::Init(statements) | LinePlanItem::Finally(statements) => {
+        LinePlanItem::Init(statements) => {
             collect_stmt_block(statements, uses);
         }
         LinePlanItem::Thread(thread) => collect_stmt_block(thread.body(), uses),
         LinePlanItem::On { trigger, body } => {
-            collect_expr(trigger, uses);
+            collect_trigger_pattern(trigger, uses);
             collect_stmt_block(body, uses);
         }
         LinePlanItem::Stmt(stmt) => collect_stmt(stmt, uses),
@@ -664,6 +664,26 @@ fn collect_line_plan_item(item: &LinePlanItem, uses: &mut Vec<SymbolUse>) {
             }
         }
         LinePlanItem::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
+    }
+}
+
+fn collect_trigger_pattern(trigger: &crate::ast::TriggerPattern, uses: &mut Vec<SymbolUse>) {
+    match trigger {
+        crate::ast::TriggerPattern::Input(pattern)
+        | crate::ast::TriggerPattern::Event(pattern)
+        | crate::ast::TriggerPattern::Mark(pattern)
+        | crate::ast::TriggerPattern::Select(pattern)
+        | crate::ast::TriggerPattern::Task(pattern)
+        | crate::ast::TriggerPattern::Scope(pattern) => collect_pattern(pattern, uses),
+        crate::ast::TriggerPattern::Signal { target, value } => {
+            collect_expr(target, uses);
+            if let Some(value) = value {
+                collect_pattern(value, uses);
+            }
+        }
+        crate::ast::TriggerPattern::Timeout(expr) | crate::ast::TriggerPattern::Expr(expr) => {
+            collect_expr(expr, uses);
+        }
     }
 }
 
