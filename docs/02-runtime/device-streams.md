@@ -54,34 +54,53 @@ pub struct Source<T, E> {
 
 pub struct SourcePolicy {
     pub backpressure: BackpressurePolicy,
-    pub clock: SourceClock,
     pub replay: ReplayPolicy,
-    pub privacy: PrivacyPolicy,
     pub max_queue: usize,
 }
 
 pub enum BackpressurePolicy {
-    Latest,
-    DropOldest,
-    DropNewest,
-    Exact,
-    Coalesce,
-    BlockProducer,
+    LatestOnly,
+    BoundedQueue {
+        capacity: usize,
+        on_overflow: OverflowPolicy,
+    },
+    BlockingNotAllowed,
 }
 
-pub enum SourceEvent<T, E> {
-    Item {
-        source: SourceId,
-        timestamp: SourceTimestamp,
-        item: T,
-    },
-    Progress(Progress),
+pub enum OverflowPolicy {
+    DropOldest,
+    DropNewest,
+    Error,
+    Coalesce,
+}
+
+pub enum ReplayPolicy {
+    Full,
+    HashOnly,
+    Summary,
+    None,
+}
+
+pub struct SourceEvent<T, E> {
+    pub source: SourceId,
+    pub sequence: TaskSequence,
+    pub kind: SourceEventKind<T, E>,
+}
+
+pub enum SourceEventKind<T, E> {
+    Item(T),
+    Progress(String),
     Disconnected,
     PermissionRevoked,
     Error(E),
     End,
 }
 ```
+
+Privacy and clock policy remain design-level source metadata, but the current
+core crate only stores the deterministic frame-boundary pieces needed for
+replay and queueing. Backend adapters may attach richer native timestamps while
+recording/replaying through `SourceEvent.sequence`.
 
 ## Source block syntax
 

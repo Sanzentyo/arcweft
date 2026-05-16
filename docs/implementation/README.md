@@ -172,11 +172,25 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   signal writes, metric writes, `event.emit(...)` calls, scenario commands, and
   ordinary calls as typed runtime IR categories rather than dropping them or
   collapsing them into a stringly signal placeholder.
+- `pro_review16.md`: line-plan runtime data now uses a structured
+  `LineTaskScope` / `LineTaskNode` graph instead of flat `init` and `children`
+  vectors. `thread`, `on`, and `at` lower to child tasks with stable task IDs,
+  task keys, triggers, priority, join policy, and cancel policy. `start` and
+  `together` preserve their graph boundaries, and `together` runs an initial
+  deterministic access-conflict check for signal/lifetime/control/output writes
+  while allowing append-only logs and events. Handler and child-task typecheck
+  scopes are isolated so locals, line guarantees, and dropped-lifetime state do
+  not leak across task or line boundaries.
+- `arcweft-core` now exposes initial Sans I/O task/source event envelopes:
+  `TaskSpec`, `TaskEvent`, `TaskHost`, `normalize_task_events`,
+  `SourcePolicy`, `BackpressurePolicy`, `ReplayPolicy`, and `SourceEvent`.
+  These are pure data contracts for host adapters; no Tokio/Rayon/filesystem,
+  device, audio, or GPU runtime is linked into core.
 - Gap audit result: broad runtime docs still exceed the implemented core. Full
-  `FrameInput`/`FrameOutput`, flow-fiber lowering, `await with` execution IR,
-  choice runtime IR, source/stream backpressure IR, hook/memo runtime tables,
-  save/replay traces, activities, and layered input routing remain TODOs beyond
-  the current line-plan Sans I/O subset.
+  engine stepping over `FrameInput`/`FrameOutput`, flow-fiber lowering,
+  `await with` execution IR, choice runtime IR, source adapter execution,
+  hook/memo runtime tables, save/replay traces, activities, and layered input
+  routing remain TODOs beyond the current line-plan Sans I/O subset.
 - `pro_review14.md` / `pro_review15.md`: adopted proof-aware
   lifetime/thread/drop direction and Agent-friendly tooling diagnostics.
   Formal `proof @proof.*` items, `trusted axiom @axiom.*` declarations,

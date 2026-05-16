@@ -21,11 +21,16 @@ creating OS tasks.
 
 ```rust
 pub trait TaskHost {
-    fn ensure_task(&mut self, spec: TaskSpec, body: TaskBody) -> TaskHandle;
+    fn ensure_task(&mut self, spec: TaskSpec) -> TaskHandle;
     fn cancel_scope(&mut self, scope: CancelScopeId);
     fn poll_frame(&mut self, budget: SchedulerBudget) -> Vec<TaskEvent>;
 }
 ```
+
+`arcweft-core` keeps this interface as Sans I/O data. The task body lives in the
+compiled runtime plan or in a host adapter table; `TaskSpec` only identifies the
+work, class, priority, cancellation scope, and replay source. Backends such as
+Tokio, Rayon, web workers, or a cooperative test executor sit outside core.
 
 ## Task class
 
@@ -50,11 +55,32 @@ pub enum TaskClass {
 ## 完了順の正規化
 
 ```rust
-task_events.sort_by_key(|event| (
-    event.logical_epoch,
-    event.task_id,
-    event.sequence,
-));
+pub fn normalize_task_events(mut events: Vec<TaskEvent>) -> Vec<TaskEvent> {
+    events.sort_by_key(|event| (
+        event.logical_epoch,
+        event.task_id.clone(),
+        event.sequence,
+    ));
+    events
+}
+```
+
+The normalized event envelope is:
+
+```rust
+pub struct TaskEvent {
+    pub logical_epoch: LogicalEpoch,
+    pub task_id: TaskId,
+    pub sequence: TaskSequence,
+    pub kind: TaskEventKind,
+}
+
+pub enum TaskEventKind {
+    Ready(String),
+    Err(String),
+    Cancelled,
+    Progress(String),
+}
 ```
 
 ## single-thread と multi-thread

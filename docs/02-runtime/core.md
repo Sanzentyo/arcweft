@@ -19,16 +19,14 @@ pub struct FrameInput {
     pub task_events: Vec<TaskEvent>,
     pub ui_events: Vec<UiEvent>,
     pub audio_events: Vec<AudioEvent>,
+    pub source_events: Vec<SourceEvent<String, String>>,
 }
 
 pub struct FrameOutput {
-    pub state_hash: StateHash,
-    pub render: RenderSpec,
-    pub ui: UiSpec,
-    pub audio: AudioDesiredState,
-    pub effects: Vec<EffectRequest>,
-    pub line_effects: Vec<LineEffectRequest>,
     pub diagnostics: Vec<RuntimeDiagnostic>,
+    pub line_effects: Vec<LineEffectRequest>,
+    pub task_requests: Vec<TaskSpec>,
+    pub cancel_requests: Vec<CancelScopeId>,
 }
 ```
 
@@ -62,26 +60,50 @@ for adapters to perform at frame boundaries.
 
 ```rust
 pub struct LineTaskGroup {
-    pub init: Vec<LineEffectRequest>,
+    pub root: LineTaskScope,
     pub options: Vec<LineOptionRequest>,
     pub bindings: Vec<LineBindingRequest>,
     pub out: Vec<LineOutRequest>,
     pub cancel_rules: Vec<LineCancelRuleRequest>,
     pub memo: Vec<LineMemoRequest>,
     pub assertions: Vec<LineAssertionRequest>,
-    pub init_defer_stack: Vec<Vec<LineEffectRequest>>,
-    pub children: Vec<LineChildTask>,
+    pub cleanup: LineCleanupPolicy,
+}
+
+pub struct LineTaskScope {
+    pub node: LineTaskNode,
     pub defer_stack: Vec<Vec<LineEffectRequest>>,
     pub completed_defer_stack: Vec<Vec<LineEffectRequest>>,
     pub cancelled_defer_stack: Vec<Vec<LineEffectRequest>>,
     pub failed_defer_stack: Vec<Vec<LineEffectRequest>>,
-    pub cleanup: LineCleanupPolicy,
+}
+
+pub enum LineTaskNode {
+    Seq(Vec<LineTaskNode>),
+    Start(Vec<LineTaskNode>),
+    Parallel {
+        policy: ParallelPolicy,
+        children: Vec<LineTaskNode>,
+    },
+    Child(LineChildTask),
+    Effect(LineEffectRequest),
 }
 
 pub struct LineChildTask {
+    pub id: TaskId,
+    pub key: Option<TaskKey>,
     pub name: Option<String>,
-    pub body: Vec<LineEffectRequest>,
-    pub defer_stack: Vec<Vec<LineEffectRequest>>,
+    pub trigger: LineTaskTrigger,
+    pub priority: TaskPriority,
+    pub join_policy: ChildJoinPolicy,
+    pub cancel_policy: ChildCancelPolicy,
+    pub scope: Box<LineTaskScope>,
+}
+
+pub enum LineTaskTrigger {
+    Immediate,
+    Mark(String),
+    Delay(LogicalDuration),
 }
 
 pub enum LineEffectRequest {
@@ -107,23 +129,23 @@ pub enum LineEffectRequest {
     Select(String),
     Break { label: Option<String>, value: Option<String> },
     Continue { label: Option<String> },
-    DeferOn { outcome: String, effects: Vec<LineEffectRequest> },
 }
 ```
 
 Current Phase 1.5 lowering maps checked HIR dialogue plans into this data model:
 
 ```text
-init statements             -> LineTaskGroup.init
-defer in init               -> LineTaskGroup.init_defer_stack
-thread name { ... }         -> LineTaskGroup.children
-defer in thread/on handler  -> LineChildTask.defer_stack
-defer in line scope         -> LineTaskGroup.defer_stack
-defer on completed          -> LineTaskGroup.completed_defer_stack
-defer on cancelled          -> LineTaskGroup.cancelled_defer_stack
-defer on failed             -> LineTaskGroup.failed_defer_stack
-at(0.35s) { ... }           -> child task that waits 0.35s, then runs body
-on .mark { ... }            -> child task that waits for .mark, then runs body
+init statements             -> LineTaskGroup.root.node effects
+defer in init/line scope    -> LineTaskGroup.root defer stacks
+thread name { ... }         -> LineTaskNode::Child with trigger Immediate
+defer in thread/on handler  -> child LineTaskScope defer stacks
+defer on completed          -> current scope completed_defer_stack
+defer on cancelled          -> current scope cancelled_defer_stack
+defer on failed             -> current scope failed_defer_stack
+start { ... }               -> LineTaskNode::Start
+together { ... }            -> LineTaskNode::Parallel(JoinAll)
+at(0.35s) { ... }           -> child task with trigger Delay(0.35s)
+on .mark { ... }            -> child task with trigger Mark(".mark")
 wait mark .x                -> LineEffectRequest::WaitMark(".x")
 wait 0.35s                  -> LineEffectRequest::Wait(...)
 'line.key <- expr           -> LineEffectRequest::RegisterHandle
@@ -139,13 +161,20 @@ memo name(...)              -> LineTaskGroup.memo
 assert expr                 -> LineTaskGroup.assertions
 ```
 
+`on` and `at` do not lower by inserting synthetic `wait` effects. They become
+task triggers so scheduling and replay can reason about when a child task starts.
+`together` preserves the parallel boundary and the lowering pass rejects
+obvious deterministic conflicts such as two children writing the same signal or
+line `out` value unless the effect category is append-only, such as structured
+logs or event emission.
+
 Raw line-plan statements fail lowering. They are not reparsed, silently accepted,
 or dropped from the runtime plan. Phase 1.5 keeps expression payloads as stable
 labels inside Sans I/O data; later HIR execution work should replace those labels
 with typed expression/runtime nodes without changing the effect categories.
 
 `defer` is not thread-specific syntax. It registers cleanup on the current
-runtime scope. In the Phase 1.5 line-plan model, the line scope, `init` scope,
+runtime scope. In the Phase 1.5 line-plan model, the line/root scope, child
 thread scopes, and event-handler scopes each have a cleanup stack. A bare
 `defer` must run when its owning scope exits, including normal completion,
 early control transfer, line cancellation, and child-task cancellation.

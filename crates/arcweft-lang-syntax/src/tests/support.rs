@@ -10,7 +10,8 @@ pub(super) use crate::{
     validate_typecheck_ready,
 };
 pub(super) use arcweft_core::{
-    LineEffectRequest, LineOutRequest, RuntimeAssignment, RuntimeCall, RuntimeLog,
+    LineEffectRequest, LineOutRequest, LineTaskNode, LineTaskTrigger, RuntimeAssignment,
+    RuntimeCall, RuntimeLog,
 };
 
 pub(super) fn parse_ok(source: impl Into<String>) -> crate::TypedSyntaxTree {

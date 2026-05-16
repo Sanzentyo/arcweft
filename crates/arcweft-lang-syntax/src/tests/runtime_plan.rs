@@ -7,6 +7,33 @@ fn call(callee: &str, args: &[&str]) -> LineEffectRequest {
     })
 }
 
+fn seq(node: &LineTaskNode) -> &[LineTaskNode] {
+    match node {
+        LineTaskNode::Seq(nodes) => nodes,
+        other => panic!("expected seq node, got {other:?}"),
+    }
+}
+
+fn direct_effects(nodes: &[LineTaskNode]) -> Vec<&LineEffectRequest> {
+    nodes
+        .iter()
+        .filter_map(|node| match node {
+            LineTaskNode::Effect(effect) => Some(effect),
+            _ => None,
+        })
+        .collect()
+}
+
+fn direct_children(nodes: &[LineTaskNode]) -> Vec<&arcweft_core::LineChildTask> {
+    nodes
+        .iter()
+        .filter_map(|node| match node {
+            LineTaskNode::Child(task) => Some(task),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
 fn canonical_log_signal_metric_are_ordinary_calls() {
     assert!(matches!(
@@ -58,64 +85,70 @@ flow @flow.opening opening {
     let groups = lower_line_task_groups(&hir).expect("line task group lowers");
     assert_eq!(groups.len(), 1);
     let group = groups[0].group();
+    let root = seq(&group.root.node);
+    let root_effects = direct_effects(root);
 
     assert_eq!(
-        group.init,
-        vec![LineEffectRequest::RegisterHandle {
+        root_effects,
+        vec![&LineEffectRequest::RegisterHandle {
             key: "'line.focus.main".to_owned(),
             handle: "acquire_focus()".to_owned(),
         }]
     );
     assert_eq!(
-        group.init_defer_stack,
-        vec![vec![call("cleanup_init_probe", &[])]]
-    );
-    assert_eq!(
-        group.defer_stack,
-        vec![vec![call("cleanup_line_scope", &[])]]
-    );
-    assert_eq!(group.children.len(), 3);
-    assert_eq!(group.children[0].name.as_deref(), Some("motion"));
-    assert_eq!(
-        group.children[0].body,
+        group.root.defer_stack,
         vec![
-            LineEffectRequest::WaitMark(".release_focus".to_owned()),
-            LineEffectRequest::Wait(arcweft_core::LogicalDuration::from_nanos(350_000_000)),
-            call("tick_motion", &[]),
+            vec![call("cleanup_init_probe", &[])],
+            vec![call("cleanup_line_scope", &[])]
         ]
     );
     assert_eq!(
-        group.children[0].defer_stack,
-        vec![vec![call("cleanup_motion", &[])]]
-    );
-    assert_eq!(group.children[1].name.as_deref(), Some("at(0.42s)"));
-    assert_eq!(
-        group.children[1].body,
-        vec![
-            LineEffectRequest::Wait(arcweft_core::LogicalDuration::from_nanos(420_000_000)),
-            call("alice.stage.face", &["worried"]),
-        ]
-    );
-    assert_eq!(group.children[2].name.as_deref(), Some(".release_focus"));
-    assert_eq!(
-        group.children[2].body,
-        vec![
-            LineEffectRequest::WaitMark(".release_focus".to_owned()),
-            LineEffectRequest::DropHandle {
-                key: "'line.focus.main".to_owned(),
-            },
-        ]
-    );
-    assert_eq!(
-        group.children[2].defer_stack,
-        vec![vec![call("cleanup_handler", &[])]]
-    );
-    assert_eq!(
-        group.completed_defer_stack,
+        group.root.completed_defer_stack,
         vec![vec![
             call("cleanup_line", &[]),
             call("cleanup_completed_probe", &[])
         ]]
+    );
+
+    let children = direct_children(root);
+    assert_eq!(children.len(), 3);
+    assert_eq!(children[0].name.as_deref(), Some("motion"));
+    assert!(matches!(children[0].trigger, LineTaskTrigger::Immediate));
+    assert_eq!(
+        direct_effects(seq(&children[0].scope.node)),
+        vec![
+            &LineEffectRequest::WaitMark(".release_focus".to_owned()),
+            &LineEffectRequest::Wait(arcweft_core::LogicalDuration::from_nanos(350_000_000)),
+            &call("tick_motion", &[]),
+        ]
+    );
+    assert_eq!(
+        children[0].scope.defer_stack,
+        vec![vec![call("cleanup_motion", &[])]]
+    );
+    assert_eq!(children[1].name.as_deref(), Some("at(0.42s)"));
+    assert_eq!(
+        children[1].trigger,
+        LineTaskTrigger::Delay(arcweft_core::LogicalDuration::from_nanos(420_000_000))
+    );
+    assert_eq!(
+        direct_effects(seq(&children[1].scope.node)),
+        vec![&call("alice.stage.face", &["worried"])]
+    );
+    assert_eq!(children[2].name.as_deref(), Some(".release_focus"));
+    assert_eq!(
+        children[2].trigger,
+        LineTaskTrigger::Mark(".release_focus".to_owned())
+    );
+    assert_eq!(
+        direct_effects(seq(&children[2].scope.node)),
+        vec![&LineEffectRequest::DropHandle {
+            key: "'line.focus.main".to_owned(),
+        }]
+    );
+    assert_eq!(
+        children[2].scope.defer_stack,
+        vec![vec![call("cleanup_handler", &[])]]
     );
 }
 
@@ -180,9 +213,21 @@ flow @flow.grouped grouped {
     validate_typecheck_ready(&hir).expect("group fixture is typecheck-ready");
 
     let groups = lower_line_task_groups(&hir).expect("grouped expressions lower");
+    let [LineTaskNode::Start(start_children)] = seq(&groups[0].group().root.node) else {
+        panic!("root should preserve start group");
+    };
+    let [
+        LineTaskNode::Parallel {
+            policy: _,
+            children,
+        },
+    ] = start_children.as_slice()
+    else {
+        panic!("start group should contain one parallel together node");
+    };
     assert_eq!(
-        groups[0].group().init,
-        vec![call("cue_start", &[]), call("cue_next", &[])]
+        direct_effects(children),
+        vec![&call("cue_start", &[]), &call("cue_next", &[])]
     );
 }
 
@@ -204,23 +249,24 @@ flow @flow.effects effects {
     validate_typecheck_ready(&hir).expect("effect fixture is typecheck-ready");
 
     let groups = lower_line_task_groups(&hir).expect("structured effects lower");
-    let init = &groups[0].group().init;
+    let root = seq(&groups[0].group().root.node);
+    let init = direct_effects(root);
     assert!(matches!(
-        &init[0],
+        init[0],
         LineEffectRequest::Log(RuntimeLog { level, message, fields })
             if level == "info" && message == "selected {id:?}" && fields.len() == 1
     ));
     assert!(matches!(
-        &init[1],
+        init[1],
         LineEffectRequest::SignalWrite(RuntimeAssignment { target, value })
             if target == "@signal.current_flow" && value == "@flow.effects"
     ));
     assert!(matches!(
-        &init[2],
+        init[2],
         LineEffectRequest::MetricWrite(RuntimeAssignment { target, value })
             if target == "@metric.frame_time_ms" && value == "frame_time.ms()"
     ));
-    assert!(matches!(&init[3], LineEffectRequest::EmitEvent(event) if event.fields.len() == 1));
+    assert!(matches!(init[3], LineEffectRequest::EmitEvent(event) if event.fields.len() == 1));
 }
 
 #[test]
@@ -264,4 +310,51 @@ flow @flow.semantic semantic {
             value: ".Done".to_owned(),
         }]
     );
+}
+
+#[test]
+fn together_group_rejects_conflicting_resource_writes() {
+    let tree = parse_ok(
+        r"
+flow @flow.conflict conflict {
+    alice[待って。[p]]
+    with {
+        together {
+            signal.set(@signal.current_flow, @flow.a)
+            signal.set(@signal.current_flow, @flow.b)
+        }
+    }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("conflict fixture lowers to HIR");
+    validate_typecheck_ready(&hir).expect("conflict fixture is typecheck-ready");
+
+    let errors = lower_line_task_groups(&hir).expect_err("conflicting writes are rejected");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("parallel resource conflict"))
+    );
+}
+
+#[test]
+fn together_group_allows_append_only_effects() {
+    let tree = parse_ok(
+        r#"
+flow @flow.append append {
+    alice[待って。[p]]
+    with {
+        together {
+            log.info("left")
+            event.emit(GameEvent::Left)
+        }
+    }
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("append fixture lowers to HIR");
+    validate_typecheck_ready(&hir).expect("append fixture is typecheck-ready");
+
+    lower_line_task_groups(&hir).expect("append-only effects do not conflict");
 }

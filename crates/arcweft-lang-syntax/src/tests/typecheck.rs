@@ -449,3 +449,96 @@ flow @flow.audit audit {
             .any(|error| error.message().contains("SAFETY doc comment"))
     );
 }
+
+#[test]
+fn typecheck_does_not_leak_on_handler_locals_into_line_scope() {
+    let tree = parse_ok(
+        r"
+flow @flow.handler_leak handler_leak {
+    alice[待って。[mark .seen][p]]
+    with:
+        on .seen:
+            let handler_local = 1
+        let later = handler_local
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("handler leak fixture lowers");
+    let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::Ref(EntityKind::Character));
+    let errors = typecheck_hir(&hir, &env).expect_err("handler locals must not leak");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("unknown symbol `handler_local`"))
+    );
+}
+
+#[test]
+fn typecheck_does_not_leak_thread_locals_into_line_scope() {
+    let tree = parse_ok(
+        r"
+flow @flow.thread_leak thread_leak {
+    alice[待って。[p]]
+    with:
+        thread worker:
+            let worker_local = 1
+        let later = worker_local
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("thread leak fixture lowers");
+    let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::Ref(EntityKind::Character));
+    let errors = typecheck_hir(&hir, &env).expect_err("thread locals must not leak");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("unknown symbol `worker_local`"))
+    );
+}
+
+#[test]
+fn typecheck_line_lifetime_guarantees_are_per_line() {
+    let tree = parse_ok(
+        r"
+flow @flow.line_scope line_scope {
+    alice(focus=.soft)[一行目。[p]]
+    with:
+        let focus = 'line.focus
+    alice[二行目。[p]]
+    with:
+        let leaked = 'line.focus
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("line scope fixture lowers");
+    let env = TypeCheckEnv::new()
+        .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+        .with_symbol(".soft", TypeKind::FocusPatch);
+    let errors = typecheck_hir(&hir, &env).expect_err("line guarantee must not leak");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("not statically guaranteed"))
+    );
+}
+
+#[test]
+fn typecheck_line_lifetime_drop_state_does_not_leak_to_next_line() {
+    let tree = parse_ok(
+        r"
+flow @flow.line_drop line_drop {
+    alice(focus=.soft)[一行目。[p]]
+    with:
+        'line.focus |> drop
+    alice(focus=.soft)[二行目。[p]]
+    with:
+        let focus = 'line.focus
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("line drop fixture lowers");
+    let env = TypeCheckEnv::new()
+        .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+        .with_symbol(".soft", TypeKind::FocusPatch);
+    typecheck_hir(&hir, &env).expect("line drop state is isolated per line");
+}

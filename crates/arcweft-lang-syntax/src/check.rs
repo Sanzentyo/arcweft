@@ -206,6 +206,16 @@ struct TypeChecker<'a> {
     effect_capabilities: HashSet<String>,
 }
 
+#[derive(Clone, Debug)]
+struct TypeCheckerScopeSnapshot {
+    active_borrows: Vec<String>,
+    locals: HashMap<String, TypeKind>,
+    active_presentation_defaults: HashMap<String, String>,
+    lifetime_guarantees: HashSet<LifetimeKey>,
+    dropped_lifetime_keys: HashSet<LifetimeKey>,
+    available_lifetimes: Vec<LifetimeScopeKind>,
+}
+
 #[derive(Clone, Debug, Default)]
 struct LoopContext {
     label: Option<String>,
@@ -508,28 +518,30 @@ impl TypeChecker<'_> {
         if let Some(portrait) = dialogue.portrait() {
             self.check_expr(portrait);
         }
-        if let Some(focus) = dialogue.focus() {
-            self.check_expr(focus);
-            self.lifetime_guarantees.insert(LifetimeKey::new(
-                LifetimeScopeKind::Line,
-                vec!["focus".to_owned()],
-            ));
-        }
-        if let Some(cleanup) = dialogue.cleanup() {
-            self.check_expr(cleanup);
-        }
         let marks = self.check_dialogue_content(dialogue.content().tokens());
-        if let Some(plan) = dialogue.plan() {
-            self.line_label_stack.push(plan.label().map(str::to_owned));
-            self.line_mark_stack.push(marks);
-            self.available_lifetimes.push(LifetimeScopeKind::Line);
-            for item in plan.items() {
-                self.check_line_plan_item(item);
+        self.with_line_runtime_scope(|checker| {
+            if let Some(focus) = dialogue.focus() {
+                checker.check_expr(focus);
+                checker.lifetime_guarantees.insert(LifetimeKey::new(
+                    LifetimeScopeKind::Line,
+                    vec!["focus".to_owned()],
+                ));
             }
-            self.line_mark_stack.pop();
-            self.available_lifetimes.pop();
-            self.line_label_stack.pop();
-        }
+            if let Some(cleanup) = dialogue.cleanup() {
+                checker.check_expr(cleanup);
+            }
+            if let Some(plan) = dialogue.plan() {
+                checker
+                    .line_label_stack
+                    .push(plan.label().map(str::to_owned));
+                checker.line_mark_stack.push(marks);
+                for item in plan.items() {
+                    checker.check_line_plan_item(item);
+                }
+                checker.line_mark_stack.pop();
+                checker.line_label_stack.pop();
+            }
+        });
     }
 
     fn bind_function_param(&mut self, pattern: &Pattern, ty: &TypeKind) {
@@ -1283,27 +1295,77 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_line_plan_output_type(&mut self, plan: &crate::ast::LinePlan) -> Option<TypeKind> {
-        self.line_label_stack.push(plan.label().map(str::to_owned));
-        let mut output = None;
-        for item in plan.items() {
-            if let Some(item_output) = self.check_line_plan_item(item) {
-                output = Some(match output {
-                    Some(current) => merge_line_output(current, &item_output, &mut self.errors),
-                    None => item_output,
-                });
-            }
+    fn snapshot_runtime_scope(&self) -> TypeCheckerScopeSnapshot {
+        TypeCheckerScopeSnapshot {
+            active_borrows: self.active_borrows.clone(),
+            locals: self.locals.clone(),
+            active_presentation_defaults: self.active_presentation_defaults.clone(),
+            lifetime_guarantees: self.lifetime_guarantees.clone(),
+            dropped_lifetime_keys: self.dropped_lifetime_keys.clone(),
+            available_lifetimes: self.available_lifetimes.clone(),
         }
-        self.line_label_stack.pop();
+    }
+
+    fn restore_runtime_scope(&mut self, snapshot: TypeCheckerScopeSnapshot) {
+        self.active_borrows = snapshot.active_borrows;
+        self.locals = snapshot.locals;
+        self.active_presentation_defaults = snapshot.active_presentation_defaults;
+        self.lifetime_guarantees = snapshot.lifetime_guarantees;
+        self.dropped_lifetime_keys = snapshot.dropped_lifetime_keys;
+        self.available_lifetimes = snapshot.available_lifetimes;
+    }
+
+    fn with_line_runtime_scope<R>(&mut self, check: impl FnOnce(&mut Self) -> R) -> R {
+        let snapshot = self.snapshot_runtime_scope();
+        self.available_lifetimes.push(LifetimeScopeKind::Line);
+        let output = check(self);
+        self.restore_runtime_scope(snapshot);
         output
+    }
+
+    fn with_child_task_scope<R>(
+        &mut self,
+        restrict_line_and_cue_lifetimes: bool,
+        check: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let snapshot = self.snapshot_runtime_scope();
+        if restrict_line_and_cue_lifetimes {
+            self.available_lifetimes
+                .retain(|scope| !matches!(scope, LifetimeScopeKind::Line | LifetimeScopeKind::Cue));
+        }
+        let output = check(self);
+        self.restore_runtime_scope(snapshot);
+        output
+    }
+
+    fn check_line_plan_output_type(&mut self, plan: &crate::ast::LinePlan) -> Option<TypeKind> {
+        self.with_line_runtime_scope(|checker| {
+            checker
+                .line_label_stack
+                .push(plan.label().map(str::to_owned));
+            let mut output = None;
+            for item in plan.items() {
+                if let Some(item_output) = checker.check_line_plan_item(item) {
+                    output = Some(match output {
+                        Some(current) => {
+                            merge_line_output(current, &item_output, &mut checker.errors)
+                        }
+                        None => item_output,
+                    });
+                }
+            }
+            checker.line_label_stack.pop();
+            output
+        })
     }
 
     fn check_line_plan_item(&mut self, item: &LinePlanItem) -> Option<TypeKind> {
         match item {
             LinePlanItem::Init(statements)
-            | LinePlanItem::Stmt(Stmt::DeferBlock { statements, .. }) => {
-                self.check_line_plan_statements(statements)
-            }
+            | LinePlanItem::Stmt(Stmt::DeferBlock { statements, .. }) => self
+                .with_child_task_scope(false, |checker| {
+                    checker.check_line_plan_statements(statements)
+                }),
             LinePlanItem::Thread(thread) => self.check_thread_body(thread.body()),
             LinePlanItem::Stmt(stmt) => {
                 self.check_stmt(stmt);
@@ -1311,9 +1373,11 @@ impl TypeChecker<'_> {
             }
             LinePlanItem::On { trigger, body } => {
                 self.check_line_on_trigger(trigger);
-                for stmt in body {
-                    self.check_stmt(stmt);
-                }
+                self.with_child_task_scope(false, |checker| {
+                    for stmt in body {
+                        checker.check_stmt(stmt);
+                    }
+                });
                 None
             }
             LinePlanItem::Option { value, .. } => {
@@ -1330,28 +1394,33 @@ impl TypeChecker<'_> {
             LinePlanItem::Out(value) => self.check_expr(value),
             LinePlanItem::TimedCue { anchor, body } => {
                 self.expect_expr_type(anchor, &TypeKind::Duration, "timeline anchor");
-                self.check_expr(body);
+                self.with_child_task_scope(false, |checker| {
+                    checker.check_expr(body);
+                });
                 None
             }
             LinePlanItem::CancelRule(rule) => {
                 self.line_cancel_depth += 1;
-                let mut output = None;
-                for stmt in rule.action() {
-                    let stmt_output = if let Stmt::Out { label, expr } = stmt {
-                        self.check_out_stmt(label.as_deref(), expr)
-                    } else {
-                        self.check_stmt(stmt);
-                        None
-                    };
-                    if let Some(stmt_output) = stmt_output {
-                        output = Some(match output {
-                            Some(current) => {
-                                merge_line_output(current, &stmt_output, &mut self.errors)
-                            }
-                            None => stmt_output,
-                        });
+                let output = self.with_child_task_scope(false, |checker| {
+                    let mut output = None;
+                    for stmt in rule.action() {
+                        let stmt_output = if let Stmt::Out { label, expr } = stmt {
+                            checker.check_out_stmt(label.as_deref(), expr)
+                        } else {
+                            checker.check_stmt(stmt);
+                            None
+                        };
+                        if let Some(stmt_output) = stmt_output {
+                            output = Some(match output {
+                                Some(current) => {
+                                    merge_line_output(current, &stmt_output, &mut checker.errors)
+                                }
+                                None => stmt_output,
+                            });
+                        }
                     }
-                }
+                    output
+                });
                 self.line_cancel_depth -= 1;
                 output
             }
@@ -1359,20 +1428,21 @@ impl TypeChecker<'_> {
                 self.expect_expr_type(expr, &TypeKind::Bool, "line-plan assertion");
                 None
             }
-            LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
-                let mut output = None;
-                for item in items {
-                    if let Some(item_output) = self.check_line_plan_item(item) {
-                        output = Some(match output {
-                            Some(current) => {
-                                merge_line_output(current, &item_output, &mut self.errors)
-                            }
-                            None => item_output,
-                        });
+            LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => self
+                .with_child_task_scope(false, |checker| {
+                    let mut output = None;
+                    for item in items {
+                        if let Some(item_output) = checker.check_line_plan_item(item) {
+                            output = Some(match output {
+                                Some(current) => {
+                                    merge_line_output(current, &item_output, &mut checker.errors)
+                                }
+                                None => item_output,
+                            });
+                        }
                     }
-                }
-                output
-            }
+                    output
+                }),
             LinePlanItem::Memo { options, .. } => {
                 for (_, value) in options {
                     self.check_expr(value);
@@ -1401,15 +1471,9 @@ impl TypeChecker<'_> {
 
     fn check_thread_body(&mut self, statements: &[Stmt]) -> Option<TypeKind> {
         self.reject_active_borrows("thread boundary");
-        let saved_lifetimes = std::mem::take(&mut self.available_lifetimes);
-        self.available_lifetimes = saved_lifetimes
-            .iter()
-            .filter(|scope| !matches!(scope, LifetimeScopeKind::Line | LifetimeScopeKind::Cue))
-            .cloned()
-            .collect();
-        let output = self.check_line_plan_statements(statements);
-        self.available_lifetimes = saved_lifetimes;
-        output
+        self.with_child_task_scope(true, |checker| {
+            checker.check_line_plan_statements(statements)
+        })
     }
 
     fn check_line_on_trigger(&mut self, trigger: &TriggerPattern) {
@@ -1444,7 +1508,6 @@ impl TypeChecker<'_> {
             | TriggerPattern::Scope(_) => {}
         }
     }
-
     fn check_dialogue_content(&mut self, tokens: &[DialogueToken]) -> HashSet<String> {
         let mut marks = HashSet::new();
         for token in tokens {

@@ -24,12 +24,19 @@ pub struct LogicalDuration {
 pub struct FrameInput {
     pub tick: TickId,
     pub dt: LogicalDuration,
+    pub input_events: Vec<InputEvent>,
+    pub task_events: Vec<TaskEvent>,
+    pub ui_events: Vec<UiEvent>,
+    pub audio_events: Vec<AudioEvent>,
+    pub source_events: Vec<SourceEvent<String, String>>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct FrameOutput {
     pub diagnostics: Vec<RuntimeDiagnostic>,
     pub line_effects: Vec<LineEffectRequest>,
+    pub task_requests: Vec<TaskSpec>,
+    pub cancel_requests: Vec<CancelScopeId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -40,8 +47,8 @@ pub struct RuntimeDiagnostic {
 /// Sans I/O runtime model for a dialogue line's scoped task group.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LineTaskGroup {
-    /// Effects that run before line reveal and child tasks start.
-    pub init: Vec<LineEffectRequest>,
+    /// Root runtime scope for init work, child tasks, and grouped timeline work.
+    pub root: LineTaskScope,
     /// Line option assignments such as `voice = auto`.
     pub options: Vec<LineOptionRequest>,
     /// Bindings introduced by `let PAT = EXPR` in a line plan.
@@ -54,20 +61,44 @@ pub struct LineTaskGroup {
     pub memo: Vec<LineMemoRequest>,
     /// Runtime-checkable assertions attached to this line plan.
     pub assertions: Vec<LineAssertionRequest>,
-    /// Cleanup registered by `defer` inside the init scope.
-    pub init_defer_stack: Vec<Vec<LineEffectRequest>>,
-    /// Line-scoped child tasks such as `thread` and `on .mark` handlers.
-    pub children: Vec<LineChildTask>,
-    /// Cleanup registered directly on the line scope.
-    pub defer_stack: Vec<Vec<LineEffectRequest>>,
-    /// Cleanup registered with `defer on completed`.
-    pub completed_defer_stack: Vec<Vec<LineEffectRequest>>,
-    /// Cleanup registered with `defer on cancelled`.
-    pub cancelled_defer_stack: Vec<Vec<LineEffectRequest>>,
-    /// Cleanup registered with `defer on failed`.
-    pub failed_defer_stack: Vec<Vec<LineEffectRequest>>,
     /// Automatic cleanup policy for line-owned handles and child tasks.
     pub cleanup: LineCleanupPolicy,
+}
+
+/// Runtime scope with a task graph and deterministic cleanup stacks.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct LineTaskScope {
+    pub node: LineTaskNode,
+    pub defer_stack: Vec<Vec<LineEffectRequest>>,
+    pub completed_defer_stack: Vec<Vec<LineEffectRequest>>,
+    pub cancelled_defer_stack: Vec<Vec<LineEffectRequest>>,
+    pub failed_defer_stack: Vec<Vec<LineEffectRequest>>,
+}
+
+/// Structured line-plan runtime graph.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LineTaskNode {
+    Seq(Vec<LineTaskNode>),
+    Start(Vec<LineTaskNode>),
+    Parallel {
+        policy: ParallelPolicy,
+        children: Vec<LineTaskNode>,
+    },
+    Child(LineChildTask),
+    Effect(LineEffectRequest),
+}
+
+impl Default for LineTaskNode {
+    fn default() -> Self {
+        Self::Seq(Vec::new())
+    }
+}
+
+/// Parallel group execution policy.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ParallelPolicy {
+    #[default]
+    JoinAll,
 }
 
 /// A child task declared by `thread name { ... }` inside a line plan.
@@ -77,9 +108,40 @@ pub struct LineTaskGroup {
 /// and line-plan threads.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LineChildTask {
+    pub id: TaskId,
+    pub key: Option<TaskKey>,
     pub name: Option<String>,
-    pub body: Vec<LineEffectRequest>,
-    pub defer_stack: Vec<Vec<LineEffectRequest>>,
+    pub trigger: LineTaskTrigger,
+    pub priority: TaskPriority,
+    pub join_policy: ChildJoinPolicy,
+    pub cancel_policy: ChildCancelPolicy,
+    pub scope: Box<LineTaskScope>,
+}
+
+/// Condition that starts a line-scoped child task.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum LineTaskTrigger {
+    #[default]
+    Immediate,
+    Mark(String),
+    Delay(LogicalDuration),
+}
+
+/// Whether the parent waits for a child task result.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ChildJoinPolicy {
+    #[default]
+    Join,
+    Detached,
+}
+
+/// How a child task exits when its owning scope is cancelled.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ChildCancelPolicy {
+    #[default]
+    CancelAndJoin,
+    Finish,
+    Detach,
 }
 
 /// Option assignment preserved from a line plan.
@@ -196,10 +258,223 @@ pub enum LineEffectRequest {
     Continue {
         label: Option<String>,
     },
-    DeferOn {
-        outcome: String,
-        effects: Vec<LineEffectRequest>,
+}
+
+/// Access information used by static conflict checks for parallel regions.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResourceAccess {
+    pub key: String,
+    pub mode: ResourceAccessMode,
+    pub policy: ConflictPolicy,
+}
+
+/// Resource access kind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResourceAccessMode {
+    Read,
+    Write,
+    Drop,
+    Append,
+    Control,
+}
+
+/// Conflict resolution policy for resource accesses in a parallel region.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ConflictPolicy {
+    Error,
+    Append,
+    LastWriterWins { priority: i32 },
+    MergePatch,
+    Reduce { op: ReduceOp },
+}
+
+/// Deterministic reduce operator for mergeable parallel writes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReduceOp {
+    Sum,
+    Min,
+    Max,
+    And,
+    Or,
+}
+
+/// Input event placeholder kept as Sans I/O data.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InputEvent {
+    pub kind: String,
+    pub payload: Option<String>,
+}
+
+/// UI event placeholder kept as Sans I/O data.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiEvent {
+    pub kind: String,
+    pub payload: Option<String>,
+}
+
+/// Audio event placeholder kept as Sans I/O data.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AudioEvent {
+    pub kind: String,
+    pub payload: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TaskId(pub String);
+
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TaskKey(pub String);
+
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct NeedId(pub String);
+
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CancelScopeId(pub String);
+
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SourceId(pub String);
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LogicalEpoch(pub u64);
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TaskSequence(pub u64);
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TaskPriority(pub i32);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AwaitTarget {
+    pub need: NeedId,
+    pub task: TaskId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskSpec {
+    pub id: TaskId,
+    pub key: TaskKey,
+    pub class: TaskClass,
+    pub priority: TaskPriority,
+    pub cancel_scope: CancelScopeId,
+    pub policy: TaskPolicy,
+    pub source: TaskSource,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskHandle {
+    pub id: TaskId,
+    pub key: TaskKey,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SchedulerBudget {
+    pub max_events: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TaskClass {
+    LocalUi,
+    Io,
+    Cpu,
+    GpuPrepare,
+    ShaderCompile,
+    WasmCall,
+    AssetDecode,
+    AudioDecode,
+    AudioRender,
+    TtsSynthesis,
+    BgmPrecompose,
+    Lsp,
+    Background,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TaskPolicy {
+    JoinSameKey,
+    AlwaysStart,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskSource {
+    pub label: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskEvent {
+    pub logical_epoch: LogicalEpoch,
+    pub task_id: TaskId,
+    pub sequence: TaskSequence,
+    pub kind: TaskEventKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TaskEventKind {
+    Ready(String),
+    Err(String),
+    Cancelled,
+    Progress(String),
+}
+
+pub trait TaskHost {
+    fn ensure_task(&mut self, spec: TaskSpec) -> TaskHandle;
+    fn cancel_scope(&mut self, scope: CancelScopeId);
+    fn poll_frame(&mut self, budget: SchedulerBudget) -> Vec<TaskEvent>;
+}
+
+/// Returns task events in replay-stable completion order.
+pub fn normalize_task_events(mut events: Vec<TaskEvent>) -> Vec<TaskEvent> {
+    events.sort_by_key(|event| (event.logical_epoch, event.task_id.clone(), event.sequence));
+    events
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourcePolicy {
+    pub backpressure: BackpressurePolicy,
+    pub replay: ReplayPolicy,
+    pub max_queue: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BackpressurePolicy {
+    LatestOnly,
+    BoundedQueue {
+        capacity: usize,
+        on_overflow: OverflowPolicy,
     },
+    BlockingNotAllowed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OverflowPolicy {
+    DropOldest,
+    DropNewest,
+    Error,
+    Coalesce,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReplayPolicy {
+    Full,
+    HashOnly,
+    Summary,
+    None,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceEvent<T, E> {
+    pub source: SourceId,
+    pub sequence: TaskSequence,
+    pub kind: SourceEventKind<T, E>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SourceEventKind<T, E> {
+    Item(T),
+    Progress(String),
+    Disconnected,
+    PermissionRevoked,
+    Error(E),
+    End,
 }
 
 /// Call-shaped runtime request. The runtime adapter decides whether the callee
@@ -260,5 +535,75 @@ impl LogicalDuration {
 impl Default for LogicalDuration {
     fn default() -> Self {
         Self::from_nanos(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_task_events_by_replay_stable_keys() {
+        let events = vec![
+            TaskEvent {
+                logical_epoch: LogicalEpoch(1),
+                task_id: TaskId("b".to_owned()),
+                sequence: TaskSequence(0),
+                kind: TaskEventKind::Ready("b".to_owned()),
+            },
+            TaskEvent {
+                logical_epoch: LogicalEpoch(0),
+                task_id: TaskId("z".to_owned()),
+                sequence: TaskSequence(9),
+                kind: TaskEventKind::Ready("z".to_owned()),
+            },
+            TaskEvent {
+                logical_epoch: LogicalEpoch(1),
+                task_id: TaskId("a".to_owned()),
+                sequence: TaskSequence(1),
+                kind: TaskEventKind::Ready("a".to_owned()),
+            },
+        ];
+
+        let normalized = normalize_task_events(events);
+        let keys: Vec<_> = normalized
+            .iter()
+            .map(|event| {
+                (
+                    event.logical_epoch,
+                    event.task_id.0.as_str(),
+                    event.sequence,
+                )
+            })
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                (LogicalEpoch(0), "z", TaskSequence(9)),
+                (LogicalEpoch(1), "a", TaskSequence(1)),
+                (LogicalEpoch(1), "b", TaskSequence(0)),
+            ]
+        );
+    }
+
+    #[test]
+    fn source_policy_is_pure_data() {
+        let policy = SourcePolicy {
+            backpressure: BackpressurePolicy::BoundedQueue {
+                capacity: 8,
+                on_overflow: OverflowPolicy::Coalesce,
+            },
+            replay: ReplayPolicy::HashOnly,
+            max_queue: 8,
+        };
+
+        assert!(matches!(
+            policy.backpressure,
+            BackpressurePolicy::BoundedQueue {
+                capacity: 8,
+                on_overflow: OverflowPolicy::Coalesce,
+            }
+        ));
+        assert_eq!(policy.replay, ReplayPolicy::HashOnly);
     }
 }
