@@ -59,6 +59,15 @@ fn entity_decl_registry_kind(kind: EntityDeclKind) -> EntityKind {
         EntityDeclKind::Activity => EntityKind::Activity,
         EntityDeclKind::Signal => EntityKind::Signal,
         EntityDeclKind::Layer => EntityKind::Layer,
+        EntityDeclKind::Textbox => EntityKind::Textbox,
+        EntityDeclKind::Voice => EntityKind::Voice,
+        EntityDeclKind::Se => EntityKind::Se,
+        EntityDeclKind::Bgm => EntityKind::Bgm,
+        EntityDeclKind::AudioBus => EntityKind::AudioBus,
+        EntityDeclKind::MixerSnapshot => EntityKind::MixerSnapshot,
+        EntityDeclKind::Ducking => EntityKind::Ducking,
+        EntityDeclKind::Motion => EntityKind::Motion,
+        EntityDeclKind::Rig => EntityKind::Rig,
     }
 }
 

@@ -94,7 +94,7 @@ alice.say(
 ]
 with {
     at(0.42s) {
-        alice.stage.face(worried, crossfade=120ms)
+        alice.stage.look(worried, crossfade=120ms)
     }
 
     at(end-250ms) {
@@ -184,11 +184,11 @@ alice(voice=auto, look=smile):
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 with {
     at(0.42s) {
-        alice.stage.face(worried, crossfade=120ms)
+        alice.stage.look(worried, crossfade=120ms)
     }
 
     cancel on input .SkipLine {
-        stop voice fade=40ms
+        'line.voice |> drop(stop_now)
         flush text instant
         continue
     }
@@ -203,11 +203,11 @@ alice.say(voice=auto, look=smile)[
 ]
 with {
     at(0.42s) {
-        alice.stage.face(worried, crossfade=120ms)
+        alice.stage.look(worried, crossfade=120ms)
     }
 
     cancel on input .SkipLine {
-        stop voice fade=40ms
+        'line.voice |> drop(stop_now)
         flush text instant
         continue
     }
@@ -221,7 +221,7 @@ alice(voice=auto):[
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 ]
 with {
-    at(0.42s) { alice.stage.face(worried) }
+    at(0.42s) { alice.stage.look(worried) }
 }
 ```
 
@@ -241,7 +241,7 @@ alice[
 ]
 with:
     at(0.42s):
-        alice.stage.face(smile)
+        alice.stage.look(smile)
 ```
 
 It is equivalent to:
@@ -252,7 +252,7 @@ alice.say()[
 ]
 with:
     at(0.42s):
-        alice.stage.face(smile)
+        alice.stage.look(smile)
 ```
 
 The colon form can use the same line plan attachment:
@@ -262,7 +262,7 @@ alice:
     おはよう。[p]
 with:
     at(0.42s):
-        alice.stage.face(smile)
+        alice.stage.look(smile)
 ```
 
 `with:` starts a line plan only at the same indentation level as the dialogue call. Inside dialogue text it is ordinary text unless introduced by a control tag. Lowering normalizes it to `with { ... }`.
@@ -271,13 +271,13 @@ The brace and indentation styles are equivalent:
 
 ```awft
 alice[おはよう。[p]]
-with { at(0.42s) { alice.stage.face(smile) } }
+with { at(0.42s) { alice.stage.look(smile) } }
 ```
 
 ```awft
 alice[おはよう。[p]]
 with:
-    at(0.42s): alice.stage.face(smile)
+    at(0.42s): alice.stage.look(smile)
 ```
 
 See [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles](dialogue-line-handles-and-returns.md) for output values and handle ownership.
@@ -297,11 +297,11 @@ with {
     memo voice_cue key=(voice.key, locale) cache=session
 
     start {
-        alice.stage.face(smile)
+        alice.stage.look(smile)
     }
 
     at(0.42s) {
-        alice.stage.face(worried, crossfade=120ms)
+        alice.stage.look(worried, crossfade=120ms)
     }
 
     at(marker("surprise")) {
@@ -309,7 +309,7 @@ with {
     }
 
     cancel on input .BackToTitle {
-        stop voice fade=80ms
+        'line.voice |> drop(stop_now)
         stop cues policy=cancel_pending
         goto @flow.title
     }
@@ -341,7 +341,7 @@ with {
     thread motion {
         wait mark .release_focus
         wait 0.35s
-        alice.stage.face(worried)
+        alice.stage.look(worried)
 
         defer {
             cleanup_motion()
@@ -378,7 +378,7 @@ with {
     start {
         together {
             alice.stage.move(to=left, time=300ms, ease=quad.out)
-            alice.stage.face(panic, crossfade=80ms)
+            alice.stage.look(panic, crossfade=80ms)
             se.play(@se.footstep_fast)
         }
     }
@@ -398,10 +398,10 @@ with {
 `at(anchor) { ... }` schedules cues relative to the current line timeline.
 
 ```awft
-at(0.35s) { alice.stage.face(blink) }
+at(0.35s) { alice.stage.look(blink) }
 at(+120ms) { alice.stage.mouth(open) }
 at(end-200ms) { alice.stage.move(to=left, time=260ms, ease=quad.out) }
-at(marker("soft_smile")) { alice.stage.face(smile, crossfade=100ms) }
+at(marker("soft_smile")) { alice.stage.look(smile, crossfade=100ms) }
 at(phoneme "a") { alice.stage.mouth(a) }
 at(char 12) { signal @signal.text_reveal_hit <- true }
 ```
@@ -451,7 +451,7 @@ with {
     }
 
     at(marker("surprise")) {
-        alice.stage.face(surprised)
+        alice.stage.look(surprised)
     }
 }
 ```
@@ -474,19 +474,19 @@ alice.say(voice=auto)[
 ]
 with {
     cancel on input .SkipLine {
-        stop voice fade=40ms
+        'line.voice |> drop(stop_now)
         flush text instant
         continue
     }
 
     cancel on input .BackToTitle {
-        stop voice fade=80ms
+        'line.voice |> drop(stop_now)
         stop cues policy=cancel_pending
         goto @flow.title
     }
 
     cancel on signal @signal.route_forced {
-        stop voice fade=120ms
+        'line.voice |> drop(stop_now)
         goto signal_value(@signal.route_forced)
     }
 }
@@ -585,7 +585,7 @@ Allowed in `at` blocks:
 ```text
 - DialogueCue-producing functions
 - stage cue sugar: face/move/anim/shake/signal
-- character object methods such as alice.stage.face(...)
+- character object methods such as alice.stage.look(...)
 - debug log/signal if capability permits
 ```
 
@@ -705,14 +705,14 @@ face(@character.alice, .worried, crossfade = 120ms)
 becomes:
 
 ```awft
-alice.stage.face(.worried, crossfade = 120ms)
+alice.stage.look(.worried, crossfade = 120ms)
 ```
 
 ```awft
 alice(voice=auto):
     聞いて。[p]
 with {
-    at(0.42s) { alice.stage.face(worried) }
+    at(0.42s) { alice.stage.look(worried) }
 }
 ```
 
@@ -723,7 +723,7 @@ alice.say(voice=auto)[
     聞いて。[p]
 ]
 with {
-    at(0.42s) { alice.stage.face(worried) }
+    at(0.42s) { alice.stage.look(worried) }
 }
 ```
 
@@ -746,10 +746,10 @@ let (actor, (face0, face1, voice)) = alice.say(
 ]
 with:
     let actor = alice.stage.acquire(scope=line)
-    let face0 = actor.face(smile)
+    let face0 = actor.look(smile)
     let voice = line.voice_handle()
     let face1 = at(0.42s):
-        actor.face(worried, crossfade=120ms)
+        actor.look(worried, crossfade=120ms)
 
     out (actor, (face0, face1, voice))
 ```
@@ -762,8 +762,8 @@ let (_, (face0, _, voice)) = alice.say(voice=auto)[
 ]
 with:
     let actor = alice.stage.acquire(scope=line)
-    let face0 = actor.face(smile)
-    let face1 = at(0.42s): actor.face(worried)
+    let face0 = actor.look(smile)
+    let face1 = at(0.42s): actor.look(worried)
     let voice = line.voice_handle()
     out (actor, (face0, face1, voice))
 ```

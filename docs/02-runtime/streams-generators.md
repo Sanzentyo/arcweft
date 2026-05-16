@@ -77,7 +77,7 @@ pub struct Watch<T> {
 
 ```awft
 let usb =
-    try await device.usb(#device.light_panel) with {
+    try await device.usb(@device.light_panel) with {
         pending p => scene @scene.device_permission_wait {
             text "USB デバイスの許可を待っています"
             progress p.ratio
@@ -110,7 +110,7 @@ The following is not allowed:
 ```awft
 stream fn unsafe_open_mic() -> Stream<AudioFrame, AudioError> {
     // error: stream fn cannot open devices directly
-    let mic = capture.microphone(#capture.player_microphone)
+    let mic = capture.microphone(@capture.player_microphone)
 }
 ```
 
@@ -118,7 +118,7 @@ Use a granted capture handle instead:
 
 ```awft
 let mic =
-    try await capture.microphone(#capture.player_microphone) with {
+    try await capture.microphone(@capture.player_microphone) with {
         pending p => scene @scene.permission_wait { progress p.ratio }
     }
 

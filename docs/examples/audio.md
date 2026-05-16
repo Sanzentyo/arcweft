@@ -36,7 +36,7 @@ flow @flow.voice_demo demo(state: GameState) -> Result<FlowExit, FlowError> {
         pending p => scene @scene.loading_voice { progress p.ratio }
     }
 
-    play voice speech.audio
+    voice(speech.audio, speaker = alice)
     say alice "おはよう。"
     Ok(FlowExit::Done)
 }

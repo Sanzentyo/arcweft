@@ -40,7 +40,7 @@ alice[
 ]
 with:
     at(0.42s):
-        alice.stage.face(smile)
+        alice.stage.look(smile)
 ```
 
 This is equivalent to the canonical detailed form:
@@ -51,7 +51,7 @@ alice.say()[
 ]
 with:
     at(0.42s):
-        alice.stage.face(smile)
+        alice.stage.look(smile)
 ```
 
 The colon form is the shortest speaker-call sugar:
@@ -61,7 +61,7 @@ alice:
     おはよう。[p]
 with:
     at(0.42s):
-        alice.stage.face(smile)
+        alice.stage.look(smile)
 ```
 
 This is equivalent to the same canonical detailed form:
@@ -72,7 +72,7 @@ alice.say()[
 ]
 with:
     at(0.42s):
-        alice.stage.face(smile)
+        alice.stage.look(smile)
 ```
 
 All four source forms produce the same typed `DialogueLine`. The canonical
@@ -121,7 +121,7 @@ Both block forms are supported. `with { ... }` is canonical; `with:` is syntax s
 ```awft
 alice[おはよう。[p]]
 with {
-    at(0.42s) { alice.stage.face(smile) }
+    at(0.42s) { alice.stage.look(smile) }
 }
 ```
 
@@ -129,7 +129,7 @@ with {
 alice[おはよう。[p]]
 with:
     at(0.42s):
-        alice.stage.face(smile)
+        alice.stage.look(smile)
 ```
 
 The two forms are equivalent after parsing. Project formatting controls the printed source style.
@@ -158,14 +158,14 @@ The `{ ... }` above is a separate lexical scope. Use `with { ... }` when the blo
 The following is a concise complex line. The `alice:` head is syntax sugar for a character dialogue call, and `with:` is syntax sugar for `with { ... }`.
 
 ```awft
-alice(voice=auto, face=smile):
+alice(voice=auto, look=.smile):
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 with:
     at(0.42s):
-        alice.stage.face(worried, crossfade=120ms)
+        alice.stage.look(.worried, crossfade=120ms)
 
     cancel on input .SkipLine:
-        stop voice fade=40ms
+        'line.voice |> drop(stop_now)
         flush text instant
         continue
 ```
@@ -173,15 +173,15 @@ with:
 It is equivalent to:
 
 ```awft
-alice.say(voice=auto, face=smile)[
+alice.say(voice=auto, look=.smile)[
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 ]
 with:
     at(0.42s):
-        alice.stage.face(worried, crossfade=120ms)
+        alice.stage.look(.worried, crossfade=120ms)
 
     cancel on input .SkipLine:
-        stop voice fade=40ms
+        'line.voice |> drop(stop_now)
         flush text instant
         continue
 ```
@@ -198,14 +198,14 @@ let handles = alice.say(voice=auto)[
 ]
 with:
     let voice = line.voice_handle()
-    let face = alice.stage.face(smile)
-    out (voice, face)
+    let look = alice.stage.look(.smile)
+    out (voice, look)
 ```
 
 The type is inferred from the `out` expression.
 
 ```text
-alice.say(...)[...] with: out (voice, face)
+alice.say(...)[...] with: out (voice, look)
   -> (VoiceHandle, StageCueHandle)
 ```
 
@@ -242,16 +242,16 @@ Line results can be destructured.
 let (line_alice, (face0, face1, voice)) = alice.say(
     id=@say.opening.dream_hint,
     voice=auto,
-    face=smile,
+    look=.smile,
 )[
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 ]
 with:
     let line_alice = alice.stage.acquire(scope=line)
     let voice = line.voice_handle()
-    let face0 = line_alice.face(smile)
+    let face0 = line_alice.look(.smile)
     let face1 = at(0.42s):
-        line_alice.face(worried, crossfade=120ms)
+        line_alice.look(.worried, crossfade=120ms)
 
     out (line_alice, (face0, face1, voice))
 ```
@@ -264,8 +264,8 @@ let (_, (face0, _, voice)) = alice.say(voice=auto)[
 ]
 with:
     let actor = alice.stage.acquire(scope=line)
-    let face0 = actor.face(smile)
-    let face1 = at(0.42s): actor.face(worried)
+    let face0 = actor.look(smile)
+    let face1 = at(0.42s): actor.look(worried)
     let voice = line.voice_handle()
     out (actor, (face0, face1, voice))
 ```
@@ -359,7 +359,7 @@ Within a line:
 ```awft
 let actor = alice.stage.acquire(scope=line, memo=true)
 let pose = actor.pose(normal)
-let face = actor.face(smile)
+let face = actor.look(smile)
 ```
 
 The `memo=true` flag allows the stage proxy to reuse loaded sprite atlases, expression meshes, and text-layout assets when the same key is requested again.
@@ -401,7 +401,7 @@ alice[
     おはよう。[p]
 ]
 with:
-    at(0.42s): alice.stage.face(smile)
+    at(0.42s): alice.stage.look(smile)
 ```
 
 becomes conceptually:
@@ -411,21 +411,21 @@ alice.say()[
     おはよう。[p]
 ]
 with:
-    at(0.42s): alice.stage.face(smile)
+    at(0.42s): alice.stage.look(smile)
 ```
 
 ```awft
 alice:
     おはよう。[p]
 with:
-    at(0.42s): alice.stage.face(smile)
+    at(0.42s): alice.stage.look(smile)
 ```
 
 also becomes the same call.
 
 ```awft
 let (_, cue) = alice.say()[おはよう。[p]] with:
-    let cue = at(0.42s): alice.stage.face(smile)
+    let cue = at(0.42s): alice.stage.look(smile)
     out (line.voice_handle(), cue)
 ```
 

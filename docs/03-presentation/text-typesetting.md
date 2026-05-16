@@ -51,9 +51,9 @@ fn math(src: String) -> Content
 ## TypesetBlock
 
 ```awft
-pub typeset #typeset.credits typst {
+pub typeset @typeset.credits typst {
     source """
-    #set text(font: "Noto Serif CJK JP", size: 18pt)
+    @set text(font: "Noto Serif CJK JP", size: 18pt)
     #align(center)[
       = Staff
 
@@ -69,8 +69,8 @@ pub typeset #typeset.credits typst {
 使用:
 
 ```awft
-let doc = try await typeset(#typeset.credits) with {
-    pending p => scene #scene.loading_typeset { text "組版中"; progress p.ratio }
+let doc = try await typeset(@typeset.credits) with {
+    pending p => scene @scene.loading_typeset { text "組版中"; progress p.ratio }
 }
 
 TypesetView(doc).scroll()

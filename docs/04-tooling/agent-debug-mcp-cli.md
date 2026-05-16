@@ -75,7 +75,7 @@ arcw agent observe --image overlay --out overlay.png
 arcw agent choose choice.opening.listen
 arcw agent click --x 520 --y 540
 arcw agent wait --until 'flow == flow.alice_intro'
-arcw agent state get 'GameState.affection[#character.alice]'
+arcw agent state get 'GameState.affection[@character.alice]'
 arcw agent audio state --json
 arcw agent tts preview voice.alice.tts "おはよう" --out voice.wav
 ```

@@ -1,12 +1,12 @@
 pub(super) use crate::{
     AwaitBranchKind, BinaryOp, BlockStyle, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
     ComputationBlockKind, ContractClause, DialogueToken, EntityDeclKind, EntityKind, Expr,
-    FlowItem, FlowKind, FunctionKind, HirFlowItem, HirTopLevelDecl, ImplMember, Item, LinePlanItem,
-    Literal, NameRegistry, Pattern, Placeholder, SelectBranchHead, Stmt, SymbolUseKind,
-    SyntaxLintCode, TraitMember, TypeCheckEnv, TypeKind, TypeRef, UnaryOp, VariantPatternPayload,
-    Visibility, collect_symbol_uses, lint_id_policy, lower_to_hir, parse_dialogue_tokens,
-    parse_expr, parse_fn_signature, parse_source, parse_type_ref, registry_from_hir, typecheck_hir,
-    validate_hir_references, validate_typecheck_ready,
+    FlowItem, FlowKind, FunctionKind, HirFlowItem, HirTopLevelDecl, ImplMember, Item,
+    LifetimeScopeKind, LinePlanItem, Literal, NameRegistry, Pattern, Placeholder, SelectBranchHead,
+    Stmt, SymbolUseKind, SyntaxLintCode, TraitMember, TypeCheckEnv, TypeKind, TypeRef, UnaryOp,
+    VariantPatternPayload, Visibility, collect_symbol_uses, lint_id_policy, lower_to_hir,
+    parse_dialogue_tokens, parse_expr, parse_fn_signature, parse_source, parse_type_ref,
+    registry_from_hir, typecheck_hir, validate_hir_references, validate_typecheck_ready,
 };
 
 pub(super) fn parse_ok(source: impl Into<String>) -> crate::TypedSyntaxTree {

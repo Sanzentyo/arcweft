@@ -5,10 +5,10 @@
 SVGだけに頼らず、エンジン内の Vector IR を持つ。
 
 ```awft
-pub vector #vector.icon.play {
+pub vector @vector.icon.play {
     viewport 0 0 24 24
 
-    path #path.triangle {
+    path @path.triangle {
         move_to 8 5
         line_to 19 12
         line_to 8 19
@@ -55,7 +55,7 @@ Canvas は `Props + Theme + LogicalTime -> VectorScene` の純粋関数として
 ## SVG import
 
 ```awft
-pub svg #svg.icon.settings from "ui/icons/settings.svg"
+pub svg @svg.icon.settings from "ui/icons/settings.svg"
 sandbox {
     external_resources = false
     scripting = false

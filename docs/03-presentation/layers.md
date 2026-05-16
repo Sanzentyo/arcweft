@@ -232,32 +232,32 @@ modal layer は独立した focus scope を持ち、閉じるまで下位 scope 
 project / module / scene で layer を宣言できる。
 
 ```awft
-pub layer #layer.world.background: World {
+pub layer @layer.world.background: World {
     z = -1000
     input = observe_only
     capture = color | object_id
 }
 
-pub layer #layer.world.characters: Character {
+pub layer @layer.world.characters: Character {
     z = 0
     input = pass_through
     capture = color | object_id | mask
 }
 
-pub layer #layer.ui.game: NativeUi {
+pub layer @layer.ui.game: NativeUi {
     z = 1000
     input = block_below on_hit
     hit_test = ui_tree
 }
 
-pub layer #layer.ui.modal: Modal {
+pub layer @layer.ui.modal: Modal {
     z = 3000
     input = modal
     hit_test = ui_tree
     focus = trap
 }
 
-pub layer #layer.debug.agent: Debug {
+pub layer @layer.debug.agent: Debug {
     z = 9000
     input = observe_only
     capture = overlay
@@ -267,18 +267,18 @@ pub layer #layer.debug.agent: Debug {
 Scene では layer に content を差し込む。
 
 ```awft
-scene #scene.opening {
-    layer #layer.world.background {
-        image(#asset.bg.room).fit(cover)
+scene @scene.opening {
+    layer @layer.world.background {
+        image(@asset.bg.room).fit(cover)
     }
 
-    layer #layer.world.characters {
-        sprite(#asset.char.alice.default)
+    layer @layer.world.characters {
+        sprite(@asset.char.alice.default)
             .at(center)
-            .agent_target(#character.alice)
+            .agent_target(@character.alice)
     }
 
-    layer #layer.ui.game {
+    layer @layer.ui.game {
         TextBox(current_text())
         ChoiceList(choices)
     }
@@ -326,8 +326,8 @@ format. The syntax/typecheck layer validates that background calls use
 HTML/CSS UI は Game Native UI とは別の `HtmlUi` layer として扱う。
 
 ```awft
-html panel #ui.settings_html from "ui/settings.html" {
-    layer = #layer.ui.html
+html panel @ui.settings_html from "ui/settings.html" {
+    layer = @layer.ui.html
     bounds = rect(0, 0, 100vw, 100vh)
     input = modal
 }
@@ -340,12 +340,12 @@ Native では Servo、Web では DOM へ渡す。Agent 観測では同じ `Layer
 FPS やトラックゲームなどは独立 Activity layer にできる。
 
 ```awft
-activity #activity.truck_game TruckGame {
-    render_layer = #layer.activity.truck
-    input_layer = #layer.activity.truck
+activity @activity.truck_game TruckGame {
+    render_layer = @layer.activity.truck
+    input_layer = @layer.activity.truck
 }
 
-pub layer #layer.activity.truck: Activity {
+pub layer @layer.activity.truck: Activity {
     z = 500
     input = block_below
     hit_test = bbox
@@ -355,7 +355,7 @@ pub layer #layer.activity.truck: Activity {
 Activity が modal minigame の場合:
 
 ```awft
-pub layer #layer.activity.fps: Activity {
+pub layer @layer.activity.fps: Activity {
     z = 2500
     input = modal
     keyboard_capture = all
@@ -411,24 +411,24 @@ arcw agent click --x 520 --y 540 --layer layer.ui.modal
 ## Testing
 
 ```awft
-test #test.modal_blocks_world_input scenario {
-    start #flow.opening
-    open_ui #ui.settings_html
+test @test.modal_blocks_world_input scenario {
+    start @flow.opening
+    open_ui @ui.settings_html
 
-    click #character.alice
+    click @character.alice
 
-    expect input blocked_by #layer.ui.modal
+    expect input blocked_by @layer.ui.modal
     expect no_event GameEvent.CharacterClicked
 }
 ```
 
 ```awft
 test #test_choice_layer_bbox visual {
-    start #flow.opening
-    wait object #choice.opening.listen visible
+    start @flow.opening
+    wait object @choice.opening.listen visible
 
-    assert_layer #choice.opening.listen == #layer.ui.game
-    assert_bbox #choice.opening.listen within rect(400, 500, 500, 80)
+    assert_layer @choice.opening.listen == @layer.ui.game
+    assert_bbox @choice.opening.listen within rect(400, 500, 500, 80)
 }
 ```
 
@@ -437,9 +437,9 @@ test #test_choice_layer_bbox visual {
 layer には契約を付けられる。
 
 ```awft
-pub layer #layer.ui.modal: Modal
+pub layer @layer.ui.modal: Modal
 ensures input.route == modal
-ensures z > #layer.ui.game.z
+ensures z > @layer.ui.game.z
 {
     z = 3000
     input = modal
@@ -450,8 +450,8 @@ UI component でも所属 layer を保証できる。
 
 ```awft
 component ChoiceList(choices: List<ChoiceView>) -> View
-ensures result.layer == #layer.ui.game
-ensures result.actions.all(_.layer == #layer.ui.game)
+ensures result.layer == @layer.ui.game
+ensures result.actions.all(_.layer == @layer.ui.game)
 {
     ...
 }
@@ -485,8 +485,8 @@ ensures result.actions.all(_.layer == #layer.ui.game)
 Layer は hook target でもある。描画・layout・input routing の各 phase で hook を実行できる。
 
 ```awft
-hook #hook.ui_layer_bbox
-on #layer.ui.game
+hook @hook.ui_layer_bbox
+on @layer.ui.game
 phase AfterLayout
 check on change layer.layout_hash
 {
@@ -499,7 +499,7 @@ check on change layer.layout_hash
 `AfterInputRoute` hook では、入力がどの layer に consumed / blocked / passed-through されたかを検査できる。
 
 ```awft
-hook #hook.debug_input_route
+hook @hook.debug_input_route
 on query Layer where input.enabled
 phase AfterInputRoute
 check on event
@@ -517,8 +517,8 @@ check on event
 Layer は hook target になれる。描画、hit-test、入力、Agent 観測の各 phase で hook を実行できる。
 
 ```awft
-hook #hook.modal.block_lower_layers
-on #layer.modal.settings
+hook @hook.modal.block_lower_layers
+on @layer.modal.settings
 at input.capture
 priority 1000
 check every event
@@ -530,13 +530,13 @@ check every event
     }
 }
 
-hook #hook.layer.agent_hint
-on #layer.choices
+hook @hook.layer.agent_hint
+on @layer.choices
 at agent.observe
-check when state .affection[#character.alice] changes
+check when state .affection[@character.alice] changes
 {
     patch_agent_observation {
-        layer #layer.choices {
+        layer @layer.choices {
             description = "現在表示中の選択肢レイヤー"
         }
     }
@@ -550,14 +550,14 @@ Layer hook は [Hook Runtime / Memoization Runtime](../02-runtime/hooks-memoizat
 Layer は hook の重要な対象である。描画・入力・Agent 観測が同じ LayerTree を共有するため、layer phase に hook を差し込める。
 
 ```awft
-hook #hook.modal_blocks_input
-on #layer.overlay.modal
+hook @hook.modal_blocks_input
+on @layer.overlay.modal
 phase InputPreRoute
 check on event
-when layer(#layer.overlay.modal).visible
+when layer(@layer.overlay.modal).visible
 effects { signal }
 {
-    signal #signal.input_blocked <- true
+    signal @signal.input_blocked <- true
 }
 ```
 
@@ -578,8 +578,8 @@ InputPostRoute
 Layer は hook target になれる。これにより、描画・入力・Agent 観測のタイミングで条件チェックや追加処理を入れられる。
 
 ```awft
-hook #hook.modal.blocks_lower_layers
-on layer #layer.ui.modal
+hook @hook.modal.blocks_lower_layers
+on layer @layer.ui.modal
 at before_input
 when layer.visible
 priority 1000
@@ -589,8 +589,8 @@ priority 1000
 ```
 
 ```awft
-hook #hook.debug.layer_observed
-on layer #layer.debug.agent
+hook @hook.debug.layer_observed
+on layer @layer.debug.agent
 at after_render
 check every 30 frames
 {
@@ -621,7 +621,7 @@ Virtual controller layers usually sit above scene/UI layers and consume touch in
 A touch virtual controller is a renderable and input-capable layer.
 
 ```awft
-layer #layer.input.touch_controller {
+layer @layer.input.touch_controller {
     z = 900
     render = true
     input = true

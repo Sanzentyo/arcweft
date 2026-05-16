@@ -29,7 +29,7 @@ pub enum ActivityMode {
 ## DSL
 
 ```awft
-pub activity #activity.truck_game from rust "mini_games/truck" {
+pub activity @activity.truck_game from rust "mini_games/truck" {
     mode = deterministic
     tick = fixed(60hz)
 
@@ -66,7 +66,7 @@ Portable Activity は `RenderCommandBuffer` を返す。
 ```awft
 RenderCommand::DrawMesh {
     mesh,
-    material: #shader.material.truck_road,
+    material: @shader.material.truck_road,
     params,
 }
 ```

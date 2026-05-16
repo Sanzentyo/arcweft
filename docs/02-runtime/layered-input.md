@@ -233,7 +233,7 @@ UI component:
 ```awft
 Button("閉じる")
     .layer(@layer.modal.settings)
-    .agent_target(#ui.settings.close)
+    .agent_target(@ui.settings.close)
     .on_click {
         emit UiEvent.SettingsClosed
     }
@@ -242,7 +242,7 @@ Button("閉じる")
 Activity:
 
 ```awft
-activity #activity.fps_arena FpsArena {
+activity @activity.fps_arena FpsArena {
     layer @layer.activity.fps {
         input = capture_when_active
         keyboard = exclusive
@@ -381,14 +381,14 @@ bbox_source = UiLayoutExact | UiBridgeApprox | BackendUnavailable
 ## Test
 
 ```awft
-test #test.modal_blocks_choices scenario {
+test @test.modal_blocks_choices scenario {
     start @flow.opening
-    open_ui #ui.settings
+    open_ui @ui.settings
 
     click @choice.opening.listen
     expect no_event GameEvent::ChoiceSelected
 
-    click #ui.settings.close
+    click @ui.settings.close
     click @choice.opening.listen
     expect event GameEvent::ChoiceSelected { id: @choice.opening.listen }
 }
@@ -408,7 +408,7 @@ ensures focus.trapped_within(self)
 Activity input 契約:
 
 ```awft
-activity #activity.fps_arena FpsArena
+activity @activity.fps_arena FpsArena
 requires input_layer(@layer.activity.fps).policy == CaptureWhenActive
 ensures no_lower_layer_receives_keyboard_while_active
 {

@@ -33,7 +33,7 @@ pub struct FrameInput {
 }
 ```
 
-WGSL 単体の shader body は `wgsl` を使う。ただし、`shader #shader... { wgsl { ... } }` のような Arcweft DSL 全体の例は `awft` を使う。
+WGSL 単体の shader body は `wgsl` を使う。ただし、`shader @shader... { wgsl { ... } }` のような Arcweft DSL 全体の例は `awft` を使う。
 
 ## 理由
 

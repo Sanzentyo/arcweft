@@ -67,10 +67,10 @@ arcw jit dump-asm fn.logic.affection_score
 ```
 
 ```awft
-property #test.jit_vm_equivalence_affection_score {
+property @test.jit_vm_equivalence_affection_score {
     for_all input in gen<AffectionInput>() {
-        let vm = eval_vm(#fn.affection_score, input)
-        let jit = eval_jit(#fn.affection_score, input)
+        let vm = eval_vm(@fn.affection_score, input)
+        let jit = eval_jit(@fn.affection_score, input)
         assert_eq vm, jit
     }
 }
@@ -81,7 +81,7 @@ property #test.jit_vm_equivalence_affection_score {
 関数は初回使用時に JIT できる。
 
 ```awft
-lazy jit fn #fn.layout_choices
+lazy jit fn @fn.layout_choices
 ```
 
 flow 内で必要なら `Need` として扱う。ただし通常は VM fallback を使い、JIT 完了後に差し替える。

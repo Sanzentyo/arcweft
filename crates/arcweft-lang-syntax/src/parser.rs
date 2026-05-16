@@ -108,6 +108,7 @@ type EntityDeclHead = (
     Option<Visibility>,
     EntityRef,
     Option<String>,
+    Option<String>,
     String,
 );
 type ContentCallParse = (
@@ -698,13 +699,14 @@ impl Parser {
             );
             return None;
         }
-        let (kind, visibility, id, name, signature_tail) =
+        let (kind, visibility, id, name, surface_alias, signature_tail) =
             parse_entity_decl_head(head.trim(), start_line.start, &mut self.errors)?;
         Some(EntityDeclItem::new(
             kind,
             visibility,
             id,
             name,
+            surface_alias,
             signature_tail,
             Some(body),
             TextRange::new(start_line.start, end),
@@ -714,13 +716,14 @@ impl Parser {
     fn parse_entity_decl_line(&mut self) -> Option<EntityDeclItem> {
         let line = self.current().clone();
         self.index += 1;
-        let (kind, visibility, id, name, signature_tail) =
+        let (kind, visibility, id, name, surface_alias, signature_tail) =
             parse_entity_decl_head(line.text.trim(), line.start, &mut self.errors)?;
         Some(EntityDeclItem::new(
             kind,
             visibility,
             id,
             name,
+            surface_alias,
             signature_tail,
             None,
             TextRange::new(line.start, line.end),
@@ -2983,11 +2986,21 @@ fn parse_extern_mod_head(head: &str) -> Option<(String, String, Option<String>)>
 
 fn entity_decl_kind(input: &str) -> Option<(EntityDeclKind, &str)> {
     [
+        ("audio bus", EntityDeclKind::AudioBus),
+        ("mixer snapshot", EntityDeclKind::MixerSnapshot),
         ("character", EntityDeclKind::Character),
         ("component", EntityDeclKind::Component),
         ("activity", EntityDeclKind::Activity),
         ("signal", EntityDeclKind::Signal),
         ("layer", EntityDeclKind::Layer),
+        ("textbox", EntityDeclKind::Textbox),
+        ("voice profile", EntityDeclKind::Voice),
+        ("voice", EntityDeclKind::Voice),
+        ("se", EntityDeclKind::Se),
+        ("bgm", EntityDeclKind::Bgm),
+        ("ducking", EntityDeclKind::Ducking),
+        ("motion", EntityDeclKind::Motion),
+        ("rig", EntityDeclKind::Rig),
     ]
     .into_iter()
     .find_map(|(keyword, kind)| {
@@ -3004,12 +3017,38 @@ fn parse_entity_decl_head(
     errors: &mut Vec<ParseError>,
 ) -> Option<EntityDeclHead> {
     let (visibility, rest) = parse_visibility_prefix(head);
+    let rest = rest
+        .trim_start()
+        .strip_prefix("surface ")
+        .unwrap_or(rest.trim_start());
     let (kind, rest) = entity_decl_kind(rest.trim_start())?;
     let (id, rest) = parse_required_entity_ref(rest, base, errors)?;
     let (id, rest) = normalize_trailing_colon_id(id, rest);
     let rest = rest.trim();
     let (name, signature_tail) = parse_name_and_tail(rest);
-    Some((kind, visibility, id, name, signature_tail))
+    let (signature_tail, surface_alias) = split_surface_alias(signature_tail);
+    Some((kind, visibility, id, name, surface_alias, signature_tail))
+}
+
+fn split_surface_alias(signature_tail: String) -> (String, Option<String>) {
+    let (before, after) = split_top_level_keyword_once(&signature_tail, "as");
+    if let Some(after) = after {
+        let alias = after
+            .split_whitespace()
+            .next()
+            .filter(|value| is_simple_identifier(value))
+            .map(str::to_owned);
+        return (before.trim().to_owned(), alias);
+    }
+    (signature_tail, None)
+}
+
+fn is_simple_identifier(source: &str) -> bool {
+    let mut chars = source.chars();
+    chars
+        .next()
+        .is_some_and(|ch| ch.is_alphabetic() || ch == '_')
+        && chars.all(|ch| ch.is_alphanumeric() || ch == '_')
 }
 
 fn normalize_trailing_colon_id(entity: EntityRef, rest: &str) -> (EntityRef, String) {

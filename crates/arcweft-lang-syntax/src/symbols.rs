@@ -737,6 +737,7 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
         Expr::Unary { expr, .. } | Expr::Try { expr } | Expr::Await { expr, .. } => {
             collect_expr(expr, uses);
         }
+        Expr::Thread { block } => collect_stmt_block(block.body(), uses),
         Expr::Range { start, end, .. } => {
             if let Some(start) = start {
                 collect_expr(start, uses);

@@ -150,7 +150,7 @@ pub enum CaptureEvent {
 Capture requests must be explicit. No script can implicitly access the microphone or camera.
 
 ```awft
-pub capture #capture.player_microphone: Microphone {
+pub capture @capture.player_microphone: Microphone {
     permission = user_prompt
     channels = 1
     sample_rate = prefer(48000)
@@ -160,7 +160,7 @@ pub capture #capture.player_microphone: Microphone {
     privacy = transient
 }
 
-pub capture #capture.face_camera: Camera {
+pub capture @capture.face_camera: Camera {
     permission = user_prompt
     resolution = prefer(1280x720)
     fps = prefer(30)
@@ -173,15 +173,15 @@ Starting capture returns a `Need` and therefore must define a pending UI in a pl
 
 ```awft
 let mic =
-    try await capture.microphone(#capture.player_microphone) with {
-        pending p => scene #scene.permission_wait {
+    try await capture.microphone(@capture.player_microphone) with {
+        pending p => scene @scene.permission_wait {
             text "マイクの許可を待っています"
             progress p.ratio
         }
 
         denied e => {
             log warn "microphone permission denied: {e:?}" { e = e }
-            return Ok(FlowExit::Goto(#flow.no_mic_fallback))
+            return Ok(FlowExit::Goto(@flow.no_mic_fallback))
         }
     }
 ```
@@ -190,13 +190,13 @@ Camera capture is the same:
 
 ```awft
 let cam =
-    try await capture.camera(#capture.face_camera) with {
-        pending p => scene #scene.permission_wait {
+    try await capture.camera(@capture.face_camera) with {
+        pending p => scene @scene.permission_wait {
             text "カメラの許可を待っています"
             progress p.ratio
         }
 
-        denied _ => return Ok(FlowExit::Goto(#flow.camera_optional))
+        denied _ => return Ok(FlowExit::Goto(@flow.camera_optional))
     }
 ```
 
@@ -205,18 +205,18 @@ let cam =
 Capture exposes latest-state and stream signals:
 
 ```awft
-pub signal #signal.microphone_level: Watch<f32>
-pub signal #signal.microphone_vad: Watch<bool>
-pub signal #signal.camera_frame: Watch<VideoFrameHandle>
-pub signal #signal.camera_pose: Watch<Option<FacePose>>
-pub signal #signal.capture_error: Stream<CaptureError>
+pub signal @signal.microphone_level: Watch<f32>
+pub signal @signal.microphone_vad: Watch<bool>
+pub signal @signal.camera_frame: Watch<VideoFrameHandle>
+pub signal @signal.camera_pose: Watch<Option<FacePose>>
+pub signal @signal.capture_error: Stream<CaptureError>
 ```
 
 Typical usage:
 
 ```awft
-watch signal #signal.microphone_level from capture.level(#capture.player_microphone)
-watch signal #signal.camera_frame from capture.latest_frame(#capture.face_camera)
+watch signal @signal.microphone_level from capture.level(@capture.player_microphone)
+watch signal @signal.camera_frame from capture.latest_frame(@capture.face_camera)
 ```
 
 ## Camera frames and rendering
@@ -230,10 +230,10 @@ Camera frames are treated as live external textures/frames. They may be:
 - used as a shader resource only if the capability permits it.
 
 ```awft
-CameraPreview(#capture.face_camera)
+CameraPreview(@capture.face_camera)
     .fit(cover)
     .clip(.rounded_rect(radius = 16))
-    .agent_target(#ui.camera_preview)
+    .agent_target(@ui.camera_preview)
 ```
 
 For zero-copy or borrowed frame paths, lifetimes follow the existing borrow rules: `VideoFrameRef<'frame>` cannot cross `await`, `yield`, or `thread` boundaries. If a frame must outlive the callback/frame scope, it must become an owned frame handle.
@@ -243,7 +243,7 @@ For zero-copy or borrowed frame paths, lifetimes follow the existing borrow rule
 Activities receive capture through typed ports, not by opening devices themselves.
 
 ```awft
-pub activity #activity.voice_minigame VoiceMinigame {
+pub activity @activity.voice_minigame VoiceMinigame {
     input {
         mic: stream<AudioFrame>
     }
@@ -259,9 +259,9 @@ pub activity #activity.voice_minigame VoiceMinigame {
 ```awft
 let result =
     await #<activity.voice_minigame>.run({
-        mic = capture.stream(#capture.player_microphone),
+        mic = capture.stream(@capture.player_microphone),
     })? with {
-        pending p => scene #scene.voice_game_loading { progress p.ratio }
+        pending p => scene @scene.voice_game_loading { progress p.ratio }
     }
 ```
 
@@ -290,13 +290,13 @@ arcweft.capture_save_recording
 Headless test mode should support virtual devices:
 
 ```awft
-pub capture #capture.test_camera: Camera {
+pub capture @capture.test_camera: Camera {
     backend = virtual_pattern
     resolution = 1280x720
     fps = 30
 }
 
-pub capture #capture.test_microphone: Microphone {
+pub capture @capture.test_microphone: Microphone {
     backend = fixture_audio("fixtures/audio/voice.wav")
 }
 ```
@@ -363,14 +363,14 @@ arcweft-capture-agent
 Some capture hardware appears as USB or HID devices rather than ordinary camera/microphone devices. Arcweft treats these through [Device Profiles, Generators, and USB](device-generator-and-usb.md). The device profile may expose typed signals or typed capture frames, but player-visible flows still receive `Need<Result<..., ...>, ...>` and must handle pending/denied branches.
 
 ```awft
-pub device #device.depth_camera: UsbRaw {
+pub device @device.depth_camera: UsbRaw {
     permission = user_prompt
     usb { vendor_id = 0x1209 product_id = 0xD001 interface = 1 }
     endpoints { input frame: bulk endpoint 0x81 packet = 512 }
     parser frame: DepthFrame from frame.bytes
 }
 
-watch signal #signal.depth_frame from device.latest(#device.depth_camera)
+watch signal @signal.depth_frame from device.latest(@device.depth_camera)
 ```
 
 ## Generator / Stream policy

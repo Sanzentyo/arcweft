@@ -161,6 +161,62 @@ where len(self) <= 16
 }
 
 #[test]
+fn parses_surface_alias_and_resource_entity_families() {
+    let tree = parse_ok(
+        r"
+pub surface character @character.alice Alice as alice {
+}
+
+pub voice profile @voice.alice.tts {
+}
+
+pub audio bus @bus.voice {
+}
+
+pub mixer snapshot @mix.dialogue {
+}
+
+pub ducking @duck.voice_over_bgm {
+}
+
+pub motion @motion.alice.nod {
+}
+
+pub rig @rig.alice.live2d {
+}
+",
+    );
+
+    let Item::EntityDecl(character) = &tree.items()[0] else {
+        panic!("expected character declaration");
+    };
+    assert_eq!(character.kind(), EntityDeclKind::Character);
+    assert_eq!(character.surface_alias(), Some("alice"));
+    assert!(matches!(
+        &tree.items()[1],
+        Item::EntityDecl(item) if item.kind() == EntityDeclKind::Voice
+    ));
+    assert!(matches!(
+        &tree.items()[2],
+        Item::EntityDecl(item) if item.kind() == EntityDeclKind::AudioBus
+    ));
+    assert!(matches!(
+        &tree.items()[3],
+        Item::EntityDecl(item) if item.kind() == EntityDeclKind::MixerSnapshot
+    ));
+}
+
+#[test]
+fn function_signatures_keep_default_parameters() {
+    let signature =
+        parse_fn_signature("fn fade(time: Duration = 120ms, easing: Ease = quad.out) -> Unit")
+            .expect("signature with defaults parses");
+    let params = signature.param_groups()[0].params();
+    assert!(params[0].default().is_some());
+    assert!(params[1].default().is_some());
+}
+
+#[test]
 fn parses_documented_state_reducer_and_view_items() {
     let tree = parse_ok(
         r"

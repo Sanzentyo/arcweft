@@ -5,7 +5,7 @@ Game Native UI は SwiftUI 風の宣言的・リアクティブ UI。HTML/CSS �
 ## Component
 
 ```awft
-pub component #ui.settings SettingsPanel(
+pub component @ui.settings SettingsPanel(
     config: Binding<Config>,
     props: SettingsProps,
 ) -> View {
@@ -27,7 +27,7 @@ pub component #ui.settings SettingsPanel(
         }
 
         Button("閉じる")
-            .agent_target(#ui.settings.close)
+            .agent_target(@ui.settings.close)
             .on_click { emit UiEvent.SettingsClosed }
     }
     .padding(24)
@@ -91,7 +91,7 @@ UI でも `Need` の暗黙 force は禁止。
 AwaitView(load_avatar(user)) {
     pending _ => SkeletonCircle()
     ready img => Image(img)
-    error _ => Icon(#vector.avatar_fallback)
+    error _ => Icon(@vector.avatar_fallback)
 }
 ```
 
@@ -117,7 +117,7 @@ pub struct UiNode {
 UI component は dependency tracking によって必要部分だけ再評価される。高価な派生値には `memo` を使う。
 
 ```awft
-component #ui.choice_list ChoiceList(state: GameState) -> View {
+component @ui.choice_list ChoiceList(state: GameState) -> View {
     memo choices key state.route, state.affection {
         opening_choices()
             .filter(choice_available(state))
@@ -134,7 +134,7 @@ component #ui.choice_list ChoiceList(state: GameState) -> View {
 UI node には hook を付けられる。
 
 ```awft
-hook #hook.choice_button_has_action
+hook @hook.choice_button_has_action
 on query UiNode where role == .Choice
 phase AfterLayout
 check every frame

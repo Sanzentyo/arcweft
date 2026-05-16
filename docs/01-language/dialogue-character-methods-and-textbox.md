@@ -98,7 +98,11 @@ alice.say(
 
 `@` is the entity-reference marker. It is not used as a special option list marker.
 
-The canonical expression/portrait option is `look`. The first positional option is shorthand for `look`, so `alice(smile, voice=auto):` and `alice(look=smile, voice=auto):` are equivalent. `face` is not a line option; stage APIs may still use methods such as `alice.stage.face(...)` for model parts.
+The canonical expression/portrait option is `look`. The first positional option
+is shorthand for `look`, so `alice(.smile, voice=auto):` and
+`alice(look=.smile, voice=auto):` are equivalent. `face` is not a line option;
+stage APIs use `alice.stage.look(...)` for authored look changes and lower-level
+model-part APIs only in adapter-specific code.
 
 Built-in line options include:
 
@@ -171,7 +175,7 @@ alice(look=smile, voice=auto)[
 ]
 with:
     at(0.42s):
-        alice.stage.face(worried)
+        alice.stage.look(worried)
 ```
 
 This form is especially convenient for tool-generated dialogue because the content block and line plan are visually separated.
@@ -267,7 +271,7 @@ Characters expose object-like stage APIs. The speaker alias remains a pure refer
 ```awft
 let actor = alice.stage.acquire(scope=line)
 let pose = actor.pose(normal)
-let face = actor.face(smile)
+let face = actor.look(smile)
 ```
 
 These handles can be memoized or preloaded:
@@ -648,7 +652,7 @@ A character alias also exposes stage-oriented methods. These methods operate on 
 
 ```awft
 alice.stage.show(smile, at=center, fade=200ms)
-alice.stage.face(worried, crossfade=120ms)
+alice.stage.look(worried, crossfade=120ms)
 alice.stage.move(to=left, time=300ms, ease=cubic.out)
 alice.stage.scale(1.05, time=200ms)
 alice.stage.hide(fade=180ms)
@@ -663,7 +667,7 @@ alice.stage(@stage.alice.main).move(to=left, time=300ms)
 Fully qualified:
 
 ```awft
-@<character.alice>.stage(@stage.alice.main).face(worried)
+@<character.alice>.stage(@stage.alice.main).look(worried)
 ```
 
 Character staging uses ordinary effectful calls and methods. There is no

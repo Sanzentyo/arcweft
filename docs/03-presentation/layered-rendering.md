@@ -213,17 +213,17 @@ pub enum ObservationSource {
 ## DSL: layer 宣言
 
 ```awft
-layer #layer.world: World {
+layer @layer.world: World {
     z = 0
     input = passthrough
 }
 
-layer #layer.dialogue: Group {
+layer @layer.dialogue: Group {
     z = 100
     input = hit_test
 }
 
-layer #layer.modal: Modal {
+layer @layer.modal: Modal {
     z = 1000
     input = modal
 }
@@ -232,20 +232,20 @@ layer #layer.modal: Modal {
 Scene 内で layer を使う。
 
 ```awft
-scene #scene.opening {
-    layer #layer.background {
-        image #asset.bg.room fit cover
+scene @scene.opening {
+    layer @layer.background {
+        image @asset.bg.room fit cover
     }
 
-    layer #layer.characters {
-        sprite #asset.char.alice.default at center
+    layer @layer.characters {
+        sprite @asset.char.alice.default at center
     }
 
-    layer #layer.dialogue {
+    layer @layer.dialogue {
         TextBox(current_text())
     }
 
-    layer #layer.choices {
+    layer @layer.choices {
         ChoiceList(choices)
     }
 }
@@ -254,10 +254,10 @@ scene #scene.opening {
 短く書く場合:
 
 ```awft
-scene #scene.opening {
-    background layer #layer.background image(#asset.bg.room)
-    character layer #layer.characters sprite(#asset.char.alice.default).at(center)
-    ui layer #layer.dialogue TextBox(current_text())
+scene @scene.opening {
+    background layer @layer.background image(@asset.bg.room)
+    character layer @layer.characters sprite(@asset.char.alice.default).at(center)
+    ui layer @layer.dialogue TextBox(current_text())
 }
 ```
 
@@ -270,7 +270,7 @@ component ChoiceList(choices: List<ChoiceView>) -> View {
     VStack {
         ForEach(choices, id = _.id) |choice| {
             ChoiceButton(choice)
-                .layer(#layer.choices)
+                .layer(@layer.choices)
                 .agent_target(choice.id)
         }
     }
@@ -284,8 +284,8 @@ UI component の `.layer(...)` は描画先 layer と入力 policy を決める�
 Rust/WASM/外部 process の Activity も layer を持つ。
 
 ```awft
-activity #activity.truck_game TruckGame {
-    layer #layer.activity.truck {
+activity @activity.truck_game TruckGame {
+    layer @layer.activity.truck {
         z = 50
         input = capture_when_active
         render = custom_3d
@@ -300,8 +300,8 @@ Activity が portable render command を返す場合、その command は該当 
 HTML UI は `HtmlUi` layer として扱う。
 
 ```awft
-html panel #ui.settings_html from "ui/settings.html" {
-    layer #layer.html.settings
+html panel @ui.settings_html from "ui/settings.html" {
+    layer @layer.html.settings
     bounds = rect(0, 0, 100vw, 100vh)
     input = modal
 }
@@ -314,10 +314,10 @@ Native では Servo、Web では DOM に差し替えるが、Layer Tree 上で�
 layer 単位で shader を適用できる。
 
 ```awft
-layer #layer.dialogue {
+layer @layer.dialogue {
     TextBox(current_text())
 }
-.shader(#shader.ui.glass_panel) {
+.shader(@shader.ui.glass_panel) {
     blur_amount = 12.0
 }
 ```
@@ -329,9 +329,9 @@ Group layer に shader を付けると、その subtree を offscreen target へ
 Layer にも契約を持てる。
 
 ```awft
-layer #layer.modal: Modal
+layer @layer.modal: Modal
 ensures input.blocks_lower_layers
-ensures z > layer(#layer.dialogue).z
+ensures z > layer(@layer.dialogue).z
 {
     ...
 }
@@ -351,12 +351,12 @@ ensures result.has_action("select")
 ## Test
 
 ```awft
-test #test.layer_order_opening visual {
-    start #flow.opening
+test @test.layer_order_opening visual {
+    start @flow.opening
 
-    assert layer #layer.background below #layer.characters
-    assert layer #layer.choices above #layer.dialogue
-    assert object #choice.opening.listen in_layer #layer.choices
+    assert layer @layer.background below @layer.characters
+    assert layer @layer.choices above @layer.dialogue
+    assert object @choice.opening.listen in_layer @layer.choices
 }
 ```
 
@@ -366,22 +366,22 @@ test #test.layer_order_opening visual {
 Layer は hook 対象である。描画・入力・layout・Agent 観測の各 phase に hook を付けられる。
 
 ```awft
-layer #layer.choices: Choice {
+layer @layer.choices: Choice {
     z = 550
     input = hit_test
     hit_test = ui_layout
 }
 
-hook #hook.layer.choices.pointer_enter
-on #layer.choices
+hook @hook.layer.choices.pointer_enter
+on @layer.choices
 phase InputTarget
 check on input PointerEnter
 {
-    signal #signal.hovered_layer <- Some(#layer.choices)
+    signal @signal.hovered_layer <- Some(@layer.choices)
 }
 
-hook #hook.layer.choices.layout_changed
-on #layer.choices
+hook @hook.layer.choices.layout_changed
+on @layer.choices
 phase AfterLayout
 check on change layout
 {

@@ -28,18 +28,18 @@ pub struct LogFrame {
 ## Signal
 
 ```awft
-pub signal #signal.current_flow: Watch<Ref<Flow>>
-pub signal #signal.loading_progress: Watch<f32>
-pub signal #signal.choice_visible: Watch<List<Ref<ChoiceOption>>>
-pub metric gauge #metric.frame_time_ms: f32
+pub signal @signal.current_flow: Watch<Ref<Flow>>
+pub signal @signal.loading_progress: Watch<f32>
+pub signal @signal.choice_visible: Watch<List<Ref<ChoiceOption>>>
+pub metric gauge @metric.frame_time_ms: f32
 ```
 
 更新:
 
 ```awft
-signal #signal.current_flow <- #flow.opening
-signal #signal.loading_progress <- p.ratio
-metric #metric.frame_time_ms <- frame_time.ms()
+signal @signal.current_flow <- @flow.opening
+signal @signal.loading_progress <- p.ratio
+metric @metric.frame_time_ms <- frame_time.ms()
 ```
 
 Signal kind:
@@ -55,8 +55,8 @@ Sample    サンプル列
 ## assert
 
 ```awft
-assert state.affection[#character.alice] >= 0
-assert_eq route_title(#flow.opening), "Opening"
+assert state.affection[@character.alice] >= 0
+assert_eq route_title(@flow.opening), "Opening"
 debug_assert choices.len() > 0
 assert_ok load_config()
 assert_some state.current_bg
@@ -67,16 +67,16 @@ assert_some state.current_bg
 ## Test
 
 ```awft
-test #test.opening_listen_route scenario {
-    start #flow.opening
+test @test.opening_listen_route scenario {
+    start @flow.opening
 
     expect log info contains "enter flow"
-    expect signal #signal.current_flow == #flow.opening
+    expect signal @signal.current_flow == @flow.opening
 
-    wait object #choice.opening.listen visible
-    choose #choice.opening.listen
+    wait object @choice.opening.listen visible
+    choose @choice.opening.listen
 
-    expect signal #signal.current_flow eventually == #flow.alice_intro
+    expect signal @signal.current_flow eventually == @flow.alice_intro
     expect no_assertion_failures
 }
 ```
@@ -84,18 +84,18 @@ test #test.opening_listen_route scenario {
 Visual test:
 
 ```awft
-test #test.opening_choices_visual visual {
-    start #flow.opening
-    wait object #choice.opening.listen visible
+test @test.opening_choices_visual visual {
+    start @flow.opening
+    wait object @choice.opening.listen visible
     capture image overlay as "opening_choices.png"
-    assert_bbox #choice.opening.listen within rect(400, 500, 400, 80)
+    assert_bbox @choice.opening.listen within rect(400, 500, 400, 80)
 }
 ```
 
 ## Bench
 
 ```awft
-bench #bench.opening_pipeline {
+bench @bench.opening_pipeline {
     setup { let state = fixture<GameState>("states/opening.json") }
 
     measure iterations = 10_000 {
@@ -112,8 +112,8 @@ bench #bench.opening_pipeline {
 Audio bench:
 
 ```awft
-bench #bench.bgm_mix_120s {
-    setup { play #bgm.alice_theme section #music.main }
+bench @bench.bgm_mix_120s {
+    setup { play @bgm.alice_theme section @music.main }
     measure duration = 120s { render_audio_offline }
     report { cpu_time, peak_buffer_bytes, loudness }
 }
@@ -137,21 +137,21 @@ arcw memo invalidate --entity flow.opening
 Test:
 
 ```awft
-test #test.choice_hook_fires scenario {
-    start #flow.opening
-    wait object #choice.opening.listen visible
-    expect hook #hook.opening.choice_visible fired
-    expect signal #signal.choice_visible == true
+test @test.choice_hook_fires scenario {
+    start @flow.opening
+    wait object @choice.opening.listen visible
+    expect hook @hook.opening.choice_visible fired
+    expect signal @signal.choice_visible == true
 }
 ```
 
 Bench:
 
 ```awft
-bench #bench.memo_hit_rate {
+bench @bench.memo_hit_rate {
     measure iterations = 10000 {
         opening_choices().map(choice_to_view(state)).collect<List<ChoiceView>>()
     }
-    assert metric #metric.memo_hit_rate >= 0.95
+    assert metric @metric.memo_hit_rate >= 0.95
 }
 ```

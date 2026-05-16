@@ -241,7 +241,7 @@ with:
     let voice = line.voice_handle()
     at(0.2s):
         let old = alice.current_face()
-        alice.face(smile)
+        alice.look(smile)
     out voice
 ```
 

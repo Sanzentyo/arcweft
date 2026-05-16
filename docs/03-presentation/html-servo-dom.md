@@ -24,7 +24,7 @@ pub trait HtmlUiHost {
 ## DSL
 
 ```awft
-html panel #ui.settings_html from "ui/settings.html" {
+html panel @ui.settings_html from "ui/settings.html" {
     mount = overlay
     z = 100
 

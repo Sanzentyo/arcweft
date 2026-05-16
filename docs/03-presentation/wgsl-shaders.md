@@ -20,7 +20,7 @@ pub enum ShaderKind {
 ## Shader DSL
 
 ```awft
-pub shader #shader.transition.dissolve: Transition
+pub shader @shader.transition.dissolve: Transition
 requires params.progress >= 0.0 && params.progress <= 1.0
 capability {
     stage = fragment
@@ -67,7 +67,7 @@ wgsl {
 ## 使用
 
 ```awft
-goto #flow.alice_intro with transition #shader.transition.dissolve {
+goto @flow.alice_intro with transition @shader.transition.dissolve {
     duration = 600ms
     params { edge_softness = 0.03 }
 }

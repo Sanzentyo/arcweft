@@ -129,7 +129,7 @@ they affect parser, HIR, formatter, LSP, or CLI work.
 - Dialogue syntax now parses `look`, `stage`, `portrait`, `focus`, and
   `cleanup` as first-class line options. The first positional line option maps
   to `look`; `face` is rejected as a line option while stage methods such as
-  `alice.stage.face(...)` remain ordinary calls.
+  `alice.stage.look(...)` remain ordinary calls.
 - Dialogue text now tokenizes `[mark .name]` into a structured marker token.
   The checker rejects duplicate marks, rejects local `[hook ...]`, and verifies
   marker-triggered line-plan `on .name:` handlers against marks in the same
@@ -143,6 +143,17 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   reports deep dot-run relative IDs such as `@...suffix` and flow IDs whose
   tail does not match the module tail. Further hierarchy checks should build on
   this pass rather than parser diagnostics.
+- `pro_review12.md` P0-P2 work is partially implemented: syntax/checking now
+  uses structured `LifetimeScopeKind`/`LifetimeKey`, recognizes upper-lifetime
+  write capabilities such as `state.write(flow)`, rejects `'line.*` outside line
+  scope and across thread boundaries, parses expression-form `thread`, keeps
+  function parameter defaults, supports `&` patch merge parsing/checking, and
+  recognizes surface aliases plus voice/se/bgm/bus/mix/ducking/motion/rig
+  entity families.
+- Remaining P2 semantic work is deeper than syntax readiness: full all-paths
+  `MustDrop` discharge, promotion proof rules, `unsafe lifetime` audit regions,
+  deterministic concurrent write conflict checking, and join-result typing for
+  threads are TODOs for the compiler/HIR layer.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure

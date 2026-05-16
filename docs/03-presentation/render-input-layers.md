@@ -370,7 +370,7 @@ pub struct InputCaptureState {
 Modal の例:
 
 ```awft
-layer #layer.confirm_dialog phase Modal z 900 {
+layer @layer.confirm_dialog phase Modal z 900 {
     input {
         policy = modal
         pointer = hit_test
@@ -391,24 +391,24 @@ layer #layer.confirm_dialog phase Modal z 900 {
 ### scene layer
 
 ```awft
-scene #scene.opening {
-    layer #layer.bg phase Background z 0 {
+scene @scene.opening {
+    layer @layer.bg phase Background z 0 {
         input none
-        image #asset.bg.room fit cover
+        image @asset.bg.room fit cover
     }
 
-    layer #layer.characters phase Characters z 200 {
+    layer @layer.characters phase Characters z 200 {
         input hit_test passthrough
-        show #character.alice at center
+        show(@character.alice, at = .center)
     }
 
-    layer #layer.dialog phase Dialogue z 500 {
+    layer @layer.dialog phase Dialogue z 500 {
         input hit_test
         TextBox(current_text())
-            .agent_target(#ui.textbox.main)
+            .agent_target(@ui.textbox.main)
     }
 
-    layer #layer.choices phase Dialogue z 550 {
+    layer @layer.choices phase Dialogue z 550 {
         input modal_when_visible
         ChoiceList(choices)
     }
@@ -418,13 +418,13 @@ scene #scene.opening {
 ### layer block 詳細
 
 ```awft
-layer #layer.settings phase Modal z 900
+layer @layer.settings phase Modal z 900
 requires visible => input.policy == .Modal
 {
     render {
         target = offscreen(cache = until_invalidated)
         blend = alpha
-        postprocess #shader.ui.glass_panel
+        postprocess @shader.ui.glass_panel
     }
 
     input {
@@ -444,11 +444,11 @@ requires visible => input.policy == .Modal
 ### shorthand
 
 ```awft
-layer #layer.bg background {
-    image #asset.bg.room
+layer @layer.bg background {
+    image @asset.bg.room
 }
 
-layer #layer.choice modal {
+layer @layer.choice modal {
     ChoiceList(choices)
 }
 ```
@@ -495,16 +495,16 @@ Game Native UI component は暗黙に `NativeUi` layer を生成してもよい�
 ```awft
 component Hud(state: GameState) -> View {
     HStack {
-        Button("設定").agent_target(#ui.settings.open)
+        Button("設定").agent_target(@ui.settings.open)
     }
-    .layer(#layer.hud, order = ui(700))
+    .layer(@layer.hud, order = ui(700))
 }
 ```
 
 または scene 側で明示する。
 
 ```awft
-layer #layer.hud {
+layer @layer.hud {
     order = ui(700)
     input = hit_test
     ui Hud(state)
@@ -530,9 +530,9 @@ pub struct UiNode {
 HTML/CSS UI は `HtmlUi` phase の layer として扱う。
 
 ```awft
-layer #layer.html_settings phase HtmlUi z 800 {
+layer @layer.html_settings phase HtmlUi z 800 {
     input modal
-    html_panel #ui.settings_html
+    html_panel @ui.settings_html
 }
 ```
 
@@ -563,11 +563,11 @@ headless では pixel-perfect DOM/Servo capture が利用できない場合で�
 トラックゲームやFPSミニゲームは `ActivityViewport` layer を持つ。
 
 ```awft
-layer #layer.truck_game phase World z 100 {
+layer @layer.truck_game phase World z 100 {
     input capture
-    activity_viewport #activity.truck_game {
+    activity_viewport @activity.truck_game {
         size = fill
-        input_map = #input.truck_game
+        input_map = @input.truck_game
     }
 }
 ```
@@ -586,7 +586,7 @@ pub enum ActivityInputRoute {
 Activity が modal/capture を要求する場合:
 
 ```awft
-activity #activity.fps_arena {
+activity @activity.fps_arena {
     input_layer {
         policy = capture
         pointer_capture = true
@@ -652,21 +652,21 @@ arcw agent layers --json
 layer 状態は test と signal に使える。
 
 ```awft
-pub signal #signal.active_modal_layer: Watch<Option<Ref<Layer>>>
-pub signal #signal.focused_layer: Watch<Option<Ref<Layer>>>
+pub signal @signal.active_modal_layer: Watch<Option<Ref<Layer>>>
+pub signal @signal.focused_layer: Watch<Option<Ref<Layer>>>
 ```
 
 visual test:
 
 ```awft
-test #test.settings_blocks_choice visual {
-    start #flow.opening
-    invoke #ui.settings.open
+test @test.settings_blocks_choice visual {
+    start @flow.opening
+    invoke @ui.settings.open
 
-    expect layer #layer.settings modal visible
-    expect layer #layer.choices blocked_by #layer.settings
+    expect layer @layer.settings modal visible
+    expect layer @layer.choices blocked_by @layer.settings
 
-    click #choice.opening.listen
+    click @choice.opening.listen
     expect no event GameEvent::ChoiceSelected
 }
 ```
@@ -674,8 +674,8 @@ test #test.settings_blocks_choice visual {
 assert:
 
 ```awft
-assert layer(#layer.settings).input.policy == .Modal
-assert no_layer_overlap_interactive(#layer.modal, #layer.debug_overlay)
+assert layer(@layer.settings).input.policy == .Modal
+assert no_layer_overlap_interactive(@layer.modal, @layer.debug_overlay)
 ```
 
 ---
@@ -685,7 +685,7 @@ assert no_layer_overlap_interactive(#layer.modal, #layer.debug_overlay)
 layer には契約を付けられる。
 
 ```awft
-layer #layer.choices phase Dialogue z 550
+layer @layer.choices phase Dialogue z 550
 requires choices.len() > 0
 ensures visible => input.policy != .None
 ensures visible => actions.len() == choices.len()
@@ -765,22 +765,22 @@ arcweft-layer-lsp
 Layer は hook 対象である。描画・入力・layout・Agent 観測の各 phase に hook を付けられる。
 
 ```awft
-layer #layer.choices: Choice {
+layer @layer.choices: Choice {
     z = 550
     input = hit_test
     hit_test = ui_layout
 }
 
-hook #hook.layer.choices.pointer_enter
-on #layer.choices
+hook @hook.layer.choices.pointer_enter
+on @layer.choices
 phase InputTarget
 check on input PointerEnter
 {
-    signal #signal.hovered_layer <- Some(#layer.choices)
+    signal @signal.hovered_layer <- Some(@layer.choices)
 }
 
-hook #hook.layer.choices.layout_changed
-on #layer.choices
+hook @hook.layer.choices.layout_changed
+on @layer.choices
 phase AfterLayout
 check on change layout
 {

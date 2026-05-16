@@ -30,14 +30,14 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
     地の文: 扉の向こうから、雨の音がした。[p]
 
-    alice(id=@say.opening.greeting, face=smile, voice=auto):
+    alice(id=@say.opening.greeting, look=.smile, voice=auto):
         おはよう、#[player_name]。[l]
 
-    alice.say(id=@say.opening.dream_hint, voice=auto, face=normal)[
+    alice.say(id=@say.opening.dream_hint, voice=auto, look=.normal)[
         今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[flash time=90ms][p]
     ]
     with {
-        at(0.45s) { alice.stage.face(worried, crossfade=120ms) }
+        at(0.45s) { alice.stage.look(worried, crossfade=120ms) }
         at(end-200ms) { alice.stage.move(to=left, time=260ms, ease=quad.out) }
     }
 
@@ -147,7 +147,7 @@ alice[
 ]
 with:
     at(0.30s):
-        alice.stage.face(smile)
+        alice.stage.look(smile)
 ```
 
 A complex line may return scoped handles. `_` explicitly discards and drops a returned handle.
@@ -158,11 +158,11 @@ let (actor, (_, voice)) = alice.say(id=@say.opening.dream_hint, voice=auto)[
 ]
 with:
     let actor = alice.stage.acquire(scope=line, memo=true)
-    let face = actor.face(normal)
+    let face = actor.look(normal)
     let voice = line.voice_handle()
 
     at(0.45s):
-        actor.face(worried, crossfade=120ms)
+        actor.look(worried, crossfade=120ms)
 
     out (actor, (face, voice))
 ```

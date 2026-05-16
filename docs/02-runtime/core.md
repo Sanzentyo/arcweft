@@ -82,10 +82,62 @@ pub enum LineEffectRequest {
 }
 ```
 
-Line lifetime registry paths such as `'line.focus` are static keys owned by the
-line scope. Guaranteed keys can be read directly; optional reads use
-`'line.focus?`. Drop operations remove registered values and run their adapter
-cleanup policy through emitted requests.
+Lifetime registry paths are typed static keys, not stringly dynamic maps.
+The core model keeps the data Sans I/O; host backends receive deterministic
+effect requests instead of direct mutation.
+
+```text
+'frame
+'tick
+'cue <= 'line <= 'scene <= 'flow <= 'session <= 'global
+'persistent
+```
+
+`'persistent` is storage-backed and is checked separately from ordinary runtime
+memory. Reads from an upper scope are allowed when the key is guaranteed, or
+when the access is optional such as `'flow.flags?`. Writes to upper scopes lower
+to replayable state-update events and require explicit capabilities.
+
+```awft
+flow @flow.opening opening(state: GameState)
+effects { state.write('flow), state.write('global) }
+{
+    alice[見たことにする。[mark .seen][p]]
+    with {
+        on .seen {
+            'flow.flags.seen_alice_intro <- true
+            'global.settings.skip_seen <- true
+        }
+    }
+}
+```
+
+Line lifetime registry paths such as `'line.focus` are owned by the line scope.
+Guaranteed keys can be read directly; optional reads use `'line.focus?`. Drop
+operations remove registered values and run their adapter cleanup policy through
+emitted requests. Lower-scope keys such as `'line.*` are not available outside
+their active scope or across a thread boundary unless an explicit move/share or
+detach operation makes the capture safe.
+
+The checker treats lifetime operations as intrinsics with typestate effects:
+
+```text
+drop
+drop_optional
+on_drop
+expose
+share
+detach
+promote
+promote_unchecked
+clone_owned
+```
+
+Safe `promote('target)` requires owned data, no shorter lifetime references, and
+replay-safe serialization when the target is `session`, `global`, or
+`persistent`. `promote_unchecked` is an unsafe-like lifetime proof escape hatch:
+it requires an explicit `unsafe lifetime` region, a reason string, and a project
+capability. It cannot bypass determinism or the Sans I/O boundary.
 
 Line-level `finally` runs after line-scoped child tasks are cancelled/joined and
 their defer stacks have run, but before any remaining automatic line-registry

@@ -231,6 +231,15 @@ pub enum EntityDeclKind {
     Activity,
     Signal,
     Layer,
+    Textbox,
+    Voice,
+    Se,
+    Bgm,
+    AudioBus,
+    MixerSnapshot,
+    Ducking,
+    Motion,
+    Rig,
 }
 
 /// Top-level entity declaration such as `character`, `component`, `activity`,
@@ -241,6 +250,7 @@ pub struct EntityDeclItem {
     visibility: Option<Visibility>,
     id: EntityRef,
     name: Option<String>,
+    surface_alias: Option<String>,
     signature_tail: String,
     body: Option<String>,
     range: TextRange,
@@ -1661,11 +1671,13 @@ impl FunctionItem {
 }
 
 impl EntityDeclItem {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) const fn new(
         kind: EntityDeclKind,
         visibility: Option<Visibility>,
         id: EntityRef,
         name: Option<String>,
+        surface_alias: Option<String>,
         signature_tail: String,
         body: Option<String>,
         range: TextRange,
@@ -1675,6 +1687,7 @@ impl EntityDeclItem {
             visibility,
             id,
             name,
+            surface_alias,
             signature_tail,
             body,
             range,
@@ -1695,6 +1708,10 @@ impl EntityDeclItem {
 
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
+    }
+
+    pub fn surface_alias(&self) -> Option<&str> {
+        self.surface_alias.as_deref()
     }
 
     pub fn signature_tail(&self) -> &str {

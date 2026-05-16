@@ -257,3 +257,107 @@ flow @flow.opening opening {
             .any(|error| error.message().contains("choice target"))
     );
 }
+
+#[test]
+fn typecheck_tracks_lifetime_registry_scope_and_write_capabilities() {
+    let tree = parse_ok(
+        r"
+flow @flow.registry registry {
+    'flow.flags.seen <- 1
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("flow registry write lowers");
+    let errors =
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("flow writes need capability");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("requires effect capability `state.write(flow)`")
+    }));
+
+    typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new().with_capability("state.write(flow)"),
+    )
+    .expect("capability permits flow lifetime registry writes");
+}
+
+#[test]
+fn typecheck_rejects_line_lifetime_use_outside_line_scope() {
+    let tree = parse_ok(
+        r"
+flow @flow.registry registry {
+    let focus = 'line.focus?
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("line registry read lowers");
+    let errors =
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("line lifetime is not in scope");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("lifetime `line` is not available"))
+    );
+}
+
+#[test]
+fn typecheck_rejects_line_lifetime_capture_across_thread_boundary() {
+    let tree = parse_ok(
+        r"
+flow @flow.thread_capture thread_capture {
+    alice(focus=.soft)[待って。[p]]
+    with:
+        thread motion:
+            let focus = 'line.focus?
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("thread capture fixture lowers");
+    let env = TypeCheckEnv::new()
+        .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+        .with_symbol(".soft", TypeKind::FocusPatch);
+    let errors = typecheck_hir(&hir, &env).expect_err("thread cannot capture line lifetime");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("lifetime `line` is not available"))
+    );
+}
+
+#[test]
+fn typechecks_patch_merge_operator_for_same_patch_family() {
+    let tree = parse_ok(
+        r"
+flow @flow.patch patch {
+    let look = .smile & .casual
+    let focus = .soft & .near
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("patch merge fixture lowers");
+    let env = TypeCheckEnv::new()
+        .with_symbol(".smile", TypeKind::CharacterPatch(EntityKind::Character))
+        .with_symbol(".casual", TypeKind::CharacterPatch(EntityKind::Character))
+        .with_symbol(".soft", TypeKind::FocusPatch)
+        .with_symbol(".near", TypeKind::FocusPatch);
+    typecheck_hir(&hir, &env).expect("compatible patch merges typecheck");
+}
+
+#[test]
+fn typechecks_expression_thread_without_raw_hir_body() {
+    let tree = parse_ok(
+        r"
+flow @flow.thread_expr thread_expr {
+    let score_task = thread compute_score { route_score(state) }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("thread expression fixture lowers");
+    validate_typecheck_ready(&hir).expect("thread expression body is structured");
+    let env = TypeCheckEnv::new()
+        .with_symbol("state", TypeKind::Named("GameState".to_owned()))
+        .with_function("route_score", TypeKind::Int);
+    typecheck_hir(&hir, &env).expect("thread expression typechecks");
+}

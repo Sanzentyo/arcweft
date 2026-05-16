@@ -41,14 +41,14 @@ It still emits normalized input actions, so gameplay code does not care whether 
 ## Declaration
 
 ```awft
-pub virtual_controller #controller.touch_default: TouchController {
-    layer = #layer.input.touch_controller
+pub virtual_controller @controller.touch_default: TouchController {
+    layer = @layer.input.touch_controller
     visible_when = platform.touch_available || settings.force_touch_controller
     opacity = 0.82
     safe_area = true
 
     left {
-        joystick #control.left_stick {
+        joystick @control.left_stick {
             action_axis x = move_x
             action_axis y = move_y
             radius = 86
@@ -58,20 +58,20 @@ pub virtual_controller #controller.touch_default: TouchController {
     }
 
     right {
-        button #control.confirm {
+        button @control.confirm {
             label = "A"
             action = confirm
             position = anchor(.bottom_right, x = 96, y = 112)
         }
 
-        button #control.cancel {
+        button @control.cancel {
             label = "B"
             action = cancel
             position = anchor(.bottom_right, x = 170, y = 56)
         }
 
-        button #control.menu {
-            icon = #vector.icon.menu
+        button @control.menu {
+            icon = @vector.icon.menu
             action = open_menu
             position = anchor(.top_right, x = 48, y = 48)
         }
@@ -84,27 +84,27 @@ pub virtual_controller #controller.touch_default: TouchController {
 A controller can also be authored as a component.
 
 ```awft
-pub component #ui.touch_controller TouchControllerView(
+pub component @ui.touch_controller TouchControllerView(
     config: TouchControllerConfig,
 ) -> View {
     ZStack {
-        VirtualJoystick(#control.left_stick)
-            .agent_target(#control.left_stick)
+        VirtualJoystick(@control.left_stick)
+            .agent_target(@control.left_stick)
             .on_axis |axis| emit InputEvent.Axis {
                 x = axis.x,
                 y = axis.y,
-                source = #controller.touch_default,
+                source = @controller.touch_default,
             }
 
         VirtualButton("A")
-            .agent_target(#control.confirm)
+            .agent_target(@control.confirm)
             .on_press { emit InputEvent.Action(.confirm) }
 
         VirtualButton("B")
-            .agent_target(#control.cancel)
+            .agent_target(@control.cancel)
             .on_press { emit InputEvent.Action(.cancel) }
     }
-    .layer(#layer.input.touch_controller)
+    .layer(@layer.input.touch_controller)
     .hit_test(.opaque_controls_only)
 }
 ```
@@ -125,7 +125,7 @@ raw touch event
 The controller does not consume touches outside its hit regions unless configured.
 
 ```awft
-layer #layer.input.touch_controller {
+layer @layer.input.touch_controller {
     z = 900
     input = true
     render = true
@@ -152,14 +152,14 @@ A joystick captures the first touch inside its base. Buttons can either capture 
 Gestures are optional. They map to actions or higher-level commands.
 
 ```awft
-pub gesture #gesture.swipe_skip {
-    source = #controller.touch_default
+pub gesture @gesture.swipe_skip {
+    source = @controller.touch_default
     area = full_screen_except_controls
     kind = swipe(direction = left, min_distance = 120)
     action = skip_text
 }
 
-pub gesture #gesture.two_finger_menu {
+pub gesture @gesture.two_finger_menu {
     kind = tap(count = 2, fingers = 2)
     action = open_menu
 }
@@ -188,9 +188,9 @@ Every control exposes an `ActionTarget`.
 Tests can use semantic actions instead of coordinates:
 
 ```awft
-test #test.touch_confirm scenario {
-    start #flow.opening
-    invoke #control.confirm press
+test @test.touch_confirm scenario {
+    start @flow.opening
+    invoke @control.confirm press
     expect event InputAction.confirm
 }
 ```

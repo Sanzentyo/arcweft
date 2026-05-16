@@ -52,7 +52,7 @@ With common options:
 alice.say(
     id = @say.opening.greeting,
     voice = auto,
-    face = smile,
+    look = .smile,
     window = @textbox.side,
 )[
     おはよう。[p]
@@ -92,7 +92,7 @@ alice.say()[
 Options are written in parentheses and are the same as `say()` options:
 
 ```awft
-alice(id=@say.opening.greeting, face=smile, voice=auto):
+alice(id=@say.opening.greeting, look=.smile, voice=auto):
     おはよう。[p]
 ```
 
@@ -101,7 +101,7 @@ is sugar for:
 ```awft
 alice.say(
     id = @say.opening.greeting,
-    face = smile,
+    look = .smile,
     voice = auto,
 )[
     おはよう。[p]
@@ -385,7 +385,7 @@ alice[
 ]
 with:
     at(0.42s):
-        alice.stage.face(smile)
+        alice.stage.look(smile)
 ```
 
 The same line-plan attachment works with colon syntax:
@@ -395,7 +395,7 @@ alice:
     おはよう。[p]
 with:
     at(0.42s):
-        alice.stage.face(smile)
+        alice.stage.look(smile)
 ```
 
 Here `alice:` lowers to the same dialogue call as `alice.say()[...]`, and `with:` lowers to `with { ... }`.
@@ -460,13 +460,13 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 ```awft
 alice: おはよう。
 
-alice(face=smile): おはよう。
+alice(look=.smile): おはよう。
 
 alice(voice=@voice.alice.001): おはよう。
 
-alice(face=smile, voice=auto): おはよう。
+alice(look=.smile, voice=auto): おはよう。
 
-alice(id=@say.opening.001, face=smile, voice=@voice.alice.001):
+alice(id=@say.opening.001, look=.smile, voice=@voice.alice.001):
     おはよう。
 ```
 
@@ -475,7 +475,7 @@ Meaning:
 | Form | Meaning |
 |---|---|
 | `alice:` | speaker is `@character.alice`; line ID, text key, voice, and window are inferred |
-| `face=smile` | expression cue before text display |
+| `look=.smile` | expression cue before text display |
 | `voice=@voice...` | explicit voice binding |
 | `voice=auto` | derive voice cue from line ID, locale, and speaker |
 | `id=@say...` | explicit line entity ID |
@@ -485,7 +485,7 @@ The implicit window is `@textbox.0` unless the character, line, or project defau
 Speaker presets are allowed in the same position:
 
 ```awft
-let alice2 = alice(face=smile, voice=auto, window=@textbox.side)
+let alice2 = alice(look=.smile, voice=auto, window=@textbox.side)
 
 alice2: おはよう。[p]
 
@@ -528,7 +528,8 @@ Inside dialogue text mode, Arcweft recognizes:
 [ruby]   ruby annotation
 #[...]   embedded Arcweft expression/content, requiring DisplayText or fmt(...)
 [call]   dialogue-safe function call
-[hook]   declared dialogue hook dispatch
+[mark .name]
+         line-local marker consumed by `with: on .name:`
 ```
 
 Outside dialogue text mode, `[...]` is not treated as a dialogue control tag. It remains normal Arcweft syntax such as indexing, lists, attributes, or parser-specific syntax.
@@ -657,7 +658,7 @@ for simultaneous values.
 ## Complex line with method form
 
 ```awft
-alice.say(id=@say.opening.dream_hint, voice=auto, face=smile)[
+alice.say(id=@say.opening.dream_hint, voice=auto, look=.smile)[
     今日は少しだけ、#[fmt("変な夢", color=rgb("#a8b5ff"))]を見たんだ。[p]
 ]
 with {
@@ -665,7 +666,7 @@ with {
     cancel on input .SkipLine => continue
     cancel on input .BackToTitle => goto @flow.title
 
-    at(0.42s) { alice.stage.face(worried, crossfade=120ms) }
+    at(0.42s) { alice.stage.look(worried, crossfade=120ms) }
     at(end-250ms) { alice.stage.animate(@anim.breath.once) }
 }
 ```
@@ -673,10 +674,10 @@ with {
 Colon sugar can attach the same line plan with `with { ... }`:
 
 ```awft
-alice(id=@say.opening.dream_hint, voice=auto, face=smile):
+alice(id=@say.opening.dream_hint, voice=auto, look=.smile):
     今日は少しだけ、#[fmt("変な夢", color=rgb("#a8b5ff"))]を見たんだ。[p]
 with {
-    at(0.42s) { alice.stage.face(worried, crossfade=120ms) }
+    at(0.42s) { alice.stage.look(worried, crossfade=120ms) }
 }
 ```
 

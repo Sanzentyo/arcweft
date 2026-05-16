@@ -2,7 +2,7 @@ use crate::ast::{
     AwaitBranchKind, ContractClause, DialogueToken, EntityDeclKind, EntityRef, EntityRefSyntax,
     FlowKind, IdRef, LinePlanItem, Pattern, Stmt,
 };
-use crate::expr::{BinaryOp, Expr, Literal};
+use crate::expr::{BinaryOp, Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind, Literal};
 use crate::lower::{HirFlowItem, HirModule, HirTopLevelDecl};
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 use crate::types::TypeRef;
@@ -30,6 +30,14 @@ pub enum EntityKind {
     Scene,
     Source,
     Layer,
+    Voice,
+    Se,
+    Bgm,
+    AudioBus,
+    MixerSnapshot,
+    Ducking,
+    Motion,
+    Rig,
     Slot,
     Target,
     Other(String),
@@ -54,10 +62,35 @@ pub enum TypeKind {
         ok: Box<TypeKind>,
         error: Box<TypeKind>,
     },
+    Option(Box<TypeKind>),
+    Handle {
+        name: String,
+        lifetime: LifetimeScopeKind,
+        state: HandleState,
+        must_drop: bool,
+    },
+    ThreadHandle(Box<TypeKind>),
+    Shared(Box<TypeKind>),
+    Function {
+        return_type: Box<TypeKind>,
+    },
+    Speaker(EntityKind),
+    SpeakerPreset(EntityKind),
+    CharacterPatch(EntityKind),
+    FocusPatch,
     Named(String),
     Tuple(Vec<TypeKind>),
     Unit,
     Never,
+}
+
+/// Minimal typestate for scoped handles tracked by the syntax checker.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum HandleState {
+    Live,
+    Dropped,
+    Detached,
+    MovedOut,
 }
 
 /// Method signature known to the parser-side semantic checker.
@@ -73,6 +106,7 @@ pub struct TypeCheckEnv {
     functions: HashMap<String, TypeKind>,
     methods: HashMap<(TypeKind, String), MethodSignature>,
     indexes: HashMap<TypeKind, TypeKind>,
+    capabilities: HashSet<String>,
 }
 
 /// Semantic type-checking diagnostic.
@@ -130,6 +164,8 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
         line_mark_stack: Vec::new(),
         lifetime_guarantees: HashSet::new(),
         dropped_lifetime_keys: HashSet::new(),
+        available_lifetimes: Vec::new(),
+        effect_capabilities: env.capabilities.clone(),
     };
     checker.check_module(module);
     if checker.errors.is_empty() {
@@ -149,8 +185,10 @@ struct TypeChecker<'a> {
     line_cancel_depth: usize,
     active_presentation_defaults: HashMap<String, String>,
     line_mark_stack: Vec<HashSet<String>>,
-    lifetime_guarantees: HashSet<String>,
-    dropped_lifetime_keys: HashSet<String>,
+    lifetime_guarantees: HashSet<LifetimeKey>,
+    dropped_lifetime_keys: HashSet<LifetimeKey>,
+    available_lifetimes: Vec<LifetimeScopeKind>,
+    effect_capabilities: HashSet<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -445,7 +483,10 @@ impl TypeChecker<'_> {
         }
         if let Some(focus) = dialogue.focus() {
             self.check_expr(focus);
-            self.lifetime_guarantees.insert("line.focus".to_owned());
+            self.lifetime_guarantees.insert(LifetimeKey::new(
+                LifetimeScopeKind::Line,
+                vec!["focus".to_owned()],
+            ));
         }
         if let Some(cleanup) = dialogue.cleanup() {
             self.check_expr(cleanup);
@@ -454,6 +495,7 @@ impl TypeChecker<'_> {
         if let Some(plan) = dialogue.plan() {
             self.line_label_stack.push(plan.label().map(str::to_owned));
             self.line_mark_stack.push(marks);
+            self.available_lifetimes.push(LifetimeScopeKind::Line);
             if plan
                 .items()
                 .iter()
@@ -469,6 +511,7 @@ impl TypeChecker<'_> {
                 self.check_line_plan_item(item);
             }
             self.line_mark_stack.pop();
+            self.available_lifetimes.pop();
             self.line_label_stack.pop();
         }
     }
@@ -1191,7 +1234,7 @@ impl TypeChecker<'_> {
             | LinePlanItem::Stmt(Stmt::DeferBlock(statements)) => {
                 self.check_line_plan_statements(statements)
             }
-            LinePlanItem::Thread(thread) => self.check_line_plan_statements(thread.body()),
+            LinePlanItem::Thread(thread) => self.check_thread_body(thread.body()),
             LinePlanItem::Stmt(stmt) => {
                 self.check_stmt(stmt);
                 None
@@ -1286,6 +1329,19 @@ impl TypeChecker<'_> {
         None
     }
 
+    fn check_thread_body(&mut self, statements: &[Stmt]) -> Option<TypeKind> {
+        self.reject_active_borrows("thread boundary");
+        let saved_lifetimes = std::mem::take(&mut self.available_lifetimes);
+        self.available_lifetimes = saved_lifetimes
+            .iter()
+            .filter(|scope| !matches!(scope, LifetimeScopeKind::Line | LifetimeScopeKind::Cue))
+            .cloned()
+            .collect();
+        let output = self.check_line_plan_statements(statements);
+        self.available_lifetimes = saved_lifetimes;
+        output
+    }
+
     fn check_line_on_trigger(&mut self, trigger: &Expr) {
         if let Expr::Path(name) = trigger
             && name.starts_with('.')
@@ -1344,6 +1400,7 @@ impl TypeChecker<'_> {
             self.check_expr(target);
             return;
         };
+        self.check_lifetime_access(&key, LifetimeAccessMode::Write);
         self.lifetime_guarantees.insert(key);
     }
 
@@ -1369,31 +1426,29 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_lifetime_path_expr(
-        &mut self,
-        lifetime: &str,
-        path: &[String],
-        optional: bool,
-    ) -> Option<TypeKind> {
-        let key = lifetime_path_key(lifetime, path);
-        if self.dropped_lifetime_keys.contains(&key) {
+    fn check_lifetime_path_expr(&mut self, key: &LifetimeKey, optional: bool) -> Option<TypeKind> {
+        self.check_lifetime_access(key, LifetimeAccessMode::Read);
+        if self.dropped_lifetime_keys.contains(key) {
             self.errors.push(TypeCheckError::new(format!(
-                "lifetime registry key `{key}` was already dropped"
+                "lifetime registry key `{}` was already dropped",
+                key.as_dotted()
             )));
             return None;
         }
-        let value = lifetime_value_type(&key);
-        if optional || self.lifetime_guarantees.contains(&key) {
+        let value = lifetime_value_type(key);
+        if optional || self.lifetime_guarantees.contains(key) {
             return Some(if optional {
-                TypeKind::Named(format!("Option<{value}>"))
+                TypeKind::Option(Box::new(value))
             } else {
-                TypeKind::Named(value)
+                value
             });
         }
         self.errors.push(TypeCheckError::new(format!(
-            "lifetime registry key `{key}` is not statically guaranteed; use `{key}?` or initialize it first"
+            "lifetime registry key `{}` is not statically guaranteed; use `{}?` or initialize it first",
+            key.as_dotted(),
+            key.as_dotted()
         )));
-        Some(TypeKind::Named(format!("Option<{value}>")))
+        Some(TypeKind::Option(Box::new(value)))
     }
 
     fn check_lifetime_pipe(&mut self, lhs: &Expr, rhs: &Expr) -> Option<()> {
@@ -1412,13 +1467,41 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn drop_lifetime_key(&mut self, key: &str) {
-        if !self.dropped_lifetime_keys.insert(key.to_owned()) {
+    fn drop_lifetime_key(&mut self, key: &LifetimeKey) {
+        self.check_lifetime_access(key, LifetimeAccessMode::Drop);
+        if !self.dropped_lifetime_keys.insert(key.clone()) {
             self.errors.push(TypeCheckError::new(format!(
-                "lifetime registry key `{key}` was dropped more than once"
+                "lifetime registry key `{}` was dropped more than once",
+                key.as_dotted()
             )));
         }
         self.lifetime_guarantees.remove(key);
+    }
+
+    fn check_lifetime_access(&mut self, key: &LifetimeKey, mode: LifetimeAccessMode) {
+        if !self.lifetime_available(key.scope()) {
+            self.errors.push(TypeCheckError::new(format!(
+                "lifetime `{}` is not available in this scope",
+                key.scope().as_str()
+            )));
+        }
+        if matches!(mode, LifetimeAccessMode::Write)
+            && !matches!(key.scope(), LifetimeScopeKind::Line)
+            && !self
+                .effect_capabilities
+                .contains(&format!("state.write({})", key.scope().as_str()))
+        {
+            self.errors.push(TypeCheckError::new(format!(
+                "writing `{}` requires effect capability `state.write({})`",
+                key.as_dotted(),
+                key.scope().as_str()
+            )));
+        }
+    }
+
+    fn lifetime_available(&self, scope: &LifetimeScopeKind) -> bool {
+        !matches!(scope, LifetimeScopeKind::Line | LifetimeScopeKind::Cue)
+            || self.available_lifetimes.contains(scope)
     }
 
     fn expect_entity_kind(&mut self, entity: &EntityRef, expected: &EntityKind, context: &str) {
@@ -1447,11 +1530,7 @@ impl TypeChecker<'_> {
         match expr {
             Expr::Literal(literal) => Some(literal_type(literal)),
             Expr::EntityRef(entity) => self.check_entity_ref_expr(entity),
-            Expr::LifetimePath {
-                lifetime,
-                path,
-                optional,
-            } => self.check_lifetime_path_expr(lifetime, path, *optional),
+            Expr::LifetimePath { key, optional } => self.check_lifetime_path_expr(key, *optional),
             Expr::Path(path) => self.check_path_expr(path),
             Expr::Placeholder(_) => None,
             Expr::Tuple(items) => Some(self.check_tuple_expr(items)),
@@ -1471,6 +1550,10 @@ impl TypeChecker<'_> {
             Expr::Pipe { lhs, rhs } => self.check_pipe_expr(lhs, rhs),
             Expr::Try { expr } => self.check_try_expr(expr),
             Expr::Await { expr, applies_try } => self.check_await_expr(expr, *applies_try),
+            Expr::Thread { block } => {
+                self.check_thread_body(block.body());
+                Some(TypeKind::ThreadHandle(Box::new(TypeKind::Unit)))
+            }
             Expr::Range { start, end, .. } => {
                 Some(self.check_range_expr(start.as_deref(), end.as_deref()))
             }
@@ -1574,8 +1657,14 @@ impl TypeChecker<'_> {
         plan: Option<&crate::ast::LinePlan>,
     ) -> TypeKind {
         self.check_expr(callee);
-        plan.and_then(|plan| self.check_line_plan_output_type(plan))
-            .unwrap_or(TypeKind::Unit)
+        if let Some(plan) = plan {
+            self.available_lifetimes.push(LifetimeScopeKind::Line);
+            let output = self.check_line_plan_output_type(plan);
+            self.available_lifetimes.pop();
+            output.unwrap_or(TypeKind::Unit)
+        } else {
+            TypeKind::Unit
+        }
     }
 
     fn check_tuple_expr(&mut self, items: &[Expr]) -> TypeKind {
@@ -1646,6 +1735,9 @@ impl TypeChecker<'_> {
                     error: Box::new(first_arg_type(&arg_types)),
                 });
             }
+            if self.env.symbol_type(name) == Some(&TypeKind::Ref(EntityKind::Character)) {
+                return Some(TypeKind::SpeakerPreset(EntityKind::Character));
+            }
             return self.env.function_type(name).cloned().or_else(|| {
                 self.errors
                     .push(TypeCheckError::new(format!("unknown function `{name}`")));
@@ -1655,7 +1747,12 @@ impl TypeChecker<'_> {
         for arg in args {
             self.check_expr(arg);
         }
-        self.check_expr(callee)
+        match self.check_expr(callee) {
+            Some(TypeKind::Speaker(entity) | TypeKind::SpeakerPreset(entity)) => {
+                Some(TypeKind::SpeakerPreset(entity))
+            }
+            other => other,
+        }
     }
 
     fn check_presentation_call(&mut self, name: &str, args: &[Expr]) -> Option<TypeKind> {
@@ -2053,6 +2150,22 @@ impl TypeChecker<'_> {
             | BinaryOp::Lte
             | BinaryOp::Gt
             | BinaryOp::Lt => Some(TypeKind::Bool),
+            BinaryOp::Merge => match (lhs_type, rhs_type) {
+                (Some(TypeKind::CharacterPatch(lhs)), Some(TypeKind::CharacterPatch(rhs)))
+                    if lhs == rhs =>
+                {
+                    Some(TypeKind::CharacterPatch(lhs))
+                }
+                (Some(TypeKind::FocusPatch), Some(TypeKind::FocusPatch)) => {
+                    Some(TypeKind::FocusPatch)
+                }
+                (lhs, rhs) => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "merge operator `&` requires compatible patch operands, found {lhs:?} and {rhs:?}"
+                    )));
+                    None
+                }
+            },
             BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem => {
                 if lhs_type == Some(TypeKind::Duration) && rhs_type == Some(TypeKind::Duration) {
                     Some(TypeKind::Duration)
@@ -2092,6 +2205,14 @@ fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
         "scene" => EntityKind::Scene,
         "source" => EntityKind::Source,
         "layer" => EntityKind::Layer,
+        "voice" => EntityKind::Voice,
+        "se" => EntityKind::Se,
+        "bgm" => EntityKind::Bgm,
+        "bus" => EntityKind::AudioBus,
+        "mix" => EntityKind::MixerSnapshot,
+        "duck" => EntityKind::Ducking,
+        "motion" => EntityKind::Motion,
+        "rig" => EntityKind::Rig,
         "slot" => EntityKind::Slot,
         "target" => EntityKind::Target,
         "scope" => EntityKind::Other("scope".to_owned()),
@@ -2108,27 +2229,25 @@ fn expr_path_label(expr: &Expr) -> Option<String> {
     }
 }
 
-fn lifetime_key(expr: &Expr) -> Option<String> {
+fn lifetime_key(expr: &Expr) -> Option<LifetimeKey> {
     match expr {
-        Expr::LifetimePath { lifetime, path, .. } => Some(lifetime_path_key(lifetime, path)),
+        Expr::LifetimePath { key, .. } => Some(key.clone()),
         _ => None,
     }
 }
 
-fn lifetime_path_key(lifetime: &str, path: &[String]) -> String {
-    let mut key = lifetime.to_owned();
-    for part in path {
-        key.push('.');
-        key.push_str(part);
-    }
-    key
-}
-
-fn lifetime_value_type(key: &str) -> String {
-    if key == "line.focus" || key.starts_with("line.focus.") {
-        "FocusHandle".to_owned()
+fn lifetime_value_type(key: &LifetimeKey) -> TypeKind {
+    if key.scope() == &LifetimeScopeKind::Line
+        && key.path().first().is_some_and(|part| part == "focus")
+    {
+        TypeKind::Handle {
+            name: "FocusHandle".to_owned(),
+            lifetime: key.scope().clone(),
+            state: HandleState::Live,
+            must_drop: true,
+        }
     } else {
-        "LifetimeValue".to_owned()
+        TypeKind::Named("LifetimeValue".to_owned())
     }
 }
 
@@ -2139,6 +2258,15 @@ fn entity_kind_for_decl(kind: EntityDeclKind) -> EntityKind {
         EntityDeclKind::Activity => EntityKind::Activity,
         EntityDeclKind::Signal => EntityKind::Signal,
         EntityDeclKind::Layer => EntityKind::Layer,
+        EntityDeclKind::Textbox => EntityKind::Textbox,
+        EntityDeclKind::Voice => EntityKind::Voice,
+        EntityDeclKind::Se => EntityKind::Se,
+        EntityDeclKind::Bgm => EntityKind::Bgm,
+        EntityDeclKind::AudioBus => EntityKind::AudioBus,
+        EntityDeclKind::MixerSnapshot => EntityKind::MixerSnapshot,
+        EntityDeclKind::Ducking => EntityKind::Ducking,
+        EntityDeclKind::Motion => EntityKind::Motion,
+        EntityDeclKind::Rig => EntityKind::Rig,
     }
 }
 
@@ -2154,6 +2282,8 @@ fn literal_type(literal: &Literal) -> TypeKind {
 
 fn is_dialogue_callee_type(ty: Option<&TypeKind>) -> bool {
     matches!(ty, Some(TypeKind::Ref(EntityKind::Character)))
+        || matches!(ty, Some(TypeKind::Speaker(_)))
+        || matches!(ty, Some(TypeKind::SpeakerPreset(_)))
         || matches!(ty, Some(TypeKind::Named(name)) if name == "SpeakerPreset")
 }
 
@@ -2687,6 +2817,13 @@ impl TypeCheckEnv {
     #[must_use]
     pub fn with_index(mut self, target: TypeKind, return_type: TypeKind) -> Self {
         self.indexes.insert(target, return_type);
+        self
+    }
+
+    /// Registers a checker capability such as `state.write(flow)`.
+    #[must_use]
+    pub fn with_capability(mut self, capability: impl Into<String>) -> Self {
+        self.capabilities.insert(capability.into());
         self
     }
 

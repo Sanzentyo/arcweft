@@ -91,6 +91,6 @@ UI:
 AwaitView(load_avatar(user)) {
     pending _ => SkeletonCircle()
     ready img => Image(img)
-    error _ => Icon(#vector.avatar_fallback)
+    error _ => Icon(@vector.avatar_fallback)
 }
 ```

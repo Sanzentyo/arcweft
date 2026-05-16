@@ -33,14 +33,17 @@ pub use ast::{
     WikiLink,
 };
 pub use check::{
-    EntityKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind, typecheck_hir,
-    validate_typecheck_ready,
+    EntityKind, HandleState, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind,
+    typecheck_hir, validate_typecheck_ready,
 };
 pub use cst::{
     ArcweftLanguage, CstLine, CstLineEvents, CstLineKind, RowanTextRange, SyntaxElement,
     SyntaxKind, SyntaxNode, SyntaxToken, TextSize, cst_lines,
 };
-pub use expr::{BinaryOp, ComputationBlockKind, Expr, Literal, Placeholder, UnaryOp, parse_expr};
+pub use expr::{
+    BinaryOp, ComputationBlockKind, Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind,
+    Literal, Placeholder, UnaryOp, parse_expr,
+};
 pub use lint::{SyntaxLint, SyntaxLintCode, lint_id_policy};
 pub use lower::{
     HirAwait, HirAwaitBranch, HirBorrow, HirChoice, HirChoiceOption, HirDialogue, HirFlow,

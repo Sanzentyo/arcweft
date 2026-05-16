@@ -1,47 +1,47 @@
-# Character Stage, Sprites, Expressions, and Voice-Synchronized Direction
+# Character Stage, Sprites, Looks, and Voice-Synchronized Direction
 
 Arcweft treats character presentation as a typed stage graph, not as ad-hoc image commands.
 
 ## Character definition
 
 ```awft
-pub character #character.alice Alice {
+pub surface character @character.alice Alice as alice {
     display_name ja-JP = "アリス"
     display_name en-US = "Alice"
 
     voice {
         default_locale = ja-JP
-        speaker = #speaker.alice
-        tts_profile = #tts.alice
+        speaker = @speaker.alice
+        tts_profile = @tts.alice
     }
 
-    sprite_sheet #sprite.alice.standing {
-        base = #asset.char.alice.body
+    sprite_sheet @sprite.alice.standing {
+        base = @asset.char.alice.body
 
         part body {
-            normal = #asset.char.alice.body.normal
+            normal = @asset.char.alice.body.normal
         }
 
-        part face {
-            normal = #asset.char.alice.face.normal
-            smile = #asset.char.alice.face.smile
-            worried = #asset.char.alice.face.worried
-            surprised = #asset.char.alice.face.surprised
+        part look {
+            normal = @asset.char.alice.face.normal
+            smile = @asset.char.alice.face.smile
+            worried = @asset.char.alice.face.worried
+            surprised = @asset.char.alice.face.surprised
         }
 
         part mouth {
-            closed = #asset.char.alice.mouth.closed
-            a = #asset.char.alice.mouth.a
-            i = #asset.char.alice.mouth.i
-            u = #asset.char.alice.mouth.u
-            e = #asset.char.alice.mouth.e
-            o = #asset.char.alice.mouth.o
+            closed = @asset.char.alice.mouth.closed
+            a = @asset.char.alice.mouth.a
+            i = @asset.char.alice.mouth.i
+            u = @asset.char.alice.mouth.u
+            e = @asset.char.alice.mouth.e
+            o = @asset.char.alice.mouth.o
         }
     }
 
-    expression normal { face = normal; mouth = closed }
-    expression smile { face = smile; mouth = closed }
-    expression worried { face = worried; mouth = closed }
+    look .normal { part.look = normal; mouth = closed }
+    look .smile { part.look = smile; mouth = closed }
+    look .worried { part.look = worried; mouth = closed }
 }
 ```
 
@@ -51,11 +51,11 @@ When a character is shown, the runtime creates a stage object:
 
 ```text
 StageObject<CharacterSprite>
-  entity: #character.alice
+  entity: @character.alice
   instance: @stage.alice.main
-  layer: #layer.characters
+  layer: @layer.characters
   transform: position / scale / rotation / skew
-  expression: smile
+  look: smile
   pose: standing
   active animations
   voice/lip-sync binding
@@ -68,14 +68,14 @@ Character aliases are typed objects in Arcweft. They expose presentation, voice,
 
 ```awft
 alice.say()[おはよう。[p]]
-alice.stage.show(smile, at=center, fade=200ms)
-alice.stage.face(worried, crossfade=120ms)
+alice.stage.show(.smile, at=.center, fade=200ms)
+alice.stage.look(.worried, crossfade=120ms)
 alice.stage.move(to=left, time=300ms, ease=quad.out)
 alice.stage.scale(1.08, time=240ms)
 alice.stage.animate(@anim.breath.loop)
 alice.voice(@voice.alice.001).play()
-alice.sprite(smile).preload()
-alice.prefetch(flow=#flow.alice_intro, lines=6)
+alice.sprite(.smile).preload()
+alice.prefetch(flow=@flow.alice_intro, lines=6)
 ```
 
 Character staging uses ordinary calls and object methods. There is no
@@ -90,6 +90,15 @@ means:
 
 ```awft
 alice.stage.show(.smile, at = .center, fade = 200ms)
+```
+
+`look` is the canonical line and stage option. Older `face = ...` examples are
+not canonical; authoring tools should migrate them to `look = ...` or
+look-patch operands.
+
+```awft
+alice(look=.smile & .casual & .motion.nod, voice=auto):
+    おはよう。[p]
 ```
 
 Object methods are effect-checked. `stage` methods affect the character stage object, `sprite` and `voice` methods return handles or `Need<...>` values, and `prefetch` schedules preload tasks.
@@ -142,7 +151,7 @@ pose(@character.alice, .hands_front, time = 160ms)
 mouth(@character.alice, .closed)
 ```
 
-Expression changes are patch operations on sprite parts. They do not recreate the entire character object.
+look changes are patch operations on sprite parts. They do not recreate the entire character object.
 
 ## Movement and transform
 
@@ -180,9 +189,9 @@ Dialogue line timeline:
 alice.say(id=@say.opening.003, look=smile, voice=auto)[
     ほら、ここ。覚えてる？[p]
 ] with {
-    at(0.15s) { alice.stage.face(normal, crossfade=80ms) }
+    at(0.15s) { alice.stage.look(normal, crossfade=80ms) }
     at(0.45s) { alice.stage.move(by=(0.04, 0.0), time=180ms) }
-    at(marker("soft_smile")) { alice.stage.face(smile, crossfade=100ms) }
+    at(marker("soft_smile")) { alice.stage.look(smile, crossfade=100ms) }
     at(end-120ms) { alice.stage.animate(@anim.breath.once) }
 }
 ```
@@ -225,7 +234,7 @@ Each stage object exposes:
 ```text
 - entity id
 - instance id
-- current expression
+- current look
 - current pose
 - bbox / polygon / mask
 - active animation tracks
@@ -239,7 +248,7 @@ Agent observation example:
 {
   "entity": "character.alice",
   "instance": "stage.alice.main",
-  "expression": "worried",
+  "look": "worried",
   "voice": "voice.ja.alice.003",
   "timeline_time_ms": 450,
   "bbox": [330, 80, 420, 640]
@@ -260,7 +269,7 @@ ensures result.agent_observable == true
 Dialogue timelines can also be validated:
 
 ```awft
-verify #proof.dialogue_timeline_bounds {
+verify @proof.dialogue_timeline_bounds {
     for_all line in DialogueLine {
         line.timeline.events.all(_.time >= 0ms)
     }
@@ -277,7 +286,7 @@ Character stage cues can be scheduled from dialogue line plan blocks, or from co
 alice.say(voice=auto)[
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 ] {
-    at(0.42s) { alice.stage.face(worried, crossfade=120ms) }
+    at(0.42s) { alice.stage.look(worried, crossfade=120ms) }
     at(end-200ms) { alice.stage.move(to=left, time=260ms, ease=quad.out) }
     at(marker("surprise")) { alice.stage.shake(strength=0.35, time=180ms) }
 }
@@ -292,7 +301,7 @@ alice.say(voice=auto)[
     まだ話している途中……[p]
 ] {
     cancel on input .SkipLine {
-        stop voice fade=40ms
+        'line.voice |> drop(stop_now)
         stop cues policy=complete_current
         flush text instant
         continue
@@ -306,7 +315,7 @@ Cue cancellation policies:
 |---|---|
 | `cancel_pending` | cancel all cues not yet started |
 | `complete_current` | finish currently active transition, cancel future cues |
-| `snap_to_final` | apply final transform/expression immediately |
+| `snap_to_final` | apply final transform/look immediately |
 | `keep_running` | do not cancel stage cues |
 
 
@@ -317,8 +326,8 @@ Cue cancellation policies:
 Character aliases act like object handles in flow code. This is syntax over typed stage commands, not mutable global object state.
 
 ```awft
-alice.show(expression=smile, at=center, fade=200ms)
-alice.face(worried, crossfade=120ms)
+alice.show(look=smile, at=center, fade=200ms)
+alice.look(worried, crossfade=120ms)
 alice.pose(hands_front, time=160ms)
 alice.mouth(closed)
 alice.move(to=left, time=350ms, ease=cubic.out)
@@ -332,7 +341,7 @@ When a stage instance must be specified explicitly:
 
 ```awft
 alice.stage(@stage.alice.main).move(to=left, time=300ms)
-@<character.alice>.stage(@stage.alice.sub).face(smile)
+@<character.alice>.stage(@stage.alice.sub).look(smile)
 ```
 
 Ordinary calls are sugar over this API:
@@ -346,8 +355,8 @@ move(@character.alice, to = .left, time = 350ms, ease = cubic.out)
 The object-style API is allowed because it preserves Arcweft's deterministic state model:
 
 ```text
-alice.face(worried)
-  -> StageCommand::SetExpression(character.alice, worried)
+alice.look(worried)
+  -> StageCommand::Setlook(character.alice, worried)
   -> applied at frame boundary
   -> observable in replay and Agent Debug Bus
 ```
@@ -356,13 +365,13 @@ alice.face(worried)
 
 ## Character preload policy
 
-Characters can declare how their sprite parts, expressions, lip-sync data, and voices should be prepared.
+Characters can declare how their sprite parts, looks, lip-sync data, and voices should be prepared.
 
 ```awft
-pub character #character.alice Alice {
+pub character @character.alice Alice {
     preload_policy {
         sprites = on_flow_anticipate
-        expressions = [normal, smile, worried, surprised]
+        looks = [normal, smile, worried, surprised]
         mouth_parts = on_voice_line
         voices = locale_current
         lipsync = metadata_only
@@ -374,8 +383,8 @@ Explicit character preload:
 
 ```awft
 preload character alice {
-    expressions [normal, smile, worried]
-    voices for flow #flow.alice_intro locale current
+    looks [normal, smile, worried]
+    voices for flow @flow.alice_intro locale current
     sprites scale_buckets [1.0, 1.25]
 }
 ```
@@ -383,8 +392,8 @@ preload character alice {
 Read-ahead for a likely next flow:
 
 ```awft
-anticipate #flow.alice_intro {
-    alice.preload(expressions=[smile, worried], voices=auto, sprites=true)
+anticipate @flow.alice_intro {
+    alice.preload(looks=[smile, worried], voices=auto, sprites=true)
     asset.preload(@asset.bg.room_evening)
     shader.preload(@shader.transition.dissolve)
 }
@@ -399,11 +408,11 @@ anticipate #flow.alice_intro {
 Expensive character presentation work is memoized by stable keys.
 
 ```awft
-pub character #character.alice Alice {
+pub character @character.alice Alice {
     memo_policy {
-        compose_sprite key=(pose, expression, mouth, scale_bucket, theme_hash) cache=session
+        compose_sprite key=(pose, look, mouth, scale_bucket, theme_hash) cache=session
         lipsync_plan key=(voice_key, locale) cache=session
-        expression_patch key=(from_expression, to_expression) cache=flow
+        look_patch key=(from_look, to_look) cache=flow
     }
 }
 ```
@@ -413,7 +422,7 @@ Runtime memo entries are typed:
 ```text
 Memo<SpriteComposite>
 Memo<LipSyncPlan>
-Memo<ExpressionPatch>
+Memo<lookPatch>
 ```
 
 They are invalidated by:
@@ -448,9 +457,9 @@ Dialogue line plan and `at(...) { ... }` blocks can call character stage methods
 alice.say(voice=auto)[
     ほら、ここ。覚えてる？[p]
 ] {
-    at(0.15s) { alice.stage.face(normal, crossfade=80ms) }
+    at(0.15s) { alice.stage.look(normal, crossfade=80ms) }
     at(0.45s) { alice.stage.move(by=(0.04, 0.0), time=180ms) }
-    at(marker("soft_smile")) { alice.stage.face(smile, crossfade=100ms) }
+    at(marker("soft_smile")) { alice.stage.look(smile, crossfade=100ms) }
     at(end-120ms) { alice.stage.animate(@anim.breath.once) }
 }
 ```
@@ -461,16 +470,16 @@ These calls create timeline cues attached to the line. They are cancelled or com
 
 ## Memoized sprite and voice handles
 
-Character presentation resources are memoized by character, pose, expression, locale, scale policy, and render target.
+Character presentation resources are memoized by character, pose, look, locale, scale policy, and render target.
 
 ```awft
 memo fn Character.sprite(
     self: Ref<Character>,
-    expression: Expression,
+    look: look,
     pose: Pose = standing,
 ) -> Need<Result<SpriteHandle, SpriteError>, TaskError>
 cache character_sprite_cache
-key (self, expression, pose, env.locale, env.render_profile)
+key (self, look, pose, env.locale, env.render_profile)
 {
     ...
 }
@@ -480,7 +489,7 @@ The object API hides the memo function behind concise calls:
 
 ```awft
 let smile = try await alice.sprite(smile) with {
-    pending p => scene #scene.loading_sprite { progress p.ratio }
+    pending p => scene @scene.loading_sprite { progress p.ratio }
 }
 
 alice.stage.show(smile, at=center)
@@ -495,21 +504,21 @@ alice.stage.show(smile, at=center)
 A flow can declare what to preload for likely next flows.
 
 ```awft
-preload next #flow.alice_intro {
-    alice.prefetch(flow=#flow.alice_intro, lines=6)
+preload next @flow.alice_intro {
+    alice.prefetch(flow=@flow.alice_intro, lines=6)
     alice.sprite(smile).preload()
     alice.voice_for(@say.alice_intro.001).preload()
-    asset.image(#asset.bg.room_evening)
+    asset.image(@asset.bg.room_evening)
 }
 ```
 
 A character may also declare policy-level hints:
 
 ```awft
-pub character #character.alice alice {
+pub character @character.alice alice {
     preload_policy {
         next_flow_lookahead = 6.lines
-        expressions = [smile, worried, normal]
+        looks = [smile, worried, normal]
         voice = auto_locale
         memoize_sprites = true
     }
@@ -522,11 +531,11 @@ Preload is a hint. If the player reaches a line before preload completes, the no
 
 ## Stage hooks
 
-Stage objects support hooks. These can be used for read-state visual changes, automatic lip sync, debug overlays, or expression defaults.
+Stage objects support hooks. These can be used for read-state visual changes, automatic lip sync, debug overlays, or look defaults.
 
 ```awft
-hook #hook.character.unread_glow
-on query StageObject where entity == #character.alice
+hook @hook.character.unread_glow
+on query StageObject where entity == @character.alice
 phase before_render
 check on change ctx.dialogue.read_state
 {
@@ -541,8 +550,8 @@ check on change ctx.dialogue.read_state
 Common built-ins:
 
 ```text
-#hook.character.auto_lipsync
-#hook.character.expression_from_dialogue
-#hook.character.prefetch_next_expression
-#hook.character.agent_bbox_debug
+@hook.character.auto_lipsync
+@hook.character.look_from_dialogue
+@hook.character.prefetch_next_look
+@hook.character.agent_bbox_debug
 ```

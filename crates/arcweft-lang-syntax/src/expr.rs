@@ -1,6 +1,6 @@
 use crate::ast::{
     EntityRef, EntityRefSyntax, FamilyRelativeEntityRef, LinePlan, Pattern, RelativeId,
-    RelativeIdSpelling, Stmt, TextRange,
+    RelativeIdSpelling, Stmt, TextRange, ThreadBlock, ThreadModifier,
 };
 use crate::cst::{
     find_last_top_level_punctuation, find_top_level_punctuation, split_leading_entity_ref_parts,
@@ -19,8 +19,7 @@ pub enum Expr {
     Literal(Literal),
     EntityRef(EntityRefSyntax),
     LifetimePath {
-        lifetime: String,
-        path: Vec<String>,
+        key: LifetimeKey,
         optional: bool,
     },
     Path(String),
@@ -63,6 +62,9 @@ pub enum Expr {
     Await {
         expr: Box<Expr>,
         applies_try: bool,
+    },
+    Thread {
+        block: Box<ThreadBlock>,
     },
     Range {
         start: Option<Box<Expr>>,
@@ -157,6 +159,94 @@ pub enum Placeholder {
     PipeLeft,
 }
 
+/// Built-in lifetime registry scopes used by script-visible lifetime paths.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LifetimeScopeKind {
+    Frame,
+    Tick,
+    Cue,
+    Line,
+    Scene,
+    Flow,
+    Session,
+    Global,
+    Persistent,
+    Named(String),
+}
+
+/// Structured key for a lifetime registry access such as `'line.focus?`.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct LifetimeKey {
+    scope: LifetimeScopeKind,
+    path: Vec<String>,
+}
+
+/// Semantic access mode used by the checker when validating registry paths.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LifetimeAccessMode {
+    Read,
+    Write,
+    MoveOut,
+    Drop,
+    Expose,
+}
+
+impl LifetimeScopeKind {
+    pub fn parse(source: &str) -> Self {
+        match source {
+            "frame" => Self::Frame,
+            "tick" => Self::Tick,
+            "cue" => Self::Cue,
+            "line" => Self::Line,
+            "scene" => Self::Scene,
+            "flow" => Self::Flow,
+            "session" => Self::Session,
+            "global" => Self::Global,
+            "persistent" => Self::Persistent,
+            name => Self::Named(name.to_owned()),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Frame => "frame",
+            Self::Tick => "tick",
+            Self::Cue => "cue",
+            Self::Line => "line",
+            Self::Scene => "scene",
+            Self::Flow => "flow",
+            Self::Session => "session",
+            Self::Global => "global",
+            Self::Persistent => "persistent",
+            Self::Named(name) => name.as_str(),
+        }
+    }
+}
+
+impl LifetimeKey {
+    pub fn new(scope: LifetimeScopeKind, path: Vec<String>) -> Self {
+        Self { scope, path }
+    }
+
+    pub const fn scope(&self) -> &LifetimeScopeKind {
+        &self.scope
+    }
+
+    pub fn path(&self) -> &[String] {
+        &self.path
+    }
+
+    pub fn as_dotted(&self) -> String {
+        self.path
+            .iter()
+            .fold(self.scope.as_str().to_owned(), |mut key, part| {
+                key.push('.');
+                key.push_str(part);
+                key
+            })
+    }
+}
+
 /// Binary operator syntax used in conditions and partial application.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BinaryOp {
@@ -170,6 +260,7 @@ pub enum BinaryOp {
     Lte,
     Gt,
     Lt,
+    Merge,
     Add,
     Sub,
     Mul,
@@ -233,11 +324,7 @@ enum Token {
     Ident(String),
     RelativePath(String),
     Entity(EntityRefSyntax),
-    LifetimePath {
-        lifetime: String,
-        path: Vec<String>,
-        optional: bool,
-    },
+    LifetimePath { key: LifetimeKey, optional: bool },
     Literal(Literal),
     Underscore,
     Caret,
@@ -310,6 +397,7 @@ impl<'a> Lexer<'a> {
                 '|' if self.starts_with("|>") => self.fixed_op("|>", 2),
                 '|' if self.starts_with("||") => self.fixed_op("||", 2),
                 '&' if self.starts_with("&&") => self.fixed_op("&&", 2),
+                '&' => self.fixed_op("&", 1),
                 '+' => self.fixed_op("+", 1),
                 '*' => self.fixed_op("*", 1),
                 '/' => self.fixed_op("/", 1),
@@ -418,8 +506,7 @@ impl<'a> Lexer<'a> {
             Token::Ident(format!("'{lifetime}"))
         } else {
             Token::LifetimePath {
-                lifetime,
-                path,
+                key: LifetimeKey::new(LifetimeScopeKind::parse(&lifetime), path),
                 optional,
             }
         }
@@ -691,6 +778,7 @@ impl ExprParser {
             Token::Ident(keyword) if keyword == "try" => Ok(Expr::Try {
                 expr: Box::new(self.parse_expr_bp(90)?),
             }),
+            Token::Ident(keyword) if keyword == "thread" => self.parse_thread_expr(),
             Token::Bang => Ok(Expr::Unary {
                 op: UnaryOp::Not,
                 expr: Box::new(self.parse_expr_bp(90)?),
@@ -717,15 +805,7 @@ impl ExprParser {
             }
             Token::Literal(literal) => Ok(Expr::Literal(literal)),
             Token::Entity(entity) => Ok(Expr::EntityRef(entity)),
-            Token::LifetimePath {
-                lifetime,
-                path,
-                optional,
-            } => Ok(Expr::LifetimePath {
-                lifetime,
-                path,
-                optional,
-            }),
+            Token::LifetimePath { key, optional } => Ok(Expr::LifetimePath { key, optional }),
             Token::Ident(path) => {
                 if self.peek() == &Token::LBrace {
                     self.bump();
@@ -826,6 +906,57 @@ impl ExprParser {
                 _ => return Err(ExprParseError::new("expected `)` or `,` in argument list")),
             }
         }
+    }
+
+    fn parse_thread_expr(&mut self) -> Result<Expr, ExprParseError> {
+        let mut modifiers = Vec::new();
+        let mut name_parts = Vec::new();
+        while self.peek() != &Token::LBrace {
+            match self.bump() {
+                Token::Ident(value) if value == "detached" && name_parts.is_empty() => {
+                    modifiers.push(ThreadModifier::Detached);
+                }
+                Token::Ident(value) => name_parts.push(value),
+                Token::Eof => return Err(ExprParseError::new("expected `{` in thread expression")),
+                token => {
+                    return Err(ExprParseError::new(&format!(
+                        "expected thread name or `{{`, found {token:?}"
+                    )));
+                }
+            }
+        }
+        self.expect(&Token::LBrace)?;
+        let mut depth = 1usize;
+        let mut body_tokens = Vec::new();
+        while depth > 0 {
+            match self.bump() {
+                Token::LBrace => {
+                    depth += 1;
+                    body_tokens.push("{".to_owned());
+                }
+                Token::RBrace => {
+                    depth -= 1;
+                    if depth > 0 {
+                        body_tokens.push("}".to_owned());
+                    }
+                }
+                Token::Eof => return Err(ExprParseError::new("unclosed thread expression block")),
+                token => body_tokens.push(token_source(&token)),
+            }
+        }
+        let body_source = body_tokens.join(" ");
+        let body = if body_source.trim().is_empty() {
+            Vec::new()
+        } else {
+            vec![Stmt::Expr(parse_expr(body_source.trim())?)]
+        };
+        Ok(Expr::Thread {
+            block: Box::new(ThreadBlock::new(
+                modifiers,
+                nonempty_joined_name(&name_parts),
+                body,
+            )),
+        })
     }
 
     fn parse_arg_expr(&mut self) -> Result<Expr, ExprParseError> {
@@ -936,6 +1067,7 @@ fn infix_binding_power(op: &str) -> Option<(u8, u8, BinaryOp)> {
         "<=" => (45, 46, BinaryOp::Lte),
         ">" => (45, 46, BinaryOp::Gt),
         "<" => (45, 46, BinaryOp::Lt),
+        "&" => (48, 49, BinaryOp::Merge),
         "+" => (50, 51, BinaryOp::Add),
         "-" => (50, 51, BinaryOp::Sub),
         "*" => (60, 61, BinaryOp::Mul),
@@ -943,6 +1075,50 @@ fn infix_binding_power(op: &str) -> Option<(u8, u8, BinaryOp)> {
         "%" => (60, 61, BinaryOp::Rem),
         _ => return None,
     })
+}
+
+fn token_source(token: &Token) -> String {
+    match token {
+        Token::Ident(value)
+        | Token::RelativePath(value)
+        | Token::Literal(Literal::Float(value)) => value.clone(),
+        Token::Entity(entity) => format!("@{}", entity.body()),
+        Token::LifetimePath { key, optional } => {
+            format!("'{}{}", key.as_dotted(), if *optional { "?" } else { "" })
+        }
+        Token::Literal(Literal::String(value)) => format!("\"{value}\""),
+        Token::Literal(Literal::Int(value)) => value.to_string(),
+        Token::Literal(Literal::Bool(value)) => value.to_string(),
+        Token::Literal(Literal::Duration { amount, unit }) => {
+            format!("{amount}{}", duration_unit_suffix(*unit))
+        }
+        Token::Underscore => "_".to_owned(),
+        Token::Caret => "^".to_owned(),
+        Token::LParen => "(".to_owned(),
+        Token::RParen => ")".to_owned(),
+        Token::LBracket => "[".to_owned(),
+        Token::RBracket => "]".to_owned(),
+        Token::LBrace => "{".to_owned(),
+        Token::RBrace => "}".to_owned(),
+        Token::Comma => ",".to_owned(),
+        Token::Dot => ".".to_owned(),
+        Token::Colon => ":".to_owned(),
+        Token::Question => "?".to_owned(),
+        Token::Bang => "!".to_owned(),
+        Token::Op(op) => (*op).to_owned(),
+        Token::Eof => String::new(),
+    }
+}
+
+const fn duration_unit_suffix(unit: DurationUnit) -> &'static str {
+    match unit {
+        DurationUnit::Millis => "ms",
+        DurationUnit::Seconds => "s",
+    }
+}
+
+fn nonempty_joined_name(parts: &[String]) -> Option<String> {
+    (!parts.is_empty()).then(|| parts.join(" "))
 }
 
 fn is_ident_start(ch: char) -> bool {

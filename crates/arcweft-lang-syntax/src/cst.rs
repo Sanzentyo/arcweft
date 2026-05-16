@@ -591,6 +591,7 @@ fn visible_head(input: &str) -> &str {
 
 fn looks_like_use_line(trimmed: &str) -> bool {
     let rest = visible_head(trimmed);
+    let rest = rest.strip_prefix("surface ").unwrap_or(rest);
     rest.starts_with("use ") || rest.starts_with("lazy use ") || rest.starts_with("eager use ")
 }
 
@@ -638,12 +639,29 @@ fn looks_like_type_alias(trimmed: &str) -> bool {
 
 fn looks_like_entity_decl_item(trimmed: &str) -> bool {
     let rest = visible_head(trimmed);
-    ["character", "component", "activity", "signal", "layer"]
-        .into_iter()
-        .any(|keyword| {
-            rest.strip_prefix(keyword)
-                .is_some_and(|tail| tail.starts_with(char::is_whitespace))
-        })
+    let rest = rest.strip_prefix("surface ").unwrap_or(rest);
+    [
+        "audio bus",
+        "mixer snapshot",
+        "voice profile",
+        "character",
+        "component",
+        "activity",
+        "signal",
+        "layer",
+        "textbox",
+        "voice",
+        "se",
+        "bgm",
+        "ducking",
+        "motion",
+        "rig",
+    ]
+    .into_iter()
+    .any(|keyword| {
+        rest.strip_prefix(keyword)
+            .is_some_and(|tail| tail.starts_with(char::is_whitespace))
+    })
 }
 
 fn looks_like_extern_mod_item(trimmed: &str) -> bool {
@@ -814,6 +832,9 @@ fn find_content_bracket(text: &str) -> Option<usize> {
 }
 
 fn is_typed_stmt(trimmed: &str) -> bool {
+    if trimmed.starts_with('\'') && (trimmed.contains("<-") || trimmed.contains("|>")) {
+        return true;
+    }
     matches!(
         trimmed.split_whitespace().next(),
         Some(

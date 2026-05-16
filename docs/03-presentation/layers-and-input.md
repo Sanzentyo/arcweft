@@ -197,10 +197,10 @@ Inherit:
 例:
 
 ```awft
-layer #layer.ui.glass_modal: Modal {
+layer @layer.ui.glass_modal: Modal {
     order = ui.modal(100)
     render_target = offscreen(format = rgba16f) {
-        postprocess #shader.ui.glass_blur
+        postprocess @shader.ui.glass_blur
     }
 }
 ```
@@ -363,13 +363,13 @@ pub struct InputScope {
 例:
 
 ```awft
-input_scope #input.opening on layer #layer.textbox {
+input_scope @input.opening on layer @layer.textbox {
     key Enter => action AdvanceText
     key Space => action AdvanceText
     gamepad South => action AdvanceText
 }
 
-input_scope #input.choice on layer #layer.choice_ui {
+input_scope @input.choice on layer @layer.choice_ui {
     pointer click target Ref<ChoiceOption> => action SelectChoice(target)
     key Up => action MoveChoice(-1)
     key Down => action MoveChoice(1)
@@ -382,27 +382,27 @@ input_scope #input.choice on layer #layer.choice_ui {
 ### layer 宣言
 
 ```awft
-layer #layer.background: Background {
+layer @layer.background: Background {
     order = background(0)
     input = pass_through
 }
 
-layer #layer.characters: Character {
+layer @layer.characters: Character {
     order = world(20)
     input = hit_test
 }
 
-layer #layer.textbox: TextBox {
+layer @layer.textbox: TextBox {
     order = ui(10)
     input = capture_on_hit
 }
 
-layer #layer.choice_ui: GameUi {
+layer @layer.choice_ui: GameUi {
     order = ui(20)
     input = capture_on_hit
 }
 
-layer #layer.modal: Modal {
+layer @layer.modal: Modal {
     order = modal(0)
     input = modal(allow_escape = true, dismiss_on_outside_click = false)
 }
@@ -411,23 +411,23 @@ layer #layer.modal: Modal {
 ### scene 内の layer 使用
 
 ```awft
-scene #scene.opening {
-    layer #layer.background {
-        image(#asset.bg.room).fit(cover)
+scene @scene.opening {
+    layer @layer.background {
+        image(@asset.bg.room).fit(cover)
     }
 
-    layer #layer.characters {
-        sprite(#asset.char.alice.default)
+    layer @layer.characters {
+        sprite(@asset.char.alice.default)
             .at(center)
-            .agent_target(#character.alice)
+            .agent_target(@character.alice)
     }
 
-    layer #layer.textbox {
+    layer @layer.textbox {
         TextBox(current_text())
-            .agent_target(#ui.textbox.main)
+            .agent_target(@ui.textbox.main)
     }
 
-    layer #layer.choice_ui if choices_visible {
+    layer @layer.choice_ui if choices_visible {
         ChoiceList(choices)
     }
 }
@@ -437,7 +437,7 @@ scene #scene.opening {
 
 ```awft
 ChoiceList(choices)
-    .layer(#layer.choice_ui)
+    .layer(@layer.choice_ui)
     .input_policy(capture_on_hit)
 ```
 
@@ -445,9 +445,9 @@ ChoiceList(choices)
 
 ```awft
 if state.ui.settings_open {
-    layer #layer.modal {
+    layer @layer.modal {
         SettingsPanel(config = bind state.config)
-            .agent_target(#ui.settings)
+            .agent_target(@ui.settings)
     }
 }
 ```
@@ -458,7 +458,7 @@ UI widget の `on_click` は、hit region と semantic action へ lowering さ�
 
 ```awft
 Button("閉じる")
-    .agent_target(#ui.settings.close)
+    .agent_target(@ui.settings.close)
     .on_click { emit UiEvent.SettingsClosed }
 ```
 
@@ -583,7 +583,7 @@ pub struct FocusTarget {
 keyboard/gamepad は原則として focused layer に配送される。modal がある場合、focus は modal 内に trap される。
 
 ```awft
-FocusPolicy::TrapWithin(#layer.modal)
+FocusPolicy::TrapWithin(@layer.modal)
 ```
 
 screen reader 用には `UiNode` と `LayerTree` から accessibility tree を生成する。
@@ -617,27 +617,27 @@ debug overlay:
 ## Tests
 
 ```awft
-test #test.choice_layer_receives_input scenario {
-    start #flow.opening
-    wait object #choice.opening.listen visible
+test @test.choice_layer_receives_input scenario {
+    start @flow.opening
+    wait object @choice.opening.listen visible
 
     let hit = hit_test(x = 520, y = 540)
-    assert_eq hit.layer, #layer.choice_ui
-    assert_eq hit.target, Some(#choice.opening.listen)
+    assert_eq hit.layer, @layer.choice_ui
+    assert_eq hit.target, Some(@choice.opening.listen)
 
-    click layer #layer.choice_ui target #choice.opening.listen
-    expect event GameEvent::ChoiceSelected { id: #choice.opening.listen }
+    click layer @layer.choice_ui target @choice.opening.listen
+    expect event GameEvent::ChoiceSelected { id: @choice.opening.listen }
 }
 ```
 
 visual:
 
 ```awft
-visual test #test.layer_order_opening {
-    start #flow.opening
+visual test @test.layer_order_opening {
+    start @flow.opening
     capture image overlay as "opening_layers.png"
-    assert_layer_above #layer.textbox #layer.characters
-    assert_layer_input_policy #layer.choice_ui capture_on_hit
+    assert_layer_above @layer.textbox @layer.characters
+    assert_layer_input_policy @layer.choice_ui capture_on_hit
 }
 ```
 
@@ -669,8 +669,8 @@ visual test #test.layer_order_opening {
 Layer は hook の主要対象でもある。入力 routing、modal、focus、Agent 観測、render pass の前後で hook を実行できる。
 
 ```awft
-hook #hook.modal.escape
-on #layer.modal
+hook @hook.modal.escape
+on @layer.modal
 phase InputCapture
 check on input KeyDown
 when input.key == .Escape
@@ -688,21 +688,21 @@ Layer hook の詳細は [Object Hooks](../01-language/hooks-and-memoization.md) 
 Layer は hook 対象である。描画・入力・layout・Agent 観測の各 phase に hook を付けられる。
 
 ```awft
-layer #layer.choices: Choice {
+layer @layer.choices: Choice {
     z = 550
     input = hit_test
     hit_test = ui_layout
 
-    hook #hook.layer.choices.pointer_enter
-    on #layer.choices
+    hook @hook.layer.choices.pointer_enter
+    on @layer.choices
     phase InputTarget
     check on input PointerEnter
     {
-        signal #signal.hovered_layer <- Some(#layer.choices)
+        signal @signal.hovered_layer <- Some(@layer.choices)
     }
 
-    hook #hook.layer.choices.layout_changed
-    on #layer.choices
+    hook @hook.layer.choices.layout_changed
+    on @layer.choices
     phase AfterLayout
     check on change layout
     {
@@ -718,8 +718,8 @@ layer #layer.choices: Choice {
 Layer は Hook target でもある。描画順・visibility・input policy・focus などの変化に対して hook を attach できる。
 
 ```awft
-hook #hook.choice_ui_appeared
-on #layer.choice_ui
+hook @hook.choice_ui_appeared
+on @layer.choice_ui
 phase AfterLayout
 check on change visibility
 when visible(self)
@@ -728,14 +728,14 @@ once per scene
     log info "choice layer appeared"
 }
 
-hook #hook.modal_opened
-on #layer.modal.settings
+hook @hook.modal_opened
+on @layer.modal.settings
 phase AfterLayout
 check on change visibility
 when visible(self)
 effects { signal_write }
 {
-    signal #signal.modal_open <- Some(self)
+    signal @signal.modal_open <- Some(self)
 }
 ```
 
@@ -744,9 +744,9 @@ effects { signal_write }
 ```awft
 memo fn choice_hit_regions(tree: LayerTree) -> List<HitRegion>
 scope = frame
-depends layer_tree_hash(tree), ui_layout_hash(#layer.choice_ui)
+depends layer_tree_hash(tree), ui_layout_hash(@layer.choice_ui)
 {
-    collect_hit_regions(#layer.choice_ui, tree)
+    collect_hit_regions(@layer.choice_ui, tree)
 }
 ```
 

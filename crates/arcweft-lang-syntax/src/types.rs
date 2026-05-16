@@ -6,6 +6,7 @@ use crate::cst::{
     split_leading_ident, split_leading_lifetime, split_top_level_keyword_once,
     split_top_level_punctuation, split_top_level_punctuation_once,
 };
+use crate::expr::{Expr, parse_expr};
 use crate::pattern::parse_pattern;
 
 /// Lifetime name used in Arcweft type syntax.
@@ -59,6 +60,7 @@ pub struct FnParam {
     doc: Option<DocBlock>,
     pattern: Pattern,
     ty: TypeRef,
+    default: Option<Expr>,
 }
 
 /// One `where` clause predicate.
@@ -155,15 +157,21 @@ fn parse_fn_param(source: &str) -> Result<FnParam, TypeParseError> {
             doc: None,
             pattern: Pattern::Ident("self".to_owned()),
             ty: TypeRef::Path("Self".to_owned()),
+            default: None,
         });
     }
     let (doc, source) = take_param_doc(source);
     let (pattern, ty) = split_top_level_punctuation_once(source, ':')
         .ok_or_else(|| TypeParseError::new("expected `pattern: Type` parameter"))?;
+    let (ty, default) = split_top_level_punctuation_once(ty, '=')
+        .map_or((ty.trim(), None), |(ty, default)| {
+            (ty.trim(), parse_expr(default.trim()).ok())
+        });
     Ok(FnParam {
         doc,
         pattern: parse_pattern(pattern),
-        ty: parse_type_ref(ty.trim())?,
+        ty: parse_type_ref(ty)?,
+        default,
     })
 }
 
@@ -387,6 +395,10 @@ impl FnParam {
     /// Parameter type annotation.
     pub const fn ty(&self) -> &TypeRef {
         &self.ty
+    }
+
+    pub const fn default(&self) -> Option<&Expr> {
+        self.default.as_ref()
     }
 }
 

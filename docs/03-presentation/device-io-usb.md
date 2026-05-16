@@ -78,7 +78,7 @@ Therefore Web device access is always represented as `Need<Result<DeviceHandle, 
 ## Device declarations
 
 ```awft
-pub device #device.light_panel: Usb {
+pub device @device.light_panel: Usb {
     permission = user_prompt
     backend = prefer(native_nusb, web_usb)
 
@@ -102,7 +102,7 @@ pub device #device.light_panel: Usb {
 HID device:
 
 ```awft
-pub device #device.macro_pad: Hid {
+pub device @device.macro_pad: Hid {
     permission = user_prompt
     backend = prefer(native_hidapi, web_hid)
 
@@ -113,8 +113,8 @@ pub device #device.macro_pad: Hid {
     }
 
     reports {
-        input  #report.macro_pad.input  = bytes(32)
-        output #report.macro_pad.output = bytes(32)
+        input  @report.macro_pad.input  = bytes(32)
+        output @report.macro_pad.output = bytes(32)
     }
 }
 ```
@@ -122,7 +122,7 @@ pub device #device.macro_pad: Hid {
 Standard gamepad:
 
 ```awft
-pub device #device.primary_gamepad: Gamepad {
+pub device @device.primary_gamepad: Gamepad {
     backend = prefer(native_gilrs, web_gamepad)
     layout = standard
     dead_zone = 0.12
@@ -134,15 +134,15 @@ pub device #device.primary_gamepad: Gamepad {
 
 ```awft
 let panel =
-    try await device.usb(#device.light_panel) with {
-        pending p => scene #scene.usb_permission_wait {
+    try await device.usb(@device.light_panel) with {
+        pending p => scene @scene.usb_permission_wait {
             text "USB ライトパネルの許可を待っています"
             progress p.ratio
         }
 
         denied _ => {
             log warn "USB device permission denied"
-            return Ok(FlowExit::Goto(#flow.no_usb_fallback))
+            return Ok(FlowExit::Goto(@flow.no_usb_fallback))
         }
     }
 ```
@@ -203,14 +203,14 @@ let events: Stream<LightPanelEvent, DeviceError> =
 Hardware events are mapped into layer-based input.
 
 ```awft
-pub input_map #input_map.gamepad_default for #device.primary_gamepad {
+pub input_map @input_map.gamepad_default for @device.primary_gamepad {
     button South -> action confirm
     button East  -> action cancel
     axis LeftX   -> axis move_x
     axis LeftY   -> axis move_y
 }
 
-pub input_map #input_map.macro_pad for #device.macro_pad {
+pub input_map @input_map.macro_pad for @device.macro_pad {
     report key_1 -> action advance_text
     report key_2 -> action open_settings
 }

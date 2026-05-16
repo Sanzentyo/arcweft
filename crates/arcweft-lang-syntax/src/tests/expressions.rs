@@ -88,4 +88,25 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
             ..
         }
     ));
+
+    let lifetime = parse_expr("'line.focus?").expect("lifetime registry expr parses");
+    assert!(matches!(
+        lifetime,
+        Expr::LifetimePath {
+            key,
+            optional: true
+        } if key.scope() == &LifetimeScopeKind::Line && key.path() == ["focus"]
+    ));
+
+    let merged = parse_expr(".smile & .casual & .motion.nod").expect("patch merge parses");
+    assert!(matches!(
+        merged,
+        Expr::Binary {
+            op: BinaryOp::Merge,
+            ..
+        }
+    ));
+
+    let thread = parse_expr("thread compute { route_score(state) }").expect("thread expr parses");
+    assert!(matches!(thread, Expr::Thread { block } if block.name() == Some("compute")));
 }

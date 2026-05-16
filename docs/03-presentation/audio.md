@@ -117,12 +117,12 @@ pub audio bus @bus.se parent @bus.master { volume = 0.9 }
 Mixer snapshot:
 
 ```awft
-pub mixer snapshot #mix.dialogue {
+pub mixer snapshot @mix.dialogue {
     @bus.bgm.volume = -8db over 300ms
     @bus.voice.volume = 0db
 }
 
-pub mixer snapshot #mix.normal {
+pub mixer snapshot @mix.normal {
     @bus.bgm.volume = 0db over 600ms
 }
 ```
@@ -130,7 +130,7 @@ pub mixer snapshot #mix.normal {
 Ducking:
 
 ```awft
-pub ducking #duck.voice_over_bgm {
+pub ducking @duck.voice_over_bgm {
     trigger = @bus.voice
     target = @bus.bgm
     amount = -6db
@@ -167,12 +167,8 @@ pub bgm @bgm.alice_theme {
 使用:
 
 ```awft
-command audio.ensure_bgm(@bgm.alice_theme) {
-    section = @music.intro
-    fade_in = 1s
-}
-
-command audio.bgm_section(@bgm.alice_theme, @music.main)
+let theme = bgm(@bgm.alice_theme, section = @music.intro, fade_in = 1s)
+theme.section(@music.main)
 ```
 
 ## Adaptive music
@@ -264,7 +260,7 @@ let speech = try await tts.speak(@voice.alice.tts, "おはよう。") with {
     pending p => scene @scene.loading_voice { progress p.ratio }
 }
 
-play voice speech.audio
+voice(speech.audio, speaker = alice)
 ```
 
 `TtsResult`:
@@ -282,7 +278,8 @@ pub struct TtsResult {
 字幕・口パク・表情同期に使う。
 
 ```awft
-say alice "おはよう。" with tts @voice.alice.tts {
+alice.say(voice=@voice.alice.tts)[おはよう。[p]]
+with {
     fallback = subtitle_only
     cache = true
 }
@@ -291,14 +288,14 @@ say alice "おはよう。" with tts @voice.alice.tts {
 ## Spatial audio
 
 ```awft
-pub audio listener #listener.main {
+pub audio listener @listener.main {
     position = camera.position
     forward = camera.forward
     up = vec3(0, 1, 0)
 }
 
-pub spatial source #audio_source.truck_engine {
-    cue = #cue.se.truck_engine_loop
+pub spatial source @audio_source.truck_engine {
+    cue = @se.truck_engine_loop
     position = truck.position
     radius = 2.0
     attenuation = inverse_square
@@ -310,8 +307,8 @@ pub spatial source #audio_source.truck_engine {
 2Dノベルゲームでも、左右の立ち位置に応じた panning を使える。
 
 ```awft
-play voice #cue.voice.alice.001 spatial {
-    position = character_position(#character.alice).to_audio_pos()
+voice(@voice.alice.opening.001, speaker = alice, spatial = true) {
+    position = character_position(@character.alice).to_audio_pos()
     mode = screen_space
 }
 ```
@@ -333,7 +330,7 @@ Web:
 ## Contract
 
 ```awft
-pub cue #cue.voice.alice.001 from "audio/voice/alice/001.ogg"
+pub cue @cue.voice.alice.001 from "audio/voice/alice/001.ogg"
 requires duration <= 10s
 ensures loudness in -24LUFS..-14LUFS
 ```
@@ -349,26 +346,26 @@ ensures no stem clips
 ## Logging / Signal
 
 ```awft
-pub signal #signal.current_bgm: Watch<Ref<Bgm>>
-pub signal #signal.audio_bus_levels: Watch<Map<Ref<AudioBus>, f32>>
-pub signal #signal.tts_progress: Watch<f32>
+pub signal @signal.current_bgm: Watch<Ref<Bgm>>
+pub signal @signal.audio_bus_levels: Watch<Map<Ref<AudioBus>, f32>>
+pub signal @signal.tts_progress: Watch<f32>
 
 log info "bgm section changed {bgm:?} -> {section:?}" {
     bgm = @bgm.alice_theme,
-    section = #music.main,
+    section = @music.main,
 }
 ```
 
 ## Test
 
 ```awft
-test #test.bgm_loop_points audio {
+test @test.bgm_loop_points audio {
     render_audio @bgm.alice_theme section @music.main duration 64bars
     assert no_clicks_at_loop
     assert loudness in -24LUFS..-14LUFS
 }
 
-test #test.tts_alice_subtitle_sync audio {
+test @test.tts_alice_subtitle_sync audio {
     let tts = synthesize_now @voice.alice.tts "おはよう。"?
     assert tts.duration > 0s
     assert tts.transcript == "おはよう。"

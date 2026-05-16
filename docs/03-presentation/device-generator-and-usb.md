@@ -145,7 +145,7 @@ WebUSB constraints:
 ## Device profile DSL
 
 ```awft
-pub device #device.rhythm_pad: UsbHid {
+pub device @device.rhythm_pad: UsbHid {
     permission = user_prompt
 
     usb {
@@ -175,12 +175,12 @@ pub device #device.rhythm_pad: UsbHid {
     }
 
     signals {
-        #signal.rhythm_pad.buttons <- input.buttons
-        #signal.rhythm_pad.axis <- vec2(input.x, input.y)
-        #signal.rhythm_pad.pressure <- input.pressure
+        @signal.rhythm_pad.buttons <- input.buttons
+        @signal.rhythm_pad.axis <- vec2(input.x, input.y)
+        @signal.rhythm_pad.pressure <- input.pressure
     }
 
-    maps_to controller #controller.rhythm_pad {
+    maps_to controller @controller.rhythm_pad {
         button A <- input.buttons.bit(0)
         button B <- input.buttons.bit(1)
         axis left <- vec2(input.x, input.y).normalize_i16()
@@ -232,7 +232,7 @@ ensures output_report_bytes(value).len() == 3
 Generated tests:
 
 ```awft
-test #test.rhythm_pad_report_parse fixture {
+test @test.rhythm_pad_report_parse fixture {
     let bytes = hex("01 03 00 10 00 00 7f")
     let report = parse RhythmPadInput from bytes?
     assert report.buttons == 3
@@ -245,15 +245,15 @@ Opening a device is `Need<Result<DevicePort, DeviceError>, TaskError>` and must 
 
 ```awft
 let pad =
-    try await device.open(#device.rhythm_pad) with {
-        pending p => scene #scene.device_permission_wait {
+    try await device.open(@device.rhythm_pad) with {
+        pending p => scene @scene.device_permission_wait {
             text "USBデバイスの接続許可を待っています"
             progress p.ratio
         }
 
         denied e => {
             log warn "USB device denied: {e:?}" { e = e }
-            return Ok(FlowExit::Goto(#flow.device_optional))
+            return Ok(FlowExit::Goto(@flow.device_optional))
         }
     }
 ```
@@ -261,7 +261,7 @@ let pad =
 Once granted, scripts do not receive raw handles. They receive a typed port and signals.
 
 ```awft
-watch signal #signal.rhythm_pad.buttons from pad.latest().buttons
+watch signal @signal.rhythm_pad.buttons from pad.latest().buttons
 ```
 
 ## USB command output
@@ -269,7 +269,7 @@ watch signal #signal.rhythm_pad.buttons from pad.latest().buttons
 Output reports and bulk writes are commands, not arbitrary host calls.
 
 ```awft
-command device #device.rhythm_pad send RhythmPadLights {
+command device @device.rhythm_pad send RhythmPadLights {
     led_mask = 0b0000_1111
     brightness = 180
 }
@@ -282,7 +282,7 @@ The command is validated by profile contracts and capability policy.
 For non-HID USB, declare endpoint ports:
 
 ```awft
-pub device #device.led_board: UsbRaw {
+pub device @device.led_board: UsbRaw {
     permission = user_prompt
 
     usb {

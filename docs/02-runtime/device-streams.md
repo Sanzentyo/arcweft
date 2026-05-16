@@ -89,7 +89,7 @@ A `source` block is allowed, but it is declarative and policy-driven.
 
 ```awft
 pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
-    from capture.camera(#capture.face_camera)
+    from capture.camera(@capture.face_camera)
     backpressure = latest
     replay = hash_only
     privacy = transient
@@ -114,7 +114,7 @@ User-visible flows must decide what to do while a source is being acquired.
 
 ```awft
 let mic =
-    try await capture.microphone(#capture.player_microphone) with {
+    try await capture.microphone(@capture.player_microphone) with {
         pending p => scene @scene.permission_wait {
             text "マイクの許可を待っています"
             progress p.ratio
@@ -153,7 +153,7 @@ Standard adapters mirror function-pipeline style, but remain source-aware.
 
 ```awft
 let reports =
-    usb.interrupt_in(#usb.custom_pad, endpoint = #usb.ep.input)
+    usb.interrupt_in(@usb.custom_pad, endpoint = @usb.ep.input)
         .map(parse_custom_pad_report)
         .filter(_.is_ok())
         .map(_.unwrap())

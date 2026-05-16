@@ -215,8 +215,8 @@ omitted text key:
   -> @text.{flow}.{speaker}.{line_suffix_or_slot}      # scope_path が空の場合
 
 voice key when voice=auto:
-  -> @voice.{locale}.{speaker}.{flow}.{scope_path}.{line_suffix_or_slot}
-  -> @voice.{locale}.{speaker}.{flow}.{line_suffix_or_slot}
+  -> @voice.{speaker}.{module_path}.{flow}.{scope_path}.{line_suffix_or_slot}
+  -> @voice.{speaker}.{module_path}.{flow}.{line_suffix_or_slot}
 
 choice id:
   choice @.suffix
@@ -253,7 +253,29 @@ alice(id=@.greeting, voice=auto):
 alice(id=@.greeting, voice=auto)
   -> @say.opening.alice.greeting
   -> @text.opening.alice.greeting
-  -> @voice.ja-JP.alice.opening.greeting
+  -> @voice.alice.game.routes.opening.opening.greeting
+```
+
+Voice IDs are logical content IDs and do not include locale. Locale is a
+resource variant selected by project configuration, runtime locale, or a
+fallback policy.
+
+```text
+logical voice id:
+  @voice.{speaker}.{module_path}.{flow}.{scope_path}.{suffix}
+
+resource variants:
+  assets/voice/{locale}/{speaker}/{module_path}/{flow}/{scope_path}/{suffix}.ogg
+  assets/voice/{locale}/{speaker}/{module_path}/{flow}/{suffix}.ogg
+```
+
+For example, `mod game::routes::opening`, `flow @flow.opening`, and
+`alice(id=@.greeting, voice=auto)` derive:
+
+```text
+@voice.alice.game.routes.opening.opening.greeting
+assets/voice/ja-JP/alice/game/routes/opening/opening/greeting.ogg
+assets/voice/en-US/alice/game/routes/opening/opening/greeting.ogg
 ```
 
 名前付き scope がない場合、`scope_path` セグメントは空文字として残さず、
@@ -306,7 +328,7 @@ choice @.first
 alice(id=@.comment)
   -> @say.opening.alice.rain.comment
   -> @text.opening.alice.rain.comment
-  -> @voice.ja-JP.alice.opening.rain.comment
+  -> @voice.alice.game.routes.opening.opening.rain.comment
 
 choice @.first
   -> @choice.opening.rain.first
@@ -409,3 +431,40 @@ use super::common::{route_gate, shared_flags}
 
 If a source file uses `parent::`, canonical tooling should rewrite it to
 `super::`.
+
+## Resource directory mapping
+
+Resource scans derive public IDs from stable directory layout while keeping
+`EntityId`, `PublicId`, source path, and semantic hash separate in manifests.
+
+```text
+assets/bg/room.png
+  -> @asset.bg.room
+
+assets/voice/ja-JP/alice/game/routes/opening/opening/greeting.ogg
+  -> @voice.alice.game.routes.opening.opening.greeting
+
+assets/se/ui/page.ogg
+  -> @se.ui.page
+
+assets/bgm/alice_theme/main.ogg
+  -> @bgm.alice_theme.main
+
+assets/character/alice/body.png
+  -> @asset.char.alice.body
+
+assets/live2d/alice/rig.model3.json
+  -> @asset.live2d.alice.rig
+```
+
+Tooling should provide resource-safe operations without changing the Sans I/O
+parser/core boundary:
+
+```bash
+arcw resource scan
+arcw resource check
+arcw resource fix
+arcw rename @voice.alice.game.routes.opening.opening.greeting @voice.alice.game.routes.opening.opening.soft_greeting
+arcw resource move assets/voice/ja-JP/alice/game/routes/opening/opening/greeting.ogg assets/voice/ja-JP/alice/game/routes/opening/opening/soft_greeting.ogg --update-refs
+arcw resource move assets/bg/room.png assets/bg/opening/room.png --keep-id
+```
