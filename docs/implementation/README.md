@@ -150,6 +150,14 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   function parameter defaults, supports `&` patch merge parsing/checking, and
   recognizes surface aliases plus voice/se/bgm/bus/mix/ducking/motion/rig
   entity families.
+- `pro_review13.md`: adopted Phase 1.5 as the next execution direction. The
+  CLI now provides `arcw check <file.awft>` and runs parse, HIR lowering,
+  reference validation, ID policy lints, typecheck readiness, minimal typecheck,
+  and line-plan runtime lowering. `arcweft-lang-syntax` exposes
+  `lower_line_task_groups`, which converts checked dialogue line plans into
+  `arcweft-core::LineTaskGroup` values without renderer/audio/device backends.
+  Scoped `defer` lowers as cleanup on the current runtime scope rather than as
+  thread-only syntax.
 - Remaining P2 semantic work is deeper than syntax readiness: full all-paths
   `MustDrop` discharge, promotion proof rules, `unsafe lifetime` audit regions,
   deterministic concurrent write conflict checking, and join-result typing for

@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arcweft-core = { path = "../arcweft-core" }
 arcweft-source = { path = "../arcweft-source" }
 blake3.workspace = true
 rowan.workspace = true

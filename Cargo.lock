@@ -5,6 +5,9 @@ version = 4
 [[package]]
 name = "arcweft-cli"
 version = "0.1.0"
+dependencies = [
+ "arcweft-lang-syntax",
+]
 
 [[package]]
 name = "arcweft-core"
@@ -37,6 +40,7 @@ dependencies = [
 name = "arcweft-lang-syntax"
 version = "0.1.0"
 dependencies = [
+ "arcweft-core",
  "arcweft-source",
  "blake3",
  "rowan",

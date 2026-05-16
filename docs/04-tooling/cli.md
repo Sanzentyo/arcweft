@@ -2,6 +2,34 @@
 
 The CLI should expose syntax-normalization tools without forcing formatter users to give up script-friendly source.
 
+## Check
+
+`arcw check <file.awft>` is the first developer-facing vertical slice. It keeps
+file I/O in the CLI adapter and runs the Sans I/O compiler stages over the
+source text:
+
+```text
+parse_source
+lower_to_hir
+registry_from_hir
+validate_hir_references
+lint_id_policy
+validate_typecheck_ready
+typecheck_hir
+lower_line_task_groups
+```
+
+Success prints a compact summary:
+
+```bash
+arcw check game/routes/opening.awft
+# ok: game/routes/opening.awft (1 flow(s), 1 line task group(s), 0 warning(s))
+```
+
+Parse, lowering, reference, readiness, typecheck, and line-plan lowering errors
+are reported to stderr and return a non-zero exit code. Syntax lints are printed
+as warnings and do not currently fail the command.
+
 ## Syntax Expansion
 
 Default formatting preserves indentation sugar such as `with:`. Expansion is explicit:

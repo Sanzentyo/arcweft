@@ -320,8 +320,9 @@ Line plan statements are scoped to the line and cannot leak variables outward.
 
 `init` runs before reveal begins. `thread name` creates a line-scoped child task
 owned by the line task group; it is a Sans I/O runtime task, not an OS thread.
-Thread-local cleanup uses `defer { ... }`; line-wide cleanup uses a line-level
-`finally { ... }` item in the `with` block.
+Scoped cleanup uses `defer { ... }` on the current runtime scope. Line-wide
+cleanup may use either a line-scope `defer` or a line-level `finally { ... }`
+item in the `with` block.
 Line-local events use `[mark .name]` in text and `on .name` in the line plan.
 
 ```awft
@@ -361,7 +362,7 @@ registered, while `'line.focus?` is optional and returns an `Option`-like value.
 `'line.focus.main` become guaranteed after an assignment with `<-`.
 
 `cleanup` is a line option/profile. `cleanup on ...:` is not part of the line
-plan grammar; use `defer { ... }` inside scoped work, line-level
+plan grammar; use `defer { ... }` in the relevant runtime scope, line-level
 `finally { ... }`, cancellation rules, or explicit drop operations.
 
 ---
@@ -567,7 +568,7 @@ Allowed in line plan blocks:
 
 ```text
 - init blocks
-- line-scoped `thread` blocks with scoped `defer` cleanup
+- scoped `defer` cleanup on line, init, thread, and handler scopes
 - line-level `finally` cleanup
 - line-local `on .mark:` handlers
 - `wait mark .name` and duration waits
@@ -778,4 +779,3 @@ with:
     let scoped_bgm = bgm.play(@bgm.tension, scope=line, drop=fade(300ms))
     out scoped_bgm.detach()
 ```
-

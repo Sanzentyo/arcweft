@@ -62,7 +62,10 @@ for adapters to perform at frame boundaries.
 
 ```rust
 pub struct LineTaskGroup {
+    pub init: Vec<LineEffectRequest>,
+    pub init_defer_stack: Vec<Vec<LineEffectRequest>>,
     pub children: Vec<LineChildTask>,
+    pub defer_stack: Vec<Vec<LineEffectRequest>>,
     pub finally: Vec<LineEffectRequest>,
     pub cleanup: LineCleanupPolicy,
 }
@@ -81,6 +84,32 @@ pub enum LineEffectRequest {
     EmitSignal(String),
 }
 ```
+
+Current Phase 1.5 lowering maps checked HIR dialogue plans into this data model:
+
+```text
+init statements             -> LineTaskGroup.init
+defer in init               -> LineTaskGroup.init_defer_stack
+thread name { ... }         -> LineTaskGroup.children
+defer in thread/on handler  -> LineChildTask.defer_stack
+defer in line scope         -> LineTaskGroup.defer_stack
+on .mark { ... }            -> child task that waits for .mark, then runs body
+finally { ... }             -> LineTaskGroup.finally
+wait mark .x                -> LineEffectRequest::WaitMark(".x")
+wait 0.35s                  -> LineEffectRequest::Wait(...)
+'line.key <- expr           -> LineEffectRequest::RegisterHandle
+'line.key |> drop           -> LineEffectRequest::DropHandle
+call-like expression stmt   -> LineEffectRequest::EmitSignal
+```
+
+Unsupported or raw line-plan statements fail lowering. They are not reparsed or
+silently accepted.
+
+`defer` is not thread-specific syntax. It registers cleanup on the current
+runtime scope. In the Phase 1.5 line-plan model, the line scope, `init` scope,
+thread scopes, and event-handler scopes each have a cleanup stack. Defers inside
+`finally` are lowered into the end of the finalizer body in reverse registration
+order because `finally` itself is already cleanup code.
 
 Lifetime registry paths are typed static keys, not stringly dynamic maps.
 The core model keeps the data Sans I/O; host backends receive deterministic
@@ -141,9 +170,9 @@ capability. It cannot bypass determinism or the Sans I/O boundary.
 
 Line-level `finally` runs after line-scoped child tasks are cancelled/joined and
 their defer stacks have run, but before any remaining automatic line-registry
-drops. Thread-local cleanup is represented by `defer { ... }`, so flow-level
-threads, line-plan threads, and handler tasks share the same scoped cleanup
-model.
+drops. Scoped cleanup is represented by `defer { ... }`, so flow-level threads,
+line-plan threads, handler tasks, and ordinary lexical runtime scopes share the
+same cleanup model.
 
 ## Determinism
 

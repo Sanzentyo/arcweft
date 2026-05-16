@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[dependencies]
+arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+
 [[bin]]
 name = "arcw"
 path = "src/main.rs"

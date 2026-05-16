@@ -13,6 +13,7 @@ mod lower;
 mod parser;
 mod pattern;
 mod resolve;
+mod runtime_plan;
 mod source;
 mod symbols;
 mod text;
@@ -52,6 +53,7 @@ pub use lower::{
 };
 pub use parser::{ParseError, RecoverySuggestion, parse_source};
 pub use resolve::{NameRegistry, NameResolutionError, registry_from_hir, validate_hir_references};
+pub use runtime_plan::{LinePlanLowerError, LoweredLineTaskGroup, lower_line_task_groups};
 pub use source::{LineIndex, ParsedSource, SourceHash};
 pub use symbols::{SymbolUse, SymbolUseKind, collect_symbol_uses};
 pub use text::parse_dialogue_tokens;

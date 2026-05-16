@@ -40,8 +40,17 @@ pub struct RuntimeDiagnostic {
 /// Sans I/O runtime model for a dialogue line's scoped task group.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LineTaskGroup {
+    /// Effects that run before line reveal and child tasks start.
+    pub init: Vec<LineEffectRequest>,
+    /// Cleanup registered by `defer` inside the init scope.
+    pub init_defer_stack: Vec<Vec<LineEffectRequest>>,
+    /// Line-scoped child tasks such as `thread` and `on .mark` handlers.
     pub children: Vec<LineChildTask>,
+    /// Cleanup registered directly on the line scope.
+    pub defer_stack: Vec<Vec<LineEffectRequest>>,
+    /// Explicit line-level finalizer effects.
     pub finally: Vec<LineEffectRequest>,
+    /// Automatic cleanup policy for line-owned handles and child tasks.
     pub cleanup: LineCleanupPolicy,
 }
 
