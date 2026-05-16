@@ -38,12 +38,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "arcweft"
+version = "0.1.0"
+dependencies = [
+ "arcweft-core",
+ "arcweft-dialogue",
+ "arcweft-id",
+ "arcweft-need",
+ "arcweft-presentation",
+ "arcweft-source",
+]
+
+[[package]]
 name = "arcweft-cli"
 version = "0.1.0"
 dependencies = [
  "arcweft-core",
  "arcweft-lang-hir",
+ "arcweft-lang-sema",
  "arcweft-lang-syntax",
+ "arcweft-runtime-plan",
  "arcweft-test",
  "arcweft-verify",
  "arcweft-verify-oxiz",
@@ -56,7 +70,6 @@ dependencies = [
 name = "arcweft-core"
 version = "0.1.0"
 dependencies = [
- "arcweft-dialogue",
  "arcweft-id",
  "arcweft-need",
  "arcweft-source",
@@ -85,22 +98,24 @@ name = "arcweft-lang-hir"
 version = "0.1.0"
 dependencies = [
  "arcweft-lang-syntax",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
-name = "arcweft-lang-lsp"
+name = "arcweft-lang-sema"
 version = "0.1.0"
 dependencies = [
- "arcweft-verify",
- "lsp-types",
- "serde_json",
+ "arcweft-core",
+ "arcweft-lang-hir",
+ "arcweft-lang-syntax",
+ "arcweft-runtime-plan",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "arcweft-lang-syntax"
 version = "0.1.0"
 dependencies = [
- "arcweft-core",
  "arcweft-source",
  "blake3",
  "rowan",
@@ -122,6 +137,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-runtime-plan"
+version = "0.1.0"
+dependencies = [
+ "arcweft-core",
+ "arcweft-lang-hir",
+ "arcweft-lang-syntax",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arcweft-source"
 version = "0.1.0"
 
@@ -139,9 +164,20 @@ name = "arcweft-verify"
 version = "0.1.0"
 dependencies = [
  "arcweft-lang-hir",
+ "arcweft-lang-sema",
  "arcweft-lang-syntax",
+ "arcweft-runtime-plan",
  "serde",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "arcweft-verify-lsp"
+version = "0.1.0"
+dependencies = [
+ "arcweft-verify",
+ "lsp-types",
+ "serde_json",
 ]
 
 [[package]]

@@ -1,25 +1,18 @@
 [package]
-name = "arcweft-core"
+name = "arcweft"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[features]
-default = []
-render-wgpu = []
-ui-servo = []
-audio = []
-capture-camera = []
-usb = []
-mcp = []
-
 [dependencies]
+arcweft-core = { path = "../arcweft-core" }
+arcweft-dialogue = { path = "../arcweft-dialogue" }
 arcweft-id = { path = "../arcweft-id" }
 arcweft-need = { path = "../arcweft-need" }
+arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-source = { path = "../arcweft-source" }
-thiserror.workspace = true
 
 [lib]
 path = "src/lib.rs"

@@ -1,4 +1,3 @@
-use super::support::*;
 use crate::cst::{
     CstFlowItemKind, CstLetFlowItemKind, CstStructuredFlowBlockKind, CstTopLevelItemKind,
     CstTopLevelLineKind, find_last_depth_zero_open_punctuation, find_last_top_level_punctuation,
@@ -8,7 +7,7 @@ use crate::cst::{
     split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
     split_top_level_whitespace,
 };
-use crate::{CstLine, CstLineKind, SyntaxKind, cst_lines, parse_source};
+use crate::{CstLine, CstLineKind, Item, SyntaxKind, cst_lines, parse_source};
 
 #[test]
 fn parsed_source_always_keeps_lossless_syntax() {

@@ -8,9 +8,7 @@ fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::TypedSyntaxTree {
     parsed.into_typed_tree()
 }
 
-use arcweft_lang_syntax::{
-    Expr, FlowItem, GenericParam, HirTopLevelDecl, Item, TypeRef, parse_fn_signature,
-};
+use arcweft_lang_syntax::{Expr, FlowItem, GenericParam, Item, TypeRef, parse_fn_signature};
 
 #[test]
 fn function_signatures_keep_generics_curried_groups_and_where_clauses() {
@@ -125,10 +123,4 @@ pub dialogue defaults @dialogue.defaults {
         "dialogue.defaults"
     );
     assert_eq!(defaults.options().len(), 3);
-
-    let hir = arcweft_lang_syntax::lower_to_hir(&tree).expect("defaults lower");
-    assert!(matches!(
-        hir.declarations(),
-        [HirTopLevelDecl::DialogueDefaults(_)]
-    ));
 }

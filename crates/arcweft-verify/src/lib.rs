@@ -6,14 +6,12 @@
 //! and solver adapter crates.
 
 use arcweft_lang_hir::{
-    HirAwait, HirBorrow, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet, HirLoop,
-    HirMatch, HirModule, HirScope, HirScopeExpr, HirSelect, HirTopLevelDecl, HirWhile, HirWhileLet,
-    IdRef, LinePlan, LinePlanItem, Stmt, TextRange,
+    EntityRefSyntax, Expr, HirAwait, HirBorrow, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf,
+    HirIfLet, HirLoop, HirMatch, HirModule, HirScope, HirScopeExpr, HirSelect, HirTopLevelDecl,
+    HirWhile, HirWhileLet, IdRef, LifetimeKey, LifetimeScopeKind, LinePlan, LinePlanItem, Stmt,
+    TextRange, ThreadBlock, TriggerPattern,
 };
-use arcweft_lang_syntax::{
-    EntityRefSyntax, Expr, LifetimeKey, LifetimeScopeKind, ThreadBlock, TriggerPattern,
-    lower_line_task_groups,
-};
+use arcweft_runtime_plan::lower_line_task_groups;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashSet};
 use thiserror::Error;
@@ -417,21 +415,21 @@ impl ObligationCollector {
         }
     }
 
-    fn collect_choice_plan_item(&mut self, item: &arcweft_lang_syntax::ChoicePlanItem) {
+    fn collect_choice_plan_item(&mut self, item: &arcweft_lang_hir::ChoicePlanItem) {
         match item {
-            arcweft_lang_syntax::ChoicePlanItem::Option { value, .. } => self.collect_expr(value),
-            arcweft_lang_syntax::ChoicePlanItem::Timeout { duration, body } => {
+            arcweft_lang_hir::ChoicePlanItem::Option { value, .. } => self.collect_expr(value),
+            arcweft_lang_hir::ChoicePlanItem::Timeout { duration, body } => {
                 self.collect_expr(duration);
                 self.collect_stmts(body);
             }
-            arcweft_lang_syntax::ChoicePlanItem::Cancel { trigger, body } => {
+            arcweft_lang_hir::ChoicePlanItem::Cancel { trigger, body } => {
                 self.collect_trigger(trigger);
                 self.collect_stmts(body);
             }
-            arcweft_lang_syntax::ChoicePlanItem::OnSelect { body, .. } => {
+            arcweft_lang_hir::ChoicePlanItem::OnSelect { body, .. } => {
                 self.collect_stmts(body);
             }
-            arcweft_lang_syntax::ChoicePlanItem::Raw(raw) => {
+            arcweft_lang_hir::ChoicePlanItem::Raw(raw) => {
                 self.add_raw_obligation(format!("raw choice plan item: {raw}"), None);
             }
         }
@@ -876,11 +874,11 @@ impl ObligationCollector {
         }
     }
 
-    fn collect_wait(&mut self, target: &arcweft_lang_syntax::WaitTarget) {
+    fn collect_wait(&mut self, target: &arcweft_lang_hir::WaitTarget) {
         match target {
-            arcweft_lang_syntax::WaitTarget::Duration(expr)
-            | arcweft_lang_syntax::WaitTarget::Expr(expr) => self.collect_expr(expr),
-            arcweft_lang_syntax::WaitTarget::Mark(_) => {}
+            arcweft_lang_hir::WaitTarget::Duration(expr)
+            | arcweft_lang_hir::WaitTarget::Expr(expr) => self.collect_expr(expr),
+            arcweft_lang_hir::WaitTarget::Mark(_) => {}
         }
     }
 
@@ -907,14 +905,14 @@ impl ObligationCollector {
         }
     }
 
-    fn collect_scope_expr_syntax(&mut self, scope: &arcweft_lang_syntax::ScopeExprBlock) {
+    fn collect_scope_expr_syntax(&mut self, scope: &arcweft_lang_hir::ScopeExprBlock) {
         self.collect_stmts(scope.statements());
         if let Some(value) = scope.value() {
             self.collect_expr(value);
         }
     }
 
-    fn collect_choice_syntax(&mut self, choice: &arcweft_lang_syntax::ChoiceBlock) {
+    fn collect_choice_syntax(&mut self, choice: &arcweft_lang_hir::ChoiceBlock) {
         for option in choice.options() {
             if let Some(condition) = option.condition() {
                 self.collect_expr(condition);
@@ -925,18 +923,18 @@ impl ObligationCollector {
         }
     }
 
-    fn collect_await_syntax(&mut self, await_with: &arcweft_lang_syntax::AwaitWith) {
+    fn collect_await_syntax(&mut self, await_with: &arcweft_lang_hir::AwaitWith) {
         self.collect_expr(await_with.expr());
         for branch in await_with.branches() {
             self.collect_flow_items_syntax(branch.body());
         }
     }
 
-    fn collect_flow_items_syntax(&mut self, items: &[arcweft_lang_syntax::FlowItem]) {
+    fn collect_flow_items_syntax(&mut self, items: &[arcweft_lang_hir::FlowItem]) {
         for item in items {
             match item {
-                arcweft_lang_syntax::FlowItem::Stmt(stmt) => self.collect_stmt(stmt),
-                arcweft_lang_syntax::FlowItem::Raw(raw) => {
+                arcweft_lang_hir::FlowItem::Stmt(stmt) => self.collect_stmt(stmt),
+                arcweft_lang_hir::FlowItem::Raw(raw) => {
                     self.add_raw_obligation(format!("raw flow item: {raw}"), None);
                 }
                 _ => {}
@@ -1268,84 +1266,4 @@ fn sanitize_symbol(name: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use arcweft_lang_syntax::{lower_to_hir, parse_source};
-
-    fn report(source: &str, mode: VerificationMode) -> VerificationReport {
-        let parsed = parse_source(source.to_owned());
-        assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let tree = parsed.into_typed_tree();
-        let hir = lower_to_hir(&tree).expect("fixture lowers");
-        verify_module(
-            &hir,
-            VerificationPolicy {
-                mode,
-                backend: BackendKind::Emit,
-            },
-        )
-    }
-
-    #[test]
-    fn promotion_without_proof_is_an_obligation() {
-        let report = report(
-            "flow @flow.opening opening {\n  let summary = promote('flow)\n}\n",
-            VerificationMode::Test,
-        );
-        assert!(report.has_errors());
-        assert!(report.obligations.iter().any(|obligation| {
-            obligation.kind == ProofObligationKind::LifetimePromotion
-                && obligation.discharge == ProofDischarge::Missing
-        }));
-    }
-
-    #[test]
-    fn unsafe_lifetime_records_audit() {
-        let report = report(
-            "flow @flow.opening opening {\n  unsafe lifetime @unsafe.cache reason = \"ok\" {\n    /// SAFETY: owned clone only\n    let summary = promote_unchecked('flow)\n  }\n}\n",
-            VerificationMode::Dev,
-        );
-        assert_eq!(report.unsafe_audit_count(), 1);
-        assert!(report.obligations.iter().any(|obligation| matches!(
-            obligation.discharge,
-            ProofDischarge::AuditedUnsafe { .. }
-        )));
-    }
-
-    #[test]
-    fn runtime_parallel_conflict_is_verifier_obligation() {
-        let report = report(
-            r"
-flow @flow.conflict conflict {
-    alice[待って。[p]]
-    with {
-        together {
-            signal.set(@signal.current_flow, @flow.a)
-            signal.set(@signal.current_flow, @flow.b)
-        }
-    }
-}
-",
-            VerificationMode::Dev,
-        );
-
-        assert!(report.has_errors());
-        assert!(report.obligations.iter().any(|obligation| {
-            obligation.kind == ProofObligationKind::RuntimeConflict
-                && obligation.message.contains("parallel resource conflict")
-        }));
-    }
-
-    #[test]
-    fn smt_lib_is_stable() {
-        let problem = SmtProblem {
-            name: "p".to_owned(),
-            assertions: vec![ProofExpr::App {
-                name: "must_drop_discharged".to_owned(),
-                args: vec![ProofExpr::Var("'line.focus".to_owned())],
-            }],
-        };
-        assert!(emit_smt_lib(&problem).contains("(check-sat)"));
-        assert!(emit_smt_lib(&problem).contains("must_drop_discharged"));
-    }
-}
+mod tests;

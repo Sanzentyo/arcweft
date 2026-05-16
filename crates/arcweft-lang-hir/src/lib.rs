@@ -1,16 +1,24 @@
-//! Structured HIR facade for Arcweft language tooling.
+//! Structured HIR for Arcweft language tooling.
 //!
-//! The current parser crate still owns the concrete HIR data structures while
-//! the compiler is being split. This crate is the stable import boundary for
-//! semantic tooling, verifier passes, CLI, and LSP code so those consumers do
-//! not reach back into parser internals directly.
+//! HIR lowering depends on surface syntax, but semantic analysis, verifier
+//! passes, runtime-plan lowering, CLI, and LSP tooling should import HIR through
+//! this crate instead of reaching into parser internals.
+
+mod lower;
 
 pub use arcweft_lang_syntax::{
-    BenchItem, ContractClause, EntityRef, HirAwait, HirAwaitBranch, HirBorrow, HirChoice,
-    HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet,
-    HirLoop, HirLowerError, HirMatch, HirMatchArm, HirModule, HirScope, HirScopeExpr, HirSelect,
-    HirSelectBranch, HirSourceLocale, HirTopLevelDecl, HirWhile, HirWhileLet, IdRef, LinePlan,
-    LinePlanItem, Pattern, Stmt, TestItem, TestKind, TextRange, TrustedAxiomItem, TypeCheckEnv,
-    TypeCheckError, TypeCheckReadinessError, TypeKind, lower_to_hir, typecheck_hir,
-    validate_typecheck_ready,
+    Attribute, AwaitBranchKind, AwaitWith, BenchItem, BorrowBlock, CallableItem, CallableKind,
+    ChoiceAction, ChoiceBlock, ChoicePlan, ChoicePlanItem, ContractClause, DeferOutcome,
+    DialogueDefaultsItem, DialogueToken, EntityDeclItem, EntityDeclKind, EntityRef,
+    EntityRefSyntax, EnumItem, Expr, ExternModItem, FlowItem, FlowKind, FunctionKind, HookItem,
+    IdRef, ImplItem, LifetimeKey, LifetimeScopeKind, LinePlan, LinePlanItem, MatchArm, MemoFn,
+    ParserItem, Pattern, ProofItem, RelativeId, ScopeExprBlock, SourceItem, SourceLocaleBlock,
+    StateItem, Stmt, TestItem, TestKind, TextRange, ThreadBlock, TraitItem, TriggerPattern,
+    TrustedAxiomItem, TypeAliasItem, TypeRef, WaitTarget,
+};
+pub use lower::{
+    HirAwait, HirAwaitBranch, HirBorrow, HirChoice, HirChoiceOption, HirDialogue, HirFlow,
+    HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet, HirLoop, HirLowerError, HirMatch,
+    HirMatchArm, HirModule, HirScope, HirScopeExpr, HirSelect, HirSelectBranch, HirSourceLocale,
+    HirTopLevelDecl, HirWhile, HirWhileLet, lower_to_hir,
 };

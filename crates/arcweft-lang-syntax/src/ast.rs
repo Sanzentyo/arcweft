@@ -1431,7 +1431,7 @@ impl UseItem {
 }
 
 impl EntityRef {
-    pub(crate) const fn new(body: String, delimited: bool, range: TextRange) -> Self {
+    pub const fn new(body: String, delimited: bool, range: TextRange) -> Self {
         Self {
             body,
             delimited,
@@ -1453,7 +1453,7 @@ impl EntityRef {
 }
 
 impl IdRef {
-    pub(crate) const fn absolute(entity: EntityRef) -> Self {
+    pub const fn absolute(entity: EntityRef) -> Self {
         Self::Absolute(entity)
     }
 
@@ -1541,7 +1541,7 @@ impl RelativeId {
 }
 
 impl EntityRefSyntax {
-    pub(crate) const fn absolute(entity: EntityRef) -> Self {
+    pub const fn absolute(entity: EntityRef) -> Self {
         Self::Absolute(entity)
     }
 

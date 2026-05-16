@@ -36,10 +36,15 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 
 - Prefer small, compiling increments.
 - Use Jujutsu (`jj`) for repository state when available; prefer `jj status`, `jj diff`, and `jj describe` over equivalent Git commands for local workflow reporting.
+- Keep crate boundaries aligned with architecture layers. Lower-level crates must not depend on higher-level crates.
 - Keep `arcweft-core` Sans I/O.
-- Do not add GPU, filesystem, network, Servo, Wasmtime, CPAL, camera, or OS dependencies to `arcweft-core`.
+- `arcweft-core` is runtime/data core only. Do not make it depend on dialogue, presentation, syntax, verifier, CLI, LSP, GPU, filesystem, network, Servo, Wasmtime, CPAL, camera, USB, MCP, or OS adapters.
+- Keep `arcweft-lang-syntax` parser/syntax-only. It may own CST, parser, surface AST, expression/type/pattern parsing, text tokenization, and syntax lints; HIR lowering, semantic checks, runtime-plan lowering, verifier logic, and tooling belong in separate crates.
+- Keep HIR, semantic analysis, runtime-plan lowering, verification, solver adapters, CLI, and LSP as separate layers. Preferred direction is `syntax -> hir -> sema -> runtime-plan/verify -> tooling`.
 - Keep data-format crates Sans I/O. Manifests, schemas, bytecode, bundles, save snapshots, and debug traces should expose typed data plus deterministic bytes/string codecs; path reads/writes, network, clocks, embedding, signing, and platform storage belong in CLI/build/player adapters.
 - Put backend-specific dependencies behind feature flags and adapter crates.
+- Use a facade crate for broad application-facing preludes. Do not place broad convenience preludes in low-level crates.
+- Do not leave workspace-external directories that look like active `crates/`, `tests/`, or fixtures. Archive true historical material under docs only when explicitly requested; otherwise remove obsolete migration scratch directories.
 - Prefer typed APIs over stringly typed APIs.
 - Prefer deterministic runtime behavior.
 - Do not use `unsafe` unless isolated in a clearly named crate/module with an explanation.
@@ -58,6 +63,7 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - Use `cargo test --workspace`.
 - Keep public API minimal.
 - Prefer private modules and explicit `pub use` exports.
+- Split large `lib.rs` / `main.rs` files by responsibility before they become architectural boundaries in practice. Prefer `module.rs` plus subdirectories over `mod.rs`.
 - Add tests for each new crate's core behavior.
 - Add snapshot/golden tests only when deterministic.
 - Use `thiserror` for Rust error types across the workspace unless there is a clear reason to hand-write `Display` / `std::error::Error`; preserve structured fields such as `kind`, `range`, `anchor`, and `message`.

@@ -9,7 +9,9 @@ repository.workspace = true
 [dependencies]
 arcweft-core = { path = "../arcweft-core" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
+arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
 arcweft-test = { path = "../arcweft-test" }
 arcweft-verify = { path = "../arcweft-verify" }
 arcweft-verify-oxiz = { path = "../arcweft-verify-oxiz" }

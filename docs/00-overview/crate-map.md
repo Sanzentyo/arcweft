@@ -31,9 +31,11 @@ arcweft-device-stream
 ```text
 arcweft-lang-syntax
 arcweft-lang-hir
+arcweft-lang-sema
+arcweft-runtime-plan
 arcweft-lang-ir
 arcweft-lang-vm
-arcweft-lang-lsp
+arcweft-verify-lsp
 arcweft-lang-jit-cranelift
 arcweft-lang-aot-rust
 arcweft-id
@@ -147,7 +149,9 @@ arcweft-agent-cli
 arcweft-cli
 arcweft-debug
 arcweft-lang-hir
-arcweft-lang-lsp
+arcweft-lang-sema
+arcweft-runtime-plan
+arcweft-verify-lsp
 arcweft-verify
 arcweft-verify-z3
 arcweft-verify-oxiz
@@ -156,7 +160,8 @@ arcweft-jj
 
 ## 依存ルール
 
-- `arcweft-core` は wgpu / audio / Servo / DOM / filesystem / network / Cranelift / Wasmtime に依存しない。
+- `arcweft-core` は runtime/data core に限定し、dialogue / presentation / syntax / verifier / CLI / LSP / wgpu / audio / Servo / DOM / filesystem / network / Cranelift / Wasmtime に依存しない。
+- 広い application prelude は facade crate `arcweft` が提供する。低レイヤ crate に便利 re-export を置かない。
 - `arcweft-presentation` は `bg(...)` / `show(...)` が返す scope-bound
   presentation handles、typed target/slot refs、clear operations、scope exit
   cleanup registry を持つ Sans I/O data/model crate とする。renderer、
@@ -167,11 +172,13 @@ arcweft-jj
 - Memoization は pure computation または TaskKey deduplication に限定し、cache は決定性に影響してはならない。
 - unsafe は `arcweft-memory`、`arcweft-plugin-*`、`arcweft-render`、`arcweft-audio-*` の境界に閉じ込める。
 - `arcweft-agent-protocol` は CLI / MCP / test / LLM が共通利用する。
-- `arcweft-lang-syntax` は rowan-compatible な lossless CST を所有する。`SyntaxKind`、`TokenKind`、green tree、`SyntaxNode`、source text / line index、error-tolerant `ParsedSource` をここに集約し、typed AST / HIR は CST 上の semantic view または lowering result として扱う。
-- `arcweft-lang-hir` は parser-owned HIR の公開境界であり、semantic passes、verifier、CLI、LSP はこの crate を入力境界にする。
+- `arcweft-lang-syntax` は rowan-compatible な lossless CST と surface parser を所有する。`SyntaxKind`、`TokenKind`、green tree、`SyntaxNode`、source text / line index、error-tolerant `ParsedSource`、surface AST、expression/type/pattern parsing、syntax lint をここに集約する。HIR lowering、semantic checks、runtime-plan lowering は持たない。
+- `arcweft-lang-hir` は HIR 型と `lower_to_hir` を所有し、semantic passes、verifier、CLI、LSP はこの crate を HIR 入力境界にする。
+- `arcweft-lang-sema` は name registry、symbol use collection、reference validation、typecheck readiness、minimal type checking を所有する。
+- `arcweft-runtime-plan` は checked HIR から `arcweft-core` の `RuntimePlan` / line task graph へ lowering する。
 - `arcweft-verify` は Sans I/O の検証中核で、proof obligation、audit manifest、SMT problem、tool diagnostics schema を所有する。ファイルI/O、process起動、watch、editor transport は持たない。
 - `arcweft-verify-z3` は外部 Z3 process adapter、`arcweft-verify-oxiz` は pure Rust OxiZ adapter とする。solver依存は `arcweft-verify` や `arcweft-core` に入れない。
-- `arcweft-lang-lsp` は transportなしの LSP helper crate とし、`arcweft-verify` report から diagnostics / code actions を作る。
+- `arcweft-verify-lsp` は transportなしの LSP helper crate とし、`arcweft-verify` report から diagnostics / code actions を作る。
 - `arcweft-test` は `test` / `bench` 宣言を HIR から Sans I/O manifest に変換する。ファイルI/O、clock、renderer/audio driving、benchmark timers、headless player 実行は CLI / player / adapter crate に置く。
 - `parse_source` は `ParsedSource { syntax, typed_tree, errors, source_hash, line_index }` のように常に lossless CST と diagnostics を返す。typed source model は `TypedSyntaxTree` として CST / rowan `SyntaxNode` と区別する。内部の行単位 parser は短期 MVP であり、delimiter recovery、top-level punctuation / keyword split、binding split、multi-token punctuation sequence split などの構文走査は CST helper へ集約し、これ以上 `split_top_level` 型の ad hoc parser を拡張しない。
 - Cranelift は `arcweft-lang-jit-cranelift` の native-only 最適化 backend に閉じ込める。`arcweft-core` に `jit-cranelift` feature や Cranelift 依存を置かない。

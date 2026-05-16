@@ -12,6 +12,13 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - Foundational ID, source anchor, Need, and dialogue surface model crates.
 - Syntax and CLI crates with Phase 1 parser/HIR/check surfaces and the
   `arcw check <file.awft>` developer entry point.
+- Language responsibilities are now split across `arcweft-lang-syntax`
+  (lossless CST, surface AST, parser, syntax lint), `arcweft-lang-hir`
+  (HIR types and lowering), `arcweft-lang-sema` (name/symbol/type readiness and
+  minimal type checking), and `arcweft-runtime-plan` (HIR to Sans I/O runtime
+  plan lowering).
+- `arcweft-core` no longer depends on dialogue or presentation; broad
+  application-facing re-exports live in the facade crate `arcweft`.
 - No renderer, Servo, audio, camera, USB, MCP, or Cranelift JIT implementation.
 
 ## Files
@@ -162,7 +169,7 @@ they affect parser, HIR, formatter, LSP, or CLI work.
 - `pro_review13.md`: adopted Phase 1.5 as the next execution direction. The
   CLI now provides `arcw check <file.awft>` and runs parse, HIR lowering,
   reference validation, ID policy lints, typecheck readiness, minimal typecheck,
-  and line-plan runtime lowering. `arcweft-lang-syntax` exposes
+  and line-plan runtime lowering. `arcweft-runtime-plan` exposes
   `lower_line_task_groups`, which converts checked dialogue line plans into
   `arcweft-core::LineTaskGroup` values without renderer/audio/device backends.
   Scoped `defer` lowers as cleanup on the current runtime scope rather than as
@@ -195,7 +202,7 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   let/let-else, if/if-let, match, loop/while/while-let/for, scope, goto, and
   return runtime nodes, runs scope cleanup stacks, and leaves actual
   native/cooperative/web execution to adapters.
-- `arcweft-lang-syntax` now exposes `lower_runtime_plan`, which converts
+- `arcweft-runtime-plan` now exposes `lower_runtime_plan`, which converts
   checked HIR flows to core `RuntimePlan` data for the Phase 1.8 execution
   slice. Runtime lowering supports dialogue, `choice`, `await with`, typed
   `let`, `let else`, structured `if`, `if let`, `match`, `loop`, `while`,

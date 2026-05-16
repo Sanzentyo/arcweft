@@ -8,9 +8,13 @@ repository.workspace = true
 
 [dependencies]
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
-arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-lang-sema = { path = "../arcweft-lang-sema" }
+arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
+
+[dev-dependencies]
+arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 
 [lib]
 path = "src/lib.rs"
