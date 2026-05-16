@@ -15,8 +15,7 @@ flow @flow.opening opening {
     with:
         init:
             'line.flag <- true
-        on .release:
-            'line.flag |> drop
+        at(0.25s): 'line.flag |> drop_optional
 }
 ",
     );
@@ -35,6 +34,38 @@ flow @flow.opening opening {
     assert!(
         String::from_utf8_lossy(&output.stdout).contains("1 line task group"),
         "stdout should include runtime-plan count"
+    );
+}
+
+#[test]
+fn check_rejects_unlowered_line_plan_item() {
+    let path = temp_awft(
+        "unsupported-line-plan",
+        r"
+pub surface character @character.alice Alice as alice {
+}
+
+flow @flow.unsupported unsupported {
+    @<character.alice>.say[待って。[p]]
+    with:
+        skip = true
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg(&path)
+        .output()
+        .expect("arcw check runs");
+
+    assert!(
+        !output.status.success(),
+        "unsupported line plan item must fail"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("line-plan option `skip`"),
+        "stderr should explain the unsupported line-plan item"
     );
 }
 

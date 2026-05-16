@@ -10,7 +10,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
 
 - Cargo workspace skeleton.
 - Foundational ID, source anchor, Need, and dialogue surface model crates.
-- Stub language syntax and CLI crates.
+- Syntax and CLI crates with Phase 1 parser/HIR/check surfaces and the
+  `arcw check <file.awft>` developer entry point.
 - No renderer, Servo, audio, camera, USB, MCP, or Cranelift JIT implementation.
 
 ## Files

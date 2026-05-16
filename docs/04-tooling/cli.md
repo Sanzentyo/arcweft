@@ -30,6 +30,12 @@ Parse, lowering, reference, readiness, typecheck, and line-plan lowering errors
 are reported to stderr and return a non-zero exit code. Syntax lints are printed
 as warnings and do not currently fail the command.
 
+Line-plan lowering must not silently drop parsed syntax. Stable Phase 1.5 cue
+syntax such as `at(0.35s): ...` is lowered into Sans I/O line task data.
+Line-plan items that are parsed but not yet represented in the Phase 1.5 runtime
+model fail `arcw check` with a `LinePlanLowerError` until their lowering is
+implemented.
+
 ## Syntax Expansion
 
 Default formatting preserves indentation sugar such as `with:`. Expansion is explicit:

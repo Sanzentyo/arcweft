@@ -91,40 +91,7 @@ fn lower_line_plan(plan: &LinePlan) -> Result<LineTaskGroup, Vec<LinePlanLowerEr
     let mut group = LineTaskGroup::default();
     let mut errors = Vec::new();
     for item in plan.items() {
-        match item {
-            LinePlanItem::Init(statements) => {
-                let scope = lower_scoped_stmt_list(statements, &mut errors);
-                group.init.extend(scope.body);
-                group.init_defer_stack.extend(scope.defer_stack);
-            }
-            LinePlanItem::Thread(thread) => {
-                let task = lower_child_task(thread.name(), thread.body(), &mut errors);
-                group.children.push(task);
-            }
-            LinePlanItem::On { trigger, body } => {
-                let mut task = lower_child_task(Some(&expr_label(trigger)), body, &mut errors);
-                if let Expr::Path(name) = trigger {
-                    task.body
-                        .insert(0, LineEffectRequest::WaitMark(name.clone()));
-                }
-                group.children.push(task);
-            }
-            LinePlanItem::Finally(statements) => {
-                let scope = lower_scoped_stmt_list(statements, &mut errors);
-                group.finally.extend(scope.body);
-                group.finally.extend(flatten_defer_stack(scope.defer_stack));
-            }
-            LinePlanItem::Stmt(stmt) => {
-                lower_line_scope_stmt(stmt, &mut group, &mut errors);
-            }
-            LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
-                lower_group_items(items, &mut group, &mut errors);
-            }
-            LinePlanItem::Raw(raw) => errors.push(LinePlanLowerError::new(format!(
-                "raw line-plan item cannot be lowered: {raw}"
-            ))),
-            _ => {}
-        }
+        lower_line_plan_item(item, &mut group, &mut errors);
     }
     if errors.is_empty() {
         Ok(group)
@@ -133,30 +100,83 @@ fn lower_line_plan(plan: &LinePlan) -> Result<LineTaskGroup, Vec<LinePlanLowerEr
     }
 }
 
-fn lower_group_items(
-    items: &[LinePlanItem],
+fn lower_line_plan_item(
+    item: &LinePlanItem,
     group: &mut LineTaskGroup,
     errors: &mut Vec<LinePlanLowerError>,
 ) {
-    for item in items {
-        match item {
-            LinePlanItem::Thread(thread) => {
-                group
-                    .children
-                    .push(lower_child_task(thread.name(), thread.body(), errors));
-            }
-            LinePlanItem::Finally(statements) => {
-                let scope = lower_scoped_stmt_list(statements, errors);
-                group.finally.extend(scope.body);
-                group.finally.extend(flatten_defer_stack(scope.defer_stack));
-            }
-            LinePlanItem::Stmt(stmt) => lower_line_scope_stmt(stmt, group, errors),
-            LinePlanItem::Raw(raw) => errors.push(LinePlanLowerError::new(format!(
-                "raw grouped line-plan item cannot be lowered: {raw}"
-            ))),
-            _ => {}
+    match item {
+        LinePlanItem::Init(statements) => {
+            let scope = lower_scoped_stmt_list(statements, errors);
+            group.init.extend(scope.body);
+            group.init_defer_stack.extend(scope.defer_stack);
         }
+        LinePlanItem::Thread(thread) => {
+            group
+                .children
+                .push(lower_child_task(thread.name(), thread.body(), errors));
+        }
+        LinePlanItem::On { trigger, body } => {
+            let mut task = lower_child_task(Some(&expr_label(trigger)), body, errors);
+            if let Expr::Path(name) = trigger {
+                task.body
+                    .insert(0, LineEffectRequest::WaitMark(name.clone()));
+            }
+            group.children.push(task);
+        }
+        LinePlanItem::Finally(statements) => {
+            let scope = lower_scoped_stmt_list(statements, errors);
+            group.finally.extend(scope.body);
+            group.finally.extend(flatten_defer_stack(scope.defer_stack));
+        }
+        LinePlanItem::Stmt(stmt) => {
+            lower_line_scope_stmt(stmt, group, errors);
+        }
+        LinePlanItem::TimedCue { anchor, body } => {
+            group.children.push(lower_timed_cue(anchor, body, errors));
+        }
+        LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
+            for item in items {
+                lower_line_plan_item(item, group, errors);
+            }
+        }
+        LinePlanItem::Expr(expr) => {
+            group.init.extend(lower_expr_effect(expr, errors));
+        }
+        LinePlanItem::Option { name, .. } => push_unsupported_item(errors, "option", name),
+        LinePlanItem::Let { .. } => push_unsupported_item(errors, "let", ""),
+        LinePlanItem::Out(_) => push_unsupported_item(errors, "out", ""),
+        LinePlanItem::CancelRule(rule) => {
+            push_unsupported_item(errors, "cancel rule", rule.trigger());
+        }
+        LinePlanItem::Memo { name, .. } => push_unsupported_item(errors, "memo", name),
+        LinePlanItem::Assert { .. } => push_unsupported_item(errors, "assert", ""),
+        LinePlanItem::Raw(raw) => errors.push(LinePlanLowerError::new(format!(
+            "raw line-plan item cannot be lowered: {raw}"
+        ))),
     }
+}
+
+fn lower_timed_cue(
+    anchor: &Expr,
+    body: &Expr,
+    errors: &mut Vec<LinePlanLowerError>,
+) -> LineChildTask {
+    let mut task = LineChildTask {
+        name: Some(format!("at({})", expr_label(anchor))),
+        body: Vec::new(),
+        defer_stack: Vec::new(),
+    };
+    if let Some(duration) = duration_expr(anchor) {
+        task.body.push(LineEffectRequest::Wait(duration));
+    } else {
+        errors.push(LinePlanLowerError::new(format!(
+            "timed cue anchor must be a literal duration for Phase 1.5 lowering, found {}",
+            expr_label(anchor)
+        )));
+    }
+    append_expr_scope(body, &mut task.body, &mut task.defer_stack, errors);
+    task
 }
 
 fn lower_child_task(
@@ -275,6 +295,16 @@ fn lower_stmt(stmt: &Stmt, errors: &mut Vec<LinePlanLowerError>) -> Vec<LineEffe
 }
 
 fn lower_expr_effect(expr: &Expr, errors: &mut Vec<LinePlanLowerError>) -> Vec<LineEffectRequest> {
+    if matches!(
+        expr,
+        Expr::Block { .. } | Expr::NamedBlock { .. } | Expr::ComputationBlock { .. }
+    ) {
+        let mut body = Vec::new();
+        let mut defer_stack = Vec::new();
+        append_expr_scope(expr, &mut body, &mut defer_stack, errors);
+        body.extend(flatten_defer_stack(defer_stack));
+        return body;
+    }
     if let Expr::Pipe { lhs, rhs } = expr
         && is_drop_intrinsic(rhs)
     {
@@ -293,6 +323,42 @@ fn lower_expr_effect(expr: &Expr, errors: &mut Vec<LinePlanLowerError>) -> Vec<L
         expr_label(expr)
     )));
     Vec::new()
+}
+
+fn append_expr_scope(
+    expr: &Expr,
+    body: &mut Vec<LineEffectRequest>,
+    defer_stack: &mut Vec<Vec<LineEffectRequest>>,
+    errors: &mut Vec<LinePlanLowerError>,
+) {
+    match expr {
+        Expr::Block { statements, value }
+        | Expr::ComputationBlock {
+            statements, value, ..
+        }
+        | Expr::NamedBlock {
+            statements, value, ..
+        } => {
+            let scope = lower_scoped_stmt_list(statements, errors);
+            body.extend(scope.body);
+            defer_stack.extend(scope.defer_stack);
+            if let Some(value) = value {
+                body.extend(lower_expr_effect(value, errors));
+            }
+        }
+        other => body.extend(lower_expr_effect(other, errors)),
+    }
+}
+
+fn push_unsupported_item(errors: &mut Vec<LinePlanLowerError>, kind: &str, detail: &str) {
+    let suffix = if detail.is_empty() {
+        String::new()
+    } else {
+        format!(" `{detail}`")
+    };
+    errors.push(LinePlanLowerError::new(format!(
+        "line-plan {kind}{suffix} is not supported by Phase 1.5 runtime lowering"
+    )));
 }
 
 fn is_drop_intrinsic(expr: &Expr) -> bool {

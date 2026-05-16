@@ -93,6 +93,7 @@ defer in init               -> LineTaskGroup.init_defer_stack
 thread name { ... }         -> LineTaskGroup.children
 defer in thread/on handler  -> LineChildTask.defer_stack
 defer in line scope         -> LineTaskGroup.defer_stack
+at(0.35s) { ... }           -> child task that waits 0.35s, then runs body
 on .mark { ... }            -> child task that waits for .mark, then runs body
 finally { ... }             -> LineTaskGroup.finally
 wait mark .x                -> LineEffectRequest::WaitMark(".x")
@@ -102,14 +103,16 @@ wait 0.35s                  -> LineEffectRequest::Wait(...)
 call-like expression stmt   -> LineEffectRequest::EmitSignal
 ```
 
-Unsupported or raw line-plan statements fail lowering. They are not reparsed or
-silently accepted.
+Unsupported or raw line-plan statements fail lowering. They are not reparsed,
+silently accepted, or dropped from the runtime plan.
 
 `defer` is not thread-specific syntax. It registers cleanup on the current
 runtime scope. In the Phase 1.5 line-plan model, the line scope, `init` scope,
 thread scopes, and event-handler scopes each have a cleanup stack. Defers inside
 `finally` are lowered into the end of the finalizer body in reverse registration
-order because `finally` itself is already cleanup code.
+order because `finally` itself is already cleanup code. A registered `defer`
+must run when its owning scope exits, including normal completion, early control
+transfer, line cancellation, and child-task cancellation.
 
 Lifetime registry paths are typed static keys, not stringly dynamic maps.
 The core model keeps the data Sans I/O; host backends receive deterministic
@@ -172,7 +175,9 @@ Line-level `finally` runs after line-scoped child tasks are cancelled/joined and
 their defer stacks have run, but before any remaining automatic line-registry
 drops. Scoped cleanup is represented by `defer { ... }`, so flow-level threads,
 line-plan threads, handler tasks, and ordinary lexical runtime scopes share the
-same cleanup model.
+same cleanup model. The VM must treat cancellation as scope exit for cleanup:
+child task cancellation first unwinds that task's defer stack, then the line
+task group proceeds to line-level finalization.
 
 ## Determinism
 

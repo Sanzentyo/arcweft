@@ -15,6 +15,7 @@ flow @flow.opening opening {
             wait 0.35s
             tick_motion()
             defer { cleanup_motion() }
+        at(0.42s): alice.stage.face(worried)
         on .release_focus:
             'line.focus.main |> drop
             defer { cleanup_handler() }
@@ -51,7 +52,7 @@ flow @flow.opening opening {
             "cleanup_line_scope()".to_owned()
         )]]
     );
-    assert_eq!(group.children.len(), 2);
+    assert_eq!(group.children.len(), 3);
     assert_eq!(group.children[0].name.as_deref(), Some("motion"));
     assert_eq!(
         group.children[0].body,
@@ -67,9 +68,17 @@ flow @flow.opening opening {
             "cleanup_motion()".to_owned()
         )]]
     );
-    assert_eq!(group.children[1].name.as_deref(), Some(".release_focus"));
+    assert_eq!(group.children[1].name.as_deref(), Some("at(0.42s)"));
     assert_eq!(
         group.children[1].body,
+        vec![
+            LineEffectRequest::Wait(arcweft_core::LogicalDuration::from_nanos(420_000_000)),
+            LineEffectRequest::EmitSignal("alice.stage.face(worried)".to_owned()),
+        ]
+    );
+    assert_eq!(group.children[2].name.as_deref(), Some(".release_focus"));
+    assert_eq!(
+        group.children[2].body,
         vec![
             LineEffectRequest::WaitMark(".release_focus".to_owned()),
             LineEffectRequest::DropHandle {
@@ -78,7 +87,7 @@ flow @flow.opening opening {
         ]
     );
     assert_eq!(
-        group.children[1].defer_stack,
+        group.children[2].defer_stack,
         vec![vec![LineEffectRequest::EmitSignal(
             "cleanup_handler()".to_owned()
         )]]
@@ -110,5 +119,58 @@ flow @flow.raw raw {
         errors
             .iter()
             .any(|error| error.message().contains("raw line-plan item"))
+    );
+}
+
+#[test]
+fn line_plan_runtime_lowering_rejects_unlowered_semantic_items() {
+    let tree = parse_ok(
+        r"
+flow @flow.unsupported unsupported {
+    alice[待って。[p]]
+    with:
+        voice = auto
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("unsupported semantic item fixture lowers to HIR");
+    validate_typecheck_ready(&hir).expect("unsupported semantic item fixture is typecheck-ready");
+
+    let errors = lower_line_task_groups(&hir).expect_err("line option is not silently dropped");
+
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("line-plan option `voice`"))
+    );
+}
+
+#[test]
+fn line_plan_runtime_lowering_lowers_nested_group_expressions() {
+    let tree = parse_ok(
+        r"
+flow @flow.grouped grouped {
+    alice[待って。[p]]
+    with {
+        start {
+            together {
+                cue_start()
+                cue_next()
+            }
+        }
+    }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("group fixture lowers to HIR");
+    validate_typecheck_ready(&hir).expect("group fixture is typecheck-ready");
+
+    let groups = lower_line_task_groups(&hir).expect("grouped expressions lower");
+    assert_eq!(
+        groups[0].group().init,
+        vec![
+            LineEffectRequest::EmitSignal("cue_start()".to_owned()),
+            LineEffectRequest::EmitSignal("cue_next()".to_owned()),
+        ]
     );
 }

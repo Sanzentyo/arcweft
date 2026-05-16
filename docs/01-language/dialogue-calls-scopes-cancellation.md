@@ -324,6 +324,10 @@ Scoped cleanup uses `defer { ... }` on the current runtime scope. Line-wide
 cleanup may use either a line-scope `defer` or a line-level `finally { ... }`
 item in the `with` block.
 Line-local events use `[mark .name]` in text and `on .name` in the line plan.
+Registered `defer` blocks run when their owning scope exits, including normal
+completion, early control transfer, line cancellation, and child-task
+cancellation. A cancelled child task must unwind its defer stack before it is
+considered joined.
 
 ```awft
 alice.say(look=smile, focus=.soft)[
