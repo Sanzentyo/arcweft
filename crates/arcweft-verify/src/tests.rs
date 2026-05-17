@@ -98,6 +98,25 @@ flow @flow.thread_join thread_join {
 }
 
 #[test]
+fn semantic_effect_capability_is_verifier_obligation() {
+    let report = report(
+        r"
+flow @flow.effects effects {
+    signal.set(@signal.current_flow, @flow.effects)
+}
+",
+        VerificationMode::Test,
+    );
+
+    assert!(report.has_errors());
+    assert!(report.obligations.iter().any(|obligation| {
+        obligation.kind == ProofObligationKind::EffectCapability
+            && obligation.discharge == ProofDischarge::Missing
+            && obligation.subject.as_deref() == Some("signal.write")
+    }));
+}
+
+#[test]
 fn semantic_cfg_discharge_is_not_overridden_by_verifier_scan() {
     let report = report(
         r"

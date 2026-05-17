@@ -242,11 +242,14 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `arcweft-lang-sema` now owns the first `SemanticReport` pass for CFG-aware
   lifetime/drop/thread/write analysis. The pass carries path-sensitive
   `FlowFacts`, applies `defer` cleanup by completed/cancelled/failed outcome,
-  and prefers semantic-owned obligations over the older verifier scan.
+  runs bounded fixed-point loop analysis for `break`/`continue`, checks proof
+  references against the promoted lifetime target, validates that unsafe audit
+  blocks contain the unchecked promotion they justify, and prefers
+  semantic-owned obligations over the older verifier scan.
   `arcweft-verify` merges that report with shared JSON diagnostics for lifetime
-  promotion, unsafe audits, upper-lifetime writes, thread capture, thread join
-  typing, MustDrop discharge, trusted assumptions, raw syntax, and simple
-  runtime write conflicts. Solver dependencies are isolated in
+  promotion, unsafe audits, upper-lifetime writes, effect capabilities, thread
+  capture, thread join typing, MustDrop discharge, trusted assumptions, raw
+  syntax, and simple runtime write conflicts. Solver dependencies are isolated in
   `arcweft-verify-z3` and `arcweft-verify-oxiz`; CLI/LSP consume verifier
   reports rather than reimplementing validation.
 - `Char` / `TextCluster` are now part of the accepted primitive model. `Char`
@@ -273,10 +276,12 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `flow @flow:. opening`, `character @. alice Alice`, `signal @signal:. ready`,
   and `source @source:. metrics()` normalize through that following name.
 - Remaining P2 semantic work is now refinement rather than missing surface
-  coverage: full fixed-point loop CFG, type-directed promotion proof rules,
-  richer `unsafe lifetime` audit region validation, precise capability/effect
-  checking, and complete thread result inference remain TODOs for the
-  compiler/HIR layer.
+  coverage: fixed-point loop analysis is bounded and syntactic, proof discharge
+  is target-aware but not solver-checked, unsafe audits validate shape but not
+  memory semantics, effect capabilities currently cover known write calls such
+  as `signal.set` and `metric.set`, and thread result inference is based on
+  current syntactic result labels. Full ownership/region solving and
+  type-directed effect inference remain compiler/HIR TODOs.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure

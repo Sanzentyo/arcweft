@@ -8,6 +8,8 @@ pub(super) enum ExitReason {
     Completed,
     Cancelled,
     Failed,
+    Break,
+    Continue,
 }
 
 /// Cleanup registered by `defer` in the current runtime scope.
@@ -45,6 +47,10 @@ impl DeferredCleanup {
     }
 
     fn applies_to(&self, reason: ExitReason) -> bool {
+        let reason = match reason {
+            ExitReason::Break | ExitReason::Continue => ExitReason::Completed,
+            reason => reason,
+        };
         matches!(self.outcome, DeferOutcome::Always)
             || matches!(
                 (self.outcome, reason),
@@ -87,6 +93,20 @@ impl FlowFacts {
         }
         live
     }
+
+    pub(super) fn merge_from(&mut self, other: &Self) -> bool {
+        let before = self.clone();
+        self.live_must_drop
+            .extend(other.live_must_drop.iter().cloned());
+        self.touched_must_drop
+            .extend(other.touched_must_drop.iter().cloned());
+        for cleanup in &other.deferred_cleanups {
+            if !self.deferred_cleanups.contains(cleanup) {
+                self.deferred_cleanups.push(cleanup.clone());
+            }
+        }
+        *self != before
+    }
 }
 
 impl ExitPath {
@@ -128,13 +148,11 @@ impl BlockFlow {
 
 pub(super) fn transfer_reason(stmt: &Stmt, context: ExitReason) -> Option<ExitReason> {
     match stmt {
-        Stmt::Return(_)
-        | Stmt::Close(_)
-        | Stmt::Goto(_)
-        | Stmt::Yield(_)
-        | Stmt::Out { .. }
-        | Stmt::Break { .. }
-        | Stmt::Continue { .. } => Some(context),
+        Stmt::Return(_) | Stmt::Close(_) | Stmt::Goto(_) | Stmt::Yield(_) | Stmt::Out { .. } => {
+            Some(context)
+        }
+        Stmt::Break { .. } => Some(ExitReason::Break),
+        Stmt::Continue { .. } => Some(ExitReason::Continue),
         Stmt::Panic(_) | Stmt::Fail(_) | Stmt::Bail(_) => Some(ExitReason::Failed),
         _ => None,
     }

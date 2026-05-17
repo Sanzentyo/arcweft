@@ -179,6 +179,28 @@ flow @flow.proven proven {
 }
 
 #[test]
+fn semantic_pass_rejects_formal_proof_for_wrong_lifetime_target() {
+    let report = semantic_report(
+        r"
+proof @proof.line_only {
+    check no_lifetime_below(LineSummary, 'line)
+}
+
+flow @flow.proven proven {
+    let summary = promote('flow, proof = @proof.line_only)
+}
+",
+        &TypeCheckEnv::new(),
+    );
+
+    assert!(report.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::LifetimePromotion
+            && obligation.discharge == SemanticDischarge::Missing
+            && obligation.subject.as_deref() == Some("'flow")
+    }));
+}
+
+#[test]
 fn semantic_pass_reports_thread_join_result_type_conflicts() {
     let report = semantic_report(
         r#"
@@ -193,6 +215,47 @@ flow @flow.thread_join thread_join {
     );
 
     assert!(report.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::ThreadJoinTyping
+            && obligation.discharge == SemanticDischarge::Missing
+    }));
+}
+
+#[test]
+fn semantic_pass_reports_thread_join_fallthrough_unit_conflicts() {
+    let report = semantic_report(
+        r"
+flow @flow.thread_join thread_join {
+    thread worker {
+        if ready {
+            out 1
+        }
+    }
+}
+",
+        &TypeCheckEnv::new(),
+    );
+
+    assert!(report.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::ThreadJoinTyping
+            && obligation.discharge == SemanticDischarge::Missing
+    }));
+}
+
+#[test]
+fn semantic_pass_ignores_cleanup_out_for_thread_join_result() {
+    let report = semantic_report(
+        r#"
+flow @flow.thread_join thread_join {
+    thread worker {
+        defer { out "cleanup" }
+        out 1
+    }
+}
+"#,
+        &TypeCheckEnv::new(),
+    );
+
+    assert!(!report.obligations.iter().any(|obligation| {
         obligation.kind == SemanticObligationKind::ThreadJoinTyping
             && obligation.discharge == SemanticDischarge::Missing
     }));
@@ -251,6 +314,44 @@ flow @flow.conflict conflict {
 }
 
 #[test]
+fn semantic_pass_requires_effect_capability_for_signal_and_metric_writes() {
+    let source = r"
+flow @flow.effects effects {
+    signal.set(@signal.current_flow, @flow.effects)
+    metric.set(@metric.frame_count, 1)
+}
+";
+    let missing = semantic_report(source, &TypeCheckEnv::new());
+    assert!(missing.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::EffectCapability
+            && obligation.discharge == SemanticDischarge::Missing
+            && obligation.subject.as_deref() == Some("signal.write")
+    }));
+    assert!(missing.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::EffectCapability
+            && obligation.discharge == SemanticDischarge::Missing
+            && obligation.subject.as_deref() == Some("metric.write")
+    }));
+
+    let allowed = semantic_report(
+        source,
+        &TypeCheckEnv::new()
+            .with_capability("signal.write")
+            .with_capability("metric.write"),
+    );
+    assert!(allowed.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::EffectCapability
+            && obligation.discharge == SemanticDischarge::Automatic
+            && obligation.subject.as_deref() == Some("signal.write")
+    }));
+    assert!(allowed.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::EffectCapability
+            && obligation.discharge == SemanticDischarge::Automatic
+            && obligation.subject.as_deref() == Some("metric.write")
+    }));
+}
+
+#[test]
 fn semantic_pass_records_unsafe_audit_and_audited_promotion() {
     let report = semantic_report(
         r#"
@@ -273,5 +374,26 @@ flow @flow.audit audit {
                 obligation.discharge,
                 SemanticDischarge::AuditedUnsafe { .. }
             )
+    }));
+}
+
+#[test]
+fn semantic_pass_rejects_empty_unsafe_lifetime_audit() {
+    let report = semantic_report(
+        r#"
+flow @flow.audit audit {
+    unsafe lifetime @unsafe.empty reason = "owned clone" {
+        /// SAFETY: this block has no unchecked promotion.
+        let x = 1
+    }
+}
+"#,
+        &TypeCheckEnv::new(),
+    );
+
+    assert!(report.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::UnsafeLifetimeAudit
+            && obligation.discharge == SemanticDischarge::Missing
+            && obligation.subject.as_deref() == Some("unsafe.empty")
     }));
 }

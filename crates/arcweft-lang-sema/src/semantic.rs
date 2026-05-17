@@ -7,10 +7,12 @@ use arcweft_lang_hir::{
     Stmt, TextRange, ThreadBlock, TriggerPattern,
 };
 use arcweft_lang_syntax::{Literal, LoopBlock, SelectBranchHead};
-use facts::{BlockFlow, DeferredCleanup, ExitReason, FlowFacts, transfer_reason};
+use facts::{BlockFlow, DeferredCleanup, ExitPath, ExitReason, FlowFacts, transfer_reason};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 type FlowState = FlowFacts;
+
+const LOOP_FIXPOINT_LIMIT: usize = 16;
 
 /// Semantic verification mode selected by compiler, CLI, or LSP tooling.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -47,6 +49,7 @@ pub enum SemanticObligationKind {
     ThreadCapture,
     ThreadJoinTyping,
     UpperLifetimeWrite,
+    EffectCapability,
     TrustedAssumption,
     RawSyntax,
     RuntimeConflict,
@@ -142,9 +145,14 @@ struct SemanticAnalyzer<'a> {
     report: SemanticReport,
     next_obligation: usize,
     unsafe_stack: Vec<String>,
-    known_proofs: BTreeSet<String>,
+    known_proofs: BTreeMap<String, ProofFacts>,
     known_axioms: BTreeSet<String>,
     reported_must_drop: HashSet<String>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct ProofFacts {
+    lifetime_targets: BTreeSet<String>,
 }
 
 impl<'a> SemanticAnalyzer<'a> {
@@ -158,7 +166,7 @@ impl<'a> SemanticAnalyzer<'a> {
             },
             next_obligation: 0,
             unsafe_stack: Vec::new(),
-            known_proofs: BTreeSet::new(),
+            known_proofs: BTreeMap::new(),
             known_axioms: BTreeSet::new(),
             reported_must_drop: HashSet::new(),
         }
@@ -183,7 +191,8 @@ impl<'a> SemanticAnalyzer<'a> {
             match declaration {
                 HirTopLevelDecl::Proof(proof) => {
                     let id = id_ref_label(proof.id(), "proof");
-                    self.known_proofs.insert(id.clone());
+                    self.known_proofs
+                        .insert(id.clone(), ProofFacts::from_body(proof.body()));
                     self.report.proofs.push(SemanticProofSummary {
                         id,
                         source: span_from_range(proof.range()),
@@ -281,22 +290,22 @@ impl<'a> SemanticAnalyzer<'a> {
                 flow
             }
             HirFlowItem::Loop(block) | HirFlowItem::LetLoop { block, .. } => {
-                self.analyze_loop_flow_items(block.body(), facts)
+                self.analyze_loop_flow_items(block.body(), facts, false)
             }
             HirFlowItem::While(block) => {
                 self.collect_expr(block.condition(), &mut facts);
-                self.analyze_loop_flow_items(block.body(), facts)
+                self.analyze_loop_flow_items(block.body(), facts, true)
             }
             HirFlowItem::WhileLet(block) => {
                 self.collect_expr(block.expr(), &mut facts);
                 if let Some(guard) = block.guard() {
                     self.collect_expr(guard, &mut facts);
                 }
-                self.analyze_loop_flow_items(block.body(), facts)
+                self.analyze_loop_flow_items(block.body(), facts, true)
             }
             HirFlowItem::For(block) => {
                 self.collect_expr(block.source(), &mut facts);
-                self.analyze_loop_flow_items(block.body(), facts)
+                self.analyze_loop_flow_items(block.body(), facts, true)
             }
             HirFlowItem::Dialogue(dialogue) => {
                 for arg in dialogue.args() {
@@ -314,10 +323,43 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn analyze_loop_flow_items(&mut self, body: &[HirFlowItem], facts: FlowFacts) -> BlockFlow {
-        let mut flow = BlockFlow::from_fallthrough(facts.clone());
-        flow.append(self.analyze_flow_items(body, vec![facts]));
-        flow
+    fn analyze_loop_flow_items(
+        &mut self,
+        body: &[HirFlowItem],
+        facts: FlowFacts,
+        may_skip: bool,
+    ) -> BlockFlow {
+        let mut head = facts.clone();
+        let mut exits = Vec::new();
+        let mut breaks = Vec::new();
+
+        for _ in 0..LOOP_FIXPOINT_LIMIT {
+            let body_flow = self.analyze_flow_items(body, vec![head.clone()]);
+            let mut changed = false;
+            for body_facts in body_flow.fallthrough {
+                changed |= head.merge_from(&body_facts);
+            }
+            for exit in body_flow.exits {
+                match exit.reason {
+                    ExitReason::Continue => changed |= head.merge_from(&exit.facts),
+                    ExitReason::Break => push_unique_facts(&mut breaks, exit.facts),
+                    _ => push_unique_exit(&mut exits, exit),
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        let mut fallthrough = Vec::new();
+        if may_skip {
+            push_unique_facts(&mut fallthrough, facts);
+            push_unique_facts(&mut fallthrough, head);
+        }
+        for facts in breaks {
+            push_unique_facts(&mut fallthrough, facts);
+        }
+        BlockFlow { fallthrough, exits }
     }
 
     fn collect_flow_items(&mut self, items: &[HirFlowItem], state: &mut FlowState) {
@@ -447,10 +489,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 flow
             }
-            Stmt::Loop { body } => self.analyze_loop_stmts(body, facts, context),
+            Stmt::Loop { body } => self.analyze_loop_stmts(body, facts, context, false),
             Stmt::While { condition, body } => {
                 self.collect_expr(condition, &mut facts);
-                self.analyze_loop_stmts(body, facts, context)
+                self.analyze_loop_stmts(body, facts, context, true)
             }
             Stmt::WhileLet {
                 expr, guard, body, ..
@@ -459,11 +501,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 if let Some(guard) = guard {
                     self.collect_expr(guard, &mut facts);
                 }
-                self.analyze_loop_stmts(body, facts, context)
+                self.analyze_loop_stmts(body, facts, context, true)
             }
             Stmt::For { source, body, .. } => {
                 self.collect_expr(source, &mut facts);
-                self.analyze_loop_stmts(body, facts, context)
+                self.analyze_loop_stmts(body, facts, context, true)
             }
             Stmt::DeferBlock {
                 outcome,
@@ -512,10 +554,39 @@ impl<'a> SemanticAnalyzer<'a> {
         body: &[Stmt],
         facts: FlowFacts,
         context: ExitReason,
+        may_skip: bool,
     ) -> BlockFlow {
-        let mut flow = BlockFlow::from_fallthrough(facts.clone());
-        flow.append(self.analyze_stmts(body, vec![facts], context));
-        flow
+        let mut head = facts.clone();
+        let mut exits = Vec::new();
+        let mut breaks = Vec::new();
+
+        for _ in 0..LOOP_FIXPOINT_LIMIT {
+            let body_flow = self.analyze_stmts(body, vec![head.clone()], context);
+            let mut changed = false;
+            for body_facts in body_flow.fallthrough {
+                changed |= head.merge_from(&body_facts);
+            }
+            for exit in body_flow.exits {
+                match exit.reason {
+                    ExitReason::Continue => changed |= head.merge_from(&exit.facts),
+                    ExitReason::Break => push_unique_facts(&mut breaks, exit.facts),
+                    _ => push_unique_exit(&mut exits, exit),
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        let mut fallthrough = Vec::new();
+        if may_skip {
+            push_unique_facts(&mut fallthrough, facts);
+            push_unique_facts(&mut fallthrough, head);
+        }
+        for facts in breaks {
+            push_unique_facts(&mut fallthrough, facts);
+        }
+        BlockFlow { fallthrough, exits }
     }
 
     fn collect_transfer_stmt_expr(&mut self, stmt: &Stmt, facts: &mut FlowFacts) {
@@ -971,6 +1042,10 @@ impl<'a> SemanticAnalyzer<'a> {
         state: &mut FlowState,
     ) {
         match method {
+            "set" if matches!(receiver, Expr::Path(path) if matches!(path.as_str(), "signal" | "metric")) =>
+            {
+                self.add_effect_capability_obligation(receiver);
+            }
             "promote" => self.add_promote_obligation(args, false),
             "promote_unchecked" => self.add_promote_obligation(args, true),
             "drop" | "drop_optional" | "on_drop" => {
@@ -1001,7 +1076,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     SemanticDischarge::AuditedUnsafe { id }
                 })
         } else if let Some(id) = proof {
-            if self.known_proofs.contains(&id) {
+            if self.proof_discharges_target(&id, target.as_deref()) {
                 SemanticDischarge::FormalProof { id }
             } else {
                 SemanticDischarge::Missing
@@ -1017,6 +1092,31 @@ impl<'a> SemanticAnalyzer<'a> {
             SemanticObligationKind::LifetimePromotion,
             message,
             target,
+            discharge,
+        );
+    }
+
+    fn proof_discharges_target(&self, id: &str, target: Option<&str>) -> bool {
+        let Some(proof) = self.known_proofs.get(id) else {
+            return false;
+        };
+        target.is_some_and(|target| proof.lifetime_targets.contains(target))
+    }
+
+    fn add_effect_capability_obligation(&mut self, receiver: &Expr) {
+        let Expr::Path(family) = receiver else {
+            return;
+        };
+        let capability = format!("{family}.write");
+        let discharge = if self.env.has_capability(&capability) {
+            SemanticDischarge::Automatic
+        } else {
+            SemanticDischarge::Missing
+        };
+        self.add_obligation(
+            SemanticObligationKind::EffectCapability,
+            format!("effect call `{family}.set` requires capability `{capability}`"),
+            Some(capability),
             discharge,
         );
     }
@@ -1041,7 +1141,8 @@ impl<'a> SemanticAnalyzer<'a> {
             vec![FlowFacts::default()],
             ExitReason::Completed,
         );
-        let output_types = out_type_labels(thread.body());
+        let output_types =
+            thread_result_type_labels(thread.body(), !body_flow.fallthrough.is_empty());
         if output_types.len() > 1 {
             self.add_obligation(
                 SemanticObligationKind::ThreadJoinTyping,
@@ -1144,14 +1245,23 @@ impl<'a> SemanticAnalyzer<'a> {
             has_reason: reason.is_some(),
             has_safety_doc,
         });
-        let discharge = if reason.is_some() && has_safety_doc {
+        let has_reason = reason.is_some_and(is_non_empty_string_literal);
+        let contains_unchecked = stmts_contain_unchecked_promotion(body);
+        let discharge = if has_reason && has_safety_doc && contains_unchecked {
             SemanticDischarge::AuditedUnsafe { id: id.clone() }
         } else {
             SemanticDischarge::Missing
         };
+        let message = if contains_unchecked {
+            format!("unsafe lifetime audit `{id}` must include string reason and SAFETY docs")
+        } else {
+            format!(
+                "unsafe lifetime audit `{id}` must contain the unchecked promotion it justifies"
+            )
+        };
         self.add_obligation(
             SemanticObligationKind::UnsafeLifetimeAudit,
-            format!("unsafe lifetime audit `{id}` must include reason and SAFETY docs"),
+            message,
             Some(id.clone()),
             discharge,
         );
@@ -1495,11 +1605,54 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 }
 
+impl ProofFacts {
+    fn from_body(body: &str) -> Self {
+        Self {
+            lifetime_targets: collect_proof_lifetime_targets(body),
+        }
+    }
+}
+
 fn span_from_range(range: &TextRange) -> SemanticSourceSpan {
     SemanticSourceSpan {
         start: range.start(),
         end: range.end(),
     }
+}
+
+fn push_unique_facts(facts: &mut Vec<FlowFacts>, value: FlowFacts) {
+    if !facts.contains(&value) {
+        facts.push(value);
+    }
+}
+
+fn push_unique_exit(exits: &mut Vec<ExitPath>, value: ExitPath) {
+    if !exits.contains(&value) {
+        exits.push(value);
+    }
+}
+
+fn collect_proof_lifetime_targets(body: &str) -> BTreeSet<String> {
+    let mut targets = BTreeSet::new();
+    let bytes = body.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'\'' {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        index += 1;
+        while index < bytes.len()
+            && (bytes[index].is_ascii_alphanumeric() || matches!(bytes[index], b'_' | b'.' | b':'))
+        {
+            index += 1;
+        }
+        if index > start + 1 {
+            targets.insert(body[start..index].to_owned());
+        }
+    }
+    targets
 }
 
 fn id_ref_label(id: &IdRef, default_family: &str) -> String {
@@ -1549,6 +1702,10 @@ fn lifetime_label_arg(expr: &Expr) -> Option<String> {
     }
 }
 
+fn is_non_empty_string_literal(expr: &Expr) -> bool {
+    matches!(expr, Expr::Literal(Literal::String(value)) if !value.trim().is_empty())
+}
+
 fn is_upper_lifetime(scope: &LifetimeScopeKind) -> bool {
     matches!(
         scope,
@@ -1557,6 +1714,214 @@ fn is_upper_lifetime(scope: &LifetimeScopeKind) -> bool {
             | LifetimeScopeKind::Global
             | LifetimeScopeKind::Persistent
     )
+}
+
+fn stmts_contain_unchecked_promotion(stmts: &[Stmt]) -> bool {
+    stmts.iter().any(stmt_contains_unchecked_promotion)
+}
+
+fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Let { expr, .. }
+        | Stmt::LetElse { expr, .. }
+        | Stmt::Return(expr)
+        | Stmt::Out { expr, .. }
+        | Stmt::Goto(expr)
+        | Stmt::Defer { expr, .. }
+        | Stmt::Yield(expr)
+        | Stmt::Panic(expr)
+        | Stmt::Fail(expr)
+        | Stmt::Bail(expr)
+        | Stmt::Expr(expr)
+        | Stmt::Close(expr)
+        | Stmt::Select(expr)
+        | Stmt::Break {
+            expr: Some(expr), ..
+        }
+        | Stmt::Wait(
+            arcweft_lang_hir::WaitTarget::Duration(expr) | arcweft_lang_hir::WaitTarget::Expr(expr),
+        ) => expr_contains_unchecked_promotion(expr),
+        Stmt::Ensure { condition, message } => {
+            expr_contains_unchecked_promotion(condition)
+                || expr_contains_unchecked_promotion(message)
+        }
+        Stmt::Signal { target, value }
+        | Stmt::LifetimeSet {
+            target,
+            expr: value,
+        } => expr_contains_unchecked_promotion(target) || expr_contains_unchecked_promotion(value),
+        Stmt::LetChoice { .. }
+        | Stmt::LetScope { .. }
+        | Stmt::LetLoop { .. }
+        | Stmt::LetAwait { .. }
+        | Stmt::Wait(arcweft_lang_hir::WaitTarget::Mark(_))
+        | Stmt::Command(_)
+        | Stmt::Break { expr: None, .. }
+        | Stmt::Continue { .. }
+        | Stmt::Raw(_) => false,
+        Stmt::Thread(thread) => stmts_contain_unchecked_promotion(thread.body()),
+        Stmt::DeferBlock { statements, .. }
+        | Stmt::On {
+            body: statements, ..
+        }
+        | Stmt::UnsafeLifetime {
+            body: statements, ..
+        }
+        | Stmt::If {
+            body: statements, ..
+        }
+        | Stmt::Loop { body: statements }
+        | Stmt::While {
+            body: statements, ..
+        }
+        | Stmt::WhileLet {
+            body: statements, ..
+        }
+        | Stmt::For {
+            body: statements, ..
+        } => stmts_contain_unchecked_promotion(statements),
+        Stmt::Match { arms, .. } => arms
+            .iter()
+            .any(|arm| stmts_contain_unchecked_promotion(arm.body())),
+    }
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "expression traversal mirrors Expr so unsafe audit coverage stays auditable"
+)]
+fn expr_contains_unchecked_promotion(expr: &Expr) -> bool {
+    match expr {
+        Expr::Call { callee, args } => {
+            matches!(callee.as_ref(), Expr::Path(path) if path == "promote_unchecked")
+                || expr_contains_unchecked_promotion(callee)
+                || args.iter().any(expr_contains_unchecked_promotion)
+        }
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => {
+            method == "promote_unchecked"
+                || expr_contains_unchecked_promotion(receiver)
+                || args.iter().any(expr_contains_unchecked_promotion)
+        }
+        Expr::Tuple(items) | Expr::List(items) => {
+            items.iter().any(expr_contains_unchecked_promotion)
+        }
+        Expr::NamedArg { value, .. }
+        | Expr::Field { target: value, .. }
+        | Expr::Try { expr: value }
+        | Expr::Await { expr: value, .. }
+        | Expr::Unary { expr: value, .. }
+        | Expr::Closure { body: value, .. } => expr_contains_unchecked_promotion(value),
+        Expr::Binary { lhs, rhs, .. }
+        | Expr::Pipe { lhs, rhs }
+        | Expr::Index {
+            target: lhs,
+            index: rhs,
+        } => expr_contains_unchecked_promotion(lhs) || expr_contains_unchecked_promotion(rhs),
+        Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => fields
+            .iter()
+            .any(|(_, value)| expr_contains_unchecked_promotion(value)),
+        Expr::Block { statements, value }
+        | Expr::ComputationBlock {
+            statements, value, ..
+        }
+        | Expr::NamedBlock {
+            statements, value, ..
+        }
+        | Expr::MemoBlock {
+            statements, value, ..
+        } => {
+            stmts_contain_unchecked_promotion(statements)
+                || value
+                    .as_ref()
+                    .is_some_and(|value| expr_contains_unchecked_promotion(value))
+        }
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            expr_contains_unchecked_promotion(condition)
+                || expr_contains_unchecked_promotion(then_branch)
+                || else_branch
+                    .as_ref()
+                    .is_some_and(|value| expr_contains_unchecked_promotion(value))
+        }
+        Expr::IfLet {
+            expr,
+            guard,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            expr_contains_unchecked_promotion(expr)
+                || guard
+                    .as_ref()
+                    .is_some_and(|guard| expr_contains_unchecked_promotion(guard))
+                || expr_contains_unchecked_promotion(then_branch)
+                || else_branch
+                    .as_ref()
+                    .is_some_and(|value| expr_contains_unchecked_promotion(value))
+        }
+        Expr::Match { scrutinee, arms } => {
+            expr_contains_unchecked_promotion(scrutinee)
+                || arms.iter().any(|arm| {
+                    arm.guard().is_some_and(expr_contains_unchecked_promotion)
+                        || expr_contains_unchecked_promotion(arm.value())
+                })
+        }
+        Expr::Thread { block } => stmts_contain_unchecked_promotion(block.body()),
+        Expr::Range { start, end, .. } => {
+            start
+                .as_ref()
+                .is_some_and(|value| expr_contains_unchecked_promotion(value))
+                || end
+                    .as_ref()
+                    .is_some_and(|value| expr_contains_unchecked_promotion(value))
+        }
+        Expr::DialogueCall { callee, plan, .. } => {
+            expr_contains_unchecked_promotion(callee)
+                || plan.as_ref().is_some_and(|plan| {
+                    plan.items()
+                        .iter()
+                        .any(line_plan_item_contains_unchecked_promotion)
+                })
+        }
+        Expr::Literal(_)
+        | Expr::Path(_)
+        | Expr::Placeholder(_)
+        | Expr::EntityRef(_)
+        | Expr::LifetimePath { .. }
+        | Expr::Raw(_) => false,
+    }
+}
+
+fn line_plan_item_contains_unchecked_promotion(item: &LinePlanItem) -> bool {
+    match item {
+        LinePlanItem::Init(stmts) => stmts_contain_unchecked_promotion(stmts),
+        LinePlanItem::Thread(thread) => stmts_contain_unchecked_promotion(thread.body()),
+        LinePlanItem::On { body, .. } => stmts_contain_unchecked_promotion(body),
+        LinePlanItem::Let { expr, .. }
+        | LinePlanItem::Option { value: expr, .. }
+        | LinePlanItem::Assert { expr, .. }
+        | LinePlanItem::Expr(expr)
+        | LinePlanItem::Out(expr) => expr_contains_unchecked_promotion(expr),
+        LinePlanItem::Stmt(stmt) => stmt_contains_unchecked_promotion(stmt),
+        LinePlanItem::TimedCue { anchor, body } => {
+            expr_contains_unchecked_promotion(anchor) || expr_contains_unchecked_promotion(body)
+        }
+        LinePlanItem::CancelRule(rule) => stmts_contain_unchecked_promotion(rule.action()),
+        LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => items
+            .iter()
+            .any(line_plan_item_contains_unchecked_promotion),
+        LinePlanItem::Memo { options, .. } => options
+            .iter()
+            .any(|(_, value)| expr_contains_unchecked_promotion(value)),
+        LinePlanItem::Raw(_) => false,
+    }
 }
 
 fn is_must_drop_key(key: &LifetimeKey) -> bool {
@@ -1830,15 +2195,21 @@ fn collect_expr_write_keys(expr: &Expr, keys: &mut BTreeSet<String>) {
     }
 }
 
-fn out_type_labels(stmts: &[Stmt]) -> BTreeSet<&'static str> {
+fn thread_result_type_labels(stmts: &[Stmt], can_fallthrough: bool) -> BTreeSet<String> {
     let mut labels = BTreeSet::new();
     for stmt in stmts {
-        collect_out_type_labels(stmt, &mut labels);
+        collect_thread_result_type_labels(stmt, &mut labels);
+    }
+    if can_fallthrough {
+        labels.insert("Unit".to_owned());
+    }
+    if labels.len() > 1 {
+        labels.remove("Unknown");
     }
     labels
 }
 
-fn collect_out_type_labels(stmt: &Stmt, labels: &mut BTreeSet<&'static str>) {
+fn collect_thread_result_type_labels(stmt: &Stmt, labels: &mut BTreeSet<String>) {
     match stmt {
         Stmt::Out { expr, .. } => {
             labels.insert(expr_type_label(expr));
@@ -1847,43 +2218,53 @@ fn collect_out_type_labels(stmt: &Stmt, labels: &mut BTreeSet<&'static str>) {
         | Stmt::Loop { .. }
         | Stmt::While { .. }
         | Stmt::WhileLet { .. }
-        | Stmt::For { .. }
-        | Stmt::DeferBlock { .. }
-        | Stmt::On { .. }
-        | Stmt::Thread(_) => {
+        | Stmt::For { .. } => {
             let body = match stmt {
-                Stmt::Thread(thread) => thread.body(),
                 Stmt::If { body, .. }
                 | Stmt::Loop { body }
                 | Stmt::While { body, .. }
                 | Stmt::WhileLet { body, .. }
-                | Stmt::For { body, .. }
-                | Stmt::DeferBlock {
-                    statements: body, ..
-                }
-                | Stmt::On { body, .. } => body.as_slice(),
+                | Stmt::For { body, .. } => body.as_slice(),
                 _ => &[],
             };
             for stmt in body {
-                collect_out_type_labels(stmt, labels);
+                collect_thread_result_type_labels(stmt, labels);
+            }
+        }
+        Stmt::Match { arms, .. } => {
+            for arm in arms {
+                for stmt in arm.body() {
+                    collect_thread_result_type_labels(stmt, labels);
+                }
+            }
+        }
+        Stmt::LetElse { else_body, .. } => {
+            for stmt in else_body {
+                collect_thread_result_type_labels(stmt, labels);
             }
         }
         _ => {}
     }
 }
 
-fn expr_type_label(expr: &Expr) -> &'static str {
+fn expr_type_label(expr: &Expr) -> String {
     match expr {
-        Expr::Literal(Literal::String(_)) => "String",
-        Expr::Literal(Literal::Char { .. }) => "Char",
-        Expr::Literal(Literal::Int(_)) => "Int",
-        Expr::Literal(Literal::Float(_)) => "Float",
-        Expr::Literal(Literal::Bool(_)) => "Bool",
-        Expr::Literal(Literal::Duration { .. }) => "Duration",
-        Expr::Tuple(_) => "Tuple",
-        Expr::List(_) => "List",
-        Expr::EntityRef(_) => "EntityRef",
-        _ => "Unknown",
+        Expr::Literal(Literal::String(_)) => "String".to_owned(),
+        Expr::Literal(Literal::Char { .. }) => "Char".to_owned(),
+        Expr::Literal(Literal::Int(_)) => "Int".to_owned(),
+        Expr::Literal(Literal::Float(_)) => "Float".to_owned(),
+        Expr::Literal(Literal::Bool(_)) => "Bool".to_owned(),
+        Expr::Literal(Literal::Duration { .. }) => "Duration".to_owned(),
+        Expr::Tuple(items) => {
+            let labels = items.iter().map(expr_type_label).collect::<Vec<_>>();
+            format!("({})", labels.join(", "))
+        }
+        Expr::List(items) => items.first().map_or_else(
+            || "List<Unknown>".to_owned(),
+            |item| format!("List<{}>", expr_type_label(item)),
+        ),
+        Expr::EntityRef(_) => "EntityRef".to_owned(),
+        _ => "Unknown".to_owned(),
     }
 }
 

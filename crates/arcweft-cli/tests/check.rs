@@ -159,6 +159,39 @@ flow @flow.thread_join thread_join {
 }
 
 #[test]
+fn verify_json_reports_effect_capability_obligation() {
+    let path = temp_awft(
+        "verify-effect-capability",
+        r"
+signal @signal:.current_flow: Watch<Ref<Flow>>
+
+flow @flow.effects effects {
+    signal.set(@signal.current_flow, @flow.effects)
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("verify")
+        .arg(&path)
+        .arg("--mode")
+        .arg("test")
+        .arg("--json")
+        .output()
+        .expect("arcw verify runs");
+
+    assert!(
+        !output.status.success(),
+        "missing effect capability should fail test-mode verification"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("effect_capability") && stdout.contains("signal.write"),
+        "JSON report should include the effect capability obligation: {stdout}"
+    );
+}
+
+#[test]
 fn verify_json_respects_semantic_defer_cancel_discharge() {
     let path = temp_awft(
         "verify-cancel-defer",

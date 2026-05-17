@@ -265,12 +265,13 @@ Syntax parser:
 - `analyze_semantics` in `arcweft-lang-sema` produces the first structured
   `SemanticReport`. The pass spans HIR plus syntax statements and now carries
   path-sensitive `FlowFacts` through blocks, branches, line plans, cancellation
-  rules, and thread bodies. Lifetime promotion, audited unsafe regions,
-  upper-lifetime writes, MustDrop discharge for line focus handles, thread
-  capture, thread join result-shape conflicts, raw syntax, trusted assumptions,
-  and sibling thread / line child task write conflicts are surfaced as typed
-  obligations for verifier, CLI, and LSP tooling. Scoped `defer` is applied by
-  outcome, so completed-only cleanup does not discharge cancellation paths.
+  rules, fixed-point loop heads, and thread bodies. Lifetime promotion,
+  audited unsafe regions, upper-lifetime writes, effect capability writes,
+  MustDrop discharge for line focus handles, thread capture, thread join
+  result-shape conflicts, raw syntax, trusted assumptions, and sibling thread /
+  line child task write conflicts are surfaced as typed obligations for
+  verifier, CLI, and LSP tooling. Scoped `defer` is applied by outcome, so
+  completed-only cleanup does not discharge cancellation paths.
 - Typed let patterns and borrow blocks preserve borrow types, and the checker rejects non-`'static` borrowed values crossing `await`, `yield`, `thread`, and `defer` suspension boundaries.
 - Parser/HIR/sema integration tests live under `crates/arcweft-lang-sema/src/tests/`
   while syntax crate unit coverage stays with `arcweft-lang-syntax`; this keeps
@@ -296,9 +297,10 @@ Not implemented in this milestone:
   routing
 - full generic substitution and effect-aware return checking
 - full type environment, name resolution, and type checking
-- inference, overload resolution, traits, generics, contracts, and effect checking
-- fixed-point loop CFG, full nested-scope borrow lifetime analysis, and precise
-  borrow end tracking
+- inference, overload resolution, traits, generics, contracts, and full
+  type-directed effect checking
+- unbounded/solver-backed loop CFG, full nested-scope borrow lifetime analysis,
+  and precise borrow end tracking
 - full semantic expression resolution and type-directed ambiguity resolution
 - full choice expression type unification beyond the current `=> @flow...` case, lifecycle runtime execution, reactive option-state reevaluation, localization extraction, formatter/canonicalizer output, and LSP diagnostics for dynamic labels and unordered map-backed options
 - full localization extraction manifests and formatter/canonicalizer normalization for relative `.suffix` IDs
@@ -307,7 +309,7 @@ Not implemented in this milestone:
 
 ## Verification
 
-Last verified during the CFG-aware semantic verification implementation:
+Last verified during the semantic verification refinement implementation:
 
 ```bash
 cargo fmt --check
