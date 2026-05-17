@@ -278,8 +278,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   and `source @source:. metrics()` normalize through that following name.
 - Remaining P2 semantic work is now refinement rather than missing surface
   coverage: fixed-point loop analysis is bounded and syntactic, proof discharge
-  is target-aware and checks proof-body `ensures`/`check` targets plus
-  unjustified `assume` clauses, unsafe audits validate shape but not memory
+  is target-aware and checks structured proof-body `ensures`/`check` targets,
+  unjustified `assume` clauses, and unknown trusted axiom references; unsafe
+  audits validate shape but not memory
   semantics, and thread result inference is based on current syntactic result
   labels. Effect capabilities are now represented as typed semantic facts:
   `effects { signal.write, metric.write }` on flows/functions and hook header
@@ -290,8 +291,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   line-plan `out`, or upper-lifetime registry writes. Direct explicit
   `drop(local)`, `drop_optional(local)`, `on_drop(local)`, and local `.drop()`
   statements end the tracked local borrow before suspension boundaries such as
-  `await`. Full solver-backed proof term checking and type-directed effect
-  inference remain compiler/HIR TODOs.
+  `await`; branch merges keep one-sided drops as maybe-dropped so they remain
+  rejected before suspension or reuse. Full solver-backed proof term checking
+  and type-directed effect inference remain compiler/HIR TODOs.
 - Verifier JSON uses a stable adjacent-tagged representation for proof
   expressions, including string-carrying variants such as
   `{ "kind": "var", "value": "signal.write" }`.

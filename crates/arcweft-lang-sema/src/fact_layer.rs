@@ -1,4 +1,4 @@
-use arcweft_lang_syntax::{ContractClause, Expr, LifetimeScopeKind};
+use arcweft_lang_syntax::{ContractClause, Expr, LifetimeScopeKind, ProofClause};
 use std::collections::BTreeSet;
 
 /// Capability granted by an effects clause or an external checker environment.
@@ -114,8 +114,8 @@ impl EffectResource {
 }
 
 impl ProofFacts {
-    pub(crate) fn from_body(body: &str) -> Self {
-        collect_proof_facts(body)
+    pub(crate) fn from_clauses(clauses: &[ProofClause], known_axioms: &BTreeSet<String>) -> Self {
+        collect_proof_facts(clauses, known_axioms)
     }
 
     pub(crate) fn discharges_target(&self, target: &str) -> bool {
@@ -294,8 +294,8 @@ fn expr_label(expr: &Expr) -> String {
     }
 }
 
-fn collect_proof_facts(body: &str) -> ProofFacts {
-    let checked_lifetime_targets = collect_checked_lifetime_targets(body);
+fn collect_proof_facts(clauses: &[ProofClause], known_axioms: &BTreeSet<String>) -> ProofFacts {
+    let checked_lifetime_targets = collect_checked_lifetime_targets(clauses);
     let mut issues = Vec::new();
     if checked_lifetime_targets.is_empty() {
         issues.push(ProofIssue::new(
@@ -303,55 +303,60 @@ fn collect_proof_facts(body: &str) -> ProofFacts {
             None,
         ));
     }
-    issues.extend(
-        body.lines()
-            .map(str::trim)
-            .filter(|line| line.starts_with("assume "))
-            .filter(|line| {
-                !(line.contains("reason") || line.contains("axiom") || line.contains("@axiom."))
-            })
-            .map(|line| {
-                ProofIssue::new(
-                    "proof `assume` must cite a reason or trusted axiom",
-                    Some(line.to_owned()),
-                )
-            }),
-    );
+    for clause in clauses {
+        match clause {
+            ProofClause::Assume {
+                source,
+                reason,
+                axiom,
+            } => {
+                if reason.is_none() && axiom.is_none() {
+                    issues.push(ProofIssue::new(
+                        "proof `assume` must cite a reason or trusted axiom",
+                        Some(source.to_owned()),
+                    ));
+                }
+                if let Some(axiom) = axiom
+                    && !known_axioms.contains(axiom)
+                {
+                    issues.push(ProofIssue::new(
+                        format!("proof references unknown trusted axiom `{axiom}`"),
+                        Some(source.to_owned()),
+                    ));
+                }
+            }
+            ProofClause::UseAxiom { id } if !known_axioms.contains(id) => {
+                issues.push(ProofIssue::new(
+                    format!("proof references unknown trusted axiom `{id}`"),
+                    Some(id.to_owned()),
+                ));
+            }
+            ProofClause::Raw { source } => issues.push(ProofIssue::new(
+                "unrecognized proof clause",
+                Some(source.to_owned()),
+            )),
+            _ => {}
+        }
+    }
     ProofFacts {
         checked_lifetime_targets,
         issues,
     }
 }
 
-fn collect_checked_lifetime_targets(body: &str) -> BTreeSet<String> {
+fn collect_checked_lifetime_targets(clauses: &[ProofClause]) -> BTreeSet<String> {
     let mut targets = BTreeSet::new();
-    for line in body.lines().map(str::trim) {
-        if !(line.starts_with("ensures ") || line.starts_with("check ")) {
-            continue;
-        }
-        targets.extend(collect_lifetime_targets(line));
-    }
-    targets
-}
-
-fn collect_lifetime_targets(source: &str) -> BTreeSet<String> {
-    let mut targets = BTreeSet::new();
-    let bytes = source.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] != b'\'' {
-            index += 1;
-            continue;
-        }
-        let start = index;
-        index += 1;
-        while index < bytes.len()
-            && (bytes[index].is_ascii_alphanumeric() || matches!(bytes[index], b'_' | b'.' | b':'))
-        {
-            index += 1;
-        }
-        if index > start + 1 {
-            targets.insert(source[start..index].to_owned());
+    for clause in clauses {
+        match clause {
+            ProofClause::Ensures {
+                lifetime_targets, ..
+            }
+            | ProofClause::Check {
+                lifetime_targets, ..
+            } => {
+                targets.extend(lifetime_targets.iter().cloned());
+            }
+            _ => {}
         }
     }
     targets

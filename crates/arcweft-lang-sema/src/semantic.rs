@@ -194,10 +194,15 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn collect_declarations(&mut self, module: &HirModule) {
         for declaration in module.declarations() {
+            if let HirTopLevelDecl::TrustedAxiom(axiom) = declaration {
+                self.known_axioms.insert(id_ref_label(axiom.id(), "axiom"));
+            }
+        }
+        for declaration in module.declarations() {
             match declaration {
                 HirTopLevelDecl::Proof(proof) => {
                     let id = id_ref_label(proof.id(), "proof");
-                    let facts = ProofFacts::from_body(proof.body());
+                    let facts = ProofFacts::from_clauses(proof.clauses(), &self.known_axioms);
                     for issue in facts.issues() {
                         self.add_obligation(
                             SemanticObligationKind::ProofBody,
@@ -217,7 +222,6 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 HirTopLevelDecl::TrustedAxiom(axiom) => {
                     let id = id_ref_label(axiom.id(), "axiom");
-                    self.known_axioms.insert(id.clone());
                     self.report
                         .trusted_axioms
                         .push(SemanticTrustedAxiomSummary {

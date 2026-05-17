@@ -276,13 +276,17 @@ Syntax parser:
   MustDrop discharge for line focus handles, thread capture, thread join
   result-shape conflicts, raw syntax, trusted assumptions, and sibling thread /
   line child task write conflicts are surfaced as typed obligations for
-  verifier, CLI, and LSP tooling. Scoped `defer` is applied by outcome, so
+  verifier, CLI, and LSP tooling. Proof bodies are structured into typed
+  clauses before semantic analysis, including checked targets, assumptions, and
+  trusted axiom references. Scoped `defer` is applied by outcome, so
   completed-only cleanup does not discharge cancellation paths.
 - Typed let patterns and borrow blocks preserve borrow types, and the checker
   rejects non-`'static` borrowed values crossing `await`, `yield`, `thread`,
   and `defer` suspension boundaries. Direct explicit local drop statements now
   end the tracked borrow before those boundaries for `drop(local)`,
   `drop_optional(local)`, `on_drop(local)`, and local `.drop()` calls.
+  Branch merges preserve one-sided drops as maybe-dropped so they cannot cross
+  suspension boundaries or be reused.
 - Parser/HIR/sema integration tests live under `crates/arcweft-lang-sema/src/tests/`
   while syntax crate unit coverage stays with `arcweft-lang-syntax`; this keeps
   the public crate surfaces separate from broad grammar and semantic coverage.
@@ -311,8 +315,8 @@ Not implemented in this milestone:
   type-directed effect checking
 - unbounded/solver-backed loop CFG and full nested-scope borrow lifetime
   analysis beyond the current region escape and explicit-drop tracking
-- full solver-backed proof term checking beyond current proof-body target and
-  unjustified-assume validation
+- full solver-backed proof term checking beyond current structured proof-body
+  target, assumption, and axiom validation
 - full semantic expression resolution and type-directed ambiguity resolution
 - full choice expression type unification beyond the current `=> @flow...` case, lifecycle runtime execution, reactive option-state reevaluation, localization extraction, formatter/canonicalizer output, and LSP diagnostics for dynamic labels and unordered map-backed options
 - full localization extraction manifests and formatter/canonicalizer normalization for relative `.suffix` IDs

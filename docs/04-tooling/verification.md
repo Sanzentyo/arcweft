@@ -136,14 +136,17 @@ capabilities discharge them automatically.
 
 This Phase 1.9 pass is CFG-aware for blocks, branches, line plans,
 cancellation rules, bounded loop fixed points, and scoped `defer` outcomes. It
-checks proof references against checked `ensures`/`check` proof-body targets,
-reports unjustified proof `assume` clauses as `proof_body` obligations, and
-validates that unsafe audit blocks contain the unchecked operation they justify.
-Ownership/region validation currently rejects borrowed values escaping through
-block final values, returns, line-plan `out`, or upper-lifetime registry writes.
-It remains conservative for full solver-backed proof term checking and
-open-ended effect inference; later compiler passes should refine or discharge
-these obligations rather than bypassing the verifier report.
+checks proof references against typed `ensures` / `check` proof-body targets,
+reports unjustified proof `assume` clauses and unknown trusted axiom references
+as `proof_body` obligations, and validates that unsafe audit blocks contain the
+unchecked operation they justify. Ownership/region validation rejects borrowed
+values escaping through block final values, returns, line-plan `out`, or
+upper-lifetime registry writes, and the type checker tracks direct local borrow
+drops across branch merges so maybe-dropped values cannot cross suspension
+boundaries or be reused. It remains conservative for full solver-backed proof
+term checking and open-ended effect inference; later compiler passes should
+refine or discharge these obligations rather than bypassing the verifier
+report.
 
 Verifier JSON serializes proof expressions with adjacent tags so string-carrying
 variants remain stable across serde implementations:

@@ -555,6 +555,80 @@ flow @flow.borrow borrow {
 }
 
 #[test]
+fn typecheck_allows_match_when_every_arm_drops_before_await_boundary() {
+    let tree = parse_ok(
+        r"
+flow @flow.borrow borrow {
+    let pixels: &'asset [Rgba8] = bg.pixels()
+    match mode {
+        .Fast => drop(pixels)
+        _ => drop(pixels)
+    }
+    try await load_avatar() with { pending p => progress.set(p.ratio) }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("all-arm drop fixture lowers");
+    let pixel_borrow = TypeKind::BorrowRef {
+        lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
+        inner: Box::new(TypeKind::Slice(Box::new(TypeKind::Named(
+            "Rgba8".to_owned(),
+        )))),
+    };
+    let env = TypeCheckEnv::new()
+        .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
+        .with_symbol("mode", TypeKind::Named("Mode".to_owned()))
+        .with_method(
+            TypeKind::Named("ImageHandle".to_owned()),
+            "pixels",
+            pixel_borrow,
+        )
+        .with_function(
+            "load_avatar",
+            TypeKind::Need {
+                ready: Box::new(TypeKind::Unit),
+                error: Box::new(TypeKind::Named("AssetError".to_owned())),
+            },
+        );
+
+    typecheck_hir(&hir, &env).expect("all match arms end borrow before await");
+}
+
+#[test]
+fn typecheck_rejects_use_after_explicit_borrow_drop() {
+    let tree = parse_ok(
+        r"
+flow @flow.borrow borrow {
+    let pixels: &'asset [Rgba8] = bg.pixels()
+    drop(pixels)
+    let again = pixels
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("use-after-drop fixture lowers");
+    let pixel_borrow = TypeKind::BorrowRef {
+        lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
+        inner: Box::new(TypeKind::Slice(Box::new(TypeKind::Named(
+            "Rgba8".to_owned(),
+        )))),
+    };
+    let env = TypeCheckEnv::new()
+        .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
+        .with_method(
+            TypeKind::Named("ImageHandle".to_owned()),
+            "pixels",
+            pixel_borrow,
+        );
+
+    let errors = typecheck_hir(&hir, &env).expect_err("dropped borrow local cannot be reused");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("used after it was dropped"))
+    );
+}
+
+#[test]
 fn typechecks_await_wait_view_branches() {
     let tree = parse_ok(
         r"

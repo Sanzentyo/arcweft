@@ -9,7 +9,7 @@ use arcweft_lang_syntax::{
 use arcweft_lang_syntax::{
     BinaryOp, Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind, Literal,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use thiserror::Error;
 
 /// Entity family inferred from an Arcweft public id prefix.
@@ -198,7 +198,7 @@ struct TypeChecker<'a> {
     env: &'a TypeCheckEnv,
     errors: Vec<TypeCheckError>,
     active_borrows: Vec<String>,
-    borrow_local_lifetimes: HashMap<String, Vec<String>>,
+    borrow_local_lifetimes: HashMap<String, BorrowLocalState>,
     locals: HashMap<String, TypeKind>,
     loop_stack: Vec<LoopContext>,
     line_label_stack: Vec<Option<String>>,
@@ -214,7 +214,7 @@ struct TypeChecker<'a> {
 #[derive(Clone, Debug)]
 struct TypeCheckerScopeSnapshot {
     active_borrows: Vec<String>,
-    borrow_local_lifetimes: HashMap<String, Vec<String>>,
+    borrow_local_lifetimes: HashMap<String, BorrowLocalState>,
     locals: HashMap<String, TypeKind>,
     active_presentation_defaults: HashMap<String, String>,
     lifetime_guarantees: HashSet<LifetimeKey>,
@@ -225,7 +225,14 @@ struct TypeCheckerScopeSnapshot {
 #[derive(Clone, Debug)]
 struct BorrowStateSnapshot {
     active_borrows: Vec<String>,
-    borrow_local_lifetimes: HashMap<String, Vec<String>>,
+    borrow_local_lifetimes: HashMap<String, BorrowLocalState>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum BorrowLocalState {
+    Live(Vec<String>),
+    Dropped,
+    MaybeDropped(Vec<String>),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -233,6 +240,40 @@ struct LoopContext {
     label: Option<String>,
     allows_value_break: bool,
     break_types: Vec<TypeKind>,
+}
+
+impl BorrowLocalState {
+    fn lifetimes(&self) -> &[String] {
+        match self {
+            Self::Live(lifetimes) | Self::MaybeDropped(lifetimes) => lifetimes,
+            Self::Dropped => &[],
+        }
+    }
+}
+
+fn merge_borrow_local_states(states: &[&BorrowLocalState]) -> BorrowLocalState {
+    let has_live = states
+        .iter()
+        .any(|state| matches!(state, BorrowLocalState::Live(_)));
+    let has_dropped = states
+        .iter()
+        .any(|state| matches!(state, BorrowLocalState::Dropped));
+    let has_maybe = states
+        .iter()
+        .any(|state| matches!(state, BorrowLocalState::MaybeDropped(_)));
+    let lifetimes = states
+        .iter()
+        .flat_map(|state| state.lifetimes())
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    match (has_live, has_dropped, has_maybe) {
+        (false, true, false) => BorrowLocalState::Dropped,
+        (true, false, false) => BorrowLocalState::Live(lifetimes),
+        _ => BorrowLocalState::MaybeDropped(lifetimes),
+    }
 }
 
 impl TypeChecker<'_> {
@@ -429,29 +470,13 @@ impl TypeChecker<'_> {
                 self.check_await_binding(pattern, await_with);
             }
             HirFlowItem::If(block) => {
-                self.expect_expr_type(block.condition(), &TypeKind::Bool, "if condition");
-                let borrow_snapshot = self.snapshot_borrow_state();
-                self.check_flow_items(block.body());
-                self.restore_borrow_state(borrow_snapshot);
+                self.check_flow_if_block(block);
             }
             HirFlowItem::IfLet(block) => {
                 self.check_if_let_block(block);
             }
             HirFlowItem::Match(block) => {
-                let expr_type = self.check_expr(block.expr());
-                for arm in block.arms() {
-                    let borrow_snapshot = self.snapshot_borrow_state();
-                    let outer_locals = self.locals.clone();
-                    for (name, ty) in let_else_bindings(arm.pattern(), expr_type.as_ref()) {
-                        self.locals.insert(name, ty);
-                    }
-                    if let Some(guard) = arm.guard() {
-                        self.expect_expr_type(guard, &TypeKind::Bool, "match arm guard");
-                    }
-                    self.check_flow_items(arm.body());
-                    self.restore_borrow_state(borrow_snapshot);
-                    self.locals = outer_locals;
-                }
+                self.check_flow_match_block(block);
             }
             HirFlowItem::Loop(block) => {
                 self.check_loop_block(block, true);
@@ -494,6 +519,41 @@ impl TypeChecker<'_> {
                     self.check_expr(arg);
                 }
             }
+        }
+    }
+
+    fn check_flow_if_block(&mut self, block: &arcweft_lang_hir::HirIf) {
+        self.expect_expr_type(block.condition(), &TypeKind::Bool, "if condition");
+        let borrow_snapshot = self.snapshot_borrow_state();
+        self.check_flow_items(block.body());
+        let then_state = self.snapshot_borrow_state();
+        self.merge_borrow_state_from_paths(
+            &borrow_snapshot,
+            &[borrow_snapshot.clone(), then_state],
+        );
+    }
+
+    fn check_flow_match_block(&mut self, block: &arcweft_lang_hir::HirMatch) {
+        let expr_type = self.check_expr(block.expr());
+        let base_borrow_snapshot = self.snapshot_borrow_state();
+        let mut arm_states = Vec::new();
+        for arm in block.arms() {
+            self.restore_borrow_state(base_borrow_snapshot.clone());
+            let outer_locals = self.locals.clone();
+            for (name, ty) in let_else_bindings(arm.pattern(), expr_type.as_ref()) {
+                self.locals.insert(name, ty);
+            }
+            if let Some(guard) = arm.guard() {
+                self.expect_expr_type(guard, &TypeKind::Bool, "match arm guard");
+            }
+            self.check_flow_items(arm.body());
+            arm_states.push(self.snapshot_borrow_state());
+            self.locals = outer_locals;
+        }
+        if arm_states.is_empty() {
+            self.restore_borrow_state(base_borrow_snapshot);
+        } else {
+            self.merge_borrow_state_from_paths(&base_borrow_snapshot, &arm_states);
         }
     }
 
@@ -589,26 +649,59 @@ impl TypeChecker<'_> {
             if lifetimes.is_empty() {
                 continue;
             }
+            self.clear_borrow_local(&name);
             self.active_borrows.extend(lifetimes.iter().cloned());
             self.borrow_local_lifetimes
-                .entry(name)
-                .or_default()
-                .extend(lifetimes);
+                .insert(name, BorrowLocalState::Live(lifetimes));
         }
     }
 
     fn release_borrow_local(&mut self, name: &str) {
-        let Some(lifetimes) = self.borrow_local_lifetimes.remove(name) else {
+        let Some(state) = self.borrow_local_lifetimes.get(name).cloned() else {
             return;
         };
-        for lifetime in lifetimes {
-            if let Some(index) = self
-                .active_borrows
-                .iter()
-                .position(|active| active == &lifetime)
-            {
-                self.active_borrows.remove(index);
+        match state {
+            BorrowLocalState::Live(lifetimes) => {
+                for lifetime in &lifetimes {
+                    self.remove_active_borrow_lifetime(lifetime);
+                }
+                self.borrow_local_lifetimes
+                    .insert(name.to_owned(), BorrowLocalState::Dropped);
             }
+            BorrowLocalState::MaybeDropped(lifetimes) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "borrowed local `{name}` may already have been dropped on another control-flow path"
+                )));
+                for lifetime in &lifetimes {
+                    self.remove_active_borrow_lifetime(lifetime);
+                }
+                self.borrow_local_lifetimes
+                    .insert(name.to_owned(), BorrowLocalState::Dropped);
+            }
+            BorrowLocalState::Dropped => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "borrowed local `{name}` was already dropped"
+                )));
+            }
+        }
+    }
+
+    fn clear_borrow_local(&mut self, name: &str) {
+        let Some(state) = self.borrow_local_lifetimes.remove(name) else {
+            return;
+        };
+        for lifetime in state.lifetimes() {
+            self.remove_active_borrow_lifetime(lifetime);
+        }
+    }
+
+    fn remove_active_borrow_lifetime(&mut self, lifetime: &str) {
+        if let Some(index) = self
+            .active_borrows
+            .iter()
+            .position(|active| active == lifetime)
+        {
+            self.active_borrows.remove(index);
         }
     }
 
@@ -622,6 +715,32 @@ impl TypeChecker<'_> {
     fn restore_borrow_state(&mut self, snapshot: BorrowStateSnapshot) {
         self.active_borrows = snapshot.active_borrows;
         self.borrow_local_lifetimes = snapshot.borrow_local_lifetimes;
+    }
+
+    fn merge_borrow_state_from_paths(
+        &mut self,
+        base: &BorrowStateSnapshot,
+        paths: &[BorrowStateSnapshot],
+    ) {
+        let mut merged = HashMap::new();
+        for (name, base_state) in &base.borrow_local_lifetimes {
+            let states = paths
+                .iter()
+                .map(|path| path.borrow_local_lifetimes.get(name).unwrap_or(base_state))
+                .collect::<Vec<_>>();
+            merged.insert(name.clone(), merge_borrow_local_states(&states));
+        }
+        self.borrow_local_lifetimes = merged;
+        self.rebuild_active_borrows();
+    }
+
+    fn rebuild_active_borrows(&mut self) {
+        self.active_borrows = self
+            .borrow_local_lifetimes
+            .values()
+            .flat_map(BorrowLocalState::lifetimes)
+            .cloned()
+            .collect();
     }
 
     fn is_dialogue_callee(&self, callee: &str) -> bool {
@@ -700,7 +819,11 @@ impl TypeChecker<'_> {
             self.locals.insert(name, ty);
         }
         self.check_flow_items(block.body());
-        self.restore_borrow_state(borrow_snapshot);
+        let then_state = self.snapshot_borrow_state();
+        self.merge_borrow_state_from_paths(
+            &borrow_snapshot,
+            &[borrow_snapshot.clone(), then_state],
+        );
         self.locals = outer_locals;
     }
 
@@ -983,7 +1106,11 @@ impl TypeChecker<'_> {
         for stmt in body {
             self.check_stmt(stmt);
         }
-        self.restore_borrow_state(borrow_snapshot);
+        let then_state = self.snapshot_borrow_state();
+        self.merge_borrow_state_from_paths(
+            &borrow_snapshot,
+            &[borrow_snapshot.clone(), then_state],
+        );
         self.locals = outer_locals;
     }
 
@@ -1045,8 +1172,10 @@ impl TypeChecker<'_> {
 
     fn check_match_stmt(&mut self, expr: &Expr, arms: &[arcweft_lang_syntax::StmtMatchArm]) {
         let expr_type = self.check_expr(expr);
+        let base_borrow_snapshot = self.snapshot_borrow_state();
+        let mut arm_states = Vec::new();
         for arm in arms {
-            let borrow_snapshot = self.snapshot_borrow_state();
+            self.restore_borrow_state(base_borrow_snapshot.clone());
             let outer_locals = self.locals.clone();
             for (name, ty) in let_else_bindings(arm.pattern(), expr_type.as_ref()) {
                 self.locals.insert(name, ty);
@@ -1057,8 +1186,13 @@ impl TypeChecker<'_> {
             for stmt in arm.body() {
                 self.check_stmt(stmt);
             }
-            self.restore_borrow_state(borrow_snapshot);
+            arm_states.push(self.snapshot_borrow_state());
             self.locals = outer_locals;
+        }
+        if arm_states.is_empty() {
+            self.restore_borrow_state(base_borrow_snapshot);
+        } else {
+            self.merge_borrow_state_from_paths(&base_borrow_snapshot, &arm_states);
         }
     }
 
@@ -1945,6 +2079,19 @@ impl TypeChecker<'_> {
     }
 
     fn check_path_expr(&mut self, path: &str) -> Option<TypeKind> {
+        if let Some(state) = self.borrow_local_lifetimes.get(path) {
+            match state {
+                BorrowLocalState::Dropped => self.errors.push(TypeCheckError::new(format!(
+                    "borrowed local `{path}` was used after it was dropped"
+                ))),
+                BorrowLocalState::MaybeDropped(_) => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "borrowed local `{path}` may have been dropped on another control-flow path"
+                    )));
+                }
+                BorrowLocalState::Live(_) => {}
+            }
+        }
         self.locals.get(path).cloned().or_else(|| {
             self.env.symbol_type(path).cloned().or_else(|| {
                 self.check_dotted_path_target(path).or_else(|| {
@@ -2422,8 +2569,23 @@ impl TypeChecker<'_> {
         else_branch: Option<&Expr>,
     ) -> Option<TypeKind> {
         self.expect_expr_type(condition, &TypeKind::Bool, "if expression condition");
+        let base_borrow_snapshot = self.snapshot_borrow_state();
         let then_type = self.check_expr(then_branch);
+        let then_borrow_state = self.snapshot_borrow_state();
+        self.restore_borrow_state(base_borrow_snapshot.clone());
         let else_type = else_branch.and_then(|branch| self.check_expr(branch));
+        let else_borrow_state = self.snapshot_borrow_state();
+        if else_branch.is_some() {
+            self.merge_borrow_state_from_paths(
+                &base_borrow_snapshot,
+                &[then_borrow_state, else_borrow_state],
+            );
+        } else {
+            self.merge_borrow_state_from_paths(
+                &base_borrow_snapshot,
+                &[base_borrow_snapshot.clone(), then_borrow_state],
+            );
+        }
         match (then_type, else_type) {
             (Some(then_type), Some(else_type)) if then_type == else_type => Some(then_type),
             (Some(then_type), Some(else_type)) => {
@@ -2449,8 +2611,11 @@ impl TypeChecker<'_> {
             return None;
         }
 
+        let base_borrow_snapshot = self.snapshot_borrow_state();
+        let mut arm_states = Vec::new();
         let mut inferred = None;
         for arm in arms {
+            self.restore_borrow_state(base_borrow_snapshot.clone());
             let outer_locals = self.locals.clone();
             for (name, ty) in let_else_bindings(arm.pattern(), scrutinee_type.as_ref()) {
                 self.locals.insert(name, ty);
@@ -2471,7 +2636,9 @@ impl TypeChecker<'_> {
                 }
                 (_, None) => return None,
             }
+            arm_states.push(self.snapshot_borrow_state());
         }
+        self.merge_borrow_state_from_paths(&base_borrow_snapshot, &arm_states);
         inferred
     }
 
@@ -2488,14 +2655,29 @@ impl TypeChecker<'_> {
             self.expect_expr_type(guard, &TypeKind::Bool, "if-let expression guard");
         }
 
+        let base_borrow_snapshot = self.snapshot_borrow_state();
         let outer_locals = self.locals.clone();
         for (name, ty) in let_else_bindings(pattern, expr_type.as_ref()) {
             self.locals.insert(name, ty);
         }
         let then_type = self.check_expr(then_branch);
+        let then_borrow_state = self.snapshot_borrow_state();
+        self.restore_borrow_state(base_borrow_snapshot.clone());
         self.locals = outer_locals;
 
         let else_type = else_branch.and_then(|branch| self.check_expr(branch));
+        let else_borrow_state = self.snapshot_borrow_state();
+        if else_branch.is_some() {
+            self.merge_borrow_state_from_paths(
+                &base_borrow_snapshot,
+                &[then_borrow_state, else_borrow_state],
+            );
+        } else {
+            self.merge_borrow_state_from_paths(
+                &base_borrow_snapshot,
+                &[base_borrow_snapshot.clone(), then_borrow_state],
+            );
+        }
         match (then_type, else_type) {
             (Some(then_type), Some(else_type)) if then_type == else_type => Some(then_type),
             (Some(then_type), Some(else_type)) => {

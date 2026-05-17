@@ -76,6 +76,14 @@ trusted axiom @axiom.resource_manifest_hashes {
     };
     assert_eq!(proof.id().body(), "proof.line_summary_to_flow");
     assert!(proof.body().contains("check no_lifetime_below"));
+    assert!(matches!(
+        proof.clauses(),
+        [
+            ProofClause::Requires { .. },
+            ProofClause::Ensures { lifetime_targets, .. },
+            ProofClause::Check { .. },
+        ] if lifetime_targets.iter().any(|target| target == "'flow")
+    ));
 
     let Item::TrustedAxiom(axiom) = &tree.items()[1] else {
         panic!("expected trusted axiom item");

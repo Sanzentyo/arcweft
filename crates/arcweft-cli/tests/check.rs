@@ -282,6 +282,38 @@ proof @proof.requires_only {
 }
 
 #[test]
+fn verify_json_reports_unknown_proof_axiom() {
+    let path = temp_awft(
+        "verify-proof-axiom",
+        r"
+proof @proof.missing_axiom {
+    use @axiom.missing
+    check no_lifetime_below(LineSummary, 'flow)
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("verify")
+        .arg(&path)
+        .arg("--mode")
+        .arg("test")
+        .arg("--json")
+        .output()
+        .expect("arcw verify runs");
+
+    assert!(
+        !output.status.success(),
+        "unknown proof axiom should fail test-mode verification"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("proof_body") && stdout.contains("axiom.missing"),
+        "JSON report should include the unknown axiom obligation: {stdout}"
+    );
+}
+
+#[test]
 fn verify_json_respects_semantic_defer_cancel_discharge() {
     let path = temp_awft(
         "verify-cancel-defer",

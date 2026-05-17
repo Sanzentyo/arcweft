@@ -23,12 +23,12 @@ pub use ast::{
     ExternModItem, Flow, FlowItem, FlowKind, ForBlock, FunctionItem, FunctionKind, HookItem, IdRef,
     IfBlock, IfLetBlock, ImplItem, ImplMember, Item, LineArg, LineMark, LineOptions, LinePlan,
     LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern,
-    ProofItem, RecordPatternField, RelativeId, RelativeIdSpelling, ScenarioCommand, ScopeBlock,
-    ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceItem, SourceLocaleBlock,
-    SpeakerLine, StateField, StateItem, Stmt, StmtMatchArm, StructField, StructItem, TestItem,
-    TestKind, TextRange, ThreadBlock, ThreadModifier, TraitItem, TraitMember, TriggerPattern,
-    TrustedAxiomItem, TypeAliasItem, TypedSyntaxTree, UseItem, VariantPatternPayload, Visibility,
-    WaitTarget, WhileBlock, WhileLetBlock, WikiLink,
+    ProofClause, ProofItem, RecordPatternField, RelativeId, RelativeIdSpelling, ScenarioCommand,
+    ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceItem,
+    SourceLocaleBlock, SpeakerLine, StateField, StateItem, Stmt, StmtMatchArm, StructField,
+    StructItem, TestItem, TestKind, TextRange, ThreadBlock, ThreadModifier, TraitItem, TraitMember,
+    TriggerPattern, TrustedAxiomItem, TypeAliasItem, TypedSyntaxTree, UseItem,
+    VariantPatternPayload, Visibility, WaitTarget, WhileBlock, WhileLetBlock, WikiLink,
 };
 pub use cst::{
     ArcweftLanguage, CstLine, CstLineEvents, CstLineKind, RowanTextRange, SyntaxElement,

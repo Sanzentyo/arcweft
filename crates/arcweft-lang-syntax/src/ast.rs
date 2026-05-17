@@ -98,7 +98,36 @@ pub struct RawItem {
 pub struct ProofItem {
     id: IdRef,
     body: String,
+    clauses: Vec<ProofClause>,
     range: TextRange,
+}
+
+/// Structured clause inside a top-level `proof` item.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProofClause {
+    Requires {
+        source: String,
+        lifetime_targets: Vec<String>,
+    },
+    Ensures {
+        source: String,
+        lifetime_targets: Vec<String>,
+    },
+    Check {
+        source: String,
+        lifetime_targets: Vec<String>,
+    },
+    Assume {
+        source: String,
+        reason: Option<String>,
+        axiom: Option<String>,
+    },
+    UseAxiom {
+        id: String,
+    },
+    Raw {
+        source: String,
+    },
 }
 
 /// Top-level `trusted axiom @axiom.id { ... }` declaration.
@@ -3456,8 +3485,18 @@ impl RawItem {
 }
 
 impl ProofItem {
-    pub(crate) const fn new(id: IdRef, body: String, range: TextRange) -> Self {
-        Self { id, body, range }
+    pub(crate) const fn new(
+        id: IdRef,
+        body: String,
+        clauses: Vec<ProofClause>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            id,
+            body,
+            clauses,
+            range,
+        }
     }
 
     pub const fn id(&self) -> &IdRef {
@@ -3466,6 +3505,10 @@ impl ProofItem {
 
     pub fn body(&self) -> &str {
         &self.body
+    }
+
+    pub fn clauses(&self) -> &[ProofClause] {
+        &self.clauses
     }
 
     pub const fn range(&self) -> &TextRange {

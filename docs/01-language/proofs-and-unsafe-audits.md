@@ -98,6 +98,11 @@ proof @proof.voice_manifest_safe {
 ```
 
 Trusted axioms are review-sensitive and should appear in generated manifests.
+Proof bodies are parsed as structured clauses. `requires` records preconditions,
+but only `ensures` and `check` clauses can discharge a proof target. A `use`
+or `assume ... axiom = @axiom.id` reference must name an existing trusted
+axiom, and every `assume` must include either `reason = ...` or an axiom
+reference.
 
 ## Unsafe lifetime blocks
 
@@ -194,11 +199,12 @@ The current pass is CFG-aware for blocks, branches, line plans, cancellation
 rules, bounded loop fixed points, and scoped `defer` outcomes. Completed-only
 cleanup does not discharge a cancelled path; cancellation cleanup must use
 `defer on cancelled` or an unqualified `defer`. Proof references are checked
-against checked proof-body targets, unjustified proof `assume` clauses become
-`proof_body` obligations, and an `unsafe lifetime` block must contain the
-unchecked promotion it justifies. Region checking rejects borrowed values that
-escape through block final values, `return`, line-plan `out`, or upper-lifetime
-registry writes. Full solver-backed proof term checking remains future
-semantic work. CLI/LSP already consume the verifier report schema, so future
-proof discharge improvements should be added to `arcweft-verify` rather than
-duplicated in tools.
+against typed `ensures` / `check` proof-body targets, unjustified proof
+`assume` clauses and unknown axiom references become `proof_body` obligations,
+and an `unsafe lifetime` block must contain the unchecked promotion it
+justifies. Region checking rejects borrowed values that escape through block
+final values, `return`, line-plan `out`, or upper-lifetime registry writes, and
+tracks direct local borrow drops through path-sensitive branch merges. Full
+solver-backed proof term checking remains future semantic work. CLI/LSP already
+consume the verifier report schema, so future proof discharge improvements
+should be added to `arcweft-verify` rather than duplicated in tools.
