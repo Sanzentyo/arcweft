@@ -86,6 +86,7 @@ pub fn format_source(
 pub fn materialize_ids(source: &str) -> Result<ToolingEditReport, ToolingError> {
     let mut edits = Vec::new();
     collect_declaration_line_id_edits(source, &mut edits);
+    collect_dialogue_line_id_edits(source, &mut edits);
     collect_choice_line_id_edits(source, &mut edits);
     report_from_edits(source, edits)
 }
@@ -453,6 +454,65 @@ fn collect_choice_line_id_edits(source: &str, edits: &mut Vec<TextEdit>) {
     }
 }
 
+fn collect_dialogue_line_id_edits(source: &str, edits: &mut Vec<TextEdit>) {
+    let parsed = parse_source(source);
+    let mut flow_slug = None;
+    let mut scopes: Vec<ScopedLine> = Vec::new();
+    for line in cst_lines(parsed.syntax()).iter() {
+        let text = line.text();
+        let trimmed = line.trimmed();
+        let indent = text.len() - text.trim_start().len();
+        while scopes.last().is_some_and(|scope| indent <= scope.indent) {
+            scopes.pop();
+        }
+        if let Some(slug) = flow_slug_from_line(trimmed) {
+            flow_slug = Some(slug);
+            scopes.clear();
+        }
+        if let Some(name) = scope_name_from_line(trimmed) {
+            scopes.push(ScopedLine { indent, name });
+            continue;
+        }
+        let Some(flow) = flow_slug.as_deref() else {
+            continue;
+        };
+        let Some(dialogue_head) = dialogue_head(trimmed) else {
+            continue;
+        };
+        let speaker = speaker_slug(dialogue_head.callee);
+        let scope_names = scopes
+            .iter()
+            .map(|scope| scope.name.as_str())
+            .collect::<Vec<_>>();
+        for option in dialogue_head.options {
+            let Some((relative, family)) = parse_relative_materialization(option.value) else {
+                continue;
+            };
+            let expected_family = if option.name == "id" { "say" } else { "text" };
+            if family.is_some_and(|family| family != expected_family) {
+                continue;
+            }
+            let Some(scope_prefix) = relative_scope_prefix(&scope_names, relative.parent_depth)
+            else {
+                continue;
+            };
+            let normalized = if option.name == "id" {
+                scoped_id("say", flow, &speaker, &scope_prefix, relative.suffix)
+            } else {
+                scoped_id("text", flow, &speaker, &scope_prefix, relative.suffix)
+            };
+            let start = line.start() + text.len() - text.trim_start().len()
+                + dialogue_head.options_start
+                + option.relative_start;
+            edits.push(TextEdit {
+                start,
+                end: start + option.value.len(),
+                replacement: format!("@{normalized}"),
+            });
+        }
+    }
+}
+
 fn declaration_id_token<'a>(trimmed: &'a str, keyword: &str) -> Option<(usize, &'a str)> {
     if let Some(token) = keyword_id_token(trimmed, keyword) {
         return Some(token);
@@ -478,6 +538,246 @@ fn flow_slug_from_line(trimmed: &str) -> Option<String> {
             })
     } else {
         Some(first.trim_end_matches('{').to_owned())
+    }
+}
+
+fn scope_name_from_line(trimmed: &str) -> Option<String> {
+    let rest = trimmed.strip_prefix("scope ")?;
+    let name = rest
+        .split_whitespace()
+        .next()?
+        .trim_end_matches('{')
+        .trim_end_matches(':');
+    is_identifier(name).then(|| name.to_owned())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ScopedLine {
+    indent: usize,
+    name: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DialogueHead<'a> {
+    callee: &'a str,
+    options_start: usize,
+    options: Vec<LineIdOption<'a>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LineIdOption<'a> {
+    name: &'a str,
+    value: &'a str,
+    relative_start: usize,
+}
+
+fn dialogue_head(trimmed: &str) -> Option<DialogueHead<'_>> {
+    let boundary = dialogue_head_boundary(trimmed)?;
+    let head = trimmed[..boundary].trim_end();
+    let open = head.find('(')?;
+    let close = head.rfind(')')?;
+    if close < open {
+        return None;
+    }
+    let callee = head[..open].trim();
+    if callee.is_empty() || callee.starts_with('@') || is_control_head(callee) {
+        return None;
+    }
+    let options_source = &head[open + 1..close];
+    let options = line_id_options(options_source);
+    (!options.is_empty()).then_some(DialogueHead {
+        callee,
+        options_start: open + 1,
+        options,
+    })
+}
+
+fn dialogue_head_boundary(trimmed: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut string_delim = None;
+    let mut escaped = false;
+    for (index, ch) in trimmed.char_indices() {
+        if let Some(delim) = string_delim {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == delim {
+                string_delim = None;
+            }
+            continue;
+        }
+        match ch {
+            '"' | '\'' => string_delim = Some(ch),
+            '(' | '{' => depth += 1,
+            ')' | '}' => depth = depth.saturating_sub(1),
+            ':' | '[' if depth == 0 => return Some(index),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn is_control_head(callee: &str) -> bool {
+    matches!(
+        callee,
+        "if" | "while" | "for" | "match" | "choice" | "scope" | "flow"
+    )
+}
+
+fn line_id_options(source: &str) -> Vec<LineIdOption<'_>> {
+    split_top_level_options(source)
+        .into_iter()
+        .filter_map(|part| {
+            let item = &source[part.clone()];
+            let eq = item.find('=')?;
+            let name = item[..eq].trim();
+            if !matches!(name, "id" | "text_key") {
+                return None;
+            }
+            let value_source = &item[eq + 1..];
+            let value = value_source.trim();
+            let leading = value_source.len() - value_source.trim_start().len();
+            Some(LineIdOption {
+                name,
+                value,
+                relative_start: part.start + eq + 1 + leading,
+            })
+        })
+        .collect()
+}
+
+fn split_top_level_options(source: &str) -> Vec<std::ops::Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut start = 0;
+    let mut depth = 0usize;
+    let mut string_delim = None;
+    let mut escaped = false;
+    for (index, ch) in source.char_indices() {
+        if let Some(delim) = string_delim {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == delim {
+                string_delim = None;
+            }
+            continue;
+        }
+        match ch {
+            '"' | '\'' => string_delim = Some(ch),
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                push_trimmed_range(source, start..index, &mut ranges);
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    push_trimmed_range(source, start..source.len(), &mut ranges);
+    ranges
+}
+
+fn push_trimmed_range(
+    source: &str,
+    range: std::ops::Range<usize>,
+    ranges: &mut Vec<std::ops::Range<usize>>,
+) {
+    let item = &source[range.clone()];
+    let leading = item.len() - item.trim_start().len();
+    let trailing = item.len() - item.trim_end().len();
+    let start = range.start + leading;
+    let end = range.end.saturating_sub(trailing);
+    if start < end {
+        ranges.push(start..end);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RelativeMaterialization<'a> {
+    suffix: &'a str,
+    parent_depth: usize,
+}
+
+fn parse_relative_materialization(
+    raw: &str,
+) -> Option<(RelativeMaterialization<'_>, Option<&str>)> {
+    if !raw.starts_with('@') || raw.starts_with("@<") {
+        return None;
+    }
+    if let Some((family, rest)) = raw[1..].split_once(":.") {
+        return (!rest.is_empty()).then_some((
+            RelativeMaterialization {
+                suffix: rest,
+                parent_depth: 0,
+            },
+            Some(family),
+        ));
+    }
+    raw.strip_prefix('@')
+        .and_then(|rest| relative_entity(rest).map(|relative| (relative, None)))
+}
+
+fn relative_entity(rest: &str) -> Option<RelativeMaterialization<'_>> {
+    relative_dot_run(rest, 0).or_else(|| relative_super_chain(rest))
+}
+
+fn relative_dot_run(rest: &str, extra_parent_depth: usize) -> Option<RelativeMaterialization<'_>> {
+    let dots = rest.chars().take_while(|ch| *ch == '.').count();
+    if dots == 0 {
+        return None;
+    }
+    let suffix = &rest[dots..];
+    (!suffix.is_empty()).then_some(RelativeMaterialization {
+        suffix,
+        parent_depth: dots.saturating_sub(1) + extra_parent_depth,
+    })
+}
+
+fn relative_super_chain(rest: &str) -> Option<RelativeMaterialization<'_>> {
+    let mut depth = 0usize;
+    let mut tail = rest;
+    while let Some(next) = tail.strip_prefix("super.") {
+        depth += 1;
+        tail = next;
+    }
+    (!tail.is_empty() && depth > 0).then_some(RelativeMaterialization {
+        suffix: tail,
+        parent_depth: depth,
+    })
+}
+
+fn relative_scope_prefix<'a>(scopes: &'a [&str], parent_depth: usize) -> Option<Vec<&'a str>> {
+    let take = scopes.len().checked_sub(parent_depth)?;
+    Some(scopes.iter().copied().take(take).collect())
+}
+
+fn scoped_id(family: &str, flow: &str, speaker: &str, scopes: &[&str], suffix: &str) -> String {
+    let mut parts = vec![family, flow, speaker];
+    parts.extend(scopes.iter().copied());
+    parts.push(suffix);
+    parts.join(".")
+}
+
+fn speaker_slug(callee: &str) -> String {
+    let base = callee
+        .trim()
+        .trim_end_matches(".say")
+        .strip_prefix("@<")
+        .and_then(|inner| inner.strip_suffix('>'))
+        .or_else(|| callee.trim().strip_prefix('@'))
+        .unwrap_or_else(|| callee.trim().trim_end_matches(".say"));
+    match base {
+        "地の文" | "地文" | "ナレーター" | "ナレータ" | "ナレーション" | "語り" | "語り手"
+        | "narrator" | "Narrator" | "NARRATOR" | "VO" | "V.O." | "O.S." | "Offscreen"
+        | "Script" | "StageDirection" | "ト書き" | "脚本" => "narrator".to_owned(),
+        other => other
+            .rsplit('.')
+            .next()
+            .unwrap_or(other)
+            .trim()
+            .to_ascii_lowercase(),
     }
 }
 
@@ -552,5 +852,23 @@ mod tests {
         assert!(report.output.contains("choice @choice.opening.first"));
         assert!(report.output.contains("@choice.opening.first.listen"));
         assert!(report.output.contains("test @test.smoke scenario"));
+    }
+
+    #[test]
+    fn materializes_dialogue_line_option_ids() {
+        let source = "flow @flow.opening opening {\n    scope outer {\n        scope rain {\n            地の文(id=@say:.sound):\n                雨の音。[p]\n            alice(id=@.comment, text_key=@.comment_text):\n                Good morning.[p]\n            alice.say(id=@...shared, text_key=@super.inner_text)[\n                Shared.[p]\n            ]\n        }\n    }\n}\n";
+        let report = materialize_ids(source).expect("materialize report");
+
+        assert!(
+            report
+                .output
+                .contains("地の文(id=@say.opening.narrator.outer.rain.sound):")
+        );
+        assert!(report.output.contains(
+            "alice(id=@say.opening.alice.outer.rain.comment, text_key=@text.opening.alice.outer.rain.comment_text):"
+        ));
+        assert!(report.output.contains(
+            "alice.say(id=@say.opening.alice.shared, text_key=@text.opening.alice.outer.inner_text)["
+        ));
     }
 }

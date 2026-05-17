@@ -737,7 +737,7 @@ fn fmt_expand_sugar_accepts_flags_before_path_and_writes() {
 
 #[test]
 fn ids_materialize_accepts_flags_before_path_without_write() {
-    let source = "flow @flow.opening opening {\n    choice @.first {\n        @.listen \"Listen\" -> @flow.next\n    }\n}\n";
+    let source = "flow @flow.opening opening {\n    scope rain {\n        alice(id=@.comment, text_key=@.comment_text):\n            Hi[p]\n    }\n    choice @.first {\n        @.listen \"Listen\" -> @flow.next\n    }\n}\n";
     let path = temp_awft("ids-materialize", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -754,6 +754,9 @@ fn ids_materialize_accepts_flags_before_path_without_write() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(
+        "alice(id=@say.opening.alice.rain.comment, text_key=@text.opening.alice.rain.comment_text):"
+    ));
     assert!(stdout.contains("choice @choice.opening.first"));
     assert!(stdout.contains("@choice.opening.first.listen"));
     assert_eq!(fs::read_to_string(&path).expect("source remains"), source);

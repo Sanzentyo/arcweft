@@ -28,7 +28,8 @@
   - preserve the callee kind when expanding dialogue sugar, so lexical speaker
     presets are not rewritten into forced `.say(...)` calls
 - ID code actions:
-  - materialize `id=@.suffix` as a normalized `@say...` ID
+  - materialize dialogue `id=@.suffix` and `text_key=@.suffix` options as
+    normalized `@say...` / `@text...` IDs
   - materialize `choice @.suffix` and relative option IDs as normalized `@choice...` IDs
   - keep `@.suffix` / `@..suffix` / `@...suffix` and `@super...` relative IDs by default during formatting
 - `Need` unhandled diagnostics
