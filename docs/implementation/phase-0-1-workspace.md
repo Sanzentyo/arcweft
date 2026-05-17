@@ -202,6 +202,11 @@ Syntax parser:
   separate from flow and line-plan effects. `LineEffectRequest::Yield` was
   removed; source event queueing, frame-boundary normalization, replay/privacy
   policy data, and backpressure handling live in Sans I/O core data structures.
+- The core engine now dispatches normalized `FrameInput.source_events` through
+  lowered source handlers. Handler `yield` applies the source backpressure
+  policy, non-item source events update close/error state, and the first
+  `StreamPlan` interpreter drains source/stream queues with deterministic
+  `ForNext` / `Yield` behavior under a fixed per-frame budget.
 - Choice syntax covers static arm sugar (`->` as `goto`, `=>` as `out`), full `option` blocks, `ui { ... }` state, structured `select { ... }` statement blocks, dynamic `for` options, `match`-gated option groups, `option pattern in expr` sugar, `label(id=@text...)`, `value = expr`, and `with { ... }` / `with:` choice plans.
 - Choice HIR preserves the source choice-body item tree as well as the flattened option list, so `let`/`if`/`for`/`match` guards and raw malformed choice-body items participate in symbol collection, readiness checks, and minimal type checking.
 - Choice lifecycle plans parse option assignments, `timeout`, `cancel on`, `on select`, and `select` statements into structured expressions/statements for HIR readiness and minimal type checking.
@@ -311,7 +316,7 @@ Not implemented in this milestone:
 - full VM lowering/execution for line task groups and adapter-side effect
   requests beyond the current Sans I/O data model
 - full flow-fiber lowering, `await with` execution IR, choice runtime IR,
-  executable stream state machines, hook/memo runtime tables,
+  full stream operator execution, hook/memo runtime tables,
   save/replay trace writers, activities, and layered input
   routing
 - full generic substitution and effect-aware return checking
@@ -330,7 +335,7 @@ Not implemented in this milestone:
 
 ## Verification
 
-Last verified during the semantic verification refinement implementation:
+Last verified during the source/stream runtime execution slice:
 
 ```bash
 cargo fmt --check

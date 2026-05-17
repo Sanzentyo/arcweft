@@ -465,6 +465,105 @@ flow @flow.run run {
 }
 
 #[test]
+fn plan_json_lists_generation_plans() {
+    let path = temp_awft(
+        "generation-plan",
+        r#"
+stream fn passthrough(frames: Stream<IteratorItem, CaptureError>) -> Stream<IteratorItem, CaptureError> {
+    for frame in frames {
+        yield frame
+    }
+}
+
+pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
+    from "fixture"
+    backpressure = latest
+    replay = hash_only
+    privacy = transient
+
+    on item frame => yield frame
+}
+
+flow @flow.generation generation {
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("plan")
+        .arg(&path)
+        .arg("--json")
+        .output()
+        .expect("arcw plan runs");
+
+    assert!(
+        output.status.success(),
+        "generation plan listing should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"streams\"")
+            && stdout.contains("passthrough")
+            && stdout.contains("\"sources\"")
+            && stdout.contains("source.fixture_frames")
+            && stdout.contains("HashOnly"),
+        "plan JSON should include stream/source metadata: {stdout}"
+    );
+}
+
+#[test]
+fn run_json_lists_source_and_stream_runtime_state() {
+    let path = temp_awft(
+        "generation-run",
+        r#"
+stream fn passthrough(frames: Stream<IteratorItem, CaptureError>) -> Stream<IteratorItem, CaptureError> {
+    for frame in frames {
+        yield frame
+    }
+}
+
+pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
+    from "fixture"
+    backpressure = latest
+    replay = hash_only
+    privacy = transient
+
+    on item frame => yield frame
+}
+
+flow @flow.generation generation {
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--frames")
+        .arg("1")
+        .arg("--json")
+        .output()
+        .expect("arcw run runs");
+
+    assert!(
+        output.status.success(),
+        "generation runtime dry-run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"source_states\"")
+            && stdout.contains("source.fixture_frames")
+            && stdout.contains("\"stream_states\"")
+            && stdout.contains("passthrough"),
+        "run JSON should include source/stream runtime state: {stdout}"
+    );
+}
+
+#[test]
 fn test_json_lists_script_tests() {
     let path = temp_awft(
         "script-test",

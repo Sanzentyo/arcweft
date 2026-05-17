@@ -78,12 +78,14 @@ audits, thread capture, thread join typing, and simple sibling write conflicts.
 
 ## Runtime Plan Inspection
 
-`arcw plan <file.awft> [--json]` exposes the lowered Sans I/O line task graph.
-It runs the same parse, HIR, typecheck, verifier, and line-plan lowering path as
+`arcw plan <file.awft> [--json]` exposes the lowered Sans I/O runtime plan. It
+runs the same parse, HIR, typecheck, verifier, and line-plan lowering path as
 `arcw check`, then prints a compact line/task summary. JSON output contains each
 line plan's flow id, line id, callee, root node kind, child task count, effect
 count, trigger labels, cleanup-stack counts, and verifier diagnostic/obligation
-counts.
+counts. JSON also includes generation metadata for `source` and `stream`
+declarations: entity id, item/error type text, source policy, handler count,
+stream op count, and stream yield count.
 
 ```bash
 arcw plan game/routes/opening.awft
@@ -110,16 +112,20 @@ arcw run game/routes/opening.awft --frames 8 --json
 The command is still Sans I/O at the runtime layer. The CLI reads the source
 file and prints a report; `arcweft-core` only consumes `FrameInput` and returns
 `FrameOutput`. The report includes per-frame flow events, line effects, task
-requests, diagnostics, and the final fiber status.
+requests, normalized source events, emitted stream events, source close
+requests, source/stream queue state, diagnostics, and the final fiber status.
 
 Current runtime lowering is strict and still intentionally bounded. It supports
 the Phase 1.8 flow slice: dialogue lines, line task groups, `choice`, `await
 with`, `let`, `let else`, `if`, `if let`, `match`, `loop`, `while`,
 `while let`, `for`, `scope`, dynamic `goto`, dynamic `return`, `out`, ordinary
-call-shaped effects, and line `cancel on` rules. `--value` injects pure
-`RuntimeValue` bindings into `FrameInput`; this is for deterministic CLI/LSP
-inspection, not host I/O. Unsupported flow syntax fails with a runtime-lowering
-error instead of being silently dropped.
+call-shaped effects, and line `cancel on` rules. The runtime also executes the
+first generation slice: source handlers can route normalized `FrameInput`
+source events into bounded source queues, and stream plans can drain
+source/stream queues and emit stream events under a deterministic per-frame
+budget. `--value` injects pure `RuntimeValue` bindings into `FrameInput`; this
+is for deterministic CLI/LSP inspection, not host I/O. Unsupported flow syntax
+fails with a runtime-lowering error instead of being silently dropped.
 
 ## Test / Bench
 

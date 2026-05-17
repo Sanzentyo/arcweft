@@ -29,6 +29,7 @@ pub struct FrameOutput {
     pub task_requests: Vec<TaskSpec>,
     pub cancel_requests: Vec<CancelScopeId>,
     pub source_events: Vec<SourceEvent<String, String>>,
+    pub stream_events: Vec<StreamEvent<String, String>>,
     pub source_close_requests: Vec<SourceId>,
 }
 
@@ -469,6 +470,7 @@ pub struct FlowFiber {
     pub frames: Vec<RuntimeFrame>,
     pub env: RuntimeEnv,
     pub source_states: BTreeMap<SourceId, SourceRuntimeState>,
+    pub stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeState>,
     pub status: FlowFiberStatus,
 }
 
@@ -481,6 +483,15 @@ pub struct SourceRuntimeState {
     pub closed: bool,
     pub last_error: Option<String>,
     pub overflow_count: u64,
+}
+
+/// Replay-observable state for one derived stream queue.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StreamRuntimeState {
+    pub id: StreamRuntimeId,
+    pub queue: VecDeque<String>,
+    pub closed: bool,
+    pub emitted_count: u64,
 }
 
 /// Runtime stack frame used to make scope exit and loop transfer explicit.
@@ -1044,6 +1055,13 @@ pub struct SourceEvent<T, E> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StreamEvent<T, E> {
+    pub stream: StreamRuntimeId,
+    pub sequence: TaskSequence,
+    pub kind: SourceEventKind<T, E>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SourceEventKind<T, E> {
     Item(T),
     Progress(String),
@@ -1146,6 +1164,31 @@ impl SourceRuntimeState {
                 None
             }
         }
+    }
+}
+
+impl StreamRuntimeState {
+    pub fn new(id: StreamRuntimeId) -> Self {
+        Self {
+            id,
+            queue: VecDeque::new(),
+            closed: false,
+            emitted_count: 0,
+        }
+    }
+
+    pub fn push_item(&mut self, item: String) -> TaskSequence {
+        let sequence = TaskSequence(self.emitted_count);
+        self.emitted_count += 1;
+        if !self.closed {
+            self.queue.push_back(item);
+        }
+        sequence
+    }
+
+    pub fn close(&mut self) {
+        self.closed = true;
+        self.queue.clear();
     }
 }
 
@@ -1325,6 +1368,7 @@ impl Default for FlowFiber {
             frames: Vec::new(),
             env: RuntimeEnv::default(),
             source_states: BTreeMap::new(),
+            stream_states: BTreeMap::new(),
             status: FlowFiberStatus::Done(FlowExit::Done),
         }
     }
@@ -1378,6 +1422,11 @@ impl Engine {
                 )
             })
             .collect();
+        let stream_states = plan
+            .stream_plans
+            .iter()
+            .map(|plan| (plan.id.clone(), StreamRuntimeState::new(plan.id.clone())))
+            .collect();
         Self {
             plan,
             fiber: FlowFiber {
@@ -1387,6 +1436,7 @@ impl Engine {
                 frames: Vec::new(),
                 env: RuntimeEnv::default(),
                 source_states,
+                stream_states,
                 status,
             },
         }
@@ -1412,6 +1462,7 @@ impl Engine {
                 ),
             }));
         self.apply_source_events(source_events, &mut output);
+        self.step_stream_plans(&mut output);
 
         if self.resume_suspended(&input, &events, &mut output) {
             return output;
@@ -1433,18 +1484,403 @@ impl Engine {
         output: &mut FrameOutput,
     ) {
         for event in events {
-            let state = self
+            output.source_events.push(event.clone());
+            let plan = self
+                .plan
+                .source_plans
+                .iter()
+                .find(|plan| plan.id == event.source)
+                .cloned();
+            if let Some(plan) = plan {
+                self.dispatch_source_event(&plan, event, output);
+            } else {
+                self.apply_unhandled_source_event(event, output);
+            }
+        }
+    }
+
+    fn dispatch_source_event(
+        &mut self,
+        plan: &SourcePlan,
+        event: SourceEvent<String, String>,
+        output: &mut FrameOutput,
+    ) {
+        self.record_source_event_state(&event, output);
+        let mut handled = false;
+        for handler in &plan.handlers {
+            let Some((bindings, ops)) = source_handler_match(handler, &event.kind) else {
+                continue;
+            };
+            handled = true;
+            self.execute_source_ops(&plan.id, ops, bindings, output);
+        }
+        if !handled && matches!(event.kind, SourceEventKind::Item(_)) {
+            self.apply_unhandled_source_event(event, output);
+        }
+    }
+
+    fn apply_unhandled_source_event(
+        &mut self,
+        event: SourceEvent<String, String>,
+        output: &mut FrameOutput,
+    ) {
+        let state = self
+            .fiber
+            .source_states
+            .entry(event.source.clone())
+            .or_insert_with(|| {
+                SourceRuntimeState::new(event.source.clone(), SourcePolicy::default())
+            });
+        if let Some(message) = state.apply_event(event) {
+            output.diagnostics.push(RuntimeDiagnostic { message });
+        }
+    }
+
+    fn record_source_event_state(
+        &mut self,
+        event: &SourceEvent<String, String>,
+        output: &mut FrameOutput,
+    ) {
+        let state = self
+            .fiber
+            .source_states
+            .entry(event.source.clone())
+            .or_insert_with(|| {
+                SourceRuntimeState::new(event.source.clone(), SourcePolicy::default())
+            });
+        match &event.kind {
+            SourceEventKind::Error(error) => {
+                state.last_error = Some(error.clone());
+                output.diagnostics.push(RuntimeDiagnostic {
+                    message: format!("source {} error: {error}", state.id.0),
+                });
+            }
+            SourceEventKind::Disconnected
+            | SourceEventKind::PermissionRevoked
+            | SourceEventKind::End => state.close(),
+            SourceEventKind::Item(_) | SourceEventKind::Progress(_) => {}
+        }
+    }
+
+    fn execute_source_ops(
+        &mut self,
+        source: &SourceId,
+        ops: &[SourceOp],
+        bindings: Vec<RuntimeBinding>,
+        output: &mut FrameOutput,
+    ) {
+        let previous = self.fiber.env.clone();
+        self.fiber.env.push_scope();
+        self.fiber.env.bind_all(bindings);
+        for op in ops {
+            self.execute_source_op(source, op, output);
+        }
+        self.fiber.env = previous;
+    }
+
+    fn execute_source_op(&mut self, source: &SourceId, op: &SourceOp, output: &mut FrameOutput) {
+        match op {
+            SourceOp::Yield(expr) => match self.evaluate_expr(expr) {
+                Ok(value) => self.push_source_item(source, runtime_value_label(&value), output),
+                Err(error) => Self::diagnose_runtime_error(error, output),
+            },
+            SourceOp::Effect(effect) => output.line_effects.push(effect.clone()),
+            SourceOp::SignalWrite(write) => output
+                .line_effects
+                .push(LineEffectRequest::SignalWrite(write.clone())),
+            SourceOp::Log(log) => output
+                .line_effects
+                .push(LineEffectRequest::Log(log.clone())),
+            SourceOp::Close(target) => self.close_source(target, output),
+            SourceOp::Noop => {}
+        }
+    }
+
+    fn push_source_item(&mut self, source: &SourceId, item: String, output: &mut FrameOutput) {
+        let state = self
+            .fiber
+            .source_states
+            .entry(source.clone())
+            .or_insert_with(|| SourceRuntimeState::new(source.clone(), SourcePolicy::default()));
+        if let Some(message) = state.push_item(item) {
+            output.diagnostics.push(RuntimeDiagnostic { message });
+        }
+    }
+
+    fn close_source(&mut self, source: &SourceId, output: &mut FrameOutput) {
+        if let Some(state) = self.fiber.source_states.get_mut(source) {
+            state.close();
+        }
+        output.source_close_requests.push(source.clone());
+    }
+
+    fn step_stream_plans(&mut self, output: &mut FrameOutput) {
+        let stream_plans = self.plan.stream_plans.clone();
+        for plan in stream_plans {
+            let mut budget = 64usize;
+            if !self.execute_stream_ops(&plan.id, &plan.ops, &mut budget, output) {
+                continue;
+            }
+            if budget == 0 {
+                output.diagnostics.push(RuntimeDiagnostic {
+                    message: format!("stream {} exhausted frame budget", plan.id.0),
+                });
+            }
+        }
+    }
+
+    fn execute_stream_ops(
+        &mut self,
+        stream: &StreamRuntimeId,
+        ops: &[StreamOp],
+        budget: &mut usize,
+        output: &mut FrameOutput,
+    ) -> bool {
+        for op in ops {
+            if *budget == 0 {
+                return true;
+            }
+            *budget -= 1;
+            if !self.execute_stream_op(stream, op, budget, output) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn execute_stream_op(
+        &mut self,
+        stream: &StreamRuntimeId,
+        op: &StreamOp,
+        budget: &mut usize,
+        output: &mut FrameOutput,
+    ) -> bool {
+        match op {
+            StreamOp::Let { pattern, expr } => self.bind_stream_let(pattern, expr, output),
+            StreamOp::ForNext {
+                pattern,
+                source,
+                body,
+            } => self.execute_stream_for_next(stream, pattern, source, body, budget, output),
+            StreamOp::Yield { expr } => self.yield_stream_item(stream, expr, output),
+            StreamOp::If {
+                condition,
+                then_ops,
+                else_ops,
+            } => match self.evaluate_bool(condition) {
+                Ok(true) => self.execute_stream_ops(stream, then_ops, budget, output),
+                Ok(false) => self.execute_stream_ops(stream, else_ops, budget, output),
+                Err(error) => {
+                    Self::diagnose_runtime_error(error, output);
+                    true
+                }
+            },
+            StreamOp::Match { scrutinee, arms } => {
+                self.execute_stream_match(stream, scrutinee, arms, budget, output)
+            }
+            StreamOp::Close { source } => {
+                self.close_stream_source(source, output);
+                true
+            }
+            StreamOp::Return => false,
+            StreamOp::Noop => true,
+        }
+    }
+
+    fn bind_stream_let(
+        &mut self,
+        pattern: &RuntimePattern,
+        expr: &RuntimeExpr,
+        output: &mut FrameOutput,
+    ) -> bool {
+        match self.evaluate_expr(expr) {
+            Ok(value) => match self.try_bind_pattern(pattern, &value) {
+                Ok(true) => true,
+                Ok(false) => {
+                    output.diagnostics.push(RuntimeDiagnostic {
+                        message: format!(
+                            "stream pattern did not match {}",
+                            runtime_value_label(&value)
+                        ),
+                    });
+                    true
+                }
+                Err(error) => {
+                    Self::diagnose_runtime_error(error, output);
+                    true
+                }
+            },
+            Err(error) => {
+                Self::diagnose_runtime_error(error, output);
+                true
+            }
+        }
+    }
+
+    fn execute_stream_for_next(
+        &mut self,
+        stream: &StreamRuntimeId,
+        pattern: &RuntimePattern,
+        source: &RuntimeExpr,
+        body: &[StreamOp],
+        budget: &mut usize,
+        output: &mut FrameOutput,
+    ) -> bool {
+        let Ok(source_key) = self.evaluate_queue_target(source) else {
+            return true;
+        };
+        while let Some(item) = self.pop_queue_item(&source_key) {
+            let previous = self.fiber.env.clone();
+            self.fiber.env.push_scope();
+            match match_runtime_pattern(pattern, &RuntimeValue::String(item)) {
+                Ok(Some(bindings)) => {
+                    self.fiber.env.bind_all(bindings);
+                    if !self.execute_stream_ops(stream, body, budget, output) {
+                        self.fiber.env = previous;
+                        return false;
+                    }
+                }
+                Ok(None) => output.diagnostics.push(RuntimeDiagnostic {
+                    message: format!("stream for-next pattern did not match {source_key}"),
+                }),
+                Err(error) => Self::diagnose_runtime_error(error, output),
+            }
+            self.fiber.env = previous;
+            if *budget == 0 {
+                break;
+            }
+        }
+        true
+    }
+
+    fn yield_stream_item(
+        &mut self,
+        stream: &StreamRuntimeId,
+        expr: &RuntimeExpr,
+        output: &mut FrameOutput,
+    ) -> bool {
+        match self.evaluate_expr(expr) {
+            Ok(value) => {
+                let item = runtime_value_label(&value);
+                let state = self
+                    .fiber
+                    .stream_states
+                    .entry(stream.clone())
+                    .or_insert_with(|| StreamRuntimeState::new(stream.clone()));
+                let sequence = state.push_item(item.clone());
+                output.stream_events.push(StreamEvent {
+                    stream: stream.clone(),
+                    sequence,
+                    kind: SourceEventKind::Item(item),
+                });
+            }
+            Err(error) => Self::diagnose_runtime_error(error, output),
+        }
+        true
+    }
+
+    fn execute_stream_match(
+        &mut self,
+        stream: &StreamRuntimeId,
+        scrutinee: &RuntimeExpr,
+        arms: &[StreamMatchArm],
+        budget: &mut usize,
+        output: &mut FrameOutput,
+    ) -> bool {
+        let value = match self.evaluate_expr(scrutinee) {
+            Ok(value) => value,
+            Err(error) => {
+                Self::diagnose_runtime_error(error, output);
+                return true;
+            }
+        };
+        for arm in arms {
+            let Ok(Some(bindings)) = match_runtime_pattern(&arm.pattern, &value) else {
+                continue;
+            };
+            let previous = self.fiber.env.clone();
+            self.fiber.env.bind_all(bindings);
+            let guard_matches = arm
+                .guard
+                .as_ref()
+                .map_or(Ok(true), |guard| self.evaluate_bool(guard));
+            if matches!(guard_matches, Ok(true)) {
+                let should_continue = self.execute_stream_ops(stream, &arm.ops, budget, output);
+                self.fiber.env = previous;
+                return should_continue;
+            }
+            if let Err(error) = guard_matches {
+                Self::diagnose_runtime_error(error, output);
+            }
+            self.fiber.env = previous;
+        }
+        true
+    }
+
+    fn close_stream_source(&mut self, source: &RuntimeExpr, output: &mut FrameOutput) {
+        match self.evaluate_queue_target(source) {
+            Ok(target) => {
+                if let Some(source) = target.strip_prefix("source:") {
+                    self.close_source(&SourceId(source.to_owned()), output);
+                } else if let Some(stream) = target.strip_prefix("stream:") {
+                    if let Some(state) = self
+                        .fiber
+                        .stream_states
+                        .get_mut(&StreamRuntimeId(stream.to_owned()))
+                    {
+                        state.close();
+                    }
+                }
+            }
+            Err(error) => Self::diagnose_runtime_error(error, output),
+        }
+    }
+
+    fn evaluate_queue_target(&mut self, expr: &RuntimeExpr) -> Result<String, RuntimeEvalError> {
+        match self.evaluate_expr(expr)? {
+            RuntimeValue::EntityRef(target) | RuntimeValue::String(target) => {
+                if self
+                    .fiber
+                    .source_states
+                    .contains_key(&SourceId(target.clone()))
+                {
+                    Ok(format!("source:{target}"))
+                } else if self
+                    .fiber
+                    .stream_states
+                    .contains_key(&StreamRuntimeId(target.clone()))
+                {
+                    Ok(format!("stream:{target}"))
+                } else {
+                    Ok(format!("source:{target}"))
+                }
+            }
+            value => Err(RuntimeEvalError::ExpectedEntityRef(runtime_value_label(
+                &value,
+            ))),
+        }
+    }
+
+    fn pop_queue_item(&mut self, key: &str) -> Option<String> {
+        if let Some(source) = key.strip_prefix("source:") {
+            return self
                 .fiber
                 .source_states
-                .entry(event.source.clone())
-                .or_insert_with(|| {
-                    SourceRuntimeState::new(event.source.clone(), SourcePolicy::default())
-                });
-            if let Some(message) = state.apply_event(event.clone()) {
-                output.diagnostics.push(RuntimeDiagnostic { message });
-            }
-            output.source_events.push(event);
+                .get_mut(&SourceId(source.to_owned()))
+                .and_then(|state| state.queue.pop_front());
         }
+        key.strip_prefix("stream:").and_then(|stream| {
+            self.fiber
+                .stream_states
+                .get_mut(&StreamRuntimeId(stream.to_owned()))
+                .and_then(|state| state.queue.pop_front())
+        })
+    }
+
+    fn diagnose_runtime_error(error: impl std::fmt::Display, output: &mut FrameOutput) {
+        output.diagnostics.push(RuntimeDiagnostic {
+            message: error.to_string(),
+        });
     }
 
     fn resume_suspended(
@@ -2271,6 +2707,10 @@ impl FrameOutput {
         self.line_effects.extend(other.line_effects);
         self.task_requests.extend(other.task_requests);
         self.cancel_requests.extend(other.cancel_requests);
+        self.source_events.extend(other.source_events);
+        self.stream_events.extend(other.stream_events);
+        self.source_close_requests
+            .extend(other.source_close_requests);
     }
 }
 
@@ -2278,6 +2718,26 @@ enum FlowControl {
     Goto(String),
     Return(String),
     Failed(String),
+}
+
+fn source_handler_match<'a>(
+    handler: &'a SourceHandlerPlan,
+    event: &SourceEventKind<String, String>,
+) -> Option<(Vec<RuntimeBinding>, &'a [SourceOp])> {
+    match (handler, event) {
+        (SourceHandlerPlan::Item { pattern, ops }, SourceEventKind::Item(item))
+        | (SourceHandlerPlan::Error { pattern, ops }, SourceEventKind::Error(item))
+        | (SourceHandlerPlan::Progress { pattern, ops }, SourceEventKind::Progress(item)) => {
+            let bindings = match_runtime_pattern(pattern, &RuntimeValue::String(item.clone()))
+                .ok()
+                .flatten()?;
+            Some((bindings, ops))
+        }
+        (SourceHandlerPlan::Disconnected { ops }, SourceEventKind::Disconnected)
+        | (SourceHandlerPlan::PermissionRevoked { ops }, SourceEventKind::PermissionRevoked)
+        | (SourceHandlerPlan::End { ops }, SourceEventKind::End) => Some((Vec::new(), ops)),
+        _ => None,
+    }
 }
 
 fn control_from_effect(effect: &LineEffectRequest) -> Option<FlowControl> {

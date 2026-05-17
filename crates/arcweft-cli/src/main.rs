@@ -99,7 +99,7 @@ fn runtime_run_command(args: &[OsString]) -> Result<(), ExitCode> {
             external_values: options.values.clone(),
             ..FrameInput::default()
         });
-        let summary = RuntimeFrameRunSummary::from_output(frame_index, output);
+        let summary = RuntimeFrameRunSummary::from_output(frame_index, output, engine.fiber());
         let done = matches!(
             engine.fiber().status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)

@@ -1,16 +1,45 @@
 use crate::CheckedModule;
 use arcweft_core::{
-    FlowEvent, FlowFiberStatus, LineEffectRequest, LineTaskGroup, LineTaskNode, LineTaskScope,
-    LineTaskTrigger, TaskSpec,
+    FlowEvent, FlowFiber, FlowFiberStatus, LineEffectRequest, LineTaskGroup, LineTaskNode,
+    LineTaskScope, LineTaskTrigger, SourceEvent, SourceEventKind, SourcePolicy, StreamEvent,
+    StreamOp, TaskSpec,
 };
-use arcweft_runtime_plan::LoweredLineTaskGroup;
+use arcweft_runtime_plan::{LoweredLineTaskGroup, lower_runtime_plan};
 use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy, verify_module};
 
 #[derive(serde::Serialize)]
 pub(crate) struct RuntimePlanReport {
     pub(crate) lines: Vec<RuntimeLinePlanSummary>,
+    pub(crate) streams: Vec<RuntimeStreamPlanSummary>,
+    pub(crate) sources: Vec<RuntimeSourcePlanSummary>,
     pub(crate) verifier_diagnostics: usize,
     pub(crate) verifier_obligations: usize,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeStreamPlanSummary {
+    pub(crate) id: String,
+    pub(crate) item_ty: String,
+    pub(crate) error_ty: String,
+    pub(crate) ops: usize,
+    pub(crate) yields: usize,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeSourcePlanSummary {
+    pub(crate) id: String,
+    pub(crate) item_ty: String,
+    pub(crate) error_ty: String,
+    pub(crate) policy: RuntimeSourcePolicySummary,
+    pub(crate) handlers: usize,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeSourcePolicySummary {
+    pub(crate) backpressure: String,
+    pub(crate) replay: String,
+    pub(crate) privacy: String,
+    pub(crate) max_queue: usize,
 }
 
 #[derive(serde::Serialize)]
@@ -67,15 +96,75 @@ impl RuntimePlanReport {
                 backend: BackendKind::Emit,
             },
         );
+        let runtime_plan = lower_runtime_plan(&checked.hir).ok();
         Self {
             lines: checked
                 .line_task_groups
                 .iter()
                 .map(RuntimeLinePlanSummary::from_lowered)
                 .collect(),
+            streams: runtime_plan
+                .as_ref()
+                .map(|plan| {
+                    plan.stream_plans
+                        .iter()
+                        .map(|stream| RuntimeStreamPlanSummary {
+                            id: stream.id.0.clone(),
+                            item_ty: stream.item_ty.clone(),
+                            error_ty: stream.error_ty.clone(),
+                            ops: stream.ops.len(),
+                            yields: stream.ops.iter().map(count_stream_yields).sum(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            sources: runtime_plan
+                .as_ref()
+                .map(|plan| {
+                    plan.source_plans
+                        .iter()
+                        .map(|source| RuntimeSourcePlanSummary {
+                            id: source.id.0.clone(),
+                            item_ty: source.item_ty.clone(),
+                            error_ty: source.error_ty.clone(),
+                            policy: source_policy_summary(&source.policy),
+                            handlers: source.handlers.len(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             verifier_diagnostics: verification.diagnostics.len(),
             verifier_obligations: verification.obligations.len(),
         }
+    }
+}
+
+fn count_stream_yields(op: &StreamOp) -> usize {
+    match op {
+        StreamOp::Yield { .. } => 1,
+        StreamOp::ForNext { body, .. } => body.iter().map(count_stream_yields).sum(),
+        StreamOp::If {
+            then_ops, else_ops, ..
+        } => then_ops
+            .iter()
+            .chain(else_ops)
+            .map(count_stream_yields)
+            .sum(),
+        StreamOp::Match { arms, .. } => arms
+            .iter()
+            .flat_map(|arm| &arm.ops)
+            .map(count_stream_yields)
+            .sum(),
+        StreamOp::Let { .. } | StreamOp::Close { .. } | StreamOp::Return | StreamOp::Noop => 0,
+    }
+}
+
+fn source_policy_summary(policy: &SourcePolicy) -> RuntimeSourcePolicySummary {
+    RuntimeSourcePolicySummary {
+        backpressure: format!("{:?}", policy.backpressure),
+        replay: format!("{:?}", policy.replay),
+        privacy: format!("{:?}", policy.privacy),
+        max_queue: policy.max_queue,
     }
 }
 
@@ -195,10 +284,27 @@ pub(crate) struct RuntimeFrameRunSummary {
     pub(crate) flow_events: Vec<String>,
     pub(crate) line_effects: Vec<String>,
     pub(crate) task_requests: Vec<String>,
+    pub(crate) source_events: Vec<String>,
+    pub(crate) stream_events: Vec<String>,
+    pub(crate) source_close_requests: Vec<String>,
+    pub(crate) source_states: Vec<RuntimeQueueStateSummary>,
+    pub(crate) stream_states: Vec<RuntimeQueueStateSummary>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeQueueStateSummary {
+    pub(crate) id: String,
+    pub(crate) queue_depth: usize,
+    pub(crate) closed: bool,
+    pub(crate) overflow_count: u64,
 }
 
 impl RuntimeFrameRunSummary {
-    pub(crate) fn from_output(index: usize, output: arcweft_core::FrameOutput) -> Self {
+    pub(crate) fn from_output(
+        index: usize,
+        output: arcweft_core::FrameOutput,
+        fiber: &FlowFiber,
+    ) -> Self {
         Self {
             index,
             diagnostics: output
@@ -212,6 +318,41 @@ impl RuntimeFrameRunSummary {
                 .task_requests
                 .iter()
                 .map(task_request_label)
+                .collect(),
+            source_events: output
+                .source_events
+                .iter()
+                .map(source_event_label)
+                .collect(),
+            stream_events: output
+                .stream_events
+                .iter()
+                .map(stream_event_label)
+                .collect(),
+            source_close_requests: output
+                .source_close_requests
+                .iter()
+                .map(|source| source.0.clone())
+                .collect(),
+            source_states: fiber
+                .source_states
+                .values()
+                .map(|state| RuntimeQueueStateSummary {
+                    id: state.id.0.clone(),
+                    queue_depth: state.queue.len(),
+                    closed: state.closed,
+                    overflow_count: state.overflow_count,
+                })
+                .collect(),
+            stream_states: fiber
+                .stream_states
+                .values()
+                .map(|state| RuntimeQueueStateSummary {
+                    id: state.id.0.clone(),
+                    queue_depth: state.queue.len(),
+                    closed: state.closed,
+                    overflow_count: 0,
+                })
                 .collect(),
         }
     }
@@ -240,6 +381,25 @@ fn flow_event_label(event: &FlowEvent) -> String {
 
 fn task_request_label(task: &TaskSpec) -> String {
     format!("{} key={} class={:?}", task.id.0, task.key.0, task.class)
+}
+
+fn source_event_label(event: &SourceEvent<String, String>) -> String {
+    format!("{} {}", event.source.0, event_kind_label(&event.kind))
+}
+
+fn stream_event_label(event: &StreamEvent<String, String>) -> String {
+    format!("{} {}", event.stream.0, event_kind_label(&event.kind))
+}
+
+fn event_kind_label(kind: &SourceEventKind<String, String>) -> String {
+    match kind {
+        SourceEventKind::Item(item) => format!("item {item}"),
+        SourceEventKind::Progress(progress) => format!("progress {progress}"),
+        SourceEventKind::Disconnected => "disconnected".to_owned(),
+        SourceEventKind::PermissionRevoked => "permission_revoked".to_owned(),
+        SourceEventKind::Error(error) => format!("error {error}"),
+        SourceEventKind::End => "end".to_owned(),
+    }
 }
 
 pub(crate) fn flow_status_label(status: &FlowFiberStatus) -> String {

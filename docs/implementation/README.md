@@ -220,6 +220,14 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   fiber status. `--value` injects pure runtime bindings such as
   `ready=true`, `count=3`, or `route=@flow.next`; the CLI owns filesystem I/O
   and runtime execution remains Sans I/O.
+- Source and stream runtime execution now has a first Sans I/O slice.
+  `FrameInput.source_events` are normalized, dispatched through lowered
+  `SourcePlan` handlers, and `yield` pushes items through the declared
+  backpressure policy. `StreamPlan` can drain source/stream queues through
+  `ForNext` and emit deterministic stream events within a per-frame budget.
+  `arcw plan --json` reports generation plans, and `arcw run --json` reports
+  source/stream events and queue state. Device acquisition, permissions, and
+  native callbacks remain adapter responsibilities.
 - The Phase 1.8 runtime now has an explicit `FlowFiber` frame stack for lexical
   scopes and loop continuations. `break` and `continue` discard queued body ops,
   pop body-local scopes, and transfer to the nearest loop/while/while-let frame.
@@ -230,7 +238,7 @@ they affect parser, HIR, formatter, LSP, or CLI work.
 - Gap audit result: broad runtime docs still exceed the implemented core. Full
   story VM value execution, complete expression evaluation, source adapter
   execution, hook/memo runtime tables, save/replay traces, activities, layered
-  input routing, and value-producing `break expr` result slots remain TODOs
+  input routing, full stream operators, and value-producing `break expr` result slots remain TODOs
   beyond the current flow/runtime Sans I/O subset.
 - `pro_review14.md` / `pro_review15.md`: adopted proof-aware
   lifetime/thread/drop direction and Agent-friendly tooling diagnostics.
