@@ -174,8 +174,8 @@ Syntax parser:
 - Top-level `hook`, `memo fn`, and `parser` declarations preserve structured body statements and final expressions in AST/HIR, including generic parser-combinator blocks such as `alt { ... }`. Hook headers now preserve canonical `when`, integer `priority`, `once`, and `effects` fields; legacy `check` headers are rejected.
 - Top-level `dialogue defaults` declarations parse as structured declarations with optional visibility/id and assignment expressions preserved for later dialogue style/window/voice/hook lowering.
 - Bodyless parser declarations such as `pub parser parse_player_command: Parser<PlayerCommand, ParseError>` are accepted and lower as parser declarations with empty bodies, matching the parser API declarations used in the language and device examples.
-- Top-level declarative `source` declarations such as `pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> { ... }` are parsed as structured syntax items with source IDs, signature tails, source policy statements, and `on ... => ...` event branches. HIR preserves them as declarations, readiness checking walks their structured statements, and minimal type checking validates the source ID family without implementing camera/audio/USB runtime backends.
-- Function-like `source name() -> Source<T, E> { loop { ... yield ... } }` declarations also parse as source items. Typed statement bodies now preserve `loop`, `while`, `while let`, and `for` statements inside functions, parsers, memo functions, hooks, and source declarations so generator-style source examples can lower and typecheck without raw statement fragments.
+- Top-level declarative `source` declarations such as `pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> { ... }` are parsed as structured syntax items with source IDs, typed `Source<T, E>` signatures, structured `from` / `backpressure` / `replay` / `privacy` headers, and structured `on ... => ...` event branches. HIR preserves them as declarations, readiness checking walks their structured statements, and minimal type checking requires complete source policy without implementing camera/audio/USB runtime backends.
+- Function-like `source name() -> Source<T, E> { loop { ... yield ... } }` declarations still parse for diagnostics, but the checker rejects them as non-canonical authoring syntax. Use `source @source.id: Source<T, E> { ... }` so replay/privacy/backpressure policy remains explicit.
 - Top-level `signal`, `character`, `layer`, `activity`, and `component` declarations from the presentation/runtime docs parse as structured entity declarations with visibility, entity ID, optional public name, signature tail, optional body, and source range. HIR preserves them as declarations, registers their entity IDs for name-resolution tests, and minimally checks that the public ID prefix matches the declaration family without implementing rendering, activity, camera, audio, or USB backends.
 - Top-level `extern rust mod ... from crate "..." { ... }` declarations from the module docs parse as structured external-module declarations with ABI, module path, import source, body text, and source range. HIR preserves them as syntax-level declarations for later Rust/WASM adapter work without implementing external runtime loading in Phase 0 / Phase 1.
 - Zero-copy `borrow expr as name: Type { ... }` blocks are parsed into AST/HIR, and the checker treats their non-`'static` lifetimes as active only inside the borrow body.
@@ -198,6 +198,10 @@ Syntax parser:
   cancellation rules, memo directives, assertions, structured log calls,
   signal writes, metric writes, `event.emit(...)` calls, scenario commands, and
   ordinary effect calls as typed `arcweft-core` runtime request categories.
+- Stream/source lowering now produces `StreamPlan` and `SourcePlan` data
+  separate from flow and line-plan effects. `LineEffectRequest::Yield` was
+  removed; source event queueing, frame-boundary normalization, replay/privacy
+  policy data, and backpressure handling live in Sans I/O core data structures.
 - Choice syntax covers static arm sugar (`->` as `goto`, `=>` as `out`), full `option` blocks, `ui { ... }` state, structured `select { ... }` statement blocks, dynamic `for` options, `match`-gated option groups, `option pattern in expr` sugar, `label(id=@text...)`, `value = expr`, and `with { ... }` / `with:` choice plans.
 - Choice HIR preserves the source choice-body item tree as well as the flattened option list, so `let`/`if`/`for`/`match` guards and raw malformed choice-body items participate in symbol collection, readiness checks, and minimal type checking.
 - Choice lifecycle plans parse option assignments, `timeout`, `cancel on`, `on select`, and `select` statements into structured expressions/statements for HIR readiness and minimal type checking.
@@ -209,6 +213,7 @@ Syntax parser:
 - Value-producing `let PAT = if let BIND = EXPR when GUARD { ... } else { ... }` expressions parse into structured expression nodes. The minimal checker validates guards as `Bool`, scopes successful pattern bindings to the then branch, and rejects mismatched branch result types.
 - Value-producing `let PAT = match EXPR { PAT when GUARD => EXPR ... }` expressions parse into structured expression nodes. The minimal checker validates guards as `Bool`, walks arm patterns and values for symbol collection, scopes arm-local bindings, and rejects mismatched arm result types.
 - Named computation blocks such as `let route = result { ... }`, `let assets = task { ... }`, `let visible = seq { ... }`, and `let levels = stream { ... }` parse into structured expression nodes with scoped statements and optional final values.
+- `yield` is checked through an explicit generation context stack. It is accepted only in `seq`, `stream`, `stream fn`, and source handlers; flow bodies and dialogue line plans reject it with guidance to use `return`/`goto` or `out`. `seq` blocks reject runtime effects, and `stream fn` must return `Stream<T, E>` with at least one yield.
 - Memo expression blocks such as `let actor = memo(scope=scene, key=(...)) { ... }` parse into structured expression nodes with memo options, scoped statements, and optional final values.
 - Flow `loop { ... }` blocks and `let name = loop { ... }` expression bindings lower to structured HIR nodes. The minimal checker tracks loop contexts, accepts `break expr` only in `loop`, infers a simple unified break type for loop expression bindings, and rejects `break` outside loop contexts.
 - Control-transfer statements preserve Rust-like label references for `break 'label expr`, `continue 'label`, and `out 'label expr` so diagnostics can name the intended continuation without treating the statement as raw syntax. `let value = 'label: loop { ... }` and line-plan `with 'label { ... }` also preserve their labels in AST/HIR, and the minimal checker rejects unresolved loop labels and unresolved line-plan `out` labels.
@@ -305,9 +310,9 @@ Not implemented in this milestone:
 - full HIR ownership/region model
 - full VM lowering/execution for line task groups and adapter-side effect
   requests beyond the current Sans I/O data model
-- full `FrameInput`/`FrameOutput` event envelopes, flow-fiber lowering,
-  `await with` execution IR, choice runtime IR, source/stream backpressure IR,
-  hook/memo runtime tables, save/replay traces, activities, and layered input
+- full flow-fiber lowering, `await with` execution IR, choice runtime IR,
+  executable stream state machines, hook/memo runtime tables,
+  save/replay trace writers, activities, and layered input
   routing
 - full generic substitution and effect-aware return checking
 - full type environment, name resolution, and type checking

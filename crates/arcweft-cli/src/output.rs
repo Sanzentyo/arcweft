@@ -171,7 +171,6 @@ fn effect_label(effect: &LineEffectRequest) -> String {
         LineEffectRequest::Out(_) => "out".to_owned(),
         LineEffectRequest::Return(_) => "return".to_owned(),
         LineEffectRequest::Goto(_) => "goto".to_owned(),
-        LineEffectRequest::Yield(_) => "yield".to_owned(),
         LineEffectRequest::Panic(_) => "panic".to_owned(),
         LineEffectRequest::Fail(_) => "fail".to_owned(),
         LineEffectRequest::Bail(_) => "bail".to_owned(),

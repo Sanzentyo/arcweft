@@ -194,7 +194,6 @@ pub enum LineEffectRequest {
     Out(LineOutRequest),
     Return(String),
     Goto(String),
-    Yield(String),
     Panic(String),
     Fail(String),
     Bail(String),
@@ -234,6 +233,9 @@ cancel on ... { ... }       -> LineTaskGroup.cancel_rules
 memo name(...)              -> LineTaskGroup.memo
 assert expr                 -> LineTaskGroup.assertions
 ```
+
+`yield` is not a line effect. It lowers only through stream/source generation
+plans; a dialogue line plan must use `out` for line-scope values.
 
 `on` and `at` do not lower by inserting synthetic `wait` effects. They become
 task triggers so scheduling and replay can reason about when a child task starts.

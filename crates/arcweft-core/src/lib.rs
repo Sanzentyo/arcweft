@@ -28,6 +28,8 @@ pub struct FrameOutput {
     pub line_effects: Vec<LineEffectRequest>,
     pub task_requests: Vec<TaskSpec>,
     pub cancel_requests: Vec<CancelScopeId>,
+    pub source_events: Vec<SourceEvent<String, String>>,
+    pub source_close_requests: Vec<SourceId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -203,6 +205,8 @@ pub struct RuntimePlan {
     pub entry_flow: Option<FlowRuntimeId>,
     pub flows: Vec<RuntimeFlow>,
     pub line_task_groups: Vec<LineTaskGroup>,
+    pub stream_plans: Vec<StreamPlan>,
+    pub source_plans: Vec<SourcePlan>,
 }
 
 /// Runtime identifier for a lowered flow.
@@ -218,6 +222,110 @@ pub struct RuntimeLineId(pub String);
 pub struct RuntimeFlow {
     pub id: FlowRuntimeId,
     pub ops: Vec<FlowOp>,
+}
+
+/// Runtime identifier for a lowered stream transform.
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StreamRuntimeId(pub String);
+
+/// Lowered stream transform state machine.
+///
+/// The core runtime keeps this as deterministic data. Host adapters may execute
+/// the state machine or replace it with an equivalent backend implementation,
+/// but device acquisition never happens inside this plan.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct StreamPlan {
+    pub id: StreamRuntimeId,
+    pub item_ty: String,
+    pub error_ty: String,
+    pub ops: Vec<StreamOp>,
+}
+
+/// One operation in a lowered stream transform.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StreamOp {
+    Let {
+        pattern: RuntimePattern,
+        expr: RuntimeExpr,
+    },
+    ForNext {
+        pattern: RuntimePattern,
+        source: RuntimeExpr,
+        body: Vec<StreamOp>,
+    },
+    Yield {
+        expr: RuntimeExpr,
+    },
+    If {
+        condition: RuntimeExpr,
+        then_ops: Vec<StreamOp>,
+        else_ops: Vec<StreamOp>,
+    },
+    Match {
+        scrutinee: RuntimeExpr,
+        arms: Vec<StreamMatchArm>,
+    },
+    Close {
+        source: RuntimeExpr,
+    },
+    Return,
+    Noop,
+}
+
+/// One stream `match` arm.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StreamMatchArm {
+    pub pattern: RuntimePattern,
+    pub guard: Option<RuntimeExpr>,
+    pub ops: Vec<StreamOp>,
+}
+
+/// Lowered live source declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourcePlan {
+    pub id: SourceId,
+    pub item_ty: String,
+    pub error_ty: String,
+    pub from: RuntimeExpr,
+    pub policy: SourcePolicy,
+    pub handlers: Vec<SourceHandlerPlan>,
+}
+
+/// Handler for one live source event kind.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SourceHandlerPlan {
+    Item {
+        pattern: RuntimePattern,
+        ops: Vec<SourceOp>,
+    },
+    Error {
+        pattern: RuntimePattern,
+        ops: Vec<SourceOp>,
+    },
+    Progress {
+        pattern: RuntimePattern,
+        ops: Vec<SourceOp>,
+    },
+    Disconnected {
+        ops: Vec<SourceOp>,
+    },
+    PermissionRevoked {
+        ops: Vec<SourceOp>,
+    },
+    End {
+        ops: Vec<SourceOp>,
+    },
+}
+
+/// Operation inside a source handler.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SourceOp {
+    Yield(RuntimeExpr),
+    Effect(LineEffectRequest),
+    SignalWrite(RuntimeAssignment),
+    Log(RuntimeLog),
+    Close(SourceId),
+    Noop,
 }
 
 /// One deterministic operation in a lowered flow program.
@@ -360,7 +468,19 @@ pub struct FlowFiber {
     pub pending_ops: VecDeque<FlowOp>,
     pub frames: Vec<RuntimeFrame>,
     pub env: RuntimeEnv,
+    pub source_states: BTreeMap<SourceId, SourceRuntimeState>,
     pub status: FlowFiberStatus,
+}
+
+/// Replay-observable state for one active Sans I/O source queue.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceRuntimeState {
+    pub id: SourceId,
+    pub policy: SourcePolicy,
+    pub queue: VecDeque<String>,
+    pub closed: bool,
+    pub last_error: Option<String>,
+    pub overflow_count: u64,
 }
 
 /// Runtime stack frame used to make scope exit and loop transfer explicit.
@@ -671,7 +791,6 @@ pub enum LineEffectRequest {
     Out(LineOutRequest),
     Return(String),
     Goto(String),
-    Yield(String),
     Panic(String),
     Fail(String),
     Bail(String),
@@ -857,10 +976,17 @@ pub fn normalize_task_events(mut events: Vec<TaskEvent>) -> Vec<TaskEvent> {
     events
 }
 
+/// Returns source events in replay-stable frame-boundary order.
+pub fn normalize_source_events<T, E>(mut events: Vec<SourceEvent<T, E>>) -> Vec<SourceEvent<T, E>> {
+    events.sort_by_key(|event| (event.source.clone(), event.sequence));
+    events
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourcePolicy {
     pub backpressure: BackpressurePolicy,
     pub replay: ReplayPolicy,
+    pub privacy: PrivacyPolicy,
     pub max_queue: usize,
 }
 
@@ -887,7 +1013,27 @@ pub enum ReplayPolicy {
     Full,
     HashOnly,
     Summary,
+    EventOnly,
     None,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PrivacyPolicy {
+    Transient,
+    Redacted,
+    Recordable,
+    Private,
+}
+
+impl Default for SourcePolicy {
+    fn default() -> Self {
+        Self {
+            backpressure: BackpressurePolicy::LatestOnly,
+            replay: ReplayPolicy::EventOnly,
+            privacy: PrivacyPolicy::Transient,
+            max_queue: 1,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -905,6 +1051,102 @@ pub enum SourceEventKind<T, E> {
     PermissionRevoked,
     Error(E),
     End,
+}
+
+impl SourceRuntimeState {
+    pub fn new(id: SourceId, policy: SourcePolicy) -> Self {
+        Self {
+            id,
+            policy,
+            queue: VecDeque::new(),
+            closed: false,
+            last_error: None,
+            overflow_count: 0,
+        }
+    }
+
+    pub fn apply_event(&mut self, event: SourceEvent<String, String>) -> Option<String> {
+        match event.kind {
+            SourceEventKind::Item(item) => self.push_item(item),
+            SourceEventKind::Error(error) => {
+                self.last_error = Some(error.clone());
+                Some(format!("source {} error: {error}", self.id.0))
+            }
+            SourceEventKind::Disconnected
+            | SourceEventKind::PermissionRevoked
+            | SourceEventKind::End => {
+                self.closed = true;
+                None
+            }
+            SourceEventKind::Progress(_) => None,
+        }
+    }
+
+    pub fn close(&mut self) {
+        self.closed = true;
+        self.queue.clear();
+    }
+
+    fn push_item(&mut self, item: String) -> Option<String> {
+        if self.closed {
+            return Some(format!("source {} received item after close", self.id.0));
+        }
+        let backpressure = self.policy.backpressure.clone();
+        match &backpressure {
+            BackpressurePolicy::LatestOnly => {
+                self.queue.clear();
+                self.queue.push_back(item);
+                None
+            }
+            BackpressurePolicy::BoundedQueue {
+                capacity,
+                on_overflow,
+            } => self.push_bounded_item(*capacity, on_overflow, item),
+            BackpressurePolicy::BlockingNotAllowed => {
+                if self.queue.is_empty() {
+                    self.queue.push_back(item);
+                    None
+                } else {
+                    self.overflow_count += 1;
+                    Some(format!(
+                        "source {} overflowed a blocking-not-allowed queue",
+                        self.id.0
+                    ))
+                }
+            }
+        }
+    }
+
+    fn push_bounded_item(
+        &mut self,
+        capacity: usize,
+        on_overflow: &OverflowPolicy,
+        item: String,
+    ) -> Option<String> {
+        if capacity == 0 {
+            self.overflow_count += 1;
+            return Some(format!("source {} has zero queue capacity", self.id.0));
+        }
+        if self.queue.len() < capacity {
+            self.queue.push_back(item);
+            return None;
+        }
+        self.overflow_count += 1;
+        match on_overflow {
+            OverflowPolicy::DropOldest => {
+                self.queue.pop_front();
+                self.queue.push_back(item);
+                None
+            }
+            OverflowPolicy::DropNewest => None,
+            OverflowPolicy::Error => Some(format!("source {} queue overflow", self.id.0)),
+            OverflowPolicy::Coalesce => {
+                self.queue.pop_back();
+                self.queue.push_back(item);
+                None
+            }
+        }
+    }
 }
 
 /// Call-shaped runtime request. The runtime adapter decides whether the callee
@@ -983,7 +1225,20 @@ impl RuntimePlan {
             entry_flow,
             flows,
             line_task_groups,
+            stream_plans: Vec::new(),
+            source_plans: Vec::new(),
         })
+    }
+
+    #[must_use]
+    pub fn with_generation_plans(
+        mut self,
+        stream_plans: Vec<StreamPlan>,
+        source_plans: Vec<SourcePlan>,
+    ) -> Self {
+        self.stream_plans = stream_plans;
+        self.source_plans = source_plans;
+        self
     }
 
     pub fn lines_only(line_task_groups: Vec<LineTaskGroup>) -> Self {
@@ -991,11 +1246,16 @@ impl RuntimePlan {
             entry_flow: None,
             flows: Vec::new(),
             line_task_groups,
+            stream_plans: Vec::new(),
+            source_plans: Vec::new(),
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.flows.is_empty() && self.line_task_groups.is_empty()
+        self.flows.is_empty()
+            && self.line_task_groups.is_empty()
+            && self.stream_plans.is_empty()
+            && self.source_plans.is_empty()
     }
 
     pub fn entry_cursor(&self) -> Option<FlowCursor> {
@@ -1064,6 +1324,7 @@ impl Default for FlowFiber {
             pending_ops: VecDeque::new(),
             frames: Vec::new(),
             env: RuntimeEnv::default(),
+            source_states: BTreeMap::new(),
             status: FlowFiberStatus::Done(FlowExit::Done),
         }
     }
@@ -1107,6 +1368,16 @@ impl Engine {
         } else {
             FlowFiberStatus::Running
         };
+        let source_states = plan
+            .source_plans
+            .iter()
+            .map(|plan| {
+                (
+                    plan.id.clone(),
+                    SourceRuntimeState::new(plan.id.clone(), plan.policy.clone()),
+                )
+            })
+            .collect();
         Self {
             plan,
             fiber: FlowFiber {
@@ -1115,6 +1386,7 @@ impl Engine {
                 pending_ops: VecDeque::new(),
                 frames: Vec::new(),
                 env: RuntimeEnv::default(),
+                source_states,
                 status,
             },
         }
@@ -1130,6 +1402,7 @@ impl Engine {
             .env
             .bind_all_root(input.external_values.iter().cloned());
         let events = normalize_task_events(std::mem::take(&mut input.task_events));
+        let source_events = normalize_source_events(std::mem::take(&mut input.source_events));
         output
             .diagnostics
             .extend(events.iter().map(|event| RuntimeDiagnostic {
@@ -1138,6 +1411,7 @@ impl Engine {
                     event.task_id.0, event.sequence.0
                 ),
             }));
+        self.apply_source_events(source_events, &mut output);
 
         if self.resume_suspended(&input, &events, &mut output) {
             return output;
@@ -1151,6 +1425,26 @@ impl Engine {
             self.step_line_only(&input, &mut output);
         }
         output
+    }
+
+    fn apply_source_events(
+        &mut self,
+        events: Vec<SourceEvent<String, String>>,
+        output: &mut FrameOutput,
+    ) {
+        for event in events {
+            let state = self
+                .fiber
+                .source_states
+                .entry(event.source.clone())
+                .or_insert_with(|| {
+                    SourceRuntimeState::new(event.source.clone(), SourcePolicy::default())
+                });
+            if let Some(message) = state.apply_event(event.clone()) {
+                output.diagnostics.push(RuntimeDiagnostic { message });
+            }
+            output.source_events.push(event);
+        }
     }
 
     fn resume_suspended(

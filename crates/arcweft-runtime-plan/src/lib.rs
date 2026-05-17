@@ -1,17 +1,22 @@
 use arcweft_core::{
-    AwaitTarget, ChildCancelPolicy, ChildJoinPolicy, ChoiceRuntimeOption, ConflictPolicy, FlowOp,
-    FlowRuntimeId, LineAssertionRequest, LineBindingRequest, LineCancelRuleRequest, LineChildTask,
-    LineEffectRequest, LineMemoRequest, LineOptionRequest, LineOutRequest, LineTaskGroup,
-    LineTaskNode, LineTaskScope, LineTaskTrigger, LogicalDuration, NeedId, ParallelPolicy,
-    ResourceAccess, ResourceAccessMode, RuntimeAssignment, RuntimeBinaryOp, RuntimeCall,
-    RuntimeCommand, RuntimeEvent, RuntimeExpr, RuntimeExprMatchArm, RuntimeField, RuntimeFieldExpr,
-    RuntimeFlow, RuntimeLineId, RuntimeLog, RuntimeMatchArm, RuntimePattern, RuntimePlan,
-    RuntimeRecordPatternField, RuntimeUnaryOp, RuntimeValue, TaskId, TaskKey, TaskPriority,
+    AwaitTarget, BackpressurePolicy, ChildCancelPolicy, ChildJoinPolicy, ChoiceRuntimeOption,
+    ConflictPolicy, FlowOp, FlowRuntimeId, LineAssertionRequest, LineBindingRequest,
+    LineCancelRuleRequest, LineChildTask, LineEffectRequest, LineMemoRequest, LineOptionRequest,
+    LineOutRequest, LineTaskGroup, LineTaskNode, LineTaskScope, LineTaskTrigger, LogicalDuration,
+    NeedId, OverflowPolicy, ParallelPolicy, PrivacyPolicy, ReplayPolicy, ResourceAccess,
+    ResourceAccessMode, RuntimeAssignment, RuntimeBinaryOp, RuntimeCall, RuntimeCommand,
+    RuntimeEvent, RuntimeExpr, RuntimeExprMatchArm, RuntimeField, RuntimeFieldExpr, RuntimeFlow,
+    RuntimeLineId, RuntimeLog, RuntimeMatchArm, RuntimePattern, RuntimePlan,
+    RuntimeRecordPatternField, RuntimeUnaryOp, RuntimeValue, SourceHandlerPlan, SourceId, SourceOp,
+    SourcePlan, SourcePolicy, StreamOp, StreamPlan, StreamRuntimeId, TaskId, TaskKey, TaskPriority,
 };
 use arcweft_lang_hir::{HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlowItem, HirModule};
+use arcweft_lang_syntax::TypeRef;
 use arcweft_lang_syntax::{
-    AwaitBranchKind, ChoiceAction, DeferOutcome, EntityRef, EntityRefSyntax, LinePlan,
-    LinePlanItem, Pattern, Stmt, TriggerPattern, WaitTarget,
+    AwaitBranchKind, ChoiceAction, DeferOutcome, EntityRef, EntityRefSyntax, FunctionKind,
+    LinePlan, LinePlanItem, Pattern, SourceBackpressurePolicy, SourceEventPattern, SourceHeader,
+    SourceOverflowPolicy, SourcePrivacyPolicy, SourceReplayPolicy, Stmt, TriggerPattern,
+    WaitTarget,
 };
 use arcweft_lang_syntax::{BinaryOp, DurationUnit, Expr, Literal, UnaryOp};
 use thiserror::Error;
@@ -83,13 +88,292 @@ pub fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<Runtime
         return Err(lowerer.errors);
     }
     let entry = flows.first().map(|flow| flow.id.clone());
+    let stream_plans = module
+        .functions()
+        .iter()
+        .filter(|function| function.kind() == FunctionKind::Stream)
+        .map(lower_stream_function)
+        .collect::<Vec<_>>();
+    let source_plans = module
+        .declarations()
+        .iter()
+        .filter_map(|decl| match decl {
+            arcweft_lang_hir::HirTopLevelDecl::Source(source) => Some(lower_source_plan(source)),
+            _ => None,
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     RuntimePlan::new(entry, flows, lowerer.line_task_groups)
+        .map(|plan| plan.with_generation_plans(stream_plans, source_plans))
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
 }
 
 struct FlowRuntimeLowerer {
     line_task_groups: Vec<LineTaskGroup>,
     errors: Vec<RuntimePlanLowerError>,
+}
+
+fn lower_stream_function(function: &arcweft_lang_hir::HirFunction) -> StreamPlan {
+    let (item_ty, error_ty) = function
+        .signature()
+        .return_type()
+        .and_then(stream_type_labels)
+        .unwrap_or_else(|| ("Unit".to_owned(), "Unit".to_owned()));
+    StreamPlan {
+        id: StreamRuntimeId(function.name().to_owned()),
+        item_ty,
+        error_ty,
+        ops: lower_stream_stmt_list(function.statements()),
+    }
+}
+
+fn lower_source_plan(
+    source: &arcweft_lang_syntax::SourceItem,
+) -> Result<SourcePlan, Vec<RuntimePlanLowerError>> {
+    let mut errors = Vec::new();
+    let id = source.id().map_or_else(
+        || SourceId(source.name().unwrap_or("anonymous").to_owned()),
+        |id| SourceId(id.body().to_owned()),
+    );
+    let (item_ty, error_ty) = source
+        .source_ty()
+        .and_then(source_type_labels)
+        .unwrap_or_else(|| {
+            errors.push(RuntimePlanLowerError::new(
+                "source plan requires `Source<T, E>` type".to_owned(),
+            ));
+            ("Unit".to_owned(), "Unit".to_owned())
+        });
+    let from = source
+        .headers()
+        .iter()
+        .find_map(|header| match header {
+            SourceHeader::From(expr) => Some(lower_runtime_expr(expr)),
+            _ => None,
+        })
+        .unwrap_or_else(|| {
+            errors.push(RuntimePlanLowerError::new(
+                "source plan requires `from` header".to_owned(),
+            ));
+            RuntimeExpr::Value(RuntimeValue::Unit)
+        });
+    let Some(policy) = lower_source_policy(source.headers()) else {
+        errors.push(RuntimePlanLowerError::new(
+            "source plan requires backpressure, replay, and privacy policies".to_owned(),
+        ));
+        return Err(errors);
+    };
+    let handlers = source
+        .handlers()
+        .iter()
+        .map(lower_source_handler)
+        .collect::<Vec<_>>();
+    if errors.is_empty() {
+        Ok(SourcePlan {
+            id,
+            item_ty,
+            error_ty,
+            from,
+            policy,
+            handlers,
+        })
+    } else {
+        Err(errors)
+    }
+}
+
+fn lower_stream_stmt_list(statements: &[Stmt]) -> Vec<StreamOp> {
+    statements.iter().flat_map(lower_stream_stmt).collect()
+}
+
+fn lower_stream_stmt(stmt: &Stmt) -> Vec<StreamOp> {
+    match stmt {
+        Stmt::Let { pattern, expr, .. } => vec![StreamOp::Let {
+            pattern: lower_runtime_pattern(pattern),
+            expr: lower_runtime_expr(expr),
+        }],
+        Stmt::For {
+            pattern,
+            source,
+            body,
+        } => vec![StreamOp::ForNext {
+            pattern: lower_runtime_pattern(pattern),
+            source: lower_runtime_expr(source),
+            body: lower_stream_stmt_list(body),
+        }],
+        Stmt::Yield(expr) => vec![StreamOp::Yield {
+            expr: lower_runtime_expr(expr),
+        }],
+        Stmt::If { condition, body } => vec![StreamOp::If {
+            condition: lower_runtime_expr(condition),
+            then_ops: lower_stream_stmt_list(body),
+            else_ops: Vec::new(),
+        }],
+        Stmt::Match { expr, arms } => vec![StreamOp::Match {
+            scrutinee: lower_runtime_expr(expr),
+            arms: arms
+                .iter()
+                .map(|arm| arcweft_core::StreamMatchArm {
+                    pattern: lower_runtime_pattern(arm.pattern()),
+                    guard: arm.guard().map(lower_runtime_expr),
+                    ops: lower_stream_stmt_list(arm.body()),
+                })
+                .collect(),
+        }],
+        Stmt::Close(expr) => vec![StreamOp::Close {
+            source: lower_runtime_expr(expr),
+        }],
+        Stmt::Return(_) => vec![StreamOp::Return],
+        _ => vec![StreamOp::Noop],
+    }
+}
+
+fn lower_source_handler(handler: &arcweft_lang_syntax::SourceHandler) -> SourceHandlerPlan {
+    let ops = lower_source_stmt_list(handler.body());
+    match handler.event() {
+        SourceEventPattern::Item(pattern) => SourceHandlerPlan::Item {
+            pattern: lower_runtime_pattern(pattern),
+            ops,
+        },
+        SourceEventPattern::Error(pattern) => SourceHandlerPlan::Error {
+            pattern: lower_runtime_pattern(pattern),
+            ops,
+        },
+        SourceEventPattern::Progress(pattern) => SourceHandlerPlan::Progress {
+            pattern: lower_runtime_pattern(pattern),
+            ops,
+        },
+        SourceEventPattern::Disconnected => SourceHandlerPlan::Disconnected { ops },
+        SourceEventPattern::PermissionRevoked => SourceHandlerPlan::PermissionRevoked { ops },
+        SourceEventPattern::End | SourceEventPattern::Raw(_) => SourceHandlerPlan::End { ops },
+    }
+}
+
+fn lower_source_stmt_list(statements: &[Stmt]) -> Vec<SourceOp> {
+    statements.iter().map(lower_source_stmt).collect()
+}
+
+fn lower_source_stmt(stmt: &Stmt) -> SourceOp {
+    match stmt {
+        Stmt::Yield(expr) => SourceOp::Yield(lower_runtime_expr(expr)),
+        Stmt::Signal { target, value } => SourceOp::SignalWrite(RuntimeAssignment {
+            target: expr_label(target),
+            value: expr_label(value),
+        }),
+        Stmt::Expr(expr) => match runtime_call_effect(expr) {
+            LineEffectRequest::Log(log) => SourceOp::Log(log),
+            effect => SourceOp::Effect(effect),
+        },
+        Stmt::Close(expr) => SourceOp::Close(SourceId(expr_label(expr))),
+        _ => SourceOp::Noop,
+    }
+}
+
+fn stream_type_labels(ty: &TypeRef) -> Option<(String, String)> {
+    match ty {
+        TypeRef::Generic { base, args } if base == "Stream" && args.len() == 2 => {
+            Some((type_label(&args[0]), type_label(&args[1])))
+        }
+        _ => None,
+    }
+}
+
+fn source_type_labels(ty: &TypeRef) -> Option<(String, String)> {
+    match ty {
+        TypeRef::Generic { base, args } if base == "Source" && args.len() == 2 => {
+            Some((type_label(&args[0]), type_label(&args[1])))
+        }
+        _ => None,
+    }
+}
+
+fn type_label(ty: &TypeRef) -> String {
+    match ty {
+        TypeRef::Never => "Never".to_owned(),
+        TypeRef::Path(path) => path.clone(),
+        TypeRef::Generic { base, args } => format!(
+            "{base}<{}>",
+            args.iter().map(type_label).collect::<Vec<_>>().join(", ")
+        ),
+        TypeRef::Ref { lifetime, inner } => {
+            let lifetime = lifetime
+                .as_ref()
+                .map(|lifetime| format!("'{} ", lifetime.name()))
+                .unwrap_or_default();
+            format!("&{lifetime}{}", type_label(inner))
+        }
+        TypeRef::Slice(inner) => format!("[{}]", type_label(inner)),
+    }
+}
+
+fn lower_source_policy(headers: &[SourceHeader]) -> Option<SourcePolicy> {
+    let backpressure = headers.iter().find_map(|header| match header {
+        SourceHeader::Backpressure(policy) => lower_backpressure(policy),
+        _ => None,
+    })?;
+    let replay = headers.iter().find_map(|header| match header {
+        SourceHeader::Replay(policy) => lower_replay(policy),
+        _ => None,
+    })?;
+    let privacy = headers.iter().find_map(|header| match header {
+        SourceHeader::Privacy(policy) => lower_privacy(policy),
+        _ => None,
+    })?;
+    let max_queue = match &backpressure {
+        BackpressurePolicy::LatestOnly | BackpressurePolicy::BlockingNotAllowed => 1,
+        BackpressurePolicy::BoundedQueue { capacity, .. } => *capacity,
+    };
+    Some(SourcePolicy {
+        backpressure,
+        replay,
+        privacy,
+        max_queue,
+    })
+}
+
+fn lower_backpressure(policy: &SourceBackpressurePolicy) -> Option<BackpressurePolicy> {
+    match policy {
+        SourceBackpressurePolicy::Latest => Some(BackpressurePolicy::LatestOnly),
+        SourceBackpressurePolicy::BlockingNotAllowed => {
+            Some(BackpressurePolicy::BlockingNotAllowed)
+        }
+        SourceBackpressurePolicy::Bounded { capacity, overflow } => {
+            Some(BackpressurePolicy::BoundedQueue {
+                capacity: expr_label(capacity).parse().unwrap_or(1),
+                on_overflow: lower_overflow(overflow),
+            })
+        }
+        SourceBackpressurePolicy::Raw(_) => None,
+    }
+}
+
+fn lower_overflow(policy: &SourceOverflowPolicy) -> OverflowPolicy {
+    match policy {
+        SourceOverflowPolicy::DropOldest => OverflowPolicy::DropOldest,
+        SourceOverflowPolicy::DropNewest => OverflowPolicy::DropNewest,
+        SourceOverflowPolicy::Error | SourceOverflowPolicy::Raw(_) => OverflowPolicy::Error,
+        SourceOverflowPolicy::Coalesce => OverflowPolicy::Coalesce,
+    }
+}
+
+fn lower_replay(policy: &SourceReplayPolicy) -> Option<ReplayPolicy> {
+    match policy {
+        SourceReplayPolicy::Full => Some(ReplayPolicy::Full),
+        SourceReplayPolicy::HashOnly => Some(ReplayPolicy::HashOnly),
+        SourceReplayPolicy::Summary => Some(ReplayPolicy::Summary),
+        SourceReplayPolicy::EventOnly => Some(ReplayPolicy::EventOnly),
+        SourceReplayPolicy::None => Some(ReplayPolicy::None),
+        SourceReplayPolicy::Raw(_) => None,
+    }
+}
+
+fn lower_privacy(policy: &SourcePrivacyPolicy) -> Option<PrivacyPolicy> {
+    match policy {
+        SourcePrivacyPolicy::Transient => Some(PrivacyPolicy::Transient),
+        SourcePrivacyPolicy::Redacted => Some(PrivacyPolicy::Redacted),
+        SourcePrivacyPolicy::Recordable => Some(PrivacyPolicy::Recordable),
+        SourcePrivacyPolicy::Private => Some(PrivacyPolicy::Private),
+        SourcePrivacyPolicy::Raw(_) => None,
+    }
 }
 
 impl FlowRuntimeLowerer {
@@ -757,7 +1041,13 @@ impl LinePlanGraphLowerer {
             })],
             Stmt::Return(expr) => vec![LineEffectRequest::Return(expr_label(expr))],
             Stmt::Goto(expr) => vec![LineEffectRequest::Goto(expr_label(expr))],
-            Stmt::Yield(expr) => vec![LineEffectRequest::Yield(expr_label(expr))],
+            Stmt::Yield(_) => {
+                self.errors.push(LinePlanLowerError::new(
+                    "`yield` cannot be lowered from a dialogue line plan; use `out` for line results"
+                        .to_owned(),
+                ));
+                Vec::new()
+            }
             Stmt::Panic(expr) => vec![LineEffectRequest::Panic(expr_label(expr))],
             Stmt::Fail(expr) => vec![LineEffectRequest::Fail(expr_label(expr))],
             Stmt::Bail(expr) => vec![LineEffectRequest::Bail(expr_label(expr))],
@@ -1014,7 +1304,6 @@ fn effect_accesses(effect: &LineEffectRequest) -> Vec<ResourceAccess> {
         )],
         LineEffectRequest::Return(_)
         | LineEffectRequest::Goto(_)
-        | LineEffectRequest::Yield(_)
         | LineEffectRequest::Panic(_)
         | LineEffectRequest::Fail(_)
         | LineEffectRequest::Bail(_)

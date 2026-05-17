@@ -394,6 +394,71 @@ flow @flow.next next {
 }
 
 #[test]
+fn runtime_plan_lowers_stream_and_source_plans_separately_from_flow_ops() {
+    let tree = parse_ok(
+        r"
+stream fn rms_level(frames: Stream<AudioFrame, AudioError>) -> Stream<f32, AudioError> {
+    for frame in frames {
+        yield rms(frame)
+    }
+}
+
+pub source @source.player_mic_frames: Source<AudioFrameHandle, CaptureError> {
+    from capture.microphone(@capture.player_microphone)
+    backpressure = bounded(capacity = 8, overflow = drop_oldest)
+    replay = hash_only
+    privacy = transient
+
+    on item frame => yield frame
+}
+
+flow @flow.opening opening {
+    return Ok(FlowExit::Done)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("stream/source fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("stream/source runtime plan lowers");
+
+    assert_eq!(plan.stream_plans.len(), 1);
+    assert_eq!(plan.stream_plans[0].id.0, "rms_level");
+    assert!(matches!(
+        plan.stream_plans[0].ops.as_slice(),
+        [arcweft_core::StreamOp::ForNext { body, .. }]
+            if matches!(body.as_slice(), [arcweft_core::StreamOp::Yield { .. }])
+    ));
+    assert_eq!(plan.source_plans.len(), 1);
+    assert_eq!(plan.source_plans[0].id.0, "source.player_mic_frames");
+    assert!(matches!(
+        plan.source_plans[0].handlers.as_slice(),
+        [arcweft_core::SourceHandlerPlan::Item { ops, .. }]
+            if matches!(ops.as_slice(), [arcweft_core::SourceOp::Yield(_)])
+    ));
+}
+
+#[test]
+fn line_plan_runtime_lowering_rejects_yield_effect() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    alice[待って。[p]]
+    with:
+        yield .Done
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("line-plan yield fixture lowers to HIR");
+
+    let errors = lower_line_task_groups(&hir).expect_err("line-plan yield is not a core effect");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("`yield` cannot be lowered from a dialogue line plan")
+    }));
+}
+
+#[test]
 fn lowers_choice_and_await_to_runtime_plan() {
     let tree = parse_ok(
         r#"

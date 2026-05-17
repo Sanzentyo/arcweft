@@ -36,6 +36,10 @@ Source<T, E>
   Live device or event stream.
   Permissioned, timestamped, cancelable, backpressure-aware.
 
+Stream<T, E>
+  Derived ordered stream transform over an existing source, stream, or granted
+  port.
+
 Need<Result<T, E>, TaskError>
   One-shot realization or acquisition.
   Must be awaited with pending/denied/error branches in user-visible flows.
@@ -55,6 +59,7 @@ pub struct Source<T, E> {
 pub struct SourcePolicy {
     pub backpressure: BackpressurePolicy,
     pub replay: ReplayPolicy,
+    pub privacy: PrivacyPolicy,
     pub max_queue: usize,
 }
 
@@ -78,7 +83,15 @@ pub enum ReplayPolicy {
     Full,
     HashOnly,
     Summary,
+    EventOnly,
     None,
+}
+
+pub enum PrivacyPolicy {
+    Transient,
+    Redacted,
+    Recordable,
+    Private,
 }
 
 pub struct SourceEvent<T, E> {
@@ -97,10 +110,9 @@ pub enum SourceEventKind<T, E> {
 }
 ```
 
-Privacy and clock policy remain design-level source metadata, but the current
-core crate only stores the deterministic frame-boundary pieces needed for
-replay and queueing. Backend adapters may attach richer native timestamps while
-recording/replaying through `SourceEvent.sequence`.
+Backend adapters may attach richer native timestamps while recording/replaying
+through `SourceEvent.sequence`, but runtime core stores only Sans I/O policy and
+deterministic frame-boundary event data.
 
 ## Source block syntax
 
@@ -123,6 +135,7 @@ This is not a free-form coroutine. The compiler enforces:
 
 - every `yield` has a typed item,
 - every source has a backpressure policy,
+- every source has replay and privacy policy,
 - borrowed frame data cannot cross `yield` or `await`,
 - source items are delivered only at frame boundary unless explicitly marked realtime,
 - source replay policy is explicit.
@@ -188,8 +201,11 @@ Every device stream can be replaced by a fixture source.
 ```rust
 pub source @source.test_camera_frames: Source<VideoFrameHandle, CaptureError> {
     from fixture.video("fixtures/camera/front_cam.webm")
-    backpressure = exact
+    backpressure = bounded(capacity = 8, overflow = error)
     replay = full
+    privacy = recordable
+
+    on item frame => yield frame
 }
 ```
 
@@ -208,6 +224,9 @@ event_only:
 none:
   product mode for private capture
 ```
+
+`privacy = private` cannot be paired with `replay = full`; choose `hash_only`,
+`summary`, `event_only`, or `none`.
 
 ## Implementation guidance
 

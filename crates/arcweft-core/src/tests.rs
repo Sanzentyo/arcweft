@@ -52,6 +52,7 @@ fn source_policy_is_pure_data() {
             on_overflow: OverflowPolicy::Coalesce,
         },
         replay: ReplayPolicy::HashOnly,
+        privacy: PrivacyPolicy::Transient,
         max_queue: 8,
     };
 
@@ -63,6 +64,107 @@ fn source_policy_is_pure_data() {
         }
     ));
     assert_eq!(policy.replay, ReplayPolicy::HashOnly);
+    assert_eq!(policy.privacy, PrivacyPolicy::Transient);
+}
+
+#[test]
+fn normalizes_source_events_by_source_and_sequence() {
+    let events: Vec<SourceEvent<String, String>> = vec![
+        SourceEvent {
+            source: SourceId("source.b".to_owned()),
+            sequence: TaskSequence(2),
+            kind: SourceEventKind::Item("b2".to_owned()),
+        },
+        SourceEvent {
+            source: SourceId("source.a".to_owned()),
+            sequence: TaskSequence(9),
+            kind: SourceEventKind::Item("a9".to_owned()),
+        },
+        SourceEvent {
+            source: SourceId("source.a".to_owned()),
+            sequence: TaskSequence(1),
+            kind: SourceEventKind::Item("a1".to_owned()),
+        },
+    ];
+
+    let normalized = normalize_source_events(events);
+    let keys = normalized
+        .iter()
+        .map(|event| (event.source.0.as_str(), event.sequence))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        keys,
+        vec![
+            ("source.a", TaskSequence(1)),
+            ("source.a", TaskSequence(9)),
+            ("source.b", TaskSequence(2)),
+        ]
+    );
+}
+
+#[test]
+fn source_runtime_latest_backpressure_keeps_latest_item() {
+    let mut state = SourceRuntimeState::new(
+        SourceId("source.camera".to_owned()),
+        SourcePolicy {
+            backpressure: BackpressurePolicy::LatestOnly,
+            replay: ReplayPolicy::HashOnly,
+            privacy: PrivacyPolicy::Transient,
+            max_queue: 1,
+        },
+    );
+
+    state.apply_event(SourceEvent {
+        source: SourceId("source.camera".to_owned()),
+        sequence: TaskSequence(0),
+        kind: SourceEventKind::Item("old".to_owned()),
+    });
+    state.apply_event(SourceEvent {
+        source: SourceId("source.camera".to_owned()),
+        sequence: TaskSequence(1),
+        kind: SourceEventKind::Item("new".to_owned()),
+    });
+
+    assert_eq!(state.queue.into_iter().collect::<Vec<_>>(), vec!["new"]);
+}
+
+#[test]
+fn engine_records_source_events_without_running_adapters() {
+    let source = SourcePlan {
+        id: SourceId("source.camera".to_owned()),
+        item_ty: "Frame".to_owned(),
+        error_ty: "CaptureError".to_owned(),
+        from: RuntimeExpr::Local("camera".to_owned()),
+        policy: SourcePolicy::default(),
+        handlers: Vec::new(),
+    };
+    let plan = RuntimePlan::new(None, Vec::new(), Vec::new())
+        .expect("empty plan is valid")
+        .with_generation_plans(Vec::new(), vec![source]);
+    let mut engine = Engine::new(plan);
+
+    let output = engine.step(FrameInput {
+        source_events: vec![SourceEvent {
+            source: SourceId("source.camera".to_owned()),
+            sequence: TaskSequence(0),
+            kind: SourceEventKind::Item("frame0".to_owned()),
+        }],
+        ..FrameInput::default()
+    });
+
+    assert_eq!(output.source_events.len(), 1);
+    assert_eq!(
+        engine
+            .fiber()
+            .source_states
+            .get(&SourceId("source.camera".to_owned()))
+            .expect("source state exists")
+            .queue
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["frame0".to_owned()]
+    );
 }
 
 fn call(name: &str) -> LineEffectRequest {

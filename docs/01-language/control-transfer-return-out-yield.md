@@ -32,7 +32,61 @@ Do not use `return` for line-plan values.
 
 ## `yield`
 
-`yield expr` is reserved for `Source<T, E>` / generator-like streams.
+`yield expr` produces an item from an explicit generation context. It is a
+statement with `Unit` type, and the expression must match the item type of the
+surrounding generator-like construct.
+
+```awft
+stream fn rms_level(frames: Stream<AudioFrame, AudioError>) -> Stream<f32, AudioError> {
+    for frame in frames {
+        yield frame.rms()
+    }
+}
+```
+
+Allowed contexts:
+
+```text
+seq { ... }
+stream { ... }
+stream fn ... -> Stream<T, E> { ... }
+source @source.id: Source<T, E> { on item frame => yield frame }
+```
+
+`yield` is a suspension boundary like `await` and `thread`: non-`'static`
+borrows, raw pointers, and borrowed callback buffers may not be captured across
+it. `seq` blocks are pure lazy sequences, so they also reject runtime effects
+such as `await`, `thread`, signal writes, metric writes, event emission, and
+logging.
+
+Live external sources are declared with policy-backed `source` blocks rather
+than function-like generator declarations.
+
+```awft
+pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
+    from capture.camera(@capture.face_camera)
+    backpressure = latest
+    replay = hash_only
+    privacy = transient
+
+    on item frame => yield frame
+}
+```
+
+Do not use `yield` in ordinary functions, task functions, flows, hooks, memo
+functions, or dialogue line plans. Use `out` for line-plan results.
+
+```awft
+let outcome = alice.say()[長い台詞です。[p]]
+with 'line {
+    cancel on input .SkipLine {
+        text.flush(mode = .Instant)
+        out 'line .Skipped
+    }
+}
+```
+
+Invalid:
 
 ```awft
 source camera_frames() -> Source<VideoFrame, CameraError> {
@@ -43,7 +97,8 @@ source camera_frames() -> Source<VideoFrame, CameraError> {
 }
 ```
 
-Do not use `yield` in dialogue line plans.
+This hides source policy and acquisition behavior. Use a canonical `source`
+declaration with `from`, `backpressure`, `replay`, and `privacy` headers.
 
 ## `break` and `continue`
 

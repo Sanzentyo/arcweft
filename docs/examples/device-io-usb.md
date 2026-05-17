@@ -25,7 +25,7 @@ pub parser parse_sensor_packet: Parser<SensorFrame, UsbParseError> {
     // Sans I/O parser for fixed-length sensor packets.
 }
 
-stream fn sensor_frames(dev: DevicePort<UsbDevice>) -> Source<SensorFrame, SensorError> {
+stream fn sensor_frames(dev: DevicePort<UsbDevice>) -> Stream<SensorFrame, SensorError> {
     for await packet in dev.bulk_in(0x81) {
         yield parse(parse_sensor_packet, packet.bytes)
             .map_err(.Parse)?

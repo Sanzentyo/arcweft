@@ -24,13 +24,16 @@ Need<T, E>
   startup / permission / realization that may take time
 
 Stream<T, E>
-  ordered event or frame sequence
+  ordered stream transform or granted-port sequence
+
+Source<T, E>
+  live external source with permission, replay, privacy, and backpressure policy
 
 Watch<T>
   latest-value signal
 
 Generator syntax
-  optional sugar for pure or granted-port stream transforms
+  optional sugar for pure sequences, stream transforms, and source handlers
 ```
 
 This keeps capture and USB handling deterministic, permission-aware, replayable, and testable.
@@ -67,6 +70,13 @@ pub struct Stream<T, E> {
     error: PhantomData<E>,
 }
 
+pub struct Source<T, E> {
+    source: SourceId,
+    policy: SourcePolicy,
+    item: PhantomData<T>,
+    error: PhantomData<E>,
+}
+
 pub struct Watch<T> {
     signal: SignalId,
     value: Option<T>,
@@ -90,7 +100,10 @@ let usb =
 
 ## Stream functions
 
-A `stream fn` is a state machine that yields values. It is allowed for pure transforms and for processing a granted port.
+A `stream fn` is a state machine that yields values. It is allowed for pure
+transforms and for processing a granted stream or port. It must return
+`Stream<T, E>`; `Source<T, E>` is reserved for policy-backed `source`
+declarations.
 
 ```awft
 stream fn rms_level(
@@ -125,6 +138,40 @@ let mic =
 
 let level_stream = rms_level(mic.frames())
 ```
+
+## `seq`, `stream`, and `source`
+
+`yield` is valid only in explicit generation contexts:
+
+```text
+seq { ... yield ... }
+  pure lazy sequence; no runtime effects
+
+stream { ... yield ... }
+stream fn ... -> Stream<T, E> { ... yield ... }
+  deterministic transform over existing values/streams
+
+source @source.id: Source<T, E> { on item value => yield value }
+  live external source with explicit policy
+```
+
+Source declarations are declarative and policy-driven:
+
+```awft
+pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
+    from capture.camera(@capture.face_camera)
+    backpressure = latest
+    replay = hash_only
+    privacy = transient
+
+    on item frame => yield frame
+    on disconnected => signal.set(@signal.camera_connected, false)
+    on error e => log.warn("camera stream error {err:?}", err = e)
+}
+```
+
+The required source headers are `from`, `backpressure`, `replay`, and
+`privacy`. `privacy = private` is incompatible with `replay = full`.
 
 ## `yield` is a suspension boundary
 
@@ -175,14 +222,14 @@ Camera preview typically uses `LatestOnly`. USB protocol streams usually use `Bo
 
 ## Replay and virtual sources
 
-Live streams are recorded as summaries or deterministic fixtures.
+Live sources are recorded as summaries or deterministic fixtures.
 
 ```text
 product/dev live source:
   device callback -> stream events
 
 test/headless source:
-  fixture stream -> same Stream<T, E> interface
+  fixture stream -> same Source<T, E> interface
 ```
 
 A trace records:
@@ -216,7 +263,8 @@ The block form is useful for complex stream transforms but is not required for m
 ```text
 Use Need for startup.
 Use Stream for ordered live data.
+Use Source for live external inputs with policy.
 Use Watch for latest value.
-Use generator syntax only as a stream-transform convenience.
+Use generator syntax only in explicit seq/stream/source contexts.
 Never let a generator open hardware directly.
 ```

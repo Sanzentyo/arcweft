@@ -445,7 +445,7 @@ pub dialogue fn flash(color: Color) -> Content {
     Content::empty()
 }
 
-stream fn camera_frames() -> Source<VideoFrame, CameraError> {
+stream fn camera_frames() -> Stream<VideoFrame, CameraError> {
     yield next_frame()
 }
 ",
@@ -466,7 +466,7 @@ stream fn camera_frames() -> Source<VideoFrame, CameraError> {
     assert_eq!(stream.kind(), FunctionKind::Stream);
     assert_eq!(
         stream.signature_text(),
-        "fn camera_frames() -> Source<VideoFrame, CameraError>"
+        "fn camera_frames() -> Stream<VideoFrame, CameraError>"
     );
     assert!(matches!(stream.body_statements()[0], Stmt::Yield(_)));
 

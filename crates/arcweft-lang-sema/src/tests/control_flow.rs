@@ -427,6 +427,47 @@ flow @flow.title title {}
 }
 
 #[test]
+fn typecheck_rejects_yield_outside_generation_context() {
+    let tree = parse_ok(
+        r"
+flow @flow.bad bad {
+    yield state
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("yield fixture lowers");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("yield in flow is rejected");
+
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("`yield` is only valid in `seq`, `stream`, or `source` contexts")
+    }));
+}
+
+#[test]
+fn typecheck_rejects_yield_in_dialogue_line_plan() {
+    let tree = parse_ok(
+        r"
+flow @flow.bad bad {
+    alice[待って。[p]]
+    with:
+        yield .Done
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("line-plan yield fixture lowers");
+    let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::Speaker(EntityKind::Character));
+    let errors = typecheck_hir(&hir, &env).expect_err("line-plan yield is rejected");
+
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("`yield` cannot be used in a dialogue line plan")
+    }));
+}
+
+#[test]
 fn typecheck_rejects_non_bool_ensure_condition() {
     let tree = parse_ok(
         r#"

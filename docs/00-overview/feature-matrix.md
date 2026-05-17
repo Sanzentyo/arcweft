@@ -80,7 +80,7 @@
 | Serial | native serial backend | Web Serial | USB CDC and microcontroller-style devices. |
 | Gamepad | native gamepad abstraction | Gamepad API | Prefer high-level controller route when possible. |
 | Touch virtual controller | Game Native UI | Game Native UI / DOM pointer input | Agent-visible and replayable as logical events. |
-| stream fn / Source<T> | yes | yes | Lowered to Arcweft state machines, not Rust unstable generators. |
+| stream fn / source block | yes | yes | `stream fn -> Stream<T,E>` transforms; `source @id: Source<T,E>` declares live policy-backed inputs. |
 
 
 ## Device and controller features

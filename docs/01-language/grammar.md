@@ -101,6 +101,7 @@ Item         :=
     FlowDecl
   | FragmentDecl
   | FunctionDecl
+  | SourceDecl
   | StateDecl
   | ReducerDecl
   | ViewDecl
@@ -320,6 +321,47 @@ Multiple `ParamGroup` entries are curried parameter groups and are preserved as
 separate syntax groups. Unexpected tokens after the return type or where clause
 are syntax errors.
 
+`stream fn` must declare `-> Stream<T, E>`. Hand-written stream transforms do
+not return `Source<T, E>`; live external sources use `source` declarations so
+policy, replay, and privacy remain explicit.
+
+## Source Declarations
+
+```text
+SourceDecl      := Visibility? 'source' SourceId? Ident? ':' SourceType SourceBlock
+SourceId        := EntityRef | RelativeId | FamilyRelativeEntityRef
+SourceType      := 'Source' '<' Type ',' Type '>'
+SourceBlock     := '{' SourceBlockItem* '}'
+SourceBlockItem := SourceHeader | SourceHandler | ContractClause
+
+SourceHeader :=
+    'from' Expr
+  | 'backpressure' '=' BackpressurePolicy
+  | 'replay' '=' ReplayPolicy
+  | 'privacy' '=' PrivacyPolicy
+
+BackpressurePolicy :=
+    'latest'
+  | 'bounded' '(' 'capacity' '=' IntLiteral ',' 'overflow' '=' OverflowPolicy ')'
+  | 'blocking_not_allowed'
+
+OverflowPolicy := 'drop_oldest' | 'drop_newest' | 'error' | 'coalesce'
+ReplayPolicy   := 'full' | 'hash_only' | 'summary' | 'event_only' | 'none'
+PrivacyPolicy  := 'transient' | 'redacted' | 'recordable' | 'private'
+
+SourceHandler      := 'on' SourceEventPattern '=>' SourceHandlerBody
+SourceEventPattern := 'item' Pattern
+                    | 'error' Pattern
+                    | 'progress' Pattern
+                    | 'disconnected'
+                    | 'permission_revoked'
+                    | 'end'
+SourceHandlerBody  := YieldStmt | ExprStmt | Block
+```
+
+Function-like `source name() -> Source<T, E> { ... }` is not canonical. Use
+`source @source.id: Source<T, E> { ... }`.
+
 ## Blocks and scopes
 
 ```text
@@ -382,11 +424,16 @@ ForStmt   := 'for' Pattern 'in' Expr StatementBlock
 BreakStmt    := 'break' LabelRef? Expr?
 ContinueStmt := 'continue' LabelRef?
 OutStmt      := 'out' LabelRef? Expr
+YieldStmt    := 'yield' Expr
 LabelRef     := '\'' Ident
 ```
 
 `break expr` is allowed only in `loop`.
 `out` is allowed only in line-plan, cue-block, and content-scope continuations.
+`yield` parses as a statement but is semantically valid only in explicit
+generation contexts: `seq { ... }`, `stream { ... }`, `stream fn`, and `source`
+handlers. Flow bodies and dialogue line plans use `return`/`goto`/`out`
+instead.
 
 ## Let and let-else
 

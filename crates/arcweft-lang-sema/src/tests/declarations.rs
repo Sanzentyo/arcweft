@@ -705,7 +705,10 @@ pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     privacy = transient
 
     on item frame => yield frame
-    on disconnected => signal.set(@signal.camera_connected, false)
+    on disconnected => {
+        signal.set(@signal.camera_connected, false)
+        log.info("camera disconnected")
+    }
     on error e => log.warn("camera stream error {err:?}", err = e)
 }
 "#,
@@ -715,15 +718,33 @@ pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     };
     assert!(source.id().is_some());
     assert!(source.signature_tail().contains("Source<VideoFrameHandle"));
-    assert!(source.body_statements().iter().any(|stmt| matches!(
-        stmt,
-        Stmt::On { trigger, body }
-            if trigger.label().contains("frame") && matches!(body.as_slice(), [Stmt::Yield(_)])
+    assert!(matches!(
+        source.source_ty(),
+        Some(TypeRef::Generic { base, args }) if base == "Source" && args.len() == 2
+    ));
+    assert!(source.headers().iter().any(|header| matches!(
+        header,
+        SourceHeader::Backpressure(SourceBackpressurePolicy::Latest)
     )));
-    assert!(source.body_statements().iter().any(|stmt| matches!(
-        stmt,
-        Stmt::On { trigger, body }
-            if trigger.label().contains("disconnected") && matches!(body.as_slice(), [Stmt::Expr(Expr::MethodCall { .. })])
+    assert!(
+        source
+            .headers()
+            .iter()
+            .any(|header| matches!(header, SourceHeader::Replay(SourceReplayPolicy::HashOnly)))
+    );
+    assert!(source.headers().iter().any(|header| matches!(
+        header,
+        SourceHeader::Privacy(SourcePrivacyPolicy::Transient)
+    )));
+    assert!(source.handlers().iter().any(|handler| matches!(
+        handler.event(),
+        SourceEventPattern::Item(Pattern::Ident(name))
+            if name == "frame" && matches!(handler.body(), [Stmt::Yield(_)])
+    )));
+    assert!(source.handlers().iter().any(|handler| matches!(
+        handler.event(),
+        SourceEventPattern::Disconnected
+            if matches!(handler.body(), [Stmt::Expr(_), Stmt::Expr(_)])
     )));
 
     let hir = lower_to_hir(&tree).expect("documented source item lowers");
@@ -743,12 +764,13 @@ pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
             "camera",
             TypeKind::Named("CaptureStream".to_owned()),
         )
+        .with_function("log.info", TypeKind::Unit)
         .with_function("log.warn", TypeKind::Unit);
     typecheck_hir(&hir, &env).expect("documented source item typechecks");
 }
 
 #[test]
-fn parses_function_like_source_with_loop_yield_body() {
+fn typecheck_rejects_function_like_source_with_loop_yield_body() {
     let tree = parse_ok(
         r"
 source camera_frames() -> Source<VideoFrame, CameraError> {
@@ -780,7 +802,62 @@ source camera_frames() -> Source<VideoFrame, CameraError> {
                 error: Box::new(TypeKind::Named("CameraError".to_owned())),
             },
         );
-    typecheck_hir(&hir, &env).expect("function-like source typechecks");
+    let errors = typecheck_hir(&hir, &env).expect_err("function-like source is rejected");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("function-like `source name() -> Source<T, E>` is not canonical")
+    }));
+}
+
+#[test]
+fn typecheck_rejects_source_missing_policy_and_private_full_replay() {
+    let tree = parse_ok(
+        r"
+pub source @source.bad: Source<Frame, CaptureError> {
+    from capture.camera(@capture.face)
+    replay = full
+    privacy = private
+
+    on item frame => yield frame
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("bad source lowers to HIR");
+    validate_typecheck_ready(&hir).expect("bad source stays structurally ready");
+    let errors =
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("bad source policy is rejected");
+
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("source is missing `backpressure` policy")
+    }));
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("`privacy = private` is incompatible with `replay = full`")
+    }));
+}
+
+#[test]
+fn typecheck_rejects_stream_fn_returning_source() {
+    let tree = parse_ok(
+        r"
+stream fn camera_frames() -> Source<Frame, CaptureError> {
+    yield next_frame()
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("stream function lowers to HIR");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
+        .expect_err("stream fn returning source is rejected");
+
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("`stream fn camera_frames` must declare `-> Stream<T, E>`")
+    }));
 }
 
 #[test]

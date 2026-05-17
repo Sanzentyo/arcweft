@@ -3,11 +3,14 @@ use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 use arcweft_lang_hir::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::TypeRef;
 use arcweft_lang_syntax::{
-    AwaitBranchKind, ContractClause, DialogueToken, EntityDeclKind, EntityRef, EntityRefSyntax,
-    FlowKind, IdRef, LinePlanItem, Pattern, Stmt, TriggerPattern,
+    AwaitBranchKind, CancelRuleSyntax, ContractClause, DialogueToken, EntityDeclKind, EntityRef,
+    EntityRefSyntax, FlowKind, FunctionKind, IdRef, LinePlanItem, Pattern,
+    SourceBackpressurePolicy, SourceEventPattern, SourceHeader, SourcePrivacyPolicy,
+    SourceReplayPolicy, Stmt, TriggerPattern,
 };
 use arcweft_lang_syntax::{
-    BinaryOp, Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind, Literal,
+    BinaryOp, ComputationBlockKind, Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind,
+    Literal,
 };
 use std::collections::{BTreeSet, HashMap, HashSet};
 use thiserror::Error;
@@ -74,6 +77,14 @@ pub enum TypeKind {
     },
     Need {
         ready: Box<TypeKind>,
+        error: Box<TypeKind>,
+    },
+    Stream {
+        item: Box<TypeKind>,
+        error: Box<TypeKind>,
+    },
+    Source {
+        item: Box<TypeKind>,
         error: Box<TypeKind>,
     },
     Result {
@@ -185,6 +196,7 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
         dropped_lifetime_keys: HashSet::new(),
         available_lifetimes: Vec::new(),
         effect_capabilities: env.capabilities.clone(),
+        yield_stack: Vec::new(),
     };
     checker.check_module(module);
     if checker.errors.is_empty() {
@@ -209,6 +221,7 @@ struct TypeChecker<'a> {
     dropped_lifetime_keys: HashSet<LifetimeKey>,
     available_lifetimes: Vec<LifetimeScopeKind>,
     effect_capabilities: HashSet<String>,
+    yield_stack: Vec<YieldContext>,
 }
 
 #[derive(Clone, Debug)]
@@ -233,6 +246,24 @@ enum BorrowLocalState {
     Live(Vec<String>),
     Dropped,
     MaybeDropped(Vec<String>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum YieldContext {
+    Seq {
+        item_ty: Option<TypeKind>,
+        yield_count: usize,
+    },
+    Stream {
+        item_ty: TypeKind,
+        error_ty: TypeKind,
+        yield_count: usize,
+    },
+    Source {
+        item_ty: TypeKind,
+        error_ty: TypeKind,
+        yield_count: usize,
+    },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -323,6 +354,7 @@ impl TypeChecker<'_> {
             self.borrow_local_lifetimes.clear();
             self.locals.clear();
             self.loop_stack.clear();
+            self.yield_stack.clear();
             self.active_presentation_defaults.clear();
             for group in function.signature().param_groups() {
                 for param in group.params() {
@@ -334,6 +366,11 @@ impl TypeChecker<'_> {
             }
             let effect_scope = EffectScope::from_contracts(function.contracts());
             let effect_snapshot = self.apply_effect_scope(&effect_scope);
+            if function.kind() == FunctionKind::Stream {
+                self.check_stream_function(function);
+                self.effect_capabilities = effect_snapshot;
+                continue;
+            }
             let actual = self.check_block_expr(function.statements(), function.value());
             self.effect_capabilities = effect_snapshot;
             if let (Some(expected), Some(actual)) = (
@@ -417,6 +454,7 @@ impl TypeChecker<'_> {
                 self.borrow_local_lifetimes.clear();
                 self.locals.clear();
                 self.loop_stack.clear();
+                self.yield_stack.clear();
                 self.check_block_expr(item.body_statements(), item.body_value());
             }
             HirTopLevelDecl::Parser(item) => {
@@ -424,6 +462,7 @@ impl TypeChecker<'_> {
                 self.borrow_local_lifetimes.clear();
                 self.locals.clear();
                 self.loop_stack.clear();
+                self.yield_stack.clear();
                 self.check_block_expr(item.body_statements(), item.body_value());
             }
             HirTopLevelDecl::Source(item) => {
@@ -431,10 +470,11 @@ impl TypeChecker<'_> {
                 self.borrow_local_lifetimes.clear();
                 self.locals.clear();
                 self.loop_stack.clear();
+                self.yield_stack.clear();
                 if let Some(id) = item.id() {
                     self.expect_entity_kind(id, &EntityKind::Source, "source id");
                 }
-                self.check_block_expr(item.body_statements(), None);
+                self.check_source_item(item);
             }
         }
     }
@@ -442,6 +482,152 @@ impl TypeChecker<'_> {
     fn check_flow_items(&mut self, items: &[HirFlowItem]) {
         for item in items {
             self.check_flow_item(item);
+        }
+    }
+
+    fn check_stream_function(&mut self, function: &arcweft_lang_hir::HirFunction) {
+        let Some((item_ty, error_ty)) = function
+            .signature()
+            .return_type()
+            .and_then(stream_return_types)
+        else {
+            self.errors.push(TypeCheckError::new(format!(
+                "`stream fn {}` must declare `-> Stream<T, E>`",
+                function.name()
+            )));
+            self.check_block_expr(function.statements(), function.value());
+            return;
+        };
+        self.yield_stack.push(YieldContext::Stream {
+            item_ty,
+            error_ty,
+            yield_count: 0,
+        });
+        self.check_block_expr(function.statements(), None);
+        let Some(YieldContext::Stream { yield_count, .. }) = self.yield_stack.pop() else {
+            return;
+        };
+        if yield_count == 0 {
+            self.errors.push(TypeCheckError::new(format!(
+                "`stream fn {}` does not yield any item",
+                function.name()
+            )));
+        }
+    }
+
+    fn check_source_item(&mut self, item: &arcweft_lang_syntax::SourceItem) {
+        if item.name().is_some() {
+            self.errors.push(TypeCheckError::new(
+                "function-like `source name() -> Source<T, E>` is not canonical; use `source @source.id: Source<T, E> { ... }`".to_owned(),
+            ));
+        }
+        let Some((item_ty, error_ty)) = item.source_ty().and_then(source_return_types) else {
+            self.errors.push(TypeCheckError::new(
+                "`source` must declare `: Source<T, E>`".to_owned(),
+            ));
+            return;
+        };
+        self.check_source_policy(item.headers());
+        for header in item.headers() {
+            if let SourceHeader::From(expr) = header {
+                self.check_expr(expr);
+            }
+        }
+        for handler in item.handlers() {
+            let outer_locals = self.locals.clone();
+            self.bind_source_handler_pattern(handler.event(), &item_ty, &error_ty);
+            self.yield_stack.push(YieldContext::Source {
+                item_ty: item_ty.clone(),
+                error_ty: error_ty.clone(),
+                yield_count: 0,
+            });
+            for stmt in handler.body() {
+                self.check_stmt(stmt);
+            }
+            self.yield_stack.pop();
+            self.locals = outer_locals;
+        }
+    }
+
+    fn check_source_policy(&mut self, headers: &[SourceHeader]) {
+        let has_from = headers
+            .iter()
+            .any(|header| matches!(header, SourceHeader::From(_)));
+        let backpressure = headers.iter().find_map(|header| match header {
+            SourceHeader::Backpressure(policy) => Some(policy),
+            _ => None,
+        });
+        let replay = headers.iter().find_map(|header| match header {
+            SourceHeader::Replay(policy) => Some(policy),
+            _ => None,
+        });
+        let privacy = headers.iter().find_map(|header| match header {
+            SourceHeader::Privacy(policy) => Some(policy),
+            _ => None,
+        });
+        if !has_from {
+            self.errors
+                .push(TypeCheckError::new("source is missing `from`".to_owned()));
+        }
+        if backpressure.is_none() {
+            self.errors.push(TypeCheckError::new(
+                "source is missing `backpressure` policy".to_owned(),
+            ));
+        }
+        if replay.is_none() {
+            self.errors.push(TypeCheckError::new(
+                "source is missing `replay` policy".to_owned(),
+            ));
+        }
+        if privacy.is_none() {
+            self.errors.push(TypeCheckError::new(
+                "source is missing `privacy` policy".to_owned(),
+            ));
+        }
+        if matches!(privacy, Some(SourcePrivacyPolicy::Private))
+            && matches!(replay, Some(SourceReplayPolicy::Full))
+        {
+            self.errors.push(TypeCheckError::new(
+                "`privacy = private` is incompatible with `replay = full`".to_owned(),
+            ));
+        }
+        if let Some(SourceBackpressurePolicy::Raw(raw)) = backpressure {
+            self.errors.push(TypeCheckError::new(format!(
+                "unknown source backpressure policy `{raw}`"
+            )));
+        }
+    }
+
+    fn bind_source_handler_pattern(
+        &mut self,
+        event: &SourceEventPattern,
+        item_ty: &TypeKind,
+        error_ty: &TypeKind,
+    ) {
+        let pattern_ty = match event {
+            SourceEventPattern::Item(pattern) => Some((pattern, item_ty)),
+            SourceEventPattern::Error(pattern) => Some((pattern, error_ty)),
+            SourceEventPattern::Progress(pattern) => {
+                let ty = TypeKind::String;
+                for (name, binding_ty) in let_else_bindings(pattern, Some(&ty)) {
+                    self.locals.insert(name, binding_ty);
+                }
+                None
+            }
+            SourceEventPattern::Raw(raw) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "unknown source event pattern `{raw}`"
+                )));
+                None
+            }
+            SourceEventPattern::Disconnected
+            | SourceEventPattern::PermissionRevoked
+            | SourceEventPattern::End => None,
+        };
+        if let Some((pattern, ty)) = pattern_ty {
+            for (name, binding_ty) in let_else_bindings(pattern, Some(ty)) {
+                self.locals.insert(name, binding_ty);
+            }
         }
     }
 
@@ -743,6 +929,55 @@ impl TypeChecker<'_> {
             .collect();
     }
 
+    fn check_yield_stmt(&mut self, expr: &Expr) {
+        self.reject_active_borrows("yield suspension boundary");
+        let actual = self.check_expr(expr);
+        let Some(context) = self.yield_stack.last_mut() else {
+            self.errors.push(TypeCheckError::new(
+                "`yield` is only valid in `seq`, `stream`, or `source` contexts".to_owned(),
+            ));
+            return;
+        };
+        match context {
+            YieldContext::Seq {
+                item_ty,
+                yield_count,
+            } => {
+                *yield_count += 1;
+                if let Some(actual) = actual {
+                    match item_ty {
+                        Some(expected) if expected != &actual => {
+                            self.errors.push(TypeCheckError::new(format!(
+                                "yielded item types do not match, found {expected:?} and {actual:?}"
+                            )));
+                        }
+                        Some(_) => {}
+                        None => *item_ty = Some(actual),
+                    }
+                }
+            }
+            YieldContext::Stream {
+                item_ty,
+                yield_count,
+                ..
+            }
+            | YieldContext::Source {
+                item_ty,
+                yield_count,
+                ..
+            } => {
+                *yield_count += 1;
+                if let Some(actual) = actual
+                    && &actual != item_ty
+                {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "yielded item must have type {item_ty:?}, found {actual:?}"
+                    )));
+                }
+            }
+        }
+    }
+
     fn is_dialogue_callee(&self, callee: &str) -> bool {
         if is_dialogue_callee_type(self.env.symbol_type(callee)) {
             return true;
@@ -862,6 +1097,7 @@ impl TypeChecker<'_> {
     }
 
     fn check_stmt(&mut self, stmt: &Stmt) {
+        self.check_seq_stmt_policy(stmt);
         match stmt {
             Stmt::Let { pattern, ty, expr } => self.check_let_stmt(pattern, ty.as_ref(), expr),
             Stmt::LetElse {
@@ -906,10 +1142,11 @@ impl TypeChecker<'_> {
                     self.check_stmt(stmt);
                 }
             }
-            Stmt::Defer { expr, .. } | Stmt::Yield(expr) => {
+            Stmt::Defer { expr, .. } => {
                 self.reject_active_borrows("suspension boundary");
                 self.check_expr(expr);
             }
+            Stmt::Yield(expr) => self.check_yield_stmt(expr),
             Stmt::Signal { target, value } => self.check_two_exprs(target, value),
             Stmt::LifetimeSet { target, expr } => self.check_lifetime_set_stmt(target, expr),
             Stmt::Wait(target) => self.check_wait_stmt(target),
@@ -941,6 +1178,32 @@ impl TypeChecker<'_> {
             Stmt::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
                 "raw statement is not type-checkable: {raw}"
             ))),
+        }
+    }
+
+    fn check_seq_stmt_policy(&mut self, stmt: &Stmt) {
+        if !self
+            .yield_stack
+            .last()
+            .is_some_and(|context| matches!(context, YieldContext::Seq { .. }))
+        {
+            return;
+        }
+        if matches!(
+            stmt,
+            Stmt::Thread(_)
+                | Stmt::DeferBlock { .. }
+                | Stmt::Defer { .. }
+                | Stmt::Signal { .. }
+                | Stmt::LifetimeSet { .. }
+                | Stmt::Wait(_)
+                | Stmt::On { .. }
+                | Stmt::Command(_)
+                | Stmt::Select(_)
+        ) {
+            self.errors.push(TypeCheckError::new(
+                "`seq` blocks are pure and cannot perform runtime effects".to_owned(),
+            ));
         }
     }
 
@@ -1646,6 +1909,13 @@ impl TypeChecker<'_> {
                 }),
             LinePlanItem::Thread(thread) => self.check_thread_body(thread.body()),
             LinePlanItem::Stmt(stmt) => {
+                if matches!(stmt, Stmt::Yield(_)) {
+                    self.errors.push(TypeCheckError::new(
+                        "`yield` cannot be used in a dialogue line plan; use `out` for line results"
+                            .to_owned(),
+                    ));
+                    return None;
+                }
                 self.check_stmt(stmt);
                 None
             }
@@ -1677,50 +1947,14 @@ impl TypeChecker<'_> {
                 });
                 None
             }
-            LinePlanItem::CancelRule(rule) => {
-                self.line_cancel_depth += 1;
-                let output = self.with_child_task_scope(false, |checker| {
-                    let mut output = None;
-                    for stmt in rule.action() {
-                        let stmt_output = if let Stmt::Out { label, expr } = stmt {
-                            checker.check_out_stmt(label.as_deref(), expr)
-                        } else {
-                            checker.check_stmt(stmt);
-                            None
-                        };
-                        if let Some(stmt_output) = stmt_output {
-                            output = Some(match output {
-                                Some(current) => {
-                                    merge_line_output(current, &stmt_output, &mut checker.errors)
-                                }
-                                None => stmt_output,
-                            });
-                        }
-                    }
-                    output
-                });
-                self.line_cancel_depth -= 1;
-                output
-            }
+            LinePlanItem::CancelRule(rule) => self.check_line_plan_cancel_rule(rule),
             LinePlanItem::Assert { expr, .. } => {
                 self.expect_expr_type(expr, &TypeKind::Bool, "line-plan assertion");
                 None
             }
-            LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => self
-                .with_child_task_scope(false, |checker| {
-                    let mut output = None;
-                    for item in items {
-                        if let Some(item_output) = checker.check_line_plan_item(item) {
-                            output = Some(match output {
-                                Some(current) => {
-                                    merge_line_output(current, &item_output, &mut checker.errors)
-                                }
-                                None => item_output,
-                            });
-                        }
-                    }
-                    output
-                }),
+            LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
+                self.with_child_task_scope(false, |checker| checker.check_line_plan_group(items))
+            }
             LinePlanItem::Memo { options, .. } => {
                 for (_, value) in options {
                     self.check_expr(value);
@@ -1737,6 +1971,47 @@ impl TypeChecker<'_> {
                 )));
                 None
             }
+        }
+    }
+
+    fn check_line_plan_cancel_rule(&mut self, rule: &CancelRuleSyntax) -> Option<TypeKind> {
+        self.line_cancel_depth += 1;
+        let output = self.with_child_task_scope(false, |checker| {
+            let mut output = None;
+            for stmt in rule.action() {
+                let stmt_output = if let Stmt::Out { label, expr } = stmt {
+                    checker.check_out_stmt(label.as_deref(), expr)
+                } else {
+                    checker.check_stmt(stmt);
+                    None
+                };
+                checker.merge_optional_line_output(&mut output, stmt_output);
+            }
+            output
+        });
+        self.line_cancel_depth -= 1;
+        output
+    }
+
+    fn check_line_plan_group(&mut self, items: &[LinePlanItem]) -> Option<TypeKind> {
+        let mut output = None;
+        for item in items {
+            let item_output = self.check_line_plan_item(item);
+            self.merge_optional_line_output(&mut output, item_output);
+        }
+        output
+    }
+
+    fn merge_optional_line_output(
+        &mut self,
+        output: &mut Option<TypeKind>,
+        next: Option<TypeKind>,
+    ) {
+        if let Some(next) = next {
+            *output = Some(match output.take() {
+                Some(current) => merge_line_output(current, &next, &mut self.errors),
+                None => next,
+            });
         }
     }
 
@@ -2006,7 +2281,14 @@ impl TypeChecker<'_> {
             Expr::Index { target, index } => self.check_index_expr(target, index),
             Expr::Pipe { lhs, rhs } => self.check_pipe_expr(lhs, rhs),
             Expr::Try { expr } => self.check_try_expr(expr),
-            Expr::Await { expr, applies_try } => self.check_await_expr(expr, *applies_try),
+            Expr::Await { expr, applies_try } => {
+                if self.in_seq_context() {
+                    self.errors.push(TypeCheckError::new(
+                        "`seq` blocks are pure and cannot await".to_owned(),
+                    ));
+                }
+                self.check_await_expr(expr, *applies_try)
+            }
             Expr::Thread { block } => {
                 self.check_thread_body(block.body());
                 Some(TypeKind::ThreadHandle(Box::new(TypeKind::Unit)))
@@ -2026,9 +2308,11 @@ impl TypeChecker<'_> {
                 self.check_block_expr(statements, value.as_deref())
             }
             Expr::ComputationBlock {
-                statements, value, ..
-            }
-            | Expr::NamedBlock {
+                kind,
+                statements,
+                value,
+            } => self.check_computation_block(*kind, statements, value.as_deref()),
+            Expr::NamedBlock {
                 statements, value, ..
             } => self.check_block_expr(statements, value.as_deref()),
             Expr::MemoBlock {
@@ -2062,6 +2346,12 @@ impl TypeChecker<'_> {
                 None
             }
         }
+    }
+
+    fn in_seq_context(&self) -> bool {
+        self.yield_stack
+            .last()
+            .is_some_and(|context| matches!(context, YieldContext::Seq { .. }))
     }
 
     fn check_entity_ref_expr(&mut self, entity: &EntityRefSyntax) -> Option<TypeKind> {
@@ -2560,6 +2850,44 @@ impl TypeChecker<'_> {
         self.reject_borrow_escape(ty.as_ref(), "block final value");
         self.locals = outer_locals;
         ty
+    }
+
+    fn check_computation_block(
+        &mut self,
+        kind: ComputationBlockKind,
+        statements: &[Stmt],
+        value: Option<&Expr>,
+    ) -> Option<TypeKind> {
+        match kind {
+            ComputationBlockKind::Result | ComputationBlockKind::Task => {
+                self.check_block_expr(statements, value)
+            }
+            ComputationBlockKind::Seq => {
+                self.yield_stack.push(YieldContext::Seq {
+                    item_ty: None,
+                    yield_count: 0,
+                });
+                self.check_block_expr(statements, value);
+                let Some(YieldContext::Seq { item_ty, .. }) = self.yield_stack.pop() else {
+                    return None;
+                };
+                Some(TypeKind::Seq(Box::new(item_ty.unwrap_or(TypeKind::Unit))))
+            }
+            ComputationBlockKind::Stream => {
+                self.yield_stack.push(YieldContext::Seq {
+                    item_ty: None,
+                    yield_count: 0,
+                });
+                self.check_block_expr(statements, value);
+                let Some(YieldContext::Seq { item_ty, .. }) = self.yield_stack.pop() else {
+                    return None;
+                };
+                Some(TypeKind::Stream {
+                    item: Box::new(item_ty.unwrap_or(TypeKind::Unit)),
+                    error: Box::new(TypeKind::Unit),
+                })
+            }
+        }
     }
 
     fn check_if_expr(
@@ -3392,6 +3720,9 @@ fn type_contains_borrow_ref(ty: &TypeKind) -> bool {
         TypeKind::Need { ready, error } => {
             type_contains_borrow_ref(ready) || type_contains_borrow_ref(error)
         }
+        TypeKind::Stream { item, error } | TypeKind::Source { item, error } => {
+            type_contains_borrow_ref(item) || type_contains_borrow_ref(error)
+        }
         TypeKind::Tuple(items) => items.iter().any(type_contains_borrow_ref),
         _ => false,
     }
@@ -3425,6 +3756,18 @@ fn type_ref_kind(ty: &TypeRef) -> TypeKind {
             ready: Box::new(type_ref_kind(&args[0])),
             error: Box::new(type_ref_kind(&args[1])),
         },
+        TypeRef::Generic { base, args } if base == "Stream" && args.len() == 2 => {
+            TypeKind::Stream {
+                item: Box::new(type_ref_kind(&args[0])),
+                error: Box::new(type_ref_kind(&args[1])),
+            }
+        }
+        TypeRef::Generic { base, args } if base == "Source" && args.len() == 2 => {
+            TypeKind::Source {
+                item: Box::new(type_ref_kind(&args[0])),
+                error: Box::new(type_ref_kind(&args[1])),
+            }
+        }
         TypeRef::Ref { lifetime, inner } => TypeKind::BorrowRef {
             lifetime: lifetime
                 .as_ref()
@@ -3433,6 +3776,25 @@ fn type_ref_kind(ty: &TypeRef) -> TypeKind {
         },
         TypeRef::Slice(inner) => TypeKind::Slice(Box::new(type_ref_kind(inner))),
         TypeRef::Generic { .. } => TypeKind::Named(type_ref_label(ty)),
+    }
+}
+
+fn stream_return_types(ty: &TypeRef) -> Option<(TypeKind, TypeKind)> {
+    match ty {
+        TypeRef::Generic { base, args } if base == "Stream" && args.len() == 2 => {
+            Some((type_ref_kind(&args[0]), type_ref_kind(&args[1])))
+        }
+        TypeRef::Generic { base, .. } if base == "Source" => None,
+        _ => None,
+    }
+}
+
+fn source_return_types(ty: &TypeRef) -> Option<(TypeKind, TypeKind)> {
+    match ty {
+        TypeRef::Generic { base, args } if base == "Source" && args.len() == 2 => {
+            Some((type_ref_kind(&args[0]), type_ref_kind(&args[1])))
+        }
+        _ => None,
     }
 }
 
