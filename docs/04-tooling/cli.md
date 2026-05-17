@@ -130,19 +130,25 @@ fails with a runtime-lowering error instead of being silently dropped.
 
 ## Test / Bench
 
-`arcw test` and `arcw bench` currently expose the Sans I/O script test manifest.
-They parse, lower, resolve, typecheck, and verify the module exactly like
-`arcw check`, then list top-level `test` or `bench` declarations. Runtime
-execution, renderer/audio driving, clock control, and benchmark timing remain
-adapter work.
+`arcw test` and `arcw bench` expose Sans I/O script test data. They parse,
+lower, resolve, typecheck, and verify the module exactly like `arcw check`.
+`arcw test` executes `scenario` tests through the headless runtime when the test
+contains `start @flow.id`; non-headless categories such as `visual` and `audio`
+are reported as skipped until a player adapter owns those backends.
+`arcw bench` still lists and validates bench declarations only. Renderer/audio
+driving, wall-clock control, offline rendering/audio, allocation counters, and
+benchmark timing remain adapter work.
 
 ```bash
 arcw test game/routes/opening.awft
 arcw test game/routes/opening.awft --json
+arcw test game/routes/opening.awft --frames 32 --json
 arcw bench game/routes/opening.awft
 arcw bench game/routes/opening.awft --json
 ```
 
+Headless scenario expectations currently cover `expect no_assertion_failures`,
+`expect signal @signal.id == VALUE`, and `expect log.LEVEL contains "text"`.
 The manifest preserves the declaration ID, kind, source span, and command-like
 body rows so CLI, LSP, headless player adapters, and Agent tooling can share one
 planning schema without reparsing source text.

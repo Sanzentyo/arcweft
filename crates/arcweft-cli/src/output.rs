@@ -5,6 +5,7 @@ use arcweft_core::{
     StreamOp, TaskSpec,
 };
 use arcweft_runtime_plan::{LoweredLineTaskGroup, lower_runtime_plan};
+use arcweft_test::ScriptTest;
 use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy, verify_module};
 
 #[derive(serde::Serialize)]
@@ -275,6 +276,54 @@ fn effect_label(effect: &LineEffectRequest) -> String {
 pub(crate) struct RuntimeRunReport {
     pub(crate) frames: Vec<RuntimeFrameRunSummary>,
     pub(crate) final_status: String,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ScriptTestRunReport {
+    pub(crate) tests: Vec<ScriptTestRunSummary>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ScriptTestRunSummary {
+    pub(crate) id: String,
+    pub(crate) kind: String,
+    pub(crate) status: String,
+    pub(crate) frames_run: usize,
+    pub(crate) final_status: Option<String>,
+    pub(crate) diagnostics: Vec<String>,
+    pub(crate) frames: Vec<RuntimeFrameRunSummary>,
+}
+
+impl ScriptTestRunSummary {
+    pub(crate) fn skipped(test: &ScriptTest, reason: impl Into<String>) -> Self {
+        Self {
+            id: test.id.clone(),
+            kind: test.kind.clone(),
+            status: "skipped".to_owned(),
+            frames_run: 0,
+            final_status: None,
+            diagnostics: vec![reason.into()],
+            frames: Vec::new(),
+        }
+    }
+
+    pub(crate) fn completed(
+        test: &ScriptTest,
+        passed: bool,
+        final_status: String,
+        diagnostics: Vec<String>,
+        frames: Vec<RuntimeFrameRunSummary>,
+    ) -> Self {
+        Self {
+            id: test.id.clone(),
+            kind: test.kind.clone(),
+            status: if passed { "passed" } else { "failed" }.to_owned(),
+            frames_run: frames.len(),
+            final_status: Some(final_status),
+            diagnostics,
+            frames,
+        }
+    }
 }
 
 #[derive(serde::Serialize)]

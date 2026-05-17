@@ -640,6 +640,53 @@ test @test.opening scenario {
 }
 
 #[test]
+fn test_json_executes_headless_scenario_expectations() {
+    let path = temp_awft(
+        "script-test-headless",
+        r#"
+signal @signal:.current_flow: Watch<Ref<Flow>>
+
+flow @flow.observed observed
+effects { signal.write }
+{
+    log.info("enter observed")
+    signal.set(@signal.current_flow, @flow.observed)
+    return "done"
+}
+
+test @test.observed scenario {
+    start @flow.observed
+    expect log.info contains "enter observed"
+    expect signal @signal.current_flow == @flow.observed
+    expect no_assertion_failures
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("test")
+        .arg(&path)
+        .arg("--frames")
+        .arg("5")
+        .arg("--json")
+        .output()
+        .expect("arcw test runs");
+
+    assert!(
+        output.status.success(),
+        "headless scenario test should pass, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("test.observed")
+            && stdout.contains("\"status\": \"passed\"")
+            && stdout.contains("\"frames_run\""),
+        "test JSON should include headless run result: {stdout}"
+    );
+}
+
+#[test]
 fn bench_json_lists_script_benches() {
     let path = temp_awft(
         "script-bench",

@@ -277,9 +277,11 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `Bytes`.
 - Top-level `test @test.* KIND { ... }` and `bench @bench.* { ... }` are now
   parsed as structured declarations and lowered into HIR metadata. The
-  `arcweft-test` crate extracts a Sans I/O manifest, and `arcw test` /
-  `arcw bench` list those declarations in human or JSON form. Actual scenario,
-  visual, audio, fixture, and performance execution remains a player/headless
+  `arcweft-test` crate extracts a Sans I/O manifest. `arcw test` now executes
+  `scenario` declarations through the headless runtime when they contain
+  `start @flow.id`, evaluates initial signal/log/no-assertion expectations, and
+  reports pass/fail/skipped JSON. `arcw bench` still lists bench declarations.
+  Visual, audio, fixture, and performance execution remains a player/headless
   adapter TODO.
 - Declaration ID positions whose family is known now accept current-scope and
   family-relative IDs. `flow @.opening`, `flow @flow:.opening`, and bare
