@@ -131,13 +131,16 @@ fails with a runtime-lowering error instead of being silently dropped.
 ## Test / Bench
 
 `arcw test` and `arcw bench` expose Sans I/O script test data. They parse,
-lower, resolve, typecheck, and verify the module exactly like `arcw check`.
+lower, resolve, and typecheck the module before reporting test or bench status.
 `arcw test` executes `scenario` tests through the headless runtime when the test
 contains `start @flow.id`; non-headless categories such as `visual` and `audio`
 are reported as skipped until a player adapter owns those backends.
-`arcw bench` still lists and validates bench declarations only. Renderer/audio
-driving, wall-clock control, offline rendering/audio, allocation counters, and
-benchmark timing remain adapter work.
+`arcw bench` validates bench declarations as headless plans. It requires a
+`measure` section, accepts `setup`, `measure`, `assert`, and `report` sections,
+and reports per-bench `validated`, `skipped`, or `failed` status in JSON.
+Renderer/audio driving, wall-clock control, offline rendering/audio, allocation
+counters, and benchmark timing remain adapter work; adapter-only sections are
+reported as skipped rather than executed by the Phase 2.0 CLI.
 
 ```bash
 arcw test game/routes/opening.awft

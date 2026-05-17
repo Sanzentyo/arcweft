@@ -687,13 +687,17 @@ test @test.observed scenario {
 }
 
 #[test]
-fn bench_json_lists_script_benches() {
+fn bench_json_validates_headless_script_benches() {
     let path = temp_awft(
         "script-bench",
         r#"
+metric gauge @metric:.memo_hit_rate: f32
+
 bench @bench.opening {
     setup { let state = fixture<GameState>("opening.json") }
     measure iterations = 10 { opening_choices() }
+    assert metric.value(@metric.memo_hit_rate) >= 0.95
+    report { cpu_time }
 }
 "#,
     );
@@ -707,13 +711,49 @@ bench @bench.opening {
 
     assert!(
         output.status.success(),
-        "bench listing should succeed, stderr: {}",
+        "bench validation should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("bench.opening") && stdout.contains("measure"),
-        "bench JSON should include script bench metadata: {stdout}"
+        stdout.contains("bench.opening")
+            && stdout.contains("\"status\": \"validated\"")
+            && stdout.contains("measure")
+            && stdout.contains("report"),
+        "bench JSON should include headless validation metadata: {stdout}"
+    );
+}
+
+#[test]
+fn bench_json_skips_adapter_only_script_benches() {
+    let path = temp_awft(
+        "script-bench-adapter",
+        r"
+bench @bench.audio {
+    setup { play @bgm.alice_theme }
+    measure iterations = 3 { render_audio_offline() }
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--json")
+        .output()
+        .expect("arcw bench runs");
+
+    assert!(
+        output.status.success(),
+        "adapter-only bench should be skipped, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("bench.audio")
+            && stdout.contains("\"status\": \"skipped\"")
+            && stdout.contains("adapter-only"),
+        "bench JSON should make unsupported headless work explicit: {stdout}"
     );
 }
 

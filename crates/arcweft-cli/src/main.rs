@@ -8,7 +8,7 @@ use arcweft_lang_sema::{
 };
 use arcweft_lang_syntax::{lint_id_policy, parse_source};
 use arcweft_runtime_plan::{LoweredLineTaskGroup, lower_line_task_groups, lower_runtime_plan};
-use arcweft_test::{ScriptStep, ScriptTest, ScriptTestManifest, collect_script_tests};
+use arcweft_test::{BenchSection, ScriptBench, ScriptStep, ScriptTest, collect_script_tests};
 use arcweft_verify::{
     BackendKind, SmtBackend, VerificationMode, VerificationPolicy, VerificationReport,
     emit_smt_lib, verify_module,
@@ -17,8 +17,9 @@ use arcweft_verify_oxiz::OxizBackend;
 use arcweft_verify_z3::ExternalZ3Backend;
 mod output;
 use output::{
-    RuntimeFrameRunSummary, RuntimePlanReport, RuntimeRunReport, ScriptTestRunReport,
-    ScriptTestRunSummary, flow_status_label,
+    RuntimeFrameRunSummary, RuntimePlanReport, RuntimeRunReport, ScriptBenchRunReport,
+    ScriptBenchRunSummary, ScriptBenchSectionRunSummary, ScriptTestRunReport, ScriptTestRunSummary,
+    flow_status_label,
 };
 use std::env;
 use std::ffi::OsString;
@@ -330,23 +331,113 @@ fn script_bench_command(args: &[OsString]) -> Result<(), ExitCode> {
     let options = ScriptPlanOptions::parse(args, "bench")?;
     let checked = load_and_check(&options.path)?;
     let manifest = collect_script_tests(&checked.hir);
-    let output = ScriptTestManifest {
-        tests: Vec::new(),
-        benches: manifest.benches,
+    let output = ScriptBenchRunReport {
+        benches: manifest.benches.iter().map(validate_script_bench).collect(),
     };
+    let failed = output.benches.iter().any(|bench| bench.status == "failed");
     if options.json {
-        print_json(&output)
+        print_json(&output)?;
     } else {
         for bench in &output.benches {
-            println!("{} ({} section(s))", bench.id, bench.sections.len());
+            println!(
+                "{} {} ({} section(s))",
+                bench.id,
+                bench.status,
+                bench.sections.len()
+            );
+            for diagnostic in &bench.diagnostics {
+                println!("  diagnostic {diagnostic}");
+            }
         }
         println!(
             "ok: {} ({} script bench(es))",
             options.path.display(),
             output.benches.len()
         );
+    }
+    if failed {
+        Err(ExitCode::FAILURE)
+    } else {
         Ok(())
     }
+}
+
+fn validate_script_bench(bench: &ScriptBench) -> ScriptBenchRunSummary {
+    let sections = bench
+        .sections
+        .iter()
+        .map(validate_bench_section)
+        .collect::<Vec<_>>();
+    let mut diagnostics = Vec::new();
+    if !bench
+        .sections
+        .iter()
+        .any(|section| section.name == "measure")
+    {
+        diagnostics.push("bench requires a `measure` section".to_owned());
+    }
+    diagnostics.extend(
+        sections
+            .iter()
+            .flat_map(|section| section.diagnostics.iter().cloned()),
+    );
+    let has_error = diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.starts_with("unknown bench section"))
+        || !bench
+            .sections
+            .iter()
+            .any(|section| section.name == "measure");
+    let has_unsupported = sections
+        .iter()
+        .any(|section| section.status == "unsupported");
+    let status = if has_error {
+        "failed"
+    } else if has_unsupported {
+        "skipped"
+    } else {
+        "validated"
+    };
+    ScriptBenchRunSummary::new(bench, status, sections, diagnostics)
+}
+
+fn validate_bench_section(section: &BenchSection) -> ScriptBenchSectionRunSummary {
+    let mut diagnostics = Vec::new();
+    if !is_known_bench_section(&section.name) {
+        diagnostics.push(format!("unknown bench section `{}`", section.name));
+        return ScriptBenchSectionRunSummary::new(&section.name, "unknown", diagnostics);
+    }
+    if let Some(reason) = unsupported_headless_bench_reason(&section.text) {
+        diagnostics.push(reason);
+        return ScriptBenchSectionRunSummary::new(&section.name, "unsupported", diagnostics);
+    }
+    ScriptBenchSectionRunSummary::new(&section.name, "validated", diagnostics)
+}
+
+fn is_known_bench_section(name: &str) -> bool {
+    matches!(name, "setup" | "measure" | "assert" | "report")
+}
+
+fn unsupported_headless_bench_reason(text: &str) -> Option<String> {
+    const UNSUPPORTED_MARKERS: &[&str] = &[
+        "render_audio_offline",
+        "capture image",
+        "capture.image",
+        "snapshot.image",
+        "screenshot",
+        "audio.",
+        "voice.",
+        "bgm.",
+        "play @",
+        "render.",
+    ];
+    let lowered = text.to_lowercase();
+    UNSUPPORTED_MARKERS
+        .iter()
+        .find(|marker| lowered.contains(**marker))
+        .map(|marker| {
+            format!("headless bench validation does not execute adapter-only operation `{marker}`")
+        })
 }
 
 fn check(path: &Path) -> Result<(), ExitCode> {

@@ -5,7 +5,7 @@ use arcweft_core::{
     StreamOp, TaskSpec,
 };
 use arcweft_runtime_plan::{LoweredLineTaskGroup, lower_runtime_plan};
-use arcweft_test::ScriptTest;
+use arcweft_test::{ScriptBench, ScriptTest};
 use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy, verify_module};
 
 #[derive(serde::Serialize)]
@@ -284,6 +284,11 @@ pub(crate) struct ScriptTestRunReport {
 }
 
 #[derive(serde::Serialize)]
+pub(crate) struct ScriptBenchRunReport {
+    pub(crate) benches: Vec<ScriptBenchRunSummary>,
+}
+
+#[derive(serde::Serialize)]
 pub(crate) struct ScriptTestRunSummary {
     pub(crate) id: String,
     pub(crate) kind: String,
@@ -292,6 +297,51 @@ pub(crate) struct ScriptTestRunSummary {
     pub(crate) final_status: Option<String>,
     pub(crate) diagnostics: Vec<String>,
     pub(crate) frames: Vec<RuntimeFrameRunSummary>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ScriptBenchRunSummary {
+    pub(crate) id: String,
+    pub(crate) status: String,
+    pub(crate) sections: Vec<ScriptBenchSectionRunSummary>,
+    pub(crate) diagnostics: Vec<String>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ScriptBenchSectionRunSummary {
+    pub(crate) name: String,
+    pub(crate) status: String,
+    pub(crate) diagnostics: Vec<String>,
+}
+
+impl ScriptBenchRunSummary {
+    pub(crate) fn new(
+        bench: &ScriptBench,
+        status: impl Into<String>,
+        sections: Vec<ScriptBenchSectionRunSummary>,
+        diagnostics: Vec<String>,
+    ) -> Self {
+        Self {
+            id: bench.id.clone(),
+            status: status.into(),
+            sections,
+            diagnostics,
+        }
+    }
+}
+
+impl ScriptBenchSectionRunSummary {
+    pub(crate) fn new(
+        name: impl Into<String>,
+        status: impl Into<String>,
+        diagnostics: Vec<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            status: status.into(),
+            diagnostics,
+        }
+    }
 }
 
 impl ScriptTestRunSummary {

@@ -280,9 +280,11 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `arcweft-test` crate extracts a Sans I/O manifest. `arcw test` now executes
   `scenario` declarations through the headless runtime when they contain
   `start @flow.id`, evaluates initial signal/log/no-assertion expectations, and
-  reports pass/fail/skipped JSON. `arcw bench` still lists bench declarations.
-  Visual, audio, fixture, and performance execution remains a player/headless
-  adapter TODO.
+  reports pass/fail/skipped JSON. `arcw bench` now validates headless bench
+  plans, requires `measure`, accepts `setup`/`measure`/`assert`/`report`
+  sections, and reports validated/skipped/failed JSON without running timers.
+  Visual, audio, fixture, wall-clock, allocation, and performance execution
+  remains a player/headless adapter TODO.
 - Declaration ID positions whose family is known now accept current-scope and
   family-relative IDs. `flow @.opening`, `flow @flow:.opening`, and bare
   `flow opening` normalize to `flow.opening`; declarations such as
