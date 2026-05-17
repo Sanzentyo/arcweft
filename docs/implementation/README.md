@@ -215,7 +215,7 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   surfaced as verifier obligations so direct verifier users can see the same
   class of graph conflict as `arcw check`.
 - `arcw run <file.awft> [--frames N] [--value name=value] [--json]` now
-  performs a deterministic dry run through the Phase 1.8 flow runtime slice and
+  performs a deterministic dry run through the Phase 2.0 headless runtime slice and
   reports per-frame flow events, effects, task requests, diagnostics, and final
   fiber status. `--value` injects pure runtime bindings such as
   `ready=true`, `count=3`, or `route=@flow.next`; the CLI owns filesystem I/O

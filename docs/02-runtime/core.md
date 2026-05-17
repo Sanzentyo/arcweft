@@ -14,6 +14,8 @@ pub struct RuntimePlan {
     pub entry_flow: Option<FlowRuntimeId>,
     pub flows: Vec<RuntimeFlow>,
     pub line_task_groups: Vec<LineTaskGroup>,
+    pub stream_plans: Vec<StreamPlan>,
+    pub source_plans: Vec<SourcePlan>,
 }
 
 pub struct RuntimeFlow {
@@ -31,10 +33,15 @@ pub enum FlowOp {
     IfLet { pattern: RuntimePattern, expr: RuntimeExpr, guard: Option<RuntimeExpr>, then_ops: Vec<FlowOp>, else_ops: Vec<FlowOp> },
     Match { scrutinee: RuntimeExpr, arms: Vec<RuntimeMatchArm> },
     Loop { body: Vec<FlowOp> },
+    LetLoop { pattern: RuntimePattern, body: Vec<FlowOp> },
+    LoopNext { body: Vec<FlowOp> },
     While { condition: RuntimeExpr, body: Vec<FlowOp> },
+    WhileNext { condition: RuntimeExpr, body: Vec<FlowOp> },
     WhileLet { pattern: RuntimePattern, expr: RuntimeExpr, guard: Option<RuntimeExpr>, body: Vec<FlowOp> },
+    WhileLetNext { pattern: RuntimePattern, expr: RuntimeExpr, guard: Option<RuntimeExpr>, body: Vec<FlowOp> },
     For { pattern: RuntimePattern, source: RuntimeExpr, body: Vec<FlowOp> },
     Scope(Vec<FlowOp>),
+    LetScope { pattern: RuntimePattern, ops: Vec<FlowOp>, value: RuntimeExpr },
     Break(Option<RuntimeExpr>),
     Continue,
     Goto(FlowRuntimeId),
@@ -42,6 +49,9 @@ pub enum FlowOp {
     Return(String),
     ReturnExpr(RuntimeExpr),
     Effect(LineEffectRequest),
+    EnterScope,
+    ExitScope,
+    ExitScopeBind { pattern: RuntimePattern, expr: RuntimeExpr },
     Noop,
 }
 
@@ -51,12 +61,15 @@ pub struct FlowFiber {
     pub pending_ops: VecDeque<FlowOp>,
     pub frames: Vec<RuntimeFrame>,
     pub env: RuntimeEnv,
+    pub observations: RuntimeObservationState,
+    pub source_states: BTreeMap<SourceId, SourceRuntimeState>,
+    pub stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeState>,
     pub status: FlowFiberStatus,
 }
 
 pub enum RuntimeFrameKind {
     Scope,
-    Loop { body: Vec<FlowOp> },
+    Loop { body: Vec<FlowOp>, result: Option<RuntimePattern> },
     While { condition: RuntimeExpr, body: Vec<FlowOp> },
     WhileLet {
         pattern: RuntimePattern,
@@ -83,23 +96,33 @@ pub struct FrameOutput {
     pub line_effects: Vec<LineEffectRequest>,
     pub task_requests: Vec<TaskSpec>,
     pub cancel_requests: Vec<CancelScopeId>,
+    pub source_events: Vec<SourceEvent<String, String>>,
+    pub stream_events: Vec<StreamEvent<String, String>>,
+    pub source_close_requests: Vec<SourceId>,
 }
 ```
 
-Phase 1.8 の `Engine` は structured control-flow runtime slice であり、まだ完全な story VM ではない。
+Phase 2.0 の `Engine` は headless structured-control-flow runtime slice であり、まだ完全な story VM ではない。
 `Engine::step(FrameInput) -> FrameOutput` は lowered flow op を 1 frame に
 最大 1 つ進める。`Dialogue` は line task group を実行し、`Choice` は入力待ち、
 `Await` は `TaskSpec` を出して `TaskEvent` で再開する。`Let` / `LetElse` /
-`If` / `IfLet` / `Match` / `Loop` / `While` / `WhileLet` / `For` は
+`If` / `IfLet` / `Match` / `Loop` / `LetLoop` / `While` / `WhileLet` / `For` / `LetScope` は
 `RuntimeValue` / `RuntimeExpr` / `RuntimePattern` と `RuntimeEnv` で評価され、
 選択された block は `pending_ops` queue に積まれて次 frame 以降で実行される。
 `FlowFiber::frames` は lexical scope と loop continuation を明示的に保持し、
 `break` / `continue` が body 内の残り op と scope-local binding を破棄して
 最も近い loop/while/while-let continuation へ移るために使われる。
+`let name = scope { ... }` は final expression を scope 内で評価してから外側の
+pattern に束縛し、`let name = loop { break expr }` は `break expr` の値を
+loop result pattern に束縛する。
 `FrameInput::external_values` は ambient input として root runtime scope に束縛される。
 branch / match / while-let pattern binding は選択された block scope にだけ束縛され、
 guard 評価後や block 終了後には外側へ漏れない。
 `Goto` / `GotoExpr` / `Return` / `ReturnExpr` は `FlowFiber` の cursor/status を更新する。
+`FrameInput.source_events` は replay-stable order に正規化され、`SourcePlan` handler と
+`StreamPlan` によって queue state と `StreamEvent` に反映される。`FlowFiber.observations`
+は emitted log / signal / metric / event を累積し、CLI/LSP/test/replay tooling が
+JSON で観測できる。
 実 thread、wall-clock、renderer、audio、device、filesystem は adapter 側の責務である。
 `ScopeExit::Completed | Cancelled | Failed` は outcome-guarded `defer` stack の
 選択に使う。

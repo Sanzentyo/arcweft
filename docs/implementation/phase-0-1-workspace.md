@@ -342,17 +342,18 @@ Not implemented in this milestone:
 
 ## Verification
 
-Last verified during the Phase 2.0 headless observation slice:
+Last verified during the Phase 2.0 headless runtime slice:
 
 ```bash
-cargo fmt --check
+cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features
 cargo test --workspace
+cargo tree -p arcweft-core --edges normal
 ```
 
 Result:
 
-- `cargo fmt --check`: passed
+- `cargo fmt --all --check`: passed
 - `cargo clippy --workspace --all-targets --all-features`: passed
 - `cargo test --workspace`: passed
 - `cargo tree -p arcweft-core --edges normal`: passed; no renderer/audio/device
