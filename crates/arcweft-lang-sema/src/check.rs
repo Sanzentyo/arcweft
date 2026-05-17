@@ -1288,10 +1288,20 @@ impl TypeChecker<'_> {
             | ContractClause::Effects(items)
             | ContractClause::Modifies(items) => {
                 for item in items {
-                    self.check_expr(item);
+                    self.check_contract_selector(item);
                 }
             }
         }
+    }
+
+    fn check_contract_selector(&mut self, expr: &Expr) {
+        // Contract selectors name capabilities or resources. They are not
+        // executable expressions, so dotted selectors such as `signal.write`
+        // must not resolve `signal` as a local value.
+        if expr_path_label(expr).is_some() || matches!(expr, Expr::EntityRef(_)) {
+            return;
+        }
+        self.check_expr(expr);
     }
 
     fn reject_active_borrows(&mut self, boundary: &str) {
@@ -1892,6 +1902,18 @@ impl TypeChecker<'_> {
     }
 
     fn check_call_expr(&mut self, callee: &Expr, args: &[Expr]) -> Option<TypeKind> {
+        if let Some(name) = expr_path_label(callee)
+            && let Some(ty) = self
+                .env
+                .function_type(&name)
+                .cloned()
+                .or_else(|| well_known_runtime_method_type(&name))
+        {
+            for arg in args {
+                self.check_expr(arg);
+            }
+            return Some(ty);
+        }
         if let Expr::Path(name) = callee {
             if let Some(ty) = self.check_presentation_call(name, args) {
                 return Some(ty);

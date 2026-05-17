@@ -278,10 +278,15 @@ they affect parser, HIR, formatter, LSP, or CLI work.
 - Remaining P2 semantic work is now refinement rather than missing surface
   coverage: fixed-point loop analysis is bounded and syntactic, proof discharge
   is target-aware but not solver-checked, unsafe audits validate shape but not
-  memory semantics, effect capabilities currently cover known write calls such
-  as `signal.set` and `metric.set`, and thread result inference is based on
-  current syntactic result labels. Full ownership/region solving and
+  memory semantics, and thread result inference is based on current syntactic
+  result labels. Effect capabilities are now represented as typed semantic
+  facts: `effects { signal.write, metric.write }` on flows/functions and hook
+  header `effects` entries grant the corresponding known write calls such as
+  `signal.set` and `metric.set`. Full ownership/region solving and
   type-directed effect inference remain compiler/HIR TODOs.
+- Verifier JSON uses a stable adjacent-tagged representation for proof
+  expressions, including string-carrying variants such as
+  `{ "kind": "var", "value": "signal.write" }`.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure

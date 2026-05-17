@@ -176,7 +176,7 @@ pub struct VerificationReport {
 
 /// Minimal proof expression IR for SMT emission and adapters.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum ProofExpr {
     Bool(bool),
     Var(String),

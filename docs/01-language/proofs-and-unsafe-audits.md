@@ -169,6 +169,13 @@ thread capture, thread join typing, trusted assumptions, raw syntax that reaches
 semantic analysis, sibling thread or line child task write conflicts, and
 MustDrop registry values such as `'line.focus`.
 
+Effect capability obligations are backed by semantic facts rather than ordinary
+symbol lookup. A flow or function contract such as
+`effects { signal.write }`, or a hook header `effects signal.write`, grants
+that capability inside the body and discharges the corresponding
+`signal.set(...)` write obligation. Unknown or missing capability facts remain
+visible in verifier output.
+
 The current pass is CFG-aware for blocks, branches, line plans, cancellation
 rules, bounded loop fixed points, and scoped `defer` outcomes. Completed-only
 cleanup does not discharge a cancelled path; cancellation cleanup must use

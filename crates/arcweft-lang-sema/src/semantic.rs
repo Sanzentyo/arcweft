@@ -1,4 +1,5 @@
 use crate::check::TypeCheckEnv;
+mod fact_layer;
 mod facts;
 use arcweft_lang_hir::{
     ChoicePlanItem, Expr, HirAwait, HirBorrow, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf,
@@ -7,6 +8,9 @@ use arcweft_lang_hir::{
     Stmt, TextRange, ThreadBlock, TriggerPattern,
 };
 use arcweft_lang_syntax::{Literal, LoopBlock, SelectBranchHead};
+use fact_layer::{
+    Capability, EffectScope, ProofFacts, write_capability_for_call, write_capability_for_method,
+};
 use facts::{BlockFlow, DeferredCleanup, ExitPath, ExitReason, FlowFacts, transfer_reason};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -147,12 +151,8 @@ struct SemanticAnalyzer<'a> {
     unsafe_stack: Vec<String>,
     known_proofs: BTreeMap<String, ProofFacts>,
     known_axioms: BTreeSet<String>,
+    effect_stack: Vec<EffectScope>,
     reported_must_drop: HashSet<String>,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct ProofFacts {
-    lifetime_targets: BTreeSet<String>,
 }
 
 impl<'a> SemanticAnalyzer<'a> {
@@ -168,6 +168,7 @@ impl<'a> SemanticAnalyzer<'a> {
             unsafe_stack: Vec::new(),
             known_proofs: BTreeMap::new(),
             known_axioms: BTreeSet::new(),
+            effect_stack: Vec::new(),
             reported_must_drop: HashSet::new(),
         }
     }
@@ -175,7 +176,10 @@ impl<'a> SemanticAnalyzer<'a> {
     fn collect_module(&mut self, module: &HirModule) {
         self.collect_declarations(module);
         for flow in module.flows() {
+            self.effect_stack
+                .push(EffectScope::from_contracts(flow.contracts()));
             let flow = self.analyze_flow_items(flow.body(), vec![FlowFacts::default()]);
+            self.effect_stack.pop();
             self.finish_block_flow(flow, ExitReason::Completed);
         }
         for function in module.functions() {
@@ -208,7 +212,12 @@ impl<'a> SemanticAnalyzer<'a> {
                             source: span_from_range(axiom.range()),
                         });
                 }
-                HirTopLevelDecl::Hook(hook) => self.collect_stmt_list(hook.body_statements()),
+                HirTopLevelDecl::Hook(hook) => {
+                    self.effect_stack
+                        .push(EffectScope::from_effects(hook.effects()));
+                    self.collect_stmt_list(hook.body_statements());
+                    self.effect_stack.pop();
+                }
                 HirTopLevelDecl::MemoFn(item) => self.collect_stmt_list(item.body_statements()),
                 HirTopLevelDecl::Parser(item) => self.collect_stmt_list(item.body_statements()),
                 HirTopLevelDecl::Source(item) => self.collect_stmt_list(item.body_statements()),
@@ -218,6 +227,8 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn collect_function(&mut self, function: &HirFunction) {
+        self.effect_stack
+            .push(EffectScope::from_contracts(function.contracts()));
         let mut flow = self.analyze_stmts(
             function.statements(),
             vec![FlowFacts::default()],
@@ -228,6 +239,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.collect_expr(value, facts);
             }
         }
+        self.effect_stack.pop();
         self.finish_block_flow(flow, ExitReason::Completed);
     }
 
@@ -1015,6 +1027,9 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn collect_call(&mut self, callee: &Expr, args: &[Expr], state: &mut FlowState) {
+        if let Some(capability) = write_capability_for_call(callee) {
+            self.add_effect_capability_obligation(&capability);
+        }
         if let Expr::Path(name) = callee {
             match name.as_str() {
                 "promote" => self.add_promote_obligation(args, false),
@@ -1042,9 +1057,10 @@ impl<'a> SemanticAnalyzer<'a> {
         state: &mut FlowState,
     ) {
         match method {
-            "set" if matches!(receiver, Expr::Path(path) if matches!(path.as_str(), "signal" | "metric")) =>
-            {
-                self.add_effect_capability_obligation(receiver);
+            "set" => {
+                if let Some(capability) = write_capability_for_method(receiver, method) {
+                    self.add_effect_capability_obligation(&capability);
+                }
             }
             "promote" => self.add_promote_obligation(args, false),
             "promote_unchecked" => self.add_promote_obligation(args, true),
@@ -1100,25 +1116,30 @@ impl<'a> SemanticAnalyzer<'a> {
         let Some(proof) = self.known_proofs.get(id) else {
             return false;
         };
-        target.is_some_and(|target| proof.lifetime_targets.contains(target))
+        target.is_some_and(|target| proof.discharges_target(target))
     }
 
-    fn add_effect_capability_obligation(&mut self, receiver: &Expr) {
-        let Expr::Path(family) = receiver else {
-            return;
-        };
-        let capability = format!("{family}.write");
-        let discharge = if self.env.has_capability(&capability) {
+    fn add_effect_capability_obligation(&mut self, capability: &Capability) {
+        let discharge = if self.has_capability(capability) {
             SemanticDischarge::Automatic
         } else {
             SemanticDischarge::Missing
         };
         self.add_obligation(
             SemanticObligationKind::EffectCapability,
-            format!("effect call `{family}.set` requires capability `{capability}`"),
-            Some(capability),
+            format!("effect call requires capability `{}`", capability.as_str()),
+            Some(capability.as_str().to_owned()),
             discharge,
         );
+    }
+
+    fn has_capability(&self, capability: &Capability) -> bool {
+        self.env.has_capability(capability.as_str())
+            || self
+                .effect_stack
+                .iter()
+                .rev()
+                .any(|scope| scope.contains(capability))
     }
 
     fn add_assume_obligation(&mut self, args: &[Expr]) {
@@ -1276,7 +1297,8 @@ impl<'a> SemanticAnalyzer<'a> {
             && is_upper_lifetime(key.scope())
         {
             let capability = format!("state.write({})", key.scope().as_str());
-            let discharge = if self.env.has_capability(&capability) {
+            let capability = Capability::new(capability);
+            let discharge = if self.has_capability(&capability) {
                 SemanticDischarge::Automatic
             } else {
                 SemanticDischarge::Missing
@@ -1605,14 +1627,6 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 }
 
-impl ProofFacts {
-    fn from_body(body: &str) -> Self {
-        Self {
-            lifetime_targets: collect_proof_lifetime_targets(body),
-        }
-    }
-}
-
 fn span_from_range(range: &TextRange) -> SemanticSourceSpan {
     SemanticSourceSpan {
         start: range.start(),
@@ -1630,29 +1644,6 @@ fn push_unique_exit(exits: &mut Vec<ExitPath>, value: ExitPath) {
     if !exits.contains(&value) {
         exits.push(value);
     }
-}
-
-fn collect_proof_lifetime_targets(body: &str) -> BTreeSet<String> {
-    let mut targets = BTreeSet::new();
-    let bytes = body.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] != b'\'' {
-            index += 1;
-            continue;
-        }
-        let start = index;
-        index += 1;
-        while index < bytes.len()
-            && (bytes[index].is_ascii_alphanumeric() || matches!(bytes[index], b'_' | b'.' | b':'))
-        {
-            index += 1;
-        }
-        if index > start + 1 {
-            targets.insert(body[start..index].to_owned());
-        }
-    }
-    targets
 }
 
 fn id_ref_label(id: &IdRef, default_family: &str) -> String {

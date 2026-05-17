@@ -349,6 +349,46 @@ flow @flow.effects effects {
             && obligation.discharge == SemanticDischarge::Automatic
             && obligation.subject.as_deref() == Some("metric.write")
     }));
+
+    let from_contract = semantic_report(
+        r"
+flow @flow.effects effects
+effects { signal.write, metric.write }
+{
+    signal.set(@signal.current_flow, @flow.effects)
+    metric.set(@metric.frame_count, 1)
+}
+",
+        &TypeCheckEnv::new(),
+    );
+    assert!(from_contract.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::EffectCapability
+            && obligation.discharge == SemanticDischarge::Automatic
+            && obligation.subject.as_deref() == Some("signal.write")
+    }));
+    assert!(from_contract.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::EffectCapability
+            && obligation.discharge == SemanticDischarge::Automatic
+            && obligation.subject.as_deref() == Some("metric.write")
+    }));
+
+    let from_hook = semantic_report(
+        r"
+hook @hook.signal_write
+on @choice.opening.listen
+phase AfterLayout
+effects signal.write
+{
+    signal.set(@signal.current_flow, @flow.effects)
+}
+",
+        &TypeCheckEnv::new(),
+    );
+    assert!(from_hook.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::EffectCapability
+            && obligation.discharge == SemanticDischarge::Automatic
+            && obligation.subject.as_deref() == Some("signal.write")
+    }));
 }
 
 #[test]

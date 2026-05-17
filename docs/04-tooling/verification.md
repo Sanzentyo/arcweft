@@ -114,6 +114,23 @@ syntax that reached HIR-facing analysis, sibling thread and line child task
 write conflicts, and MustDrop registry values such as `'line.focus` that are not
 explicitly dropped or transferred.
 
+Effects are checked as semantic facts, not as ordinary value expressions.
+Flow/function contracts and hook headers grant capabilities in the checked body:
+
+```awft
+flow @flow.effects effects
+effects { signal.write, metric.write }
+{
+    signal.set(@signal.current_flow, @flow.effects)
+    metric.set(@metric.choice_count, 1)
+}
+```
+
+In the current implementation, `signal.set(...)` requires `signal.write` and
+`metric.set(...)` requires `metric.write`. Missing capabilities are reported as
+`effect_capability` obligations; matching `effects` clauses or explicit
+checker environment capabilities discharge them automatically.
+
 This Phase 1.9 pass is CFG-aware for blocks, branches, line plans,
 cancellation rules, bounded loop fixed points, and scoped `defer` outcomes. It
 checks proof references against the promoted lifetime target and validates that
@@ -121,6 +138,13 @@ unsafe audit blocks contain the unchecked operation they justify. It remains
 conservative for solver-backed proof bodies, full ownership/region validation,
 and open-ended effect inference; later compiler passes should refine or
 discharge these obligations rather than bypassing the verifier report.
+
+Verifier JSON serializes proof expressions with adjacent tags so string-carrying
+variants remain stable across serde implementations:
+
+```json
+{ "kind": "var", "value": "signal.write" }
+```
 
 ## Counterexample
 

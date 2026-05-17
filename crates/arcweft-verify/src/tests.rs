@@ -117,6 +117,27 @@ flow @flow.effects effects {
 }
 
 #[test]
+fn semantic_effect_capability_can_be_discharged_by_effects_clause() {
+    let report = report(
+        r"
+flow @flow.effects effects
+effects { signal.write }
+{
+    signal.set(@signal.current_flow, @flow.effects)
+}
+",
+        VerificationMode::Test,
+    );
+
+    assert!(!report.has_errors());
+    assert!(report.obligations.iter().any(|obligation| {
+        obligation.kind == ProofObligationKind::EffectCapability
+            && obligation.discharge == ProofDischarge::Automatic
+            && obligation.subject.as_deref() == Some("signal.write")
+    }));
+}
+
+#[test]
 fn semantic_cfg_discharge_is_not_overridden_by_verifier_scan() {
     let report = report(
         r"

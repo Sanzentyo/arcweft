@@ -192,6 +192,38 @@ flow @flow.effects effects {
 }
 
 #[test]
+fn verify_json_accepts_effect_capability_from_flow_contract() {
+    let path = temp_awft(
+        "verify-effect-contract",
+        r"
+signal @signal:.current_flow: Watch<Ref<Flow>>
+
+flow @flow.effects effects
+effects { signal.write }
+{
+    signal.set(@signal.current_flow, @flow.effects)
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("verify")
+        .arg(&path)
+        .arg("--mode")
+        .arg("test")
+        .arg("--json")
+        .output()
+        .expect("arcw verify runs");
+
+    assert!(
+        output.status.success(),
+        "flow effects clause should discharge signal.write, stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn verify_json_respects_semantic_defer_cancel_discharge() {
     let path = temp_awft(
         "verify-cancel-defer",
