@@ -609,6 +609,51 @@ flow @flow.generation generation {
 }
 
 #[test]
+fn run_json_executes_scope_and_loop_value_bindings() {
+    let path = temp_awft(
+        "runtime-value-bindings",
+        r#"
+flow @flow.value_bindings value_bindings {
+    let local_target = scope target_scope {
+        let candidate = @flow.done
+        candidate
+    }
+
+    let next = 'pick: loop {
+        break 'pick local_target
+    }
+
+    goto next
+}
+
+flow @flow.done done {
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--frames")
+        .arg("12")
+        .arg("--json")
+        .output()
+        .expect("arcw run runs");
+
+    assert!(
+        output.status.success(),
+        "runtime dry-run should execute scope/loop value bindings, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("goto flow.done") && stdout.contains("done Return"),
+        "run JSON should include goto produced by loop break value: {stdout}"
+    );
+}
+
+#[test]
 fn test_json_lists_script_tests() {
     let path = temp_awft(
         "script-test",

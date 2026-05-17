@@ -373,6 +373,10 @@ pub enum FlowOp {
     Loop {
         body: Vec<FlowOp>,
     },
+    LetLoop {
+        pattern: RuntimePattern,
+        body: Vec<FlowOp>,
+    },
     LoopNext {
         body: Vec<FlowOp>,
     },
@@ -402,6 +406,11 @@ pub enum FlowOp {
         body: Vec<FlowOp>,
     },
     Scope(Vec<FlowOp>),
+    LetScope {
+        pattern: RuntimePattern,
+        ops: Vec<FlowOp>,
+        value: RuntimeExpr,
+    },
     Break(Option<RuntimeExpr>),
     Continue,
     Goto(FlowRuntimeId),
@@ -411,6 +420,10 @@ pub enum FlowOp {
     Effect(LineEffectRequest),
     EnterScope,
     ExitScope,
+    ExitScopeBind {
+        pattern: RuntimePattern,
+        expr: RuntimeExpr,
+    },
     Noop,
 }
 
@@ -520,6 +533,7 @@ pub enum RuntimeFrameKind {
     Scope,
     Loop {
         body: Vec<FlowOp>,
+        result: Option<RuntimePattern>,
     },
     While {
         condition: RuntimeExpr,
@@ -606,6 +620,8 @@ pub enum RuntimeEvalError {
     PatternMismatch(String),
     #[error("pattern binds `{0}` more than once")]
     DuplicateBinding(String),
+    #[error("break value can only be consumed by a value-producing loop")]
+    BreakValueOutsideValueLoop,
     #[error("loop control `{0}` reached a non-loop runtime context")]
     MisplacedLoopControl(&'static str),
 }
@@ -2179,7 +2195,20 @@ impl Engine {
             FlowOp::Loop { body } => {
                 self.advance_if_needed(next);
                 self.fiber.frames.push(RuntimeFrame {
-                    kind: RuntimeFrameKind::Loop { body: body.clone() },
+                    kind: RuntimeFrameKind::Loop {
+                        body: body.clone(),
+                        result: None,
+                    },
+                });
+                self.push_loop_iteration(body);
+            }
+            FlowOp::LetLoop { pattern, body } => {
+                self.advance_if_needed(next);
+                self.fiber.frames.push(RuntimeFrame {
+                    kind: RuntimeFrameKind::Loop {
+                        body: body.clone(),
+                        result: Some(pattern),
+                    },
                 });
                 self.push_loop_iteration(body);
             }
@@ -2277,16 +2306,31 @@ impl Engine {
                 self.advance_if_needed(next);
                 self.push_scoped_ops(ops);
             }
+            FlowOp::LetScope {
+                pattern,
+                mut ops,
+                value,
+            } => {
+                self.advance_if_needed(next);
+                ops.insert(0, FlowOp::EnterScope);
+                ops.push(FlowOp::ExitScopeBind {
+                    pattern,
+                    expr: value,
+                });
+                self.push_ops(ops);
+            }
             FlowOp::Break(expr) => {
-                if let Some(expr) = expr {
-                    match self.evaluate_expr(&expr) {
-                        Ok(value) => output.diagnostics.push(RuntimeDiagnostic {
-                            message: format!("break {}", runtime_value_label(&value)),
-                        }),
-                        Err(error) => self.fail_eval(error, output),
-                    }
-                }
-                if self.break_nearest_loop() {
+                let value = match expr {
+                    Some(expr) => match self.evaluate_expr(&expr) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            self.fail_eval(error, output);
+                            return;
+                        }
+                    },
+                    None => RuntimeValue::Unit,
+                };
+                if self.break_nearest_loop(&value, output) {
                     self.advance_if_needed(next);
                 } else {
                     self.fail_eval(RuntimeEvalError::MisplacedLoopControl("break"), output);
@@ -2326,9 +2370,37 @@ impl Engine {
                 self.pop_scope_frame();
                 self.advance_if_needed(next);
             }
+            FlowOp::ExitScopeBind { pattern, expr } => {
+                let value = match self.evaluate_expr(&expr) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        self.fail_eval(error, output);
+                        return;
+                    }
+                };
+                self.pop_scope_frame();
+                self.bind_value(&pattern, &value, output);
+                self.advance_if_needed(next);
+            }
             FlowOp::Noop => {
                 self.advance_if_needed(next);
             }
+        }
+    }
+
+    fn bind_value(
+        &mut self,
+        pattern: &RuntimePattern,
+        value: &RuntimeValue,
+        output: &mut FrameOutput,
+    ) {
+        match self.try_bind_pattern(pattern, value) {
+            Ok(true) => {}
+            Ok(false) => self.fail_eval(
+                RuntimeEvalError::PatternMismatch(runtime_value_label(value)),
+                output,
+            ),
+            Err(error) => self.fail_eval(error, output),
         }
     }
 
@@ -2448,9 +2520,25 @@ impl Engine {
         }
     }
 
-    fn break_nearest_loop(&mut self) -> bool {
+    fn break_nearest_loop(&mut self, value: &RuntimeValue, output: &mut FrameOutput) -> bool {
         self.discard_pending_until_loop_next();
-        self.pop_loop_frame().is_some()
+        let Some(kind) = self.pop_loop_frame() else {
+            return false;
+        };
+        match kind {
+            RuntimeFrameKind::Loop {
+                result: Some(pattern),
+                ..
+            } => self.bind_value(&pattern, value, output),
+            RuntimeFrameKind::Loop { result: None, .. } => {}
+            RuntimeFrameKind::While { .. } | RuntimeFrameKind::WhileLet { .. } => {
+                if *value != RuntimeValue::Unit {
+                    self.fail_eval(RuntimeEvalError::BreakValueOutsideValueLoop, output);
+                }
+            }
+            RuntimeFrameKind::Scope => return false,
+        }
+        true
     }
 
     fn continue_nearest_loop(&mut self, output: &mut FrameOutput) -> bool {
@@ -2460,7 +2548,7 @@ impl Engine {
             return false;
         };
         match kind {
-            RuntimeFrameKind::Loop { body } => self.push_loop_iteration(body),
+            RuntimeFrameKind::Loop { body, .. } => self.push_loop_iteration(body),
             RuntimeFrameKind::While { condition, body } => {
                 self.push_ops(vec![FlowOp::WhileNext { condition, body }]);
             }

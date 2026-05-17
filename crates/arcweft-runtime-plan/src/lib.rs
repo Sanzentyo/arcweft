@@ -10,13 +10,16 @@ use arcweft_core::{
     RuntimeRecordPatternField, RuntimeUnaryOp, RuntimeValue, SourceHandlerPlan, SourceId, SourceOp,
     SourcePlan, SourcePolicy, StreamOp, StreamPlan, StreamRuntimeId, TaskId, TaskKey, TaskPriority,
 };
-use arcweft_lang_hir::{HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlowItem, HirModule};
+use arcweft_lang_hir::{
+    HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlowItem, HirLoop, HirMatch, HirModule,
+    HirScopeExpr,
+};
 use arcweft_lang_syntax::TypeRef;
 use arcweft_lang_syntax::{
-    AwaitBranchKind, ChoiceAction, DeferOutcome, EntityRef, EntityRefSyntax, FunctionKind,
-    LinePlan, LinePlanItem, Pattern, SourceBackpressurePolicy, SourceEventPattern, SourceHeader,
-    SourceOverflowPolicy, SourcePrivacyPolicy, SourceReplayPolicy, Stmt, TriggerPattern,
-    WaitTarget,
+    AwaitBranchKind, ChoiceAction, DeferOutcome, EntityRef, EntityRefSyntax, FlowItem,
+    FunctionKind, LinePlan, LinePlanItem, Pattern, SourceBackpressurePolicy, SourceEventPattern,
+    SourceHeader, SourceOverflowPolicy, SourcePrivacyPolicy, SourceReplayPolicy, Stmt,
+    TriggerPattern, WaitTarget,
 };
 use arcweft_lang_syntax::{BinaryOp, DurationUnit, Expr, Literal, UnaryOp};
 use thiserror::Error;
@@ -414,6 +417,9 @@ impl FlowRuntimeLowerer {
                         flow_index,
                     )));
                 }
+                HirFlowItem::LetScope { pattern, scope } => {
+                    ops.push(self.lower_scope_expr(pattern, scope));
+                }
                 HirFlowItem::If(block) => {
                     ops.push(FlowOp::If {
                         condition: lower_runtime_expr(block.condition()),
@@ -431,24 +437,15 @@ impl FlowRuntimeLowerer {
                     });
                 }
                 HirFlowItem::Match(block) => {
-                    let arms = block
-                        .arms()
-                        .iter()
-                        .map(|arm| RuntimeMatchArm {
-                            pattern: lower_runtime_pattern(arm.pattern()),
-                            guard: arm.guard().map(lower_runtime_expr),
-                            ops: self.lower_flow_items(flow_id, arm.body(), flow_index),
-                        })
-                        .collect();
-                    ops.push(FlowOp::Match {
-                        scrutinee: lower_runtime_expr(block.expr()),
-                        arms,
-                    });
+                    ops.push(self.lower_match_block(flow_id, block, flow_index));
                 }
                 HirFlowItem::Loop(block) => {
                     ops.push(FlowOp::Loop {
                         body: self.lower_flow_items(flow_id, block.body(), flow_index),
                     });
+                }
+                HirFlowItem::LetLoop { pattern, block } => {
+                    ops.push(self.lower_loop_expr(flow_id, pattern, block, flow_index));
                 }
                 HirFlowItem::While(block) => {
                     ops.push(FlowOp::While {
@@ -485,6 +482,49 @@ impl FlowRuntimeLowerer {
             }
         }
         ops
+    }
+
+    fn lower_scope_expr(&mut self, pattern: &Pattern, scope: &HirScopeExpr) -> FlowOp {
+        FlowOp::LetScope {
+            pattern: lower_runtime_pattern(pattern),
+            ops: self.lower_flow_stmt_list(scope.statements()),
+            value: scope
+                .value()
+                .map_or(RuntimeExpr::Value(RuntimeValue::Unit), lower_runtime_expr),
+        }
+    }
+
+    fn lower_match_block(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        block: &HirMatch,
+        flow_index: usize,
+    ) -> FlowOp {
+        FlowOp::Match {
+            scrutinee: lower_runtime_expr(block.expr()),
+            arms: block
+                .arms()
+                .iter()
+                .map(|arm| RuntimeMatchArm {
+                    pattern: lower_runtime_pattern(arm.pattern()),
+                    guard: arm.guard().map(lower_runtime_expr),
+                    ops: self.lower_flow_items(flow_id, arm.body(), flow_index),
+                })
+                .collect(),
+        }
+    }
+
+    fn lower_loop_expr(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        pattern: &Pattern,
+        block: &HirLoop,
+        flow_index: usize,
+    ) -> FlowOp {
+        FlowOp::LetLoop {
+            pattern: lower_runtime_pattern(pattern),
+            body: self.lower_flow_items(flow_id, block.body(), flow_index),
+        }
     }
 
     fn lower_runtime_dialogue(
@@ -604,6 +644,17 @@ impl FlowRuntimeLowerer {
                 pattern: lower_runtime_pattern(pattern),
                 expr: lower_runtime_expr(expr),
             }],
+            Stmt::LetScope { pattern, scope } => vec![FlowOp::LetScope {
+                pattern: lower_runtime_pattern(pattern),
+                ops: self.lower_flow_stmt_list(scope.statements()),
+                value: scope
+                    .value()
+                    .map_or(RuntimeExpr::Value(RuntimeValue::Unit), lower_runtime_expr),
+            }],
+            Stmt::LetLoop { pattern, block } => vec![FlowOp::LetLoop {
+                pattern: lower_runtime_pattern(pattern),
+                body: self.lower_syntax_flow_items(block.body()),
+            }],
             Stmt::LetElse {
                 pattern,
                 expr,
@@ -689,6 +740,21 @@ impl FlowRuntimeLowerer {
         statements
             .iter()
             .flat_map(|statement| self.lower_flow_stmt(statement))
+            .collect()
+    }
+
+    fn lower_syntax_flow_items(&mut self, items: &[FlowItem]) -> Vec<FlowOp> {
+        items
+            .iter()
+            .flat_map(|item| match item {
+                FlowItem::Stmt(statement) => self.lower_flow_stmt(statement),
+                other => {
+                    self.errors.push(RuntimePlanLowerError::new(format!(
+                        "unsupported nested flow item for runtime lowering: {other:?}"
+                    )));
+                    Vec::new()
+                }
+            })
             .collect()
     }
 

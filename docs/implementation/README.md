@@ -243,8 +243,10 @@ they affect parser, HIR, formatter, LSP, or CLI work.
 - Gap audit result: broad runtime docs still exceed the implemented core. Full
   story VM value execution, complete expression evaluation, source adapter
   execution, hook/memo runtime tables, save/replay traces, activities, layered
-  input routing, full stream operators, and value-producing `break expr` result slots remain TODOs
-  beyond the current flow/runtime Sans I/O subset.
+  input routing, and full stream operators remain TODOs beyond the current
+  flow/runtime Sans I/O subset. The implemented subset now executes
+  `let name = scope { ... }` value bindings and `let name = loop { break expr }`
+  result binding in the headless runtime.
 - `pro_review14.md` / `pro_review15.md`: adopted proof-aware
   lifetime/thread/drop direction and Agent-friendly tooling diagnostics.
   Formal `proof @proof.*` items, `trusted axiom @axiom.*` declarations,
