@@ -38,6 +38,39 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn check_json_reports_compiler_pipeline_summary() {
+    let path = temp_awft(
+        "valid-json",
+        r#"
+flow @flow.opening opening {
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg(&path)
+        .arg("--json")
+        .output()
+        .expect("arcw check runs");
+
+    assert!(
+        output.status.success(),
+        "expected JSON check success, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"status\": \"ok\"")
+            && stdout.contains("\"flows\": 1")
+            && stdout.contains("\"line_task_groups\"")
+            && stdout.contains("\"verifier_obligations\""),
+        "check JSON should include pipeline summary: {stdout}"
+    );
+}
+
+#[test]
 fn check_accepts_state_write_effect_contract() {
     let path = temp_awft(
         "state-write-effect",

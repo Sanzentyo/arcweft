@@ -9,6 +9,17 @@ use arcweft_test::{ScriptBench, ScriptTest};
 use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy, verify_module};
 
 #[derive(serde::Serialize)]
+pub(crate) struct CheckReport {
+    pub(crate) status: String,
+    pub(crate) flows: usize,
+    pub(crate) line_task_groups: usize,
+    pub(crate) syntax_warnings: usize,
+    pub(crate) verifier_diagnostics: usize,
+    pub(crate) verifier_obligations: usize,
+    pub(crate) unsafe_audits: usize,
+}
+
+#[derive(serde::Serialize)]
 pub(crate) struct RuntimePlanReport {
     pub(crate) lines: Vec<RuntimeLinePlanSummary>,
     pub(crate) streams: Vec<RuntimeStreamPlanSummary>,
@@ -86,6 +97,28 @@ struct RuntimeTaskSummary {
     join_policy: String,
     cancel_policy: String,
     scope: Box<RuntimeScopeSummary>,
+}
+
+impl CheckReport {
+    pub(crate) fn from_checked(
+        checked: &CheckedModule,
+        verification: &arcweft_verify::VerificationReport,
+    ) -> Self {
+        Self {
+            status: if verification.has_errors() {
+                "failed"
+            } else {
+                "ok"
+            }
+            .to_owned(),
+            flows: checked.hir.flows().len(),
+            line_task_groups: checked.line_task_groups.len(),
+            syntax_warnings: checked.syntax_warnings,
+            verifier_diagnostics: verification.diagnostics.len(),
+            verifier_obligations: verification.obligations.len(),
+            unsafe_audits: verification.unsafe_audit_count(),
+        }
+    }
 }
 
 impl RuntimePlanReport {

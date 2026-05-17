@@ -17,7 +17,7 @@ use arcweft_verify_oxiz::OxizBackend;
 use arcweft_verify_z3::ExternalZ3Backend;
 mod output;
 use output::{
-    RuntimeFrameRunSummary, RuntimePlanReport, RuntimeRunReport, ScriptBenchRunReport,
+    CheckReport, RuntimeFrameRunSummary, RuntimePlanReport, RuntimeRunReport, ScriptBenchRunReport,
     ScriptBenchRunSummary, ScriptBenchSectionRunSummary, ScriptTestRunReport, ScriptTestRunSummary,
     flow_status_label,
 };
@@ -46,7 +46,7 @@ fn run(args: &[OsString]) -> Result<(), ExitCode> {
             print_help();
             Ok(())
         }
-        [command, path] if command == "check" => check(&PathBuf::from(path)),
+        [command, rest @ ..] if command == "check" => check_command(rest),
         [command, rest @ ..] if command == "verify" => verify_command(rest),
         [command, rest @ ..] if command == "unsafe" => unsafe_command(rest),
         [command, rest @ ..] if command == "plan" => runtime_plan_command(rest),
@@ -440,8 +440,9 @@ fn unsupported_headless_bench_reason(text: &str) -> Option<String> {
         })
 }
 
-fn check(path: &Path) -> Result<(), ExitCode> {
-    let checked = load_and_check(path)?;
+fn check_command(args: &[OsString]) -> Result<(), ExitCode> {
+    let options = CheckOptions::parse(args)?;
+    let checked = load_and_check(&options.path)?;
     let report = verify_module(
         &checked.hir,
         VerificationPolicy {
@@ -449,19 +450,25 @@ fn check(path: &Path) -> Result<(), ExitCode> {
             backend: BackendKind::Emit,
         },
     );
-    print_human_diagnostics(&report);
+    if options.json {
+        print_json(&CheckReport::from_checked(&checked, &report))?;
+    } else {
+        print_human_diagnostics(&report);
+    }
     if report.has_errors() {
         return Err(ExitCode::FAILURE);
     }
 
-    println!(
-        "ok: {} ({} flow(s), {} line task group(s), {} warning(s), {} obligation(s))",
-        path.display(),
-        checked.hir.flows().len(),
-        checked.line_task_groups.len(),
-        checked.syntax_warnings,
-        report.obligations.len()
-    );
+    if !options.json {
+        println!(
+            "ok: {} ({} flow(s), {} line task group(s), {} warning(s), {} obligation(s))",
+            options.path.display(),
+            checked.hir.flows().len(),
+            checked.line_task_groups.len(),
+            checked.syntax_warnings,
+            report.obligations.len()
+        );
+    }
     Ok(())
 }
 
@@ -613,6 +620,12 @@ struct VerifyOptions {
 }
 
 #[derive(Clone, Debug)]
+struct CheckOptions {
+    path: PathBuf,
+    json: bool,
+}
+
+#[derive(Clone, Debug)]
 struct ScriptPlanOptions {
     path: PathBuf,
     frames: usize,
@@ -626,6 +639,31 @@ struct RuntimeRunOptions {
     frames: usize,
     values: Vec<RuntimeBinding>,
     json: bool,
+}
+
+impl CheckOptions {
+    fn parse(args: &[OsString]) -> Result<Self, ExitCode> {
+        let Some(path) = args.first() else {
+            eprintln!("error: check requires <file.awft>");
+            print_help();
+            return Err(ExitCode::from(2));
+        };
+        let mut options = Self {
+            path: PathBuf::from(path),
+            json: false,
+        };
+        for arg in &args[1..] {
+            let flag = arg.to_string_lossy();
+            match flag.as_ref() {
+                "--json" => options.json = true,
+                other => {
+                    eprintln!("error: unknown check option `{other}`");
+                    return Err(ExitCode::from(2));
+                }
+            }
+        }
+        Ok(options)
+    }
 }
 
 impl ScriptPlanOptions {
@@ -921,7 +959,7 @@ fn solve_report(report: &VerificationReport, backend: BackendKind, z3_command: O
 
 fn print_help() {
     eprintln!("Usage:");
-    eprintln!("  arcw check <file.awft>");
+    eprintln!("  arcw check <file.awft> [--json]");
     eprintln!(
         "  arcw verify <file.awft> [--mode dev|test|release] [--backend emit|oxiz|z3] [--json]"
     );

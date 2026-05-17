@@ -168,7 +168,7 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   patch merge parsing/checking, and recognizes surface aliases plus
   voice/se/bgm/bus/mix/ducking/motion/rig entity families.
 - `pro_review13.md`: adopted Phase 1.5 as the next execution direction. The
-  CLI now provides `arcw check <file.awft>` and runs parse, HIR lowering,
+  CLI now provides `arcw check <file.awft> [--json]` and runs parse, HIR lowering,
   reference validation, ID policy lints, typecheck readiness, minimal typecheck,
   and line-plan runtime lowering. `arcweft-runtime-plan` exposes
   `lower_line_task_groups`, which converts checked dialogue line plans into
