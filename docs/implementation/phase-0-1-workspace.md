@@ -278,7 +278,11 @@ Syntax parser:
   line child task write conflicts are surfaced as typed obligations for
   verifier, CLI, and LSP tooling. Scoped `defer` is applied by outcome, so
   completed-only cleanup does not discharge cancellation paths.
-- Typed let patterns and borrow blocks preserve borrow types, and the checker rejects non-`'static` borrowed values crossing `await`, `yield`, `thread`, and `defer` suspension boundaries.
+- Typed let patterns and borrow blocks preserve borrow types, and the checker
+  rejects non-`'static` borrowed values crossing `await`, `yield`, `thread`,
+  and `defer` suspension boundaries. Direct explicit local drop statements now
+  end the tracked borrow before those boundaries for `drop(local)`,
+  `drop_optional(local)`, `on_drop(local)`, and local `.drop()` calls.
 - Parser/HIR/sema integration tests live under `crates/arcweft-lang-sema/src/tests/`
   while syntax crate unit coverage stays with `arcweft-lang-syntax`; this keeps
   the public crate surfaces separate from broad grammar and semantic coverage.
@@ -305,8 +309,8 @@ Not implemented in this milestone:
 - full type environment, name resolution, and type checking
 - inference, overload resolution, traits, generics, contracts, and full
   type-directed effect checking
-- unbounded/solver-backed loop CFG, full nested-scope borrow lifetime analysis
-  beyond the current region escape checks, and precise borrow end tracking
+- unbounded/solver-backed loop CFG and full nested-scope borrow lifetime
+  analysis beyond the current region escape and explicit-drop tracking
 - full solver-backed proof term checking beyond current proof-body target and
   unjustified-assume validation
 - full semantic expression resolution and type-directed ambiguity resolution

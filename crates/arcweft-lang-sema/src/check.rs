@@ -174,6 +174,7 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
         env,
         errors: Vec::new(),
         active_borrows: Vec::new(),
+        borrow_local_lifetimes: HashMap::new(),
         locals: HashMap::new(),
         loop_stack: Vec::new(),
         line_label_stack: Vec::new(),
@@ -197,6 +198,7 @@ struct TypeChecker<'a> {
     env: &'a TypeCheckEnv,
     errors: Vec<TypeCheckError>,
     active_borrows: Vec<String>,
+    borrow_local_lifetimes: HashMap<String, Vec<String>>,
     locals: HashMap<String, TypeKind>,
     loop_stack: Vec<LoopContext>,
     line_label_stack: Vec<Option<String>>,
@@ -212,11 +214,18 @@ struct TypeChecker<'a> {
 #[derive(Clone, Debug)]
 struct TypeCheckerScopeSnapshot {
     active_borrows: Vec<String>,
+    borrow_local_lifetimes: HashMap<String, Vec<String>>,
     locals: HashMap<String, TypeKind>,
     active_presentation_defaults: HashMap<String, String>,
     lifetime_guarantees: HashSet<LifetimeKey>,
     dropped_lifetime_keys: HashSet<LifetimeKey>,
     available_lifetimes: Vec<LifetimeScopeKind>,
+}
+
+#[derive(Clone, Debug)]
+struct BorrowStateSnapshot {
+    active_borrows: Vec<String>,
+    borrow_local_lifetimes: HashMap<String, Vec<String>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -238,6 +247,7 @@ impl TypeChecker<'_> {
 
         for flow in module.flows() {
             self.active_borrows.clear();
+            self.borrow_local_lifetimes.clear();
             self.locals.clear();
             self.loop_stack.clear();
             self.active_presentation_defaults.clear();
@@ -269,6 +279,7 @@ impl TypeChecker<'_> {
         }
         for function in module.functions() {
             self.active_borrows.clear();
+            self.borrow_local_lifetimes.clear();
             self.locals.clear();
             self.loop_stack.clear();
             self.active_presentation_defaults.clear();
@@ -332,6 +343,7 @@ impl TypeChecker<'_> {
             }
             HirTopLevelDecl::Callable(item) => {
                 self.active_borrows.clear();
+                self.borrow_local_lifetimes.clear();
                 self.locals.clear();
                 self.loop_stack.clear();
                 for contract in item.contracts() {
@@ -340,6 +352,7 @@ impl TypeChecker<'_> {
             }
             HirTopLevelDecl::State(item) => {
                 self.active_borrows.clear();
+                self.borrow_local_lifetimes.clear();
                 self.locals.clear();
                 self.loop_stack.clear();
                 for field in item.fields() {
@@ -360,18 +373,21 @@ impl TypeChecker<'_> {
             }
             HirTopLevelDecl::MemoFn(item) => {
                 self.active_borrows.clear();
+                self.borrow_local_lifetimes.clear();
                 self.locals.clear();
                 self.loop_stack.clear();
                 self.check_block_expr(item.body_statements(), item.body_value());
             }
             HirTopLevelDecl::Parser(item) => {
                 self.active_borrows.clear();
+                self.borrow_local_lifetimes.clear();
                 self.locals.clear();
                 self.loop_stack.clear();
                 self.check_block_expr(item.body_statements(), item.body_value());
             }
             HirTopLevelDecl::Source(item) => {
                 self.active_borrows.clear();
+                self.borrow_local_lifetimes.clear();
                 self.locals.clear();
                 self.loop_stack.clear();
                 if let Some(id) = item.id() {
@@ -414,7 +430,9 @@ impl TypeChecker<'_> {
             }
             HirFlowItem::If(block) => {
                 self.expect_expr_type(block.condition(), &TypeKind::Bool, "if condition");
+                let borrow_snapshot = self.snapshot_borrow_state();
                 self.check_flow_items(block.body());
+                self.restore_borrow_state(borrow_snapshot);
             }
             HirFlowItem::IfLet(block) => {
                 self.check_if_let_block(block);
@@ -422,6 +440,7 @@ impl TypeChecker<'_> {
             HirFlowItem::Match(block) => {
                 let expr_type = self.check_expr(block.expr());
                 for arm in block.arms() {
+                    let borrow_snapshot = self.snapshot_borrow_state();
                     let outer_locals = self.locals.clone();
                     for (name, ty) in let_else_bindings(arm.pattern(), expr_type.as_ref()) {
                         self.locals.insert(name, ty);
@@ -430,6 +449,7 @@ impl TypeChecker<'_> {
                         self.expect_expr_type(guard, &TypeKind::Bool, "match arm guard");
                     }
                     self.check_flow_items(arm.body());
+                    self.restore_borrow_state(borrow_snapshot);
                     self.locals = outer_locals;
                 }
             }
@@ -562,6 +582,48 @@ impl TypeChecker<'_> {
         }
     }
 
+    fn register_borrow_bindings(&mut self, pattern: &Pattern, fallback: &TypeKind) {
+        for (name, binding_ty) in pattern_bindings_with_fallback(pattern, fallback) {
+            let mut lifetimes = Vec::new();
+            collect_type_kind_lifetimes(&binding_ty, &mut lifetimes);
+            if lifetimes.is_empty() {
+                continue;
+            }
+            self.active_borrows.extend(lifetimes.iter().cloned());
+            self.borrow_local_lifetimes
+                .entry(name)
+                .or_default()
+                .extend(lifetimes);
+        }
+    }
+
+    fn release_borrow_local(&mut self, name: &str) {
+        let Some(lifetimes) = self.borrow_local_lifetimes.remove(name) else {
+            return;
+        };
+        for lifetime in lifetimes {
+            if let Some(index) = self
+                .active_borrows
+                .iter()
+                .position(|active| active == &lifetime)
+            {
+                self.active_borrows.remove(index);
+            }
+        }
+    }
+
+    fn snapshot_borrow_state(&self) -> BorrowStateSnapshot {
+        BorrowStateSnapshot {
+            active_borrows: self.active_borrows.clone(),
+            borrow_local_lifetimes: self.borrow_local_lifetimes.clone(),
+        }
+    }
+
+    fn restore_borrow_state(&mut self, snapshot: BorrowStateSnapshot) {
+        self.active_borrows = snapshot.active_borrows;
+        self.borrow_local_lifetimes = snapshot.borrow_local_lifetimes;
+    }
+
     fn is_dialogue_callee(&self, callee: &str) -> bool {
         if is_dialogue_callee_type(self.env.symbol_type(callee)) {
             return true;
@@ -587,12 +649,14 @@ impl TypeChecker<'_> {
             ));
         }
         for branch in await_with.branches() {
+            let borrow_snapshot = self.snapshot_borrow_state();
             let outer_locals = self.locals.clone();
             let branch_type = await_branch_pattern_type(branch.kind(), &ready, &error);
             for (name, ty) in let_else_bindings(branch.pattern(), Some(&branch_type)) {
                 self.locals.insert(name, ty);
             }
             self.check_flow_items(branch.body());
+            self.restore_borrow_state(borrow_snapshot);
             self.locals = outer_locals;
         }
 
@@ -608,6 +672,7 @@ impl TypeChecker<'_> {
         block: &arcweft_lang_hir::HirLoop,
         allows_value_break: bool,
     ) -> Option<TypeKind> {
+        let borrow_snapshot = self.snapshot_borrow_state();
         self.loop_stack.push(LoopContext {
             label: block.label().map(str::to_owned),
             allows_value_break,
@@ -615,6 +680,7 @@ impl TypeChecker<'_> {
         });
         self.check_flow_items(block.body());
         let context = self.loop_stack.pop()?;
+        self.restore_borrow_state(borrow_snapshot);
         unify_loop_break_types(&context.break_types)
     }
 
@@ -628,11 +694,13 @@ impl TypeChecker<'_> {
         if let Some(guard) = block.guard() {
             self.expect_expr_type(guard, &TypeKind::Bool, "if-let guard");
         }
+        let borrow_snapshot = self.snapshot_borrow_state();
         let outer_locals = self.locals.clone();
         for (name, ty) in let_else_bindings(block.pattern(), expr_type.as_ref()) {
             self.locals.insert(name, ty);
         }
         self.check_flow_items(block.body());
+        self.restore_borrow_state(borrow_snapshot);
         self.locals = outer_locals;
     }
 
@@ -641,20 +709,25 @@ impl TypeChecker<'_> {
         if let Some(guard) = block.guard() {
             self.expect_expr_type(guard, &TypeKind::Bool, "while-let guard");
         }
+        let borrow_snapshot = self.snapshot_borrow_state();
         let outer_locals = self.locals.clone();
         for (name, ty) in let_else_bindings(block.pattern(), expr_type.as_ref()) {
             self.locals.insert(name, ty);
         }
         self.with_statement_loop(|this| this.check_flow_items(block.body()));
+        self.restore_borrow_state(borrow_snapshot);
         self.locals = outer_locals;
     }
 
     fn check_for_block(&mut self, block: &arcweft_lang_hir::HirFor) {
         self.check_expr(block.source());
+        let borrow_snapshot = self.snapshot_borrow_state();
         self.with_statement_loop(|this| this.check_flow_items(block.body()));
+        self.restore_borrow_state(borrow_snapshot);
     }
 
     fn with_statement_loop(&mut self, check_body: impl FnOnce(&mut Self)) {
+        let borrow_snapshot = self.snapshot_borrow_state();
         self.loop_stack.push(LoopContext {
             label: None,
             allows_value_break: false,
@@ -662,6 +735,7 @@ impl TypeChecker<'_> {
         });
         check_body(self);
         self.loop_stack.pop();
+        self.restore_borrow_state(borrow_snapshot);
     }
 
     fn check_stmt(&mut self, stmt: &Stmt) {
@@ -687,6 +761,7 @@ impl TypeChecker<'_> {
             | Stmt::Bail(expr)
             | Stmt::Select(expr) => {
                 self.check_expr(expr);
+                self.release_direct_drop_expr(expr);
             }
             Stmt::Out { label, expr } => {
                 let ty = self.check_out_stmt(label.as_deref(), expr);
@@ -815,8 +890,11 @@ impl TypeChecker<'_> {
         let ty = self
             .check_expr(expr)
             .or_else(|| annotation.map(type_ref_kind));
+        let annotated_ty = annotation.map(type_ref_kind);
         if let (Some(annotation), Some(actual)) = (annotation, ty.as_ref()) {
-            let expected = type_ref_kind(annotation);
+            let expected = annotated_ty
+                .clone()
+                .unwrap_or_else(|| type_ref_kind(annotation));
             if &expected != actual {
                 self.errors.push(TypeCheckError::new(format!(
                     "let annotation expects {expected:?}, but expression has {actual:?}"
@@ -840,12 +918,8 @@ impl TypeChecker<'_> {
                 self.locals.insert(name, binding_ty);
             }
         }
-        collect_borrow_lifetimes(pattern, &mut self.active_borrows);
-        if let Some(annotation) = annotation {
-            collect_type_lifetimes(annotation, &mut self.active_borrows);
-        }
-        if let Some(ty) = ty.as_ref() {
-            collect_type_kind_lifetimes(ty, &mut self.active_borrows);
+        if let Some(borrow_ty) = annotated_ty.as_ref().or(ty.as_ref()) {
+            self.register_borrow_bindings(pattern, borrow_ty);
         }
     }
 
@@ -896,25 +970,25 @@ impl TypeChecker<'_> {
         for (name, ty) in let_else_bindings(pattern, expr_type.as_ref()) {
             self.locals.insert(name, ty);
         }
-        collect_borrow_lifetimes(pattern, &mut self.active_borrows);
-        if let Some(annotation) = annotation {
-            collect_type_lifetimes(annotation, &mut self.active_borrows);
-        }
-        if let Some(ty) = expr_type.as_ref() {
-            collect_type_kind_lifetimes(ty, &mut self.active_borrows);
+        let annotated_ty = annotation.map(type_ref_kind);
+        if let Some(borrow_ty) = annotated_ty.as_ref().or(expr_type.as_ref()) {
+            self.register_borrow_bindings(pattern, borrow_ty);
         }
     }
 
     fn check_if_stmt(&mut self, condition: &Expr, body: &[Stmt]) {
         self.expect_expr_type(condition, &TypeKind::Bool, "if condition");
+        let borrow_snapshot = self.snapshot_borrow_state();
         let outer_locals = self.locals.clone();
         for stmt in body {
             self.check_stmt(stmt);
         }
+        self.restore_borrow_state(borrow_snapshot);
         self.locals = outer_locals;
     }
 
     fn check_stmt_loop(&mut self, body: &[Stmt]) {
+        let borrow_snapshot = self.snapshot_borrow_state();
         self.loop_stack.push(LoopContext {
             label: None,
             allows_value_break: true,
@@ -924,6 +998,7 @@ impl TypeChecker<'_> {
             self.check_stmt(stmt);
         }
         self.loop_stack.pop();
+        self.restore_borrow_state(borrow_snapshot);
     }
 
     fn check_stmt_while_let(
@@ -934,6 +1009,7 @@ impl TypeChecker<'_> {
         body: &[Stmt],
     ) {
         let expr_type = self.check_expr(expr);
+        let borrow_snapshot = self.snapshot_borrow_state();
         let outer_locals = self.locals.clone();
         for (name, ty) in let_else_bindings(pattern, expr_type.as_ref()) {
             self.locals.insert(name, ty);
@@ -946,11 +1022,13 @@ impl TypeChecker<'_> {
                 this.check_stmt(stmt);
             }
         });
+        self.restore_borrow_state(borrow_snapshot);
         self.locals = outer_locals;
     }
 
     fn check_stmt_for(&mut self, pattern: &Pattern, source: &Expr, body: &[Stmt]) {
         self.check_expr(source);
+        let borrow_snapshot = self.snapshot_borrow_state();
         let outer_locals = self.locals.clone();
         if let Some(name) = ident_pattern_name(pattern) {
             self.locals
@@ -961,12 +1039,14 @@ impl TypeChecker<'_> {
                 this.check_stmt(stmt);
             }
         });
+        self.restore_borrow_state(borrow_snapshot);
         self.locals = outer_locals;
     }
 
     fn check_match_stmt(&mut self, expr: &Expr, arms: &[arcweft_lang_syntax::StmtMatchArm]) {
         let expr_type = self.check_expr(expr);
         for arm in arms {
+            let borrow_snapshot = self.snapshot_borrow_state();
             let outer_locals = self.locals.clone();
             for (name, ty) in let_else_bindings(arm.pattern(), expr_type.as_ref()) {
                 self.locals.insert(name, ty);
@@ -977,6 +1057,7 @@ impl TypeChecker<'_> {
             for stmt in arm.body() {
                 self.check_stmt(stmt);
             }
+            self.restore_borrow_state(borrow_snapshot);
             self.locals = outer_locals;
         }
     }
@@ -1259,15 +1340,18 @@ impl TypeChecker<'_> {
     fn check_borrow_block(&mut self, block: &arcweft_lang_hir::HirBorrow) {
         self.check_expr(block.source());
         let borrow_start = self.active_borrows.len();
+        let borrow_local_start = self.borrow_local_lifetimes.clone();
         let locals_start = self.locals.clone();
-        collect_borrow_lifetimes(block.binding(), &mut self.active_borrows);
         if let Some((name, ty)) = typed_pattern_binding(block.binding()) {
-            self.locals.insert(name.to_owned(), type_ref_kind(ty));
+            let ty = type_ref_kind(ty);
+            self.locals.insert(name.to_owned(), ty.clone());
+            self.register_borrow_bindings(block.binding(), &ty);
         }
         for item in block.body() {
             self.check_flow_item(item);
         }
         self.active_borrows.truncate(borrow_start);
+        self.borrow_local_lifetimes = borrow_local_start;
         self.locals = locals_start;
     }
 
@@ -1353,6 +1437,7 @@ impl TypeChecker<'_> {
     fn snapshot_runtime_scope(&self) -> TypeCheckerScopeSnapshot {
         TypeCheckerScopeSnapshot {
             active_borrows: self.active_borrows.clone(),
+            borrow_local_lifetimes: self.borrow_local_lifetimes.clone(),
             locals: self.locals.clone(),
             active_presentation_defaults: self.active_presentation_defaults.clone(),
             lifetime_guarantees: self.lifetime_guarantees.clone(),
@@ -1363,6 +1448,7 @@ impl TypeChecker<'_> {
 
     fn restore_runtime_scope(&mut self, snapshot: TypeCheckerScopeSnapshot) {
         self.active_borrows = snapshot.active_borrows;
+        self.borrow_local_lifetimes = snapshot.borrow_local_lifetimes;
         self.locals = snapshot.locals;
         self.active_presentation_defaults = snapshot.active_presentation_defaults;
         self.lifetime_guarantees = snapshot.lifetime_guarantees;
@@ -1688,6 +1774,31 @@ impl TypeChecker<'_> {
             )));
         }
         self.lifetime_guarantees.remove(key);
+    }
+
+    fn release_direct_drop_expr(&mut self, expr: &Expr) {
+        match expr {
+            Expr::Call { callee, args } if is_drop_callee(callee) => {
+                for arg in args {
+                    if let Expr::Path(name) = arg {
+                        self.release_borrow_local(name);
+                    }
+                }
+            }
+            Expr::MethodCall {
+                receiver, method, ..
+            } if is_drop_name(method) => {
+                if let Expr::Path(name) = receiver.as_ref() {
+                    self.release_borrow_local(name);
+                }
+            }
+            Expr::Pipe { lhs, rhs } if is_drop_callee(rhs) => {
+                if let Expr::Path(name) = lhs.as_ref() {
+                    self.release_borrow_local(name);
+                }
+            }
+            _ => {}
+        }
     }
 
     fn check_lifetime_access(&mut self, key: &LifetimeKey, mode: LifetimeAccessMode) {
@@ -2199,6 +2310,9 @@ impl TypeChecker<'_> {
         for arg in args {
             self.check_expr(arg);
         }
+        if is_drop_name(method) {
+            return Some(TypeKind::Unit);
+        }
         receiver_type.and_then(|receiver_type| {
             self.env
                 .method_type(&receiver_type, method)
@@ -2573,30 +2687,6 @@ fn is_character_entity_literal(source: &str) -> bool {
         )
 }
 
-fn collect_borrow_lifetimes(pattern: &Pattern, lifetimes: &mut Vec<String>) {
-    match pattern {
-        Pattern::Typed { ty, .. } => collect_type_lifetimes(ty, lifetimes),
-        Pattern::Tuple(items) | Pattern::List { items, .. } => {
-            for item in items {
-                collect_borrow_lifetimes(item, lifetimes);
-            }
-        }
-        Pattern::Record { fields, .. } => {
-            for field in fields {
-                collect_borrow_lifetimes(field.pattern(), lifetimes);
-            }
-        }
-        Pattern::Whole { pattern, .. } => collect_borrow_lifetimes(pattern, lifetimes),
-        Pattern::Ident(_)
-        | Pattern::MutIdent(_)
-        | Pattern::Literal(_)
-        | Pattern::Entity(_)
-        | Pattern::Variant { .. }
-        | Pattern::Discard
-        | Pattern::Raw(_) => {}
-    }
-}
-
 fn typed_pattern_binding(pattern: &Pattern) -> Option<(&str, &TypeRef)> {
     match pattern {
         Pattern::Typed { name, ty } => Some((name, ty)),
@@ -2795,6 +2885,15 @@ fn variant_payload_type(expr_type: Option<&TypeKind>) -> Option<TypeKind> {
     option_payload_type(expr_type).or_else(|| expr_type.cloned())
 }
 
+fn is_drop_callee(expr: &Expr) -> bool {
+    matches!(expr, Expr::Path(name) if is_drop_name(name))
+        || matches!(expr, Expr::Call { callee, .. } if is_drop_callee(callee))
+}
+
+fn is_drop_name(name: &str) -> bool {
+    matches!(name, "drop" | "drop_optional" | "on_drop")
+}
+
 fn result_ok_type(name: &str) -> Option<TypeKind> {
     let inner = name
         .strip_prefix("Result<")
@@ -2810,7 +2909,10 @@ fn well_known_runtime_method_type(name: &str) -> Option<TypeKind> {
     (name.starts_with("log.")
         || matches!(
             name,
-            "signal.set"
+            "drop"
+                | "drop_optional"
+                | "on_drop"
+                | "signal.set"
                 | "metric.set"
                 | "event.emit"
                 | "scene.show"
@@ -3051,27 +3153,6 @@ fn await_branch_pattern_type(
         AwaitBranchKind::Ready => ready.clone(),
         AwaitBranchKind::Error => error.clone(),
         AwaitBranchKind::Denied => TypeKind::Named("AwaitDenied".to_owned()),
-    }
-}
-
-fn collect_type_lifetimes(ty: &TypeRef, lifetimes: &mut Vec<String>) {
-    match ty {
-        TypeRef::Ref { lifetime, inner } => {
-            if let Some(lifetime) = lifetime {
-                let name = lifetime.name();
-                if name != "static" {
-                    lifetimes.push(name.to_owned());
-                }
-            }
-            collect_type_lifetimes(inner, lifetimes);
-        }
-        TypeRef::Generic { args, .. } => {
-            for arg in args {
-                collect_type_lifetimes(arg, lifetimes);
-            }
-        }
-        TypeRef::Slice(inner) => collect_type_lifetimes(inner, lifetimes),
-        TypeRef::Never | TypeRef::Path(_) => {}
     }
 }
 

@@ -236,6 +236,21 @@ let escaped = {
 # error: borrowed value cannot escape through upper lifetime registry write
 ```
 
+Borrowed locals can be ended before a suspension or region boundary with a
+direct explicit drop statement. Conditional drops inside `if`, `match`, or loop
+bodies are not enough unless every possible path proves the borrow has ended.
+This is a semantic lifetime end for the local borrow; using the dropped binding
+after this point is a checker error in later ownership passes.
+
+```awft
+let pixels: &'asset [Rgba8] = bg.pixels()
+drop(pixels)
+
+try await load_avatar() with:
+    pending p:
+        progress.set(p.ratio)
+```
+
 Use owned values or handles:
 
 ```awft

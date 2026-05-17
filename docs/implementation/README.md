@@ -287,8 +287,11 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `signal.set` and `metric.set`. Semantic conflict checks now use typed
   resource access facts for lifetime/signal/metric writes. Ownership/region
   checking rejects borrowed values escaping through block finals, returns,
-  line-plan `out`, or upper-lifetime registry writes. Full solver-backed proof
-  term checking and type-directed effect inference remain compiler/HIR TODOs.
+  line-plan `out`, or upper-lifetime registry writes. Direct explicit
+  `drop(local)`, `drop_optional(local)`, `on_drop(local)`, and local `.drop()`
+  statements end the tracked local borrow before suspension boundaries such as
+  `await`. Full solver-backed proof term checking and type-directed effect
+  inference remain compiler/HIR TODOs.
 - Verifier JSON uses a stable adjacent-tagged representation for proof
   expressions, including string-carrying variants such as
   `{ "kind": "var", "value": "signal.write" }`.

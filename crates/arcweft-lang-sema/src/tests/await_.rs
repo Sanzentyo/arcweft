@@ -475,6 +475,86 @@ flow @flow.borrow borrow {
 }
 
 #[test]
+fn typecheck_allows_explicit_drop_before_await_boundary() {
+    let tree = parse_ok(
+        r"
+flow @flow.borrow borrow {
+    let pixels: &'asset [Rgba8] = bg.pixels()
+    drop(pixels)
+    try await load_avatar() with { pending p => progress.set(p.ratio) }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("explicit drop borrow fixture lowers");
+    let pixel_borrow = TypeKind::BorrowRef {
+        lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
+        inner: Box::new(TypeKind::Slice(Box::new(TypeKind::Named(
+            "Rgba8".to_owned(),
+        )))),
+    };
+    let env = TypeCheckEnv::new()
+        .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
+        .with_method(
+            TypeKind::Named("ImageHandle".to_owned()),
+            "pixels",
+            pixel_borrow,
+        )
+        .with_function(
+            "load_avatar",
+            TypeKind::Need {
+                ready: Box::new(TypeKind::Unit),
+                error: Box::new(TypeKind::Named("AssetError".to_owned())),
+            },
+        );
+
+    typecheck_hir(&hir, &env).expect("explicit drop ends borrow before await");
+}
+
+#[test]
+fn typecheck_rejects_conditional_drop_before_await_boundary() {
+    let tree = parse_ok(
+        r"
+flow @flow.borrow borrow {
+    let pixels: &'asset [Rgba8] = bg.pixels()
+    if should_drop {
+        drop(pixels)
+    }
+    try await load_avatar() with { pending p => progress.set(p.ratio) }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("conditional drop borrow fixture lowers");
+    let pixel_borrow = TypeKind::BorrowRef {
+        lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
+        inner: Box::new(TypeKind::Slice(Box::new(TypeKind::Named(
+            "Rgba8".to_owned(),
+        )))),
+    };
+    let env = TypeCheckEnv::new()
+        .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
+        .with_symbol("should_drop", TypeKind::Bool)
+        .with_method(
+            TypeKind::Named("ImageHandle".to_owned()),
+            "pixels",
+            pixel_borrow,
+        )
+        .with_function(
+            "load_avatar",
+            TypeKind::Need {
+                ready: Box::new(TypeKind::Unit),
+                error: Box::new(TypeKind::Named("AssetError".to_owned())),
+            },
+        );
+
+    let errors = typecheck_hir(&hir, &env).expect_err("conditional drop is not enough");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("suspension boundary"))
+    );
+}
+
+#[test]
 fn typechecks_await_wait_view_branches() {
     let tree = parse_ok(
         r"
