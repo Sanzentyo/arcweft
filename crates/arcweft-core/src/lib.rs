@@ -109,6 +109,13 @@ pub enum RuntimeExpr {
         then_expr: Box<RuntimeExpr>,
         else_expr: Box<RuntimeExpr>,
     },
+    IfLet {
+        pattern: RuntimePattern,
+        expr: Box<RuntimeExpr>,
+        guard: Option<Box<RuntimeExpr>>,
+        then_expr: Box<RuntimeExpr>,
+        else_expr: Box<RuntimeExpr>,
+    },
     Match {
         scrutinee: Box<RuntimeExpr>,
         arms: Vec<RuntimeExprMatchArm>,
@@ -2726,7 +2733,45 @@ impl Engine {
                     self.evaluate_expr(else_expr)
                 }
             }
+            RuntimeExpr::IfLet {
+                pattern,
+                expr,
+                guard,
+                then_expr,
+                else_expr,
+            } => self.evaluate_if_let_expr(pattern, expr, guard.as_deref(), then_expr, else_expr),
             RuntimeExpr::Match { scrutinee, arms } => self.evaluate_match_expr(scrutinee, arms),
+        }
+    }
+
+    fn evaluate_if_let_expr(
+        &mut self,
+        pattern: &RuntimePattern,
+        expr: &RuntimeExpr,
+        guard: Option<&RuntimeExpr>,
+        then_expr: &RuntimeExpr,
+        else_expr: &RuntimeExpr,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let value = self.evaluate_expr(expr)?;
+        let Some(bindings) = match_runtime_pattern(pattern, &value)? else {
+            return self.evaluate_expr(else_expr);
+        };
+        let previous = self.fiber.env.clone();
+        self.fiber.env.bind_all(bindings);
+        match guard.map_or(Ok(true), |guard| self.evaluate_bool(guard)) {
+            Ok(true) => {
+                let result = self.evaluate_expr(then_expr);
+                self.fiber.env = previous;
+                result
+            }
+            Ok(false) => {
+                self.fiber.env = previous;
+                self.evaluate_expr(else_expr)
+            }
+            Err(error) => {
+                self.fiber.env = previous;
+                Err(error)
+            }
         }
     }
 
@@ -3151,6 +3196,7 @@ fn expr_runtime_label(expr: &RuntimeExpr) -> String {
         RuntimeExpr::Unary { op, .. } => runtime_unary_op_label(*op).to_owned(),
         RuntimeExpr::Binary { op, .. } => runtime_binary_op_label(*op).to_owned(),
         RuntimeExpr::If { .. } => "if".to_owned(),
+        RuntimeExpr::IfLet { .. } => "if let".to_owned(),
         RuntimeExpr::Match { .. } => "match".to_owned(),
     }
 }

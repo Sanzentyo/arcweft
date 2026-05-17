@@ -9,6 +9,7 @@ use arcweft_lang_sema::{
 use arcweft_lang_syntax::{lint_id_policy, parse_source};
 use arcweft_runtime_plan::{LoweredLineTaskGroup, lower_line_task_groups, lower_runtime_plan};
 use arcweft_test::{BenchSection, ScriptBench, ScriptStep, ScriptTest, collect_script_tests};
+use arcweft_tooling::{FormatOptions, ToolingEditReport, format_source, materialize_ids};
 use arcweft_verify::{
     BackendKind, SmtBackend, VerificationMode, VerificationPolicy, VerificationReport,
     emit_smt_lib, verify_module,
@@ -53,11 +54,97 @@ fn run(args: &[OsString]) -> Result<(), ExitCode> {
         [command, rest @ ..] if command == "run" => runtime_run_command(rest),
         [command, rest @ ..] if command == "test" => script_test_command(rest),
         [command, rest @ ..] if command == "bench" => script_bench_command(rest),
+        [command, rest @ ..] if command == "fmt" => format_command(rest),
+        [command, rest @ ..] if command == "ids" => ids_command(rest),
         [command, ..] => {
             eprintln!("error: unknown command `{}`", command.to_string_lossy());
             print_help();
             Err(ExitCode::from(2))
         }
+    }
+}
+
+fn format_command(args: &[OsString]) -> Result<(), ExitCode> {
+    let options = ToolingCommandOptions::parse(args, "fmt")?;
+    run_tooling_command(&options, |source| {
+        format_source(
+            source,
+            FormatOptions {
+                expand_sugar: options.expand_sugar,
+            },
+        )
+    })
+}
+
+fn ids_command(args: &[OsString]) -> Result<(), ExitCode> {
+    let Some((subcommand, rest)) = args.split_first() else {
+        eprintln!("error: ids requires a subcommand");
+        print_help();
+        return Err(ExitCode::from(2));
+    };
+    if subcommand != "materialize" {
+        eprintln!(
+            "error: unknown ids subcommand `{}`",
+            subcommand.to_string_lossy()
+        );
+        return Err(ExitCode::from(2));
+    }
+    let options = ToolingCommandOptions::parse(rest, "ids materialize")?;
+    run_tooling_command(&options, materialize_ids)
+}
+
+fn run_tooling_command(
+    options: &ToolingCommandOptions,
+    mut run_one: impl FnMut(&str) -> Result<ToolingEditReport, arcweft_tooling::ToolingError>,
+) -> Result<(), ExitCode> {
+    let paths = collect_awft_paths(&options.path)?;
+    let mut reports = Vec::new();
+    for path in paths {
+        let source = fs::read_to_string(&path).map_err(|error| {
+            eprintln!("error: failed to read {}: {error}", path.display());
+            ExitCode::FAILURE
+        })?;
+        let report = run_one(&source).map_err(|error| {
+            eprintln!("error: failed to edit {}: {error}", path.display());
+            ExitCode::FAILURE
+        })?;
+        if options.write && report.changed {
+            fs::write(&path, &report.output).map_err(|error| {
+                eprintln!("error: failed to write {}: {error}", path.display());
+                ExitCode::FAILURE
+            })?;
+        }
+        reports.push(ToolingFileReport {
+            path: path.display().to_string(),
+            changed: report.changed,
+            edits: report.edits.len(),
+            output: if options.write {
+                None
+            } else {
+                Some(report.output)
+            },
+        });
+    }
+    if options.json {
+        print_json(&ToolingCommandReport { files: reports })
+    } else {
+        for report in &reports {
+            println!(
+                "{}: {} edit(s){}",
+                report.path,
+                report.edits,
+                if report.changed { "" } else { " (unchanged)" }
+            );
+            if !options.write
+                && let Some(output) = &report.output
+            {
+                print!("{output}");
+                if !output.ends_with('\n') {
+                    println!();
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -641,6 +728,27 @@ struct RuntimeRunOptions {
     json: bool,
 }
 
+#[derive(Clone, Debug)]
+struct ToolingCommandOptions {
+    path: PathBuf,
+    expand_sugar: bool,
+    write: bool,
+    json: bool,
+}
+
+#[derive(serde::Serialize)]
+struct ToolingCommandReport {
+    files: Vec<ToolingFileReport>,
+}
+
+#[derive(serde::Serialize)]
+struct ToolingFileReport {
+    path: String,
+    changed: bool,
+    edits: usize,
+    output: Option<String>,
+}
+
 impl CheckOptions {
     fn parse(args: &[OsString]) -> Result<Self, ExitCode> {
         let Some(path) = args.first() else {
@@ -662,6 +770,48 @@ impl CheckOptions {
                 }
             }
         }
+        Ok(options)
+    }
+}
+
+impl ToolingCommandOptions {
+    fn parse(args: &[OsString], command: &str) -> Result<Self, ExitCode> {
+        if args.is_empty() {
+            eprintln!("error: {command} requires <file-or-dir>");
+            print_help();
+            return Err(ExitCode::from(2));
+        }
+        let mut options = Self {
+            path: PathBuf::new(),
+            expand_sugar: false,
+            write: false,
+            json: false,
+        };
+        let mut path = None;
+        for arg in args {
+            let flag = arg.to_string_lossy();
+            match flag.as_ref() {
+                "--expand-sugar" => options.expand_sugar = true,
+                "--write" => options.write = true,
+                "--json" => options.json = true,
+                other if other.starts_with('-') => {
+                    eprintln!("error: unknown {command} option `{other}`");
+                    return Err(ExitCode::from(2));
+                }
+                other => {
+                    if path.replace(PathBuf::from(other)).is_some() {
+                        eprintln!("error: {command} accepts exactly one <file-or-dir>");
+                        return Err(ExitCode::from(2));
+                    }
+                }
+            }
+        }
+        let Some(path) = path else {
+            eprintln!("error: {command} requires <file-or-dir>");
+            print_help();
+            return Err(ExitCode::from(2));
+        };
+        options.path = path;
         Ok(options)
     }
 }
@@ -918,6 +1068,40 @@ fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), ExitCod
     })
 }
 
+fn collect_awft_paths(path: &Path) -> Result<Vec<PathBuf>, ExitCode> {
+    if path.is_file() {
+        return Ok(vec![path.to_path_buf()]);
+    }
+    if !path.is_dir() {
+        eprintln!("error: {} is not a file or directory", path.display());
+        return Err(ExitCode::from(2));
+    }
+    let mut paths = Vec::new();
+    let mut stack = vec![path.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).map_err(|error| {
+            eprintln!("error: failed to read {}: {error}", dir.display());
+            ExitCode::FAILURE
+        })? {
+            let entry = entry.map_err(|error| {
+                eprintln!("error: failed to read directory entry: {error}");
+                ExitCode::FAILURE
+            })?;
+            let entry_path = entry.path();
+            if entry_path.is_dir() {
+                stack.push(entry_path);
+            } else if entry_path
+                .extension()
+                .is_some_and(|extension| extension == "awft")
+            {
+                paths.push(entry_path);
+            }
+        }
+    }
+    paths.sort();
+    Ok(paths)
+}
+
 fn emit_smt(path: &Path, report: &VerificationReport) -> Result<(), ExitCode> {
     fs::create_dir_all(path).map_err(|error| {
         eprintln!("error: failed to create {}: {error}", path.display());
@@ -971,4 +1155,6 @@ fn print_help() {
     eprintln!("  arcw run <file.awft> [--frames N] [--value name=value] [--json]");
     eprintln!("  arcw test <file.awft> [--json]");
     eprintln!("  arcw bench <file.awft> [--json]");
+    eprintln!("  arcw fmt <file-or-dir> [--expand-sugar] [--write] [--json]");
+    eprintln!("  arcw ids materialize <file-or-dir> [--write] [--json]");
 }

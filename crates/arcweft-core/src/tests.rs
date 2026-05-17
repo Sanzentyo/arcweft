@@ -825,6 +825,57 @@ fn duplicate_pattern_bindings_fail_before_env_mutation() {
 }
 
 #[test]
+fn if_let_expression_binds_only_success_branch() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.if_let".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.if_let".to_owned()),
+            ops: vec![
+                FlowOp::Let {
+                    pattern: RuntimePattern::Ident("target".to_owned()),
+                    expr: RuntimeExpr::IfLet {
+                        pattern: RuntimePattern::Variant {
+                            path: None,
+                            name: "Some".to_owned(),
+                            payload: Some(Box::new(RuntimePattern::Ident("route".to_owned()))),
+                        },
+                        expr: Box::new(RuntimeExpr::Local("opt".to_owned())),
+                        guard: None,
+                        then_expr: Box::new(RuntimeExpr::Local("route".to_owned())),
+                        else_expr: Box::new(RuntimeExpr::EntityRef("flow.fallback".to_owned())),
+                    },
+                },
+                FlowOp::GotoExpr(RuntimeExpr::Local("target".to_owned())),
+            ],
+        }],
+        Vec::new(),
+    )
+    .expect("if-let runtime plan is valid");
+    let mut engine = Engine::new(plan);
+
+    engine.step(FrameInput {
+        external_values: vec![RuntimeBinding {
+            name: "opt".to_owned(),
+            value: RuntimeValue::Variant {
+                path: None,
+                name: "Some".to_owned(),
+                payload: Some(Box::new(RuntimeValue::EntityRef("flow.next".to_owned()))),
+            },
+        }],
+        ..FrameInput::default()
+    });
+    let output = engine.step(FrameInput::default());
+
+    assert_eq!(
+        output.flow_events,
+        vec![FlowEvent::Goto {
+            target: FlowRuntimeId("flow.next".to_owned())
+        }]
+    );
+    assert!(engine.fiber().env.get("route").is_none());
+}
+
+#[test]
 fn line_cancel_rule_replaces_normal_line_body() {
     let group = LineTaskGroup {
         root: LineTaskScope {

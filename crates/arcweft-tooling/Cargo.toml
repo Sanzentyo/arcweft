@@ -1,5 +1,5 @@
 [package]
-name = "arcweft-verify-lsp"
+name = "arcweft-tooling"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -7,10 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-tooling = { path = "../arcweft-tooling" }
-arcweft-verify = { path = "../arcweft-verify" }
-lsp-types.workspace = true
-serde_json.workspace = true
+arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+serde = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
 
 [lib]
 path = "src/lib.rs"

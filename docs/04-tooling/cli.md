@@ -206,3 +206,10 @@ Materialization resolves only ID-bearing contexts such as line IDs, text keys,
 choice IDs, and choice option IDs. It must not rewrite ordinary entity
 references, and it must not invent support for ambiguous forms such as
 `goto @.next`.
+
+The current CLI implementation routes both commands through the Sans I/O
+`arcweft-tooling` crate. `arcw fmt` is a dry-run by default and writes only with
+`--write`; `arcw ids materialize` follows the same dry-run/write split and can
+emit JSON reports. The first materialization slice covers known top-level
+declaration IDs plus choice and choice-option IDs; future slices should extend
+that typed context table before rewriting dialogue line/text-key IDs.

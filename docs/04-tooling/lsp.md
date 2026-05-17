@@ -82,3 +82,9 @@ CLI/LSP は `arcweft-verify` の machine-readable diagnostics を共有する。
 `arcweft-verify-lsp` is a Sans I/O helper crate. It converts verifier reports into
 `lsp-types` diagnostics and code actions. A transport server can wrap this
 crate later without changing verifier semantics.
+
+It also exposes source-level helpers backed by `arcweft-tooling`: sugar
+expansion actions, relative-ID materialization actions, and inferred-ID inlay
+hints. These helpers return `lsp-types` data only; opening documents, applying
+workspace edits, watching files, and resolving editor capabilities remain
+transport-adapter responsibilities.

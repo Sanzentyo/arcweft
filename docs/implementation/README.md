@@ -319,6 +319,19 @@ they affect parser, HIR, formatter, LSP, or CLI work.
 - Verifier JSON uses a stable adjacent-tagged representation for proof
   expressions, including string-carrying variants such as
   `{ "kind": "var", "value": "signal.write" }`.
+- Phase 2.1 tooling has a first Sans I/O crate, `arcweft-tooling`, for source
+  edit reports, sugar expansion, ID materialization edits, source code actions,
+  and inferred-ID hints. The CLI now wires `arcw fmt` and
+  `arcw ids materialize` as dry-run-by-default adapter commands with `--write`
+  and `--json`; `arcweft-verify-lsp` exposes the same source actions and hints
+  without owning an LSP transport. The current ID materialization table covers
+  top-level declarations plus choice/choice-option IDs and should be extended
+  through typed context data before line/text-key rewriting is enabled.
+- Runtime value lowering is stricter for executable flow plans. Unsupported
+  value-position expressions such as ordinary calls now produce runtime-plan
+  lowering errors instead of being coerced into string labels; adapter-facing
+  payload labels still use the existing lossy labeler where the runtime treats
+  them as observational data rather than executable values.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure

@@ -687,6 +687,79 @@ flow @flow.done done {
 }
 
 #[test]
+fn fmt_preserves_sugar_by_default() {
+    let source = "flow @flow.opening opening {\n    alice: hi[p]\n}\n";
+    let path = temp_awft("fmt-preserve", source);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("fmt")
+        .arg(&path)
+        .output()
+        .expect("arcw fmt runs");
+
+    assert!(
+        output.status.success(),
+        "fmt should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("alice: hi[p]"),
+        "default fmt should preserve authoring sugar"
+    );
+    assert_eq!(fs::read_to_string(&path).expect("source remains"), source);
+}
+
+#[test]
+fn fmt_expand_sugar_accepts_flags_before_path_and_writes() {
+    let path = temp_awft(
+        "fmt-expand",
+        "pub surface character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    alice: hi[p]\n    with:\n        log.info(\"x\")\n    goto parent::next\n}\n",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("fmt")
+        .arg("--expand-sugar")
+        .arg("--write")
+        .arg(&path)
+        .output()
+        .expect("arcw fmt runs");
+
+    assert!(
+        output.status.success(),
+        "fmt --expand-sugar should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let rewritten = fs::read_to_string(&path).expect("rewritten source");
+    assert!(rewritten.contains("alice.say()[hi[p]]"));
+    assert!(rewritten.contains("with {"));
+    assert!(rewritten.contains("goto super::next"));
+}
+
+#[test]
+fn ids_materialize_accepts_flags_before_path_without_write() {
+    let source = "flow @flow.opening opening {\n    choice @.first {\n        @.listen \"Listen\" -> @flow.next\n    }\n}\n";
+    let path = temp_awft("ids-materialize", source);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("ids")
+        .arg("materialize")
+        .arg("--json")
+        .arg(&path)
+        .output()
+        .expect("arcw ids materialize runs");
+
+    assert!(
+        output.status.success(),
+        "ids materialize should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("choice @choice.opening.first"));
+    assert!(stdout.contains("@choice.opening.first.listen"));
+    assert_eq!(fs::read_to_string(&path).expect("source remains"), source);
+}
+
+#[test]
 fn test_json_lists_script_tests() {
     let path = temp_awft(
         "script-test",

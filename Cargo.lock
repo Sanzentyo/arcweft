@@ -59,6 +59,7 @@ dependencies = [
  "arcweft-lang-syntax",
  "arcweft-runtime-plan",
  "arcweft-test",
+ "arcweft-tooling",
  "arcweft-verify",
  "arcweft-verify-oxiz",
  "arcweft-verify-z3",
@@ -160,6 +161,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-tooling"
+version = "0.1.0"
+dependencies = [
+ "arcweft-lang-syntax",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arcweft-verify"
 version = "0.1.0"
 dependencies = [
@@ -175,6 +185,7 @@ dependencies = [
 name = "arcweft-verify-lsp"
 version = "0.1.0"
 dependencies = [
+ "arcweft-tooling",
  "arcweft-verify",
  "lsp-types",
  "serde_json",
