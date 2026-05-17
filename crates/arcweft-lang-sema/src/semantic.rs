@@ -1,6 +1,8 @@
 use crate::check::TypeCheckEnv;
-mod fact_layer;
 mod facts;
+use crate::fact_layer::{
+    Capability, EffectScope, ProofFacts, write_capability_for_call, write_capability_for_method,
+};
 use arcweft_lang_hir::{
     ChoicePlanItem, Expr, HirAwait, HirBorrow, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf,
     HirIfLet, HirLoop, HirMatch, HirModule, HirScope, HirScopeExpr, HirSelect, HirTopLevelDecl,
@@ -8,9 +10,6 @@ use arcweft_lang_hir::{
     Stmt, TextRange, ThreadBlock, TriggerPattern,
 };
 use arcweft_lang_syntax::{Literal, LoopBlock, SelectBranchHead};
-use fact_layer::{
-    Capability, EffectScope, ProofFacts, write_capability_for_call, write_capability_for_method,
-};
 use facts::{BlockFlow, DeferredCleanup, ExitPath, ExitReason, FlowFacts, transfer_reason};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 

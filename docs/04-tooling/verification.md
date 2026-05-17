@@ -119,17 +119,20 @@ Flow/function contracts and hook headers grant capabilities in the checked body:
 
 ```awft
 flow @flow.effects effects
-effects { signal.write, metric.write }
+effects { signal.write, metric.write, state.write('flow) }
 {
     signal.set(@signal.current_flow, @flow.effects)
     metric.set(@metric.choice_count, 1)
+    'flow.flags.seen <- true
 }
 ```
 
 In the current implementation, `signal.set(...)` requires `signal.write` and
-`metric.set(...)` requires `metric.write`. Missing capabilities are reported as
-`effect_capability` obligations; matching `effects` clauses or explicit
-checker environment capabilities discharge them automatically.
+`metric.set(...)` requires `metric.write`; upper-lifetime registry writes such
+as `'flow.flags.seen <- true` require `state.write(flow)`, written in source as
+`state.write('flow)`. Missing capabilities are reported as verifier
+obligations; matching `effects` clauses or explicit checker environment
+capabilities discharge them automatically.
 
 This Phase 1.9 pass is CFG-aware for blocks, branches, line plans,
 cancellation rules, bounded loop fixed points, and scoped `defer` outcomes. It

@@ -5,6 +5,7 @@
 //! crates do not depend on it.
 
 mod check;
+mod fact_layer;
 mod resolve;
 mod semantic;
 mod symbols;

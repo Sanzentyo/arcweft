@@ -151,6 +151,22 @@ flow @flow.registry registry {
             && obligation.discharge == SemanticDischarge::Automatic
             && obligation.subject.as_deref() == Some("flow.flags.seen")
     }));
+
+    let allowed_by_contract = semantic_report(
+        r"
+flow @flow.registry_contract registry_contract
+effects { state.write('flow) }
+{
+    'flow.flags.seen <- true
+}
+",
+        &TypeCheckEnv::new(),
+    );
+    assert!(allowed_by_contract.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::UpperLifetimeWrite
+            && obligation.discharge == SemanticDischarge::Automatic
+            && obligation.subject.as_deref() == Some("flow.flags.seen")
+    }));
 }
 
 #[test]

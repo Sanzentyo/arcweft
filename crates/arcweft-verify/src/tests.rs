@@ -138,6 +138,27 @@ effects { signal.write }
 }
 
 #[test]
+fn semantic_state_write_can_be_discharged_by_effects_clause() {
+    let report = report(
+        r"
+flow @flow.registry registry
+effects { state.write('flow) }
+{
+    'flow.flags.seen <- true
+}
+",
+        VerificationMode::Test,
+    );
+
+    assert!(!report.has_errors());
+    assert!(report.obligations.iter().any(|obligation| {
+        obligation.kind == ProofObligationKind::UpperLifetimeWrite
+            && obligation.discharge == ProofDischarge::Automatic
+            && obligation.subject.as_deref() == Some("flow.flags.seen")
+    }));
+}
+
+#[test]
 fn semantic_cfg_discharge_is_not_overridden_by_verifier_scan() {
     let report = report(
         r"

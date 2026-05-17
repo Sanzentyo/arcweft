@@ -191,8 +191,9 @@ Syntax parser:
 - Flow/function `effects { ... }` contracts and hook header `effects` entries
   are lowered into typed semantic capability facts. These facts discharge known
   write-call obligations such as `signal.set(...) -> signal.write` and
-  `metric.set(...) -> metric.write`; missing facts still surface through the
-  verifier report rather than being hidden by the type checker.
+  `metric.set(...) -> metric.write`, plus upper-lifetime registry writes such
+  as `state.write('flow) -> state.write(flow)`; missing facts still surface
+  through the verifier report rather than being hidden by the type checker.
 - Phase 1.5 line-plan lowering preserves line options, `let`, `out`,
   cancellation rules, memo directives, assertions, structured log calls,
   signal writes, metric writes, `event.emit(...)` calls, scenario commands, and

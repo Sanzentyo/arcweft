@@ -161,11 +161,12 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   this pass rather than parser diagnostics.
 - `pro_review12.md` P0-P2 work is partially implemented: syntax/checking now
   uses structured `LifetimeScopeKind`/`LifetimeKey`, recognizes upper-lifetime
-  write capabilities such as `state.write(flow)`, rejects `'line.*` outside line
-  scope and across thread boundaries, parses expression-form `thread`, keeps
-  function parameter defaults, supports `&` patch merge parsing/checking, and
-  recognizes surface aliases plus voice/se/bgm/bus/mix/ducking/motion/rig
-  entity families.
+  write capabilities such as `state.write(flow)`, and accepts source effects
+  selectors such as `effects { state.write('flow) }` as capability facts.
+  It rejects `'line.*` outside line scope and across thread boundaries, parses
+  expression-form `thread`, keeps function parameter defaults, supports `&`
+  patch merge parsing/checking, and recognizes surface aliases plus
+  voice/se/bgm/bus/mix/ducking/motion/rig entity families.
 - `pro_review13.md`: adopted Phase 1.5 as the next execution direction. The
   CLI now provides `arcw check <file.awft>` and runs parse, HIR lowering,
   reference validation, ID policy lints, typecheck readiness, minimal typecheck,

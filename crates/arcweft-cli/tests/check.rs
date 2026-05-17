@@ -38,6 +38,33 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn check_accepts_state_write_effect_contract() {
+    let path = temp_awft(
+        "state-write-effect",
+        r"
+flow @flow.registry registry
+effects { state.write('flow) }
+{
+    'flow.flags.seen <- true
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg(&path)
+        .output()
+        .expect("arcw check runs");
+
+    assert!(
+        output.status.success(),
+        "expected state.write effect to pass, stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn check_rejects_unlowered_line_plan_item() {
     let path = temp_awft(
         "unsupported-line-plan",

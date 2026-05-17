@@ -171,10 +171,11 @@ MustDrop registry values such as `'line.focus`.
 
 Effect capability obligations are backed by semantic facts rather than ordinary
 symbol lookup. A flow or function contract such as
-`effects { signal.write }`, or a hook header `effects signal.write`, grants
-that capability inside the body and discharges the corresponding
-`signal.set(...)` write obligation. Unknown or missing capability facts remain
-visible in verifier output.
+`effects { signal.write, state.write('flow) }`, or a hook header
+`effects signal.write`, grants those capabilities inside the body. This
+discharges corresponding write obligations such as `signal.set(...)` and
+upper-lifetime registry writes like `'flow.flags.seen <- true`. Unknown or
+missing capability facts remain visible in verifier output.
 
 The current pass is CFG-aware for blocks, branches, line plans, cancellation
 rules, bounded loop fixed points, and scoped `defer` outcomes. Completed-only

@@ -1,34 +1,34 @@
-use arcweft_lang_syntax::{ContractClause, Expr};
+use arcweft_lang_syntax::{ContractClause, Expr, LifetimeScopeKind};
 use std::collections::BTreeSet;
 
 /// Capability granted by an effects clause or an external checker environment.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) struct Capability(String);
+pub(crate) struct Capability(String);
 
 /// Effect permissions active while checking a flow, function, or hook body.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(super) struct EffectScope {
+pub(crate) struct EffectScope {
     capabilities: BTreeSet<Capability>,
 }
 
 /// Proof facts extracted from a top-level `proof` item.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(super) struct ProofFacts {
+pub(crate) struct ProofFacts {
     lifetime_targets: BTreeSet<String>,
 }
 
 impl Capability {
-    pub(super) fn new(value: impl Into<String>) -> Self {
+    pub(crate) fn new(value: impl Into<String>) -> Self {
         Self(value.into())
     }
 
-    pub(super) fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 }
 
 impl EffectScope {
-    pub(super) fn from_contracts(contracts: &[ContractClause]) -> Self {
+    pub(crate) fn from_contracts(contracts: &[ContractClause]) -> Self {
         let capabilities = contracts
             .iter()
             .filter_map(|contract| match contract {
@@ -40,30 +40,34 @@ impl EffectScope {
         Self { capabilities }
     }
 
-    pub(super) fn from_effects(effects: &[Expr]) -> Self {
+    pub(crate) fn from_effects(effects: &[Expr]) -> Self {
         Self {
             capabilities: effects.iter().filter_map(capability_from_expr).collect(),
         }
     }
 
-    pub(super) fn contains(&self, capability: &Capability) -> bool {
+    pub(crate) fn contains(&self, capability: &Capability) -> bool {
         self.capabilities.contains(capability)
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &Capability> {
+        self.capabilities.iter()
     }
 }
 
 impl ProofFacts {
-    pub(super) fn from_body(body: &str) -> Self {
+    pub(crate) fn from_body(body: &str) -> Self {
         Self {
             lifetime_targets: collect_proof_lifetime_targets(body),
         }
     }
 
-    pub(super) fn discharges_target(&self, target: &str) -> bool {
+    pub(crate) fn discharges_target(&self, target: &str) -> bool {
         self.lifetime_targets.contains(target)
     }
 }
 
-pub(super) fn write_capability_for_method(receiver: &Expr, method: &str) -> Option<Capability> {
+pub(crate) fn write_capability_for_method(receiver: &Expr, method: &str) -> Option<Capability> {
     if method != "set" {
         return None;
     }
@@ -75,7 +79,7 @@ pub(super) fn write_capability_for_method(receiver: &Expr, method: &str) -> Opti
     }
 }
 
-pub(super) fn write_capability_for_call(callee: &Expr) -> Option<Capability> {
+pub(crate) fn write_capability_for_call(callee: &Expr) -> Option<Capability> {
     match expr_path_label(callee).as_deref() {
         Some("signal.set") => Some(Capability::new("signal.write")),
         Some("metric.set") => Some(Capability::new("metric.write")),
@@ -83,7 +87,22 @@ pub(super) fn write_capability_for_call(callee: &Expr) -> Option<Capability> {
     }
 }
 
-pub(super) fn capability_from_expr(expr: &Expr) -> Option<Capability> {
+pub(crate) fn capability_from_expr(expr: &Expr) -> Option<Capability> {
+    if let Expr::Call { callee, args } = expr
+        && expr_path_label(callee).as_deref() == Some("state.write")
+    {
+        return state_write_capability(args);
+    }
+    if let Expr::MethodCall {
+        receiver,
+        method,
+        args,
+    } = expr
+        && method == "write"
+        && expr_path_label(receiver).as_deref() == Some("state")
+    {
+        return state_write_capability(args);
+    }
     expr_path_label(expr).map(Capability::new)
 }
 
@@ -95,6 +114,20 @@ fn expr_path_label(expr: &Expr) -> Option<String> {
         }
         _ => None,
     }
+}
+
+fn lifetime_scope_arg(expr: &Expr) -> Option<LifetimeScopeKind> {
+    match expr {
+        Expr::LifetimePath { key, .. } => Some(key.scope().clone()),
+        Expr::Path(path) => path.strip_prefix('\'').map(LifetimeScopeKind::parse),
+        _ => None,
+    }
+}
+
+fn state_write_capability(args: &[Expr]) -> Option<Capability> {
+    args.first()
+        .and_then(lifetime_scope_arg)
+        .map(|scope| Capability::new(format!("state.write({})", scope.as_str())))
 }
 
 fn collect_proof_lifetime_targets(body: &str) -> BTreeSet<String> {

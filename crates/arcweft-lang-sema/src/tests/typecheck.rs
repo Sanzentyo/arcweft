@@ -281,6 +281,19 @@ flow @flow.registry registry {
         &TypeCheckEnv::new().with_capability("state.write(flow)"),
     )
     .expect("capability permits flow lifetime registry writes");
+
+    let tree = parse_ok(
+        r"
+flow @flow.registry_contract registry_contract
+effects { state.write('flow) }
+{
+    'flow.flags.seen <- 1
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("flow registry write with effects lowers");
+    typecheck_hir(&hir, &TypeCheckEnv::new())
+        .expect("effects clause permits flow lifetime registry writes");
 }
 
 #[test]

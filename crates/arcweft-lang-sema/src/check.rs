@@ -1,3 +1,4 @@
+use crate::fact_layer::{EffectScope, capability_from_expr};
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 use arcweft_lang_hir::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::TypeRef;
@@ -261,7 +262,10 @@ impl TypeChecker<'_> {
             for contract in flow.contracts() {
                 self.check_contract_clause(contract);
             }
+            let effect_scope = EffectScope::from_contracts(flow.contracts());
+            let effect_snapshot = self.apply_effect_scope(&effect_scope);
             self.check_flow_items(flow.body());
+            self.effect_capabilities = effect_snapshot;
         }
         for function in module.functions() {
             self.active_borrows.clear();
@@ -276,7 +280,10 @@ impl TypeChecker<'_> {
             for contract in function.contracts() {
                 self.check_contract_clause(contract);
             }
+            let effect_scope = EffectScope::from_contracts(function.contracts());
+            let effect_snapshot = self.apply_effect_scope(&effect_scope);
             let actual = self.check_block_expr(function.statements(), function.value());
+            self.effect_capabilities = effect_snapshot;
             if let (Some(expected), Some(actual)) = (
                 function.signature().return_type().map(type_ref_kind),
                 actual,
@@ -346,7 +353,10 @@ impl TypeChecker<'_> {
             }
             HirTopLevelDecl::Hook(item) => {
                 self.expect_entity_kind(item.id(), &EntityKind::Hook, "hook id");
+                let effect_scope = EffectScope::from_effects(item.effects());
+                let effect_snapshot = self.apply_effect_scope(&effect_scope);
                 self.check_block_expr(item.body_statements(), None);
+                self.effect_capabilities = effect_snapshot;
             }
             HirTopLevelDecl::MemoFn(item) => {
                 self.active_borrows.clear();
@@ -1298,10 +1308,20 @@ impl TypeChecker<'_> {
         // Contract selectors name capabilities or resources. They are not
         // executable expressions, so dotted selectors such as `signal.write`
         // must not resolve `signal` as a local value.
-        if expr_path_label(expr).is_some() || matches!(expr, Expr::EntityRef(_)) {
+        if capability_from_expr(expr).is_some() || matches!(expr, Expr::EntityRef(_)) {
             return;
         }
         self.check_expr(expr);
+    }
+
+    fn apply_effect_scope(&mut self, scope: &EffectScope) -> HashSet<String> {
+        let snapshot = self.effect_capabilities.clone();
+        self.effect_capabilities.extend(
+            scope
+                .iter()
+                .map(|capability| capability.as_str().to_owned()),
+        );
+        snapshot
     }
 
     fn reject_active_borrows(&mut self, boundary: &str) {
