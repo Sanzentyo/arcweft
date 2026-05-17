@@ -241,11 +241,11 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   guard evaluation uses temporary bindings and restores the previous runtime
   environment. `FrameInput::external_values` bind into the root runtime scope so
   ambient per-frame values are not lost when a nested scope exits.
-- Gap audit result: broad runtime docs still exceed the implemented core. Full
-  story VM value execution, complete expression evaluation, source adapter
-  execution, hook/memo runtime tables, save/replay traces, activities, layered
-  input routing, and full stream operators remain TODOs beyond the current
-  flow/runtime Sans I/O subset. The implemented subset now executes
+- Gap audit result: broad runtime docs still exceed the Phase 2.0 headless
+  target. Full story VM value execution, complete expression evaluation, source
+  adapter execution, hook/memo runtime tables, save/replay traces, activities,
+  layered input routing, and full stream operators remain TODOs beyond the
+  current Sans I/O runtime slice. The implemented slice executes
   `let name = scope { ... }` value bindings and `let name = loop { break expr }`
   result binding in the headless runtime.
 - `pro_review14.md` / `pro_review15.md`: adopted proof-aware
@@ -286,8 +286,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   reports pass/fail/skipped JSON. `arcw bench` now validates headless bench
   plans, requires `measure`, accepts `setup`/`measure`/`assert`/`report`
   sections, and reports validated/skipped/failed JSON without running timers.
-  Visual, audio, fixture, wall-clock, allocation, and performance execution
-  remains a player/headless adapter TODO.
+  Visual, audio, fixture, wall-clock, allocation, and performance execution are
+  intentionally outside the Phase 2.0 Sans I/O CLI and remain player/headless
+  adapter responsibilities.
 - Declaration ID positions whose family is known now accept current-scope and
   family-relative IDs. `flow @.opening`, `flow @flow:.opening`, and bare
   `flow opening` normalize to `flow.opening`; declarations such as
@@ -313,7 +314,8 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   statements end the tracked local borrow before suspension boundaries such as
   `await`; branch merges keep one-sided drops as maybe-dropped so they remain
   rejected before suspension or reuse. Full solver-backed proof term checking
-  and type-directed effect inference remain compiler/HIR TODOs.
+  and type-directed effect inference remain beyond the current Phase 2.0
+  semantic/verifier slice.
 - Verifier JSON uses a stable adjacent-tagged representation for proof
   expressions, including string-carrying variants such as
   `{ "kind": "var", "value": "signal.write" }`.
