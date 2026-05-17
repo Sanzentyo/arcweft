@@ -120,7 +120,7 @@ requests, source/stream queue state, cumulative log/signal/metric/event
 observations, diagnostics, and the final fiber status.
 
 Current runtime lowering is strict and still intentionally bounded. It supports
-the Phase 1.8 flow slice: dialogue lines, line task groups, `choice`, `await
+the Phase 2.0 headless flow slice: dialogue lines, line task groups, `choice`, `await
 with`, `let`, `let else`, `if`, `if let`, `match`, `loop`, `while`,
 `while let`, `for`, `scope`, dynamic `goto`, dynamic `return`, `out`, ordinary
 call-shaped effects, and line `cancel on` rules. The runtime also executes the
@@ -159,9 +159,9 @@ The manifest preserves the declaration ID, kind, source span, and command-like
 body rows so CLI, LSP, headless player adapters, and Agent tooling can share one
 planning schema without reparsing source text.
 
-Line-plan lowering must not silently drop parsed syntax. Stable Phase 1.5 cue
+Line-plan lowering must not silently drop parsed syntax. Stable Phase 2.0 cue
 syntax such as `at(0.35s): ...` is lowered into Sans I/O line task data.
-Line-plan items that are parsed but not yet represented in the Phase 1.5 runtime
+Line-plan items that are parsed but not yet represented in the Phase 2.0 runtime
 model fail `arcw check` with a `LinePlanLowerError` until their lowering is
 implemented.
 

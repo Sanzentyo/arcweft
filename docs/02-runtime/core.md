@@ -228,7 +228,7 @@ pub enum LineEffectRequest {
 }
 ```
 
-Current Phase 1.5 lowering maps checked HIR dialogue plans into this data model:
+Current Phase 2.0 lowering maps checked HIR dialogue plans into this data model:
 
 ```text
 init statements             -> LineTaskGroup.root.node effects
@@ -298,12 +298,12 @@ labels in the runtime data; the later typed VM/HIR evaluator should replace
 those labels with typed value nodes.
 
 Raw line-plan statements fail lowering. They are not reparsed, silently accepted,
-or dropped from the runtime plan. Phase 1.5 keeps expression payloads as stable
+or dropped from the runtime plan. Phase 2.0 keeps expression payloads as stable
 labels inside Sans I/O data; later HIR execution work should replace those labels
 with typed expression/runtime nodes without changing the effect categories.
 
 `defer` is not thread-specific syntax. It registers cleanup on the current
-runtime scope. In the Phase 1.5 line-plan model, the line/root scope, child
+runtime scope. In the Phase 2.0 line-plan model, the line/root scope, child
 thread scopes, and event-handler scopes each have a cleanup stack. A bare
 `defer` must run when its owning scope exits, including normal completion,
 early control transfer, line cancellation, and child-task cancellation.

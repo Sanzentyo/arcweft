@@ -194,7 +194,7 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `SourcePolicy`, `BackpressurePolicy`, `ReplayPolicy`, and `SourceEvent`.
   These are pure data contracts for host adapters; no Tokio/Rayon/filesystem,
   device, audio, or GPU runtime is linked into core.
-- Phase 1.8 structured runtime work has started in `arcweft-core`:
+- Phase 2.0 structured headless runtime work is implemented in `arcweft-core`:
   `RuntimePlan`, `RuntimeFlow`, `FlowOp`, `RuntimeValue`, `RuntimeExpr`,
   `RuntimePattern`, `RuntimeEnv`, `Engine`, `FlowFiber`, and
   `run_line_task_group` can step lowered flow/dialogue task graphs over
@@ -204,7 +204,7 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   return runtime nodes, runs scope cleanup stacks, and leaves actual
   native/cooperative/web execution to adapters.
 - `arcweft-runtime-plan` now exposes `lower_runtime_plan`, which converts
-  checked HIR flows to core `RuntimePlan` data for the Phase 1.8 execution
+  checked HIR flows to core `RuntimePlan` data for the Phase 2.0 execution
   slice. Runtime lowering supports dialogue, `choice`, `await with`, typed
   `let`, `let else`, structured `if`, `if let`, `match`, `loop`, `while`,
   `while let`, `for`, `scope`, dynamic `goto`, dynamic `return`, flow-level
@@ -220,7 +220,8 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   fiber status. `--value` injects pure runtime bindings such as
   `ready=true`, `count=3`, or `route=@flow.next`; the CLI owns filesystem I/O
   and runtime execution remains Sans I/O.
-- Phase 2.0 headless observation state has started. `arcweft-core` records
+- Phase 2.0 headless observation state is implemented for the current runtime
+  slice. `arcweft-core` records
   cumulative log, signal, metric, and event observations from emitted
   `LineEffectRequest` values without performing host I/O, and
   `arcw run --json` exposes those observations for CLI, test, LSP, replay, and
@@ -233,7 +234,7 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `arcw plan --json` reports generation plans, and `arcw run --json` reports
   source/stream events and queue state. Device acquisition, permissions, and
   native callbacks remain adapter responsibilities.
-- The Phase 1.8 runtime now has an explicit `FlowFiber` frame stack for lexical
+- The Phase 2.0 runtime now has an explicit `FlowFiber` frame stack for lexical
   scopes and loop continuations. `break` and `continue` discard queued body ops,
   pop body-local scopes, and transfer to the nearest loop/while/while-let frame.
   Branch, match, and while-let pattern bindings are scoped to the selected body;

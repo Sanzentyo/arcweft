@@ -7,9 +7,9 @@ Agent tools will embed into `Observation.diagnostics`. This means an Agent can
 see an obligation id, source span, related proof/audit ids, and available
 actions before the renderer/MCP runtime exists.
 
-Runtime observation and action are still Phase 2. The Phase 1.5 connection point
-is the shared diagnostic/action schema produced by `arcweft-verify` and consumed
-by CLI/LSP.
+Runtime observation now has a Phase 2.0 headless slice through `arcw run --json`.
+The shared diagnostic/action schema produced by `arcweft-verify` and consumed by
+CLI/LSP remains the connection point for future Agent tools.
 
 ```awft
 pub trait AgentDebugBus {
