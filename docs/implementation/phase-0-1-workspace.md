@@ -188,6 +188,9 @@ Syntax parser:
 - Canonical runtime observation uses ordinary calls: `log.info(...)`,
   `log.debug(...)`, `log.warn(...)`, `signal.set(target, value)`, and
   `metric.set(target, value)`, and `event.emit(Event, fields)`.
+- `metric gauge @metric.*: T`, `metric counter @metric.*: T`, and generic
+  `metric @metric.*: T` parse as metric entity declarations so metric writes
+  can be resolved and observed by the headless runtime.
 - Flow/function `effects { ... }` contracts and hook header `effects` entries
   are lowered into typed semantic capability facts. These facts discharge known
   write-call obligations such as `signal.set(...) -> signal.write` and
@@ -207,6 +210,10 @@ Syntax parser:
   policy, non-item source events update close/error state, and the first
   `StreamPlan` interpreter drains source/stream queues with deterministic
   `ForNext` / `Yield` behavior under a fixed per-frame budget.
+- The core engine now records cumulative headless observations for
+  `LineEffectRequest::Log`, `SignalWrite`, `MetricWrite`, and `EmitEvent`.
+  `arcw run --json` exposes those observations per frame as the basis for
+  scenario test expectations and replay/debug inspection.
 - Choice syntax covers static arm sugar (`->` as `goto`, `=>` as `out`), full `option` blocks, `ui { ... }` state, structured `select { ... }` statement blocks, dynamic `for` options, `match`-gated option groups, `option pattern in expr` sugar, `label(id=@text...)`, `value = expr`, and `with { ... }` / `with:` choice plans.
 - Choice HIR preserves the source choice-body item tree as well as the flattened option list, so `let`/`if`/`for`/`match` guards and raw malformed choice-body items participate in symbol collection, readiness checks, and minimal type checking.
 - Choice lifecycle plans parse option assignments, `timeout`, `cancel on`, `on select`, and `select` statements into structured expressions/statements for HIR readiness and minimal type checking.
@@ -335,7 +342,7 @@ Not implemented in this milestone:
 
 ## Verification
 
-Last verified during the source/stream runtime execution slice:
+Last verified during the Phase 2.0 headless observation slice:
 
 ```bash
 cargo fmt --check

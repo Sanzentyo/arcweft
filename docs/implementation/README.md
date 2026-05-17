@@ -220,6 +220,11 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   fiber status. `--value` injects pure runtime bindings such as
   `ready=true`, `count=3`, or `route=@flow.next`; the CLI owns filesystem I/O
   and runtime execution remains Sans I/O.
+- Phase 2.0 headless observation state has started. `arcweft-core` records
+  cumulative log, signal, metric, and event observations from emitted
+  `LineEffectRequest` values without performing host I/O, and
+  `arcw run --json` exposes those observations for CLI, test, LSP, replay, and
+  Agent tooling.
 - Source and stream runtime execution now has a first Sans I/O slice.
   `FrameInput.source_events` are normalized, dispatched through lowered
   `SourcePlan` handlers, and `yield` pushes items through the declared

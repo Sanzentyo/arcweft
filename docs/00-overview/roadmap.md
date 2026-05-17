@@ -9,15 +9,30 @@
 - Sans I/O `Engine::step`
 - simple flow / reducer / view
 
-## Phase 1: Graph / LSP / test
+## Phase 1: Graph / verification / runtime foundation
 
 - Typed Narrative Graph
 - GraphPatch
-- LSP diagnostics / inlay ID
+- verifier diagnostics / inlay-ready IDs
 - scenario test
 - logging / signal / assert
 
-## Phase 2: wgpu / UI / Agent
+## Phase 2.0: Headless Arcweft Runtime
+
+- Sans I/O `check` / `verify` / `plan` / `run`
+- headless scenario test execution
+- deterministic flow / line / source / stream stepping
+- log / signal / metric / event observation state
+- task, source, stream, trace, and snapshot data contracts
+
+## Phase 2.1: Tooling / LSP / formatter
+
+- LSP diagnostics / inlay ID
+- formatter and sugar expansion
+- ID materialization / rename
+- verifier and runtime report code actions
+
+## Phase 2.5: wgpu / UI / Agent
 
 - headless wgpu renderer
 - screenshot / object-id pass / bbox
@@ -62,4 +77,3 @@
 - GraphRAG index
 - Agent debugging at scale
 - product mode capability / auth / audit
-

@@ -469,9 +469,23 @@ pub struct FlowFiber {
     pub pending_ops: VecDeque<FlowOp>,
     pub frames: Vec<RuntimeFrame>,
     pub env: RuntimeEnv,
+    pub observations: RuntimeObservationState,
     pub source_states: BTreeMap<SourceId, SourceRuntimeState>,
     pub stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeState>,
     pub status: FlowFiberStatus,
+}
+
+/// Cumulative observable state produced by a headless runtime run.
+///
+/// This is the data counterpart of log/signal/metric/event effects. Adapters
+/// may still consume the individual effect requests, while CLI, LSP, tests, and
+/// replay tools can inspect this state without performing I/O.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RuntimeObservationState {
+    pub signals: BTreeMap<String, String>,
+    pub metrics: BTreeMap<String, String>,
+    pub logs: Vec<RuntimeLog>,
+    pub events: Vec<RuntimeEvent>,
 }
 
 /// Replay-observable state for one active Sans I/O source queue.
@@ -1192,6 +1206,40 @@ impl StreamRuntimeState {
     }
 }
 
+impl RuntimeObservationState {
+    pub fn record_effect(&mut self, effect: &LineEffectRequest) {
+        match effect {
+            LineEffectRequest::Log(log) => self.logs.push(log.clone()),
+            LineEffectRequest::SignalWrite(write) => {
+                self.signals
+                    .insert(write.target.clone(), write.value.clone());
+            }
+            LineEffectRequest::MetricWrite(write) => {
+                self.metrics
+                    .insert(write.target.clone(), write.value.clone());
+            }
+            LineEffectRequest::EmitEvent(event) => self.events.push(event.clone()),
+            LineEffectRequest::RegisterHandle { .. }
+            | LineEffectRequest::DropHandle { .. }
+            | LineEffectRequest::WaitMark(_)
+            | LineEffectRequest::Wait(_)
+            | LineEffectRequest::Call(_)
+            | LineEffectRequest::Command(_)
+            | LineEffectRequest::Out(_)
+            | LineEffectRequest::Return(_)
+            | LineEffectRequest::Goto(_)
+            | LineEffectRequest::Panic(_)
+            | LineEffectRequest::Fail(_)
+            | LineEffectRequest::Bail(_)
+            | LineEffectRequest::Ensure { .. }
+            | LineEffectRequest::Close(_)
+            | LineEffectRequest::Select(_)
+            | LineEffectRequest::Break { .. }
+            | LineEffectRequest::Continue { .. } => {}
+        }
+    }
+}
+
 /// Call-shaped runtime request. The runtime adapter decides whether the callee
 /// maps to presentation, audio, state, or user code.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1367,6 +1415,7 @@ impl Default for FlowFiber {
             pending_ops: VecDeque::new(),
             frames: Vec::new(),
             env: RuntimeEnv::default(),
+            observations: RuntimeObservationState::default(),
             source_states: BTreeMap::new(),
             stream_states: BTreeMap::new(),
             status: FlowFiberStatus::Done(FlowExit::Done),
@@ -1435,6 +1484,7 @@ impl Engine {
                 pending_ops: VecDeque::new(),
                 frames: Vec::new(),
                 env: RuntimeEnv::default(),
+                observations: RuntimeObservationState::default(),
                 source_states,
                 stream_states,
                 status,
@@ -1465,9 +1515,11 @@ impl Engine {
         self.step_stream_plans(&mut output);
 
         if self.resume_suspended(&input, &events, &mut output) {
+            self.record_observations(&output.line_effects);
             return output;
         }
         if !matches!(self.fiber.status, FlowFiberStatus::Running) {
+            self.record_observations(&output.line_effects);
             return output;
         }
         if self.fiber.cursor.is_some() {
@@ -1475,7 +1527,14 @@ impl Engine {
         } else {
             self.step_line_only(&input, &mut output);
         }
+        self.record_observations(&output.line_effects);
         output
+    }
+
+    fn record_observations(&mut self, effects: &[LineEffectRequest]) {
+        for effect in effects {
+            self.fiber.observations.record_effect(effect);
+        }
     }
 
     fn apply_source_events(

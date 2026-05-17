@@ -465,6 +465,51 @@ flow @flow.run run {
 }
 
 #[test]
+fn run_json_reports_headless_observations() {
+    let path = temp_awft(
+        "runtime-observations",
+        r#"
+signal @signal:.current_flow: Watch<Ref<Flow>>
+metric gauge @metric.frame_count: i32
+
+flow @flow.observed observed
+effects { signal.write, metric.write }
+{
+    log.info("enter observed")
+    signal.set(@signal.current_flow, @flow.observed)
+    metric.set(@metric.frame_count, 1)
+    event.emit("GameEvent::Entered")
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--frames")
+        .arg("5")
+        .arg("--json")
+        .output()
+        .expect("arcw run runs");
+
+    assert!(
+        output.status.success(),
+        "runtime dry-run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"observations\"")
+            && stdout.contains("signal.current_flow")
+            && stdout.contains("metric.frame_count")
+            && stdout.contains("enter observed")
+            && stdout.contains("GameEvent::Entered"),
+        "run JSON should include cumulative headless observations: {stdout}"
+    );
+}
+
+#[test]
 fn plan_json_lists_generation_plans() {
     let path = temp_awft(
         "generation-plan",

@@ -306,6 +306,7 @@ pub enum EntityDeclKind {
     Component,
     Activity,
     Signal,
+    Metric,
     Layer,
     Textbox,
     Voice,

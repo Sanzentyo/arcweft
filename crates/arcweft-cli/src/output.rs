@@ -284,11 +284,37 @@ pub(crate) struct RuntimeFrameRunSummary {
     pub(crate) flow_events: Vec<String>,
     pub(crate) line_effects: Vec<String>,
     pub(crate) task_requests: Vec<String>,
+    pub(crate) observations: RuntimeObservationSummary,
     pub(crate) source_events: Vec<String>,
     pub(crate) stream_events: Vec<String>,
     pub(crate) source_close_requests: Vec<String>,
     pub(crate) source_states: Vec<RuntimeQueueStateSummary>,
     pub(crate) stream_states: Vec<RuntimeQueueStateSummary>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeObservationSummary {
+    pub(crate) signals: Vec<RuntimeObservedAssignment>,
+    pub(crate) metrics: Vec<RuntimeObservedAssignment>,
+    pub(crate) logs: Vec<RuntimeObservedLog>,
+    pub(crate) events: Vec<RuntimeObservedEvent>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeObservedAssignment {
+    pub(crate) target: String,
+    pub(crate) value: String,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeObservedLog {
+    pub(crate) level: String,
+    pub(crate) message: String,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeObservedEvent {
+    pub(crate) event: String,
 }
 
 #[derive(serde::Serialize)]
@@ -319,6 +345,43 @@ impl RuntimeFrameRunSummary {
                 .iter()
                 .map(task_request_label)
                 .collect(),
+            observations: RuntimeObservationSummary {
+                signals: fiber
+                    .observations
+                    .signals
+                    .iter()
+                    .map(|(target, value)| RuntimeObservedAssignment {
+                        target: target.clone(),
+                        value: value.clone(),
+                    })
+                    .collect(),
+                metrics: fiber
+                    .observations
+                    .metrics
+                    .iter()
+                    .map(|(target, value)| RuntimeObservedAssignment {
+                        target: target.clone(),
+                        value: value.clone(),
+                    })
+                    .collect(),
+                logs: fiber
+                    .observations
+                    .logs
+                    .iter()
+                    .map(|log| RuntimeObservedLog {
+                        level: log.level.clone(),
+                        message: log.message.clone(),
+                    })
+                    .collect(),
+                events: fiber
+                    .observations
+                    .events
+                    .iter()
+                    .map(|event| RuntimeObservedEvent {
+                        event: event.event.clone(),
+                    })
+                    .collect(),
+            },
             source_events: output
                 .source_events
                 .iter()

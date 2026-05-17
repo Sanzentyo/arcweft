@@ -113,7 +113,8 @@ The command is still Sans I/O at the runtime layer. The CLI reads the source
 file and prints a report; `arcweft-core` only consumes `FrameInput` and returns
 `FrameOutput`. The report includes per-frame flow events, line effects, task
 requests, normalized source events, emitted stream events, source close
-requests, source/stream queue state, diagnostics, and the final fiber status.
+requests, source/stream queue state, cumulative log/signal/metric/event
+observations, diagnostics, and the final fiber status.
 
 Current runtime lowering is strict and still intentionally bounded. It supports
 the Phase 1.8 flow slice: dialogue lines, line task groups, `choice`, `await
