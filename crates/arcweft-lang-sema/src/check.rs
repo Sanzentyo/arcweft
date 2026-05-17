@@ -677,9 +677,11 @@ impl TypeChecker<'_> {
             | Stmt::LetScope { .. }
             | Stmt::LetLoop { .. }
             | Stmt::LetAwait { .. } => self.reject_unlowered_stmt_binding(stmt),
-            Stmt::Return(expr)
-            | Stmt::Close(expr)
-            | Stmt::Expr(expr)
+            Stmt::Return(expr) | Stmt::Close(expr) => {
+                let ty = self.check_expr(expr);
+                self.reject_borrow_escape(ty.as_ref(), "function or flow return");
+            }
+            Stmt::Expr(expr)
             | Stmt::Panic(expr)
             | Stmt::Fail(expr)
             | Stmt::Bail(expr)
@@ -687,7 +689,8 @@ impl TypeChecker<'_> {
                 self.check_expr(expr);
             }
             Stmt::Out { label, expr } => {
-                self.check_out_stmt(label.as_deref(), expr);
+                let ty = self.check_out_stmt(label.as_deref(), expr);
+                self.reject_borrow_escape(ty.as_ref(), "line-plan out value");
             }
             Stmt::Ensure { condition, message } => self.check_ensure_stmt(condition, message),
             Stmt::Goto(expr) => {
@@ -820,7 +823,7 @@ impl TypeChecker<'_> {
                 )));
             }
         }
-        if let Some(ty) = ty {
+        if let Some(ty) = ty.as_ref() {
             if let Some(name) = ident_pattern_name(pattern) {
                 if let Some(slot_family) = default_presentation_slot_family(expr) {
                     if let Some(previous) = self
@@ -833,13 +836,16 @@ impl TypeChecker<'_> {
                     }
                 }
             }
-            for (name, binding_ty) in pattern_bindings_with_fallback(pattern, &ty) {
+            for (name, binding_ty) in pattern_bindings_with_fallback(pattern, ty) {
                 self.locals.insert(name, binding_ty);
             }
         }
         collect_borrow_lifetimes(pattern, &mut self.active_borrows);
         if let Some(annotation) = annotation {
             collect_type_lifetimes(annotation, &mut self.active_borrows);
+        }
+        if let Some(ty) = ty.as_ref() {
+            collect_type_kind_lifetimes(ty, &mut self.active_borrows);
         }
     }
 
@@ -893,6 +899,9 @@ impl TypeChecker<'_> {
         collect_borrow_lifetimes(pattern, &mut self.active_borrows);
         if let Some(annotation) = annotation {
             collect_type_lifetimes(annotation, &mut self.active_borrows);
+        }
+        if let Some(ty) = expr_type.as_ref() {
+            collect_type_kind_lifetimes(ty, &mut self.active_borrows);
         }
     }
 
@@ -1333,6 +1342,14 @@ impl TypeChecker<'_> {
         }
     }
 
+    fn reject_borrow_escape(&mut self, ty: Option<&TypeKind>, destination: &str) {
+        if ty.is_some_and(type_contains_borrow_ref) {
+            self.errors.push(TypeCheckError::new(format!(
+                "borrowed value cannot escape through {destination}"
+            )));
+        }
+    }
+
     fn snapshot_runtime_scope(&self) -> TypeCheckerScopeSnapshot {
         TypeCheckerScopeSnapshot {
             active_borrows: self.active_borrows.clone(),
@@ -1581,7 +1598,7 @@ impl TypeChecker<'_> {
     }
 
     fn check_lifetime_set_stmt(&mut self, target: &Expr, expr: &Expr) {
-        self.check_expr(expr);
+        let value_ty = self.check_expr(expr);
         let Some(key) = lifetime_key(target) else {
             self.errors.push(TypeCheckError::new(
                 "lifetime registry assignment target must be `'scope.key`".to_owned(),
@@ -1590,6 +1607,12 @@ impl TypeChecker<'_> {
             return;
         };
         self.check_lifetime_access(&key, LifetimeAccessMode::Write);
+        if !matches!(
+            key.scope(),
+            LifetimeScopeKind::Line | LifetimeScopeKind::Cue
+        ) {
+            self.reject_borrow_escape(value_ty.as_ref(), "upper lifetime registry write");
+        }
         self.lifetime_guarantees.insert(key);
     }
 
@@ -2273,6 +2296,7 @@ impl TypeChecker<'_> {
             self.check_stmt(stmt);
         }
         let ty = value.map_or(Some(TypeKind::Unit), |value| self.check_expr(value));
+        self.reject_borrow_escape(ty.as_ref(), "block final value");
         self.locals = outer_locals;
         ty
     }
@@ -3049,6 +3073,69 @@ fn collect_type_lifetimes(ty: &TypeRef, lifetimes: &mut Vec<String>) {
         TypeRef::Slice(inner) => collect_type_lifetimes(inner, lifetimes),
         TypeRef::Never | TypeRef::Path(_) => {}
     }
+}
+
+fn collect_type_kind_lifetimes(ty: &TypeKind, lifetimes: &mut Vec<String>) {
+    match ty {
+        TypeKind::BorrowRef { lifetime, inner } => {
+            if let Some(lifetime) = lifetime
+                && !is_static_lifetime(lifetime)
+            {
+                lifetimes.push(lifetime.as_str().to_owned());
+            }
+            collect_type_kind_lifetimes(inner, lifetimes);
+        }
+        TypeKind::List(inner)
+        | TypeKind::Slice(inner)
+        | TypeKind::Seq(inner)
+        | TypeKind::Option(inner)
+        | TypeKind::ThreadHandle(inner)
+        | TypeKind::Shared(inner) => collect_type_kind_lifetimes(inner, lifetimes),
+        TypeKind::Map { key, value }
+        | TypeKind::Result {
+            ok: key,
+            error: value,
+        } => {
+            collect_type_kind_lifetimes(key, lifetimes);
+            collect_type_kind_lifetimes(value, lifetimes);
+        }
+        TypeKind::Need { ready, error } => {
+            collect_type_kind_lifetimes(ready, lifetimes);
+            collect_type_kind_lifetimes(error, lifetimes);
+        }
+        TypeKind::Tuple(items) => {
+            for item in items {
+                collect_type_kind_lifetimes(item, lifetimes);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn type_contains_borrow_ref(ty: &TypeKind) -> bool {
+    match ty {
+        TypeKind::BorrowRef { lifetime, .. } => !lifetime.as_ref().is_some_and(is_static_lifetime),
+        TypeKind::List(inner)
+        | TypeKind::Slice(inner)
+        | TypeKind::Seq(inner)
+        | TypeKind::Option(inner)
+        | TypeKind::ThreadHandle(inner)
+        | TypeKind::Shared(inner) => type_contains_borrow_ref(inner),
+        TypeKind::Map { key, value }
+        | TypeKind::Result {
+            ok: key,
+            error: value,
+        } => type_contains_borrow_ref(key) || type_contains_borrow_ref(value),
+        TypeKind::Need { ready, error } => {
+            type_contains_borrow_ref(ready) || type_contains_borrow_ref(error)
+        }
+        TypeKind::Tuple(items) => items.iter().any(type_contains_borrow_ref),
+        _ => false,
+    }
+}
+
+fn is_static_lifetime(lifetime: &LifetimeScopeKind) -> bool {
+    matches!(lifetime, LifetimeScopeKind::Named(name) if name == "static")
 }
 
 fn type_ref_kind(ty: &TypeRef) -> TypeKind {

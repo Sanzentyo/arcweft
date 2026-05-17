@@ -217,6 +217,54 @@ flow @flow.proven proven {
 }
 
 #[test]
+fn semantic_pass_requires_checked_proof_body_for_discharge() {
+    let report = semantic_report(
+        r"
+proof @proof.requires_only {
+    requires summary.lifetime >= 'flow
+}
+
+flow @flow.unproven unproven {
+    let summary = promote('flow, proof = @proof.requires_only)
+}
+",
+        &TypeCheckEnv::new(),
+    );
+
+    assert!(report.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::ProofBody
+            && obligation.discharge == SemanticDischarge::Missing
+            && obligation.subject.as_deref() == Some("proof.requires_only")
+    }));
+    assert!(report.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::LifetimePromotion
+            && obligation.discharge == SemanticDischarge::Missing
+    }));
+}
+
+#[test]
+fn semantic_pass_rejects_unjustified_proof_assume() {
+    let report = semantic_report(
+        r"
+proof @proof.assume_only {
+    assume no_lifetime_below(LineSummary, 'flow)
+    check no_lifetime_below(LineSummary, 'flow)
+}
+",
+        &TypeCheckEnv::new(),
+    );
+
+    assert!(report.obligations.iter().any(|obligation| {
+        obligation.kind == SemanticObligationKind::ProofBody
+            && obligation.discharge == SemanticDischarge::Missing
+            && obligation
+                .subject
+                .as_deref()
+                .is_some_and(|subject| subject.contains("assume"))
+    }));
+}
+
+#[test]
 fn semantic_pass_reports_thread_join_result_type_conflicts() {
     let report = semantic_report(
         r#"

@@ -1,7 +1,9 @@
 use crate::check::TypeCheckEnv;
 mod facts;
 use crate::fact_layer::{
-    Capability, EffectScope, ProofFacts, write_capability_for_call, write_capability_for_method,
+    Capability, EffectScope, ProofFacts, ResourceAccess, resource_accesses_from_expr,
+    resource_write_for_lifetime, resource_write_for_signal, write_capability_for_call,
+    write_capability_for_method,
 };
 use arcweft_lang_hir::{
     ChoicePlanItem, Expr, HirAwait, HirBorrow, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf,
@@ -53,6 +55,7 @@ pub enum SemanticObligationKind {
     ThreadJoinTyping,
     UpperLifetimeWrite,
     EffectCapability,
+    ProofBody,
     TrustedAssumption,
     RawSyntax,
     RuntimeConflict,
@@ -194,8 +197,19 @@ impl<'a> SemanticAnalyzer<'a> {
             match declaration {
                 HirTopLevelDecl::Proof(proof) => {
                     let id = id_ref_label(proof.id(), "proof");
-                    self.known_proofs
-                        .insert(id.clone(), ProofFacts::from_body(proof.body()));
+                    let facts = ProofFacts::from_body(proof.body());
+                    for issue in facts.issues() {
+                        self.add_obligation(
+                            SemanticObligationKind::ProofBody,
+                            format!("proof `{id}`: {}", issue.message()),
+                            issue
+                                .subject()
+                                .map(str::to_owned)
+                                .or_else(|| Some(id.clone())),
+                            SemanticDischarge::Missing,
+                        );
+                    }
+                    self.known_proofs.insert(id.clone(), facts);
                     self.report.proofs.push(SemanticProofSummary {
                         id,
                         source: span_from_range(proof.range()),
@@ -245,7 +259,7 @@ impl<'a> SemanticAnalyzer<'a> {
     fn analyze_flow_items(&mut self, items: &[HirFlowItem], initial: Vec<FlowFacts>) -> BlockFlow {
         let mut fallthrough = initial;
         let mut exits = Vec::new();
-        let mut sibling_writes = BTreeMap::<String, String>::new();
+        let mut sibling_writes = BTreeMap::<ResourceAccess, String>::new();
 
         for item in items {
             if fallthrough.is_empty() {
@@ -374,7 +388,7 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn collect_flow_items(&mut self, items: &[HirFlowItem], state: &mut FlowState) {
-        let mut sibling_writes = BTreeMap::<String, String>::new();
+        let mut sibling_writes = BTreeMap::<ResourceAccess, String>::new();
         for item in items {
             if let HirFlowItem::Stmt(Stmt::Thread(thread)) = item {
                 self.check_sibling_thread_conflicts(thread, &mut sibling_writes);
@@ -436,7 +450,7 @@ impl<'a> SemanticAnalyzer<'a> {
     ) -> BlockFlow {
         let mut fallthrough = initial;
         let mut exits = Vec::new();
-        let mut sibling_writes = BTreeMap::<String, String>::new();
+        let mut sibling_writes = BTreeMap::<ResourceAccess, String>::new();
 
         for stmt in stmts {
             if fallthrough.is_empty() {
@@ -618,7 +632,7 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn collect_stmts(&mut self, stmts: &[Stmt], state: &mut FlowState) {
-        let mut sibling_writes = BTreeMap::<String, String>::new();
+        let mut sibling_writes = BTreeMap::<ResourceAccess, String>::new();
         for stmt in stmts {
             if let Stmt::Thread(thread) = stmt {
                 self.check_sibling_thread_conflicts(thread, &mut sibling_writes);
@@ -1193,14 +1207,15 @@ impl<'a> SemanticAnalyzer<'a> {
     fn check_sibling_thread_conflicts(
         &mut self,
         thread: &ThreadBlock,
-        sibling_writes: &mut BTreeMap<String, String>,
+        sibling_writes: &mut BTreeMap<ResourceAccess, String>,
     ) {
-        for key in write_keys_in_stmts(thread.body()) {
+        for access in write_accesses_in_stmts(thread.body()) {
             if let Some(previous) = sibling_writes.insert(
-                key.clone(),
+                access.clone(),
                 thread.name().unwrap_or("<anonymous>").to_owned(),
             ) {
                 let current = thread.name().unwrap_or("<anonymous>");
+                let key = access.key();
                 self.add_obligation(
                     SemanticObligationKind::RuntimeConflict,
                     format!(
@@ -1214,14 +1229,15 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn check_line_plan_child_conflicts(&mut self, items: &[LinePlanItem], include_all: bool) {
-        let mut sibling_writes = BTreeMap::<String, String>::new();
+        let mut sibling_writes = BTreeMap::<ResourceAccess, String>::new();
         for (index, item) in items.iter().enumerate() {
             if !include_all && !is_line_plan_child_item(item) {
                 continue;
             }
             let child_name = line_plan_child_name(item, index);
-            for key in write_keys_in_line_plan_item(item) {
-                if let Some(previous) = sibling_writes.insert(key.clone(), child_name.clone()) {
+            for access in write_accesses_in_line_plan_item(item) {
+                if let Some(previous) = sibling_writes.insert(access.clone(), child_name.clone()) {
+                    let key = access.key();
                     self.add_obligation(
                         SemanticObligationKind::RuntimeConflict,
                         format!(
@@ -1930,44 +1946,47 @@ fn is_drop_expr(expr: &Expr) -> bool {
     )
 }
 
-fn write_keys_in_stmts(stmts: &[Stmt]) -> BTreeSet<String> {
-    let mut keys = BTreeSet::new();
+fn write_accesses_in_stmts(stmts: &[Stmt]) -> BTreeSet<ResourceAccess> {
+    let mut accesses = BTreeSet::new();
     for stmt in stmts {
-        collect_stmt_write_keys(stmt, &mut keys);
+        collect_stmt_write_accesses(stmt, &mut accesses);
     }
-    keys
+    accesses
 }
 
-fn write_keys_in_line_plan_item(item: &LinePlanItem) -> BTreeSet<String> {
-    let mut keys = BTreeSet::new();
-    collect_line_plan_item_write_keys(item, &mut keys);
-    keys
+fn write_accesses_in_line_plan_item(item: &LinePlanItem) -> BTreeSet<ResourceAccess> {
+    let mut accesses = BTreeSet::new();
+    collect_line_plan_item_write_accesses(item, &mut accesses);
+    accesses
 }
 
-fn collect_line_plan_item_write_keys(item: &LinePlanItem, keys: &mut BTreeSet<String>) {
+fn collect_line_plan_item_write_accesses(
+    item: &LinePlanItem,
+    accesses: &mut BTreeSet<ResourceAccess>,
+) {
     match item {
         LinePlanItem::Init(stmts) => {
             for stmt in stmts {
-                collect_stmt_write_keys(stmt, keys);
+                collect_stmt_write_accesses(stmt, accesses);
             }
         }
         LinePlanItem::Thread(thread) => {
             for stmt in thread.body() {
-                collect_stmt_write_keys(stmt, keys);
+                collect_stmt_write_accesses(stmt, accesses);
             }
         }
         LinePlanItem::On { body, .. } => {
             for stmt in body {
-                collect_stmt_write_keys(stmt, keys);
+                collect_stmt_write_accesses(stmt, accesses);
             }
         }
-        LinePlanItem::Stmt(stmt) => collect_stmt_write_keys(stmt, keys),
+        LinePlanItem::Stmt(stmt) => collect_stmt_write_accesses(stmt, accesses),
         LinePlanItem::TimedCue { body, .. } | LinePlanItem::Expr(body) => {
-            collect_expr_write_keys(body, keys);
+            collect_expr_write_accesses(body, accesses);
         }
         LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
             for item in items {
-                collect_line_plan_item_write_keys(item, keys);
+                collect_line_plan_item_write_accesses(item, accesses);
             }
         }
         _ => {}
@@ -2112,21 +2131,23 @@ fn collect_expr_drop_keys(expr: &Expr, keys: &mut HashSet<LifetimeKey>) {
     }
 }
 
-fn collect_stmt_write_keys(stmt: &Stmt, keys: &mut BTreeSet<String>) {
+fn collect_stmt_write_accesses(stmt: &Stmt, accesses: &mut BTreeSet<ResourceAccess>) {
     match stmt {
         Stmt::LifetimeSet {
             target: Expr::LifetimePath { key, .. },
             ..
         } => {
-            keys.insert(format!("lifetime:{}", key.as_dotted()));
+            accesses.insert(resource_write_for_lifetime(key.as_dotted()));
         }
         Stmt::Signal { target, .. } => {
-            keys.insert(format!("signal:{}", expr_label(target)));
+            accesses.insert(resource_write_for_signal(expr_label(target)));
         }
-        Stmt::Expr(expr) | Stmt::Defer { expr, .. } => collect_expr_write_keys(expr, keys),
+        Stmt::Expr(expr) | Stmt::Defer { expr, .. } => {
+            collect_expr_write_accesses(expr, accesses);
+        }
         Stmt::DeferBlock { statements, .. } => {
             for stmt in statements {
-                collect_stmt_write_keys(stmt, keys);
+                collect_stmt_write_accesses(stmt, accesses);
             }
         }
         Stmt::On { .. } | Stmt::Thread(_) => {
@@ -2136,40 +2157,30 @@ fn collect_stmt_write_keys(stmt: &Stmt, keys: &mut BTreeSet<String>) {
                 _ => &[],
             };
             for stmt in body {
-                collect_stmt_write_keys(stmt, keys);
+                collect_stmt_write_accesses(stmt, accesses);
             }
         }
         _ => {}
     }
 }
 
-fn collect_expr_write_keys(expr: &Expr, keys: &mut BTreeSet<String>) {
+fn collect_expr_write_accesses(expr: &Expr, accesses: &mut BTreeSet<ResourceAccess>) {
+    accesses.extend(resource_accesses_from_expr(expr));
     match expr {
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } if method == "set"
-            && matches!(receiver.as_ref(), Expr::Path(path) if matches!(path.as_str(), "signal" | "metric")) =>
-        {
-            if let Some(target) = args.first() {
-                keys.insert(format!("{}:{}", expr_label(receiver), expr_label(target)));
-            }
-        }
         Expr::Call { args, .. } | Expr::Tuple(args) | Expr::List(args) => {
             for arg in args {
-                collect_expr_write_keys(arg, keys);
+                collect_expr_write_accesses(arg, accesses);
             }
         }
         Expr::NamedArg { value, .. }
         | Expr::Field { target: value, .. }
         | Expr::Try { expr: value }
         | Expr::Await { expr: value, .. }
-        | Expr::Unary { expr: value, .. } => collect_expr_write_keys(value, keys),
+        | Expr::Unary { expr: value, .. } => collect_expr_write_accesses(value, accesses),
         Expr::MethodCall { receiver, args, .. } => {
-            collect_expr_write_keys(receiver, keys);
+            collect_expr_write_accesses(receiver, accesses);
             for arg in args {
-                collect_expr_write_keys(arg, keys);
+                collect_expr_write_accesses(arg, accesses);
             }
         }
         Expr::Binary { lhs, rhs, .. }
@@ -2178,8 +2189,8 @@ fn collect_expr_write_keys(expr: &Expr, keys: &mut BTreeSet<String>) {
             target: lhs,
             index: rhs,
         } => {
-            collect_expr_write_keys(lhs, keys);
-            collect_expr_write_keys(rhs, keys);
+            collect_expr_write_accesses(lhs, accesses);
+            collect_expr_write_accesses(rhs, accesses);
         }
         _ => {}
     }

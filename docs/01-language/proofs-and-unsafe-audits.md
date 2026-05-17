@@ -43,6 +43,18 @@ assume
 reason or trusted axiom reference. Production policy may reject undisclosed
 assumptions.
 
+A referenced proof must prove the requested target through an `ensures` or
+`check` clause. Mentioning a lifetime only in `requires` is not enough:
+
+```awft
+proof @proof.requires_only {
+    requires summary.lifetime >= 'flow
+}
+
+let summary = promote('flow, proof = @proof.requires_only)
+# error: proof body does not check or ensure the 'flow target
+```
+
 ## Proof references
 
 Operations that need non-local justification reference a proof explicitly.
@@ -61,9 +73,10 @@ must_drop_discharged(handle)
 thread_capture_safe(capture, target_thread)
 ```
 
-The verifier accepts the operation only when the referenced proof discharges
-the required obligations, unless the project policy explicitly allows
-unverified proof stubs.
+The verifier accepts the operation only when the referenced proof body
+discharges the required obligation target and the proof body itself has no
+unjustified assumptions. Unverified proof stubs stay visible as verifier
+obligations.
 
 ## Trusted axioms
 
@@ -181,9 +194,11 @@ The current pass is CFG-aware for blocks, branches, line plans, cancellation
 rules, bounded loop fixed points, and scoped `defer` outcomes. Completed-only
 cleanup does not discharge a cancelled path; cancellation cleanup must use
 `defer on cancelled` or an unqualified `defer`. Proof references are checked
-against the promoted lifetime target, and an `unsafe lifetime` block must
-contain the unchecked promotion it justifies. Full solver-backed proof body
-checking and ownership/region validation remain future semantic work. CLI/LSP
-already consume the verifier report schema, so future proof discharge
-improvements should be added to `arcweft-verify` rather than duplicated in
-tools.
+against checked proof-body targets, unjustified proof `assume` clauses become
+`proof_body` obligations, and an `unsafe lifetime` block must contain the
+unchecked promotion it justifies. Region checking rejects borrowed values that
+escape through block final values, `return`, line-plan `out`, or upper-lifetime
+registry writes. Full solver-backed proof term checking remains future
+semantic work. CLI/LSP already consume the verifier report schema, so future
+proof discharge improvements should be added to `arcweft-verify` rather than
+duplicated in tools.

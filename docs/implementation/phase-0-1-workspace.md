@@ -305,8 +305,10 @@ Not implemented in this milestone:
 - full type environment, name resolution, and type checking
 - inference, overload resolution, traits, generics, contracts, and full
   type-directed effect checking
-- unbounded/solver-backed loop CFG, full nested-scope borrow lifetime analysis,
-  and precise borrow end tracking
+- unbounded/solver-backed loop CFG, full nested-scope borrow lifetime analysis
+  beyond the current region escape checks, and precise borrow end tracking
+- full solver-backed proof term checking beyond current proof-body target and
+  unjustified-assume validation
 - full semantic expression resolution and type-directed ambiguity resolution
 - full choice expression type unification beyond the current `=> @flow...` case, lifecycle runtime execution, reactive option-state reevaluation, localization extraction, formatter/canonicalizer output, and LSP diagnostics for dynamic labels and unordered map-backed options
 - full localization extraction manifests and formatter/canonicalizer normalization for relative `.suffix` IDs

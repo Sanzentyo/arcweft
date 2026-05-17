@@ -81,6 +81,7 @@ pub enum ProofObligationKind {
     ThreadJoinTyping,
     UpperLifetimeWrite,
     EffectCapability,
+    ProofBody,
     TrustedAssumption,
     RawSyntax,
     RuntimeConflict,
@@ -370,6 +371,7 @@ fn is_semantic_owned_kind(kind: ProofObligationKind) -> bool {
             | ProofObligationKind::ThreadJoinTyping
             | ProofObligationKind::UpperLifetimeWrite
             | ProofObligationKind::EffectCapability
+            | ProofObligationKind::ProofBody
             | ProofObligationKind::TrustedAssumption
             | ProofObligationKind::RawSyntax
             | ProofObligationKind::RuntimeConflict
@@ -465,6 +467,7 @@ fn proof_kind(kind: SemanticObligationKind) -> ProofObligationKind {
         SemanticObligationKind::ThreadJoinTyping => ProofObligationKind::ThreadJoinTyping,
         SemanticObligationKind::UpperLifetimeWrite => ProofObligationKind::UpperLifetimeWrite,
         SemanticObligationKind::EffectCapability => ProofObligationKind::EffectCapability,
+        SemanticObligationKind::ProofBody => ProofObligationKind::ProofBody,
         SemanticObligationKind::TrustedAssumption => ProofObligationKind::TrustedAssumption,
         SemanticObligationKind::RawSyntax => ProofObligationKind::RawSyntax,
         SemanticObligationKind::RuntimeConflict => ProofObligationKind::RuntimeConflict,
@@ -1409,6 +1412,7 @@ fn obligation_predicate(kind: ProofObligationKind) -> &'static str {
         ProofObligationKind::ThreadJoinTyping => "thread_join_result_typed",
         ProofObligationKind::UpperLifetimeWrite => "upper_lifetime_write_safe",
         ProofObligationKind::EffectCapability => "effect_capability_available",
+        ProofObligationKind::ProofBody => "proof_body_valid",
         ProofObligationKind::TrustedAssumption => "trusted_assumption",
         ProofObligationKind::RawSyntax => "raw_syntax_absent",
         ProofObligationKind::RuntimeConflict => "runtime_conflict_absent",
@@ -1425,7 +1429,8 @@ fn actions_for(kind: ProofObligationKind, discharge: &ProofDischarge) -> Vec<Too
         | ProofObligationKind::ThreadCapture
         | ProofObligationKind::ThreadJoinTyping
         | ProofObligationKind::UpperLifetimeWrite
-        | ProofObligationKind::EffectCapability => {
+        | ProofObligationKind::EffectCapability
+        | ProofObligationKind::ProofBody => {
             vec![
                 ToolAction {
                     id: "action.generate_proof_stub".to_owned(),

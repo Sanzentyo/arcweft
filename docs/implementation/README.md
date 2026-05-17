@@ -278,13 +278,17 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   and `source @source:. metrics()` normalize through that following name.
 - Remaining P2 semantic work is now refinement rather than missing surface
   coverage: fixed-point loop analysis is bounded and syntactic, proof discharge
-  is target-aware but not solver-checked, unsafe audits validate shape but not
-  memory semantics, and thread result inference is based on current syntactic
-  result labels. Effect capabilities are now represented as typed semantic
-  facts: `effects { signal.write, metric.write }` on flows/functions and hook
-  header `effects` entries grant the corresponding known write calls such as
-  `signal.set` and `metric.set`. Full ownership/region solving and
-  type-directed effect inference remain compiler/HIR TODOs.
+  is target-aware and checks proof-body `ensures`/`check` targets plus
+  unjustified `assume` clauses, unsafe audits validate shape but not memory
+  semantics, and thread result inference is based on current syntactic result
+  labels. Effect capabilities are now represented as typed semantic facts:
+  `effects { signal.write, metric.write }` on flows/functions and hook header
+  `effects` entries grant the corresponding known write calls such as
+  `signal.set` and `metric.set`. Semantic conflict checks now use typed
+  resource access facts for lifetime/signal/metric writes. Ownership/region
+  checking rejects borrowed values escaping through block finals, returns,
+  line-plan `out`, or upper-lifetime registry writes. Full solver-backed proof
+  term checking and type-directed effect inference remain compiler/HIR TODOs.
 - Verifier JSON uses a stable adjacent-tagged representation for proof
   expressions, including string-carrying variants such as
   `{ "kind": "var", "value": "signal.write" }`.

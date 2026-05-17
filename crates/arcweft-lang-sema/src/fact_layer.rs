@@ -11,10 +11,39 @@ pub(crate) struct EffectScope {
     capabilities: BTreeSet<Capability>,
 }
 
+/// Operation kind used by deterministic resource conflict checks.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum EffectAccess {
+    Write,
+}
+
+/// Runtime or semantic resource touched by an effectful operation.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum EffectResource {
+    Lifetime(String),
+    Signal(String),
+    Metric(String),
+}
+
+/// One typed access fact used by semantic conflict checking.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct ResourceAccess {
+    resource: EffectResource,
+    access: EffectAccess,
+}
+
 /// Proof facts extracted from a top-level `proof` item.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ProofFacts {
-    lifetime_targets: BTreeSet<String>,
+    checked_lifetime_targets: BTreeSet<String>,
+    issues: Vec<ProofIssue>,
+}
+
+/// Validation issue found in a source proof body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ProofIssue {
+    message: String,
+    subject: Option<String>,
 }
 
 impl Capability {
@@ -55,15 +84,63 @@ impl EffectScope {
     }
 }
 
-impl ProofFacts {
-    pub(crate) fn from_body(body: &str) -> Self {
+impl ResourceAccess {
+    pub(crate) fn write(resource: EffectResource) -> Self {
         Self {
-            lifetime_targets: collect_proof_lifetime_targets(body),
+            resource,
+            access: EffectAccess::Write,
         }
     }
 
+    pub(crate) fn key(&self) -> String {
+        format!("{}:{}", self.resource.family(), self.resource.label())
+    }
+}
+
+impl EffectResource {
+    fn family(&self) -> &'static str {
+        match self {
+            Self::Lifetime(_) => "lifetime",
+            Self::Signal(_) => "signal",
+            Self::Metric(_) => "metric",
+        }
+    }
+
+    fn label(&self) -> &str {
+        match self {
+            Self::Lifetime(label) | Self::Signal(label) | Self::Metric(label) => label,
+        }
+    }
+}
+
+impl ProofFacts {
+    pub(crate) fn from_body(body: &str) -> Self {
+        collect_proof_facts(body)
+    }
+
     pub(crate) fn discharges_target(&self, target: &str) -> bool {
-        self.lifetime_targets.contains(target)
+        self.issues.is_empty() && self.checked_lifetime_targets.contains(target)
+    }
+
+    pub(crate) fn issues(&self) -> &[ProofIssue] {
+        &self.issues
+    }
+}
+
+impl ProofIssue {
+    pub(crate) fn new(message: impl Into<String>, subject: Option<String>) -> Self {
+        Self {
+            message: message.into(),
+            subject,
+        }
+    }
+
+    pub(crate) fn message(&self) -> &str {
+        &self.message
+    }
+
+    pub(crate) fn subject(&self) -> Option<&str> {
+        self.subject.as_deref()
     }
 }
 
@@ -130,9 +207,136 @@ fn state_write_capability(args: &[Expr]) -> Option<Capability> {
         .map(|scope| Capability::new(format!("state.write({})", scope.as_str())))
 }
 
-fn collect_proof_lifetime_targets(body: &str) -> BTreeSet<String> {
+pub(crate) fn resource_write_for_lifetime(label: impl Into<String>) -> ResourceAccess {
+    ResourceAccess::write(EffectResource::Lifetime(label.into()))
+}
+
+pub(crate) fn resource_write_for_signal(label: impl Into<String>) -> ResourceAccess {
+    ResourceAccess::write(EffectResource::Signal(label.into()))
+}
+
+pub(crate) fn resource_accesses_from_expr(expr: &Expr) -> BTreeSet<ResourceAccess> {
+    let mut accesses = BTreeSet::new();
+    collect_resource_accesses_from_expr(expr, &mut accesses);
+    accesses
+}
+
+fn collect_resource_accesses_from_expr(expr: &Expr, accesses: &mut BTreeSet<ResourceAccess>) {
+    match expr {
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } if method == "set" => {
+            if let Some(target) = args.first() {
+                match expr_path_label(receiver).as_deref() {
+                    Some("signal") => {
+                        accesses.insert(ResourceAccess::write(EffectResource::Signal(expr_label(
+                            target,
+                        ))));
+                    }
+                    Some("metric") => {
+                        accesses.insert(ResourceAccess::write(EffectResource::Metric(expr_label(
+                            target,
+                        ))));
+                    }
+                    _ => {}
+                }
+            }
+            collect_resource_accesses_from_expr(receiver, accesses);
+            for arg in args {
+                collect_resource_accesses_from_expr(arg, accesses);
+            }
+        }
+        Expr::Call { callee, args } => {
+            collect_resource_accesses_from_expr(callee, accesses);
+            for arg in args {
+                collect_resource_accesses_from_expr(arg, accesses);
+            }
+        }
+        Expr::Tuple(items) | Expr::List(items) => {
+            for item in items {
+                collect_resource_accesses_from_expr(item, accesses);
+            }
+        }
+        Expr::NamedArg { value, .. }
+        | Expr::Field { target: value, .. }
+        | Expr::Try { expr: value }
+        | Expr::Await { expr: value, .. }
+        | Expr::Unary { expr: value, .. } => collect_resource_accesses_from_expr(value, accesses),
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_resource_accesses_from_expr(receiver, accesses);
+            for arg in args {
+                collect_resource_accesses_from_expr(arg, accesses);
+            }
+        }
+        Expr::Binary { lhs, rhs, .. }
+        | Expr::Pipe { lhs, rhs }
+        | Expr::Index {
+            target: lhs,
+            index: rhs,
+        } => {
+            collect_resource_accesses_from_expr(lhs, accesses);
+            collect_resource_accesses_from_expr(rhs, accesses);
+        }
+        _ => {}
+    }
+}
+
+fn expr_label(expr: &Expr) -> String {
+    match expr {
+        Expr::Path(path) => path.clone(),
+        Expr::EntityRef(entity) => entity.body().to_owned(),
+        Expr::LifetimePath { key, .. } => key.as_dotted(),
+        Expr::Field { target, field } => format!("{}.{}", expr_label(target), field),
+        Expr::Literal(literal) => format!("{literal:?}"),
+        _ => format!("{expr:?}"),
+    }
+}
+
+fn collect_proof_facts(body: &str) -> ProofFacts {
+    let checked_lifetime_targets = collect_checked_lifetime_targets(body);
+    let mut issues = Vec::new();
+    if checked_lifetime_targets.is_empty() {
+        issues.push(ProofIssue::new(
+            "proof body must contain an `ensures` or `check` clause for the proven lifetime target",
+            None,
+        ));
+    }
+    issues.extend(
+        body.lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with("assume "))
+            .filter(|line| {
+                !(line.contains("reason") || line.contains("axiom") || line.contains("@axiom."))
+            })
+            .map(|line| {
+                ProofIssue::new(
+                    "proof `assume` must cite a reason or trusted axiom",
+                    Some(line.to_owned()),
+                )
+            }),
+    );
+    ProofFacts {
+        checked_lifetime_targets,
+        issues,
+    }
+}
+
+fn collect_checked_lifetime_targets(body: &str) -> BTreeSet<String> {
     let mut targets = BTreeSet::new();
-    let bytes = body.as_bytes();
+    for line in body.lines().map(str::trim) {
+        if !(line.starts_with("ensures ") || line.starts_with("check ")) {
+            continue;
+        }
+        targets.extend(collect_lifetime_targets(line));
+    }
+    targets
+}
+
+fn collect_lifetime_targets(source: &str) -> BTreeSet<String> {
+    let mut targets = BTreeSet::new();
+    let bytes = source.as_bytes();
     let mut index = 0;
     while index < bytes.len() {
         if bytes[index] != b'\'' {
@@ -147,7 +351,7 @@ fn collect_proof_lifetime_targets(body: &str) -> BTreeSet<String> {
             index += 1;
         }
         if index > start + 1 {
-            targets.insert(body[start..index].to_owned());
+            targets.insert(source[start..index].to_owned());
         }
     }
     targets

@@ -159,6 +159,25 @@ effects { state.write('flow) }
 }
 
 #[test]
+fn proof_body_issues_are_verifier_obligations() {
+    let report = report(
+        r"
+proof @proof.requires_only {
+    requires summary.lifetime >= 'flow
+}
+",
+        VerificationMode::Test,
+    );
+
+    assert!(report.has_errors());
+    assert!(report.obligations.iter().any(|obligation| {
+        obligation.kind == ProofObligationKind::ProofBody
+            && obligation.discharge == ProofDischarge::Missing
+            && obligation.subject.as_deref() == Some("proof.requires_only")
+    }));
+}
+
+#[test]
 fn semantic_cfg_discharge_is_not_overridden_by_verifier_scan() {
     let report = report(
         r"

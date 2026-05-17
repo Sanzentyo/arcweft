@@ -109,10 +109,10 @@ structured `SemanticReport`. `arcweft-verify` treats that report as the source
 of truth for semantic-owned obligations before emitting the shared verifier JSON
 used by CLI, LSP, and Agent tooling. It generates obligations for lifetime
 promotion, `unsafe lifetime`, upper-lifetime registry writes, thread capture,
-effect capability writes, thread join result typing, trusted assumptions, `Raw`
-syntax that reached HIR-facing analysis, sibling thread and line child task
-write conflicts, and MustDrop registry values such as `'line.focus` that are not
-explicitly dropped or transferred.
+effect capability writes, proof-body validity, thread join result typing,
+trusted assumptions, `Raw` syntax that reached HIR-facing analysis, sibling
+thread and line child task write conflicts, and MustDrop registry values such
+as `'line.focus` that are not explicitly dropped or transferred.
 
 Effects are checked as semantic facts, not as ordinary value expressions.
 Flow/function contracts and hook headers grant capabilities in the checked body:
@@ -136,11 +136,14 @@ capabilities discharge them automatically.
 
 This Phase 1.9 pass is CFG-aware for blocks, branches, line plans,
 cancellation rules, bounded loop fixed points, and scoped `defer` outcomes. It
-checks proof references against the promoted lifetime target and validates that
-unsafe audit blocks contain the unchecked operation they justify. It remains
-conservative for solver-backed proof bodies, full ownership/region validation,
-and open-ended effect inference; later compiler passes should refine or
-discharge these obligations rather than bypassing the verifier report.
+checks proof references against checked `ensures`/`check` proof-body targets,
+reports unjustified proof `assume` clauses as `proof_body` obligations, and
+validates that unsafe audit blocks contain the unchecked operation they justify.
+Ownership/region validation currently rejects borrowed values escaping through
+block final values, returns, line-plan `out`, or upper-lifetime registry writes.
+It remains conservative for full solver-backed proof term checking and
+open-ended effect inference; later compiler passes should refine or discharge
+these obligations rather than bypassing the verifier report.
 
 Verifier JSON serializes proof expressions with adjacent tags so string-carrying
 variants remain stable across serde implementations:

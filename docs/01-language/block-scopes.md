@@ -221,6 +221,21 @@ let slice = {
 # error: pixels cannot escape frame borrow scope
 ```
 
+The same rule applies to any region exit. Borrowed values cannot be returned,
+exported with `out`, used as a block final value, or written into an upper
+lifetime registry such as `'flow.*`:
+
+```awft
+let escaped = {
+    let pixels: &'asset [Rgba8] = bg.pixels()
+    pixels
+}
+# error: borrowed value cannot escape through block final value
+
+'flow.cache.pixels <- pixels
+# error: borrowed value cannot escape through upper lifetime registry write
+```
+
 Use owned values or handles:
 
 ```awft

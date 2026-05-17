@@ -251,6 +251,37 @@ effects { signal.write }
 }
 
 #[test]
+fn verify_json_reports_invalid_proof_body() {
+    let path = temp_awft(
+        "verify-proof-body",
+        r"
+proof @proof.requires_only {
+    requires summary.lifetime >= 'flow
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("verify")
+        .arg(&path)
+        .arg("--mode")
+        .arg("test")
+        .arg("--json")
+        .output()
+        .expect("arcw verify runs");
+
+    assert!(
+        !output.status.success(),
+        "invalid proof body should fail test-mode verification"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("proof_body") && stdout.contains("proof.requires_only"),
+        "JSON report should include the proof body obligation: {stdout}"
+    );
+}
+
+#[test]
 fn verify_json_respects_semantic_defer_cancel_discharge() {
     let path = temp_awft(
         "verify-cancel-defer",

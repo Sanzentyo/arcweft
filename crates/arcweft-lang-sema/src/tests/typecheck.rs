@@ -297,6 +297,72 @@ effects { state.write('flow) }
 }
 
 #[test]
+fn typecheck_rejects_borrowed_block_final_value_escape() {
+    let tree = parse_ok(
+        r"
+flow @flow.borrow_escape borrow_escape {
+    let escaped = {
+        let pixels: &'asset [Rgba8] = bg.pixels()
+        pixels
+    }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("borrow escape fixture lowers");
+    let env = TypeCheckEnv::new()
+        .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
+        .with_method(
+            TypeKind::Named("ImageHandle".to_owned()),
+            "pixels",
+            TypeKind::BorrowRef {
+                lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
+                inner: Box::new(TypeKind::Slice(Box::new(TypeKind::Named(
+                    "Rgba8".to_owned(),
+                )))),
+            },
+        );
+    let errors = typecheck_hir(&hir, &env).expect_err("borrowed final value cannot escape block");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("block final value"))
+    );
+}
+
+#[test]
+fn typecheck_rejects_borrowed_value_written_to_upper_lifetime() {
+    let tree = parse_ok(
+        r"
+flow @flow.borrow_registry borrow_registry
+effects { state.write('flow) }
+{
+    let pixels: &'asset [Rgba8] = bg.pixels()
+    'flow.cache.pixels <- pixels
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("borrow registry fixture lowers");
+    let env = TypeCheckEnv::new()
+        .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
+        .with_method(
+            TypeKind::Named("ImageHandle".to_owned()),
+            "pixels",
+            TypeKind::BorrowRef {
+                lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
+                inner: Box::new(TypeKind::Slice(Box::new(TypeKind::Named(
+                    "Rgba8".to_owned(),
+                )))),
+            },
+        );
+    let errors = typecheck_hir(&hir, &env).expect_err("borrowed value cannot escape to flow scope");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("upper lifetime registry write"))
+    );
+}
+
+#[test]
 fn typecheck_rejects_line_lifetime_use_outside_line_scope() {
     let tree = parse_ok(
         r"
