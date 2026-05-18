@@ -15,7 +15,7 @@ choice @choice.opening.first {
 ## attribute macro
 
 ```awft
-@derive(Serialize, Debug, Format)
+#derive(Serialize, Debug, Format)
 pub enum GameEvent { ... }
 ```
 

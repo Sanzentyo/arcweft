@@ -219,7 +219,7 @@ pub struct WikiLink {
     range: TextRange,
 }
 
-/// Attribute syntax such as `@derive(...)`.
+/// Attribute syntax such as `#derive(...)`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Attribute {
     name: String,

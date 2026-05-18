@@ -32,7 +32,7 @@ match は exhaustive check される。
 ## derive
 
 ```awft
-@derive(Clone, Debug, Format, Serialize, Eq)
+#derive(Clone, Debug, Format, Serialize, Eq)
 pub enum GameEvent {
     StartGame,
     ChoiceSelected { id: Ref<ChoiceOption> },
@@ -66,4 +66,3 @@ where len(self) <= 16
 Option<T> = Some(T) | None
 Result<T, E> = Ok(T) | Err(E)
 ```
-
