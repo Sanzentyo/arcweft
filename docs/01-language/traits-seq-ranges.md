@@ -34,7 +34,7 @@ pub impl Format for Route {
 Generic function:
 
 ```awft
-pub fn group_by<T, K>(key: T -> K)(xs: List<T>) -> Map<K, List<T>>
+pub fn group_by<T, K>(key: T -> K)(xs: Vec<T>) -> Map<K, Vec<T>>
 where
     K: Eq + Hash
 {
@@ -153,7 +153,7 @@ pub trait IntoSeq {
 }
 ```
 
-`List<T>` と整数 `Range<T>` は `IntoSeq` を実装する。
+`Vec<T>` と整数 `Range<T>` は `IntoSeq` を実装する。
 
 ```awft
 let labels =
@@ -161,7 +161,7 @@ let labels =
         .seq()
         .filter(_.enabled)
         .map(_.label)
-        .collect<List<String>>()
+        .collect<Vec<String>>()
 ```
 
 `for` は `IntoSeq` を要求する。
@@ -193,7 +193,7 @@ pub trait Reservable {
 MVP standard implementors:
 
 ```text
-List<T>
+Vec<T>
 String
 Bytes
 ```
@@ -210,7 +210,7 @@ TextCluster
 Examples:
 
 ```awft
-let names = List<String>.with_capacity(8)
+let names = Vec<String>.with_capacity(8)
 names.reserve(4)
 names.shrink_to(2)
 
@@ -306,7 +306,7 @@ let frames =
     await camera_source
         .take(60)
         .record()
-        .collect<List<CameraFrame>>() with {
+        .collect<Vec<CameraFrame>>() with {
             pending p => scene.show(@scene.capture_wait); progress.set(p.ratio)
         }
 ```
@@ -382,3 +382,4 @@ Arcweft は曖昧な method resolution を避けるため、初期仕様では i
 4. blanket impl は core/prelude crate 中心
 5. user blanket impl は将来拡張
 ```
+

@@ -10,7 +10,7 @@ pub struct ArcError {
     message: Content
     trace: ErrorTrace
     source: Option<ErrorSource>
-    related: List<RelatedDiagnostic>
+    related: Vec<RelatedDiagnostic>
 }
 ```
 
@@ -24,7 +24,7 @@ The trace is displayed by default in dev/test and summarized in product builds.
 
 ```awft
 pub struct ErrorTrace {
-    frames: List<ErrorFrame>
+    frames: Vec<ErrorFrame>
     state_hash: Option<StateHash>
     tick: Option<TickId>
     replay_cursor: Option<TraceCursor>
@@ -226,3 +226,4 @@ crash/
   }
 }
 ```
+

@@ -484,7 +484,7 @@ fn parses_lifetime_type_syntax_for_borrow_checks() {
 #[test]
 fn parses_and_typechecks_function_parameter_destructuring() {
     let signature = parse_fn_signature(
-        "fn summarize(TruckResult { score, rank, .. }: TruckResult, [first, ..rest]: List<Route>) -> Unit",
+        "fn summarize(TruckResult { score, rank, .. }: TruckResult, [first, ..rest]: Vec<Route>) -> Unit",
     )
     .expect("destructured function parameters parse");
     assert!(matches!(
@@ -501,7 +501,7 @@ fn parses_and_typechecks_function_parameter_destructuring() {
 
     let tree = parse_ok(
         r"
-fn summarize(TruckResult { score, rank, .. }: TruckResult, [first, ..rest]: List<Route>) -> Unit {
+fn summarize(TruckResult { score, rank, .. }: TruckResult, [first, ..rest]: Vec<Route>) -> Unit {
     let _ = score
     let _ = rank
     let _ = first

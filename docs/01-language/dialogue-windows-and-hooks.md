@@ -245,7 +245,7 @@ pub enum DialoguePatch {
     Style(TextStylePatch),
     Voice(Option<VoiceCue>),
     Window(Ref<Textbox>),
-    Cues(List<DialogueCue>),
+    Cues(Vec<DialogueCue>),
 }
 ```
 
@@ -298,4 +298,5 @@ Text windows expose:
 ```
 
 This lets LLM debuggers inspect whether a line is visible, partially revealed, read/unread, or blocked by a wait tag.
+
 

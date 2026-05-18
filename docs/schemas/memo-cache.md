@@ -49,7 +49,7 @@ Example:
     { "dep": "GameState.route", "version": 12 },
     { "dep": "GameState.affection[character.alice]", "version": 8 }
   ],
-  "value_kind": "List<ChoiceView>",
+  "value_kind": "Vec<ChoiceView>",
   "value_hash": "b3:value...",
   "created_tick": 180,
   "last_used_tick": 182,
@@ -100,3 +100,4 @@ hot reload patch committed:
 profile/build mode changed:
   invalidate JIT and debug-sensitive memo entries
 ```
+

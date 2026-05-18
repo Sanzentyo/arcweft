@@ -1,0 +1,16 @@
+[package]
+name = "arcweft-ref"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arcweft-id = { path = "../arcweft-id" }
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true

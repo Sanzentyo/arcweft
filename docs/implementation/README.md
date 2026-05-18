@@ -276,7 +276,7 @@ they affect parser, HIR, formatter, LSP, or CLI work.
 - Capacity traits are accepted for owning collections: `WithCapacity` and
   `Reservable` expose `with_capacity`, `reserve`, `shrink`, and `shrink_to`.
   Capacity is non-observable and may be a no-op on constrained/Wasm targets.
-  The syntax checker recognizes these methods for `List<T>`, `String`, and
+  The syntax checker recognizes these methods for `Vec<T>`, `String`, and
   `Bytes`.
 - Top-level `test @test.* KIND { ... }` and `bench @bench.* { ... }` are now
   parsed as structured declarations and lowered into HIR metadata. The
@@ -329,6 +329,21 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `text_key=` options, flat `=== line ... ===` dialogue heads, and
   choice/choice-option IDs. `with { ... }`, `with:`, and flat `=== with ===`
   line-plan attachments share the same materialization context.
+- The old `arcweft-tooling` dialogue-ID line scanner has been removed from the
+  tooling crate. ID materialization now flows through
+  `arcweft-lang-hir::collect_id_context`, which emits typed source operations
+  for declarations, choices, choice options, explicit dialogue `id` /
+  `text_key` options, and omitted dialogue options. Tooling, CLI, and LSP
+  convert those typed operations into edits, hints, and actions instead of
+  keeping scanner-specific logic.
+- `pro_review19.md` is reflected with Rust-like collection names. The facade
+  prelude now exports minimal Sans I/O standard data crates:
+  `arcweft-adt` (`Unit`, `Never`, `Vec<T>`, `Array<T,N>`, deterministic map/set
+  wrappers, patch/log/snapshot types), `arcweft-ref` (`Id<T>`, `Ref<T>`,
+  `Handle<T>`, `WeakHandle<T>`, `Borrow`, `Slice`, `Lease`), and
+  `arcweft-memory` (`Bytes`, `Blob`, `BlobRef`, `SharedSliceDesc`,
+  `MemoryLease`, `PodSlice<T>`). The language docs use `Vec<T>` for growable
+  ordered lists and reserve `Array<T,N>` for fixed-length literals.
 - Runtime value lowering is stricter for executable flow plans. Unsupported
   value-position expressions such as ordinary calls now produce runtime-plan
   lowering errors instead of being coerced into string labels; adapter-facing
@@ -362,3 +377,4 @@ The stable specification locations for the `pro_review4.md` decisions are:
 - `docs/05-build-and-security/native-web-build.md`: native/web runtime target model.
 - `docs/05-build-and-security/packaging.md`: Sans I/O bundle format boundary.
 - `docs/schemas/README.md`: schemas as data formats rather than I/O APIs.
+

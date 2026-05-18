@@ -163,7 +163,7 @@ Syntax parser:
 - Expression syntax now has a Pratt-style parser and an `Expr` AST for entity references, literals, tuples, calls, named arguments, method calls, indexes, field access, pipes, prefix `try`, postfix `?`, unary `!`/`-`, arithmetic operators, comparisons, and placeholders.
 - Generic expression brackets are always `Expr::Index`; dialogue content brackets become `Expr::DialogueCall` only in dialogue-capable parser contexts such as flow content calls and line-result bindings.
 - Expression syntax also preserves float literals, half-open/inclusive ranges, and `in` membership expressions used by documented contracts.
-- Pipeline and helper-call expressions preserve `_`/`^` placeholders, placeholder field access such as `_.enabled`, generic method names such as `collect<List<T>>()`, and closure arguments such as `with_context(|| "...")` without falling back to raw expressions.
+- Pipeline and helper-call expressions preserve `_`/`^` placeholders, placeholder field access such as `_.enabled`, generic method names such as `collect<Vec<T>>()`, and closure arguments such as `with_context(|| "...")` without falling back to raw expressions.
 - List expressions such as `[normal, smile, worried]`, `[]`, and nested call arguments parse as structured `Expr::List` nodes and participate in symbol collection and minimal type checking. Bare record/map literals such as `{ player_name = state.player_name }` and `{}` parse as structured `Expr::RecordLiteral` nodes for dialogue args and state defaults.
 - Type syntax now has `TypeRef`/`LifetimeName` support for lifetime-bearing borrow types such as `&'asset [Rgba8]`, function signature generic parameters such as `fn first<'a, T>(...)`, curried parameter groups, `where` predicates, and the bottom type spellings `!` / `Never`.
 - `//` is the ordinary comment form. `#` is reserved for entity references and is not skipped as a comment. Consecutive `///` lines are preserved as Markdown doc comments on supported declarations, fields, enum variants, and function parameters.
@@ -360,3 +360,4 @@ Result:
   dependency entered core.
 - `cargo tree -p arcweft-lang-syntax --edges normal`: passed; syntax remains on
   rowan, blake3, thiserror, and `arcweft-source`.
+

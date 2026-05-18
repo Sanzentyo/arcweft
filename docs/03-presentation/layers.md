@@ -450,7 +450,7 @@ ensures z > @layer.ui.game.z
 UI component でも所属 layer を保証できる。
 
 ```awft
-component ChoiceList(choices: List<ChoiceView>) -> View
+component ChoiceList(choices: Vec<ChoiceView>) -> View
 ensures result.layer == @layer.ui.game
 ensures result.actions.all(_.layer == @layer.ui.game)
 {
@@ -630,3 +630,4 @@ layer @layer.input.touch_controller {
 Controls inside this layer consume only their own hit regions and emit normalized actions. Touches outside controls pass through to lower layers. This allows visual novel UI, minigame input, and mobile controls to coexist.
 
 See [Touch Virtual Controller](touch-virtual-controller.md).
+

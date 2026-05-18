@@ -743,7 +743,7 @@ effects { signal_write }
 入力 routing に関する高コスト判定は memo 化できる。
 
 ```awft
-memo fn choice_hit_regions(tree: LayerTree) -> List<HitRegion>
+memo fn choice_hit_regions(tree: LayerTree) -> Vec<HitRegion>
 scope = frame
 depends layer_tree_hash(tree), ui_layout_hash(@layer.choice_ui)
 {
@@ -772,3 +772,4 @@ USB/HID/Gamepad/Keyboard/Touch
 ```
 
 Virtual controller layers usually sit above scene/UI layers and consume touch input inside their hit regions before lower layers receive it.
+

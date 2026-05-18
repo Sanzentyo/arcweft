@@ -3,9 +3,9 @@
 ## 関数は data-last が標準
 
 ```awft
-fn map<A, B>(f: A -> B)(xs: List<A>) -> List<B>
-fn filter<A>(pred: A -> Bool)(xs: List<A>) -> List<A>
-fn fold<A, B>(init: B, step: (B, A) -> B)(xs: List<A>) -> B
+fn map<A, B>(f: A -> B)(xs: Vec<A>) -> Vec<B>
+fn filter<A>(pred: A -> Bool)(xs: Vec<A>) -> Vec<A>
+fn fold<A, B>(init: B, step: (B, A) -> B)(xs: Vec<A>) -> B
 ```
 
 これにより、以下が自然になる。
@@ -88,7 +88,7 @@ let choices =
         .take(5)
 ```
 
-`Seq<T>` は lazy。必要時に `collect<List<T>>()` で materialize。
+`Seq<T>` は lazy。必要時に `collect<Vec<T>>()` で materialize。
 
 ## effectful map は `traverse`
 
@@ -98,5 +98,6 @@ let images = await image_paths.traverse(asset.image).parallel(limit = 4)
 
 - `map`: pure / synchronous。
 - `traverse`: `Task` / `Need` を返す。
+
 
 

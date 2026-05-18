@@ -41,13 +41,20 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 name = "arcweft"
 version = "0.1.0"
 dependencies = [
+ "arcweft-adt",
  "arcweft-core",
  "arcweft-dialogue",
  "arcweft-id",
+ "arcweft-memory",
  "arcweft-need",
  "arcweft-presentation",
+ "arcweft-ref",
  "arcweft-source",
 ]
+
+[[package]]
+name = "arcweft-adt"
+version = "0.1.0"
 
 [[package]]
 name = "arcweft-cli"
@@ -124,6 +131,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-memory"
+version = "0.1.0"
+
+[[package]]
 name = "arcweft-need"
 version = "0.1.0"
 dependencies = [
@@ -132,6 +143,13 @@ dependencies = [
 
 [[package]]
 name = "arcweft-presentation"
+version = "0.1.0"
+dependencies = [
+ "arcweft-id",
+]
+
+[[package]]
+name = "arcweft-ref"
 version = "0.1.0"
 dependencies = [
  "arcweft-id",
@@ -164,6 +182,7 @@ dependencies = [
 name = "arcweft-tooling"
 version = "0.1.0"
 dependencies = [
+ "arcweft-lang-hir",
  "arcweft-lang-syntax",
  "serde",
  "thiserror 2.0.18",

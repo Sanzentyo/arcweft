@@ -44,7 +44,7 @@ TokenKind
 ```text
 Primitive: (), bool, String, explicit integer and float widths, Duration, Color, Ratio, Length, Angle
 ADT: struct, enum, newtype
-Generic: List<T>, Map<K,V>, Set<T>, Option<T>, Result<T,E>, Need<T,E>, Ref<T>
+Generic: Vec<T>, Map<K,V>, Set<T>, Option<T>, Result<T,E>, Need<T,E>, Ref<T>
 Function: A -> B, curried function groups
 Borrow: &'a T, &'a mut T
 ```
@@ -148,3 +148,4 @@ Borrow: &'a T, &'a mut T
 ```
 
 これが通れば、以後の WGSL、Audio、UI、JIT、RAG は同じ土台へ載せられる。
+

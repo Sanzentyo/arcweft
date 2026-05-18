@@ -474,7 +474,7 @@ fn typechecks_structured_collection_and_capacity_trait_methods() {
     let tree = parse_ok(
         r"
 flow @flow.collections collections {
-    let nums: List<i32> = [1, 2, 3]
+    let nums: Vec<i32> = [1, 2, 3]
     let first: i32 = nums[0]
     let _ = nums.reserve(4)
     let _ = nums.shrink()

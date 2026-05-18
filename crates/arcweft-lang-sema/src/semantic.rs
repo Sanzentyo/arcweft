@@ -2265,8 +2265,8 @@ fn expr_type_label(expr: &Expr) -> String {
             format!("({})", labels.join(", "))
         }
         Expr::List(items) => items.first().map_or_else(
-            || "List<Unknown>".to_owned(),
-            |item| format!("List<{}>", expr_type_label(item)),
+            || "Vec<Unknown>".to_owned(),
+            |item| format!("Vec<{}>", expr_type_label(item)),
         ),
         Expr::EntityRef(_) => "EntityRef".to_owned(),
         _ => "Unknown".to_owned(),

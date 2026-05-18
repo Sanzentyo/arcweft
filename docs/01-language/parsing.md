@@ -41,7 +41,7 @@ ensures result.is_err() => result.err().span.len() > 0
 ## Agent script parser
 
 ```awft
-pub parser parse_agent_script: Parser<List<AgentScriptCommand>, ParseError> {
+pub parser parse_agent_script: Parser<Vec<AgentScriptCommand>, ParseError> {
     many line {
         alt {
             "observe" => AgentScriptCommand::Observe,
@@ -74,10 +74,10 @@ choice.opening.listen
 ```awft
 pub struct ParseError {
     pub span: TextRange,
-    pub expected: List<ExpectedToken>,
+    pub expected: Vec<ExpectedToken>,
     pub found: Option<String>,
     pub message: String,
-    pub recovery: List<RecoverySuggestion>,
+    pub recovery: Vec<RecoverySuggestion>,
 }
 ```
 
@@ -93,5 +93,6 @@ ensures result.is_ok() => result.unwrap().width > 0
 ```
 
 borrow は await/yield を跨げない。
+
 
 

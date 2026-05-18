@@ -28,7 +28,7 @@ pub struct LogFrame {
 ```awft
 pub signal @signal.current_flow: Watch<Ref<Flow>>
 pub signal @signal.loading_progress: Watch<f32>
-pub signal @signal.choice_visible: Watch<List<Ref<ChoiceOption>>>
+pub signal @signal.choice_visible: Watch<Vec<Ref<ChoiceOption>>>
 pub metric gauge @metric.frame_time_ms: f32
 ```
 
@@ -122,7 +122,7 @@ bench @bench.opening_pipeline {
         black_box(opening_choices())
             .filter(choice_available(state))
             .map(choice_to_view(state))
-            .collect<List<ChoiceView>>()
+            .collect<Vec<ChoiceView>>()
     }
 
     assert metric allocations <= 2
@@ -170,8 +170,9 @@ Bench:
 ```awft
 bench @bench.memo_hit_rate {
     measure iterations = 10000 {
-        opening_choices().map(choice_to_view(state)).collect<List<ChoiceView>>()
+        opening_choices().map(choice_to_view(state)).collect<Vec<ChoiceView>>()
     }
     assert metric.value(@metric.memo_hit_rate) >= 0.95
 }
 ```
+

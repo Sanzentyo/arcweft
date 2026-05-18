@@ -49,11 +49,11 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
     let empty_record = parse_expr("{}").expect("empty record literal parses");
     assert!(matches!(empty_record, Expr::RecordLiteral(fields) if fields.is_empty()));
 
-    let generic_collect = parse_expr("visible_choices.collect<List<ChoiceView>>()")
+    let generic_collect = parse_expr("visible_choices.collect<Vec<ChoiceView>>()")
         .expect("generic method call parses");
     assert!(matches!(
         generic_collect,
-        Expr::MethodCall { method, .. } if method == "collect<List<ChoiceView>>"
+        Expr::MethodCall { method, .. } if method == "collect<Vec<ChoiceView>>"
     ));
 
     let context_closure =

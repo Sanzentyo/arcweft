@@ -1,8 +1,11 @@
 [workspace]
 members = [
     "crates/arcweft-core",
+    "crates/arcweft-adt",
     "crates/arcweft-dialogue",
     "crates/arcweft-id",
+    "crates/arcweft-memory",
+    "crates/arcweft-ref",
     "crates/arcweft",
     "crates/arcweft-lang-hir",
     "crates/arcweft-lang-sema",

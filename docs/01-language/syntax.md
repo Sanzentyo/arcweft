@@ -33,7 +33,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
 ## 重要な構文ルール
 
-- 型パラメータは `<>`: `List<T>`, `Result<T, E>`。
+- 型パラメータは `<>`: `Vec<T>`, `Result<T, E>`。
 - Entity 参照は `@foo.bar`、複雑な参照やメンバアクセス前は `@<foo.bar>`。
 - `@.suffix` / `@..suffix` / `@...suffix` / `@super.suffix` は dialogue line / choice / option / text key のような ID 文脈だけで使う相対 ID。
 - module / import の相対指定は `self::` / `super::` / `crate::` を使う。
@@ -179,14 +179,14 @@ once
 ## memo
 
 ```awft
-memo fn visible_opening_choices(state: GameState) -> List<ChoiceView>
+memo fn visible_opening_choices(state: GameState) -> Vec<ChoiceView>
 key = (state.route, state.flags, state.affection)
 scope = frame
 {
     opening_choices()
         .filter(choice_available(state))
         .map(choice_to_view(state))
-        .collect<List<ChoiceView>>()
+        .collect<Vec<ChoiceView>>()
 }
 ```
 
@@ -221,3 +221,4 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 ```
 
 There is no separate `script` item. Concise dialogue statements and typed Arcweft statements are both `FlowItem`s.
+

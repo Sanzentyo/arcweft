@@ -113,7 +113,7 @@ pub fn Character.say(
     voice: VoicePolicy = auto,
     look: Option<Expression> = None,
     style: Option<TextStylePatch> = None,
-    hooks: List<Ref<Hook>> = [],
+    hooks: Vec<Ref<Hook>> = [],
 ) -> DialogueContentCall
 ```
 
@@ -792,3 +792,4 @@ with:
     let scoped_bgm = bgm.play(@bgm.tension, scope=line, drop=fade(300ms))
     out scoped_bgm.detach()
 ```
+

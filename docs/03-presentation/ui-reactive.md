@@ -122,7 +122,7 @@ component @ui.choice_list ChoiceList(state: GameState) -> View {
         opening_choices()
             .filter(choice_available(state))
             .map(choice_to_view(state))
-            .collect<List<ChoiceView>>()
+            .collect<Vec<ChoiceView>>()
     }
 
     VStack {
@@ -142,3 +142,4 @@ check every frame
     assert object.actions.contains("select")
 }
 ```
+

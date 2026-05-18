@@ -156,6 +156,7 @@ arcweft-verify
 arcweft-verify-z3
 arcweft-verify-oxiz
 arcweft-jj
+arcweft-tooling
 ```
 
 ## 依存ルール
@@ -174,6 +175,9 @@ arcweft-jj
 - `arcweft-agent-protocol` は CLI / MCP / test / LLM が共通利用する。
 - `arcweft-lang-syntax` は rowan-compatible な lossless CST と surface parser を所有する。`SyntaxKind`、`TokenKind`、green tree、`SyntaxNode`、source text / line index、error-tolerant `ParsedSource`、surface AST、expression/type/pattern parsing、syntax lint をここに集約する。HIR lowering、semantic checks、runtime-plan lowering は持たない。
 - `arcweft-lang-hir` は HIR 型と `lower_to_hir` を所有し、semantic passes、verifier、CLI、LSP はこの crate を HIR 入力境界にする。
+- `arcweft-lang-hir` は syntax/CST 由来の typed ID context も所有する。
+  `arcweft-tooling`、CLI、LSP は dialogue ID や choice ID を独自 scan
+  せず、この context から edit / hint / code action を作る。
 - `arcweft-lang-sema` は name registry、symbol use collection、reference validation、typecheck readiness、minimal type checking を所有する。
 - `arcweft-runtime-plan` は checked HIR から `arcweft-core` の `RuntimePlan` / line task graph へ lowering する。
 - `arcweft-verify` は Sans I/O の検証中核で、proof obligation、audit manifest、SMT problem、tool diagnostics schema を所有する。ファイルI/O、process起動、watch、editor transport は持たない。

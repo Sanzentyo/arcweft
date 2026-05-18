@@ -196,7 +196,7 @@ pub trait DeviceDriver {
     fn open(&mut self, lease: DeviceLeaseRaw, config: Self::Config)
         -> Need<Result<Self::Ports, DeviceError>, TaskError>;
 
-    fn poll(&mut self, budget: DevicePollBudget) -> Result<List<DeviceEvent>, DeviceError>;
+    fn poll(&mut self, budget: DevicePollBudget) -> Result<Vec<DeviceEvent>, DeviceError>;
 
     fn close(&mut self) -> Result<(), DeviceError>;
 }
@@ -283,3 +283,4 @@ Use manual Rust drivers for:
 ```
 
 Both paths feed the same `DeviceProfile` and `DevicePort` runtime model.
+

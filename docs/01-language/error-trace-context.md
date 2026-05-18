@@ -21,7 +21,7 @@ pub struct ArcError {
 
 pub struct ErrorTrace {
     origin: TraceFrame
-    frames: List<TraceFrame>
+    frames: Vec<TraceFrame>
     state_hash: Option<StateHash>
     tick: Option<TickId>
     replay_cursor: Option<TraceCursor>
@@ -278,4 +278,5 @@ crash/
   }
 }
 ```
+
 

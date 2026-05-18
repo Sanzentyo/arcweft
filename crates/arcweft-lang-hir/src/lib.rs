@@ -4,6 +4,7 @@
 //! passes, runtime-plan lowering, CLI, and LSP tooling should import HIR through
 //! this crate instead of reaching into parser internals.
 
+mod id_context;
 mod lower;
 
 pub use arcweft_lang_syntax::{
@@ -15,6 +16,10 @@ pub use arcweft_lang_syntax::{
     ParserItem, Pattern, ProofItem, RelativeId, ScopeExprBlock, SourceItem, SourceLocaleBlock,
     StateItem, Stmt, TestItem, TestKind, TextRange, ThreadBlock, TraitItem, TriggerPattern,
     TrustedAxiomItem, TypeAliasItem, TypeRef, WaitTarget,
+};
+pub use id_context::{
+    IdContextEntry, IdContextKind, IdContextMaterialization, IdContextOption, IdContextReport,
+    collect_id_context,
 };
 pub use lower::{
     HirAwait, HirAwaitBranch, HirBorrow, HirChoice, HirChoiceOption, HirDialogue, HirFlow,

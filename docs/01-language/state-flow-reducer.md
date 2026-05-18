@@ -84,7 +84,7 @@ View は `await` 禁止。`Need` は `AwaitView` や fallback を使う。
 ```awft
 pub struct Update<S> {
     pub state: S,
-    pub commands: List<Command>,
+    pub commands: Vec<Command>,
 }
 ```
 
@@ -95,4 +95,5 @@ state
     .set(.config.text_speed, value.clamp(0.1, 3.0))
     .update(.affection[@character.alice], |v| v + 1)
 ```
+
 

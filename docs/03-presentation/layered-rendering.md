@@ -268,7 +268,7 @@ scope {
 Game Native UI component は内部的に layer subtree を生成する。
 
 ```awft
-component ChoiceList(choices: List<ChoiceView>) -> View {
+component ChoiceList(choices: Vec<ChoiceView>) -> View {
     VStack {
         ForEach(choices, id = _.id) |choice| {
             ChoiceButton(choice)
@@ -392,3 +392,4 @@ check on change layout
 ```
 
 入力 routing では hook の `InputDisposition` が routing 結果に影響する。Modal、pointer capture、debug overlay、Agent overlay はこの仕組みで共通化される。
+

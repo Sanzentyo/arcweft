@@ -65,7 +65,11 @@ pub enum TypeKind {
     Range,
     DisplayText,
     Ref(EntityKind),
-    List(Box<TypeKind>),
+    Vec(Box<TypeKind>),
+    Array {
+        item: Box<TypeKind>,
+        len: String,
+    },
     Slice(Box<TypeKind>),
     Seq(Box<TypeKind>),
     Map {
@@ -1274,10 +1278,10 @@ impl TypeChecker<'_> {
     }
 
     fn check_let_stmt(&mut self, pattern: &Pattern, annotation: Option<&TypeRef>, expr: &Expr) {
-        let ty = self
-            .check_expr(expr)
-            .or_else(|| annotation.map(type_ref_kind));
         let annotated_ty = annotation.map(type_ref_kind);
+        let ty = self
+            .check_expr_with_expected(expr, annotated_ty.as_ref())
+            .or_else(|| annotated_ty.clone());
         if let (Some(annotation), Some(actual)) = (annotation, ty.as_ref()) {
             let expected = annotated_ty
                 .clone()
@@ -2260,6 +2264,14 @@ impl TypeChecker<'_> {
     }
 
     fn check_expr(&mut self, expr: &Expr) -> Option<TypeKind> {
+        self.check_expr_with_expected(expr, None)
+    }
+
+    fn check_expr_with_expected(
+        &mut self,
+        expr: &Expr,
+        expected: Option<&TypeKind>,
+    ) -> Option<TypeKind> {
         match expr {
             Expr::Literal(literal) => Some(literal_type(literal)),
             Expr::EntityRef(entity) => self.check_entity_ref_expr(entity),
@@ -2267,7 +2279,7 @@ impl TypeChecker<'_> {
             Expr::Path(path) => self.check_path_expr(path),
             Expr::Placeholder(_) => None,
             Expr::Tuple(items) => Some(self.check_tuple_expr(items)),
-            Expr::List(items) => Some(self.check_list_expr(items)),
+            Expr::List(items) => Some(self.check_list_expr_with_expected(items, expected)),
             Expr::Call { callee, args } => self.check_call_expr(callee, args),
             Expr::NamedArg { value, .. } => self.check_expr(value),
             Expr::MethodCall {
@@ -2448,7 +2460,11 @@ impl TypeChecker<'_> {
         )
     }
 
-    fn check_list_expr(&mut self, items: &[Expr]) -> TypeKind {
+    fn check_list_expr_with_expected(
+        &mut self,
+        items: &[Expr],
+        expected: Option<&TypeKind>,
+    ) -> TypeKind {
         let mut item_type = None;
         for item in items {
             let next_type = self.check_expr(item).unwrap_or(TypeKind::Unit);
@@ -2462,7 +2478,17 @@ impl TypeChecker<'_> {
                 None => item_type = Some(next_type),
             }
         }
-        TypeKind::List(Box::new(item_type.unwrap_or(TypeKind::Unit)))
+        let item_type = item_type.unwrap_or(TypeKind::Unit);
+        if let Some(TypeKind::Array { item, len }) = expected
+            && array_len_matches(len, items.len())
+            && item.as_ref() == &item_type
+        {
+            return TypeKind::Array {
+                item: item.clone(),
+                len: len.clone(),
+            };
+        }
+        TypeKind::Vec(Box::new(item_type))
     }
 
     fn check_memo_block_expr(
@@ -3216,10 +3242,13 @@ fn ident_pattern_name(pattern: &Pattern) -> Option<&str> {
 
 fn iter_item_type(source_type: Option<&TypeKind>) -> TypeKind {
     match source_type {
-        Some(TypeKind::List(item) | TypeKind::Seq(item) | TypeKind::Slice(item)) => {
-            item.as_ref().clone()
-        }
-        Some(TypeKind::Named(name)) if name.starts_with("List<") && name.ends_with('>') => {
+        Some(
+            TypeKind::Vec(item)
+            | TypeKind::Array { item, .. }
+            | TypeKind::Seq(item)
+            | TypeKind::Slice(item),
+        ) => item.as_ref().clone(),
+        Some(TypeKind::Named(name)) if name.starts_with("Vec<") && name.ends_with('>') => {
             TypeKind::Named(name[5..name.len() - 1].to_owned())
         }
         Some(TypeKind::Named(name)) if name.starts_with("Seq<") && name.ends_with('>') => {
@@ -3442,7 +3471,7 @@ fn well_known_runtime_method_type(name: &str) -> Option<TypeKind> {
 
 fn well_known_static_capacity_method_type(name: &str) -> Option<TypeKind> {
     match name {
-        "List.with_capacity" => Some(TypeKind::List(Box::new(TypeKind::Named("_".to_owned())))),
+        "Vec.with_capacity" => Some(TypeKind::Vec(Box::new(TypeKind::Named("_".to_owned())))),
         "String.with_capacity" => Some(TypeKind::String),
         "Bytes.with_capacity" => Some(TypeKind::Named("Bytes".to_owned())),
         _ => None,
@@ -3464,13 +3493,15 @@ fn well_known_capacity_method_type(
 }
 
 fn is_reservable_type(ty: &TypeKind) -> bool {
-    matches!(ty, TypeKind::List(_) | TypeKind::String)
+    matches!(ty, TypeKind::Vec(_) | TypeKind::String)
         || matches!(ty, TypeKind::Named(name) if name == "Bytes")
 }
 
 fn collection_index_type(target_type: &TypeKind) -> Option<TypeKind> {
     match target_type {
-        TypeKind::List(item) | TypeKind::Slice(item) => Some(item.as_ref().clone()),
+        TypeKind::Vec(item) | TypeKind::Array { item, .. } | TypeKind::Slice(item) => {
+            Some(item.as_ref().clone())
+        }
         TypeKind::Map { value, .. } => Some(value.as_ref().clone()),
         TypeKind::String => Some(TypeKind::TextCluster),
         _ => None,
@@ -3632,11 +3663,19 @@ fn simple_expr_type(expr: &Expr) -> Option<TypeKind> {
                 .first()
                 .and_then(simple_expr_type)
                 .unwrap_or(TypeKind::Unit);
-            Some(TypeKind::List(Box::new(item)))
+            Some(TypeKind::Vec(Box::new(item)))
         }
         Expr::RecordLiteral(_) => Some(TypeKind::Named("Record".to_owned())),
         _ => None,
     }
+}
+
+fn array_len_matches(label: &str, actual: usize) -> bool {
+    label
+        .parse::<usize>()
+        .ok()
+        .or_else(|| label.strip_prefix('N')?.parse::<usize>().ok())
+        .is_none_or(|expected| expected == actual)
 }
 
 fn default_presentation_slot_family(expr: &Expr) -> Option<&'static str> {
@@ -3679,7 +3718,8 @@ fn collect_type_kind_lifetimes(ty: &TypeKind, lifetimes: &mut Vec<String>) {
             }
             collect_type_kind_lifetimes(inner, lifetimes);
         }
-        TypeKind::List(inner)
+        TypeKind::Vec(inner)
+        | TypeKind::Array { item: inner, .. }
         | TypeKind::Slice(inner)
         | TypeKind::Seq(inner)
         | TypeKind::Option(inner)
@@ -3709,7 +3749,8 @@ fn collect_type_kind_lifetimes(ty: &TypeKind, lifetimes: &mut Vec<String>) {
 fn type_contains_borrow_ref(ty: &TypeKind) -> bool {
     match ty {
         TypeKind::BorrowRef { lifetime, .. } => !lifetime.as_ref().is_some_and(is_static_lifetime),
-        TypeKind::List(inner)
+        TypeKind::Vec(inner)
+        | TypeKind::Array { item: inner, .. }
         | TypeKind::Slice(inner)
         | TypeKind::Seq(inner)
         | TypeKind::Option(inner)
@@ -3739,9 +3780,13 @@ fn type_ref_kind(ty: &TypeRef) -> TypeKind {
     match ty {
         TypeRef::Never => TypeKind::Never,
         TypeRef::Path(path) => named_type_label(path),
-        TypeRef::Generic { base, args } if base == "List" && args.len() == 1 => {
-            TypeKind::List(Box::new(type_ref_kind(&args[0])))
+        TypeRef::Generic { base, args } if base == "Vec" && args.len() == 1 => {
+            TypeKind::Vec(Box::new(type_ref_kind(&args[0])))
         }
+        TypeRef::Generic { base, args } if base == "Array" && args.len() == 2 => TypeKind::Array {
+            item: Box::new(type_ref_kind(&args[0])),
+            len: type_ref_label(&args[1]),
+        },
         TypeRef::Generic { base, args } if base == "Seq" && args.len() == 1 => {
             TypeKind::Seq(Box::new(type_ref_kind(&args[0])))
         }

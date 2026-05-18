@@ -316,7 +316,7 @@ choice @choice.opening.routes {
         .with_symbol("state", TypeKind::Named("GameState".to_owned()))
         .with_function(
             "opening_routes",
-            TypeKind::Named("List<RouteChoice>".to_owned()),
+            TypeKind::Named("Vec<RouteChoice>".to_owned()),
         );
     typecheck_hir(&hir, &env).expect("dynamic choice option fields typecheck");
 }

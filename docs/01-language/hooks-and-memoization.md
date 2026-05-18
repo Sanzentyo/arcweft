@@ -354,14 +354,14 @@ key = (choice.id, state.affection[@character.alice])
 自動依存追跡:
 
 ```awft
-memo fn visible_choices(state: GameState) -> List<ChoiceView>
+memo fn visible_choices(state: GameState) -> Vec<ChoiceView>
 scope = scene
 track = auto
 {
     opening_choices()
         .filter(choice_available(state))
         .map(choice_to_view(state))
-        .collect<List<ChoiceView>>()
+        .collect<Vec<ChoiceView>>()
 }
 ```
 
@@ -468,3 +468,4 @@ memo_options:= ("scope" "=" memo_scope)? ("key" "=" expr_tuple)? ("depends" "=" 
 9. Need/Task は TaskKey で in-flight 合流し、memo cache と統合する。
 10. Agent/LSP/CLI から hook/memo を検査・可視化できる。
 ```
+

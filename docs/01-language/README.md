@@ -10,6 +10,7 @@
 - [Localization for Dialogue](localization-dialogue.md)
 - [ID と参照](ids-and-references.md)
 - [Literals and primitive types](literals-and-primitives.md)
+- [Standard Types and Prelude](standard-types-and-prelude.md)
 - [関数、パイプ、カリー化](functions-and-pipeline.md)
 - [Traits, Seq, Ranges, and Monad-like Abstractions](traits-seq-ranges.md)
 - [Semicolon policy](semicolon-policy.md)
