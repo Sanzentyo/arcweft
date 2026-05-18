@@ -737,7 +737,7 @@ fn fmt_expand_sugar_accepts_flags_before_path_and_writes() {
 
 #[test]
 fn ids_materialize_accepts_flags_before_path_without_write() {
-    let source = "flow @flow.opening opening {\n    scope rain {\n        alice(id=@.comment, text_key=@.comment_text):\n            Hi[p]\n    }\n    choice @.first {\n        @.listen \"Listen\" -> @flow.next\n    }\n}\n";
+    let source = "flow @flow.opening opening {\n    scope rain {\n        alice(id=@.comment, text_key=@.comment_text):\n            Hi[p]\n    }\n    alice:\n        Omitted[p]\n=== line 地の文 ===\nFlat[p]\n=== with ===\nwait mark .done\n=== /with ===\n=== /line ===\n    choice @.first {\n        @.listen \"Listen\" -> @flow.next\n    }\n}\n";
     let path = temp_awft("ids-materialize", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -756,6 +756,10 @@ fn ids_materialize_accepts_flags_before_path_without_write() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains(
         "alice(id=@say.opening.alice.rain.comment, text_key=@text.opening.alice.rain.comment_text):"
+    ));
+    assert!(stdout.contains("alice(id=@say.opening.alice.001, text_key=@text.opening.alice.001):"));
+    assert!(stdout.contains(
+        "=== line 地の文(id=@say.opening.narrator.001, text_key=@text.opening.narrator.001) ==="
     ));
     assert!(stdout.contains("choice @choice.opening.first"));
     assert!(stdout.contains("@choice.opening.first.listen"));

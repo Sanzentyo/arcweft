@@ -3,9 +3,9 @@
 //! This crate produces deterministic text edits and lightweight tooling data.
 //! It does not read files, write files, watch paths, or run an LSP transport.
 
-use arcweft_lang_syntax::{IdRef, Item, ParsedSource, cst_lines, parse_source};
+use arcweft_lang_syntax::{CstLine, IdRef, Item, ParsedSource, cst_lines, parse_source};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 /// Formatting and source normalization options.
@@ -98,6 +98,7 @@ pub fn inferred_id_hints(source: &str) -> Vec<InlayHint> {
     for item in parsed.typed_tree().items() {
         collect_item_id_hints(item, &mut hints);
     }
+    collect_dialogue_id_hints(source, &mut hints);
     hints
 }
 
@@ -458,19 +459,18 @@ fn collect_dialogue_line_id_edits(source: &str, edits: &mut Vec<TextEdit>) {
     let parsed = parse_source(source);
     let mut flow_slug = None;
     let mut scopes: Vec<ScopedLine> = Vec::new();
+    let mut line_counters = BTreeMap::<String, usize>::new();
     for line in cst_lines(parsed.syntax()).iter() {
         let text = line.text();
         let trimmed = line.trimmed();
         let indent = text.len() - text.trim_start().len();
-        while scopes.last().is_some_and(|scope| indent <= scope.indent) {
-            scopes.pop();
-        }
-        if let Some(slug) = flow_slug_from_line(trimmed) {
-            flow_slug = Some(slug);
-            scopes.clear();
-        }
-        if let Some(name) = scope_name_from_line(trimmed) {
-            scopes.push(ScopedLine { indent, name });
+        if update_dialogue_scan_context(
+            trimmed,
+            indent,
+            &mut scopes,
+            &mut flow_slug,
+            &mut line_counters,
+        ) {
             continue;
         }
         let Some(flow) = flow_slug.as_deref() else {
@@ -484,7 +484,10 @@ fn collect_dialogue_line_id_edits(source: &str, edits: &mut Vec<TextEdit>) {
             .iter()
             .map(|scope| scope.name.as_str())
             .collect::<Vec<_>>();
-        for option in dialogue_head.options {
+        let mut normalized_id = dialogue_head.option("id").and_then(|option| {
+            normalized_line_option_id(option.value, "say", flow, &speaker, &scope_names)
+        });
+        for option in &dialogue_head.options {
             let Some((relative, family)) = parse_relative_materialization(option.value) else {
                 continue;
             };
@@ -501,16 +504,153 @@ fn collect_dialogue_line_id_edits(source: &str, edits: &mut Vec<TextEdit>) {
             } else {
                 scoped_id("text", flow, &speaker, &scope_prefix, relative.suffix)
             };
+            let Some(options_start) = dialogue_head.options_start else {
+                continue;
+            };
             let start = line.start() + text.len() - text.trim_start().len()
-                + dialogue_head.options_start
+                + options_start
                 + option.relative_start;
             edits.push(TextEdit {
                 start,
                 end: start + option.value.len(),
                 replacement: format!("@{normalized}"),
             });
+            if option.name == "id" {
+                normalized_id = Some(normalized);
+            }
+        }
+        if normalized_id.is_none() {
+            normalized_id = Some(next_generated_line_id(
+                flow,
+                &speaker,
+                &scope_names,
+                &mut line_counters,
+            ));
+        }
+        let Some(line_id) = normalized_id else {
+            continue;
+        };
+        let text_key = dialogue_head.option("text_key").and_then(|option| {
+            normalized_line_option_id(option.value, "text", flow, &speaker, &scope_names)
+        });
+        let missing = missing_line_options(&dialogue_head, &line_id, text_key.as_deref());
+        if !missing.is_empty() {
+            edits.push(insert_missing_line_options(line, &dialogue_head, &missing));
         }
     }
+}
+
+fn collect_dialogue_id_hints(source: &str, hints: &mut Vec<InlayHint>) {
+    let parsed = parse_source(source);
+    let mut flow_slug = None;
+    let mut scopes: Vec<ScopedLine> = Vec::new();
+    let mut line_counters = BTreeMap::<String, usize>::new();
+    for line in cst_lines(parsed.syntax()).iter() {
+        let text = line.text();
+        let trimmed = line.trimmed();
+        let leading = text.len() - text.trim_start().len();
+        let indent = leading;
+        if update_dialogue_scan_context(
+            trimmed,
+            indent,
+            &mut scopes,
+            &mut flow_slug,
+            &mut line_counters,
+        ) {
+            continue;
+        }
+        let Some(flow) = flow_slug.as_deref() else {
+            continue;
+        };
+        let Some(dialogue_head) = dialogue_head(trimmed) else {
+            continue;
+        };
+        let speaker = speaker_slug(dialogue_head.callee);
+        let scope_names = scopes
+            .iter()
+            .map(|scope| scope.name.as_str())
+            .collect::<Vec<_>>();
+        let normalized_id = dialogue_head
+            .option("id")
+            .and_then(|option| {
+                normalized_line_option_id(option.value, "say", flow, &speaker, &scope_names)
+            })
+            .unwrap_or_else(|| {
+                next_generated_line_id(flow, &speaker, &scope_names, &mut line_counters)
+            });
+        for option in &dialogue_head.options {
+            let family = if option.name == "id" { "say" } else { "text" };
+            if let Some(normalized) =
+                normalized_line_option_id(option.value, family, flow, &speaker, &scope_names)
+            {
+                let Some(options_start) = dialogue_head.options_start else {
+                    continue;
+                };
+                hints.push(InlayHint {
+                    position: line.start()
+                        + leading
+                        + options_start
+                        + option.relative_start
+                        + option.value.len(),
+                    label: format!("@{normalized}"),
+                });
+            }
+        }
+        let text_key = dialogue_head
+            .option("text_key")
+            .and_then(|option| {
+                normalized_line_option_id(option.value, "text", flow, &speaker, &scope_names)
+            })
+            .unwrap_or_else(|| line_id_to_text_key(&normalized_id));
+        let missing = missing_line_options(&dialogue_head, &normalized_id, Some(&text_key));
+        if !missing.is_empty() {
+            hints.push(InlayHint {
+                position: line.start() + leading + dialogue_head.missing_options_insert,
+                label: missing.join(", "),
+            });
+        }
+    }
+}
+
+fn update_dialogue_scan_context(
+    trimmed: &str,
+    indent: usize,
+    scopes: &mut Vec<ScopedLine>,
+    flow_slug: &mut Option<String>,
+    line_counters: &mut BTreeMap<String, usize>,
+) -> bool {
+    while scopes
+        .last()
+        .and_then(|scope| scope.indent)
+        .is_some_and(|scope_indent| indent <= scope_indent)
+    {
+        scopes.pop();
+    }
+    if let Some(fence) = flat_fence(trimmed) {
+        if fence.close && fence.kind == "scope" {
+            scopes.pop();
+            return true;
+        }
+        if !fence.close && fence.kind == "scope" {
+            if let Some(name) = nonempty_identifier(fence.head) {
+                scopes.push(ScopedLine { indent: None, name });
+            }
+            return true;
+        }
+    }
+    if let Some(slug) = flow_slug_from_line(trimmed) {
+        *flow_slug = Some(slug);
+        scopes.clear();
+        line_counters.clear();
+    }
+    if let Some(name) = scope_name_from_line(trimmed) {
+        scopes.push(ScopedLine {
+            indent: Some(indent),
+            name,
+        });
+        return true;
+    }
+    false
 }
 
 fn declaration_id_token<'a>(trimmed: &'a str, keyword: &str) -> Option<(usize, &'a str)> {
@@ -553,14 +693,16 @@ fn scope_name_from_line(trimmed: &str) -> Option<String> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ScopedLine {
-    indent: usize,
+    indent: Option<usize>,
     name: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct DialogueHead<'a> {
     callee: &'a str,
-    options_start: usize,
+    options_start: Option<usize>,
+    options_has_any: bool,
+    missing_options_insert: usize,
     options: Vec<LineIdOption<'a>>,
 }
 
@@ -572,24 +714,207 @@ struct LineIdOption<'a> {
 }
 
 fn dialogue_head(trimmed: &str) -> Option<DialogueHead<'_>> {
+    if let Some(fence) = flat_fence(trimmed)
+        && !fence.close
+        && fence.kind == "line"
+    {
+        let head_start = flat_fence_head_start(trimmed)?;
+        return dialogue_head_from_call_head(fence.head, head_start);
+    }
     let boundary = dialogue_head_boundary(trimmed)?;
-    let head = trimmed[..boundary].trim_end();
-    let open = head.find('(')?;
-    let close = head.rfind(')')?;
-    if close < open {
+    dialogue_head_from_call_head(trimmed[..boundary].trim_end(), 0)
+}
+
+fn dialogue_head_from_call_head(head: &str, base: usize) -> Option<DialogueHead<'_>> {
+    let open = head.find('(');
+    let close = head.rfind(')');
+    let (callee, options_start, options_has_any, missing_options_insert, options) =
+        match (open, close) {
+            (Some(open), Some(close)) if close >= open => {
+                let callee = head[..open].trim();
+                let options_source = &head[open + 1..close];
+                (
+                    callee,
+                    Some(base + open + 1),
+                    !options_source.trim().is_empty(),
+                    base + close,
+                    line_id_options(options_source),
+                )
+            }
+            _ => (
+                head.trim(),
+                None,
+                false,
+                base + head.trim_end().len(),
+                Vec::new(),
+            ),
+        };
+    if callee.is_empty()
+        || callee.starts_with('@')
+        || callee.contains('=')
+        || callee.split_whitespace().nth(1).is_some()
+        || is_control_head(callee)
+    {
         return None;
     }
-    let callee = head[..open].trim();
-    if callee.is_empty() || callee.starts_with('@') || is_control_head(callee) {
-        return None;
-    }
-    let options_source = &head[open + 1..close];
-    let options = line_id_options(options_source);
-    (!options.is_empty()).then_some(DialogueHead {
+    Some(DialogueHead {
         callee,
-        options_start: open + 1,
+        options_start,
+        options_has_any,
+        missing_options_insert,
         options,
     })
+}
+
+impl<'a> DialogueHead<'a> {
+    fn option(&self, name: &str) -> Option<&LineIdOption<'a>> {
+        self.options.iter().find(|option| option.name == name)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct FlatFence<'a> {
+    kind: &'a str,
+    head: &'a str,
+    close: bool,
+}
+
+fn flat_fence(source: &str) -> Option<FlatFence<'_>> {
+    let inner = source
+        .trim()
+        .strip_prefix("===")?
+        .strip_suffix("===")?
+        .trim();
+    if let Some(close) = inner.strip_prefix('/') {
+        let kind = close.split_whitespace().next().unwrap_or_default();
+        return Some(FlatFence {
+            kind,
+            head: close.trim(),
+            close: true,
+        });
+    }
+    let (kind, head) = split_leading_word(inner).unwrap_or((inner, ""));
+    Some(FlatFence {
+        kind,
+        head: head.trim(),
+        close: false,
+    })
+}
+
+fn flat_fence_head_start(source: &str) -> Option<usize> {
+    let open = source.find("===")? + "===".len();
+    let after_open = &source[open..];
+    let inner_leading = after_open.len() - after_open.trim_start().len();
+    let inner_start = open + inner_leading;
+    let inner = &source[inner_start..source.rfind("===")?];
+    let (_, head) = split_leading_word(inner.trim())?;
+    source[inner_start..]
+        .find(head)
+        .map(|offset| inner_start + offset)
+}
+
+fn split_leading_word(source: &str) -> Option<(&str, &str)> {
+    let trimmed = source.trim_start();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let end = trimmed
+        .char_indices()
+        .find_map(|(index, ch)| ch.is_whitespace().then_some(index))
+        .unwrap_or(trimmed.len());
+    Some((&trimmed[..end], trimmed[end..].trim_start()))
+}
+
+fn nonempty_identifier(source: &str) -> Option<String> {
+    let name = source.trim();
+    (!name.is_empty() && is_identifier(name)).then(|| name.to_owned())
+}
+
+fn normalized_line_option_id(
+    raw: &str,
+    family: &str,
+    flow: &str,
+    speaker: &str,
+    scopes: &[&str],
+) -> Option<String> {
+    let absolute_prefix = format!("@{family}.");
+    if let Some(body) = raw.strip_prefix(&absolute_prefix) {
+        return Some(format!("{family}.{body}"));
+    }
+    let (relative, explicit_family) = parse_relative_materialization(raw)?;
+    if explicit_family.is_some_and(|explicit| explicit != family) {
+        return None;
+    }
+    let scope_prefix = relative_scope_prefix(scopes, relative.parent_depth)?;
+    Some(scoped_id(
+        family,
+        flow,
+        speaker,
+        &scope_prefix,
+        relative.suffix,
+    ))
+}
+
+fn next_generated_line_id(
+    flow: &str,
+    speaker: &str,
+    scopes: &[&str],
+    counters: &mut BTreeMap<String, usize>,
+) -> String {
+    let mut parts = vec!["say", flow, speaker];
+    parts.extend(scopes.iter().copied());
+    let prefix = parts.join(".");
+    let next = counters.entry(prefix.clone()).or_insert(0);
+    *next += 1;
+    format!("{prefix}.{next:03}")
+}
+
+fn missing_line_options(
+    head: &DialogueHead<'_>,
+    line_id: &str,
+    text_key: Option<&str>,
+) -> Vec<String> {
+    let mut missing = Vec::new();
+    if head.option("id").is_none() {
+        missing.push(format!("id=@{line_id}"));
+    }
+    if head.option("text_key").is_none() {
+        missing.push(format!(
+            "text_key=@{}",
+            text_key.map_or_else(|| line_id_to_text_key(line_id), str::to_owned)
+        ));
+    }
+    missing
+}
+
+fn insert_missing_line_options(
+    line: &CstLine,
+    head: &DialogueHead<'_>,
+    missing: &[String],
+) -> TextEdit {
+    let leading = line.text().len() - line.text().trim_start().len();
+    let start = line.start() + leading + head.missing_options_insert;
+    let joined = missing.join(", ");
+    let replacement = if head.options_start.is_some() {
+        if head.options_has_any {
+            format!(", {joined}")
+        } else {
+            joined
+        }
+    } else {
+        format!("({joined})")
+    };
+    TextEdit {
+        start,
+        end: start,
+        replacement,
+    }
+}
+
+fn line_id_to_text_key(line_id: &str) -> String {
+    line_id
+        .strip_prefix("say.")
+        .map_or_else(|| format!("text.{line_id}"), |tail| format!("text.{tail}"))
 }
 
 fn dialogue_head_boundary(trimmed: &str) -> Option<usize> {
@@ -859,16 +1184,35 @@ mod tests {
         let source = "flow @flow.opening opening {\n    scope outer {\n        scope rain {\n            地の文(id=@say:.sound):\n                雨の音。[p]\n            alice(id=@.comment, text_key=@.comment_text):\n                Good morning.[p]\n            alice.say(id=@...shared, text_key=@super.inner_text)[\n                Shared.[p]\n            ]\n        }\n    }\n}\n";
         let report = materialize_ids(source).expect("materialize report");
 
-        assert!(
-            report
-                .output
-                .contains("地の文(id=@say.opening.narrator.outer.rain.sound):")
-        );
+        assert!(report.output.contains(
+            "地の文(id=@say.opening.narrator.outer.rain.sound, text_key=@text.opening.narrator.outer.rain.sound):"
+        ));
         assert!(report.output.contains(
             "alice(id=@say.opening.alice.outer.rain.comment, text_key=@text.opening.alice.outer.rain.comment_text):"
         ));
         assert!(report.output.contains(
             "alice.say(id=@say.opening.alice.shared, text_key=@text.opening.alice.outer.inner_text)["
         ));
+    }
+
+    #[test]
+    fn materializes_omitted_dialogue_ids_in_colon_call_and_flat_fences() {
+        let source = "flow @flow.opening opening {\n    alice:\n        Hi[p]\n    alice.say()[\n        Again[p]\n    ]\n=== scope rain ===\n=== line 地の文 ===\n雨。[p]\n=== with ===\nwait mark .done\n=== /with ===\n=== /line ===\n=== /scope ===\n}\n";
+        let report = materialize_ids(source).expect("materialize report");
+
+        assert!(
+            report
+                .output
+                .contains("alice(id=@say.opening.alice.001, text_key=@text.opening.alice.001):")
+        );
+        assert!(
+            report.output.contains(
+                "alice.say(id=@say.opening.alice.002, text_key=@text.opening.alice.002)["
+            )
+        );
+        assert!(report.output.contains(
+            "=== line 地の文(id=@say.opening.narrator.rain.001, text_key=@text.opening.narrator.rain.001) ==="
+        ));
+        assert!(report.output.contains("=== with ==="));
     }
 }

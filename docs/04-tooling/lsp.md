@@ -30,6 +30,8 @@
 - ID code actions:
   - materialize dialogue `id=@.suffix` and `text_key=@.suffix` options as
     normalized `@say...` / `@text...` IDs
+  - insert omitted dialogue `id=` / `text_key=` for colon, bracket-call, and
+    flat `=== line ... ===` dialogue heads
   - materialize `choice @.suffix` and relative option IDs as normalized `@choice...` IDs
   - keep `@.suffix` / `@..suffix` / `@...suffix` and `@super...` relative IDs by default during formatting
 - `Need` unhandled diagnostics

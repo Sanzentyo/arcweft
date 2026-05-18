@@ -160,9 +160,17 @@ mod tests {
                 .iter()
                 .any(|action| action.title == "Expand Arcweft sugar")
         );
+        assert!(
+            actions
+                .iter()
+                .any(|action| action.title == "Materialize inferred Arcweft ID")
+        );
         let hints = inferred_id_inlay_hints(source);
         assert!(hints.iter().any(|hint| {
             matches!(&hint.label, lsp_types::InlayHintLabel::String(label) if label == "@flow.opening")
+        }));
+        assert!(hints.iter().any(|hint| {
+            matches!(&hint.label, lsp_types::InlayHintLabel::String(label) if label.contains("id=@say.opening.alice.001"))
         }));
     }
 }

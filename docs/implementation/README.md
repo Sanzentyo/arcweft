@@ -325,9 +325,10 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `arcw ids materialize` as dry-run-by-default adapter commands with `--write`
   and `--json`; `arcweft-verify-lsp` exposes the same source actions and hints
   without owning an LSP transport. The current ID materialization table covers
-  top-level declarations, explicit dialogue line `id=` / `text_key=` options,
-  and choice/choice-option IDs. Inserting omitted generated dialogue IDs and
-  text keys remains a later typed-context pass.
+  top-level declarations, explicit and omitted dialogue line `id=` /
+  `text_key=` options, flat `=== line ... ===` dialogue heads, and
+  choice/choice-option IDs. `with { ... }`, `with:`, and flat `=== with ===`
+  line-plan attachments share the same materialization context.
 - Runtime value lowering is stricter for executable flow plans. Unsupported
   value-position expressions such as ordinary calls now produce runtime-plan
   lowering errors instead of being coerced into string labels; adapter-facing

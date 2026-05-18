@@ -211,7 +211,9 @@ The current CLI implementation routes both commands through the Sans I/O
 `arcweft-tooling` crate. `arcw fmt` is a dry-run by default and writes only with
 `--write`; `arcw ids materialize` follows the same dry-run/write split and can
 emit JSON reports. The current materialization slice covers known top-level
-declaration IDs, explicit dialogue line `id=` / `text_key=` options, choice IDs,
-and choice-option IDs. It does not yet insert omitted generated dialogue IDs or
-text keys; that belongs in a later typed context pass so source anchors and
-author comments stay stable.
+declaration IDs, explicit dialogue line `id=` / `text_key=` options, omitted
+dialogue line IDs/text keys, choice IDs, and choice-option IDs. Dialogue ID
+materialization treats `with { ... }`, `with:`, and flat `=== with ===` line-plan
+attachments as the same source construct; flat `=== line ... ===` heads are
+materialized with the same `@say...` / `@text...` rules as colon and bracket
+dialogue calls.
