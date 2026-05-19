@@ -1,0 +1,11 @@
+pub impl RouteInfo {
+    fn label(self) -> String {
+        if self.enabled {
+            self.label
+        } else {
+            "disabled"
+        }
+    }
+}
+
+flow @flow.main main { return "done" }

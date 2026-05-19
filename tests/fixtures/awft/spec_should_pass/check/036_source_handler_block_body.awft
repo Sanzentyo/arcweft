@@ -1,0 +1,13 @@
+source @source.events: Source<String, String> {
+    from adapter.events()
+    backpressure = latest
+    replay = event_only
+    privacy = transient
+
+    on item ev => {
+        log.info("event", value = ev)
+        yield ev
+    }
+}
+
+flow @flow.main main { return "done" }

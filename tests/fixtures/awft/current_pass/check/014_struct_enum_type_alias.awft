@@ -1,0 +1,16 @@
+pub enum RouteKind {
+    Opening,
+    Done,
+}
+
+pub struct RouteInfo {
+    id: Ref<Flow>,
+    label: String,
+}
+
+pub type RouteLabel = String
+where len(self) >= 1
+
+flow @flow.main main {
+    return "done"
+}

@@ -1,0 +1,6 @@
+flow @flow.main main {
+    let xs = [1, 2, 3]
+    let ys = xs.map(|x| x + 1).collect<Vec<i32>>()
+    log.info("ys", value = ys)
+    return "done"
+}

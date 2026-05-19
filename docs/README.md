@@ -7,10 +7,13 @@
 1. [全体アーキテクチャ](00-overview/architecture.md)
 2. [命名・拡張子・公開識別子](00-overview/naming.md)
 3. [決定事項と設計原則](00-overview/decisions.md)
-4. [DSL 概要](01-language/README.md)
-5. [実行モデル](02-runtime/README.md)
-6. [描画・UI・音声](03-presentation/README.md)
-7. [ツール・検証・LLM デバッグ](04-tooling/README.md)
+4. [Runtime Boundary Refactor Direction](00-overview/runtime-boundary-refactor.md)
+5. [DSL 概要](01-language/README.md)
+6. [Entries and Capabilities](01-language/entries-and-capabilities.md)
+7. [実行モデル](02-runtime/README.md)
+8. [RuntimeStep and Executors](02-runtime/runtime-step-and-executors.md)
+9. [描画・UI・音声](03-presentation/README.md)
+10. [ツール・検証・LLM デバッグ](04-tooling/README.md)
 
 ## Arcweft 固有の命名
 
@@ -40,6 +43,7 @@
 - [ID と参照](01-language/ids-and-references.md)
 - [文法サマリ](01-language/grammar.md)
 - [Standard Types and Prelude](01-language/standard-types-and-prelude.md)
+- [Entries and Capabilities](01-language/entries-and-capabilities.md)
 - [Localization for Dialogue](01-language/localization-dialogue.md)
 - [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](01-language/dialogue-control-tags-and-ruby.md)
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](01-language/dialogue-calls-scopes-cancellation.md)
@@ -55,6 +59,7 @@
 - [Proofs and Unsafe Lifetime Audits](01-language/proofs-and-unsafe-audits.md)
 - [Runtime Hooks and Memoization](02-runtime/hooks-memoization.md)
 - [Runtime Notes: Control Flow, Patterns, and Loops](02-runtime/control-flow-runtime.md)
+- [RuntimeStep and Executors](02-runtime/runtime-step-and-executors.md)
 - [USB Device Manifest](schemas/usb-device-manifest.md)
 - [Virtual Controller Manifest](schemas/virtual-controller-manifest.md)
 - [Hooks / memoization example](examples/hooks-memoization.md)

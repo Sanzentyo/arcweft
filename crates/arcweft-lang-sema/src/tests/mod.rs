@@ -1,7 +1,9 @@
 mod support;
 
 mod await_;
+mod awft_contract_fixtures;
 mod choice;
+mod compile_gap_regressions;
 mod contracts;
 mod control_flow;
 mod declarations;

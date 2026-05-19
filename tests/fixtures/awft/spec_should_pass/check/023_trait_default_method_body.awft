@@ -1,0 +1,7 @@
+pub trait Named {
+    fn name(self) -> String {
+        "unnamed"
+    }
+}
+
+flow @flow.main main { return "done" }

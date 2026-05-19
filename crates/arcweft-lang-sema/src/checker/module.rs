@@ -2,9 +2,9 @@
 
 use super::{
     EffectScope, EntityKind, FlowKind, FunctionKind, HirModule, HirTopLevelDecl, LifetimeKey,
-    LifetimeScopeKind, Pattern, TypeCheckError, TypeChecker, YieldContext, choice_output_type,
-    entity_kind_for_decl, ident_pattern_name, stream_return_types, type_ref_kind,
-    validate_typecheck_ready,
+    LifetimeScopeKind, Pattern, TypeCheckError, TypeChecker, TypeKind, YieldContext,
+    choice_output_type, entity_kind_for_decl, ident_pattern_name, stream_return_types,
+    type_ref_kind, validate_typecheck_ready,
 };
 
 impl TypeChecker<'_> {
@@ -16,6 +16,8 @@ impl TypeChecker<'_> {
                     .map(|error| TypeCheckError::new(error.message().to_owned())),
             );
         }
+
+        self.bind_top_level_entity_aliases(module);
 
         for flow in module.flows() {
             self.active_borrows.clear();
@@ -89,6 +91,21 @@ impl TypeChecker<'_> {
             self.check_top_level_decl(declaration);
         }
         self.check_flow_items(module.top_level_items());
+    }
+
+    fn bind_top_level_entity_aliases(&mut self, module: &HirModule) {
+        for declaration in module.declarations() {
+            let HirTopLevelDecl::EntityDecl(item) = declaration else {
+                continue;
+            };
+            let Some(alias) = item.surface_alias() else {
+                continue;
+            };
+            self.global_symbols.insert(
+                alias.to_owned(),
+                TypeKind::Ref(entity_kind_for_decl(item.kind())),
+            );
+        }
     }
 
     pub(super) fn check_top_level_decl(&mut self, declaration: &HirTopLevelDecl) {

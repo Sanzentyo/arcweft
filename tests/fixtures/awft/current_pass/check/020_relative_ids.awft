@@ -1,0 +1,11 @@
+flow @.main main {
+    scope dream {
+        choice @.first {
+            @.listen "Listen" -> @flow.done
+        }
+    }
+}
+
+flow @flow.done done {
+    return "done"
+}

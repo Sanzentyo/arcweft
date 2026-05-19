@@ -1,0 +1,8 @@
+fn normalize(name: String) -> String {
+    name.trim().to_string()
+}
+
+flow @flow.main main {
+    let n = normalize(" alice ")
+    return n
+}

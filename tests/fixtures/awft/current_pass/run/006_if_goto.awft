@@ -1,0 +1,10 @@
+flow @flow.main main {
+    if true {
+        goto @flow.done
+    }
+    return "unreachable"
+}
+
+flow @flow.done done {
+    return "done"
+}

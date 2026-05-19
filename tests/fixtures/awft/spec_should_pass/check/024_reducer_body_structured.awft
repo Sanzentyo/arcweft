@@ -1,0 +1,6 @@
+pub reducer update(state: GameState, event: GameEvent) -> Result<Update<GameState>, GameError> {
+    let next = state
+    Ok(next.to_update())
+}
+
+flow @flow.main main { return "done" }

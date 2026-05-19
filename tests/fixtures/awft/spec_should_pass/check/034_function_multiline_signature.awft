@@ -1,0 +1,8 @@
+fn summarize(
+    state: GameState,
+    route: Ref<Flow>,
+) -> Summary {
+    Summary { route }
+}
+
+flow @flow.main main { return "done" }

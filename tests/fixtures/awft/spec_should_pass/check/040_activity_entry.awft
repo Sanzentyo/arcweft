@@ -1,0 +1,4 @@
+entry activity @entry.minigame { run @flow.activity_main }
+flow @flow.activity_main activity_main {
+    return "mounted"
+}

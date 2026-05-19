@@ -1,0 +1,5 @@
+extern capability fs { type FsError fn read_text(path: String) -> Need<String, FsError> effects { fs.read } }
+flow @flow.main main effects { fs.read } {
+    let text = try await fs.read_text("C:\Users\me\profile.json") with { error e => return "missing" }
+    return text
+}

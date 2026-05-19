@@ -1,0 +1,4 @@
+flow @flow.main main {
+    let xs = ["a", "b"]
+    return xs[0]
+}

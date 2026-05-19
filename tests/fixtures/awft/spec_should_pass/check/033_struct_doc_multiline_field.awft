@@ -1,0 +1,8 @@
+pub struct Settings {
+    /// Volume configuration.
+    audio: AudioConfig,
+    /// Nested visual configuration.
+    visual: VisualConfig,
+}
+
+flow @flow.main main { return "done" }

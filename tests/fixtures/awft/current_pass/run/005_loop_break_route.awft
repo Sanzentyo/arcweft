@@ -1,0 +1,10 @@
+flow @flow.main main {
+    let route = loop {
+        break @flow.done
+    }
+    goto route
+}
+
+flow @flow.done done {
+    return "done"
+}

@@ -1,0 +1,7 @@
+entry bench @entry.bench {
+    run @flow.main
+}
+
+flow @flow.main main {
+    return "bench"
+}

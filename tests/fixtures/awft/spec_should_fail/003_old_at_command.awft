@@ -1,0 +1,4 @@
+flow @flow.main main {
+    @bg @asset.bg.room
+    return "done"
+}

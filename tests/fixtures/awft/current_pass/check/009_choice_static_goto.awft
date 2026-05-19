@@ -1,0 +1,9 @@
+flow @flow.main main {
+    choice @.first {
+        @.next "Next" -> @flow.done
+    }
+}
+
+flow @flow.done done {
+    return "done"
+}

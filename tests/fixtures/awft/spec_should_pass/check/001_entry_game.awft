@@ -1,0 +1,7 @@
+entry game @entry.game {
+    start @flow.main
+}
+
+flow @flow.main main {
+    return "game"
+}

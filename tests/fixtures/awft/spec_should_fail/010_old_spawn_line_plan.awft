@@ -1,0 +1,6 @@
+character @character.alice Alice as alice {}
+flow @flow.main main {
+    alice: hello
+    with:
+        spawn { log.info("old") }
+}

@@ -24,6 +24,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
 ## Files
 
 - `phase-0-1-workspace.md`: current crate layout, public types, verification status, and deferred work.
+- `refactor-checklist.md`: direction-package checklist for the runtime boundary,
+  entry/capability grammar, RuntimeStep, executor, and fixture-driven gates.
 
 ## Design Reviews Reflected
 

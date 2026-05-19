@@ -1,0 +1,4 @@
+entry game @entry.main { start @flow.second }
+
+flow @flow.first first { return "wrong" }
+flow @flow.second second { return "right" }

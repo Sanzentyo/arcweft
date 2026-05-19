@@ -1,0 +1,8 @@
+pub trait Renderable {
+    fn render(
+        self,
+        ctx: RenderContext,
+    ) -> RenderNode
+}
+
+flow @flow.main main { return "done" }

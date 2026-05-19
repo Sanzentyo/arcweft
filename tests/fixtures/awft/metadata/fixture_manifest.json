@@ -1,0 +1,742 @@
+{
+  "fixtures": [
+    {
+      "path": "tests/fixtures/awft/current_pass/check/001_minimal_flow_return.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline should parse/check under current grammar"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/002_two_flow_goto.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline should parse/check under current grammar"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/003_simple_log_effect.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline should parse/check under current grammar"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/004_if_statement.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline should parse/check under current grammar"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/005_match_statement.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline should parse/check under current grammar"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/006_loop_break_value.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline should parse/check under current grammar"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/007_scope_value.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline should parse/check under current grammar"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/008_let_else_diverge.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "gap",
+      "expected_future": "pass",
+      "reason": "future Option constructor and let-else binding target; retained as direction fixture until typed Option value construction is implemented"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/009_choice_static_goto.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline should parse/check under current grammar"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/010_dialogue_basic.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline should parse/check under current grammar"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/011_dialogue_with_plan.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "gap",
+      "expected_future": "pass",
+      "reason": "future compact line-plan handler syntax; retained until handler arrow sugar lowers without raw recovery"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/012_function_final_expr.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline should parse/check under current grammar"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/013_task_fn_await_shape.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "gap",
+      "expected_future": "pass",
+      "reason": "future task await fixture requiring typed task/capability function environment"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/014_struct_enum_type_alias.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "gap",
+      "expected_future": "pass",
+      "reason": "future type-alias where/self contract fixture"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/015_state_defaults.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "gap",
+      "expected_future": "pass",
+      "reason": "future prelude Option constructor default fixture"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/016_source_decl.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "gap",
+      "expected_future": "pass",
+      "reason": "future adapter-backed source fixture"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/017_stream_fn_shape.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "gap",
+      "expected_future": "pass",
+      "reason": "future stream block yield fixture"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/018_trait_impl_shape.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline should parse/check under current grammar"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/019_line_defer_cleanup.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline should parse/check under current grammar"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/020_relative_ids.awft",
+      "category": "current_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline should parse/check under current grammar"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/run/001_return_done.awft",
+      "category": "current_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline dry-run fixture"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/run/002_goto_done.awft",
+      "category": "current_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline dry-run fixture"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/run/003_log_then_return.awft",
+      "category": "current_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline dry-run fixture"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/run/004_signal_metric_event.awft",
+      "category": "current_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "gap",
+      "expected_future": "pass",
+      "reason": "future inline effects header and event constructor fixture"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/run/005_loop_break_route.awft",
+      "category": "current_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline dry-run fixture"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/run/006_if_goto.awft",
+      "category": "current_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline dry-run fixture"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/run/007_match_return.awft",
+      "category": "current_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline dry-run fixture"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/run/008_scope_return.awft",
+      "category": "current_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline dry-run fixture"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/run/009_dialogue_line.awft",
+      "category": "current_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "baseline dry-run fixture"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/run/010_line_task_effects.awft",
+      "category": "current_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "gap",
+      "expected_future": "pass",
+      "reason": "future compact line-plan handler syntax fixture"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/001_entry_game.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/002_entry_cli.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/003_entry_server.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/004_entry_activity.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/005_entry_test.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/006_entry_bench.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/010_capability_fs_read.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/011_capability_fs_write.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/012_capability_stdio.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/013_capability_http_entry.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/014_virtual_path_reject_os_paths_positive.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/020_multiline_struct_field_default.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/021_multiline_enum_variant_payload.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/022_multiline_trait_method.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/023_trait_default_method_body.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/024_reducer_body_structured.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/025_view_body_structured.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/026_pure_fn_call_value_position.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/027_method_call_value_position.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/028_index_expr_value_position.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/029_range_expr_value_position.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/030_closure_pipeline_value_position.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/031_nested_braces_in_string.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/032_raw_dialogue_braces.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/033_struct_doc_multiline_field.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/034_function_multiline_signature.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/035_impl_multiline_fn_body.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/036_source_handler_block_body.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/037_entry_selected_not_first_flow.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/038_flow_effect_capability_annotation.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/039_top_level_test_uses_entry.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/040_activity_entry.awft",
+      "category": "spec_should_pass",
+      "subtype": "check",
+      "command": "check",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/run/001_cli_stdout_entry.awft",
+      "category": "spec_should_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/run/002_file_read_task.awft",
+      "category": "spec_should_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/run/003_file_write_task.awft",
+      "category": "spec_should_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/run/004_server_health.awft",
+      "category": "spec_should_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/run/005_pure_call_runtime.awft",
+      "category": "spec_should_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/run/006_entry_second_flow.awft",
+      "category": "spec_should_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/run/007_source_stream_payload.awft",
+      "category": "spec_should_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/run/008_method_value_runtime.awft",
+      "category": "spec_should_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/run/009_index_runtime.awft",
+      "category": "spec_should_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/run/010_runtime_step_budget_many_ops.awft",
+      "category": "spec_should_pass",
+      "subtype": "run",
+      "command": "run",
+      "expected_current": "fail_or_unsupported",
+      "expected_future": "pass",
+      "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/001_absolute_unix_path.awft",
+      "category": "spec_should_fail",
+      "subtype": null,
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "negative fixture to keep invalid forms rejected"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/002_absolute_windows_path.awft",
+      "category": "spec_should_fail",
+      "subtype": null,
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "negative fixture to keep invalid forms rejected"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/003_old_at_command.awft",
+      "category": "spec_should_fail",
+      "subtype": null,
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "negative fixture to keep invalid forms rejected"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/004_face_line_option.awft",
+      "category": "spec_should_fail",
+      "subtype": null,
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "negative fixture to keep invalid forms rejected"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/005_bare_relative_goto.awft",
+      "category": "spec_should_fail",
+      "subtype": null,
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "negative fixture to keep invalid forms rejected"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/006_missing_capability_effect.awft",
+      "category": "spec_should_fail",
+      "subtype": null,
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "negative fixture to keep invalid forms rejected"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/007_direct_network_without_capability.awft",
+      "category": "spec_should_fail",
+      "subtype": null,
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "negative fixture to keep invalid forms rejected"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/008_runtime_frame_name_forbidden_doc_sample.awft",
+      "category": "spec_should_fail",
+      "subtype": null,
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "negative fixture to keep invalid forms rejected"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/009_ambiguous_bare_dot_id.awft",
+      "category": "spec_should_fail",
+      "subtype": null,
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "negative fixture to keep invalid forms rejected"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/010_old_spawn_line_plan.awft",
+      "category": "spec_should_fail",
+      "subtype": null,
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "negative fixture to keep invalid forms rejected"
+    }
+  ]
+}

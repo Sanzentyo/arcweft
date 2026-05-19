@@ -1,0 +1,4 @@
+flow @flow.main main {
+    log.info("hello")
+    return "done"
+}

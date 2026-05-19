@@ -1,0 +1,9 @@
+character @character.alice Alice as alice {
+}
+
+flow @flow.main main {
+    alice: hello[p]
+    with:
+        defer { log.info("cleanup") }
+    return "done"
+}

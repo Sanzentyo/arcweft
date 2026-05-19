@@ -1,0 +1,7 @@
+fn label(choice: ChoiceView) -> String {
+    choice.label
+}
+
+flow @flow.main main {
+    return "done"
+}

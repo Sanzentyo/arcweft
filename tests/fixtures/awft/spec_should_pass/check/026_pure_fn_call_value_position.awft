@@ -1,0 +1,10 @@
+#[pure]
+fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+flow @flow.main main {
+    let n = add(1, 2)
+    log.info("n", value = n)
+    return "done"
+}

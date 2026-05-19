@@ -1,0 +1,8 @@
+source @source.events: Source<Record, String> {
+    from adapter.events()
+    backpressure = latest
+    replay = event_only
+    privacy = transient
+    on item ev => yield ev
+}
+flow @flow.main main { return "done" }

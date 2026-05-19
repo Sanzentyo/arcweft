@@ -1,0 +1,16 @@
+pub trait Named {
+    type Item
+    fn name(self) -> String
+}
+
+pub impl Named for RouteInfo {
+    type Item = RouteInfo
+
+    fn name(self) -> String {
+        self.label
+    }
+}
+
+flow @flow.main main {
+    return "done"
+}

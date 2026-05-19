@@ -1,0 +1,9 @@
+signal @signal.ready: Watch<bool>
+metric gauge @metric.count: i32
+
+flow @flow.main main effects { signal.write, metric.write } {
+    signal.set(@signal.ready, true)
+    metric.set(@metric.count, 1)
+    event.emit(AppStarted, flow = @flow.main)
+    return "done"
+}

@@ -157,21 +157,19 @@ impl TypeChecker<'_> {
                 BorrowLocalState::Live(_) => {}
             }
         }
-        self.locals.get(path).cloned().or_else(|| {
-            self.env.symbol_type(path).cloned().or_else(|| {
-                self.check_dotted_path_target(path).or_else(|| {
-                    // Short enum-variant expressions such as `.Instant` rely
-                    // on expected type resolution in the full checker. The
-                    // Phase 1 checker preserves unknown short variants as
-                    // variant values after registered symbols and patch names
-                    // had a chance to resolve.
-                    if path.starts_with('.') {
-                        return Some(TypeKind::Named("Variant".to_owned()));
-                    }
-                    self.errors
-                        .push(TypeCheckError::new(format!("unknown symbol `{path}`")));
-                    None
-                })
+        self.symbol_type(path).cloned().or_else(|| {
+            self.check_dotted_path_target(path).or_else(|| {
+                // Short enum-variant expressions such as `.Instant` rely
+                // on expected type resolution in the full checker. The
+                // Phase 1 checker preserves unknown short variants as
+                // variant values after registered symbols and patch names
+                // had a chance to resolve.
+                if path.starts_with('.') {
+                    return Some(TypeKind::Named("Variant".to_owned()));
+                }
+                self.errors
+                    .push(TypeCheckError::new(format!("unknown symbol `{path}`")));
+                None
             })
         })
     }
@@ -385,7 +383,7 @@ impl TypeChecker<'_> {
                     error: Box::new(first_arg_type(&arg_types)),
                 });
             }
-            if self.env.symbol_type(name) == Some(&TypeKind::Ref(EntityKind::Character)) {
+            if self.symbol_type(name) == Some(&TypeKind::Ref(EntityKind::Character)) {
                 return Some(TypeKind::SpeakerPreset(EntityKind::Character));
             }
             return self.env.function_type(name).cloned().or_else(|| {

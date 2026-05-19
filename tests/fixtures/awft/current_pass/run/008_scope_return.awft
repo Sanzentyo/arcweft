@@ -1,0 +1,7 @@
+flow @flow.main main {
+    let value = scope calc {
+        10 + 32
+    }
+    log.info("value", value = value)
+    return "done"
+}

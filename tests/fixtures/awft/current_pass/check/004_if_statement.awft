@@ -1,0 +1,6 @@
+flow @flow.main main {
+    if true {
+        log.info("then")
+    }
+    return "done"
+}

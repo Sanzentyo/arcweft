@@ -1,0 +1,8 @@
+pub enum GameEvent {
+    ChoiceSelected {
+        id: Ref<ChoiceOption>,
+        label: String,
+    },
+}
+
+flow @flow.main main { return "done" }

@@ -1,0 +1,8 @@
+pub state GameState {
+    pub route: Ref<Flow> = @flow.main
+    pub current_bg: Option<ImageHandle> = None
+}
+
+flow @flow.main main {
+    return "done"
+}

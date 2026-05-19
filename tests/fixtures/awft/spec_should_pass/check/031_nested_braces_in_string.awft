@@ -1,0 +1,8 @@
+fn template() -> String {
+    "json { still string }"
+}
+
+flow @flow.main main {
+    log.info(template())
+    return "done"
+}

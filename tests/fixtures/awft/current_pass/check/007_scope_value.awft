@@ -1,0 +1,8 @@
+flow @flow.main main {
+    let answer = scope calc {
+        let x = 40
+        x + 2
+    }
+    log.info("answer", value = answer)
+    return "done"
+}

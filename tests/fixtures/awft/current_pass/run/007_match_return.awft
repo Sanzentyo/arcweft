@@ -1,0 +1,6 @@
+flow @flow.main main {
+    match 1 {
+        1 => return "one"
+        _ => return "other"
+    }
+}

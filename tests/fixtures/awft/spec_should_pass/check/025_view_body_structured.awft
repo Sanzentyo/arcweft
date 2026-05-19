@@ -1,0 +1,6 @@
+pub view current_scene(state: GameState) -> Scene {
+    let bg = @asset.bg.room
+    scene { layer bg = image(bg) }
+}
+
+flow @flow.main main { return "done" }

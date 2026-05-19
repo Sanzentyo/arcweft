@@ -1,0 +1,13 @@
+extern capability cli {
+    fn args() -> Vec<String>
+    fn stdout(text: String) effects { stdio.write }
+    fn stderr(text: String) effects { stdio.write }
+    fn exit(code: Int) -> Never effects { process.exit }
+}
+
+entry cli @entry.main { run @flow.main }
+
+flow @flow.main main effects { stdio.write, process.exit } {
+    cli.stdout("hello")
+    return cli.exit(0)
+}

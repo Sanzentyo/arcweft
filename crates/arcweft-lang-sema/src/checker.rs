@@ -83,6 +83,7 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
         errors: Vec::new(),
         active_borrows: Vec::new(),
         borrow_local_lifetimes: HashMap::new(),
+        global_symbols: HashMap::new(),
         locals: HashMap::new(),
         loop_stack: Vec::new(),
         line_label_stack: Vec::new(),
@@ -108,6 +109,7 @@ struct TypeChecker<'a> {
     errors: Vec<TypeCheckError>,
     active_borrows: Vec<String>,
     borrow_local_lifetimes: HashMap<String, BorrowLocalState>,
+    global_symbols: HashMap<String, TypeKind>,
     locals: HashMap<String, TypeKind>,
     loop_stack: Vec<LoopContext>,
     line_label_stack: Vec<Option<String>>,
@@ -158,12 +160,19 @@ struct LoopContext {
 }
 
 impl TypeChecker<'_> {
+    fn symbol_type(&self, name: &str) -> Option<&TypeKind> {
+        self.locals
+            .get(name)
+            .or_else(|| self.global_symbols.get(name))
+            .or_else(|| self.env.symbol_type(name))
+    }
+
     fn is_dialogue_callee(&self, callee: &str) -> bool {
-        if is_dialogue_callee_type(self.env.symbol_type(callee)) {
+        if is_dialogue_callee_type(self.symbol_type(callee)) {
             return true;
         }
         callee.strip_suffix(".say").is_some_and(|receiver| {
-            is_dialogue_callee_type(self.env.symbol_type(receiver))
+            is_dialogue_callee_type(self.symbol_type(receiver))
                 || is_character_entity_literal(receiver)
         })
     }

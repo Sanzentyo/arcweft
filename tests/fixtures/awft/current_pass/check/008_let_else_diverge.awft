@@ -1,0 +1,10 @@
+flow @flow.main main {
+    let Some(route) = Some(@flow.done) else {
+        return "missing"
+    }
+    goto route
+}
+
+flow @flow.done done {
+    return "done"
+}
