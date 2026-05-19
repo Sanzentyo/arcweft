@@ -10,8 +10,14 @@ use arcweft_lang_hir::model::{
     HirMatch, HirModule, HirScope, HirScopeExpr, HirSelect, HirTopLevelDecl, HirWhile, HirWhileLet,
 };
 use arcweft_lang_hir::syntax::{
-    EntityRefSyntax, Expr, IdRef, LifetimeKey, LifetimeScopeKind, LinePlan, LinePlanItem, Stmt,
-    TextRange, ThreadBlock, TriggerPattern,
+    ast::{
+        choice::{ChoiceBlock, ChoicePlanItem},
+        common::TextRange,
+        flow::{AwaitWith, FlowItem, ScopeExprBlock, Stmt, ThreadBlock, WaitTarget},
+        ids::{EntityRefSyntax, IdRef},
+        line_plan::{LinePlan, LinePlanItem, TriggerPattern},
+    },
+    expr::{Expr, LifetimeKey, LifetimeScopeKind},
 };
 use arcweft_lang_sema::{
     env::TypeCheckEnv,
@@ -648,23 +654,23 @@ impl ObligationCollector {
         }
     }
 
-    fn collect_choice_plan_item(&mut self, item: &arcweft_lang_hir::syntax::ChoicePlanItem) {
+    fn collect_choice_plan_item(&mut self, item: &ChoicePlanItem) {
         match item {
-            arcweft_lang_hir::syntax::ChoicePlanItem::Option { value, .. } => {
+            ChoicePlanItem::Option { value, .. } => {
                 self.collect_expr(value);
             }
-            arcweft_lang_hir::syntax::ChoicePlanItem::Timeout { duration, body } => {
+            ChoicePlanItem::Timeout { duration, body } => {
                 self.collect_expr(duration);
                 self.collect_stmts(body);
             }
-            arcweft_lang_hir::syntax::ChoicePlanItem::Cancel { trigger, body } => {
+            ChoicePlanItem::Cancel { trigger, body } => {
                 self.collect_trigger(trigger);
                 self.collect_stmts(body);
             }
-            arcweft_lang_hir::syntax::ChoicePlanItem::OnSelect { body, .. } => {
+            ChoicePlanItem::OnSelect { body, .. } => {
                 self.collect_stmts(body);
             }
-            arcweft_lang_hir::syntax::ChoicePlanItem::Raw(raw) => {
+            ChoicePlanItem::Raw(raw) => {
                 self.add_raw_obligation(
                     format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
                     raw.range().map(|range| format!("{range:?}")),
@@ -1122,11 +1128,10 @@ impl ObligationCollector {
         }
     }
 
-    fn collect_wait(&mut self, target: &arcweft_lang_hir::syntax::WaitTarget) {
+    fn collect_wait(&mut self, target: &WaitTarget) {
         match target {
-            arcweft_lang_hir::syntax::WaitTarget::Duration(expr)
-            | arcweft_lang_hir::syntax::WaitTarget::Expr(expr) => self.collect_expr(expr),
-            arcweft_lang_hir::syntax::WaitTarget::Mark(_) => {}
+            WaitTarget::Duration(expr) | WaitTarget::Expr(expr) => self.collect_expr(expr),
+            WaitTarget::Mark(_) => {}
         }
     }
 
@@ -1153,14 +1158,14 @@ impl ObligationCollector {
         }
     }
 
-    fn collect_scope_expr_syntax(&mut self, scope: &arcweft_lang_hir::syntax::ScopeExprBlock) {
+    fn collect_scope_expr_syntax(&mut self, scope: &ScopeExprBlock) {
         self.collect_stmts(scope.statements());
         if let Some(value) = scope.value() {
             self.collect_expr(value);
         }
     }
 
-    fn collect_choice_syntax(&mut self, choice: &arcweft_lang_hir::syntax::ChoiceBlock) {
+    fn collect_choice_syntax(&mut self, choice: &ChoiceBlock) {
         for option in choice.options() {
             if let Some(condition) = option.condition() {
                 self.collect_expr(condition);
@@ -1171,18 +1176,18 @@ impl ObligationCollector {
         }
     }
 
-    fn collect_await_syntax(&mut self, await_with: &arcweft_lang_hir::syntax::AwaitWith) {
+    fn collect_await_syntax(&mut self, await_with: &AwaitWith) {
         self.collect_expr(await_with.expr());
         for branch in await_with.branches() {
             self.collect_flow_items_syntax(branch.body());
         }
     }
 
-    fn collect_flow_items_syntax(&mut self, items: &[arcweft_lang_hir::syntax::FlowItem]) {
+    fn collect_flow_items_syntax(&mut self, items: &[FlowItem]) {
         for item in items {
             match item {
-                arcweft_lang_hir::syntax::FlowItem::Stmt(stmt) => self.collect_stmt(stmt),
-                arcweft_lang_hir::syntax::FlowItem::Raw(raw) => {
+                FlowItem::Stmt(stmt) => self.collect_stmt(stmt),
+                FlowItem::Raw(raw) => {
                     self.add_raw_obligation(
                         format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
                         raw.range().map(|range| format!("{range:?}")),

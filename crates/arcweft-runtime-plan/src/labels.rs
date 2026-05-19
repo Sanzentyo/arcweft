@@ -1,7 +1,9 @@
 //! Stable textual labels used by runtime-plan lowering.
 
 use arcweft_core::time::LogicalDuration;
-use arcweft_lang_hir::syntax::{DurationUnit, Expr, Literal};
+use arcweft_lang_hir::syntax::ast::pattern::Pattern;
+use arcweft_lang_hir::syntax::expr::{DurationUnit, Expr, Literal};
+use arcweft_lang_hir::syntax::types::TypeRef;
 
 pub(crate) fn named_arg_label(value: &str) -> Option<String> {
     value.split_once(" = ").map(|(name, _)| name.to_owned())
@@ -11,7 +13,7 @@ pub(crate) fn named_arg_value(value: &str) -> Option<String> {
     value.split_once(" = ").map(|(_, value)| value.to_owned())
 }
 
-pub(crate) fn pattern_label(pattern: &arcweft_lang_hir::syntax::Pattern) -> String {
+pub(crate) fn pattern_label(pattern: &Pattern) -> String {
     format!("{pattern:?}")
 }
 
@@ -79,23 +81,23 @@ pub(crate) fn literal_label(literal: &Literal) -> String {
     }
 }
 
-pub(crate) fn type_label(ty: &arcweft_lang_hir::syntax::TypeRef) -> String {
+pub(crate) fn type_label(ty: &TypeRef) -> String {
     match ty {
-        arcweft_lang_hir::syntax::TypeRef::Never => "Never".to_owned(),
-        arcweft_lang_hir::syntax::TypeRef::ConstInt(value) => value.to_string(),
-        arcweft_lang_hir::syntax::TypeRef::Path(path) => path.clone(),
-        arcweft_lang_hir::syntax::TypeRef::Generic { base, args } => format!(
+        TypeRef::Never => "Never".to_owned(),
+        TypeRef::ConstInt(value) => value.to_string(),
+        TypeRef::Path(path) => path.clone(),
+        TypeRef::Generic { base, args } => format!(
             "{base}<{}>",
             args.iter().map(type_label).collect::<Vec<_>>().join(", ")
         ),
-        arcweft_lang_hir::syntax::TypeRef::Ref { lifetime, inner } => {
+        TypeRef::Ref { lifetime, inner } => {
             let lifetime = lifetime
                 .as_ref()
                 .map(|lifetime| format!("'{} ", lifetime.name()))
                 .unwrap_or_default();
             format!("&{lifetime}{}", type_label(inner))
         }
-        arcweft_lang_hir::syntax::TypeRef::Slice(inner) => format!("[{}]", type_label(inner)),
+        TypeRef::Slice(inner) => format!("[{}]", type_label(inner)),
     }
 }
 

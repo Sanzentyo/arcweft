@@ -26,10 +26,15 @@ use arcweft_core::line_task::{
 use arcweft_core::plan::RuntimePlan;
 use arcweft_core::task::{TaskId, TaskKey, TaskPriority};
 use arcweft_lang_hir::model::{HirDialogue, HirFlowItem, HirModule, HirTopLevelDecl};
-use arcweft_lang_hir::syntax::Expr;
 use arcweft_lang_hir::syntax::{
-    DeferOutcome, EntityRef, FunctionKind, LinePlan, LinePlanItem, Pattern, Stmt, TriggerPattern,
-    WaitTarget,
+    ast::{
+        flow::{Stmt, WaitTarget},
+        ids::EntityRef,
+        items::FunctionKind,
+        line_plan::{DeferOutcome, LinePlan, LinePlanItem, TriggerPattern},
+        pattern::Pattern,
+    },
+    expr::Expr,
 };
 
 /// Lowers all dialogue line plans in a HIR module to Sans I/O runtime data.

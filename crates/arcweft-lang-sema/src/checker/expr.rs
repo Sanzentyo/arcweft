@@ -4,6 +4,7 @@ use super::{
     BorrowLocalState, EntityRefSyntax, Expr, LifetimeScopeKind, Stmt, TypeCheckError, TypeChecker,
     TypeKind, YieldContext, array_len_matches, array_repeat_len_label, entity_kind, literal_type,
 };
+use arcweft_lang_syntax::ast::line_plan::LinePlan;
 
 impl TypeChecker<'_> {
     pub(super) fn expect_expr_type(&mut self, expr: &Expr, expected: &TypeKind, context: &str) {
@@ -187,11 +188,7 @@ impl TypeChecker<'_> {
         TypeKind::Named("Record".to_owned())
     }
 
-    fn check_dialogue_call_expr(
-        &mut self,
-        callee: &Expr,
-        plan: Option<&arcweft_lang_syntax::LinePlan>,
-    ) -> TypeKind {
+    fn check_dialogue_call_expr(&mut self, callee: &Expr, plan: Option<&LinePlan>) -> TypeKind {
         self.check_expr(callee);
         if let Some(plan) = plan {
             self.available_lifetimes.push(LifetimeScopeKind::Line);

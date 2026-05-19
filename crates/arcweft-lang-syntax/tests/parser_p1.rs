@@ -1,5 +1,5 @@
-fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::TypedSyntaxTree {
-    let parsed = arcweft_lang_syntax::parse_source(source);
+fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::TypedSyntaxTree {
+    let parsed = arcweft_lang_syntax::parser::parse_source(source);
     assert!(
         parsed.errors().is_empty(),
         "expected source to parse without errors, got {:?}",
@@ -8,7 +8,11 @@ fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::TypedSyntaxTree {
     parsed.into_typed_tree()
 }
 
-use arcweft_lang_syntax::{Expr, FlowItem, GenericParam, Item, TypeRef, parse_fn_signature};
+use arcweft_lang_syntax::{
+    ast::{flow::FlowItem, items::Item},
+    expr::Expr,
+    types::{GenericParam, TypeRef, parse_fn_signature},
+};
 
 #[test]
 fn function_signatures_keep_generics_curried_groups_and_where_clauses() {

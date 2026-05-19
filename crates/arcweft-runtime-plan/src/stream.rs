@@ -3,7 +3,7 @@
 use crate::expr::lower_runtime_expr;
 use crate::pattern::lower_runtime_pattern;
 use arcweft_core::stream::{StreamMatchArm, StreamOp, StreamPlan, StreamRuntimeId};
-use arcweft_lang_hir::syntax::{Stmt, TypeRef};
+use arcweft_lang_hir::syntax::{ast::flow::Stmt, types::TypeRef};
 
 /// Lowers a HIR stream function into a Sans I/O stream plan.
 pub(crate) fn lower_stream_function(function: &arcweft_lang_hir::model::HirFunction) -> StreamPlan {

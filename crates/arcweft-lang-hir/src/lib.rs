@@ -16,5 +16,5 @@ pub mod model;
 /// Syntax types intentionally exposed through a namespace instead of flat
 /// crate-root re-exports, so downstream crates can see which layer owns a type.
 pub mod syntax {
-    pub use arcweft_lang_syntax::*;
+    pub use arcweft_lang_syntax::{ast, cst, expr, lint, parser, pattern, source, text, types};
 }

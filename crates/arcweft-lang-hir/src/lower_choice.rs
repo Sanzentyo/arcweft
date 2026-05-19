@@ -3,7 +3,7 @@ use crate::lower_ids::{
     normalize_choice_action, normalize_choice_id, normalize_option_id, normalize_text_key_id,
 };
 use crate::model::{HirChoice, HirChoiceOption, HirLowerError};
-use arcweft_lang_syntax::ChoiceBlock;
+use arcweft_lang_syntax::ast::choice::ChoiceBlock;
 
 pub(crate) fn lower_choice(
     choice: &ChoiceBlock,

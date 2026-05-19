@@ -1,7 +1,8 @@
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 use crate::types::EntityKind;
 use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
-use arcweft_lang_syntax::EntityDeclKind;
+use arcweft_lang_syntax::ast::flow::FlowKind;
+use arcweft_lang_syntax::ast::items::EntityDeclKind;
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -27,8 +28,8 @@ pub fn registry_from_hir(module: &HirModule) -> NameRegistry {
             registry = registry.with_entity(
                 id.body(),
                 match flow.kind() {
-                    arcweft_lang_syntax::FlowKind::Flow => EntityKind::Flow,
-                    arcweft_lang_syntax::FlowKind::Fragment => EntityKind::Fragment,
+                    FlowKind::Flow => EntityKind::Flow,
+                    FlowKind::Fragment => EntityKind::Fragment,
                 },
             );
         }

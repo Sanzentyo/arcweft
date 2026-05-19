@@ -1,6 +1,7 @@
 use crate::cst::{
-    CstFlowItemKind, CstLetFlowItemKind, CstStmtKind, CstStructuredFlowBlockKind,
-    CstTopLevelItemKind, CstTopLevelLineKind, classify_stmt, find_last_depth_zero_open_punctuation,
+    CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineKind, CstStmtKind,
+    CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxKind,
+    classify_stmt, cst_lines, find_last_depth_zero_open_punctuation,
     find_last_top_level_punctuation, find_matching_punctuation, punctuation_delta,
     source_line_count, source_lines, split_first_string_literal,
     split_last_top_level_punctuation_sequence_once, split_leading_entity_ref_parts,
@@ -8,7 +9,7 @@ use crate::cst::{
     split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
     split_top_level_whitespace, take_doc_comment_prefix,
 };
-use crate::{CstLine, CstLineKind, Item, SyntaxKind, cst_lines, parse_source};
+use crate::{ast::items::Item, parser::parse_source};
 
 #[test]
 fn parsed_source_always_keeps_lossless_syntax() {

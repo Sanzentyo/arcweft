@@ -407,10 +407,14 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   item, arm, option block, and choice-plan parsing. `parser/items.rs` owns
   enum/struct/state field parsing and trait/impl member parsing. The parser
   driver still needs further family-specific module extraction.
+- `arcweft-lang-syntax` crate-root exports are module namespaces only. Downstream
+  crates now import syntax-owned types through `ast::*`, `expr`, `types`,
+  `parser`, `cst`, `lint`, `source`, or `text` instead of flat crate-root
+  compatibility re-exports.
 - `arcweft-runtime-plan` no longer depends directly on
   `arcweft-lang-syntax`; runtime lowering imports syntax-owned surface types
-  through `arcweft-lang-hir::syntax` so the dependency direction remains
-  `runtime-plan -> hir`.
+  through `arcweft-lang-hir::syntax::{ast, expr, types}` so the dependency
+  direction remains `runtime-plan -> hir` without a flat HIR syntax prelude.
 - `arcweft-core` tests are split by runtime family under `core/src/tests/`:
   task, source, stream, observation, flow, and line-task coverage now live in
   separate files, while the root `tests.rs` only wires modules and shared

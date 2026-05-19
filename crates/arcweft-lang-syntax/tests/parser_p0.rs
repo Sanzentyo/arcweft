@@ -1,5 +1,5 @@
-fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::TypedSyntaxTree {
-    let parsed = arcweft_lang_syntax::parse_source(source);
+fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::TypedSyntaxTree {
+    let parsed = arcweft_lang_syntax::parser::parse_source(source);
     assert!(
         parsed.errors().is_empty(),
         "expected source to parse without errors, got {:?}",
@@ -9,8 +9,12 @@ fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::TypedSyntaxTree {
 }
 
 use arcweft_lang_syntax::{
-    BinaryOp, Expr, FlowItem, Item, RawSyntaxFamily, Stmt, TypeRef, UnaryOp, parse_expr,
-    parse_type_ref,
+    ast::{
+        flow::{FlowItem, Stmt},
+        items::{Item, RawSyntaxFamily},
+    },
+    expr::{BinaryOp, Expr, UnaryOp, parse_expr},
+    types::{TypeRef, parse_type_ref},
 };
 
 fn field_path(expr: &Expr) -> Option<String> {
@@ -70,7 +74,7 @@ flow @flow.opening opening {
     };
     assert!(matches!(
         &flow.body()[0],
-        FlowItem::Stmt(arcweft_lang_syntax::Stmt::Let {
+        FlowItem::Stmt(Stmt::Let {
             expr: Expr::DialogueCall { .. },
             ..
         })

@@ -4,6 +4,7 @@ use super::{
     EntityKind, EntityRefSyntax, IdRef, Pattern, TypeCheckError, TypeChecker, TypeKind,
     ident_pattern_name, iter_item_type,
 };
+use arcweft_lang_syntax::ast::choice::{ChoiceAction, ChoiceItem, ChoiceOption, ChoicePlanItem};
 
 impl TypeChecker<'_> {
     pub(super) fn check_choice(&mut self, choice: &arcweft_lang_hir::model::HirChoice) {
@@ -26,15 +27,15 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_choice_items(&mut self, items: &[arcweft_lang_syntax::ChoiceItem]) {
+    fn check_choice_items(&mut self, items: &[ChoiceItem]) {
         for item in items {
             self.check_choice_item(item);
         }
     }
 
-    fn check_choice_item(&mut self, item: &arcweft_lang_syntax::ChoiceItem) {
+    fn check_choice_item(&mut self, item: &ChoiceItem) {
         match item {
-            arcweft_lang_syntax::ChoiceItem::Let { pattern, expr } => {
+            ChoiceItem::Let { pattern, expr } => {
                 let value_type = self.check_expr(expr);
                 if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), value_type) {
                     self.locals.insert(name.to_owned(), ty);
@@ -45,13 +46,13 @@ impl TypeChecker<'_> {
                     )));
                 }
             }
-            arcweft_lang_syntax::ChoiceItem::If { condition, items } => {
+            ChoiceItem::If { condition, items } => {
                 self.expect_expr_type(condition, &TypeKind::Bool, "choice if condition");
                 let outer_locals = self.locals.clone();
                 self.check_choice_items(items);
                 self.locals = outer_locals;
             }
-            arcweft_lang_syntax::ChoiceItem::For {
+            ChoiceItem::For {
                 pattern,
                 source,
                 items,
@@ -69,7 +70,7 @@ impl TypeChecker<'_> {
                 self.check_choice_items(items);
                 self.locals = outer_locals;
             }
-            arcweft_lang_syntax::ChoiceItem::Match { expr, arms } => {
+            ChoiceItem::Match { expr, arms } => {
                 self.check_expr(expr);
                 for arm in arms {
                     let outer_locals = self.locals.clone();
@@ -85,14 +86,14 @@ impl TypeChecker<'_> {
                     self.locals = outer_locals;
                 }
             }
-            arcweft_lang_syntax::ChoiceItem::Option(option) => self.check_choice_option(option),
-            arcweft_lang_syntax::ChoiceItem::Raw(raw) => self.errors.push(TypeCheckError::new(
-                format!("raw choice item is not type-checkable: {raw}"),
-            )),
+            ChoiceItem::Option(option) => self.check_choice_option(option),
+            ChoiceItem::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
+                "raw choice item is not type-checkable: {raw}"
+            ))),
         }
     }
 
-    fn check_choice_option(&mut self, option: &arcweft_lang_syntax::ChoiceOption) {
+    fn check_choice_option(&mut self, option: &ChoiceOption) {
         if let Some(IdRef::Absolute(id)) = option.id() {
             self.expect_entity_kind(id, &EntityKind::ChoiceOption, "choice option id");
         }
@@ -123,44 +124,44 @@ impl TypeChecker<'_> {
         self.check_choice_action(option.action());
     }
 
-    fn check_choice_action(&mut self, action: &arcweft_lang_syntax::ChoiceAction) {
+    fn check_choice_action(&mut self, action: &ChoiceAction) {
         match action {
-            arcweft_lang_syntax::ChoiceAction::Out(expr) => {
+            ChoiceAction::Out(expr) => {
                 self.check_expr(expr);
             }
-            arcweft_lang_syntax::ChoiceAction::SelectBlock(statements) => {
+            ChoiceAction::SelectBlock(statements) => {
                 let outer_locals = self.locals.clone();
                 for stmt in statements {
                     self.check_stmt(stmt);
                 }
                 self.locals = outer_locals;
             }
-            arcweft_lang_syntax::ChoiceAction::Goto(target) => {
+            ChoiceAction::Goto(target) => {
                 if let EntityRefSyntax::Absolute(target) = target {
                     self.expect_entity_kind(target, &EntityKind::Flow, "choice target");
                 }
             }
-            arcweft_lang_syntax::ChoiceAction::None => {}
+            ChoiceAction::None => {}
         }
     }
 
-    fn check_choice_plan_item(&mut self, item: &arcweft_lang_syntax::ChoicePlanItem) {
+    fn check_choice_plan_item(&mut self, item: &ChoicePlanItem) {
         match item {
-            arcweft_lang_syntax::ChoicePlanItem::Option { value, .. } => {
+            ChoicePlanItem::Option { value, .. } => {
                 self.check_expr(value);
             }
-            arcweft_lang_syntax::ChoicePlanItem::Timeout { duration, body } => {
+            ChoicePlanItem::Timeout { duration, body } => {
                 self.expect_expr_type(duration, &TypeKind::Duration, "choice timeout duration");
                 for stmt in body {
                     self.check_stmt(stmt);
                 }
             }
-            arcweft_lang_syntax::ChoicePlanItem::Cancel { body, .. } => {
+            ChoicePlanItem::Cancel { body, .. } => {
                 for stmt in body {
                     self.check_stmt(stmt);
                 }
             }
-            arcweft_lang_syntax::ChoicePlanItem::OnSelect { pattern, body } => {
+            ChoicePlanItem::OnSelect { pattern, body } => {
                 let outer_locals = self.locals.clone();
                 if let Some(name) = ident_pattern_name(pattern) {
                     self.locals
@@ -171,9 +172,9 @@ impl TypeChecker<'_> {
                 }
                 self.locals = outer_locals;
             }
-            arcweft_lang_syntax::ChoicePlanItem::Raw(raw) => self.errors.push(TypeCheckError::new(
-                format!("raw choice-plan item is not type-checkable: {raw}"),
-            )),
+            ChoicePlanItem::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
+                "raw choice-plan item is not type-checkable: {raw}"
+            ))),
         }
     }
 }

@@ -1,7 +1,7 @@
 //! Dialogue line-plan lowering data exposed to tooling and tests.
 
 use arcweft_core::line_task::LineTaskGroup;
-use arcweft_lang_hir::syntax::EntityRef;
+use arcweft_lang_hir::syntax::ast::ids::EntityRef;
 
 /// Runtime task plan produced from one checked dialogue line plan.
 #[derive(Clone, Debug, Eq, PartialEq)]

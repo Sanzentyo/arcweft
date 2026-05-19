@@ -5,7 +5,12 @@
 //! returns typed entries instead of source-specific text edits so higher layers
 //! do not keep their own dialogue scanners.
 
-use arcweft_lang_syntax::{CstLineKind, ParsedSource, TextRange, cst_lines, parse_source};
+use arcweft_lang_syntax::{
+    ast::common::TextRange,
+    cst::{CstLineKind, cst_lines},
+    parser::parse_source,
+    source::ParsedSource,
+};
 use std::collections::BTreeMap;
 
 /// ID family attached to a materialized source position.

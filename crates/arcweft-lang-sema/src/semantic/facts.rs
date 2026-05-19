@@ -1,5 +1,5 @@
-use arcweft_lang_hir::syntax::{LifetimeKey, Stmt};
-use arcweft_lang_syntax::DeferOutcome;
+use arcweft_lang_hir::syntax::{ast::flow::Stmt, expr::LifetimeKey};
+use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
 use std::collections::HashSet;
 
 /// Why a scope path is leaving the current continuation.

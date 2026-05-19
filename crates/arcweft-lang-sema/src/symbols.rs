@@ -1,8 +1,15 @@
 use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
-use arcweft_lang_syntax::Expr;
 use arcweft_lang_syntax::{
-    ContractClause, DialogueToken, EntityRef, EntityRefSyntax, IdRef, ImplMember, LinePlan,
-    LinePlanItem, Stmt, TraitMember,
+    ast::{
+        choice::{ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceOption, ChoicePlanItem},
+        dialogue::DialogueToken,
+        flow::{AwaitWith, ContractClause, SelectBranchHead, Stmt, StmtMatchArm, WaitTarget},
+        ids::{EntityRef, EntityRefSyntax, IdRef},
+        items::{ImplMember, RawSyntax, TraitMember},
+        line_plan::{LinePlan, LinePlanItem, TriggerPattern},
+        pattern::{Pattern, VariantPatternPayload},
+    },
+    expr::{Expr, MatchExprArm},
 };
 
 /// Kind of symbol-like syntax discovered in lowered HIR.
@@ -292,12 +299,11 @@ fn collect_choice(choice: &arcweft_lang_hir::model::HirChoice, uses: &mut Vec<Sy
             push_entity(uses, target);
         }
         match option.action() {
-            arcweft_lang_syntax::ChoiceAction::Out(expr) => collect_expr(expr, uses),
-            arcweft_lang_syntax::ChoiceAction::SelectBlock(statements) => {
+            ChoiceAction::Out(expr) => collect_expr(expr, uses),
+            ChoiceAction::SelectBlock(statements) => {
                 collect_stmt_block(statements, uses);
             }
-            arcweft_lang_syntax::ChoiceAction::Goto(_)
-            | arcweft_lang_syntax::ChoiceAction::None => {}
+            ChoiceAction::Goto(_) | ChoiceAction::None => {}
         }
     }
     if let Some(plan) = choice.plan() {
@@ -307,19 +313,19 @@ fn collect_choice(choice: &arcweft_lang_hir::model::HirChoice, uses: &mut Vec<Sy
     }
 }
 
-fn collect_choice_item(item: &arcweft_lang_syntax::ChoiceItem, uses: &mut Vec<SymbolUse>) {
+fn collect_choice_item(item: &ChoiceItem, uses: &mut Vec<SymbolUse>) {
     match item {
-        arcweft_lang_syntax::ChoiceItem::Let { pattern, expr } => {
+        ChoiceItem::Let { pattern, expr } => {
             collect_pattern(pattern, uses);
             collect_expr(expr, uses);
         }
-        arcweft_lang_syntax::ChoiceItem::If { condition, items } => {
+        ChoiceItem::If { condition, items } => {
             collect_expr(condition, uses);
             for item in items {
                 collect_choice_item(item, uses);
             }
         }
-        arcweft_lang_syntax::ChoiceItem::For {
+        ChoiceItem::For {
             pattern,
             source,
             items,
@@ -330,7 +336,7 @@ fn collect_choice_item(item: &arcweft_lang_syntax::ChoiceItem, uses: &mut Vec<Sy
                 collect_choice_item(item, uses);
             }
         }
-        arcweft_lang_syntax::ChoiceItem::Match { expr, arms } => {
+        ChoiceItem::Match { expr, arms } => {
             collect_expr(expr, uses);
             for arm in arms {
                 collect_pattern(arm.pattern(), uses);
@@ -342,10 +348,10 @@ fn collect_choice_item(item: &arcweft_lang_syntax::ChoiceItem, uses: &mut Vec<Sy
                 }
             }
         }
-        arcweft_lang_syntax::ChoiceItem::Option(option) => {
+        ChoiceItem::Option(option) => {
             collect_choice_option(option, uses);
         }
-        arcweft_lang_syntax::ChoiceItem::Raw(raw) => {
+        ChoiceItem::Raw(raw) => {
             uses.push(SymbolUse::new(
                 SymbolUseKind::RawExpr,
                 raw.source().to_owned(),
@@ -354,7 +360,7 @@ fn collect_choice_item(item: &arcweft_lang_syntax::ChoiceItem, uses: &mut Vec<Sy
     }
 }
 
-fn collect_choice_option(option: &arcweft_lang_syntax::ChoiceOption, uses: &mut Vec<SymbolUse>) {
+fn collect_choice_option(option: &ChoiceOption, uses: &mut Vec<SymbolUse>) {
     if let Some(id) = option.id() {
         push_id_ref(uses, id);
     }
@@ -371,27 +377,27 @@ fn collect_choice_option(option: &arcweft_lang_syntax::ChoiceOption, uses: &mut 
         push_entity_syntax(uses, target);
     }
     match option.action() {
-        arcweft_lang_syntax::ChoiceAction::Out(expr) => collect_expr(expr, uses),
-        arcweft_lang_syntax::ChoiceAction::SelectBlock(statements) => {
+        ChoiceAction::Out(expr) => collect_expr(expr, uses),
+        ChoiceAction::SelectBlock(statements) => {
             collect_stmt_block(statements, uses);
         }
-        arcweft_lang_syntax::ChoiceAction::Goto(_) | arcweft_lang_syntax::ChoiceAction::None => {}
+        ChoiceAction::Goto(_) | ChoiceAction::None => {}
     }
 }
 
-fn collect_choice_plan_item(item: &arcweft_lang_syntax::ChoicePlanItem, uses: &mut Vec<SymbolUse>) {
+fn collect_choice_plan_item(item: &ChoicePlanItem, uses: &mut Vec<SymbolUse>) {
     match item {
-        arcweft_lang_syntax::ChoicePlanItem::Option { value, .. } => collect_expr(value, uses),
-        arcweft_lang_syntax::ChoicePlanItem::Timeout { duration, body } => {
+        ChoicePlanItem::Option { value, .. } => collect_expr(value, uses),
+        ChoicePlanItem::Timeout { duration, body } => {
             collect_expr(duration, uses);
             collect_stmt_block(body, uses);
         }
-        arcweft_lang_syntax::ChoicePlanItem::Cancel { body, .. } => collect_stmt_block(body, uses),
-        arcweft_lang_syntax::ChoicePlanItem::OnSelect { pattern, body } => {
+        ChoicePlanItem::Cancel { body, .. } => collect_stmt_block(body, uses),
+        ChoicePlanItem::OnSelect { pattern, body } => {
             collect_pattern(pattern, uses);
             collect_stmt_block(body, uses);
         }
-        arcweft_lang_syntax::ChoicePlanItem::Raw(raw) => {
+        ChoicePlanItem::Raw(raw) => {
             uses.push(SymbolUse::new(
                 SymbolUseKind::RawExpr,
                 raw.source().to_owned(),
@@ -419,61 +425,56 @@ fn collect_match_block(block: &arcweft_lang_hir::model::HirMatch, uses: &mut Vec
     }
 }
 
-fn collect_select_head(head: &arcweft_lang_syntax::SelectBranchHead, uses: &mut Vec<SymbolUse>) {
+fn collect_select_head(head: &SelectBranchHead, uses: &mut Vec<SymbolUse>) {
     match head {
-        arcweft_lang_syntax::SelectBranchHead::Bind { source, .. } => collect_expr(source, uses),
-        arcweft_lang_syntax::SelectBranchHead::Frame(pattern)
-        | arcweft_lang_syntax::SelectBranchHead::Event(pattern) => {
+        SelectBranchHead::Bind { source, .. } => collect_expr(source, uses),
+        SelectBranchHead::Frame(pattern) | SelectBranchHead::Event(pattern) => {
             collect_pattern(pattern, uses);
         }
-        arcweft_lang_syntax::SelectBranchHead::Raw(raw) => {
+        SelectBranchHead::Raw(raw) => {
             uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone()));
         }
     }
 }
 
-fn collect_pattern(pattern: &arcweft_lang_syntax::Pattern, uses: &mut Vec<SymbolUse>) {
+fn collect_pattern(pattern: &Pattern, uses: &mut Vec<SymbolUse>) {
     match pattern {
-        arcweft_lang_syntax::Pattern::Raw(raw) => {
+        Pattern::Raw(raw) => {
             uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone()));
         }
-        arcweft_lang_syntax::Pattern::Literal(expr) => collect_expr(expr, uses),
-        arcweft_lang_syntax::Pattern::Entity(entity) => push_entity(uses, entity),
-        arcweft_lang_syntax::Pattern::Tuple(items)
-        | arcweft_lang_syntax::Pattern::BracketSeq { items, .. } => {
+        Pattern::Literal(expr) => collect_expr(expr, uses),
+        Pattern::Entity(entity) => push_entity(uses, entity),
+        Pattern::Tuple(items) | Pattern::BracketSeq { items, .. } => {
             for item in items {
                 collect_pattern(item, uses);
             }
         }
-        arcweft_lang_syntax::Pattern::Record { fields, .. } => {
+        Pattern::Record { fields, .. } => {
             for field in fields {
                 collect_pattern(field.pattern(), uses);
             }
         }
-        arcweft_lang_syntax::Pattern::Whole { pattern, .. } => collect_pattern(pattern, uses),
-        arcweft_lang_syntax::Pattern::Variant {
+        Pattern::Whole { pattern, .. } => collect_pattern(pattern, uses),
+        Pattern::Variant {
             payload: Some(payload),
             ..
         } => collect_variant_payload(payload, uses),
-        arcweft_lang_syntax::Pattern::Ident(_)
-        | arcweft_lang_syntax::Pattern::MutIdent(_)
-        | arcweft_lang_syntax::Pattern::Variant { payload: None, .. }
-        | arcweft_lang_syntax::Pattern::Discard
-        | arcweft_lang_syntax::Pattern::Typed { .. } => {}
+        Pattern::Ident(_)
+        | Pattern::MutIdent(_)
+        | Pattern::Variant { payload: None, .. }
+        | Pattern::Discard
+        | Pattern::Typed { .. } => {}
     }
 }
 
-fn collect_variant_payload(
-    payload: &arcweft_lang_syntax::VariantPatternPayload,
-    uses: &mut Vec<SymbolUse>,
-) {
+fn collect_variant_payload(payload: &VariantPatternPayload, uses: &mut Vec<SymbolUse>) {
     match payload {
-        arcweft_lang_syntax::VariantPatternPayload::Tuple(items) => {
+        VariantPatternPayload::Tuple(items) => {
             for item in items {
                 collect_pattern(item, uses);
             }
         }
-        arcweft_lang_syntax::VariantPatternPayload::Record { fields, .. } => {
+        VariantPatternPayload::Record { fields, .. } => {
             for field in fields {
                 collect_pattern(field.pattern(), uses);
             }
@@ -601,17 +602,14 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
     }
 }
 
-fn collect_raw_stmt(raw: &arcweft_lang_syntax::RawSyntax, uses: &mut Vec<SymbolUse>) {
+fn collect_raw_stmt(raw: &RawSyntax, uses: &mut Vec<SymbolUse>) {
     uses.push(SymbolUse::new(
         SymbolUseKind::RawExpr,
         raw.source().to_owned(),
     ));
 }
 
-fn collect_unlowered_await_binding(
-    await_with: &arcweft_lang_syntax::AwaitWith,
-    uses: &mut Vec<SymbolUse>,
-) {
+fn collect_unlowered_await_binding(await_with: &AwaitWith, uses: &mut Vec<SymbolUse>) {
     uses.push(SymbolUse::new(
         SymbolUseKind::RawExpr,
         format!(
@@ -621,7 +619,7 @@ fn collect_unlowered_await_binding(
     ));
 }
 
-fn collect_choice_stmt(choice: &arcweft_lang_syntax::ChoiceBlock, uses: &mut Vec<SymbolUse>) {
+fn collect_choice_stmt(choice: &ChoiceBlock, uses: &mut Vec<SymbolUse>) {
     if let Some(id) = choice.id() {
         push_id_ref(uses, id);
     }
@@ -639,21 +637,17 @@ fn collect_choice_stmt(choice: &arcweft_lang_syntax::ChoiceBlock, uses: &mut Vec
             push_id_ref(uses, text_key);
         }
         match option.action() {
-            arcweft_lang_syntax::ChoiceAction::Out(expr) => collect_expr(expr, uses),
-            arcweft_lang_syntax::ChoiceAction::SelectBlock(statements) => {
+            ChoiceAction::Out(expr) => collect_expr(expr, uses),
+            ChoiceAction::SelectBlock(statements) => {
                 collect_stmt_block(statements, uses);
             }
-            arcweft_lang_syntax::ChoiceAction::Goto(target) => push_entity_syntax(uses, target),
-            arcweft_lang_syntax::ChoiceAction::None => {}
+            ChoiceAction::Goto(target) => push_entity_syntax(uses, target),
+            ChoiceAction::None => {}
         }
     }
 }
 
-fn collect_stmt_match(
-    expr: &arcweft_lang_syntax::Expr,
-    arms: &[arcweft_lang_syntax::StmtMatchArm],
-    uses: &mut Vec<SymbolUse>,
-) {
+fn collect_stmt_match(expr: &Expr, arms: &[StmtMatchArm], uses: &mut Vec<SymbolUse>) {
     collect_expr(expr, uses);
     for arm in arms {
         collect_pattern(arm.pattern(), uses);
@@ -701,25 +695,21 @@ fn collect_line_plan_item(item: &LinePlanItem, uses: &mut Vec<SymbolUse>) {
     }
 }
 
-fn collect_trigger_pattern(
-    trigger: &arcweft_lang_syntax::TriggerPattern,
-    uses: &mut Vec<SymbolUse>,
-) {
+fn collect_trigger_pattern(trigger: &TriggerPattern, uses: &mut Vec<SymbolUse>) {
     match trigger {
-        arcweft_lang_syntax::TriggerPattern::Input(pattern)
-        | arcweft_lang_syntax::TriggerPattern::Event(pattern)
-        | arcweft_lang_syntax::TriggerPattern::Mark(pattern)
-        | arcweft_lang_syntax::TriggerPattern::Select(pattern)
-        | arcweft_lang_syntax::TriggerPattern::Task(pattern)
-        | arcweft_lang_syntax::TriggerPattern::Scope(pattern) => collect_pattern(pattern, uses),
-        arcweft_lang_syntax::TriggerPattern::Signal { target, value } => {
+        TriggerPattern::Input(pattern)
+        | TriggerPattern::Event(pattern)
+        | TriggerPattern::Mark(pattern)
+        | TriggerPattern::Select(pattern)
+        | TriggerPattern::Task(pattern)
+        | TriggerPattern::Scope(pattern) => collect_pattern(pattern, uses),
+        TriggerPattern::Signal { target, value } => {
             collect_expr(target, uses);
             if let Some(value) = value {
                 collect_pattern(value, uses);
             }
         }
-        arcweft_lang_syntax::TriggerPattern::Timeout(expr)
-        | arcweft_lang_syntax::TriggerPattern::Expr(expr) => {
+        TriggerPattern::Timeout(expr) | TriggerPattern::Expr(expr) => {
             collect_expr(expr, uses);
         }
     }
@@ -733,13 +723,12 @@ fn collect_dialogue_content(tokens: &[DialogueToken], uses: &mut Vec<SymbolUse>)
     }
 }
 
-fn collect_wait_target(target: &arcweft_lang_syntax::WaitTarget, uses: &mut Vec<SymbolUse>) {
+fn collect_wait_target(target: &WaitTarget, uses: &mut Vec<SymbolUse>) {
     match target {
-        arcweft_lang_syntax::WaitTarget::Duration(expr)
-        | arcweft_lang_syntax::WaitTarget::Expr(expr) => {
+        WaitTarget::Duration(expr) | WaitTarget::Expr(expr) => {
             collect_expr(expr, uses);
         }
-        arcweft_lang_syntax::WaitTarget::Mark(_) => {}
+        WaitTarget::Mark(_) => {}
     }
 }
 
@@ -885,7 +874,7 @@ fn collect_if_expr(
 }
 
 fn collect_if_let_expr(
-    pattern: &arcweft_lang_syntax::Pattern,
+    pattern: &Pattern,
     expr: &Expr,
     guard: Option<&Expr>,
     then_branch: &Expr,
@@ -903,11 +892,7 @@ fn collect_if_let_expr(
     }
 }
 
-fn collect_match_expr(
-    scrutinee: &Expr,
-    arms: &[arcweft_lang_syntax::MatchExprArm],
-    uses: &mut Vec<SymbolUse>,
-) {
+fn collect_match_expr(scrutinee: &Expr, arms: &[MatchExprArm], uses: &mut Vec<SymbolUse>) {
     collect_expr(scrutinee, uses);
     for arm in arms {
         collect_pattern(arm.pattern(), uses);

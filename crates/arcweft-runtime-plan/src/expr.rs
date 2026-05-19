@@ -9,7 +9,10 @@ use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeUnaryOp,
     RuntimeValue,
 };
-use arcweft_lang_hir::syntax::{BinaryOp, Expr, Literal, Pattern, UnaryOp};
+use arcweft_lang_hir::syntax::{
+    ast::pattern::Pattern,
+    expr::{BinaryOp, Expr, Literal, MatchExprArm, UnaryOp},
+};
 
 /// Lowers an expression into a runtime value expression, preserving a lossy
 /// string label for adapter-facing values that are not executable by the core.
@@ -234,10 +237,7 @@ fn lower_strict_if_let_expr(
     })
 }
 
-fn lower_strict_match_expr(
-    scrutinee: &Expr,
-    arms: &[arcweft_lang_hir::syntax::MatchExprArm],
-) -> Result<RuntimeExpr, String> {
+fn lower_strict_match_expr(scrutinee: &Expr, arms: &[MatchExprArm]) -> Result<RuntimeExpr, String> {
     Ok(RuntimeExpr::Match {
         scrutinee: Box::new(lower_runtime_expr_strict(scrutinee)?),
         arms: arms

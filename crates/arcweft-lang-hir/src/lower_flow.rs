@@ -9,9 +9,9 @@ use crate::model::{
     HirLowerError, HirMatch, HirMatchArm, HirScope, HirScopeExpr, HirSelect, HirSelectBranch,
     HirSourceLocale, HirWhile, HirWhileLet,
 };
-use arcweft_lang_syntax::{
-    AwaitWith, BorrowBlock, Flow, FlowItem, IfBlock, IfLetBlock, LoopBlock, MatchBlock, ScopeBlock,
-    ScopeExprBlock, SourceLocaleBlock, Stmt, WhileBlock, WhileLetBlock,
+use arcweft_lang_syntax::ast::flow::{
+    AwaitWith, BorrowBlock, Flow, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchBlock,
+    ScopeBlock, ScopeExprBlock, SelectBlock, SourceLocaleBlock, Stmt, WhileBlock, WhileLetBlock,
 };
 
 pub(crate) fn lower_flow(flow: &Flow) -> Result<HirFlow, HirLowerError> {
@@ -196,10 +196,7 @@ fn lower_while_let(
     })
 }
 
-fn lower_for(
-    block: &arcweft_lang_syntax::ForBlock,
-    context: &mut LowerContext,
-) -> Result<HirFor, HirLowerError> {
+fn lower_for(block: &ForBlock, context: &mut LowerContext) -> Result<HirFor, HirLowerError> {
     Ok(HirFor {
         pattern: block.pattern().clone(),
         source: block.source().clone(),
@@ -212,7 +209,7 @@ fn lower_for(
 }
 
 fn lower_select(
-    block: &arcweft_lang_syntax::SelectBlock,
+    block: &SelectBlock,
     context: &mut LowerContext,
 ) -> Result<HirSelect, HirLowerError> {
     Ok(HirSelect {

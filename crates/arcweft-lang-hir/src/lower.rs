@@ -1,6 +1,6 @@
 use crate::lower_flow::{lower_flow, lower_flow_item};
 use crate::model::{HirFunction, HirLowerError, HirModule, HirTopLevelDecl};
-use arcweft_lang_syntax::{FunctionItem, Item, TypedSyntaxTree};
+use arcweft_lang_syntax::ast::items::{FunctionItem, Item, TypedSyntaxTree};
 
 /// Lowers a parsed syntax tree into HIR-facing structures.
 pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerError>> {

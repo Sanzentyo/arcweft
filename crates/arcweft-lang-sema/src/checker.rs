@@ -8,16 +8,25 @@ use crate::lifetime::{
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 use crate::types::{EntityKind, MapKind, TypeKind};
 use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
-use arcweft_lang_syntax::TypeRef;
 use arcweft_lang_syntax::{
-    AwaitBranchKind, CancelRuleSyntax, ContractClause, DialogueToken, EntityDeclKind, EntityRef,
-    EntityRefSyntax, FlowKind, FunctionKind, IdRef, LinePlanItem, Pattern, SelectBranchHead,
-    SourceBackpressurePolicy, SourceEventPattern, SourceHeader, SourcePrivacyPolicy,
-    SourceReplayPolicy, Stmt, TriggerPattern,
-};
-use arcweft_lang_syntax::{
-    BinaryOp, ComputationBlockKind, Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind,
-    Literal,
+    ast::{
+        choice::ChoiceAction,
+        dialogue::DialogueToken,
+        flow::{AwaitBranchKind, ContractClause, FlowKind, SelectBranchHead, Stmt},
+        ids::{EntityRef, EntityRefSyntax, IdRef},
+        items::{EntityDeclKind, FunctionKind},
+        line_plan::{CancelRuleSyntax, LinePlanItem, TriggerPattern},
+        pattern::{Pattern, VariantPatternPayload},
+        source::{
+            SourceBackpressurePolicy, SourceEventPattern, SourceHeader, SourcePrivacyPolicy,
+            SourceReplayPolicy,
+        },
+    },
+    expr::{
+        BinaryOp, ComputationBlockKind, Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind,
+        Literal, MatchExprArm, UnaryOp,
+    },
+    types::TypeRef,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -1124,13 +1133,13 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_unary_expr(&mut self, op: arcweft_lang_syntax::UnaryOp, expr: &Expr) -> TypeKind {
+    fn check_unary_expr(&mut self, op: UnaryOp, expr: &Expr) -> TypeKind {
         match op {
-            arcweft_lang_syntax::UnaryOp::Not => {
+            UnaryOp::Not => {
                 self.expect_expr_type(expr, &TypeKind::Bool, "not operand");
                 TypeKind::Bool
             }
-            arcweft_lang_syntax::UnaryOp::Neg => match self.check_expr(expr) {
+            UnaryOp::Neg => match self.check_expr(expr) {
                 Some(TypeKind::Int) => TypeKind::Int,
                 Some(TypeKind::Float) => TypeKind::Float,
                 Some(TypeKind::Duration) => TypeKind::Duration,
@@ -1347,11 +1356,7 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_match_expr(
-        &mut self,
-        scrutinee: &Expr,
-        arms: &[arcweft_lang_syntax::MatchExprArm],
-    ) -> Option<TypeKind> {
+    fn check_match_expr(&mut self, scrutinee: &Expr, arms: &[MatchExprArm]) -> Option<TypeKind> {
         let scrutinee_type = self.check_expr(scrutinee);
         if arms.is_empty() {
             self.errors.push(TypeCheckError::new(
@@ -1749,11 +1754,11 @@ fn collect_pattern_binding_names(pattern: &Pattern) -> Vec<String> {
         Pattern::Variant { payload, .. } => payload
             .iter()
             .flat_map(|payload| match payload {
-                arcweft_lang_syntax::VariantPatternPayload::Tuple(items) => items
+                VariantPatternPayload::Tuple(items) => items
                     .iter()
                     .flat_map(collect_pattern_binding_names)
                     .collect::<Vec<_>>(),
-                arcweft_lang_syntax::VariantPatternPayload::Record { fields, .. } => fields
+                VariantPatternPayload::Record { fields, .. } => fields
                     .iter()
                     .flat_map(|field| collect_pattern_binding_names(field.pattern()))
                     .collect(),
@@ -1778,16 +1783,16 @@ fn collect_pattern_binding_names(pattern: &Pattern) -> Vec<String> {
     }
 }
 
-fn variant_payload_bindings(payload: &arcweft_lang_syntax::VariantPatternPayload) -> Vec<String> {
+fn variant_payload_bindings(payload: &VariantPatternPayload) -> Vec<String> {
     match payload {
-        arcweft_lang_syntax::VariantPatternPayload::Tuple(items) => items
+        VariantPatternPayload::Tuple(items) => items
             .iter()
             .filter_map(|pattern| match pattern {
                 Pattern::Ident(name) if is_local_ident(name) => Some(name.to_owned()),
                 _ => None,
             })
             .collect(),
-        arcweft_lang_syntax::VariantPatternPayload::Record { fields, .. } => fields
+        VariantPatternPayload::Record { fields, .. } => fields
             .iter()
             .flat_map(|field| {
                 let names = let_else_bindings(field.pattern(), None);
@@ -2020,15 +2025,14 @@ fn choice_output_type(choice: &arcweft_lang_hir::model::HirChoice) -> Option<Typ
     let mut inferred = None;
     for option in choice.options() {
         let ty = match option.action() {
-            arcweft_lang_syntax::ChoiceAction::Out(expr) => simple_expr_type(expr)?,
-            arcweft_lang_syntax::ChoiceAction::SelectBlock(statements) => {
+            ChoiceAction::Out(expr) => simple_expr_type(expr)?,
+            ChoiceAction::SelectBlock(statements) => {
                 let [Stmt::Out { expr, .. }] = statements.as_slice() else {
                     return None;
                 };
                 simple_expr_type(expr)?
             }
-            arcweft_lang_syntax::ChoiceAction::Goto(_)
-            | arcweft_lang_syntax::ChoiceAction::None => return None,
+            ChoiceAction::Goto(_) | ChoiceAction::None => return None,
         };
         match &inferred {
             Some(existing) if existing != &ty => return None,

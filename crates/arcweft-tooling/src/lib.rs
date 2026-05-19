@@ -7,8 +7,17 @@ use arcweft_lang_hir::id_context::{
     IdContextEntry, IdContextMaterialization, IdContextOption, collect_id_context,
 };
 use arcweft_lang_syntax::{
-    AwaitBranch, ChoiceAction, ChoiceItem, Expr, FlowItem, Item, LinePlanItem, ParsedSource,
-    Pattern, Stmt, cst_lines, parse_source,
+    ast::{
+        choice::{ChoiceAction, ChoiceItem},
+        flow::{AwaitBranch, FlowItem, Stmt},
+        items::{EntityDeclKind, Item},
+        line_plan::LinePlanItem,
+        pattern::Pattern,
+    },
+    cst::{CstLineEvents, CstLineKind, cst_lines},
+    expr::Expr,
+    parser::parse_source,
+    source::ParsedSource,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -238,7 +247,7 @@ fn sugar_expansion_edits(source: &str) -> Vec<TextEdit> {
     let mut edits = Vec::new();
 
     for line in lines.iter() {
-        if line.kind() == arcweft_lang_syntax::CstLineKind::Comment {
+        if line.kind() == CstLineKind::Comment {
             continue;
         }
         edits.extend(parent_path_edits(line.text(), line.start()));
@@ -274,9 +283,7 @@ fn collect_character_aliases(parsed: &ParsedSource) -> BTreeSet<String> {
         .items()
         .iter()
         .filter_map(|item| match item {
-            Item::EntityDecl(entity)
-                if entity.kind() == arcweft_lang_syntax::EntityDeclKind::Character =>
-            {
+            Item::EntityDecl(entity) if entity.kind() == EntityDeclKind::Character => {
                 entity.surface_alias().map(str::to_owned)
             }
             _ => None,
@@ -526,23 +533,23 @@ fn collect_speaker_presets_from_choice_items(
 }
 
 fn collect_speaker_presets_from_choice_plan_item(
-    item: &arcweft_lang_syntax::ChoicePlanItem,
+    item: &arcweft_lang_syntax::ast::choice::ChoicePlanItem,
     character_aliases: &BTreeSet<String>,
     presets: &mut BTreeSet<String>,
 ) {
     match item {
-        arcweft_lang_syntax::ChoicePlanItem::Option { value, .. } => {
+        arcweft_lang_syntax::ast::choice::ChoicePlanItem::Option { value, .. } => {
             collect_speaker_presets_from_expr(value, character_aliases, presets);
         }
-        arcweft_lang_syntax::ChoicePlanItem::Timeout { duration, body } => {
+        arcweft_lang_syntax::ast::choice::ChoicePlanItem::Timeout { duration, body } => {
             collect_speaker_presets_from_expr(duration, character_aliases, presets);
             collect_speaker_presets_from_stmts(body, character_aliases, presets);
         }
-        arcweft_lang_syntax::ChoicePlanItem::Cancel { body, .. }
-        | arcweft_lang_syntax::ChoicePlanItem::OnSelect { body, .. } => {
+        arcweft_lang_syntax::ast::choice::ChoicePlanItem::Cancel { body, .. }
+        | arcweft_lang_syntax::ast::choice::ChoicePlanItem::OnSelect { body, .. } => {
             collect_speaker_presets_from_stmts(body, character_aliases, presets);
         }
-        arcweft_lang_syntax::ChoicePlanItem::Raw(_) => {}
+        arcweft_lang_syntax::ast::choice::ChoicePlanItem::Raw(_) => {}
     }
 }
 
@@ -1028,10 +1035,7 @@ fn is_identifier(value: &str) -> bool {
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
-fn closing_brace_insert(
-    lines: &arcweft_lang_syntax::CstLineEvents,
-    with_start: usize,
-) -> Option<TextEdit> {
+fn closing_brace_insert(lines: &CstLineEvents, with_start: usize) -> Option<TextEdit> {
     let index = lines.iter().position(|line| line.start() == with_start)?;
     let line = lines.get(index)?;
     let indent = leading_whitespace(line.text());

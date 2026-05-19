@@ -5,9 +5,10 @@ use super::{
     SourceReplayPolicy, TypeCheckError, TypeChecker, TypeKind, YieldContext, let_else_bindings,
     source_return_types,
 };
+use arcweft_lang_syntax::ast::source::SourceItem;
 
 impl TypeChecker<'_> {
-    pub(super) fn check_source_item(&mut self, item: &arcweft_lang_syntax::SourceItem) {
+    pub(super) fn check_source_item(&mut self, item: &SourceItem) {
         if item.name().is_some() {
             self.errors.push(TypeCheckError::new(
                 "function-like `source name() -> Source<T, E>` is not canonical; use `source @source.id: Source<T, E> { ... }`".to_owned(),

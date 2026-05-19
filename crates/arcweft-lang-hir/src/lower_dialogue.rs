@@ -4,7 +4,7 @@ use crate::lower_ids::{
     speaker_slug,
 };
 use crate::model::{HirDialogue, HirLowerError};
-use arcweft_lang_syntax::{ContentCall, SpeakerLine};
+use arcweft_lang_syntax::ast::dialogue::{ContentCall, SpeakerLine};
 
 pub(crate) fn lower_speaker_line(
     line: &SpeakerLine,

@@ -5,7 +5,11 @@
 //! open files, drive a renderer, sleep, or run benchmark timers.
 
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
-use arcweft_lang_hir::syntax::{BenchItem, IdRef, TestItem, TextRange};
+use arcweft_lang_hir::syntax::ast::{
+    common::TextRange,
+    ids::IdRef,
+    proof::{BenchItem, TestItem},
+};
 use serde::{Deserialize, Serialize};
 
 /// Tool-facing manifest of script-level tests and benches.
@@ -129,7 +133,7 @@ fn span(range: &TextRange) -> ManifestSpan {
 mod tests {
     use super::*;
     use arcweft_lang_hir::lower::lower_to_hir;
-    use arcweft_lang_syntax::parse_source;
+    use arcweft_lang_syntax::parser::parse_source;
 
     #[test]
     fn collects_script_test_and_bench_manifest() {

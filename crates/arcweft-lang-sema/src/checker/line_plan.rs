@@ -5,13 +5,11 @@ use super::{
     Pattern, Stmt, TriggerPattern, TypeCheckError, TypeChecker, TypeKind, let_else_bindings,
     lifetime_key, merge_line_output,
 };
+use arcweft_lang_syntax::ast::{flow::WaitTarget, line_plan::LinePlan};
 use std::collections::HashSet;
 
 impl TypeChecker<'_> {
-    pub(super) fn check_line_plan_output_type(
-        &mut self,
-        plan: &arcweft_lang_syntax::LinePlan,
-    ) -> Option<TypeKind> {
+    pub(super) fn check_line_plan_output_type(&mut self, plan: &LinePlan) -> Option<TypeKind> {
         self.with_line_runtime_scope(|checker| {
             checker
                 .line_label_stack
@@ -244,12 +242,12 @@ impl TypeChecker<'_> {
         self.lifetime_guarantees.insert(key);
     }
 
-    pub(super) fn check_wait_stmt(&mut self, target: &arcweft_lang_syntax::WaitTarget) {
+    pub(super) fn check_wait_stmt(&mut self, target: &WaitTarget) {
         match target {
-            arcweft_lang_syntax::WaitTarget::Duration(expr) => {
+            WaitTarget::Duration(expr) => {
                 self.expect_expr_type(expr, &TypeKind::Duration, "wait duration");
             }
-            arcweft_lang_syntax::WaitTarget::Mark(name) => {
+            WaitTarget::Mark(name) => {
                 if !self
                     .line_mark_stack
                     .last()
@@ -260,7 +258,7 @@ impl TypeChecker<'_> {
                     )));
                 }
             }
-            arcweft_lang_syntax::WaitTarget::Expr(expr) => {
+            WaitTarget::Expr(expr) => {
                 self.check_expr(expr);
             }
         }

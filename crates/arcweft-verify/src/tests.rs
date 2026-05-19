@@ -1,6 +1,6 @@
 use super::*;
 use arcweft_lang_hir::lower::lower_to_hir;
-use arcweft_lang_syntax::parse_source;
+use arcweft_lang_syntax::parser::parse_source;
 
 fn report(source: &str, mode: VerificationMode) -> VerificationReport {
     let parsed = parse_source(source.to_owned());

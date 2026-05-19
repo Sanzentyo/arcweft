@@ -1,9 +1,22 @@
 use arcweft_lang_syntax::{
-    Attribute, AwaitBranchKind, BenchItem, CallableItem, ChoiceAction, ChoicePlan, ContractClause,
-    DialogueContent, DialogueDefaultsItem, EntityDeclItem, EntityRef, EntityRefSyntax, EnumItem,
-    Expr, ExternModItem, FlowKind, FnSignature, FunctionKind, HookItem, ImplItem, LineArg,
-    LinePlan, MemoFn, ParserItem, Pattern, ProofItem, SourceItem, StateItem, Stmt, StructItem,
-    TestItem, TextRange, TraitItem, TrustedAxiomItem, TypeAliasItem,
+    ast::{
+        choice::{ChoiceAction, ChoiceItem, ChoicePlan},
+        common::TextRange,
+        dialogue::{DialogueContent, DialogueDefaultsItem, LineArg},
+        flow::{AwaitBranchKind, ContractClause, FlowKind, SelectBranchHead, Stmt},
+        ids::{EntityRef, EntityRefSyntax},
+        items::{
+            Attribute, CallableItem, EntityDeclItem, EnumItem, ExternModItem, FunctionKind,
+            HookItem, ImplItem, MemoFn, ParserItem, StateItem, StructItem, TraitItem,
+            TypeAliasItem,
+        },
+        line_plan::LinePlan,
+        pattern::Pattern,
+        proof::{BenchItem, ProofItem, TestItem, TrustedAxiomItem},
+        source::SourceItem,
+    },
+    expr::Expr,
+    types::FnSignature,
 };
 use thiserror::Error;
 
@@ -131,7 +144,7 @@ pub struct HirDialogue {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirChoice {
     pub(crate) id: Option<EntityRef>,
-    pub(crate) items: Vec<arcweft_lang_syntax::ChoiceItem>,
+    pub(crate) items: Vec<ChoiceItem>,
     pub(crate) options: Vec<HirChoiceOption>,
     pub(crate) plan: Option<ChoicePlan>,
 }
@@ -240,7 +253,7 @@ pub struct HirSelect {
 /// HIR-facing select branch.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirSelectBranch {
-    pub(crate) head: arcweft_lang_syntax::SelectBranchHead,
+    pub(crate) head: SelectBranchHead,
     pub(crate) body: Vec<HirFlowItem>,
 }
 
@@ -421,7 +434,7 @@ impl HirChoice {
         &self.options
     }
 
-    pub fn items(&self) -> &[arcweft_lang_syntax::ChoiceItem] {
+    pub fn items(&self) -> &[ChoiceItem] {
         &self.items
     }
 
@@ -608,7 +621,7 @@ impl HirSelect {
 }
 
 impl HirSelectBranch {
-    pub const fn head(&self) -> &arcweft_lang_syntax::SelectBranchHead {
+    pub const fn head(&self) -> &SelectBranchHead {
         &self.head
     }
 

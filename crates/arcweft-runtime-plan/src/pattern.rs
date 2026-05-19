@@ -4,7 +4,7 @@ use crate::expr::lower_runtime_expr;
 use crate::labels::expr_label;
 use arcweft_core::pattern::{RuntimePattern, RuntimeRecordPatternField};
 use arcweft_core::value::{RuntimeExpr, RuntimeValue};
-use arcweft_lang_hir::syntax::{Pattern, VariantPatternPayload};
+use arcweft_lang_hir::syntax::ast::pattern::{Pattern, VariantPatternPayload};
 
 /// Converts parser/HIR patterns into the Sans I/O runtime pattern model.
 pub(crate) fn lower_runtime_pattern(pattern: &Pattern) -> RuntimePattern {

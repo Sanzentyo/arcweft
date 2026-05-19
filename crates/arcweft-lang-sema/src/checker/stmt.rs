@@ -5,7 +5,10 @@ use super::{
     TypeKind, YieldContext, default_presentation_slot_family, ident_pattern_name, is_local_ident,
     let_else_bindings, pattern_bindings_with_fallback, stmts_diverge, type_ref_kind,
 };
-use arcweft_lang_syntax::{ScenarioCommand, StmtMatchArm, TypeRef};
+use arcweft_lang_syntax::{
+    ast::{dialogue::ScenarioCommand, flow::StmtMatchArm},
+    types::TypeRef,
+};
 
 impl TypeChecker<'_> {
     pub(super) fn check_stmt(&mut self, stmt: &Stmt) {

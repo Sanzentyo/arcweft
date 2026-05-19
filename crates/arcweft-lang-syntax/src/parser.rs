@@ -25,12 +25,13 @@ use crate::ast::pattern::Pattern;
 use crate::ast::proof::{BenchItem, ProofItem, TestItem, TrustedAxiomItem};
 use crate::ast::source::{SourceItem, SourceItemParts};
 use crate::cst::{
-    CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstStmtKind, CstStructuredFlowBlockKind,
-    CstTopLevelItemKind, CstTopLevelLineKind, classify_stmt, collect_wiki_link_ranges,
-    find_matching_punctuation, find_top_level_punctuation, nonempty_trimmed_source_lines,
-    punctuation_delta, source_line_count, source_lines, split_leading_entity_ref_parts,
-    split_leading_ident, split_leading_relative_entity_ref, split_leading_relative_id,
-    split_top_level_keyword_once, split_top_level_punctuation, split_top_level_punctuation_once,
+    CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineEvents, CstStmtKind,
+    CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxNode,
+    classify_stmt, collect_wiki_link_ranges, cst_lines, find_matching_punctuation,
+    find_top_level_punctuation, nonempty_trimmed_source_lines, punctuation_delta,
+    source_line_count, source_lines, split_leading_entity_ref_parts, split_leading_ident,
+    split_leading_relative_entity_ref, split_leading_relative_id, split_top_level_keyword_once,
+    split_top_level_punctuation, split_top_level_punctuation_once,
     split_top_level_punctuation_sequence_once, split_top_level_whitespace,
     starts_leading_entity_ref, starts_leading_relative_entity_ref, starts_leading_relative_id,
 };
@@ -39,7 +40,6 @@ use crate::pattern::parse_pattern;
 use crate::source::ParsedSource;
 use crate::text::parse_dialogue_tokens;
 use crate::types::{parse_fn_signature, parse_type_ref};
-use crate::{CstLine, CstLineEvents, SyntaxNode, cst_lines};
 use arcweft_source::{SourceAnchor, SourceName};
 
 mod choice;

@@ -1,7 +1,7 @@
 //! Arcweft lifetime-registry helpers for semantic checking.
 
 use crate::types::{HandleState, TypeKind};
-use arcweft_lang_syntax::{Expr, LifetimeKey, LifetimeScopeKind};
+use arcweft_lang_syntax::expr::{Expr, LifetimeKey, LifetimeScopeKind};
 
 pub(crate) fn lifetime_key(expr: &Expr) -> Option<LifetimeKey> {
     match expr {

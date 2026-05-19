@@ -18,18 +18,37 @@ pub(super) use arcweft_core::{
 pub(super) use arcweft_lang_hir::lower::lower_to_hir;
 pub(super) use arcweft_lang_hir::model::{HirFlowItem, HirTopLevelDecl};
 pub(super) use arcweft_lang_syntax::{
-    AwaitBranchKind, BinaryOp, BlockStyle, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
-    ComputationBlockKind, ContractClause, DeferOutcome, DialogueToken, EntityDeclKind, Expr,
-    FlowItem, FlowKind, FunctionKind, ImplMember, Item, LifetimeScopeKind, LinePlanItem, Literal,
-    Pattern, Placeholder, ProofClause, RawSyntaxFamily, SelectBranchHead, SourceBackpressurePolicy,
-    SourceEventPattern, SourceHeader, SourcePrivacyPolicy, SourceReplayPolicy, Stmt,
-    SyntaxLintCode, TestKind, TraitMember, TypeRef, UnaryOp, VariantPatternPayload, Visibility,
-    lint_id_policy, parse_dialogue_tokens, parse_expr, parse_fn_signature, parse_source,
-    parse_type_ref,
+    ast::{
+        choice::{ChoiceAction, ChoiceItem, ChoicePlanItem},
+        common::Visibility,
+        dialogue::DialogueToken,
+        flow::{AwaitBranchKind, ContractClause, FlowItem, FlowKind, SelectBranchHead, Stmt},
+        items::{
+            CallableKind, EntityDeclKind, FunctionKind, ImplMember, Item, RawSyntaxFamily,
+            TraitMember,
+        },
+        line_plan::{BlockStyle, DeferOutcome, LinePlanItem},
+        pattern::{Pattern, VariantPatternPayload},
+        proof::{ProofClause, TestKind},
+        source::{
+            SourceBackpressurePolicy, SourceEventPattern, SourceHeader, SourcePrivacyPolicy,
+            SourceReplayPolicy,
+        },
+    },
+    expr::{
+        BinaryOp, ComputationBlockKind, Expr, LifetimeScopeKind, Literal, Placeholder, UnaryOp,
+        parse_expr,
+    },
+    lint::{SyntaxLintCode, lint_id_policy},
+    parser::{ParseError, parse_source},
+    text::parse_dialogue_tokens,
+    types::{TypeRef, parse_fn_signature, parse_type_ref},
 };
 pub(super) use arcweft_runtime_plan::{lower_line_task_groups, lower_runtime_plan};
 
-pub(super) fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::TypedSyntaxTree {
+pub(super) fn parse_ok(
+    source: impl Into<String>,
+) -> arcweft_lang_syntax::ast::items::TypedSyntaxTree {
     let parsed = parse_source(source);
     assert!(
         parsed.errors().is_empty(),
@@ -39,7 +58,7 @@ pub(super) fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::TypedS
     parsed.into_typed_tree()
 }
 
-pub(super) fn parse_errors(source: impl Into<String>) -> Vec<arcweft_lang_syntax::ParseError> {
+pub(super) fn parse_errors(source: impl Into<String>) -> Vec<ParseError> {
     let parsed = parse_source(source);
     assert!(
         !parsed.errors().is_empty(),

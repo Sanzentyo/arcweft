@@ -6,7 +6,7 @@ use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::check::{typecheck_hir, validate_typecheck_ready};
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
-use arcweft_lang_syntax::{lint_id_policy, parse_source};
+use arcweft_lang_syntax::{lint::lint_id_policy, parser::parse_source};
 use arcweft_runtime_plan::line_task::LoweredLineTaskGroup;
 use arcweft_runtime_plan::{lower_line_task_groups, lower_runtime_plan};
 use arcweft_test::{BenchSection, ScriptBench, ScriptStep, ScriptTest, collect_script_tests};

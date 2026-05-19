@@ -1,7 +1,10 @@
 use crate::lower_context::LowerContext;
 use crate::model::HirLowerError;
-use arcweft_lang_syntax::{
-    ChoiceAction, EntityRef, EntityRefSyntax, Flow, FlowKind, IdRef, RelativeId, TextRange,
+use arcweft_lang_syntax::ast::{
+    choice::ChoiceAction,
+    common::TextRange,
+    flow::{Flow, FlowKind},
+    ids::{EntityRef, EntityRefSyntax, IdRef, RelativeId},
 };
 
 // TODO(lint): Module paths and named `scope` blocks should both be available to

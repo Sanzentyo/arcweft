@@ -1,4 +1,7 @@
-use arcweft_lang_syntax::{ContractClause, Expr, LifetimeScopeKind, ProofClause};
+use arcweft_lang_syntax::{
+    ast::{flow::ContractClause, proof::ProofClause},
+    expr::{Expr, LifetimeScopeKind},
+};
 use std::collections::BTreeSet;
 
 /// Capability granted by an effects clause or an external checker environment.

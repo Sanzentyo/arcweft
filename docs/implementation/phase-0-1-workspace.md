@@ -73,8 +73,10 @@ block, and choice-plan parsing. `parser/items.rs` owns enum/struct/state field
 parsing and trait/impl member parsing; remaining family parser modules remain
 a follow-up.
 Runtime plan lowering imports syntax-owned surface types through
-`arcweft-lang-hir`'s `syntax` namespace and no longer declares a direct
-dependency on `arcweft-lang-syntax`.
+`arcweft-lang-hir`'s `syntax::{ast, expr, types}` namespaces and no longer
+declares a direct dependency on `arcweft-lang-syntax`. `arcweft-lang-syntax`
+itself exposes subsystem modules rather than flat crate-root compatibility
+re-exports.
 Core tests are split by runtime family under
 `crates/arcweft-core/src/tests/`: `task.rs`, `source.rs`, `stream.rs`,
 `observation.rs`, `flow.rs`, and `line_task.rs`. The root `tests.rs` remains
