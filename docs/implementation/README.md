@@ -374,8 +374,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   Downstream crates import core types through those module paths. The
   `arcweft-lang-sema` split now has public `check`, `checker`, `types`, `env`,
   `diagnostics`, `borrow`, and `lifetime` modules, and the checker body has
-  started language-family child modules for `choice` and `source`; additional
-  checker-family splits remain tracked work. `arcweft-runtime-plan` is split into `errors`,
+  started language-family child modules for `choice`, `line_plan`, and
+  `source`; additional checker-family splits remain tracked work.
+  `arcweft-runtime-plan` is split into `errors`,
   `expr`, `flow`, `labels`, `line_task`, `pattern`, `source`, and `stream`
   modules for lowering diagnostics, runtime expression/effect lowering, flow
   lowering, shared textual label helpers, lowered line-task metadata, runtime
