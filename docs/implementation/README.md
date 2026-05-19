@@ -414,8 +414,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   family modules are public responsibility namespaces; recovery types are
   addressed as `parser::recovery::ParseError` /
   `parser::recovery::RecoverySuggestion` rather than through a flat
-  compatibility re-export. `parser/top_level.rs` owns module/use/item-family
-  dispatch. The parser driver still needs further
+  compatibility re-export. `parser/helpers.rs` owns shared parser helpers for
+  module/use path handling and attribute parsing, and `parser/top_level.rs`
+  owns module/use/item-family dispatch. The parser driver still needs further
   family-specific module extraction.
 - `arcweft-lang-syntax` crate-root exports are module namespaces only. Downstream
   crates now import syntax-owned types through `ast::*`, `expr`, `types`,

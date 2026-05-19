@@ -1,5 +1,5 @@
 use crate::ast::choice::{ChoiceBlock, ChoicePlan};
-use crate::ast::common::{DocBlock, TextRange, UseItem, UseMode, Visibility};
+use crate::ast::common::{DocBlock, TextRange, Visibility};
 use crate::ast::dialogue::{
     ContentCall, DialogueContent, DialogueDefaultOption, DialogueDefaultsItem, LineArg,
     LineOptions, LineOptionsInit, ScenarioCommand, SpeakerLine,
@@ -15,7 +15,7 @@ use crate::ast::ids::{
     WikiLink,
 };
 use crate::ast::items::{
-    Attribute, CallableItem, CallableKind, EntityDeclItem, EntityDeclKind, EnumItem, ExternModItem,
+    CallableItem, CallableKind, EntityDeclItem, EntityDeclKind, EnumItem, ExternModItem,
     FunctionInit, FunctionItem, FunctionKind, HookInit, HookItem, ImplItem, MemoFn, ParserItem,
     RawSyntax, StateItem, StructItem, TraitItem, TypeAliasItem, TypedSyntaxTree,
 };
@@ -42,6 +42,7 @@ use crate::types::{parse_fn_signature, parse_type_ref};
 use arcweft_source::{SourceAnchor, SourceName};
 
 pub mod choice;
+pub mod helpers;
 pub mod items;
 pub mod line_plan;
 pub mod proof;
@@ -2920,34 +2921,6 @@ fn collect_wiki_links(source: &str) -> Vec<WikiLink> {
         .collect()
 }
 
-fn parse_use_line(trimmed: &str, range: TextRange) -> Option<UseItem> {
-    let (visibility, rest) = parse_visibility_prefix(trimmed);
-    let rest = rest.trim_start();
-    let (mode, tree) = if let Some(tree) = rest.strip_prefix("lazy use ") {
-        (Some(UseMode::Lazy), tree)
-    } else if let Some(tree) = rest.strip_prefix("eager use ") {
-        (Some(UseMode::Eager), tree)
-    } else {
-        (None, rest.strip_prefix("use ")?)
-    };
-    Some(UseItem::new(
-        visibility,
-        mode,
-        normalize_module_path(tree.trim()),
-        range,
-    ))
-}
-
-fn normalize_module_path(path: &str) -> String {
-    path.strip_prefix("parent::")
-        .map_or_else(|| path.to_owned(), |tail| format!("super::{tail}"))
-}
-
-fn is_relative_id_path(path: &str) -> bool {
-    let trimmed = path.trim_start();
-    trimmed.starts_with('.') || trimmed.starts_with("@.") || trimmed.starts_with("@super.")
-}
-
 fn parse_function_kind_and_signature(source: &str) -> (FunctionKind, &str) {
     [
         ("task ", FunctionKind::Task),
@@ -3838,20 +3811,6 @@ fn push_line_hooks(hooks: &mut Vec<Expr>, expr: Expr) {
 
 fn split_comma_args(source: &str) -> Vec<&str> {
     split_top_level_punctuation(source, ',')
-}
-
-fn parse_attribute(trimmed: &str, range: TextRange) -> Option<Attribute> {
-    let rest = trimmed.strip_prefix("#[")?.strip_suffix(']')?.trim();
-    let open = find_top_level_punctuation(rest, '(')?;
-    let close = find_matching_punctuation(rest, open, '(', ')')?;
-    (rest[close + ')'.len_utf8()..].trim().is_empty()).then_some(())?;
-    let name = rest[..open].trim().to_owned();
-    let args = rest[open + 1..close].trim();
-    Some(Attribute::new(
-        name,
-        (!args.is_empty()).then(|| args.to_owned()),
-        range,
-    ))
 }
 
 fn parse_contract_clause(line: &str) -> Option<ContractClause> {

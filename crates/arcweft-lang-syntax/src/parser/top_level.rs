@@ -1,8 +1,8 @@
 //! Top-level parser dispatch for modules, imports, and item families.
 
 use super::{
-    Parser, TopLevelDispatch, is_relative_id_path, normalize_module_path, parse_attribute,
-    parse_use_line,
+    Parser, TopLevelDispatch,
+    helpers::{is_relative_id_path, normalize_module_path, parse_attribute, parse_use_line},
 };
 use crate::ast::{
     common::{ModuleDecl, TextRange, UseItem},
