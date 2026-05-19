@@ -404,8 +404,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   source-item header/handler/body parsing, `parser/proof.rs` owning
   proof/test item clause parsing, and `parser/line_plan.rs` owning line-plan
   body, trigger, defer, and thread parsing. `parser/choice.rs` owns choice
-  item, arm, option block, and choice-plan parsing. The parser driver still
-  needs further family-specific module extraction.
+  item, arm, option block, and choice-plan parsing. `parser/items.rs` owns
+  enum/struct/state field parsing and trait/impl member parsing. The parser
+  driver still needs further family-specific module extraction.
 - `arcweft-runtime-plan` no longer depends directly on
   `arcweft-lang-syntax`; runtime lowering imports syntax-owned surface types
   through `arcweft-lang-hir::syntax` so the dependency direction remains
