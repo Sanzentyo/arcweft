@@ -395,9 +395,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `arcweft-lang-sema` split now has public `check`, `checker`, `types`, `env`,
   `diagnostics`, `borrow`, and `lifetime` modules, and the checker body has
   started language-family child modules for `choice`, `effects`, `expr`,
-  `flow`, `line_plan`, `presentation`, `source`, and `stmt`, plus `module` for
-  module/top-level entry checks and `borrow_state` for borrow binding and
-  branch-merge helpers; `helpers` now owns shared
+  `flow`, `line_plan`, `presentation`, `source`, `suspension`, and `stmt`,
+  plus `module` for module/top-level entry checks and `borrow_state` for borrow
+  binding and branch-merge helpers; `helpers` now owns shared
   type/pattern/merge/divergence helper functions used by those checker modules.
   Semantic traversal and flow-fact helper families are now isolated under
   `semantic/facts.rs` and `semantic/traversal.rs`. Additional checker-family
@@ -443,7 +443,10 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   item header/body parsing, source-locale blocks, source handlers, and source
   statement helpers, `parser/top_level.rs` owns module/use/item-family dispatch,
   `parser/flow.rs` owns flow item, flow-body, scope/thread/defer/unsafe
-  lifetime, and bare-scope dispatch, and
+  lifetime, and bare-scope dispatch, `parser/control_flow.rs` owns structured
+  flow/control blocks (`if`/`if let`/`match`/`loop`/`while`/`for`/`select`),
+  value-producing `let` control-flow expressions, and shared control-flow block
+  helpers, and
   `parser/await_.rs` owns `await ... with` parsing (await `let` bindings,
   multiline await heads, and await-branch parsing), while
   `parser/dialogue.rs` owns dialogue defaults, dialogue-content calls,

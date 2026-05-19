@@ -49,10 +49,10 @@ implementation split into `engine/eval.rs`, `engine/flow.rs`,
 `arcweft-lang-sema` split has started with public `check`, `checker`, `types`,
 `env`, `diagnostics`, `borrow`, and `lifetime` modules, while the larger
 language-family checker split now includes `choice`, `expr`, `flow`,
-`line_plan`, `source`, `stmt`, `effects`, `module`, `borrow_state`, and
-`helpers` child modules. Semantic-analysis traversal helpers are now isolated
-under `semantic/traversal.rs`, with flow-fact state and transfer primitives in
-`semantic/facts.rs`.
+`line_plan`, `source`, `suspension`, `stmt`, `effects`, `module`,
+`borrow_state`, and `helpers` child modules. Semantic-analysis traversal
+helpers are now isolated under `semantic/traversal.rs`, with flow-fact state
+and transfer primitives in `semantic/facts.rs`.
 `arcweft-runtime-plan` is split across lowering-family
 modules including `errors`, `expr`, `flow`, `labels`, `line_task`, `pattern`,
 `source`, and `stream`. The crate root is only a public module namespace;
@@ -96,6 +96,9 @@ parser-root re-export. `parser/helpers.rs` owns shared parser helpers for
 module/use path handling and attribute parsing, `parser/top_level.rs` owns
 module/use/item dispatch, `parser/flow.rs` owns flow item and flow-body
 dispatch plus scope/thread/defer/unsafe-lifetime and bare-scope flow blocks,
+`parser/control_flow.rs` owns structured flow/control blocks
+(`if`/`if let`/`match`/`loop`/`while`/`for`/`select`), value-producing `let`
+control-flow expressions, and shared control-flow block helpers,
 `parser/source.rs` owns source-locale blocks, `parser/await_.rs` owns
 `await ... with` parsing (await `let` bindings, multiline await heads, and
 await-branch parsing), and `parser/dialogue.rs` owns
@@ -127,7 +130,7 @@ layout and module surfaces.
 | `arcweft-lang-syntax` AST family split | Complete | AST families are moved under `src/ast/*.rs` with `ast.rs` as namespace. |
 | `arcweft-lang-syntax` parser family split | In progress | Family modules exist, but parser driver and shared parsing logic remain concentrated in `parser.rs`. |
 | `arcweft-lang-sema` public split (`check/checker/types/env/diagnostics/borrow/lifetime`) | Complete | Public modules exist and `check.rs` is facade-only. |
-| `arcweft-lang-sema` deeper checker-family extraction | In progress | `checker/*` child modules now include presentation-call validation, but `checker.rs` still holds substantial control-flow, lifetime-boundary, and expression typing state. |
+| `arcweft-lang-sema` deeper checker-family extraction | In progress | `checker/*` child modules now include presentation-call validation and extracted suspension/lifetime-boundary helpers, but `checker.rs` still holds substantial expression/lifetime checking state. |
 | Dialogue compatibility alias cleanup | Complete | Compatibility aliases like `DialogueOptions`/`VoiceRef` are removed; canonical names are in use. |
 
 ## Implemented Types
