@@ -45,7 +45,7 @@ Downstream crates import core runtime data through those modules. The
 `arcweft-lang-sema` split has started with public `check`, `checker`, `types`,
 `env`, `diagnostics`, `borrow`, and `lifetime` modules, while the larger
 language-family checker splits remain follow-up refactors. `arcweft-runtime-plan`
-has started its module split with `errors` and `line_task`.
+has started its module split with `errors`, `labels`, and `line_task`.
 
 ## Implemented Types
 

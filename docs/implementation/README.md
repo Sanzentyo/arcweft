@@ -375,8 +375,8 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `arcweft-lang-sema` split now has public `check`, `checker`, `types`, `env`,
   `diagnostics`, `borrow`, and `lifetime` modules; language-family checker
   splits remain tracked work. `arcweft-runtime-plan` has started its split with
-  `errors` and `line_task` modules for lowering diagnostics and lowered
-  line-task metadata.
+  `errors`, `labels`, and `line_task` modules for lowering diagnostics,
+  shared textual label helpers, and lowered line-task metadata.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure
