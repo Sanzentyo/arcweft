@@ -1,8 +1,9 @@
 //! Source declaration lowering into core source runtime data.
 
 use crate::errors::RuntimePlanLowerError;
+use crate::expr::{lower_runtime_expr, runtime_call_effect};
 use crate::labels::{expr_label, type_label};
-use crate::{lower_runtime_expr, lower_runtime_pattern, runtime_call_effect};
+use crate::pattern::lower_runtime_pattern;
 use arcweft_core::effect::{LineEffectRequest, RuntimeAssignment};
 use arcweft_core::source::{
     BackpressurePolicy, OverflowPolicy, PrivacyPolicy, ReplayPolicy, SourceHandlerPlan, SourceId,

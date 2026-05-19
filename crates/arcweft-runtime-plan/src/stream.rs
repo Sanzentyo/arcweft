@@ -1,6 +1,7 @@
 //! Stream-function lowering into core stream runtime data.
 
-use crate::{lower_runtime_expr, lower_runtime_pattern};
+use crate::expr::lower_runtime_expr;
+use crate::pattern::lower_runtime_pattern;
 use arcweft_core::stream::{StreamMatchArm, StreamOp, StreamPlan, StreamRuntimeId};
 use arcweft_lang_syntax::{Stmt, TypeRef};
 
