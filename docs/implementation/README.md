@@ -395,12 +395,13 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `arcweft-lang-sema` split now has public `check`, `checker`, `types`, `env`,
   `diagnostics`, `borrow`, and `lifetime` modules, and the checker body has
   started language-family child modules for `choice`, `effects`, `expr`,
-  `flow`, `line_plan`, `source`, and `stmt`, plus `module` for module/top-level
-  entry checks and `borrow_state` for borrow binding and branch-merge helpers;
-  `helpers` now owns shared type/pattern/merge/divergence helper functions used
-  by those checker modules. Semantic traversal and flow-fact helper families are
-  now isolated under `semantic/facts.rs` and `semantic/traversal.rs`. Additional
-  checker-family splits remain tracked work.
+  `flow`, `line_plan`, `presentation`, `source`, and `stmt`, plus `module` for
+  module/top-level entry checks and `borrow_state` for borrow binding and
+  branch-merge helpers; `helpers` now owns shared
+  type/pattern/merge/divergence helper functions used by those checker modules.
+  Semantic traversal and flow-fact helper families are now isolated under
+  `semantic/facts.rs` and `semantic/traversal.rs`. Additional checker-family
+  splits remain tracked work.
   `arcweft-runtime-plan` is split into `errors`,
   `expr`, `flow`, `labels`, `line_task`, `pattern`, `source`, and `stream`
   modules for lowering diagnostics, runtime expression/effect lowering, flow

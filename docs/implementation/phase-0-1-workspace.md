@@ -127,7 +127,7 @@ layout and module surfaces.
 | `arcweft-lang-syntax` AST family split | Complete | AST families are moved under `src/ast/*.rs` with `ast.rs` as namespace. |
 | `arcweft-lang-syntax` parser family split | In progress | Family modules exist, but parser driver and shared parsing logic remain concentrated in `parser.rs`. |
 | `arcweft-lang-sema` public split (`check/checker/types/env/diagnostics/borrow/lifetime`) | Complete | Public modules exist and `check.rs` is facade-only. |
-| `arcweft-lang-sema` deeper checker-family extraction | In progress | `checker/*` child modules exist, but `checker.rs` still holds substantial cross-family logic and state. |
+| `arcweft-lang-sema` deeper checker-family extraction | In progress | `checker/*` child modules now include presentation-call validation, but `checker.rs` still holds substantial control-flow, lifetime-boundary, and expression typing state. |
 | Dialogue compatibility alias cleanup | Complete | Compatibility aliases like `DialogueOptions`/`VoiceRef` are removed; canonical names are in use. |
 
 ## Implemented Types
