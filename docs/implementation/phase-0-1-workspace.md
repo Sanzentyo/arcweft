@@ -361,8 +361,8 @@ Not implemented in this milestone:
 - full type environment, name resolution, and type checking
 - full completion of the `pro_review21.md` file split plan: `arcweft-lang-sema`
   still needs language-family checker extraction, `arcweft-runtime-plan` still
-  needs flow/expr/pattern/source/stream lowering extraction, and syntax/HIR
-  still need their larger AST/parser/lowering splits.
+  needs flow/expr/pattern lowering extraction, and syntax/HIR still need their
+  larger AST/parser/lowering splits.
 - inference, overload resolution, traits, generics, contracts, and full
   type-directed effect checking
 - unbounded/solver-backed loop CFG and full nested-scope borrow lifetime

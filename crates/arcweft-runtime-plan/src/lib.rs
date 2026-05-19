@@ -1,12 +1,16 @@
 pub mod errors;
 pub mod labels;
 pub mod line_task;
+pub mod source;
+pub mod stream;
 
 use crate::errors::{LinePlanLowerError, RuntimePlanLowerError};
 use crate::labels::{
     duration_expr, expr_label, literal_label, named_arg_label, named_arg_value, pattern_label,
 };
 use crate::line_task::LoweredLineTaskGroup;
+use crate::source::lower_source_plan;
+use crate::stream::lower_stream_function;
 use arcweft_core::effect::{
     ConflictPolicy, LineEffectRequest, ResourceAccess, ResourceAccessMode, RuntimeAssignment,
     RuntimeCall, RuntimeCommand, RuntimeEvent, RuntimeField, RuntimeLog,
@@ -21,11 +25,6 @@ use arcweft_core::plan::{
     ChoiceRuntimeOption, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId, RuntimeMatchArm,
     RuntimePlan,
 };
-use arcweft_core::source::{
-    BackpressurePolicy, OverflowPolicy, PrivacyPolicy, ReplayPolicy, SourceHandlerPlan, SourceId,
-    SourceOp, SourcePlan, SourcePolicy,
-};
-use arcweft_core::stream::{StreamMatchArm, StreamOp, StreamPlan, StreamRuntimeId};
 use arcweft_core::task::{AwaitTarget, NeedId, TaskId, TaskKey, TaskPriority};
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeUnaryOp,
@@ -35,12 +34,9 @@ use arcweft_lang_hir::{
     HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlowItem, HirLoop, HirMatch, HirModule,
     HirScopeExpr,
 };
-use arcweft_lang_syntax::TypeRef;
 use arcweft_lang_syntax::{
     AwaitBranchKind, ChoiceAction, DeferOutcome, EntityRef, EntityRefSyntax, FlowItem,
-    FunctionKind, LinePlan, LinePlanItem, Pattern, SourceBackpressurePolicy, SourceEventPattern,
-    SourceHeader, SourceOverflowPolicy, SourcePrivacyPolicy, SourceReplayPolicy, Stmt,
-    TriggerPattern, WaitTarget,
+    FunctionKind, LinePlan, LinePlanItem, Pattern, Stmt, TriggerPattern, WaitTarget,
 };
 use arcweft_lang_syntax::{BinaryOp, Expr, Literal, UnaryOp};
 
@@ -110,271 +106,6 @@ pub fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<Runtime
 struct FlowRuntimeLowerer {
     line_task_groups: Vec<LineTaskGroup>,
     errors: Vec<RuntimePlanLowerError>,
-}
-
-fn lower_stream_function(function: &arcweft_lang_hir::HirFunction) -> StreamPlan {
-    let (item_ty, error_ty) = function
-        .signature()
-        .return_type()
-        .and_then(stream_type_labels)
-        .unwrap_or_else(|| ("Unit".to_owned(), "Unit".to_owned()));
-    StreamPlan {
-        id: StreamRuntimeId(function.name().to_owned()),
-        item_ty,
-        error_ty,
-        ops: lower_stream_stmt_list(function.statements()),
-    }
-}
-
-fn lower_source_plan(
-    source: &arcweft_lang_syntax::SourceItem,
-) -> Result<SourcePlan, Vec<RuntimePlanLowerError>> {
-    let mut errors = Vec::new();
-    let id = source.id().map_or_else(
-        || SourceId(source.name().unwrap_or("anonymous").to_owned()),
-        |id| SourceId(id.body().to_owned()),
-    );
-    let (item_ty, error_ty) = source
-        .source_ty()
-        .and_then(source_type_labels)
-        .unwrap_or_else(|| {
-            errors.push(RuntimePlanLowerError::new(
-                "source plan requires `Source<T, E>` type".to_owned(),
-            ));
-            ("Unit".to_owned(), "Unit".to_owned())
-        });
-    let from = source
-        .headers()
-        .iter()
-        .find_map(|header| match header {
-            SourceHeader::From(expr) => Some(lower_runtime_expr(expr)),
-            _ => None,
-        })
-        .unwrap_or_else(|| {
-            errors.push(RuntimePlanLowerError::new(
-                "source plan requires `from` header".to_owned(),
-            ));
-            RuntimeExpr::Value(RuntimeValue::Unit)
-        });
-    let Some(policy) = lower_source_policy(source.headers()) else {
-        errors.push(RuntimePlanLowerError::new(
-            "source plan requires backpressure, replay, and privacy policies".to_owned(),
-        ));
-        return Err(errors);
-    };
-    let handlers = source
-        .handlers()
-        .iter()
-        .map(lower_source_handler)
-        .collect::<Vec<_>>();
-    if errors.is_empty() {
-        Ok(SourcePlan {
-            id,
-            item_ty,
-            error_ty,
-            from,
-            policy,
-            handlers,
-        })
-    } else {
-        Err(errors)
-    }
-}
-
-fn lower_stream_stmt_list(statements: &[Stmt]) -> Vec<StreamOp> {
-    statements.iter().flat_map(lower_stream_stmt).collect()
-}
-
-fn lower_stream_stmt(stmt: &Stmt) -> Vec<StreamOp> {
-    match stmt {
-        Stmt::Let { pattern, expr, .. } => vec![StreamOp::Let {
-            pattern: lower_runtime_pattern(pattern),
-            expr: lower_runtime_expr(expr),
-        }],
-        Stmt::For {
-            pattern,
-            source,
-            body,
-        } => vec![StreamOp::ForNext {
-            pattern: lower_runtime_pattern(pattern),
-            source: lower_runtime_expr(source),
-            body: lower_stream_stmt_list(body),
-        }],
-        Stmt::Yield(expr) => vec![StreamOp::Yield {
-            expr: lower_runtime_expr(expr),
-        }],
-        Stmt::If { condition, body } => vec![StreamOp::If {
-            condition: lower_runtime_expr(condition),
-            then_ops: lower_stream_stmt_list(body),
-            else_ops: Vec::new(),
-        }],
-        Stmt::Match { expr, arms } => vec![StreamOp::Match {
-            scrutinee: lower_runtime_expr(expr),
-            arms: arms
-                .iter()
-                .map(|arm| StreamMatchArm {
-                    pattern: lower_runtime_pattern(arm.pattern()),
-                    guard: arm.guard().map(lower_runtime_expr),
-                    ops: lower_stream_stmt_list(arm.body()),
-                })
-                .collect(),
-        }],
-        Stmt::Close(expr) => vec![StreamOp::Close {
-            source: lower_runtime_expr(expr),
-        }],
-        Stmt::Return(_) => vec![StreamOp::Return],
-        _ => vec![StreamOp::Noop],
-    }
-}
-
-fn lower_source_handler(handler: &arcweft_lang_syntax::SourceHandler) -> SourceHandlerPlan {
-    let ops = lower_source_stmt_list(handler.body());
-    match handler.event() {
-        SourceEventPattern::Item(pattern) => SourceHandlerPlan::Item {
-            pattern: lower_runtime_pattern(pattern),
-            ops,
-        },
-        SourceEventPattern::Error(pattern) => SourceHandlerPlan::Error {
-            pattern: lower_runtime_pattern(pattern),
-            ops,
-        },
-        SourceEventPattern::Progress(pattern) => SourceHandlerPlan::Progress {
-            pattern: lower_runtime_pattern(pattern),
-            ops,
-        },
-        SourceEventPattern::Disconnected => SourceHandlerPlan::Disconnected { ops },
-        SourceEventPattern::PermissionRevoked => SourceHandlerPlan::PermissionRevoked { ops },
-        SourceEventPattern::End | SourceEventPattern::Raw(_) => SourceHandlerPlan::End { ops },
-    }
-}
-
-fn lower_source_stmt_list(statements: &[Stmt]) -> Vec<SourceOp> {
-    statements.iter().map(lower_source_stmt).collect()
-}
-
-fn lower_source_stmt(stmt: &Stmt) -> SourceOp {
-    match stmt {
-        Stmt::Yield(expr) => SourceOp::Yield(lower_runtime_expr(expr)),
-        Stmt::Signal { target, value } => SourceOp::SignalWrite(RuntimeAssignment {
-            target: expr_label(target),
-            value: expr_label(value),
-        }),
-        Stmt::Expr(expr) => match runtime_call_effect(expr) {
-            LineEffectRequest::Log(log) => SourceOp::Log(log),
-            effect => SourceOp::Effect(effect),
-        },
-        Stmt::Close(expr) => SourceOp::Close(SourceId(expr_label(expr))),
-        _ => SourceOp::Noop,
-    }
-}
-
-fn stream_type_labels(ty: &TypeRef) -> Option<(String, String)> {
-    match ty {
-        TypeRef::Generic { base, args } if base == "Stream" && args.len() == 2 => {
-            Some((type_label(&args[0]), type_label(&args[1])))
-        }
-        _ => None,
-    }
-}
-
-fn source_type_labels(ty: &TypeRef) -> Option<(String, String)> {
-    match ty {
-        TypeRef::Generic { base, args } if base == "Source" && args.len() == 2 => {
-            Some((type_label(&args[0]), type_label(&args[1])))
-        }
-        _ => None,
-    }
-}
-
-fn type_label(ty: &TypeRef) -> String {
-    match ty {
-        TypeRef::Never => "Never".to_owned(),
-        TypeRef::ConstInt(value) => value.to_string(),
-        TypeRef::Path(path) => path.clone(),
-        TypeRef::Generic { base, args } => format!(
-            "{base}<{}>",
-            args.iter().map(type_label).collect::<Vec<_>>().join(", ")
-        ),
-        TypeRef::Ref { lifetime, inner } => {
-            let lifetime = lifetime
-                .as_ref()
-                .map(|lifetime| format!("'{} ", lifetime.name()))
-                .unwrap_or_default();
-            format!("&{lifetime}{}", type_label(inner))
-        }
-        TypeRef::Slice(inner) => format!("[{}]", type_label(inner)),
-    }
-}
-
-fn lower_source_policy(headers: &[SourceHeader]) -> Option<SourcePolicy> {
-    let backpressure = headers.iter().find_map(|header| match header {
-        SourceHeader::Backpressure(policy) => lower_backpressure(policy),
-        _ => None,
-    })?;
-    let replay = headers.iter().find_map(|header| match header {
-        SourceHeader::Replay(policy) => lower_replay(policy),
-        _ => None,
-    })?;
-    let privacy = headers.iter().find_map(|header| match header {
-        SourceHeader::Privacy(policy) => lower_privacy(policy),
-        _ => None,
-    })?;
-    let max_queue = match &backpressure {
-        BackpressurePolicy::LatestOnly | BackpressurePolicy::BlockingNotAllowed => 1,
-        BackpressurePolicy::BoundedQueue { capacity, .. } => *capacity,
-    };
-    Some(SourcePolicy {
-        backpressure,
-        replay,
-        privacy,
-        max_queue,
-    })
-}
-
-fn lower_backpressure(policy: &SourceBackpressurePolicy) -> Option<BackpressurePolicy> {
-    match policy {
-        SourceBackpressurePolicy::Latest => Some(BackpressurePolicy::LatestOnly),
-        SourceBackpressurePolicy::BlockingNotAllowed => {
-            Some(BackpressurePolicy::BlockingNotAllowed)
-        }
-        SourceBackpressurePolicy::Bounded { capacity, overflow } => {
-            Some(BackpressurePolicy::BoundedQueue {
-                capacity: expr_label(capacity).parse().unwrap_or(1),
-                on_overflow: lower_overflow(overflow),
-            })
-        }
-        SourceBackpressurePolicy::Raw(_) => None,
-    }
-}
-
-fn lower_overflow(policy: &SourceOverflowPolicy) -> OverflowPolicy {
-    match policy {
-        SourceOverflowPolicy::DropOldest => OverflowPolicy::DropOldest,
-        SourceOverflowPolicy::DropNewest => OverflowPolicy::DropNewest,
-        SourceOverflowPolicy::Error | SourceOverflowPolicy::Raw(_) => OverflowPolicy::Error,
-        SourceOverflowPolicy::Coalesce => OverflowPolicy::Coalesce,
-    }
-}
-
-fn lower_replay(policy: &SourceReplayPolicy) -> Option<ReplayPolicy> {
-    match policy {
-        SourceReplayPolicy::Full => Some(ReplayPolicy::Full),
-        SourceReplayPolicy::HashOnly => Some(ReplayPolicy::HashOnly),
-        SourceReplayPolicy::Summary => Some(ReplayPolicy::Summary),
-        SourceReplayPolicy::EventOnly => Some(ReplayPolicy::EventOnly),
-        SourceReplayPolicy::None => Some(ReplayPolicy::None),
-        SourceReplayPolicy::Raw(_) => None,
-    }
-}
-
-fn lower_privacy(policy: &SourcePrivacyPolicy) -> Option<PrivacyPolicy> {
-    match policy {
-        SourcePrivacyPolicy::Transient => Some(PrivacyPolicy::Transient),
-        SourcePrivacyPolicy::Redacted => Some(PrivacyPolicy::Redacted),
-        SourcePrivacyPolicy::Recordable => Some(PrivacyPolicy::Recordable),
-        SourcePrivacyPolicy::Private => Some(PrivacyPolicy::Private),
-        SourcePrivacyPolicy::Raw(_) => None,
-    }
 }
 
 impl FlowRuntimeLowerer {
@@ -1423,7 +1154,7 @@ fn accesses_conflict(left: &ResourceAccess, right: &ResourceAccess) -> bool {
     true
 }
 
-fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
+pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
     match expr {
         Expr::Literal(literal) => RuntimeExpr::Value(lower_runtime_literal(literal)),
         Expr::EntityRef(entity) => RuntimeExpr::EntityRef(entity.body().to_owned()),
@@ -1711,7 +1442,7 @@ fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
     }
 }
 
-fn lower_runtime_pattern(pattern: &Pattern) -> RuntimePattern {
+pub(crate) fn lower_runtime_pattern(pattern: &Pattern) -> RuntimePattern {
     match pattern {
         Pattern::Ident(name) => RuntimePattern::Ident(name.clone()),
         Pattern::MutIdent(name) => RuntimePattern::MutIdent(name.clone()),
@@ -1846,7 +1577,7 @@ fn runtime_call(expr: &Expr) -> RuntimeCall {
     }
 }
 
-fn runtime_call_effect(expr: &Expr) -> LineEffectRequest {
+pub(crate) fn runtime_call_effect(expr: &Expr) -> LineEffectRequest {
     let call = runtime_call(expr);
     if let Some(log) = runtime_log_call(&call) {
         return LineEffectRequest::Log(log);

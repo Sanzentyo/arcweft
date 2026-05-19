@@ -79,6 +79,26 @@ pub(crate) fn literal_label(literal: &Literal) -> String {
     }
 }
 
+pub(crate) fn type_label(ty: &arcweft_lang_syntax::TypeRef) -> String {
+    match ty {
+        arcweft_lang_syntax::TypeRef::Never => "Never".to_owned(),
+        arcweft_lang_syntax::TypeRef::ConstInt(value) => value.to_string(),
+        arcweft_lang_syntax::TypeRef::Path(path) => path.clone(),
+        arcweft_lang_syntax::TypeRef::Generic { base, args } => format!(
+            "{base}<{}>",
+            args.iter().map(type_label).collect::<Vec<_>>().join(", ")
+        ),
+        arcweft_lang_syntax::TypeRef::Ref { lifetime, inner } => {
+            let lifetime = lifetime
+                .as_ref()
+                .map(|lifetime| format!("'{} ", lifetime.name()))
+                .unwrap_or_default();
+            format!("&{lifetime}{}", type_label(inner))
+        }
+        arcweft_lang_syntax::TypeRef::Slice(inner) => format!("[{}]", type_label(inner)),
+    }
+}
+
 fn decimal_to_nanos(amount: &str, unit_nanos: u64) -> Option<u64> {
     let (whole, frac) = amount.split_once('.').unwrap_or((amount, ""));
     let whole_nanos = whole.parse::<u64>().ok()?.checked_mul(unit_nanos)?;
