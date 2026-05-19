@@ -379,8 +379,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `arcweft-lang-sema` split now has public `check`, `checker`, `types`, `env`,
   `diagnostics`, `borrow`, and `lifetime` modules, and the checker body has
   started language-family child modules for `choice`, `expr`, `flow`,
-  `line_plan`, `source`, and `stmt`; additional checker-family splits remain
-  tracked work.
+  `line_plan`, `source`, and `stmt`, plus `module` for module/top-level entry
+  checks and `borrow_state` for borrow binding and branch-merge helpers;
+  additional checker-family splits remain tracked work.
   `arcweft-runtime-plan` is split into `errors`,
   `expr`, `flow`, `labels`, `line_task`, `pattern`, `source`, and `stream`
   modules for lowering diagnostics, runtime expression/effect lowering, flow
@@ -390,8 +391,8 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   compatibility exports: public consumers import HIR data through `model`,
   lowering through `lower`, ID-context tooling through `id_context`, and syntax
   ownership through the namespaced `syntax` module. The lowering implementation
-  is split into `lower_flow`, `lower_dialogue`, `lower_choice`, `lower_ids`,
-  and `lower_context` internals.
+  is split into public responsibility namespaces `lower_flow`,
+  `lower_dialogue`, `lower_choice`, `lower_ids`, and `lower_context`.
 - `arcweft-lang-syntax` has started the AST family split requested by
   `pro_review21.md`: top-level tree/item/recovery wrappers live in
   `ast/items.rs`, shared range/module/use/doc primitives live in

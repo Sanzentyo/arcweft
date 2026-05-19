@@ -1,5 +1,5 @@
 use crate::env::TypeCheckEnv;
-mod facts;
+pub mod facts;
 use crate::fact_layer::{
     Capability, EffectScope, ProofFacts, ResourceAccess, resource_accesses_from_expr,
     resource_write_for_lifetime, resource_write_for_signal, write_capability_for_call,

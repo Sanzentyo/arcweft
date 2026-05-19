@@ -6,11 +6,11 @@
 
 pub mod id_context;
 pub mod lower;
-mod lower_choice;
-mod lower_context;
-mod lower_dialogue;
-mod lower_flow;
-mod lower_ids;
+pub mod lower_choice;
+pub mod lower_context;
+pub mod lower_dialogue;
+pub mod lower_flow;
+pub mod lower_ids;
 pub mod model;
 
 /// Syntax types intentionally exposed through a namespace instead of flat
