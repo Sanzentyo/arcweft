@@ -11,7 +11,7 @@ use crate::ast::flow::{
     AwaitBranch, AwaitBranchKind, AwaitWith, BorrowBlock, ContractClause, Flow, FlowInit, FlowItem,
     FlowKind, ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchArm, MatchBlock, ScopeBlock,
     ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, Stmt,
-    StmtMatchArm, ThreadBlock, ThreadModifier, WaitTarget, WhileBlock, WhileLetBlock,
+    StmtMatchArm, WaitTarget, WhileBlock, WhileLetBlock,
 };
 use crate::ast::ids::{
     EntityRef, EntityRefSyntax, FamilyRelativeEntityRef, IdRef, RelativeId, RelativeIdSpelling,
@@ -23,9 +23,7 @@ use crate::ast::items::{
     ImplMember, Item, MemoFn, ParserItem, RawItem, RawSyntax, StateField, StateItem, StructField,
     StructItem, TraitItem, TraitMember, TypeAliasItem, TypedSyntaxTree,
 };
-use crate::ast::line_plan::{
-    BlockStyle, CancelRuleSyntax, DeferOutcome, LinePlan, LinePlanItem, TriggerPattern,
-};
+use crate::ast::line_plan::{BlockStyle, DeferOutcome, LinePlan};
 use crate::ast::pattern::Pattern;
 use crate::ast::proof::{BenchItem, ProofItem, TestItem, TrustedAxiomItem};
 use crate::ast::source::{SourceItem, SourceItemParts};
@@ -48,9 +46,14 @@ use crate::types::{parse_fn_signature, parse_type_ref};
 use crate::{CstLine, CstLineEvents, SyntaxNode, cst_lines};
 use arcweft_source::{SourceAnchor, SourceName};
 
+mod line_plan;
 mod proof;
 mod recovery;
 mod source;
+use line_plan::{
+    nonempty_string, parse_defer_outcome, parse_line_plan_body, parse_thread_block,
+    parse_trigger_pattern,
+};
 use proof::{parse_proof_clauses, parse_test_kind};
 pub use recovery::{ParseError, RecoverySuggestion};
 use source::{
@@ -3860,68 +3863,6 @@ fn parse_binding_pattern(source: &str) -> (Pattern, Option<crate::types::TypeRef
     )
 }
 
-fn parse_trigger_pattern(source: &str) -> TriggerPattern {
-    let source = source.trim();
-    if let Some(rest) = source.strip_prefix("input ") {
-        return TriggerPattern::Input(parse_pattern(rest.trim()));
-    }
-    if let Some(rest) = source.strip_prefix("event ") {
-        return TriggerPattern::Event(parse_pattern(rest.trim()));
-    }
-    if let Some(rest) = source.strip_prefix("item ") {
-        return TriggerPattern::Event(parse_pattern(rest.trim()));
-    }
-    if let Some(rest) = source.strip_prefix("error ") {
-        return TriggerPattern::Event(parse_pattern(rest.trim()));
-    }
-    if source == "disconnected" {
-        return TriggerPattern::Event(parse_pattern(source));
-    }
-    if let Some(rest) = source.strip_prefix("signal ") {
-        let mut parts = split_top_level_whitespace(rest);
-        let target = parts.first().map_or_else(
-            || Expr::Raw(rest.to_owned()),
-            |target| parse_expr_lossy(target),
-        );
-        let value = (parts.len() > 1)
-            .then(|| parse_pattern(parts.drain(1..).collect::<Vec<_>>().join(" ").trim()));
-        return TriggerPattern::Signal { target, value };
-    }
-    if let Some(rest) = source.strip_prefix("timeout ") {
-        return TriggerPattern::Timeout(parse_expr_lossy(rest.trim()));
-    }
-    if let Some(rest) = source.strip_prefix("mark ") {
-        return TriggerPattern::Mark(parse_pattern(rest.trim()));
-    }
-    if let Some(rest) = source.strip_prefix("select ") {
-        return TriggerPattern::Select(parse_pattern(rest.trim()));
-    }
-    if let Some(rest) = source.strip_prefix("task ") {
-        return TriggerPattern::Task(parse_pattern(rest.trim()));
-    }
-    if let Some(rest) = source.strip_prefix("scope ") {
-        return TriggerPattern::Scope(parse_pattern(rest.trim()));
-    }
-    if source.starts_with('.') {
-        return TriggerPattern::Mark(parse_pattern(source));
-    }
-    TriggerPattern::Expr(parse_expr_lossy(source))
-}
-
-fn parse_defer_outcome(head: &str) -> Option<DeferOutcome> {
-    let rest = head.trim().strip_prefix("defer")?.trim();
-    if rest.is_empty() {
-        return Some(DeferOutcome::Always);
-    }
-    let outcome = rest.strip_prefix("on")?.trim();
-    match outcome {
-        "completed" => Some(DeferOutcome::Completed),
-        "cancelled" => Some(DeferOutcome::Cancelled),
-        "failed" => Some(DeferOutcome::Failed),
-        _ => None,
-    }
-}
-
 fn split_scenario_args(source: &str) -> Vec<&str> {
     split_top_level_whitespace(source)
 }
@@ -4889,60 +4830,6 @@ fn find_content_bracket(text: &str) -> Option<usize> {
     (!text[..open].trim_end().ends_with('#')).then_some(open)
 }
 
-fn parse_line_plan_body(style: BlockStyle, body: &str, range: TextRange) -> LinePlan {
-    let lines = collect_logical_block_items(body);
-    let mut items = Vec::new();
-    let mut index = 0;
-    while index < lines.len() {
-        let line = &lines[index];
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            index += 1;
-            continue;
-        }
-        if is_multiline_timed_cue_header(trimmed) {
-            let cue_indent = indentation(line);
-            let mut body_lines = Vec::new();
-            index += 1;
-            while index < lines.len() {
-                let child = &lines[index];
-                let child_trimmed = child.trim();
-                if !child_trimmed.is_empty() && indentation(child.as_str()) <= cue_indent {
-                    break;
-                }
-                if !child_trimmed.is_empty() {
-                    body_lines.push(child_trimmed);
-                }
-                index += 1;
-            }
-            let body = body_lines.join(" ");
-            items.push(parse_line_plan_item(&format!("{trimmed} {body}")));
-            continue;
-        }
-        if let Some(head) = line_plan_colon_head(trimmed) {
-            let cue_indent = indentation(line);
-            let mut body_lines = Vec::new();
-            index += 1;
-            while index < lines.len() {
-                let child = &lines[index];
-                let child_trimmed = child.trim();
-                if !child_trimmed.is_empty() && indentation(child.as_str()) <= cue_indent {
-                    break;
-                }
-                if !child_trimmed.is_empty() {
-                    body_lines.push(child.as_str());
-                }
-                index += 1;
-            }
-            items.push(parse_line_plan_colon_item(head, &body_lines.join("\n")));
-            continue;
-        }
-        items.push(parse_line_plan_item(trimmed));
-        index += 1;
-    }
-    LinePlan::new(style, items, range)
-}
-
 fn attach_line_plan_label(plan: LinePlan, label: Option<String>) -> LinePlan {
     if let Some(label) = label {
         plan.with_label(label)
@@ -5001,263 +4888,6 @@ fn labeled_head_tail(head: &str) -> Option<&str> {
     Some(tail.trim_start())
 }
 
-fn is_multiline_timed_cue_header(line: &str) -> bool {
-    line.starts_with("at(") && line.ends_with(':')
-}
-
-fn line_plan_colon_head(line: &str) -> Option<&str> {
-    let head = line.strip_suffix(':')?.trim();
-    (head == "init"
-        || parse_defer_outcome(head).is_some()
-        || head.starts_with("thread")
-        || head.starts_with("on ")
-        || head.starts_with("scope"))
-    .then_some(head)
-}
-
-fn parse_line_plan_colon_item(head: &str, body: &str) -> LinePlanItem {
-    if head == "init" {
-        return LinePlanItem::Init(parse_stmt_lines(body));
-    }
-    if let Some(outcome) = parse_defer_outcome(head) {
-        return LinePlanItem::Stmt(Stmt::DeferBlock {
-            outcome,
-            statements: parse_stmt_lines(body),
-        });
-    }
-    if let Some(rest) = head.strip_prefix("thread") {
-        return LinePlanItem::Thread(parse_thread_block(&format!("thread{rest}"), body));
-    }
-    if let Some(rest) = head.strip_prefix("on ") {
-        return LinePlanItem::On {
-            trigger: parse_trigger_pattern(rest.trim()),
-            body: parse_stmt_lines(body),
-        };
-    }
-    if head.starts_with("scope") {
-        return LinePlanItem::Stmt(Stmt::Expr(parse_named_block_expr(head, body)));
-    }
-    let source = format!("{head}:\n{body}");
-    LinePlanItem::Raw(RawSyntax::line_plan_item(
-        source,
-        Some(TextRange::new(0, head.len() + body.len() + 2)),
-    ))
-}
-
-fn parse_line_plan_item(line: &str) -> LinePlanItem {
-    if let Some((head, body)) = split_brace_item(line) {
-        if let Some(item) = parse_line_plan_braced_item(head, body) {
-            return item;
-        }
-    }
-    if let Some(rest) = line.strip_prefix("out ") {
-        return LinePlanItem::Out(parse_expr_lossy(rest.trim()));
-    }
-    if let Some(rest) = line.strip_prefix("let ") {
-        if let Some((pattern, expr)) = split_top_level_binding(rest) {
-            return LinePlanItem::Let {
-                pattern: parse_pattern(pattern.trim()),
-                expr: parse_expr_lossy(expr.trim()),
-            };
-        }
-    }
-    if let Some(rest) = line.strip_prefix("defer ") {
-        if rest.trim_start().starts_with("on ") {
-            return LinePlanItem::Raw(RawSyntax::line_plan_item(
-                line,
-                Some(TextRange::new(0, line.len())),
-            ));
-        }
-        return LinePlanItem::Stmt(Stmt::Defer {
-            outcome: DeferOutcome::Always,
-            expr: parse_expr_lossy(rest.trim()),
-        });
-    }
-    if let Some(rest) = line.strip_prefix("cancel on ") {
-        if let Some((head, body)) = split_brace_item(line) {
-            if let Some(trigger) = head.strip_prefix("cancel on ") {
-                return LinePlanItem::CancelRule(CancelRuleSyntax::new(
-                    parse_trigger_pattern(trigger.trim()),
-                    parse_stmt_lines(body.trim()),
-                ));
-            }
-        }
-        let (trigger, action) =
-            split_top_level_punctuation_sequence_once(rest, &["=", ">"]).unwrap_or((rest, ""));
-        return LinePlanItem::CancelRule(CancelRuleSyntax::new(
-            parse_trigger_pattern(trigger.trim()),
-            parse_line_plan_cancel_action(action.trim()),
-        ));
-    }
-    if line.starts_with("at(")
-        && let Some(open) = find_top_level_punctuation(line, '(')
-        && let Some(close) = find_matching_punctuation(line, open, '(', ')')
-    {
-        let anchor = &line[open + '('.len_utf8()..close];
-        let body = &line[close + ')'.len_utf8()..];
-        if body.trim_start().starts_with('[') {
-            return LinePlanItem::Raw(RawSyntax::line_plan_item(
-                line,
-                Some(TextRange::new(0, line.len())),
-            ));
-        }
-        return LinePlanItem::TimedCue {
-            anchor: parse_expr_lossy(anchor.trim()),
-            body: parse_expr_lossy(normalize_timed_cue_body(body)),
-        };
-    }
-    if let Some(rest) = line.strip_prefix("start ") {
-        return LinePlanItem::StartGroup(parse_line_plan_nested_items(rest.trim()));
-    }
-    if let Some(rest) = line.strip_prefix("together ") {
-        return LinePlanItem::TogetherGroup(parse_line_plan_nested_items(rest.trim()));
-    }
-    if let Some(rest) = line.strip_prefix("memo ") {
-        return parse_line_plan_memo(rest.trim());
-    }
-    if let Some(expr) = line.strip_prefix("debug_assert ") {
-        return LinePlanItem::Assert {
-            debug: true,
-            expr: parse_expr_lossy(expr.trim()),
-        };
-    }
-    if let Some(expr) = line.strip_prefix("assert ") {
-        return LinePlanItem::Assert {
-            debug: false,
-            expr: parse_expr_lossy(expr.trim()),
-        };
-    }
-    if is_line_plan_statement(line) {
-        return LinePlanItem::Stmt(parse_stmt(line));
-    }
-    if let Some((name, value)) = split_top_level_punctuation_once(line, '=') {
-        return LinePlanItem::Option {
-            name: name.trim().to_owned(),
-            value: parse_expr_lossy(value.trim()),
-        };
-    }
-    if let Ok(expr) = parse_expr(line) {
-        return LinePlanItem::Expr(expr);
-    }
-    LinePlanItem::Raw(RawSyntax::line_plan_item(
-        line,
-        Some(TextRange::new(0, line.len())),
-    ))
-}
-
-fn is_line_plan_statement(line: &str) -> bool {
-    matches!(
-        line.split_whitespace().next(),
-        Some(
-            "signal"
-                | "wait"
-                | "return"
-                | "goto"
-                | "yield"
-                | "panic"
-                | "fail"
-                | "bail"
-                | "ensure"
-                | "close"
-                | "select"
-                | "break"
-                | "continue"
-        )
-    )
-}
-
-fn parse_line_plan_braced_item(head: &str, body: &str) -> Option<LinePlanItem> {
-    if head == "init" {
-        return Some(LinePlanItem::Init(parse_stmt_lines(body)));
-    }
-    if let Some(outcome) = parse_defer_outcome(head) {
-        return Some(LinePlanItem::Stmt(Stmt::DeferBlock {
-            outcome,
-            statements: parse_stmt_lines(body),
-        }));
-    }
-    if let Some(rest) = head.strip_prefix("thread") {
-        return Some(LinePlanItem::Thread(parse_thread_block(
-            &format!("thread{rest}"),
-            body,
-        )));
-    }
-    if let Some(rest) = head.strip_prefix("on ") {
-        return Some(LinePlanItem::On {
-            trigger: parse_trigger_pattern(rest.trim()),
-            body: parse_stmt_lines(body),
-        });
-    }
-    if head == "start" {
-        return Some(LinePlanItem::StartGroup(parse_line_plan_nested_items(body)));
-    }
-    if head == "together" {
-        return Some(LinePlanItem::TogetherGroup(parse_line_plan_nested_items(
-            body,
-        )));
-    }
-    if head.starts_with("scope") {
-        return Some(LinePlanItem::Stmt(Stmt::Expr(parse_named_block_expr(
-            head, body,
-        ))));
-    }
-    None
-}
-
-fn parse_thread_block(head: &str, body: &str) -> ThreadBlock {
-    let rest = head.trim().strip_prefix("thread").unwrap_or(head).trim();
-    let mut modifiers = Vec::new();
-    let mut parts = rest.split_whitespace().collect::<Vec<_>>();
-    if matches!(parts.first(), Some(&"detached")) {
-        modifiers.push(ThreadModifier::Detached);
-        parts.remove(0);
-    }
-    let name = nonempty_string(&parts.join(" "));
-    ThreadBlock::new(modifiers, name, parse_stmt_lines(body))
-}
-
-fn nonempty_string(source: &str) -> Option<String> {
-    (!source.is_empty()).then(|| source.to_owned())
-}
-
-fn parse_line_plan_memo(source: &str) -> LinePlanItem {
-    let mut parts = split_scenario_args(source);
-    if parts.is_empty() {
-        return LinePlanItem::Raw(RawSyntax::line_plan_item(
-            "memo",
-            Some(TextRange::new(0, "memo".len())),
-        ));
-    }
-    let name = parts.remove(0).to_owned();
-    let options = parts
-        .into_iter()
-        .filter_map(|part| {
-            split_top_level_punctuation_once(part, '=')
-                .map(|(name, value)| (name.to_owned(), parse_expr_lossy(value)))
-        })
-        .collect();
-    LinePlanItem::Memo { name, options }
-}
-
-fn parse_line_plan_nested_items(source: &str) -> Vec<LinePlanItem> {
-    let body = source
-        .trim()
-        .strip_prefix('{')
-        .and_then(|value| value.strip_suffix('}'))
-        .unwrap_or_else(|| source.trim());
-    parse_line_plan_body(BlockStyle::Brace, body, TextRange::new(0, body.len()))
-        .items()
-        .to_vec()
-}
-
-fn parse_line_plan_cancel_action(action: &str) -> Vec<Stmt> {
-    if action.is_empty() {
-        Vec::new()
-    } else {
-        parse_stmt_lines(action)
-    }
-}
-
 fn parse_expr_lossy(source: &str) -> crate::expr::Expr {
     if let Some(expr) = parse_presentation_special_call(source) {
         return expr;
@@ -5303,13 +4933,6 @@ fn is_plain_block_callee(source: &str) -> bool {
             .chars()
             .next()
             .is_some_and(|ch| ch.is_lowercase() || ch == '_')
-}
-
-fn normalize_timed_cue_body(source: &str) -> &str {
-    source
-        .trim_start_matches([':', ' ', '{'])
-        .trim_end_matches('}')
-        .trim()
 }
 
 fn is_await_with_head(trimmed: &str) -> bool {
