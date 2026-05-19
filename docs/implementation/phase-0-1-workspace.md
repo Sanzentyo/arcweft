@@ -78,7 +78,8 @@ The `ast` namespace is public and family-oriented; `ast.rs` no longer provides
 a flat compatibility re-export layer for those AST definitions.
 The parser split has also started with `parser/recovery.rs` for parse
 diagnostic/recovery types, `parser/source.rs` for source-item
-header/handler/body parsing, and `parser/proof.rs` for proof/test item
+header/handler/body parsing, including the source top-level item parser, and
+`parser/proof.rs` for proof/test item
 clause parsing plus proof, trusted-axiom, test, and bench top-level item
 parsing. `parser/line_plan.rs` now owns line-plan body, trigger,
 defer, and thread parsing. `parser/choice.rs` owns choice item, arm, option

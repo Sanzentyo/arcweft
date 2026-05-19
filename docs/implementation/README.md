@@ -422,9 +422,11 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   addressed as `parser::recovery::ParseError` /
   `parser::recovery::RecoverySuggestion` rather than through a flat
   compatibility re-export. `parser/helpers.rs` owns shared parser helpers for
-  module/use path handling and attribute parsing, `parser/top_level.rs`
-  owns module/use/item-family dispatch, `parser/flow.rs` owns flow item and
-  flow-body dispatch, and `parser/dialogue.rs` owns dialogue-content calls,
+  module/use path handling and attribute parsing, `parser/source.rs` owns source
+  item header/body parsing in addition to source handlers and source statement
+  helpers, `parser/top_level.rs` owns module/use/item-family dispatch,
+  `parser/flow.rs` owns flow item and flow-body dispatch, and
+  `parser/dialogue.rs` owns dialogue-content calls,
   speaker-line sugar, trailing line-plan attachment, and flat dialogue/with
   fence handling. `parser/items.rs` now owns parser methods for function-like,
   enum, struct, state, trait, impl, and type-alias top-level items in addition

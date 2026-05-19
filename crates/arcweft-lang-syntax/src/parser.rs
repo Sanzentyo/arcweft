@@ -20,7 +20,6 @@ use crate::ast::items::{
 };
 use crate::ast::line_plan::{BlockStyle, DeferOutcome, LinePlan};
 use crate::ast::pattern::Pattern;
-use crate::ast::source::{SourceItem, SourceItemParts};
 use crate::cst::{
     CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineEvents, CstStmtKind,
     CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxNode,
@@ -55,10 +54,6 @@ use line_plan::{
     parse_trigger_pattern,
 };
 use recovery::{ParseError, RecoverySuggestion};
-use source::{
-    parse_source_handlers, parse_source_headers, parse_source_stmt_lines,
-    parse_source_type_from_tail,
-};
 
 /// Parses an Arcweft source string.
 #[must_use]
@@ -631,79 +626,6 @@ impl Parser {
             None,
             TextRange::new(line.start, line.end),
         ))
-    }
-
-    fn parse_source_item(&mut self) -> Option<SourceItem> {
-        let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_flow_block();
-        if !ok {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "unclosed block while parsing source item",
-                ["}"],
-                Some(start_line.text.trim()),
-                ["insert a closing `}` for the source body"],
-            );
-            return None;
-        }
-        let (visibility, after_visibility) = parse_visibility_prefix(head.trim());
-        let after_source = after_visibility
-            .trim_start()
-            .strip_prefix("source")?
-            .trim_start();
-        let (id, name, signature_tail) = if after_source.starts_with('@') {
-            match parse_required_decl_entity_ref_or_marker(
-                after_source,
-                "source",
-                start_line.start,
-                &mut self.errors,
-            )? {
-                (DeclEntityId::Entity(id), rest) => {
-                    let (id, tail) = normalize_trailing_colon_id(id, rest);
-                    (Some(id), None, tail.trim().to_owned())
-                }
-                (DeclEntityId::NameMarker(marker), rest) => {
-                    let (name, tail) = parse_name_and_tail(rest);
-                    let Some(name_value) = name.as_deref() else {
-                        self.errors.push(simple_error(
-                            marker.range.start(),
-                            marker.range.end() - marker.range.start(),
-                            "source declaration marker needs a following source name",
-                            "@source:. name()",
-                        ));
-                        return None;
-                    };
-                    (
-                        Some(EntityRef::new(
-                            format!("source.{name_value}"),
-                            false,
-                            marker.range,
-                        )),
-                        name,
-                        tail,
-                    )
-                }
-            }
-        } else {
-            let (name, tail) = parse_name_and_tail(after_source);
-            (None, name, tail)
-        };
-
-        let source_ty = parse_source_type_from_tail(&signature_tail);
-        let headers = parse_source_headers(&body);
-        let handlers = parse_source_handlers(&body);
-        Some(SourceItem::from_parts(SourceItemParts {
-            visibility,
-            id,
-            name,
-            signature_tail,
-            source_ty,
-            headers,
-            handlers,
-            body: body.clone(),
-            body_statements: parse_source_stmt_lines(&body),
-            range: TextRange::new(start_line.start, end),
-        }))
     }
 
     fn parse_choice(&mut self) -> Option<ChoiceBlock> {
