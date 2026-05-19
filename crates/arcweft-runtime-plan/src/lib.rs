@@ -1,3 +1,8 @@
+pub mod errors;
+pub mod line_task;
+
+use crate::errors::{LinePlanLowerError, RuntimePlanLowerError};
+use crate::line_task::LoweredLineTaskGroup;
 use arcweft_core::effect::{
     ConflictPolicy, LineEffectRequest, ResourceAccess, ResourceAccessMode, RuntimeAssignment,
     RuntimeCall, RuntimeCommand, RuntimeEvent, RuntimeField, RuntimeLog,
@@ -35,23 +40,6 @@ use arcweft_lang_syntax::{
     TriggerPattern, WaitTarget,
 };
 use arcweft_lang_syntax::{BinaryOp, DurationUnit, Expr, Literal, UnaryOp};
-use thiserror::Error;
-
-/// Runtime task plan produced from one checked dialogue line plan.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LoweredLineTaskGroup {
-    flow_id: Option<EntityRef>,
-    line_id: Option<EntityRef>,
-    callee: String,
-    group: LineTaskGroup,
-}
-
-/// Error produced while converting syntax/HIR line plans to core data.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-#[error("{message}")]
-pub struct LinePlanLowerError {
-    message: String,
-}
 
 /// Lowers all dialogue line plans in a HIR module to Sans I/O runtime data.
 pub fn lower_line_task_groups(
@@ -70,13 +58,6 @@ pub fn lower_line_task_groups(
     } else {
         Err(lowerer.errors)
     }
-}
-
-/// Error produced while converting HIR flows to the executable runtime plan.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-#[error("{message}")]
-pub struct RuntimePlanLowerError {
-    message: String,
 }
 
 /// Lowers checked HIR flows to the Sans I/O core runtime program.
@@ -805,19 +786,6 @@ impl FlowRuntimeLowerer {
                 .map(|error| RuntimePlanLowerError::new(error.message().to_owned())),
         );
         effects
-    }
-}
-
-impl RuntimePlanLowerError {
-    fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-        }
-    }
-
-    /// Human-readable runtime lowering diagnostic.
-    pub fn message(&self) -> &str {
-        &self.message
     }
 }
 
@@ -2061,39 +2029,6 @@ fn literal_label(literal: &Literal) -> String {
                 DurationUnit::Seconds => "s",
             }
         ),
-    }
-}
-
-impl LoweredLineTaskGroup {
-    /// Flow that owns this line plan, if it was declared inside a flow.
-    pub const fn flow_id(&self) -> Option<&EntityRef> {
-        self.flow_id.as_ref()
-    }
-
-    /// Dialogue line id, if present or generated during HIR lowering.
-    pub const fn line_id(&self) -> Option<&EntityRef> {
-        self.line_id.as_ref()
-    }
-
-    /// Normalized dialogue callee such as `alice` or `alice.say`.
-    pub fn callee(&self) -> &str {
-        &self.callee
-    }
-
-    /// Sans I/O task group consumed by the future runtime.
-    pub const fn group(&self) -> &LineTaskGroup {
-        &self.group
-    }
-}
-
-impl LinePlanLowerError {
-    fn new(message: String) -> Self {
-        Self { message }
-    }
-
-    /// Human-readable lowering diagnostic.
-    pub fn message(&self) -> &str {
-        &self.message
     }
 }
 

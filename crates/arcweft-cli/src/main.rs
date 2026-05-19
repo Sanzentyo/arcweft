@@ -7,7 +7,8 @@ use arcweft_lang_sema::check::{typecheck_hir, validate_typecheck_ready};
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
 use arcweft_lang_syntax::{lint_id_policy, parse_source};
-use arcweft_runtime_plan::{LoweredLineTaskGroup, lower_line_task_groups, lower_runtime_plan};
+use arcweft_runtime_plan::line_task::LoweredLineTaskGroup;
+use arcweft_runtime_plan::{lower_line_task_groups, lower_runtime_plan};
 use arcweft_test::{BenchSection, ScriptBench, ScriptStep, ScriptTest, collect_script_tests};
 use arcweft_tooling::{FormatOptions, ToolingEditReport, format_source, materialize_ids};
 use arcweft_verify::{

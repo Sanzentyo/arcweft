@@ -371,10 +371,12 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   is split into public responsibility modules (`time`, `frame`, `value`,
   `pattern`, `effect`, `task`, `source`, `stream`, `plan`, `line_task`,
   `observation`, and `engine`) without root-level compatibility aliases.
-  Downstream crates import core types through those module paths. The first
-  `arcweft-lang-sema` split has moved semantic types, environments, and
-  diagnostics into `types`, `env`, and `diagnostics`; further checker,
-  borrow/lifetime, and language-family splits remain tracked work.
+  Downstream crates import core types through those module paths. The
+  `arcweft-lang-sema` split now has public `check`, `checker`, `types`, `env`,
+  `diagnostics`, `borrow`, and `lifetime` modules; language-family checker
+  splits remain tracked work. `arcweft-runtime-plan` has started its split with
+  `errors` and `line_task` modules for lowering diagnostics and lowered
+  line-task metadata.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure
