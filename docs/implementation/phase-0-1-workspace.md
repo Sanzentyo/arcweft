@@ -362,8 +362,9 @@ Not implemented in this milestone:
 - full generic substitution and effect-aware return checking
 - full type environment, name resolution, and type checking
 - full completion of the `pro_review21.md` file split plan: `arcweft-lang-sema`
-  still needs deeper expression-helper extraction after the expression dispatch
-  split, and syntax/HIR still need their larger AST/parser/lowering splits.
+  still needs deeper expression call/control-helper extraction after the
+  expression dispatch/value-helper split, and syntax/HIR still need their
+  larger AST/parser/lowering splits.
 - inference, overload resolution, traits, generics, contracts, and full
   type-directed effect checking
 - unbounded/solver-backed loop CFG and full nested-scope borrow lifetime
