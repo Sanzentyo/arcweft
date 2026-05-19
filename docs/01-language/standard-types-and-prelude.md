@@ -239,13 +239,16 @@ LinePlan
 text should prefer `TextKey`, `RichText`, and `Localized<RichText>` where
 localization, ruby, reveal, or text effects matter.
 
-## Facade Prelude
+## Rust Facade Namespaces
 
-The Rust facade crate `arcweft` re-exports the current minimal prelude:
+The Rust facade crate `arcweft` exposes crate-family namespaces instead of a
+flat compatibility prelude:
 
 ```rust
-use arcweft::prelude::*;
+use arcweft::core::frame::FrameInput;
+use arcweft::dialogue::DialogueLine;
+use arcweft::presentation::PresentationHandle;
 ```
 
 Low-level crates should depend on narrow crates directly instead of importing
-the facade prelude.
+the facade crate.

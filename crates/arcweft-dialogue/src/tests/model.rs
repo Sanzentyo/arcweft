@@ -1,5 +1,8 @@
 use crate::*;
 use arcweft_id::PublicId;
+use arcweft_presentation::{
+    BackgroundSurface, PresentationSlot, PresentationTarget, SlotValue, asset, bg, clear_bg,
+};
 use arcweft_source::SourceAnchor;
 use core::time::Duration;
 

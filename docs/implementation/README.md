@@ -17,8 +17,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
   (HIR types and lowering), `arcweft-lang-sema` (name/symbol/type readiness and
   minimal type checking), and `arcweft-runtime-plan` (HIR to Sans I/O runtime
   plan lowering).
-- `arcweft-core` no longer depends on dialogue or presentation; broad
-  application-facing re-exports live in the facade crate `arcweft`.
+- `arcweft-core` no longer depends on dialogue or presentation; the facade
+  crate `arcweft` exposes crate-family namespaces instead of a flat prelude.
 - No renderer, Servo, audio, camera, USB, MCP, or Cranelift JIT implementation.
 
 ## Files
@@ -347,7 +347,8 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   LSP convert typed operations into edits, hints, and actions instead of
   keeping scanner-specific logic.
 - `pro_review19.md` is reflected with Rust-like collection names. The facade
-  prelude now exports minimal Sans I/O standard data crates:
+  crate exposes minimal Sans I/O standard data crates through explicit
+  namespaces rather than a flat compatibility prelude:
   `arcweft-adt` (`Unit`, `Never`, `Vec<T>`, `Array<T,N>`,
   `OrderedMap`/`SortedMap`/`OrderedSet`/`SortedSet`, `SmallList`, state paths, patch/diff/version/log/queue/cache
   types, source/stream descriptors, arena/slot/generational ID structures,
@@ -415,9 +416,17 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   addressed as `parser::recovery::ParseError` /
   `parser::recovery::RecoverySuggestion` rather than through a flat
   compatibility re-export. `parser/helpers.rs` owns shared parser helpers for
-  module/use path handling and attribute parsing, and `parser/top_level.rs`
-  owns module/use/item-family dispatch. The parser driver still needs further
-  family-specific module extraction.
+  module/use path handling and attribute parsing, `parser/top_level.rs`
+  owns module/use/item-family dispatch, `parser/flow.rs` owns flow item and
+  flow-body dispatch, and `parser/dialogue.rs` owns dialogue-content calls,
+  speaker-line sugar, trailing line-plan attachment, and flat dialogue/with
+  fence handling. The parser driver still needs further family-specific module
+  extraction.
+- The application-facing `arcweft` facade no longer provides
+  `arcweft::prelude::*`. It exposes namespaced crate families such as
+  `arcweft::core`, `arcweft::dialogue`, `arcweft::presentation`,
+  `arcweft::adt`, `arcweft::need`, and `arcweft::source` so module boundaries
+  remain visible to consumers.
 - `arcweft-lang-syntax` crate-root exports are module namespaces only. Downstream
   crates now import syntax-owned types through `ast::*`, `expr`, `types`,
   `parser`, `cst`, `lint`, `source`, or `text` instead of flat crate-root

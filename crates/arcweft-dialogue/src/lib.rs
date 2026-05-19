@@ -1,9 +1,6 @@
 use arcweft_id::{PublicId, TextKey};
-pub use arcweft_presentation::{
-    BackgroundSurface, CharacterSurface, ClearPresentation, PresentationHandle,
-    PresentationRegistry, PresentationScope, PresentationSlot, PresentationTarget, SlotRef,
-    SlotValue, asset, bg, bg_ref, clear_bg, presentation_scope, presentation_slot,
-    presentation_target,
+use arcweft_presentation::{
+    CharacterSurface, ClearPresentation, PresentationHandle, PresentationScope, SlotRef,
 };
 use arcweft_source::SourceAnchor;
 use core::time::Duration;

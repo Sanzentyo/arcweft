@@ -53,6 +53,10 @@ language-family checker split now includes `choice`, `expr`, `flow`,
 `arcweft-runtime-plan` is split across lowering-family
 modules including `errors`, `expr`, `flow`, `labels`, `line_task`, `pattern`,
 `source`, and `stream`.
+The application-facing `arcweft` facade exposes crate-family namespaces instead
+of `arcweft::prelude::*`, so consumers can import through `arcweft::core`,
+`arcweft::dialogue`, `arcweft::presentation`, `arcweft::adt`,
+`arcweft::need`, and other visible module boundaries.
 `arcweft-lang-hir` now separates public HIR data into `model.rs`, public
 lowering entry points into `lower.rs`, and lowering responsibilities into
 `lower_flow.rs`, `lower_dialogue.rs`, `lower_choice.rs`, `lower_ids.rs`, and
@@ -78,8 +82,11 @@ block, and choice-plan parsing. `parser/items.rs` owns enum/struct/state field
 parsing and trait/impl member parsing. These are public parser namespaces, and
 parse recovery types are imported through `parser::recovery` instead of a flat
 parser-root re-export. `parser/helpers.rs` owns shared parser helpers for
-module/use path handling and attribute parsing, and `parser/top_level.rs` owns
-module/use/item dispatch; remaining family parser modules remain a follow-up.
+module/use path handling and attribute parsing, `parser/top_level.rs` owns
+module/use/item dispatch, `parser/flow.rs` owns flow item and flow-body
+dispatch, and `parser/dialogue.rs` owns dialogue-content calls, speaker-line
+sugar, trailing line-plan attachment, and flat dialogue/with fence handling;
+remaining family parser modules remain a follow-up.
 Runtime plan lowering imports syntax-owned surface types through
 `arcweft-lang-hir`'s `syntax::{ast, expr, types}` namespaces and no longer
 declares a direct dependency on `arcweft-lang-syntax`. `arcweft-lang-syntax`
@@ -404,9 +411,9 @@ Not implemented in this milestone:
 - full type environment, name resolution, and type checking
 - full completion of the `pro_review21.md` file split plan: `arcweft-lang-sema`
   still needs deeper expression call/control-helper extraction after the
-  module-entry, effect, and borrow-state splits; syntax still needs larger parser
-  family splits beyond the current helpers/top-level/proof/source/choice/line-plan/items
-  modules.
+  module-entry, effect, and borrow-state splits; syntax still needs any
+  remaining family parser extraction beyond the current
+  helpers/top-level/flow/dialogue/proof/source/choice/line-plan/items modules.
 - inference, overload resolution, traits, generics, contracts, and full
   type-directed effect checking
 - unbounded/solver-backed loop CFG and full nested-scope borrow lifetime
