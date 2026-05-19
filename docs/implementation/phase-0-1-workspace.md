@@ -68,7 +68,9 @@ The parser split has also started with `parser/recovery.rs` for parse
 diagnostic/recovery types, `parser/source.rs` for source-item
 header/handler/body parsing, and `parser/proof.rs` for proof/test item
 clause parsing. `parser/line_plan.rs` now owns line-plan body, trigger,
-defer, and thread parsing; remaining family parser modules remain a follow-up.
+defer, and thread parsing. `parser/choice.rs` owns choice item, arm, option
+block, and choice-plan parsing; remaining family parser modules remain a
+follow-up.
 Runtime plan lowering imports syntax-owned surface types through
 `arcweft-lang-hir`'s `syntax` namespace and no longer declares a direct
 dependency on `arcweft-lang-syntax`.
