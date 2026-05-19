@@ -30,6 +30,19 @@ Phase 0 / Phase 1 minimal Rust workspace:
 The implementation notes track accepted syntax decisions from `docs/reviews/` when
 they affect parser, HIR, formatter, LSP, or CLI work.
 
+`pro_review21.md` status is intentionally tracked as mixed completion:
+
+- Completed in codebase structure: `arcweft-core`, `arcweft-lang-hir`,
+  `arcweft-runtime-plan`, and most public-module boundary moves in
+  `arcweft-lang-syntax` / `arcweft-lang-sema`.
+- Completed in compatibility cleanup: dialogue compatibility aliases such as
+  `DialogueOptions` and `VoiceRef` are removed; canonical names
+  (`SayOptions`, `VoicePolicy`) are the only public API.
+- Remaining: deeper checker internals split in `arcweft-lang-sema::checker`,
+  additional semantic-analyzer helper extraction beyond
+  `arcweft-lang-sema::semantic::{facts,traversal}`, and continued
+  parser-driver extraction in `arcweft-lang-syntax::parser`.
+
 - `pro_review4.md`: adopted value-producing `{ ... }` blocks, `scope name { ... }`
   blocks for relative ID namespaces, unnamed `scope { ... }` as name-omitted
   sugar, relative IDs only in ID-bearing contexts,
@@ -385,8 +398,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `flow`, `line_plan`, `source`, and `stmt`, plus `module` for module/top-level
   entry checks and `borrow_state` for borrow binding and branch-merge helpers;
   `helpers` now owns shared type/pattern/merge/divergence helper functions used
-  by those checker modules. Additional checker-family splits remain tracked
-  work.
+  by those checker modules. Semantic traversal and flow-fact helper families are
+  now isolated under `semantic/facts.rs` and `semantic/traversal.rs`. Additional
+  checker-family splits remain tracked work.
   `arcweft-runtime-plan` is split into `errors`,
   `expr`, `flow`, `labels`, `line_task`, `pattern`, `source`, and `stream`
   modules for lowering diagnostics, runtime expression/effect lowering, flow
@@ -429,6 +443,8 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   statement helpers, `parser/top_level.rs` owns module/use/item-family dispatch,
   `parser/flow.rs` owns flow item, flow-body, scope/thread/defer/unsafe
   lifetime, and bare-scope dispatch, and
+  `parser/await_.rs` owns `await ... with` parsing (await `let` bindings,
+  multiline await heads, and await-branch parsing), while
   `parser/dialogue.rs` owns dialogue defaults, dialogue-content calls,
   speaker-line sugar, trailing line-plan attachment, and flat dialogue/with
   fence handling. `parser/items.rs` now owns parser methods for function-like,

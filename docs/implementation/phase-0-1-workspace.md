@@ -50,7 +50,9 @@ implementation split into `engine/eval.rs`, `engine/flow.rs`,
 `env`, `diagnostics`, `borrow`, and `lifetime` modules, while the larger
 language-family checker split now includes `choice`, `expr`, `flow`,
 `line_plan`, `source`, `stmt`, `effects`, `module`, `borrow_state`, and
-`helpers` child modules.
+`helpers` child modules. Semantic-analysis traversal helpers are now isolated
+under `semantic/traversal.rs`, with flow-fact state and transfer primitives in
+`semantic/facts.rs`.
 `arcweft-runtime-plan` is split across lowering-family
 modules including `errors`, `expr`, `flow`, `labels`, `line_task`, `pattern`,
 `source`, and `stream`. The crate root is only a public module namespace;
@@ -94,7 +96,9 @@ parser-root re-export. `parser/helpers.rs` owns shared parser helpers for
 module/use path handling and attribute parsing, `parser/top_level.rs` owns
 module/use/item dispatch, `parser/flow.rs` owns flow item and flow-body
 dispatch plus scope/thread/defer/unsafe-lifetime and bare-scope flow blocks,
-`parser/source.rs` owns source-locale blocks, and `parser/dialogue.rs` owns
+`parser/source.rs` owns source-locale blocks, `parser/await_.rs` owns
+`await ... with` parsing (await `let` bindings, multiline await heads, and
+await-branch parsing), and `parser/dialogue.rs` owns
 dialogue defaults, dialogue-content calls, speaker-line sugar, trailing
 line-plan attachment, and flat dialogue/with fence handling;
 remaining family parser modules remain a follow-up.
@@ -107,6 +111,24 @@ Core tests are split by runtime family under
 `crates/arcweft-core/src/tests/`: `task.rs`, `source.rs`, `stream.rs`,
 `observation.rs`, `flow.rs`, and `line_task.rs`. The root `tests.rs` remains
 only the test harness plus shared helpers.
+
+## pro_review21 Completion Matrix
+
+Audit basis: `docs/reviews/pro_review21.md` compared against current crate
+layout and module surfaces.
+
+| Review21 area | Current status | Notes |
+| --- | --- | --- |
+| `arcweft-core` split (`time/frame/value/pattern/effect/task/source/stream/plan/line_task/observation/engine`) | Complete | Public module boundaries are in `core/src/lib.rs`; engine internals are split under `core/src/engine/`. |
+| `arcweft-core` test split by runtime family | Complete | Coverage is split under `core/src/tests/` with root harness-only `tests.rs`. |
+| `arcweft-lang-hir` split (`model`, `lower`, `lower_*`, `id_context`) | Complete | Public namespace structure matches review intent. |
+| `arcweft-runtime-plan` split (`errors/expr/flow/labels/line_task/pattern/source/stream`) | Complete | `src/lib.rs` is namespace-only. |
+| `runtime-plan -> syntax` direct dependency removal | Complete | `arcweft-runtime-plan/Cargo.toml` depends on `arcweft-lang-hir`, not `arcweft-lang-syntax`; syntax types flow through `hir::syntax`. |
+| `arcweft-lang-syntax` AST family split | Complete | AST families are moved under `src/ast/*.rs` with `ast.rs` as namespace. |
+| `arcweft-lang-syntax` parser family split | In progress | Family modules exist, but parser driver and shared parsing logic remain concentrated in `parser.rs`. |
+| `arcweft-lang-sema` public split (`check/checker/types/env/diagnostics/borrow/lifetime`) | Complete | Public modules exist and `check.rs` is facade-only. |
+| `arcweft-lang-sema` deeper checker-family extraction | In progress | `checker/*` child modules exist, but `checker.rs` still holds substantial cross-family logic and state. |
+| Dialogue compatibility alias cleanup | Complete | Compatibility aliases like `DialogueOptions`/`VoiceRef` are removed; canonical names are in use. |
 
 ## Implemented Types
 
@@ -424,9 +446,10 @@ Not implemented in this milestone:
 - full generic substitution and effect-aware return checking
 - full type environment, name resolution, and type checking
 - full completion of the `pro_review21.md` file split plan: `arcweft-lang-sema`
-  still needs deeper expression call/control-helper extraction after the
-  module-entry, effect, borrow-state, and helper splits; syntax still needs any
-  remaining family parser extraction beyond the current
+  still needs deeper checker expression/call/control-helper extraction and
+  additional semantic analyzer family extraction beyond the new
+  `semantic::traversal` boundary; syntax still needs any remaining family
+  parser extraction beyond the current
   helpers/top-level/flow/dialogue/proof/source/choice/line-plan/items modules.
 - inference, overload resolution, traits, generics, contracts, and full
   type-directed effect checking
