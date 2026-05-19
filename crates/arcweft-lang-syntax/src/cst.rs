@@ -1025,6 +1025,72 @@ pub(crate) fn punctuation_delta(source: &str, open: char, close: char) -> i32 {
         })
 }
 
+/// Returns source lines without treating line splitting as parser grammar.
+///
+/// This helper is intentionally small and text-level. Parser modules use it
+/// while they are still being migrated to rowan events so line handling is
+/// centralized in the CST/text utility layer instead of open-coded at each
+/// grammar site.
+pub(crate) fn source_lines(source: &str) -> Vec<&str> {
+    source
+        .split('\n')
+        .map(|line| line.strip_suffix('\r').unwrap_or(line))
+        .collect()
+}
+
+/// Returns non-empty trimmed source lines for interim line-oriented parsing.
+pub(crate) fn nonempty_trimmed_source_lines(source: &str) -> Vec<&str> {
+    source_lines(source)
+        .into_iter()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect()
+}
+
+/// Counts source lines using the same text policy as [`source_lines`].
+pub(crate) fn source_line_count(source: &str) -> usize {
+    source_lines(source).len()
+}
+
+/// Documentation prefix extracted from a text fragment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CstDocPrefix {
+    lines: Vec<String>,
+    consumed: usize,
+}
+
+impl CstDocPrefix {
+    pub(crate) fn lines(&self) -> &[String] {
+        &self.lines
+    }
+
+    pub(crate) const fn consumed(&self) -> usize {
+        self.consumed
+    }
+}
+
+/// Takes leading `///` lines from a parameter fragment.
+///
+/// Function parameters are parsed from signature fragments rather than full
+/// rowan line nodes. Keeping the scan here preserves one source of truth for
+/// doc-comment stripping until signatures are fully event-backed.
+pub(crate) fn take_doc_comment_prefix(source: &str) -> Option<CstDocPrefix> {
+    let mut lines = Vec::new();
+    let mut consumed = 0;
+
+    for segment in source.split_inclusive('\n') {
+        let line = segment.trim_end_matches('\n').trim_end_matches('\r');
+        let trimmed = line.trim();
+        let Some(text) = trimmed.strip_prefix("///") else {
+            break;
+        };
+        lines.push(text.strip_prefix(' ').unwrap_or(text).to_owned());
+        consumed += segment.len();
+    }
+
+    (!lines.is_empty()).then_some(CstDocPrefix { lines, consumed })
+}
+
 /// Finds a top-level punctuation token while ignoring strings and comments.
 pub(crate) fn find_top_level_punctuation(source: &str, punctuation: char) -> Option<usize> {
     let punctuation = punctuation.encode_utf8(&mut [0; 4]).to_owned();

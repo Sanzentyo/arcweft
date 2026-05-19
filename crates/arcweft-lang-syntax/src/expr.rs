@@ -25,7 +25,12 @@ pub enum Expr {
     Path(String),
     Placeholder(Placeholder),
     Tuple(Vec<Expr>),
-    List(Vec<Expr>),
+    /// Surface `[a, b, c]` sequence literal before expected-type resolution.
+    BracketSeq(Vec<Expr>),
+    ArrayRepeat {
+        value: Box<Expr>,
+        len: Box<Expr>,
+    },
     Call {
         callee: Box<Expr>,
         args: Vec<Expr>,
@@ -339,6 +344,7 @@ enum Token {
     Comma,
     Dot,
     Colon,
+    Semicolon,
     Question,
     Bang,
     Op(&'static str),
@@ -383,6 +389,7 @@ impl<'a> Lexer<'a> {
                 '}' => self.single(Token::RBrace),
                 ',' => self.single(Token::Comma),
                 ':' => self.single(Token::Colon),
+                ';' => self.single(Token::Semicolon),
                 '?' => self.single(Token::Question),
                 '!' if self.starts_with("!=") => self.fixed_op("!=", 2),
                 '!' => self.single(Token::Bang),
@@ -837,7 +844,7 @@ impl ExprParser {
             Token::Underscore => Ok(Expr::Placeholder(Placeholder::Partial)),
             Token::Caret => Ok(Expr::Placeholder(Placeholder::PipeLeft)),
             Token::LParen => self.parse_tuple_or_group(),
-            Token::LBracket => self.parse_list(),
+            Token::LBracket => self.parse_bracket_seq(),
             Token::LBrace => Ok(Expr::RecordLiteral(self.parse_record_fields()?)),
             token => Err(ExprParseError::new(&format!(
                 "expected expression, found {token:?}"
@@ -874,27 +881,46 @@ impl ExprParser {
         }
     }
 
-    fn parse_list(&mut self) -> Result<Expr, ExprParseError> {
+    fn parse_bracket_seq(&mut self) -> Result<Expr, ExprParseError> {
         let mut items = Vec::new();
         if self.peek() == &Token::RBracket {
             self.bump();
-            return Ok(Expr::List(items));
+            return Ok(Expr::BracketSeq(items));
         }
         loop {
             items.push(self.parse_expr_bp(0)?);
             match self.peek() {
+                Token::Semicolon => {
+                    self.bump();
+                    if items.len() != 1 {
+                        return Err(ExprParseError::new(
+                            "array repeat literal expects one value before `;`",
+                        ));
+                    }
+                    let len = self.parse_expr_bp(0)?;
+                    self.expect(&Token::RBracket)?;
+                    let value = items.remove(0);
+                    return Ok(Expr::ArrayRepeat {
+                        value: Box::new(value),
+                        len: Box::new(len),
+                    });
+                }
                 Token::Comma => {
                     self.bump();
                     if self.peek() == &Token::RBracket {
                         self.bump();
-                        return Ok(Expr::List(items));
+                        return Ok(Expr::BracketSeq(items));
                     }
                 }
                 Token::RBracket => {
                     self.bump();
-                    return Ok(Expr::List(items));
+                    return Ok(Expr::BracketSeq(items));
                 }
-                _ => return Err(ExprParseError::new("expected `]` or `,` in list")),
+                _ => {
+                    return Err(ExprParseError::new(
+                        "expected `]` or `,` in bracket sequence literal",
+                    ));
+                }
             }
         }
     }
@@ -1122,6 +1148,7 @@ fn token_source(token: &Token) -> String {
         Token::Comma => ",".to_owned(),
         Token::Dot => ".".to_owned(),
         Token::Colon => ":".to_owned(),
+        Token::Semicolon => ";".to_owned(),
         Token::Question => "?".to_owned(),
         Token::Bang => "!".to_owned(),
         Token::Op(op) => (*op).to_owned(),

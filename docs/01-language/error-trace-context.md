@@ -16,7 +16,7 @@ pub struct ArcError {
     message: Content
     source: Option<ArcError>
     trace: ErrorTrace
-    data: Map<String, ErrorValue>
+    data: OrderedMap<String, ErrorValue>
 }
 
 pub struct ErrorTrace {

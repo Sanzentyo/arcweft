@@ -101,7 +101,7 @@ flow @flow.alice_intro alice_intro {
     let env = TypeCheckEnv::new()
         .with_symbol(
             "state.affection",
-            TypeKind::Named("Map<Character, Int>".to_owned()),
+            TypeKind::Named("OrderedMap<Character, Int>".to_owned()),
         )
         .with_symbol("state.inventory", TypeKind::Named("Inventory".to_owned()))
         .with_method(
@@ -110,7 +110,7 @@ flow @flow.alice_intro alice_intro {
             TypeKind::Bool,
         )
         .with_index(
-            TypeKind::Named("Map<Character, Int>".to_owned()),
+            TypeKind::Named("OrderedMap<Character, Int>".to_owned()),
             TypeKind::Int,
         );
     typecheck_hir(&hir, &env).expect("scope expression typechecks");

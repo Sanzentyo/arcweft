@@ -65,7 +65,7 @@ ensures no_effect network.request
 ## decreases
 
 ```awft
-fn count_reachable(flow: Ref<Flow>, visited: Set<Ref<Flow>>) -> usize
+fn count_reachable(flow: Ref<Flow>, visited: OrderedSet<Ref<Flow>>) -> usize
 decreases graph.remaining_nodes(flow, visited)
 {
     ...
@@ -100,5 +100,4 @@ assume external_plugin_is_deterministic
 - Creusot / Verus bridge for Rust proof-oriented code
 - Property test generation
 - LLM counterexample explanation
-
 

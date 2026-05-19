@@ -802,7 +802,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.collect_stmts(body, &mut state);
             }
             ChoicePlanItem::Raw(raw) => {
-                self.add_raw_obligation(format!("raw choice plan item: {raw}"), None);
+                self.add_raw_obligation(
+                    format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
+                    raw.range().map(|range| format!("{range:?}")),
+                );
             }
         }
         self.finish_scope(&state);
@@ -893,7 +896,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 BlockFlow::from_fallthrough(facts)
             }
             LinePlanItem::Raw(raw) => {
-                self.add_raw_obligation(format!("raw line plan item: {raw}"), None);
+                self.add_raw_obligation(
+                    format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
+                    raw.range().map(|range| format!("{range:?}")),
+                );
                 BlockFlow::from_fallthrough(facts)
             }
         }
@@ -912,10 +918,14 @@ impl<'a> SemanticAnalyzer<'a> {
                     state.add_must_drop(key.clone());
                 }
             }
-            Expr::Tuple(items) | Expr::List(items) => {
+            Expr::Tuple(items) | Expr::BracketSeq(items) => {
                 for item in items {
                     self.collect_expr(item, state);
                 }
+            }
+            Expr::ArrayRepeat { value, len } => {
+                self.collect_expr(value, state);
+                self.collect_expr(len, state);
             }
             Expr::Call { callee, args } => self.collect_call(callee, args, state),
             Expr::NamedArg { value, .. } => self.collect_expr(value, state),
@@ -1527,7 +1537,10 @@ impl<'a> SemanticAnalyzer<'a> {
         match item {
             arcweft_lang_hir::FlowItem::Stmt(stmt) => self.collect_stmt(stmt, state),
             arcweft_lang_hir::FlowItem::Raw(raw) => {
-                self.add_raw_obligation(format!("raw flow item: {raw}"), None);
+                self.add_raw_obligation(
+                    format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
+                    raw.range().map(|range| format!("{range:?}")),
+                );
             }
             _ => {}
         }
@@ -1816,8 +1829,11 @@ fn expr_contains_unchecked_promotion(expr: &Expr) -> bool {
                 || expr_contains_unchecked_promotion(receiver)
                 || args.iter().any(expr_contains_unchecked_promotion)
         }
-        Expr::Tuple(items) | Expr::List(items) => {
+        Expr::Tuple(items) | Expr::BracketSeq(items) => {
             items.iter().any(expr_contains_unchecked_promotion)
+        }
+        Expr::ArrayRepeat { value, len } => {
+            expr_contains_unchecked_promotion(value) || expr_contains_unchecked_promotion(len)
         }
         Expr::NamedArg { value, .. }
         | Expr::Field { target: value, .. }
@@ -2106,7 +2122,7 @@ fn collect_expr_drop_keys(expr: &Expr, keys: &mut HashSet<LifetimeKey>) {
                 collect_expr_drop_keys(arg, keys);
             }
         }
-        Expr::Tuple(items) | Expr::List(items) => {
+        Expr::Tuple(items) | Expr::BracketSeq(items) => {
             for item in items {
                 collect_expr_drop_keys(item, keys);
             }
@@ -2171,10 +2187,14 @@ fn collect_stmt_write_accesses(stmt: &Stmt, accesses: &mut BTreeSet<ResourceAcce
 fn collect_expr_write_accesses(expr: &Expr, accesses: &mut BTreeSet<ResourceAccess>) {
     accesses.extend(resource_accesses_from_expr(expr));
     match expr {
-        Expr::Call { args, .. } | Expr::Tuple(args) | Expr::List(args) => {
+        Expr::Call { args, .. } | Expr::Tuple(args) | Expr::BracketSeq(args) => {
             for arg in args {
                 collect_expr_write_accesses(arg, accesses);
             }
+        }
+        Expr::ArrayRepeat { value, len } => {
+            collect_expr_write_accesses(value, accesses);
+            collect_expr_write_accesses(len, accesses);
         }
         Expr::NamedArg { value, .. }
         | Expr::Field { target: value, .. }
@@ -2264,10 +2284,13 @@ fn expr_type_label(expr: &Expr) -> String {
             let labels = items.iter().map(expr_type_label).collect::<Vec<_>>();
             format!("({})", labels.join(", "))
         }
-        Expr::List(items) => items.first().map_or_else(
+        Expr::BracketSeq(items) => items.first().map_or_else(
             || "Vec<Unknown>".to_owned(),
             |item| format!("Vec<{}>", expr_type_label(item)),
         ),
+        Expr::ArrayRepeat { value, len } => {
+            format!("Array<{}, {}>", expr_type_label(value), expr_label(len))
+        }
         Expr::EntityRef(_) => "EntityRef".to_owned(),
         _ => "Unknown".to_owned(),
     }

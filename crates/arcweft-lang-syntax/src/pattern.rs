@@ -62,7 +62,7 @@ pub(crate) fn parse_pattern(source: &str) -> Pattern {
         .strip_prefix('[')
         .and_then(|value| value.strip_suffix(']'))
     {
-        return parse_list_pattern(inner);
+        return parse_bracket_seq_pattern(inner);
     }
     if let Some(pattern) = parse_record_pattern(source) {
         return pattern;
@@ -106,7 +106,7 @@ fn split_whole_pattern(source: &str) -> Option<(&str, &str)> {
     .then_some((name, rest))
 }
 
-fn parse_list_pattern(inner: &str) -> Pattern {
+fn parse_bracket_seq_pattern(inner: &str) -> Pattern {
     let mut rest = None;
     let items = split_pattern_items(inner)
         .into_iter()
@@ -122,7 +122,7 @@ fn parse_list_pattern(inner: &str) -> Pattern {
             }
         })
         .collect();
-    Pattern::List { items, rest }
+    Pattern::BracketSeq { items, rest }
 }
 
 fn parse_variant_pattern(source: &str) -> Option<Pattern> {

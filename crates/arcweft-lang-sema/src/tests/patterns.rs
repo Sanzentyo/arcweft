@@ -109,7 +109,7 @@ flow @flow.patterns patterns {
     assert!(matches!(
         &flow.body()[4],
         FlowItem::Stmt(Stmt::Let {
-            pattern: Pattern::List {
+            pattern: Pattern::BracketSeq {
                 items,
                 rest: Some(rest),
             },

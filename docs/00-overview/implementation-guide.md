@@ -44,7 +44,7 @@ TokenKind
 ```text
 Primitive: (), bool, String, explicit integer and float widths, Duration, Color, Ratio, Length, Angle
 ADT: struct, enum, newtype
-Generic: Vec<T>, Map<K,V>, Set<T>, Option<T>, Result<T,E>, Need<T,E>, Ref<T>
+Generic: Vec<T>, OrderedMap<K,V>, OrderedSet<T>, Option<T>, Result<T,E>, Need<T,E>, Ref<T>
 Function: A -> B, curried function groups
 Borrow: &'a T, &'a mut T
 ```

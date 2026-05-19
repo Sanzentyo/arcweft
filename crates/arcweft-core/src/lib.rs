@@ -9,6 +9,26 @@ pub struct LogicalDuration {
     nanos: u64,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LogicalTime {
+    tick: TickId,
+    elapsed: LogicalDuration,
+}
+
+impl LogicalTime {
+    pub const fn new(tick: TickId, elapsed: LogicalDuration) -> Self {
+        Self { tick, elapsed }
+    }
+
+    pub const fn tick(self) -> TickId {
+        self.tick
+    }
+
+    pub const fn elapsed(self) -> LogicalDuration {
+        self.elapsed
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct FrameInput {
     pub tick: TickId,
@@ -61,7 +81,7 @@ pub enum RuntimeValue {
     Duration(LogicalDuration),
     EntityRef(String),
     Tuple(Vec<RuntimeValue>),
-    List(Vec<RuntimeValue>),
+    BracketSeq(Vec<RuntimeValue>),
     Record(Vec<RuntimeFieldValue>),
     Variant {
         path: Option<String>,
@@ -84,7 +104,7 @@ pub enum RuntimeExpr {
     Local(String),
     EntityRef(String),
     Tuple(Vec<RuntimeExpr>),
-    List(Vec<RuntimeExpr>),
+    BracketSeq(Vec<RuntimeExpr>),
     Record(Vec<RuntimeFieldExpr>),
     Variant {
         path: Option<String>,
@@ -175,7 +195,7 @@ pub enum RuntimePattern {
         fields: Vec<RuntimeRecordPatternField>,
         rest: bool,
     },
-    List {
+    BracketSeq {
         items: Vec<RuntimePattern>,
         rest: Option<String>,
     },
@@ -611,8 +631,8 @@ pub enum RuntimeEvalError {
     ExpectedInt(String),
     #[error("expected entity reference expression, found {0}")]
     ExpectedEntityRef(String),
-    #[error("expected list expression, found {0}")]
-    ExpectedList(String),
+    #[error("expected bracket sequence expression, found {0}")]
+    ExpectedBracketSeq(String),
     #[error("field `{field}` does not exist on {value}")]
     MissingField { field: String, value: String },
     #[error("operator `{op}` is not supported for {lhs} and {rhs}")]
@@ -2287,7 +2307,7 @@ impl Engine {
             } => {
                 self.advance_if_needed(next);
                 match self.evaluate_expr(&source) {
-                    Ok(RuntimeValue::List(items)) => {
+                    Ok(RuntimeValue::BracketSeq(items)) => {
                         let mut ops = Vec::new();
                         for item in items {
                             ops.push(FlowOp::EnterScope);
@@ -2302,7 +2322,7 @@ impl Engine {
                     }
                     Ok(value) => {
                         self.fail_eval(
-                            RuntimeEvalError::ExpectedList(runtime_value_label(&value)),
+                            RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)),
                             output,
                         );
                     }
@@ -2669,11 +2689,11 @@ impl Engine {
                 .map(|item| self.evaluate_expr(item))
                 .collect::<Result<Vec<_>, _>>()
                 .map(RuntimeValue::Tuple),
-            RuntimeExpr::List(items) => items
+            RuntimeExpr::BracketSeq(items) => items
                 .iter()
                 .map(|item| self.evaluate_expr(item))
                 .collect::<Result<Vec<_>, _>>()
-                .map(RuntimeValue::List),
+                .map(RuntimeValue::BracketSeq),
             RuntimeExpr::Record(fields) => fields
                 .iter()
                 .map(|field| {
@@ -3014,8 +3034,8 @@ fn collect_pattern_bindings(
             }
             Ok(true)
         }
-        RuntimePattern::List { items, rest } => {
-            let RuntimeValue::List(values) = value else {
+        RuntimePattern::BracketSeq { items, rest } => {
+            let RuntimeValue::BracketSeq(values) = value else {
                 return Ok(false);
             };
             if rest.is_none() && items.len() != values.len() {
@@ -3030,7 +3050,7 @@ fn collect_pattern_bindings(
             if let Some(name) = rest {
                 bindings.push(RuntimeBinding {
                     name: name.clone(),
-                    value: RuntimeValue::List(values[items.len()..].to_vec()),
+                    value: RuntimeValue::BracketSeq(values[items.len()..].to_vec()),
                 });
             }
             Ok(true)
@@ -3189,7 +3209,7 @@ fn expr_runtime_label(expr: &RuntimeExpr) -> String {
         RuntimeExpr::Local(name) => name.clone(),
         RuntimeExpr::EntityRef(target) => format!("@{target}"),
         RuntimeExpr::Tuple(items) => format!("tuple/{}", items.len()),
-        RuntimeExpr::List(items) => format!("list/{}", items.len()),
+        RuntimeExpr::BracketSeq(items) => format!("bracket_seq/{}", items.len()),
         RuntimeExpr::Record(fields) => format!("record/{}", fields.len()),
         RuntimeExpr::Variant { name, .. } => format!(".{name}"),
         RuntimeExpr::Field { field, .. } => format!(".{field}"),
@@ -3212,7 +3232,7 @@ fn runtime_value_label(value: &RuntimeValue) -> String {
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
-        RuntimeValue::List(values) => format!("list/{}", values.len()),
+        RuntimeValue::BracketSeq(values) => format!("bracket_seq/{}", values.len()),
         RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {

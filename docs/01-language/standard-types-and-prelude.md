@@ -15,6 +15,7 @@ Need<T, E>
 Progress
 Duration
 TickId
+LogicalTime
 ```
 
 `Never` is the canonical bottom type name. The advanced alias `!` is allowed in
@@ -42,16 +43,19 @@ Arcweft uses Rust-like collection names for the default surface vocabulary:
 ```awft
 Vec<T>
 VecDeque<T>
+SmallList<T, N>
 OrderedMap<K, V>
 BTreeMap<K, V>
+SortedMap<K, V>
 OrderedSet<T>
 BTreeSet<T>
+SortedSet<T>
 BitSet<E>
 Array<T, N>
 ```
 
 `Vec<T>` is the default growable ordered sequence. It preserves authored order
-and is the normal target for list literals when no fixed-size context exists.
+and is the normal target for bracket sequence literals when no fixed-size context exists.
 
 `Array<T, N>` is a fixed-length sequence. A literal such as `[a, b, c]` can be
 typed as `Array<T, 3>` when the expected type requires exactly three elements.
@@ -62,15 +66,121 @@ let dynamic: Vec<i32> = [1, 2, 3]
 let fixed: Array<i32, 3> = [1, 2, 3]
 ```
 
-`[value; N]` is reserved for fixed-length array construction.
+`[value; N]` is fixed-length array construction. `N` must be an integer
+constant in the current Phase 2 surface.
 
 ```awft
 let zeros: Array<i32, 4> = [0; 4]
 ```
 
+Length mismatch is a verifier/type-checking diagnostic:
+
+```awft
+let bad: Array<i32, 2> = [1, 2, 3]  # error
+```
+
 `OrderedMap` / `OrderedSet` preserve first insertion order. `BTreeMap` /
 `BTreeSet` provide canonical sorted order for snapshots and replay-visible
-serialization. `HashMap` and `HashSet` are not part of the default prelude.
+serialization. `SortedMap` / `SortedSet` are surface aliases for the sorted
+contract. `HashMap` and `HashSet` are not part of the default prelude.
+
+`SmallList<T, N>` is a deterministic small-list abstraction. The Rust MVP keeps
+it Vec-backed so the public data contract stays Sans I/O and does not promise a
+specific inline-storage implementation.
+
+## Arena, Slot, Graph, and Tree Data
+
+Compiler, runtime, presentation, and tooling code use explicit ID-bearing data
+structures instead of naked numeric indexes:
+
+```awft
+Arena<T>
+StableArena<T>
+ArenaId<T>
+SlotMap<T>
+GenerationalId<T>
+SparseSet<T>
+EntityStore<T>
+
+Tree<T>
+LayerTree<T>
+SceneGraph<T>
+UiTree<T>
+StableGraph<N, E>
+DependencyGraph<N>
+RouteGraph
+```
+
+`Arena<T>` is append-only and preserves insertion order. `StableArena<T>` has
+the same surface contract but signals that IDs are suitable for save, replay,
+and debug manifests. `SlotMap<T>` uses `GenerationalId<T>` so stale runtime
+handles can be rejected.
+
+`Tree<T>` is the shared deterministic parent/child shape for layer, scene, and
+UI trees. `StableGraph<N, E>` preserves node insertion order and explicit edge
+order; `DependencyGraph<N>` is a unit-edge graph for memo, asset, and build
+dependencies.
+
+## State, Patch, and Replay Data
+
+These types describe deterministic state deltas and replay-visible logs:
+
+```awft
+StatePath
+Patch<T>
+PatchSet<T>
+Diff<T>
+Versioned<T>
+Snapshot<T>
+StableHash
+EventLog<E>
+TraceLog<E>
+TaskQueue<T>
+EventQueue<E>
+NeedCacheState<T, E, P = Unit>
+RingBuffer<T>
+Signal<T>
+SignalBus<T>
+Source<T, E>
+Stream<T, E>
+```
+
+`StatePath` is a structured dotted path. `PatchSet`, queues, and logs preserve
+append order. `NeedCacheState` mirrors the state of cached asynchronous work
+without depending on a host runtime or I/O adapter.
+
+`RingBuffer<T>` is a bounded FIFO data structure for source/device queues. It is
+still pure data: adapter crates decide whether the backing transport is shared
+memory, browser events, native callbacks, or another host mechanism. `Signal<T>`
+and `SignalBus<T>` model replay-visible last-value state and do not perform
+notification I/O themselves.
+
+`Source<T,E>` and `Stream<T,E>` are deterministic descriptors. Live callbacks,
+permissions, and host polling are adapter concerns; the language and runtime
+observe them through explicit events and replayable queue state.
+
+## Source and Tooling Data
+
+Compiler, verifier, formatter, and LSP-facing APIs share source identity and
+diagnostic data:
+
+```awft
+SourceRange
+SourceSpan
+SourceAnchor
+LineIndex
+Diagnostic
+DiagnosticBag
+SyntaxNode
+AstNodeId
+HirId
+```
+
+`SourceSpan` / `SourceRange` are byte-oriented source coordinates with optional
+line/column positions for display. `SourceAnchor` is used in runtime traces and
+error propagation. `SyntaxNode` is the lossless CST node type owned by
+`arcweft-lang-syntax`; `AstNodeId` and `HirId` are stable IDs for compiler and
+tooling manifests.
 
 ## Capacity
 
@@ -98,13 +208,36 @@ pointers, or host handles directly. Use descriptor types instead:
 Bytes
 Blob
 BlobRef
+FrameArena<T>
+BumpArena<T>
 SharedSliceDesc
+SharedSlice<T>
 MemoryLease
 PodSlice<T>
 ```
 
 Adapters may back these descriptors with mmap, shared memory, files, or GPU
 buffers, but the core data format remains Sans I/O.
+
+## Text and Localization Data
+
+Dialogue and presentation text use structured text data near the prelude:
+
+```awft
+TextKey
+Localized<T>
+LocaleMap<T>
+RichText
+TextRun
+InlineTag
+RubyText
+DialogueLine
+LinePlan
+```
+
+`String` remains available for ordinary string values. User-facing narrative
+text should prefer `TextKey`, `RichText`, and `Localized<RichText>` where
+localization, ruby, reveal, or text effects matter.
 
 ## Facade Prelude
 

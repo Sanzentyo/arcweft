@@ -513,8 +513,12 @@ fn lower_flow_item_with_context(
             lower_await_with(await_with, context).map(HirFlowItem::Await)
         }
         FlowItem::Raw(raw) => Err(HirLowerError::new(
-            format!("raw flow item cannot be lowered: {raw}"),
-            None,
+            format!(
+                "raw {:?} recovery node cannot be lowered: {}",
+                raw.family(),
+                raw.source()
+            ),
+            raw.range(),
         )),
     }
 }

@@ -129,7 +129,7 @@ flow @flow.opening opening {
         .with_symbol("end", TypeKind::Duration)
         .with_symbol(
             "state.affection",
-            TypeKind::Named("Map<Ref<Character>, Int>".to_owned()),
+            TypeKind::Named("OrderedMap<Ref<Character>, Int>".to_owned()),
         )
         .with_function("show", TypeKind::Unit)
         .with_function("fmt", TypeKind::DisplayText)
@@ -151,7 +151,7 @@ flow @flow.opening opening {
             TypeKind::Named("StageCue".to_owned()),
         )
         .with_index(
-            TypeKind::Named("Map<Ref<Character>, Int>".to_owned()),
+            TypeKind::Named("OrderedMap<Ref<Character>, Int>".to_owned()),
             TypeKind::Int,
         );
 
@@ -214,6 +214,60 @@ flow @flow.opening opening {
             .message()
             .contains("default slot already has live handle")
     }));
+}
+
+#[test]
+fn type_ref_keeps_explicit_map_kind() {
+    let ordered = crate::check::type_ref_kind(
+        &parse_type_ref("OrderedMap<Ref<Character>, Int>").expect("ordered map type parses"),
+    );
+    let sorted = crate::check::type_ref_kind(
+        &parse_type_ref("SortedMap<Ref<Character>, Int>").expect("sorted map type parses"),
+    );
+    let btree = crate::check::type_ref_kind(
+        &parse_type_ref("BTreeMap<Ref<Character>, Int>").expect("btree map type parses"),
+    );
+    assert!(matches!(
+        ordered,
+        TypeKind::Map {
+            kind: crate::MapKind::Ordered,
+            ..
+        }
+    ));
+    assert!(matches!(
+        sorted,
+        TypeKind::Map {
+            kind: crate::MapKind::Sorted,
+            ..
+        }
+    ));
+    assert!(matches!(
+        btree,
+        TypeKind::Map {
+            kind: crate::MapKind::BTree,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn named_iter_item_type_extracts_sequence_items() {
+    assert_eq!(
+        crate::check::named_iter_item_type("Vec<Foo>").as_deref(),
+        Some("Foo")
+    );
+    assert_eq!(
+        crate::check::named_iter_item_type("Seq<Foo>").as_deref(),
+        Some("Foo")
+    );
+    assert_eq!(
+        crate::check::named_iter_item_type("Slice<Foo>").as_deref(),
+        Some("Foo")
+    );
+    assert_eq!(
+        crate::check::named_iter_item_type("Array<Foo, 3>").as_deref(),
+        Some("Foo")
+    );
 }
 
 #[test]
@@ -476,6 +530,8 @@ fn typechecks_structured_collection_and_capacity_trait_methods() {
 flow @flow.collections collections {
     let nums: Vec<i32> = [1, 2, 3]
     let first: i32 = nums[0]
+    let fixed: Array<i32, 3> = [1, 2, 3]
+    let zeros: Array<i32, 4> = [0; 4]
     let _ = nums.reserve(4)
     let _ = nums.shrink()
     let _ = nums.shrink_to(1)
@@ -485,6 +541,42 @@ flow @flow.collections collections {
     );
     let hir = lower_to_hir(&tree).expect("collection fixture lowers");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("collection fixture typechecks");
+}
+
+#[test]
+fn typecheck_rejects_array_literal_length_mismatch() {
+    let tree = parse_ok(
+        r"
+flow @flow.array_mismatch array_mismatch {
+    let fixed: Array<i32, 2> = [1, 2, 3]
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("array mismatch fixture lowers");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("length mismatch");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("array literal length mismatch"))
+    );
+}
+
+#[test]
+fn typecheck_rejects_array_repeat_length_mismatch() {
+    let tree = parse_ok(
+        r"
+flow @flow.array_repeat_mismatch array_repeat_mismatch {
+    let fixed: Array<i32, 2> = [0; 3]
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("array repeat mismatch fixture lowers");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("length mismatch");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("array repeat length mismatch"))
+    );
 }
 
 #[test]

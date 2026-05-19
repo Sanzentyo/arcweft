@@ -11,8 +11,8 @@ mod semantic;
 mod symbols;
 
 pub use check::{
-    EntityKind, HandleState, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError, TypeKind,
-    typecheck_hir, validate_typecheck_ready,
+    EntityKind, HandleState, MapKind, TypeCheckEnv, TypeCheckError, TypeCheckReadinessError,
+    TypeKind, typecheck_hir, validate_typecheck_ready,
 };
 pub use resolve::{NameRegistry, NameResolutionError, registry_from_hir, validate_hir_references};
 pub use semantic::{

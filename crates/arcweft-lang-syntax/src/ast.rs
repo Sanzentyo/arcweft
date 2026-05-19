@@ -93,6 +93,27 @@ pub struct RawItem {
     range: TextRange,
 }
 
+/// Recovery-only syntax that did not match a typed grammar family.
+///
+/// `RawSyntax` is not executable syntax. Parser recovery uses it to keep source
+/// text plus a best-effort family/span so HIR, diagnostics, verifier, and LSP
+/// tooling can report the unsupported construct without reparsing strings.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RawSyntax {
+    family: RawSyntaxFamily,
+    source: String,
+    range: Option<TextRange>,
+}
+
+/// Grammar family where a recovery node was produced.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RawSyntaxFamily {
+    FlowItem,
+    ChoiceItem,
+    ChoicePlanItem,
+    LinePlanItem,
+}
+
 /// Top-level `proof @proof.id { ... }` item kept for verifier lowering.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofItem {
@@ -219,7 +240,7 @@ pub struct WikiLink {
     range: TextRange,
 }
 
-/// Attribute syntax such as `#derive(...)`.
+/// Attribute syntax such as `#[derive(...)]`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Attribute {
     name: String,
@@ -522,7 +543,7 @@ pub enum FlowItem {
     Scope(ScopeBlock),
     Include(EntityRefSyntax),
     AwaitWith(AwaitWith),
-    Raw(String),
+    Raw(RawSyntax),
 }
 
 /// Scoped source-locale override for directly authored text.
@@ -836,7 +857,7 @@ pub enum Pattern {
         fields: Vec<RecordPatternField>,
         rest: bool,
     },
-    List {
+    BracketSeq {
         items: Vec<Pattern>,
         rest: Option<String>,
     },
@@ -1112,7 +1133,7 @@ pub enum ChoicePlanItem {
         pattern: Pattern,
         body: Vec<Stmt>,
     },
-    Raw(String),
+    Raw(RawSyntax),
 }
 
 /// Item inside a choice body.
@@ -1136,7 +1157,7 @@ pub enum ChoiceItem {
         arms: Vec<ChoiceMatchArm>,
     },
     Option(Box<ChoiceOption>),
-    Raw(String),
+    Raw(RawSyntax),
 }
 
 /// One branch of a `match` item inside a choice body.
@@ -1236,7 +1257,7 @@ pub enum LinePlanItem {
         expr: Expr,
     },
     Expr(Expr),
-    Raw(String),
+    Raw(RawSyntax),
 }
 
 /// Parsed cancellation syntax.
@@ -3591,6 +3612,54 @@ impl RawItem {
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+}
+
+impl RawSyntax {
+    pub(crate) fn new(
+        family: RawSyntaxFamily,
+        source: impl Into<String>,
+        range: Option<TextRange>,
+    ) -> Self {
+        Self {
+            family,
+            source: source.into(),
+            range,
+        }
+    }
+
+    pub(crate) fn flow_item(source: impl Into<String>, range: Option<TextRange>) -> Self {
+        Self::new(RawSyntaxFamily::FlowItem, source, range)
+    }
+
+    pub(crate) fn choice_item(source: impl Into<String>, range: Option<TextRange>) -> Self {
+        Self::new(RawSyntaxFamily::ChoiceItem, source, range)
+    }
+
+    pub(crate) fn choice_plan_item(source: impl Into<String>, range: Option<TextRange>) -> Self {
+        Self::new(RawSyntaxFamily::ChoicePlanItem, source, range)
+    }
+
+    pub(crate) fn line_plan_item(source: impl Into<String>, range: Option<TextRange>) -> Self {
+        Self::new(RawSyntaxFamily::LinePlanItem, source, range)
+    }
+
+    pub const fn family(&self) -> RawSyntaxFamily {
+        self.family
+    }
+
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    pub const fn range(&self) -> Option<TextRange> {
+        self.range
+    }
+}
+
+impl core::fmt::Display for RawSyntax {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(&self.source)
     }
 }
 

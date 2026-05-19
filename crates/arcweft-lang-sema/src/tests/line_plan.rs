@@ -219,7 +219,12 @@ with:
         panic!("expected content call");
     };
     let plan = call.plan().expect("line plan");
-    assert!(matches!(&plan.items()[0], LinePlanItem::Raw(_)));
+    let LinePlanItem::Raw(raw) = &plan.items()[0] else {
+        panic!("expected line-plan recovery node");
+    };
+    assert_eq!(raw.family(), RawSyntaxFamily::LinePlanItem);
+    assert_eq!(raw.source(), "at(0.42s)[alice.stage.face(worried)]");
+    assert!(raw.range().is_some());
 
     let hir = lower_to_hir(&tree).expect("lossy line plan still lowers");
     let errors = validate_typecheck_ready(&hir).expect_err("old at bracket cue is rejected");

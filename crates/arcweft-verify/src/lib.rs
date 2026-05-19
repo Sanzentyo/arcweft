@@ -658,7 +658,10 @@ impl ObligationCollector {
                 self.collect_stmts(body);
             }
             arcweft_lang_hir::ChoicePlanItem::Raw(raw) => {
-                self.add_raw_obligation(format!("raw choice plan item: {raw}"), None);
+                self.add_raw_obligation(
+                    format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
+                    raw.range().map(|range| format!("{range:?}")),
+                );
             }
         }
     }
@@ -696,7 +699,10 @@ impl ObligationCollector {
                 }
             }
             LinePlanItem::Raw(raw) => {
-                self.add_raw_obligation(format!("raw line plan item: {raw}"), None);
+                self.add_raw_obligation(
+                    format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
+                    raw.range().map(|range| format!("{range:?}")),
+                );
             }
         }
     }
@@ -813,10 +819,14 @@ impl ObligationCollector {
             Expr::LifetimePath { key, .. } => {
                 self.lifetime_reads.push(key.clone());
             }
-            Expr::Tuple(items) | Expr::List(items) => {
+            Expr::Tuple(items) | Expr::BracketSeq(items) => {
                 for item in items {
                     self.collect_expr(item);
                 }
+            }
+            Expr::ArrayRepeat { value, len } => {
+                self.collect_expr(value);
+                self.collect_expr(len);
             }
             Expr::Call { callee, args } => {
                 self.collect_call(callee, args);
@@ -1163,7 +1173,10 @@ impl ObligationCollector {
             match item {
                 arcweft_lang_hir::FlowItem::Stmt(stmt) => self.collect_stmt(stmt),
                 arcweft_lang_hir::FlowItem::Raw(raw) => {
-                    self.add_raw_obligation(format!("raw flow item: {raw}"), None);
+                    self.add_raw_obligation(
+                        format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
+                        raw.range().map(|range| format!("{range:?}")),
+                    );
                 }
                 _ => {}
             }

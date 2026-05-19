@@ -6,8 +6,8 @@
 pub state GameState {
     pub route: Ref<Flow> = @flow.opening
     pub config: Config = Config {}
-    pub flags: Set<Flag> = {}
-    pub affection: Map<Ref<Character>, i32> = {}
+    pub flags: OrderedSet<Flag> = {}
+    pub affection: OrderedMap<Ref<Character>, i32> = {}
     pub current_bg: Option<ImageHandle> = None
 }
 ```

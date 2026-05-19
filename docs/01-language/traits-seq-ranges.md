@@ -34,7 +34,7 @@ pub impl Format for Route {
 Generic function:
 
 ```awft
-pub fn group_by<T, K>(key: T -> K)(xs: Vec<T>) -> Map<K, Vec<T>>
+pub fn group_by<T, K>(key: T -> K)(xs: Vec<T>) -> OrderedMap<K, Vec<T>>
 where
     K: Eq + Hash
 {

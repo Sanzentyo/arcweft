@@ -144,9 +144,34 @@ impl<T> PodSlice<T> {
     }
 }
 
+/// Typed shared slice descriptor for non-POD logical payloads.
+///
+/// The descriptor carries only layout and type information. Mapping,
+/// validation, and host lifetime management belong to adapter crates.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SharedSlice<T> {
+    desc: SharedSliceDesc,
+    marker: core::marker::PhantomData<fn() -> T>,
+}
+
+impl<T> SharedSlice<T> {
+    /// Creates a typed shared-slice descriptor.
+    pub const fn new(desc: SharedSliceDesc) -> Self {
+        Self {
+            desc,
+            marker: core::marker::PhantomData,
+        }
+    }
+
+    /// Untyped layout descriptor.
+    pub const fn desc(&self) -> SharedSliceDesc {
+        self.desc
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Bytes, PodSlice, SharedSliceDesc};
+    use super::{Bytes, PodSlice, SharedSlice, SharedSliceDesc};
 
     #[test]
     fn bytes_shrink_keeps_data() {
@@ -163,5 +188,13 @@ mod tests {
         let slice = PodSlice::<u32>::new(desc);
         assert_eq!(slice.desc().offset(), 16);
         assert_eq!(slice.desc().len(), 32);
+    }
+
+    #[test]
+    fn shared_slice_is_descriptor_only() {
+        let desc = SharedSliceDesc::new(64, 128);
+        let slice = SharedSlice::<String>::new(desc);
+        assert_eq!(slice.desc().offset(), 64);
+        assert_eq!(slice.desc().len(), 128);
     }
 }

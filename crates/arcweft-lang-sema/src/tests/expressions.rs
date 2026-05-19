@@ -36,13 +36,13 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
     let partial = parse_expr("_.score >= ^").expect("partial comparison expression parses");
     assert!(matches!(partial, Expr::Binary { .. }));
 
-    let list = parse_expr("[normal, smile, worried]").expect("list expression parses");
-    assert!(matches!(list, Expr::List(items) if items.len() == 3));
-    let empty_list = parse_expr("[]").expect("empty list expression parses");
-    assert!(matches!(empty_list, Expr::List(items) if items.is_empty()));
+    let list = parse_expr("[normal, smile, worried]").expect("bracket sequence parses");
+    assert!(matches!(list, Expr::BracketSeq(items) if items.len() == 3));
+    let empty_list = parse_expr("[]").expect("empty bracket sequence parses");
+    assert!(matches!(empty_list, Expr::BracketSeq(items) if items.is_empty()));
     let nested_list = parse_expr("[@stem.piano, fade(0.2s, [slow, fast])]")
-        .expect("nested list expression parses");
-    assert!(matches!(nested_list, Expr::List(items) if items.len() == 2));
+        .expect("nested bracket sequence parses");
+    assert!(matches!(nested_list, Expr::BracketSeq(items) if items.len() == 2));
     let record_literal =
         parse_expr("{ player_name = state.player_name }").expect("record literal parses");
     assert!(matches!(record_literal, Expr::RecordLiteral(fields) if fields.len() == 1));

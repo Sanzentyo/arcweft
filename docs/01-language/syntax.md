@@ -145,7 +145,6 @@ AwaitView(typeset(@typeset.credits)) {
 hook @hook.opening.choice_visible
 on @choice.opening.listen
 phase AfterLayout
-check every frame
 when object.visible && object.enabled
 effects { signal_write, assert }
 {

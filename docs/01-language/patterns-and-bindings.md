@@ -79,9 +79,9 @@ Result::Err(e)
 GameEvent::ChoiceSelected { id }
 ```
 
-## List / slice patterns
+## Bracket sequence patterns
 
-Phase 1 syntax supports fixed-length list patterns and rest patterns.
+Phase 1 syntax supports fixed-length bracket sequence patterns and rest patterns.
 
 ```awft
 match items {
@@ -91,7 +91,9 @@ match items {
 }
 ```
 
-Owned list and borrowed slice patterns use the same surface syntax. Type checking decides whether the scrutinee supports owned-list or borrowed-slice destructuring and applies the corresponding lifetime rules.
+`Vec`, `Array`, and borrowed `Slice` destructuring use the same `[ ... ]`
+surface syntax. Type checking decides which sequence-like scrutinee forms are
+accepted and applies the corresponding lifetime rules.
 
 ## Binding entire pattern
 

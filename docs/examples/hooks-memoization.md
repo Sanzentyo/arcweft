@@ -28,7 +28,6 @@ effects { ui.enable, log.debug }
 pub hook @hook.opening.listen_hover
 on @choice.opening.listen
 phase InputTarget
-check every frame
 when input.pointer.hovered
 effects { ui.style }
 {

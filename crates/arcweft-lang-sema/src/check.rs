@@ -73,6 +73,7 @@ pub enum TypeKind {
     Slice(Box<TypeKind>),
     Seq(Box<TypeKind>),
     Map {
+        kind: MapKind,
         key: Box<TypeKind>,
         value: Box<TypeKind>,
     },
@@ -116,6 +117,14 @@ pub enum TypeKind {
     Tuple(Vec<TypeKind>),
     Unit,
     Never,
+}
+
+/// Deterministic map family preserved by semantic type checking.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MapKind {
+    Ordered,
+    Sorted,
+    BTree,
 }
 
 /// Minimal typestate for scoped handles tracked by the syntax checker.
@@ -2279,7 +2288,10 @@ impl TypeChecker<'_> {
             Expr::Path(path) => self.check_path_expr(path),
             Expr::Placeholder(_) => None,
             Expr::Tuple(items) => Some(self.check_tuple_expr(items)),
-            Expr::List(items) => Some(self.check_list_expr_with_expected(items, expected)),
+            Expr::BracketSeq(items) => Some(self.check_bracket_seq_with_expected(items, expected)),
+            Expr::ArrayRepeat { value, len } => {
+                Some(self.check_array_repeat_expr(value, len, expected))
+            }
             Expr::Call { callee, args } => self.check_call_expr(callee, args),
             Expr::NamedArg { value, .. } => self.check_expr(value),
             Expr::MethodCall {
@@ -2460,18 +2472,24 @@ impl TypeChecker<'_> {
         )
     }
 
-    fn check_list_expr_with_expected(
+    fn check_bracket_seq_with_expected(
         &mut self,
         items: &[Expr],
         expected: Option<&TypeKind>,
     ) -> TypeKind {
         let mut item_type = None;
+        let expected_item = match expected {
+            Some(TypeKind::Array { item, .. } | TypeKind::Vec(item)) => Some(item.as_ref()),
+            _ => None,
+        };
         for item in items {
-            let next_type = self.check_expr(item).unwrap_or(TypeKind::Unit);
+            let next_type = self
+                .check_expr_with_expected(item, expected_item)
+                .unwrap_or(TypeKind::Unit);
             match &item_type {
                 Some(existing) if existing != &next_type => {
                     self.errors.push(TypeCheckError::new(format!(
-                        "list items must have the same type, found {existing:?} and {next_type:?}"
+                        "sequence literal items must have the same type, found {existing:?} and {next_type:?}"
                     )));
                 }
                 Some(_) => {}
@@ -2479,16 +2497,70 @@ impl TypeChecker<'_> {
             }
         }
         let item_type = item_type.unwrap_or(TypeKind::Unit);
-        if let Some(TypeKind::Array { item, len }) = expected
-            && array_len_matches(len, items.len())
-            && item.as_ref() == &item_type
-        {
+        if let Some(TypeKind::Array { item, len }) = expected {
+            if !array_len_matches(len, items.len()) {
+                self.errors.push(TypeCheckError::new(format!(
+                    "array literal length mismatch: expected {len}, found {}",
+                    items.len()
+                )));
+            }
+            if item.as_ref() != &item_type {
+                self.errors.push(TypeCheckError::new(format!(
+                    "array items must have type {:?}, found {item_type:?}",
+                    item.as_ref()
+                )));
+            }
             return TypeKind::Array {
                 item: item.clone(),
                 len: len.clone(),
             };
         }
         TypeKind::Vec(Box::new(item_type))
+    }
+
+    fn check_array_repeat_expr(
+        &mut self,
+        value: &Expr,
+        len: &Expr,
+        expected: Option<&TypeKind>,
+    ) -> TypeKind {
+        let expected_item = match expected {
+            Some(TypeKind::Array { item, .. }) => Some(item.as_ref()),
+            _ => None,
+        };
+        let item_type = self
+            .check_expr_with_expected(value, expected_item)
+            .unwrap_or(TypeKind::Unit);
+        let len_label = array_repeat_len_label(len).unwrap_or_else(|| {
+            self.errors.push(TypeCheckError::new(
+                "array repeat length must be an integer constant".to_owned(),
+            ));
+            "_".to_owned()
+        });
+        self.expect_expr_type(len, &TypeKind::Int, "array repeat length");
+
+        if let Some(TypeKind::Array { item, len }) = expected {
+            if len != &len_label && len_label != "_" {
+                self.errors.push(TypeCheckError::new(format!(
+                    "array repeat length mismatch: expected {len}, found {len_label}"
+                )));
+            }
+            if item.as_ref() != &item_type {
+                self.errors.push(TypeCheckError::new(format!(
+                    "array repeat value must have type {:?}, found {item_type:?}",
+                    item.as_ref()
+                )));
+            }
+            return TypeKind::Array {
+                item: item.clone(),
+                len: len.clone(),
+            };
+        }
+
+        TypeKind::Array {
+            item: Box::new(item_type),
+            len: len_label,
+        }
     }
 
     fn check_memo_block_expr(
@@ -3248,17 +3320,36 @@ fn iter_item_type(source_type: Option<&TypeKind>) -> TypeKind {
             | TypeKind::Seq(item)
             | TypeKind::Slice(item),
         ) => item.as_ref().clone(),
-        Some(TypeKind::Named(name)) if name.starts_with("Vec<") && name.ends_with('>') => {
-            TypeKind::Named(name[5..name.len() - 1].to_owned())
-        }
-        Some(TypeKind::Named(name)) if name.starts_with("Seq<") && name.ends_with('>') => {
-            TypeKind::Named(name[4..name.len() - 1].to_owned())
-        }
-        Some(TypeKind::Named(name)) if name.starts_with("Vec<") && name.ends_with('>') => {
-            TypeKind::Named(name[4..name.len() - 1].to_owned())
-        }
+        Some(TypeKind::Named(name)) => named_iter_item_type(name).map_or_else(
+            || TypeKind::Named("ChoiceOptionSource".to_owned()),
+            TypeKind::Named,
+        ),
         _ => TypeKind::Named("ChoiceOptionSource".to_owned()),
     }
+}
+
+pub(crate) fn named_iter_item_type(name: &str) -> Option<String> {
+    if let Some(inner) = generic_named_type_arg(name, "Vec")
+        .or_else(|| generic_named_type_arg(name, "Seq"))
+        .or_else(|| generic_named_type_arg(name, "Slice"))
+    {
+        return Some(inner.to_owned());
+    }
+    let inner = generic_named_type_arg(name, "Array")?;
+    Some(
+        inner
+            .split_once(',')
+            .map_or(inner, |(item, _)| item)
+            .trim()
+            .to_owned(),
+    )
+}
+
+fn generic_named_type_arg<'a>(name: &'a str, base: &str) -> Option<&'a str> {
+    name.strip_prefix(base)?
+        .strip_prefix('<')?
+        .strip_suffix('>')
+        .map(str::trim)
 }
 
 fn well_known_field_type(field: &str) -> Option<TypeKind> {
@@ -3292,7 +3383,7 @@ fn let_else_bindings(pattern: &Pattern, expr_type: Option<&TypeKind>) -> Vec<(St
             .iter()
             .flat_map(|item| let_else_bindings(item, None))
             .collect(),
-        Pattern::List { items, rest } => {
+        Pattern::BracketSeq { items, rest } => {
             let mut bindings = items
                 .iter()
                 .flat_map(|item| let_else_bindings(item, None))
@@ -3341,7 +3432,7 @@ fn collect_pattern_binding_names(pattern: &Pattern) -> Vec<String> {
             .iter()
             .flat_map(collect_pattern_binding_names)
             .collect(),
-        Pattern::List { items, rest } => {
+        Pattern::BracketSeq { items, rest } => {
             let mut names = items
                 .iter()
                 .flat_map(collect_pattern_binding_names)
@@ -3658,14 +3749,28 @@ fn simple_expr_type(expr: &Expr) -> Option<TypeKind> {
             .map(simple_expr_type)
             .collect::<Option<Vec<_>>>()
             .map(TypeKind::Tuple),
-        Expr::List(items) => {
+        Expr::BracketSeq(items) => {
             let item = items
                 .first()
                 .and_then(simple_expr_type)
                 .unwrap_or(TypeKind::Unit);
             Some(TypeKind::Vec(Box::new(item)))
         }
+        Expr::ArrayRepeat { value, len } => {
+            let item = simple_expr_type(value)?;
+            Some(TypeKind::Array {
+                item: Box::new(item),
+                len: array_repeat_len_label(len)?,
+            })
+        }
         Expr::RecordLiteral(_) => Some(TypeKind::Named("Record".to_owned())),
+        _ => None,
+    }
+}
+
+fn array_repeat_len_label(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Literal(Literal::Int(value)) if *value >= 0 => Some(value.to_string()),
         _ => None,
     }
 }
@@ -3725,7 +3830,7 @@ fn collect_type_kind_lifetimes(ty: &TypeKind, lifetimes: &mut Vec<String>) {
         | TypeKind::Option(inner)
         | TypeKind::ThreadHandle(inner)
         | TypeKind::Shared(inner) => collect_type_kind_lifetimes(inner, lifetimes),
-        TypeKind::Map { key, value }
+        TypeKind::Map { key, value, .. }
         | TypeKind::Result {
             ok: key,
             error: value,
@@ -3756,7 +3861,7 @@ fn type_contains_borrow_ref(ty: &TypeKind) -> bool {
         | TypeKind::Option(inner)
         | TypeKind::ThreadHandle(inner)
         | TypeKind::Shared(inner) => type_contains_borrow_ref(inner),
-        TypeKind::Map { key, value }
+        TypeKind::Map { key, value, .. }
         | TypeKind::Result {
             ok: key,
             error: value,
@@ -3776,9 +3881,23 @@ fn is_static_lifetime(lifetime: &LifetimeScopeKind) -> bool {
     matches!(lifetime, LifetimeScopeKind::Named(name) if name == "static")
 }
 
-fn type_ref_kind(ty: &TypeRef) -> TypeKind {
+fn is_map_type_name(name: &str) -> bool {
+    matches!(name, "OrderedMap" | "SortedMap" | "BTreeMap")
+}
+
+fn map_kind_for_type_name(name: &str) -> MapKind {
+    match name {
+        "OrderedMap" => MapKind::Ordered,
+        "SortedMap" => MapKind::Sorted,
+        "BTreeMap" => MapKind::BTree,
+        _ => unreachable!("map type names are filtered before kind selection"),
+    }
+}
+
+pub(crate) fn type_ref_kind(ty: &TypeRef) -> TypeKind {
     match ty {
         TypeRef::Never => TypeKind::Never,
+        TypeRef::ConstInt(value) => TypeKind::Named(value.to_string()),
         TypeRef::Path(path) => named_type_label(path),
         TypeRef::Generic { base, args } if base == "Vec" && args.len() == 1 => {
             TypeKind::Vec(Box::new(type_ref_kind(&args[0])))
@@ -3790,10 +3909,13 @@ fn type_ref_kind(ty: &TypeRef) -> TypeKind {
         TypeRef::Generic { base, args } if base == "Seq" && args.len() == 1 => {
             TypeKind::Seq(Box::new(type_ref_kind(&args[0])))
         }
-        TypeRef::Generic { base, args } if base == "Map" && args.len() == 2 => TypeKind::Map {
-            key: Box::new(type_ref_kind(&args[0])),
-            value: Box::new(type_ref_kind(&args[1])),
-        },
+        TypeRef::Generic { base, args } if is_map_type_name(base) && args.len() == 2 => {
+            TypeKind::Map {
+                kind: map_kind_for_type_name(base),
+                key: Box::new(type_ref_kind(&args[0])),
+                value: Box::new(type_ref_kind(&args[1])),
+            }
+        }
         TypeRef::Generic { base, args } if base == "Result" && args.len() == 2 => {
             TypeKind::Result {
                 ok: Box::new(type_ref_kind(&args[0])),
@@ -3849,6 +3971,7 @@ fn source_return_types(ty: &TypeRef) -> Option<(TypeKind, TypeKind)> {
 fn type_ref_label(ty: &TypeRef) -> String {
     match ty {
         TypeRef::Never => "Never".to_owned(),
+        TypeRef::ConstInt(value) => value.to_string(),
         TypeRef::Path(path) => path.clone(),
         TypeRef::Generic { base, args } => format!(
             "{base}<{}>",

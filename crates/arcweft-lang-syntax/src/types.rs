@@ -4,7 +4,7 @@ use crate::ast::{DocBlock, Pattern, TextRange};
 use crate::cst::{
     find_matching_angle_group, find_matching_punctuation, find_top_level_punctuation,
     split_leading_ident, split_leading_lifetime, split_top_level_keyword_once,
-    split_top_level_punctuation, split_top_level_punctuation_once,
+    split_top_level_punctuation, split_top_level_punctuation_once, take_doc_comment_prefix,
 };
 use crate::expr::{Expr, parse_expr};
 use crate::pattern::parse_pattern;
@@ -19,6 +19,7 @@ pub struct LifetimeName {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeRef {
     Never,
+    ConstInt(usize),
     Path(String),
     Generic {
         base: String,
@@ -176,23 +177,14 @@ fn parse_fn_param(source: &str) -> Result<FnParam, TypeParseError> {
 }
 
 fn take_param_doc(source: &str) -> (Option<DocBlock>, &str) {
-    let mut docs = Vec::new();
-    let mut consumed = 0;
-    for line in source.lines() {
-        let trimmed = line.trim();
-        let Some(text) = trimmed.strip_prefix("///") else {
-            break;
-        };
-        docs.push(text.strip_prefix(' ').unwrap_or(text).to_owned());
-        consumed += line.len() + 1;
-    }
-    if docs.is_empty() {
+    let Some(prefix) = take_doc_comment_prefix(source) else {
         return (None, source.trim());
-    }
+    };
+    let consumed = prefix.consumed();
     let rest = source.get(consumed..).unwrap_or_default().trim();
     (
         Some(DocBlock::new(
-            docs.join("\n"),
+            prefix.lines().join("\n"),
             TextRange::new(0, consumed.saturating_sub(1)),
         )),
         rest,
@@ -200,6 +192,9 @@ fn take_param_doc(source: &str) -> (Option<DocBlock>, &str) {
 }
 
 fn parse_type_atom(source: &str) -> TypeRef {
+    if let Ok(value) = source.parse::<usize>() {
+        return TypeRef::ConstInt(value);
+    }
     if matches!(source, "!" | "Never") {
         return TypeRef::Never;
     }
@@ -295,7 +290,7 @@ fn parse_where_clauses(source: &str) -> Result<Vec<WhereClause>, TypeParseError>
 
 fn type_ref_has_whitespace_path(ty: &TypeRef) -> bool {
     match ty {
-        TypeRef::Never => false,
+        TypeRef::Never | TypeRef::ConstInt(_) => false,
         TypeRef::Path(path) => path.chars().any(char::is_whitespace),
         TypeRef::Generic { base, args } => {
             base.chars().any(char::is_whitespace) || args.iter().any(type_ref_has_whitespace_path)

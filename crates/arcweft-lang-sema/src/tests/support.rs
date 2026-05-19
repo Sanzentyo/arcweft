@@ -13,7 +13,7 @@ pub(super) use arcweft_lang_syntax::{
     AwaitBranchKind, BinaryOp, BlockStyle, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
     ComputationBlockKind, ContractClause, DeferOutcome, DialogueToken, EntityDeclKind, Expr,
     FlowItem, FlowKind, FunctionKind, ImplMember, Item, LifetimeScopeKind, LinePlanItem, Literal,
-    Pattern, Placeholder, ProofClause, SelectBranchHead, SourceBackpressurePolicy,
+    Pattern, Placeholder, ProofClause, RawSyntaxFamily, SelectBranchHead, SourceBackpressurePolicy,
     SourceEventPattern, SourceHeader, SourcePrivacyPolicy, SourceReplayPolicy, Stmt,
     SyntaxLintCode, TestKind, TraitMember, TypeRef, UnaryOp, VariantPatternPayload, Visibility,
     lint_id_policy, parse_dialogue_tokens, parse_expr, parse_fn_signature, parse_source,

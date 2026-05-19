@@ -8,24 +8,24 @@ use crate::ast::{
     FunctionInit, FunctionItem, FunctionKind, HookInit, HookItem, IdRef, IfBlock, IfLetBlock,
     ImplItem, ImplMember, Item, LineArg, LineOptions, LineOptionsInit, LinePlan, LinePlanItem,
     LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, ProofClause, ProofItem,
-    RawItem, RelativeId, RelativeIdSpelling, ScenarioCommand, ScopeBlock, ScopeExprBlock,
-    SelectBlock, SelectBranch, SelectBranchHead, SourceBackpressurePolicy, SourceEventPattern,
-    SourceHandler, SourceHeader, SourceItem, SourceItemParts, SourceLocaleBlock,
-    SourceOverflowPolicy, SourcePrivacyPolicy, SourceReplayPolicy, SpeakerLine, StateField,
-    StateItem, Stmt, StmtMatchArm, StructField, StructItem, TestItem, TestKind, TextRange,
-    ThreadBlock, ThreadModifier, TraitItem, TraitMember, TriggerPattern, TrustedAxiomItem,
-    TypeAliasItem, TypedSyntaxTree, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock,
-    WikiLink,
+    RawItem, RawSyntax, RelativeId, RelativeIdSpelling, ScenarioCommand, ScopeBlock,
+    ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceBackpressurePolicy,
+    SourceEventPattern, SourceHandler, SourceHeader, SourceItem, SourceItemParts,
+    SourceLocaleBlock, SourceOverflowPolicy, SourcePrivacyPolicy, SourceReplayPolicy, SpeakerLine,
+    StateField, StateItem, Stmt, StmtMatchArm, StructField, StructItem, TestItem, TestKind,
+    TextRange, ThreadBlock, ThreadModifier, TraitItem, TraitMember, TriggerPattern,
+    TrustedAxiomItem, TypeAliasItem, TypedSyntaxTree, UseItem, UseMode, Visibility, WhileBlock,
+    WhileLetBlock, WikiLink,
 };
 use crate::cst::{
     CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstStructuredFlowBlockKind,
     CstTopLevelItemKind, CstTopLevelLineKind, collect_wiki_link_ranges, find_matching_punctuation,
-    find_top_level_punctuation, punctuation_delta, split_first_string_literal,
-    split_leading_entity_ref_parts, split_leading_ident, split_leading_relative_entity_ref,
-    split_leading_relative_id, split_top_level_keyword_once, split_top_level_punctuation,
-    split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
-    split_top_level_whitespace, starts_leading_entity_ref, starts_leading_relative_entity_ref,
-    starts_leading_relative_id,
+    find_top_level_punctuation, nonempty_trimmed_source_lines, punctuation_delta,
+    source_line_count, source_lines, split_first_string_literal, split_leading_entity_ref_parts,
+    split_leading_ident, split_leading_relative_entity_ref, split_leading_relative_id,
+    split_top_level_keyword_once, split_top_level_punctuation, split_top_level_punctuation_once,
+    split_top_level_punctuation_sequence_once, split_top_level_whitespace,
+    starts_leading_entity_ref, starts_leading_relative_entity_ref, starts_leading_relative_id,
 };
 use crate::expr::{ComputationBlockKind, Expr, parse_expr};
 use crate::pattern::parse_pattern;
@@ -1306,8 +1306,12 @@ impl Parser {
             if let Some(item) = nested.parse_flow_item_until_indent(0) {
                 items.push(item);
             } else {
-                let line = nested.current().text.trim().to_owned();
-                items.push(FlowItem::Raw(line));
+                let current = nested.current().clone();
+                let line = current.text.trim().to_owned();
+                items.push(FlowItem::Raw(RawSyntax::flow_item(
+                    line,
+                    Some(TextRange::new(current.start, current.end)),
+                )));
                 nested.index += 1;
             }
         }
@@ -1359,6 +1363,14 @@ impl Parser {
             CstFlowItemKind::Include | CstFlowItemKind::AwaitWith | CstFlowItemKind::Other => {}
         }
 
+        // Keep typed statements from falling back to Raw when the coarse CST
+        // classifier misses a surface form. This is especially important for
+        // `let name: Array<T, N> = ...`: the colon belongs to the type
+        // annotation and must not be reinterpreted as speaker-line sugar.
+        if is_typed_stmt(trimmed) || trimmed.starts_with("let ") {
+            self.index += 1;
+            return Some(FlowItem::Stmt(parse_stmt(trimmed)));
+        }
         if let Some(item) = self.parse_line_flow_item(&line, trimmed) {
             return Some(item);
         }
@@ -1367,15 +1379,6 @@ impl Parser {
         }
         if let Some(item) = self.parse_content_call_or_speaker_line() {
             return Some(item);
-        }
-        // Keep typed statements from falling back to Raw when the coarse CST
-        // classifier misses a surface form. This is especially important for
-        // discard bindings such as `let _ = handle.reserve(n)`, where the
-        // binding pattern is meaningful even though it does not introduce a
-        // named local.
-        if is_typed_stmt(trimmed) {
-            self.index += 1;
-            return Some(FlowItem::Stmt(parse_stmt(trimmed)));
         }
 
         None
@@ -1415,7 +1418,10 @@ impl Parser {
                 ["rewrite this unstructured task as a scoped thread"],
             );
             self.index += 1;
-            return Some(FlowItem::Raw(trimmed.to_owned()));
+            return Some(FlowItem::Raw(RawSyntax::flow_item(
+                trimmed,
+                Some(TextRange::new(line.start, line.end)),
+            )));
         }
         if trimmed.starts_with('@') && !trimmed.contains('[') {
             let message = if trimmed.starts_with("@choice") {
@@ -1433,7 +1439,10 @@ impl Parser {
         }
         if self.reject_legacy_scenario_call(trimmed, TextRange::new(line.start, line.end)) {
             self.index += 1;
-            return Some(FlowItem::Raw(trimmed.to_owned()));
+            return Some(FlowItem::Raw(RawSyntax::flow_item(
+                trimmed,
+                Some(TextRange::new(line.start, line.end)),
+            )));
         }
         if let Some(expr) = parse_presentation_special_call(trimmed) {
             self.index += 1;
@@ -1471,7 +1480,10 @@ impl Parser {
                 ["remove this close fence or add the missing open fence"],
             );
             self.index += 1;
-            return Some(FlowItem::Raw(trimmed.to_owned()));
+            return Some(FlowItem::Raw(RawSyntax::flow_item(
+                trimmed,
+                Some(TextRange::new(line.start, line.end)),
+            )));
         }
         match fence.kind {
             "line" => Some(self.parse_flat_line(line, fence.head)),
@@ -1508,7 +1520,10 @@ impl Parser {
                     ["use a supported flat block head"],
                 );
                 self.index += 1;
-                Some(FlowItem::Raw(trimmed.to_owned()))
+                Some(FlowItem::Raw(RawSyntax::flow_item(
+                    trimmed,
+                    Some(TextRange::new(line.start, line.end)),
+                )))
             }
         }
     }
@@ -4219,7 +4234,7 @@ fn parse_named_line_option(
 }
 
 fn push_line_hooks(hooks: &mut Vec<Expr>, expr: Expr) {
-    if let Expr::List(items) = expr {
+    if let Expr::BracketSeq(items) = expr {
         hooks.extend(items);
     } else {
         hooks.push(expr);
@@ -4513,8 +4528,12 @@ fn parse_choice_items(body: &str, base: usize, errors: &mut Vec<ParseError>) -> 
     collect_logical_block_items(body)
         .into_iter()
         .map(|line| {
-            parse_choice_item(line.trim(), base, errors)
-                .unwrap_or_else(|| ChoiceItem::Raw(line.trim().to_owned()))
+            parse_choice_item(line.trim(), base, errors).unwrap_or_else(|| {
+                ChoiceItem::Raw(RawSyntax::choice_item(
+                    line.trim(),
+                    Some(TextRange::new(base, base + line.len())),
+                ))
+            })
         })
         .collect()
 }
@@ -4555,7 +4574,10 @@ fn parse_choice_item(
     if trimmed.starts_with("let ") {
         return Some(match parse_stmt(trimmed) {
             Stmt::Let { pattern, expr, .. } => ChoiceItem::Let { pattern, expr },
-            _ => ChoiceItem::Raw(trimmed.to_owned()),
+            _ => ChoiceItem::Raw(RawSyntax::choice_item(
+                trimmed,
+                Some(TextRange::new(base, base + trimmed.len())),
+            )),
         });
     }
     if let Some((head, body)) = split_brace_item(trimmed) {
@@ -4564,7 +4586,10 @@ fn parse_choice_item(
                 let option_head = format!("option {}", pattern.trim());
                 let Some(option) = parse_choice_option_block(&option_head, body, base, errors)
                 else {
-                    return Some(ChoiceItem::Raw(trimmed.to_owned()));
+                    return Some(ChoiceItem::Raw(RawSyntax::choice_item(
+                        trimmed,
+                        Some(TextRange::new(base, base + trimmed.len())),
+                    )));
                 };
                 return Some(ChoiceItem::For {
                     pattern: parse_pattern(pattern.trim()),
@@ -4624,7 +4649,12 @@ fn parse_choice_match_arms(
                 parse_choice_items(block.trim(), base, errors)
             } else {
                 parse_choice_item(value, base, errors).map_or_else(
-                    || vec![ChoiceItem::Raw(value.to_owned())],
+                    || {
+                        vec![ChoiceItem::Raw(RawSyntax::choice_item(
+                            value,
+                            Some(TextRange::new(base, base + value.len())),
+                        ))]
+                    },
                     |item| vec![item],
                 )
             };
@@ -4670,7 +4700,12 @@ fn parse_choice_plan_items(body: &str) -> Vec<ChoicePlanItem> {
                 }
             }
             split_top_level_binding(trimmed).map_or_else(
-                || ChoicePlanItem::Raw(trimmed.to_owned()),
+                || {
+                    ChoicePlanItem::Raw(RawSyntax::choice_plan_item(
+                        trimmed,
+                        Some(TextRange::new(0, trimmed.len())),
+                    ))
+                },
                 |(name, value)| ChoicePlanItem::Option {
                     name: name.trim().to_owned(),
                     value: parse_expr_lossy(value.trim()),
@@ -5191,7 +5226,11 @@ fn parse_line_plan_colon_item(head: &str, body: &str) -> LinePlanItem {
     if head.starts_with("scope") {
         return LinePlanItem::Stmt(Stmt::Expr(parse_named_block_expr(head, body)));
     }
-    LinePlanItem::Raw(format!("{head}:\n{body}"))
+    let source = format!("{head}:\n{body}");
+    LinePlanItem::Raw(RawSyntax::line_plan_item(
+        source,
+        Some(TextRange::new(0, head.len() + body.len() + 2)),
+    ))
 }
 
 fn parse_line_plan_item(line: &str) -> LinePlanItem {
@@ -5213,7 +5252,10 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
     }
     if let Some(rest) = line.strip_prefix("defer ") {
         if rest.trim_start().starts_with("on ") {
-            return LinePlanItem::Raw(line.to_owned());
+            return LinePlanItem::Raw(RawSyntax::line_plan_item(
+                line,
+                Some(TextRange::new(0, line.len())),
+            ));
         }
         return LinePlanItem::Stmt(Stmt::Defer {
             outcome: DeferOutcome::Always,
@@ -5243,7 +5285,10 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
         let anchor = &line[open + '('.len_utf8()..close];
         let body = &line[close + ')'.len_utf8()..];
         if body.trim_start().starts_with('[') {
-            return LinePlanItem::Raw(line.to_owned());
+            return LinePlanItem::Raw(RawSyntax::line_plan_item(
+                line,
+                Some(TextRange::new(0, line.len())),
+            ));
         }
         return LinePlanItem::TimedCue {
             anchor: parse_expr_lossy(anchor.trim()),
@@ -5283,7 +5328,10 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
     if let Ok(expr) = parse_expr(line) {
         return LinePlanItem::Expr(expr);
     }
-    LinePlanItem::Raw(line.to_owned())
+    LinePlanItem::Raw(RawSyntax::line_plan_item(
+        line,
+        Some(TextRange::new(0, line.len())),
+    ))
 }
 
 fn is_line_plan_statement(line: &str) -> bool {
@@ -5364,7 +5412,10 @@ fn nonempty_string(source: &str) -> Option<String> {
 fn parse_line_plan_memo(source: &str) -> LinePlanItem {
     let mut parts = split_scenario_args(source);
     if parts.is_empty() {
-        return LinePlanItem::Raw("memo".to_owned());
+        return LinePlanItem::Raw(RawSyntax::line_plan_item(
+            "memo",
+            Some(TextRange::new(0, "memo".len())),
+        ));
     }
     let name = parts.remove(0).to_owned();
     let options = parts
@@ -5575,8 +5626,8 @@ fn parse_await_branches(source: &str) -> Vec<AwaitBranch> {
         .and_then(|value| value.strip_suffix('}'))
         .unwrap_or(source)
         .trim();
-    if body
-        .lines()
+    if source_lines(body)
+        .into_iter()
         .any(|line| is_colon_await_branch_head(line.trim()))
     {
         return parse_colon_await_branches(body);
@@ -5592,7 +5643,7 @@ fn parse_colon_await_branches(source: &str) -> Vec<AwaitBranch> {
     let mut current_head = None::<String>;
     let mut current_body = String::new();
 
-    for line in source.lines() {
+    for line in source_lines(source) {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
@@ -5646,12 +5697,8 @@ fn parse_colon_await_branch(head: &str, body: &str) -> Option<AwaitBranch> {
 }
 
 fn split_await_branch_lines(source: &str) -> Vec<&str> {
-    if source.lines().count() > 1 {
-        return source
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .collect();
+    if source_line_count(source) > 1 {
+        return nonempty_trimmed_source_lines(source);
     }
     let mut lines = Vec::new();
     let mut start = 0;

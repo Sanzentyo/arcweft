@@ -104,10 +104,17 @@ they affect parser, HIR, formatter, LSP, or CLI work.
 - Parser-facing grammar delimiter decisions have been moved out of the typed
   parser's local string scans and into CST helpers. The remaining raw
   character scans live in the CST lexer / CST text utilities themselves, where
-  they tokenize source text or implement named text utilities such as wiki-link
-  and string-literal extraction. Future grammar behavior should continue to
-  enter through CST helpers or grammar-level rowan events rather than parser
-  module scans.
+  they tokenize source text or implement named text utilities such as line
+  splitting, documentation-prefix extraction, wiki-link extraction, and
+  string-literal extraction. Future grammar behavior should continue to enter
+  through CST helpers or grammar-level rowan events rather than parser module
+  scans.
+- Parser recovery for flow items, choice-body items, choice-plan items, and
+  line-plan items now uses a typed `RawSyntax` recovery node with grammar
+  family and source span metadata. These nodes are diagnostics carriers only:
+  HIR lowering rejects raw flow recovery nodes, and semantic/verifier passes
+  report raw line/choice recovery as typed obligations instead of treating it
+  as executable syntax.
 - CST reference helpers now keep absolute `EntityRef`, ID-context `IdRef`, and
   family-relative `EntityRefSyntax` separate. `@.suffix`, `@..suffix`,
   `@...suffix`, `@super...`, and ID-context family forms such as
@@ -333,17 +340,25 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   tooling crate. ID materialization now flows through
   `arcweft-lang-hir::collect_id_context`, which emits typed source operations
   for declarations, choices, choice options, explicit dialogue `id` /
-  `text_key` options, and omitted dialogue options. Tooling, CLI, and LSP
-  convert those typed operations into edits, hints, and actions instead of
+  `text_key` options, and omitted dialogue options. Speaker-preset discovery
+  now walks the parsed typed tree instead of source lines. Tooling, CLI, and
+  LSP convert typed operations into edits, hints, and actions instead of
   keeping scanner-specific logic.
 - `pro_review19.md` is reflected with Rust-like collection names. The facade
   prelude now exports minimal Sans I/O standard data crates:
-  `arcweft-adt` (`Unit`, `Never`, `Vec<T>`, `Array<T,N>`, deterministic map/set
-  wrappers, patch/log/snapshot types), `arcweft-ref` (`Id<T>`, `Ref<T>`,
-  `Handle<T>`, `WeakHandle<T>`, `Borrow`, `Slice`, `Lease`), and
-  `arcweft-memory` (`Bytes`, `Blob`, `BlobRef`, `SharedSliceDesc`,
-  `MemoryLease`, `PodSlice<T>`). The language docs use `Vec<T>` for growable
-  ordered lists and reserve `Array<T,N>` for fixed-length literals.
+  `arcweft-adt` (`Unit`, `Never`, `Vec<T>`, `Array<T,N>`,
+  `OrderedMap`/`SortedMap`/`OrderedSet`/`SortedSet`, `SmallList`, state paths, patch/diff/version/log/queue/cache
+  types, source/stream descriptors, arena/slot/generational ID structures,
+  deterministic tree/graph structures, ring buffers, signal buses, compiler
+  node IDs, and rich-text/localization data),
+  `arcweft-ref` (`Id<T>`, `Ref<T>`, `Handle<T>`, `WeakHandle<T>`,
+  `Borrow`, `Slice`, `Lease`), and `arcweft-memory` (`Bytes`, `Blob`,
+  `BlobRef`, `SharedSliceDesc`, `SharedSlice<T>`, `MemoryLease`,
+  `PodSlice<T>`), while `arcweft-source` provides `SourceRange`, `SourceSpan`,
+  and shared diagnostic bags. The language docs use `Vec<T>` for growable ordered sequences,
+  `Array<T,N>` for fixed-length sequences, and `[value; N]` for fixed-length repeat
+  literals. Adapter-backed implementations remain outside the Sans I/O prelude
+  slice; the exported structures are data contracts only.
 - Runtime value lowering is stricter for executable flow plans. Unsupported
   value-position expressions such as ordinary calls now produce runtime-plan
   lowering errors instead of being coerced into string labels; adapter-facing

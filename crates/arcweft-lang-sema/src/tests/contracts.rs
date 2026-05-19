@@ -149,14 +149,14 @@ ensures no_effect network.request
         .with_symbol("progress", TypeKind::Float)
         .with_symbol(
             "result.affection",
-            TypeKind::Named("Map<Character, Int>".to_owned()),
+            TypeKind::Named("OrderedMap<Character, Int>".to_owned()),
         )
         .with_symbol("character", TypeKind::Ref(EntityKind::Character))
         .with_symbol("asset.read", TypeKind::Named("Effect".to_owned()))
         .with_symbol("ui.show", TypeKind::Named("Effect".to_owned()))
         .with_symbol("network.request", TypeKind::Named("Effect".to_owned()))
         .with_index(
-            TypeKind::Named("Map<Character, Int>".to_owned()),
+            TypeKind::Named("OrderedMap<Character, Int>".to_owned()),
             TypeKind::Int,
         );
 

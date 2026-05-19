@@ -273,8 +273,8 @@ fn parses_documented_state_reducer_and_view_items() {
 pub state GameState {
     pub route: Ref<Flow> = @flow.opening
     pub config: Config = Config {}
-    pub flags: Set<Flag> = {}
-    pub affection: Map<Ref<Character>, i32> = {}
+    pub flags: OrderedSet<Flag> = {}
+    pub affection: OrderedMap<Ref<Character>, i32> = {}
     pub current_bg: Option<ImageHandle> = None
 }
 
@@ -494,7 +494,7 @@ fn parses_and_typechecks_function_parameter_destructuring() {
     ));
     assert!(matches!(
         signature.param_groups()[0].params()[1].pattern(),
-        Pattern::List { items, rest }
+        Pattern::BracketSeq { items, rest }
             if matches!(items.as_slice(), [Pattern::Ident(name)] if name == "first")
                 && rest.as_deref() == Some("rest")
     ));

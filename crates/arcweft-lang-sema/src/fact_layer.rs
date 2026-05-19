@@ -254,10 +254,14 @@ fn collect_resource_accesses_from_expr(expr: &Expr, accesses: &mut BTreeSet<Reso
                 collect_resource_accesses_from_expr(arg, accesses);
             }
         }
-        Expr::Tuple(items) | Expr::List(items) => {
+        Expr::Tuple(items) | Expr::BracketSeq(items) => {
             for item in items {
                 collect_resource_accesses_from_expr(item, accesses);
             }
+        }
+        Expr::ArrayRepeat { value, len } => {
+            collect_resource_accesses_from_expr(value, accesses);
+            collect_resource_accesses_from_expr(len, accesses);
         }
         Expr::NamedArg { value, .. }
         | Expr::Field { target: value, .. }

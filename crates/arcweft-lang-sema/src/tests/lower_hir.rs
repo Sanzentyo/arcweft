@@ -53,3 +53,17 @@ fn lowering_rejects_unstructured_raw_items() {
     let errors = lower_to_hir(&tree).expect_err("raw item cannot lower");
     assert!(errors[0].message().contains("raw"));
 }
+
+#[test]
+fn lowering_rejects_flow_recovery_nodes_with_span() {
+    let tree = parse_ok(
+        r"
+flow @flow.raw_example {
+    unknown surface form
+}
+",
+    );
+    let errors = lower_to_hir(&tree).expect_err("raw flow item cannot lower");
+    assert!(errors[0].message().contains("FlowItem"));
+    assert!(errors[0].range().is_some());
+}

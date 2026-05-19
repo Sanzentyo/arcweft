@@ -292,6 +292,7 @@ fn source_type_labels(ty: &TypeRef) -> Option<(String, String)> {
 fn type_label(ty: &TypeRef) -> String {
     match ty {
         TypeRef::Never => "Never".to_owned(),
+        TypeRef::ConstInt(value) => value.to_string(),
         TypeRef::Path(path) => path.clone(),
         TypeRef::Generic { base, args } => format!(
             "{base}<{}>",
@@ -1442,7 +1443,10 @@ fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
         Expr::EntityRef(entity) => RuntimeExpr::EntityRef(entity.body().to_owned()),
         Expr::Path(path) => RuntimeExpr::Local(path.clone()),
         Expr::Tuple(items) => RuntimeExpr::Tuple(items.iter().map(lower_runtime_expr).collect()),
-        Expr::List(items) => RuntimeExpr::List(items.iter().map(lower_runtime_expr).collect()),
+        Expr::BracketSeq(items) => {
+            RuntimeExpr::BracketSeq(items.iter().map(lower_runtime_expr).collect())
+        }
+        Expr::ArrayRepeat { value, len } => lower_runtime_array_repeat(value, len),
         Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => RuntimeExpr::Record(
             fields
                 .iter()
@@ -1524,11 +1528,12 @@ fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, String> {
             .map(lower_runtime_expr_strict)
             .collect::<Result<Vec<_>, _>>()
             .map(RuntimeExpr::Tuple),
-        Expr::List(items) => items
+        Expr::BracketSeq(items) => items
             .iter()
             .map(lower_runtime_expr_strict)
             .collect::<Result<Vec<_>, _>>()
-            .map(RuntimeExpr::List),
+            .map(RuntimeExpr::BracketSeq),
+        Expr::ArrayRepeat { value, len } => lower_runtime_array_repeat_strict(value, len),
         Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => fields
             .iter()
             .map(|(name, value)| {
@@ -1745,7 +1750,7 @@ fn lower_runtime_pattern(pattern: &Pattern) -> RuntimePattern {
                 .collect(),
             rest: *rest,
         },
-        Pattern::List { items, rest } => RuntimePattern::List {
+        Pattern::BracketSeq { items, rest } => RuntimePattern::BracketSeq {
             items: items.iter().map(lower_runtime_pattern).collect(),
             rest: rest.clone(),
         },
@@ -1990,7 +1995,40 @@ fn expr_label(expr: &Expr) -> String {
         ),
         Expr::Field { target, field } => format!("{}.{}", expr_label(target), field),
         Expr::Pipe { lhs, rhs } => format!("{} |> {}", expr_label(lhs), expr_label(rhs)),
+        Expr::ArrayRepeat { value, len } => {
+            format!("[{}; {}]", expr_label(value), expr_label(len))
+        }
         other => format!("{other:?}"),
+    }
+}
+
+fn lower_runtime_array_repeat(value: &Expr, len: &Expr) -> RuntimeExpr {
+    let Some(len) = array_repeat_len(len) else {
+        return RuntimeExpr::Value(RuntimeValue::String(expr_label(&Expr::ArrayRepeat {
+            value: Box::new(value.clone()),
+            len: Box::new(len.clone()),
+        })));
+    };
+    RuntimeExpr::BracketSeq((0..len).map(|_| lower_runtime_expr(value)).collect())
+}
+
+fn lower_runtime_array_repeat_strict(value: &Expr, len: &Expr) -> Result<RuntimeExpr, String> {
+    let Some(len) = array_repeat_len(len) else {
+        return Err(format!(
+            "array repeat length must be an integer constant in `{}`",
+            expr_label(len)
+        ));
+    };
+    (0..len)
+        .map(|_| lower_runtime_expr_strict(value))
+        .collect::<Result<Vec<_>, _>>()
+        .map(RuntimeExpr::BracketSeq)
+}
+
+fn array_repeat_len(expr: &Expr) -> Option<usize> {
+    match expr {
+        Expr::Literal(Literal::Int(value)) => usize::try_from(*value).ok(),
+        _ => None,
     }
 }
 

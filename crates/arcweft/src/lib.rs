@@ -5,8 +5,13 @@
 
 pub mod prelude {
     pub use arcweft_adt::{
-        Array, BTreeMap, BTreeSet, BitSet, EventLog, Map, Never, OrderedMap, OrderedSet, Patch,
-        Set, Snapshot, StableHash, TraceLog, Unit, Vec, VecDeque,
+        Arena, ArenaId, Array, AstNodeId, BTreeMap, BTreeSet, BitSet, BumpArena, DependencyGraph,
+        Diff, EntityStore, EventLog, EventQueue, FrameArena, GenerationalId, GraphEdge,
+        GraphNodeId, HirId, InlineTag, LayerTree, LocaleMap, Localized, NeedCacheState, Never,
+        OrderedMap, OrderedSet, Patch, PatchSet, RichText, RingBuffer, RouteGraph, RubyText,
+        SceneGraph, Signal, SignalBus, SlotMap, SmallList, Snapshot, SortedMap, SortedSet, Source,
+        SparseSet, StableArena, StableGraph, StableHash, StatePath, Stream, TaskQueue, TextRun,
+        TraceLog, Tree, TreeNode, TreeNodeId, UiTree, Unit, Vec, VecDeque, Versioned,
     };
     pub use arcweft_core::*;
     pub use arcweft_dialogue::{
@@ -18,7 +23,9 @@ pub mod prelude {
         VoicePolicy, VoiceRef, character, line_id, textbox,
     };
     pub use arcweft_id::{EntityId, IdError, IdErrorKind, PublicId, TextKey};
-    pub use arcweft_memory::{Blob, BlobRef, Bytes, MemoryLease, PodSlice, SharedSliceDesc};
+    pub use arcweft_memory::{
+        Blob, BlobRef, Bytes, MemoryLease, PodSlice, SharedSlice, SharedSliceDesc,
+    };
     pub use arcweft_need::{Need, Progress, ProgressError};
     pub use arcweft_presentation::{
         BackgroundSurface, CharacterSurface, ClearPresentation, PresentationHandle,
@@ -27,5 +34,8 @@ pub mod prelude {
         presentation_target,
     };
     pub use arcweft_ref::{Borrow, Handle, Id, Lease, Ref, Slice, WeakHandle};
-    pub use arcweft_source::{SourceAnchor, SourceName, SourcePosition};
+    pub use arcweft_source::{
+        Diagnostic, DiagnosticBag, DiagnosticSeverity, SourceAnchor, SourceName, SourcePosition,
+        SourceRange, SourceSpan,
+    };
 }

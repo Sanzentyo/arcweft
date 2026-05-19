@@ -137,7 +137,6 @@ UI node には hook を付けられる。
 hook @hook.choice_button_has_action
 on query UiNode where role == .Choice
 phase AfterLayout
-check every frame
 {
     assert object.actions.contains("select")
 }

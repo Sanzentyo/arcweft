@@ -346,7 +346,10 @@ fn collect_choice_item(item: &arcweft_lang_syntax::ChoiceItem, uses: &mut Vec<Sy
             collect_choice_option(option, uses);
         }
         arcweft_lang_syntax::ChoiceItem::Raw(raw) => {
-            uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone()));
+            uses.push(SymbolUse::new(
+                SymbolUseKind::RawExpr,
+                raw.source().to_owned(),
+            ));
         }
     }
 }
@@ -389,7 +392,10 @@ fn collect_choice_plan_item(item: &arcweft_lang_syntax::ChoicePlanItem, uses: &m
             collect_stmt_block(body, uses);
         }
         arcweft_lang_syntax::ChoicePlanItem::Raw(raw) => {
-            uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone()));
+            uses.push(SymbolUse::new(
+                SymbolUseKind::RawExpr,
+                raw.source().to_owned(),
+            ));
         }
     }
 }
@@ -434,7 +440,7 @@ fn collect_pattern(pattern: &arcweft_lang_syntax::Pattern, uses: &mut Vec<Symbol
         arcweft_lang_syntax::Pattern::Literal(expr) => collect_expr(expr, uses),
         arcweft_lang_syntax::Pattern::Entity(entity) => push_entity(uses, entity),
         arcweft_lang_syntax::Pattern::Tuple(items)
-        | arcweft_lang_syntax::Pattern::List { items, .. } => {
+        | arcweft_lang_syntax::Pattern::BracketSeq { items, .. } => {
             for item in items {
                 collect_pattern(item, uses);
             }
@@ -681,7 +687,10 @@ fn collect_line_plan_item(item: &LinePlanItem, uses: &mut Vec<SymbolUse>) {
                 collect_expr(value, uses);
             }
         }
-        LinePlanItem::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
+        LinePlanItem::Raw(raw) => uses.push(SymbolUse::new(
+            SymbolUseKind::RawExpr,
+            raw.source().to_owned(),
+        )),
     }
 }
 
@@ -727,15 +736,23 @@ fn collect_wait_target(target: &arcweft_lang_syntax::WaitTarget, uses: &mut Vec<
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "symbol collection mirrors the public Expr enum so new syntax variants stay auditable"
+)]
 fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
     match expr {
         Expr::Literal(_) | Expr::Placeholder(_) | Expr::LifetimePath { .. } => {}
         Expr::EntityRef(entity) => push_entity_syntax(uses, entity),
         Expr::Path(path) => uses.push(SymbolUse::new(SymbolUseKind::Path, path.clone())),
-        Expr::Tuple(items) | Expr::List(items) => {
+        Expr::Tuple(items) | Expr::BracketSeq(items) => {
             for item in items {
                 collect_expr(item, uses);
             }
+        }
+        Expr::ArrayRepeat { value, len } => {
+            collect_expr(value, uses);
+            collect_expr(len, uses);
         }
         Expr::Call { callee, args } => {
             if let Expr::Path(path) = callee.as_ref() {

@@ -9,7 +9,7 @@ fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::TypedSyntaxTree {
 }
 
 use arcweft_lang_syntax::{
-    BinaryOp, Expr, FlowItem, Item, TypeRef, UnaryOp, parse_expr, parse_type_ref,
+    BinaryOp, Expr, FlowItem, Item, RawSyntaxFamily, TypeRef, UnaryOp, parse_expr, parse_type_ref,
 };
 
 fn field_path(expr: &Expr) -> Option<String> {
@@ -141,4 +141,43 @@ fn field_and_index_are_structured_for_later_typechecking() {
         parse_type_ref("!").expect("never type parses"),
         TypeRef::Never
     ));
+}
+
+#[test]
+fn array_types_and_repeat_literals_are_structured() {
+    assert!(matches!(
+        parse_type_ref("Array<i32, 3>").expect("array type parses"),
+        TypeRef::Generic { base, args }
+            if base == "Array"
+                && args.len() == 2
+                && matches!(&args[1], TypeRef::ConstInt(3))
+    ));
+
+    let expr = parse_expr("[0; 4]").expect("array repeat literal parses");
+    assert!(matches!(
+        expr,
+        Expr::ArrayRepeat { value, len }
+            if matches!(value.as_ref(), Expr::Literal(_))
+                && matches!(len.as_ref(), Expr::Literal(_))
+    ));
+}
+
+#[test]
+fn flow_recovery_nodes_keep_family_and_source_range() {
+    let tree = parse_ok(
+        r"
+flow @flow.raw_example {
+    unknown surface form
+}
+",
+    );
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    let FlowItem::Raw(raw) = &flow.body()[0] else {
+        panic!("expected recovery node");
+    };
+    assert_eq!(raw.family(), RawSyntaxFamily::FlowItem);
+    assert_eq!(raw.source(), "unknown surface form");
+    assert!(raw.range().is_some());
 }

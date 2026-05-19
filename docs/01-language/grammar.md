@@ -164,7 +164,7 @@ LineOption     := 'id' '=' (EntityRef | RelativeId | FamilyRelativeEntityRef)
                 | 'window' '=' EntityRef
                 | Ident '=' Expr
                 | 'source_locale' '=' Locale
-                | 'hooks' '=' ListExpr
+                | 'hooks' '=' Expr
                 | 'style' '=' Expr
 DialogueText   := TextUntilLineEnd | Newline IndentedText
 DialogueContent:= TextAndDialogueTags*
@@ -456,16 +456,16 @@ Pattern :=
   | TuplePattern
   | RecordPattern
   | VariantPattern
-  | ListPattern
+  | BracketSeqPattern
   | WholeBindingPattern
 
 WholeBindingPattern := Ident NonBindingPattern
-NonBindingPattern  := Literal | EntityRef | TuplePattern | RecordPattern | VariantPattern | ListPattern
+NonBindingPattern  := Literal | EntityRef | TuplePattern | RecordPattern | VariantPattern | BracketSeqPattern
 TuplePattern  := '(' Pattern (',' Pattern)* ')'
 RecordPattern := TypePath? '{' FieldPattern* '..'? '}'
 FieldPattern  := Ident | Ident ':' Pattern
 VariantPattern:= ('.' Ident | TypePath '::' Ident) VariantPayload?
-ListPattern   := '[' Pattern* RestPattern? ']'
+BracketSeqPattern := '[' Pattern* RestPattern? ']'
 RestPattern   := '..' Ident?
 ```
 

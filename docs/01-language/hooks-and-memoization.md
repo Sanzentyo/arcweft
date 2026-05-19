@@ -144,13 +144,12 @@ when layer.visible
 
 ## 条件チェックタイミング
 
-`when` は pure expression のみ。チェックタイミングは明示する。
+`when` は pure expression のみ。hook target と phase が評価契機を決める。
 
 ```awft
 hook @hook.alice_route_unlock
 on state .affection[@character.alice]
 phase StateChanged
-check on change
 when state.affection[@character.alice] >= 3
 once per save
 {
@@ -158,7 +157,7 @@ once per save
 }
 ```
 
-利用できる `check` policy:
+実装内部では hook の評価契機を次のような policy として扱える。
 
 ```awft
 pub enum CheckPolicy {
@@ -168,7 +167,6 @@ pub enum CheckPolicy {
     OnInput(InputKind),
     OnLayerEvent(LayerEventKind),
     OnNeed(TaskOrNeedId),
-    EveryFrame,
     EveryTicks(u32),
     EveryDuration(Duration),
     Manual,
@@ -178,14 +176,12 @@ pub enum CheckPolicy {
 構文例:
 
 ```awft
-on check every frame
-on check every 10 ticks
-on check signal @signal.loading_progress
-on check layer @layer.ui.modal visibility_changed
-on check need @task.opening_assets ready
+on signal @signal.loading_progress
+on layer @layer.ui.modal visibility_changed
+on need @task.opening_assets ready
 ```
 
-`every frame` は高コストになりやすいため、LSP は state/signal/layer-event への置換を提案する。
+polling は高コストになりやすいため、LSP は state/signal/layer-event への置換を提案する。
 
 ---
 
