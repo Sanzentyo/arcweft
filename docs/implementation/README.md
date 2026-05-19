@@ -399,7 +399,8 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   declarative source-stream syntax lives in `ast/source.rs`. `ast.rs` is now a
   module facade rather than the owner of AST family definitions.
 - `arcweft-lang-syntax` parser splitting has started with `parser/recovery.rs`
-  owning `ParseError` and `RecoverySuggestion`; the parser driver still needs
+  owning `ParseError` and `RecoverySuggestion`, and `parser/source.rs` owning
+  source-item header/handler/body parsing; the parser driver still needs
   further family-specific module extraction.
 - `arcweft-runtime-plan` no longer depends directly on
   `arcweft-lang-syntax`; runtime lowering imports syntax-owned surface types
