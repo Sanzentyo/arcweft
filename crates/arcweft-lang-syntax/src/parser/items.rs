@@ -1,4 +1,8 @@
-use crate::ast::items::{EnumVariant, ImplMember, StateField, StructField, TraitMember};
+use crate::ast::common::TextRange;
+use crate::ast::items::{
+    CallableItem, EnumItem, EnumVariant, FunctionInit, FunctionItem, ImplItem, ImplMember,
+    StateField, StateItem, StructField, StructItem, TraitItem, TraitMember, TypeAliasItem,
+};
 use crate::cst::{
     find_matching_angle_group, find_top_level_punctuation, split_leading_ident,
     split_top_level_punctuation, split_top_level_punctuation_once,
@@ -6,9 +10,273 @@ use crate::cst::{
 use crate::types::{parse_fn_signature, parse_type_ref};
 
 use super::{
-    PendingDocLines, collect_logical_block_items, parse_expr_lossy, parse_scope_expr_body,
-    parse_visibility_prefix, split_brace_item, split_top_level_binding,
+    Parser, PendingDocLines, collect_logical_block_items, parse_callable_kind,
+    parse_contract_clause, parse_expr_lossy, parse_function_kind_and_signature,
+    parse_name_and_tail, parse_optional_angle_head, parse_scope_expr_body, parse_visibility_prefix,
+    split_brace_item, split_function_header_lines, split_supertraits, split_top_level_binding,
 };
+
+impl Parser {
+    pub(super) fn parse_function_item(&mut self) -> Option<FunctionItem> {
+        let doc = self.take_pending_doc();
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_function_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing function",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the function body"],
+            );
+            return None;
+        }
+
+        let header_lines = head
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>();
+        let (signature_head, contract_lines) = split_function_header_lines(&header_lines)?;
+        let (visibility, signature_text) = parse_visibility_prefix(&signature_head);
+        let (kind, signature_text) = parse_function_kind_and_signature(signature_text.trim());
+        let signature_text = signature_text.to_owned();
+        let Ok(signature) = parse_fn_signature(&signature_text) else {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "invalid function signature",
+                ["fn name<'a>(...)"],
+                Some(signature_head.as_str()),
+                ["write the function item with a valid `fn` signature head"],
+            );
+            return None;
+        };
+        let contracts = contract_lines
+            .iter()
+            .filter_map(|line| parse_contract_clause(line))
+            .collect();
+        let (body_statements, body_value) = parse_scope_expr_body(&body);
+
+        Some(FunctionItem::new(FunctionInit {
+            doc,
+            kind,
+            visibility,
+            signature,
+            signature_text,
+            contracts,
+            body,
+            body_statements,
+            body_value,
+            range: TextRange::new(start_line.start, end),
+        }))
+    }
+
+    pub(super) fn parse_enum_item(&mut self) -> Option<EnumItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing enum",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the enum body"],
+            );
+            return None;
+        }
+        let (visibility, rest) = parse_visibility_prefix(head.trim());
+        let name = rest.trim_start().strip_prefix("enum")?.trim();
+        let (name, _) = parse_name_and_tail(name);
+        Some(EnumItem::new(
+            visibility,
+            name.unwrap_or_default(),
+            parse_enum_variants(&body),
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    pub(super) fn parse_callable_item(&mut self) -> Option<CallableItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_flow_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing function-like item",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the item body"],
+            );
+            return None;
+        }
+        let header_lines = head
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>();
+        let first = header_lines.first().copied()?;
+        let (visibility, rest) = parse_visibility_prefix(first);
+        let (kind, after_kind) = parse_callable_kind(rest.trim_start())?;
+        let (name, signature_tail) = parse_name_and_tail(after_kind);
+        let contracts = header_lines
+            .iter()
+            .skip(1)
+            .filter_map(|line| parse_contract_clause(line))
+            .collect();
+
+        Some(CallableItem::new(
+            kind,
+            visibility,
+            name.unwrap_or_default(),
+            signature_tail,
+            contracts,
+            body,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    pub(super) fn parse_state_item(&mut self) -> Option<StateItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing state",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the state body"],
+            );
+            return None;
+        }
+        let (visibility, rest) = parse_visibility_prefix(head.trim());
+        let name = rest.trim_start().strip_prefix("state")?.trim();
+        let (name, _) = parse_name_and_tail(name);
+        Some(StateItem::new(
+            visibility,
+            name.unwrap_or_default(),
+            parse_state_fields(&body),
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    pub(super) fn parse_trait_item(&mut self) -> Option<TraitItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing trait",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the trait body"],
+            );
+            return None;
+        }
+        let (visibility, rest) = parse_visibility_prefix(head.trim());
+        let rest = rest.trim_start().strip_prefix("trait")?.trim();
+        let (name, supertraits) = split_top_level_punctuation_once(rest, ':')
+            .map_or((rest, ""), |(name, traits)| (name.trim(), traits.trim()));
+        Some(TraitItem::new(
+            visibility,
+            name.to_owned(),
+            split_supertraits(supertraits),
+            parse_trait_members(&body),
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    pub(super) fn parse_impl_item(&mut self) -> Option<ImplItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing impl",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the impl body"],
+            );
+            return None;
+        }
+        let (visibility, rest) = parse_visibility_prefix(head.trim());
+        let rest = rest.trim_start().strip_prefix("impl")?.trim();
+        let (generics, rest) = parse_optional_angle_head(rest);
+        let (maybe_trait, target) = crate::cst::split_top_level_keyword_once(rest, "for");
+        let (trait_name, target) = target.map_or((None, rest.trim()), |target| {
+            (Some(maybe_trait.trim().to_owned()), target.trim())
+        });
+        Some(ImplItem::new(
+            visibility,
+            generics,
+            trait_name,
+            target.to_owned(),
+            parse_impl_members(&body),
+            body,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    pub(super) fn parse_struct_item(&mut self) -> Option<StructItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing struct",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the struct body"],
+            );
+            return None;
+        }
+        let (visibility, rest) = parse_visibility_prefix(head.trim());
+        let name = rest.trim_start().strip_prefix("struct")?.trim();
+        let (name, _) = parse_name_and_tail(name);
+        Some(StructItem::new(
+            visibility,
+            name.unwrap_or_default(),
+            parse_struct_fields(&body),
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    pub(super) fn parse_type_alias(&mut self) -> Option<TypeAliasItem> {
+        let start_line = self.current().clone();
+        let mut raw = start_line.text.clone();
+        let mut end = start_line.end;
+        self.index += 1;
+        while self.index < self.events.len() {
+            let line = self.current();
+            let trimmed = line.text.trim();
+            if !trimmed.starts_with("where ") {
+                break;
+            }
+            raw.push('\n');
+            raw.push_str(&line.text);
+            end = line.end;
+            self.index += 1;
+        }
+
+        let mut lines = raw.lines().map(str::trim).filter(|line| !line.is_empty());
+        let first = lines.next()?;
+        let (visibility, rest) = parse_visibility_prefix(first);
+        let rest = rest.trim_start().strip_prefix("type")?.trim();
+        let (name, target) = split_top_level_binding(rest)?;
+        let target = parse_type_ref(target.trim()).ok()?;
+        let where_clauses = lines
+            .filter_map(|line| line.strip_prefix("where "))
+            .map(str::trim)
+            .map(parse_expr_lossy)
+            .collect();
+
+        Some(TypeAliasItem::new(
+            visibility,
+            name.trim().to_owned(),
+            target,
+            where_clauses,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+}
 
 pub(super) fn parse_enum_variants(body: &str) -> Vec<EnumVariant> {
     let mut docs = PendingDocLines::default();
