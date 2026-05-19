@@ -411,6 +411,10 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `arcweft-lang-syntax`; runtime lowering imports syntax-owned surface types
   through `arcweft-lang-hir::syntax` so the dependency direction remains
   `runtime-plan -> hir`.
+- `arcweft-core` test splitting has started: task event normalization lives in
+  `core/src/tests/task.rs`, and source policy/event/runtime behavior lives in
+  `core/src/tests/source.rs`. Remaining flow, stream, and line-task tests still
+  need family files.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure
