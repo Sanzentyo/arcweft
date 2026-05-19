@@ -11,7 +11,6 @@ arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 serde.workspace = true
 
 [dev-dependencies]
-arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 
 [lints]

@@ -1,9 +1,12 @@
 use crate::CheckedModule;
-use arcweft_core::{
-    FlowEvent, FlowFiber, FlowFiberStatus, LineEffectRequest, LineTaskGroup, LineTaskNode,
-    LineTaskScope, LineTaskTrigger, SourceEvent, SourceEventKind, SourcePolicy, StreamEvent,
-    StreamOp, TaskSpec,
-};
+use arcweft_core::effect::LineEffectRequest;
+use arcweft_core::engine::{FlowFiber, FlowFiberStatus};
+use arcweft_core::frame::FrameOutput;
+use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope, LineTaskTrigger};
+use arcweft_core::plan::FlowEvent;
+use arcweft_core::source::{SourceEvent, SourceEventKind, SourcePolicy};
+use arcweft_core::stream::{StreamEvent, StreamOp};
+use arcweft_core::task::TaskSpec;
 use arcweft_runtime_plan::{LoweredLineTaskGroup, lower_runtime_plan};
 use arcweft_test::{ScriptBench, ScriptTest};
 use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy, verify_module};
@@ -458,11 +461,7 @@ pub(crate) struct RuntimeQueueStateSummary {
 }
 
 impl RuntimeFrameRunSummary {
-    pub(crate) fn from_output(
-        index: usize,
-        output: arcweft_core::FrameOutput,
-        fiber: &FlowFiber,
-    ) -> Self {
+    pub(crate) fn from_output(index: usize, output: FrameOutput, fiber: &FlowFiber) -> Self {
         Self {
             index,
             diagnostics: output

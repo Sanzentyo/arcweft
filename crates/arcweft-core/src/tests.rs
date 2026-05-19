@@ -1,4 +1,7 @@
-use super::*;
+use crate::{
+    effect::*, engine::*, frame::*, line_task::*, pattern::*, plan::*, source::*, stream::*,
+    task::*, value::*,
+};
 
 #[test]
 fn normalizes_task_events_by_replay_stable_keys() {

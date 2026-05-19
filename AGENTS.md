@@ -44,6 +44,7 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - Keep data-format crates Sans I/O. Manifests, schemas, bytecode, bundles, save snapshots, and debug traces should expose typed data plus deterministic bytes/string codecs; path reads/writes, network, clocks, embedding, signing, and platform storage belong in CLI/build/player adapters.
 - Put backend-specific dependencies behind feature flags and adapter crates.
 - Use a facade crate for broad application-facing preludes. Do not place broad convenience preludes in low-level crates.
+- Prefer responsibility modules as public boundaries (`pub mod`) when a crate has multiple stable subsystems. Avoid flattening every type through root-level `pub use`; root re-exports should be deliberate facade API, not compatibility shims.
 - Do not leave workspace-external directories that look like active `crates/`, `tests/`, or fixtures. Archive true historical material under docs only when explicitly requested; otherwise remove obsolete migration scratch directories.
 - Prefer typed APIs over stringly typed APIs.
 - Prefer deterministic runtime behavior.
@@ -61,8 +62,8 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - Use `cargo fmt`.
 - Use `cargo clippy --workspace --all-targets --all-features` when feasible.
 - Use `cargo test --workspace`.
-- Keep public API minimal.
-- Prefer private modules and explicit `pub use` exports.
+- Keep public API intentional.
+- Prefer `pub mod` boundaries for subsystem APIs and keep item visibility narrow inside those modules. Use root `pub use` only for small, deliberate facade surfaces.
 - Split large `lib.rs` / `main.rs` files by responsibility before they become architectural boundaries in practice. Prefer `module.rs` plus subdirectories over `mod.rs`.
 - Add tests for each new crate's core behavior.
 - Add snapshot/golden tests only when deterministic.

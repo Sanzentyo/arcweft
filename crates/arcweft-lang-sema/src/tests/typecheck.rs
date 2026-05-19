@@ -230,21 +230,21 @@ fn type_ref_keeps_explicit_map_kind() {
     assert!(matches!(
         ordered,
         TypeKind::Map {
-            kind: crate::MapKind::Ordered,
+            kind: MapKind::Ordered,
             ..
         }
     ));
     assert!(matches!(
         sorted,
         TypeKind::Map {
-            kind: crate::MapKind::Sorted,
+            kind: MapKind::Sorted,
             ..
         }
     ));
     assert!(matches!(
         btree,
         TypeKind::Map {
-            kind: crate::MapKind::BTree,
+            kind: MapKind::BTree,
             ..
         }
     ));

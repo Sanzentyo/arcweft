@@ -24,7 +24,7 @@ fn direct_effects(nodes: &[LineTaskNode]) -> Vec<&LineEffectRequest> {
         .collect()
 }
 
-fn direct_children(nodes: &[LineTaskNode]) -> Vec<&arcweft_core::LineChildTask> {
+fn direct_children(nodes: &[LineTaskNode]) -> Vec<&LineChildTask> {
     nodes
         .iter()
         .filter_map(|node| match node {
@@ -118,7 +118,7 @@ flow @flow.opening opening {
         direct_effects(seq(&children[0].scope.node)),
         vec![
             &LineEffectRequest::WaitMark(".release_focus".to_owned()),
-            &LineEffectRequest::Wait(arcweft_core::LogicalDuration::from_nanos(350_000_000)),
+            &LineEffectRequest::Wait(LogicalDuration::from_nanos(350_000_000)),
             &call("tick_motion", &[]),
         ]
     );
@@ -129,7 +129,7 @@ flow @flow.opening opening {
     assert_eq!(children[1].name.as_deref(), Some("at(0.42s)"));
     assert_eq!(
         children[1].trigger,
-        LineTaskTrigger::Delay(arcweft_core::LogicalDuration::from_nanos(420_000_000))
+        LineTaskTrigger::Delay(LogicalDuration::from_nanos(420_000_000))
     );
     assert_eq!(
         direct_effects(seq(&children[1].scope.node)),
@@ -425,15 +425,13 @@ flow @flow.opening opening {
     assert_eq!(plan.stream_plans[0].id.0, "rms_level");
     assert!(matches!(
         plan.stream_plans[0].ops.as_slice(),
-        [arcweft_core::StreamOp::ForNext { body, .. }]
-            if matches!(body.as_slice(), [arcweft_core::StreamOp::Yield { .. }])
+        [StreamOp::ForNext { body, .. }] if matches!(body.as_slice(), [StreamOp::Yield { .. }])
     ));
     assert_eq!(plan.source_plans.len(), 1);
     assert_eq!(plan.source_plans[0].id.0, "source.player_mic_frames");
     assert!(matches!(
         plan.source_plans[0].handlers.as_slice(),
-        [arcweft_core::SourceHandlerPlan::Item { ops, .. }]
-            if matches!(ops.as_slice(), [arcweft_core::SourceOp::Yield(_)])
+        [SourceHandlerPlan::Item { ops, .. }] if matches!(ops.as_slice(), [SourceOp::Yield(_)])
     ));
 }
 

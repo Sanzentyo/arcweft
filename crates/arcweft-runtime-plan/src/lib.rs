@@ -1,14 +1,27 @@
-use arcweft_core::{
-    AwaitTarget, BackpressurePolicy, ChildCancelPolicy, ChildJoinPolicy, ChoiceRuntimeOption,
-    ConflictPolicy, FlowOp, FlowRuntimeId, LineAssertionRequest, LineBindingRequest,
-    LineCancelRuleRequest, LineChildTask, LineEffectRequest, LineMemoRequest, LineOptionRequest,
-    LineOutRequest, LineTaskGroup, LineTaskNode, LineTaskScope, LineTaskTrigger, LogicalDuration,
-    NeedId, OverflowPolicy, ParallelPolicy, PrivacyPolicy, ReplayPolicy, ResourceAccess,
-    ResourceAccessMode, RuntimeAssignment, RuntimeBinaryOp, RuntimeCall, RuntimeCommand,
-    RuntimeEvent, RuntimeExpr, RuntimeExprMatchArm, RuntimeField, RuntimeFieldExpr, RuntimeFlow,
-    RuntimeLineId, RuntimeLog, RuntimeMatchArm, RuntimePattern, RuntimePlan,
-    RuntimeRecordPatternField, RuntimeUnaryOp, RuntimeValue, SourceHandlerPlan, SourceId, SourceOp,
-    SourcePlan, SourcePolicy, StreamOp, StreamPlan, StreamRuntimeId, TaskId, TaskKey, TaskPriority,
+use arcweft_core::effect::{
+    ConflictPolicy, LineEffectRequest, ResourceAccess, ResourceAccessMode, RuntimeAssignment,
+    RuntimeCall, RuntimeCommand, RuntimeEvent, RuntimeField, RuntimeLog,
+};
+use arcweft_core::line_task::{
+    ChildCancelPolicy, ChildJoinPolicy, LineAssertionRequest, LineBindingRequest,
+    LineCancelRuleRequest, LineChildTask, LineMemoRequest, LineOptionRequest, LineOutRequest,
+    LineTaskGroup, LineTaskNode, LineTaskScope, LineTaskTrigger, ParallelPolicy,
+};
+use arcweft_core::pattern::{RuntimePattern, RuntimeRecordPatternField};
+use arcweft_core::plan::{
+    ChoiceRuntimeOption, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId, RuntimeMatchArm,
+    RuntimePlan,
+};
+use arcweft_core::source::{
+    BackpressurePolicy, OverflowPolicy, PrivacyPolicy, ReplayPolicy, SourceHandlerPlan, SourceId,
+    SourceOp, SourcePlan, SourcePolicy,
+};
+use arcweft_core::stream::{StreamMatchArm, StreamOp, StreamPlan, StreamRuntimeId};
+use arcweft_core::task::{AwaitTarget, NeedId, TaskId, TaskKey, TaskPriority};
+use arcweft_core::time::LogicalDuration;
+use arcweft_core::value::{
+    RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeUnaryOp,
+    RuntimeValue,
 };
 use arcweft_lang_hir::{
     HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlowItem, HirLoop, HirMatch, HirModule,
@@ -215,7 +228,7 @@ fn lower_stream_stmt(stmt: &Stmt) -> Vec<StreamOp> {
             scrutinee: lower_runtime_expr(expr),
             arms: arms
                 .iter()
-                .map(|arm| arcweft_core::StreamMatchArm {
+                .map(|arm| StreamMatchArm {
                     pattern: lower_runtime_pattern(arm.pattern()),
                     guard: arm.guard().map(lower_runtime_expr),
                     ops: lower_stream_stmt_list(arm.body()),
@@ -1890,7 +1903,7 @@ fn runtime_log_call(call: &RuntimeCall) -> Option<RuntimeLog> {
             .enumerate()
             .map(|(idx, value)| RuntimeField {
                 name: named_arg_label(value).unwrap_or_else(|| format!("arg{idx}")),
-                value: named_arg_value(value).unwrap_or_else(|| value.clone()),
+                value: named_arg_value(value).unwrap_or_else(|| (*value).clone()),
             })
             .collect(),
     })
@@ -1918,7 +1931,7 @@ fn runtime_event_call(call: &RuntimeCall) -> Option<RuntimeEvent> {
             .enumerate()
             .map(|(idx, value)| RuntimeField {
                 name: named_arg_label(value).unwrap_or_else(|| format!("arg{idx}")),
-                value: named_arg_value(value).unwrap_or_else(|| value.clone()),
+                value: named_arg_value(value).unwrap_or_else(|| (*value).clone()),
             })
             .collect(),
     })

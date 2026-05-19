@@ -366,6 +366,15 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   lowering errors instead of being coerced into string labels; adapter-facing
   payload labels still use the existing lossy labeler where the runtime treats
   them as observational data rather than executable values.
+- `pro_review21.md`: module boundaries are being treated as first-class
+  architecture boundaries rather than temporary file organization. `arcweft-core`
+  is split into public responsibility modules (`time`, `frame`, `value`,
+  `pattern`, `effect`, `task`, `source`, `stream`, `plan`, `line_task`,
+  `observation`, and `engine`) without root-level compatibility aliases.
+  Downstream crates import core types through those module paths. The first
+  `arcweft-lang-sema` split has moved semantic types, environments, and
+  diagnostics into `types`, `env`, and `diagnostics`; further checker,
+  borrow/lifetime, and language-family splits remain tracked work.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure
@@ -376,6 +385,11 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   structured fields such as `kind`, `range`, `anchor`, and `message`.
 - Keep `arcweft-core` free of Cranelift, Wasmtime, filesystem, network, GPU,
   audio, device, and OS dependencies.
+- Keep AST, HIR, runtime-plan, schemas, and manifests as owned data models.
+  Rust lifetime parameters should stay at adapter/view boundaries unless a local
+  crate-internal API clearly benefits; Arcweft lifetime and ownership rules are
+  semantic facts checked by `arcweft-lang-sema`, not Rust borrows threaded
+  through every intermediate representation.
 
 The stable specification locations for the `pro_review4.md` decisions are:
 

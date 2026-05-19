@@ -24,6 +24,28 @@ Implemented workspace members:
 
 The workspace is intentionally dependency-light. `arcweft-core` keeps only placeholder non-JIT adapter feature flags and has no Cranelift/Wasmtime dependency or Cranelift feature. Native JIT belongs in a future `arcweft-lang-jit-cranelift` adapter selected by player/build crates.
 
+The largest runtime and semantic crates are being split by responsibility per
+`docs/reviews/pro_review21.md`. `arcweft-core` now exposes public module
+boundaries instead of a flat root API:
+
+- `time`
+- `frame`
+- `value`
+- `pattern`
+- `effect`
+- `task`
+- `source`
+- `stream`
+- `plan`
+- `line_task`
+- `observation`
+- `engine`
+
+Downstream crates import core runtime data through those modules. The
+`arcweft-lang-sema` split has started with public `types`, `env`, and
+`diagnostics` modules, while the larger checker/borrow/lifetime and
+language-family splits remain follow-up refactors.
+
 ## Implemented Types
 
 Identity and source:
@@ -336,6 +358,9 @@ Not implemented in this milestone:
   routing
 - full generic substitution and effect-aware return checking
 - full type environment, name resolution, and type checking
+- full completion of the `pro_review21.md` file split plan: `arcweft-lang-sema`
+  still needs checker/borrow/lifetime/language-family module extraction, and
+  syntax/HIR/runtime-plan still need their larger AST/parser/lowering splits.
 - inference, overload resolution, traits, generics, contracts, and full
   type-directed effect checking
 - unbounded/solver-backed loop CFG and full nested-scope borrow lifetime

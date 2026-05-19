@@ -1,11 +1,11 @@
-use arcweft_core::{
-    Engine, FlowFiberStatus, FlowRuntimeId, FrameInput, RuntimeBinding, RuntimePlan, RuntimeValue,
-};
+use arcweft_core::engine::{Engine, FlowFiberStatus};
+use arcweft_core::frame::FrameInput;
+use arcweft_core::plan::{FlowRuntimeId, RuntimePlan};
+use arcweft_core::value::{RuntimeBinding, RuntimeValue};
 use arcweft_lang_hir::lower_to_hir;
-use arcweft_lang_sema::{
-    TypeCheckEnv, registry_from_hir, typecheck_hir, validate_hir_references,
-    validate_typecheck_ready,
-};
+use arcweft_lang_sema::check::{typecheck_hir, validate_typecheck_ready};
+use arcweft_lang_sema::env::TypeCheckEnv;
+use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
 use arcweft_lang_syntax::{lint_id_policy, parse_source};
 use arcweft_runtime_plan::{LoweredLineTaskGroup, lower_line_task_groups, lower_runtime_plan};
 use arcweft_test::{BenchSection, ScriptBench, ScriptStep, ScriptTest, collect_script_tests};

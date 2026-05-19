@@ -12,9 +12,12 @@ use arcweft_lang_hir::{
     TextRange, ThreadBlock, TriggerPattern,
 };
 use arcweft_lang_sema::{
-    SemanticDiagnostic, SemanticDischarge, SemanticMode, SemanticObligation,
-    SemanticObligationKind, SemanticPolicy, SemanticReport, SemanticSeverity, TypeCheckEnv,
-    analyze_semantics,
+    env::TypeCheckEnv,
+    semantic::{
+        SemanticDiagnostic, SemanticDischarge, SemanticMode, SemanticObligation,
+        SemanticObligationKind, SemanticPolicy, SemanticReport, SemanticSeverity,
+        analyze_semantics,
+    },
 };
 use arcweft_runtime_plan::lower_line_task_groups;
 use serde::{Deserialize, Serialize};

@@ -1,12 +1,19 @@
-pub(super) use crate::{
-    EntityKind, NameRegistry, SemanticDischarge, SemanticMode, SemanticObligationKind,
-    SemanticPolicy, SemanticReport, SymbolUseKind, TypeCheckEnv, TypeKind, analyze_semantics,
-    collect_symbol_uses, registry_from_hir, typecheck_hir, validate_hir_references,
-    validate_typecheck_ready,
+pub(super) use crate::check::{typecheck_hir, validate_typecheck_ready};
+pub(super) use crate::env::TypeCheckEnv;
+pub(super) use crate::resolve::{NameRegistry, registry_from_hir, validate_hir_references};
+pub(super) use crate::semantic::{
+    SemanticDischarge, SemanticMode, SemanticObligationKind, SemanticPolicy, SemanticReport,
+    analyze_semantics,
 };
+pub(super) use crate::symbols::{SymbolUseKind, collect_symbol_uses};
+pub(super) use crate::types::{EntityKind, MapKind, TypeKind};
 pub(super) use arcweft_core::{
-    FlowOp, FlowRuntimeId, LineEffectRequest, LineOutRequest, LineTaskNode, LineTaskTrigger,
-    RuntimeAssignment, RuntimeCall, RuntimeLog,
+    effect::{LineEffectRequest, RuntimeAssignment, RuntimeCall, RuntimeLog},
+    line_task::{LineChildTask, LineOutRequest, LineTaskNode, LineTaskTrigger},
+    plan::{FlowOp, FlowRuntimeId},
+    source::{SourceHandlerPlan, SourceOp},
+    stream::StreamOp,
+    time::LogicalDuration,
 };
 pub(super) use arcweft_lang_hir::{HirFlowItem, HirTopLevelDecl, lower_to_hir};
 pub(super) use arcweft_lang_syntax::{

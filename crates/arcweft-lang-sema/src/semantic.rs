@@ -1,4 +1,4 @@
-use crate::check::TypeCheckEnv;
+use crate::env::TypeCheckEnv;
 mod facts;
 use crate::fact_layer::{
     Capability, EffectScope, ProofFacts, ResourceAccess, resource_accesses_from_expr,

@@ -1,5 +1,5 @@
-use crate::check::EntityKind;
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
+use crate::types::EntityKind;
 use arcweft_lang_hir::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::EntityDeclKind;
 use std::collections::HashMap;
