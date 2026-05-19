@@ -378,9 +378,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   and shared diagnostics/observation plumbing. The
   `arcweft-lang-sema` split now has public `check`, `checker`, `types`, `env`,
   `diagnostics`, `borrow`, and `lifetime` modules, and the checker body has
-  started language-family child modules for `choice`, `expr`, `flow`,
-  `line_plan`, `source`, and `stmt`, plus `module` for module/top-level entry
-  checks and `borrow_state` for borrow binding and branch-merge helpers;
+  started language-family child modules for `choice`, `effects`, `expr`,
+  `flow`, `line_plan`, `source`, and `stmt`, plus `module` for module/top-level
+  entry checks and `borrow_state` for borrow binding and branch-merge helpers;
   additional checker-family splits remain tracked work.
   `arcweft-runtime-plan` is split into `errors`,
   `expr`, `flow`, `labels`, `line_task`, `pattern`, `source`, and `stream`

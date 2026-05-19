@@ -32,6 +32,7 @@ use std::collections::{HashMap, HashSet};
 
 pub mod borrow_state;
 pub mod choice;
+pub mod effects;
 pub mod expr;
 pub mod flow;
 pub mod line_plan;
@@ -316,47 +317,6 @@ impl TypeChecker<'_> {
         check_body(self);
         self.loop_stack.pop();
         self.restore_borrow_state(borrow_snapshot);
-    }
-
-    fn check_contract_clause(&mut self, contract: &ContractClause) {
-        match contract {
-            ContractClause::Requires { expr, .. }
-            | ContractClause::Ensures { expr, .. }
-            | ContractClause::Invariant { expr, .. }
-            | ContractClause::Assume { expr } => {
-                self.expect_expr_type(expr, &TypeKind::Bool, "contract expression");
-            }
-            ContractClause::NoEffect(expr) | ContractClause::Decreases(expr) => {
-                self.check_expr(expr);
-            }
-            ContractClause::Reads(items)
-            | ContractClause::Effects(items)
-            | ContractClause::Modifies(items) => {
-                for item in items {
-                    self.check_contract_selector(item);
-                }
-            }
-        }
-    }
-
-    fn check_contract_selector(&mut self, expr: &Expr) {
-        // Contract selectors name capabilities or resources. They are not
-        // executable expressions, so dotted selectors such as `signal.write`
-        // must not resolve `signal` as a local value.
-        if capability_from_expr(expr).is_some() || matches!(expr, Expr::EntityRef(_)) {
-            return;
-        }
-        self.check_expr(expr);
-    }
-
-    fn apply_effect_scope(&mut self, scope: &EffectScope) -> HashSet<String> {
-        let snapshot = self.effect_capabilities.clone();
-        self.effect_capabilities.extend(
-            scope
-                .iter()
-                .map(|capability| capability.as_str().to_owned()),
-        );
-        snapshot
     }
 
     fn reject_active_borrows(&mut self, boundary: &str) {
