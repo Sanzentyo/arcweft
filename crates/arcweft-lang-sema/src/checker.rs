@@ -11,7 +11,7 @@ use arcweft_lang_hir::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::TypeRef;
 use arcweft_lang_syntax::{
     AwaitBranchKind, CancelRuleSyntax, ContractClause, DialogueToken, EntityDeclKind, EntityRef,
-    EntityRefSyntax, FlowKind, FunctionKind, IdRef, LinePlanItem, Pattern,
+    EntityRefSyntax, FlowKind, FunctionKind, IdRef, LinePlanItem, Pattern, SelectBranchHead,
     SourceBackpressurePolicy, SourceEventPattern, SourceHeader, SourcePrivacyPolicy,
     SourceReplayPolicy, Stmt, TriggerPattern,
 };
@@ -22,6 +22,7 @@ use arcweft_lang_syntax::{
 use std::collections::{HashMap, HashSet};
 
 mod choice;
+mod flow;
 mod line_plan;
 mod source;
 mod stmt;
@@ -306,12 +307,6 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_flow_items(&mut self, items: &[HirFlowItem]) {
-        for item in items {
-            self.check_flow_item(item);
-        }
-    }
-
     fn check_stream_function(&mut self, function: &arcweft_lang_hir::HirFunction) {
         let Some((item_ty, error_ty)) = function
             .signature()
@@ -340,126 +335,6 @@ impl TypeChecker<'_> {
                 function.name()
             )));
         }
-    }
-
-    fn check_flow_item(&mut self, item: &HirFlowItem) {
-        match item {
-            HirFlowItem::Stmt(stmt) => self.check_stmt(stmt),
-            HirFlowItem::Dialogue(dialogue) => {
-                self.check_dialogue_item(dialogue);
-            }
-            HirFlowItem::Choice(choice) => {
-                self.check_choice(choice);
-            }
-            HirFlowItem::LetChoice { pattern, choice } => {
-                self.check_choice_binding(pattern, choice);
-            }
-            HirFlowItem::LetScope { pattern, scope } => {
-                self.check_scope_expr_binding(pattern, scope);
-            }
-            HirFlowItem::LetLoop { pattern, block } => {
-                self.check_loop_binding(pattern, block);
-            }
-            HirFlowItem::LetAwait {
-                pattern,
-                await_with,
-            } => {
-                self.check_await_binding(pattern, await_with);
-            }
-            HirFlowItem::If(block) => {
-                self.check_flow_if_block(block);
-            }
-            HirFlowItem::IfLet(block) => {
-                self.check_if_let_block(block);
-            }
-            HirFlowItem::Match(block) => {
-                self.check_flow_match_block(block);
-            }
-            HirFlowItem::Loop(block) => {
-                self.check_loop_block(block, true);
-            }
-            HirFlowItem::While(block) => {
-                self.check_while_block(block);
-            }
-            HirFlowItem::WhileLet(block) => {
-                self.check_while_let_block(block);
-            }
-            HirFlowItem::For(block) => {
-                self.check_for_block(block);
-            }
-            HirFlowItem::Select(block) => {
-                self.check_select_block(block);
-            }
-            HirFlowItem::Borrow(block) => {
-                self.check_borrow_block(block);
-            }
-            HirFlowItem::SourceLocale(block) => {
-                self.check_flow_items(block.body());
-            }
-            HirFlowItem::Scope(block) => {
-                self.check_scoped_flow_items(block.body());
-            }
-            HirFlowItem::Include(entity) => {
-                let kind = entity_kind(entity);
-                if !matches!(kind, Some(EntityKind::Fragment | EntityKind::Flow)) {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "include target `{}` must be a flow or fragment reference",
-                        entity.body()
-                    )));
-                }
-            }
-            HirFlowItem::Await(await_with) => {
-                self.check_await_item(await_with);
-            }
-            HirFlowItem::Scenario { args, .. } => {
-                for arg in args {
-                    self.check_expr(arg);
-                }
-            }
-        }
-    }
-
-    fn check_flow_if_block(&mut self, block: &arcweft_lang_hir::HirIf) {
-        self.expect_expr_type(block.condition(), &TypeKind::Bool, "if condition");
-        let borrow_snapshot = self.snapshot_borrow_state();
-        self.check_flow_items(block.body());
-        let then_state = self.snapshot_borrow_state();
-        self.merge_borrow_state_from_paths(
-            &borrow_snapshot,
-            &[borrow_snapshot.clone(), then_state],
-        );
-    }
-
-    fn check_flow_match_block(&mut self, block: &arcweft_lang_hir::HirMatch) {
-        let expr_type = self.check_expr(block.expr());
-        let base_borrow_snapshot = self.snapshot_borrow_state();
-        let mut arm_states = Vec::new();
-        for arm in block.arms() {
-            self.restore_borrow_state(base_borrow_snapshot.clone());
-            let outer_locals = self.locals.clone();
-            for (name, ty) in let_else_bindings(arm.pattern(), expr_type.as_ref()) {
-                self.locals.insert(name, ty);
-            }
-            if let Some(guard) = arm.guard() {
-                self.expect_expr_type(guard, &TypeKind::Bool, "match arm guard");
-            }
-            self.check_flow_items(arm.body());
-            arm_states.push(self.snapshot_borrow_state());
-            self.locals = outer_locals;
-        }
-        if arm_states.is_empty() {
-            self.restore_borrow_state(base_borrow_snapshot);
-        } else {
-            self.merge_borrow_state_from_paths(&base_borrow_snapshot, &arm_states);
-        }
-    }
-
-    fn check_scoped_flow_items(&mut self, items: &[HirFlowItem]) {
-        let outer_locals = self.locals.clone();
-        let outer_presentation_defaults = self.active_presentation_defaults.clone();
-        self.check_flow_items(items);
-        self.locals = outer_locals;
-        self.active_presentation_defaults = outer_presentation_defaults;
     }
 
     fn check_choice_binding(&mut self, pattern: &Pattern, choice: &arcweft_lang_hir::HirChoice) {
@@ -805,75 +680,6 @@ impl TypeChecker<'_> {
         check_body(self);
         self.loop_stack.pop();
         self.restore_borrow_state(borrow_snapshot);
-    }
-
-    fn check_scope_expr_binding(
-        &mut self,
-        pattern: &Pattern,
-        scope: &arcweft_lang_hir::HirScopeExpr,
-    ) {
-        let outer_locals = self.locals.clone();
-        for stmt in scope.statements() {
-            self.check_stmt(stmt);
-        }
-        let value_type = scope.value().and_then(|value| self.check_expr(value));
-        self.locals = outer_locals;
-        if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), value_type) {
-            self.locals.insert(name.to_owned(), ty);
-        }
-    }
-
-    fn check_select_block(&mut self, block: &arcweft_lang_hir::HirSelect) {
-        if block.branches().is_empty() {
-            self.errors.push(TypeCheckError::new(
-                "select block must define at least one branch".to_owned(),
-            ));
-        }
-        for branch in block.branches() {
-            self.check_select_head(branch.head());
-            for item in branch.body() {
-                self.check_flow_item(item);
-            }
-        }
-    }
-
-    fn check_borrow_block(&mut self, block: &arcweft_lang_hir::HirBorrow) {
-        self.check_expr(block.source());
-        let borrow_start = self.active_borrows.len();
-        let borrow_local_start = self.borrow_local_lifetimes.clone();
-        let locals_start = self.locals.clone();
-        if let Some((name, ty)) = typed_pattern_binding(block.binding()) {
-            let ty = type_ref_kind(ty);
-            self.locals.insert(name.to_owned(), ty.clone());
-            self.register_borrow_bindings(block.binding(), &ty);
-        }
-        for item in block.body() {
-            self.check_flow_item(item);
-        }
-        self.active_borrows.truncate(borrow_start);
-        self.borrow_local_lifetimes = borrow_local_start;
-        self.locals = locals_start;
-    }
-
-    fn check_select_head(&mut self, head: &arcweft_lang_syntax::SelectBranchHead) {
-        match head {
-            arcweft_lang_syntax::SelectBranchHead::Bind { source, .. } => {
-                self.check_expr(source);
-            }
-            arcweft_lang_syntax::SelectBranchHead::Frame(pattern)
-            | arcweft_lang_syntax::SelectBranchHead::Event(pattern) => {
-                if let Pattern::Raw(raw) = pattern {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "raw select branch pattern is not type-checkable: {raw}"
-                    )));
-                }
-            }
-            arcweft_lang_syntax::SelectBranchHead::Raw(raw) => {
-                self.errors.push(TypeCheckError::new(format!(
-                    "raw select branch head is not type-checkable: {raw}"
-                )));
-            }
-        }
     }
 
     fn check_contract_clause(&mut self, contract: &ContractClause) {
