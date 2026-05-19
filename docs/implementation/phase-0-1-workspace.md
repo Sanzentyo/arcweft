@@ -77,7 +77,8 @@ defer, and thread parsing. `parser/choice.rs` owns choice item, arm, option
 block, and choice-plan parsing. `parser/items.rs` owns enum/struct/state field
 parsing and trait/impl member parsing. These are public parser namespaces, and
 parse recovery types are imported through `parser::recovery` instead of a flat
-parser-root re-export; remaining family parser modules remain a follow-up.
+parser-root re-export. `parser/top_level.rs` owns module/use/item dispatch;
+remaining family parser modules remain a follow-up.
 Runtime plan lowering imports syntax-owned surface types through
 `arcweft-lang-hir`'s `syntax::{ast, expr, types}` namespaces and no longer
 declares a direct dependency on `arcweft-lang-syntax`. `arcweft-lang-syntax`
@@ -403,7 +404,8 @@ Not implemented in this milestone:
 - full completion of the `pro_review21.md` file split plan: `arcweft-lang-sema`
   still needs deeper expression call/control-helper extraction after the
   module-entry and borrow-state splits; syntax still needs larger parser
-  family splits beyond the initial proof/source/choice/line-plan/items modules.
+  family splits beyond the current top-level/proof/source/choice/line-plan/items
+  modules.
 - inference, overload resolution, traits, generics, contracts, and full
   type-directed effect checking
 - unbounded/solver-backed loop CFG and full nested-scope borrow lifetime
