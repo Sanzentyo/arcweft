@@ -14,9 +14,9 @@ fn models_speaker_preset_and_line_plan_out() {
     let worried = "worried".to_owned();
 
     let alice2 = alice.preset(
-        DialogueOptions::empty()
+        SayOptions::empty()
             .with_look(smile.clone())
-            .with_voice(VoiceRef::Auto)
+            .with_voice(VoicePolicy::Auto)
             .with_text_box(textbox),
     );
 
@@ -74,7 +74,7 @@ fn models_speaker_preset_and_line_plan_out() {
 
     let line = DialogueLine::from_preset(
         &alice2,
-        DialogueOptions::empty(),
+        SayOptions::empty(),
         content,
         plan,
         SourceAnchor::generated(),
@@ -82,7 +82,7 @@ fn models_speaker_preset_and_line_plan_out() {
 
     assert_eq!(line.speaker().id().as_str(), "character.alice");
     assert_eq!(line.options().look.as_ref(), Some(&smile));
-    assert!(matches!(line.options().voice, Some(VoiceRef::Auto)));
+    assert!(matches!(line.options().voice, Some(VoicePolicy::Auto)));
     assert_eq!(line.plan().steps().len(), 4);
     assert!(line.plan().output().is_some());
 }

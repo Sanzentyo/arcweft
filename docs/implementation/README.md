@@ -130,7 +130,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `show(@character.alice, .normal)`.
 - `arcweft-dialogue` contains the current Sans I/O model for scoped
   dialogue lines, speaker presets, content, line plans, and the dialogue-side
-  adapter helpers for character presentation calls.
+  adapter helpers for character presentation calls. Compatibility type aliases
+  such as `DialogueOptions` and `VoiceRef` have been removed; Rust callers use
+  the canonical `SayOptions` and `VoicePolicy` names directly.
 - `arcweft-presentation` contains the Sans I/O model for scoped presentation
   handles. `bg(...)` and `show(...)` return typed
   `PresentationHandle<T>` values registered against a `PresentationTarget`,

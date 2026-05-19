@@ -34,8 +34,6 @@ pub struct SayOptions {
     pub text_box: Option<TextBoxRef>,
 }
 
-pub type DialogueOptions = SayOptions;
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SpeakerPreset {
     speaker: SpeakerRef,
@@ -47,8 +45,6 @@ pub enum VoicePolicy {
     Auto,
     Id(PublicId),
 }
-
-pub type VoiceRef = VoicePolicy;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogueContent {
@@ -246,7 +242,7 @@ impl SpeakerRef {
     }
 
     #[must_use]
-    pub fn preset(&self, options: DialogueOptions) -> SpeakerPreset {
+    pub fn preset(&self, options: SayOptions) -> SpeakerPreset {
         SpeakerPreset {
             speaker: self.clone(),
             options,
@@ -345,7 +341,7 @@ impl DialogueLine {
         &self.speaker
     }
 
-    pub const fn options(&self) -> &DialogueOptions {
+    pub const fn options(&self) -> &SayOptions {
         &self.options
     }
 
@@ -442,7 +438,7 @@ impl SpeakerPreset {
         &self.speaker
     }
 
-    pub const fn options(&self) -> &DialogueOptions {
+    pub const fn options(&self) -> &SayOptions {
         &self.options
     }
 }

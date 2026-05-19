@@ -161,7 +161,10 @@ Presentation model:
 `arcweft-presentation` owns these Sans I/O types. `PresentationRegistry<T>`
 enforces scope lifetime by removing registered values for a scope when
 `exit_scope` is called. `arcweft-dialogue` keeps only dialogue-specific adapter
-helpers that turn `SpeakerRef` into presentation character IDs.
+helpers that turn `SpeakerRef` into presentation character IDs. Dialogue-facing
+Rust APIs use the canonical `SayOptions` and `VoicePolicy` names directly;
+temporary compatibility aliases such as `DialogueOptions` and `VoiceRef` are no
+longer part of the crate surface.
 
 Syntax parser:
 
@@ -232,7 +235,7 @@ Syntax parser:
   the following brace body, which keeps flow/callable/entity/source builders
   from maintaining their own prelude scanners.
 - The `TypedSyntaxTree` view is still produced by the existing parser builder.
-  That builder remains a temporary compatibility point inside
+  That builder remains transitional internal parser infrastructure inside
   `arcweft-lang-syntax`; future parser work should move it onto CST/event
   parsing rather than growing the private line-splitting helpers.
 - The parser records module/use headers, attributes, wiki links, flows, fragments, flow items, scenario commands, speaker lines, content calls, choice blocks, hooks, memo functions, parser items, line plans, and dialogue tokens.
