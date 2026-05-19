@@ -49,7 +49,8 @@ implementation split into `engine/eval.rs`, `engine/flow.rs`,
 `arcweft-lang-sema` split has started with public `check`, `checker`, `types`,
 `env`, `diagnostics`, `borrow`, and `lifetime` modules, while the larger
 language-family checker split now includes `choice`, `expr`, `flow`,
-`line_plan`, `source`, `stmt`, `effects`, `module`, and `borrow_state` child modules.
+`line_plan`, `source`, `stmt`, `effects`, `module`, `borrow_state`, and
+`helpers` child modules.
 `arcweft-runtime-plan` is split across lowering-family
 modules including `errors`, `expr`, `flow`, `labels`, `line_task`, `pattern`,
 `source`, and `stream`. The crate root is only a public module namespace;
@@ -413,7 +414,7 @@ Not implemented in this milestone:
 - full type environment, name resolution, and type checking
 - full completion of the `pro_review21.md` file split plan: `arcweft-lang-sema`
   still needs deeper expression call/control-helper extraction after the
-  module-entry, effect, and borrow-state splits; syntax still needs any
+  module-entry, effect, borrow-state, and helper splits; syntax still needs any
   remaining family parser extraction beyond the current
   helpers/top-level/flow/dialogue/proof/source/choice/line-plan/items modules.
 - inference, overload resolution, traits, generics, contracts, and full

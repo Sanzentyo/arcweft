@@ -218,13 +218,13 @@ flow @flow.opening opening {
 
 #[test]
 fn type_ref_keeps_explicit_map_kind() {
-    let ordered = crate::checker::type_ref_kind(
+    let ordered = crate::checker::helpers::type_ref_kind(
         &parse_type_ref("OrderedMap<Ref<Character>, Int>").expect("ordered map type parses"),
     );
-    let sorted = crate::checker::type_ref_kind(
+    let sorted = crate::checker::helpers::type_ref_kind(
         &parse_type_ref("SortedMap<Ref<Character>, Int>").expect("sorted map type parses"),
     );
-    let btree = crate::checker::type_ref_kind(
+    let btree = crate::checker::helpers::type_ref_kind(
         &parse_type_ref("BTreeMap<Ref<Character>, Int>").expect("btree map type parses"),
     );
     assert!(matches!(
@@ -253,19 +253,19 @@ fn type_ref_keeps_explicit_map_kind() {
 #[test]
 fn named_iter_item_type_extracts_sequence_items() {
     assert_eq!(
-        crate::checker::named_iter_item_type("Vec<Foo>").as_deref(),
+        crate::checker::helpers::named_iter_item_type("Vec<Foo>").as_deref(),
         Some("Foo")
     );
     assert_eq!(
-        crate::checker::named_iter_item_type("Seq<Foo>").as_deref(),
+        crate::checker::helpers::named_iter_item_type("Seq<Foo>").as_deref(),
         Some("Foo")
     );
     assert_eq!(
-        crate::checker::named_iter_item_type("Slice<Foo>").as_deref(),
+        crate::checker::helpers::named_iter_item_type("Slice<Foo>").as_deref(),
         Some("Foo")
     );
     assert_eq!(
-        crate::checker::named_iter_item_type("Array<Foo, 3>").as_deref(),
+        crate::checker::helpers::named_iter_item_type("Array<Foo, 3>").as_deref(),
         Some("Foo")
     );
 }
