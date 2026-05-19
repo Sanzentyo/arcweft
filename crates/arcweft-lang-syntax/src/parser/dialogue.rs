@@ -1,3 +1,5 @@
+use crate::ast::dialogue::{DialogueDefaultOption, DialogueDefaultsItem};
+
 use super::{
     BlockStyle, ContentCall, ContentCallParse, CstLine, DialogueContent, FlowItem, LinePlan,
     Parser, ScopeBlock, SpeakerLine, Stmt, TextRange, attach_line_plan_label,
@@ -5,12 +7,81 @@ use super::{
     find_matching_punctuation, find_top_level_punctuation, indentation, is_with_brace_head,
     parse_binding_pattern, parse_dialogue_call_expr_source, parse_dialogue_tokens,
     parse_expr_lossy, parse_flat_fence, parse_inline_with_colon_plan, parse_line_options,
-    parse_line_plan_body, parse_with_brace_label, parse_with_indent_label, punctuation_delta,
-    simple_error, split_brace_item, split_call_head, split_leading_ident, split_speaker_line,
-    split_top_level_binding,
+    parse_line_plan_body, parse_optional_decl_entity_ref, parse_visibility_prefix,
+    parse_with_brace_label, parse_with_indent_label, punctuation_delta, simple_error,
+    split_brace_item, split_call_head, split_leading_ident, split_speaker_line,
+    split_top_level_binding, split_top_level_punctuation_once,
 };
 
 impl Parser {
+    pub(super) fn parse_dialogue_defaults(&mut self) -> Option<DialogueDefaultsItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing dialogue defaults",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the dialogue defaults body"],
+            );
+            return None;
+        }
+        let (visibility, rest) = parse_visibility_prefix(head.trim());
+        let after_defaults = rest
+            .trim_start()
+            .strip_prefix("dialogue defaults")?
+            .trim_start();
+        let (id, tail) = parse_optional_decl_entity_ref(
+            after_defaults,
+            "dialogue",
+            start_line.start,
+            &mut self.errors,
+        );
+        if !tail.trim().is_empty() {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.start + head.len()),
+                "unexpected tokens after dialogue defaults header",
+                ["{"],
+                Some(tail.trim()),
+                ["move defaults into the declaration body"],
+            );
+        }
+        let options = body
+            .lines()
+            .filter_map(|line| {
+                let trimmed = line.trim();
+                if trimmed.is_empty() || trimmed.starts_with("//") {
+                    return None;
+                }
+                let (name, value) =
+                    split_top_level_punctuation_once(trimmed, '=').unwrap_or_else(|| {
+                        self.push_error(
+                            TextRange::new(start_line.start, start_line.start + trimmed.len()),
+                            "expected dialogue default assignment",
+                            ["name = expr"],
+                            Some(trimmed),
+                            ["write defaults as `name = value`"],
+                        );
+                        ("", "")
+                    });
+                (!name.trim().is_empty()).then(|| {
+                    DialogueDefaultOption::new(
+                        name.trim().to_owned(),
+                        parse_expr_lossy(value.trim()),
+                        TextRange::new(start_line.start, start_line.start + trimmed.len()),
+                    )
+                })
+            })
+            .collect();
+        Some(DialogueDefaultsItem::new(
+            visibility,
+            id,
+            options,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
     pub(super) fn parse_let_dialogue_call(&mut self) -> Option<Stmt> {
         let start = self.current().clone();
         let mut text = start.text.trim().to_owned();

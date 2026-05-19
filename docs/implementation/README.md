@@ -416,8 +416,10 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   source-item header/handler/body parsing, `parser/proof.rs` owning
   proof/test item clause parsing, and `parser/line_plan.rs` owning line-plan
   body, trigger, defer, and thread parsing. `parser/choice.rs` owns choice
-  item, arm, option block, and choice-plan parsing. `parser/items.rs` owns
-  enum/struct/state field parsing and trait/impl member parsing. These parser
+  top-level blocks, `let choice` bindings, choice item, arm, option block, and
+  choice-plan parsing. `parser/items.rs` owns enum/struct/state field parsing
+  and trait/impl member parsing. `parser/hooks.rs` owns hook item parsing and
+  hook-header diagnostics. These parser
   family modules are public responsibility namespaces; recovery types are
   addressed as `parser::recovery::ParseError` /
   `parser::recovery::RecoverySuggestion` rather than through a flat
@@ -426,11 +428,12 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   item header/body parsing in addition to source handlers and source statement
   helpers, `parser/top_level.rs` owns module/use/item-family dispatch,
   `parser/flow.rs` owns flow item and flow-body dispatch, and
-  `parser/dialogue.rs` owns dialogue-content calls,
+  `parser/dialogue.rs` owns dialogue defaults, dialogue-content calls,
   speaker-line sugar, trailing line-plan attachment, and flat dialogue/with
   fence handling. `parser/items.rs` now owns parser methods for function-like,
   enum, struct, state, trait, impl, and type-alias top-level items in addition
-  to entity declarations, extern modules, and item-member helpers.
+  to entity declarations, extern modules, memo functions, parser items, and
+  item-member helpers.
   `parser/proof.rs` owns proof, trusted-axiom, test, and bench top-level parser
   methods plus proof/test clause parsing. The parser driver still needs further
   family-specific module extraction.

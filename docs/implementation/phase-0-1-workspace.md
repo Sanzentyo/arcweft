@@ -82,17 +82,20 @@ header/handler/body parsing, including the source top-level item parser, and
 `parser/proof.rs` for proof/test item
 clause parsing plus proof, trusted-axiom, test, and bench top-level item
 parsing. `parser/line_plan.rs` now owns line-plan body, trigger,
-defer, and thread parsing. `parser/choice.rs` owns choice item, arm, option
-block, and choice-plan parsing. `parser/items.rs` owns enum/struct/state field
-parsing, trait/impl member parsing, and the parser methods for function-like,
-enum, struct, state, trait, impl, type-alias, entity-declaration, and extern
-module top-level items. These are public parser namespaces, and
+defer, and thread parsing. `parser/choice.rs` owns choice top-level blocks,
+`let choice` bindings, choice item, arm, option block, and choice-plan parsing.
+`parser/items.rs` owns enum/struct/state field parsing, trait/impl member
+parsing, and the parser methods for function-like, enum, struct, state, trait,
+impl, type-alias, entity-declaration, extern module, memo function, and parser
+item top-level items. `parser/hooks.rs` owns hook item parsing and hook-header
+diagnostics. These are public parser namespaces, and
 parse recovery types are imported through `parser::recovery` instead of a flat
 parser-root re-export. `parser/helpers.rs` owns shared parser helpers for
 module/use path handling and attribute parsing, `parser/top_level.rs` owns
 module/use/item dispatch, `parser/flow.rs` owns flow item and flow-body
-dispatch, and `parser/dialogue.rs` owns dialogue-content calls, speaker-line
-sugar, trailing line-plan attachment, and flat dialogue/with fence handling;
+dispatch, and `parser/dialogue.rs` owns dialogue defaults, dialogue-content
+calls, speaker-line sugar, trailing line-plan attachment, and flat
+dialogue/with fence handling;
 remaining family parser modules remain a follow-up.
 Runtime plan lowering imports syntax-owned surface types through
 `arcweft-lang-hir`'s `syntax::{ast, expr, types}` namespaces and no longer

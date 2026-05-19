@@ -1,8 +1,8 @@
 use crate::ast::common::TextRange;
 use crate::ast::items::{
     CallableItem, EntityDeclItem, EnumItem, EnumVariant, ExternModItem, FunctionInit, FunctionItem,
-    ImplItem, ImplMember, StateField, StateItem, StructField, StructItem, TraitItem, TraitMember,
-    TypeAliasItem,
+    ImplItem, ImplMember, MemoFn, ParserItem, StateField, StateItem, StructField, StructItem,
+    TraitItem, TraitMember, TypeAliasItem,
 };
 use crate::cst::{
     find_matching_angle_group, find_top_level_punctuation, split_leading_ident,
@@ -19,6 +19,109 @@ use super::{
 };
 
 impl Parser {
+    pub(super) fn parse_memo_fn(&mut self) -> Option<MemoFn> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing memo fn",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the memo function body"],
+            );
+            return None;
+        }
+        let mut lines = head.lines().map(str::trim).filter(|line| !line.is_empty());
+        let first = lines.next()?;
+        let (visibility, after_visibility) = parse_visibility_prefix(first);
+        let signature = after_visibility
+            .trim_start()
+            .strip_prefix("memo fn")?
+            .trim()
+            .to_owned();
+        let options = lines
+            .inspect(|line| self.reject_old_memo_option(line, start_line.start))
+            .map(str::to_owned)
+            .collect();
+        let (body_statements, body_value) = parse_scope_expr_body(&body);
+        Some(MemoFn::new(
+            visibility,
+            signature,
+            options,
+            body,
+            body_statements,
+            body_value,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn reject_old_memo_option(&mut self, line: &str, base: usize) {
+        if line.starts_with("cache ") {
+            self.push_error(
+                TextRange::new(base, base + line.len()),
+                "`cache` is not valid memo option syntax",
+                ["scope = MemoScope"],
+                Some(line),
+                ["replace `cache session` with `scope = session`"],
+            );
+        }
+    }
+
+    pub(super) fn parse_parser_item(&mut self) -> Option<ParserItem> {
+        if !self.current().text.contains('{') && !self.next_nonblank_line_is_brace() {
+            return self.parse_parser_item_line();
+        }
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing parser item",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the parser body"],
+            );
+            return None;
+        }
+        let (visibility, after_visibility) = parse_visibility_prefix(head.trim());
+        let after_parser = after_visibility
+            .trim_start()
+            .strip_prefix("parser")?
+            .trim_start();
+        let (name, tail) = parse_name_and_tail(after_parser);
+        let (body_statements, body_value) = parse_scope_expr_body(&body);
+        Some(ParserItem::new(
+            visibility,
+            name.unwrap_or_default(),
+            tail,
+            body,
+            body_statements,
+            body_value,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_parser_item_line(&mut self) -> Option<ParserItem> {
+        let line = self.current().clone();
+        self.index += 1;
+        let (visibility, after_visibility) = parse_visibility_prefix(line.text.trim());
+        let after_parser = after_visibility
+            .trim_start()
+            .strip_prefix("parser")?
+            .trim_start();
+        let (name, tail) = parse_name_and_tail(after_parser);
+        Some(ParserItem::new(
+            visibility,
+            name.unwrap_or_default(),
+            tail,
+            String::new(),
+            Vec::new(),
+            None,
+            TextRange::new(line.start, line.end),
+        ))
+    }
+
     pub(super) fn parse_function_item(&mut self) -> Option<FunctionItem> {
         let doc = self.take_pending_doc();
         let start_line = self.current().clone();

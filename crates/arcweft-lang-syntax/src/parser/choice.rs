@@ -1,9 +1,11 @@
 use crate::ast::choice::{
-    ChoiceAction, ChoiceItem, ChoiceMatchArm, ChoiceOption, ChoicePlanItem, ChoiceUiField,
+    ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceMatchArm, ChoiceOption, ChoicePlan,
+    ChoicePlanItem, ChoiceUiField,
 };
 use crate::ast::common::TextRange;
 use crate::ast::flow::Stmt;
 use crate::ast::items::RawSyntax;
+use crate::ast::line_plan::BlockStyle;
 use crate::cst::{
     find_matching_punctuation, find_top_level_punctuation, split_first_string_literal,
     split_top_level_keyword_once, split_top_level_punctuation_sequence_once,
@@ -12,17 +14,96 @@ use crate::expr::parse_expr;
 use crate::pattern::parse_pattern;
 
 use super::{
-    collect_logical_block_items, parse_expr_lossy, parse_optional_id_ref,
+    Parser, collect_logical_block_items, indentation, parse_expr_lossy, parse_optional_id_ref,
     parse_required_entity_ref_syntax, parse_required_id_ref, parse_stmt, parse_stmt_lines,
     parse_trigger_pattern, recovery::ParseError, split_brace_item, split_pattern_guard,
     split_top_level_binding,
 };
 
-pub(super) fn parse_choice_items(
-    body: &str,
-    base: usize,
-    errors: &mut Vec<ParseError>,
-) -> Vec<ChoiceItem> {
+impl Parser {
+    pub(super) fn parse_choice(&mut self) -> Option<ChoiceBlock> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing choice",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the choice block"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("choice")?.trim();
+        let (id, _) = parse_optional_id_ref(rest, start_line.start, &mut self.errors);
+        let items = parse_choice_items(&body, start_line.start, &mut self.errors);
+        let plan = self.take_choice_plan_after_current(start_line.start);
+        Some(ChoiceBlock::new(
+            id,
+            items,
+            plan,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    pub(super) fn parse_let_choice(&mut self) -> Option<Stmt> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing choice expression",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the choice expression block"],
+            );
+            return None;
+        }
+
+        let rest = head.trim().strip_prefix("let")?.trim();
+        let (pattern, choice_head) = split_top_level_binding(rest)?;
+        let choice_rest = choice_head.trim().strip_prefix("choice")?.trim();
+        let (id, _) = parse_optional_id_ref(choice_rest, start_line.start, &mut self.errors);
+        let items = parse_choice_items(&body, start_line.start, &mut self.errors);
+        let plan = self.take_choice_plan_after_current(start_line.start);
+
+        Some(Stmt::LetChoice {
+            pattern: parse_pattern(pattern.trim()),
+            choice: ChoiceBlock::new(id, items, plan, TextRange::new(start_line.start, end)),
+        })
+    }
+
+    fn take_choice_plan_after_current(&mut self, base: usize) -> Option<ChoicePlan> {
+        self.skip_blank_and_comments();
+        if self.index >= self.events.len() {
+            return None;
+        }
+        let line = self.current().clone();
+        let trimmed = line.text.trim();
+        if trimmed == "with" || trimmed.starts_with("with ") {
+            let (head, body, end, ok) = self.take_brace_block();
+            if ok && head.trim() == "with" {
+                return Some(ChoicePlan::new(
+                    BlockStyle::Brace,
+                    parse_choice_plan_items(&body),
+                    TextRange::new(line.start, end),
+                ));
+            }
+        }
+        if trimmed == "with:" {
+            self.index += 1;
+            let body = self.take_indented_await_body(indentation(&line.text) + 1);
+            return Some(ChoicePlan::new(
+                BlockStyle::Indent,
+                parse_choice_plan_items(&body),
+                TextRange::new(line.start, base + body.len()),
+            ));
+        }
+        None
+    }
+}
+
+fn parse_choice_items(body: &str, base: usize, errors: &mut Vec<ParseError>) -> Vec<ChoiceItem> {
     collect_logical_block_items(body)
         .into_iter()
         .map(|line| {
@@ -137,7 +218,7 @@ fn parse_choice_match_arms(
         .collect()
 }
 
-pub(super) fn parse_choice_plan_items(body: &str) -> Vec<ChoicePlanItem> {
+fn parse_choice_plan_items(body: &str) -> Vec<ChoicePlanItem> {
     collect_logical_block_items(body)
         .into_iter()
         .map(|line| {
