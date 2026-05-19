@@ -1,7 +1,4 @@
 use arcweft_id::{PublicId, TextKey};
-use arcweft_presentation::{
-    CharacterSurface, ClearPresentation, PresentationHandle, PresentationScope, SlotRef,
-};
 use arcweft_source::SourceAnchor;
 use core::time::Duration;
 use thiserror::Error;
@@ -256,25 +253,6 @@ pub fn character(name: &str) -> SpeakerRef {
 
 pub fn textbox(name: &str) -> TextBoxRef {
     TextBoxRef::new(domain_id("textbox", name))
-}
-
-pub fn show(
-    character: &SpeakerRef,
-    expression_name: &str,
-    scope: PresentationScope,
-) -> PresentationHandle<CharacterSurface> {
-    arcweft_presentation::show_character(character.id(), expression_name, scope)
-}
-
-pub fn character_ref(character: &SpeakerRef) -> SlotRef<CharacterSurface> {
-    arcweft_presentation::character_ref(character.id())
-}
-
-pub fn hide(
-    character: &SpeakerRef,
-    scope: PresentationScope,
-) -> ClearPresentation<CharacterSurface> {
-    arcweft_presentation::hide_character(character.id(), scope)
 }
 
 /// Creates a dialogue line id from a full public id such as `say.opening.001`.

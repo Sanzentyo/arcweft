@@ -10,12 +10,14 @@ use crate::cst::{
 };
 use crate::types::{parse_fn_signature, parse_type_ref};
 
-use super::{
-    Parser, PendingDocLines, collect_logical_block_items, parse_callable_kind,
-    parse_contract_clause, parse_entity_decl_head, parse_expr_lossy, parse_extern_mod_head,
+use super::headers::{
+    parse_callable_kind, parse_contract_clause, parse_entity_decl_head, parse_extern_mod_head,
     parse_function_kind_and_signature, parse_name_and_tail, parse_optional_angle_head,
-    parse_scope_expr_body, parse_visibility_prefix, split_brace_item, split_function_header_lines,
-    split_supertraits, split_top_level_binding,
+    parse_visibility_prefix, split_function_header_lines, split_supertraits,
+};
+use super::{
+    Parser, PendingDocLines, collect_logical_block_items, parse_expr_lossy, parse_scope_expr_body,
+    split_brace_item, split_top_level_binding,
 };
 
 impl Parser {

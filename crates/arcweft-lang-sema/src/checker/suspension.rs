@@ -1,8 +1,9 @@
 //! Suspension boundaries and runtime-scope helpers.
 
+use super::helpers::let_else_bindings;
 use super::{
     Expr, LifetimeScopeKind, LoopContext, TypeCheckError, TypeChecker, TypeCheckerScopeSnapshot,
-    TypeKind, YieldContext, await_branch_pattern_type, let_else_bindings, type_contains_borrow_ref,
+    TypeKind, YieldContext, await_branch_pattern_type, type_contains_borrow_ref,
     unify_loop_break_types,
 };
 

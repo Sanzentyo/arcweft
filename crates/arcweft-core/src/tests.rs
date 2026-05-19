@@ -1,6 +1,7 @@
 use crate::effect::{LineEffectRequest, RuntimeCall};
 
 mod flow;
+mod frame;
 mod line_task;
 mod observation;
 mod source;

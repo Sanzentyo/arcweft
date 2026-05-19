@@ -1,6 +1,6 @@
 //! Shared parser helpers that are not tied to a single grammar family.
 
-use super::parse_visibility_prefix;
+use super::headers::parse_visibility_prefix;
 use crate::ast::{
     common::{TextRange, UseItem, UseMode},
     items::Attribute,

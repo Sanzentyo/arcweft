@@ -1,9 +1,9 @@
 //! Source-declaration type checking.
 
+use super::helpers::let_else_bindings;
 use super::{
     SourceBackpressurePolicy, SourceEventPattern, SourceHeader, SourcePrivacyPolicy,
-    SourceReplayPolicy, TypeCheckError, TypeChecker, TypeKind, YieldContext, let_else_bindings,
-    source_return_types,
+    SourceReplayPolicy, TypeCheckError, TypeChecker, TypeKind, YieldContext, source_return_types,
 };
 use arcweft_lang_syntax::ast::source::SourceItem;
 

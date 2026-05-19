@@ -1,11 +1,10 @@
 use crate::ast::common::TextRange;
 use crate::ast::items::{HookInit, HookItem};
 
-use super::{
-    Parser, find_header_value, parse_expr_lossy,
-    parse_required_decl_entity_ref_without_name_marker, parse_stmt_lines, parse_visibility_prefix,
-    split_comma_args,
+use super::headers::{
+    find_header_value, parse_required_decl_entity_ref_without_name_marker, parse_visibility_prefix,
 };
+use super::{Parser, parse_expr_lossy, parse_stmt_lines, split_comma_args};
 
 impl Parser {
     pub(super) fn parse_hook(&mut self) -> Option<HookItem> {

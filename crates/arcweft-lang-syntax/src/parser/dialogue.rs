@@ -1,5 +1,6 @@
 use crate::ast::dialogue::{DialogueDefaultOption, DialogueDefaultsItem};
 
+use super::headers::{parse_optional_decl_entity_ref, parse_visibility_prefix, simple_error};
 use super::{
     BlockStyle, ContentCall, ContentCallParse, CstLine, DialogueContent, FlowItem, LinePlan,
     Parser, ScopeBlock, SpeakerLine, Stmt, TextRange, attach_line_plan_label,
@@ -7,8 +8,7 @@ use super::{
     find_matching_punctuation, find_top_level_punctuation, indentation, is_with_brace_head,
     parse_binding_pattern, parse_dialogue_call_expr_source, parse_dialogue_tokens,
     parse_expr_lossy, parse_flat_fence, parse_inline_with_colon_plan, parse_line_options,
-    parse_line_plan_body, parse_optional_decl_entity_ref, parse_visibility_prefix,
-    parse_with_brace_label, parse_with_indent_label, punctuation_delta, simple_error,
+    parse_line_plan_body, parse_with_brace_label, parse_with_indent_label, punctuation_delta,
     split_brace_item, split_call_head, split_leading_ident, split_speaker_line,
     split_top_level_binding, split_top_level_punctuation_once,
 };

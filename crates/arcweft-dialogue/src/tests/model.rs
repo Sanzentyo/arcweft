@@ -1,8 +1,5 @@
 use crate::*;
 use arcweft_id::PublicId;
-use arcweft_presentation::{
-    BackgroundSurface, PresentationSlot, PresentationTarget, SlotValue, asset, bg, clear_bg,
-};
 use arcweft_source::SourceAnchor;
 use core::time::Duration;
 
@@ -85,69 +82,4 @@ fn models_speaker_preset_and_line_plan_out() {
     assert!(matches!(line.options().voice, Some(VoicePolicy::Auto)));
     assert_eq!(line.plan().steps().len(), 4);
     assert!(line.plan().output().is_some());
-}
-
-#[test]
-fn presentation_handles_share_scope_lifetime_and_slots() {
-    let line_scope = PresentationScope::line();
-    let alice = character("alice");
-    let background = bg(asset("bg.room"), line_scope.clone());
-    let shown_alice = show(&alice, "smile", line_scope.clone());
-
-    assert_eq!(background.scope(), &line_scope);
-    assert_eq!(shown_alice.scope(), &line_scope);
-    assert_eq!(background.target().id().as_str(), "target.scene");
-    assert_eq!(background.slot().id().as_str(), "slot.background.default");
-    assert_eq!(
-        shown_alice.slot().id().as_str(),
-        "slot.character.alice.default"
-    );
-    assert_eq!(shown_alice.value().character().as_str(), "character.alice");
-    assert_eq!(
-        shown_alice.value().expression().map(PublicId::as_str),
-        Some("expression.smile")
-    );
-}
-
-#[test]
-fn presentation_slot_value_behaves_like_static_option() {
-    let mut slot = SlotValue::empty(
-        PresentationTarget::scene(),
-        PresentationSlot::default_background(),
-    );
-    assert!(slot.get().is_none());
-
-    let first = bg(asset("bg.room"), PresentationScope::flow());
-    assert!(slot.set(first).is_none());
-    assert_eq!(
-        slot.get()
-            .map(BackgroundSurface::asset)
-            .map(PublicId::as_str),
-        Some("asset.bg.room")
-    );
-
-    let second = bg(asset("bg.evening"), PresentationScope::line());
-    let previous = slot.set(second).expect("previous background is returned");
-    assert_eq!(previous.asset().as_str(), "asset.bg.room");
-    assert_eq!(
-        slot.get()
-            .map(BackgroundSurface::asset)
-            .map(PublicId::as_str),
-        Some("asset.bg.evening")
-    );
-
-    let cleared = slot.clear().expect("background clears");
-    assert_eq!(cleared.asset().as_str(), "asset.bg.evening");
-    assert!(slot.get().is_none());
-    assert_eq!(
-        clear_bg(PresentationScope::line()).slot().id().as_str(),
-        "slot.background.default"
-    );
-    assert_eq!(
-        hide(&character("alice"), PresentationScope::line())
-            .slot()
-            .id()
-            .as_str(),
-        "slot.character.alice.default"
-    );
 }

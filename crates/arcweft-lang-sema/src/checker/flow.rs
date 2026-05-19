@@ -1,8 +1,9 @@
 //! Flow-item type checking and flow-local scope handling.
 
+use super::helpers::let_else_bindings;
 use super::{
     EntityKind, HirFlowItem, Pattern, SelectBranchHead, TypeCheckError, TypeChecker, TypeKind,
-    entity_kind, ident_pattern_name, let_else_bindings, type_ref_kind, typed_pattern_binding,
+    entity_kind, ident_pattern_name, type_ref_kind, typed_pattern_binding,
 };
 
 impl TypeChecker<'_> {

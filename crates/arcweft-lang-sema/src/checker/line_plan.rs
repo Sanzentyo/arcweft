@@ -1,9 +1,10 @@
 //! Dialogue line-plan type checking.
 
+use super::helpers::let_else_bindings;
 use super::{
     CancelRuleSyntax, DialogueToken, Expr, LifetimeAccessMode, LifetimeScopeKind, LinePlanItem,
-    Pattern, Stmt, TriggerPattern, TypeCheckError, TypeChecker, TypeKind, let_else_bindings,
-    lifetime_key, merge_line_output,
+    Pattern, Stmt, TriggerPattern, TypeCheckError, TypeChecker, TypeKind, lifetime_key,
+    merge_line_output,
 };
 use arcweft_lang_syntax::ast::{flow::WaitTarget, line_plan::LinePlan};
 use std::collections::HashSet;

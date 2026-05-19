@@ -52,7 +52,9 @@ language-family checker split now includes `choice`, `expr`, `flow`,
 `line_plan`, `source`, `suspension`, `stmt`, `effects`, `module`,
 `borrow_state`, and `helpers` child modules. Semantic-analysis traversal
 helpers are now isolated under `semantic/traversal.rs`, with flow-fact state
-and transfer primitives in `semantic/facts.rs`.
+and transfer primitives in `semantic/facts.rs`. `checker.rs` now owns checker
+state, entrypoints, and a small set of shared helpers rather than expression
+or statement-family checking methods.
 `arcweft-runtime-plan` is split across lowering-family
 modules including `errors`, `expr`, `flow`, `labels`, `line_task`, `pattern`,
 `source`, and `stream`. The crate root is only a public module namespace;
@@ -103,17 +105,20 @@ control-flow expressions, and shared control-flow block helpers,
 `await ... with` parsing (await `let` bindings, multiline await heads, and
 await-branch parsing), and `parser/dialogue.rs` owns
 dialogue defaults, dialogue-content calls, speaker-line sugar, trailing
-line-plan attachment, and flat dialogue/with fence handling;
-remaining family parser modules remain a follow-up.
+line-plan attachment, and flat dialogue/with fence handling. `parser/headers.rs`
+owns declaration headers, entity/ID reference parsing, function signatures,
+contract clauses, visibility, and related header-level helpers used by sibling
+parser modules through `super::headers::*`. Remaining parser follow-up is
+driver/common-helper slimming rather than missing parser family modules.
 Runtime plan lowering imports syntax-owned surface types through
 `arcweft-lang-hir`'s `syntax::{ast, expr, types}` namespaces and no longer
 declares a direct dependency on `arcweft-lang-syntax`. `arcweft-lang-syntax`
 itself exposes subsystem modules rather than flat crate-root compatibility
 re-exports.
 Core tests are split by runtime family under
-`crates/arcweft-core/src/tests/`: `task.rs`, `source.rs`, `stream.rs`,
-`observation.rs`, `flow.rs`, and `line_task.rs`. The root `tests.rs` remains
-only the test harness plus shared helpers.
+`crates/arcweft-core/src/tests/`: `frame.rs`, `task.rs`, `source.rs`,
+`stream.rs`, `observation.rs`, `flow.rs`, and `line_task.rs`. The root
+`tests.rs` remains only the test harness plus shared helpers.
 
 ## pro_review21 Completion Matrix
 
@@ -129,12 +134,27 @@ layout and module surfaces.
 | `runtime-plan -> syntax` direct dependency removal | Complete | `arcweft-runtime-plan/Cargo.toml` depends on `arcweft-lang-hir`, not `arcweft-lang-syntax`; syntax types flow through `hir::syntax`. |
 | `arcweft-test` duplicate dependency cleanup | Complete | `arcweft-test` keeps `arcweft-lang-hir` only in `[dependencies]`; there is no duplicated `hir` entry across dependency sections. |
 | `arcweft` facade flat-prelude removal / namespace boundary policy | Complete | `crates/arcweft/src/lib.rs` exposes crate-family `pub mod` namespaces and does not reintroduce `arcweft::prelude::*`. |
-| `arcweft-dialogue -> arcweft-presentation` dependency review | In progress | Dependency is still present by design for current dialogue-side presentation adapter helpers; extracting a narrower presentation-model crate remains a separate architecture task. |
+| `arcweft-dialogue -> arcweft-presentation` dependency review | Complete | `arcweft-dialogue` no longer depends on `arcweft-presentation`; presentation staging helpers and tests live in `arcweft-presentation`, while the application facade exposes both namespaces. |
 | `arcweft-lang-syntax` AST family split | Complete | AST families are moved under `src/ast/*.rs` with `ast.rs` as namespace. |
-| `arcweft-lang-syntax` parser family split | In progress | Family modules exist, and control-flow plus statement parsing are extracted; parser lifecycle/error plumbing and some cross-cutting helpers remain in `parser.rs`. |
+| `arcweft-lang-syntax` parser family split | Mostly complete | Family modules exist for top-level, flow, control-flow, statements, await, dialogue, choice, line-plan, items, hooks, source, proof, recovery, helpers, and headers. Parser lifecycle/error plumbing and a small set of cross-cutting common helpers remain in `parser.rs`. |
 | `arcweft-lang-sema` public split (`check/checker/types/env/diagnostics/borrow/lifetime`) | Complete | Public modules exist and `check.rs` is facade-only. |
-| `arcweft-lang-sema` deeper checker-family extraction | In progress | `checker/*` child modules now include presentation-call validation, suspension helpers, and lifetime-access helpers, but `checker.rs` still holds substantial expression/type-checking state. |
+| `arcweft-lang-sema` deeper checker-family extraction | Complete for review21 split | Expression/type-checking, statement, flow, line-plan, source, suspension, effects, presentation, module, lifetime-access, borrow-state, and helper families are split under `checker/`; `checker.rs` owns checker state and entrypoints. |
 | Dialogue compatibility alias cleanup | Complete | Compatibility aliases like `DialogueOptions`/`VoiceRef` are removed; canonical names are in use. |
+
+### pro_review21 Prompt-to-Artifact Checklist
+
+This checklist is the strict prompt-to-repo mapping for review21-focused items.
+
+| Prompt item | Status | Artifact evidence |
+| --- | --- | --- |
+| core split/tests | Complete | `crates/arcweft-core/src/lib.rs` (`pub mod time/frame/value/pattern/effect/task/source/stream/plan/line_task/observation/engine`), `crates/arcweft-core/src/engine/{eval,flow,line,source,stream,suspend}.rs`, `crates/arcweft-core/src/tests/{frame,task,source,stream,observation,flow,line_task}.rs` |
+| sema split/tests | Complete | Public split is present in `crates/arcweft-lang-sema/src/{check,checker,types,env,diagnostics,borrow,lifetime}.rs`; checker families live under `crates/arcweft-lang-sema/src/checker/*.rs`, including `expr.rs`, while coverage exists in `crates/arcweft-lang-sema/src/tests/` including `await_.rs`, `control_flow.rs`, `typecheck.rs`, and `semantic.rs`. |
+| syntax AST/parser split | Mostly complete | AST family split is complete (`crates/arcweft-lang-syntax/src/ast/{common,ids,items,pattern,flow,dialogue,line_plan,choice,proof,source}.rs`); parser family modules exist (`crates/arcweft-lang-syntax/src/parser/{await_,choice,control_flow,dialogue,flow,headers,helpers,hooks,items,line_plan,proof,recovery,source,statements,top_level}.rs`). Parser-driver and cross-cutting lifecycle/common helper slimming remains as follow-up. |
+| HIR/runtime-plan split | Complete | HIR: `crates/arcweft-lang-hir/src/{model,lower,lower_flow,lower_dialogue,lower_choice,lower_ids,lower_context,id_context}.rs`; runtime-plan: `crates/arcweft-runtime-plan/src/{errors,expr,flow,labels,line_task,pattern,source,stream}.rs` with namespace root in `src/lib.rs`. |
+| dependency cleanup | Complete | `crates/arcweft-runtime-plan/Cargo.toml` depends on `arcweft-lang-hir` (no direct `arcweft-lang-syntax`), `crates/arcweft-test/Cargo.toml` has no duplicate `arcweft-lang-hir` entry, and `crates/arcweft-dialogue/Cargo.toml` no longer depends on `arcweft-presentation`. |
+| lifetime/borrow tests | Complete (current review21 scope) | Suspension-boundary and explicit-drop coverage is present in `crates/arcweft-lang-sema/src/tests/await_.rs` and `crates/arcweft-lang-sema/src/tests/control_flow.rs` (await/yield/thread/defer boundary rejection and drop-before-await acceptance), with related lifetime/capture checks in `crates/arcweft-lang-sema/src/tests/typecheck.rs`. |
+| adapter view lifetime guidance | Complete for frame boundary | `crates/arcweft-core/src/frame.rs` exposes `FrameInputView<'a>` and `FrameOutputWriter<'a>` so adapter-facing frame data can be borrowed/written without transferring ownership. |
+| dialogue -> presentation dependency decision | Complete | Presentation calls and registry tests live in `crates/arcweft-presentation`; `arcweft-dialogue` owns only dialogue data and has no presentation dependency. |
 
 ## Implemented Types
 
@@ -196,11 +216,11 @@ Presentation model:
 
 `arcweft-presentation` owns these Sans I/O types. `PresentationRegistry<T>`
 enforces scope lifetime by removing registered values for a scope when
-`exit_scope` is called. `arcweft-dialogue` keeps only dialogue-specific adapter
-helpers that turn `SpeakerRef` into presentation character IDs. Dialogue-facing
-Rust APIs use the canonical `SayOptions` and `VoicePolicy` names directly;
-temporary compatibility aliases such as `DialogueOptions` and `VoiceRef` are no
-longer part of the crate surface.
+`exit_scope` is called. `arcweft-dialogue` owns only dialogue-specific data and
+does not depend on presentation. Dialogue-facing Rust APIs use the canonical
+`SayOptions` and `VoicePolicy` names directly; temporary compatibility aliases
+such as `DialogueOptions` and `VoiceRef` are no longer part of the crate
+surface.
 
 Syntax parser:
 
@@ -451,12 +471,10 @@ Not implemented in this milestone:
   routing
 - full generic substitution and effect-aware return checking
 - full type environment, name resolution, and type checking
-- full completion of the `pro_review21.md` file split plan: `arcweft-lang-sema`
-  still needs deeper checker expression/call/control-helper extraction and
-  additional semantic analyzer family extraction beyond the new
-  `semantic::traversal` boundary; syntax still needs any remaining family
-  parser extraction beyond the current
-  helpers/top-level/flow/dialogue/proof/source/choice/line-plan/items modules.
+- final `pro_review21.md` parser slimming: syntax still needs any remaining
+  parser driver/lifecycle/common-helper extraction beyond the current
+  helpers/headers/top-level/flow/dialogue/proof/source/choice/line-plan/items
+  modules.
 - inference, overload resolution, traits, generics, contracts, and full
   type-directed effect checking
 - unbounded/solver-backed loop CFG and full nested-scope borrow lifetime
@@ -471,7 +489,7 @@ Not implemented in this milestone:
 
 ## Verification
 
-Last verified during the Phase 2.0 headless runtime slice:
+Last verified after the `pro_review21.md` module-boundary integration:
 
 ```bash
 cargo fmt --all --check

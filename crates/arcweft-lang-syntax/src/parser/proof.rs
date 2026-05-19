@@ -2,7 +2,8 @@ use crate::ast::common::TextRange;
 use crate::ast::proof::{BenchItem, ProofClause, ProofItem, TestItem, TestKind, TrustedAxiomItem};
 use crate::cst::split_leading_ident;
 
-use super::{Parser, parse_required_id_ref, recovery::ParseError, simple_error};
+use super::headers::{parse_required_id_ref, simple_error};
+use super::{Parser, recovery::ParseError};
 
 impl Parser {
     pub(super) fn parse_proof_item(&mut self) -> Option<ProofItem> {

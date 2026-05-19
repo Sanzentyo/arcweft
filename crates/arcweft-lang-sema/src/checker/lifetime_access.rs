@@ -1,8 +1,9 @@
 //! Lifetime registry access and drop semantics.
 
+use super::helpers::is_drop_name;
 use super::{
     Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind, TypeCheckError, TypeChecker,
-    TypeKind, is_drop_callee, is_drop_name, lifetime_key, lifetime_value_type,
+    TypeKind, is_drop_callee, lifetime_key, lifetime_value_type,
 };
 
 impl TypeChecker<'_> {

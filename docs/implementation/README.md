@@ -30,26 +30,17 @@ Phase 0 / Phase 1 minimal Rust workspace:
 The implementation notes track accepted syntax decisions from `docs/reviews/` when
 they affect parser, HIR, formatter, LSP, or CLI work.
 
-`pro_review21.md` status is intentionally tracked as mixed completion:
+`pro_review21.md` status remains mixed by item, with explicit evidence tracked
+in `phase-0-1-workspace.md` under "pro_review21 Prompt-to-Artifact Checklist".
 
-- Completed in codebase structure: `arcweft-core`, `arcweft-lang-hir`,
-  `arcweft-runtime-plan`, and most public-module boundary moves in
-  `arcweft-lang-syntax` / `arcweft-lang-sema`.
-- Completed in dependency cleanup: `arcweft-runtime-plan` no longer has a
-  direct `arcweft-lang-syntax` dependency, and `arcweft-test` no longer has a
-  duplicated `arcweft-lang-hir` dependency entry.
-- Completed in facade policy: `crates/arcweft/src/lib.rs` keeps crate-family
-  `pub mod` namespaces and does not provide `arcweft::prelude::*`.
-- Completed in compatibility cleanup: dialogue compatibility aliases such as
-  `DialogueOptions` and `VoiceRef` are removed; canonical names
-  (`SayOptions`, `VoicePolicy`) are the only public API.
-- Remaining: deeper checker internals split in `arcweft-lang-sema::checker`,
-  additional semantic-analyzer helper extraction beyond
-  `arcweft-lang-sema::semantic::{facts,traversal}`, continued parser-driver
-  extraction in `arcweft-lang-syntax::parser`, and final architecture
-  determination for `arcweft-dialogue -> arcweft-presentation` (keep as
-  intentional adapter dependency or extract a narrower shared presentation
-  model crate).
+Current high-confidence state:
+
+- Done: core split + tests, sema public split, syntax AST split, HIR split,
+  runtime-plan split, dependency cleanup (`runtime-plan -> hir`, duplicate
+  `arcweft-test` dependency removal, and
+  `arcweft-dialogue -> arcweft-presentation` cleanup), and adapter-frame view
+  lifetime APIs.
+- In progress: final parser-driver/common-helper slimming in syntax.
 
 - `pro_review4.md`: adopted value-producing `{ ... }` blocks, `scope name { ... }`
   blocks for relative ID namespaces, unnamed `scope { ... }` as name-omitted
@@ -150,10 +141,11 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   calls such as `bg(@asset.bg.room, fade = 300ms)` and
   `show(@character.alice, .normal)`.
 - `arcweft-dialogue` contains the current Sans I/O model for scoped
-  dialogue lines, speaker presets, content, line plans, and the dialogue-side
-  adapter helpers for character presentation calls. Compatibility type aliases
-  such as `DialogueOptions` and `VoiceRef` have been removed; Rust callers use
-  the canonical `SayOptions` and `VoicePolicy` names directly.
+  dialogue lines, speaker presets, content, and line plans. Presentation
+  staging helpers live in `arcweft-presentation`; `arcweft-dialogue` no longer
+  depends on the presentation crate. Compatibility type aliases such as
+  `DialogueOptions` and `VoiceRef` have been removed; Rust callers use the
+  canonical `SayOptions` and `VoicePolicy` names directly.
 - `arcweft-presentation` contains the Sans I/O model for scoped presentation
   handles. `bg(...)` and `show(...)` return typed
   `PresentationHandle<T>` values registered against a `PresentationTarget`,
@@ -408,6 +400,8 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   for module/top-level entry checks, and `borrow_state` for borrow binding and
   branch-merge helpers; `helpers` now owns shared
   type/pattern/merge/divergence helper functions used by those checker modules.
+  `checker.rs` is reduced to checker state, public entrypoints, and a small
+  set of shared local helpers.
   Semantic traversal and flow-fact helper families are now isolated under
   `semantic/facts.rs` and `semantic/traversal.rs`. Additional checker-family
   splits remain tracked work.
@@ -467,9 +461,12 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   to entity declarations, extern modules, memo functions, parser items, and
   item-member helpers.
   `parser/proof.rs` owns proof, trusted-axiom, test, and bench top-level parser
-  methods plus proof/test clause parsing. The parser driver still needs further
-  extraction of remaining lifecycle/error-plumbing and cross-cutting helper
-  methods, but statement parsing is no longer owned by `parser.rs`.
+  methods plus proof/test clause parsing. `parser/headers.rs` owns declaration
+  headers, visibility, entity/ID reference parsing, contract clauses, function
+  signatures, and related header-level helpers addressed from sibling modules
+  as `super::headers::*`. The parser driver still needs further slimming of
+  lifecycle/error-plumbing and a small set of cross-cutting helpers, but family
+  parsing and statement parsing are no longer owned by `parser.rs`.
 - The application-facing `arcweft` facade no longer provides
   `arcweft::prelude::*`. It exposes namespaced crate families such as
   `arcweft::core`, `arcweft::dialogue`, `arcweft::presentation`,
@@ -484,9 +481,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   through `arcweft-lang-hir::syntax::{ast, expr, types}` so the dependency
   direction remains `runtime-plan -> hir` without a flat HIR syntax prelude.
 - `arcweft-core` tests are split by runtime family under `core/src/tests/`:
-  task, source, stream, observation, flow, and line-task coverage now live in
-  separate files, while the root `tests.rs` only wires modules and shared
-  helpers.
+  frame, task, source, stream, observation, flow, and line-task coverage now
+  live in separate files, while the root `tests.rs` only wires modules and
+  shared helpers.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure

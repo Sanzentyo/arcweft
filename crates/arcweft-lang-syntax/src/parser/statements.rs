@@ -1,10 +1,11 @@
+use super::headers::parse_required_id_ref;
 use super::{
     CstStmtKind, DeferOutcome, Expr, IdRef, ParseError, Parser, RawSyntax, RelativeId,
     RelativeIdSpelling, ScopeExprBlock, Stmt, TextRange, WaitTarget, classify_stmt,
     parse_binding_pattern, parse_braced_while_let_stmt, parse_defer_outcome, parse_expr_lossy,
     parse_expr_with_inline_line_plan, parse_memo_block_options, parse_named_block_expr,
-    parse_pattern, parse_required_id_ref, parse_scope_expr_body, parse_stmt_lines,
-    parse_stmt_match_arms, parse_thread_block, parse_trigger_pattern, parse_word_scenario_command,
+    parse_pattern, parse_scope_expr_body, parse_stmt_lines, parse_stmt_match_arms,
+    parse_thread_block, parse_trigger_pattern, parse_word_scenario_command,
     split_top_level_binding, split_top_level_keyword_once, split_top_level_punctuation_once,
     split_top_level_punctuation_sequence_once,
 };

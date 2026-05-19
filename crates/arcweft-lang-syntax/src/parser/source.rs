@@ -14,11 +14,13 @@ use crate::expr::Expr;
 use crate::pattern::parse_pattern;
 use crate::types::parse_type_ref;
 
+use super::headers::{
+    DeclEntityId, normalize_trailing_colon_id, parse_name_and_tail,
+    parse_required_decl_entity_ref_or_marker, parse_visibility_prefix, simple_error,
+};
 use super::{
-    DeclEntityId, Parser, collect_logical_block_items, normalize_trailing_colon_id,
-    parse_expr_lossy, parse_name_and_tail, parse_required_decl_entity_ref_or_marker, parse_stmt,
-    parse_stmt_lines, parse_visibility_prefix, simple_error, split_comma_args,
-    split_top_level_binding,
+    Parser, collect_logical_block_items, parse_expr_lossy, parse_stmt, parse_stmt_lines,
+    split_comma_args, split_top_level_binding,
 };
 
 impl Parser {
