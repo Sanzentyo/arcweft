@@ -391,11 +391,13 @@ they affect parser, HIR, formatter, LSP, or CLI work.
 - `arcweft-lang-syntax` has started the AST family split requested by
   `pro_review21.md`: top-level tree/item/recovery wrappers live in
   `ast/items.rs`, shared range/module/use/doc primitives live in
-  `ast/common.rs`, entity/reference ID syntax lives in `ast/ids.rs`,
-  dialogue surface syntax lives in `ast/dialogue.rs`, line-plan syntax lives in
-  `ast/line_plan.rs`, choice syntax lives in `ast/choice.rs`,
-  proof/test/bench declarations live in `ast/proof.rs`, and declarative
-  source-stream syntax lives in `ast/source.rs`.
+  `ast/common.rs`, entity/reference ID syntax lives in `ast/ids.rs`, structured
+  binding syntax lives in `ast/pattern.rs`, flow/control-transfer syntax lives
+  in `ast/flow.rs`, dialogue surface syntax lives in `ast/dialogue.rs`,
+  line-plan syntax lives in `ast/line_plan.rs`, choice syntax lives in
+  `ast/choice.rs`, proof/test/bench declarations live in `ast/proof.rs`, and
+  declarative source-stream syntax lives in `ast/source.rs`. `ast.rs` is now a
+  module facade rather than the owner of AST family definitions.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure

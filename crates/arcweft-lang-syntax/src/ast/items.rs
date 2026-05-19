@@ -1,8 +1,10 @@
+use crate::expr::Expr;
+use crate::types::{FnSignature, TypeRef};
+
 use super::{
-    BenchItem, CallableItem, DialogueDefaultsItem, EntityDeclItem, EnumItem, ExternModItem, Flow,
-    FlowItem, FunctionItem, HookItem, ImplItem, MemoFn, ModuleDecl, ParserItem, ProofItem,
-    SourceItem, StateItem, StructItem, TestItem, TextRange, TraitItem, TrustedAxiomItem,
-    TypeAliasItem, UseItem, WikiLink,
+    BenchItem, ContractClause, DialogueDefaultsItem, DocBlock, EntityRef, Flow, FlowItem,
+    ModuleDecl, ProofItem, SourceItem, Stmt, TestItem, TextRange, TrustedAxiomItem, UseItem,
+    Visibility, WikiLink,
 };
 
 /// Typed syntax view of an `.awft` source with module/use headers and items.
@@ -209,5 +211,944 @@ impl RawSyntax {
 impl core::fmt::Display for RawSyntax {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(&self.source)
+    }
+}
+
+/// Top-level function item with parsed signature head and contract clauses.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FunctionItem {
+    doc: Option<DocBlock>,
+    kind: FunctionKind,
+    visibility: Option<Visibility>,
+    signature: FnSignature,
+    signature_text: String,
+    contracts: Vec<ContractClause>,
+    body: String,
+    body_statements: Vec<Stmt>,
+    body_value: Option<Expr>,
+    range: TextRange,
+}
+
+/// Top-level function category.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FunctionKind {
+    /// Ordinary synchronous function.
+    Function,
+    /// Background task function that may await non-visible work.
+    Task,
+    /// Dialogue-safe function callable from dialogue content tags.
+    Dialogue,
+    /// Generator-like function that yields a stream/source of values.
+    Stream,
+}
+
+/// Top-level entity declaration family with runtime-specific body preserved.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EntityDeclKind {
+    Character,
+    Component,
+    Activity,
+    Signal,
+    Metric,
+    Layer,
+    Textbox,
+    Voice,
+    Se,
+    Bgm,
+    AudioBus,
+    MixerSnapshot,
+    Ducking,
+    Motion,
+    Rig,
+}
+
+/// Top-level entity declaration such as `character`, `component`, `activity`,
+/// `signal`, or `layer`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EntityDeclItem {
+    kind: EntityDeclKind,
+    visibility: Option<Visibility>,
+    id: EntityRef,
+    name: Option<String>,
+    surface_alias: Option<String>,
+    signature_tail: String,
+    body: Option<String>,
+    range: TextRange,
+}
+
+/// External module import declaration such as
+/// `extern rust mod path from crate "name" { ... }`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternModItem {
+    abi: String,
+    path: String,
+    source: Option<String>,
+    body: String,
+    range: TextRange,
+}
+
+/// Internal initializer for a function item.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct FunctionInit {
+    pub(crate) doc: Option<DocBlock>,
+    pub(crate) kind: FunctionKind,
+    pub(crate) visibility: Option<Visibility>,
+    pub(crate) signature: FnSignature,
+    pub(crate) signature_text: String,
+    pub(crate) contracts: Vec<ContractClause>,
+    pub(crate) body: String,
+    pub(crate) body_statements: Vec<Stmt>,
+    pub(crate) body_value: Option<Expr>,
+    pub(crate) range: TextRange,
+}
+
+/// Function-like top-level item such as `reducer` or `view`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallableItem {
+    kind: CallableKind,
+    visibility: Option<Visibility>,
+    name: String,
+    signature_tail: String,
+    contracts: Vec<ContractClause>,
+    body: String,
+    range: TextRange,
+}
+
+/// Function-like item category.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CallableKind {
+    Reducer,
+    View,
+}
+
+/// Root state declaration with typed fields and initializer expressions.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateItem {
+    visibility: Option<Visibility>,
+    name: String,
+    fields: Vec<StateField>,
+    range: TextRange,
+}
+
+/// One state field, optionally public, with its default expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateField {
+    doc: Option<DocBlock>,
+    visibility: Option<Visibility>,
+    name: String,
+    ty: TypeRef,
+    default: Expr,
+}
+
+/// Trait declaration with associated type and function members.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TraitItem {
+    visibility: Option<Visibility>,
+    name: String,
+    supertraits: Vec<String>,
+    members: Vec<TraitMember>,
+    range: TextRange,
+}
+
+/// Member allowed inside a trait declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TraitMember {
+    AssociatedType {
+        name: String,
+        params: Vec<String>,
+        value: Option<TypeRef>,
+    },
+    Function {
+        signature: FnSignature,
+    },
+    Raw(String),
+}
+
+/// Member allowed inside an impl declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ImplMember {
+    AssociatedType {
+        name: String,
+        params: Vec<String>,
+        value: TypeRef,
+    },
+    Function {
+        signature: FnSignature,
+        body: String,
+        body_statements: Vec<Stmt>,
+        body_value: Option<Expr>,
+    },
+    Raw(String),
+}
+
+/// Impl declaration with structured members and original body text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImplItem {
+    visibility: Option<Visibility>,
+    generics: Option<String>,
+    trait_name: Option<String>,
+    target: String,
+    members: Vec<ImplMember>,
+    body: String,
+    range: TextRange,
+}
+
+/// Top-level algebraic data type declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnumItem {
+    visibility: Option<Visibility>,
+    name: String,
+    variants: Vec<EnumVariant>,
+    range: TextRange,
+}
+
+/// One enum variant row, preserving payload syntax for later lowering.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnumVariant {
+    doc: Option<DocBlock>,
+    name: String,
+    payload: Option<String>,
+}
+
+/// Top-level struct declaration with typed fields.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StructItem {
+    visibility: Option<Visibility>,
+    name: String,
+    fields: Vec<StructField>,
+    range: TextRange,
+}
+
+/// One `name: Type` struct field.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StructField {
+    doc: Option<DocBlock>,
+    name: String,
+    ty: TypeRef,
+}
+
+/// Newtype/type alias declaration with optional `where` contracts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeAliasItem {
+    visibility: Option<Visibility>,
+    name: String,
+    target: TypeRef,
+    where_clauses: Vec<Expr>,
+    range: TextRange,
+}
+
+/// Hook item syntax.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HookItem {
+    visibility: Option<Visibility>,
+    id: EntityRef,
+    target: String,
+    phase: String,
+    when: Option<Expr>,
+    priority: Option<i64>,
+    once: bool,
+    effects: Vec<Expr>,
+    body: String,
+    body_statements: Vec<Stmt>,
+    range: TextRange,
+}
+
+/// Internal initializer for hook syntax.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct HookInit {
+    pub(crate) visibility: Option<Visibility>,
+    pub(crate) id: EntityRef,
+    pub(crate) target: String,
+    pub(crate) phase: String,
+    pub(crate) when: Option<Expr>,
+    pub(crate) priority: Option<i64>,
+    pub(crate) once: bool,
+    pub(crate) effects: Vec<Expr>,
+    pub(crate) body: String,
+    pub(crate) body_statements: Vec<Stmt>,
+    pub(crate) range: TextRange,
+}
+
+/// Memoized function item.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemoFn {
+    visibility: Option<Visibility>,
+    signature: String,
+    options: Vec<String>,
+    body: String,
+    body_statements: Vec<Stmt>,
+    body_value: Option<Expr>,
+    range: TextRange,
+}
+
+/// User-defined parser item.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParserItem {
+    visibility: Option<Visibility>,
+    name: String,
+    signature_tail: String,
+    body: String,
+    body_statements: Vec<Stmt>,
+    body_value: Option<Expr>,
+    range: TextRange,
+}
+
+impl FunctionItem {
+    pub(crate) fn new(init: FunctionInit) -> Self {
+        Self {
+            doc: init.doc,
+            kind: init.kind,
+            visibility: init.visibility,
+            signature: init.signature,
+            signature_text: init.signature_text,
+            contracts: init.contracts,
+            body: init.body,
+            body_statements: init.body_statements,
+            body_value: init.body_value,
+            range: init.range,
+        }
+    }
+
+    pub const fn kind(&self) -> FunctionKind {
+        self.kind
+    }
+
+    pub const fn doc(&self) -> Option<&DocBlock> {
+        self.doc.as_ref()
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub const fn signature(&self) -> &FnSignature {
+        &self.signature
+    }
+
+    pub fn signature_text(&self) -> &str {
+        &self.signature_text
+    }
+
+    pub fn contracts(&self) -> &[ContractClause] {
+        &self.contracts
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub fn body_statements(&self) -> &[Stmt] {
+        &self.body_statements
+    }
+
+    pub const fn body_value(&self) -> Option<&Expr> {
+        self.body_value.as_ref()
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl EntityDeclItem {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) const fn new(
+        kind: EntityDeclKind,
+        visibility: Option<Visibility>,
+        id: EntityRef,
+        name: Option<String>,
+        surface_alias: Option<String>,
+        signature_tail: String,
+        body: Option<String>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            kind,
+            visibility,
+            id,
+            name,
+            surface_alias,
+            signature_tail,
+            body,
+            range,
+        }
+    }
+
+    pub const fn kind(&self) -> EntityDeclKind {
+        self.kind
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub const fn id(&self) -> &EntityRef {
+        &self.id
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn surface_alias(&self) -> Option<&str> {
+        self.surface_alias.as_deref()
+    }
+
+    pub fn signature_tail(&self) -> &str {
+        &self.signature_tail
+    }
+
+    pub fn body(&self) -> Option<&str> {
+        self.body.as_deref()
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl ExternModItem {
+    pub(crate) const fn new(
+        abi: String,
+        path: String,
+        source: Option<String>,
+        body: String,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            abi,
+            path,
+            source,
+            body,
+            range,
+        }
+    }
+
+    pub fn abi(&self) -> &str {
+        &self.abi
+    }
+
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    pub fn source(&self) -> Option<&str> {
+        self.source.as_deref()
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl CallableItem {
+    pub(crate) fn new(
+        kind: CallableKind,
+        visibility: Option<Visibility>,
+        name: String,
+        signature_tail: String,
+        contracts: Vec<ContractClause>,
+        body: String,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            kind,
+            visibility,
+            name,
+            signature_tail,
+            contracts,
+            body,
+            range,
+        }
+    }
+
+    pub const fn kind(&self) -> CallableKind {
+        self.kind
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn signature_tail(&self) -> &str {
+        &self.signature_tail
+    }
+
+    pub fn contracts(&self) -> &[ContractClause] {
+        &self.contracts
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl StateItem {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        name: String,
+        fields: Vec<StateField>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            name,
+            fields,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn fields(&self) -> &[StateField] {
+        &self.fields
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl StateField {
+    pub(crate) const fn new(
+        doc: Option<DocBlock>,
+        visibility: Option<Visibility>,
+        name: String,
+        ty: TypeRef,
+        default: Expr,
+    ) -> Self {
+        Self {
+            doc,
+            visibility,
+            name,
+            ty,
+            default,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub const fn doc(&self) -> Option<&DocBlock> {
+        self.doc.as_ref()
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn ty(&self) -> &TypeRef {
+        &self.ty
+    }
+
+    pub const fn default(&self) -> &Expr {
+        &self.default
+    }
+}
+
+impl TraitItem {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        name: String,
+        supertraits: Vec<String>,
+        members: Vec<TraitMember>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            name,
+            supertraits,
+            members,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn supertraits(&self) -> &[String] {
+        &self.supertraits
+    }
+
+    pub fn members(&self) -> &[TraitMember] {
+        &self.members
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl ImplItem {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        generics: Option<String>,
+        trait_name: Option<String>,
+        target: String,
+        members: Vec<ImplMember>,
+        body: String,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            generics,
+            trait_name,
+            target,
+            members,
+            body,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn generics(&self) -> Option<&str> {
+        self.generics.as_deref()
+    }
+
+    pub fn trait_name(&self) -> Option<&str> {
+        self.trait_name.as_deref()
+    }
+
+    pub fn target(&self) -> &str {
+        &self.target
+    }
+
+    pub fn members(&self) -> &[ImplMember] {
+        &self.members
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl EnumItem {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        name: String,
+        variants: Vec<EnumVariant>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            name,
+            variants,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn variants(&self) -> &[EnumVariant] {
+        &self.variants
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl EnumVariant {
+    pub(crate) const fn new(doc: Option<DocBlock>, name: String, payload: Option<String>) -> Self {
+        Self { doc, name, payload }
+    }
+
+    pub const fn doc(&self) -> Option<&DocBlock> {
+        self.doc.as_ref()
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn payload(&self) -> Option<&str> {
+        self.payload.as_deref()
+    }
+}
+
+impl StructItem {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        name: String,
+        fields: Vec<StructField>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            name,
+            fields,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn fields(&self) -> &[StructField] {
+        &self.fields
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl StructField {
+    pub(crate) const fn new(doc: Option<DocBlock>, name: String, ty: TypeRef) -> Self {
+        Self { doc, name, ty }
+    }
+
+    pub const fn doc(&self) -> Option<&DocBlock> {
+        self.doc.as_ref()
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn ty(&self) -> &TypeRef {
+        &self.ty
+    }
+}
+
+impl TypeAliasItem {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        name: String,
+        target: TypeRef,
+        where_clauses: Vec<Expr>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            name,
+            target,
+            where_clauses,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn target(&self) -> &TypeRef {
+        &self.target
+    }
+
+    pub fn where_clauses(&self) -> &[Expr] {
+        &self.where_clauses
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl HookItem {
+    pub(crate) fn new(init: HookInit) -> Self {
+        Self {
+            visibility: init.visibility,
+            id: init.id,
+            target: init.target,
+            phase: init.phase,
+            when: init.when,
+            priority: init.priority,
+            once: init.once,
+            effects: init.effects,
+            body: init.body,
+            body_statements: init.body_statements,
+            range: init.range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub const fn id(&self) -> &EntityRef {
+        &self.id
+    }
+
+    pub fn target(&self) -> &str {
+        &self.target
+    }
+
+    pub fn phase(&self) -> &str {
+        &self.phase
+    }
+
+    pub const fn when(&self) -> Option<&Expr> {
+        self.when.as_ref()
+    }
+
+    pub const fn priority(&self) -> Option<i64> {
+        self.priority
+    }
+
+    pub const fn once(&self) -> bool {
+        self.once
+    }
+
+    pub fn effects(&self) -> &[Expr] {
+        &self.effects
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub fn body_statements(&self) -> &[Stmt] {
+        &self.body_statements
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl MemoFn {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        signature: String,
+        options: Vec<String>,
+        body: String,
+        body_statements: Vec<Stmt>,
+        body_value: Option<Expr>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            signature,
+            options,
+            body,
+            body_statements,
+            body_value,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn signature(&self) -> &str {
+        &self.signature
+    }
+
+    pub fn options(&self) -> &[String] {
+        &self.options
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub fn body_statements(&self) -> &[Stmt] {
+        &self.body_statements
+    }
+
+    pub const fn body_value(&self) -> Option<&Expr> {
+        self.body_value.as_ref()
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl ParserItem {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        name: String,
+        signature_tail: String,
+        body: String,
+        body_statements: Vec<Stmt>,
+        body_value: Option<Expr>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            name,
+            signature_tail,
+            body,
+            body_statements,
+            body_value,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn signature_tail(&self) -> &str {
+        &self.signature_tail
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub fn body_statements(&self) -> &[Stmt] {
+        &self.body_statements
+    }
+
+    pub const fn body_value(&self) -> Option<&Expr> {
+        self.body_value.as_ref()
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
     }
 }
