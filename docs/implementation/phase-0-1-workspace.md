@@ -93,9 +93,10 @@ parse recovery types are imported through `parser::recovery` instead of a flat
 parser-root re-export. `parser/helpers.rs` owns shared parser helpers for
 module/use path handling and attribute parsing, `parser/top_level.rs` owns
 module/use/item dispatch, `parser/flow.rs` owns flow item and flow-body
-dispatch, and `parser/dialogue.rs` owns dialogue defaults, dialogue-content
-calls, speaker-line sugar, trailing line-plan attachment, and flat
-dialogue/with fence handling;
+dispatch plus scope/thread/defer/unsafe-lifetime and bare-scope flow blocks,
+`parser/source.rs` owns source-locale blocks, and `parser/dialogue.rs` owns
+dialogue defaults, dialogue-content calls, speaker-line sugar, trailing
+line-plan attachment, and flat dialogue/with fence handling;
 remaining family parser modules remain a follow-up.
 Runtime plan lowering imports syntax-owned surface types through
 `arcweft-lang-hir`'s `syntax::{ast, expr, types}` namespaces and no longer

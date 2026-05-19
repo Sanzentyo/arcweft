@@ -3,12 +3,13 @@ use super::{
     DeferOutcome, DialogueContent, Flow, FlowInit, FlowItem, Parser, RawSyntax, ScopeBlock,
     SpeakerLine, Stmt, TextRange, flow_decl_family, implicit_flow_name_from_id, indentation,
     is_await_with_head, is_expression_statement_call, is_typed_stmt, nonempty_string,
-    parse_await_with, parse_contract_clause, parse_dialogue_tokens, parse_expr_lossy,
-    parse_flat_fence, parse_flow_kind, parse_flow_signature, parse_line_options,
+    parse_await_with, parse_contract_clause, parse_defer_outcome, parse_dialogue_tokens,
+    parse_expr_lossy, parse_flat_fence, parse_flow_kind, parse_flow_signature, parse_line_options,
     parse_line_plan_body, parse_name_and_tail, parse_optional_decl_id_ref,
-    parse_presentation_special_call, parse_required_entity_ref_syntax, parse_stmt,
-    parse_stmt_lines, parse_thread_block, parse_visibility_prefix, parse_word_scenario_command,
-    simple_error, split_call_head, split_leading_ident,
+    parse_presentation_special_call, parse_required_entity_ref_syntax, parse_scope_head,
+    parse_stmt, parse_stmt_lines, parse_thread_block, parse_unsafe_lifetime_block,
+    parse_visibility_prefix, parse_word_scenario_command, simple_error, split_call_head,
+    split_leading_ident,
 };
 
 impl Parser {
@@ -240,6 +241,145 @@ impl Parser {
         is_await_with_head(trimmed)
             .then(|| self.parse_await_flow_item(line, trimmed))
             .flatten()
+    }
+
+    pub(super) fn parse_scope_block(&mut self) -> Option<ScopeBlock> {
+        let start_line = self.current().clone();
+        if start_line.text.trim().ends_with(':') {
+            self.index += 1;
+            let body = self.take_indented_await_body(indentation(&start_line.text) + 1);
+            let head = start_line.text.trim().trim_end_matches(':').trim();
+            let name = parse_scope_head(head)?.as_option().map(str::to_owned);
+            let body = self.parse_flow_body(&body, start_line.start + head.len());
+            return Some(ScopeBlock::new(
+                name,
+                body,
+                TextRange::new(start_line.start, self.previous_end()),
+            ));
+        }
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing named scope",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the scope block"],
+            );
+            return None;
+        }
+        let name = head.trim().strip_prefix("scope")?.trim();
+        let name = (!name.is_empty()).then(|| name.to_owned());
+        let body = self.parse_flow_body(&body, start_line.start + head.len());
+        Some(ScopeBlock::new(
+            name,
+            body,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_thread_flow_stmt(&mut self) -> Option<FlowItem> {
+        let start_line = self.current().clone();
+        let trimmed = start_line.text.trim();
+        if trimmed.ends_with(':') {
+            self.index += 1;
+            let body = self.take_indented_await_body(indentation(&start_line.text) + 1);
+            let head = trimmed.trim_end_matches(':').trim();
+            let thread = parse_thread_block(head, &body);
+            return Some(FlowItem::Stmt(Stmt::Thread(thread)));
+        }
+        let (head, body, _, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing thread",
+                ["}"],
+                Some(trimmed),
+                ["insert a closing `}` for the thread block"],
+            );
+            return None;
+        }
+        Some(FlowItem::Stmt(Stmt::Thread(parse_thread_block(
+            head.trim(),
+            &body,
+        ))))
+    }
+
+    fn parse_defer_flow_stmt(&mut self) -> Option<FlowItem> {
+        let start_line = self.current().clone();
+        let trimmed = start_line.text.trim();
+        if trimmed.ends_with(':') || trimmed == "defer" {
+            self.index += 1;
+            let body = self.take_indented_await_body(indentation(&start_line.text) + 1);
+            return Some(FlowItem::Stmt(Stmt::DeferBlock {
+                outcome: parse_defer_outcome(trimmed.trim_end_matches(':'))
+                    .unwrap_or(DeferOutcome::Always),
+                statements: parse_stmt_lines(&body),
+            }));
+        }
+        if trimmed.starts_with("defer ") && !trimmed.contains('{') {
+            self.index += 1;
+            return Some(FlowItem::Stmt(parse_stmt(trimmed)));
+        }
+        let (head, body, _, ok) = self.take_brace_block();
+        if ok && let Some(outcome) = parse_defer_outcome(head.trim()) {
+            return Some(FlowItem::Stmt(Stmt::DeferBlock {
+                outcome,
+                statements: parse_stmt_lines(&body),
+            }));
+        }
+        self.push_error(
+            TextRange::new(start_line.start, start_line.end),
+            "unclosed block while parsing defer",
+            ["}"],
+            Some(trimmed),
+            ["insert a closing `}` for the defer block"],
+        );
+        None
+    }
+
+    fn parse_unsafe_lifetime_flow_stmt(&mut self) -> Option<FlowItem> {
+        let start_line = self.current().clone();
+        let (head, body, _, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing unsafe lifetime",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the unsafe lifetime block"],
+            );
+            return None;
+        }
+        Some(FlowItem::Stmt(parse_unsafe_lifetime_block(
+            &head,
+            &body,
+            start_line.start,
+            &mut self.errors,
+        )))
+    }
+
+    pub(super) fn parse_bare_scope_block(&mut self) -> Option<ScopeBlock> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing unnamed scope",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the unnamed scope block"],
+            );
+            return None;
+        }
+        if !head.trim().is_empty() {
+            return None;
+        }
+        Some(ScopeBlock::new(
+            None,
+            self.parse_flow_body(&body, start_line.start),
+            TextRange::new(start_line.start, end),
+        ))
     }
 
     fn parse_flat_flow_item(&mut self, line: &CstLine, trimmed: &str) -> Option<FlowItem> {

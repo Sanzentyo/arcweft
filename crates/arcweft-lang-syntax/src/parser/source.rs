@@ -1,6 +1,6 @@
 use crate::ast::common::TextRange;
 use crate::ast::dialogue::ScenarioCommand;
-use crate::ast::flow::Stmt;
+use crate::ast::flow::{SourceLocaleBlock, Stmt};
 use crate::ast::ids::EntityRef;
 use crate::ast::source::{
     SourceBackpressurePolicy, SourceEventPattern, SourceHandler, SourceHeader, SourceItem,
@@ -22,6 +22,28 @@ use super::{
 };
 
 impl Parser {
+    pub(super) fn parse_source_locale_block(&mut self) -> Option<SourceLocaleBlock> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing source locale",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the source locale block"],
+            );
+            return None;
+        }
+        let locale = head.trim().strip_prefix("source locale")?.trim().to_owned();
+        let body = self.parse_flow_body(&body, start_line.start + head.len());
+        Some(SourceLocaleBlock::new(
+            locale,
+            body,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
     pub(super) fn parse_source_item(&mut self) -> Option<SourceItem> {
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_flow_block();
