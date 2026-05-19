@@ -3,7 +3,9 @@
 //! This crate produces deterministic text edits and lightweight tooling data.
 //! It does not read files, write files, watch paths, or run an LSP transport.
 
-use arcweft_lang_hir::{IdContextMaterialization, collect_id_context};
+use arcweft_lang_hir::id_context::{
+    IdContextEntry, IdContextMaterialization, IdContextOption, collect_id_context,
+};
 use arcweft_lang_syntax::{
     AwaitBranch, ChoiceAction, ChoiceItem, Expr, FlowItem, Item, LinePlanItem, ParsedSource,
     Pattern, Stmt, cst_lines, parse_source,
@@ -105,7 +107,7 @@ fn id_context_edits(source: &str) -> Vec<TextEdit> {
         .collect()
 }
 
-fn id_context_edit(entry: &arcweft_lang_hir::IdContextEntry) -> TextEdit {
+fn id_context_edit(entry: &IdContextEntry) -> TextEdit {
     match entry.materialization() {
         IdContextMaterialization::Replace { range, normalized } => TextEdit {
             start: range.start(),
@@ -120,7 +122,7 @@ fn id_context_edit(entry: &arcweft_lang_hir::IdContextEntry) -> TextEdit {
         } => {
             let joined = options
                 .iter()
-                .map(arcweft_lang_hir::IdContextOption::as_assignment)
+                .map(IdContextOption::as_assignment)
                 .collect::<Vec<_>>()
                 .join(", ");
             let replacement = if *call_has_options {
@@ -156,7 +158,7 @@ fn id_context_hints(source: &str) -> Vec<InlayHint> {
                 position: insert.start(),
                 label: options
                     .iter()
-                    .map(arcweft_lang_hir::IdContextOption::as_assignment)
+                    .map(IdContextOption::as_assignment)
                     .collect::<Vec<_>>()
                     .join(", "),
             },

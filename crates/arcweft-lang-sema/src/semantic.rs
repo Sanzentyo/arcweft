@@ -5,10 +5,12 @@ use crate::fact_layer::{
     resource_write_for_lifetime, resource_write_for_signal, write_capability_for_call,
     write_capability_for_method,
 };
-use arcweft_lang_hir::{
-    ChoicePlanItem, Expr, HirAwait, HirBorrow, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf,
-    HirIfLet, HirLoop, HirMatch, HirModule, HirScope, HirScopeExpr, HirSelect, HirTopLevelDecl,
-    HirWhile, HirWhileLet, IdRef, LifetimeKey, LifetimeScopeKind, LinePlan, LinePlanItem, Pattern,
+use arcweft_lang_hir::model::{
+    HirAwait, HirBorrow, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet, HirLoop,
+    HirMatch, HirModule, HirScope, HirScopeExpr, HirSelect, HirTopLevelDecl, HirWhile, HirWhileLet,
+};
+use arcweft_lang_hir::syntax::{
+    ChoicePlanItem, Expr, IdRef, LifetimeKey, LifetimeScopeKind, LinePlan, LinePlanItem, Pattern,
     Stmt, TextRange, ThreadBlock, TriggerPattern,
 };
 use arcweft_lang_syntax::{Literal, LoopBlock, SelectBranchHead};
@@ -781,7 +783,7 @@ impl<'a> SemanticAnalyzer<'a> {
         self.finish_scope(&state);
     }
 
-    fn collect_choice_syntax(&mut self, choice: &arcweft_lang_hir::ChoiceBlock) {
+    fn collect_choice_syntax(&mut self, choice: &arcweft_lang_hir::syntax::ChoiceBlock) {
         if let Some(plan) = choice.plan() {
             for item in plan.items() {
                 self.collect_choice_plan_item(item);
@@ -1366,11 +1368,15 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn collect_wait(&mut self, target: &arcweft_lang_hir::WaitTarget, state: &mut FlowState) {
+    fn collect_wait(
+        &mut self,
+        target: &arcweft_lang_hir::syntax::WaitTarget,
+        state: &mut FlowState,
+    ) {
         match target {
-            arcweft_lang_hir::WaitTarget::Duration(expr)
-            | arcweft_lang_hir::WaitTarget::Expr(expr) => self.collect_expr(expr, state),
-            arcweft_lang_hir::WaitTarget::Mark(_) => {}
+            arcweft_lang_hir::syntax::WaitTarget::Duration(expr)
+            | arcweft_lang_hir::syntax::WaitTarget::Expr(expr) => self.collect_expr(expr, state),
+            arcweft_lang_hir::syntax::WaitTarget::Mark(_) => {}
         }
     }
 
@@ -1409,7 +1415,7 @@ impl<'a> SemanticAnalyzer<'a> {
         self.finish_scope(&state);
     }
 
-    fn collect_scope_expr_syntax(&mut self, scope: &arcweft_lang_hir::ScopeExprBlock) {
+    fn collect_scope_expr_syntax(&mut self, scope: &arcweft_lang_hir::syntax::ScopeExprBlock) {
         let mut state = FlowState::default();
         self.collect_stmts(scope.statements(), &mut state);
         if let Some(value) = scope.value() {
@@ -1494,7 +1500,7 @@ impl<'a> SemanticAnalyzer<'a> {
         self.finish_scope(&state);
     }
 
-    fn collect_await_syntax(&mut self, await_with: &arcweft_lang_hir::AwaitWith) {
+    fn collect_await_syntax(&mut self, await_with: &arcweft_lang_hir::syntax::AwaitWith) {
         let mut state = FlowState::default();
         self.collect_expr(await_with.expr(), &mut state);
         self.finish_scope(&state);
@@ -1534,12 +1540,12 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn collect_flow_item_syntax(
         &mut self,
-        item: &arcweft_lang_hir::FlowItem,
+        item: &arcweft_lang_hir::syntax::FlowItem,
         state: &mut FlowState,
     ) {
         match item {
-            arcweft_lang_hir::FlowItem::Stmt(stmt) => self.collect_stmt(stmt, state),
-            arcweft_lang_hir::FlowItem::Raw(raw) => {
+            arcweft_lang_hir::syntax::FlowItem::Stmt(stmt) => self.collect_stmt(stmt, state),
+            arcweft_lang_hir::syntax::FlowItem::Raw(raw) => {
                 self.add_raw_obligation(
                     format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
                     raw.range().map(|range| format!("{range:?}")),
@@ -1713,7 +1719,7 @@ fn named_entity_arg(args: &[Expr], name: &str) -> Option<String> {
     })
 }
 
-fn entity_label(entity: &arcweft_lang_hir::EntityRefSyntax) -> Option<String> {
+fn entity_label(entity: &arcweft_lang_hir::syntax::EntityRefSyntax) -> Option<String> {
     entity
         .as_absolute()
         .map(|absolute| absolute.body().to_owned())
@@ -1765,7 +1771,8 @@ fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
             expr: Some(expr), ..
         }
         | Stmt::Wait(
-            arcweft_lang_hir::WaitTarget::Duration(expr) | arcweft_lang_hir::WaitTarget::Expr(expr),
+            arcweft_lang_hir::syntax::WaitTarget::Duration(expr)
+            | arcweft_lang_hir::syntax::WaitTarget::Expr(expr),
         ) => expr_contains_unchecked_promotion(expr),
         Stmt::Ensure { condition, message } => {
             expr_contains_unchecked_promotion(condition)
@@ -1780,7 +1787,7 @@ fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
         | Stmt::LetScope { .. }
         | Stmt::LetLoop { .. }
         | Stmt::LetAwait { .. }
-        | Stmt::Wait(arcweft_lang_hir::WaitTarget::Mark(_))
+        | Stmt::Wait(arcweft_lang_hir::syntax::WaitTarget::Mark(_))
         | Stmt::Command(_)
         | Stmt::Break { expr: None, .. }
         | Stmt::Continue { .. }

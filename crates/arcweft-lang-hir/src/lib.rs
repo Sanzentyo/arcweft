@@ -4,28 +4,17 @@
 //! passes, runtime-plan lowering, CLI, and LSP tooling should import HIR through
 //! this crate instead of reaching into parser internals.
 
-mod id_context;
-mod lower;
-mod model;
+pub mod id_context;
+pub mod lower;
+mod lower_choice;
+mod lower_context;
+mod lower_dialogue;
+mod lower_flow;
+mod lower_ids;
+pub mod model;
 
-pub use arcweft_lang_syntax::{
-    Attribute, AwaitBranchKind, AwaitWith, BenchItem, BorrowBlock, CallableItem, CallableKind,
-    ChoiceAction, ChoiceBlock, ChoicePlan, ChoicePlanItem, ContractClause, DeferOutcome,
-    DialogueDefaultsItem, DialogueToken, EntityDeclItem, EntityDeclKind, EntityRef,
-    EntityRefSyntax, EnumItem, Expr, ExternModItem, FlowItem, FlowKind, FunctionKind, HookItem,
-    IdRef, ImplItem, LifetimeKey, LifetimeScopeKind, LinePlan, LinePlanItem, MatchArm, MemoFn,
-    ParserItem, Pattern, ProofItem, RawSyntax, RawSyntaxFamily, RelativeId, ScopeExprBlock,
-    SourceItem, SourceLocaleBlock, StateItem, Stmt, TestItem, TestKind, TextRange, ThreadBlock,
-    TraitItem, TriggerPattern, TrustedAxiomItem, TypeAliasItem, TypeRef, WaitTarget,
-};
-pub use id_context::{
-    IdContextEntry, IdContextKind, IdContextMaterialization, IdContextOption, IdContextReport,
-    collect_id_context,
-};
-pub use lower::lower_to_hir;
-pub use model::{
-    HirAwait, HirAwaitBranch, HirBorrow, HirChoice, HirChoiceOption, HirDialogue, HirFlow,
-    HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet, HirLoop, HirLowerError, HirMatch,
-    HirMatchArm, HirModule, HirScope, HirScopeExpr, HirSelect, HirSelectBranch, HirSourceLocale,
-    HirTopLevelDecl, HirWhile, HirWhileLet,
-};
+/// Syntax types intentionally exposed through a namespace instead of flat
+/// crate-root re-exports, so downstream crates can see which layer owns a type.
+pub mod syntax {
+    pub use arcweft_lang_syntax::*;
+}

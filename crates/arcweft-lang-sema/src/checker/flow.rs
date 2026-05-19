@@ -89,7 +89,7 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_flow_if_block(&mut self, block: &arcweft_lang_hir::HirIf) {
+    fn check_flow_if_block(&mut self, block: &arcweft_lang_hir::model::HirIf) {
         self.expect_expr_type(block.condition(), &TypeKind::Bool, "if condition");
         let borrow_snapshot = self.snapshot_borrow_state();
         self.check_flow_items(block.body());
@@ -100,7 +100,7 @@ impl TypeChecker<'_> {
         );
     }
 
-    fn check_flow_match_block(&mut self, block: &arcweft_lang_hir::HirMatch) {
+    fn check_flow_match_block(&mut self, block: &arcweft_lang_hir::model::HirMatch) {
         let expr_type = self.check_expr(block.expr());
         let base_borrow_snapshot = self.snapshot_borrow_state();
         let mut arm_states = Vec::new();
@@ -135,7 +135,7 @@ impl TypeChecker<'_> {
     fn check_scope_expr_binding(
         &mut self,
         pattern: &Pattern,
-        scope: &arcweft_lang_hir::HirScopeExpr,
+        scope: &arcweft_lang_hir::model::HirScopeExpr,
     ) {
         let outer_locals = self.locals.clone();
         for stmt in scope.statements() {
@@ -148,7 +148,7 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_select_block(&mut self, block: &arcweft_lang_hir::HirSelect) {
+    fn check_select_block(&mut self, block: &arcweft_lang_hir::model::HirSelect) {
         if block.branches().is_empty() {
             self.errors.push(TypeCheckError::new(
                 "select block must define at least one branch".to_owned(),
@@ -162,7 +162,7 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_borrow_block(&mut self, block: &arcweft_lang_hir::HirBorrow) {
+    fn check_borrow_block(&mut self, block: &arcweft_lang_hir::model::HirBorrow) {
         self.check_expr(block.source());
         let borrow_start = self.active_borrows.len();
         let borrow_local_start = self.borrow_local_lifetimes.clone();

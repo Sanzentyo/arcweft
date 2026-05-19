@@ -15,7 +15,8 @@ pub(super) use arcweft_core::{
     stream::StreamOp,
     time::LogicalDuration,
 };
-pub(super) use arcweft_lang_hir::{HirFlowItem, HirTopLevelDecl, lower_to_hir};
+pub(super) use arcweft_lang_hir::lower::lower_to_hir;
+pub(super) use arcweft_lang_hir::model::{HirFlowItem, HirTopLevelDecl};
 pub(super) use arcweft_lang_syntax::{
     AwaitBranchKind, BinaryOp, BlockStyle, CallableKind, ChoiceAction, ChoiceItem, ChoicePlanItem,
     ComputationBlockKind, ContractClause, DeferOutcome, DialogueToken, EntityDeclKind, Expr,

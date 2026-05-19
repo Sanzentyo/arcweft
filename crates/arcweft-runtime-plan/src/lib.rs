@@ -25,7 +25,7 @@ use arcweft_core::line_task::{
 };
 use arcweft_core::plan::RuntimePlan;
 use arcweft_core::task::{TaskId, TaskKey, TaskPriority};
-use arcweft_lang_hir::{HirDialogue, HirFlowItem, HirModule};
+use arcweft_lang_hir::model::{HirDialogue, HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::Expr;
 use arcweft_lang_syntax::{
     DeferOutcome, EntityRef, FunctionKind, LinePlan, LinePlanItem, Pattern, Stmt, TriggerPattern,
@@ -69,7 +69,7 @@ pub fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<Runtime
         .declarations()
         .iter()
         .filter_map(|decl| match decl {
-            arcweft_lang_hir::HirTopLevelDecl::Source(source) => Some(lower_source_plan(source)),
+            HirTopLevelDecl::Source(source) => Some(lower_source_plan(source)),
             _ => None,
         })
         .collect::<Result<Vec<_>, _>>()?;

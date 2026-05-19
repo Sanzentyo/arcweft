@@ -1,6 +1,6 @@
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 use crate::types::EntityKind;
-use arcweft_lang_hir::{HirFlowItem, HirModule, HirTopLevelDecl};
+use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::EntityDeclKind;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -189,7 +189,7 @@ fn register_flow_item(item: &HirFlowItem, registry: &mut NameRegistry) {
     }
 }
 
-fn register_choice(choice: &arcweft_lang_hir::HirChoice, registry: &mut NameRegistry) {
+fn register_choice(choice: &arcweft_lang_hir::model::HirChoice, registry: &mut NameRegistry) {
     if let Some(id) = choice.id() {
         registry.insert(id.body(), EntityKind::Choice);
     }

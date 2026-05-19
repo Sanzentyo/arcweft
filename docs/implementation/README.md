@@ -382,9 +382,12 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   modules for lowering diagnostics, runtime expression/effect lowering, flow
   lowering, shared textual label helpers, lowered line-task metadata, runtime
   pattern lowering, source declaration lowering, and stream-function lowering.
-- `arcweft-lang-hir` now has a dedicated `model` module for public HIR data
-  structures and accessors. `lower` remains the lowering driver and
-  implementation module.
+- `arcweft-lang-hir` now exposes responsibility modules instead of flat
+  compatibility exports: public consumers import HIR data through `model`,
+  lowering through `lower`, ID-context tooling through `id_context`, and syntax
+  ownership through the namespaced `syntax` module. The lowering implementation
+  is split into `lower_flow`, `lower_dialogue`, `lower_choice`, `lower_ids`,
+  and `lower_context` internals.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure

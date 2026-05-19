@@ -1,4 +1,4 @@
-use arcweft_lang_hir::{LifetimeKey, Stmt};
+use arcweft_lang_hir::syntax::{LifetimeKey, Stmt};
 use arcweft_lang_syntax::DeferOutcome;
 use std::collections::HashSet;
 

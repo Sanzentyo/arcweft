@@ -7,7 +7,7 @@ use crate::lifetime::{
 };
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 use crate::types::{EntityKind, MapKind, TypeKind};
-use arcweft_lang_hir::{HirFlowItem, HirModule, HirTopLevelDecl};
+use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::TypeRef;
 use arcweft_lang_syntax::{
     AwaitBranchKind, CancelRuleSyntax, ContractClause, DialogueToken, EntityDeclKind, EntityRef,
@@ -308,7 +308,7 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_stream_function(&mut self, function: &arcweft_lang_hir::HirFunction) {
+    fn check_stream_function(&mut self, function: &arcweft_lang_hir::model::HirFunction) {
         let Some((item_ty, error_ty)) = function
             .signature()
             .return_type()
@@ -338,7 +338,11 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_choice_binding(&mut self, pattern: &Pattern, choice: &arcweft_lang_hir::HirChoice) {
+    fn check_choice_binding(
+        &mut self,
+        pattern: &Pattern,
+        choice: &arcweft_lang_hir::model::HirChoice,
+    ) {
         self.check_choice(choice);
         if let Some(name) = ident_pattern_name(pattern)
             && let Some(ty) = choice_output_type(choice)
@@ -347,21 +351,25 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_loop_binding(&mut self, pattern: &Pattern, block: &arcweft_lang_hir::HirLoop) {
+    fn check_loop_binding(&mut self, pattern: &Pattern, block: &arcweft_lang_hir::model::HirLoop) {
         let ty = self.check_loop_block(block, true);
         if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), ty) {
             self.locals.insert(name.to_owned(), ty);
         }
     }
 
-    fn check_await_binding(&mut self, pattern: &Pattern, await_with: &arcweft_lang_hir::HirAwait) {
+    fn check_await_binding(
+        &mut self,
+        pattern: &Pattern,
+        await_with: &arcweft_lang_hir::model::HirAwait,
+    ) {
         let ty = self.check_await_item(await_with);
         if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), ty) {
             self.locals.insert(name.to_owned(), ty);
         }
     }
 
-    fn check_dialogue_item(&mut self, dialogue: &arcweft_lang_hir::HirDialogue) {
+    fn check_dialogue_item(&mut self, dialogue: &arcweft_lang_hir::model::HirDialogue) {
         if !self.is_dialogue_callee(dialogue.callee()) {
             self.errors.push(TypeCheckError::new(format!(
                 "dialogue callee `{}` must resolve to Ref<Character> or SpeakerPreset",
@@ -575,7 +583,10 @@ impl TypeChecker<'_> {
         })
     }
 
-    fn check_await_item(&mut self, await_with: &arcweft_lang_hir::HirAwait) -> Option<TypeKind> {
+    fn check_await_item(
+        &mut self,
+        await_with: &arcweft_lang_hir::model::HirAwait,
+    ) -> Option<TypeKind> {
         self.reject_active_borrows("await suspension boundary");
         let ty = self.check_expr(await_with.expr());
         let Some(TypeKind::Need { ready, error }) = ty else {
@@ -610,7 +621,7 @@ impl TypeChecker<'_> {
 
     fn check_loop_block(
         &mut self,
-        block: &arcweft_lang_hir::HirLoop,
+        block: &arcweft_lang_hir::model::HirLoop,
         allows_value_break: bool,
     ) -> Option<TypeKind> {
         let borrow_snapshot = self.snapshot_borrow_state();
@@ -625,12 +636,12 @@ impl TypeChecker<'_> {
         unify_loop_break_types(&context.break_types)
     }
 
-    fn check_while_block(&mut self, block: &arcweft_lang_hir::HirWhile) {
+    fn check_while_block(&mut self, block: &arcweft_lang_hir::model::HirWhile) {
         self.expect_expr_type(block.condition(), &TypeKind::Bool, "while condition");
         self.with_statement_loop(|this| this.check_flow_items(block.body()));
     }
 
-    fn check_if_let_block(&mut self, block: &arcweft_lang_hir::HirIfLet) {
+    fn check_if_let_block(&mut self, block: &arcweft_lang_hir::model::HirIfLet) {
         let expr_type = self.check_expr(block.expr());
         if let Some(guard) = block.guard() {
             self.expect_expr_type(guard, &TypeKind::Bool, "if-let guard");
@@ -649,7 +660,7 @@ impl TypeChecker<'_> {
         self.locals = outer_locals;
     }
 
-    fn check_while_let_block(&mut self, block: &arcweft_lang_hir::HirWhileLet) {
+    fn check_while_let_block(&mut self, block: &arcweft_lang_hir::model::HirWhileLet) {
         let expr_type = self.check_expr(block.expr());
         if let Some(guard) = block.guard() {
             self.expect_expr_type(guard, &TypeKind::Bool, "while-let guard");
@@ -664,7 +675,7 @@ impl TypeChecker<'_> {
         self.locals = outer_locals;
     }
 
-    fn check_for_block(&mut self, block: &arcweft_lang_hir::HirFor) {
+    fn check_for_block(&mut self, block: &arcweft_lang_hir::model::HirFor) {
         self.check_expr(block.source());
         let borrow_snapshot = self.snapshot_borrow_state();
         self.with_statement_loop(|this| this.check_flow_items(block.body()));
@@ -2005,7 +2016,7 @@ fn is_local_ident(name: &str) -> bool {
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
-fn choice_output_type(choice: &arcweft_lang_hir::HirChoice) -> Option<TypeKind> {
+fn choice_output_type(choice: &arcweft_lang_hir::model::HirChoice) -> Option<TypeKind> {
     let mut inferred = None;
     for option in choice.options() {
         let ty = match option.action() {

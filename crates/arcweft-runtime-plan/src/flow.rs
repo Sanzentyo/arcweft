@@ -12,9 +12,9 @@ use arcweft_core::plan::{
 };
 use arcweft_core::task::{AwaitTarget, NeedId, TaskId};
 use arcweft_core::value::{RuntimeExpr, RuntimeValue};
-use arcweft_lang_hir::{
-    HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlowItem, HirLoop, HirMatch, HirModule,
-    HirScopeExpr,
+use arcweft_lang_hir::model::{
+    HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirLoop, HirMatch,
+    HirModule, HirScopeExpr,
 };
 use arcweft_lang_syntax::{
     AwaitBranchKind, ChoiceAction, EntityRef, EntityRefSyntax, FlowItem, Pattern, Stmt,
@@ -77,7 +77,7 @@ impl FlowRuntimeLowerer {
         expr.map(|expr| self.lower_runtime_expr(expr))
     }
 
-    fn lower_flow(&mut self, index: usize, flow: &arcweft_lang_hir::HirFlow) -> RuntimeFlow {
+    fn lower_flow(&mut self, index: usize, flow: &HirFlow) -> RuntimeFlow {
         let id = flow.id().map_or_else(
             || FlowRuntimeId(format!("flow.{}", flow.name().unwrap_or("anonymous"))),
             flow_runtime_id,

@@ -6,7 +6,7 @@ use super::{
 };
 
 impl TypeChecker<'_> {
-    pub(super) fn check_choice(&mut self, choice: &arcweft_lang_hir::HirChoice) {
+    pub(super) fn check_choice(&mut self, choice: &arcweft_lang_hir::model::HirChoice) {
         if let Some(id) = choice.id() {
             self.expect_entity_kind(id, &EntityKind::Choice, "choice id");
         }

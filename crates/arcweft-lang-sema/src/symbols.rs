@@ -1,4 +1,4 @@
-use arcweft_lang_hir::{HirFlowItem, HirModule, HirTopLevelDecl};
+use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::Expr;
 use arcweft_lang_syntax::{
     ContractClause, DialogueToken, EntityRef, EntityRefSyntax, IdRef, ImplMember, LinePlan,
@@ -249,7 +249,7 @@ fn collect_flow_items(items: &[HirFlowItem], uses: &mut Vec<SymbolUse>) {
     }
 }
 
-fn collect_dialogue(dialogue: &arcweft_lang_hir::HirDialogue, uses: &mut Vec<SymbolUse>) {
+fn collect_dialogue(dialogue: &arcweft_lang_hir::model::HirDialogue, uses: &mut Vec<SymbolUse>) {
     uses.push(SymbolUse::new(
         SymbolUseKind::DialogueCallee,
         dialogue.callee().to_owned(),
@@ -268,7 +268,7 @@ fn collect_dialogue(dialogue: &arcweft_lang_hir::HirDialogue, uses: &mut Vec<Sym
     }
 }
 
-fn collect_choice(choice: &arcweft_lang_hir::HirChoice, uses: &mut Vec<SymbolUse>) {
+fn collect_choice(choice: &arcweft_lang_hir::model::HirChoice, uses: &mut Vec<SymbolUse>) {
     if let Some(id) = choice.id() {
         push_entity(uses, id);
     }
@@ -406,7 +406,7 @@ fn collect_stmt_block(statements: &[Stmt], uses: &mut Vec<SymbolUse>) {
     }
 }
 
-fn collect_match_block(block: &arcweft_lang_hir::HirMatch, uses: &mut Vec<SymbolUse>) {
+fn collect_match_block(block: &arcweft_lang_hir::model::HirMatch, uses: &mut Vec<SymbolUse>) {
     collect_expr(block.expr(), uses);
     for arm in block.arms() {
         collect_pattern(arm.pattern(), uses);

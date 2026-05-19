@@ -4,7 +4,8 @@
 //! manifest that CLI, LSP, and future runtime adapters can consume. It does not
 //! open files, drive a renderer, sleep, or run benchmark timers.
 
-use arcweft_lang_hir::{BenchItem, HirModule, HirTopLevelDecl, IdRef, TestItem};
+use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
+use arcweft_lang_hir::syntax::{BenchItem, IdRef, TestItem, TextRange};
 use serde::{Deserialize, Serialize};
 
 /// Tool-facing manifest of script-level tests and benches.
@@ -117,7 +118,7 @@ fn id_ref_label(id: &IdRef, default_family: &str) -> String {
     }
 }
 
-fn span(range: &arcweft_lang_hir::TextRange) -> ManifestSpan {
+fn span(range: &TextRange) -> ManifestSpan {
     ManifestSpan {
         start: range.start(),
         end: range.end(),
@@ -127,7 +128,7 @@ fn span(range: &arcweft_lang_hir::TextRange) -> ManifestSpan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_lang_hir::lower_to_hir;
+    use arcweft_lang_hir::lower::lower_to_hir;
     use arcweft_lang_syntax::parse_source;
 
     #[test]

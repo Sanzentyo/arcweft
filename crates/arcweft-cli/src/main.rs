@@ -2,7 +2,7 @@ use arcweft_core::engine::{Engine, FlowFiberStatus};
 use arcweft_core::frame::FrameInput;
 use arcweft_core::plan::{FlowRuntimeId, RuntimePlan};
 use arcweft_core::value::{RuntimeBinding, RuntimeValue};
-use arcweft_lang_hir::lower_to_hir;
+use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::check::{typecheck_hir, validate_typecheck_ready};
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
@@ -622,7 +622,7 @@ fn unsafe_command(args: &[OsString]) -> Result<(), ExitCode> {
 }
 
 struct CheckedModule {
-    hir: arcweft_lang_hir::HirModule,
+    hir: arcweft_lang_hir::model::HirModule,
     syntax_warnings: usize,
     line_task_groups: Vec<LoweredLineTaskGroup>,
 }
