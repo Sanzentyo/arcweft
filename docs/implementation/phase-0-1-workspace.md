@@ -79,7 +79,8 @@ a flat compatibility re-export layer for those AST definitions.
 The parser split has also started with `parser/recovery.rs` for parse
 diagnostic/recovery types, `parser/source.rs` for source-item
 header/handler/body parsing, and `parser/proof.rs` for proof/test item
-clause parsing. `parser/line_plan.rs` now owns line-plan body, trigger,
+clause parsing plus proof, trusted-axiom, test, and bench top-level item
+parsing. `parser/line_plan.rs` now owns line-plan body, trigger,
 defer, and thread parsing. `parser/choice.rs` owns choice item, arm, option
 block, and choice-plan parsing. `parser/items.rs` owns enum/struct/state field
 parsing, trait/impl member parsing, and the parser methods for function-like,

@@ -1,7 +1,129 @@
-use crate::ast::proof::{ProofClause, TestKind};
+use crate::ast::common::TextRange;
+use crate::ast::proof::{BenchItem, ProofClause, ProofItem, TestItem, TestKind, TrustedAxiomItem};
 use crate::cst::split_leading_ident;
 
-use super::{recovery::ParseError, simple_error};
+use super::{Parser, parse_required_id_ref, recovery::ParseError, simple_error};
+
+impl Parser {
+    pub(super) fn parse_proof_item(&mut self) -> Option<ProofItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing proof item",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the proof body"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("proof")?.trim();
+        let (id, rest) = parse_required_id_ref(rest, start_line.start, &mut self.errors)?;
+        if !rest.trim().is_empty() {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.start + head.len()),
+                "unexpected text after proof id",
+                ["{"],
+                Some(rest.trim()),
+                ["move proof clauses into the proof body"],
+            );
+        }
+        let clauses = parse_proof_clauses(&body);
+        Some(ProofItem::new(
+            id,
+            body,
+            clauses,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    pub(super) fn parse_trusted_axiom_item(&mut self) -> Option<TrustedAxiomItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing trusted axiom item",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the trusted axiom body"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("trusted axiom")?.trim();
+        let (id, rest) = parse_required_id_ref(rest, start_line.start, &mut self.errors)?;
+        if !rest.trim().is_empty() {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.start + head.len()),
+                "unexpected text after trusted axiom id",
+                ["{"],
+                Some(rest.trim()),
+                ["move axiom metadata into the trusted axiom body"],
+            );
+        }
+        Some(TrustedAxiomItem::new(
+            id,
+            body,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    pub(super) fn parse_test_item(&mut self) -> Option<TestItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing test item",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the test body"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("test")?.trim();
+        let (id, rest) = parse_required_id_ref(rest, start_line.start, &mut self.errors)?;
+        let kind = parse_test_kind(rest.trim(), start_line.start, head.len(), &mut self.errors)?;
+        Some(TestItem::new(
+            id,
+            kind,
+            body,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    pub(super) fn parse_bench_item(&mut self) -> Option<BenchItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing bench item",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the bench body"],
+            );
+            return None;
+        }
+        let rest = head.trim().strip_prefix("bench")?.trim();
+        let (id, rest) = parse_required_id_ref(rest, start_line.start, &mut self.errors)?;
+        if !rest.trim().is_empty() {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.start + head.len()),
+                "unexpected text after bench id",
+                ["{"],
+                Some(rest.trim()),
+                ["move bench configuration into the bench body"],
+            );
+        }
+        Some(BenchItem::new(
+            id,
+            body,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+}
 
 pub(super) fn parse_proof_clauses(body: &str) -> Vec<ProofClause> {
     body.lines()

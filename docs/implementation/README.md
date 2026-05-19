@@ -428,8 +428,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   speaker-line sugar, trailing line-plan attachment, and flat dialogue/with
   fence handling. `parser/items.rs` now owns parser methods for function-like,
   enum, struct, state, trait, impl, and type-alias top-level items in addition
-  to item-member helpers. The parser driver still needs further
-  family-specific module extraction.
+  to item-member helpers. `parser/proof.rs` owns proof, trusted-axiom, test,
+  and bench top-level parser methods plus proof/test clause parsing. The parser
+  driver still needs further family-specific module extraction.
 - The application-facing `arcweft` facade no longer provides
   `arcweft::prelude::*`. It exposes namespaced crate families such as
   `arcweft::core`, `arcweft::dialogue`, `arcweft::presentation`,
