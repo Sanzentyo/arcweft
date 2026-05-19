@@ -629,8 +629,8 @@ flow @flow.opening opening {
     alice:
         聞いて。[p]
     with {
-        assert textbox_ready
-        debug_assert route_count > 0
+        assert(textbox_ready)
+        debug_assert(route_count > 0)
     }
 }
 ",

@@ -413,13 +413,6 @@ impl LinePlanGraphLowerer {
                 ));
                 Vec::new()
             }
-            Stmt::Panic(expr) => vec![LineEffectRequest::Panic(expr_label(expr))],
-            Stmt::Fail(expr) => vec![LineEffectRequest::Fail(expr_label(expr))],
-            Stmt::Bail(expr) => vec![LineEffectRequest::Bail(expr_label(expr))],
-            Stmt::Ensure { condition, message } => vec![LineEffectRequest::Ensure {
-                condition: expr_label(condition),
-                message: expr_label(message),
-            }],
             Stmt::Close(expr) => vec![LineEffectRequest::Close(expr_label(expr))],
             Stmt::Select(expr) => vec![LineEffectRequest::Select(expr_label(expr))],
             Stmt::Break { label, expr } => vec![LineEffectRequest::Break {

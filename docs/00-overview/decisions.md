@@ -242,7 +242,7 @@ return
 goto
 break
 continue
-fail / panic
+fail(...) / panic(...)
 never-returning function
 ```
 

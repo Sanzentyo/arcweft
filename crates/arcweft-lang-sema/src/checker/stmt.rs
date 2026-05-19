@@ -30,11 +30,7 @@ impl TypeChecker<'_> {
                 let ty = self.check_expr(expr);
                 self.reject_borrow_escape(ty.as_ref(), "function or flow return");
             }
-            Stmt::Expr(expr)
-            | Stmt::Panic(expr)
-            | Stmt::Fail(expr)
-            | Stmt::Bail(expr)
-            | Stmt::Select(expr) => {
+            Stmt::Expr(expr) | Stmt::Select(expr) => {
                 self.check_expr(expr);
                 self.release_direct_drop_expr(expr);
             }
@@ -42,7 +38,6 @@ impl TypeChecker<'_> {
                 let ty = self.check_out_stmt(label.as_deref(), expr);
                 self.reject_borrow_escape(ty.as_ref(), "line-plan out value");
             }
-            Stmt::Ensure { condition, message } => self.check_ensure_stmt(condition, message),
             Stmt::Goto(expr) => {
                 self.expect_expr_type(expr, &TypeKind::Ref(EntityKind::Flow), "goto destination");
             }
@@ -432,11 +427,6 @@ impl TypeChecker<'_> {
             )));
         }
         self.check_expr(expr)
-    }
-
-    fn check_ensure_stmt(&mut self, condition: &Expr, message: &Expr) {
-        self.expect_expr_type(condition, &TypeKind::Bool, "ensure condition");
-        self.check_expr(message);
     }
 
     fn resolve_loop_label(&self, label: Option<&str>) -> Option<usize> {

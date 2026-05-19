@@ -506,17 +506,10 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         | Stmt::Return(expr)
         | Stmt::Goto(expr)
         | Stmt::Yield(expr)
-        | Stmt::Panic(expr)
-        | Stmt::Fail(expr)
-        | Stmt::Bail(expr)
         | Stmt::Close(expr)
         | Stmt::Defer { expr, .. }
         | Stmt::Expr(expr) => {
             collect_expr(expr, uses);
-        }
-        Stmt::Ensure { condition, message } => {
-            collect_expr(condition, uses);
-            collect_expr(message, uses);
         }
         Stmt::Signal { target, value } => {
             collect_expr(target, uses);

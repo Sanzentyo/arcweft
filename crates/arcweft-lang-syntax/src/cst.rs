@@ -204,7 +204,6 @@ pub(crate) enum CstStmtKind {
     DeferBlock,
     Defer,
     ControlTransfer,
-    Ensure,
     On,
     UnsafeLifetime,
     Braced,
@@ -546,8 +545,6 @@ pub(crate) fn classify_stmt(trimmed: &str) -> CstStmtKind {
         CstStmtKind::Defer
     } else if looks_like_control_transfer(trimmed) {
         CstStmtKind::ControlTransfer
-    } else if trimmed.starts_with("ensure ") {
-        CstStmtKind::Ensure
     } else if trimmed.starts_with("on ") {
         CstStmtKind::On
     } else if trimmed.starts_with("unsafe lifetime ") && trimmed.contains('{') {
@@ -578,11 +575,9 @@ fn looks_like_control_transfer(trimmed: &str) -> bool {
         || trimmed.starts_with("continue ")
         || trimmed.starts_with("out ")
         || trimmed.starts_with("break ")
-        || [
-            "return ", "goto ", "yield ", "panic ", "fail ", "bail ", "close ", "select ",
-        ]
-        .iter()
-        .any(|prefix| trimmed.starts_with(prefix))
+        || ["return ", "goto ", "yield ", "close ", "select "]
+            .iter()
+            .any(|prefix| trimmed.starts_with(prefix))
 }
 
 fn looks_like_braced_stmt(trimmed: &str) -> bool {

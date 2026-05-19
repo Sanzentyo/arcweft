@@ -675,8 +675,8 @@ test @test.settings_blocks_choice visual {
 assert:
 
 ```awft
-assert layer(@layer.settings).input.policy == .Modal
-assert no_layer_overlap_interactive(@layer.modal, @layer.debug_overlay)
+assert(layer(@layer.settings).input.policy == .Modal)
+assert(no_layer_overlap_interactive(@layer.modal, @layer.debug_overlay))
 ```
 
 ---

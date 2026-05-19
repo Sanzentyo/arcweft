@@ -356,9 +356,9 @@ ensures result.has_action("select")
 test @test.layer_order_opening visual {
     start @flow.opening
 
-    assert layer @layer.background below @layer.characters
-    assert layer @layer.choices above @layer.dialogue
-    assert object @choice.opening.listen in_layer @layer.choices
+    assert(layer(@layer.background).below(@layer.characters))
+    assert(layer(@layer.choices).above(@layer.dialogue))
+    assert(object(@choice.opening.listen).in_layer(@layer.choices))
 }
 ```
 

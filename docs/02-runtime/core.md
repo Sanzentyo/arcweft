@@ -254,7 +254,7 @@ event.emit(Event, fields)   -> LineEffectRequest::EmitEvent
 out expr                    -> LineEffectRequest::Out and LineTaskGroup.out
 cancel on ... { ... }       -> LineTaskGroup.cancel_rules
 memo name(...)              -> LineTaskGroup.memo
-assert expr                 -> LineTaskGroup.assertions
+assert(expr)                -> LineTaskGroup.assertions
 ```
 
 `yield` is not a line effect. It lowers only through stream/source generation

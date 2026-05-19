@@ -53,11 +53,11 @@ Sample    サンプル列
 ## assert
 
 ```awft
-assert state.affection[@character.alice] >= 0
-assert_eq route_title(@flow.opening), "Opening"
-debug_assert choices.len() > 0
-assert_ok load_config()
-assert_some state.current_bg
+assert(state.affection[@character.alice] >= 0)
+assert_eq(route_title(@flow.opening), "Opening")
+debug_assert(choices.len() > 0)
+assert_ok(load_config())
+assert_some(state.current_bg)
 ```
 
 失敗時は `AssertionEvent` として log/signal/trace/crash bundle に流す。
@@ -125,7 +125,7 @@ bench @bench.opening_pipeline {
             .collect<Vec<ChoiceView>>()
     }
 
-    assert metric allocations <= 2
+    assert(metric.allocations <= 2)
 }
 ```
 
@@ -172,7 +172,7 @@ bench @bench.memo_hit_rate {
     measure iterations = 10000 {
         opening_choices().map(choice_to_view(state)).collect<Vec<ChoiceView>>()
     }
-    assert metric.value(@metric.memo_hit_rate) >= 0.95
+    assert(metric.value(@metric.memo_hit_rate) >= 0.95)
 }
 ```
 

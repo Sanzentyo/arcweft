@@ -83,7 +83,7 @@ return Err(.MissingRoute)
 goto @flow.title
 break value
 continue
-panic "missing route"
+panic("missing route")
 ```
 
 Not allowed:

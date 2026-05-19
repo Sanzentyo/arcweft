@@ -640,9 +640,6 @@ impl<'a> SemanticAnalyzer<'a> {
             | Stmt::Close(expr)
             | Stmt::Goto(expr)
             | Stmt::Yield(expr)
-            | Stmt::Panic(expr)
-            | Stmt::Fail(expr)
-            | Stmt::Bail(expr)
             | Stmt::Out { expr, .. }
             | Stmt::Break {
                 expr: Some(expr), ..
@@ -682,9 +679,6 @@ impl<'a> SemanticAnalyzer<'a> {
             Stmt::Return(expr)
             | Stmt::Close(expr)
             | Stmt::Expr(expr)
-            | Stmt::Panic(expr)
-            | Stmt::Fail(expr)
-            | Stmt::Bail(expr)
             | Stmt::Select(expr)
             | Stmt::Goto(expr)
             | Stmt::Yield(expr)
@@ -694,10 +688,6 @@ impl<'a> SemanticAnalyzer<'a> {
             | Stmt::Break {
                 expr: Some(expr), ..
             } => self.collect_expr(expr, state),
-            Stmt::Ensure { condition, message } => {
-                self.collect_expr(condition, state);
-                self.collect_expr(message, state);
-            }
             Stmt::Thread(thread) => self.collect_thread(thread),
             Stmt::DeferBlock { statements, .. } => {
                 self.collect_stmts(statements, state);

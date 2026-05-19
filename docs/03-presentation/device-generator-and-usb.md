@@ -235,7 +235,7 @@ Generated tests:
 test @test.rhythm_pad_report_parse fixture {
     let bytes = hex("01 03 00 10 00 00 7f")
     let report = parse RhythmPadInput from bytes?
-    assert report.buttons == 3
+    assert(report.buttons == 3)
 }
 ```
 

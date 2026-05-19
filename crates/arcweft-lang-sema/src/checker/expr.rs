@@ -338,6 +338,9 @@ impl TypeChecker<'_> {
     }
 
     fn check_call_expr(&mut self, callee: &Expr, args: &[Expr]) -> Option<TypeKind> {
+        if let Some(ty) = self.check_builtin_call_expr(callee, args) {
+            return Some(ty);
+        }
         if let Some(name) = expr_path_label(callee)
             && let Some(ty) = self
                 .env
@@ -399,6 +402,40 @@ impl TypeChecker<'_> {
                 Some(TypeKind::SpeakerPreset(entity))
             }
             other => other,
+        }
+    }
+
+    fn check_builtin_call_expr(&mut self, callee: &Expr, args: &[Expr]) -> Option<TypeKind> {
+        let name = expr_path_label(callee)?;
+        match name.as_str() {
+            "panic" | "fail" | "bail" => {
+                for arg in args {
+                    self.check_expr(arg);
+                }
+                Some(TypeKind::Never)
+            }
+            "ensure" => {
+                self.check_assert_like_args(args, "ensure");
+                Some(TypeKind::Unit)
+            }
+            "assert" | "debug_assert" => {
+                self.check_assert_like_args(args, name.as_str());
+                Some(TypeKind::Unit)
+            }
+            _ => None,
+        }
+    }
+
+    fn check_assert_like_args(&mut self, args: &[Expr], name: &str) {
+        if let Some(condition) = args.first() {
+            self.expect_expr_type(condition, &TypeKind::Bool, &format!("{name} condition"));
+        } else {
+            self.errors.push(TypeCheckError::new(format!(
+                "{name} requires a condition argument"
+            )));
+        }
+        for arg in args.iter().skip(1) {
+            self.check_expr(arg);
         }
     }
 

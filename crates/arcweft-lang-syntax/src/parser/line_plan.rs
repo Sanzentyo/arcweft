@@ -246,18 +246,6 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
     if let Some(rest) = line.strip_prefix("memo ") {
         return parse_line_plan_memo(rest.trim());
     }
-    if let Some(expr) = line.strip_prefix("debug_assert ") {
-        return LinePlanItem::Assert {
-            debug: true,
-            expr: parse_expr_lossy(expr.trim()),
-        };
-    }
-    if let Some(expr) = line.strip_prefix("assert ") {
-        return LinePlanItem::Assert {
-            debug: false,
-            expr: parse_expr_lossy(expr.trim()),
-        };
-    }
     if is_line_plan_statement(line) {
         return LinePlanItem::Stmt(parse_stmt(line));
     }
@@ -268,6 +256,9 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
         };
     }
     if let Ok(expr) = parse_expr(line) {
+        if let Some(assertion) = parse_assert_call(&expr) {
+            return assertion;
+        }
         return LinePlanItem::Expr(expr);
     }
     LinePlanItem::Raw(RawSyntax::line_plan_item(
@@ -285,10 +276,6 @@ fn is_line_plan_statement(line: &str) -> bool {
                 | "return"
                 | "goto"
                 | "yield"
-                | "panic"
-                | "fail"
-                | "bail"
-                | "ensure"
                 | "close"
                 | "select"
                 | "break"
@@ -333,6 +320,27 @@ fn parse_line_plan_braced_item(head: &str, body: &str) -> Option<LinePlanItem> {
         ))));
     }
     None
+}
+
+fn parse_assert_call(expr: &Expr) -> Option<LinePlanItem> {
+    let Expr::Call { callee, args } = expr else {
+        return None;
+    };
+    let Expr::Path(name) = callee.as_ref() else {
+        return None;
+    };
+    let debug = match name.as_str() {
+        "assert" => false,
+        "debug_assert" => true,
+        _ => return None,
+    };
+    let [condition] = args.as_slice() else {
+        return None;
+    };
+    Some(LinePlanItem::Assert {
+        debug,
+        expr: condition.clone(),
+    })
 }
 
 pub(super) fn parse_thread_block(head: &str, body: &str) -> ThreadBlock {

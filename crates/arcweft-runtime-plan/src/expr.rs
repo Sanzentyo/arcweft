@@ -356,6 +356,9 @@ fn runtime_call(expr: &Expr) -> RuntimeCall {
 /// the callee names a built-in effect namespace such as `log.info`.
 pub(crate) fn runtime_call_effect(expr: &Expr) -> LineEffectRequest {
     let call = runtime_call(expr);
+    if let Some(effect) = runtime_control_call(&call) {
+        return effect;
+    }
     if let Some(log) = runtime_log_call(&call) {
         return LineEffectRequest::Log(log);
     }
@@ -369,6 +372,29 @@ pub(crate) fn runtime_call_effect(expr: &Expr) -> LineEffectRequest {
         return LineEffectRequest::EmitEvent(event);
     }
     LineEffectRequest::Call(call)
+}
+
+fn runtime_control_call(call: &RuntimeCall) -> Option<LineEffectRequest> {
+    match call.callee.as_str() {
+        "panic" => Some(LineEffectRequest::Panic(
+            call.args.first().cloned().unwrap_or_default(),
+        )),
+        "fail" => Some(LineEffectRequest::Fail(
+            call.args.first().cloned().unwrap_or_default(),
+        )),
+        "bail" => Some(LineEffectRequest::Bail(
+            call.args.first().cloned().unwrap_or_default(),
+        )),
+        "ensure" => Some(LineEffectRequest::Ensure {
+            condition: call.args.first().cloned().unwrap_or_default(),
+            message: call.args.get(1).cloned().unwrap_or_default(),
+        }),
+        "assert" | "debug_assert" => Some(LineEffectRequest::Ensure {
+            condition: call.args.first().cloned().unwrap_or_default(),
+            message: "assertion failed".to_owned(),
+        }),
+        _ => None,
+    }
 }
 
 fn runtime_log_call(call: &RuntimeCall) -> Option<RuntimeLog> {

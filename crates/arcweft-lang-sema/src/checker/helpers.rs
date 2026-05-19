@@ -344,6 +344,12 @@ pub(super) fn well_known_runtime_method_type(name: &str) -> Option<TypeKind> {
     if let Some(ty) = well_known_static_capacity_method_type(name) {
         return Some(ty);
     }
+    if matches!(name, "panic" | "fail" | "bail") {
+        return Some(TypeKind::Never);
+    }
+    if matches!(name, "ensure" | "assert" | "debug_assert") {
+        return Some(TypeKind::Unit);
+    }
     (name.starts_with("log.")
         || matches!(
             name,
@@ -497,20 +503,19 @@ pub(super) fn stmts_diverge(stmts: &[Stmt]) -> bool {
 
 pub(super) fn stmt_diverges(stmt: &Stmt) -> bool {
     match stmt {
-        Stmt::Return(_)
-        | Stmt::Goto(_)
-        | Stmt::Break { .. }
-        | Stmt::Continue { .. }
-        | Stmt::Panic(_)
-        | Stmt::Fail(_)
-        | Stmt::Bail(_) => true,
-        Stmt::Raw(raw) => {
-            raw.source().starts_with("break")
-                || raw.source().starts_with("panic ")
-                || raw.source().starts_with("fail ")
-        }
+        Stmt::Return(_) | Stmt::Goto(_) | Stmt::Break { .. } | Stmt::Continue { .. } => true,
+        Stmt::Expr(expr) => expr_diverges(expr),
+        Stmt::Raw(raw) => raw.source().starts_with("break"),
         _ => false,
     }
+}
+
+pub(super) fn expr_diverges(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Call { callee, .. }
+            if matches!(expr_path_label(callee).as_deref(), Some("panic" | "fail" | "bail"))
+    )
 }
 
 pub(super) fn is_local_ident(name: &str) -> bool {

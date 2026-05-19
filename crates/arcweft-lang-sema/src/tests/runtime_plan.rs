@@ -279,7 +279,7 @@ flow @flow.semantic semantic {
         voice = auto
         let actor = alice.stage_handle()
         memo line_handles(scope=line)
-        assert actor.ready()
+        assert(actor.ready())
         cancel on input .SkipLine { out 'line .Skipped }
         out .Done
 }

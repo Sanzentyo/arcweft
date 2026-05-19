@@ -159,8 +159,8 @@ fn cst_statement_classifier_covers_typed_statement_heads() {
     );
     assert_eq!(classify_stmt("defer close line"), CstStmtKind::Defer);
     assert_eq!(
-        classify_stmt("ensure ready, \"not ready\""),
-        CstStmtKind::Ensure
+        classify_stmt("ensure(ready, \"not ready\")"),
+        CstStmtKind::Expr
     );
     assert_eq!(classify_stmt("on item => yield item"), CstStmtKind::On);
     assert_eq!(

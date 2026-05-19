@@ -138,7 +138,7 @@ hook @hook.choice_button_has_action
 on query UiNode where role == .Choice
 phase AfterLayout
 {
-    assert object.actions.contains("select")
+    assert(object.actions.contains("select"))
 }
 ```
 

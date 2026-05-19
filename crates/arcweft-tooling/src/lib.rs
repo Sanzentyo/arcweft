@@ -644,9 +644,6 @@ fn collect_speaker_presets_from_stmt(
         | Stmt::Goto(expr)
         | Stmt::Defer { expr, .. }
         | Stmt::Yield(expr)
-        | Stmt::Panic(expr)
-        | Stmt::Fail(expr)
-        | Stmt::Bail(expr)
         | Stmt::Close(expr)
         | Stmt::Select(expr)
         | Stmt::Expr(expr) => {
@@ -657,10 +654,6 @@ fn collect_speaker_presets_from_stmt(
         }
         Stmt::DeferBlock { statements, .. } => {
             collect_speaker_presets_from_stmts(statements, character_aliases, presets);
-        }
-        Stmt::Ensure { condition, message } => {
-            collect_speaker_presets_from_expr(condition, character_aliases, presets);
-            collect_speaker_presets_from_expr(message, character_aliases, presets);
         }
         Stmt::Signal { target, value }
         | Stmt::LifetimeSet {

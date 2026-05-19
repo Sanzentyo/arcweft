@@ -276,7 +276,7 @@ Syntax parser:
   as one parser-local string-dispatch chain.
 - Generic statement parsing now starts from CST-owned `CstStmtKind`
   classification for lifetime registry writes, `wait`, `let`, `defer`,
-  control transfer, `ensure`, `on`, unsafe-lifetime audit blocks, braced
+  control transfer, `on`, unsafe-lifetime audit blocks, braced
   statements, presentation calls, scenario commands, and expression-like
   statements. Unsupported statements recover as `RawSyntaxFamily::Stmt` with
   source text and range metadata, so later semantic, verifier, runtime-plan,
@@ -360,7 +360,10 @@ Syntax parser:
 - Choice syntax covers static arm sugar (`->` as `goto`, `=>` as `out`), full `option` blocks, `ui { ... }` state, structured `select { ... }` statement blocks, dynamic `for` options, `match`-gated option groups, `option pattern in expr` sugar, `label(id=@text...)`, `value = expr`, and `with { ... }` / `with:` choice plans.
 - Choice HIR preserves the source choice-body item tree as well as the flattened option list, so `let`/`if`/`for`/`match` guards and raw malformed choice-body items participate in symbol collection, readiness checks, and minimal type checking.
 - Choice lifecycle plans parse option assignments, `timeout`, `cancel on`, `on select`, and `select` statements into structured expressions/statements for HIR readiness and minimal type checking.
-- Flow `let`/`return`/`goto`/`bail`/`ensure` statements and statement-block `if`/`match` bodies now lower to structured `Stmt` and `Pattern` values instead of opaque strings.
+- Flow `let`/`return`/`goto` statements, ordinary call-syntax `bail(...)` /
+  `ensure(...)` / `fail(...)` / `panic(...)` / `assert(...)`, and
+  statement-block `if`/`match` bodies now lower to structured `Stmt`,
+  `Expr`, and `Pattern` values instead of opaque strings.
 - Flow declarations preserve parsed parameter/return signatures through AST and HIR, and flow parameters are bound as locals during minimal type checking.
 - Flow `if` and `match` blocks lower to structured HIR nodes, and their nested flow items participate in symbol collection and type checking. Statement-style `match` arms preserve `when` guards, validate them as `Bool`, and scope supported pattern bindings to the selected arm body.
 - Flow `if let PAT = EXPR when GUARD { ... }` blocks lower to structured HIR nodes. The checker validates guard expressions as `Bool`, binds supported option payload patterns only inside the if-let body, and keeps outer locals unchanged afterward.
@@ -374,7 +377,7 @@ Syntax parser:
 - Control-transfer statements preserve Rust-like label references for `break 'label expr`, `continue 'label`, and `out 'label expr` so diagnostics can name the intended continuation without treating the statement as raw syntax. `let value = 'label: loop { ... }` and line-plan `with 'label { ... }` also preserve their labels in AST/HIR, and the minimal checker rejects unresolved loop labels and unresolved line-plan `out` labels.
 - Flow `for` loops and source-aware `select` blocks lower to structured HIR nodes, and their nested flow items participate in symbol collection and type-check readiness checks.
 - Flow `while` and `while let` loops lower to structured HIR nodes. The minimal checker validates `while` conditions and `while-let` guards as `Bool`, keeps pattern bindings scoped to the loop body, and treats both loop forms as statement-oriented constructs.
-- `let PAT = EXPR else { ... }` parses as a structured statement, keeps the else body as typed statements, and the checker rejects else blocks that do not leave the current continuation. `return`, `goto`, `break`, `continue`, `panic`, and `fail` are recognized as diverging statements for this minimal checker.
+- `let PAT = EXPR else { ... }` parses as a structured statement, keeps the else body as typed statements, and the checker rejects else blocks that do not leave the current continuation. `return`, `goto`, `break`, `continue`, and call-syntax `panic(...)` / `fail(...)` / `bail(...)` are recognized as diverging forms for this minimal checker.
 - Pattern syntax now preserves documented structured shapes including `mut` bindings, literals, entity-ref patterns, record/struct patterns with `..`, list/rest patterns, structured enum variant tuple/record payloads, and whole-pattern bindings such as `ev .ChoiceSelected { id }`.
 - Named `scope name { ... }` blocks lower to structured HIR nodes. Relative choice IDs such as `choice @.first` and relative option IDs such as `@.listen` normalize through the current flow and scope path during HIR lowering.
 - `let name = scope name? { ... }` parses as a scope expression binding, preserves nested typed statements and final expression separately, and lets the checker infer the bound value while keeping inner locals scoped to the block. Omitting the name creates the same lexical/value scope without adding a generated-ID scope segment. The headless runtime evaluates the final expression before popping the scope, then binds the result outside the scope.

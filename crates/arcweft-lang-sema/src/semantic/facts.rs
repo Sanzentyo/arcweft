@@ -1,4 +1,7 @@
-use arcweft_lang_hir::syntax::{ast::flow::Stmt, expr::LifetimeKey};
+use arcweft_lang_hir::syntax::{
+    ast::flow::Stmt,
+    expr::{Expr, LifetimeKey},
+};
 use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
 use std::collections::HashSet;
 
@@ -153,7 +156,23 @@ pub(super) fn transfer_reason(stmt: &Stmt, context: ExitReason) -> Option<ExitRe
         }
         Stmt::Break { .. } => Some(ExitReason::Break),
         Stmt::Continue { .. } => Some(ExitReason::Continue),
-        Stmt::Panic(_) | Stmt::Fail(_) | Stmt::Bail(_) => Some(ExitReason::Failed),
+        Stmt::Expr(expr) if expr_is_failed_transfer(expr) => Some(ExitReason::Failed),
+        _ => None,
+    }
+}
+
+fn expr_is_failed_transfer(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Call { callee, .. }
+            if matches!(expr_path_label(callee).as_deref(), Some("panic" | "fail" | "bail"))
+    )
+}
+
+fn expr_path_label(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(path) => Some(path.clone()),
+        Expr::Field { target, field } => Some(format!("{}.{}", expr_path_label(target)?, field)),
         _ => None,
     }
 }

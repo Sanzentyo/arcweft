@@ -24,9 +24,6 @@ fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
         | Stmt::Goto(expr)
         | Stmt::Defer { expr, .. }
         | Stmt::Yield(expr)
-        | Stmt::Panic(expr)
-        | Stmt::Fail(expr)
-        | Stmt::Bail(expr)
         | Stmt::Expr(expr)
         | Stmt::Close(expr)
         | Stmt::Select(expr)
@@ -35,10 +32,6 @@ fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
         }
         | Stmt::Wait(WaitTarget::Duration(expr) | WaitTarget::Expr(expr)) => {
             expr_contains_unchecked_promotion(expr)
-        }
-        Stmt::Ensure { condition, message } => {
-            expr_contains_unchecked_promotion(condition)
-                || expr_contains_unchecked_promotion(message)
         }
         Stmt::Signal { target, value }
         | Stmt::LifetimeSet {

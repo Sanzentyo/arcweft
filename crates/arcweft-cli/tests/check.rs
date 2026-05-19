@@ -854,7 +854,7 @@ metric gauge @metric:.memo_hit_rate: f32
 bench @bench.opening {
     setup { let state = fixture<GameState>("opening.json") }
     measure iterations = 10 { opening_choices() }
-    assert metric.value(@metric.memo_hit_rate) >= 0.95
+    assert(metric.value(@metric.memo_hit_rate) >= 0.95)
     report { cpu_time }
 }
 "#,

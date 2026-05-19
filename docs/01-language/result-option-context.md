@@ -183,21 +183,21 @@ await asset.image(@asset.bg.room)? with:
 Arcweft standard library includes convenience helpers:
 
 ```awft
-bail "invalid route"
-ensure condition, "message"
-fail ErrorKind::InvariantBroken
+bail("invalid route")
+ensure(condition, "message")
+fail(ErrorKind::InvariantBroken)
 ```
 
 Semantics:
 
 ```text
-bail msg:
+bail(msg):
   construct ArcError with current trace and return Err(...)
 
-ensure cond, msg:
-  if !cond { bail msg }
+ensure(cond, msg):
+  if !cond { bail(msg) }
 
-fail kind:
+fail(kind):
   construct ArcError of the given kind and diverge with type !
 ```
 
@@ -205,7 +205,7 @@ Examples:
 
 ```awft
 fn validate_score(score: i32) -> ArcResult<Unit> {
-    ensure score >= 0, "score must be non-negative"
+    ensure(score >= 0, "score must be non-negative")
     Ok(())
 }
 ```

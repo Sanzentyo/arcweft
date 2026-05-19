@@ -362,15 +362,15 @@ log.info(
 ```awft
 test @test.bgm_loop_points audio {
     render_audio @bgm.alice_theme section @music.main duration 64bars
-    assert no_clicks_at_loop
-    assert loudness in -24LUFS..-14LUFS
+    assert(no_clicks_at_loop())
+    assert((-24LUFS..-14LUFS).contains(loudness))
 }
 
 test @test.tts_alice_subtitle_sync audio {
     let tts = synthesize_now @voice.alice.tts "おはよう。"?
-    assert tts.duration > 0s
-    assert tts.transcript == "おはよう。"
-    assert tts.visemes.len() > 0
+    assert(tts.duration > 0s)
+    assert(tts.transcript == "おはよう。")
+    assert(tts.visemes.len() > 0)
 }
 ```
 

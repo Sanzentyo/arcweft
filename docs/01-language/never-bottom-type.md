@@ -6,11 +6,11 @@ Arcweft has a bottom type. Its canonical name is `Never`; the advanced Rust-like
 
 ```awft
 fn impossible() -> Never {
-    panic "unreachable"
+    panic("unreachable")
 }
 
 fn impossible_short() -> ! {
-    panic "unreachable"
+    panic("unreachable")
 }
 ```
 
@@ -21,8 +21,8 @@ return Err(.MissingRoute)
 goto @flow.title
 break route
 continue
-panic "invalid state"
-fail .InvariantBroken
+panic("invalid state")
+fail(.InvariantBroken)
 loop { tick() }
 ```
 
@@ -76,8 +76,8 @@ return expr      # exits current fn / flow / parser / task fn
 goto @flow.x     # exits current flow segment with FlowExit::Goto
 break expr       # exits nearest loop; if loop-valued, contributes expr type
 continue         # starts next loop iteration
-panic "msg"      # runtime failure; type !
-fail error       # construct ArcError and diverge; type !
+panic("msg")     # runtime failure; type !
+fail(error)      # construct ArcError and diverge; type !
 abort line       # cancel current line and diverge from line continuation
 ```
 
@@ -166,4 +166,3 @@ this branch never returns
 ```
 
 rather than forcing users to understand bottom-type theory.
-

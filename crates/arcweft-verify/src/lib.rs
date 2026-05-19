@@ -738,16 +738,12 @@ impl ObligationCollector {
             | Stmt::Goto(expr)
             | Stmt::Defer { expr, .. }
             | Stmt::Yield(expr)
-            | Stmt::Panic(expr)
-            | Stmt::Fail(expr)
-            | Stmt::Bail(expr)
             | Stmt::Close(expr)
             | Stmt::Select(expr)
             | Stmt::Expr(expr) => self.collect_expr(expr),
             Stmt::Thread(thread) => self.collect_thread(thread),
             Stmt::DeferBlock { statements, .. } => self.collect_stmts(statements),
-            Stmt::Ensure { condition, message }
-            | Stmt::Signal {
+            Stmt::Signal {
                 target: condition,
                 value: message,
             } => {

@@ -269,9 +269,9 @@ flow @flow.title title {
 #[test]
 fn typechecks_let_else_panic_and_fail_as_diverging() {
     for diverging in [
-        r#"panic "missing route""#,
-        "fail .MissingRoute",
-        r#"bail "missing route""#,
+        r#"panic("missing route")"#,
+        "fail(.MissingRoute)",
+        r#"bail("missing route")"#,
     ] {
         let source = format!(
             r"
@@ -297,13 +297,13 @@ flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {{
 }
 
 #[test]
-fn parses_and_typechecks_bail_and_ensure_statements() {
+fn parses_and_typechecks_bail_and_ensure_calls() {
     let tree = parse_ok(
         r#"
 flow @flow.validate validate {
-    ensure score >= 0, "score must be non-negative"
+    ensure(score >= 0, "score must be non-negative")
     if !valid {
-        bail "invalid score"
+        bail("invalid score")
     }
     goto @flow.title
 }
@@ -313,10 +313,7 @@ flow @flow.validate validate {
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
-    assert!(matches!(
-        &flow.body()[0],
-        FlowItem::Stmt(Stmt::Ensure { .. })
-    ));
+    assert!(matches!(&flow.body()[0], FlowItem::Stmt(Stmt::Expr(_))));
     let hir = lower_to_hir(&tree).expect("bail and ensure fixture lowers");
     validate_typecheck_ready(&hir).expect("bail and ensure are typecheck-ready");
     let env = TypeCheckEnv::new()
@@ -332,7 +329,7 @@ fn parses_and_typechecks_result_computation_block_binding() {
 flow @flow.compute compute {
     let route = result {
         let id = parse_choice_id(raw)?
-        ensure id_valid, "choice id must be valid"
+        ensure(id_valid, "choice id must be valid")
         Ok(@flow.title)
     }
     goto @flow.title
@@ -472,7 +469,7 @@ fn typecheck_rejects_non_bool_ensure_condition() {
     let tree = parse_ok(
         r#"
 flow @flow.validate validate {
-    ensure score, "score must be non-negative"
+    ensure(score, "score must be non-negative")
 }
 "#,
     );

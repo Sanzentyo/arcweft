@@ -109,7 +109,7 @@ pub fn open_route(
     /// Current game state.
     state: GameState,
 ) -> ! {
-    panic "todo"
+    panic("todo")
 }
 "#,
     );
@@ -192,7 +192,7 @@ fn statement_recovery_nodes_keep_family_and_source_range() {
     let tree = parse_ok(
         r"
 fn bad_stmt() -> Unit {
-    ensure ready
+    let broken
 }
 ",
     );
@@ -200,9 +200,9 @@ fn bad_stmt() -> Unit {
         panic!("expected function");
     };
     let Stmt::Raw(raw) = &function.body_statements()[0] else {
-        panic!("expected statement recovery node");
+        panic!("expected raw statement recovery node");
     };
     assert_eq!(raw.family(), RawSyntaxFamily::Stmt);
-    assert_eq!(raw.source(), "ensure ready");
+    assert_eq!(raw.source(), "let broken");
     assert!(raw.range().is_some());
 }

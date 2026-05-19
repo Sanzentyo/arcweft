@@ -6,7 +6,7 @@ use super::{
     parse_expr_with_inline_line_plan, parse_memo_block_options, parse_named_block_expr,
     parse_pattern, parse_scope_expr_body, parse_stmt_lines, parse_stmt_match_arms,
     parse_thread_block, parse_trigger_pattern, parse_word_scenario_command,
-    split_top_level_binding, split_top_level_keyword_once, split_top_level_punctuation_once,
+    split_top_level_binding, split_top_level_keyword_once,
     split_top_level_punctuation_sequence_once,
 };
 
@@ -160,7 +160,6 @@ pub(super) fn parse_stmt(trimmed: &str) -> Stmt {
         CstStmtKind::ControlTransfer => {
             parse_control_transfer_stmt(trimmed).unwrap_or_else(|| raw_stmt(trimmed))
         }
-        CstStmtKind::Ensure => parse_ensure_stmt(trimmed),
         CstStmtKind::On => parse_on_stmt(trimmed),
         CstStmtKind::PresentationCall => {
             parse_presentation_special_call(trimmed).map_or_else(|| raw_stmt(trimmed), Stmt::Expr)
@@ -196,20 +195,6 @@ fn parse_let_stmt(trimmed: &str) -> Stmt {
             pattern,
             ty,
             expr: parse_expr_with_inline_line_plan(expr.trim()),
-        }
-    } else {
-        raw_stmt(trimmed)
-    }
-}
-
-fn parse_ensure_stmt(trimmed: &str) -> Stmt {
-    let Some(rest) = trimmed.strip_prefix("ensure ") else {
-        return raw_stmt(trimmed);
-    };
-    if let Some((condition, message)) = split_top_level_punctuation_once(rest, ',') {
-        Stmt::Ensure {
-            condition: parse_expr_lossy(condition.trim()),
-            message: parse_expr_lossy(message.trim()),
         }
     } else {
         raw_stmt(trimmed)
@@ -385,9 +370,6 @@ fn parse_control_transfer_stmt(trimmed: &str) -> Option<Stmt> {
         ("return ", Stmt::Return as fn(Expr) -> Stmt),
         ("goto ", Stmt::Goto),
         ("yield ", Stmt::Yield),
-        ("panic ", Stmt::Panic),
-        ("fail ", Stmt::Fail),
-        ("bail ", Stmt::Bail),
         ("close ", Stmt::Close),
         ("select ", Stmt::Select),
     ]
