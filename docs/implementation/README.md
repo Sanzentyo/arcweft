@@ -30,17 +30,17 @@ Phase 0 / Phase 1 minimal Rust workspace:
 The implementation notes track accepted syntax decisions from `docs/reviews/` when
 they affect parser, HIR, formatter, LSP, or CLI work.
 
-`pro_review21.md` status remains mixed by item, with explicit evidence tracked
-in `phase-0-1-workspace.md` under "pro_review21 Prompt-to-Artifact Checklist".
+`pro_review21.md` is reflected for the current module-boundary scope, with
+explicit evidence tracked in `phase-0-1-workspace.md` under
+"pro_review21 Prompt-to-Artifact Checklist".
 
 Current high-confidence state:
 
 - Done: core split + tests, sema public split, syntax AST split, HIR split,
-  runtime-plan split, dependency cleanup (`runtime-plan -> hir`, duplicate
-  `arcweft-test` dependency removal, and
+  syntax parser family split, runtime-plan split, dependency cleanup
+  (`runtime-plan -> hir`, duplicate `arcweft-test` dependency removal, and
   `arcweft-dialogue -> arcweft-presentation` cleanup), and adapter-frame view
   lifetime APIs.
-- In progress: final parser-driver/common-helper slimming in syntax.
 
 - `pro_review4.md`: adopted value-producing `{ ... }` blocks, `scope name { ... }`
   blocks for relative ID namespaces, unnamed `scope { ... }` as name-omitted

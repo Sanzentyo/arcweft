@@ -162,6 +162,8 @@ fn cst_statement_classifier_covers_typed_statement_heads() {
         classify_stmt("ensure(ready, \"not ready\")"),
         CstStmtKind::Expr
     );
+    assert_eq!(classify_stmt("ensure ready"), CstStmtKind::Expr);
+    assert_eq!(classify_stmt("panic \"todo\""), CstStmtKind::Expr);
     assert_eq!(classify_stmt("on item => yield item"), CstStmtKind::On);
     assert_eq!(
         classify_stmt("unsafe lifetime @unsafe.borrow { promote(value) }"),
