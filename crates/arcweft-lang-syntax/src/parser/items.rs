@@ -1,7 +1,8 @@
 use crate::ast::common::TextRange;
 use crate::ast::items::{
-    CallableItem, EnumItem, EnumVariant, FunctionInit, FunctionItem, ImplItem, ImplMember,
-    StateField, StateItem, StructField, StructItem, TraitItem, TraitMember, TypeAliasItem,
+    CallableItem, EntityDeclItem, EnumItem, EnumVariant, ExternModItem, FunctionInit, FunctionItem,
+    ImplItem, ImplMember, StateField, StateItem, StructField, StructItem, TraitItem, TraitMember,
+    TypeAliasItem,
 };
 use crate::cst::{
     find_matching_angle_group, find_top_level_punctuation, split_leading_ident,
@@ -11,9 +12,10 @@ use crate::types::{parse_fn_signature, parse_type_ref};
 
 use super::{
     Parser, PendingDocLines, collect_logical_block_items, parse_callable_kind,
-    parse_contract_clause, parse_expr_lossy, parse_function_kind_and_signature,
-    parse_name_and_tail, parse_optional_angle_head, parse_scope_expr_body, parse_visibility_prefix,
-    split_brace_item, split_function_header_lines, split_supertraits, split_top_level_binding,
+    parse_contract_clause, parse_entity_decl_head, parse_expr_lossy, parse_extern_mod_head,
+    parse_function_kind_and_signature, parse_name_and_tail, parse_optional_angle_head,
+    parse_scope_expr_body, parse_visibility_prefix, split_brace_item, split_function_header_lines,
+    split_supertraits, split_top_level_binding,
 };
 
 impl Parser {
@@ -273,6 +275,81 @@ impl Parser {
             name.trim().to_owned(),
             target,
             where_clauses,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    pub(super) fn parse_entity_decl_item(&mut self) -> Option<EntityDeclItem> {
+        if self.current().text.contains('{') || self.next_nonblank_line_is_brace() {
+            self.parse_entity_decl_block()
+        } else {
+            self.parse_entity_decl_line()
+        }
+    }
+
+    fn parse_entity_decl_block(&mut self) -> Option<EntityDeclItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_flow_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing entity declaration",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the declaration body"],
+            );
+            return None;
+        }
+        let (kind, visibility, id, name, surface_alias, signature_tail) =
+            parse_entity_decl_head(head.trim(), start_line.start, &mut self.errors)?;
+        Some(EntityDeclItem::new(
+            kind,
+            visibility,
+            id,
+            name,
+            surface_alias,
+            signature_tail,
+            Some(body),
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    fn parse_entity_decl_line(&mut self) -> Option<EntityDeclItem> {
+        let line = self.current().clone();
+        self.index += 1;
+        let (kind, visibility, id, name, surface_alias, signature_tail) =
+            parse_entity_decl_head(line.text.trim(), line.start, &mut self.errors)?;
+        Some(EntityDeclItem::new(
+            kind,
+            visibility,
+            id,
+            name,
+            surface_alias,
+            signature_tail,
+            None,
+            TextRange::new(line.start, line.end),
+        ))
+    }
+
+    pub(super) fn parse_extern_mod_item(&mut self) -> Option<ExternModItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing external module",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the external module body"],
+            );
+            return None;
+        }
+        let (abi, path, source) = parse_extern_mod_head(head.trim())?;
+        Some(ExternModItem::new(
+            abi,
+            path,
+            source,
+            body,
             TextRange::new(start_line.start, end),
         ))
     }

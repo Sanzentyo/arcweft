@@ -15,8 +15,8 @@ use crate::ast::ids::{
     WikiLink,
 };
 use crate::ast::items::{
-    CallableKind, EntityDeclItem, EntityDeclKind, ExternModItem, FunctionKind, HookInit, HookItem,
-    MemoFn, ParserItem, RawSyntax, TypedSyntaxTree,
+    CallableKind, EntityDeclKind, FunctionKind, HookInit, HookItem, MemoFn, ParserItem, RawSyntax,
+    TypedSyntaxTree,
 };
 use crate::ast::line_plan::{BlockStyle, DeferOutcome, LinePlan};
 use crate::ast::pattern::Pattern;
@@ -217,81 +217,6 @@ impl Parser {
 
         let tree = TypedSyntaxTree::new(source_take(self), module, uses, items, wiki_links);
         (tree, core::mem::take(&mut self.errors))
-    }
-
-    fn parse_entity_decl_item(&mut self) -> Option<EntityDeclItem> {
-        if self.current().text.contains('{') || self.next_nonblank_line_is_brace() {
-            self.parse_entity_decl_block()
-        } else {
-            self.parse_entity_decl_line()
-        }
-    }
-
-    fn parse_entity_decl_block(&mut self) -> Option<EntityDeclItem> {
-        let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_flow_block();
-        if !ok {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "unclosed block while parsing entity declaration",
-                ["}"],
-                Some(start_line.text.trim()),
-                ["insert a closing `}` for the declaration body"],
-            );
-            return None;
-        }
-        let (kind, visibility, id, name, surface_alias, signature_tail) =
-            parse_entity_decl_head(head.trim(), start_line.start, &mut self.errors)?;
-        Some(EntityDeclItem::new(
-            kind,
-            visibility,
-            id,
-            name,
-            surface_alias,
-            signature_tail,
-            Some(body),
-            TextRange::new(start_line.start, end),
-        ))
-    }
-
-    fn parse_entity_decl_line(&mut self) -> Option<EntityDeclItem> {
-        let line = self.current().clone();
-        self.index += 1;
-        let (kind, visibility, id, name, surface_alias, signature_tail) =
-            parse_entity_decl_head(line.text.trim(), line.start, &mut self.errors)?;
-        Some(EntityDeclItem::new(
-            kind,
-            visibility,
-            id,
-            name,
-            surface_alias,
-            signature_tail,
-            None,
-            TextRange::new(line.start, line.end),
-        ))
-    }
-
-    fn parse_extern_mod_item(&mut self) -> Option<ExternModItem> {
-        let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "unclosed block while parsing external module",
-                ["}"],
-                Some(start_line.text.trim()),
-                ["insert a closing `}` for the external module body"],
-            );
-            return None;
-        }
-        let (abi, path, source) = parse_extern_mod_head(head.trim())?;
-        Some(ExternModItem::new(
-            abi,
-            path,
-            source,
-            body,
-            TextRange::new(start_line.start, end),
-        ))
     }
 
     fn take_flow_block(&mut self) -> (String, String, usize, bool) {

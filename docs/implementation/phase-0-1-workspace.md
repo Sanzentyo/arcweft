@@ -85,8 +85,8 @@ parsing. `parser/line_plan.rs` now owns line-plan body, trigger,
 defer, and thread parsing. `parser/choice.rs` owns choice item, arm, option
 block, and choice-plan parsing. `parser/items.rs` owns enum/struct/state field
 parsing, trait/impl member parsing, and the parser methods for function-like,
-enum, struct, state, trait, impl, and type-alias top-level items. These are
-public parser namespaces, and
+enum, struct, state, trait, impl, type-alias, entity-declaration, and extern
+module top-level items. These are public parser namespaces, and
 parse recovery types are imported through `parser::recovery` instead of a flat
 parser-root re-export. `parser/helpers.rs` owns shared parser helpers for
 module/use path handling and attribute parsing, `parser/top_level.rs` owns
