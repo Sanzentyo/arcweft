@@ -221,10 +221,22 @@ pub enum LineEffectRequest {
     Fail(String),
     Bail(String),
     Ensure { condition: String, message: String },
+    Assert(RuntimeAssertion),
     Close(String),
     Select(String),
     Break { label: Option<String>, value: Option<String> },
     Continue { label: Option<String> },
+}
+
+pub struct RuntimeAssertion {
+    pub condition: String,
+    pub message: String,
+    pub profile: RuntimeAssertionProfile,
+}
+
+pub enum RuntimeAssertionProfile {
+    Always,
+    DebugOnly,
 }
 ```
 
@@ -251,6 +263,9 @@ log.info(...)               -> LineEffectRequest::Log
 signal.set(target, value)   -> LineEffectRequest::SignalWrite
 metric.set(target, value)   -> LineEffectRequest::MetricWrite
 event.emit(Event, fields)   -> LineEffectRequest::EmitEvent
+ensure(cond, msg)           -> LineEffectRequest::Ensure
+assert(cond, msg?)          -> LineEffectRequest::Assert(profile=Always)
+debug_assert(cond, msg?)    -> LineEffectRequest::Assert(profile=DebugOnly)
 out expr                    -> LineEffectRequest::Out and LineTaskGroup.out
 cancel on ... { ... }       -> LineTaskGroup.cancel_rules
 memo name(...)              -> LineTaskGroup.memo

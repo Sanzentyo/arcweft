@@ -8,7 +8,9 @@ pub(super) use crate::semantic::{
 pub(super) use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 pub(super) use crate::types::{EntityKind, MapKind, TypeKind};
 pub(super) use arcweft_core::{
-    effect::{LineEffectRequest, RuntimeAssignment, RuntimeCall, RuntimeLog},
+    effect::{
+        LineEffectRequest, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall, RuntimeLog,
+    },
     line_task::{LineChildTask, LineOutRequest, LineTaskNode, LineTaskTrigger},
     plan::{FlowOp, FlowRuntimeId},
     source::{SourceHandlerPlan, SourceOp},

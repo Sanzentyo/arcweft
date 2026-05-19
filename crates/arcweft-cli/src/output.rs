@@ -302,6 +302,10 @@ fn effect_label(effect: &LineEffectRequest) -> String {
         LineEffectRequest::Fail(_) => "fail".to_owned(),
         LineEffectRequest::Bail(_) => "bail".to_owned(),
         LineEffectRequest::Ensure { .. } => "ensure".to_owned(),
+        LineEffectRequest::Assert(assertion) => match assertion.profile {
+            arcweft_core::effect::RuntimeAssertionProfile::Always => "assert".to_owned(),
+            arcweft_core::effect::RuntimeAssertionProfile::DebugOnly => "debug_assert".to_owned(),
+        },
         LineEffectRequest::Close(_) => "close".to_owned(),
         LineEffectRequest::Select(_) => "select".to_owned(),
         LineEffectRequest::Break { .. } => "break".to_owned(),

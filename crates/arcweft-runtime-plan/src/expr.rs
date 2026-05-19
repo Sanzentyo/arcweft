@@ -3,7 +3,8 @@
 use crate::labels::{duration_expr, expr_label, literal_label, named_arg_label, named_arg_value};
 use crate::pattern::lower_runtime_pattern;
 use arcweft_core::effect::{
-    LineEffectRequest, RuntimeAssignment, RuntimeCall, RuntimeEvent, RuntimeField, RuntimeLog,
+    LineEffectRequest, RuntimeAssertion, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall,
+    RuntimeEvent, RuntimeField, RuntimeLog,
 };
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeUnaryOp,
@@ -389,11 +390,27 @@ fn runtime_control_call(call: &RuntimeCall) -> Option<LineEffectRequest> {
             condition: call.args.first().cloned().unwrap_or_default(),
             message: call.args.get(1).cloned().unwrap_or_default(),
         }),
-        "assert" | "debug_assert" => Some(LineEffectRequest::Ensure {
-            condition: call.args.first().cloned().unwrap_or_default(),
-            message: "assertion failed".to_owned(),
-        }),
+        "assert" => Some(LineEffectRequest::Assert(runtime_assertion(
+            call,
+            RuntimeAssertionProfile::Always,
+        ))),
+        "debug_assert" => Some(LineEffectRequest::Assert(runtime_assertion(
+            call,
+            RuntimeAssertionProfile::DebugOnly,
+        ))),
         _ => None,
+    }
+}
+
+fn runtime_assertion(call: &RuntimeCall, profile: RuntimeAssertionProfile) -> RuntimeAssertion {
+    RuntimeAssertion {
+        condition: call.args.first().cloned().unwrap_or_default(),
+        message: call
+            .args
+            .get(1)
+            .cloned()
+            .unwrap_or_else(|| "assertion failed".to_owned()),
+        profile,
     }
 }
 

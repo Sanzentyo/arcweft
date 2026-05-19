@@ -663,7 +663,8 @@ fn effect_accesses(effect: &LineEffectRequest) -> Vec<ResourceAccess> {
         | LineEffectRequest::Wait(_)
         | LineEffectRequest::Call(_)
         | LineEffectRequest::Command(_)
-        | LineEffectRequest::Ensure { .. } => Vec::new(),
+        | LineEffectRequest::Ensure { .. }
+        | LineEffectRequest::Assert(_) => Vec::new(),
     }
 }
 

@@ -28,6 +28,7 @@ pub enum LineEffectRequest {
         condition: String,
         message: String,
     },
+    Assert(RuntimeAssertion),
     Close(String),
     Select(String),
     Break {
@@ -37,6 +38,25 @@ pub enum LineEffectRequest {
     Continue {
         label: Option<String>,
     },
+}
+
+/// Runtime assertion request emitted by ordinary `assert(...)` calls.
+///
+/// The core remains Sans I/O: this data says when an assertion should be
+/// enforced, while the host/test runner chooses how assertion failures are
+/// logged, traced, or surfaced.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeAssertion {
+    pub condition: String,
+    pub message: String,
+    pub profile: RuntimeAssertionProfile,
+}
+
+/// Profile policy for runtime assertions.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeAssertionProfile {
+    Always,
+    DebugOnly,
 }
 
 /// Access information used by static conflict checks for parallel regions.

@@ -35,6 +35,7 @@ impl RuntimeObservationState {
             | LineEffectRequest::Fail(_)
             | LineEffectRequest::Bail(_)
             | LineEffectRequest::Ensure { .. }
+            | LineEffectRequest::Assert(_)
             | LineEffectRequest::Close(_)
             | LineEffectRequest::Select(_)
             | LineEffectRequest::Break { .. }

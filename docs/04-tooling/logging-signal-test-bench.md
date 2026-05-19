@@ -60,7 +60,10 @@ assert_ok(load_config())
 assert_some(state.current_bg)
 ```
 
-失敗時は `AssertionEvent` として log/signal/trace/crash bundle に流す。
+`assert(...)` は常に有効な runtime assertion として扱う。
+`debug_assert(...)` は debug/test profile でのみ強制される assertion として
+runtime plan に残す。失敗時は `AssertionEvent` として
+log/signal/trace/crash bundle に流す。
 
 ## Test
 

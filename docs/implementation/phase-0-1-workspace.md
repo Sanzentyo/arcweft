@@ -364,6 +364,9 @@ Syntax parser:
   `ensure(...)` / `fail(...)` / `panic(...)` / `assert(...)`, and
   statement-block `if`/`match` bodies now lower to structured `Stmt`,
   `Expr`, and `Pattern` values instead of opaque strings.
+- Runtime lowering keeps `ensure(...)` as a false-path failure request and
+  preserves `assert(...)` / `debug_assert(...)` as profile-aware assertion
+  effects instead of collapsing them into `ensure(...)`.
 - Flow declarations preserve parsed parameter/return signatures through AST and HIR, and flow parameters are bound as locals during minimal type checking.
 - Flow `if` and `match` blocks lower to structured HIR nodes, and their nested flow items participate in symbol collection and type checking. Statement-style `match` arms preserve `when` guards, validate them as `Bool`, and scope supported pattern bindings to the selected arm body.
 - Flow `if let PAT = EXPR when GUARD { ... }` blocks lower to structured HIR nodes. The checker validates guard expressions as `Bool`, binds supported option payload patterns only inside the if-let body, and keeps outer locals unchanged afterward.

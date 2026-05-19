@@ -537,3 +537,48 @@ flow @flow.ready ready {
     assert!(matches!(&plan.flows[0].ops[0], FlowOp::If { .. }));
     assert!(matches!(&plan.flows[0].ops[1], FlowOp::Match { .. }));
 }
+
+#[test]
+fn runtime_plan_lowering_preserves_assertion_profiles() {
+    let tree = parse_ok(
+        r#"
+flow @flow.assertions assertions {
+    ensure(route.is_some(), "route missing")
+    assert(state.ready(), "state must be ready")
+    debug_assert(cache.consistent())
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("assertion runtime fixture lowers to HIR");
+    validate_typecheck_ready(&hir).expect("assertion fixture is typecheck-ready");
+
+    let plan = lower_runtime_plan(&hir).expect("assertion runtime plan lowers");
+    let [
+        FlowOp::Effect(ensure),
+        FlowOp::Effect(assert),
+        FlowOp::Effect(debug_assert),
+    ] = plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected three assertion-related effects");
+    };
+
+    assert!(matches!(
+        ensure,
+        LineEffectRequest::Ensure { condition, message }
+            if condition == "route.is_some()" && message == "\"route missing\""
+    ));
+    assert!(matches!(
+        assert,
+        LineEffectRequest::Assert(assertion)
+            if assertion.condition == "state.ready()"
+                && assertion.message == "\"state must be ready\""
+                && assertion.profile == RuntimeAssertionProfile::Always
+    ));
+    assert!(matches!(
+        debug_assert,
+        LineEffectRequest::Assert(assertion)
+            if assertion.condition == "cache.consistent()"
+                && assertion.message == "assertion failed"
+                && assertion.profile == RuntimeAssertionProfile::DebugOnly
+    ));
+}
