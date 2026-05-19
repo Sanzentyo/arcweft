@@ -44,8 +44,10 @@ boundaries instead of a flat root API:
 Downstream crates import core runtime data through those modules. The
 `arcweft-lang-sema` split has started with public `check`, `checker`, `types`,
 `env`, `diagnostics`, `borrow`, and `lifetime` modules, while the larger
-language-family checker splits remain follow-up refactors. `arcweft-runtime-plan`
-has started its module split with `errors`, `labels`, and `line_task`.
+language-family checker split now includes `choice`, `line_plan`, `source`, and
+`stmt` child modules. `arcweft-runtime-plan` is split across lowering-family
+modules including `errors`, `expr`, `flow`, `labels`, `line_task`, `pattern`,
+`source`, and `stream`.
 
 ## Implemented Types
 
@@ -360,8 +362,9 @@ Not implemented in this milestone:
 - full generic substitution and effect-aware return checking
 - full type environment, name resolution, and type checking
 - full completion of the `pro_review21.md` file split plan: `arcweft-lang-sema`
-  still needs language-family checker extraction, and syntax/HIR still need
-  their larger AST/parser/lowering splits.
+  still needs remaining checker-family extraction, especially expression and
+  flow checking, and syntax/HIR still need their larger AST/parser/lowering
+  splits.
 - inference, overload resolution, traits, generics, contracts, and full
   type-directed effect checking
 - unbounded/solver-backed loop CFG and full nested-scope borrow lifetime
