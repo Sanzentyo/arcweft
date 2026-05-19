@@ -75,9 +75,10 @@ a follow-up.
 Runtime plan lowering imports syntax-owned surface types through
 `arcweft-lang-hir`'s `syntax` namespace and no longer declares a direct
 dependency on `arcweft-lang-syntax`.
-Core tests are being split by runtime family: task event normalization now
-lives in `crates/arcweft-core/src/tests/task.rs`, and source policy/event
-runtime tests live in `crates/arcweft-core/src/tests/source.rs`.
+Core tests are split by runtime family under
+`crates/arcweft-core/src/tests/`: `task.rs`, `source.rs`, `stream.rs`,
+`observation.rs`, `flow.rs`, and `line_task.rs`. The root `tests.rs` remains
+only the test harness plus shared helpers.
 
 ## Implemented Types
 
