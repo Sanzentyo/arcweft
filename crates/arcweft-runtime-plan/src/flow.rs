@@ -16,7 +16,7 @@ use arcweft_lang_hir::model::{
     HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirLoop, HirMatch,
     HirModule, HirScopeExpr,
 };
-use arcweft_lang_syntax::{
+use arcweft_lang_hir::syntax::{
     AwaitBranchKind, ChoiceAction, EntityRef, EntityRefSyntax, FlowItem, Pattern, Stmt,
 };
 
@@ -60,7 +60,7 @@ struct FlowRuntimeLowerer {
 }
 
 impl FlowRuntimeLowerer {
-    fn lower_runtime_expr(&mut self, expr: &arcweft_lang_syntax::Expr) -> RuntimeExpr {
+    fn lower_runtime_expr(&mut self, expr: &arcweft_lang_hir::syntax::Expr) -> RuntimeExpr {
         match lower_runtime_expr_strict(expr) {
             Ok(expr) => expr,
             Err(message) => {
@@ -72,7 +72,7 @@ impl FlowRuntimeLowerer {
 
     fn lower_optional_runtime_expr(
         &mut self,
-        expr: Option<&arcweft_lang_syntax::Expr>,
+        expr: Option<&arcweft_lang_hir::syntax::Expr>,
     ) -> Option<RuntimeExpr> {
         expr.map(|expr| self.lower_runtime_expr(expr))
     }

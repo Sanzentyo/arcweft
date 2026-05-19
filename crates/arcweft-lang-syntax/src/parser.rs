@@ -35,7 +35,9 @@ use crate::text::parse_dialogue_tokens;
 use crate::types::{parse_fn_signature, parse_type_ref};
 use crate::{CstLine, CstLineEvents, SyntaxNode, cst_lines};
 use arcweft_source::{SourceAnchor, SourceName};
-use thiserror::Error;
+
+mod recovery;
+pub use recovery::{ParseError, RecoverySuggestion};
 
 /// Parses an Arcweft source string.
 #[must_use]
@@ -45,24 +47,6 @@ pub fn parse_source(source: impl Into<String>) -> ParsedSource {
     let mut parser = Parser::from_syntax(source.clone(), &syntax);
     let (tree, errors) = parser.parse();
     ParsedSource::new(source, syntax, tree, errors)
-}
-
-/// Syntax-level parse error with expected tokens and recovery suggestions.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-#[error("{message}")]
-pub struct ParseError {
-    range: TextRange,
-    expected: Vec<String>,
-    found: Option<String>,
-    message: String,
-    recovery: Vec<RecoverySuggestion>,
-    anchor: SourceAnchor,
-}
-
-/// Suggested local edit or strategy for recovering from an error.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RecoverySuggestion {
-    message: String,
 }
 
 enum OptionalLabel {
@@ -3057,71 +3041,6 @@ impl Parser {
                 .collect(),
             SourceAnchor::new(SourceName::path("<memory>"), 0..0),
         ));
-    }
-}
-
-impl ParseError {
-    fn new(
-        range: TextRange,
-        expected: Vec<String>,
-        found: Option<String>,
-        message: String,
-        recovery: Vec<RecoverySuggestion>,
-        anchor: SourceAnchor,
-    ) -> Self {
-        Self {
-            range,
-            expected,
-            found,
-            message,
-            recovery,
-            anchor,
-        }
-    }
-
-    fn rebased(mut self, base_offset: usize) -> Self {
-        self.range = TextRange::new(
-            self.range.start() + base_offset,
-            self.range.end() + base_offset,
-        );
-        self
-    }
-
-    /// Error byte range.
-    pub const fn range(&self) -> &TextRange {
-        &self.range
-    }
-
-    /// Expected syntax fragments.
-    pub fn expected(&self) -> &[String] {
-        &self.expected
-    }
-
-    /// Found fragment, if known.
-    pub fn found(&self) -> Option<&str> {
-        self.found.as_deref()
-    }
-
-    /// Human-readable diagnostic message.
-    pub fn message(&self) -> &str {
-        &self.message
-    }
-
-    /// Recovery suggestions.
-    pub fn recovery(&self) -> &[RecoverySuggestion] {
-        &self.recovery
-    }
-
-    /// Source anchor for tooling integrations.
-    pub const fn anchor(&self) -> &SourceAnchor {
-        &self.anchor
-    }
-}
-
-impl RecoverySuggestion {
-    /// Recovery message.
-    pub fn message(&self) -> &str {
-        &self.message
     }
 }
 

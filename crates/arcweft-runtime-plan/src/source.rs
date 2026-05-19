@@ -10,14 +10,14 @@ use arcweft_core::source::{
     SourceOp, SourcePlan, SourcePolicy,
 };
 use arcweft_core::value::{RuntimeExpr, RuntimeValue};
-use arcweft_lang_syntax::{
+use arcweft_lang_hir::syntax::{
     SourceBackpressurePolicy, SourceEventPattern, SourceHeader, SourceOverflowPolicy,
     SourcePrivacyPolicy, SourceReplayPolicy, Stmt, TypeRef,
 };
 
 /// Lowers a checked source declaration into a Sans I/O source plan.
 pub(crate) fn lower_source_plan(
-    source: &arcweft_lang_syntax::SourceItem,
+    source: &arcweft_lang_hir::syntax::SourceItem,
 ) -> Result<SourcePlan, Vec<RuntimePlanLowerError>> {
     let mut errors = Vec::new();
     let id = source.id().map_or_else(
@@ -71,7 +71,7 @@ pub(crate) fn lower_source_plan(
     }
 }
 
-fn lower_source_handler(handler: &arcweft_lang_syntax::SourceHandler) -> SourceHandlerPlan {
+fn lower_source_handler(handler: &arcweft_lang_hir::syntax::SourceHandler) -> SourceHandlerPlan {
     let ops = lower_source_stmt_list(handler.body());
     match handler.event() {
         SourceEventPattern::Item(pattern) => SourceHandlerPlan::Item {

@@ -62,6 +62,11 @@ entity/reference IDs, `ast/pattern.rs` owns structured binding syntax,
 surface syntax, `ast/line_plan.rs` owns line-plan syntax, `ast/choice.rs` owns
 choice syntax, `ast/proof.rs` owns proof/test/bench declarations, and
 `ast/source.rs` owns declarative source-stream syntax.
+The parser split has also started with `parser/recovery.rs` for parse
+diagnostic/recovery types; family parser modules remain a follow-up. Runtime
+plan lowering imports syntax-owned surface types through `arcweft-lang-hir`'s
+`syntax` namespace and no longer declares a direct dependency on
+`arcweft-lang-syntax`.
 
 ## Implemented Types
 

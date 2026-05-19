@@ -1,7 +1,7 @@
 //! Stable textual labels used by runtime-plan lowering.
 
 use arcweft_core::time::LogicalDuration;
-use arcweft_lang_syntax::{DurationUnit, Expr, Literal};
+use arcweft_lang_hir::syntax::{DurationUnit, Expr, Literal};
 
 pub(crate) fn named_arg_label(value: &str) -> Option<String> {
     value.split_once(" = ").map(|(name, _)| name.to_owned())
@@ -11,7 +11,7 @@ pub(crate) fn named_arg_value(value: &str) -> Option<String> {
     value.split_once(" = ").map(|(_, value)| value.to_owned())
 }
 
-pub(crate) fn pattern_label(pattern: &arcweft_lang_syntax::Pattern) -> String {
+pub(crate) fn pattern_label(pattern: &arcweft_lang_hir::syntax::Pattern) -> String {
     format!("{pattern:?}")
 }
 
@@ -79,23 +79,23 @@ pub(crate) fn literal_label(literal: &Literal) -> String {
     }
 }
 
-pub(crate) fn type_label(ty: &arcweft_lang_syntax::TypeRef) -> String {
+pub(crate) fn type_label(ty: &arcweft_lang_hir::syntax::TypeRef) -> String {
     match ty {
-        arcweft_lang_syntax::TypeRef::Never => "Never".to_owned(),
-        arcweft_lang_syntax::TypeRef::ConstInt(value) => value.to_string(),
-        arcweft_lang_syntax::TypeRef::Path(path) => path.clone(),
-        arcweft_lang_syntax::TypeRef::Generic { base, args } => format!(
+        arcweft_lang_hir::syntax::TypeRef::Never => "Never".to_owned(),
+        arcweft_lang_hir::syntax::TypeRef::ConstInt(value) => value.to_string(),
+        arcweft_lang_hir::syntax::TypeRef::Path(path) => path.clone(),
+        arcweft_lang_hir::syntax::TypeRef::Generic { base, args } => format!(
             "{base}<{}>",
             args.iter().map(type_label).collect::<Vec<_>>().join(", ")
         ),
-        arcweft_lang_syntax::TypeRef::Ref { lifetime, inner } => {
+        arcweft_lang_hir::syntax::TypeRef::Ref { lifetime, inner } => {
             let lifetime = lifetime
                 .as_ref()
                 .map(|lifetime| format!("'{} ", lifetime.name()))
                 .unwrap_or_default();
             format!("&{lifetime}{}", type_label(inner))
         }
-        arcweft_lang_syntax::TypeRef::Slice(inner) => format!("[{}]", type_label(inner)),
+        arcweft_lang_hir::syntax::TypeRef::Slice(inner) => format!("[{}]", type_label(inner)),
     }
 }
 

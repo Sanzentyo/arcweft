@@ -161,7 +161,6 @@ version = "0.1.0"
 dependencies = [
  "arcweft-core",
  "arcweft-lang-hir",
- "arcweft-lang-syntax",
  "thiserror 2.0.18",
 ]
 
