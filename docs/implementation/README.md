@@ -371,7 +371,11 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   is split into public responsibility modules (`time`, `frame`, `value`,
   `pattern`, `effect`, `task`, `source`, `stream`, `plan`, `line_task`,
   `observation`, and `engine`) without root-level compatibility aliases.
-  Downstream crates import core types through those module paths. The
+  Downstream crates import core types through those module paths. The runtime
+  engine implementation is also split by execution responsibility under
+  `engine/`: `eval`, `flow`, `line`, `source`, `stream`, and `suspend`, while
+  `engine.rs` owns only the engine state types, construction, frame stepping,
+  and shared diagnostics/observation plumbing. The
   `arcweft-lang-sema` split now has public `check`, `checker`, `types`, `env`,
   `diagnostics`, `borrow`, and `lifetime` modules, and the checker body has
   started language-family child modules for `choice`, `expr`, `flow`,
@@ -405,8 +409,12 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   proof/test item clause parsing, and `parser/line_plan.rs` owning line-plan
   body, trigger, defer, and thread parsing. `parser/choice.rs` owns choice
   item, arm, option block, and choice-plan parsing. `parser/items.rs` owns
-  enum/struct/state field parsing and trait/impl member parsing. The parser
-  driver still needs further family-specific module extraction.
+  enum/struct/state field parsing and trait/impl member parsing. These parser
+  family modules are public responsibility namespaces; recovery types are
+  addressed as `parser::recovery::ParseError` /
+  `parser::recovery::RecoverySuggestion` rather than through a flat
+  compatibility re-export. The parser driver still needs further
+  family-specific module extraction.
 - `arcweft-lang-syntax` crate-root exports are module namespaces only. Downstream
   crates now import syntax-owned types through `ast::*`, `expr`, `types`,
   `parser`, `cst`, `lint`, `source`, or `text` instead of flat crate-root

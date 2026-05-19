@@ -42,12 +42,12 @@ use crate::text::parse_dialogue_tokens;
 use crate::types::{parse_fn_signature, parse_type_ref};
 use arcweft_source::{SourceAnchor, SourceName};
 
-mod choice;
-mod items;
-mod line_plan;
-mod proof;
-mod recovery;
-mod source;
+pub mod choice;
+pub mod items;
+pub mod line_plan;
+pub mod proof;
+pub mod recovery;
+pub mod source;
 use choice::{parse_choice_items, parse_choice_plan_items};
 use items::{
     parse_enum_variants, parse_impl_members, parse_state_fields, parse_struct_fields,
@@ -58,7 +58,7 @@ use line_plan::{
     parse_trigger_pattern,
 };
 use proof::{parse_proof_clauses, parse_test_kind};
-pub use recovery::{ParseError, RecoverySuggestion};
+use recovery::{ParseError, RecoverySuggestion};
 use source::{
     parse_source_handlers, parse_source_headers, parse_source_stmt_lines,
     parse_source_type_from_tail,

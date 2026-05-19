@@ -1,7 +1,7 @@
 use crate::ast::proof::{ProofClause, TestKind};
 use crate::cst::split_leading_ident;
 
-use super::{ParseError, simple_error};
+use super::{recovery::ParseError, simple_error};
 
 pub(super) fn parse_proof_clauses(body: &str) -> Vec<ProofClause> {
     body.lines()

@@ -2,7 +2,7 @@
 
 use crate::ast::items::TypedSyntaxTree;
 use crate::cst::SyntaxNode;
-use crate::parser::ParseError;
+use crate::parser::recovery::ParseError;
 use std::{fmt, sync::Arc};
 
 /// Fully parsed source file.

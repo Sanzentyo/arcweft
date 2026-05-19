@@ -30,12 +30,12 @@ use arcweft_lang_syntax::{
 };
 use std::collections::{HashMap, HashSet};
 
-mod choice;
-mod expr;
-mod flow;
-mod line_plan;
-mod source;
-mod stmt;
+pub mod choice;
+pub mod expr;
+pub mod flow;
+pub mod line_plan;
+pub mod source;
+pub mod stmt;
 
 /// Verifies that lowered HIR no longer contains raw expression fragments.
 ///

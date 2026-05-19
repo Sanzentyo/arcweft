@@ -42,6 +42,10 @@ boundaries instead of a flat root API:
 - `engine`
 
 Downstream crates import core runtime data through those modules. The
+`engine` module keeps public state and stepping types in `engine.rs`, with the
+implementation split into `engine/eval.rs`, `engine/flow.rs`,
+`engine/line.rs`, `engine/source.rs`, `engine/stream.rs`, and
+`engine/suspend.rs`.
 `arcweft-lang-sema` split has started with public `check`, `checker`, `types`,
 `env`, `diagnostics`, `borrow`, and `lifetime` modules, while the larger
 language-family checker split now includes `choice`, `expr`, `flow`,
@@ -70,8 +74,9 @@ header/handler/body parsing, and `parser/proof.rs` for proof/test item
 clause parsing. `parser/line_plan.rs` now owns line-plan body, trigger,
 defer, and thread parsing. `parser/choice.rs` owns choice item, arm, option
 block, and choice-plan parsing. `parser/items.rs` owns enum/struct/state field
-parsing and trait/impl member parsing; remaining family parser modules remain
-a follow-up.
+parsing and trait/impl member parsing. These are public parser namespaces, and
+parse recovery types are imported through `parser::recovery` instead of a flat
+parser-root re-export; remaining family parser modules remain a follow-up.
 Runtime plan lowering imports syntax-owned surface types through
 `arcweft-lang-hir`'s `syntax::{ast, expr, types}` namespaces and no longer
 declares a direct dependency on `arcweft-lang-syntax`. `arcweft-lang-syntax`
@@ -396,8 +401,8 @@ Not implemented in this milestone:
 - full type environment, name resolution, and type checking
 - full completion of the `pro_review21.md` file split plan: `arcweft-lang-sema`
   still needs deeper expression call/control-helper extraction after the
-  expression dispatch/value-helper split; syntax still needs larger AST/parser
-  family splits beyond the initial proof/source AST modules.
+  expression dispatch/value-helper split; syntax still needs larger parser
+  family splits beyond the initial proof/source/choice/line-plan/items modules.
 - inference, overload resolution, traits, generics, contracts, and full
   type-directed effect checking
 - unbounded/solver-backed loop CFG and full nested-scope borrow lifetime

@@ -12,9 +12,10 @@ use crate::expr::parse_expr;
 use crate::pattern::parse_pattern;
 
 use super::{
-    ParseError, collect_logical_block_items, parse_expr_lossy, parse_optional_id_ref,
+    collect_logical_block_items, parse_expr_lossy, parse_optional_id_ref,
     parse_required_entity_ref_syntax, parse_required_id_ref, parse_stmt, parse_stmt_lines,
-    parse_trigger_pattern, split_brace_item, split_pattern_guard, split_top_level_binding,
+    parse_trigger_pattern, recovery::ParseError, split_brace_item, split_pattern_guard,
+    split_top_level_binding,
 };
 
 pub(super) fn parse_choice_items(
