@@ -127,10 +127,13 @@ layout and module surfaces.
 | `arcweft-lang-hir` split (`model`, `lower`, `lower_*`, `id_context`) | Complete | Public namespace structure matches review intent. |
 | `arcweft-runtime-plan` split (`errors/expr/flow/labels/line_task/pattern/source/stream`) | Complete | `src/lib.rs` is namespace-only. |
 | `runtime-plan -> syntax` direct dependency removal | Complete | `arcweft-runtime-plan/Cargo.toml` depends on `arcweft-lang-hir`, not `arcweft-lang-syntax`; syntax types flow through `hir::syntax`. |
+| `arcweft-test` duplicate dependency cleanup | Complete | `arcweft-test` keeps `arcweft-lang-hir` only in `[dependencies]`; there is no duplicated `hir` entry across dependency sections. |
+| `arcweft` facade flat-prelude removal / namespace boundary policy | Complete | `crates/arcweft/src/lib.rs` exposes crate-family `pub mod` namespaces and does not reintroduce `arcweft::prelude::*`. |
+| `arcweft-dialogue -> arcweft-presentation` dependency review | In progress | Dependency is still present by design for current dialogue-side presentation adapter helpers; extracting a narrower presentation-model crate remains a separate architecture task. |
 | `arcweft-lang-syntax` AST family split | Complete | AST families are moved under `src/ast/*.rs` with `ast.rs` as namespace. |
-| `arcweft-lang-syntax` parser family split | In progress | Family modules exist, but parser driver and shared parsing logic remain concentrated in `parser.rs`. |
+| `arcweft-lang-syntax` parser family split | In progress | Family modules exist, and control-flow plus statement parsing are extracted; parser lifecycle/error plumbing and some cross-cutting helpers remain in `parser.rs`. |
 | `arcweft-lang-sema` public split (`check/checker/types/env/diagnostics/borrow/lifetime`) | Complete | Public modules exist and `check.rs` is facade-only. |
-| `arcweft-lang-sema` deeper checker-family extraction | In progress | `checker/*` child modules now include presentation-call validation and extracted suspension/lifetime-boundary helpers, but `checker.rs` still holds substantial expression/lifetime checking state. |
+| `arcweft-lang-sema` deeper checker-family extraction | In progress | `checker/*` child modules now include presentation-call validation, suspension helpers, and lifetime-access helpers, but `checker.rs` still holds substantial expression/type-checking state. |
 | Dialogue compatibility alias cleanup | Complete | Compatibility aliases like `DialogueOptions`/`VoiceRef` are removed; canonical names are in use. |
 
 ## Implemented Types

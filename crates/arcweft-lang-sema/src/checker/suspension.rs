@@ -1,12 +1,76 @@
 //! Suspension boundaries and runtime-scope helpers.
 
 use super::{
-    LifetimeScopeKind, LoopContext, TypeCheckError, TypeChecker, TypeCheckerScopeSnapshot,
-    TypeKind, await_branch_pattern_type, let_else_bindings, type_contains_borrow_ref,
+    Expr, LifetimeScopeKind, LoopContext, TypeCheckError, TypeChecker, TypeCheckerScopeSnapshot,
+    TypeKind, YieldContext, await_branch_pattern_type, let_else_bindings, type_contains_borrow_ref,
     unify_loop_break_types,
 };
 
 impl TypeChecker<'_> {
+    pub(super) fn check_yield_stmt(&mut self, expr: &Expr) {
+        self.reject_active_borrows("yield suspension boundary");
+        let actual = self.check_expr(expr);
+        let Some(context) = self.yield_stack.last_mut() else {
+            self.errors.push(TypeCheckError::new(
+                "`yield` is only valid in `seq`, `stream`, or `source` contexts".to_owned(),
+            ));
+            return;
+        };
+        match context {
+            YieldContext::Seq {
+                item_ty,
+                yield_count,
+            } => {
+                *yield_count += 1;
+                if let Some(actual) = actual {
+                    match item_ty {
+                        Some(expected) if expected != &actual => {
+                            self.errors.push(TypeCheckError::new(format!(
+                                "yielded item types do not match, found {expected:?} and {actual:?}"
+                            )));
+                        }
+                        Some(_) => {}
+                        None => *item_ty = Some(actual),
+                    }
+                }
+            }
+            YieldContext::Stream {
+                item_ty,
+                yield_count,
+                ..
+            }
+            | YieldContext::Source {
+                item_ty,
+                yield_count,
+                ..
+            } => {
+                *yield_count += 1;
+                if let Some(actual) = actual
+                    && &actual != item_ty
+                {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "yielded item must have type {item_ty:?}, found {actual:?}"
+                    )));
+                }
+            }
+        }
+    }
+
+    pub(super) fn check_await_expr(&mut self, expr: &Expr, applies_try: bool) -> Option<TypeKind> {
+        self.reject_active_borrows("await suspension boundary");
+        match self.check_expr(expr) {
+            Some(TypeKind::Need { ready, .. }) if applies_try => Some(*ready),
+            Some(TypeKind::Need { ready, error }) => Some(TypeKind::Result { ok: ready, error }),
+            Some(other) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "await expression must have Need<T, E> type, found {other:?}"
+                )));
+                None
+            }
+            None => None,
+        }
+    }
+
     pub(super) fn check_await_item(
         &mut self,
         await_with: &arcweft_lang_hir::model::HirAwait,

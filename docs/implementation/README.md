@@ -35,13 +35,21 @@ they affect parser, HIR, formatter, LSP, or CLI work.
 - Completed in codebase structure: `arcweft-core`, `arcweft-lang-hir`,
   `arcweft-runtime-plan`, and most public-module boundary moves in
   `arcweft-lang-syntax` / `arcweft-lang-sema`.
+- Completed in dependency cleanup: `arcweft-runtime-plan` no longer has a
+  direct `arcweft-lang-syntax` dependency, and `arcweft-test` no longer has a
+  duplicated `arcweft-lang-hir` dependency entry.
+- Completed in facade policy: `crates/arcweft/src/lib.rs` keeps crate-family
+  `pub mod` namespaces and does not provide `arcweft::prelude::*`.
 - Completed in compatibility cleanup: dialogue compatibility aliases such as
   `DialogueOptions` and `VoiceRef` are removed; canonical names
   (`SayOptions`, `VoicePolicy`) are the only public API.
 - Remaining: deeper checker internals split in `arcweft-lang-sema::checker`,
   additional semantic-analyzer helper extraction beyond
-  `arcweft-lang-sema::semantic::{facts,traversal}`, and continued
-  parser-driver extraction in `arcweft-lang-syntax::parser`.
+  `arcweft-lang-sema::semantic::{facts,traversal}`, continued parser-driver
+  extraction in `arcweft-lang-syntax::parser`, and final architecture
+  determination for `arcweft-dialogue -> arcweft-presentation` (keep as
+  intentional adapter dependency or extract a narrower shared presentation
+  model crate).
 
 - `pro_review4.md`: adopted value-producing `{ ... }` blocks, `scope name { ... }`
   blocks for relative ID namespaces, unnamed `scope { ... }` as name-omitted
@@ -396,8 +404,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `diagnostics`, `borrow`, and `lifetime` modules, and the checker body has
   started language-family child modules for `choice`, `effects`, `expr`,
   `flow`, `line_plan`, `presentation`, `source`, `suspension`, and `stmt`,
-  plus `module` for module/top-level entry checks and `borrow_state` for borrow
-  binding and branch-merge helpers; `helpers` now owns shared
+  plus `lifetime_access` for lifetime registry reads/writes/drops, `module`
+  for module/top-level entry checks, and `borrow_state` for borrow binding and
+  branch-merge helpers; `helpers` now owns shared
   type/pattern/merge/divergence helper functions used by those checker modules.
   Semantic traversal and flow-fact helper families are now isolated under
   `semantic/facts.rs` and `semantic/traversal.rs`. Additional checker-family
@@ -442,11 +451,13 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   module/use path handling and attribute parsing, `parser/source.rs` owns source
   item header/body parsing, source-locale blocks, source handlers, and source
   statement helpers, `parser/top_level.rs` owns module/use/item-family dispatch,
-  `parser/flow.rs` owns flow item, flow-body, scope/thread/defer/unsafe
-  lifetime, and bare-scope dispatch, `parser/control_flow.rs` owns structured
+  `parser/flow.rs` owns flow item, flow-body, scope/thread/defer, and
+  bare-scope dispatch, `parser/control_flow.rs` owns structured
   flow/control blocks (`if`/`if let`/`match`/`loop`/`while`/`for`/`select`),
   value-producing `let` control-flow expressions, and shared control-flow block
-  helpers, and
+  helpers, `parser/statements.rs` owns statement parsing, `let` statement
+  forms, control-transfer statements, unsafe lifetime statement blocks, and
+  statement-label parsing, and
   `parser/await_.rs` owns `await ... with` parsing (await `let` bindings,
   multiline await heads, and await-branch parsing), while
   `parser/dialogue.rs` owns dialogue defaults, dialogue-content calls,
@@ -457,7 +468,8 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   item-member helpers.
   `parser/proof.rs` owns proof, trusted-axiom, test, and bench top-level parser
   methods plus proof/test clause parsing. The parser driver still needs further
-  family-specific module extraction.
+  extraction of remaining lifecycle/error-plumbing and cross-cutting helper
+  methods, but statement parsing is no longer owned by `parser.rs`.
 - The application-facing `arcweft` facade no longer provides
   `arcweft::prelude::*`. It exposes namespaced crate families such as
   `arcweft::core`, `arcweft::dialogue`, `arcweft::presentation`,
