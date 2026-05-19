@@ -6,6 +6,7 @@
 
 mod id_context;
 mod lower;
+mod model;
 
 pub use arcweft_lang_syntax::{
     Attribute, AwaitBranchKind, AwaitWith, BenchItem, BorrowBlock, CallableItem, CallableKind,
@@ -21,9 +22,10 @@ pub use id_context::{
     IdContextEntry, IdContextKind, IdContextMaterialization, IdContextOption, IdContextReport,
     collect_id_context,
 };
-pub use lower::{
+pub use lower::lower_to_hir;
+pub use model::{
     HirAwait, HirAwaitBranch, HirBorrow, HirChoice, HirChoiceOption, HirDialogue, HirFlow,
     HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet, HirLoop, HirLowerError, HirMatch,
     HirMatchArm, HirModule, HirScope, HirScopeExpr, HirSelect, HirSelectBranch, HirSourceLocale,
-    HirTopLevelDecl, HirWhile, HirWhileLet, lower_to_hir,
+    HirTopLevelDecl, HirWhile, HirWhileLet,
 };

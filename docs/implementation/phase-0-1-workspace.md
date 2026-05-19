@@ -48,6 +48,8 @@ language-family checker split now includes `choice`, `expr`, `flow`,
 `line_plan`, `source`, and `stmt` child modules. `arcweft-runtime-plan` is split across lowering-family
 modules including `errors`, `expr`, `flow`, `labels`, `line_task`, `pattern`,
 `source`, and `stream`.
+`arcweft-lang-hir` now separates the public HIR data model into `model.rs`,
+leaving `lower.rs` as the lowering driver and implementation.
 
 ## Implemented Types
 
@@ -363,8 +365,8 @@ Not implemented in this milestone:
 - full type environment, name resolution, and type checking
 - full completion of the `pro_review21.md` file split plan: `arcweft-lang-sema`
   still needs deeper expression call/control-helper extraction after the
-  expression dispatch/value-helper split, and syntax/HIR still need their
-  larger AST/parser/lowering splits.
+  expression dispatch/value-helper split; HIR still needs lowering-family
+  implementation splits; syntax still needs larger AST/parser family splits.
 - inference, overload resolution, traits, generics, contracts, and full
   type-directed effect checking
 - unbounded/solver-backed loop CFG and full nested-scope borrow lifetime
