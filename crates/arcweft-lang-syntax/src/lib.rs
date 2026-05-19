@@ -4,7 +4,7 @@
 //! formatter, diagnostics, and later HIR lowering, while deliberately avoiding
 //! type resolution or runtime semantics.
 
-mod ast;
+pub mod ast;
 mod cst;
 mod expr;
 mod lint;
@@ -14,23 +14,35 @@ mod source;
 mod text;
 mod types;
 
-pub use ast::{
-    Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BenchItem, BlockStyle, BorrowBlock,
-    CallableItem, CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem,
-    ChoiceMatchArm, ChoiceOption, ChoicePlan, ChoicePlanItem, ContentCall, ContractClause,
-    DeferOutcome, DialogueContent, DialogueDefaultOption, DialogueDefaultsItem, DialogueToken,
-    DocBlock, EntityDeclItem, EntityDeclKind, EntityRef, EntityRefSyntax, EnumItem, EnumVariant,
-    ExternModItem, Flow, FlowItem, FlowKind, ForBlock, FunctionItem, FunctionKind, HookItem, IdRef,
-    IfBlock, IfLetBlock, ImplItem, ImplMember, Item, LineArg, LineMark, LineOptions, LinePlan,
-    LinePlanItem, LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, Pattern,
-    ProofClause, ProofItem, RawSyntax, RawSyntaxFamily, RecordPatternField, RelativeId,
-    RelativeIdSpelling, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch,
-    SelectBranchHead, SourceBackpressurePolicy, SourceEventPattern, SourceHandler, SourceHeader,
-    SourceItem, SourceLocaleBlock, SourceOverflowPolicy, SourcePrivacyPolicy, SourceReplayPolicy,
-    SpeakerLine, StateField, StateItem, Stmt, StmtMatchArm, StructField, StructItem, TestItem,
-    TestKind, TextRange, ThreadBlock, ThreadModifier, TraitItem, TraitMember, TriggerPattern,
-    TrustedAxiomItem, TypeAliasItem, TypedSyntaxTree, UseItem, VariantPatternPayload, Visibility,
-    WaitTarget, WhileBlock, WhileLetBlock, WikiLink,
+pub use ast::choice::{
+    ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceMatchArm, ChoiceOption, ChoicePlan, ChoicePlanItem,
+};
+pub use ast::common::{DocBlock, ModuleDecl, TextRange, UseItem, Visibility};
+pub use ast::dialogue::{
+    ContentCall, DialogueContent, DialogueDefaultOption, DialogueDefaultsItem, DialogueToken,
+    LineArg, LineMark, LineOptions, ScenarioCommand, SpeakerLine,
+};
+pub use ast::flow::{
+    AwaitBranch, AwaitBranchKind, AwaitWith, BorrowBlock, ContractClause, Flow, FlowItem, FlowKind,
+    ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchArm, MatchBlock, ScopeBlock, ScopeExprBlock,
+    SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, Stmt, StmtMatchArm,
+    ThreadBlock, ThreadModifier, WaitTarget, WhileBlock, WhileLetBlock,
+};
+pub use ast::ids::{EntityRef, EntityRefSyntax, IdRef, RelativeId, RelativeIdSpelling, WikiLink};
+pub use ast::items::{
+    Attribute, CallableItem, CallableKind, EntityDeclItem, EntityDeclKind, EnumItem, EnumVariant,
+    ExternModItem, FunctionItem, FunctionKind, HookItem, ImplItem, ImplMember, Item, MemoFn,
+    ParserItem, RawSyntax, RawSyntaxFamily, StateField, StateItem, StructField, StructItem,
+    TraitItem, TraitMember, TypeAliasItem, TypedSyntaxTree,
+};
+pub use ast::line_plan::{
+    BlockStyle, CancelRuleSyntax, DeferOutcome, LinePlan, LinePlanItem, TriggerPattern,
+};
+pub use ast::pattern::{Pattern, RecordPatternField, VariantPatternPayload};
+pub use ast::proof::{BenchItem, ProofClause, ProofItem, TestItem, TestKind, TrustedAxiomItem};
+pub use ast::source::{
+    SourceBackpressurePolicy, SourceEventPattern, SourceHandler, SourceHeader, SourceItem,
+    SourceOverflowPolicy, SourcePrivacyPolicy, SourceReplayPolicy,
 };
 pub use cst::{
     ArcweftLanguage, CstLine, CstLineEvents, CstLineKind, RowanTextRange, SyntaxElement,

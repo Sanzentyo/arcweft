@@ -1,8 +1,11 @@
 use crate::expr::Expr;
 
-use super::{
-    BlockStyle, EntityRefSyntax, IdRef, Pattern, RawSyntax, Stmt, TextRange, TriggerPattern,
-};
+use super::common::TextRange;
+use super::flow::Stmt;
+use super::ids::{EntityRefSyntax, IdRef};
+use super::items::RawSyntax;
+use super::line_plan::{BlockStyle, TriggerPattern};
+use super::pattern::Pattern;
 
 /// `choice @choice.id { ... }` flow item with option rows.
 #[derive(Clone, Debug, Eq, PartialEq)]

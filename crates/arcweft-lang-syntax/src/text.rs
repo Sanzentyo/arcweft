@@ -1,4 +1,4 @@
-use crate::ast::{DialogueTag, DialogueToken, LineMark};
+use crate::ast::dialogue::{DialogueTag, DialogueToken, LineMark};
 use crate::expr::{Expr, Literal, parse_expr};
 
 /// Parses dialogue-text mode into tokens.

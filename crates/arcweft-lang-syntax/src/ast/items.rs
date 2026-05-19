@@ -1,11 +1,12 @@
 use crate::expr::Expr;
 use crate::types::{FnSignature, TypeRef};
 
-use super::{
-    BenchItem, ContractClause, DialogueDefaultsItem, DocBlock, EntityRef, Flow, FlowItem,
-    ModuleDecl, ProofItem, SourceItem, Stmt, TestItem, TextRange, TrustedAxiomItem, UseItem,
-    Visibility, WikiLink,
-};
+use super::common::{DocBlock, ModuleDecl, TextRange, UseItem, Visibility};
+use super::dialogue::DialogueDefaultsItem;
+use super::flow::{ContractClause, Flow, FlowItem, Stmt};
+use super::ids::{EntityRef, WikiLink};
+use super::proof::{BenchItem, ProofItem, TestItem, TrustedAxiomItem};
+use super::source::SourceItem;
 
 /// Typed syntax view of an `.awft` source with module/use headers and items.
 #[derive(Clone, Debug, Eq, PartialEq)]

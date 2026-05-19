@@ -1,4 +1,4 @@
-use super::TextRange;
+use super::common::TextRange;
 
 /// Absolute entity reference such as `@flow.opening` or `@<flow.opening@sem:abc>`.
 #[derive(Clone, Debug, Eq, PartialEq)]

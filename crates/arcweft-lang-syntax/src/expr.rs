@@ -1,7 +1,10 @@
-use crate::ast::{
-    EntityRef, EntityRefSyntax, FamilyRelativeEntityRef, LinePlan, Pattern, RelativeId,
-    RelativeIdSpelling, Stmt, TextRange, ThreadBlock, ThreadModifier,
+use crate::ast::common::TextRange;
+use crate::ast::flow::{Stmt, ThreadBlock, ThreadModifier};
+use crate::ast::ids::{
+    EntityRef, EntityRefSyntax, FamilyRelativeEntityRef, RelativeId, RelativeIdSpelling,
 };
+use crate::ast::line_plan::LinePlan;
+use crate::ast::pattern::Pattern;
 use crate::cst::{
     find_last_top_level_punctuation, find_top_level_punctuation, split_leading_entity_ref_parts,
     split_leading_relative_entity_ref, split_top_level_punctuation_once,

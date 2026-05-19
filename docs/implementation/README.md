@@ -397,7 +397,8 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   line-plan syntax lives in `ast/line_plan.rs`, choice syntax lives in
   `ast/choice.rs`, proof/test/bench declarations live in `ast/proof.rs`, and
   declarative source-stream syntax lives in `ast/source.rs`. `ast.rs` is now a
-  module facade rather than the owner of AST family definitions.
+  public module namespace rather than the owner of AST family definitions or a
+  flat compatibility re-export layer.
 - `arcweft-lang-syntax` parser splitting has started with `parser/recovery.rs`
   owning `ParseError` and `RecoverySuggestion`, `parser/source.rs` owning
   source-item header/handler/body parsing, and `parser/proof.rs` owning

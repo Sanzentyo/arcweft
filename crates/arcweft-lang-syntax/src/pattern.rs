@@ -1,4 +1,6 @@
-use crate::ast::{EntityRef, Pattern, RecordPatternField, TextRange, VariantPatternPayload};
+use crate::ast::common::TextRange;
+use crate::ast::ids::{EntityRef, EntityRefSyntax};
+use crate::ast::pattern::{Pattern, RecordPatternField, VariantPatternPayload};
 use crate::cst::{
     find_matching_punctuation, find_top_level_punctuation,
     split_last_top_level_punctuation_sequence_once, split_leading_ident,
@@ -38,7 +40,7 @@ pub(crate) fn parse_pattern(source: &str) -> Pattern {
     if let Some(pattern) = parse_variant_pattern(source) {
         return pattern;
     }
-    if let Ok(Expr::EntityRef(crate::ast::EntityRefSyntax::Absolute(entity))) = parse_expr(source) {
+    if let Ok(Expr::EntityRef(EntityRefSyntax::Absolute(entity))) = parse_expr(source) {
         return Pattern::Entity(entity);
     }
     if let Some(entity) = parse_entity_pattern(source) {

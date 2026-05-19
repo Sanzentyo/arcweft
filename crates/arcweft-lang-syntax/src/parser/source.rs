@@ -1,6 +1,9 @@
-use crate::ast::{
-    ScenarioCommand, SourceBackpressurePolicy, SourceEventPattern, SourceHandler, SourceHeader,
-    SourceOverflowPolicy, SourcePrivacyPolicy, SourceReplayPolicy, Stmt, TextRange,
+use crate::ast::common::TextRange;
+use crate::ast::dialogue::ScenarioCommand;
+use crate::ast::flow::Stmt;
+use crate::ast::source::{
+    SourceBackpressurePolicy, SourceEventPattern, SourceHandler, SourceHeader,
+    SourceOverflowPolicy, SourcePrivacyPolicy, SourceReplayPolicy,
 };
 use crate::cst::{
     find_matching_punctuation, find_top_level_punctuation,

@@ -1,20 +1,34 @@
-use crate::ast::{
-    Attribute, AwaitBranch, AwaitBranchKind, AwaitWith, BenchItem, BlockStyle, BorrowBlock,
-    CallableItem, CallableKind, CancelRuleSyntax, ChoiceAction, ChoiceBlock, ChoiceItem,
-    ChoiceMatchArm, ChoiceOption, ChoicePlan, ChoicePlanItem, ChoiceUiField, ContentCall,
-    ContractClause, DeferOutcome, DialogueContent, DialogueDefaultOption, DialogueDefaultsItem,
-    DocBlock, EntityDeclItem, EntityDeclKind, EntityRef, EntityRefSyntax, EnumItem, EnumVariant,
-    ExternModItem, FamilyRelativeEntityRef, Flow, FlowInit, FlowItem, FlowKind, ForBlock,
-    FunctionInit, FunctionItem, FunctionKind, HookInit, HookItem, IdRef, IfBlock, IfLetBlock,
-    ImplItem, ImplMember, Item, LineArg, LineOptions, LineOptionsInit, LinePlan, LinePlanItem,
-    LoopBlock, MatchArm, MatchBlock, MemoFn, ModuleDecl, ParserItem, ProofItem, RawItem, RawSyntax,
-    RelativeId, RelativeIdSpelling, ScenarioCommand, ScopeBlock, ScopeExprBlock, SelectBlock,
-    SelectBranch, SelectBranchHead, SourceItem, SourceItemParts, SourceLocaleBlock, SpeakerLine,
-    StateField, StateItem, Stmt, StmtMatchArm, StructField, StructItem, TestItem, TextRange,
-    ThreadBlock, ThreadModifier, TraitItem, TraitMember, TriggerPattern, TrustedAxiomItem,
-    TypeAliasItem, TypedSyntaxTree, UseItem, UseMode, Visibility, WhileBlock, WhileLetBlock,
+use crate::ast::choice::{
+    ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceMatchArm, ChoiceOption, ChoicePlan,
+    ChoicePlanItem, ChoiceUiField,
+};
+use crate::ast::common::{DocBlock, ModuleDecl, TextRange, UseItem, UseMode, Visibility};
+use crate::ast::dialogue::{
+    ContentCall, DialogueContent, DialogueDefaultOption, DialogueDefaultsItem, LineArg,
+    LineOptions, LineOptionsInit, ScenarioCommand, SpeakerLine,
+};
+use crate::ast::flow::{
+    AwaitBranch, AwaitBranchKind, AwaitWith, BorrowBlock, ContractClause, Flow, FlowInit, FlowItem,
+    FlowKind, ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchArm, MatchBlock, ScopeBlock,
+    ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, SourceLocaleBlock, Stmt,
+    StmtMatchArm, ThreadBlock, ThreadModifier, WaitTarget, WhileBlock, WhileLetBlock,
+};
+use crate::ast::ids::{
+    EntityRef, EntityRefSyntax, FamilyRelativeEntityRef, IdRef, RelativeId, RelativeIdSpelling,
     WikiLink,
 };
+use crate::ast::items::{
+    Attribute, CallableItem, CallableKind, EntityDeclItem, EntityDeclKind, EnumItem, EnumVariant,
+    ExternModItem, FunctionInit, FunctionItem, FunctionKind, HookInit, HookItem, ImplItem,
+    ImplMember, Item, MemoFn, ParserItem, RawItem, RawSyntax, StateField, StateItem, StructField,
+    StructItem, TraitItem, TraitMember, TypeAliasItem, TypedSyntaxTree,
+};
+use crate::ast::line_plan::{
+    BlockStyle, CancelRuleSyntax, DeferOutcome, LinePlan, LinePlanItem, TriggerPattern,
+};
+use crate::ast::pattern::Pattern;
+use crate::ast::proof::{BenchItem, ProofItem, TestItem, TrustedAxiomItem};
+use crate::ast::source::{SourceItem, SourceItemParts};
 use crate::cst::{
     CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstStmtKind, CstStructuredFlowBlockKind,
     CstTopLevelItemKind, CstTopLevelLineKind, classify_stmt, collect_wiki_link_ranges,
@@ -3836,7 +3850,7 @@ fn parse_scenario_args(args: &str) -> Vec<crate::expr::Expr> {
         .collect()
 }
 
-fn parse_binding_pattern(source: &str) -> (crate::ast::Pattern, Option<crate::types::TypeRef>) {
+fn parse_binding_pattern(source: &str) -> (Pattern, Option<crate::types::TypeRef>) {
     split_top_level_punctuation_once(source, ':').map_or_else(
         || (parse_pattern(source.trim()), None),
         |(pattern, ty)| {
@@ -5951,14 +5965,14 @@ fn parse_on_stmt(trimmed: &str) -> Stmt {
 
 fn parse_wait_stmt(rest: &str) -> Stmt {
     if let Some(name) = rest.strip_prefix("mark ") {
-        return Stmt::Wait(crate::ast::WaitTarget::Mark(name.trim().to_owned()));
+        return Stmt::Wait(WaitTarget::Mark(name.trim().to_owned()));
     }
     let expr = parse_expr_lossy(rest);
     match expr {
         Expr::Literal(crate::expr::Literal::Duration { .. }) => {
-            Stmt::Wait(crate::ast::WaitTarget::Duration(expr))
+            Stmt::Wait(WaitTarget::Duration(expr))
         }
-        _ => Stmt::Wait(crate::ast::WaitTarget::Expr(expr)),
+        _ => Stmt::Wait(WaitTarget::Expr(expr)),
     }
 }
 
@@ -6031,7 +6045,7 @@ fn parse_unsafe_lifetime_block(
         .trim();
     let (id, trailing) = parse_required_id_ref(rest, base, errors).unwrap_or_else(|| {
         (
-            IdRef::relative(crate::ast::RelativeId::new(
+            IdRef::relative(RelativeId::new(
                 "missing".to_owned(),
                 0,
                 RelativeIdSpelling::DotRun,

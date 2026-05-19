@@ -1,4 +1,7 @@
-use super::{EntityRef, Pattern, Stmt, TextRange, Visibility};
+use super::common::{TextRange, Visibility};
+use super::flow::Stmt;
+use super::ids::EntityRef;
+use super::pattern::Pattern;
 use crate::expr::Expr;
 use crate::types::TypeRef;
 

@@ -1,6 +1,8 @@
 use crate::expr::Expr;
 
-use super::{EntityRef, EntityRefSyntax, IdRef, LinePlan, TextRange, Visibility};
+use super::common::{TextRange, Visibility};
+use super::ids::{EntityRef, EntityRefSyntax, IdRef};
+use super::line_plan::LinePlan;
 
 /// Line-oriented scenario command retained for non-call DSL blocks.
 ///

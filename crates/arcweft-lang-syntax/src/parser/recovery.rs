@@ -1,7 +1,7 @@
 use arcweft_source::SourceAnchor;
 use thiserror::Error;
 
-use crate::ast::TextRange;
+use crate::ast::common::TextRange;
 
 /// Syntax-level parse error with expected tokens and recovery suggestions.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]

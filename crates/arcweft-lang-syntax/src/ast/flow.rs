@@ -1,10 +1,13 @@
 use crate::expr::Expr;
 use crate::types::TypeRef;
 
-use super::{
-    ChoiceBlock, ContentCall, DeferOutcome, DocBlock, EntityRefSyntax, IdRef, Pattern, RawSyntax,
-    ScenarioCommand, SpeakerLine, TextRange, TriggerPattern, Visibility,
-};
+use super::choice::ChoiceBlock;
+use super::common::{DocBlock, TextRange, Visibility};
+use super::dialogue::{ContentCall, ScenarioCommand, SpeakerLine};
+use super::ids::{EntityRefSyntax, IdRef};
+use super::items::RawSyntax;
+use super::line_plan::{DeferOutcome, TriggerPattern};
+use super::pattern::Pattern;
 /// Flow item with typed header and parsed flow body.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Flow {

@@ -62,6 +62,8 @@ entity/reference IDs, `ast/pattern.rs` owns structured binding syntax,
 surface syntax, `ast/line_plan.rs` owns line-plan syntax, `ast/choice.rs` owns
 choice syntax, `ast/proof.rs` owns proof/test/bench declarations, and
 `ast/source.rs` owns declarative source-stream syntax.
+The `ast` namespace is public and family-oriented; `ast.rs` no longer provides
+a flat compatibility re-export layer for those AST definitions.
 The parser split has also started with `parser/recovery.rs` for parse
 diagnostic/recovery types, `parser/source.rs` for source-item
 header/handler/body parsing, and `parser/proof.rs` for proof/test item

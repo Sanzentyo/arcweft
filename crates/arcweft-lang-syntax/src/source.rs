@@ -1,6 +1,6 @@
 //! Parsed source container and line indexing.
 
-use crate::ast::TypedSyntaxTree;
+use crate::ast::items::TypedSyntaxTree;
 use crate::cst::SyntaxNode;
 use crate::parser::ParseError;
 use std::{fmt, sync::Arc};

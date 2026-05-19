@@ -1,4 +1,5 @@
-use super::{IdRef, TextRange};
+use super::common::TextRange;
+use super::ids::IdRef;
 
 /// Top-level `proof @proof.id { ... }` item kept for verifier lowering.
 #[derive(Clone, Debug, Eq, PartialEq)]

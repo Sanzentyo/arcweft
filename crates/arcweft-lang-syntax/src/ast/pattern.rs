@@ -1,7 +1,7 @@
 use crate::expr::Expr;
 use crate::types::TypeRef;
 
-use super::EntityRef;
+use super::ids::EntityRef;
 
 /// Pattern syntax used by `let` and line-plan return destructuring.
 #[derive(Clone, Debug, Eq, PartialEq)]

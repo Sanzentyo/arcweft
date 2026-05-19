@@ -1,7 +1,8 @@
-use crate::ast::{
-    ChoiceAction, ChoiceItem, FamilyRelativeEntityRef, FlowItem, IdRef, Item, RelativeId,
-    RelativeIdSpelling, TextRange, TypedSyntaxTree,
-};
+use crate::ast::choice::{ChoiceAction, ChoiceItem};
+use crate::ast::common::TextRange;
+use crate::ast::flow::FlowItem;
+use crate::ast::ids::{FamilyRelativeEntityRef, IdRef, RelativeId, RelativeIdSpelling};
+use crate::ast::items::{Item, TypedSyntaxTree};
 
 /// Syntax-level lint emitted before full name resolution.
 #[derive(Clone, Debug, Eq, PartialEq)]

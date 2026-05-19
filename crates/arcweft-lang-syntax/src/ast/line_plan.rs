@@ -1,6 +1,9 @@
 use crate::expr::Expr;
 
-use super::{Pattern, RawSyntax, Stmt, TextRange, ThreadBlock};
+use super::common::TextRange;
+use super::flow::{Stmt, ThreadBlock};
+use super::items::RawSyntax;
+use super::pattern::Pattern;
 
 /// Canonical `with { ... }` line plan, plus `with:` indentation sugar.
 #[derive(Clone, Debug, Eq, PartialEq)]

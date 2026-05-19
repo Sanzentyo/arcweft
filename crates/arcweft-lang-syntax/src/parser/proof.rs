@@ -1,4 +1,4 @@
-use crate::ast::{ProofClause, TestKind};
+use crate::ast::proof::{ProofClause, TestKind};
 use crate::cst::split_leading_ident;
 
 use super::{ParseError, simple_error};
