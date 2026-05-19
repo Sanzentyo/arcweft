@@ -1,11 +1,12 @@
 use crate::cst::{
-    CstFlowItemKind, CstLetFlowItemKind, CstStructuredFlowBlockKind, CstTopLevelItemKind,
-    CstTopLevelLineKind, find_last_depth_zero_open_punctuation, find_last_top_level_punctuation,
-    find_matching_punctuation, punctuation_delta, source_line_count, source_lines,
-    split_first_string_literal, split_last_top_level_punctuation_sequence_once,
-    split_leading_entity_ref_parts, split_leading_lifetime, split_leading_relative_id,
-    split_top_level_keyword_once, split_top_level_punctuation_once,
-    split_top_level_punctuation_sequence_once, split_top_level_whitespace, take_doc_comment_prefix,
+    CstFlowItemKind, CstLetFlowItemKind, CstStmtKind, CstStructuredFlowBlockKind,
+    CstTopLevelItemKind, CstTopLevelLineKind, classify_stmt, find_last_depth_zero_open_punctuation,
+    find_last_top_level_punctuation, find_matching_punctuation, punctuation_delta,
+    source_line_count, source_lines, split_first_string_literal,
+    split_last_top_level_punctuation_sequence_once, split_leading_entity_ref_parts,
+    split_leading_lifetime, split_leading_relative_id, split_top_level_keyword_once,
+    split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
+    split_top_level_whitespace, take_doc_comment_prefix,
 };
 use crate::{CstLine, CstLineKind, Item, SyntaxKind, cst_lines, parse_source};
 
@@ -138,6 +139,46 @@ fn cst_line_events_classify_flow_item_dispatch() {
             CstStructuredFlowBlockKind::Scope
         ))
     );
+}
+
+#[test]
+fn cst_statement_classifier_covers_typed_statement_heads() {
+    assert_eq!(
+        classify_stmt("'line.voice <- voice"),
+        CstStmtKind::LifetimeSet
+    );
+    assert_eq!(classify_stmt("let voice = load_voice()"), CstStmtKind::Let);
+    assert_eq!(
+        classify_stmt("return Ok(done)"),
+        CstStmtKind::ControlTransfer
+    );
+    assert_eq!(
+        classify_stmt("defer on cancelled { close line }"),
+        CstStmtKind::DeferBlock
+    );
+    assert_eq!(classify_stmt("defer close line"), CstStmtKind::Defer);
+    assert_eq!(
+        classify_stmt("ensure ready, \"not ready\""),
+        CstStmtKind::Ensure
+    );
+    assert_eq!(classify_stmt("on item => yield item"), CstStmtKind::On);
+    assert_eq!(
+        classify_stmt("unsafe lifetime @unsafe.borrow { promote(value) }"),
+        CstStmtKind::UnsafeLifetime
+    );
+    assert_eq!(
+        classify_stmt("thread loader { wait mark .done }"),
+        CstStmtKind::Braced
+    );
+    assert_eq!(
+        classify_stmt("ref bg(@slot.background.main)"),
+        CstStmtKind::PresentationCall
+    );
+    assert_eq!(
+        classify_stmt("scene @scene.loading"),
+        CstStmtKind::ScenarioCommand
+    );
+    assert_eq!(classify_stmt("if ready"), CstStmtKind::AmbiguousBlockHead);
 }
 
 #[test]

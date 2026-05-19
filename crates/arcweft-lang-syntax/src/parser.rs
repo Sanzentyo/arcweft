@@ -18,14 +18,15 @@ use crate::ast::{
     WhileLetBlock, WikiLink,
 };
 use crate::cst::{
-    CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstStructuredFlowBlockKind,
-    CstTopLevelItemKind, CstTopLevelLineKind, collect_wiki_link_ranges, find_matching_punctuation,
-    find_top_level_punctuation, nonempty_trimmed_source_lines, punctuation_delta,
-    source_line_count, source_lines, split_first_string_literal, split_leading_entity_ref_parts,
-    split_leading_ident, split_leading_relative_entity_ref, split_leading_relative_id,
-    split_top_level_keyword_once, split_top_level_punctuation, split_top_level_punctuation_once,
-    split_top_level_punctuation_sequence_once, split_top_level_whitespace,
-    starts_leading_entity_ref, starts_leading_relative_entity_ref, starts_leading_relative_id,
+    CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstStmtKind, CstStructuredFlowBlockKind,
+    CstTopLevelItemKind, CstTopLevelLineKind, classify_stmt, collect_wiki_link_ranges,
+    find_matching_punctuation, find_top_level_punctuation, nonempty_trimmed_source_lines,
+    punctuation_delta, source_line_count, source_lines, split_first_string_literal,
+    split_leading_entity_ref_parts, split_leading_ident, split_leading_relative_entity_ref,
+    split_leading_relative_id, split_top_level_keyword_once, split_top_level_punctuation,
+    split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
+    split_top_level_whitespace, starts_leading_entity_ref, starts_leading_relative_entity_ref,
+    starts_leading_relative_id,
 };
 use crate::expr::{ComputationBlockKind, Expr, parse_expr};
 use crate::pattern::parse_pattern;
@@ -6230,80 +6231,99 @@ fn parse_inline_line_plan_source(source: &str) -> Option<LinePlan> {
 }
 
 fn parse_stmt(trimmed: &str) -> Stmt {
-    if let Some((target, expr)) = split_top_level_punctuation_sequence_once(trimmed, &["<", "-"])
-        && target.trim_start().starts_with('\'')
-    {
-        return Stmt::LifetimeSet {
-            target: parse_expr_lossy(target.trim()),
-            expr: parse_expr_lossy(expr.trim()),
-        };
-    }
-    if let Some(rest) = trimmed.strip_prefix("wait ") {
-        return parse_wait_stmt(rest.trim());
-    }
-    if let Some(rest) = trimmed.strip_prefix("let ") {
-        if let Some((pattern, expr)) = split_top_level_binding(rest) {
-            let (pattern, ty) = parse_binding_pattern(pattern);
-            return Stmt::Let {
-                pattern,
-                ty,
-                expr: parse_expr_with_inline_line_plan(expr.trim()),
+    match classify_stmt(trimmed) {
+        CstStmtKind::LifetimeSet => {
+            let Some((target, expr)) =
+                split_top_level_punctuation_sequence_once(trimmed, &["<", "-"])
+            else {
+                return raw_stmt(trimmed);
             };
+            Stmt::LifetimeSet {
+                target: parse_expr_lossy(target.trim()),
+                expr: parse_expr_lossy(expr.trim()),
+            }
         }
-        return Stmt::Raw(trimmed.to_owned());
-    }
-    if trimmed.starts_with("defer ")
-        && trimmed.contains('{')
-        && let Some(stmt) = parse_braced_stmt(trimmed)
-    {
-        return stmt;
-    }
-    if let Some(rest) = trimmed.strip_prefix("defer ") {
-        return Stmt::Defer {
-            outcome: DeferOutcome::Always,
-            expr: parse_expr_lossy(rest.trim()),
-        };
-    }
-    if let Some(stmt) = parse_control_transfer_stmt(trimmed) {
-        return stmt;
-    }
-    if let Some(rest) = trimmed.strip_prefix("ensure ") {
-        if let Some((condition, message)) = split_top_level_punctuation_once(rest, ',') {
-            return Stmt::Ensure {
-                condition: parse_expr_lossy(condition.trim()),
-                message: parse_expr_lossy(message.trim()),
-            };
+        CstStmtKind::Wait => trimmed
+            .strip_prefix("wait ")
+            .map(str::trim)
+            .map_or_else(|| raw_stmt(trimmed), parse_wait_stmt),
+        CstStmtKind::Let => parse_let_stmt(trimmed),
+        CstStmtKind::DeferBlock | CstStmtKind::Braced | CstStmtKind::UnsafeLifetime => {
+            parse_braced_stmt(trimmed).unwrap_or_else(|| raw_stmt(trimmed))
         }
-        return Stmt::Raw(trimmed.to_owned());
-    }
-    if let Some(rest) = trimmed.strip_prefix("on ") {
-        if let Some((head, action)) = split_top_level_punctuation_sequence_once(rest, &["=", ">"]) {
-            return Stmt::On {
-                trigger: parse_trigger_pattern(head.trim()),
-                body: vec![parse_stmt(action.trim())],
-            };
+        CstStmtKind::Defer => trimmed.strip_prefix("defer ").map_or_else(
+            || raw_stmt(trimmed),
+            |rest| Stmt::Defer {
+                outcome: DeferOutcome::Always,
+                expr: parse_expr_lossy(rest.trim()),
+            },
+        ),
+        CstStmtKind::ControlTransfer => {
+            parse_control_transfer_stmt(trimmed).unwrap_or_else(|| raw_stmt(trimmed))
         }
-        return Stmt::Raw(trimmed.to_owned());
+        CstStmtKind::Ensure => parse_ensure_stmt(trimmed),
+        CstStmtKind::On => parse_on_stmt(trimmed),
+        CstStmtKind::PresentationCall => {
+            parse_presentation_special_call(trimmed).map_or_else(|| raw_stmt(trimmed), Stmt::Expr)
+        }
+        CstStmtKind::ScenarioCommand => {
+            parse_word_scenario_command(trimmed, TextRange::new(0, trimmed.len()))
+                .map_or_else(|| raw_stmt(trimmed), Stmt::Command)
+        }
+        CstStmtKind::AmbiguousBlockHead => raw_stmt(trimmed),
+        CstStmtKind::Expr => Stmt::Expr(parse_expr_lossy(trimmed)),
     }
-    if trimmed.starts_with("unsafe lifetime ")
-        && trimmed.contains('{')
-        && let Some(stmt) = parse_unsafe_lifetime_inline(trimmed)
-    {
-        return stmt;
+}
+
+fn raw_stmt(source: &str) -> Stmt {
+    Stmt::Raw(RawSyntax::stmt(
+        source,
+        Some(TextRange::new(0, source.len())),
+    ))
+}
+
+fn parse_let_stmt(trimmed: &str) -> Stmt {
+    let Some(rest) = trimmed.strip_prefix("let ") else {
+        return raw_stmt(trimmed);
+    };
+    if let Some((pattern, expr)) = split_top_level_binding(rest) {
+        let (pattern, ty) = parse_binding_pattern(pattern);
+        Stmt::Let {
+            pattern,
+            ty,
+            expr: parse_expr_with_inline_line_plan(expr.trim()),
+        }
+    } else {
+        raw_stmt(trimmed)
     }
-    if let Some(stmt) = parse_braced_stmt(trimmed) {
-        return stmt;
+}
+
+fn parse_ensure_stmt(trimmed: &str) -> Stmt {
+    let Some(rest) = trimmed.strip_prefix("ensure ") else {
+        return raw_stmt(trimmed);
+    };
+    if let Some((condition, message)) = split_top_level_punctuation_once(rest, ',') {
+        Stmt::Ensure {
+            condition: parse_expr_lossy(condition.trim()),
+            message: parse_expr_lossy(message.trim()),
+        }
+    } else {
+        raw_stmt(trimmed)
     }
-    if let Some(expr) = parse_presentation_special_call(trimmed) {
-        return Stmt::Expr(expr);
+}
+
+fn parse_on_stmt(trimmed: &str) -> Stmt {
+    let Some(rest) = trimmed.strip_prefix("on ") else {
+        return raw_stmt(trimmed);
+    };
+    if let Some((head, action)) = split_top_level_punctuation_sequence_once(rest, &["=", ">"]) {
+        Stmt::On {
+            trigger: parse_trigger_pattern(head.trim()),
+            body: vec![parse_stmt(action.trim())],
+        }
+    } else {
+        raw_stmt(trimmed)
     }
-    if let Some(command) = parse_word_scenario_command(trimmed, TextRange::new(0, trimmed.len())) {
-        return Stmt::Command(command);
-    }
-    if matches!(trimmed.split_whitespace().next(), Some("match" | "if")) {
-        return Stmt::Raw(trimmed.to_owned());
-    }
-    Stmt::Expr(parse_expr_lossy(trimmed))
 }
 
 fn parse_wait_stmt(rest: &str) -> Stmt {
@@ -6359,7 +6379,7 @@ fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {
     }
     if let Some(rest) = head.strip_prefix("for ") {
         let (pattern, Some(source)) = split_top_level_keyword_once(rest, "in") else {
-            return Some(Stmt::Raw(trimmed.to_owned()));
+            return Some(raw_stmt(trimmed));
         };
         return Some(Stmt::For {
             pattern: parse_pattern(pattern.trim()),
@@ -6371,15 +6391,6 @@ fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {
         expr: parse_expr_lossy(expr.trim()),
         arms: parse_stmt_match_arms(body),
     })
-}
-
-fn parse_unsafe_lifetime_inline(trimmed: &str) -> Option<Stmt> {
-    let (head, body) = split_brace_item(trimmed)?;
-    if !head.starts_with("unsafe lifetime ") {
-        return None;
-    }
-    let mut errors = Vec::new();
-    Some(parse_unsafe_lifetime_block(head, body, 0, &mut errors))
 }
 
 fn parse_unsafe_lifetime_block(
@@ -6437,7 +6448,7 @@ fn parse_unsafe_lifetime_block(
 fn parse_braced_while_let_stmt(head: &str, body: &str) -> Option<Stmt> {
     let rest = head.strip_prefix("while let ")?;
     let Some((pattern, expr_and_guard)) = split_top_level_binding(rest) else {
-        return Some(Stmt::Raw(format!("{head} {{ {body} }}")));
+        return Some(raw_stmt(&format!("{head} {{ {body} }}")));
     };
     let (expr, guard) = split_pattern_guard(expr_and_guard.trim());
     Some(Stmt::WhileLet {

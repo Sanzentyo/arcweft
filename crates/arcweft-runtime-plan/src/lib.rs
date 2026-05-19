@@ -1159,7 +1159,9 @@ impl LinePlanGraphLowerer {
             }
             Stmt::Raw(raw) => {
                 self.errors.push(LinePlanLowerError::new(format!(
-                    "raw statement cannot be lowered: {raw}"
+                    "raw {:?} recovery node cannot be lowered: {}",
+                    raw.family(),
+                    raw.source()
                 )));
                 Vec::new()
             }

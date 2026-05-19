@@ -756,7 +756,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             Stmt::Break { expr: None, .. } | Stmt::Continue { .. } => {}
-            Stmt::Raw(raw) => self.add_raw_obligation(format!("raw statement: {raw}"), None),
+            Stmt::Raw(raw) => self.add_raw_obligation(
+                format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
+                raw.range().map(|range| format!("{range:?}")),
+            ),
         }
     }
 

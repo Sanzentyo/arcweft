@@ -139,6 +139,14 @@ Syntax parser:
   family routing for structured blocks, special `let` forms, await wait-views,
   includes, old `@choice` recovery, and generic typed statements no longer lives
   as one parser-local string-dispatch chain.
+- Generic statement parsing now starts from CST-owned `CstStmtKind`
+  classification for lifetime registry writes, `wait`, `let`, `defer`,
+  control transfer, `ensure`, `on`, unsafe-lifetime audit blocks, braced
+  statements, presentation calls, scenario commands, and expression-like
+  statements. Unsupported statements recover as `RawSyntaxFamily::Stmt` with
+  source text and range metadata, so later semantic, verifier, runtime-plan,
+  CLI, and LSP passes can report the typed recovery node without rescanning
+  source snippets.
 - Balanced brace-block collection now lives on `CstLineEvents` as a
   `CstBlockEvent` collector. It covers ordinary first-top-level-open blocks and
   function-body blocks, including body-open recovery, so flow/function/item
@@ -271,7 +279,7 @@ Syntax parser:
 - Background task-style `await expr`, `try await expr`, and `await? expr` without a wait-view block parse as structured expression AST. The minimal checker requires the awaited expression to have `Need<T, E>` type, returns `Result<T, E>` for plain `await`, and unwraps to `T` for `try await` / `await?`.
 - Ordinary Rust-like propagation syntax is represented in expression AST. `expr?` and prefix `try expr` parse as structured try expressions, participate in symbol collection, and the minimal checker unwraps `Result<T, E>`-like types while rejecting non-result expressions.
 - Flow/function contract clauses (`requires`, `ensures`, `invariant`, `assume`, `reads`, `effects`, `no_effect`, `modifies`, `decreases`) are parsed separately from the body and participate in symbol collection and type checking where applicable.
-- `lower_to_hir` verifies that parsed edge-case flow syntax can be converted to HIR-facing structures and rejects raw flow recovery nodes that still need parser coverage. Flow, choice, choice-plan, and line-plan recovery nodes preserve source text, grammar family, and source span metadata through typed syntax so diagnostics, verifier obligations, and LSP actions do not need to re-scan raw source.
+- `lower_to_hir` verifies that parsed edge-case flow syntax can be converted to HIR-facing structures and rejects raw flow recovery nodes that still need parser coverage. Flow, statement, choice, choice-plan, and line-plan recovery nodes preserve source text, grammar family, and source span metadata through typed syntax so diagnostics, verifier obligations, and LSP actions do not need to re-scan raw source.
 - `collect_symbol_uses` walks HIR without reparsing source snippets so name resolution can see dialogue callees, entity references, paths, calls, methods, dialogue text expressions, timed cues, and choice-condition references.
 - `registry_from_hir` and `validate_hir_references` provide minimal name resolution over HIR declarations and entity references.
 - `validate_typecheck_ready` rejects lowered HIR that still contains raw expression fragments before the future type checker sees it.

@@ -111,10 +111,12 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   scans.
 - Parser recovery for flow items, choice-body items, choice-plan items, and
   line-plan items now uses a typed `RawSyntax` recovery node with grammar
-  family and source span metadata. These nodes are diagnostics carriers only:
-  HIR lowering rejects raw flow recovery nodes, and semantic/verifier passes
-  report raw line/choice recovery as typed obligations instead of treating it
-  as executable syntax.
+  family and source span metadata. Statement parsing also enters through a
+  CST-owned `CstStmtKind` classifier, and remaining unsupported statements use
+  `RawSyntaxFamily::Stmt` instead of opaque strings. These nodes are
+  diagnostics carriers only: HIR lowering rejects raw flow recovery nodes, and
+  semantic/verifier/runtime-plan passes report raw recovery as typed
+  obligations instead of treating it as executable syntax.
 - CST reference helpers now keep absolute `EntityRef`, ID-context `IdRef`, and
   family-relative `EntityRefSyntax` separate. `@.suffix`, `@..suffix`,
   `@...suffix`, `@super...`, and ID-context family forms such as

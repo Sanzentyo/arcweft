@@ -112,6 +112,7 @@ pub enum RawSyntaxFamily {
     ChoiceItem,
     ChoicePlanItem,
     LinePlanItem,
+    Stmt,
 }
 
 /// Top-level `proof @proof.id { ... }` item kept for verifier lowering.
@@ -813,7 +814,7 @@ pub enum Stmt {
         label: Option<String>,
     },
     Expr(Expr),
-    Raw(String),
+    Raw(RawSyntax),
 }
 
 /// A scoped VM child task owned by the nearest runtime scope.
@@ -3642,6 +3643,10 @@ impl RawSyntax {
 
     pub(crate) fn line_plan_item(source: impl Into<String>, range: Option<TextRange>) -> Self {
         Self::new(RawSyntaxFamily::LinePlanItem, source, range)
+    }
+
+    pub(crate) fn stmt(source: impl Into<String>, range: Option<TextRange>) -> Self {
+        Self::new(RawSyntaxFamily::Stmt, source, range)
     }
 
     pub const fn family(&self) -> RawSyntaxFamily {

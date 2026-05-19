@@ -1190,7 +1190,9 @@ impl TypeChecker<'_> {
             Stmt::Break { label, expr } => self.check_break_stmt(label.as_deref(), expr.as_ref()),
             Stmt::Continue { label } => self.check_continue_stmt(label.as_deref()),
             Stmt::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
-                "raw statement is not type-checkable: {raw}"
+                "raw {:?} recovery node is not type-checkable: {}",
+                raw.family(),
+                raw.source()
             ))),
         }
     }
@@ -3700,7 +3702,9 @@ fn stmt_diverges(stmt: &Stmt) -> bool {
         | Stmt::Fail(_)
         | Stmt::Bail(_) => true,
         Stmt::Raw(raw) => {
-            raw.starts_with("break") || raw.starts_with("panic ") || raw.starts_with("fail ")
+            raw.source().starts_with("break")
+                || raw.source().starts_with("panic ")
+                || raw.source().starts_with("fail ")
         }
         _ => false,
     }

@@ -597,8 +597,15 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         }
         Stmt::Match { expr, arms } => collect_stmt_match(expr, arms, uses),
         Stmt::Break { expr: None, .. } | Stmt::Continue { .. } => {}
-        Stmt::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
+        Stmt::Raw(raw) => collect_raw_stmt(raw, uses),
     }
+}
+
+fn collect_raw_stmt(raw: &arcweft_lang_syntax::RawSyntax, uses: &mut Vec<SymbolUse>) {
+    uses.push(SymbolUse::new(
+        SymbolUseKind::RawExpr,
+        raw.source().to_owned(),
+    ));
 }
 
 fn collect_unlowered_await_binding(

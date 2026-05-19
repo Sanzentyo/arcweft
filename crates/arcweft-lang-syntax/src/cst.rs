@@ -195,6 +195,25 @@ pub(crate) enum CstLetFlowItemKind {
     Plain,
 }
 
+/// Typed statement head classification used before AST construction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CstStmtKind {
+    LifetimeSet,
+    Wait,
+    Let,
+    DeferBlock,
+    Defer,
+    ControlTransfer,
+    Ensure,
+    On,
+    UnsafeLifetime,
+    Braced,
+    PresentationCall,
+    ScenarioCommand,
+    AmbiguousBlockHead,
+    Expr,
+}
+
 /// Rule used when collecting a balanced brace block from line events.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CstBlockOpenRule {
@@ -512,6 +531,87 @@ impl CstLine {
     pub const fn end(&self) -> usize {
         self.end
     }
+}
+
+pub(crate) fn classify_stmt(trimmed: &str) -> CstStmtKind {
+    if looks_like_lifetime_set(trimmed) {
+        CstStmtKind::LifetimeSet
+    } else if trimmed.starts_with("wait ") {
+        CstStmtKind::Wait
+    } else if trimmed.starts_with("let ") {
+        CstStmtKind::Let
+    } else if trimmed.starts_with("defer ") && trimmed.contains('{') {
+        CstStmtKind::DeferBlock
+    } else if trimmed.starts_with("defer ") {
+        CstStmtKind::Defer
+    } else if looks_like_control_transfer(trimmed) {
+        CstStmtKind::ControlTransfer
+    } else if trimmed.starts_with("ensure ") {
+        CstStmtKind::Ensure
+    } else if trimmed.starts_with("on ") {
+        CstStmtKind::On
+    } else if trimmed.starts_with("unsafe lifetime ") && trimmed.contains('{') {
+        CstStmtKind::UnsafeLifetime
+    } else if looks_like_braced_stmt(trimmed) {
+        CstStmtKind::Braced
+    } else if looks_like_presentation_special_call(trimmed) {
+        CstStmtKind::PresentationCall
+    } else if looks_like_word_scenario_command(trimmed) {
+        CstStmtKind::ScenarioCommand
+    } else if matches!(trimmed.split_whitespace().next(), Some("match" | "if")) {
+        CstStmtKind::AmbiguousBlockHead
+    } else {
+        CstStmtKind::Expr
+    }
+}
+
+fn looks_like_lifetime_set(trimmed: &str) -> bool {
+    let Some((target, _)) = split_top_level_punctuation_sequence_once(trimmed, &["<", "-"]) else {
+        return false;
+    };
+    target.trim_start().starts_with('\'')
+}
+
+fn looks_like_control_transfer(trimmed: &str) -> bool {
+    trimmed == "break"
+        || trimmed == "continue"
+        || trimmed.starts_with("continue ")
+        || trimmed.starts_with("out ")
+        || trimmed.starts_with("break ")
+        || [
+            "return ", "goto ", "yield ", "panic ", "fail ", "bail ", "close ", "select ",
+        ]
+        .iter()
+        .any(|prefix| trimmed.starts_with(prefix))
+}
+
+fn looks_like_braced_stmt(trimmed: &str) -> bool {
+    find_top_level_punctuation(trimmed, '{').is_some()
+}
+
+fn looks_like_presentation_special_call(trimmed: &str) -> bool {
+    trimmed.starts_with("ref bg")
+        || trimmed.starts_with("ref show")
+        || trimmed.starts_with("clear bg")
+}
+
+fn looks_like_word_scenario_command(trimmed: &str) -> bool {
+    matches!(
+        trimmed.split_whitespace().next(),
+        Some(
+            "scene"
+                | "bg"
+                | "show"
+                | "hide"
+                | "play"
+                | "stop"
+                | "camera"
+                | "focus"
+                | "wait"
+                | "progress"
+                | "text"
+        )
+    )
 }
 
 fn classify_line(text: &str) -> CstLineKind {

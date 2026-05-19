@@ -9,7 +9,8 @@ fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::TypedSyntaxTree {
 }
 
 use arcweft_lang_syntax::{
-    BinaryOp, Expr, FlowItem, Item, RawSyntaxFamily, TypeRef, UnaryOp, parse_expr, parse_type_ref,
+    BinaryOp, Expr, FlowItem, Item, RawSyntaxFamily, Stmt, TypeRef, UnaryOp, parse_expr,
+    parse_type_ref,
 };
 
 fn field_path(expr: &Expr) -> Option<String> {
@@ -179,5 +180,25 @@ flow @flow.raw_example {
     };
     assert_eq!(raw.family(), RawSyntaxFamily::FlowItem);
     assert_eq!(raw.source(), "unknown surface form");
+    assert!(raw.range().is_some());
+}
+
+#[test]
+fn statement_recovery_nodes_keep_family_and_source_range() {
+    let tree = parse_ok(
+        r"
+fn bad_stmt() -> Unit {
+    ensure ready
+}
+",
+    );
+    let Item::Function(function) = &tree.items()[0] else {
+        panic!("expected function");
+    };
+    let Stmt::Raw(raw) = &function.body_statements()[0] else {
+        panic!("expected statement recovery node");
+    };
+    assert_eq!(raw.family(), RawSyntaxFamily::Stmt);
+    assert_eq!(raw.source(), "ensure ready");
     assert!(raw.range().is_some());
 }
