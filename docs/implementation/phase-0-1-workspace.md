@@ -54,10 +54,12 @@ lowering entry points into `lower.rs`, and lowering responsibilities into
 `lower_context.rs`. Downstream crates no longer rely on flat crate-root HIR
 compatibility re-exports; they import through `model`, `lower`, `id_context`,
 or the namespaced `syntax` module.
-`arcweft-lang-syntax` has begun its AST family split with `ast/proof.rs` for
-proof/test/bench declarations and `ast/source.rs` for declarative source-stream
-syntax. Entity/reference ID syntax is now isolated in `ast/ids.rs`.
-Common range/module/use/doc primitives are isolated in `ast/common.rs`.
+`arcweft-lang-syntax` has begun its AST family split with `ast/items.rs` for
+top-level tree/item/recovery wrappers, `ast/common.rs` for range/module/use/doc
+primitives, `ast/ids.rs` for entity/reference IDs, `ast/dialogue.rs` for
+dialogue surface syntax, `ast/line_plan.rs` for line-plan syntax,
+`ast/choice.rs` for choice syntax, `ast/proof.rs` for proof/test/bench
+declarations, and `ast/source.rs` for declarative source-stream syntax.
 
 ## Implemented Types
 
