@@ -52,7 +52,9 @@ language-family checker split now includes `choice`, `expr`, `flow`,
 `line_plan`, `source`, `stmt`, `effects`, `module`, and `borrow_state` child modules.
 `arcweft-runtime-plan` is split across lowering-family
 modules including `errors`, `expr`, `flow`, `labels`, `line_task`, `pattern`,
-`source`, and `stream`.
+`source`, and `stream`. The crate root is only a public module namespace;
+whole-runtime-plan lowering lives in `flow::lower_runtime_plan`, and dialogue
+line-plan graph lowering lives in `line_task::lower_line_task_groups`.
 The application-facing `arcweft` facade exposes crate-family namespaces instead
 of `arcweft::prelude::*`, so consumers can import through `arcweft::core`,
 `arcweft::dialogue`, `arcweft::presentation`, `arcweft::adt`,

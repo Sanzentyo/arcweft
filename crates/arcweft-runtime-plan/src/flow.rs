@@ -3,23 +3,27 @@
 use crate::errors::{LinePlanLowerError, RuntimePlanLowerError};
 use crate::expr::{lower_runtime_expr_strict, runtime_call_effect};
 use crate::labels::expr_label;
+use crate::line_task::{lower_line_plan, lower_line_plan_statements};
 use crate::pattern::lower_runtime_pattern;
-use crate::{lower_line_plan, lower_line_plan_statements};
+use crate::source::lower_source_plan;
+use crate::stream::lower_stream_function;
 use arcweft_core::effect::{LineEffectRequest, RuntimeCommand};
 use arcweft_core::line_task::{LineOutRequest, LineTaskGroup};
 use arcweft_core::plan::{
     ChoiceRuntimeOption, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId, RuntimeMatchArm,
+    RuntimePlan,
 };
 use arcweft_core::task::{AwaitTarget, NeedId, TaskId};
 use arcweft_core::value::{RuntimeExpr, RuntimeValue};
 use arcweft_lang_hir::model::{
     HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirLoop, HirMatch,
-    HirModule, HirScopeExpr,
+    HirModule, HirScopeExpr, HirTopLevelDecl,
 };
 use arcweft_lang_hir::syntax::ast::{
     choice::ChoiceAction,
     flow::{AwaitBranchKind, FlowItem, Stmt},
     ids::{EntityRef, EntityRefSyntax},
+    items::FunctionKind,
     pattern::Pattern,
 };
 use arcweft_lang_hir::syntax::expr::Expr;
@@ -27,6 +31,33 @@ use arcweft_lang_hir::syntax::expr::Expr;
 pub(crate) struct LoweredRuntimeFlows {
     pub(crate) flows: Vec<RuntimeFlow>,
     pub(crate) line_task_groups: Vec<LineTaskGroup>,
+}
+
+/// Lowers checked HIR flows to the Sans I/O core runtime program.
+///
+/// This pass is intentionally stricter than line-task-only lowering: it must
+/// not silently skip flow syntax because the engine would otherwise execute a
+/// different story than the source describes.
+pub fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<RuntimePlanLowerError>> {
+    let lowered_flows = lower_runtime_flows(module)?;
+    let entry = lowered_flows.flows.first().map(|flow| flow.id.clone());
+    let stream_plans = module
+        .functions()
+        .iter()
+        .filter(|function| function.kind() == FunctionKind::Stream)
+        .map(lower_stream_function)
+        .collect::<Vec<_>>();
+    let source_plans = module
+        .declarations()
+        .iter()
+        .filter_map(|decl| match decl {
+            HirTopLevelDecl::Source(source) => Some(lower_source_plan(source)),
+            _ => None,
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    RuntimePlan::new(entry, lowered_flows.flows, lowered_flows.line_task_groups)
+        .map(|plan| plan.with_generation_plans(stream_plans, source_plans))
+        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
 }
 
 /// Lowers HIR flow bodies into executable Sans I/O flow operations.

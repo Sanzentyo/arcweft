@@ -16,7 +16,7 @@ validate_hir_references
 lint_id_policy
 validate_typecheck_ready
 typecheck_hir
-lower_line_task_groups
+line_task::lower_line_task_groups
 verify_module --mode dev
 ```
 

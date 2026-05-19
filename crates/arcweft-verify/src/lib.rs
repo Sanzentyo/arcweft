@@ -27,7 +27,7 @@ use arcweft_lang_sema::{
         analyze_semantics,
     },
 };
-use arcweft_runtime_plan::lower_line_task_groups;
+use arcweft_runtime_plan::line_task::lower_line_task_groups;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use thiserror::Error;

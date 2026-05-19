@@ -179,9 +179,9 @@ they affect parser, HIR, formatter, LSP, or CLI work.
 - `pro_review13.md`: adopted Phase 1.5 as the next execution direction. The
   CLI now provides `arcw check <file.awft> [--json]` and runs parse, HIR lowering,
   reference validation, ID policy lints, typecheck readiness, minimal typecheck,
-  and line-plan runtime lowering. `arcweft-runtime-plan` exposes
+  and line-plan runtime lowering. `arcweft-runtime-plan::line_task` exposes
   `lower_line_task_groups`, which converts checked dialogue line plans into
-  `arcweft-core::LineTaskGroup` values without renderer/audio/device backends.
+  `arcweft-core::line_task::LineTaskGroup` values without renderer/audio/device backends.
   Scoped `defer` lowers as cleanup on the current runtime scope rather than as
   thread-only syntax.
 - Phase 1.5 line-plan lowering now preserves line options, line-local `let`
@@ -212,7 +212,7 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   let/let-else, if/if-let, match, loop/while/while-let/for, scope, goto, and
   return runtime nodes, runs scope cleanup stacks, and leaves actual
   native/cooperative/web execution to adapters.
-- `arcweft-runtime-plan` now exposes `lower_runtime_plan`, which converts
+- `arcweft-runtime-plan::flow` now exposes `lower_runtime_plan`, which converts
   checked HIR flows to core `RuntimePlan` data for the Phase 2.0 execution
   slice. Runtime lowering supports dialogue, `choice`, `await with`, typed
   `let`, `let else`, structured `if`, `if let`, `match`, `loop`, `while`,
@@ -386,8 +386,10 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   `arcweft-runtime-plan` is split into `errors`,
   `expr`, `flow`, `labels`, `line_task`, `pattern`, `source`, and `stream`
   modules for lowering diagnostics, runtime expression/effect lowering, flow
-  lowering, shared textual label helpers, lowered line-task metadata, runtime
-  pattern lowering, source declaration lowering, and stream-function lowering.
+  and whole-runtime-plan lowering, shared textual label helpers, lowered
+  line-task metadata and line-plan graph lowering, runtime pattern lowering,
+  source declaration lowering, and stream-function lowering. The crate root is
+  now only a public module namespace.
 - `arcweft-lang-hir` now exposes responsibility modules instead of flat
   compatibility exports: public consumers import HIR data through `model`,
   lowering through `lower`, ID-context tooling through `id_context`, and syntax

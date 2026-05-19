@@ -44,7 +44,9 @@ pub(super) use arcweft_lang_syntax::{
     text::parse_dialogue_tokens,
     types::{TypeRef, parse_fn_signature, parse_type_ref},
 };
-pub(super) use arcweft_runtime_plan::{lower_line_task_groups, lower_runtime_plan};
+pub(super) use arcweft_runtime_plan::{
+    flow::lower_runtime_plan, line_task::lower_line_task_groups,
+};
 
 pub(super) fn parse_ok(
     source: impl Into<String>,

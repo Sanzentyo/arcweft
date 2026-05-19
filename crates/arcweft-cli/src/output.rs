@@ -7,8 +7,8 @@ use arcweft_core::plan::FlowEvent;
 use arcweft_core::source::{SourceEvent, SourceEventKind, SourcePolicy};
 use arcweft_core::stream::{StreamEvent, StreamOp};
 use arcweft_core::task::TaskSpec;
+use arcweft_runtime_plan::flow::lower_runtime_plan;
 use arcweft_runtime_plan::line_task::LoweredLineTaskGroup;
-use arcweft_runtime_plan::lower_runtime_plan;
 use arcweft_test::{ScriptBench, ScriptTest};
 use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy, verify_module};
 
