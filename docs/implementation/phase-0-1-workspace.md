@@ -54,6 +54,9 @@ lowering entry points into `lower.rs`, and lowering responsibilities into
 `lower_context.rs`. Downstream crates no longer rely on flat crate-root HIR
 compatibility re-exports; they import through `model`, `lower`, `id_context`,
 or the namespaced `syntax` module.
+`arcweft-lang-syntax` has begun its AST family split with `ast/proof.rs` for
+proof/test/bench declarations and `ast/source.rs` for declarative source-stream
+syntax.
 
 ## Implemented Types
 
@@ -370,7 +373,7 @@ Not implemented in this milestone:
 - full completion of the `pro_review21.md` file split plan: `arcweft-lang-sema`
   still needs deeper expression call/control-helper extraction after the
   expression dispatch/value-helper split; syntax still needs larger AST/parser
-  family splits.
+  family splits beyond the initial proof/source AST modules.
 - inference, overload resolution, traits, generics, contracts, and full
   type-directed effect checking
 - unbounded/solver-backed loop CFG and full nested-scope borrow lifetime
