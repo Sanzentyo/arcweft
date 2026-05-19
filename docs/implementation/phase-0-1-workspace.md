@@ -57,6 +57,7 @@ or the namespaced `syntax` module.
 `arcweft-lang-syntax` has begun its AST family split with `ast/proof.rs` for
 proof/test/bench declarations and `ast/source.rs` for declarative source-stream
 syntax. Entity/reference ID syntax is now isolated in `ast/ids.rs`.
+Common range/module/use/doc primitives are isolated in `ast/common.rs`.
 
 ## Implemented Types
 
