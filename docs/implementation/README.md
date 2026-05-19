@@ -390,7 +390,8 @@ they affect parser, HIR, formatter, LSP, or CLI work.
   and `lower_context` internals.
 - `arcweft-lang-syntax` has started the AST family split requested by
   `pro_review21.md`: proof/test/bench declarations live in `ast/proof.rs`, and
-  declarative source-stream syntax lives in `ast/source.rs`.
+  declarative source-stream syntax lives in `ast/source.rs`. Entity/reference
+  ID syntax now lives in `ast/ids.rs`.
 - Continue migrating typed AST/HIR/checking APIs into semantic views or lowering
   outputs over the CST instead of extending the current line parser.
 - Keep `.awfb`, schemas, manifests, bytecode, and save/debug snapshots as pure

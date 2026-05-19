@@ -56,7 +56,7 @@ compatibility re-exports; they import through `model`, `lower`, `id_context`,
 or the namespaced `syntax` module.
 `arcweft-lang-syntax` has begun its AST family split with `ast/proof.rs` for
 proof/test/bench declarations and `ast/source.rs` for declarative source-stream
-syntax.
+syntax. Entity/reference ID syntax is now isolated in `ast/ids.rs`.
 
 ## Implemented Types
 
