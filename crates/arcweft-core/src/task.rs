@@ -25,6 +25,7 @@ pub struct TaskPriority(pub i32);
 pub struct AwaitTarget {
     pub need: NeedId,
     pub task: TaskId,
+    pub request: HostTaskRequest,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -218,6 +219,16 @@ impl TaskSpec {
     }
 }
 
+impl AwaitTarget {
+    pub fn new(need: NeedId, task: TaskId, request: HostTaskRequest) -> Self {
+        Self {
+            need,
+            task,
+            request,
+        }
+    }
+}
+
 impl HostTaskRequest {
     pub fn custom(
         capability: impl Into<String>,
@@ -259,6 +270,24 @@ impl HostTaskRequest {
                 operation,
                 ..
             } => format!("{}.{}", capability.0, operation),
+        }
+    }
+
+    pub const fn task_class(&self) -> TaskClass {
+        match self {
+            Self::FileReadText(_)
+            | Self::FileReadBytes(_)
+            | Self::FileWriteText(_)
+            | Self::FileWriteBytes(_)
+            | Self::HttpFetch(_)
+            | Self::HttpRespond(_)
+            | Self::ProcessRun(_) => TaskClass::Io,
+            Self::AssetLoad(_) => TaskClass::AssetDecode,
+            Self::ShaderCompile(_) => TaskClass::ShaderCompile,
+            Self::AudioDecode(_) => TaskClass::AudioDecode,
+            Self::TtsSynthesis(_) => TaskClass::TtsSynthesis,
+            Self::WasmCall(_) => TaskClass::WasmCall,
+            Self::Custom { .. } => TaskClass::Background,
         }
     }
 }

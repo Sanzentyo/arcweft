@@ -489,6 +489,78 @@ flow @flow.alice_intro alice_intro {
 }
 
 #[test]
+fn runtime_plan_lowers_await_calls_to_typed_host_requests() {
+    let tree = parse_ok(
+        r#"
+flow @flow.loading loading {
+    try await fs.read_text("game/config.awft") with { pending p => progress.set(p.ratio) }
+    try await http.fetch("https://example.invalid/api", method = "POST", body = "payload") with { pending p => progress.set(p.ratio) }
+    try await asset.image(@asset.bg.room) with { pending p => progress.set(p.ratio) }
+    try await shader.compile(@shader.fade, entry = "main") with { pending p => progress.set(p.ratio) }
+    try await audio.decode(@voice.alice.opening) with { pending p => progress.set(p.ratio) }
+    try await tts.synthesize("hello", voice = "alice") with { pending p => progress.set(p.ratio) }
+    try await process.run("arcw", args = ["check", "game.awft"]) with { pending p => progress.set(p.ratio) }
+    try await wasm.call("module", "function", 1) with { pending p => progress.set(p.ratio) }
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("typed host request fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("typed host requests lower");
+    let requests = plan.flows[0]
+        .ops
+        .iter()
+        .map(|op| match op {
+            FlowOp::Await { target, .. } => &target.request,
+            other => panic!("expected await op, got {other:?}"),
+        })
+        .collect::<Vec<_>>();
+
+    assert!(matches!(
+        requests[0],
+        HostTaskRequest::FileReadText(FileReadTextRequest { path }) if path == "game/config.awft"
+    ));
+    assert!(matches!(
+        requests[1],
+        HostTaskRequest::HttpFetch(HttpFetchRequest { url, method, body: Some(body), .. })
+            if url == "https://example.invalid/api"
+                && method == "POST"
+                && body.value() == &RuntimeValue::String("payload".to_owned())
+    ));
+    assert!(matches!(
+        requests[2],
+        HostTaskRequest::AssetLoad(AssetRequest { id, kind })
+            if id == "asset.bg.room" && kind == "image"
+    ));
+    assert!(matches!(
+        requests[3],
+        HostTaskRequest::ShaderCompile(ShaderRequest { id, entry: Some(entry) })
+            if id == "shader.fade" && entry == "main"
+    ));
+    assert!(matches!(
+        requests[4],
+        HostTaskRequest::AudioDecode(AudioDecodeRequest { id }) if id == "voice.alice.opening"
+    ));
+    assert!(matches!(
+        requests[5],
+        HostTaskRequest::TtsSynthesis(TtsRequest { voice: Some(voice), text })
+            if voice == "alice" && text == "hello"
+    ));
+    assert!(matches!(
+        requests[6],
+        HostTaskRequest::ProcessRun(ProcessRunRequest { program, args, .. })
+            if program == "arcw" && args == &vec!["check".to_owned(), "game.awft".to_owned()]
+    ));
+    assert!(matches!(
+        requests[7],
+        HostTaskRequest::WasmCall(WasmCallRequest { module, function, args })
+            if module == "module"
+                && function == "function"
+                && args == &vec![RuntimePayload::new(RuntimeValue::Int(1))]
+    ));
+}
+
+#[test]
 fn runtime_plan_lowering_preserves_let_and_dynamic_goto() {
     let tree = parse_ok(
         r"

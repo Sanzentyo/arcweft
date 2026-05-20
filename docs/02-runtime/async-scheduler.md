@@ -147,9 +147,11 @@ AwaitView(load_avatar(user)) {
 ```
 
 In the Phase 2.0 Sans I/O runtime slice, `await ... with` lowers to a
-`FlowOp::Await` containing an `AwaitTarget` and pending effects. Entering the op
-emits a `TaskSpec` and switches `FlowFiberStatus` to `Waiting`. The runtime
-resumes only when a matching `TaskEvent` arrives in a later `RuntimeStepInput`.
+`FlowOp::Await` containing an `AwaitTarget` and pending effects. `AwaitTarget`
+stores the `NeedId`, `TaskId`, and typed `HostTaskRequest` that the host adapter
+must execute. Entering the op emits a `TaskSpec` using that request and switches
+`FlowFiberStatus` to `Waiting`. The runtime resumes only when a matching
+`TaskEvent` arrives in a later `RuntimeStepInput`.
 
 ```text
 TaskEventKind::Ready(value)    -> resume the flow after the await op
@@ -161,3 +163,9 @@ TaskEventKind::Cancelled       -> mark the fiber failed
 Actual asset loading, worker execution, clocks, renderer progress UI, and audio
 work remain outside `arcweft-core`. Core only produces deterministic task
 requests and consumes deterministic task events.
+
+Recognized capability calls such as `fs.read_text(...)`, `http.fetch(...)`,
+`asset.image(...)`, `shader.compile(...)`, `audio.decode(...)`,
+`tts.synthesize(...)`, `process.run(...)`, and `wasm.call(...)` lower to
+dedicated `HostTaskRequest` variants. Unknown awaited call namespaces lower to
+`HostTaskRequest::Custom` with structured argument payloads.

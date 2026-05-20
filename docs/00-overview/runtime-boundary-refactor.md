@@ -304,6 +304,24 @@ adapter-facing labels            -> only for observation/debug payloads
 
 Do not allow arbitrary lossy string labels in executable value positions.
 
+Current Phase 2.0 lowering now attaches a typed `HostTaskRequest` directly to
+`AwaitTarget` for recognized awaited capability calls:
+
+```text
+fs.read_text / fs.read_bytes / fs.write_text / fs.write_bytes
+http.fetch / http.respond
+process.run
+asset.load / asset.<kind> / voice.load
+shader.compile
+audio.decode
+tts.synthesize
+wasm.call
+```
+
+Unknown awaited call namespaces remain `HostTaskRequest::Custom` so adapters
+still receive structured capability, operation, and argument payload data
+without forcing `arcweft-core` to depend on host I/O.
+
 ### `crates/arcweft-runtime-plan/src/flow.rs`
 
 `lower_runtime_plan` should no longer pick the first flow as implicit entry once `entry` exists. It should lower entries into `RuntimePlan.entries` and fail if the selected entry is missing.
@@ -326,7 +344,7 @@ pub struct RuntimePlan {
 arcw run <file.awft> --entry @entry.main --mode game --steps 8
 arcw run <file.awft> --entry @entry.main --mode drain --max-ops 10000
 arcw cli <file.awft> --entry @entry.main -- ARGS...
-arcw serve <file.awft> --entry @entry.http --adapter native-http
+arcw serve <file.awft> --entry @entry.http --adapter native-http --json
 ```
 
 Replace `RuntimeRunOptions.frames` with:
@@ -588,7 +606,7 @@ These encode intentionally rejected constructs, such as absolute OS paths or old
 - [x] Add `--entry`.
 - [x] Rename runtime report fields from frames to steps.
 - [x] Add `arcw cli` after entry/capability grammar lands.
-- [ ] Add `arcw serve` after server adapter lands.
+- [x] Add `arcw serve` as a Sans I/O server-entry route-plan command.
 
 ### Parser / language
 
@@ -605,8 +623,9 @@ These encode intentionally rejected constructs, such as absolute OS paths or old
 - [x] Do not infer runtime entry from first flow once `entry` exists.
 - [x] Add `RuntimePlan.entries`.
 - [x] Add pure function call runtime lowering.
-- [ ] Add typed `HostTaskRequest` lowering for file/HTTP/asset/shader/audio/TTS/process.
+- [x] Add typed `HostTaskRequest` lowering for file/HTTP/asset/shader/audio/TTS/process.
 - [x] Keep VM as semantic source of truth.
+- [ ] Add native server adapters that consume `arcw serve` route plans.
 - [ ] Add AOT executor later as another `RuntimeExecutor` implementation, not as different semantics.
 
 ### Tests

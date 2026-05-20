@@ -1,6 +1,9 @@
 use arcweft_core::engine::{Engine, FlowFiberStatus};
 use arcweft_core::executor::{RuntimeExecutor, VmExecutor};
-use arcweft_core::plan::{FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan};
+use arcweft_core::plan::{
+    FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimePlan,
+    RuntimeRouteSpec,
+};
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
 };
@@ -47,6 +50,7 @@ enum CliCommand {
     Plan(PlanOptions),
     Run(RuntimeRunOptions),
     Cli(CliRunOptions),
+    Serve(ServeOptions),
     Test(ScriptTestOptions),
     Bench(ScriptBenchOptions),
     Fmt(ToolingCommandOptions),
@@ -76,6 +80,7 @@ fn run(cli: Cli) -> Result<(), ExitCode> {
         CliCommand::Plan(options) => runtime_plan_command(&options),
         CliCommand::Run(options) => runtime_run_command(&options),
         CliCommand::Cli(options) => runtime_cli_command(&options),
+        CliCommand::Serve(options) => runtime_serve_command(&options),
         CliCommand::Test(options) => script_test_command(&options),
         CliCommand::Bench(options) => script_bench_command(&options),
         CliCommand::Fmt(options) => format_command(&options),
@@ -308,6 +313,63 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
     }
 }
 
+fn runtime_serve_command(options: &ServeOptions) -> Result<(), ExitCode> {
+    let checked = load_and_check(&options.path)?;
+    let plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
+        for error in errors {
+            eprintln!("error: {error}");
+        }
+        ExitCode::FAILURE
+    })?;
+    let entry = select_server_entry(&plan, options.entry.as_deref())?;
+    let routes = server_routes(entry);
+    if routes.is_empty() {
+        eprintln!(
+            "error: server entry `{}` has no runnable routes",
+            entry.id.0
+        );
+        return Err(ExitCode::FAILURE);
+    }
+    for route in &routes {
+        if !plan.flows.iter().any(|flow| flow.id == route.target) {
+            eprintln!(
+                "error: server route {} {} targets unknown flow `{}`",
+                route.method, route.path, route.target.0
+            );
+            return Err(ExitCode::FAILURE);
+        }
+    }
+    let report = ServePlanReport {
+        status: "planned".to_owned(),
+        entry: entry.id.0.clone(),
+        adapter: options.adapter.clone(),
+        routes: routes
+            .iter()
+            .map(|route| ServeRouteReport {
+                method: route.method.clone(),
+                path: route.path.clone(),
+                target: route.target.0.clone(),
+            })
+            .collect(),
+    };
+    if options.json {
+        print_json(&report)
+    } else {
+        for route in &report.routes {
+            println!("{} {} -> {}", route.method, route.path, route.target);
+        }
+        println!(
+            "ok: {} (server entry {}, adapter={}, {} route(s), status={})",
+            options.path.display(),
+            report.entry,
+            report.adapter,
+            report.routes.len(),
+            report.status
+        );
+        Ok(())
+    }
+}
+
 fn apply_runtime_entry_selection(
     plan: &mut RuntimePlan,
     entry: Option<&str>,
@@ -344,6 +406,48 @@ fn apply_runtime_entry_selection(
         return Ok(());
     }
     Ok(())
+}
+
+fn select_server_entry<'a>(
+    plan: &'a RuntimePlan,
+    entry: Option<&str>,
+) -> Result<&'a RuntimeEntrySpec, ExitCode> {
+    if let Some(entry) = entry {
+        let entry = normalize_entry_id(entry);
+        let Some(spec) = plan
+            .entries
+            .iter()
+            .find(|candidate| candidate.id.0 == entry)
+        else {
+            eprintln!("error: unknown entry `{entry}`");
+            return Err(ExitCode::FAILURE);
+        };
+        if spec.kind != RuntimeEntryKind::Server {
+            eprintln!("error: entry `{entry}` is not a server entry");
+            return Err(ExitCode::FAILURE);
+        }
+        return Ok(spec);
+    }
+    let Some(spec) = plan
+        .entries
+        .iter()
+        .find(|candidate| candidate.kind == RuntimeEntryKind::Server)
+    else {
+        eprintln!("error: no server entry found; declare `entry server @entry.name`");
+        return Err(ExitCode::FAILURE);
+    };
+    Ok(spec)
+}
+
+fn server_routes(entry: &RuntimeEntrySpec) -> Vec<RuntimeRouteSpec> {
+    match &entry.target {
+        RuntimeEntryTarget::Routes(routes) => routes.clone(),
+        RuntimeEntryTarget::Flow(flow) => vec![RuntimeRouteSpec {
+            method: "*".to_owned(),
+            path: "*".to_owned(),
+            target: flow.clone(),
+        }],
+    }
 }
 
 fn apply_runtime_cli_entry_selection(
@@ -930,6 +1034,17 @@ struct CliRunOptions {
 }
 
 #[derive(Args, Clone, Debug)]
+struct ServeOptions {
+    path: PathBuf,
+    #[arg(long)]
+    entry: Option<String>,
+    #[arg(long, default_value = "sans-io")]
+    adapter: String,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
 struct ScriptTestOptions {
     path: PathBuf,
     #[arg(long, default_value_t = 32)]
@@ -981,6 +1096,21 @@ struct ToolingFileReport {
     changed: bool,
     edits: usize,
     output: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct ServePlanReport {
+    status: String,
+    entry: String,
+    adapter: String,
+    routes: Vec<ServeRouteReport>,
+}
+
+#[derive(serde::Serialize)]
+struct ServeRouteReport {
+    method: String,
+    path: String,
+    target: String,
 }
 
 fn parse_runtime_binding_arg(value: &str) -> Result<RuntimeBinding, String> {

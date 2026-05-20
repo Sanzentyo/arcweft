@@ -29,6 +29,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   string literals in favor of `VirtualPath` constructors.
 - `arcweft-core` no longer depends on dialogue or presentation; the facade
   crate `arcweft` exposes crate-family namespaces instead of a flat prelude.
+- Awaited capability calls now carry typed `HostTaskRequest` data through
+  `AwaitTarget` into emitted `TaskSpec`s. The core remains Sans I/O; adapters
+  consume the request data and later return deterministic `TaskEvent`s.
 - No renderer, Servo, audio, camera, USB, MCP, or Cranelift JIT implementation.
 
 ## Files

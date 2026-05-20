@@ -1,8 +1,7 @@
 use super::{
     AwaitState, AwaitTarget, CancelScopeId, ChoiceRuntimeOption, ChoiceState, Engine, FlowEvent,
-    FlowFiberStatus, HostTaskRequest, LineEffectRequest, RuntimeDiagnostic, RuntimeStepInput,
-    RuntimeStepOutput, TaskClass, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
-    TaskSpec,
+    FlowFiberStatus, LineEffectRequest, RuntimeDiagnostic, RuntimeStepInput, RuntimeStepOutput,
+    TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
 };
 
 impl Engine {
@@ -118,10 +117,10 @@ pub(super) fn await_task_spec(target: &AwaitTarget) -> TaskSpec {
     TaskSpec::new(
         target.task.clone(),
         TaskKey(target.task.0.clone()),
-        TaskClass::Background,
+        target.request.task_class(),
         TaskPriority(0),
         CancelScopeId("flow".to_owned()),
         TaskPolicy::JoinSameKey,
-        HostTaskRequest::custom("await", "need", [target.need.0.clone().into()]),
+        target.request.clone(),
     )
 }

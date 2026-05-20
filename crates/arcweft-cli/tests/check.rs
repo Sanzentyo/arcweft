@@ -1261,6 +1261,90 @@ fn spec_rejected_edge_fixtures_fail_with_diagnostics() {
     }
 }
 
+#[test]
+fn serve_json_lists_server_routes() {
+    let path = temp_awft(
+        "serve-routes",
+        r#"
+entry server @entry.http {
+    route GET "/health" -> @flow.health
+    route POST "/save" -> @flow.save
+}
+
+flow @flow.health health {
+    return "ok"
+}
+
+flow @flow.save save {
+    return "saved"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("serve")
+        .arg(&path)
+        .arg("--entry")
+        .arg("@entry.http")
+        .arg("--adapter")
+        .arg("native-http")
+        .arg("--json")
+        .output()
+        .expect("arcw serve runs");
+
+    assert!(
+        output.status.success(),
+        "expected serve route plan success, stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"status\": \"planned\"")
+            && stdout.contains("\"entry\": \"entry.http\"")
+            && stdout.contains("\"method\": \"GET\"")
+            && stdout.contains("\"path\": \"/health\"")
+            && stdout.contains("\"target\": \"flow.save\""),
+        "serve JSON should list lowered server routes: {stdout}"
+    );
+}
+
+#[test]
+fn serve_json_treats_server_run_entry_as_default_route() {
+    let path = temp_awft(
+        "serve-run",
+        r#"
+entry server @entry.server {
+    run @flow.main
+}
+
+flow @flow.main main {
+    return "server"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("serve")
+        .arg(&path)
+        .arg("--json")
+        .output()
+        .expect("arcw serve runs");
+
+    assert!(
+        output.status.success(),
+        "expected server run entry success, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"method\": \"*\"")
+            && stdout.contains("\"path\": \"*\"")
+            && stdout.contains("\"target\": \"flow.main\""),
+        "server run entry should become a default route: {stdout}"
+    );
+}
+
 fn temp_awft(name: &str, source: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     path.push(format!("arcweft-cli-{name}-{}.awft", std::process::id()));

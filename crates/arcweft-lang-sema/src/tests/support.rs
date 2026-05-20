@@ -15,7 +15,12 @@ pub(super) use arcweft_core::{
     plan::{FlowOp, FlowRuntimeId},
     source::{SourceHandlerPlan, SourceOp},
     stream::StreamOp,
+    task::{
+        AssetRequest, AudioDecodeRequest, FileReadTextRequest, HostTaskRequest, HttpFetchRequest,
+        ProcessRunRequest, ShaderRequest, TtsRequest, WasmCallRequest,
+    },
     time::LogicalDuration,
+    value::{RuntimePayload, RuntimeValue},
 };
 pub(super) use arcweft_lang_hir::lower::lower_to_hir;
 pub(super) use arcweft_lang_hir::model::{HirFlowItem, HirTopLevelDecl};

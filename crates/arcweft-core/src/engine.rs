@@ -18,8 +18,8 @@ use crate::stream::{
     RuntimeStreamEvent, StreamMatchArm, StreamOp, StreamRuntimeId, StreamRuntimeState,
 };
 use crate::task::{
-    AwaitTarget, CancelScopeId, HostTaskRequest, TaskClass, TaskEvent, TaskEventKind, TaskKey,
-    TaskPolicy, TaskPriority, TaskSpec, normalize_task_events,
+    AwaitTarget, CancelScopeId, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+    TaskSpec, normalize_task_events,
 };
 use crate::value::{
     RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm,

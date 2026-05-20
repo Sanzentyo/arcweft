@@ -2,6 +2,7 @@
 
 use crate::errors::{LinePlanLowerError, RuntimePlanLowerError};
 use crate::expr::{lower_runtime_expr_strict, runtime_call_effect};
+use crate::host_request::lower_host_task_request;
 use crate::labels::expr_label;
 use crate::line_task::{lower_line_plan, lower_line_plan_statements};
 use crate::pattern::lower_runtime_pattern;
@@ -415,10 +416,11 @@ impl FlowRuntimeLowerer {
             .flat_map(|branch| self.lower_pending_flow_items(branch.body()))
             .collect();
         FlowOp::Await {
-            target: AwaitTarget {
-                need: NeedId(format!("need.await.{task_name}")),
-                task: TaskId(format!("task.await.{task_name}")),
-            },
+            target: AwaitTarget::new(
+                NeedId(format!("need.await.{task_name}")),
+                TaskId(format!("task.await.{task_name}")),
+                lower_host_task_request(await_with.expr()),
+            ),
             pending,
         }
     }

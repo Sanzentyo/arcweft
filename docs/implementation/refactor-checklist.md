@@ -80,7 +80,8 @@ filesystem capability calls, and old RuntimeFrame naming.
 - [x] Add `--entry`.
 - [x] Rename runtime report `frames` to `steps`.
 - [x] Add `arcw cli` after capability grammar lands.
-- [ ] Add `arcw serve` after server entry/adapter lands.
+- [x] Add `arcw serve` as a Sans I/O server-entry route-plan command.
+- [ ] Add native server adapters that consume `arcw serve` route plans.
 
 ## Tests and fixtures
 

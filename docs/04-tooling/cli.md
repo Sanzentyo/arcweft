@@ -54,6 +54,7 @@ arcw unsafe game/routes/opening.awft --json
 arcw plan game/routes/opening.awft --json
 arcw run game/routes/opening.awft --steps 4 --json
 arcw cli game/routes/opening.awft -- --dry-run
+arcw serve game/routes/server.awft --entry http --json
 arcw test game/routes/opening.awft --json
 arcw bench game/routes/opening.awft --json
 ```
@@ -155,8 +156,27 @@ arcw cli tools/build.awft -- --profile debug
 arcw cli tools/build.awft --entry main --json -- --profile release
 ```
 
-`arcw serve` remains a later adapter command because server entries can route
-multiple methods/paths and require an explicit host adapter.
+## Server Entry Plan
+
+`arcw serve <file.awft> [--entry entry.id] [--adapter NAME] [--json]` validates
+and exposes a source-declared `entry server`. In Phase 2.0 this is still a
+Sans I/O adapter-plan command: it does not open sockets, spawn a native HTTP
+server, or run filesystem/network effects. It selects a server entry, lowers its
+routes, verifies that route targets exist, and prints the method/path/flow table
+that a host adapter should bind.
+
+If `--entry` is omitted, the first `entry server` is selected. A server entry
+with `route METHOD "PATH" -> @flow.id` exposes those routes directly. A server
+entry with `run @flow.id` is treated as a default `* * -> flow.id` route for
+headless adapter planning.
+
+```bash
+arcw serve game/routes/server.awft
+arcw serve game/routes/server.awft --entry http --adapter native-http --json
+```
+
+Native HTTP binding remains adapter work outside `arcweft-core`; the CLI report
+uses `status = "planned"` to make that boundary explicit.
 
 ## Test / Bench
 
