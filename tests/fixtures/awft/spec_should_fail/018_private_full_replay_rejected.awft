@@ -1,0 +1,12 @@
+pub source @source.private_full: Source<IteratorItem, CaptureError> {
+    from "fixture"
+    backpressure = latest
+    replay = full
+    privacy = private
+
+    on item frame => yield frame
+}
+
+flow @flow.done done {
+    return "done"
+}

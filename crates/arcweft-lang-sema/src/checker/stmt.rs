@@ -35,6 +35,12 @@ impl TypeChecker<'_> {
                 self.release_direct_drop_expr(expr);
             }
             Stmt::Out { label, expr } => {
+                if self.line_out_depth == 0 {
+                    self.errors.push(TypeCheckError::new(
+                        "`out` can only be used in a dialogue line plan, cue block, or content scope"
+                            .to_owned(),
+                    ));
+                }
                 let ty = self.check_out_stmt(label.as_deref(), expr);
                 self.reject_borrow_escape(ty.as_ref(), "line-plan out value");
             }

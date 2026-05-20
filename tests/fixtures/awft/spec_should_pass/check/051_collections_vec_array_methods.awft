@@ -1,0 +1,14 @@
+fn build_numbers() -> Vec<i32> {
+    let xs = Vec<i32>::with_capacity(4usize)
+    xs.push(1i32)
+    xs.push(2i32)
+    xs.shrink()
+    xs
+}
+
+flow @flow.collections collections {
+    let xs = build_numbers()
+    let fixed: [i32; 3] = [1i32, 2i32, 3i32]
+    let repeated: [i32; 4] = [0i32; 4]
+    return "done"
+}

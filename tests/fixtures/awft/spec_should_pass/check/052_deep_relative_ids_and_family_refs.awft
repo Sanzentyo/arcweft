@@ -1,0 +1,19 @@
+pub surface character @character.alice Alice as alice {
+}
+
+flow @.root root {
+    scope outer {
+        scope inner {
+            alice(id=@...intro, text_key=@super.super.intro_text):
+                deep relative IDs[p]
+
+            choice @super.first {
+                @super.listen "親側の選択肢" -> @flow:.next
+            }
+        }
+    }
+}
+
+flow @flow:.next next {
+    return "next"
+}

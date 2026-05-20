@@ -863,6 +863,168 @@
       "expected_current": "fail",
       "expected_future": "fail",
       "reason": "ambiguous await expr? with form must remain rejected with try-await guidance"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/026_headless_observation_calls.awft",
+      "category": "current_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "headless log, signal, metric, and event call syntax remains accepted"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/027_dialogue_bare_scope_after_bracket_call.awft",
+      "category": "current_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "bare block after bracket dialogue call is treated as a separate lexical scope"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/run/011_source_stream_policy_plan.awft",
+      "category": "current_pass",
+      "subtype": "edge_case",
+      "command": "run",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "source and stream policy fixture remains runnable in the headless runtime slice"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/049_await_context_option_boundaries.awft",
+      "category": "spec_should_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "pass",
+      "reason": "try-await, parenthesized await, await? sugar, and Option context should compose"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/050_comments_strings_unicode_paths.awft",
+      "category": "spec_should_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "pass",
+      "reason": "raw strings, braces inside strings, Unicode text, and path-like strings should parse structurally"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/051_collections_vec_array_methods.awft",
+      "category": "spec_should_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "pass",
+      "reason": "Vec construction, shrink, array literals, and array repeat syntax should typecheck"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/052_deep_relative_ids_and_family_refs.awft",
+      "category": "spec_should_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "pass",
+      "reason": "deep relative ids and family-relative refs should resolve consistently"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/run/011_dialogue_line_value_and_handle_discard.awft",
+      "category": "spec_should_pass",
+      "subtype": "edge_case",
+      "command": "run",
+      "expected_current": "fail",
+      "expected_future": "pass",
+      "reason": "dialogue line return values, handles, and timed cues should lower to runtime"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/012_name_at_pattern_removed_rejected.awft",
+      "category": "spec_should_fail",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "removed name-at pattern syntax stays rejected"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/013_continue_expr_position_rejected.awft",
+      "category": "spec_should_fail",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "continue cannot be bound as a value expression"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/014_let_else_non_diverging_rejected.awft",
+      "category": "spec_should_fail",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "let-else else block must diverge"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/015_break_value_in_while_rejected.awft",
+      "category": "spec_should_fail",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "break expr is only valid for loop, not while"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/016_yield_in_flow_rejected.awft",
+      "category": "spec_should_fail",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "yield is limited to source and stream generation contexts"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/017_out_in_flow_rejected.awft",
+      "category": "spec_should_fail",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "out is limited to dialogue line plan, cue, and content scopes"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/018_private_full_replay_rejected.awft",
+      "category": "spec_should_fail",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "private sources cannot request full replay"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/019_unsafe_lifetime_missing_reason_rejected.awft",
+      "category": "spec_should_fail",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "unsafe lifetime audit blocks require a reason"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/020_unsafe_block_missing_safety_doc_rejected.awft",
+      "category": "spec_should_fail",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "unsafe lifetime audit blocks require a SAFETY doc comment"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/021_await_question_with_context_rejected.awft",
+      "category": "spec_should_fail",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "await expr? with remains rejected even when context chaining is present"
     }
   ]
 }

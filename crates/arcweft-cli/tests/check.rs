@@ -189,11 +189,15 @@ fn verify_json_reports_semantic_thread_join_conflict() {
     let path = temp_awft(
         "verify-thread-join",
         r#"
+pub surface character @character.alice Alice as alice {
+}
+
 flow @flow.thread_join thread_join {
-    thread worker {
-        out 1
-        out "bad"
-    }
+    alice[待って。[p]]
+    with:
+        thread worker:
+            out 1
+            out "bad"
 }
 "#,
     );
@@ -1065,6 +1069,22 @@ fn spec_valid_edge_fixtures_track_current_gaps() {
             "tests/fixtures/awft/spec_should_pass/check/048_literals_units_char_edge.awft",
             "raw expression",
         ),
+        (
+            "tests/fixtures/awft/spec_should_pass/check/049_await_context_option_boundaries.awft",
+            "raw FlowItem",
+        ),
+        (
+            "tests/fixtures/awft/spec_should_pass/check/050_comments_strings_unicode_paths.awft",
+            "raw expression",
+        ),
+        (
+            "tests/fixtures/awft/spec_should_pass/check/051_collections_vec_array_methods.awft",
+            "raw expression",
+        ),
+        (
+            "tests/fixtures/awft/spec_should_pass/check/052_deep_relative_ids_and_family_refs.awft",
+            "unresolved entity reference",
+        ),
     ] {
         let path = workspace_root().join(relative_path);
         let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -1088,6 +1108,38 @@ fn spec_valid_edge_fixtures_track_current_gaps() {
 }
 
 #[test]
+fn spec_valid_run_edge_fixtures_track_current_gaps() {
+    let relative_path =
+        "tests/fixtures/awft/spec_should_pass/run/011_dialogue_line_value_and_handle_discard.awft";
+    let expected = "raw expression";
+    let path = workspace_root().join(relative_path);
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--json")
+        .arg("--steps")
+        .arg("5")
+        .output()
+        .expect("arcw run runs");
+
+    assert!(
+        !output.status.success(),
+        "{} is a spec-valid runtime fixture that should expose a current implementation gap",
+        path.display()
+    );
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains(expected),
+        "output for {} should contain `{expected}`:\n{combined}",
+        path.display()
+    );
+}
+
+#[test]
 fn rejected_await_question_with_fixture_fails_with_guidance() {
     let path = workspace_root()
         .join("tests/fixtures/awft/spec_should_fail/011_await_question_with_rejected.awft");
@@ -1103,6 +1155,67 @@ fn rejected_await_question_with_fixture_fails_with_guidance() {
         stderr.contains("await expr? with") && stderr.contains("try await"),
         "diagnostic should point to try-await replacement: {stderr}"
     );
+}
+
+#[test]
+fn spec_rejected_edge_fixtures_fail_with_diagnostics() {
+    for (relative_path, expected) in [
+        (
+            "tests/fixtures/awft/spec_should_fail/012_name_at_pattern_removed_rejected.awft",
+            "unresolved entity reference",
+        ),
+        (
+            "tests/fixtures/awft/spec_should_fail/013_continue_expr_position_rejected.awft",
+            "unknown symbol `continue`",
+        ),
+        (
+            "tests/fixtures/awft/spec_should_fail/014_let_else_non_diverging_rejected.awft",
+            "let-else else block must leave the current continuation",
+        ),
+        (
+            "tests/fixtures/awft/spec_should_fail/015_break_value_in_while_rejected.awft",
+            "break expr",
+        ),
+        (
+            "tests/fixtures/awft/spec_should_fail/016_yield_in_flow_rejected.awft",
+            "yield",
+        ),
+        (
+            "tests/fixtures/awft/spec_should_fail/017_out_in_flow_rejected.awft",
+            "`out` can only be used",
+        ),
+        (
+            "tests/fixtures/awft/spec_should_fail/018_private_full_replay_rejected.awft",
+            "privacy = private",
+        ),
+        (
+            "tests/fixtures/awft/spec_should_fail/019_unsafe_lifetime_missing_reason_rejected.awft",
+            "unsafe lifetime block requires a reason",
+        ),
+        (
+            "tests/fixtures/awft/spec_should_fail/020_unsafe_block_missing_safety_doc_rejected.awft",
+            "unsafe lifetime block requires a SAFETY doc comment",
+        ),
+    ] {
+        let path = workspace_root().join(relative_path);
+        let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+            .arg("check")
+            .arg(&path)
+            .output()
+            .expect("arcw check runs");
+
+        assert!(
+            !output.status.success(),
+            "{} must be rejected by arcw check",
+            path.display()
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains(expected),
+            "stderr for {} should contain `{expected}`:\n{}",
+            path.display(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }
 
 fn temp_awft(name: &str, source: &str) -> PathBuf {

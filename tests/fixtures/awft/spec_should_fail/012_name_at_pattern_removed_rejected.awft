@@ -1,0 +1,6 @@
+flow @flow.bad_pattern bad_pattern(event: GameEvent) {
+    match event {
+        ev @ .ChoiceSelected { id } => log.info("old Rust-like binding", id = id)
+        _ => ()
+    }
+}

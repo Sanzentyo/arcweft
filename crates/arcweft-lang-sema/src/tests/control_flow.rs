@@ -267,6 +267,26 @@ flow @flow.title title {
 }
 
 #[test]
+fn typecheck_rejects_out_outside_line_plan_scope() {
+    let tree = parse_ok(
+        r"
+flow @flow.bad_out bad_out {
+    out .Done
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("flow out fixture lowers");
+    validate_typecheck_ready(&hir).expect("flow out fixture is typecheck-ready");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("flow-level out is rejected");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("`out` can only be used")),
+        "expected flow-level out rejection, got {errors:?}"
+    );
+}
+
+#[test]
 fn typechecks_let_else_panic_and_fail_as_diverging() {
     for diverging in [
         r#"panic("missing route")"#,

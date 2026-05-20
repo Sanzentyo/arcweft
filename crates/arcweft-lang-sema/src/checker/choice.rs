@@ -131,9 +131,11 @@ impl TypeChecker<'_> {
             }
             ChoiceAction::SelectBlock(statements) => {
                 let outer_locals = self.locals.clone();
+                self.line_out_depth += 1;
                 for stmt in statements {
                     self.check_stmt(stmt);
                 }
+                self.line_out_depth -= 1;
                 self.locals = outer_locals;
             }
             ChoiceAction::Goto(target) => {

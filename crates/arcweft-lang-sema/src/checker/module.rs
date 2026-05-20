@@ -314,6 +314,7 @@ impl TypeChecker<'_> {
                 checker.check_expr(cleanup);
             }
             if let Some(plan) = dialogue.plan() {
+                checker.line_out_depth += 1;
                 checker
                     .line_label_stack
                     .push(plan.label().map(str::to_owned));
@@ -323,6 +324,7 @@ impl TypeChecker<'_> {
                 }
                 checker.line_mark_stack.pop();
                 checker.line_label_stack.pop();
+                checker.line_out_depth -= 1;
             }
         });
     }

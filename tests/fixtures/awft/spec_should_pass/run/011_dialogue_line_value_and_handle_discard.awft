@@ -1,0 +1,15 @@
+pub surface character @character.alice Alice as alice {
+}
+
+flow @flow.line_handles line_handles {
+    let (_, cue) = alice.say(voice=auto)[聞いて。[p]]
+    with:
+        let actor = alice.stage.acquire(scope=line)
+        let cue = at(0.42s):
+            actor.look(.worried, crossfade=120ms)
+        let voice = line.voice_handle()
+        out (voice, cue)
+
+    log.info("cue kept", cue = cue)
+    return "done"
+}

@@ -12,6 +12,7 @@ use std::collections::HashSet;
 impl TypeChecker<'_> {
     pub(super) fn check_line_plan_output_type(&mut self, plan: &LinePlan) -> Option<TypeKind> {
         self.with_line_runtime_scope(|checker| {
+            checker.line_out_depth += 1;
             checker
                 .line_label_stack
                 .push(plan.label().map(str::to_owned));
@@ -27,6 +28,7 @@ impl TypeChecker<'_> {
                 }
             }
             checker.line_label_stack.pop();
+            checker.line_out_depth -= 1;
             output
         })
     }

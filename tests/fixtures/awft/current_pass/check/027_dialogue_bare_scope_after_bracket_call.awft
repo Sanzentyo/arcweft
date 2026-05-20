@@ -1,0 +1,20 @@
+pub surface character @character.alice Alice as alice {
+}
+
+flow @flow.dialogue_scope_edge dialogue_scope_edge {
+    @<character.alice>.say[まずは本文。[mark .release][p]]
+    with:
+        init:
+            log.info("line init")
+        on .release:
+            log.info("mark release")
+        defer on failed:
+            log.info("failed")
+        out .Completed
+
+    @<character.alice>.say[直後に裸ブロック。[p]] {
+        log.info("this block is a separate lexical scope, not a line plan")
+    }
+
+    return "done"
+}

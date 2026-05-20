@@ -1,0 +1,4 @@
+flow @flow.bad_yield bad_yield {
+    yield 1
+    return "done"
+}

@@ -1,0 +1,18 @@
+stream fn passthrough(frames: Stream<IteratorItem, CaptureError>) -> Stream<IteratorItem, CaptureError> {
+    for frame in frames {
+        yield frame
+    }
+}
+
+pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
+    from "fixture"
+    backpressure = latest
+    replay = hash_only
+    privacy = transient
+
+    on item frame => yield frame
+}
+
+flow @flow.generation generation {
+    return "done"
+}

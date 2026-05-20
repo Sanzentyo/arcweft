@@ -1,0 +1,5 @@
+flow @flow.unsafe_missing_safety_doc unsafe_missing_safety_doc {
+    unsafe lifetime @unsafe.cache reason = "fixture intentionally omits SAFETY doc" {
+        let summary = promote_unchecked('flow)
+    }
+}
