@@ -201,6 +201,7 @@ impl Engine {
         options: RuntimeStepOptions,
     ) -> RuntimeStepResult {
         let mut output = RuntimeStepOutput::default();
+        let mut executed_ops = 0;
         self.fiber.env.bind_all_root(input.bindings.iter().cloned());
         let events = normalize_task_events(std::mem::take(&mut input.task_events));
         let source_events = normalize_source_events(std::mem::take(&mut input.source_events));
@@ -215,21 +216,57 @@ impl Engine {
         self.apply_source_events(source_events, &mut output);
         self.step_stream_plans(&mut output);
 
-        if self.resume_suspended(&input, &events, &mut output) {
-            self.record_observations(&output.effects.line);
-            return self.step_result(output, options);
-        }
-        if !matches!(self.fiber.status, FlowFiberStatus::Running) {
-            self.record_observations(&output.effects.line);
-            return self.step_result(output, options);
-        }
-        if self.fiber.cursor.is_some() {
-            self.step_flow(&input, &mut output);
-        } else {
-            self.step_line_only(&input, &mut output);
+        while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
+            self.step_runtime_op(&input, &events, &mut output);
+            executed_ops += 1;
+            if self.should_return_to_host(options.mode, &output, executed_ops) {
+                break;
+            }
         }
         self.record_observations(&output.effects.line);
-        self.step_result(output, options)
+        self.step_result(output, options, executed_ops)
+    }
+
+    fn can_attempt_runtime_op(&self) -> bool {
+        !matches!(
+            self.fiber.status,
+            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+        )
+    }
+
+    fn step_runtime_op(
+        &mut self,
+        input: &RuntimeStepInput,
+        events: &[TaskEvent],
+        output: &mut RuntimeStepOutput,
+    ) {
+        if self.resume_suspended(input, events, output) {
+            return;
+        }
+        if !matches!(self.fiber.status, FlowFiberStatus::Running) {
+            return;
+        }
+        if self.fiber.cursor.is_some() {
+            self.step_flow(input, output);
+        } else {
+            self.step_line_only(input, output);
+        }
+    }
+
+    fn should_return_to_host(
+        &self,
+        mode: RuntimeStepMode,
+        output: &RuntimeStepOutput,
+        executed_ops: usize,
+    ) -> bool {
+        if self.hard_stop_reason(output).is_some() {
+            return true;
+        }
+        match mode {
+            RuntimeStepMode::OneOp => executed_ops > 0,
+            RuntimeStepMode::Game => has_presentation_visible_output(output),
+            RuntimeStepMode::Drain | RuntimeStepMode::Server => false,
+        }
     }
 
     fn record_observations(&mut self, effects: &[LineEffectRequest]) {
@@ -248,41 +285,79 @@ impl Engine {
         &self,
         output: RuntimeStepOutput,
         options: RuntimeStepOptions,
+        executed_ops: usize,
     ) -> RuntimeStepResult {
-        let stop_reason = match self.fiber.status {
-            FlowFiberStatus::Done(_) => RuntimeStepStopReason::Done,
-            FlowFiberStatus::Failed(_) => RuntimeStepStopReason::Failed,
-            FlowFiberStatus::Waiting(_) | FlowFiberStatus::Choice(_) => {
-                RuntimeStepStopReason::Blocked
-            }
-            FlowFiberStatus::Running if options.budget.max_ops == 0 => {
-                RuntimeStepStopReason::BudgetExhausted
-            }
-            FlowFiberStatus::Running if has_runtime_output(&output) => {
-                RuntimeStepStopReason::Output
-            }
-            FlowFiberStatus::Running => match options.mode {
-                RuntimeStepMode::OneOp => RuntimeStepStopReason::OneOp,
-                RuntimeStepMode::Drain | RuntimeStepMode::Game | RuntimeStepMode::Server => {
-                    RuntimeStepStopReason::BudgetExhausted
-                }
-            },
-        };
+        let stop_reason = self
+            .hard_stop_reason(&output)
+            .unwrap_or_else(|| Self::running_stop_reason(options, executed_ops, &output));
         RuntimeStepResult {
             output,
             fiber_status: self.fiber.status.clone(),
             stop_reason,
         }
     }
+
+    fn hard_stop_reason(&self, output: &RuntimeStepOutput) -> Option<RuntimeStepStopReason> {
+        match self.fiber.status {
+            FlowFiberStatus::Done(_) => Some(RuntimeStepStopReason::Done),
+            FlowFiberStatus::Failed(_) => Some(RuntimeStepStopReason::Failed),
+            FlowFiberStatus::Waiting(_) | FlowFiberStatus::Choice(_) => {
+                Some(RuntimeStepStopReason::Blocked)
+            }
+            FlowFiberStatus::Running if has_host_requests(output) => {
+                Some(RuntimeStepStopReason::Output)
+            }
+            FlowFiberStatus::Running => None,
+        }
+    }
+
+    fn running_stop_reason(
+        options: RuntimeStepOptions,
+        executed_ops: usize,
+        output: &RuntimeStepOutput,
+    ) -> RuntimeStepStopReason {
+        if options.mode == RuntimeStepMode::Game && has_presentation_visible_output(output) {
+            return RuntimeStepStopReason::Output;
+        }
+        if options.mode == RuntimeStepMode::OneOp && executed_ops > 0 {
+            return RuntimeStepStopReason::OneOp;
+        }
+        if executed_ops >= options.budget.max_ops {
+            return RuntimeStepStopReason::BudgetExhausted;
+        }
+        RuntimeStepStopReason::OneOp
+    }
 }
 
-fn has_runtime_output(output: &RuntimeStepOutput) -> bool {
-    !output.diagnostics.is_empty()
-        || !output.flow_events.is_empty()
-        || !output.effects.line.is_empty()
-        || !output.effects.source_events.is_empty()
-        || !output.effects.stream_events.is_empty()
-        || !output.requests.tasks.is_empty()
+fn has_host_requests(output: &RuntimeStepOutput) -> bool {
+    !output.requests.tasks.is_empty()
         || !output.requests.cancel_scopes.is_empty()
         || !output.requests.source_close.is_empty()
+}
+
+fn has_presentation_visible_output(output: &RuntimeStepOutput) -> bool {
+    output.flow_events.iter().any(flow_event_is_visible)
+        || output.effects.line.iter().any(line_effect_is_visible)
+}
+
+fn flow_event_is_visible(event: &FlowEvent) -> bool {
+    matches!(
+        event,
+        FlowEvent::DialogueLine { .. }
+            | FlowEvent::LineCancelled { .. }
+            | FlowEvent::ChoicePresented { .. }
+            | FlowEvent::ChoiceSelected { .. }
+            | FlowEvent::AwaitStarted { .. }
+            | FlowEvent::AwaitProgress { .. }
+    )
+}
+
+fn line_effect_is_visible(effect: &LineEffectRequest) -> bool {
+    !matches!(
+        effect,
+        LineEffectRequest::Log(_)
+            | LineEffectRequest::SignalWrite(_)
+            | LineEffectRequest::MetricWrite(_)
+            | LineEffectRequest::EmitEvent(_)
+    )
 }

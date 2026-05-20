@@ -502,6 +502,89 @@ flow @flow.run run {
 }
 
 #[test]
+fn run_json_modes_and_budget_drive_engine_step_boundary() {
+    let path = temp_awft(
+        "runtime-step-modes",
+        r#"
+flow @flow.run run {
+    log.info("first")
+    log.info("second")
+    return "done"
+}
+"#,
+    );
+
+    let one_op = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--mode")
+        .arg("one-op")
+        .arg("--steps")
+        .arg("1")
+        .arg("--json")
+        .output()
+        .expect("arcw run runs");
+    assert!(
+        one_op.status.success(),
+        "one-op run should succeed, stderr: {}",
+        String::from_utf8_lossy(&one_op.stderr)
+    );
+    let one_op_stdout = String::from_utf8_lossy(&one_op.stdout);
+    assert!(
+        one_op_stdout.contains("\"stop_reason\": \"OneOp\"")
+            && one_op_stdout.contains("\"final_status\": \"running\""),
+        "one-op should return after one VM op: {one_op_stdout}"
+    );
+
+    let drain = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("1")
+        .arg("--max-ops")
+        .arg("8")
+        .arg("--json")
+        .output()
+        .expect("arcw run runs");
+    assert!(
+        drain.status.success(),
+        "drain run should succeed, stderr: {}",
+        String::from_utf8_lossy(&drain.stderr)
+    );
+    let drain_stdout = String::from_utf8_lossy(&drain.stdout);
+    assert!(
+        drain_stdout.contains("\"stop_reason\": \"Done\"")
+            && drain_stdout.contains("\"final_status\": \"done"),
+        "drain should finish within one host step: {drain_stdout}"
+    );
+
+    let budget = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("1")
+        .arg("--max-ops")
+        .arg("1")
+        .arg("--json")
+        .output()
+        .expect("arcw run runs");
+    assert!(
+        budget.status.success(),
+        "budgeted run should succeed, stderr: {}",
+        String::from_utf8_lossy(&budget.stderr)
+    );
+    let budget_stdout = String::from_utf8_lossy(&budget.stdout);
+    assert!(
+        budget_stdout.contains("\"stop_reason\": \"BudgetExhausted\""),
+        "drain max-ops should stop with budget exhaustion: {budget_stdout}"
+    );
+}
+
+#[test]
 fn run_json_reports_headless_observations() {
     let path = temp_awft(
         "runtime-observations",

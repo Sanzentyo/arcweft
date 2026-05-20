@@ -59,7 +59,7 @@ pub struct FlowFiber {
     pub line_cursor: usize,
     pub cursor: Option<FlowCursor>,
     pub pending_ops: VecDeque<FlowOp>,
-    pub frames: Vec<FlowControlStackEntry>,
+    pub control_stack: Vec<FlowControlStackEntry>,
     pub env: RuntimeEnv,
     pub observations: RuntimeObservationState,
     pub source_states: BTreeMap<SourceId, SourceRuntimeState>,
@@ -93,23 +93,40 @@ pub struct RuntimeStepInput {
 pub struct RuntimeStepOutput {
     pub diagnostics: Vec<RuntimeDiagnostic>,
     pub flow_events: Vec<FlowEvent>,
-    pub line_effects: Vec<LineEffectRequest>,
-    pub task_requests: Vec<TaskSpec>,
-    pub cancel_requests: Vec<CancelScopeId>,
+    pub effects: RuntimeEffectBatch,
+    pub requests: HostRequestBatch,
+}
+
+pub struct RuntimeEffectBatch {
+    pub line: Vec<LineEffectRequest>,
     pub source_events: Vec<RuntimeSourceEvent>,
     pub stream_events: Vec<RuntimeStreamEvent>,
-    pub source_close_requests: Vec<SourceId>,
+}
+
+pub struct HostRequestBatch {
+    pub tasks: Vec<TaskSpec>,
+    pub cancel_scopes: Vec<CancelScopeId>,
+    pub source_close: Vec<SourceId>,
+}
+
+pub struct RuntimeStepResult {
+    pub output: RuntimeStepOutput,
+    pub fiber_status: FlowFiberStatus,
+    pub stop_reason: RuntimeStepStopReason,
 }
 ```
 
 Phase 2.0 の `Engine` は headless structured-control-flow runtime slice であり、まだ完全な story VM ではない。
-`Engine::step(RuntimeStepInput) -> RuntimeStepOutput` は lowered flow op を 1 frame に
-最大 1 つ進める。`Dialogue` は line task group を実行し、`Choice` は入力待ち、
-`Await` は `TaskSpec` を出して `TaskEvent` で再開する。`Let` / `LetElse` /
+`Engine::step(RuntimeStepInput, RuntimeStepOptions) -> RuntimeStepResult` は
+`RuntimeStepMode` と `RuntimeStepBudget::max_ops` に従って lowered flow op を
+内部 drain する。`OneOp` は最大 1 op、`Drain` / `Server` は blocked/done/failed
+または budget まで進め、`Game` は presentation-visible output で host に制御を返す。
+`Dialogue` は line task group を実行し、`Choice` は入力待ち、`Await` は `TaskSpec`
+を出して `TaskEvent` で再開する。`Let` / `LetElse` /
 `If` / `IfLet` / `Match` / `Loop` / `LetLoop` / `While` / `WhileLet` / `For` / `LetScope` は
 `RuntimeValue` / `RuntimeExpr` / `RuntimePattern` と `RuntimeEnv` で評価され、
-選択された block は `pending_ops` queue に積まれて次 frame 以降で実行される。
-`FlowFiber::frames` は lexical scope と loop continuation を明示的に保持し、
+選択された block は `pending_ops` queue に積まれて以降の runtime op として実行される。
+`FlowFiber::control_stack` は lexical scope と loop continuation を明示的に保持し、
 `break` / `continue` が body 内の残り op と scope-local binding を破棄して
 最も近い loop/while/while-let continuation へ移るために使われる。
 `let name = scope { ... }` は final expression を scope 内で評価してから外側の
@@ -420,18 +437,17 @@ pub enum FlowFiber {
 
 ## Hooks and memo integration
 
-`RuntimeStepOutput` には hook 由来の log / signal / diagnostics / command が含まれる。hook は直接 state を変更せず、phase ごとに許可された output だけを返す。
+Hook は直接 state を変更せず、phase ごとに許可された pure output だけを返す。
+Phase 2.0 の `RuntimeStepOutput` は diagnostics、flow events、`RuntimeEffectBatch`、
+`HostRequestBatch` に分かれ、render/audio/device の実行は adapter 側に残る。将来の
+presentation runtime は、この境界から render/audio/ui desired state を導出する。
 
 ```rust
 pub struct RuntimeStepOutput {
-    pub state_hash: StateHash,
-    pub render: RenderSpec,
-    pub ui: UiSpec,
-    pub audio: AudioDesiredState,
-    pub effects: Vec<EffectRequest>,
     pub diagnostics: Vec<RuntimeDiagnostic>,
-    pub hook_outputs: Vec<HookOutput>,
-    pub memo_stats: Option<MemoFrameStats>,
+    pub flow_events: Vec<FlowEvent>,
+    pub effects: RuntimeEffectBatch,
+    pub requests: HostRequestBatch,
 }
 ```
 

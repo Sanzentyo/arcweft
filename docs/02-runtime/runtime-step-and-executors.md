@@ -2,7 +2,10 @@
 
 ## RuntimeStep boundary
 
-Core runtime uses `RuntimeStep*`. Game/render/audio adapters may use `Frame` terminology, but the VM boundary does not.
+Core runtime uses `RuntimeStep*`. Game/render/audio adapters may use `Frame`
+terminology, but the VM boundary does not. The boundary is Sans I/O: a host
+passes pure data into the runtime and receives pure output batches plus a stop
+reason.
 
 ```rust
 pub trait RuntimeExecutor {
@@ -12,17 +15,29 @@ pub trait RuntimeExecutor {
         options: RuntimeStepOptions,
     ) -> RuntimeStepResult;
 
-    fn snapshot(&self) -> RuntimeSnapshot;
-    fn restore(&mut self, snapshot: RuntimeSnapshot) -> Result<(), RestoreError>;
+    fn fiber(&self) -> &FlowFiber;
+}
+
+pub struct RuntimeStepResult {
+    pub output: RuntimeStepOutput,
+    pub fiber_status: FlowFiberStatus,
+    pub stop_reason: RuntimeStepStopReason,
 }
 ```
+
+`Engine` implements `RuntimeExecutor` directly. `VmExecutor` is the current
+semantic executor wrapper used by CLI tooling; it delegates to `Engine` and keeps
+the VM as the source of truth.
+
+Snapshot/restore remains a future shared contract. It must use executor-neutral
+data when added so VM, AOT, replay, and LSP tooling can compare equivalent
+runtime states.
 
 ## Executors
 
 ```rust
 pub struct VmExecutor {
-    plan: RuntimePlan,
-    fiber: FlowFiber,
+    engine: Engine,
 }
 
 pub struct AotExecutor {
@@ -36,7 +51,8 @@ pub struct HybridExecutor {
 }
 ```
 
-All executors use the same `RuntimeStepInput` and `RuntimeStepResult`.
+All executors use the same `RuntimeStepInput`, `RuntimeStepOptions`, and
+`RuntimeStepResult`.
 
 ## Interpreter / compiled modes
 
@@ -58,25 +74,21 @@ Full script AOT
   - generated state machine implements RuntimeExecutor
 ```
 
-AOT never directly touches filesystem, network, renderer, audio, or wall-clock. It emits `RuntimeEffectBatch` and `HostRequestBatch` just like the VM.
+AOT never directly touches filesystem, network, renderer, audio, or wall-clock.
+It emits `RuntimeEffectBatch` and `HostRequestBatch` just like the VM.
 
 ## Step options
 
 ```rust
 pub enum RuntimeStepMode {
     OneOp,
-    DrainUntilBlocked,
-    DrainUntilOutput,
-    DrainUntilPresentationChange,
-    DrainUntilBudget,
+    Drain,
+    Game,
+    Server,
 }
 
 pub struct RuntimeStepBudget {
-    pub max_vm_ops: usize,
-    pub max_effects: usize,
-    pub max_task_requests: usize,
-    pub max_source_events: usize,
-    pub max_stream_ops: usize,
+    pub max_ops: usize,
 }
 
 pub struct RuntimeStepOptions {
@@ -85,31 +97,62 @@ pub struct RuntimeStepOptions {
 }
 ```
 
-## Effect batch
+`Engine::step` drains internally according to the selected mode:
+
+- `OneOp`: execute at most one runtime operation.
+- `Drain`: execute until blocked, done, failed, or `max_ops` is exhausted.
+- `Game`: drain internal bookkeeping but return on presentation-visible output.
+- `Server`: drain like server-side automation; pure observations do not stop the
+  step.
+
+`max_ops` is enforced inside the VM loop. If the budget is reached before a hard
+stop, the result reports `RuntimeStepStopReason::BudgetExhausted`.
+
+## Stop reasons
 
 ```rust
-pub struct RuntimeEffectBatch {
-    pub presentation: Vec<PresentationEffect>,
-    pub audio: Vec<AudioEffect>,
-    pub ui: Vec<UiEffect>,
-    pub log: Vec<RuntimeLog>,
-    pub signal: Vec<RuntimeAssignment>,
-    pub metric: Vec<RuntimeAssignment>,
-    pub event: Vec<RuntimeEvent>,
-    pub debug: Vec<DebugEffect>,
-    pub host: Vec<HostEffect>,
-    pub control: Vec<RuntimeControlEffect>,
+pub enum RuntimeStepStopReason {
+    OneOp,
+    Blocked,
+    Output,
+    BudgetExhausted,
+    Done,
+    Failed,
 }
 ```
 
-`LineEffectRequest` remains only as line-task-local IR. It is folded into `RuntimeEffectBatch` before leaving a runtime step.
+`Blocked` covers runtime states that require later host input, such as choices or
+awaited task results. `Output` covers host-visible output in `Game` mode and host
+requests that require the adapter to act. `Done` and `Failed` are terminal hard
+stops.
+
+## Effect batch
+
+```rust
+pub struct RuntimeStepOutput {
+    pub diagnostics: Vec<RuntimeDiagnostic>,
+    pub flow_events: Vec<FlowEvent>,
+    pub effects: RuntimeEffectBatch,
+    pub requests: HostRequestBatch,
+}
+
+pub struct RuntimeEffectBatch {
+    pub line: Vec<LineEffectRequest>,
+    pub source_events: Vec<RuntimeSourceEvent>,
+    pub stream_events: Vec<RuntimeStreamEvent>,
+}
+```
+
+`LineEffectRequest` is still the current Phase 2.0 line/runtime effect IR. Hosts
+must treat it as pure data and perform actual presentation, audio, logging,
+signal, or metric side effects outside `arcweft-core`.
 
 ## Host requests
 
 ```rust
 pub struct HostRequestBatch {
     pub tasks: Vec<TaskSpec>,
-    pub cancels: Vec<CancelScopeId>,
+    pub cancel_scopes: Vec<CancelScopeId>,
     pub source_close: Vec<SourceId>,
 }
 ```
@@ -123,20 +166,3 @@ pub struct RuntimePayload(pub RuntimeValue);
 `SourceEvent<String, String>` and `StreamEvent<String, String>` are removed.
 Use `RuntimeSourceEvent` and `RuntimeStreamEvent`. Display tooling may derive a
 payload label, but the runtime boundary preserves the structured value.
-
-## Snapshot rule
-
-Snapshots are executor-independent:
-
-```rust
-pub struct RuntimeSnapshot {
-    pub fiber: RuntimeFiberSnapshot,
-    pub env: RuntimeEnvSnapshot,
-    pub source_states: Vec<SourceSnapshot>,
-    pub stream_states: Vec<StreamSnapshot>,
-    pub observations: RuntimeObservationState,
-    pub version: SnapshotVersion,
-}
-```
-
-VM snapshots and AOT snapshots must use the same representation.

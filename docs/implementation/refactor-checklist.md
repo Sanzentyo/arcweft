@@ -30,13 +30,13 @@ filesystem capability calls, and old RuntimeFrame naming.
 - [x] Change `Engine::step` signature to require `RuntimeStepOptions`.
 - [x] Implement `RuntimeStepMode::OneOp`.
 - [x] Add first `RuntimeStepMode::{Drain, Game, Server}` API surface.
-- [ ] Teach `Engine::step` to internally drain according to mode.
-- [ ] Add presentation-change-specific drain semantics.
-- [ ] Enforce `RuntimeStepBudget` inside the VM loop instead of only reporting API shape.
+- [x] Teach `Engine::step` to internally drain according to mode.
+- [x] Add presentation-change-specific drain semantics.
+- [x] Enforce `RuntimeStepBudget` inside the VM loop instead of only reporting API shape.
 - [x] Add `RuntimeStepStopReason` reporting.
-- [ ] Add `RuntimeExecutor` trait.
-- [ ] Implement `VmExecutor`.
-- [ ] Keep VM as semantic source of truth.
+- [x] Add `RuntimeExecutor` trait.
+- [x] Implement `VmExecutor`.
+- [x] Keep VM as semantic source of truth.
 
 ## Task / host requests
 

@@ -268,6 +268,12 @@ Current high-confidence state:
   and final fiber status. `--value` injects pure runtime bindings such as
   `ready=true`, `count=3`, or `route=@flow.next`; the CLI owns filesystem I/O
   and runtime execution remains Sans I/O.
+- Runtime stepping now uses the shared `RuntimeExecutor` trait. `VmExecutor`
+  wraps the semantic `Engine` implementation used by CLI and tests, and
+  `Engine::step` enforces `RuntimeStepMode::{OneOp, Drain, Game, Server}` plus
+  `RuntimeStepBudget::max_ops` inside the VM loop. `Game` mode returns on
+  presentation-visible output while pure observations can drain to a harder
+  boundary.
 - Phase 2.0 headless observation state is implemented for the current runtime
   slice. `arcweft-core` records
   cumulative log, signal, metric, and event observations from emitted

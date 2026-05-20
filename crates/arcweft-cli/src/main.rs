@@ -1,4 +1,5 @@
 use arcweft_core::engine::{Engine, FlowFiberStatus};
+use arcweft_core::executor::{RuntimeExecutor, VmExecutor};
 use arcweft_core::plan::{FlowRuntimeId, RuntimeEntryTarget, RuntimePlan};
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
@@ -188,19 +189,19 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
         ExitCode::FAILURE
     })?;
     apply_runtime_entry_selection(&mut plan, options.entry.as_deref(), options.flow.as_deref())?;
-    let mut engine = Engine::new(plan);
+    let mut executor = VmExecutor::new(plan);
     let mut steps = Vec::new();
     for step_index in 0..options.steps {
-        let result = engine.step(
+        let result = executor.step(
             RuntimeStepInput {
                 bindings: options.values.clone(),
                 ..RuntimeStepInput::default()
             },
             step_options(options.mode, options.max_ops),
         );
-        let summary = RuntimeStepRunSummary::from_result(step_index, result, engine.fiber());
+        let summary = RuntimeStepRunSummary::from_result(step_index, result, executor.fiber());
         let done = matches!(
-            engine.fiber().status,
+            executor.fiber().status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         );
         steps.push(summary);
@@ -210,7 +211,7 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
     }
     let report = RuntimeRunReport {
         steps,
-        final_status: flow_status_label(&engine.fiber().status),
+        final_status: flow_status_label(&executor.fiber().status),
     };
     if options.json {
         print_json(&report)
@@ -363,19 +364,19 @@ fn run_script_test(
     };
     let mut plan = plan.clone();
     plan.entry_flow = Some(FlowRuntimeId(start));
-    let mut engine = Engine::new(plan);
+    let mut executor = VmExecutor::new(plan);
     let mut steps = Vec::new();
     for step_index in 0..options.steps {
-        let result = engine.step(
+        let result = executor.step(
             RuntimeStepInput {
                 bindings: options.values.clone(),
                 ..RuntimeStepInput::default()
             },
             step_options(options.mode, options.max_ops),
         );
-        let summary = RuntimeStepRunSummary::from_result(step_index, result, engine.fiber());
+        let summary = RuntimeStepRunSummary::from_result(step_index, result, executor.fiber());
         let done = matches!(
-            engine.fiber().status,
+            executor.fiber().status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         );
         steps.push(summary);
@@ -383,13 +384,13 @@ fn run_script_test(
             break;
         }
     }
-    let final_status = flow_status_label(&engine.fiber().status);
+    let final_status = flow_status_label(&executor.fiber().status);
     let mut diagnostics = steps
         .iter()
         .flat_map(|step| step.diagnostics.iter().cloned())
         .collect::<Vec<_>>();
-    diagnostics.extend(test_expectation_failures(test, &engine, &steps));
-    match engine.fiber().status {
+    diagnostics.extend(test_expectation_failures(test, executor.engine(), &steps));
+    match executor.fiber().status {
         FlowFiberStatus::Done(_) => {}
         FlowFiberStatus::Failed(ref message) => {
             diagnostics.push(format!("runtime failed: {message}"));
