@@ -37,7 +37,6 @@ flow @flow.main main {
 }
 
 #[test]
-#[ignore = "enable after entry declarations are implemented"]
 fn entry_selects_runtime_start_flow() {
     let tree = parse_ok(
         r#"
@@ -56,7 +55,6 @@ flow @flow.second second { return "right" }
 }
 
 #[test]
-#[ignore = "enable after extern capability declarations are implemented"]
 fn capability_file_read_is_need_request_not_string_call() {
     let tree = parse_ok(
         r#"

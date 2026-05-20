@@ -133,6 +133,15 @@ impl TypeChecker<'_> {
         entity
             .as_absolute()
             .and_then(entity_kind)
+            .or_else(|| {
+                entity.family_relative_ref().and_then(|relative| {
+                    entity_kind(&arcweft_lang_syntax::ast::ids::EntityRef::new(
+                        format!("{}._", relative.family()),
+                        false,
+                        *relative.range(),
+                    ))
+                })
+            })
             .map(TypeKind::Ref)
             .or_else(|| {
                 self.errors.push(TypeCheckError::new(format!(
@@ -161,6 +170,15 @@ impl TypeChecker<'_> {
             self.check_dotted_path_target(path).or_else(|| {
                 if path == "None" {
                     return Some(TypeKind::Option(Box::new(TypeKind::Named("_".to_owned()))));
+                }
+                if path == "asset" {
+                    return Some(TypeKind::Named("AssetApi".to_owned()));
+                }
+                if path == "voice" {
+                    return Some(TypeKind::Named("VoiceApi".to_owned()));
+                }
+                if path == "state" {
+                    return Some(TypeKind::Named("GameState".to_owned()));
                 }
                 // Short enum-variant expressions such as `.Instant` rely
                 // on expected type resolution in the full checker. The
@@ -344,7 +362,6 @@ impl TypeChecker<'_> {
         }
         if let Some(name) = expr_path_label(callee)
             && let Some(ty) = self
-                .env
                 .function_type(&name)
                 .cloned()
                 .or_else(|| well_known_runtime_method_type(&name))
@@ -397,7 +414,7 @@ impl TypeChecker<'_> {
             if self.symbol_type(name) == Some(&TypeKind::Ref(EntityKind::Character)) {
                 return Some(TypeKind::SpeakerPreset(EntityKind::Character));
             }
-            return self.env.function_type(name).cloned().or_else(|| {
+            return self.function_type(name).cloned().or_else(|| {
                 self.errors
                     .push(TypeCheckError::new(format!("unknown function `{name}`")));
                 None
@@ -477,7 +494,6 @@ impl TypeChecker<'_> {
         if let Expr::Path(receiver_path) = receiver {
             let dotted = format!("{receiver_path}.{method}");
             if let Some(ty) = self
-                .env
                 .function_type(&dotted)
                 .cloned()
                 .or_else(|| well_known_runtime_method_type(&dotted))
@@ -501,6 +517,30 @@ impl TypeChecker<'_> {
             return Some(TypeKind::Unit);
         }
         receiver_type.and_then(|receiver_type| {
+            if matches!(method, "context" | "with_context") {
+                return match receiver_type {
+                    TypeKind::Need { .. } => Some(receiver_type),
+                    TypeKind::Option(inner) => Some(TypeKind::Result {
+                        ok: inner,
+                        error: Box::new(TypeKind::Named("ArcError".to_owned())),
+                    }),
+                    TypeKind::Result { ok, .. } => Some(TypeKind::Result {
+                        ok,
+                        error: Box::new(TypeKind::Named("ArcError".to_owned())),
+                    }),
+                    _ => None,
+                };
+            }
+            if method == "face"
+                && matches!(
+                    receiver_type,
+                    TypeKind::Ref(EntityKind::Character)
+                        | TypeKind::Speaker(EntityKind::Character)
+                        | TypeKind::SpeakerPreset(EntityKind::Character)
+                )
+            {
+                return Some(TypeKind::CharacterPatch(EntityKind::Character));
+            }
             self.env
                 .method_type(&receiver_type, method)
                 .cloned()
@@ -654,6 +694,8 @@ impl TypeChecker<'_> {
             );
         }
         match (then_type, else_type) {
+            (Some(TypeKind::Never), Some(else_type)) => Some(else_type),
+            (Some(then_type), Some(TypeKind::Never)) => Some(then_type),
             (Some(then_type), Some(else_type)) if then_type == else_type => Some(then_type),
             (Some(then_type), Some(else_type)) => {
                 self.errors.push(TypeCheckError::new(format!(
@@ -691,6 +733,12 @@ impl TypeChecker<'_> {
             match (&inferred, arm_type) {
                 (None, Some(ty)) => inferred = Some(ty),
                 (Some(existing), Some(ty)) if existing == &ty => {}
+                (Some(existing), Some(TypeKind::Never)) => {
+                    inferred = Some(existing.clone());
+                }
+                (Some(TypeKind::Never), Some(ty)) => {
+                    inferred = Some(ty);
+                }
                 (Some(existing), Some(ty)) => {
                     self.errors.push(TypeCheckError::new(format!(
                         "match expression arms must have the same type, found {existing:?} and {ty:?}"

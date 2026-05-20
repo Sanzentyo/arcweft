@@ -10,8 +10,8 @@ use crate::stream::lower_stream_function;
 use arcweft_core::effect::{LineEffectRequest, RuntimeCommand};
 use arcweft_core::line_task::{LineOutRequest, LineTaskGroup};
 use arcweft_core::plan::{
-    ChoiceRuntimeOption, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId, RuntimeMatchArm,
-    RuntimePlan,
+    ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
+    RuntimeEntryTarget, RuntimeFlow, RuntimeLineId, RuntimeMatchArm, RuntimePlan, RuntimeRouteSpec,
 };
 use arcweft_core::task::{AwaitTarget, NeedId, TaskId};
 use arcweft_core::value::{RuntimeExpr, RuntimeValue};
@@ -21,9 +21,9 @@ use arcweft_lang_hir::model::{
 };
 use arcweft_lang_hir::syntax::ast::{
     choice::ChoiceAction,
-    flow::{AwaitBranchKind, FlowItem, Stmt},
+    flow::{AwaitBranchKind, FlowItem, Stmt, StmtMatchArm},
     ids::{EntityRef, EntityRefSyntax},
-    items::FunctionKind,
+    items::{EntryItem, EntryKind, FunctionKind},
     pattern::Pattern,
 };
 use arcweft_lang_hir::syntax::expr::Expr;
@@ -40,7 +40,8 @@ pub(crate) struct LoweredRuntimeFlows {
 /// different story than the source describes.
 pub fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<RuntimePlanLowerError>> {
     let lowered_flows = lower_runtime_flows(module)?;
-    let entry = lowered_flows.flows.first().map(|flow| flow.id.clone());
+    let entries = lower_runtime_entries(module);
+    let entry = implicit_entry_flow(&entries, &lowered_flows.flows);
     let stream_plans = module
         .functions()
         .iter()
@@ -56,8 +57,86 @@ pub fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<Runtime
         })
         .collect::<Result<Vec<_>, _>>()?;
     RuntimePlan::new(entry, lowered_flows.flows, lowered_flows.line_task_groups)
-        .map(|plan| plan.with_generation_plans(stream_plans, source_plans))
+        .map(|plan| {
+            plan.with_entries(entries)
+                .with_generation_plans(stream_plans, source_plans)
+        })
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
+}
+
+fn lower_runtime_entries(module: &HirModule) -> Vec<RuntimeEntrySpec> {
+    module
+        .declarations()
+        .iter()
+        .filter_map(|decl| match decl {
+            HirTopLevelDecl::Entry(entry) => Some(RuntimeEntrySpec {
+                id: EntryRuntimeId(entry.id().body().to_owned()),
+                kind: lower_entry_kind(entry.kind()),
+                target: lower_entry_target(entry.items()),
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+fn lower_entry_kind(kind: &EntryKind) -> RuntimeEntryKind {
+    match kind {
+        EntryKind::Game => RuntimeEntryKind::Game,
+        EntryKind::Cli => RuntimeEntryKind::Cli,
+        EntryKind::Server => RuntimeEntryKind::Server,
+        EntryKind::Activity => RuntimeEntryKind::Activity,
+        EntryKind::Test => RuntimeEntryKind::Test,
+        EntryKind::Bench => RuntimeEntryKind::Bench,
+        EntryKind::Custom(value) => RuntimeEntryKind::Custom(value.clone()),
+    }
+}
+
+fn lower_entry_target(items: &[EntryItem]) -> RuntimeEntryTarget {
+    let routes = items
+        .iter()
+        .filter_map(|item| match item {
+            EntryItem::Route {
+                method,
+                path,
+                target,
+            } => Some(RuntimeRouteSpec {
+                method: method.clone(),
+                path: path.clone(),
+                target: flow_runtime_id(target),
+            }),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if !routes.is_empty() {
+        return RuntimeEntryTarget::Routes(routes);
+    }
+    items
+        .iter()
+        .find_map(|item| match item {
+            EntryItem::Start(target) | EntryItem::Run(target) => {
+                Some(RuntimeEntryTarget::Flow(flow_runtime_id(target)))
+            }
+            EntryItem::Route { .. } | EntryItem::Option { .. } | EntryItem::Raw(_) => None,
+        })
+        .unwrap_or_else(|| RuntimeEntryTarget::Routes(Vec::new()))
+}
+
+fn implicit_entry_flow(
+    entries: &[RuntimeEntrySpec],
+    flows: &[RuntimeFlow],
+) -> Option<FlowRuntimeId> {
+    if entries.len() == 1
+        && let Some(flow) = match &entries[0].target {
+            RuntimeEntryTarget::Flow(flow) => Some(flow),
+            RuntimeEntryTarget::Routes(routes) => routes.first().map(|route| &route.target),
+        }
+    {
+        return Some(flow.clone());
+    }
+    if entries.is_empty() {
+        return flows.first().map(|flow| flow.id.clone());
+    }
+    None
 }
 
 /// Lowers HIR flow bodies into executable Sans I/O flow operations.
@@ -395,7 +474,10 @@ impl FlowRuntimeLowerer {
                 else_ops: self.lower_flow_stmt_list(else_body),
             }],
             Stmt::Goto(expr) => vec![FlowOp::GotoExpr(self.lower_runtime_expr(expr))],
-            Stmt::Return(expr) => vec![FlowOp::ReturnExpr(self.lower_runtime_expr(expr))],
+            Stmt::Return(expr) => vec![FlowOp::ReturnExpr(
+                lower_runtime_expr_strict(expr)
+                    .unwrap_or_else(|_| RuntimeExpr::Value(RuntimeValue::String(expr_label(expr)))),
+            )],
             Stmt::Expr(expr) => vec![FlowOp::Effect(runtime_call_effect(expr))],
             Stmt::Out { label, expr } => {
                 vec![FlowOp::Effect(LineEffectRequest::Out(LineOutRequest {
@@ -443,14 +525,7 @@ impl FlowRuntimeLowerer {
             }],
             Stmt::Match { expr, arms } => vec![FlowOp::Match {
                 scrutinee: self.lower_runtime_expr(expr),
-                arms: arms
-                    .iter()
-                    .map(|arm| RuntimeMatchArm {
-                        pattern: lower_runtime_pattern(arm.pattern()),
-                        guard: self.lower_optional_runtime_expr(arm.guard()),
-                        ops: self.lower_flow_stmt_list(arm.body()),
-                    })
-                    .collect(),
+                arms: self.lower_stmt_match_arms(arms),
             }],
             Stmt::Break { expr, .. } => {
                 vec![FlowOp::Break(
@@ -465,6 +540,16 @@ impl FlowRuntimeLowerer {
                 Vec::new()
             }
         }
+    }
+
+    fn lower_stmt_match_arms(&mut self, arms: &[StmtMatchArm]) -> Vec<RuntimeMatchArm> {
+        arms.iter()
+            .map(|arm| RuntimeMatchArm {
+                pattern: lower_runtime_pattern(arm.pattern()),
+                guard: self.lower_optional_runtime_expr(arm.guard()),
+                ops: self.lower_flow_stmt_list(arm.body()),
+            })
+            .collect()
     }
 
     fn lower_flow_stmt_list(&mut self, statements: &[Stmt]) -> Vec<FlowOp> {

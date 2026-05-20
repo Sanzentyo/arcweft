@@ -139,6 +139,10 @@ impl Parser {
             CstTopLevelItemKind::Struct => self.parse_struct_item().map(Item::Struct),
             CstTopLevelItemKind::TypeAlias => self.parse_type_alias().map(Item::TypeAlias),
             CstTopLevelItemKind::EntityDecl => self.parse_entity_decl_item().map(Item::EntityDecl),
+            CstTopLevelItemKind::Entry => self.parse_entry_item().map(Item::Entry),
+            CstTopLevelItemKind::ExternCapability => self
+                .parse_extern_capability_item()
+                .map(Item::ExternCapability),
             CstTopLevelItemKind::ExternMod => self.parse_extern_mod_item().map(Item::ExternMod),
             CstTopLevelItemKind::Hook => self.parse_hook().map(Item::Hook),
             CstTopLevelItemKind::DialogueDefaults => {

@@ -1,5 +1,5 @@
 use arcweft_core::engine::{Engine, FlowFiberStatus};
-use arcweft_core::plan::{FlowRuntimeId, RuntimePlan};
+use arcweft_core::plan::{FlowRuntimeId, RuntimeEntryTarget, RuntimePlan};
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
 };
@@ -181,12 +181,13 @@ fn runtime_plan_command(options: &PlanOptions) -> Result<(), ExitCode> {
 
 fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
     let checked = load_and_check(&options.path)?;
-    let plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
+    let mut plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
         for error in errors {
             eprintln!("error: {}", error.message());
         }
         ExitCode::FAILURE
     })?;
+    apply_runtime_entry_selection(&mut plan, options.entry.as_deref(), options.flow.as_deref())?;
     let mut engine = Engine::new(plan);
     let mut steps = Vec::new();
     for step_index in 0..options.steps {
@@ -237,6 +238,61 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
             report.final_status
         );
         Ok(())
+    }
+}
+
+fn apply_runtime_entry_selection(
+    plan: &mut RuntimePlan,
+    entry: Option<&str>,
+    flow: Option<&str>,
+) -> Result<(), ExitCode> {
+    if entry.is_some() && flow.is_some() {
+        eprintln!("error: --entry and --flow are mutually exclusive");
+        return Err(ExitCode::from(2));
+    }
+    if let Some(flow) = flow {
+        let flow = FlowRuntimeId(normalize_flow_id(flow));
+        if !plan.flows.iter().any(|candidate| candidate.id == flow) {
+            eprintln!("error: unknown flow `{}`", flow.0);
+            return Err(ExitCode::FAILURE);
+        }
+        plan.entry_flow = Some(flow);
+        return Ok(());
+    }
+    if let Some(entry) = entry {
+        let entry = normalize_entry_id(entry);
+        let Some(spec) = plan
+            .entries
+            .iter()
+            .find(|candidate| candidate.id.0 == entry)
+        else {
+            eprintln!("error: unknown entry `{entry}`");
+            return Err(ExitCode::FAILURE);
+        };
+        let RuntimeEntryTarget::Flow(flow) = &spec.target else {
+            eprintln!("error: entry `{entry}` does not select a single runnable flow");
+            return Err(ExitCode::FAILURE);
+        };
+        plan.entry_flow = Some(flow.clone());
+        return Ok(());
+    }
+    Ok(())
+}
+
+fn normalize_flow_id(value: &str) -> String {
+    normalize_entity_selector(value, "flow")
+}
+
+fn normalize_entry_id(value: &str) -> String {
+    normalize_entity_selector(value, "entry")
+}
+
+fn normalize_entity_selector(value: &str, family: &str) -> String {
+    let value = value.trim().trim_start_matches('@');
+    if value.contains('.') {
+        value.to_owned()
+    } else {
+        format!("{family}.{value}")
     }
 }
 
@@ -745,6 +801,10 @@ struct PlanOptions {
 #[derive(Args, Clone, Debug)]
 struct RuntimeRunOptions {
     path: PathBuf,
+    #[arg(long, conflicts_with = "flow")]
+    entry: Option<String>,
+    #[arg(long, conflicts_with = "entry")]
+    flow: Option<String>,
     #[arg(long, default_value_t = 1)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::OneOp)]

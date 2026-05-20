@@ -100,14 +100,17 @@ CLI adapter and does not start renderer/audio/device backends.
 
 ## Runtime Dry Run
 
-`arcw run <file.awft> [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
+`arcw run <file.awft> [--entry entry.id|main] [--flow flow.id|name] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
 headless execution entry point. It uses the same parse, HIR, reference
 validation, typecheck, and line-plan lowering path as `arcw check`, then lowers
 checked flows to `arcweft-core::RuntimePlan` and steps `Engine` for up to `N`
-runtime steps.
+runtime steps. If `--entry` or `--flow` is omitted, the first lowered flow is
+used as a deterministic fallback for headless inspection.
 
 ```bash
 arcw run game/routes/opening.awft --steps 8
+arcw run game/routes/opening.awft --entry main --mode drain --steps 8
+arcw run game/routes/opening.awft --flow opening --mode drain --steps 8
 arcw run game/routes/opening.awft --mode drain --steps 8 --max-ops 32
 arcw run game/routes/opening.awft --steps 8 --value ready=true --value route=@flow.next
 arcw run game/routes/opening.awft --steps 8 --json

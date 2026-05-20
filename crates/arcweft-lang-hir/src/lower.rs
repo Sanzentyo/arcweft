@@ -33,6 +33,12 @@ pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerErr
             Item::EntityDecl(item) => {
                 declarations.push(HirTopLevelDecl::EntityDecl(item.clone()));
             }
+            Item::Entry(item) => {
+                declarations.push(HirTopLevelDecl::Entry(item.clone()));
+            }
+            Item::ExternCapability(item) => {
+                declarations.push(HirTopLevelDecl::ExternCapability(item.clone()));
+            }
             Item::ExternMod(item) => {
                 declarations.push(HirTopLevelDecl::ExternMod(item.clone()));
             }

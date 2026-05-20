@@ -69,10 +69,12 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
         HirTopLevelDecl::Attribute(_)
         | HirTopLevelDecl::DialogueDefaults(_)
         | HirTopLevelDecl::Enum(_)
+        | HirTopLevelDecl::ExternCapability(_)
         | HirTopLevelDecl::ExternMod(_)
         | HirTopLevelDecl::Proof(_)
         | HirTopLevelDecl::Struct(_)
         | HirTopLevelDecl::TrustedAxiom(_) => {}
+        HirTopLevelDecl::Entry(item) => collect_entry_decl(item, uses),
         HirTopLevelDecl::Test(item) => push_id_ref(uses, item.id()),
         HirTopLevelDecl::Bench(item) => push_id_ref(uses, item.id()),
         HirTopLevelDecl::Impl(item) => {
@@ -148,6 +150,28 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
             }
             for stmt in item.body_statements() {
                 collect_stmt(stmt, uses);
+            }
+        }
+    }
+}
+
+fn collect_entry_decl(
+    item: &arcweft_lang_syntax::ast::items::EntryDeclItem,
+    uses: &mut Vec<SymbolUse>,
+) {
+    push_entity(uses, item.id());
+    for item in item.items() {
+        match item {
+            arcweft_lang_syntax::ast::items::EntryItem::Start(target)
+            | arcweft_lang_syntax::ast::items::EntryItem::Run(target)
+            | arcweft_lang_syntax::ast::items::EntryItem::Route { target, .. } => {
+                push_entity(uses, target);
+            }
+            arcweft_lang_syntax::ast::items::EntryItem::Option { value, .. } => {
+                collect_expr(value, uses);
+            }
+            arcweft_lang_syntax::ast::items::EntryItem::Raw(raw) => {
+                uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone()));
             }
         }
     }

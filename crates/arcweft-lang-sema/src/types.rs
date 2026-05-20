@@ -3,6 +3,7 @@ use arcweft_lang_syntax::expr::LifetimeScopeKind;
 /// Entity family used by semantic references and ID checks.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum EntityKind {
+    Entry,
     Flow,
     Fragment,
     Choice,

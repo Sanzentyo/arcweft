@@ -6,6 +6,7 @@ use super::{
     choice_output_type, entity_kind_for_decl, ident_pattern_name, stream_return_types,
     type_ref_kind, validate_typecheck_ready,
 };
+use arcweft_lang_syntax::ast::items::EntryItem;
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
 
 impl TypeChecker<'_> {
@@ -19,6 +20,8 @@ impl TypeChecker<'_> {
         }
 
         self.bind_top_level_entity_aliases(module);
+        self.bind_top_level_functions(module);
+        self.bind_extern_capability_functions(module);
 
         for flow in module.flows() {
             self.active_borrows.clear();
@@ -109,17 +112,53 @@ impl TypeChecker<'_> {
         }
     }
 
+    fn bind_extern_capability_functions(&mut self, module: &HirModule) {
+        for declaration in module.declarations() {
+            let HirTopLevelDecl::ExternCapability(item) = declaration else {
+                continue;
+            };
+            for function in item.functions() {
+                let return_type = function
+                    .signature()
+                    .return_type()
+                    .map_or(TypeKind::Unit, type_ref_kind);
+                self.global_functions.insert(
+                    format!("{}.{}", item.id(), function.signature().name()),
+                    return_type,
+                );
+            }
+        }
+    }
+
+    fn bind_top_level_functions(&mut self, module: &HirModule) {
+        for function in module.functions() {
+            let return_type = function
+                .signature()
+                .return_type()
+                .map_or(TypeKind::Unit, type_ref_kind);
+            self.global_functions
+                .insert(function.name().to_owned(), return_type);
+        }
+    }
+
     pub(super) fn check_top_level_decl(&mut self, declaration: &HirTopLevelDecl) {
         match declaration {
             HirTopLevelDecl::Attribute(_)
             | HirTopLevelDecl::DialogueDefaults(_)
             | HirTopLevelDecl::Enum(_)
-            | HirTopLevelDecl::ExternMod(_)
             | HirTopLevelDecl::Impl(_)
             | HirTopLevelDecl::Proof(_)
             | HirTopLevelDecl::Struct(_)
             | HirTopLevelDecl::Trait(_)
-            | HirTopLevelDecl::TrustedAxiom(_) => {}
+            | HirTopLevelDecl::TrustedAxiom(_)
+            | HirTopLevelDecl::ExternMod(_)
+            | HirTopLevelDecl::ExternCapability(_) => {}
+            HirTopLevelDecl::Entry(item) => {
+                self.expect_entity_kind(item.id(), &EntityKind::Entry, "entry id");
+                for item in item.items() {
+                    self.check_entry_item(item);
+                }
+            }
             HirTopLevelDecl::Test(item) => {
                 if let Some(id) = item.id().as_absolute() {
                     self.expect_entity_kind(id, &EntityKind::Test, "test id");
@@ -197,6 +236,25 @@ impl TypeChecker<'_> {
                     self.expect_entity_kind(id, &EntityKind::Source, "source id");
                 }
                 self.check_source_item(item);
+            }
+        }
+    }
+
+    fn check_entry_item(&mut self, item: &EntryItem) {
+        match item {
+            EntryItem::Start(target) | EntryItem::Run(target) => {
+                self.expect_entity_kind(target, &EntityKind::Flow, "entry flow target");
+            }
+            EntryItem::Route { target, .. } => {
+                self.expect_entity_kind(target, &EntityKind::Flow, "entry route target");
+            }
+            EntryItem::Option { value, .. } => {
+                self.check_expr(value);
+            }
+            EntryItem::Raw(raw) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "raw entry item is not type-checkable: {raw}"
+                )));
             }
         }
     }

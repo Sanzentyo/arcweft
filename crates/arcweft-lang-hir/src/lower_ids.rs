@@ -65,6 +65,13 @@ pub(crate) fn normalize_entity_ref_syntax(
     match entity {
         EntityRefSyntax::Absolute(entity) => Ok(entity.clone()),
         EntityRefSyntax::FamilyRelative(relative) => {
+            if relative.family() == "flow" && relative.relative().parent_depth() == 0 {
+                return Ok(EntityRef::new(
+                    format!("flow.{}", relative.relative().suffix()),
+                    false,
+                    *relative.range(),
+                ));
+            }
             let Some(flow_slug) = &context.flow_slug else {
                 return Err(HirLowerError::new(
                     "relative entity reference requires a flow context",

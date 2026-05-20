@@ -128,16 +128,16 @@ impl Parser {
                     || matches!(kind, CstLetFlowItemKind::AwaitStart)
                         && !self.has_multiline_await_with(indent)
                 {
-                    self.index += 1;
-                    return Some(FlowItem::Stmt(parse_stmt(trimmed)));
+                    let stmt = self.consume_stmt_text_with_continuations(indent);
+                    return Some(FlowItem::Stmt(parse_stmt(stmt.trim())));
                 }
                 if let Some(item) = self.parse_let_flow_item(kind, indent) {
                     return Some(item);
                 }
             }
             CstFlowItemKind::TypedStmt => {
-                self.index += 1;
-                return Some(FlowItem::Stmt(parse_stmt(trimmed)));
+                let stmt = self.consume_stmt_text_with_continuations(indent);
+                return Some(FlowItem::Stmt(parse_stmt(stmt.trim())));
             }
             CstFlowItemKind::Include | CstFlowItemKind::AwaitWith | CstFlowItemKind::Other => {}
         }
@@ -147,8 +147,8 @@ impl Parser {
         // `let name: Array<T, N> = ...`: the colon belongs to the type
         // annotation and must not be reinterpreted as speaker-line sugar.
         if is_typed_stmt(trimmed) || trimmed.starts_with("let ") {
-            self.index += 1;
-            return Some(FlowItem::Stmt(parse_stmt(trimmed)));
+            let stmt = self.consume_stmt_text_with_continuations(indent);
+            return Some(FlowItem::Stmt(parse_stmt(stmt.trim())));
         }
         if let Some(item) = self.parse_line_flow_item(&line, trimmed) {
             return Some(item);
@@ -161,6 +161,25 @@ impl Parser {
         }
 
         None
+    }
+
+    fn consume_stmt_text_with_continuations(&mut self, indent: usize) -> String {
+        let mut stmt = self.current().text.clone();
+        self.index += 1;
+        while self.index < self.events.len() {
+            let next = self.current();
+            let next_trimmed = next.text.trim_start();
+            if indentation(&next.text) <= indent || !next_trimmed.starts_with('.') {
+                break;
+            }
+            // Dot-leading lines are expression continuations, not new flow
+            // items. Preserve a newline so parser diagnostics can still point
+            // back to the authored shape when the expression is malformed.
+            stmt.push('\n');
+            stmt.push_str(&next.text);
+            self.index += 1;
+        }
+        stmt
     }
 
     fn parse_let_flow_item(&mut self, kind: CstLetFlowItemKind, indent: usize) -> Option<FlowItem> {

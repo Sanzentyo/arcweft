@@ -619,13 +619,49 @@ pub(super) fn parse_scope_expr_body(body: &str) -> (Vec<Stmt>, Option<crate::exp
 }
 
 fn parse_final_block_expr(source: &str) -> Option<crate::expr::Expr> {
+    if let Some((condition, then_body, else_body)) = split_inline_if_else_expr(source) {
+        return Some(crate::expr::Expr::If {
+            condition: Box::new(parse_expr_lossy(condition)),
+            then_branch: Box::new(parse_block_expr(then_body)),
+            else_branch: Some(Box::new(parse_block_expr(else_body))),
+        });
+    }
     let (head, body) = split_brace_item(source)?;
-    head.strip_prefix("match ")
-        .map(str::trim)
-        .map(|scrutinee| crate::expr::Expr::Match {
+    if let Some(scrutinee) = head.strip_prefix("match ").map(str::trim) {
+        return Some(crate::expr::Expr::Match {
             scrutinee: Box::new(parse_expr_lossy(scrutinee)),
             arms: parse_match_expr_arms(body),
-        })
+        });
+    }
+    if let Some(condition) = head.strip_prefix("if ").map(str::trim) {
+        let (then_body, else_body) = split_embedded_else_body(body)?;
+        return Some(crate::expr::Expr::If {
+            condition: Box::new(parse_expr_lossy(condition)),
+            then_branch: Box::new(parse_block_expr(&then_body)),
+            else_branch: Some(Box::new(parse_block_expr(&else_body))),
+        });
+    }
+    None
+}
+
+fn split_inline_if_else_expr(source: &str) -> Option<(&str, &str, &str)> {
+    let source = source.trim();
+    let condition_start = source.strip_prefix("if ")?;
+    let open = condition_start.find('{')?;
+    let condition = condition_start[..open].trim();
+    let body_start = "if ".len() + open + '{'.len_utf8();
+    let marker = "\n    } else {";
+    let else_marker = source
+        .find(marker)
+        .or_else(|| source.find("\n} else {"))
+        .or_else(|| source.find("} else {"))?;
+    let else_body_start = else_marker + source[else_marker..].find('{')? + '{'.len_utf8();
+    let else_body_end = source.rfind('}')?;
+    (else_body_start <= else_body_end).then_some((
+        condition,
+        source[body_start..else_marker].trim(),
+        source[else_body_start..else_body_end].trim(),
+    ))
 }
 
 pub(super) fn parse_block_expr(body: &str) -> crate::expr::Expr {

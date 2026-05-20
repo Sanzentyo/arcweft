@@ -301,6 +301,16 @@ pub(super) fn collect_logical_block_items(body: &str) -> Vec<String> {
     let mut depth = 0_i32;
 
     for raw_line in body.lines().filter(|line| !line.trim().is_empty()) {
+        let trimmed = raw_line.trim_start();
+        // Method-chain continuation lines belong to the preceding logical item.
+        // Without this, multi-line `Option.context(...)?` or `Need.context(...)`
+        // parses the dot line as an unrelated raw flow item.
+        if current.is_empty()
+            && trimmed.starts_with('.')
+            && let Some(previous) = lines.pop()
+        {
+            current = previous;
+        }
         if !current.is_empty() {
             current.push('\n');
         }
@@ -441,6 +451,14 @@ fn labeled_head_tail(head: &str) -> Option<&str> {
 }
 
 pub(super) fn parse_expr_lossy(source: &str) -> crate::expr::Expr {
+    let normalized = normalize_dot_continuations(source);
+    let source = normalized.trim();
+    if let Some(value) = parse_raw_string_literal(source) {
+        return crate::expr::Expr::Literal(crate::expr::Literal::String(value));
+    }
+    if let Some(expr) = parse_static_generic_call(source) {
+        return expr;
+    }
     if let Some(expr) = parse_presentation_special_call(source) {
         return expr;
     }
@@ -451,6 +469,56 @@ pub(super) fn parse_expr_lossy(source: &str) -> crate::expr::Expr {
         }
     }
     parse_expr(source).unwrap_or_else(|_| crate::expr::Expr::Raw(source.to_owned()))
+}
+
+fn normalize_dot_continuations(source: &str) -> String {
+    let mut lines = source.lines();
+    let Some(first) = lines.next() else {
+        return String::new();
+    };
+    let mut normalized = first.trim().to_owned();
+    for line in lines {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('.') {
+            normalized.push_str(trimmed);
+        } else {
+            normalized.push(' ');
+            normalized.push_str(trimmed);
+        }
+    }
+    normalized
+}
+
+fn parse_static_generic_call(source: &str) -> Option<crate::expr::Expr> {
+    let open = find_top_level_punctuation(source, '(')?;
+    let close = find_matching_punctuation(source, open, '(', ')')?;
+    if !source[close + ')'.len_utf8()..].trim().is_empty() {
+        return None;
+    }
+    let callee = source[..open].trim();
+    if !(callee.contains('<') && callee.contains("::")) {
+        return None;
+    }
+    Some(crate::expr::Expr::Call {
+        callee: Box::new(crate::expr::Expr::Path(callee.to_owned())),
+        args: split_comma_args(&source[open + '('.len_utf8()..close])
+            .into_iter()
+            .map(parse_expr_lossy)
+            .collect(),
+    })
+}
+
+fn parse_raw_string_literal(source: &str) -> Option<String> {
+    let rest = source.strip_prefix('r')?;
+    let hashes = rest.chars().take_while(|ch| *ch == '#').count();
+    let quote_start = 1 + hashes;
+    if !source.get(quote_start..)?.starts_with('"') {
+        return None;
+    }
+    let closing = format!("\"{}", "#".repeat(hashes));
+    let body_start = quote_start + '"'.len_utf8();
+    let body_end = source.get(body_start..)?.strip_suffix(&closing)?;
+    Some(body_end.to_owned())
 }
 
 pub(super) fn parse_presentation_special_call(source: &str) -> Option<crate::expr::Expr> {

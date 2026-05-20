@@ -84,6 +84,7 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
         active_borrows: Vec::new(),
         borrow_local_lifetimes: HashMap::new(),
         global_symbols: HashMap::new(),
+        global_functions: HashMap::new(),
         locals: HashMap::new(),
         loop_stack: Vec::new(),
         line_label_stack: Vec::new(),
@@ -111,6 +112,7 @@ struct TypeChecker<'a> {
     active_borrows: Vec<String>,
     borrow_local_lifetimes: HashMap<String, BorrowLocalState>,
     global_symbols: HashMap<String, TypeKind>,
+    global_functions: HashMap<String, TypeKind>,
     locals: HashMap<String, TypeKind>,
     loop_stack: Vec<LoopContext>,
     line_label_stack: Vec<Option<String>>,
@@ -167,6 +169,12 @@ impl TypeChecker<'_> {
             .get(name)
             .or_else(|| self.global_symbols.get(name))
             .or_else(|| self.env.symbol_type(name))
+    }
+
+    fn function_type(&self, name: &str) -> Option<&TypeKind> {
+        self.global_functions
+            .get(name)
+            .or_else(|| self.env.function_type(name))
     }
 
     fn is_dialogue_callee(&self, callee: &str) -> bool {

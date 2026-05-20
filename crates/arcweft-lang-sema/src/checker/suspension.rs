@@ -132,13 +132,13 @@ impl TypeChecker<'_> {
 
     pub(super) fn check_if_let_block(&mut self, block: &arcweft_lang_hir::model::HirIfLet) {
         let expr_type = self.check_expr(block.expr());
-        if let Some(guard) = block.guard() {
-            self.expect_expr_type(guard, &TypeKind::Bool, "if-let guard");
-        }
         let borrow_snapshot = self.snapshot_borrow_state();
         let outer_locals = self.locals.clone();
         for (name, ty) in let_else_bindings(block.pattern(), expr_type.as_ref()) {
             self.locals.insert(name, ty);
+        }
+        if let Some(guard) = block.guard() {
+            self.expect_expr_type(guard, &TypeKind::Bool, "if-let guard");
         }
         self.check_flow_items(block.body());
         let then_state = self.snapshot_borrow_state();
@@ -155,13 +155,13 @@ impl TypeChecker<'_> {
 
     pub(super) fn check_while_let_block(&mut self, block: &arcweft_lang_hir::model::HirWhileLet) {
         let expr_type = self.check_expr(block.expr());
-        if let Some(guard) = block.guard() {
-            self.expect_expr_type(guard, &TypeKind::Bool, "while-let guard");
-        }
         let borrow_snapshot = self.snapshot_borrow_state();
         let outer_locals = self.locals.clone();
         for (name, ty) in let_else_bindings(block.pattern(), expr_type.as_ref()) {
             self.locals.insert(name, ty);
+        }
+        if let Some(guard) = block.guard() {
+            self.expect_expr_type(guard, &TypeKind::Bool, "while-let guard");
         }
         self.with_statement_loop(|this| this.check_flow_items(block.body()));
         self.restore_borrow_state(borrow_snapshot);

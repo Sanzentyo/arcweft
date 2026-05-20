@@ -568,14 +568,23 @@ impl<'a> Lexer<'a> {
             self.cursor += 2;
         } else if self.starts_with("s") {
             self.cursor += 1;
+        } else {
+            while let Some(ch) = self.peek_char() {
+                if ch.is_ascii_alphanumeric() || ch == '_' {
+                    self.bump_char();
+                } else {
+                    break;
+                }
+            }
         }
         let raw = &self.source[start..self.cursor];
+        let (number, suffix) = split_number_suffix(raw);
         if let Some(duration) = parse_duration(raw) {
             Token::Literal(duration)
-        } else if raw.contains('.') {
-            Token::Literal(Literal::Float(raw.to_owned()))
+        } else if number.contains('.') || matches!(suffix, "f32" | "f64" | "pt" | "rad") {
+            Token::Literal(Literal::Float(number.to_owned()))
         } else {
-            Token::Literal(Literal::Int(raw.parse().unwrap_or(0)))
+            Token::Literal(Literal::Int(number.parse().unwrap_or(0)))
         }
     }
 
@@ -1192,6 +1201,14 @@ fn parse_duration(source: &str) -> Option<Literal> {
         amount: value.to_owned(),
         unit: DurationUnit::Seconds,
     })
+}
+
+fn split_number_suffix(source: &str) -> (&str, &str) {
+    let split = source
+        .char_indices()
+        .find(|(_, ch)| ch.is_ascii_alphabetic() || *ch == '_')
+        .map_or(source.len(), |(index, _)| index);
+    (&source[..split], &source[split..])
 }
 
 fn parse_entity_expr(source: &str) -> Option<EntityRefSyntax> {

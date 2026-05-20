@@ -6,6 +6,7 @@ use super::{
 pub(super) fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
     let head = entity.body().split(['.', '@', ':']).next()?;
     Some(match head {
+        "entry" => EntityKind::Entry,
         "flow" => EntityKind::Flow,
         "frag" | "fragment" => EntityKind::Fragment,
         "choice" => EntityKind::Choice,
@@ -157,6 +158,7 @@ pub(super) fn generic_named_type_arg<'a>(name: &'a str, base: &str) -> Option<&'
 pub(super) fn well_known_field_type(field: &str) -> Option<TypeKind> {
     Some(match field {
         "choice_id" | "id" => TypeKind::Ref(EntityKind::ChoiceOption),
+        "route_override" => TypeKind::Option(Box::new(TypeKind::Ref(EntityKind::Flow))),
         "target" => TypeKind::Ref(EntityKind::Flow),
         "enabled" | "visible" | "ready" => TypeKind::Bool,
         "order" | "count" | "index" => TypeKind::Int,
@@ -179,10 +181,12 @@ pub(super) fn let_else_bindings(
             .cloned()
             .map(|ty| vec![(name.to_owned(), ty)])
             .unwrap_or_default(),
-        Pattern::Variant { payload, .. } => payload
+        Pattern::Variant { name, payload, .. } => payload
             .iter()
             .flat_map(variant_payload_bindings)
-            .filter_map(|name| variant_payload_type(expr_type).map(|ty| (name, ty)))
+            .filter_map(|binding| {
+                variant_payload_type_for_name(name, expr_type).map(|ty| (binding, ty))
+            })
             .collect(),
         Pattern::Tuple(items) => items
             .iter()
@@ -324,6 +328,18 @@ pub(super) fn variant_payload_type(expr_type: Option<&TypeKind>) -> Option<TypeK
     option_payload_type(expr_type).or_else(|| expr_type.cloned())
 }
 
+pub(super) fn variant_payload_type_for_name(
+    variant: &str,
+    expr_type: Option<&TypeKind>,
+) -> Option<TypeKind> {
+    match (variant, expr_type) {
+        ("Ok", Some(TypeKind::Result { ok, .. })) => Some(ok.as_ref().clone()),
+        ("Err", Some(TypeKind::Result { error, .. })) => Some(error.as_ref().clone()),
+        ("Some", _) => option_payload_type(expr_type),
+        _ => variant_payload_type(expr_type),
+    }
+}
+
 pub(super) fn is_drop_callee(expr: &Expr) -> bool {
     matches!(expr, Expr::Path(name) if is_drop_name(name))
         || matches!(expr, Expr::Call { callee, .. } if is_drop_callee(callee))
@@ -357,6 +373,18 @@ pub(super) fn well_known_runtime_method_type(name: &str) -> Option<TypeKind> {
             error: Box::new(TypeKind::Named("ArcError".to_owned())),
         });
     }
+    if name == "asset.image" {
+        return Some(TypeKind::Need {
+            ready: Box::new(TypeKind::Named("ImageHandle".to_owned())),
+            error: Box::new(TypeKind::Named("AssetError".to_owned())),
+        });
+    }
+    if name == "voice.load" {
+        return Some(TypeKind::Need {
+            ready: Box::new(TypeKind::Named("VoiceHandle".to_owned())),
+            error: Box::new(TypeKind::Named("VoiceError".to_owned())),
+        });
+    }
     if name == "len" {
         return Some(TypeKind::Int);
     }
@@ -383,6 +411,12 @@ pub(super) fn well_known_runtime_method_type(name: &str) -> Option<TypeKind> {
 }
 
 pub(super) fn well_known_static_capacity_method_type(name: &str) -> Option<TypeKind> {
+    if let Some(item) = name
+        .strip_prefix("Vec<")
+        .and_then(|tail| tail.strip_suffix(">::with_capacity"))
+    {
+        return Some(TypeKind::Vec(Box::new(named_type_label(item.trim()))));
+    }
     match name {
         "Vec.with_capacity" => Some(TypeKind::Vec(Box::new(TypeKind::Named("_".to_owned())))),
         "String.with_capacity" => Some(TypeKind::String),
@@ -396,11 +430,16 @@ pub(super) fn well_known_capacity_method_type(
     method: &str,
     arg_count: usize,
 ) -> Option<TypeKind> {
+    if let TypeKind::Vec(item) = receiver
+        && matches!((method, arg_count), ("pop" | "pop_front", 0))
+    {
+        return Some(TypeKind::Option(item.clone()));
+    }
     if !is_reservable_type(receiver) {
         return None;
     }
     match (method, arg_count) {
-        ("reserve" | "shrink_to", 1) | ("shrink", 0) => Some(TypeKind::Unit),
+        ("push" | "reserve" | "shrink_to", 1) | ("shrink", 0) => Some(TypeKind::Unit),
         _ => None,
     }
 }
@@ -707,9 +746,21 @@ pub(crate) fn type_ref_kind(ty: &TypeRef) -> TypeKind {
                 .map(|lifetime| LifetimeScopeKind::parse(lifetime.name())),
             inner: Box::new(type_ref_kind(inner)),
         },
-        TypeRef::Slice(inner) => TypeKind::Slice(Box::new(type_ref_kind(inner))),
+        TypeRef::Slice(inner) => array_type_from_slice_inner(inner)
+            .unwrap_or_else(|| TypeKind::Slice(Box::new(type_ref_kind(inner)))),
         TypeRef::Generic { .. } => TypeKind::Named(type_ref_label(ty)),
     }
+}
+
+fn array_type_from_slice_inner(inner: &TypeRef) -> Option<TypeKind> {
+    let TypeRef::Path(path) = inner else {
+        return None;
+    };
+    let (item, len) = path.split_once(';')?;
+    Some(TypeKind::Array {
+        item: Box::new(named_type_label(item.trim())),
+        len: len.trim().to_owned(),
+    })
 }
 
 pub(super) fn stream_return_types(ty: &TypeRef) -> Option<(TypeKind, TypeKind)> {

@@ -17,6 +17,14 @@ Phase 0 / Phase 1 minimal Rust workspace:
   (HIR types and lowering), `arcweft-lang-sema` (name/symbol/type readiness and
   minimal type checking), and `arcweft-runtime-plan` (HIR to Sans I/O runtime
   plan lowering).
+- Entry declarations now parse, lower through HIR, materialize into
+  `RuntimePlan.entries`, and can be selected by `arcw run --entry`; `--flow`
+  remains available for direct flow selection. When no entry is provided,
+  runtime lowering keeps the first flow as the deterministic fallback for
+  current headless fixtures.
+- `extern capability` declarations parse and lower as structured HIR
+  declarations. Capability functions are registered for minimal type checking,
+  while effect/capability enforcement remains a separate verifier task.
 - `arcweft-core` no longer depends on dialogue or presentation; the facade
   crate `arcweft` exposes crate-family namespaces instead of a flat prelude.
 - No renderer, Servo, audio, camera, USB, MCP, or Cranelift JIT implementation.

@@ -11,6 +11,7 @@ use thiserror::Error;
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RuntimePlan {
     pub entry_flow: Option<FlowRuntimeId>,
+    pub entries: Vec<RuntimeEntrySpec>,
     pub flows: Vec<RuntimeFlow>,
     pub line_task_groups: Vec<LineTaskGroup>,
     pub stream_plans: Vec<StreamPlan>,
@@ -20,6 +21,45 @@ pub struct RuntimePlan {
 /// Runtime identifier for a lowered flow.
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct FlowRuntimeId(pub String);
+
+/// Runtime identifier for a source-declared entry.
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct EntryRuntimeId(pub String);
+
+/// Adapter family of a source-declared entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeEntryKind {
+    Game,
+    Cli,
+    Server,
+    Activity,
+    Test,
+    Bench,
+    Custom(String),
+}
+
+/// Launch target selected by an entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeEntryTarget {
+    Flow(FlowRuntimeId),
+    Routes(Vec<RuntimeRouteSpec>),
+}
+
+/// Route declaration in a server-like entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeRouteSpec {
+    pub method: String,
+    pub path: String,
+    pub target: FlowRuntimeId,
+}
+
+/// Lowered entry declaration preserved for CLI/LSP/runtime launch selection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeEntrySpec {
+    pub id: EntryRuntimeId,
+    pub kind: RuntimeEntryKind,
+    pub target: RuntimeEntryTarget,
+}
 
 /// Runtime identifier for a lowered dialogue line.
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -185,6 +225,7 @@ impl RuntimePlan {
         }
         Ok(Self {
             entry_flow,
+            entries: Vec::new(),
             flows,
             line_task_groups,
             stream_plans: Vec::new(),
@@ -203,9 +244,16 @@ impl RuntimePlan {
         self
     }
 
+    #[must_use]
+    pub fn with_entries(mut self, entries: Vec<RuntimeEntrySpec>) -> Self {
+        self.entries = entries;
+        self
+    }
+
     pub fn lines_only(line_task_groups: Vec<LineTaskGroup>) -> Self {
         Self {
             entry_flow: None,
+            entries: Vec::new(),
             flows: Vec::new(),
             line_task_groups,
             stream_plans: Vec::new(),
@@ -229,6 +277,12 @@ impl RuntimePlan {
 }
 
 impl From<&str> for FlowRuntimeId {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl From<&str> for EntryRuntimeId {
     fn from(value: &str) -> Self {
         Self(value.to_owned())
     }

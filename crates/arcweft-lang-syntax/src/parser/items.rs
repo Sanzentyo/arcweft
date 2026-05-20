@@ -1,19 +1,23 @@
 use crate::ast::common::TextRange;
 use crate::ast::items::{
-    CallableItem, EntityDeclItem, EnumItem, EnumVariant, ExternModItem, FunctionInit, FunctionItem,
-    ImplItem, ImplMember, MemoFn, ParserItem, StateField, StateItem, StructField, StructItem,
-    TraitItem, TraitMember, TypeAliasItem,
+    CallableItem, CapabilityFn, EntityDeclItem, EntryDeclItem, EntryItem, EntryKind, EnumItem,
+    EnumVariant, ExternCapabilityItem, ExternModItem, FunctionInit, FunctionItem, ImplItem,
+    ImplMember, MemoFn, ParserItem, StateField, StateItem, StructField, StructItem, TraitItem,
+    TraitMember, TypeAliasItem,
 };
 use crate::cst::{
-    find_matching_angle_group, find_top_level_punctuation, split_leading_ident,
-    split_top_level_punctuation, split_top_level_punctuation_once,
+    find_matching_angle_group, find_top_level_punctuation, split_first_string_literal,
+    split_leading_ident, split_top_level_punctuation, split_top_level_punctuation_once,
+    split_top_level_punctuation_sequence_once,
 };
 use crate::types::{parse_fn_signature, parse_type_ref};
 
 use super::headers::{
-    parse_callable_kind, parse_contract_clause, parse_entity_decl_head, parse_extern_mod_head,
-    parse_function_kind_and_signature, parse_name_and_tail, parse_optional_angle_head,
-    parse_visibility_prefix, split_function_header_lines, split_supertraits,
+    parse_callable_kind, parse_contract_clause, parse_contract_expr_list, parse_entity_decl_head,
+    parse_extern_mod_head, parse_function_kind_and_signature, parse_name_and_tail,
+    parse_optional_angle_head, parse_required_decl_entity_ref_without_name_marker,
+    parse_required_entity_ref, parse_visibility_prefix, split_function_header_lines,
+    split_supertraits,
 };
 use super::{
     Parser, PendingDocLines, collect_logical_block_items, parse_expr_lossy, parse_scope_expr_body,
@@ -436,6 +440,58 @@ impl Parser {
         ))
     }
 
+    pub(super) fn parse_entry_item(&mut self) -> Option<EntryDeclItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing entry declaration",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the entry body"],
+            );
+            return None;
+        }
+        let (kind, visibility, id) =
+            parse_entry_head(head.trim(), start_line.start, &mut self.errors)?;
+        Some(EntryDeclItem::new(
+            kind,
+            visibility,
+            id,
+            parse_entry_body(&body, start_line.start, &mut self.errors),
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
+    pub(super) fn parse_extern_capability_item(&mut self) -> Option<ExternCapabilityItem> {
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_brace_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing external capability",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the capability body"],
+            );
+            return None;
+        }
+        let (visibility, rest) = parse_visibility_prefix(head.trim());
+        let id = rest
+            .trim_start()
+            .strip_prefix("extern capability")?
+            .trim()
+            .to_owned();
+        Some(ExternCapabilityItem::new(
+            visibility,
+            id,
+            parse_capability_fns(&body),
+            body,
+            TextRange::new(start_line.start, end),
+        ))
+    }
+
     pub(super) fn parse_extern_mod_item(&mut self) -> Option<ExternModItem> {
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();
@@ -531,6 +587,127 @@ pub(super) fn parse_state_fields(body: &str) -> Vec<StateField> {
             })
         })
         .collect()
+}
+
+fn parse_entry_head(
+    head: &str,
+    base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Option<(
+    EntryKind,
+    Option<crate::ast::common::Visibility>,
+    crate::ast::ids::EntityRef,
+)> {
+    let (visibility, rest) = parse_visibility_prefix(head);
+    let rest = rest.trim_start().strip_prefix("entry")?.trim_start();
+    let (kind, id_source) = if rest.starts_with('@') {
+        (EntryKind::Game, rest)
+    } else {
+        let (kind, rest) = split_leading_ident(rest)
+            .map(|(kind, rest)| (EntryKind::parse(kind), rest))
+            .unwrap_or((EntryKind::Game, rest));
+        (kind, rest.trim_start())
+    };
+
+    let id = if id_source.is_empty() {
+        crate::ast::ids::EntityRef::new(
+            format!("entry.{}", kind.as_str()),
+            false,
+            TextRange::new(base, base),
+        )
+    } else {
+        parse_required_decl_entity_ref_without_name_marker(
+            id_source,
+            "entry",
+            "entry declaration markers must include a suffix",
+            base + head.len().saturating_sub(id_source.len()),
+            errors,
+        )?
+        .0
+    };
+    Some((kind, visibility, id))
+}
+
+fn parse_entry_body(
+    body: &str,
+    base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Vec<EntryItem> {
+    collect_logical_block_items(body)
+        .into_iter()
+        .map(|item| parse_entry_body_item(item.trim(), base, errors))
+        .collect()
+}
+
+fn parse_entry_body_item(
+    item: &str,
+    base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> EntryItem {
+    if let Some(rest) = item.strip_prefix("start ") {
+        return parse_required_entity_ref(rest.trim(), base, errors).map_or_else(
+            || EntryItem::Raw(item.to_owned()),
+            |(target, _)| EntryItem::Start(target),
+        );
+    }
+    if let Some(rest) = item.strip_prefix("run ") {
+        return parse_required_entity_ref(rest.trim(), base, errors).map_or_else(
+            || EntryItem::Raw(item.to_owned()),
+            |(target, _)| EntryItem::Run(target),
+        );
+    }
+    if let Some(rest) = item.strip_prefix("route ") {
+        return parse_entry_route(rest, base, errors)
+            .unwrap_or_else(|| EntryItem::Raw(item.to_owned()));
+    }
+    if let Some((name, value)) = split_top_level_binding(item) {
+        return EntryItem::Option {
+            name: name.trim().to_owned(),
+            value: parse_expr_lossy(value.trim()),
+        };
+    }
+    EntryItem::Raw(item.to_owned())
+}
+
+fn parse_entry_route(
+    source: &str,
+    base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Option<EntryItem> {
+    let (left, target_source) = split_top_level_punctuation_sequence_once(source, &["-", ">"])?;
+    let (method, rest) = split_leading_ident(left.trim())?;
+    let (path, _) = split_first_string_literal(rest.trim())?;
+    let (target, _) = parse_required_entity_ref(target_source.trim(), base, errors)?;
+    Some(EntryItem::Route {
+        method: method.to_owned(),
+        path: path.to_owned(),
+        target,
+    })
+}
+
+fn parse_capability_fns(body: &str) -> Vec<CapabilityFn> {
+    let mut starts = body
+        .match_indices("fn ")
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if starts.is_empty() {
+        return Vec::new();
+    }
+    starts.push(body.len());
+    starts
+        .windows(2)
+        .filter_map(|window| parse_capability_fn(body[window[0]..window[1]].trim()))
+        .collect()
+}
+
+fn parse_capability_fn(item: &str) -> Option<CapabilityFn> {
+    let (signature_source, effects_source) =
+        crate::cst::split_top_level_keyword_once(item, "effects");
+    let signature = parse_fn_signature(signature_source.trim()).ok()?;
+    let effects = effects_source
+        .map(parse_contract_expr_list)
+        .unwrap_or_default();
+    Some(CapabilityFn::new(signature, effects))
 }
 
 pub(super) fn parse_trait_members(body: &str) -> Vec<TraitMember> {

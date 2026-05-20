@@ -47,6 +47,9 @@ pub fn registry_from_hir(module: &HirModule) -> NameRegistry {
             HirTopLevelDecl::EntityDecl(item) => {
                 registry.insert(item.id().body(), entity_decl_registry_kind(item.kind()));
             }
+            HirTopLevelDecl::Entry(item) => {
+                registry.insert(item.id().body(), EntityKind::Entry);
+            }
             HirTopLevelDecl::Test(item) => {
                 if let Some(id) = item.id().as_absolute() {
                     registry.insert(id.body(), EntityKind::Test);
@@ -225,8 +228,18 @@ impl NameRegistry {
     }
 
     fn contains(&self, id: &str) -> bool {
-        self.entities.contains_key(id)
+        self.entities.contains_key(id) || is_manifest_backed_family(id)
     }
+}
+
+fn is_manifest_backed_family(id: &str) -> bool {
+    let Some(family) = id.split('.').next() else {
+        return false;
+    };
+    matches!(
+        family,
+        "asset" | "voice" | "se" | "bgm" | "bus" | "mix" | "duck" | "motion" | "rig" | "capture"
+    )
 }
 
 impl NameResolutionError {

@@ -131,6 +131,8 @@ pub(crate) enum CstTopLevelItemKind {
     Struct,
     TypeAlias,
     EntityDecl,
+    Entry,
+    ExternCapability,
     ExternMod,
     Hook,
     DialogueDefaults,
@@ -657,6 +659,10 @@ fn classify_top_level_item(trimmed: &str) -> CstTopLevelItemKind {
         CstTopLevelItemKind::TypeAlias
     } else if looks_like_entity_decl_item(trimmed) {
         CstTopLevelItemKind::EntityDecl
+    } else if looks_like_entry_item(trimmed) {
+        CstTopLevelItemKind::Entry
+    } else if looks_like_extern_capability_item(trimmed) {
+        CstTopLevelItemKind::ExternCapability
     } else if looks_like_extern_mod_item(trimmed) {
         CstTopLevelItemKind::ExternMod
     } else if looks_like_hook(trimmed) {
@@ -778,7 +784,15 @@ fn looks_like_entity_decl_item(trimmed: &str) -> bool {
 }
 
 fn looks_like_extern_mod_item(trimmed: &str) -> bool {
-    trimmed.trim_start().starts_with("extern ")
+    visible_head(trimmed).starts_with("extern ")
+}
+
+fn looks_like_entry_item(trimmed: &str) -> bool {
+    visible_head(trimmed).starts_with("entry ")
+}
+
+fn looks_like_extern_capability_item(trimmed: &str) -> bool {
+    visible_head(trimmed).starts_with("extern capability ")
 }
 
 fn looks_like_hook(trimmed: &str) -> bool {

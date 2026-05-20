@@ -49,13 +49,13 @@ runtime-plan, CLI, and LSP behavior actually support the documented syntax.
 
 ## Parser / AWFT grammar
 
-- [ ] Add `entry` declaration to AST.
-- [ ] Add `entry` parser dispatch.
-- [ ] Add `entry` HIR lowering.
-- [ ] Add selected entry lowering in runtime plan.
-- [ ] Add `extern capability` declaration to AST.
-- [ ] Add capability parser dispatch.
-- [ ] Add capability HIR lowering.
+- [x] Add `entry` declaration to AST.
+- [x] Add `entry` parser dispatch.
+- [x] Add `entry` HIR lowering.
+- [x] Add selected entry lowering in runtime plan.
+- [x] Add `extern capability` declaration to AST.
+- [x] Add capability parser dispatch.
+- [x] Add capability HIR lowering.
 - [ ] Add capability effect checking.
 - [ ] Add virtual path capability examples to docs.
 
@@ -76,7 +76,7 @@ runtime-plan, CLI, and LSP behavior actually support the documented syntax.
 - [x] Add `--steps`.
 - [x] Add `--mode one-op|drain|game|server`.
 - [x] Add `--max-ops`.
-- [ ] Add `--entry`.
+- [x] Add `--entry`.
 - [x] Rename runtime report `frames` to `steps`.
 - [ ] Add `arcw cli` after capability grammar lands.
 - [ ] Add `arcw serve` after server entry/adapter lands.

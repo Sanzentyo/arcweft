@@ -32,6 +32,8 @@ pub enum Item {
     Struct(StructItem),
     TypeAlias(TypeAliasItem),
     EntityDecl(EntityDeclItem),
+    Entry(EntryDeclItem),
+    ExternCapability(ExternCapabilityItem),
     ExternMod(ExternModItem),
     Hook(HookItem),
     DialogueDefaults(DialogueDefaultsItem),
@@ -277,6 +279,48 @@ pub struct EntityDeclItem {
     range: TextRange,
 }
 
+/// Program entry declaration such as `entry game @entry.main { start @flow.opening }`.
+///
+/// Entries are launch manifests in source form. They select an executable flow
+/// or adapter route without making the first flow in a file special.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EntryDeclItem {
+    kind: EntryKind,
+    visibility: Option<Visibility>,
+    id: EntityRef,
+    items: Vec<EntryItem>,
+    range: TextRange,
+}
+
+/// Entry adapter family.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EntryKind {
+    Game,
+    Cli,
+    Server,
+    Activity,
+    Test,
+    Bench,
+    Custom(String),
+}
+
+/// Structured item inside an entry block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EntryItem {
+    Start(EntityRef),
+    Run(EntityRef),
+    Route {
+        method: String,
+        path: String,
+        target: EntityRef,
+    },
+    Option {
+        name: String,
+        value: Expr,
+    },
+    Raw(String),
+}
+
 /// External module import declaration such as
 /// `extern rust mod path from crate "name" { ... }`.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -286,6 +330,26 @@ pub struct ExternModItem {
     source: Option<String>,
     body: String,
     range: TextRange,
+}
+
+/// Host capability declaration such as `extern capability cli { fn stdout(...) }`.
+///
+/// Capability declarations describe adapter-provided functions for checking and
+/// tooling. They do not import host code into Sans I/O core crates.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternCapabilityItem {
+    visibility: Option<Visibility>,
+    id: String,
+    functions: Vec<CapabilityFn>,
+    body: String,
+    range: TextRange,
+}
+
+/// One function exported by an `extern capability` block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CapabilityFn {
+    signature: FnSignature,
+    effects: Vec<Expr>,
 }
 
 /// Internal initializer for a function item.
@@ -608,6 +672,70 @@ impl EntityDeclItem {
     }
 }
 
+impl EntryDeclItem {
+    pub(crate) const fn new(
+        kind: EntryKind,
+        visibility: Option<Visibility>,
+        id: EntityRef,
+        items: Vec<EntryItem>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            kind,
+            visibility,
+            id,
+            items,
+            range,
+        }
+    }
+
+    pub const fn kind(&self) -> &EntryKind {
+        &self.kind
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub const fn id(&self) -> &EntityRef {
+        &self.id
+    }
+
+    pub fn items(&self) -> &[EntryItem] {
+        &self.items
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl EntryKind {
+    pub(crate) fn parse(source: &str) -> Self {
+        match source {
+            "game" => Self::Game,
+            "cli" => Self::Cli,
+            "server" => Self::Server,
+            "activity" => Self::Activity,
+            "test" => Self::Test,
+            "bench" => Self::Bench,
+            custom => Self::Custom(custom.to_owned()),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Game => "game",
+            Self::Cli => "cli",
+            Self::Server => "server",
+            Self::Activity => "activity",
+            Self::Test => "test",
+            Self::Bench => "bench",
+            Self::Custom(value) => value,
+        }
+    }
+}
+
 impl ExternModItem {
     pub(crate) const fn new(
         abi: String,
@@ -643,6 +771,58 @@ impl ExternModItem {
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+}
+
+impl ExternCapabilityItem {
+    pub(crate) const fn new(
+        visibility: Option<Visibility>,
+        id: String,
+        functions: Vec<CapabilityFn>,
+        body: String,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            visibility,
+            id,
+            functions,
+            body,
+            range,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn functions(&self) -> &[CapabilityFn] {
+        &self.functions
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl CapabilityFn {
+    pub(crate) const fn new(signature: FnSignature, effects: Vec<Expr>) -> Self {
+        Self { signature, effects }
+    }
+
+    pub const fn signature(&self) -> &FnSignature {
+        &self.signature
+    }
+
+    pub fn effects(&self) -> &[Expr] {
+        &self.effects
     }
 }
 
