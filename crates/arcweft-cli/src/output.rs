@@ -593,7 +593,10 @@ fn flow_event_label(event: &FlowEvent) -> String {
 }
 
 fn task_request_label(task: &TaskSpec) -> String {
-    format!("{} key={} class={:?}", task.id.0, task.key.0, task.class)
+    format!(
+        "{} key={} class={:?} request={}",
+        task.id.0, task.key.0, task.class, task.debug_label
+    )
 }
 
 fn source_event_label(event: &RuntimeSourceEvent) -> String {

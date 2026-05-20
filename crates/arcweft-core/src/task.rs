@@ -1,3 +1,5 @@
+use crate::value::RuntimePayload;
+
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TaskId(pub String);
 
@@ -33,7 +35,8 @@ pub struct TaskSpec {
     pub priority: TaskPriority,
     pub cancel_scope: CancelScopeId,
     pub policy: TaskPolicy,
-    pub source: TaskSource,
+    pub request: HostTaskRequest,
+    pub debug_label: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -70,9 +73,103 @@ pub enum TaskPolicy {
     AlwaysStart,
 }
 
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HostCapabilityId(pub String);
+
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TaskSource {
-    pub label: String,
+pub enum HostTaskRequest {
+    FileReadText(FileReadTextRequest),
+    FileReadBytes(FileReadBytesRequest),
+    FileWriteText(FileWriteTextRequest),
+    FileWriteBytes(FileWriteBytesRequest),
+    HttpFetch(HttpFetchRequest),
+    HttpRespond(HttpRespondRequest),
+    ProcessRun(ProcessRunRequest),
+    AssetLoad(AssetRequest),
+    ShaderCompile(ShaderRequest),
+    AudioDecode(AudioDecodeRequest),
+    TtsSynthesis(TtsRequest),
+    WasmCall(WasmCallRequest),
+    Custom {
+        capability: HostCapabilityId,
+        operation: String,
+        args: Vec<RuntimePayload>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FileReadTextRequest {
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FileReadBytesRequest {
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FileWriteTextRequest {
+    pub path: String,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FileWriteBytesRequest {
+    pub path: String,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HttpFetchRequest {
+    pub url: String,
+    pub method: String,
+    pub headers: Vec<(String, String)>,
+    pub body: Option<RuntimePayload>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HttpRespondRequest {
+    pub request_id: String,
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Option<RuntimePayload>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProcessRunRequest {
+    pub program: String,
+    pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssetRequest {
+    pub id: String,
+    pub kind: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ShaderRequest {
+    pub id: String,
+    pub entry: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AudioDecodeRequest {
+    pub id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TtsRequest {
+    pub voice: Option<String>,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WasmCallRequest {
+    pub module: String,
+    pub function: String,
+    pub args: Vec<RuntimePayload>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -95,6 +192,87 @@ pub trait TaskHost {
     fn ensure_task(&mut self, spec: TaskSpec) -> TaskHandle;
     fn cancel_scope(&mut self, scope: CancelScopeId);
     fn poll_frame(&mut self, budget: SchedulerBudget) -> Vec<TaskEvent>;
+}
+
+impl TaskSpec {
+    pub fn new(
+        id: TaskId,
+        key: TaskKey,
+        class: TaskClass,
+        priority: TaskPriority,
+        cancel_scope: CancelScopeId,
+        policy: TaskPolicy,
+        request: HostTaskRequest,
+    ) -> Self {
+        let debug_label = request.debug_label();
+        Self {
+            id,
+            key,
+            class,
+            priority,
+            cancel_scope,
+            policy,
+            request,
+            debug_label,
+        }
+    }
+}
+
+impl HostTaskRequest {
+    pub fn custom(
+        capability: impl Into<String>,
+        operation: impl Into<String>,
+        args: impl IntoIterator<Item = RuntimePayload>,
+    ) -> Self {
+        Self::Custom {
+            capability: HostCapabilityId(capability.into()),
+            operation: operation.into(),
+            args: args.into_iter().collect(),
+        }
+    }
+
+    pub fn debug_label(&self) -> String {
+        match self {
+            Self::FileReadText(request) => format!("file.read_text {}", request.path),
+            Self::FileReadBytes(request) => format!("file.read_bytes {}", request.path),
+            Self::FileWriteText(request) => format!("file.write_text {}", request.path),
+            Self::FileWriteBytes(request) => format!("file.write_bytes {}", request.path),
+            Self::HttpFetch(request) => format!("http.fetch {} {}", request.method, request.url),
+            Self::HttpRespond(request) => {
+                format!("http.respond {} {}", request.request_id, request.status)
+            }
+            Self::ProcessRun(request) => format!("process.run {}", request.program),
+            Self::AssetLoad(request) => format!("asset.load {} {}", request.kind, request.id),
+            Self::ShaderCompile(request) => format!("shader.compile {}", request.id),
+            Self::AudioDecode(request) => format!("audio.decode {}", request.id),
+            Self::TtsSynthesis(request) => {
+                format!(
+                    "tts.synthesis {}",
+                    request.voice.as_deref().unwrap_or("default")
+                )
+            }
+            Self::WasmCall(request) => {
+                format!("wasm.call {}::{}", request.module, request.function)
+            }
+            Self::Custom {
+                capability,
+                operation,
+                ..
+            } => format!("{}.{}", capability.0, operation),
+        }
+    }
+}
+
+impl From<&str> for HostCapabilityId {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl From<String> for HostCapabilityId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
 }
 
 /// Returns task events in replay-stable completion order.

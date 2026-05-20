@@ -40,13 +40,13 @@ filesystem capability calls, and old RuntimeFrame naming.
 
 ## Task / host requests
 
-- [ ] Change `TaskSpec` to hold `HostTaskRequest` and `debug_label`.
-- [ ] Remove `TaskSource.label` as an execution discriminator.
-- [ ] Add file read/write requests.
-- [ ] Add HTTP fetch/respond requests/effects.
-- [ ] Add process run request.
-- [ ] Add asset/shader/audio/TTS requests.
-- [ ] Add custom capability request.
+- [x] Change `TaskSpec` to hold `HostTaskRequest` and `debug_label`.
+- [x] Remove `TaskSource.label` as an execution discriminator.
+- [x] Add file read/write requests.
+- [x] Add HTTP fetch/respond requests/effects.
+- [x] Add process run request.
+- [x] Add asset/shader/audio/TTS requests.
+- [x] Add custom capability request.
 
 ## Parser / AWFT grammar
 
@@ -62,12 +62,12 @@ filesystem capability calls, and old RuntimeFrame naming.
 
 ## Compile-gap hardening
 
-- [ ] Replace line-based enum parsing with logical/CST item parsing.
+- [x] Replace line-based enum parsing with logical/CST item parsing.
 - [x] Replace line-based struct field parsing with logical/CST item parsing.
 - [x] Replace line-based state field parsing with logical/CST item parsing.
 - [x] Replace line-based trait member parsing with logical/CST item parsing.
-- [ ] Replace raw brace-counting `collect_logical_block_items` with token/CST-aware collection.
-- [ ] Parse callable bodies structurally like function bodies.
+- [x] Replace raw brace-counting `collect_logical_block_items` with token/CST-aware collection.
+- [x] Parse callable bodies structurally like function bodies.
 - [x] Add pure function call lowering in executable runtime expressions.
 - [x] Add typed method/function calls or reject them with actionable diagnostics.
 
@@ -79,7 +79,7 @@ filesystem capability calls, and old RuntimeFrame naming.
 - [x] Add `--max-ops`.
 - [x] Add `--entry`.
 - [x] Rename runtime report `frames` to `steps`.
-- [ ] Add `arcw cli` after capability grammar lands.
+- [x] Add `arcw cli` after capability grammar lands.
 - [ ] Add `arcw serve` after server entry/adapter lands.
 
 ## Tests and fixtures

@@ -318,13 +318,9 @@ pub(super) fn collect_logical_block_items(body: &str) -> Vec<String> {
             current.push('\n');
         }
         current.push_str(raw_line);
-        for ch in raw_line.chars() {
-            match ch {
-                '{' | '(' | '[' => depth += 1,
-                '}' | ')' | ']' => depth -= 1,
-                _ => {}
-            }
-        }
+        depth += crate::cst::punctuation_delta(raw_line, '{', '}');
+        depth += crate::cst::punctuation_delta(raw_line, '(', ')');
+        depth += crate::cst::punctuation_delta(raw_line, '[', ']');
         if depth <= 0 {
             lines.push(core::mem::take(&mut current));
             depth = 0;

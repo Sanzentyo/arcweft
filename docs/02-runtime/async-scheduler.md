@@ -10,7 +10,8 @@ pub struct TaskSpec {
     pub priority: TaskPriority,
     pub cancel_scope: CancelScopeId,
     pub policy: TaskPolicy,
-    pub source: TaskSource,
+    pub request: HostTaskRequest,
+    pub debug_label: String,
 }
 ```
 
@@ -28,9 +29,33 @@ pub trait TaskHost {
 ```
 
 `arcweft-core` keeps this interface as Sans I/O data. The task body lives in the
-compiled runtime plan or in a host adapter table; `TaskSpec` only identifies the
-work, class, priority, cancellation scope, and replay source. Backends such as
-Tokio, Rayon, web workers, or a cooperative test executor sit outside core.
+compiled runtime plan or in a host adapter table; `TaskSpec` identifies the
+work by typed `HostTaskRequest`, class, priority, cancellation scope, and stable
+key. `debug_label` is for diagnostics only and is never an execution
+discriminator. Backends such as Tokio, Rayon, web workers, or a cooperative test
+executor sit outside core.
+
+```rust
+pub enum HostTaskRequest {
+    FileReadText(FileReadTextRequest),
+    FileReadBytes(FileReadBytesRequest),
+    FileWriteText(FileWriteTextRequest),
+    FileWriteBytes(FileWriteBytesRequest),
+    HttpFetch(HttpFetchRequest),
+    HttpRespond(HttpRespondRequest),
+    ProcessRun(ProcessRunRequest),
+    AssetLoad(AssetRequest),
+    ShaderCompile(ShaderRequest),
+    AudioDecode(AudioDecodeRequest),
+    TtsSynthesis(TtsRequest),
+    WasmCall(WasmCallRequest),
+    Custom {
+        capability: HostCapabilityId,
+        operation: String,
+        args: Vec<RuntimePayload>,
+    },
+}
+```
 
 ## Task class
 

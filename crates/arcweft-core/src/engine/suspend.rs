@@ -1,7 +1,8 @@
 use super::{
     AwaitState, AwaitTarget, CancelScopeId, ChoiceRuntimeOption, ChoiceState, Engine, FlowEvent,
-    FlowFiberStatus, LineEffectRequest, RuntimeDiagnostic, RuntimeStepInput, RuntimeStepOutput,
-    TaskClass, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority, TaskSource, TaskSpec,
+    FlowFiberStatus, HostTaskRequest, LineEffectRequest, RuntimeDiagnostic, RuntimeStepInput,
+    RuntimeStepOutput, TaskClass, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+    TaskSpec,
 };
 
 impl Engine {
@@ -114,15 +115,13 @@ fn input_selects_choice(input: &RuntimeStepInput, option: &ChoiceRuntimeOption) 
 }
 
 pub(super) fn await_task_spec(target: &AwaitTarget) -> TaskSpec {
-    TaskSpec {
-        id: target.task.clone(),
-        key: TaskKey(target.task.0.clone()),
-        class: TaskClass::Background,
-        priority: TaskPriority(0),
-        cancel_scope: CancelScopeId("flow".to_owned()),
-        policy: TaskPolicy::JoinSameKey,
-        source: TaskSource {
-            label: format!("await {}", target.need.0),
-        },
-    }
+    TaskSpec::new(
+        target.task.clone(),
+        TaskKey(target.task.0.clone()),
+        TaskClass::Background,
+        TaskPriority(0),
+        CancelScopeId("flow".to_owned()),
+        TaskPolicy::JoinSameKey,
+        HostTaskRequest::custom("await", "need", [target.need.0.clone().into()]),
+    )
 }

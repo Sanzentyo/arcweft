@@ -25,7 +25,7 @@ pub struct AwaitedTaskSnapshot {
     pub task_id: TaskId,
     pub key: TaskKey,
     pub class: TaskClass,
-    pub source: TaskSource,
+    pub request: HostTaskRequest,
 }
 ```
 
@@ -75,4 +75,3 @@ Agent actions are replayed as semantic actions when possible.
 ```bash
 arcw agent replay traces/bug.awfagent.ndjson --headless
 ```
-

@@ -376,7 +376,21 @@ pub struct CallableItem {
     signature_tail: String,
     contracts: Vec<ContractClause>,
     body: String,
+    body_statements: Vec<Stmt>,
+    body_value: Option<Expr>,
     range: TextRange,
+}
+
+pub(crate) struct CallableItemInit {
+    pub(crate) kind: CallableKind,
+    pub(crate) visibility: Option<Visibility>,
+    pub(crate) name: String,
+    pub(crate) signature_tail: String,
+    pub(crate) contracts: Vec<ContractClause>,
+    pub(crate) body: String,
+    pub(crate) body_statements: Vec<Stmt>,
+    pub(crate) body_value: Option<Expr>,
+    pub(crate) range: TextRange,
 }
 
 /// Function-like item category.
@@ -827,23 +841,17 @@ impl CapabilityFn {
 }
 
 impl CallableItem {
-    pub(crate) fn new(
-        kind: CallableKind,
-        visibility: Option<Visibility>,
-        name: String,
-        signature_tail: String,
-        contracts: Vec<ContractClause>,
-        body: String,
-        range: TextRange,
-    ) -> Self {
+    pub(crate) fn new(init: CallableItemInit) -> Self {
         Self {
-            kind,
-            visibility,
-            name,
-            signature_tail,
-            contracts,
-            body,
-            range,
+            kind: init.kind,
+            visibility: init.visibility,
+            name: init.name,
+            signature_tail: init.signature_tail,
+            contracts: init.contracts,
+            body: init.body,
+            body_statements: init.body_statements,
+            body_value: init.body_value,
+            range: init.range,
         }
     }
 
@@ -869,6 +877,14 @@ impl CallableItem {
 
     pub fn body(&self) -> &str {
         &self.body
+    }
+
+    pub fn body_statements(&self) -> &[Stmt] {
+        &self.body_statements
+    }
+
+    pub const fn body_value(&self) -> Option<&Expr> {
+        self.body_value.as_ref()
     }
 
     pub const fn range(&self) -> &TextRange {

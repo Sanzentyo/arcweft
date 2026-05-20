@@ -158,6 +158,10 @@ fn parses_documented_adt_items() {
 pub enum GameEvent {
     StartGame,
     ChoiceSelected { id: Ref<ChoiceOption> },
+    Detailed {
+        id: Ref<ChoiceOption>,
+        label: TextKey,
+    },
 }
 
 pub struct SettingsInput {
@@ -177,11 +181,17 @@ where len(self) <= 16
     };
     assert_eq!(event.visibility(), Some(Visibility::Public));
     assert_eq!(event.name(), "GameEvent");
-    assert_eq!(event.variants().len(), 2);
+    assert_eq!(event.variants().len(), 3);
     assert_eq!(event.variants()[1].name(), "ChoiceSelected");
     assert_eq!(
         event.variants()[1].payload(),
         Some("{ id: Ref<ChoiceOption> }")
+    );
+    assert_eq!(event.variants()[2].name(), "Detailed");
+    assert!(
+        event.variants()[2]
+            .payload()
+            .is_some_and(|payload| payload.contains("label: TextKey"))
     );
 
     let Item::Struct(settings) = &tree.items()[2] else {
@@ -318,12 +328,16 @@ pub view current_scene(state: GameState) -> Scene {
     assert!(reducer.signature_tail().contains("GameEvent"));
     assert_eq!(reducer.contracts().len(), 1);
     assert!(reducer.body().contains("match event"));
+    assert!(reducer.body_statements().is_empty());
+    assert!(matches!(reducer.body_value(), Some(Expr::Match { .. })));
 
     let Item::Callable(view) = &tree.items()[2] else {
         panic!("expected view item");
     };
     assert_eq!(view.kind(), CallableKind::View);
     assert_eq!(view.name(), "current_scene");
+    assert!(view.body_statements().is_empty());
+    assert!(matches!(view.body_value(), Some(Expr::NamedBlock { name, .. }) if name == "scene"));
 
     let hir = lower_to_hir(&tree).expect("syntax-only state/callable items do not block HIR");
     assert!(hir.flows().is_empty());

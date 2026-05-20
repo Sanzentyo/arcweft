@@ -1,6 +1,6 @@
 use arcweft_core::engine::{Engine, FlowFiberStatus};
 use arcweft_core::executor::{RuntimeExecutor, VmExecutor};
-use arcweft_core::plan::{FlowRuntimeId, RuntimeEntryTarget, RuntimePlan};
+use arcweft_core::plan::{FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan};
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
 };
@@ -46,6 +46,7 @@ enum CliCommand {
     Unsafe(UnsafeOptions),
     Plan(PlanOptions),
     Run(RuntimeRunOptions),
+    Cli(CliRunOptions),
     Test(ScriptTestOptions),
     Bench(ScriptBenchOptions),
     Fmt(ToolingCommandOptions),
@@ -74,6 +75,7 @@ fn run(cli: Cli) -> Result<(), ExitCode> {
         CliCommand::Unsafe(options) => unsafe_command(&options),
         CliCommand::Plan(options) => runtime_plan_command(&options),
         CliCommand::Run(options) => runtime_run_command(&options),
+        CliCommand::Cli(options) => runtime_cli_command(&options),
         CliCommand::Test(options) => script_test_command(&options),
         CliCommand::Bench(options) => script_bench_command(&options),
         CliCommand::Fmt(options) => format_command(&options),
@@ -242,6 +244,70 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
     }
 }
 
+fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
+    let checked = load_and_check(&options.path)?;
+    let mut plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
+        for error in errors {
+            eprintln!("error: {error}");
+        }
+        ExitCode::FAILURE
+    })?;
+    apply_runtime_cli_entry_selection(&mut plan, options.entry.as_deref())?;
+    let mut bindings = options.values.clone();
+    bindings.push(RuntimeBinding {
+        name: "args".to_owned(),
+        value: RuntimeValue::BracketSeq(
+            options
+                .args
+                .iter()
+                .cloned()
+                .map(RuntimeValue::String)
+                .collect(),
+        ),
+    });
+    bindings.push(RuntimeBinding {
+        name: "argc".to_owned(),
+        value: RuntimeValue::Int(i64::try_from(options.args.len()).unwrap_or(i64::MAX)),
+    });
+
+    let mut executor = VmExecutor::new(plan);
+    let mut steps = Vec::new();
+    for step_index in 0..options.steps {
+        let result = executor.step(
+            RuntimeStepInput {
+                bindings: bindings.clone(),
+                ..RuntimeStepInput::default()
+            },
+            step_options(options.mode, options.max_ops),
+        );
+        let summary = RuntimeStepRunSummary::from_result(step_index, result, executor.fiber());
+        let done = matches!(
+            executor.fiber().status,
+            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+        );
+        steps.push(summary);
+        if done {
+            break;
+        }
+    }
+    let report = RuntimeRunReport {
+        steps,
+        final_status: flow_status_label(&executor.fiber().status),
+    };
+    if options.json {
+        print_json(&report)
+    } else {
+        println!(
+            "ok: {} ({} cli arg(s), {} step(s), final_status={})",
+            options.path.display(),
+            options.args.len(),
+            report.steps.len(),
+            report.final_status
+        );
+        Ok(())
+    }
+}
+
 fn apply_runtime_entry_selection(
     plan: &mut RuntimePlan,
     entry: Option<&str>,
@@ -277,6 +343,32 @@ fn apply_runtime_entry_selection(
         plan.entry_flow = Some(flow.clone());
         return Ok(());
     }
+    Ok(())
+}
+
+fn apply_runtime_cli_entry_selection(
+    plan: &mut RuntimePlan,
+    entry: Option<&str>,
+) -> Result<(), ExitCode> {
+    if let Some(entry) = entry {
+        return apply_runtime_entry_selection(plan, Some(entry), None);
+    }
+    let Some(spec) = plan
+        .entries
+        .iter()
+        .find(|candidate| candidate.kind == RuntimeEntryKind::Cli)
+    else {
+        eprintln!("error: no cli entry found; declare `entry cli @entry.name` or pass --entry");
+        return Err(ExitCode::FAILURE);
+    };
+    let RuntimeEntryTarget::Flow(flow) = &spec.target else {
+        eprintln!(
+            "error: cli entry `{}` does not select a single runnable flow",
+            spec.id.0
+        );
+        return Err(ExitCode::FAILURE);
+    };
+    plan.entry_flow = Some(flow.clone());
     Ok(())
 }
 
@@ -816,6 +908,25 @@ struct RuntimeRunOptions {
     values: Vec<RuntimeBinding>,
     #[arg(long)]
     json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+struct CliRunOptions {
+    path: PathBuf,
+    #[arg(long)]
+    entry: Option<String>,
+    #[arg(long, default_value_t = 1)]
+    steps: usize,
+    #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
+    mode: CliRuntimeStepMode,
+    #[arg(long, default_value_t = 32)]
+    max_ops: usize,
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    values: Vec<RuntimeBinding>,
+    #[arg(long)]
+    json: bool,
+    #[arg(last = true)]
+    args: Vec<String>,
 }
 
 #[derive(Args, Clone, Debug)]

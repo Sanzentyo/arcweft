@@ -585,6 +585,40 @@ flow @flow.run run {
 }
 
 #[test]
+fn cli_json_selects_cli_entry_and_binds_args() {
+    let path = temp_awft(
+        "cli-entry",
+        r"
+entry cli @entry.main { run @flow.main }
+
+flow @flow.main main(argc: i32) {
+    return argc
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("cli")
+        .arg(&path)
+        .arg("--json")
+        .arg("--")
+        .arg("one")
+        .arg("two")
+        .output()
+        .expect("arcw cli runs");
+    assert!(
+        output.status.success(),
+        "cli run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"final_status\": \"done") && stdout.contains("return 2"),
+        "cli entry should bind argc from trailing args: {stdout}"
+    );
+}
+
+#[test]
 fn run_json_reports_headless_observations() {
     let path = temp_awft(
         "runtime-observations",

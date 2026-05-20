@@ -53,6 +53,7 @@ arcw verify game/routes/opening.awft --emit-smt out/proofs
 arcw unsafe game/routes/opening.awft --json
 arcw plan game/routes/opening.awft --json
 arcw run game/routes/opening.awft --steps 4 --json
+arcw cli game/routes/opening.awft -- --dry-run
 arcw test game/routes/opening.awft --json
 arcw bench game/routes/opening.awft --json
 ```
@@ -135,6 +136,27 @@ source/stream queues and emit stream events under a deterministic per-step
 budget. `--value` injects pure `RuntimeValue` bindings into `RuntimeStepInput`; this
 is for deterministic CLI/LSP inspection, not host I/O. Unsupported flow syntax
 fails with a runtime-lowering error instead of being silently dropped.
+
+## CLI Entry Dry Run
+
+`arcw cli <file.awft> [--entry entry.id] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json] -- ARGS...`
+executes a source-declared `entry cli` through the same Sans I/O runtime as
+`arcw run`. If `--entry` is omitted, the first `entry cli` that selects a single
+flow is used. The command does not perform script-requested filesystem,
+process, or network effects; it only binds CLI arguments as pure runtime values:
+
+```text
+args: [String]
+argc: i32
+```
+
+```bash
+arcw cli tools/build.awft -- --profile debug
+arcw cli tools/build.awft --entry main --json -- --profile release
+```
+
+`arcw serve` remains a later adapter command because server entries can route
+multiple methods/paths and require an explicit host adapter.
 
 ## Test / Bench
 

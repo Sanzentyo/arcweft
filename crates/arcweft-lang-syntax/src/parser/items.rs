@@ -1,9 +1,9 @@
 use crate::ast::common::TextRange;
 use crate::ast::items::{
-    CallableItem, CapabilityFn, EntityDeclItem, EntryDeclItem, EntryItem, EntryKind, EnumItem,
-    EnumVariant, ExternCapabilityItem, ExternModItem, FunctionInit, FunctionItem, ImplItem,
-    ImplMember, MemoFn, ParserItem, StateField, StateItem, StructField, StructItem, TraitItem,
-    TraitMember, TypeAliasItem,
+    CallableItem, CallableItemInit, CapabilityFn, EntityDeclItem, EntryDeclItem, EntryItem,
+    EntryKind, EnumItem, EnumVariant, ExternCapabilityItem, ExternModItem, FunctionInit,
+    FunctionItem, ImplItem, ImplMember, MemoFn, ParserItem, StateField, StateItem, StructField,
+    StructItem, TraitItem, TraitMember, TypeAliasItem,
 };
 use crate::cst::{
     find_matching_angle_group, find_top_level_punctuation, split_first_string_literal,
@@ -233,16 +233,19 @@ impl Parser {
             .skip(1)
             .filter_map(|line| parse_contract_clause(line))
             .collect();
+        let (body_statements, body_value) = parse_scope_expr_body(&body);
 
-        Some(CallableItem::new(
+        Some(CallableItem::new(CallableItemInit {
             kind,
             visibility,
-            name.unwrap_or_default(),
-            signature_tail,
+            name: name.unwrap_or_default(),
+            signature_tail: signature_tail.clone(),
             contracts,
             body,
-            TextRange::new(start_line.start, end),
-        ))
+            body_statements,
+            body_value,
+            range: TextRange::new(start_line.start, end),
+        }))
     }
 
     pub(super) fn parse_state_item(&mut self) -> Option<StateItem> {
@@ -518,10 +521,11 @@ impl Parser {
 
 pub(super) fn parse_enum_variants(body: &str) -> Vec<EnumVariant> {
     let mut docs = PendingDocLines::default();
-    body.lines()
+    collect_logical_block_items(body)
+        .into_iter()
         .enumerate()
-        .filter_map(|(line_index, line)| {
-            let line = line.trim();
+        .filter_map(|(line_index, item)| {
+            let line = item.trim();
             if line.is_empty() {
                 return None;
             }

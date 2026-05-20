@@ -108,6 +108,15 @@ fn child_task_triggers_emit_task_request_and_scoped_body() {
 
     assert_eq!(output.requests.tasks.len(), 1);
     assert_eq!(output.requests.tasks[0].priority, TaskPriority(7));
+    assert_eq!(output.requests.tasks[0].debug_label, "line_task.run_child");
+    assert!(matches!(
+        &output.requests.tasks[0].request,
+        HostTaskRequest::Custom {
+            capability,
+            operation,
+            args
+        } if capability.0 == "line_task" && operation == "run_child" && args.len() == 1
+    ));
     assert_eq!(
         output.effects.line,
         vec![call("handler"), call("handler_defer")]

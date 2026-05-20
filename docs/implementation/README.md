@@ -238,10 +238,13 @@ Current high-confidence state:
   scopes are isolated so locals, line guarantees, and dropped-lifetime state do
   not leak across task or line boundaries.
 - `arcweft-core` now exposes initial Sans I/O task/source event envelopes:
-  `TaskSpec`, `TaskEvent`, `TaskHost`, `normalize_task_events`,
-  `SourcePolicy`, `BackpressurePolicy`, `ReplayPolicy`, and `SourceEvent`.
-  These are pure data contracts for host adapters; no Tokio/Rayon/filesystem,
-  device, audio, or GPU runtime is linked into core.
+  `TaskSpec`, `HostTaskRequest`, `TaskEvent`, `TaskHost`,
+  `normalize_task_events`, `SourcePolicy`, `BackpressurePolicy`,
+  `ReplayPolicy`, and `SourceEvent`. `TaskSpec` carries a typed host request
+  plus a diagnostics-only `debug_label`; file, HTTP, process, asset, shader,
+  audio, TTS, Wasm, and custom capability requests are pure data contracts for
+  host adapters. No Tokio/Rayon/filesystem, device, audio, or GPU runtime is
+  linked into core.
 - Phase 2.0 structured headless runtime work is implemented in `arcweft-core`:
   `RuntimePlan`, `RuntimeFlow`, `FlowOp`, `RuntimeValue`, `RuntimeExpr`,
   `RuntimePattern`, `RuntimeEnv`, `Engine`, `FlowFiber`, and

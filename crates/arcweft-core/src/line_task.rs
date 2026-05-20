@@ -2,7 +2,7 @@ use crate::effect::{LineEffectRequest, RuntimeField};
 use crate::plan::FlowEvent;
 use crate::step::{RuntimeStepInput, RuntimeStepOutput};
 use crate::task::{
-    CancelScopeId, TaskClass, TaskId, TaskKey, TaskPolicy, TaskPriority, TaskSource, TaskSpec,
+    CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
 };
 use crate::time::LogicalDuration;
 
@@ -297,20 +297,19 @@ fn task_spec(task: &LineChildTask) -> TaskSpec {
         .key
         .clone()
         .unwrap_or_else(|| TaskKey(task.id.0.clone()));
-    TaskSpec {
-        id: task.id.clone(),
+    let name = task
+        .name
+        .clone()
+        .unwrap_or_else(|| "anonymous line task".to_owned());
+    TaskSpec::new(
+        task.id.clone(),
         key,
-        class: TaskClass::LocalUi,
-        priority: task.priority,
-        cancel_scope: CancelScopeId("line".to_owned()),
-        policy: TaskPolicy::JoinSameKey,
-        source: TaskSource {
-            label: task
-                .name
-                .clone()
-                .unwrap_or_else(|| "anonymous line task".to_owned()),
-        },
-    }
+        TaskClass::LocalUi,
+        task.priority,
+        CancelScopeId("line".to_owned()),
+        TaskPolicy::JoinSameKey,
+        HostTaskRequest::custom("line_task", "run_child", [name.into()]),
+    )
 }
 
 fn outcome_defer_stack(scope: &LineTaskScope, exit: ScopeExit) -> &[Vec<LineEffectRequest>] {

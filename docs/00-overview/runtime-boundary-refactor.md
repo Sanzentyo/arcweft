@@ -585,28 +585,28 @@ These encode intentionally rejected constructs, such as absolute OS paths or old
 
 - [x] Remove `--frames` from `arcw run`.
 - [x] Add `--steps`, `--mode`, and `--max-ops`.
-- [ ] Add `--entry`.
+- [x] Add `--entry`.
 - [x] Rename runtime report fields from frames to steps.
-- [ ] Add `arcw cli` after entry/capability grammar lands.
+- [x] Add `arcw cli` after entry/capability grammar lands.
 - [ ] Add `arcw serve` after server adapter lands.
 
 ### Parser / language
 
-- [ ] Add `entry` declarations.
-- [ ] Add `extern capability` declarations.
-- [ ] Add capability effect facts.
-- [ ] Parse callable bodies structurally.
-- [ ] Replace line-based ADT/state/trait parsing with logical/CST item parsing.
-- [ ] Replace naive brace counting in `collect_logical_block_items`.
-- [ ] Add virtual path capabilities.
+- [x] Add `entry` declarations.
+- [x] Add `extern capability` declarations.
+- [x] Add capability effect facts.
+- [x] Parse callable bodies structurally.
+- [x] Replace line-based ADT/state/trait parsing with logical/CST item parsing.
+- [x] Replace naive brace counting in `collect_logical_block_items`.
+- [x] Add virtual path capabilities.
 
 ### Runtime lowering
 
-- [ ] Do not infer runtime entry from first flow once `entry` exists.
-- [ ] Add `RuntimePlan.entries`.
-- [ ] Add pure function call runtime lowering.
+- [x] Do not infer runtime entry from first flow once `entry` exists.
+- [x] Add `RuntimePlan.entries`.
+- [x] Add pure function call runtime lowering.
 - [ ] Add typed `HostTaskRequest` lowering for file/HTTP/asset/shader/audio/TTS/process.
-- [ ] Keep VM as semantic source of truth.
+- [x] Keep VM as semantic source of truth.
 - [ ] Add AOT executor later as another `RuntimeExecutor` implementation, not as different semantics.
 
 ### Tests
@@ -617,4 +617,4 @@ These encode intentionally rejected constructs, such as absolute OS paths or old
 - [x] Add current-pass fixtures.
 - [x] Add spec-should-pass fixtures.
 - [x] Add spec-should-fail fixtures.
-- [ ] Unignore spec fixtures as implementation lands.
+- [x] Unignore spec fixtures as implementation lands.
