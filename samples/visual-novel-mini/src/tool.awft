@@ -1,0 +1,9 @@
+entry cli @entry.main {
+    run @flow.main
+}
+
+flow @flow.main main(argc: i32) {
+    log.info("tool invoked")
+    return argc
+}
+

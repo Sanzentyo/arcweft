@@ -82,6 +82,21 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn speaker_preset_call_arguments_are_typed_expressions() {
+    let expr = parse_expr("alice(face=.smile, voice=auto, window=@textbox:.side)")
+        .expect("speaker preset argument list parses");
+    let Expr::Call { callee, args } = expr else {
+        panic!("expected call expression");
+    };
+    assert!(matches!(callee.as_ref(), Expr::Path(path) if path == "alice"));
+    assert_eq!(args.len(), 3);
+    assert!(args.iter().all(|arg| matches!(arg, Expr::NamedArg { .. })));
+    assert!(
+        matches!(&args[0], Expr::NamedArg { value, .. } if matches!(value.as_ref(), Expr::Path(path) if path == ".smile"))
+    );
+}
+
+#[test]
 fn at_is_entity_ref_and_slash_comments_are_comments() {
     let tree = parse_ok(
         r"

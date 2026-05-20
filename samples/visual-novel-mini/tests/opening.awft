@@ -1,0 +1,17 @@
+signal @signal:.current_flow: Watch<Ref<Flow>>
+
+flow @flow.opening opening
+effects { signal.write }
+{
+    log.info("test opening")
+    signal.set(@signal.current_flow, @flow.opening)
+    return "done"
+}
+
+test @test.opening_smoke scenario {
+    start @flow.opening
+    expect log.info contains "test opening"
+    expect signal @signal.current_flow == @flow.opening
+    expect no_assertion_failures
+}
+

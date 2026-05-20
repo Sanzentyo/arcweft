@@ -2,6 +2,7 @@
 members = [
     "crates/arcweft-core",
     "crates/arcweft-adt",
+    "crates/arcweft-adapter-context",
     "crates/arcweft-dialogue",
     "crates/arcweft-id",
     "crates/arcweft-memory",

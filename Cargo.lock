@@ -103,6 +103,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-adapter-context"
+version = "0.1.0"
+dependencies = [
+ "arcweft-lang-sema",
+]
+
+[[package]]
 name = "arcweft-adt"
 version = "0.1.0"
 
@@ -110,6 +117,7 @@ version = "0.1.0"
 name = "arcweft-cli"
 version = "0.1.0"
 dependencies = [
+ "arcweft-adapter-context",
  "arcweft-core",
  "arcweft-lang-hir",
  "arcweft-lang-sema",

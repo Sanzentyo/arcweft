@@ -100,6 +100,63 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn speaker_preset_options_parse_but_reject_unresolved_atoms() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    let alice2 = alice(face=smile, mood=embarrassed, custom_style=soft, window=@textbox:.side)
+    alice2: おはよう。[p]
+    alice.face(worried)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("extensible speaker options lower");
+    let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::Ref(EntityKind::Character));
+    let errors = typecheck_hir(&hir, &env).expect_err("unresolved dialogue atoms are rejected");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("unknown symbol `smile`"))
+    );
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("unknown symbol `worried`"))
+    );
+
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    let bad = smile
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("bare atom fixture lowers");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("bare atom is not global");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("unknown symbol `smile`"))
+    );
+}
+
+#[test]
+fn speaker_preset_options_accept_resolved_variant_atoms() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    let alice2 = alice(face=.smile, voice=auto, window=@textbox:.side)
+    alice2: おはよう。[p]
+    alice.face(.worried)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("resolved speaker options lower");
+    let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::Ref(EntityKind::Character));
+    typecheck_hir(&hir, &env).expect("short variant atom options typecheck");
+}
+
+#[test]
 fn parses_bare_block_after_dialogue_as_unnamed_scope() {
     let tree = parse_ok(
         r#"

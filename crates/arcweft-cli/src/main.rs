@@ -1,3 +1,4 @@
+use arcweft_adapter_context::native_http_server_context;
 use arcweft_core::engine::{Engine, FlowFiberStatus};
 use arcweft_core::executor::{RuntimeExecutor, VmExecutor};
 use arcweft_core::plan::{
@@ -317,7 +318,8 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
 }
 
 fn runtime_serve_command(options: &ServeOptions) -> Result<(), ExitCode> {
-    let checked = load_and_check(&options.path)?;
+    let env = server_adapter_typecheck_env();
+    let checked = load_and_check_with_env(&options.path, &env)?;
     let plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
         for error in errors {
             eprintln!("error: {error}");
@@ -914,6 +916,10 @@ struct CheckedModule {
 }
 
 fn load_and_check(path: &Path) -> Result<CheckedModule, ExitCode> {
+    load_and_check_with_env(path, &TypeCheckEnv::new())
+}
+
+fn load_and_check_with_env(path: &Path, env: &TypeCheckEnv) -> Result<CheckedModule, ExitCode> {
     if !is_awft_path(path) {
         eprintln!("error: {} is not an .awft source file", path.display());
         return Err(ExitCode::from(2));
@@ -962,7 +968,7 @@ fn load_and_check(path: &Path) -> Result<CheckedModule, ExitCode> {
         return Err(ExitCode::FAILURE);
     }
 
-    if let Err(errors) = typecheck_hir(&hir, &TypeCheckEnv::new()) {
+    if let Err(errors) = typecheck_hir(&hir, env) {
         for error in errors {
             eprintln!("error: {}", error.message());
         }
@@ -984,6 +990,10 @@ fn load_and_check(path: &Path) -> Result<CheckedModule, ExitCode> {
         syntax_warnings: lints.len(),
         line_task_groups,
     })
+}
+
+fn server_adapter_typecheck_env() -> TypeCheckEnv {
+    native_http_server_context().apply_to_env(TypeCheckEnv::new())
 }
 
 #[derive(Args, Clone, Debug)]

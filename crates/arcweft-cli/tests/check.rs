@@ -1310,6 +1310,40 @@ flow @flow.save save {
 }
 
 #[test]
+fn serve_json_typechecks_route_params_runtime_binding() {
+    let path = temp_awft(
+        "serve-route-params",
+        r#"
+entry server @entry.http {
+    route GET "/hello/:name" -> @flow.hello
+}
+
+flow @flow.hello hello {
+    return route_params.name
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("serve")
+        .arg(&path)
+        .arg("--entry")
+        .arg("http")
+        .arg("--adapter")
+        .arg("native-http")
+        .arg("--json")
+        .output()
+        .expect("arcw serve runs");
+
+    assert!(
+        output.status.success(),
+        "expected route_params to typecheck in server entry context, stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn serve_json_treats_server_run_entry_as_default_route() {
     let path = temp_awft(
         "serve-run",

@@ -645,7 +645,9 @@ impl<'a> Lexer<'a> {
             || self.source[..self.cursor]
                 .chars()
                 .next_back()
-                .is_some_and(|ch| ch.is_whitespace() || matches!(ch, '(' | '[' | '{' | ','));
+                .is_some_and(|ch| {
+                    ch.is_whitespace() || matches!(ch, '(' | '[' | '{' | ',' | '=' | ':')
+                });
         at_expr_start
             && self
                 .source

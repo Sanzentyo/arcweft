@@ -418,6 +418,18 @@ impl TypeChecker<'_> {
             if name == "assume" {
                 return Some(TypeKind::Unit);
             }
+            if self.symbol_type(name) == Some(&TypeKind::Ref(EntityKind::Character)) {
+                for arg in args {
+                    self.check_expr(arg);
+                }
+                return Some(TypeKind::SpeakerPreset(EntityKind::Character));
+            }
+            if self.symbol_type(name) == Some(&TypeKind::SpeakerPreset(EntityKind::Character)) {
+                for arg in args {
+                    self.check_expr(arg);
+                }
+                return Some(TypeKind::SpeakerPreset(EntityKind::Character));
+            }
             let arg_types = args
                 .iter()
                 .map(|arg| self.check_expr(arg))
@@ -437,23 +449,25 @@ impl TypeChecker<'_> {
             if name == "Some" {
                 return Some(TypeKind::Option(Box::new(first_arg_type(&arg_types))));
             }
-            if self.symbol_type(name) == Some(&TypeKind::Ref(EntityKind::Character)) {
-                return Some(TypeKind::SpeakerPreset(EntityKind::Character));
-            }
             return self.function_type(name).cloned().or_else(|| {
                 self.errors
                     .push(TypeCheckError::new(format!("unknown function `{name}`")));
                 None
             });
         }
-        for arg in args {
-            self.check_expr(arg);
-        }
         match self.check_expr(callee) {
             Some(TypeKind::Speaker(entity) | TypeKind::SpeakerPreset(entity)) => {
+                for arg in args {
+                    self.check_expr(arg);
+                }
                 Some(TypeKind::SpeakerPreset(entity))
             }
-            other => other,
+            other => {
+                for arg in args {
+                    self.check_expr(arg);
+                }
+                other
+            }
         }
     }
 
@@ -539,14 +553,17 @@ impl TypeChecker<'_> {
             }
         }
         let receiver_type = self.check_expr(receiver);
-        for arg in args {
-            self.check_expr(arg);
-        }
         if is_drop_name(method_name) {
+            for arg in args {
+                self.check_expr(arg);
+            }
             return Some(TypeKind::Unit);
         }
         receiver_type.and_then(|receiver_type| {
             if matches!(method_name, "context" | "with_context") {
+                for arg in args {
+                    self.check_expr(arg);
+                }
                 return match receiver_type {
                     TypeKind::Need { .. } => Some(receiver_type),
                     TypeKind::Option(inner) => Some(TypeKind::Result {
@@ -568,6 +585,9 @@ impl TypeChecker<'_> {
                         | TypeKind::SpeakerPreset(EntityKind::Character)
                 )
             {
+                for arg in args {
+                    self.check_expr(arg);
+                }
                 return Some(TypeKind::CharacterPatch(EntityKind::Character));
             }
             if method_name == "say"
@@ -578,7 +598,13 @@ impl TypeChecker<'_> {
                         | TypeKind::SpeakerPreset(EntityKind::Character)
                 )
             {
+                for arg in args {
+                    self.check_expr(arg);
+                }
                 return Some(TypeKind::SpeakerPreset(EntityKind::Character));
+            }
+            for arg in args {
+                self.check_expr(arg);
             }
             self.env
                 .method_type(&receiver_type, method_name)
@@ -649,8 +675,14 @@ impl TypeChecker<'_> {
             self.check_expr(target);
             return Some(field_type);
         }
-        self.check_expr(target);
-        None
+        match self.check_expr(target) {
+            Some(TypeKind::Map { value, .. }) => Some(*value),
+            Some(TypeKind::Named(name)) if name == "HttpRequestContext" => match field {
+                "method" | "path" | "body" => Some(TypeKind::String),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
     fn check_try_expr(&mut self, expr: &Expr) -> Option<TypeKind> {
