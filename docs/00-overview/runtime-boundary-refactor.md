@@ -344,7 +344,7 @@ pub struct RuntimePlan {
 arcw run <file.awft> --entry @entry.main --mode game --steps 8
 arcw run <file.awft> --entry @entry.main --mode drain --max-ops 10000
 arcw cli <file.awft> --entry @entry.main -- ARGS...
-arcw serve <file.awft> --entry @entry.http --adapter native-http --json
+arcw serve <file.awft> --entry @entry.http --adapter native-http --listen 127.0.0.1:8080
 ```
 
 Replace `RuntimeRunOptions.frames` with:
@@ -625,8 +625,12 @@ These encode intentionally rejected constructs, such as absolute OS paths or old
 - [x] Add pure function call runtime lowering.
 - [x] Add typed `HostTaskRequest` lowering for file/HTTP/asset/shader/audio/TTS/process.
 - [x] Keep VM as semantic source of truth.
-- [ ] Add native server adapters that consume `arcw serve` route plans.
-- [ ] Add AOT executor later as another `RuntimeExecutor` implementation, not as different semantics.
+- [x] Add native server adapters that consume `arcw serve` route plans.
+- [x] Add AOT executor as another `RuntimeExecutor` implementation, not as different semantics.
+
+Future bytecode/state-machine work may replace the Phase 2 VM-equivalent
+`AotExecutor` internals with generated dispatch, but that is outside this
+runtime-boundary closure checklist.
 
 ### Tests
 

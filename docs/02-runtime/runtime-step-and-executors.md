@@ -27,7 +27,9 @@ pub struct RuntimeStepResult {
 
 `Engine` implements `RuntimeExecutor` directly. `VmExecutor` is the current
 semantic executor wrapper used by CLI tooling; it delegates to `Engine` and keeps
-the VM as the source of truth.
+the VM as the source of truth. `AotExecutor` also implements `RuntimeExecutor`
+today, but its Phase 2 implementation deliberately delegates to `VmExecutor` so
+the public AOT boundary can be tested without creating a second semantic engine.
 
 Snapshot/restore remains a future shared contract. It must use executor-neutral
 data when added so VM, AOT, replay, and LSP tooling can compare equivalent
@@ -41,8 +43,7 @@ pub struct VmExecutor {
 }
 
 pub struct AotExecutor {
-    state: AotRuntimeState,
-    dispatch: AotDispatchTable,
+    vm: VmExecutor,
 }
 
 pub struct HybridExecutor {
@@ -76,6 +77,8 @@ Full script AOT
 
 AOT never directly touches filesystem, network, renderer, audio, or wall-clock.
 It emits `RuntimeEffectBatch` and `HostRequestBatch` just like the VM.
+Generated AOT dispatch remains future work; until then, `AotExecutor` is a
+VM-equivalent conformance boundary.
 
 ## Step options
 

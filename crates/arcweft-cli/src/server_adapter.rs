@@ -1,0 +1,361 @@
+use arcweft_core::engine::{FlowExit, FlowFiberStatus};
+use arcweft_core::executor::{RuntimeExecutor, VmExecutor};
+use arcweft_core::plan::{FlowRuntimeId, RuntimePlan, RuntimeRouteSpec};
+use arcweft_core::step::{
+    RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
+};
+use arcweft_core::value::{RuntimeBinding, RuntimeFieldValue, RuntimeValue};
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream};
+use thiserror::Error;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct NativeHttpServerConfig {
+    pub(crate) listen: SocketAddr,
+    pub(crate) once: bool,
+    pub(crate) max_ops: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub(crate) struct NativeHttpServerReport {
+    pub(crate) listen: String,
+    pub(crate) handled_requests: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct NativeHttpResponse {
+    pub(crate) status: u16,
+    pub(crate) body: String,
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub(crate) enum ServerAdapterError {
+    #[error("native HTTP adapter failed to bind {addr}: {message}")]
+    Bind { addr: SocketAddr, message: String },
+    #[error("native HTTP adapter failed to accept a request: {0}")]
+    Accept(String),
+    #[error("native HTTP adapter failed to read a request: {0}")]
+    Read(String),
+    #[error("native HTTP adapter failed to write a response: {0}")]
+    Write(String),
+    #[error("invalid HTTP request")]
+    InvalidRequest,
+}
+
+pub(crate) fn serve_native_http(
+    plan: &RuntimePlan,
+    routes: &[RuntimeRouteSpec],
+    config: NativeHttpServerConfig,
+) -> Result<NativeHttpServerReport, ServerAdapterError> {
+    let listener = TcpListener::bind(config.listen).map_err(|error| ServerAdapterError::Bind {
+        addr: config.listen,
+        message: error.to_string(),
+    })?;
+    let listen = listener
+        .local_addr()
+        .map_or_else(|_| config.listen.to_string(), |addr| addr.to_string());
+    let mut handled_requests = 0;
+    loop {
+        let (stream, _) = listener
+            .accept()
+            .map_err(|error| ServerAdapterError::Accept(error.to_string()))?;
+        serve_stream(stream, plan, routes, config.max_ops)?;
+        handled_requests += 1;
+        if config.once {
+            break;
+        }
+    }
+    Ok(NativeHttpServerReport {
+        listen,
+        handled_requests,
+    })
+}
+
+fn serve_stream(
+    mut stream: TcpStream,
+    plan: &RuntimePlan,
+    routes: &[RuntimeRouteSpec],
+    max_ops: usize,
+) -> Result<(), ServerAdapterError> {
+    let mut buffer = vec![0_u8; 64 * 1024];
+    let read = stream
+        .read(&mut buffer)
+        .map_err(|error| ServerAdapterError::Read(error.to_string()))?;
+    let request = String::from_utf8_lossy(&buffer[..read]);
+    let response = handle_http_request(plan, routes, &request, max_ops)?;
+    stream
+        .write_all(http_response_bytes(&response).as_bytes())
+        .map_err(|error| ServerAdapterError::Write(error.to_string()))
+}
+
+pub(crate) fn handle_http_request(
+    plan: &RuntimePlan,
+    routes: &[RuntimeRouteSpec],
+    request: &str,
+    max_ops: usize,
+) -> Result<NativeHttpResponse, ServerAdapterError> {
+    let parsed = parse_http_request(request)?;
+    let Some((route, params)) = routes
+        .iter()
+        .find_map(|route| route_match(route, &parsed).map(|params| (route, params)))
+    else {
+        return Ok(NativeHttpResponse {
+            status: 404,
+            body: "not found".to_owned(),
+        });
+    };
+    Ok(run_route_flow(
+        plan,
+        &route.target,
+        &parsed,
+        params,
+        max_ops,
+    ))
+}
+
+fn run_route_flow(
+    plan: &RuntimePlan,
+    target: &FlowRuntimeId,
+    request: &HttpRequestHead,
+    params: Vec<(String, String)>,
+    max_ops: usize,
+) -> NativeHttpResponse {
+    let mut plan = plan.clone();
+    plan.entry_flow = Some(target.clone());
+    let mut executor = VmExecutor::new(plan);
+    let result = executor.step(
+        RuntimeStepInput {
+            bindings: request_bindings(request, params),
+            ..RuntimeStepInput::default()
+        },
+        RuntimeStepOptions {
+            mode: RuntimeStepMode::Server,
+            budget: RuntimeStepBudget { max_ops },
+        },
+    );
+    if let Some(diagnostic) = result.output.diagnostics.first() {
+        return NativeHttpResponse {
+            status: 500,
+            body: diagnostic.message.clone(),
+        };
+    }
+    match &executor.fiber().status {
+        FlowFiberStatus::Done(FlowExit::Return(value)) => NativeHttpResponse {
+            status: 200,
+            body: value.clone(),
+        },
+        FlowFiberStatus::Done(FlowExit::Done) => NativeHttpResponse {
+            status: 204,
+            body: String::new(),
+        },
+        FlowFiberStatus::Failed(message) => NativeHttpResponse {
+            status: 500,
+            body: message.clone(),
+        },
+        FlowFiberStatus::Running | FlowFiberStatus::Waiting(_) | FlowFiberStatus::Choice(_) => {
+            NativeHttpResponse {
+                status: 202,
+                body: "route did not complete in this server step".to_owned(),
+            }
+        }
+    }
+}
+
+fn request_bindings(
+    request: &HttpRequestHead,
+    params: Vec<(String, String)>,
+) -> Vec<RuntimeBinding> {
+    vec![
+        RuntimeBinding {
+            name: "request".to_owned(),
+            value: RuntimeValue::Record(vec![
+                RuntimeFieldValue {
+                    name: "method".to_owned(),
+                    value: RuntimeValue::String(request.method.clone()),
+                },
+                RuntimeFieldValue {
+                    name: "path".to_owned(),
+                    value: RuntimeValue::String(request.path.clone()),
+                },
+                RuntimeFieldValue {
+                    name: "body".to_owned(),
+                    value: RuntimeValue::String(request.body.clone()),
+                },
+            ]),
+        },
+        RuntimeBinding {
+            name: "route_params".to_owned(),
+            value: RuntimeValue::Record(
+                params
+                    .into_iter()
+                    .map(|(name, value)| RuntimeFieldValue {
+                        name,
+                        value: RuntimeValue::String(value),
+                    })
+                    .collect(),
+            ),
+        },
+    ]
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct HttpRequestHead {
+    method: String,
+    path: String,
+    body: String,
+}
+
+fn parse_http_request(request: &str) -> Result<HttpRequestHead, ServerAdapterError> {
+    let (head, body) = request.split_once("\r\n\r\n").unwrap_or((request, ""));
+    let request_line = head
+        .lines()
+        .next()
+        .ok_or(ServerAdapterError::InvalidRequest)?;
+    let mut parts = request_line.split_whitespace();
+    let method = parts
+        .next()
+        .ok_or(ServerAdapterError::InvalidRequest)?
+        .to_owned();
+    let raw_path = parts
+        .next()
+        .ok_or(ServerAdapterError::InvalidRequest)?
+        .to_owned();
+    let path = raw_path
+        .split_once('?')
+        .map_or(raw_path.as_str(), |(path, _)| path)
+        .to_owned();
+    Ok(HttpRequestHead {
+        method,
+        path,
+        body: body.to_owned(),
+    })
+}
+
+fn route_match(
+    route: &RuntimeRouteSpec,
+    request: &HttpRequestHead,
+) -> Option<Vec<(String, String)>> {
+    let method_matches = route.method == "*" || route.method.eq_ignore_ascii_case(&request.method);
+    if !method_matches {
+        return None;
+    }
+    match_path(&route.path, &request.path)
+}
+
+fn match_path(pattern: &str, path: &str) -> Option<Vec<(String, String)>> {
+    if pattern == "*" {
+        return Some(Vec::new());
+    }
+    let pattern_segments = split_path(pattern);
+    let path_segments = split_path(path);
+    if pattern_segments.len() != path_segments.len() {
+        return None;
+    }
+    pattern_segments.iter().zip(path_segments).try_fold(
+        Vec::new(),
+        |mut params, (pattern, value)| {
+            if let Some(name) = pattern.strip_prefix(':') {
+                params.push((name.to_owned(), value.to_owned()));
+                Some(params)
+            } else if pattern == &value {
+                Some(params)
+            } else {
+                None
+            }
+        },
+    )
+}
+
+fn split_path(path: &str) -> Vec<&str> {
+    path.trim_matches('/')
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect()
+}
+
+fn http_response_bytes(response: &NativeHttpResponse) -> String {
+    let status_text = match response.status {
+        202 => "Accepted",
+        204 => "No Content",
+        404 => "Not Found",
+        500 => "Internal Server Error",
+        _ => "OK",
+    };
+    format!(
+        "HTTP/1.1 {} {}\r\ncontent-length: {}\r\ncontent-type: text/plain; charset=utf-8\r\nconnection: close\r\n\r\n{}",
+        response.status,
+        status_text,
+        response.body.len(),
+        response.body
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_core::plan::{FlowOp, RuntimeFlow};
+
+    #[test]
+    fn native_http_adapter_routes_request_to_flow() {
+        let plan = plan_with_flow("flow.health", vec![FlowOp::Return("ok".to_owned())]);
+        let routes = vec![RuntimeRouteSpec {
+            method: "GET".to_owned(),
+            path: "/health".to_owned(),
+            target: FlowRuntimeId("flow.health".to_owned()),
+        }];
+
+        let response = handle_http_request(
+            &plan,
+            &routes,
+            "GET /health HTTP/1.1\r\nhost: localhost\r\n\r\n",
+            8,
+        )
+        .expect("request is handled");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, "ok");
+    }
+
+    #[test]
+    fn native_http_adapter_binds_route_params() {
+        let plan = plan_with_flow(
+            "flow.hello",
+            vec![FlowOp::ReturnExpr(
+                arcweft_core::value::RuntimeExpr::Field {
+                    target: Box::new(arcweft_core::value::RuntimeExpr::Local(
+                        "route_params".to_owned(),
+                    )),
+                    field: "name".to_owned(),
+                },
+            )],
+        );
+        let routes = vec![RuntimeRouteSpec {
+            method: "GET".to_owned(),
+            path: "/hello/:name".to_owned(),
+            target: FlowRuntimeId("flow.hello".to_owned()),
+        }];
+
+        let response = handle_http_request(
+            &plan,
+            &routes,
+            "GET /hello/alice HTTP/1.1\r\nhost: localhost\r\n\r\n",
+            8,
+        )
+        .expect("request is handled");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, "alice");
+    }
+
+    fn plan_with_flow(id: &str, ops: Vec<FlowOp>) -> RuntimePlan {
+        RuntimePlan::new(
+            Some(FlowRuntimeId(id.to_owned())),
+            vec![RuntimeFlow {
+                id: FlowRuntimeId(id.to_owned()),
+                ops,
+            }],
+            Vec::new(),
+        )
+        .expect("plan is valid")
+    }
+}

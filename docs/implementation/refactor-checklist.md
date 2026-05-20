@@ -81,7 +81,8 @@ filesystem capability calls, and old RuntimeFrame naming.
 - [x] Rename runtime report `frames` to `steps`.
 - [x] Add `arcw cli` after capability grammar lands.
 - [x] Add `arcw serve` as a Sans I/O server-entry route-plan command.
-- [ ] Add native server adapters that consume `arcw serve` route plans.
+- [x] Add native server adapters that consume `arcw serve` route plans.
+- [x] Add AOT executor as another `RuntimeExecutor` implementation.
 
 ## Tests and fixtures
 

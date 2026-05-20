@@ -32,6 +32,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - Awaited capability calls now carry typed `HostTaskRequest` data through
   `AwaitTarget` into emitted `TaskSpec`s. The core remains Sans I/O; adapters
   consume the request data and later return deterministic `TaskEvent`s.
+- `arcw serve --listen` owns a minimal native HTTP adapter in the CLI layer. It
+  consumes lowered server route plans and executes matched flows through
+  `RuntimeStepMode::Server`; `arcweft-core` remains free of network I/O.
+- `AotExecutor` exists as a VM-equivalent `RuntimeExecutor` boundary. Generated
+  dispatch remains future work, but tooling can now target the AOT executor
+  shape without introducing different semantics.
 - No renderer, Servo, audio, camera, USB, MCP, or Cranelift JIT implementation.
 
 ## Files

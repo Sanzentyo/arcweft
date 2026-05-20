@@ -25,12 +25,15 @@ use arcweft_verify_oxiz::OxizBackend;
 use arcweft_verify_z3::ExternalZ3Backend;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 mod output;
+mod server_adapter;
 use output::{
     CheckReport, RuntimePlanReport, RuntimeRunReport, RuntimeStepRunSummary, ScriptBenchRunReport,
     ScriptBenchRunSummary, ScriptBenchSectionRunSummary, ScriptTestRunReport, ScriptTestRunSummary,
     flow_status_label,
 };
+use server_adapter::{NativeHttpServerConfig, serve_native_http};
 use std::fs;
+use std::net::SocketAddr;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -352,6 +355,34 @@ fn runtime_serve_command(options: &ServeOptions) -> Result<(), ExitCode> {
             })
             .collect(),
     };
+    if let Some(listen) = options.listen {
+        let server_report = serve_native_http(
+            &plan,
+            &routes,
+            NativeHttpServerConfig {
+                listen,
+                once: options.once,
+                max_ops: options.max_ops,
+            },
+        )
+        .map_err(|error| {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        })?;
+        let report = ServeRunReport {
+            plan: report,
+            server: server_report,
+        };
+        return if options.json {
+            print_json(&report)
+        } else {
+            println!(
+                "ok: served {} request(s) on {}",
+                report.server.handled_requests, report.server.listen
+            );
+            Ok(())
+        };
+    }
     if options.json {
         print_json(&report)
     } else {
@@ -1041,6 +1072,12 @@ struct ServeOptions {
     #[arg(long, default_value = "sans-io")]
     adapter: String,
     #[arg(long)]
+    listen: Option<SocketAddr>,
+    #[arg(long)]
+    once: bool,
+    #[arg(long, default_value_t = 128)]
+    max_ops: usize,
+    #[arg(long)]
     json: bool,
 }
 
@@ -1111,6 +1148,12 @@ struct ServeRouteReport {
     method: String,
     path: String,
     target: String,
+}
+
+#[derive(serde::Serialize)]
+struct ServeRunReport {
+    plan: ServePlanReport,
+    server: server_adapter::NativeHttpServerReport,
 }
 
 fn parse_runtime_binding_arg(value: &str) -> Result<RuntimeBinding, String> {

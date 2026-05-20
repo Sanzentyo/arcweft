@@ -158,12 +158,11 @@ arcw cli tools/build.awft --entry main --json -- --profile release
 
 ## Server Entry Plan
 
-`arcw serve <file.awft> [--entry entry.id] [--adapter NAME] [--json]` validates
-and exposes a source-declared `entry server`. In Phase 2.0 this is still a
-Sans I/O adapter-plan command: it does not open sockets, spawn a native HTTP
-server, or run filesystem/network effects. It selects a server entry, lowers its
-routes, verifies that route targets exist, and prints the method/path/flow table
-that a host adapter should bind.
+`arcw serve <file.awft> [--entry entry.id] [--adapter NAME] [--listen ADDR] [--once] [--max-ops N] [--json]`
+validates and exposes a source-declared `entry server`. Without `--listen`, it
+is a Sans I/O adapter-plan command: it selects a server entry, lowers its routes,
+verifies that route targets exist, and prints the method/path/flow table that a
+host adapter should bind.
 
 If `--entry` is omitted, the first `entry server` is selected. A server entry
 with `route METHOD "PATH" -> @flow.id` exposes those routes directly. A server
@@ -173,10 +172,18 @@ headless adapter planning.
 ```bash
 arcw serve game/routes/server.awft
 arcw serve game/routes/server.awft --entry http --adapter native-http --json
+arcw serve game/routes/server.awft --entry http --adapter native-http --listen 127.0.0.1:8080
+arcw serve game/routes/server.awft --entry http --adapter native-http --listen 127.0.0.1:0 --once --json
 ```
 
-Native HTTP binding remains adapter work outside `arcweft-core`; the CLI report
-uses `status = "planned"` to make that boundary explicit.
+With `--listen`, the CLI owns a minimal native HTTP adapter using `std::net`.
+The adapter parses the request line, matches exact routes and `:param` path
+segments, binds request data into the runtime as pure values, runs the target
+flow in `RuntimeStepMode::Server`, and writes a plain-text HTTP response from
+the returned flow value. Native HTTP binding remains outside `arcweft-core`; core
+only sees deterministic `RuntimeStepInput` and produces deterministic runtime
+output. The route-plan report uses `status = "planned"` to make that boundary
+explicit.
 
 ## Test / Bench
 

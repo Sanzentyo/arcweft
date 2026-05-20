@@ -19,6 +19,17 @@ pub struct VmExecutor {
     engine: Engine,
 }
 
+/// AOT executor boundary that currently preserves VM-equivalent semantics.
+///
+/// The Phase 2 implementation intentionally delegates to `VmExecutor` rather
+/// than introducing a second semantic engine. Native or generated dispatch can
+/// replace the backend behind this type once bytecode/state-machine generation
+/// exists, while callers already depend on the stable `RuntimeExecutor` shape.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AotExecutor {
+    vm: VmExecutor,
+}
+
 impl VmExecutor {
     pub fn new(plan: RuntimePlan) -> Self {
         Self {
@@ -39,6 +50,22 @@ impl VmExecutor {
     }
 }
 
+impl AotExecutor {
+    pub fn new(plan: RuntimePlan) -> Self {
+        Self {
+            vm: VmExecutor::new(plan),
+        }
+    }
+
+    pub const fn vm(&self) -> &VmExecutor {
+        &self.vm
+    }
+
+    pub fn into_vm(self) -> VmExecutor {
+        self.vm
+    }
+}
+
 impl RuntimeExecutor for VmExecutor {
     fn step(&mut self, input: RuntimeStepInput, options: RuntimeStepOptions) -> RuntimeStepResult {
         self.engine.step(input, options)
@@ -46,6 +73,16 @@ impl RuntimeExecutor for VmExecutor {
 
     fn fiber(&self) -> &FlowFiber {
         self.engine.fiber()
+    }
+}
+
+impl RuntimeExecutor for AotExecutor {
+    fn step(&mut self, input: RuntimeStepInput, options: RuntimeStepOptions) -> RuntimeStepResult {
+        self.vm.step(input, options)
+    }
+
+    fn fiber(&self) -> &FlowFiber {
+        self.vm.fiber()
     }
 }
 
