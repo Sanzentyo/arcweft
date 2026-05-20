@@ -1,0 +1,241 @@
+use crate::effect::LineEffectRequest;
+use crate::plan::FlowEvent;
+use crate::source::{SourceEvent, SourceId};
+use crate::stream::StreamEvent;
+use crate::task::{CancelScopeId, TaskEvent, TaskSpec};
+use crate::time::{LogicalDuration, TickId};
+use crate::value::RuntimeBinding;
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RuntimeStepInput {
+    pub tick: TickId,
+    pub dt: LogicalDuration,
+    pub bindings: Vec<RuntimeBinding>,
+    pub input_events: Vec<InputEvent>,
+    pub task_events: Vec<TaskEvent>,
+    pub ui_events: Vec<UiEvent>,
+    pub audio_events: Vec<AudioEvent>,
+    pub source_events: Vec<SourceEvent<String, String>>,
+}
+
+/// Borrowed adapter-facing view of runtime step inputs.
+///
+/// Adapters should prefer this view when handing input data into lower runtime
+/// layers. The view keeps ownership at the adapter step boundary and makes it
+/// clear that runtime code must not retain borrowed event slices past the step.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeStepInputRef<'a> {
+    tick: TickId,
+    dt: LogicalDuration,
+    bindings: &'a [RuntimeBinding],
+    input_events: &'a [InputEvent],
+    task_events: &'a [TaskEvent],
+    ui_events: &'a [UiEvent],
+    audio_events: &'a [AudioEvent],
+    source_events: &'a [SourceEvent<String, String>],
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RuntimeStepOutput {
+    pub diagnostics: Vec<RuntimeDiagnostic>,
+    pub flow_events: Vec<FlowEvent>,
+    pub effects: RuntimeEffectBatch,
+    pub requests: HostRequestBatch,
+}
+
+/// Runtime-produced events and effect requests, kept as pure data for hosts.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RuntimeEffectBatch {
+    pub line: Vec<LineEffectRequest>,
+    pub source_events: Vec<SourceEvent<String, String>>,
+    pub stream_events: Vec<StreamEvent<String, String>>,
+}
+
+/// Host-facing requests emitted by one deterministic runtime step.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct HostRequestBatch {
+    pub tasks: Vec<TaskSpec>,
+    pub cancel_scopes: Vec<CancelScopeId>,
+    pub source_close: Vec<SourceId>,
+}
+
+/// Result envelope returned by the runtime step boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeStepResult {
+    pub output: RuntimeStepOutput,
+    pub fiber_status: crate::engine::FlowFiberStatus,
+    pub stop_reason: RuntimeStepStopReason,
+}
+
+/// Runtime stepping policy selected by hosts and CLI tooling.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RuntimeStepOptions {
+    pub mode: RuntimeStepMode,
+    pub budget: RuntimeStepBudget,
+}
+
+/// Deterministic work budget for one `Engine::step` call.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeStepBudget {
+    pub max_ops: usize,
+}
+
+/// Runtime drain strategy. Adapter loops remain outside `arcweft-core`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RuntimeStepMode {
+    #[default]
+    OneOp,
+    Drain,
+    Game,
+    Server,
+}
+
+/// Reason the runtime stopped returning control to the host.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeStepStopReason {
+    OneOp,
+    Blocked,
+    Output,
+    BudgetExhausted,
+    Done,
+    Failed,
+}
+
+/// Mutable adapter-facing writer for runtime step outputs.
+///
+/// The writer gives adapter/runtime integration code a scoped output sink
+/// without transferring ownership of the whole `RuntimeStepOutput` value.
+pub struct RuntimeStepOutputSink<'a> {
+    output: &'a mut RuntimeStepOutput,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeDiagnostic {
+    pub message: String,
+}
+
+/// Named value provided by adapters or earlier runtime operations.
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InputEvent {
+    pub kind: String,
+    pub payload: Option<String>,
+}
+
+/// UI event placeholder kept as Sans I/O data.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiEvent {
+    pub kind: String,
+    pub payload: Option<String>,
+}
+
+/// Audio event placeholder kept as Sans I/O data.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AudioEvent {
+    pub kind: String,
+    pub payload: Option<String>,
+}
+
+impl RuntimeStepInput {
+    pub fn as_view(&self) -> RuntimeStepInputRef<'_> {
+        RuntimeStepInputRef {
+            tick: self.tick,
+            dt: self.dt,
+            bindings: self.bindings.as_slice(),
+            input_events: self.input_events.as_slice(),
+            task_events: self.task_events.as_slice(),
+            ui_events: self.ui_events.as_slice(),
+            audio_events: self.audio_events.as_slice(),
+            source_events: self.source_events.as_slice(),
+        }
+    }
+}
+
+impl<'a> RuntimeStepInputRef<'a> {
+    pub const fn tick(&self) -> TickId {
+        self.tick
+    }
+
+    pub const fn dt(&self) -> LogicalDuration {
+        self.dt
+    }
+
+    pub const fn bindings(&self) -> &'a [RuntimeBinding] {
+        self.bindings
+    }
+
+    pub const fn input_events(&self) -> &'a [InputEvent] {
+        self.input_events
+    }
+
+    pub const fn task_events(&self) -> &'a [TaskEvent] {
+        self.task_events
+    }
+
+    pub const fn ui_events(&self) -> &'a [UiEvent] {
+        self.ui_events
+    }
+
+    pub const fn audio_events(&self) -> &'a [AudioEvent] {
+        self.audio_events
+    }
+
+    pub const fn source_events(&self) -> &'a [SourceEvent<String, String>] {
+        self.source_events
+    }
+}
+
+impl RuntimeStepOutput {
+    pub fn writer(&mut self) -> RuntimeStepOutputSink<'_> {
+        RuntimeStepOutputSink::new(self)
+    }
+
+    pub(crate) fn merge(&mut self, other: Self) {
+        self.diagnostics.extend(other.diagnostics);
+        self.flow_events.extend(other.flow_events);
+        self.effects.line.extend(other.effects.line);
+        self.effects
+            .source_events
+            .extend(other.effects.source_events);
+        self.effects
+            .stream_events
+            .extend(other.effects.stream_events);
+        self.requests.tasks.extend(other.requests.tasks);
+        self.requests
+            .cancel_scopes
+            .extend(other.requests.cancel_scopes);
+        self.requests
+            .source_close
+            .extend(other.requests.source_close);
+    }
+}
+
+impl Default for RuntimeStepBudget {
+    fn default() -> Self {
+        Self { max_ops: 1 }
+    }
+}
+
+impl<'a> RuntimeStepOutputSink<'a> {
+    pub const fn new(output: &'a mut RuntimeStepOutput) -> Self {
+        Self { output }
+    }
+
+    pub fn output(&self) -> &RuntimeStepOutput {
+        self.output
+    }
+
+    pub fn output_mut(&mut self) -> &mut RuntimeStepOutput {
+        self.output
+    }
+
+    pub fn push_diagnostic(&mut self, message: impl Into<String>) {
+        self.output.diagnostics.push(RuntimeDiagnostic {
+            message: message.into(),
+        });
+    }
+
+    pub fn merge(&mut self, other: RuntimeStepOutput) {
+        self.output.merge(other);
+    }
+}

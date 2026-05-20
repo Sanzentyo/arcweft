@@ -1,5 +1,5 @@
 use super::call;
-use crate::{effect::*, engine::*, frame::*, line_task::*, plan::*, task::*};
+use crate::{effect::*, engine::*, line_task::*, plan::*, step::*, task::*};
 
 #[test]
 fn engine_steps_line_task_groups_as_sans_io_effects() {
@@ -14,10 +14,10 @@ fn engine_steps_line_task_groups_as_sans_io_effects() {
     };
     let mut engine = Engine::new(RuntimePlan::lines_only(vec![group]));
 
-    let output = engine.step(FrameInput::default());
+    let output = super::runtime_step(&mut engine, RuntimeStepInput::default());
 
     assert_eq!(
-        output.line_effects,
+        output.effects.line,
         vec![
             call("line_start"),
             call("line_defer"),
@@ -46,12 +46,12 @@ fn line_cancel_rule_replaces_normal_line_body() {
     };
     let output = run_line_task_group_for_input(
         &group,
-        &FrameInput {
+        &RuntimeStepInput {
             input_events: vec![InputEvent {
                 kind: "input".to_owned(),
                 payload: Some(".SkipLine".to_owned()),
             }],
-            ..FrameInput::default()
+            ..RuntimeStepInput::default()
         },
     );
 
@@ -62,7 +62,7 @@ fn line_cancel_rule_replaces_normal_line_body() {
         }]
     );
     assert_eq!(
-        output.line_effects,
+        output.effects.line,
         vec![
             LineEffectRequest::Out(LineOutRequest {
                 label: None,
@@ -96,20 +96,20 @@ fn child_task_triggers_emit_task_request_and_scoped_body() {
         },
         ..LineTaskGroup::default()
     };
-    let input = FrameInput {
+    let input = RuntimeStepInput {
         input_events: vec![InputEvent {
             kind: "mark".to_owned(),
             payload: Some(".seen".to_owned()),
         }],
-        ..FrameInput::default()
+        ..RuntimeStepInput::default()
     };
 
     let output = run_line_task_group(&group, &input, ScopeExit::Completed);
 
-    assert_eq!(output.task_requests.len(), 1);
-    assert_eq!(output.task_requests[0].priority, TaskPriority(7));
+    assert_eq!(output.requests.tasks.len(), 1);
+    assert_eq!(output.requests.tasks[0].priority, TaskPriority(7));
     assert_eq!(
-        output.line_effects,
+        output.effects.line,
         vec![call("handler"), call("handler_defer")]
     );
 }

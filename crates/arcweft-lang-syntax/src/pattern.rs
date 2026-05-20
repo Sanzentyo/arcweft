@@ -135,6 +135,8 @@ fn parse_variant_pattern(source: &str) -> Option<Pattern> {
         split_last_top_level_punctuation_sequence_once(head, &[":", ":"])
     {
         (Some(path.trim().to_owned()), name.trim())
+    } else if matches!(head, "Some" | "None" | "Ok" | "Err") {
+        (None, head.trim())
     } else {
         return None;
     };

@@ -17,6 +17,7 @@ arcweft-tooling = { path = "../arcweft-tooling" }
 arcweft-verify = { path = "../arcweft-verify" }
 arcweft-verify-oxiz = { path = "../arcweft-verify-oxiz" }
 arcweft-verify-z3 = { path = "../arcweft-verify-z3" }
+clap = { workspace = true, features = ["derive"] }
 serde.workspace = true
 serde_json.workspace = true
 

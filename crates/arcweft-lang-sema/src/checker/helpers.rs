@@ -309,6 +309,7 @@ pub(super) fn variant_payload_bindings(payload: &VariantPatternPayload) -> Vec<S
 
 pub(super) fn option_payload_type(expr_type: Option<&TypeKind>) -> Option<TypeKind> {
     match expr_type {
+        Some(TypeKind::Option(inner)) => Some(inner.as_ref().clone()),
         Some(TypeKind::Named(name)) if name == "Option<Ref<Flow>>" => {
             Some(TypeKind::Ref(EntityKind::Flow))
         }
@@ -350,6 +351,15 @@ pub(super) fn well_known_runtime_method_type(name: &str) -> Option<TypeKind> {
     if matches!(name, "ensure" | "assert" | "debug_assert") {
         return Some(TypeKind::Unit);
     }
+    if name == "load_bg" {
+        return Some(TypeKind::Need {
+            ready: Box::new(TypeKind::Named("ImageHandle".to_owned())),
+            error: Box::new(TypeKind::Named("ArcError".to_owned())),
+        });
+    }
+    if name == "len" {
+        return Some(TypeKind::Int);
+    }
     (name.starts_with("log.")
         || matches!(
             name,
@@ -359,6 +369,7 @@ pub(super) fn well_known_runtime_method_type(name: &str) -> Option<TypeKind> {
                 | "signal.set"
                 | "metric.set"
                 | "event.emit"
+                | "adapter.events"
                 | "scene.show"
                 | "scene.clear"
                 | "progress.set"
@@ -664,6 +675,15 @@ pub(crate) fn type_ref_kind(ty: &TypeRef) -> TypeKind {
                 ok: Box::new(type_ref_kind(&args[0])),
                 error: Box::new(type_ref_kind(&args[1])),
             }
+        }
+        TypeRef::Generic { base, args } if base == "ArcResult" && args.len() == 1 => {
+            TypeKind::Result {
+                ok: Box::new(type_ref_kind(&args[0])),
+                error: Box::new(TypeKind::Named("ArcError".to_owned())),
+            }
+        }
+        TypeRef::Generic { base, args } if base == "Option" && args.len() == 1 => {
+            TypeKind::Option(Box::new(type_ref_kind(&args[0])))
         }
         TypeRef::Generic { base, args } if base == "Need" && args.len() == 2 => TypeKind::Need {
             ready: Box::new(type_ref_kind(&args[0])),

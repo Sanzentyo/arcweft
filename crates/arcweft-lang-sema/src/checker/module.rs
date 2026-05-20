@@ -6,6 +6,7 @@ use super::{
     choice_output_type, entity_kind_for_decl, ident_pattern_name, stream_return_types,
     type_ref_kind, validate_typecheck_ready,
 };
+use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
 
 impl TypeChecker<'_> {
     pub(super) fn check_module(&mut self, module: &HirModule) {
@@ -79,7 +80,7 @@ impl TypeChecker<'_> {
                 function.signature().return_type().map(type_ref_kind),
                 actual,
             ) {
-                if actual != expected {
+                if !types_compatible(&expected, &actual) {
                     self.errors.push(TypeCheckError::new(format!(
                         "function `{}` returns {expected:?}, but body has {actual:?}",
                         function.name()
@@ -155,9 +156,13 @@ impl TypeChecker<'_> {
                 }
             }
             HirTopLevelDecl::TypeAlias(item) => {
+                let outer_locals = self.locals.clone();
+                self.locals
+                    .insert("self".to_owned(), type_ref_kind(item.target()));
                 for clause in item.where_clauses() {
                     self.check_expr(clause);
                 }
+                self.locals = outer_locals;
             }
             HirTopLevelDecl::Hook(item) => {
                 self.expect_entity_kind(item.id(), &EntityKind::Hook, "hook id");
@@ -218,10 +223,20 @@ impl TypeChecker<'_> {
             yield_count: 0,
         });
         self.check_block_expr(function.statements(), None);
+        let value_is_stream_block = matches!(
+            function.value(),
+            Some(Expr::ComputationBlock {
+                kind: ComputationBlockKind::Stream,
+                ..
+            })
+        );
+        if let Some(value) = function.value() {
+            self.check_expr(value);
+        }
         let Some(YieldContext::Stream { yield_count, .. }) = self.yield_stack.pop() else {
             return;
         };
-        if yield_count == 0 {
+        if yield_count == 0 && !value_is_stream_block {
             self.errors.push(TypeCheckError::new(format!(
                 "`stream fn {}` does not yield any item",
                 function.name()
@@ -310,5 +325,32 @@ impl TypeChecker<'_> {
                 checker.line_label_stack.pop();
             }
         });
+    }
+}
+
+fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {
+    if expected == actual || matches!(expected, TypeKind::Named(name) if name == "_") {
+        return true;
+    }
+    match (expected, actual) {
+        (
+            TypeKind::Result {
+                ok: expected_ok,
+                error: expected_error,
+            },
+            TypeKind::Result {
+                ok: actual_ok,
+                error: actual_error,
+            },
+        ) => {
+            types_compatible(expected_ok, actual_ok)
+                && (types_compatible(expected_error, actual_error)
+                    || matches!(actual_error.as_ref(), TypeKind::Named(name) if name == "_"))
+        }
+        (TypeKind::Option(expected), TypeKind::Option(actual)) => {
+            types_compatible(expected, actual)
+                || matches!(actual.as_ref(), TypeKind::Named(name) if name == "_")
+        }
+        _ => false,
     }
 }

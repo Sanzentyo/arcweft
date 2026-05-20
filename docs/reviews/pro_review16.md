@@ -6,7 +6,7 @@
 
 現状の Rust 実装は、workspace dependency もかなり軽く、root では `unsafe_code = "forbid"` が入っています。 `arcweft-cli` も `arcw check` で parse → HIR → typecheck → line task group lowering を順番に実行しているだけで、並列実行はしていません。
 
-`LineTaskGroup` も「実行」ではなく、`init`、`children`、`defer_stack`、`SignalWrite`、`MetricWrite`、`RegisterHandle` などのデータモデルです。 実装 README でも、full VM execution / `FrameInput` / `FrameOutput` / source backpressure / hook memo runtime / save replay などはまだ deferred とされています。
+`LineTaskGroup` も「実行」ではなく、`init`、`children`、`defer_stack`、`SignalWrite`、`MetricWrite`、`RegisterHandle` などのデータモデルです。 実装 README でも、full VM execution / `RuntimeStepInput` / `RuntimeStepOutput` / source backpressure / hook memo runtime / save replay などはまだ deferred とされています。
 
 なので、現時点では「共有メモリを複数 thread から同時に mutate して壊れる」という種類の data race は見当たりません。
 
@@ -168,8 +168,8 @@ TaskHost::ensure_task(...)
 TaskHost::poll_frame(...) -> Vec<TaskEvent>
 
 // frame boundary
-FrameInput { task_events, ... }
-FrameOutput { effect_requests, ... }
+RuntimeStepInput { task_events, ... }
+RuntimeStepOutput { effect_requests, ... }
 ```
 
 こうしておけば、native multi-thread / web single-thread / replay で同じ意味論を保てます。

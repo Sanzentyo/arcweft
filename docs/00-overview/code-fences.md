@@ -27,7 +27,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 Rust host / crate 実装例は `rust` のままにする。
 
 ```rust
-pub struct FrameInput {
+pub struct RuntimeStepInput {
     pub tick: TickId,
     pub dt: LogicalDuration,
 }

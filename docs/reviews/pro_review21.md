@@ -27,7 +27,7 @@
 
 1. `arcweft-lang-sema` の Arcweft lifetime registry / borrow escape 検査を `lifetime.rs` と `borrow.rs` に独立させる。
 2. `await` / `yield` / `thread` / `defer` / line plan child task の suspension boundary で borrow が跨がないことをテストで固定する。
-3. runtime adapter 境界には `FrameInputView<'a>` / `ActivitySnapshotRef<'a>` のような view/ref 型を導入する。ただし core data model 本体は owned のままにする。
+3. runtime adapter 境界には `RuntimeStepInputRef<'a>` / `ActivitySnapshotRef<'a>` のような view/ref 型を導入する。ただし core data model 本体は owned のままにする。
 
 ---
 
@@ -162,7 +162,7 @@ arcweft-presentation
 `core/src/lib.rs` は、次の責務を単一ファイルで持っている。
 
 - logical time: `TickId`, `LogicalDuration`, `LogicalTime`
-- frame data: `FrameInput`, `FrameOutput`, `RuntimeDiagnostic`
+- frame data: `RuntimeStepInput`, `RuntimeStepOutput`, `RuntimeDiagnostic`
 - runtime value/expression/pattern: `RuntimeValue`, `RuntimeExpr`, `RuntimePattern`
 - runtime plan: `RuntimePlan`, `RuntimeFlow`, `FlowOp`, `StreamPlan`, `SourcePlan`
 - engine state: `Engine`, `FlowFiber`, `FlowFiberStatus`, `FlowCursor`
@@ -225,7 +225,7 @@ pub use effect::{
     RuntimeField, RuntimeLog,
 };
 pub use engine::{Engine, FlowCursor, FlowExit, FlowFiber, FlowFiberStatus};
-pub use frame::{AudioEvent, FrameInput, FrameOutput, InputEvent, RuntimeDiagnostic, UiEvent};
+pub use frame::{AudioEvent, RuntimeStepInput, RuntimeStepOutput, InputEvent, RuntimeDiagnostic, UiEvent};
 pub use line_task::{
     AudioCleanup, ChildCancelPolicy, ChildJoinPolicy, ChildTaskCleanup, LineAssertionRequest,
     LineBindingRequest, LineCancelRuleRequest, LineChildTask, LineCleanupPolicy,
@@ -275,23 +275,23 @@ mod tests;
 - `impl Default for LogicalDuration`
 - `impl LogicalTime`
 
-`LogicalDuration` は `FrameInput`, `LineTaskTrigger`, `RuntimeValue::Duration` で使うため public re-export する。
+`LogicalDuration` は `RuntimeStepInput`, `LineTaskTrigger`, `RuntimeValue::Duration` で使うため public re-export する。
 
 #### Step 2: `frame.rs`
 
 移動対象:
 
-- `FrameInput`
-- `FrameOutput`
+- `RuntimeStepInput`
+- `RuntimeStepOutput`
 - `RuntimeDiagnostic`
 - `RuntimeBinding` は `value.rs` でもよいが、frame input から使われるため `value.rs` に置くのが自然。
 - `InputEvent`, `UiEvent`, `AudioEvent`
-- `impl FrameOutput::merge`
+- `impl RuntimeStepOutput::merge`
 
-`FrameOutput::merge` は engine/line_task から使うだけなら `pub(crate)` にする。
+`RuntimeStepOutput::merge` は engine/line_task から使うだけなら `pub(crate)` にする。
 
 ```rust
-impl FrameOutput {
+impl RuntimeStepOutput {
     pub(crate) fn merge(&mut self, other: Self) { ... }
 }
 ```
@@ -438,7 +438,7 @@ impl FrameOutput {
 - `Engine`
 - `FlowFiber`
 - `RuntimeObservationState` への参照
-- `RuntimeFrame`, `RuntimeFrameKind`
+- `FlowControlStackEntry`, `FlowControlStackEntryKind`
 - `FlowCursor`
 - `FlowFiberStatus`
 - `AwaitState`, `ChoiceState`, `FlowExit`
@@ -1192,7 +1192,7 @@ pub struct FlowCursor {
 core data は owned のままにしつつ、adapter API には lifetime view を導入してよい。
 
 ```rust
-pub struct FrameInputView<'a> {
+pub struct RuntimeStepInputRef<'a> {
     pub tick: TickId,
     pub dt: LogicalDuration,
     pub input_events: &'a [InputEvent],
@@ -1201,12 +1201,12 @@ pub struct FrameInputView<'a> {
     pub audio_events: &'a [AudioEvent],
 }
 
-pub struct FrameOutputWriter<'a> {
-    output: &'a mut FrameOutput,
+pub struct RuntimeStepOutputSink<'a> {
+    output: &'a mut RuntimeStepOutput,
 }
 ```
 
-設計文書上の `Activity` も `MountContext<'_>`, `FrameInputView<'_>`, `FrameOutputWriter<'_>`, `ActivitySnapshotRef<'_>` のような境界を想定しているため、ここは Rust lifetime を使う価値がある。
+設計文書上の `Activity` も `MountContext<'_>`, `RuntimeStepInputRef<'_>`, `RuntimeStepOutputSink<'_>`, `ActivitySnapshotRef<'_>` のような境界を想定しているため、ここは Rust lifetime を使う価値がある。
 
 ---
 

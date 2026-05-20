@@ -20,7 +20,7 @@ workspace はすでに `arcweft-core`、`arcweft-dialogue`、`arcweft-id`、`arc
 
 目標は「`.awft` ファイルを読む → CST/AST → HIR → reference/lint/typecheck-ready/minimal typecheck → line plan を Sans I/O runtime data に落とす」までを、renderer なし・VM 完全実装なし・外部I/Oなしで閉じることです。
 
-Arcweft core の設計は Sans I/O で、core は副作用を実行せず、状態と effect request を返す思想です。 さらに `arcweft-core` 側にも `FrameInput` / `FrameOutput` / `LineTaskGroup` / `LineEffectRequest` の最小モデルがすでにあります。 だから次は「本物の renderer」ではなく、**言語からこの core データモデルへ落ちる変換**が一番筋が良いです。
+Arcweft core の設計は Sans I/O で、core は副作用を実行せず、状態と effect request を返す思想です。 さらに `arcweft-core` 側にも `RuntimeStepInput` / `RuntimeStepOutput` / `LineTaskGroup` / `LineEffectRequest` の最小モデルがすでにあります。 だから次は「本物の renderer」ではなく、**言語からこの core データモデルへ落ちる変換**が一番筋が良いです。
 
 ## 具体的な PR 分割
 

@@ -1,4 +1,4 @@
-use crate::{engine::*, frame::*, pattern::*, plan::*, source::*, task::*, value::*};
+use crate::{engine::*, pattern::*, plan::*, source::*, step::*, task::*, value::*};
 
 #[test]
 fn source_policy_is_pure_data() {
@@ -99,16 +99,19 @@ fn engine_records_source_events_without_running_adapters() {
         .with_generation_plans(Vec::new(), vec![source]);
     let mut engine = Engine::new(plan);
 
-    let output = engine.step(FrameInput {
-        source_events: vec![SourceEvent {
-            source: SourceId("source.camera".to_owned()),
-            sequence: TaskSequence(0),
-            kind: SourceEventKind::Item("frame0".to_owned()),
-        }],
-        ..FrameInput::default()
-    });
+    let output = super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            source_events: vec![SourceEvent {
+                source: SourceId("source.camera".to_owned()),
+                sequence: TaskSequence(0),
+                kind: SourceEventKind::Item("frame0".to_owned()),
+            }],
+            ..RuntimeStepInput::default()
+        },
+    );
 
-    assert_eq!(output.source_events.len(), 1);
+    assert_eq!(output.effects.source_events.len(), 1);
     assert_eq!(
         engine
             .fiber()
@@ -147,14 +150,17 @@ fn source_handler_yield_controls_source_queue() {
         .with_generation_plans(Vec::new(), vec![source]);
     let mut engine = Engine::new(plan);
 
-    engine.step(FrameInput {
-        source_events: vec![SourceEvent {
-            source: source_id.clone(),
-            sequence: TaskSequence(0),
-            kind: SourceEventKind::Item("frame0".to_owned()),
-        }],
-        ..FrameInput::default()
-    });
+    super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            source_events: vec![SourceEvent {
+                source: source_id.clone(),
+                sequence: TaskSequence(0),
+                kind: SourceEventKind::Item("frame0".to_owned()),
+            }],
+            ..RuntimeStepInput::default()
+        },
+    );
 
     assert_eq!(
         engine

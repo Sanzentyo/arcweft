@@ -151,7 +151,7 @@ pub enum RuntimePattern {
 
 This evaluator is deliberately small and Sans I/O. It handles deterministic
 bool/int/string/entity/list/tuple/record/variant values, structured bindings,
-and explicit external bindings from `FrameInput`. Function calls, overloads,
+and explicit external bindings from `RuntimeStepInput`. Function calls, overloads,
 numeric unit coercions, and full type-directed evaluation remain semantic/HIR
 work before this runtime layer.
 

@@ -27,7 +27,7 @@ UI component の `on_click` も、`UiNode → HitRegion → ActionTarget → Lay
 
 現在の workspace 実装を見ると、`Cargo.toml` の実装済み crates は `arcweft-core`、`arcweft-dialogue`、`arcweft-id`、`arcweft-lang-syntax`、`arcweft-need`、`arcweft-presentation`、`arcweft-source`、`arcweft-cli` だけです。`arcweft-agent-bus`、`arcweft-agent-observe`、`arcweft-agent-action`、`arcweft-agent-mcp`、`arcweft-agent-cli` などは workspace member にはまだ入っていません。
 
-実装ステータス文書でも、未実装として `wgpu renderer`、`Servo / DOM UI`、`audio backend`、`MCP / agent protocol runtime`、`full FrameInput/FrameOutput event envelopes`、`layered input routing` などが明示されています。
+実装ステータス文書でも、未実装として `wgpu renderer`、`Servo / DOM UI`、`audio backend`、`MCP / agent protocol runtime`、`full RuntimeStepInput/RuntimeStepOutput event envelopes`、`layered input routing` などが明示されています。
 
 また、現在の `arcweft-cli` は実質 `arcw check <file.awft>` のみで、`arcw agent observe` や `arcw agent click` はまだ実装されていません。
 

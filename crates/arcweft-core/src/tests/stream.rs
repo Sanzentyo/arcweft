@@ -1,4 +1,4 @@
-use crate::{engine::*, frame::*, pattern::*, plan::*, source::*, stream::*, task::*, value::*};
+use crate::{engine::*, pattern::*, plan::*, source::*, step::*, stream::*, task::*, value::*};
 
 #[test]
 fn stream_plan_drains_source_queue_and_emits_stream_items() {
@@ -40,17 +40,20 @@ fn stream_plan_drains_source_queue_and_emits_stream_items() {
         .with_generation_plans(vec![stream], vec![source]);
     let mut engine = Engine::new(plan);
 
-    let output = engine.step(FrameInput {
-        source_events: vec![SourceEvent {
-            source: source_id.clone(),
-            sequence: TaskSequence(0),
-            kind: SourceEventKind::Item("frame0".to_owned()),
-        }],
-        ..FrameInput::default()
-    });
+    let output = super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            source_events: vec![SourceEvent {
+                source: source_id.clone(),
+                sequence: TaskSequence(0),
+                kind: SourceEventKind::Item("frame0".to_owned()),
+            }],
+            ..RuntimeStepInput::default()
+        },
+    );
 
     assert_eq!(
-        output.stream_events,
+        output.effects.stream_events,
         vec![StreamEvent {
             stream: stream_id.clone(),
             sequence: TaskSequence(0),

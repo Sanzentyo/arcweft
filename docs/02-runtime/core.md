@@ -2,7 +2,7 @@
 
 `arcweft-core` は副作用を実行しない。入力を受け取り、次の状態と要求を返す。
 
-Core が扱う program、bytecode、manifest reference、save snapshot、diagnostic、trace はすべて pure data。Core は path を開かず、filesystem、network、wall-clock、GPU/audio/device handle、Wasm runtime、Cranelift runtime を保持しない。外部 adapter は bytes/string へ serialize された bundle や task result を `FrameInput` / `TaskEvent` として渡す。
+Core が扱う program、bytecode、manifest reference、save snapshot、diagnostic、trace はすべて pure data。Core は path を開かず、filesystem、network、wall-clock、GPU/audio/device handle、Wasm runtime、Cranelift runtime を保持しない。外部 adapter は bytes/string へ serialize された bundle や task result を `RuntimeStepInput` / `TaskEvent` として渡す。
 
 ```rust
 pub struct Engine {
@@ -59,7 +59,7 @@ pub struct FlowFiber {
     pub line_cursor: usize,
     pub cursor: Option<FlowCursor>,
     pub pending_ops: VecDeque<FlowOp>,
-    pub frames: Vec<RuntimeFrame>,
+    pub frames: Vec<FlowControlStackEntry>,
     pub env: RuntimeEnv,
     pub observations: RuntimeObservationState,
     pub source_states: BTreeMap<SourceId, SourceRuntimeState>,
@@ -67,7 +67,7 @@ pub struct FlowFiber {
     pub status: FlowFiberStatus,
 }
 
-pub enum RuntimeFrameKind {
+pub enum FlowControlStackEntryKind {
     Scope,
     Loop { body: Vec<FlowOp>, result: Option<RuntimePattern> },
     While { condition: RuntimeExpr, body: Vec<FlowOp> },
@@ -79,10 +79,10 @@ pub enum RuntimeFrameKind {
     },
 }
 
-pub struct FrameInput {
+pub struct RuntimeStepInput {
     pub tick: TickId,
     pub dt: LogicalDuration,
-    pub external_values: Vec<RuntimeBinding>,
+    pub bindings: Vec<RuntimeBinding>,
     pub input_events: Vec<InputEvent>,
     pub task_events: Vec<TaskEvent>,
     pub ui_events: Vec<UiEvent>,
@@ -90,7 +90,7 @@ pub struct FrameInput {
     pub source_events: Vec<SourceEvent<String, String>>,
 }
 
-pub struct FrameOutput {
+pub struct RuntimeStepOutput {
     pub diagnostics: Vec<RuntimeDiagnostic>,
     pub flow_events: Vec<FlowEvent>,
     pub line_effects: Vec<LineEffectRequest>,
@@ -103,7 +103,7 @@ pub struct FrameOutput {
 ```
 
 Phase 2.0 の `Engine` は headless structured-control-flow runtime slice であり、まだ完全な story VM ではない。
-`Engine::step(FrameInput) -> FrameOutput` は lowered flow op を 1 frame に
+`Engine::step(RuntimeStepInput) -> RuntimeStepOutput` は lowered flow op を 1 frame に
 最大 1 つ進める。`Dialogue` は line task group を実行し、`Choice` は入力待ち、
 `Await` は `TaskSpec` を出して `TaskEvent` で再開する。`Let` / `LetElse` /
 `If` / `IfLet` / `Match` / `Loop` / `LetLoop` / `While` / `WhileLet` / `For` / `LetScope` は
@@ -115,11 +115,11 @@ Phase 2.0 の `Engine` は headless structured-control-flow runtime slice であ
 `let name = scope { ... }` は final expression を scope 内で評価してから外側の
 pattern に束縛し、`let name = loop { break expr }` は `break expr` の値を
 loop result pattern に束縛する。
-`FrameInput::external_values` は ambient input として root runtime scope に束縛される。
+`RuntimeStepInput::bindings` は ambient input として root runtime scope に束縛される。
 branch / match / while-let pattern binding は選択された block scope にだけ束縛され、
 guard 評価後や block 終了後には外側へ漏れない。
 `Goto` / `GotoExpr` / `Return` / `ReturnExpr` は `FlowFiber` の cursor/status を更新する。
-`FrameInput.source_events` は replay-stable order に正規化され、`SourcePlan` handler と
+`RuntimeStepInput.source_events` は replay-stable order に正規化され、`SourcePlan` handler と
 `StreamPlan` によって queue state と `StreamEvent` に反映される。`FlowFiber.observations`
 は emitted log / signal / metric / event を累積し、CLI/LSP/test/replay tooling が
 JSON で観測できる。
@@ -304,7 +304,7 @@ scope / bare block         -> FlowOp::Scope
 goto @flow.x / goto route  -> FlowOp::GotoExpr
 return expr                -> FlowOp::ReturnExpr
 out / log / signal / call  -> FlowOp::Effect or line effect
-cancel on input .SkipLine  -> line cancel rule selected from FrameInput
+cancel on input .SkipLine  -> line cancel rule selected from RuntimeStepInput
 ```
 
 This slice is intentionally strict: runtime lowering errors on unsupported flow
@@ -397,7 +397,7 @@ line-scope defer stacks.
 - wall-clock を state に入れない。
 - random は seeded RNG capability。
 - task 完了は frame boundary で正規化。
-- replay は `FrameInput` 列と task/audio/ui result を記録。
+- replay は `RuntimeStepInput` 列と task/audio/ui result を記録。
 
 ## Flow fiber
 
@@ -418,10 +418,10 @@ pub enum FlowFiber {
 
 ## Hooks and memo integration
 
-`FrameOutput` には hook 由来の log / signal / diagnostics / command が含まれる。hook は直接 state を変更せず、phase ごとに許可された output だけを返す。
+`RuntimeStepOutput` には hook 由来の log / signal / diagnostics / command が含まれる。hook は直接 state を変更せず、phase ごとに許可された output だけを返す。
 
 ```rust
-pub struct FrameOutput {
+pub struct RuntimeStepOutput {
     pub state_hash: StateHash,
     pub render: RenderSpec,
     pub ui: UiSpec,

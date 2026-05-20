@@ -270,14 +270,14 @@ Phase Web-4:
 Arcweft coreはSans I/Oなので、
 
 ```rust
-Engine::step(FrameInput) -> FrameOutput
+Engine::step(RuntimeStepInput) -> RuntimeStepOutput
 ```
 
-だけを正にして、`FrameOutput` 内のcommands/effectsをbackendが実行します。既存docsでも `FrameOutput` は命令を実行せず、`Command` / `EffectRequest` / `TaskSpec` として返す、とされています。
+だけを正にして、`RuntimeStepOutput` 内のcommands/effectsをbackendが実行します。既存docsでも `RuntimeStepOutput` は命令を実行せず、`Command` / `EffectRequest` / `TaskSpec` として返す、とされています。
 
 ```text
 Arcweft Core
-  ↓ FrameOutput
+  ↓ RuntimeStepOutput
 Host Backend
   ├─ Native wgpu
   ├─ Native audio

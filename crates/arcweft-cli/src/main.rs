@@ -1,6 +1,8 @@
 use arcweft_core::engine::{Engine, FlowFiberStatus};
-use arcweft_core::frame::FrameInput;
 use arcweft_core::plan::{FlowRuntimeId, RuntimePlan};
+use arcweft_core::step::{
+    RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
+};
 use arcweft_core::value::{RuntimeBinding, RuntimeValue};
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::check::{typecheck_hir, validate_typecheck_ready};
@@ -17,57 +19,69 @@ use arcweft_verify::{
 };
 use arcweft_verify_oxiz::OxizBackend;
 use arcweft_verify_z3::ExternalZ3Backend;
+use clap::{Args, Parser, Subcommand, ValueEnum};
 mod output;
 use output::{
-    CheckReport, RuntimeFrameRunSummary, RuntimePlanReport, RuntimeRunReport, ScriptBenchRunReport,
+    CheckReport, RuntimePlanReport, RuntimeRunReport, RuntimeStepRunSummary, ScriptBenchRunReport,
     ScriptBenchRunSummary, ScriptBenchSectionRunSummary, ScriptTestRunReport, ScriptTestRunSummary,
     flow_status_label,
 };
-use std::env;
-use std::ffi::OsString;
 use std::fs;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+#[derive(Debug, Parser)]
+#[command(name = "arcw", about = "Arcweft language and runtime tooling")]
+struct Cli {
+    #[command(subcommand)]
+    command: CliCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum CliCommand {
+    Check(CheckOptions),
+    Verify(VerifyOptions),
+    Unsafe(UnsafeOptions),
+    Plan(PlanOptions),
+    Run(RuntimeRunOptions),
+    Test(ScriptTestOptions),
+    Bench(ScriptBenchOptions),
+    Fmt(ToolingCommandOptions),
+    Ids {
+        #[command(subcommand)]
+        command: IdsCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum IdsCommand {
+    Materialize(ToolingCommandOptions),
+}
+
 fn main() -> ExitCode {
-    let args = env::args_os().skip(1).collect::<Vec<_>>();
-    match run(&args) {
+    match run(Cli::parse()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(code) => code,
     }
 }
 
-fn run(args: &[OsString]) -> Result<(), ExitCode> {
-    match args {
-        [] => {
-            print_help();
-            Err(ExitCode::from(2))
-        }
-        [flag] if flag == "--help" || flag == "-h" => {
-            print_help();
-            Ok(())
-        }
-        [command, rest @ ..] if command == "check" => check_command(rest),
-        [command, rest @ ..] if command == "verify" => verify_command(rest),
-        [command, rest @ ..] if command == "unsafe" => unsafe_command(rest),
-        [command, rest @ ..] if command == "plan" => runtime_plan_command(rest),
-        [command, rest @ ..] if command == "run" => runtime_run_command(rest),
-        [command, rest @ ..] if command == "test" => script_test_command(rest),
-        [command, rest @ ..] if command == "bench" => script_bench_command(rest),
-        [command, rest @ ..] if command == "fmt" => format_command(rest),
-        [command, rest @ ..] if command == "ids" => ids_command(rest),
-        [command, ..] => {
-            eprintln!("error: unknown command `{}`", command.to_string_lossy());
-            print_help();
-            Err(ExitCode::from(2))
-        }
+fn run(cli: Cli) -> Result<(), ExitCode> {
+    match cli.command {
+        CliCommand::Check(options) => check_command(&options),
+        CliCommand::Verify(options) => verify_command(&options),
+        CliCommand::Unsafe(options) => unsafe_command(&options),
+        CliCommand::Plan(options) => runtime_plan_command(&options),
+        CliCommand::Run(options) => runtime_run_command(&options),
+        CliCommand::Test(options) => script_test_command(&options),
+        CliCommand::Bench(options) => script_bench_command(&options),
+        CliCommand::Fmt(options) => format_command(&options),
+        CliCommand::Ids { command } => ids_command(command),
     }
 }
 
-fn format_command(args: &[OsString]) -> Result<(), ExitCode> {
-    let options = ToolingCommandOptions::parse(args, "fmt")?;
-    run_tooling_command(&options, |source| {
+fn format_command(options: &ToolingCommandOptions) -> Result<(), ExitCode> {
+    run_tooling_command(options, |source| {
         format_source(
             source,
             FormatOptions {
@@ -77,21 +91,10 @@ fn format_command(args: &[OsString]) -> Result<(), ExitCode> {
     })
 }
 
-fn ids_command(args: &[OsString]) -> Result<(), ExitCode> {
-    let Some((subcommand, rest)) = args.split_first() else {
-        eprintln!("error: ids requires a subcommand");
-        print_help();
-        return Err(ExitCode::from(2));
-    };
-    if subcommand != "materialize" {
-        eprintln!(
-            "error: unknown ids subcommand `{}`",
-            subcommand.to_string_lossy()
-        );
-        return Err(ExitCode::from(2));
+fn ids_command(command: IdsCommand) -> Result<(), ExitCode> {
+    match command {
+        IdsCommand::Materialize(options) => run_tooling_command(&options, materialize_ids),
     }
-    let options = ToolingCommandOptions::parse(rest, "ids materialize")?;
-    run_tooling_command(&options, materialize_ids)
 }
 
 fn run_tooling_command(
@@ -149,8 +152,7 @@ fn run_tooling_command(
     }
 }
 
-fn runtime_plan_command(args: &[OsString]) -> Result<(), ExitCode> {
-    let options = ScriptPlanOptions::parse(args, "plan")?;
+fn runtime_plan_command(options: &PlanOptions) -> Result<(), ExitCode> {
     let checked = load_and_check(&options.path)?;
     let report = RuntimePlanReport::from_checked(&checked);
     if options.json {
@@ -177,8 +179,7 @@ fn runtime_plan_command(args: &[OsString]) -> Result<(), ExitCode> {
     }
 }
 
-fn runtime_run_command(args: &[OsString]) -> Result<(), ExitCode> {
-    let options = RuntimeRunOptions::parse(args)?;
+fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
     let checked = load_and_check(&options.path)?;
     let plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
         for error in errors {
@@ -187,57 +188,59 @@ fn runtime_run_command(args: &[OsString]) -> Result<(), ExitCode> {
         ExitCode::FAILURE
     })?;
     let mut engine = Engine::new(plan);
-    let mut frames = Vec::new();
-    for frame_index in 0..options.frames {
-        let output = engine.step(FrameInput {
-            external_values: options.values.clone(),
-            ..FrameInput::default()
-        });
-        let summary = RuntimeFrameRunSummary::from_output(frame_index, output, engine.fiber());
+    let mut steps = Vec::new();
+    for step_index in 0..options.steps {
+        let result = engine.step(
+            RuntimeStepInput {
+                bindings: options.values.clone(),
+                ..RuntimeStepInput::default()
+            },
+            step_options(options.mode, options.max_ops),
+        );
+        let summary = RuntimeStepRunSummary::from_result(step_index, result, engine.fiber());
         let done = matches!(
             engine.fiber().status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         );
-        frames.push(summary);
+        steps.push(summary);
         if done {
             break;
         }
     }
     let report = RuntimeRunReport {
-        frames,
+        steps,
         final_status: flow_status_label(&engine.fiber().status),
     };
     if options.json {
         print_json(&report)
     } else {
-        for frame in &report.frames {
+        for step in &report.steps {
             println!(
-                "frame {}: {} flow event(s), {} effect(s), {} task request(s), {} diagnostic(s)",
-                frame.index,
-                frame.flow_events.len(),
-                frame.line_effects.len(),
-                frame.task_requests.len(),
-                frame.diagnostics.len()
+                "step {}: {} flow event(s), {} effect(s), {} task request(s), {} diagnostic(s)",
+                step.index,
+                step.flow_events.len(),
+                step.line_effects.len(),
+                step.task_requests.len(),
+                step.diagnostics.len()
             );
-            for event in &frame.flow_events {
+            for event in &step.flow_events {
                 println!("  event {event}");
             }
-            for effect in &frame.line_effects {
+            for effect in &step.line_effects {
                 println!("  effect {effect}");
             }
         }
         println!(
-            "ok: {} ({} frame(s), final_status={})",
+            "ok: {} ({} step(s), final_status={})",
             options.path.display(),
-            report.frames.len(),
+            report.steps.len(),
             report.final_status
         );
         Ok(())
     }
 }
 
-fn script_test_command(args: &[OsString]) -> Result<(), ExitCode> {
-    let options = ScriptPlanOptions::parse(args, "test")?;
+fn script_test_command(options: &ScriptTestOptions) -> Result<(), ExitCode> {
     let checked = load_and_check(&options.path)?;
     let manifest = collect_script_tests(&checked.hir);
     let plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
@@ -250,7 +253,7 @@ fn script_test_command(args: &[OsString]) -> Result<(), ExitCode> {
         tests: manifest
             .tests
             .iter()
-            .map(|test| run_script_test(test, &plan, &options))
+            .map(|test| run_script_test(test, &plan, options))
             .collect(),
     };
     let failed = output.tests.iter().any(|test| test.status == "failed");
@@ -259,8 +262,8 @@ fn script_test_command(args: &[OsString]) -> Result<(), ExitCode> {
     } else {
         for test in &output.tests {
             println!(
-                "{} {} {} ({} frame(s))",
-                test.id, test.kind, test.status, test.frames_run
+                "{} {} {} ({} step(s))",
+                test.id, test.kind, test.status, test.steps_run
             );
             for diagnostic in &test.diagnostics {
                 println!("  diagnostic {diagnostic}");
@@ -282,7 +285,7 @@ fn script_test_command(args: &[OsString]) -> Result<(), ExitCode> {
 fn run_script_test(
     test: &ScriptTest,
     plan: &RuntimePlan,
-    options: &ScriptPlanOptions,
+    options: &ScriptTestOptions,
 ) -> ScriptTestRunSummary {
     if test.kind != "scenario" {
         return ScriptTestRunSummary::skipped(
@@ -305,28 +308,31 @@ fn run_script_test(
     let mut plan = plan.clone();
     plan.entry_flow = Some(FlowRuntimeId(start));
     let mut engine = Engine::new(plan);
-    let mut frames = Vec::new();
-    for frame_index in 0..options.frames {
-        let output = engine.step(FrameInput {
-            external_values: options.values.clone(),
-            ..FrameInput::default()
-        });
-        let summary = RuntimeFrameRunSummary::from_output(frame_index, output, engine.fiber());
+    let mut steps = Vec::new();
+    for step_index in 0..options.steps {
+        let result = engine.step(
+            RuntimeStepInput {
+                bindings: options.values.clone(),
+                ..RuntimeStepInput::default()
+            },
+            step_options(options.mode, options.max_ops),
+        );
+        let summary = RuntimeStepRunSummary::from_result(step_index, result, engine.fiber());
         let done = matches!(
             engine.fiber().status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         );
-        frames.push(summary);
+        steps.push(summary);
         if done {
             break;
         }
     }
     let final_status = flow_status_label(&engine.fiber().status);
-    let mut diagnostics = frames
+    let mut diagnostics = steps
         .iter()
-        .flat_map(|frame| frame.diagnostics.iter().cloned())
+        .flat_map(|step| step.diagnostics.iter().cloned())
         .collect::<Vec<_>>();
-    diagnostics.extend(test_expectation_failures(test, &engine, &frames));
+    diagnostics.extend(test_expectation_failures(test, &engine, &steps));
     match engine.fiber().status {
         FlowFiberStatus::Done(_) => {}
         FlowFiberStatus::Failed(ref message) => {
@@ -334,13 +340,13 @@ fn run_script_test(
         }
         FlowFiberStatus::Running | FlowFiberStatus::Waiting(_) | FlowFiberStatus::Choice(_) => {
             diagnostics.push(format!(
-                "scenario did not finish within {} frame(s): {final_status}",
-                options.frames
+                "scenario did not finish within {} step(s): {final_status}",
+                options.steps
             ));
         }
     }
     let passed = diagnostics.is_empty();
-    ScriptTestRunSummary::completed(test, passed, final_status, diagnostics, frames)
+    ScriptTestRunSummary::completed(test, passed, final_status, diagnostics, steps)
 }
 
 fn test_start_flow(test: &ScriptTest) -> Option<String> {
@@ -354,7 +360,7 @@ fn test_start_flow(test: &ScriptTest) -> Option<String> {
 fn test_expectation_failures(
     test: &ScriptTest,
     engine: &Engine,
-    frames: &[RuntimeFrameRunSummary],
+    frames: &[RuntimeStepRunSummary],
 ) -> Vec<String> {
     test.steps
         .iter()
@@ -366,7 +372,7 @@ fn test_expectation_failures(
 fn evaluate_test_expectation(
     step: &ScriptStep,
     engine: &Engine,
-    frames: &[RuntimeFrameRunSummary],
+    frames: &[RuntimeStepRunSummary],
 ) -> Result<(), String> {
     let text = step.text.trim();
     if text == "expect no_assertion_failures" {
@@ -415,8 +421,7 @@ fn parse_log_contains_expectation(text: &str) -> Option<(String, String)> {
     ))
 }
 
-fn script_bench_command(args: &[OsString]) -> Result<(), ExitCode> {
-    let options = ScriptPlanOptions::parse(args, "bench")?;
+fn script_bench_command(options: &ScriptBenchOptions) -> Result<(), ExitCode> {
     let checked = load_and_check(&options.path)?;
     let manifest = collect_script_tests(&checked.hir);
     let output = ScriptBenchRunReport {
@@ -528,8 +533,7 @@ fn unsupported_headless_bench_reason(text: &str) -> Option<String> {
         })
 }
 
-fn check_command(args: &[OsString]) -> Result<(), ExitCode> {
-    let options = CheckOptions::parse(args)?;
+fn check_command(options: &CheckOptions) -> Result<(), ExitCode> {
     let checked = load_and_check(&options.path)?;
     let report = verify_module(
         &checked.hir,
@@ -560,8 +564,7 @@ fn check_command(args: &[OsString]) -> Result<(), ExitCode> {
     Ok(())
 }
 
-fn verify_command(args: &[OsString]) -> Result<(), ExitCode> {
-    let options = VerifyOptions::parse(args)?;
+fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
     let checked = load_and_check(&options.path)?;
     let report = verify_module(
         &checked.hir,
@@ -598,8 +601,7 @@ fn verify_command(args: &[OsString]) -> Result<(), ExitCode> {
     }
 }
 
-fn unsafe_command(args: &[OsString]) -> Result<(), ExitCode> {
-    let options = VerifyOptions::parse_with_default_mode(args, VerificationMode::Dev)?;
+fn unsafe_command(options: &UnsafeOptions) -> Result<(), ExitCode> {
     let checked = load_and_check(&options.path)?;
     let report = verify_module(
         &checked.hir,
@@ -696,45 +698,100 @@ fn load_and_check(path: &Path) -> Result<CheckedModule, ExitCode> {
     })
 }
 
-#[derive(Clone, Debug)]
+#[derive(Args, Clone, Debug)]
 struct VerifyOptions {
     path: PathBuf,
+    #[arg(long, value_parser = parse_verification_mode, default_value = "test")]
     mode: VerificationMode,
+    #[arg(long, alias = "solver", value_parser = parse_backend_kind, default_value = "emit")]
     backend: BackendKind,
+    #[arg(long)]
     json: bool,
+    #[arg(long)]
     emit_obligations: Option<PathBuf>,
+    #[arg(long)]
     emit_smt: Option<PathBuf>,
+    #[arg(long, alias = "z3-command")]
     z3_command: Option<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Args, Clone, Debug)]
+struct UnsafeOptions {
+    path: PathBuf,
+    #[arg(long, value_parser = parse_verification_mode, default_value = "dev")]
+    mode: VerificationMode,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
 struct CheckOptions {
     path: PathBuf,
+    #[arg(long)]
     json: bool,
 }
 
-#[derive(Clone, Debug)]
-struct ScriptPlanOptions {
+#[derive(Args, Clone, Debug)]
+struct PlanOptions {
     path: PathBuf,
-    frames: usize,
-    values: Vec<RuntimeBinding>,
+    #[arg(long)]
     json: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Args, Clone, Debug)]
 struct RuntimeRunOptions {
     path: PathBuf,
-    frames: usize,
+    #[arg(long, default_value_t = 1)]
+    steps: usize,
+    #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::OneOp)]
+    mode: CliRuntimeStepMode,
+    #[arg(long, default_value_t = 1)]
+    max_ops: usize,
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
     values: Vec<RuntimeBinding>,
+    #[arg(long)]
     json: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Args, Clone, Debug)]
+struct ScriptTestOptions {
+    path: PathBuf,
+    #[arg(long, default_value_t = 32)]
+    steps: usize,
+    #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
+    mode: CliRuntimeStepMode,
+    #[arg(long, default_value_t = 32)]
+    max_ops: usize,
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    values: Vec<RuntimeBinding>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+struct ScriptBenchOptions {
+    path: PathBuf,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
 struct ToolingCommandOptions {
     path: PathBuf,
+    #[arg(long)]
     expand_sugar: bool,
+    #[arg(long)]
     write: bool,
+    #[arg(long)]
     json: bool,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum CliRuntimeStepMode {
+    OneOp,
+    Drain,
+    Game,
+    Server,
 }
 
 #[derive(serde::Serialize)]
@@ -750,164 +807,12 @@ struct ToolingFileReport {
     output: Option<String>,
 }
 
-impl CheckOptions {
-    fn parse(args: &[OsString]) -> Result<Self, ExitCode> {
-        let Some(path) = args.first() else {
-            eprintln!("error: check requires <file.awft>");
-            print_help();
-            return Err(ExitCode::from(2));
-        };
-        let mut options = Self {
-            path: PathBuf::from(path),
-            json: false,
-        };
-        for arg in &args[1..] {
-            let flag = arg.to_string_lossy();
-            match flag.as_ref() {
-                "--json" => options.json = true,
-                other => {
-                    eprintln!("error: unknown check option `{other}`");
-                    return Err(ExitCode::from(2));
-                }
-            }
-        }
-        Ok(options)
-    }
-}
-
-impl ToolingCommandOptions {
-    fn parse(args: &[OsString], command: &str) -> Result<Self, ExitCode> {
-        if args.is_empty() {
-            eprintln!("error: {command} requires <file-or-dir>");
-            print_help();
-            return Err(ExitCode::from(2));
-        }
-        let mut options = Self {
-            path: PathBuf::new(),
-            expand_sugar: false,
-            write: false,
-            json: false,
-        };
-        let mut path = None;
-        for arg in args {
-            let flag = arg.to_string_lossy();
-            match flag.as_ref() {
-                "--expand-sugar" => options.expand_sugar = true,
-                "--write" => options.write = true,
-                "--json" => options.json = true,
-                other if other.starts_with('-') => {
-                    eprintln!("error: unknown {command} option `{other}`");
-                    return Err(ExitCode::from(2));
-                }
-                other => {
-                    if path.replace(PathBuf::from(other)).is_some() {
-                        eprintln!("error: {command} accepts exactly one <file-or-dir>");
-                        return Err(ExitCode::from(2));
-                    }
-                }
-            }
-        }
-        let Some(path) = path else {
-            eprintln!("error: {command} requires <file-or-dir>");
-            print_help();
-            return Err(ExitCode::from(2));
-        };
-        options.path = path;
-        Ok(options)
-    }
-}
-
-impl ScriptPlanOptions {
-    fn parse(args: &[OsString], command: &str) -> Result<Self, ExitCode> {
-        let Some(path) = args.first() else {
-            eprintln!("error: {command} requires <file.awft>");
-            print_help();
-            return Err(ExitCode::from(2));
-        };
-        let mut options = Self {
-            path: PathBuf::from(path),
-            frames: 32,
-            values: Vec::new(),
-            json: false,
-        };
-        let mut index = 1;
-        while index < args.len() {
-            let flag = args[index].to_string_lossy();
-            match flag.as_ref() {
-                "--json" => options.json = true,
-                "--frames" => {
-                    index += 1;
-                    options.frames = parse_usize_arg(args.get(index), "--frames")?;
-                }
-                "--value" => {
-                    index += 1;
-                    options
-                        .values
-                        .push(parse_runtime_binding(args.get(index), "--value")?);
-                }
-                other => {
-                    eprintln!("error: unknown {command} option `{other}`");
-                    return Err(ExitCode::from(2));
-                }
-            }
-            index += 1;
-        }
-        Ok(options)
-    }
-}
-
-impl RuntimeRunOptions {
-    fn parse(args: &[OsString]) -> Result<Self, ExitCode> {
-        let Some(path) = args.first() else {
-            eprintln!("error: run requires <file.awft>");
-            print_help();
-            return Err(ExitCode::from(2));
-        };
-        let mut options = Self {
-            path: PathBuf::from(path),
-            frames: 1,
-            values: Vec::new(),
-            json: false,
-        };
-        let mut index = 1;
-        while index < args.len() {
-            let flag = args[index].to_string_lossy();
-            match flag.as_ref() {
-                "--json" => options.json = true,
-                "--frames" => {
-                    index += 1;
-                    options.frames = parse_usize_arg(args.get(index), "--frames")?;
-                }
-                "--value" => {
-                    index += 1;
-                    options
-                        .values
-                        .push(parse_runtime_binding(args.get(index), "--value")?);
-                }
-                other => {
-                    eprintln!("error: unknown run option `{other}`");
-                    return Err(ExitCode::from(2));
-                }
-            }
-            index += 1;
-        }
-        Ok(options)
-    }
-}
-
-fn parse_runtime_binding(value: Option<&OsString>, flag: &str) -> Result<RuntimeBinding, ExitCode> {
-    let Some(value) = value else {
-        eprintln!("error: {flag} requires name=value");
-        return Err(ExitCode::from(2));
-    };
-    let value = value.to_string_lossy();
+fn parse_runtime_binding_arg(value: &str) -> Result<RuntimeBinding, String> {
     let Some((name, raw)) = value.split_once('=') else {
-        eprintln!("error: {flag} requires name=value");
-        return Err(ExitCode::from(2));
+        return Err("expected name=value".to_owned());
     };
     if name.is_empty() {
-        eprintln!("error: {flag} binding name must not be empty");
-        return Err(ExitCode::from(2));
+        return Err("binding name must not be empty".to_owned());
     }
     Ok(RuntimeBinding {
         name: name.to_owned(),
@@ -928,119 +833,40 @@ fn parse_runtime_value(raw: &str) -> RuntimeValue {
     }
 }
 
-impl VerifyOptions {
-    fn parse(args: &[OsString]) -> Result<Self, ExitCode> {
-        Self::parse_with_default_mode(args, VerificationMode::Test)
-    }
-
-    fn parse_with_default_mode(
-        args: &[OsString],
-        default_mode: VerificationMode,
-    ) -> Result<Self, ExitCode> {
-        let Some(path) = args.first() else {
-            eprintln!("error: verify requires <file.awft>");
-            print_help();
-            return Err(ExitCode::from(2));
-        };
-        let mut options = Self {
-            path: PathBuf::from(path),
-            mode: default_mode,
-            backend: BackendKind::Emit,
-            json: false,
-            emit_obligations: None,
-            emit_smt: None,
-            z3_command: None,
-        };
-        let mut index = 1;
-        while index < args.len() {
-            let flag = args[index].to_string_lossy();
-            match flag.as_ref() {
-                "--json" => options.json = true,
-                "--mode" => {
-                    index += 1;
-                    options.mode = parse_mode(args.get(index))?;
-                }
-                "--backend" | "--solver" => {
-                    index += 1;
-                    options.backend = parse_backend(args.get(index))?;
-                }
-                "--emit-obligations" => {
-                    index += 1;
-                    options.emit_obligations =
-                        Some(parse_path_arg(args.get(index), flag.as_ref())?);
-                }
-                "--emit-smt" => {
-                    index += 1;
-                    options.emit_smt = Some(parse_path_arg(args.get(index), flag.as_ref())?);
-                }
-                "--solver-command" | "--z3-command" => {
-                    index += 1;
-                    options.z3_command = Some(parse_string_arg(args.get(index), flag.as_ref())?);
-                }
-                other => {
-                    eprintln!("error: unknown verify option `{other}`");
-                    return Err(ExitCode::from(2));
-                }
-            }
-            index += 1;
-        }
-        Ok(options)
+fn parse_verification_mode(value: &str) -> Result<VerificationMode, String> {
+    match value {
+        "dev" => Ok(VerificationMode::Dev),
+        "test" => Ok(VerificationMode::Test),
+        "release" => Ok(VerificationMode::Release),
+        other => Err(format!("unknown verification mode `{other}`")),
     }
 }
 
-fn parse_mode(arg: Option<&OsString>) -> Result<VerificationMode, ExitCode> {
-    match arg.map(|arg| arg.to_string_lossy()).as_deref() {
-        Some("dev") => Ok(VerificationMode::Dev),
-        Some("test") => Ok(VerificationMode::Test),
-        Some("release") => Ok(VerificationMode::Release),
-        Some(other) => {
-            eprintln!("error: unknown verification mode `{other}`");
-            Err(ExitCode::from(2))
-        }
-        None => {
-            eprintln!("error: --mode requires a value");
-            Err(ExitCode::from(2))
-        }
+fn parse_backend_kind(value: &str) -> Result<BackendKind, String> {
+    match value {
+        "emit" => Ok(BackendKind::Emit),
+        "oxiz" => Ok(BackendKind::Oxiz),
+        "z3" => Ok(BackendKind::Z3),
+        other => Err(format!("unknown verifier backend `{other}`")),
     }
 }
 
-fn parse_backend(arg: Option<&OsString>) -> Result<BackendKind, ExitCode> {
-    match arg.map(|arg| arg.to_string_lossy()).as_deref() {
-        Some("emit") => Ok(BackendKind::Emit),
-        Some("oxiz") => Ok(BackendKind::Oxiz),
-        Some("z3") => Ok(BackendKind::Z3),
-        Some(other) => {
-            eprintln!("error: unknown verifier backend `{other}`");
-            Err(ExitCode::from(2))
-        }
-        None => {
-            eprintln!("error: --backend requires a value");
-            Err(ExitCode::from(2))
-        }
+fn step_options(mode: CliRuntimeStepMode, max_ops: usize) -> RuntimeStepOptions {
+    RuntimeStepOptions {
+        mode: mode.into(),
+        budget: RuntimeStepBudget { max_ops },
     }
 }
 
-fn parse_path_arg(arg: Option<&OsString>, flag: &str) -> Result<PathBuf, ExitCode> {
-    arg.map(PathBuf::from).ok_or_else(|| {
-        eprintln!("error: {flag} requires a path");
-        ExitCode::from(2)
-    })
-}
-
-fn parse_string_arg(arg: Option<&OsString>, flag: &str) -> Result<String, ExitCode> {
-    arg.map(|value| value.to_string_lossy().into_owned())
-        .ok_or_else(|| {
-            eprintln!("error: {flag} requires a value");
-            ExitCode::from(2)
-        })
-}
-
-fn parse_usize_arg(arg: Option<&OsString>, flag: &str) -> Result<usize, ExitCode> {
-    let value = parse_string_arg(arg, flag)?;
-    value.parse::<usize>().map_err(|error| {
-        eprintln!("error: {flag} requires a positive integer: {error}");
-        ExitCode::from(2)
-    })
+impl From<CliRuntimeStepMode> for RuntimeStepMode {
+    fn from(value: CliRuntimeStepMode) -> Self {
+        match value {
+            CliRuntimeStepMode::OneOp => Self::OneOp,
+            CliRuntimeStepMode::Drain => Self::Drain,
+            CliRuntimeStepMode::Game => Self::Game,
+            CliRuntimeStepMode::Server => Self::Server,
+        }
+    }
 }
 
 fn print_human_diagnostics(report: &VerificationReport) {
@@ -1140,22 +966,4 @@ fn solve_report(report: &VerificationReport, backend: BackendKind, z3_command: O
             Err(error) => eprintln!("solver[{backend:?}] {}: {error}", obligation.id),
         }
     }
-}
-
-fn print_help() {
-    eprintln!("Usage:");
-    eprintln!("  arcw check <file.awft> [--json]");
-    eprintln!(
-        "  arcw verify <file.awft> [--mode dev|test|release] [--backend emit|oxiz|z3] [--json]"
-    );
-    eprintln!(
-        "  arcw verify <file.awft> --emit-obligations obligations.json --emit-smt out/proofs"
-    );
-    eprintln!("  arcw unsafe <file.awft> [--json]");
-    eprintln!("  arcw plan <file.awft> [--json]");
-    eprintln!("  arcw run <file.awft> [--frames N] [--value name=value] [--json]");
-    eprintln!("  arcw test <file.awft> [--json]");
-    eprintln!("  arcw bench <file.awft> [--json]");
-    eprintln!("  arcw fmt <file-or-dir> [--expand-sugar] [--write] [--json]");
-    eprintln!("  arcw ids materialize <file-or-dir> [--write] [--json]");
 }

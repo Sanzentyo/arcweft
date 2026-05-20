@@ -1,10 +1,10 @@
 use crate::CheckedModule;
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::engine::{FlowFiber, FlowFiberStatus};
-use arcweft_core::frame::FrameOutput;
 use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope, LineTaskTrigger};
 use arcweft_core::plan::FlowEvent;
 use arcweft_core::source::{SourceEvent, SourceEventKind, SourcePolicy};
+use arcweft_core::step::RuntimeStepResult;
 use arcweft_core::stream::{StreamEvent, StreamOp};
 use arcweft_core::task::TaskSpec;
 use arcweft_runtime_plan::flow::lower_runtime_plan;
@@ -315,7 +315,7 @@ fn effect_label(effect: &LineEffectRequest) -> String {
 
 #[derive(serde::Serialize)]
 pub(crate) struct RuntimeRunReport {
-    pub(crate) frames: Vec<RuntimeFrameRunSummary>,
+    pub(crate) steps: Vec<RuntimeStepRunSummary>,
     pub(crate) final_status: String,
 }
 
@@ -334,10 +334,10 @@ pub(crate) struct ScriptTestRunSummary {
     pub(crate) id: String,
     pub(crate) kind: String,
     pub(crate) status: String,
-    pub(crate) frames_run: usize,
+    pub(crate) steps_run: usize,
     pub(crate) final_status: Option<String>,
     pub(crate) diagnostics: Vec<String>,
-    pub(crate) frames: Vec<RuntimeFrameRunSummary>,
+    pub(crate) steps: Vec<RuntimeStepRunSummary>,
 }
 
 #[derive(serde::Serialize)]
@@ -391,10 +391,10 @@ impl ScriptTestRunSummary {
             id: test.id.clone(),
             kind: test.kind.clone(),
             status: "skipped".to_owned(),
-            frames_run: 0,
+            steps_run: 0,
             final_status: None,
             diagnostics: vec![reason.into()],
-            frames: Vec::new(),
+            steps: Vec::new(),
         }
     }
 
@@ -403,23 +403,25 @@ impl ScriptTestRunSummary {
         passed: bool,
         final_status: String,
         diagnostics: Vec<String>,
-        frames: Vec<RuntimeFrameRunSummary>,
+        steps: Vec<RuntimeStepRunSummary>,
     ) -> Self {
         Self {
             id: test.id.clone(),
             kind: test.kind.clone(),
             status: if passed { "passed" } else { "failed" }.to_owned(),
-            frames_run: frames.len(),
+            steps_run: steps.len(),
             final_status: Some(final_status),
             diagnostics,
-            frames,
+            steps,
         }
     }
 }
 
 #[derive(serde::Serialize)]
-pub(crate) struct RuntimeFrameRunSummary {
+pub(crate) struct RuntimeStepRunSummary {
     pub(crate) index: usize,
+    pub(crate) stop_reason: String,
+    pub(crate) fiber_status: String,
     pub(crate) diagnostics: Vec<String>,
     pub(crate) flow_events: Vec<String>,
     pub(crate) line_effects: Vec<String>,
@@ -465,19 +467,27 @@ pub(crate) struct RuntimeQueueStateSummary {
     pub(crate) overflow_count: u64,
 }
 
-impl RuntimeFrameRunSummary {
-    pub(crate) fn from_output(index: usize, output: FrameOutput, fiber: &FlowFiber) -> Self {
+impl RuntimeStepRunSummary {
+    pub(crate) fn from_result(index: usize, result: RuntimeStepResult, fiber: &FlowFiber) -> Self {
+        let RuntimeStepResult {
+            output,
+            fiber_status,
+            stop_reason,
+        } = result;
         Self {
             index,
+            stop_reason: format!("{stop_reason:?}"),
+            fiber_status: flow_status_label(&fiber_status),
             diagnostics: output
                 .diagnostics
                 .into_iter()
                 .map(|diagnostic| diagnostic.message)
                 .collect(),
             flow_events: output.flow_events.iter().map(flow_event_label).collect(),
-            line_effects: output.line_effects.iter().map(effect_label).collect(),
+            line_effects: output.effects.line.iter().map(effect_label).collect(),
             task_requests: output
-                .task_requests
+                .requests
+                .tasks
                 .iter()
                 .map(task_request_label)
                 .collect(),
@@ -519,17 +529,20 @@ impl RuntimeFrameRunSummary {
                     .collect(),
             },
             source_events: output
+                .effects
                 .source_events
                 .iter()
                 .map(source_event_label)
                 .collect(),
             stream_events: output
+                .effects
                 .stream_events
                 .iter()
                 .map(stream_event_label)
                 .collect(),
             source_close_requests: output
-                .source_close_requests
+                .requests
+                .source_close
                 .iter()
                 .map(|source| source.0.clone())
                 .collect(),

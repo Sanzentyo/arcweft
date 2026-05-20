@@ -2037,7 +2037,7 @@ Required runtime properties:
 - stable ordering of simultaneous effects
 - no direct side effects in core
 - effect requests only
-- replayable FrameInput / FrameOutput
+- replayable RuntimeStepInput / RuntimeStepOutput
 - child tasks cannot outlive the parent scope unless explicitly detached
 ```
 

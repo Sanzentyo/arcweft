@@ -1,11 +1,11 @@
 use super::{
-    Engine, FrameOutput, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr, RuntimePattern,
+    Engine, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr, RuntimePattern, RuntimeStepOutput,
     RuntimeValue, SourceEventKind, SourceId, StreamEvent, StreamMatchArm, StreamOp,
     StreamRuntimeId, StreamRuntimeState, match_runtime_pattern, runtime_value_label,
 };
 
 impl Engine {
-    pub(super) fn step_stream_plans(&mut self, output: &mut FrameOutput) {
+    pub(super) fn step_stream_plans(&mut self, output: &mut RuntimeStepOutput) {
         let stream_plans = self.plan.stream_plans.clone();
         for plan in stream_plans {
             let mut budget = 64usize;
@@ -25,7 +25,7 @@ impl Engine {
         stream: &StreamRuntimeId,
         ops: &[StreamOp],
         budget: &mut usize,
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) -> bool {
         for op in ops {
             if *budget == 0 {
@@ -44,7 +44,7 @@ impl Engine {
         stream: &StreamRuntimeId,
         op: &StreamOp,
         budget: &mut usize,
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) -> bool {
         match op {
             StreamOp::Let { pattern, expr } => self.bind_stream_let(pattern, expr, output),
@@ -82,7 +82,7 @@ impl Engine {
         &mut self,
         pattern: &RuntimePattern,
         expr: &RuntimeExpr,
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) -> bool {
         match self.evaluate_expr(expr) {
             Ok(value) => match self.try_bind_pattern(pattern, &value) {
@@ -115,7 +115,7 @@ impl Engine {
         source: &RuntimeExpr,
         body: &[StreamOp],
         budget: &mut usize,
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) -> bool {
         let Ok(source_key) = self.evaluate_queue_target(source) else {
             return true;
@@ -148,7 +148,7 @@ impl Engine {
         &mut self,
         stream: &StreamRuntimeId,
         expr: &RuntimeExpr,
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) -> bool {
         match self.evaluate_expr(expr) {
             Ok(value) => {
@@ -159,7 +159,7 @@ impl Engine {
                     .entry(stream.clone())
                     .or_insert_with(|| StreamRuntimeState::new(stream.clone()));
                 let sequence = state.push_item(item.clone());
-                output.stream_events.push(StreamEvent {
+                output.effects.stream_events.push(StreamEvent {
                     stream: stream.clone(),
                     sequence,
                     kind: SourceEventKind::Item(item),
@@ -176,7 +176,7 @@ impl Engine {
         scrutinee: &RuntimeExpr,
         arms: &[StreamMatchArm],
         budget: &mut usize,
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) -> bool {
         let value = match self.evaluate_expr(scrutinee) {
             Ok(value) => value,
@@ -208,7 +208,11 @@ impl Engine {
         true
     }
 
-    pub(super) fn close_stream_source(&mut self, source: &RuntimeExpr, output: &mut FrameOutput) {
+    pub(super) fn close_stream_source(
+        &mut self,
+        source: &RuntimeExpr,
+        output: &mut RuntimeStepOutput,
+    ) {
         match self.evaluate_queue_target(source) {
             Ok(target) => {
                 if let Some(source) = target.strip_prefix("source:") {

@@ -52,7 +52,7 @@ arcw verify game/routes/opening.awft --emit-obligations obligations.json
 arcw verify game/routes/opening.awft --emit-smt out/proofs
 arcw unsafe game/routes/opening.awft --json
 arcw plan game/routes/opening.awft --json
-arcw run game/routes/opening.awft --frames 4 --json
+arcw run game/routes/opening.awft --steps 4 --json
 arcw test game/routes/opening.awft --json
 arcw bench game/routes/opening.awft --json
 ```
@@ -100,21 +100,23 @@ CLI adapter and does not start renderer/audio/device backends.
 
 ## Runtime Dry Run
 
-`arcw run <file.awft> [--frames N] [--value name=value] [--json]` is the first
+`arcw run <file.awft> [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
 headless execution entry point. It uses the same parse, HIR, reference
 validation, typecheck, and line-plan lowering path as `arcw check`, then lowers
 checked flows to `arcweft-core::RuntimePlan` and steps `Engine` for up to `N`
-frames.
+runtime steps.
 
 ```bash
-arcw run game/routes/opening.awft --frames 8
-arcw run game/routes/opening.awft --frames 8 --value ready=true --value route=@flow.next
-arcw run game/routes/opening.awft --frames 8 --json
+arcw run game/routes/opening.awft --steps 8
+arcw run game/routes/opening.awft --mode drain --steps 8 --max-ops 32
+arcw run game/routes/opening.awft --steps 8 --value ready=true --value route=@flow.next
+arcw run game/routes/opening.awft --steps 8 --json
 ```
 
 The command is still Sans I/O at the runtime layer. The CLI reads the source
-file and prints a report; `arcweft-core` only consumes `FrameInput` and returns
-`FrameOutput`. The report includes per-frame flow events, line effects, task
+file and prints a report; `arcweft-core` only consumes `RuntimeStepInput` plus
+`RuntimeStepOptions` and returns `RuntimeStepResult`. The report includes per-step
+flow events, line effects, task
 requests, normalized source events, emitted stream events, source close
 requests, source/stream queue state, cumulative log/signal/metric/event
 observations, diagnostics, and the final fiber status.
@@ -124,10 +126,10 @@ the Phase 2.0 headless flow slice: dialogue lines, line task groups, `choice`, `
 with`, `let`, `let else`, `if`, `if let`, `match`, `loop`, `while`,
 `while let`, `for`, `scope`, dynamic `goto`, dynamic `return`, `out`, ordinary
 call-shaped effects, and line `cancel on` rules. The runtime also executes the
-first generation slice: source handlers can route normalized `FrameInput`
+first generation slice: source handlers can route normalized `RuntimeStepInput`
 source events into bounded source queues, and stream plans can drain
-source/stream queues and emit stream events under a deterministic per-frame
-budget. `--value` injects pure `RuntimeValue` bindings into `FrameInput`; this
+source/stream queues and emit stream events under a deterministic per-step
+budget. `--value` injects pure `RuntimeValue` bindings into `RuntimeStepInput`; this
 is for deterministic CLI/LSP inspection, not host I/O. Unsupported flow syntax
 fails with a runtime-lowering error instead of being silently dropped.
 
@@ -148,7 +150,7 @@ reported as skipped rather than executed by the Phase 2.0 CLI.
 ```bash
 arcw test game/routes/opening.awft
 arcw test game/routes/opening.awft --json
-arcw test game/routes/opening.awft --frames 32 --json
+arcw test game/routes/opening.awft --steps 32 --json
 arcw bench game/routes/opening.awft
 arcw bench game/routes/opening.awft --json
 ```

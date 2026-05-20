@@ -1,16 +1,16 @@
 use super::suspend::await_task_spec;
 use super::{
-    AwaitState, ChoiceState, Engine, FlowCursor, FlowEvent, FlowFiberStatus, FlowOp, FlowRuntimeId,
-    FrameInput, FrameOutput, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
-    RuntimeFrame, RuntimeFrameKind, RuntimePattern, RuntimeValue, expr_runtime_label,
-    run_line_task_group_for_input, runtime_value_label,
+    AwaitState, ChoiceState, Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowCursor,
+    FlowEvent, FlowFiberStatus, FlowOp, FlowRuntimeId, RuntimeBinding, RuntimeDiagnostic,
+    RuntimeEvalError, RuntimeExpr, RuntimePattern, RuntimeStepInput, RuntimeStepOutput,
+    RuntimeValue, expr_runtime_label, run_line_task_group_for_input, runtime_value_label,
 };
 
 impl Engine {
     // Keep the opcode dispatcher contiguous while the Phase 1 runtime surface is
     // still changing; extracting each arm now would obscure grammar coverage.
     #[allow(clippy::too_many_lines)]
-    pub(super) fn step_flow(&mut self, input: &FrameInput, output: &mut FrameOutput) {
+    pub(super) fn step_flow(&mut self, input: &RuntimeStepInput, output: &mut RuntimeStepOutput) {
         let (op, next) = if let Some(op) = self.fiber.pending_ops.pop_front() {
             (op, None)
         } else {
@@ -92,8 +92,8 @@ impl Engine {
                     need: target.need.clone(),
                     task: target.task.clone(),
                 });
-                output.line_effects.extend(pending);
-                output.task_requests.push(await_task_spec(&target));
+                output.effects.line.extend(pending);
+                output.requests.tasks.push(await_task_spec(&target));
                 self.fiber.status = FlowFiberStatus::Waiting(AwaitState {
                     target,
                     resume: next
@@ -146,8 +146,8 @@ impl Engine {
             },
             FlowOp::Loop { body } => {
                 self.advance_if_needed(next);
-                self.fiber.frames.push(RuntimeFrame {
-                    kind: RuntimeFrameKind::Loop {
+                self.fiber.control_stack.push(FlowControlStackEntry {
+                    kind: FlowControlStackEntryKind::Loop {
                         body: body.clone(),
                         result: None,
                     },
@@ -156,8 +156,8 @@ impl Engine {
             }
             FlowOp::LetLoop { pattern, body } => {
                 self.advance_if_needed(next);
-                self.fiber.frames.push(RuntimeFrame {
-                    kind: RuntimeFrameKind::Loop {
+                self.fiber.control_stack.push(FlowControlStackEntry {
+                    kind: FlowControlStackEntryKind::Loop {
                         body: body.clone(),
                         result: Some(pattern),
                     },
@@ -170,8 +170,8 @@ impl Engine {
             FlowOp::While { condition, body } => match self.evaluate_bool(&condition) {
                 Ok(true) => {
                     self.advance_if_needed(next);
-                    self.fiber.frames.push(RuntimeFrame {
-                        kind: RuntimeFrameKind::While {
+                    self.fiber.control_stack.push(FlowControlStackEntry {
+                        kind: FlowControlStackEntryKind::While {
                             condition: condition.clone(),
                             body: body.clone(),
                         },
@@ -198,8 +198,8 @@ impl Engine {
             } => match self.evaluate_if_let(&pattern, &expr, guard.as_ref()) {
                 Ok(Some(bindings)) => {
                     self.advance_if_needed(next);
-                    self.fiber.frames.push(RuntimeFrame {
-                        kind: RuntimeFrameKind::WhileLet {
+                    self.fiber.control_stack.push(FlowControlStackEntry {
+                        kind: FlowControlStackEntryKind::WhileLet {
                             pattern: pattern.clone(),
                             expr: expr.clone(),
                             guard: guard.clone(),
@@ -306,15 +306,15 @@ impl Engine {
                 Err(error) => self.fail_eval(error, output),
             },
             FlowOp::Effect(effect) => {
-                output.line_effects.push(effect);
+                output.effects.line.push(effect);
                 if !self.apply_control_effects(output) {
                     self.advance_if_needed(next);
                 }
             }
             FlowOp::EnterScope => {
                 self.fiber.env.push_scope();
-                self.fiber.frames.push(RuntimeFrame {
-                    kind: RuntimeFrameKind::Scope,
+                self.fiber.control_stack.push(FlowControlStackEntry {
+                    kind: FlowControlStackEntryKind::Scope,
                 });
                 self.advance_if_needed(next);
             }
@@ -344,7 +344,7 @@ impl Engine {
         &mut self,
         pattern: &RuntimePattern,
         value: &RuntimeValue,
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) {
         match self.try_bind_pattern(pattern, value) {
             Ok(true) => {}
@@ -427,35 +427,35 @@ impl Engine {
 
     pub(super) fn pop_scope_frame(&mut self) {
         if matches!(
-            self.fiber.frames.last(),
-            Some(RuntimeFrame {
-                kind: RuntimeFrameKind::Scope
+            self.fiber.control_stack.last(),
+            Some(FlowControlStackEntry {
+                kind: FlowControlStackEntryKind::Scope
             })
         ) {
-            self.fiber.frames.pop();
+            self.fiber.control_stack.pop();
             self.fiber.env.pop_scope();
         }
     }
 
     pub(super) fn pop_scope_frames_until_loop(&mut self) {
         while matches!(
-            self.fiber.frames.last(),
-            Some(RuntimeFrame {
-                kind: RuntimeFrameKind::Scope
+            self.fiber.control_stack.last(),
+            Some(FlowControlStackEntry {
+                kind: FlowControlStackEntryKind::Scope
             })
         ) {
             self.pop_scope_frame();
         }
     }
 
-    pub(super) fn pop_loop_frame(&mut self) -> Option<RuntimeFrameKind> {
+    pub(super) fn pop_loop_frame(&mut self) -> Option<FlowControlStackEntryKind> {
         self.pop_scope_frames_until_loop();
-        match self.fiber.frames.pop() {
-            Some(RuntimeFrame {
+        match self.fiber.control_stack.pop() {
+            Some(FlowControlStackEntry {
                 kind:
-                    kind @ (RuntimeFrameKind::Loop { .. }
-                    | RuntimeFrameKind::While { .. }
-                    | RuntimeFrameKind::WhileLet { .. }),
+                    kind @ (FlowControlStackEntryKind::Loop { .. }
+                    | FlowControlStackEntryKind::While { .. }
+                    | FlowControlStackEntryKind::WhileLet { .. }),
             }) => Some(kind),
             _ => None,
         }
@@ -475,40 +475,46 @@ impl Engine {
     pub(super) fn break_nearest_loop(
         &mut self,
         value: &RuntimeValue,
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) -> bool {
         self.discard_pending_until_loop_next();
         let Some(kind) = self.pop_loop_frame() else {
             return false;
         };
         match kind {
-            RuntimeFrameKind::Loop {
+            FlowControlStackEntryKind::Loop {
                 result: Some(pattern),
                 ..
             } => self.bind_value(&pattern, value, output),
-            RuntimeFrameKind::Loop { result: None, .. } => {}
-            RuntimeFrameKind::While { .. } | RuntimeFrameKind::WhileLet { .. } => {
+            FlowControlStackEntryKind::Loop { result: None, .. } => {}
+            FlowControlStackEntryKind::While { .. }
+            | FlowControlStackEntryKind::WhileLet { .. } => {
                 if *value != RuntimeValue::Unit {
                     self.fail_eval(RuntimeEvalError::BreakValueOutsideValueLoop, output);
                 }
             }
-            RuntimeFrameKind::Scope => return false,
+            FlowControlStackEntryKind::Scope => return false,
         }
         true
     }
 
-    pub(super) fn continue_nearest_loop(&mut self, output: &mut FrameOutput) -> bool {
+    pub(super) fn continue_nearest_loop(&mut self, output: &mut RuntimeStepOutput) -> bool {
         self.pop_scope_frames_until_loop();
         self.discard_pending_until_loop_next();
-        let Some(kind) = self.fiber.frames.last().map(|frame| frame.kind.clone()) else {
+        let Some(kind) = self
+            .fiber
+            .control_stack
+            .last()
+            .map(|frame| frame.kind.clone())
+        else {
             return false;
         };
         match kind {
-            RuntimeFrameKind::Loop { body, .. } => self.push_loop_iteration(body),
-            RuntimeFrameKind::While { condition, body } => {
+            FlowControlStackEntryKind::Loop { body, .. } => self.push_loop_iteration(body),
+            FlowControlStackEntryKind::While { condition, body } => {
                 self.push_ops(vec![FlowOp::WhileNext { condition, body }]);
             }
-            RuntimeFrameKind::WhileLet {
+            FlowControlStackEntryKind::WhileLet {
                 pattern,
                 expr,
                 guard,
@@ -521,7 +527,7 @@ impl Engine {
                     body,
                 }]);
             }
-            RuntimeFrameKind::Scope => {
+            FlowControlStackEntryKind::Scope => {
                 self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
                 return false;
             }

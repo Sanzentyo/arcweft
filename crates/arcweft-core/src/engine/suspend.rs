@@ -1,15 +1,15 @@
 use super::{
     AwaitState, AwaitTarget, CancelScopeId, ChoiceRuntimeOption, ChoiceState, Engine, FlowEvent,
-    FlowFiberStatus, FrameInput, FrameOutput, LineEffectRequest, RuntimeDiagnostic, TaskClass,
-    TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority, TaskSource, TaskSpec,
+    FlowFiberStatus, LineEffectRequest, RuntimeDiagnostic, RuntimeStepInput, RuntimeStepOutput,
+    TaskClass, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority, TaskSource, TaskSpec,
 };
 
 impl Engine {
     pub(super) fn resume_suspended(
         &mut self,
-        input: &FrameInput,
+        input: &RuntimeStepInput,
         events: &[TaskEvent],
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) -> bool {
         match self.fiber.status.clone() {
             FlowFiberStatus::Waiting(state) => {
@@ -30,7 +30,7 @@ impl Engine {
         &mut self,
         state: AwaitState,
         events: &[TaskEvent],
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) {
         let Some(event) = events
             .iter()
@@ -73,8 +73,8 @@ impl Engine {
     pub(super) fn resume_choice_state(
         &mut self,
         state: ChoiceState,
-        input: &FrameInput,
-        output: &mut FrameOutput,
+        input: &RuntimeStepInput,
+        output: &mut RuntimeStepOutput,
     ) {
         let Some(option) = state
             .options
@@ -90,9 +90,9 @@ impl Engine {
             id: state.id.clone(),
             option: selected,
         });
-        output.line_effects.extend(option.effects.clone());
+        output.effects.line.extend(option.effects.clone());
         if let Some(out) = option.out {
-            output.line_effects.push(LineEffectRequest::Out(out));
+            output.effects.line.push(LineEffectRequest::Out(out));
         }
         if let Some(target) = option.target {
             self.goto(target, output);
@@ -103,7 +103,7 @@ impl Engine {
     }
 }
 
-fn input_selects_choice(input: &FrameInput, option: &ChoiceRuntimeOption) -> bool {
+fn input_selects_choice(input: &RuntimeStepInput, option: &ChoiceRuntimeOption) -> bool {
     input.input_events.iter().any(|event| {
         let Some(payload) = event.payload.as_deref() else {
             return false;

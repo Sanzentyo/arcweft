@@ -8,7 +8,7 @@ Activity はノベル本編、トラックゲーム、FPS、WASM plugin、Rust p
 pub trait Activity {
     fn manifest() -> ActivityManifest where Self: Sized;
     fn mount(&mut self, ctx: MountContext<'_>) -> Result<MountResult, ActivityError>;
-    fn step(&mut self, input: FrameInputView<'_>, output: FrameOutputWriter<'_>) -> StepStatus;
+    fn step(&mut self, input: RuntimeStepInputRef<'_>, output: RuntimeStepOutputSink<'_>) -> StepStatus;
     fn snapshot(&self) -> Result<ActivitySnapshot, ActivityError>;
     fn restore(&mut self, snapshot: ActivitySnapshotRef<'_>) -> Result<(), ActivityError>;
 }

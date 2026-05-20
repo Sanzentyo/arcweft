@@ -93,7 +93,7 @@ SmallList<T, const N>
 | `BitSet<E>`       | bitset        | flags、effects、capabilities、read-state   |
 | `SmallList<T,N>`  | smallvec 系    | hot path、小さい固定上限 list                   |
 
-既存 runtime でも `RuntimePlan` は `Vec`、`FlowFiber` は `VecDeque` と `BTreeMap` を使う形になっており、`FrameInput` / `FrameOutput` もイベントや要求の `Vec` を中心に構造化されています。 また HookTable は phase ごとの `BTreeMap` と hook の `IndexMap` を持つ設計なので、**sorted order と insertion order の両方を明示的に使い分ける**方針が合っています。
+既存 runtime でも `RuntimePlan` は `Vec`、`FlowFiber` は `VecDeque` と `BTreeMap` を使う形になっており、`RuntimeStepInput` / `RuntimeStepOutput` もイベントや要求の `Vec` を中心に構造化されています。 また HookTable は phase ごとの `BTreeMap` と hook の `IndexMap` を持つ設計なので、**sorted order と insertion order の両方を明示的に使い分ける**方針が合っています。
 
 ---
 
@@ -183,7 +183,7 @@ Versioned<T>
 StableHash
 ```
 
-`FrameOutput` は実際の副作用ではなく、`EffectRequest`、`TaskSpec`、`Command` のような要求を返す設計です。 そのため、state も「即 mutation」より、`Patch`、`EventLog`、`TraceLog` として扱える方が debug / replay / verification に向いています。
+`RuntimeStepOutput` は実際の副作用ではなく、`EffectRequest`、`TaskSpec`、`Command` のような要求を返す設計です。 そのため、state も「即 mutation」より、`Patch`、`EventLog`、`TraceLog` として扱える方が debug / replay / verification に向いています。
 
 ---
 

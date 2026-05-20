@@ -159,6 +159,9 @@ impl TypeChecker<'_> {
         }
         self.symbol_type(path).cloned().or_else(|| {
             self.check_dotted_path_target(path).or_else(|| {
+                if path == "None" {
+                    return Some(TypeKind::Option(Box::new(TypeKind::Named("_".to_owned()))));
+                }
                 // Short enum-variant expressions such as `.Instant` rely
                 // on expected type resolution in the full checker. The
                 // Phase 1 checker preserves unknown short variants as
@@ -346,7 +349,12 @@ impl TypeChecker<'_> {
                 .cloned()
                 .or_else(|| well_known_runtime_method_type(&name))
         {
-            for arg in args {
+            let checked_args = if name == "event.emit" {
+                args.iter().skip(1).collect::<Vec<_>>()
+            } else {
+                args.iter().collect::<Vec<_>>()
+            };
+            for arg in checked_args {
                 self.check_expr(arg);
             }
             return Some(ty);
@@ -382,6 +390,9 @@ impl TypeChecker<'_> {
                     ok: Box::new(TypeKind::Named("_".to_owned())),
                     error: Box::new(first_arg_type(&arg_types)),
                 });
+            }
+            if name == "Some" {
+                return Some(TypeKind::Option(Box::new(first_arg_type(&arg_types))));
             }
             if self.symbol_type(name) == Some(&TypeKind::Ref(EntityKind::Character)) {
                 return Some(TypeKind::SpeakerPreset(EntityKind::Character));
@@ -471,7 +482,12 @@ impl TypeChecker<'_> {
                 .cloned()
                 .or_else(|| well_known_runtime_method_type(&dotted))
             {
-                for arg in args {
+                let checked_args = if dotted == "event.emit" {
+                    args.iter().skip(1).collect::<Vec<_>>()
+                } else {
+                    args.iter().collect::<Vec<_>>()
+                };
+                for arg in checked_args {
                     self.check_expr(arg);
                 }
                 return Some(ty);

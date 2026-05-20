@@ -8,7 +8,7 @@
 
 ## 現状の構造認識
 
-Arcweftの設計上の中心は、`.awft` DSLから lossless CST、typed AST/HIR、Typed IR、bytecode/bundle へ進み、実行時は **Sans I/O Core** が `Engine::step(FrameInput) -> FrameOutput` 的に純粋な状態遷移を行い、GPU・FS・network・Audio・WASM・Craneliftなどは外側のHost/Adapterに置く、という構造です。設計文書でも `arcweft-core` はGPU、Audio、Servo、DOM、filesystem、network、WASM runtime、Cranelift runtimeに直接依存しないと明記されています。
+Arcweftの設計上の中心は、`.awft` DSLから lossless CST、typed AST/HIR、Typed IR、bytecode/bundle へ進み、実行時は **Sans I/O Core** が `Engine::step(RuntimeStepInput) -> RuntimeStepOutput` 的に純粋な状態遷移を行い、GPU・FS・network・Audio・WASM・Craneliftなどは外側のHost/Adapterに置く、という構造です。設計文書でも `arcweft-core` はGPU、Audio、Servo、DOM、filesystem、network、WASM runtime、Cranelift runtimeに直接依存しないと明記されています。
 
 ワークスペースは現在、`arcweft-core`、`arcweft-dialogue`、`arcweft-id`、`arcweft-lang-hir`、`arcweft-lang-lsp`、`arcweft-lang-syntax`、`arcweft-need`、`arcweft-presentation`、`arcweft-source`、`arcweft-test`、`arcweft-verify`、`arcweft-verify-oxiz`、`arcweft-verify-z3`、`arcweft-cli` の14クレート構成です。
 
@@ -114,7 +114,7 @@ arcweft           -> core, dialogue, presentation, need, id, source を re-expor
 案B: coreを runtime と model に割る
 
 arcweft-runtime-core
-  Engine, FrameInput, FrameOutput, RuntimePlan, FlowOp
+  Engine, RuntimeStepInput, RuntimeStepOutput, RuntimePlan, FlowOp
 
 arcweft-model
   id, source anchor, dialogue/presentationにまたがる純データ
@@ -152,7 +152,7 @@ arcweft-core
 
 ### 4. `core/src/lib.rs` を分割する
 
-`arcweft-core/src/lib.rs` は、prelude、時刻、FrameInput/FrameOutput、RuntimeValue、RuntimeExpr、RuntimePattern、RuntimeEnv、RuntimePlan、FlowOp、Engine、TaskHost、SourceEvent、LineTaskGroup、LineEffectRequest、ResourceAccess などが1ファイルに入っています。
+`arcweft-core/src/lib.rs` は、prelude、時刻、RuntimeStepInput/RuntimeStepOutput、RuntimeValue、RuntimeExpr、RuntimePattern、RuntimeEnv、RuntimePlan、FlowOp、Engine、TaskHost、SourceEvent、LineTaskGroup、LineEffectRequest、ResourceAccess などが1ファイルに入っています。
 
 これは現段階では動きますが、今後のRuntime/VM/Task/Source/LinePlanの伸び方を考えると、早めに分けた方がいいです。
 

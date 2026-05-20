@@ -224,7 +224,7 @@ Current high-confidence state:
   `RuntimePlan`, `RuntimeFlow`, `FlowOp`, `RuntimeValue`, `RuntimeExpr`,
   `RuntimePattern`, `RuntimeEnv`, `Engine`, `FlowFiber`, and
   `run_line_task_group` can step lowered flow/dialogue task graphs over
-  `FrameInput` into `FrameOutput` without performing I/O. The spine emits
+  `RuntimeStepInput` into `RuntimeStepOutput` without performing I/O. The spine emits
   child/await `TaskSpec`s and deterministic line effects, evaluates
   let/let-else, if/if-let, match, loop/while/while-let/for, scope, goto, and
   return runtime nodes, runs scope cleanup stacks, and leaves actual
@@ -240,10 +240,10 @@ Current high-confidence state:
   for CLI, LSP, and Agent inspection. Runtime parallel conflicts are also
   surfaced as verifier obligations so direct verifier users can see the same
   class of graph conflict as `arcw check`.
-- `arcw run <file.awft> [--frames N] [--value name=value] [--json]` now
+- `arcw run <file.awft> [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` now
   performs a deterministic dry run through the Phase 2.0 headless runtime slice and
-  reports per-frame flow events, effects, task requests, diagnostics, and final
-  fiber status. `--value` injects pure runtime bindings such as
+  reports per-step flow events, effects, host requests, diagnostics, stop reason,
+  and final fiber status. `--value` injects pure runtime bindings such as
   `ready=true`, `count=3`, or `route=@flow.next`; the CLI owns filesystem I/O
   and runtime execution remains Sans I/O.
 - Phase 2.0 headless observation state is implemented for the current runtime
@@ -253,20 +253,20 @@ Current high-confidence state:
   `arcw run --json` exposes those observations for CLI, test, LSP, replay, and
   Agent tooling.
 - Source and stream runtime execution now has a first Sans I/O slice.
-  `FrameInput.source_events` are normalized, dispatched through lowered
+  `RuntimeStepInput.source_events` are normalized, dispatched through lowered
   `SourcePlan` handlers, and `yield` pushes items through the declared
   backpressure policy. `StreamPlan` can drain source/stream queues through
-  `ForNext` and emit deterministic stream events within a per-frame budget.
+  `ForNext` and emit deterministic stream events within a per-step budget.
   `arcw plan --json` reports generation plans, and `arcw run --json` reports
   source/stream events and queue state. Device acquisition, permissions, and
   native callbacks remain adapter responsibilities.
-- The Phase 2.0 runtime now has an explicit `FlowFiber` frame stack for lexical
+- The Phase 2.0 runtime now has an explicit `FlowFiber` control stack for lexical
   scopes and loop continuations. `break` and `continue` discard queued body ops,
-  pop body-local scopes, and transfer to the nearest loop/while/while-let frame.
+  pop body-local scopes, and transfer to the nearest loop/while/while-let entry.
   Branch, match, and while-let pattern bindings are scoped to the selected body;
   guard evaluation uses temporary bindings and restores the previous runtime
-  environment. `FrameInput::external_values` bind into the root runtime scope so
-  ambient per-frame values are not lost when a nested scope exits.
+  environment. `RuntimeStepInput::bindings` bind into the root runtime scope so
+  ambient per-step values are not lost when a nested scope exits.
 - Gap audit result: broad runtime docs still exceed the Phase 2.0 headless
   target. Full story VM value execution, complete expression evaluation, source
   adapter execution, hook/memo runtime tables, save/replay traces, activities,

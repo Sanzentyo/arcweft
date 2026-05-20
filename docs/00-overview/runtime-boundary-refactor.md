@@ -4,7 +4,11 @@
 
 This document intentionally does **not** preserve backward compatibility. Do not add `deprecated` names, type aliases, compatibility modules, or wrapper APIs. The project is still early enough that the correct names and shapes should replace the wrong ones directly.
 
-The current implementation still exposes `FrameInput`, `FrameInputView`, `FrameOutput`, and `FrameOutputWriter` in `crates/arcweft-core/src/frame.rs`; the engine imports and consumes them from `engine.rs`; and the CLI directly constructs `FrameInput` and reports `RuntimeFrameRunSummary`. The core runtime also still uses `RuntimeFrame` / `RuntimeFrameKind` as flow-control stack entries and stores them in `FlowFiber.frames`.
+The current implementation exposes `RuntimeStepInput`, `RuntimeStepInputRef`,
+`RuntimeStepOutput`, `RuntimeStepOutputSink`, `RuntimeStepResult`, and
+`RuntimeStepOptions` from `crates/arcweft-core/src/step.rs`. `Engine::step`
+requires explicit step options, returns a result envelope, and stores lexical
+scope / loop continuation entries in `FlowFiber.control_stack`.
 
 The correct direction is to make `RuntimeStep*` the core vocabulary and reserve `Frame` only for game/render/audio adapter layers.
 
@@ -12,15 +16,12 @@ The correct direction is to make `RuntimeStep*` the core vocabulary and reserve 
 
 ## Mandatory naming decisions
 
-### Delete these core names
+### Delete these obsolete core names
 
 ```text
-FrameInput
-FrameInputView
-FrameOutput
-FrameOutputWriter
-RuntimeFrame
-RuntimeFrameKind
+arcweft_core::frame
+crates/arcweft-core/src/frame.rs
+Engine::step(RuntimeStepInput) -> RuntimeStepOutput
 FlowFiber.frames
 external_values
 line_effects as top-level RuntimeStepOutput field
@@ -52,6 +53,10 @@ RuntimeStreamEvent
 RuntimePayload
 ```
 
+`RuntimeSourceEvent`, `RuntimeStreamEvent`, and `RuntimePayload` are still the
+next structured-payload follow-up; the current runtime step boundary has the
+batch shape but still carries string payloads for source/stream events.
+
 ### Keep `Frame` only here
 
 ```text
@@ -73,7 +78,7 @@ Those names belong outside `arcweft-core`, or at least outside its VM runtime bo
 Replace the architecture line:
 
 ```text
-Engine::step(FrameInput) -> FrameOutput
+Engine::step(RuntimeStepInput) -> RuntimeStepOutput
 ```
 
 with:
@@ -82,7 +87,7 @@ with:
 Engine::step(RuntimeStepInput, RuntimeStepOptions) -> RuntimeStepResult
 ```
 
-Replace prose saying `FrameOutput` returns `Command` / `EffectRequest` / `TaskSpec` with prose saying `RuntimeStepOutput` contains typed effect batches and host request batches.
+Replace prose saying `RuntimeStepOutput` returns `Command` / `EffectRequest` / `TaskSpec` with prose saying `RuntimeStepOutput` contains typed effect batches and host request batches.
 
 ### `docs/02-runtime/core.md`
 
@@ -110,7 +115,7 @@ pub struct RuntimeStepResult {
 }
 ```
 
-Remove examples that show `FrameInput`, `FrameOutput`, and `FrameInput::external_values`.
+Remove examples that show `RuntimeStepInput`, `RuntimeStepOutput`, and `RuntimeStepInput::bindings`.
 
 ### `crates/arcweft-core/src/frame.rs`
 
@@ -136,17 +141,11 @@ pub struct HostRequestBatch { ... }
 pub enum RuntimePayload { ... }
 ```
 
-`RuntimeStepOutputSink` replaces the old `FrameOutputWriter`; it should expose output sinks by semantic domain, not just `push_diagnostic` and `merge`.
+`RuntimeStepOutputSink` replaces the old `RuntimeStepOutputSink`; it should expose output sinks by semantic domain, not just `push_diagnostic` and `merge`.
 
 ### `crates/arcweft-core/src/lib.rs`
 
 Replace:
-
-```rust
-pub mod frame;
-```
-
-with:
 
 ```rust
 pub mod step;
@@ -159,7 +158,7 @@ Add `payload`, `host`, or `effect_batch` modules only if the new file grows too 
 Replace imports:
 
 ```rust
-use crate::frame::{FrameInput, FrameOutput, RuntimeDiagnostic};
+use crate::step::{RuntimeStepInput, RuntimeStepOutput, RuntimeDiagnostic};
 ```
 
 with:
@@ -183,7 +182,7 @@ No `step(input)` convenience overload.
 Replace:
 
 ```rust
-pub frames: Vec<RuntimeFrame>,
+pub frames: Vec<FlowControlStackEntry>,
 ```
 
 with:
@@ -192,7 +191,7 @@ with:
 pub control_stack: Vec<FlowControlStackEntry>,
 ```
 
-Replace `RuntimeFrame` / `RuntimeFrameKind` definitions with:
+Replace `FlowControlStackEntry` / `FlowControlStackEntryKind` definitions with:
 
 ```rust
 pub struct FlowControlStackEntry {
@@ -209,12 +208,12 @@ pub enum FlowControlStackEntryKind {
 
 ### `crates/arcweft-core/src/engine/flow.rs`
 
-Replace all `FrameInput` / `FrameOutput` function parameters with `RuntimeStepInput` / `RuntimeStepOutput` or narrower refs/sinks.
+Replace all `RuntimeStepInput` / `RuntimeStepOutput` function parameters with `RuntimeStepInput` / `RuntimeStepOutput` or narrower refs/sinks.
 
 Replace all stack operations:
 
 ```rust
-self.fiber.frames.push(RuntimeFrame { kind: RuntimeFrameKind::Loop { ... } });
+self.fiber.frames.push(FlowControlStackEntry { kind: FlowControlStackEntryKind::Loop { ... } });
 self.fiber.frames.last()
 self.fiber.frames.pop()
 ```
@@ -320,7 +319,7 @@ pub struct RuntimePlan {
 
 ### `crates/arcweft-cli/src/main.rs`
 
-Remove `--frames`. Use runtime step vocabulary:
+`--frames` is removed from runtime execution commands. Use runtime step vocabulary:
 
 ```bash
 arcw run <file.awft> --entry @entry.main --mode game --steps 8
@@ -338,14 +337,14 @@ max_ops: Option<usize>,
 entry: Option<String>,
 ```
 
-Replace all `FrameInput { external_values: ... }` construction with `RuntimeStepInput { bindings: ... }`.
+Replace all `RuntimeStepInput { bindings: ... }` construction with `RuntimeStepInput { bindings: ... }`.
 
 ### `crates/arcweft-cli/src/output.rs`
 
 Rename:
 
 ```text
-RuntimeFrameRunSummary -> RuntimeStepRunSummary
+RuntimeStepRunSummary -> RuntimeStepRunSummary
 frames                 -> steps
 frame.index            -> step.index
 line_effects           -> effects
@@ -569,24 +568,24 @@ These encode intentionally rejected constructs, such as absolute OS paths or old
 
 ### Runtime names and structure
 
-- [ ] Rename `crates/arcweft-core/src/frame.rs` to `step.rs`.
-- [ ] Delete `FrameInput`, `FrameInputView`, `FrameOutput`, `FrameOutputWriter`.
-- [ ] Add `RuntimeStepInput`, `RuntimeStepInputRef`, `RuntimeStepOutput`, `RuntimeStepOutputSink`.
-- [ ] Add `RuntimeStepResult`, `RuntimeStepOptions`, `RuntimeStepBudget`, `RuntimeStepMode`, `RuntimeStepStopReason`.
-- [ ] Rename `FlowFiber.frames` to `FlowFiber.control_stack`.
-- [ ] Delete `RuntimeFrame` and `RuntimeFrameKind`.
-- [ ] Add `FlowControlStackEntry` and `FlowControlStackEntryKind`.
-- [ ] Replace `external_values` with `bindings`.
-- [ ] Replace top-level `line_effects` with `RuntimeEffectBatch`.
-- [ ] Replace top-level `task_requests` with `HostRequestBatch`.
+- [x] Rename `crates/arcweft-core/src/frame.rs` to `step.rs`.
+- [x] Delete the old `arcweft_core::frame` module and old step-output field names.
+- [x] Add `RuntimeStepInput`, `RuntimeStepInputRef`, `RuntimeStepOutput`, `RuntimeStepOutputSink`.
+- [x] Add `RuntimeStepResult`, `RuntimeStepOptions`, `RuntimeStepBudget`, `RuntimeStepMode`, `RuntimeStepStopReason`.
+- [x] Rename `FlowFiber.frames` to `FlowFiber.control_stack`.
+- [x] Keep stack entries as `FlowControlStackEntry` and `FlowControlStackEntryKind`.
+- [x] Replace `external_values` with `bindings`.
+- [x] Replace top-level `line_effects` with `RuntimeEffectBatch`.
+- [x] Replace top-level `task_requests` with `HostRequestBatch`.
 - [ ] Add `RuntimePayload`.
 - [ ] Replace string-only source/stream events with structured payload events.
 
 ### CLI
 
-- [ ] Remove `--frames` from `arcw run`.
-- [ ] Add `--steps`, `--mode`, `--max-ops`, and `--entry`.
-- [ ] Rename runtime report fields from frames to steps.
+- [x] Remove `--frames` from `arcw run`.
+- [x] Add `--steps`, `--mode`, and `--max-ops`.
+- [ ] Add `--entry`.
+- [x] Rename runtime report fields from frames to steps.
 - [ ] Add `arcw cli` after entry/capability grammar lands.
 - [ ] Add `arcw serve` after server adapter lands.
 
@@ -611,10 +610,10 @@ These encode intentionally rejected constructs, such as absolute OS paths or old
 
 ### Tests
 
-- [ ] Add parser/HIR/sema fixture loader.
-- [ ] Add CLI check fixture loader.
-- [ ] Add CLI run fixture loader.
-- [ ] Add current-pass fixtures.
-- [ ] Add spec-should-pass fixtures.
-- [ ] Add spec-should-fail fixtures.
+- [x] Add parser/HIR/sema fixture loader.
+- [x] Add CLI check fixture loader.
+- [x] Add CLI run fixture loader.
+- [x] Add current-pass fixtures.
+- [x] Add spec-should-pass fixtures.
+- [x] Add spec-should-fail fixtures.
 - [ ] Unignore spec fixtures as implementation lands.

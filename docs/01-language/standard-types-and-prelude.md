@@ -245,7 +245,7 @@ The Rust facade crate `arcweft` exposes crate-family namespaces instead of a
 flat compatibility prelude:
 
 ```rust
-use arcweft::core::frame::FrameInput;
+use arcweft::core::frame::RuntimeStepInput;
 use arcweft::dialogue::DialogueLine;
 use arcweft::presentation::PresentationHandle;
 ```

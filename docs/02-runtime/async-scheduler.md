@@ -124,7 +124,7 @@ AwaitView(load_avatar(user)) {
 In the Phase 2.0 Sans I/O runtime slice, `await ... with` lowers to a
 `FlowOp::Await` containing an `AwaitTarget` and pending effects. Entering the op
 emits a `TaskSpec` and switches `FlowFiberStatus` to `Waiting`. The runtime
-resumes only when a matching `TaskEvent` arrives in a later `FrameInput`.
+resumes only when a matching `TaskEvent` arrives in a later `RuntimeStepInput`.
 
 ```text
 TaskEventKind::Ready(value)    -> resume the flow after the await op

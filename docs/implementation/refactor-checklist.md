@@ -5,36 +5,34 @@ No compatibility aliases. No deprecated wrappers. No transitional re-export modu
 ## Fixture activation note
 
 The direction package is applied without rewriting future-spec fixtures into
-today's grammar. Some files under `tests/fixtures/awft/current_pass/` currently
-remain explicit implementation gaps and are skipped by the fixture harness with
-file-name allowlists. Promote each fixture by removing it from the skip list
-only after the parser, HIR, sema, runtime-plan, CLI, and LSP behavior actually
-support the documented syntax.
+today's grammar. Files under `tests/fixtures/awft/current_pass/` are now expected
+to pass without file-name allowlists. Keep future grammar targets under
+`spec_should_pass/` as ignored fixtures until the parser, HIR, sema,
+runtime-plan, CLI, and LSP behavior actually support the documented syntax.
 
 ## Core rename and structure
 
-- [ ] Rename `crates/arcweft-core/src/frame.rs` to `crates/arcweft-core/src/step.rs`.
-- [ ] Delete `FrameInput`, `FrameInputView`, `FrameOutput`, `FrameOutputWriter`.
-- [ ] Add `RuntimeStepInput`, `RuntimeStepInputRef`, `RuntimeStepOutput`, `RuntimeStepOutputSink`.
-- [ ] Add `RuntimeStepResult`, `RuntimeStepOptions`, `RuntimeStepBudget`, `RuntimeStepMode`, `RuntimeStepStopReason`.
-- [ ] Replace `external_values` with `bindings` everywhere.
-- [ ] Replace `FlowFiber.frames` with `FlowFiber.control_stack`.
-- [ ] Delete `RuntimeFrame` and `RuntimeFrameKind`.
-- [ ] Add `FlowControlStackEntry` and `FlowControlStackEntryKind`.
-- [ ] Replace top-level `line_effects` with `RuntimeEffectBatch`.
-- [ ] Replace top-level `task_requests` with `HostRequestBatch`.
+- [x] Rename `crates/arcweft-core/src/frame.rs` to `crates/arcweft-core/src/step.rs`.
+- [x] Delete old frame-boundary exports and the `arcweft_core::frame` module.
+- [x] Add `RuntimeStepInput`, `RuntimeStepInputRef`, `RuntimeStepOutput`, `RuntimeStepOutputSink`.
+- [x] Add `RuntimeStepResult`, `RuntimeStepOptions`, `RuntimeStepBudget`, `RuntimeStepMode`, `RuntimeStepStopReason`.
+- [x] Replace `external_values` with `bindings` everywhere.
+- [x] Replace `FlowFiber.frames` with `FlowFiber.control_stack`.
+- [x] Keep flow-control stack names as `FlowControlStackEntry` and `FlowControlStackEntryKind`.
+- [x] Replace top-level `line_effects` with `RuntimeEffectBatch`.
+- [x] Replace top-level `task_requests` with `HostRequestBatch`.
 - [ ] Add `RuntimePayload`.
 - [ ] Replace string-only source/stream events with structured payload events.
 
 ## Runtime execution
 
-- [ ] Change `Engine::step` signature to require `RuntimeStepOptions`.
-- [ ] Implement `RuntimeStepMode::OneOp`.
-- [ ] Implement `RuntimeStepMode::DrainUntilBlocked`.
-- [ ] Implement `RuntimeStepMode::DrainUntilOutput`.
-- [ ] Implement `RuntimeStepMode::DrainUntilPresentationChange`.
-- [ ] Implement `RuntimeStepMode::DrainUntilBudget`.
-- [ ] Add `RuntimeStepStopReason` reporting.
+- [x] Change `Engine::step` signature to require `RuntimeStepOptions`.
+- [x] Implement `RuntimeStepMode::OneOp`.
+- [x] Add first `RuntimeStepMode::{Drain, Game, Server}` API surface.
+- [ ] Teach `Engine::step` to internally drain according to mode.
+- [ ] Add presentation-change-specific drain semantics.
+- [ ] Enforce `RuntimeStepBudget` inside the VM loop instead of only reporting API shape.
+- [x] Add `RuntimeStepStopReason` reporting.
 - [ ] Add `RuntimeExecutor` trait.
 - [ ] Implement `VmExecutor`.
 - [ ] Keep VM as semantic source of truth.
@@ -74,23 +72,23 @@ support the documented syntax.
 
 ## CLI
 
-- [ ] Remove `--frames`.
-- [ ] Add `--steps`.
-- [ ] Add `--mode one-op|drain|game|server`.
-- [ ] Add `--max-ops`.
+- [x] Remove `--frames`.
+- [x] Add `--steps`.
+- [x] Add `--mode one-op|drain|game|server`.
+- [x] Add `--max-ops`.
 - [ ] Add `--entry`.
-- [ ] Rename runtime report `frames` to `steps`.
+- [x] Rename runtime report `frames` to `steps`.
 - [ ] Add `arcw cli` after capability grammar lands.
 - [ ] Add `arcw serve` after server entry/adapter lands.
 
 ## Tests and fixtures
 
-- [ ] Add `tests/fixtures/awft/current_pass/check`.
-- [ ] Add `tests/fixtures/awft/current_pass/run`.
-- [ ] Add `tests/fixtures/awft/spec_should_pass/check`.
-- [ ] Add `tests/fixtures/awft/spec_should_pass/run`.
-- [ ] Add `tests/fixtures/awft/spec_should_fail`.
-- [ ] Add sema fixture loader test.
-- [ ] Add CLI check/run fixture test.
-- [ ] Add focused compile gap regression test.
+- [x] Add `tests/fixtures/awft/current_pass/check`.
+- [x] Add `tests/fixtures/awft/current_pass/run`.
+- [x] Add `tests/fixtures/awft/spec_should_pass/check`.
+- [x] Add `tests/fixtures/awft/spec_should_pass/run`.
+- [x] Add `tests/fixtures/awft/spec_should_fail`.
+- [x] Add sema fixture loader test.
+- [x] Add CLI check/run fixture test.
+- [x] Add focused compile gap regression coverage through current-pass fixtures.
 - [ ] Unignore spec_should_pass tests after implementation catches up.

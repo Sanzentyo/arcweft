@@ -1290,7 +1290,7 @@ pub enum HirStmt {
 
 ## 17. Runtime / Core との境界
 
-Arcweft core は副作用を実行しない。`Engine::step(FrameInput) -> FrameOutput` は deterministic な data を受け取り、次 state と request を返す。core は filesystem、network、wall-clock、GPU/audio/device handle を保持しない。
+Arcweft core は副作用を実行しない。`Engine::step(RuntimeStepInput) -> RuntimeStepOutput` は deterministic な data を受け取り、次 state と request を返す。core は filesystem、network、wall-clock、GPU/audio/device handle を保持しない。
 
 この原則に従い、source/generator も次のように分離する。
 

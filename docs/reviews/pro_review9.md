@@ -170,7 +170,7 @@ HIR/typecheck:
   command emission lowering
 
 runtime:
-  FrameOutput.Command / EffectRequest へ lower
+  RuntimeStepOutput.Command / EffectRequest へ lower
 ```
 
 JIT 対象にはしない。JIT は pure / deterministic な numeric/dataflow 関数だけに限定し、effectful call は VM / runtime lowering 側で扱う。

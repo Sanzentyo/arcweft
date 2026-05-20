@@ -477,7 +477,7 @@ flow @flow.run run {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
-        .arg("--frames")
+        .arg("--steps")
         .arg("2")
         .arg("--json")
         .output()
@@ -493,7 +493,7 @@ flow @flow.run run {
         stdout.contains("\"flow_events\"")
             && stdout.contains("dialogue")
             && stdout.contains("done"),
-        "run JSON should include frame events and final status: {stdout}"
+        "run JSON should include step events and final status: {stdout}"
     );
 }
 
@@ -520,7 +520,7 @@ effects { signal.write, metric.write }
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
-        .arg("--frames")
+        .arg("--steps")
         .arg("5")
         .arg("--json")
         .output()
@@ -620,7 +620,7 @@ flow @flow.generation generation {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
-        .arg("--frames")
+        .arg("--steps")
         .arg("1")
         .arg("--json")
         .output()
@@ -668,7 +668,7 @@ flow @flow.done done {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
-        .arg("--frames")
+        .arg("--steps")
         .arg("12")
         .arg("--json")
         .output()
@@ -824,7 +824,7 @@ test @test.observed scenario {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("test")
         .arg(&path)
-        .arg("--frames")
+        .arg("--steps")
         .arg("5")
         .arg("--json")
         .output()
@@ -839,7 +839,7 @@ test @test.observed scenario {
     assert!(
         stdout.contains("test.observed")
             && stdout.contains("\"status\": \"passed\"")
-            && stdout.contains("\"frames_run\""),
+            && stdout.contains("\"steps_run\""),
         "test JSON should include headless run result: {stdout}"
     );
 }

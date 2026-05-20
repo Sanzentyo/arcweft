@@ -1,5 +1,5 @@
 use super::call;
-use crate::{engine::*, frame::*, line_task::*, pattern::*, plan::*, task::*, value::*};
+use crate::{engine::*, line_task::*, pattern::*, plan::*, step::*, task::*, value::*};
 
 #[test]
 fn engine_steps_flow_ops_and_applies_goto() {
@@ -33,14 +33,14 @@ fn engine_steps_flow_ops_and_applies_goto() {
     .expect("flow plan is valid");
     let mut engine = Engine::new(plan);
 
-    let first = engine.step(FrameInput::default());
-    assert_eq!(first.line_effects, vec![call("opening_line")]);
+    let first = super::runtime_step(&mut engine, RuntimeStepInput::default());
+    assert_eq!(first.effects.line, vec![call("opening_line")]);
     assert!(matches!(
         first.flow_events.as_slice(),
         [FlowEvent::DialogueLine { .. }]
     ));
 
-    let second = engine.step(FrameInput::default());
+    let second = super::runtime_step(&mut engine, RuntimeStepInput::default());
     assert_eq!(
         second.flow_events,
         vec![FlowEvent::Goto {
@@ -48,7 +48,7 @@ fn engine_steps_flow_ops_and_applies_goto() {
         }]
     );
 
-    let third = engine.step(FrameInput::default());
+    let third = super::runtime_step(&mut engine, RuntimeStepInput::default());
     assert_eq!(
         third.flow_events,
         vec![FlowEvent::Return {
@@ -90,7 +90,7 @@ fn engine_waits_for_choice_input() {
     .expect("choice plan is valid");
     let mut engine = Engine::new(plan);
 
-    let presented = engine.step(FrameInput::default());
+    let presented = super::runtime_step(&mut engine, RuntimeStepInput::default());
     assert_eq!(
         presented.flow_events,
         vec![FlowEvent::ChoicePresented {
@@ -99,13 +99,16 @@ fn engine_waits_for_choice_input() {
     );
     assert!(matches!(engine.fiber().status, FlowFiberStatus::Choice(_)));
 
-    let selected = engine.step(FrameInput {
-        input_events: vec![InputEvent {
-            kind: "choice".to_owned(),
-            payload: Some("choice.listen".to_owned()),
-        }],
-        ..FrameInput::default()
-    });
+    let selected = super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            input_events: vec![InputEvent {
+                kind: "choice".to_owned(),
+                payload: Some("choice.listen".to_owned()),
+            }],
+            ..RuntimeStepInput::default()
+        },
+    );
     assert_eq!(
         selected.flow_events,
         vec![
@@ -143,20 +146,23 @@ fn engine_waits_for_await_task_event() {
     .expect("await plan is valid");
     let mut engine = Engine::new(plan);
 
-    let waiting = engine.step(FrameInput::default());
-    assert_eq!(waiting.line_effects, vec![call("show_loading")]);
-    assert_eq!(waiting.task_requests[0].id, target.task);
+    let waiting = super::runtime_step(&mut engine, RuntimeStepInput::default());
+    assert_eq!(waiting.effects.line, vec![call("show_loading")]);
+    assert_eq!(waiting.requests.tasks[0].id, target.task);
     assert!(matches!(engine.fiber().status, FlowFiberStatus::Waiting(_)));
 
-    let ready = engine.step(FrameInput {
-        task_events: vec![TaskEvent {
-            logical_epoch: LogicalEpoch(0),
-            task_id: TaskId("task.bg".to_owned()),
-            sequence: TaskSequence(0),
-            kind: TaskEventKind::Ready("bg_handle".to_owned()),
-        }],
-        ..FrameInput::default()
-    });
+    let ready = super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            task_events: vec![TaskEvent {
+                logical_epoch: LogicalEpoch(0),
+                task_id: TaskId("task.bg".to_owned()),
+                sequence: TaskSequence(0),
+                kind: TaskEventKind::Ready("bg_handle".to_owned()),
+            }],
+            ..RuntimeStepInput::default()
+        },
+    );
     assert!(ready.flow_events.iter().any(|event| matches!(
         event,
         FlowEvent::AwaitReady { value, .. } if value == "bg_handle"
@@ -189,8 +195,12 @@ fn engine_binds_runtime_values_and_gotos_entity_refs() {
     .expect("flow plan is valid");
     let mut engine = Engine::new(plan);
 
-    assert!(engine.step(FrameInput::default()).flow_events.is_empty());
-    let goto = engine.step(FrameInput::default());
+    assert!(
+        super::runtime_step(&mut engine, RuntimeStepInput::default())
+            .flow_events
+            .is_empty()
+    );
+    let goto = super::runtime_step(&mut engine, RuntimeStepInput::default());
 
     assert_eq!(
         goto.flow_events,
@@ -237,30 +247,37 @@ fn engine_runs_if_and_match_blocks_from_runtime_values() {
     .expect("flow plan is valid");
     let mut engine = Engine::new(plan);
 
-    let first = engine.step(FrameInput {
-        external_values: vec![
-            RuntimeBinding {
-                name: "ready".to_owned(),
-                value: RuntimeValue::Bool(true),
-            },
-            RuntimeBinding {
-                name: "route".to_owned(),
-                value: RuntimeValue::EntityRef("flow.ready".to_owned()),
-            },
-        ],
-        ..FrameInput::default()
-    });
+    let first = super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            bindings: vec![
+                RuntimeBinding {
+                    name: "ready".to_owned(),
+                    value: RuntimeValue::Bool(true),
+                },
+                RuntimeBinding {
+                    name: "route".to_owned(),
+                    value: RuntimeValue::EntityRef("flow.ready".to_owned()),
+                },
+            ],
+            ..RuntimeStepInput::default()
+        },
+    );
     assert!(first.flow_events.is_empty());
-    assert!(engine.step(FrameInput::default()).flow_events.is_empty());
+    assert!(
+        super::runtime_step(&mut engine, RuntimeStepInput::default())
+            .flow_events
+            .is_empty()
+    );
     assert_eq!(
-        engine.step(FrameInput::default()).flow_events,
+        super::runtime_step(&mut engine, RuntimeStepInput::default()).flow_events,
         vec![FlowEvent::Goto {
             target: FlowRuntimeId("flow.match".to_owned())
         }]
     );
-    let mut matched = FrameOutput::default();
+    let mut matched = RuntimeStepOutput::default();
     for _ in 0..6 {
-        matched = engine.step(FrameInput::default());
+        matched = super::runtime_step(&mut engine, RuntimeStepInput::default());
         if matched
             .flow_events
             .iter()
@@ -300,9 +317,9 @@ fn loop_break_exits_to_next_flow_op_without_running_remaining_body() {
     let mut engine = Engine::new(plan);
 
     for _ in 0..3 {
-        engine.step(FrameInput::default());
+        super::runtime_step(&mut engine, RuntimeStepInput::default());
     }
-    let output = engine.step(FrameInput::default());
+    let output = super::runtime_step(&mut engine, RuntimeStepInput::default());
 
     assert_eq!(
         output.flow_events,
@@ -339,18 +356,24 @@ fn while_continue_reruns_condition_and_skips_remaining_body() {
         value: RuntimeValue::Bool(false),
     };
 
-    engine.step(FrameInput {
-        external_values: vec![keep_true],
-        ..FrameInput::default()
-    });
-    engine.step(FrameInput::default());
-    engine.step(FrameInput {
-        external_values: vec![keep_false],
-        ..FrameInput::default()
-    });
-    let mut output = FrameOutput::default();
+    super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            bindings: vec![keep_true],
+            ..RuntimeStepInput::default()
+        },
+    );
+    super::runtime_step(&mut engine, RuntimeStepInput::default());
+    super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            bindings: vec![keep_false],
+            ..RuntimeStepInput::default()
+        },
+    );
+    let mut output = RuntimeStepOutput::default();
     for _ in 0..6 {
-        output = engine.step(FrameInput::default());
+        output = super::runtime_step(&mut engine, RuntimeStepInput::default());
         if output
             .flow_events
             .iter()
@@ -394,21 +417,24 @@ fn branch_pattern_bindings_do_not_leak_after_branch_scope() {
     .expect("branch plan is valid");
     let mut engine = Engine::new(plan);
 
-    engine.step(FrameInput {
-        external_values: vec![RuntimeBinding {
-            name: "opt".to_owned(),
-            value: RuntimeValue::Variant {
-                path: None,
-                name: "Some".to_owned(),
-                payload: Some(Box::new(RuntimeValue::EntityRef("flow.next".to_owned()))),
-            },
-        }],
-        ..FrameInput::default()
-    });
+    super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            bindings: vec![RuntimeBinding {
+                name: "opt".to_owned(),
+                value: RuntimeValue::Variant {
+                    path: None,
+                    name: "Some".to_owned(),
+                    payload: Some(Box::new(RuntimeValue::EntityRef("flow.next".to_owned()))),
+                },
+            }],
+            ..RuntimeStepInput::default()
+        },
+    );
     for _ in 0..4 {
-        engine.step(FrameInput::default());
+        super::runtime_step(&mut engine, RuntimeStepInput::default());
     }
-    let output = engine.step(FrameInput::default());
+    let output = super::runtime_step(&mut engine, RuntimeStepInput::default());
 
     assert!(output.diagnostics.iter().any(|diagnostic| {
         diagnostic
@@ -439,7 +465,7 @@ fn duplicate_pattern_bindings_fail_before_env_mutation() {
     .expect("duplicate pattern plan is valid");
     let mut engine = Engine::new(plan);
 
-    let output = engine.step(FrameInput::default());
+    let output = super::runtime_step(&mut engine, RuntimeStepInput::default());
 
     assert!(output.diagnostics.iter().any(|diagnostic| {
         diagnostic
@@ -478,18 +504,21 @@ fn if_let_expression_binds_only_success_branch() {
     .expect("if-let runtime plan is valid");
     let mut engine = Engine::new(plan);
 
-    engine.step(FrameInput {
-        external_values: vec![RuntimeBinding {
-            name: "opt".to_owned(),
-            value: RuntimeValue::Variant {
-                path: None,
-                name: "Some".to_owned(),
-                payload: Some(Box::new(RuntimeValue::EntityRef("flow.next".to_owned()))),
-            },
-        }],
-        ..FrameInput::default()
-    });
-    let output = engine.step(FrameInput::default());
+    super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            bindings: vec![RuntimeBinding {
+                name: "opt".to_owned(),
+                value: RuntimeValue::Variant {
+                    path: None,
+                    name: "Some".to_owned(),
+                    payload: Some(Box::new(RuntimeValue::EntityRef("flow.next".to_owned()))),
+                },
+            }],
+            ..RuntimeStepInput::default()
+        },
+    );
+    let output = super::runtime_step(&mut engine, RuntimeStepInput::default());
 
     assert_eq!(
         output.flow_events,

@@ -1,5 +1,5 @@
 use super::{
-    Engine, FrameOutput, LineEffectRequest, RuntimeBinding, RuntimeDiagnostic, RuntimeValue,
+    Engine, LineEffectRequest, RuntimeBinding, RuntimeDiagnostic, RuntimeStepOutput, RuntimeValue,
     SourceEvent, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp, SourcePlan, SourcePolicy,
     SourceRuntimeState, match_runtime_pattern, runtime_value_label,
 };
@@ -8,10 +8,10 @@ impl Engine {
     pub(super) fn apply_source_events(
         &mut self,
         events: Vec<SourceEvent<String, String>>,
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) {
         for event in events {
-            output.source_events.push(event.clone());
+            output.effects.source_events.push(event.clone());
             let plan = self
                 .plan
                 .source_plans
@@ -30,7 +30,7 @@ impl Engine {
         &mut self,
         plan: &SourcePlan,
         event: SourceEvent<String, String>,
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) {
         self.record_source_event_state(&event, output);
         let mut handled = false;
@@ -49,7 +49,7 @@ impl Engine {
     pub(super) fn apply_unhandled_source_event(
         &mut self,
         event: SourceEvent<String, String>,
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) {
         let state = self
             .fiber
@@ -66,7 +66,7 @@ impl Engine {
     pub(super) fn record_source_event_state(
         &mut self,
         event: &SourceEvent<String, String>,
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) {
         let state = self
             .fiber
@@ -94,7 +94,7 @@ impl Engine {
         source: &SourceId,
         ops: &[SourceOp],
         bindings: Vec<RuntimeBinding>,
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) {
         let previous = self.fiber.env.clone();
         self.fiber.env.push_scope();
@@ -109,19 +109,21 @@ impl Engine {
         &mut self,
         source: &SourceId,
         op: &SourceOp,
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) {
         match op {
             SourceOp::Yield(expr) => match self.evaluate_expr(expr) {
                 Ok(value) => self.push_source_item(source, runtime_value_label(&value), output),
                 Err(error) => Self::diagnose_runtime_error(error, output),
             },
-            SourceOp::Effect(effect) => output.line_effects.push(effect.clone()),
+            SourceOp::Effect(effect) => output.effects.line.push(effect.clone()),
             SourceOp::SignalWrite(write) => output
-                .line_effects
+                .effects
+                .line
                 .push(LineEffectRequest::SignalWrite(write.clone())),
             SourceOp::Log(log) => output
-                .line_effects
+                .effects
+                .line
                 .push(LineEffectRequest::Log(log.clone())),
             SourceOp::Close(target) => self.close_source(target, output),
             SourceOp::Noop => {}
@@ -132,7 +134,7 @@ impl Engine {
         &mut self,
         source: &SourceId,
         item: String,
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) {
         let state = self
             .fiber
@@ -144,11 +146,11 @@ impl Engine {
         }
     }
 
-    pub(super) fn close_source(&mut self, source: &SourceId, output: &mut FrameOutput) {
+    pub(super) fn close_source(&mut self, source: &SourceId, output: &mut RuntimeStepOutput) {
         if let Some(state) = self.fiber.source_states.get_mut(source) {
             state.close();
         }
-        output.source_close_requests.push(source.clone());
+        output.requests.source_close.push(source.clone());
     }
 }
 

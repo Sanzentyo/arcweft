@@ -1,16 +1,16 @@
-use crate::frame::{FrameInput, FrameOutput, InputEvent, RuntimeDiagnostic};
+use crate::step::{InputEvent, RuntimeDiagnostic, RuntimeStepInput, RuntimeStepOutput};
 use crate::time::{LogicalDuration, TickId};
 
 #[test]
-fn frame_input_view_borrows_adapter_owned_events() {
-    let input = FrameInput {
+fn runtime_step_input_ref_borrows_adapter_owned_events() {
+    let input = RuntimeStepInput {
         tick: TickId(7),
         dt: LogicalDuration::from_nanos(16_000_000),
         input_events: vec![InputEvent {
             kind: "advance".to_owned(),
             payload: None,
         }],
-        ..FrameInput::default()
+        ..RuntimeStepInput::default()
     };
 
     let view = input.as_view();
@@ -18,20 +18,20 @@ fn frame_input_view_borrows_adapter_owned_events() {
     assert_eq!(view.tick(), TickId(7));
     assert_eq!(view.dt(), LogicalDuration::from_nanos(16_000_000));
     assert_eq!(view.input_events()[0].kind, "advance");
-    assert!(view.external_values().is_empty());
+    assert!(view.bindings().is_empty());
 }
 
 #[test]
-fn frame_output_writer_scopes_mutation_without_taking_output() {
-    let mut output = FrameOutput::default();
+fn runtime_step_output_sink_scopes_mutation_without_taking_output() {
+    let mut output = RuntimeStepOutput::default();
     {
         let mut writer = output.writer();
         writer.push_diagnostic("first");
-        writer.merge(FrameOutput {
+        writer.merge(RuntimeStepOutput {
             diagnostics: vec![RuntimeDiagnostic {
                 message: "second".to_owned(),
             }],
-            ..FrameOutput::default()
+            ..RuntimeStepOutput::default()
         });
     }
 

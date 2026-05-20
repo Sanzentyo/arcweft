@@ -1,4 +1,4 @@
-use crate::{effect::*, engine::*, frame::*, plan::*};
+use crate::{effect::*, engine::*, plan::*, step::*};
 
 #[test]
 fn runtime_records_log_signal_metric_and_event_observations() {
@@ -33,7 +33,7 @@ fn runtime_records_log_signal_metric_and_event_observations() {
     let mut engine = Engine::new(plan);
 
     for _ in 0..4 {
-        engine.step(FrameInput::default());
+        super::runtime_step(&mut engine, RuntimeStepInput::default());
     }
 
     let observations = &engine.fiber().observations;

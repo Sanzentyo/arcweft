@@ -47,12 +47,15 @@ impl Parser {
         );
         let (name, signature_tail) = parse_name_and_tail(after_id.trim());
         let name = name.or_else(|| implicit_flow_name_from_id(id.as_ref()));
+        let (signature_tail, inline_contracts) = split_inline_flow_contracts(&signature_tail);
         let signature = parse_flow_signature(name.as_deref(), &signature_tail);
-        let contracts = header_lines
-            .iter()
-            .skip(1)
-            .filter_map(|line| parse_contract_clause(line))
-            .collect();
+        let mut contracts = inline_contracts;
+        contracts.extend(
+            header_lines
+                .iter()
+                .skip(1)
+                .filter_map(|line| parse_contract_clause(line)),
+        );
         let body_items = self.parse_flow_body(&body, start_line.start + head.len());
 
         Some(Flow::new(FlowInit {
@@ -585,4 +588,19 @@ impl Parser {
             CstStructuredFlowBlockKind::Scope => self.parse_scope_block().map(FlowItem::Scope),
         }
     }
+}
+
+fn split_inline_flow_contracts(
+    signature_tail: &str,
+) -> (String, Vec<crate::ast::flow::ContractClause>) {
+    let trimmed = signature_tail.trim();
+    if let Some(rest) = trimmed.strip_prefix("effects ") {
+        return (
+            String::new(),
+            parse_contract_clause(&format!("effects {rest}"))
+                .into_iter()
+                .collect(),
+        );
+    }
+    (signature_tail.to_owned(), Vec::new())
 }

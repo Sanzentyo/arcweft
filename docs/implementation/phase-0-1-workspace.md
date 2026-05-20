@@ -153,7 +153,7 @@ This checklist is the strict prompt-to-repo mapping for review21-focused items.
 | HIR/runtime-plan split | Complete | HIR: `crates/arcweft-lang-hir/src/{model,lower,lower_flow,lower_dialogue,lower_choice,lower_ids,lower_context,id_context}.rs`; runtime-plan: `crates/arcweft-runtime-plan/src/{errors,expr,flow,labels,line_task,pattern,source,stream}.rs` with namespace root in `src/lib.rs`. |
 | dependency cleanup | Complete | `crates/arcweft-runtime-plan/Cargo.toml` depends on `arcweft-lang-hir` (no direct `arcweft-lang-syntax`), `crates/arcweft-test/Cargo.toml` has no duplicate `arcweft-lang-hir` entry, and `crates/arcweft-dialogue/Cargo.toml` no longer depends on `arcweft-presentation`. |
 | lifetime/borrow tests | Complete (current review21 scope) | Suspension-boundary and explicit-drop coverage is present in `crates/arcweft-lang-sema/src/tests/await_.rs` and `crates/arcweft-lang-sema/src/tests/control_flow.rs` (await/yield/thread/defer boundary rejection and drop-before-await acceptance), with related lifetime/capture checks in `crates/arcweft-lang-sema/src/tests/typecheck.rs`. |
-| adapter view lifetime guidance | Complete for frame boundary | `crates/arcweft-core/src/frame.rs` exposes `FrameInputView<'a>` and `FrameOutputWriter<'a>` so adapter-facing frame data can be borrowed/written without transferring ownership. |
+| adapter view lifetime guidance | Complete for frame boundary | `crates/arcweft-core/src/frame.rs` exposes `RuntimeStepInputRef<'a>` and `RuntimeStepOutputSink<'a>` so adapter-facing frame data can be borrowed/written without transferring ownership. |
 | dialogue -> presentation dependency decision | Complete | Presentation calls and registry tests live in `crates/arcweft-presentation`; `arcweft-dialogue` owns only dialogue data and has no presentation dependency. |
 
 ## Implemented Types
@@ -348,7 +348,7 @@ Syntax parser:
   separate from flow and line-plan effects. `LineEffectRequest::Yield` was
   removed; source event queueing, frame-boundary normalization, replay/privacy
   policy data, and backpressure handling live in Sans I/O core data structures.
-- The core engine now dispatches normalized `FrameInput.source_events` through
+- The core engine now dispatches normalized `RuntimeStepInput.source_events` through
   lowered source handlers. Handler `yield` applies the source backpressure
   policy, non-item source events update close/error state, and the first
   `StreamPlan` interpreter drains source/stream queues with deterministic

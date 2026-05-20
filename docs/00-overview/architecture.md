@@ -24,7 +24,7 @@ Compiler / Tooling
         │
         ▼
 Sans I/O Core / Typed IR VM
-  Engine::step(FrameInput) -> FrameOutput
+  Engine::step(RuntimeStepInput) -> RuntimeStepOutput
   bytecode interpreter is the semantic source of truth
   deterministic state machine
   no GPU / no FS / no wall-clock / no raw network
@@ -50,10 +50,10 @@ Host / Adapter Layer
 `arcweft-core` は GPU、Audio、Servo、DOM、filesystem、network、WASM runtime、Cranelift runtime に直接依存しない。
 
 ```rust
-Engine::step(input: FrameInput) -> FrameOutput
+Engine::step(input: RuntimeStepInput) -> RuntimeStepOutput
 ```
 
-`FrameOutput` は命令を実行しない。実行すべきことを `Command` / `EffectRequest` / `TaskSpec` として返す。
+`RuntimeStepOutput` は命令を実行しない。実行すべきことを `Command` / `EffectRequest` / `TaskSpec` として返す。
 
 ### Data format も Sans I/O
 
@@ -80,7 +80,7 @@ asset load、shader compile、lazy use realization、Activity instantiate、TTS 
 ```rust
 pub trait Activity {
     fn mount(&mut self, ctx: MountContext<'_>) -> Result<MountResult, ActivityError>;
-    fn step(&mut self, input: FrameInputView<'_>, out: FrameOutputWriter<'_>) -> StepStatus;
+    fn step(&mut self, input: RuntimeStepInputRef<'_>, out: RuntimeStepOutputSink<'_>) -> StepStatus;
     fn snapshot(&self) -> Result<ActivitySnapshot, ActivityError>;
     fn restore(&mut self, snapshot: ActivitySnapshotRef<'_>) -> Result<(), ActivityError>;
 }

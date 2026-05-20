@@ -171,7 +171,7 @@ impl Parser {
     }
 
     fn take_function_block(&mut self) -> (String, String, usize, bool) {
-        self.take_block_event(CstBlockOpenRule::FunctionBodyOpen)
+        self.take_block_event(CstBlockOpenRule::FunctionBody)
     }
 
     fn next_nonblank_line_is_brace(&self) -> bool {
@@ -209,7 +209,7 @@ impl Parser {
     }
 
     fn take_brace_block(&mut self) -> (String, String, usize, bool) {
-        self.take_block_event(CstBlockOpenRule::FirstTopLevelOpen)
+        self.take_block_event(CstBlockOpenRule::FirstTopLevel)
     }
 
     fn take_block_event(&mut self, rule: CstBlockOpenRule) -> (String, String, usize, bool) {

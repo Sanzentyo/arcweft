@@ -216,8 +216,9 @@ pub(crate) enum CstStmtKind {
 /// Rule used when collecting a balanced brace block from line events.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CstBlockOpenRule {
-    FirstTopLevelOpen,
-    FunctionBodyOpen,
+    FirstTopLevel,
+    FlowBody,
+    FunctionBody,
 }
 
 /// Balanced brace block projected from CST line events.
@@ -372,7 +373,7 @@ impl CstLineEvents {
             }
             text.push_str(&line.text);
             end = line.end;
-            if matches!(rule, CstBlockOpenRule::FunctionBodyOpen)
+            if matches!(rule, CstBlockOpenRule::FunctionBody)
                 && (trimmed == "{" || line_has_unclosed_top_level_open(trimmed))
             {
                 seen_body_open = true;
@@ -388,8 +389,9 @@ impl CstLineEvents {
         }
 
         let open = match rule {
-            CstBlockOpenRule::FirstTopLevelOpen => find_top_level_punctuation(&text, '{'),
-            CstBlockOpenRule::FunctionBodyOpen => find_body_open(&text),
+            CstBlockOpenRule::FirstTopLevel => find_top_level_punctuation(&text, '{'),
+            CstBlockOpenRule::FlowBody => find_last_top_level_punctuation(&text, '{'),
+            CstBlockOpenRule::FunctionBody => find_body_open(&text),
         };
         let Some(open) = open else {
             return CstBlockEvent::new(text, String::new(), end, false, start + 1);
@@ -434,7 +436,7 @@ impl CstLineEvents {
             return CstBlockEvent::new(header, String::new(), end, false, index);
         }
 
-        let mut body = self.collect_brace_block(index, CstBlockOpenRule::FirstTopLevelOpen);
+        let mut body = self.collect_brace_block(index, CstBlockOpenRule::FlowBody);
         if !body.head.is_empty() {
             if !header.is_empty() {
                 header.push('\n');
@@ -1005,8 +1007,8 @@ fn block_event_is_complete(
     depth: i32,
 ) -> bool {
     match rule {
-        CstBlockOpenRule::FirstTopLevelOpen => seen_open && depth == 0,
-        CstBlockOpenRule::FunctionBodyOpen => seen_open && seen_body_open && depth == 0,
+        CstBlockOpenRule::FirstTopLevel | CstBlockOpenRule::FlowBody => seen_open && depth == 0,
+        CstBlockOpenRule::FunctionBody => seen_open && seen_body_open && depth == 0,
     }
 }
 

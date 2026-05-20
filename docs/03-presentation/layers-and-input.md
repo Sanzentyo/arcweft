@@ -13,14 +13,14 @@
 ## 基本方針
 
 ```text
-FrameOutput
+RuntimeStepOutput
   ├─ layer_tree: LayerTree
   ├─ render_graph: RenderGraph
   ├─ input_routing: InputRoutingTable
   └─ observations: Object/Ui/Layer metadata
 ```
 
-入力は「前回 commit された `LayerTree`」を使って host 側で routing し、その結果を次 tick の `FrameInput` に入れる。これにより、headless / native / web / replay で同じ入力解決ができる。
+入力は「前回 commit された `LayerTree`」を使って host 側で routing し、その結果を次 tick の `RuntimeStepInput` に入れる。これにより、headless / native / web / replay で同じ入力解決ができる。
 
 ```text
 tick N output:
@@ -473,10 +473,10 @@ UiNode
   → UiEvent.SettingsClosed
 ```
 
-## FrameInput の更新
+## RuntimeStepInput の更新
 
 ```rust
-pub struct FrameInput {
+pub struct RuntimeStepInput {
     pub tick: TickId,
     pub dt: LogicalDuration,
     pub raw_input_events: Vec<RawInputEvent>,

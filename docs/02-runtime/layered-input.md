@@ -27,7 +27,7 @@ Engine::step
 `arcweft-core` は OS/window/browser 由来の raw event を直接解釈しない。host が `InputRouter` で layer routing し、`RoutedInputEvent` として渡す。
 
 ```rust
-pub struct FrameInput {
+pub struct RuntimeStepInput {
     pub tick: TickId,
     pub dt: LogicalDuration,
     pub input: LayeredInputFrame,

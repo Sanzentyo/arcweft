@@ -21,7 +21,7 @@ Compile:
     → RuntimeHookPlan
 
 Runtime:
-  FrameInput + LayerTree + Signals + TaskEvents
+  RuntimeStepInput + LayerTree + Signals + TaskEvents
     → HookScheduler.collect(phase)
     → stable order
     → execute hook bodies as small fibers

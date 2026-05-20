@@ -1,7 +1,7 @@
 use super::{
-    Engine, FlowFiberStatus, FrameOutput, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError,
-    RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldValue, RuntimeMatchArm, RuntimeMatchSelection,
-    RuntimePattern, RuntimeValue, evaluate_binary, evaluate_unary, match_runtime_pattern,
+    Engine, FlowFiberStatus, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
+    RuntimeExprMatchArm, RuntimeFieldValue, RuntimeMatchArm, RuntimeMatchSelection, RuntimePattern,
+    RuntimeStepOutput, RuntimeValue, evaluate_binary, evaluate_unary, match_runtime_pattern,
     runtime_value_label,
 };
 
@@ -10,7 +10,7 @@ impl Engine {
         &mut self,
         pattern: &RuntimePattern,
         expr: &RuntimeExpr,
-        output: &mut FrameOutput,
+        output: &mut RuntimeStepOutput,
     ) {
         match self.evaluate_expr(expr).and_then(|value| {
             self.try_bind_pattern(pattern, &value)
@@ -268,7 +268,11 @@ impl Engine {
         Ok(true)
     }
 
-    pub(super) fn fail_eval(&mut self, error: impl std::fmt::Display, output: &mut FrameOutput) {
+    pub(super) fn fail_eval(
+        &mut self,
+        error: impl std::fmt::Display,
+        output: &mut RuntimeStepOutput,
+    ) {
         let message = error.to_string();
         self.fiber.status = FlowFiberStatus::Failed(message.clone());
         output.diagnostics.push(RuntimeDiagnostic { message });

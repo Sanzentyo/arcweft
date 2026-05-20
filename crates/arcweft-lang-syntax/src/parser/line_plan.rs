@@ -220,6 +220,14 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
             parse_line_plan_cancel_action(action.trim()),
         ));
     }
+    if let Some(rest) = line.strip_prefix("on ")
+        && let Some((trigger, body)) = rest.split_once("=>")
+    {
+        return LinePlanItem::On {
+            trigger: parse_trigger_pattern(trigger.trim()),
+            body: vec![Stmt::Expr(parse_expr_lossy(body.trim()))],
+        };
+    }
     if line.starts_with("at(")
         && let Some(open) = find_top_level_punctuation(line, '(')
         && let Some(close) = find_matching_punctuation(line, open, '(', ')')

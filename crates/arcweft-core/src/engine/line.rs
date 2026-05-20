@@ -1,10 +1,14 @@
 use super::{
-    Engine, FlowCursor, FlowEvent, FlowExit, FlowFiberStatus, FlowRuntimeId, FrameInput,
-    FrameOutput, LineEffectRequest, run_line_task_group_for_input,
+    Engine, FlowCursor, FlowEvent, FlowExit, FlowFiberStatus, FlowRuntimeId, LineEffectRequest,
+    RuntimeStepInput, RuntimeStepOutput, run_line_task_group_for_input,
 };
 
 impl Engine {
-    pub(super) fn step_line_only(&mut self, input: &FrameInput, output: &mut FrameOutput) {
+    pub(super) fn step_line_only(
+        &mut self,
+        input: &RuntimeStepInput,
+        output: &mut RuntimeStepOutput,
+    ) {
         let Some(group) = self.plan.line_task_groups.get(self.fiber.line_cursor) else {
             self.finish(output);
             return;
@@ -16,8 +20,8 @@ impl Engine {
         }
     }
 
-    pub(super) fn apply_control_effects(&mut self, output: &mut FrameOutput) -> bool {
-        let Some(control) = output.line_effects.iter().find_map(control_from_effect) else {
+    pub(super) fn apply_control_effects(&mut self, output: &mut RuntimeStepOutput) -> bool {
+        let Some(control) = output.effects.line.iter().find_map(control_from_effect) else {
             return false;
         };
         match control {
@@ -28,7 +32,7 @@ impl Engine {
         true
     }
 
-    pub(super) fn goto(&mut self, target: FlowRuntimeId, output: &mut FrameOutput) {
+    pub(super) fn goto(&mut self, target: FlowRuntimeId, output: &mut RuntimeStepOutput) {
         self.fiber.pending_ops.clear();
         output.flow_events.push(FlowEvent::Goto {
             target: target.clone(),
@@ -40,7 +44,7 @@ impl Engine {
         self.fiber.status = FlowFiberStatus::Running;
     }
 
-    pub(super) fn return_value(&mut self, value: String, output: &mut FrameOutput) {
+    pub(super) fn return_value(&mut self, value: String, output: &mut RuntimeStepOutput) {
         self.fiber.pending_ops.clear();
         output.flow_events.push(FlowEvent::Return {
             value: value.clone(),
@@ -48,7 +52,7 @@ impl Engine {
         self.fiber.status = FlowFiberStatus::Done(FlowExit::Return(value));
     }
 
-    pub(super) fn finish(&mut self, output: &mut FrameOutput) {
+    pub(super) fn finish(&mut self, output: &mut RuntimeStepOutput) {
         output.flow_events.push(FlowEvent::Done);
         self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
     }

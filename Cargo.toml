@@ -32,6 +32,7 @@ repository = "https://example.invalid/arcweft"
 
 [workspace.dependencies]
 blake3 = "1.8.5"
+clap = "4.6.1"
 lsp-types = "0.97.0"
 oxiz-solver = "0.2.1"
 rowan = "0.16.1"

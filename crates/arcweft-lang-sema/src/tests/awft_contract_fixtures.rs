@@ -17,27 +17,6 @@ fn awft_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-fn file_name(path: &Path) -> &str {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .expect("fixture file name is utf-8")
-}
-
-fn is_current_check_gap(path: &Path) -> bool {
-    matches!(
-        file_name(path),
-        // Direction-package fixtures kept as future syntax/semantic targets.
-        // Remove entries here as each gap becomes implemented.
-        "008_let_else_diverge.awft"
-            | "011_dialogue_with_plan.awft"
-            | "013_task_fn_await_shape.awft"
-            | "014_struct_enum_type_alias.awft"
-            | "015_state_defaults.awft"
-            | "016_source_decl.awft"
-            | "017_stream_fn_shape.awft"
-    )
-}
-
 fn assert_check_pipeline(path: &Path) {
     let source = fs::read_to_string(path).expect("fixture source");
     let parsed = parse_source(source);
@@ -61,10 +40,7 @@ fn assert_check_pipeline(path: &Path) {
 
 #[test]
 fn current_check_fixtures_pass_parser_hir_sema() {
-    for path in awft_files(&fixture_root().join("current_pass/check"))
-        .into_iter()
-        .filter(|path| !is_current_check_gap(path))
-    {
+    for path in awft_files(&fixture_root().join("current_pass/check")) {
         assert_check_pipeline(&path);
     }
 }

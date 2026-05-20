@@ -141,7 +141,7 @@ pub struct RuntimeMatchArm {
 
 pub(crate) type RuntimeMatchSelection = Option<(Vec<RuntimeBinding>, Vec<FlowOp>)>;
 
-/// Runtime choice option visible to adapters and selectable from `FrameInput`.
+/// Runtime choice option visible to adapters and selectable from `RuntimeStepInput`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ChoiceRuntimeOption {
     pub id: Option<String>,

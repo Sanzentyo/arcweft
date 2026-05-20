@@ -1,6 +1,6 @@
 use crate::effect::{LineEffectRequest, RuntimeField};
-use crate::frame::{FrameInput, FrameOutput};
 use crate::plan::FlowEvent;
+use crate::step::{RuntimeStepInput, RuntimeStepOutput};
 use crate::task::{
     CancelScopeId, TaskClass, TaskId, TaskKey, TaskPolicy, TaskPriority, TaskSource, TaskSpec,
 };
@@ -193,28 +193,28 @@ pub enum AudioCleanup {
 /// Runs a line task group into deterministic effect requests.
 pub fn run_line_task_group(
     group: &LineTaskGroup,
-    input: &FrameInput,
+    input: &RuntimeStepInput,
     exit: ScopeExit,
-) -> FrameOutput {
-    let mut output = FrameOutput::default();
+) -> RuntimeStepOutput {
+    let mut output = RuntimeStepOutput::default();
     run_scope(&group.root, input, exit, &mut output);
     output
 }
 
 pub(crate) fn run_line_task_group_for_input(
     group: &LineTaskGroup,
-    input: &FrameInput,
-) -> FrameOutput {
+    input: &RuntimeStepInput,
+) -> RuntimeStepOutput {
     if let Some(rule) = group
         .cancel_rules
         .iter()
         .find(|rule| input_matches_trigger(input, &rule.trigger))
     {
-        let mut output = FrameOutput::default();
+        let mut output = RuntimeStepOutput::default();
         output.flow_events.push(FlowEvent::LineCancelled {
             trigger: rule.trigger.clone(),
         });
-        output.line_effects.extend(rule.action.clone());
+        output.effects.line.extend(rule.action.clone());
         run_scope_cleanup(&group.root, ScopeExit::Cancelled, &mut output);
         output
     } else {
@@ -222,7 +222,7 @@ pub(crate) fn run_line_task_group_for_input(
     }
 }
 
-fn input_matches_trigger(input: &FrameInput, trigger: &str) -> bool {
+fn input_matches_trigger(input: &RuntimeStepInput, trigger: &str) -> bool {
     input.input_events.iter().any(|event| {
         if event.kind == trigger {
             return true;
@@ -235,21 +235,28 @@ fn input_matches_trigger(input: &FrameInput, trigger: &str) -> bool {
     })
 }
 
-fn run_scope(scope: &LineTaskScope, input: &FrameInput, exit: ScopeExit, output: &mut FrameOutput) {
+fn run_scope(
+    scope: &LineTaskScope,
+    input: &RuntimeStepInput,
+    exit: ScopeExit,
+    output: &mut RuntimeStepOutput,
+) {
     run_node(&scope.node, input, output);
     run_scope_cleanup(scope, exit, output);
 }
 
-fn run_scope_cleanup(scope: &LineTaskScope, exit: ScopeExit, output: &mut FrameOutput) {
+fn run_scope_cleanup(scope: &LineTaskScope, exit: ScopeExit, output: &mut RuntimeStepOutput) {
     output
-        .line_effects
+        .effects
+        .line
         .extend(flatten_defer_stack(&scope.defer_stack));
     output
-        .line_effects
+        .effects
+        .line
         .extend(flatten_defer_stack(outcome_defer_stack(scope, exit)));
 }
 
-fn run_node(node: &LineTaskNode, input: &FrameInput, output: &mut FrameOutput) {
+fn run_node(node: &LineTaskNode, input: &RuntimeStepInput, output: &mut RuntimeStepOutput) {
     match node {
         LineTaskNode::Seq(nodes) | LineTaskNode::Start(nodes) => {
             for node in nodes {
@@ -262,19 +269,19 @@ fn run_node(node: &LineTaskNode, input: &FrameInput, output: &mut FrameOutput) {
             }
         }
         LineTaskNode::Child(task) => run_child_task(task, input, output),
-        LineTaskNode::Effect(effect) => output.line_effects.push(effect.clone()),
+        LineTaskNode::Effect(effect) => output.effects.line.push(effect.clone()),
     }
 }
 
-fn run_child_task(task: &LineChildTask, input: &FrameInput, output: &mut FrameOutput) {
+fn run_child_task(task: &LineChildTask, input: &RuntimeStepInput, output: &mut RuntimeStepOutput) {
     if !trigger_is_ready(&task.trigger, input) {
         return;
     }
-    output.task_requests.push(task_spec(task));
+    output.requests.tasks.push(task_spec(task));
     run_scope(&task.scope, input, ScopeExit::Completed, output);
 }
 
-fn trigger_is_ready(trigger: &LineTaskTrigger, input: &FrameInput) -> bool {
+fn trigger_is_ready(trigger: &LineTaskTrigger, input: &RuntimeStepInput) -> bool {
     match trigger {
         LineTaskTrigger::Immediate => true,
         LineTaskTrigger::Mark(name) => input.input_events.iter().any(|event| {

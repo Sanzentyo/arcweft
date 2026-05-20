@@ -62,7 +62,7 @@ Borrow: &'a T, &'a mut T
 
 - `Engine::step` を完成させる。
 - State / FlowFiber / Reducer / View を VM 上で動かす。
-- `FrameInput` / `FrameOutput` を JSON debug dump できるようにする。
+- `RuntimeStepInput` / `RuntimeStepOutput` を JSON debug dump できるようにする。
 
 ### `arcweft-lang-vm`
 

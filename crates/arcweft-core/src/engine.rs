@@ -1,5 +1,4 @@
 use crate::effect::LineEffectRequest;
-use crate::frame::{FrameInput, FrameOutput, RuntimeDiagnostic};
 use crate::line_task::run_line_task_group_for_input;
 use crate::observation::RuntimeObservationState;
 use crate::pattern::{RuntimePattern, match_runtime_pattern};
@@ -10,6 +9,10 @@ use crate::plan::{
 use crate::source::{
     SourceEvent, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp, SourcePlan, SourcePolicy,
     SourceRuntimeState, normalize_source_events,
+};
+use crate::step::{
+    RuntimeDiagnostic, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput,
+    RuntimeStepResult, RuntimeStepStopReason,
 };
 use crate::stream::{StreamEvent, StreamMatchArm, StreamOp, StreamRuntimeId, StreamRuntimeState};
 use crate::task::{
@@ -41,7 +44,7 @@ pub struct FlowFiber {
     pub line_cursor: usize,
     pub cursor: Option<FlowCursor>,
     pub pending_ops: VecDeque<FlowOp>,
-    pub frames: Vec<RuntimeFrame>,
+    pub control_stack: Vec<FlowControlStackEntry>,
     pub env: RuntimeEnv,
     pub observations: RuntimeObservationState,
     pub source_states: BTreeMap<SourceId, SourceRuntimeState>,
@@ -50,13 +53,13 @@ pub struct FlowFiber {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RuntimeFrame {
-    pub kind: RuntimeFrameKind,
+pub struct FlowControlStackEntry {
+    pub kind: FlowControlStackEntryKind,
 }
 
 /// Structured frame kind for the minimal flow executor.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RuntimeFrameKind {
+pub enum FlowControlStackEntryKind {
     Scope,
     Loop {
         body: Vec<FlowOp>,
@@ -119,7 +122,7 @@ impl Default for FlowFiber {
             line_cursor: 0,
             cursor: None,
             pending_ops: VecDeque::new(),
-            frames: Vec::new(),
+            control_stack: Vec::new(),
             env: RuntimeEnv::default(),
             observations: RuntimeObservationState::default(),
             source_states: BTreeMap::new(),
@@ -176,7 +179,7 @@ impl Engine {
                 line_cursor: 0,
                 cursor,
                 pending_ops: VecDeque::new(),
-                frames: Vec::new(),
+                control_stack: Vec::new(),
                 env: RuntimeEnv::default(),
                 observations: RuntimeObservationState::default(),
                 source_states,
@@ -190,11 +193,13 @@ impl Engine {
         &self.fiber
     }
 
-    pub fn step(&mut self, mut input: FrameInput) -> FrameOutput {
-        let mut output = FrameOutput::default();
-        self.fiber
-            .env
-            .bind_all_root(input.external_values.iter().cloned());
+    pub fn step(
+        &mut self,
+        mut input: RuntimeStepInput,
+        options: RuntimeStepOptions,
+    ) -> RuntimeStepResult {
+        let mut output = RuntimeStepOutput::default();
+        self.fiber.env.bind_all_root(input.bindings.iter().cloned());
         let events = normalize_task_events(std::mem::take(&mut input.task_events));
         let source_events = normalize_source_events(std::mem::take(&mut input.source_events));
         output
@@ -209,20 +214,20 @@ impl Engine {
         self.step_stream_plans(&mut output);
 
         if self.resume_suspended(&input, &events, &mut output) {
-            self.record_observations(&output.line_effects);
-            return output;
+            self.record_observations(&output.effects.line);
+            return self.step_result(output, options);
         }
         if !matches!(self.fiber.status, FlowFiberStatus::Running) {
-            self.record_observations(&output.line_effects);
-            return output;
+            self.record_observations(&output.effects.line);
+            return self.step_result(output, options);
         }
         if self.fiber.cursor.is_some() {
             self.step_flow(&input, &mut output);
         } else {
             self.step_line_only(&input, &mut output);
         }
-        self.record_observations(&output.line_effects);
-        output
+        self.record_observations(&output.effects.line);
+        self.step_result(output, options)
     }
 
     fn record_observations(&mut self, effects: &[LineEffectRequest]) {
@@ -231,9 +236,51 @@ impl Engine {
         }
     }
 
-    fn diagnose_runtime_error(error: impl std::fmt::Display, output: &mut FrameOutput) {
+    fn diagnose_runtime_error(error: impl std::fmt::Display, output: &mut RuntimeStepOutput) {
         output.diagnostics.push(RuntimeDiagnostic {
             message: error.to_string(),
         });
     }
+
+    fn step_result(
+        &self,
+        output: RuntimeStepOutput,
+        options: RuntimeStepOptions,
+    ) -> RuntimeStepResult {
+        let stop_reason = match self.fiber.status {
+            FlowFiberStatus::Done(_) => RuntimeStepStopReason::Done,
+            FlowFiberStatus::Failed(_) => RuntimeStepStopReason::Failed,
+            FlowFiberStatus::Waiting(_) | FlowFiberStatus::Choice(_) => {
+                RuntimeStepStopReason::Blocked
+            }
+            FlowFiberStatus::Running if options.budget.max_ops == 0 => {
+                RuntimeStepStopReason::BudgetExhausted
+            }
+            FlowFiberStatus::Running if has_runtime_output(&output) => {
+                RuntimeStepStopReason::Output
+            }
+            FlowFiberStatus::Running => match options.mode {
+                RuntimeStepMode::OneOp => RuntimeStepStopReason::OneOp,
+                RuntimeStepMode::Drain | RuntimeStepMode::Game | RuntimeStepMode::Server => {
+                    RuntimeStepStopReason::BudgetExhausted
+                }
+            },
+        };
+        RuntimeStepResult {
+            output,
+            fiber_status: self.fiber.status.clone(),
+            stop_reason,
+        }
+    }
+}
+
+fn has_runtime_output(output: &RuntimeStepOutput) -> bool {
+    !output.diagnostics.is_empty()
+        || !output.flow_events.is_empty()
+        || !output.effects.line.is_empty()
+        || !output.effects.source_events.is_empty()
+        || !output.effects.stream_events.is_empty()
+        || !output.requests.tasks.is_empty()
+        || !output.requests.cancel_scopes.is_empty()
+        || !output.requests.source_close.is_empty()
 }
