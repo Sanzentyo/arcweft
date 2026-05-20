@@ -306,8 +306,16 @@ impl<'a> SemanticAnalyzer<'a> {
             HirFlowItem::Stmt(stmt) => self.analyze_stmt(stmt, facts, ExitReason::Completed),
             HirFlowItem::If(block) => {
                 self.collect_expr(block.condition(), &mut facts);
-                let mut flow = BlockFlow::from_fallthrough(facts.clone());
+                let else_initial = facts.clone();
+                let mut flow = if block.else_body().is_empty() {
+                    BlockFlow::from_fallthrough(facts.clone())
+                } else {
+                    BlockFlow::default()
+                };
                 flow.append(self.analyze_flow_items(block.body(), vec![facts]));
+                if !block.else_body().is_empty() {
+                    flow.append(self.analyze_flow_items(block.else_body(), vec![else_initial]));
+                }
                 flow
             }
             HirFlowItem::IfLet(block) => {
@@ -315,8 +323,16 @@ impl<'a> SemanticAnalyzer<'a> {
                 if let Some(guard) = block.guard() {
                     self.collect_expr(guard, &mut facts);
                 }
-                let mut flow = BlockFlow::from_fallthrough(facts.clone());
+                let else_initial = facts.clone();
+                let mut flow = if block.else_body().is_empty() {
+                    BlockFlow::from_fallthrough(facts.clone())
+                } else {
+                    BlockFlow::default()
+                };
                 flow.append(self.analyze_flow_items(block.body(), vec![facts]));
+                if !block.else_body().is_empty() {
+                    flow.append(self.analyze_flow_items(block.else_body(), vec![else_initial]));
+                }
                 flow
             }
             HirFlowItem::Match(block) => {
@@ -1441,7 +1457,10 @@ impl<'a> SemanticAnalyzer<'a> {
         self.collect_expr(block.condition(), state);
         let mut body_state = state.clone();
         self.collect_flow_items(block.body(), &mut body_state);
+        let mut else_state = state.clone();
+        self.collect_flow_items(block.else_body(), &mut else_state);
         state.live_must_drop.extend(body_state.live_must_drop);
+        state.live_must_drop.extend(else_state.live_must_drop);
     }
 
     fn collect_if_let(&mut self, block: &HirIfLet, state: &mut FlowState) {
@@ -1451,7 +1470,10 @@ impl<'a> SemanticAnalyzer<'a> {
         }
         let mut body_state = state.clone();
         self.collect_flow_items(block.body(), &mut body_state);
+        let mut else_state = state.clone();
+        self.collect_flow_items(block.else_body(), &mut else_state);
         state.live_must_drop.extend(body_state.live_must_drop);
+        state.live_must_drop.extend(else_state.live_must_drop);
     }
 
     fn collect_match(&mut self, block: &HirMatch, state: &mut FlowState) {

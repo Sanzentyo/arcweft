@@ -1,7 +1,7 @@
 use crate::pattern::RuntimePattern;
 use crate::source::SourceEventKind;
 use crate::task::TaskSequence;
-use crate::value::RuntimeExpr;
+use crate::value::{RuntimeExpr, RuntimePayload};
 use std::collections::VecDeque;
 
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -64,7 +64,7 @@ pub struct StreamMatchArm {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StreamRuntimeState {
     pub id: StreamRuntimeId,
-    pub queue: VecDeque<String>,
+    pub queue: VecDeque<RuntimePayload>,
     pub closed: bool,
     pub emitted_count: u64,
 }
@@ -78,6 +78,8 @@ pub struct StreamEvent<T, E> {
     pub kind: SourceEventKind<T, E>,
 }
 
+pub type RuntimeStreamEvent = StreamEvent<RuntimePayload, RuntimePayload>;
+
 impl StreamRuntimeState {
     pub fn new(id: StreamRuntimeId) -> Self {
         Self {
@@ -88,7 +90,7 @@ impl StreamRuntimeState {
         }
     }
 
-    pub fn push_item(&mut self, item: String) -> TaskSequence {
+    pub fn push_item(&mut self, item: RuntimePayload) -> TaskSequence {
         let sequence = TaskSequence(self.emitted_count);
         self.emitted_count += 1;
         if !self.closed {

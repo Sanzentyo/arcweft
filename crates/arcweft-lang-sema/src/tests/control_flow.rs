@@ -1240,6 +1240,7 @@ flow @flow.branching branching {
         _ => goto @flow.fallback
     }
 }
+
 ",
     );
 
@@ -1254,6 +1255,29 @@ flow @flow.branching branching {
     let hir = lower_to_hir(&tree).expect("if and match lower");
     assert!(matches!(&hir.flows()[0].body()[0], HirFlowItem::If(_)));
     assert!(matches!(&hir.flows()[0].body()[1], HirFlowItem::Match(_)));
+}
+
+#[test]
+fn parses_flow_statement_if_else_blocks() {
+    let source = r#"
+flow @flow.main main(input: i32) -> String {
+    if input > 0 {
+        return "ok"
+    } else {
+        bail("Input must be greater than 0")
+    }
+}
+"#;
+    let parsed = parse_source(source.to_owned());
+    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+    let tree = parsed.into_typed_tree();
+    let hir = lower_to_hir(&tree).expect("if-else lowers");
+    let HirFlowItem::If(block) = &hir.flows()[0].body()[0] else {
+        panic!("expected if block");
+    };
+    assert_eq!(block.body().len(), 1);
+    assert_eq!(block.else_body().len(), 1);
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("if-else typechecks");
 }
 
 #[test]

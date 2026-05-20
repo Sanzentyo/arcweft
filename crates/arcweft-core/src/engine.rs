@@ -7,22 +7,24 @@ use crate::plan::{
     RuntimePlan,
 };
 use crate::source::{
-    SourceEvent, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp, SourcePlan, SourcePolicy,
-    SourceRuntimeState, normalize_source_events,
+    RuntimeSourceEvent, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp, SourcePlan,
+    SourcePolicy, SourceRuntimeState, normalize_source_events,
 };
 use crate::step::{
     RuntimeDiagnostic, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput,
     RuntimeStepResult, RuntimeStepStopReason,
 };
-use crate::stream::{StreamEvent, StreamMatchArm, StreamOp, StreamRuntimeId, StreamRuntimeState};
+use crate::stream::{
+    RuntimeStreamEvent, StreamMatchArm, StreamOp, StreamRuntimeId, StreamRuntimeState,
+};
 use crate::task::{
     AwaitTarget, CancelScopeId, TaskClass, TaskEvent, TaskEventKind, TaskKey, TaskPolicy,
     TaskPriority, TaskSource, TaskSpec, normalize_task_events,
 };
 use crate::value::{
     RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm,
-    RuntimeFieldValue, RuntimeValue, evaluate_binary, evaluate_unary, expr_runtime_label,
-    runtime_value_label,
+    RuntimeFieldValue, RuntimePayload, RuntimeValue, evaluate_binary, evaluate_unary,
+    expr_runtime_label, runtime_value_label,
 };
 use std::collections::{BTreeMap, VecDeque};
 pub mod eval;

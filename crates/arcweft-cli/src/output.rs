@@ -3,10 +3,11 @@ use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::engine::{FlowFiber, FlowFiberStatus};
 use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope, LineTaskTrigger};
 use arcweft_core::plan::FlowEvent;
-use arcweft_core::source::{SourceEvent, SourceEventKind, SourcePolicy};
+use arcweft_core::source::{RuntimeSourceEvent, SourceEventKind, SourcePolicy};
 use arcweft_core::step::RuntimeStepResult;
-use arcweft_core::stream::{StreamEvent, StreamOp};
+use arcweft_core::stream::{RuntimeStreamEvent, StreamOp};
 use arcweft_core::task::TaskSpec;
+use arcweft_core::value::RuntimePayload;
 use arcweft_runtime_plan::flow::lower_runtime_plan;
 use arcweft_runtime_plan::line_task::LoweredLineTaskGroup;
 use arcweft_test::{ScriptBench, ScriptTest};
@@ -595,21 +596,21 @@ fn task_request_label(task: &TaskSpec) -> String {
     format!("{} key={} class={:?}", task.id.0, task.key.0, task.class)
 }
 
-fn source_event_label(event: &SourceEvent<String, String>) -> String {
+fn source_event_label(event: &RuntimeSourceEvent) -> String {
     format!("{} {}", event.source.0, event_kind_label(&event.kind))
 }
 
-fn stream_event_label(event: &StreamEvent<String, String>) -> String {
+fn stream_event_label(event: &RuntimeStreamEvent) -> String {
     format!("{} {}", event.stream.0, event_kind_label(&event.kind))
 }
 
-fn event_kind_label(kind: &SourceEventKind<String, String>) -> String {
+fn event_kind_label(kind: &SourceEventKind<RuntimePayload, RuntimePayload>) -> String {
     match kind {
-        SourceEventKind::Item(item) => format!("item {item}"),
+        SourceEventKind::Item(item) => format!("item {}", item.label()),
         SourceEventKind::Progress(progress) => format!("progress {progress}"),
         SourceEventKind::Disconnected => "disconnected".to_owned(),
         SourceEventKind::PermissionRevoked => "permission_revoked".to_owned(),
-        SourceEventKind::Error(error) => format!("error {error}"),
+        SourceEventKind::Error(error) => format!("error {}", error.label()),
         SourceEventKind::End => "end".to_owned(),
     }
 }

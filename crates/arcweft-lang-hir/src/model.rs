@@ -187,6 +187,7 @@ pub struct HirScopeExpr {
 pub struct HirIf {
     pub(crate) condition: Expr,
     pub(crate) body: Vec<HirFlowItem>,
+    pub(crate) else_body: Vec<HirFlowItem>,
 }
 
 /// HIR-facing if-let block.
@@ -196,6 +197,7 @@ pub struct HirIfLet {
     pub(crate) expr: Expr,
     pub(crate) guard: Option<Expr>,
     pub(crate) body: Vec<HirFlowItem>,
+    pub(crate) else_body: Vec<HirFlowItem>,
 }
 
 /// HIR-facing match block.
@@ -528,6 +530,10 @@ impl HirIf {
     pub fn body(&self) -> &[HirFlowItem] {
         &self.body
     }
+
+    pub fn else_body(&self) -> &[HirFlowItem] {
+        &self.else_body
+    }
 }
 
 impl HirIfLet {
@@ -545,6 +551,10 @@ impl HirIfLet {
 
     pub fn body(&self) -> &[HirFlowItem] {
         &self.body
+    }
+
+    pub fn else_body(&self) -> &[HirFlowItem] {
+        &self.else_body
     }
 }
 

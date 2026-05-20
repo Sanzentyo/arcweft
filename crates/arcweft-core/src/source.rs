@@ -1,7 +1,7 @@
 use crate::effect::{LineEffectRequest, RuntimeAssignment, RuntimeLog};
 use crate::pattern::RuntimePattern;
 use crate::task::TaskSequence;
-use crate::value::RuntimeExpr;
+use crate::value::{RuntimeExpr, RuntimePayload};
 use std::collections::VecDeque;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -57,9 +57,9 @@ pub enum SourceOp {
 pub struct SourceRuntimeState {
     pub id: SourceId,
     pub policy: SourcePolicy,
-    pub queue: VecDeque<String>,
+    pub queue: VecDeque<RuntimePayload>,
     pub closed: bool,
-    pub last_error: Option<String>,
+    pub last_error: Option<RuntimePayload>,
     pub overflow_count: u64,
 }
 
@@ -144,6 +144,8 @@ pub enum SourceEventKind<T, E> {
     End,
 }
 
+pub type RuntimeSourceEvent = SourceEvent<RuntimePayload, RuntimePayload>;
+
 impl SourceRuntimeState {
     pub fn new(id: SourceId, policy: SourcePolicy) -> Self {
         Self {
@@ -156,12 +158,12 @@ impl SourceRuntimeState {
         }
     }
 
-    pub fn apply_event(&mut self, event: SourceEvent<String, String>) -> Option<String> {
+    pub fn apply_event(&mut self, event: RuntimeSourceEvent) -> Option<String> {
         match event.kind {
             SourceEventKind::Item(item) => self.push_item(item),
             SourceEventKind::Error(error) => {
                 self.last_error = Some(error.clone());
-                Some(format!("source {} error: {error}", self.id.0))
+                Some(format!("source {} error: {}", self.id.0, error.label()))
             }
             SourceEventKind::Disconnected
             | SourceEventKind::PermissionRevoked
@@ -178,7 +180,7 @@ impl SourceRuntimeState {
         self.queue.clear();
     }
 
-    pub(crate) fn push_item(&mut self, item: String) -> Option<String> {
+    pub(crate) fn push_item(&mut self, item: RuntimePayload) -> Option<String> {
         if self.closed {
             return Some(format!("source {} received item after close", self.id.0));
         }
@@ -212,7 +214,7 @@ impl SourceRuntimeState {
         &mut self,
         capacity: usize,
         on_overflow: &OverflowPolicy,
-        item: String,
+        item: RuntimePayload,
     ) -> Option<String> {
         if capacity == 0 {
             self.overflow_count += 1;

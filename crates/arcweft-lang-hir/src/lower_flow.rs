@@ -238,6 +238,11 @@ fn lower_if(block: &IfBlock, context: &mut LowerContext) -> Result<HirIf, HirLow
             .iter()
             .map(|item| lower_flow_item_with_context(item, context))
             .collect::<Result<Vec<_>, _>>()?,
+        else_body: block
+            .else_body()
+            .iter()
+            .map(|item| lower_flow_item_with_context(item, context))
+            .collect::<Result<Vec<_>, _>>()?,
     })
 }
 
@@ -248,6 +253,11 @@ fn lower_if_let(block: &IfLetBlock, context: &mut LowerContext) -> Result<HirIfL
         guard: block.guard().cloned(),
         body: block
             .body()
+            .iter()
+            .map(|item| lower_flow_item_with_context(item, context))
+            .collect::<Result<Vec<_>, _>>()?,
+        else_body: block
+            .else_body()
             .iter()
             .map(|item| lower_flow_item_with_context(item, context))
             .collect::<Result<Vec<_>, _>>()?,

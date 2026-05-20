@@ -46,7 +46,7 @@ fn stream_plan_drains_source_queue_and_emits_stream_items() {
             source_events: vec![SourceEvent {
                 source: source_id.clone(),
                 sequence: TaskSequence(0),
-                kind: SourceEventKind::Item("frame0".to_owned()),
+                kind: SourceEventKind::Item("frame0".into()),
             }],
             ..RuntimeStepInput::default()
         },
@@ -57,7 +57,7 @@ fn stream_plan_drains_source_queue_and_emits_stream_items() {
         vec![StreamEvent {
             stream: stream_id.clone(),
             sequence: TaskSequence(0),
-            kind: SourceEventKind::Item("frame0".to_owned()),
+            kind: SourceEventKind::Item("frame0".into()),
         }]
     );
     assert!(
@@ -77,7 +77,7 @@ fn stream_plan_drains_source_queue_and_emits_stream_items() {
             .expect("stream state exists")
             .queue
             .iter()
-            .cloned()
+            .map(RuntimePayload::label)
             .collect::<Vec<_>>(),
         vec!["frame0".to_owned()]
     );

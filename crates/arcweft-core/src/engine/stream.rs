@@ -1,7 +1,7 @@
 use super::{
-    Engine, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr, RuntimePattern, RuntimeStepOutput,
-    RuntimeValue, SourceEventKind, SourceId, StreamEvent, StreamMatchArm, StreamOp,
-    StreamRuntimeId, StreamRuntimeState, match_runtime_pattern, runtime_value_label,
+    Engine, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr, RuntimePattern, RuntimePayload,
+    RuntimeStepOutput, RuntimeStreamEvent, RuntimeValue, SourceEventKind, SourceId, StreamMatchArm,
+    StreamOp, StreamRuntimeId, StreamRuntimeState, match_runtime_pattern, runtime_value_label,
 };
 
 impl Engine {
@@ -123,7 +123,7 @@ impl Engine {
         while let Some(item) = self.pop_queue_item(&source_key) {
             let previous = self.fiber.env.clone();
             self.fiber.env.push_scope();
-            match match_runtime_pattern(pattern, &RuntimeValue::String(item)) {
+            match match_runtime_pattern(pattern, item.value()) {
                 Ok(Some(bindings)) => {
                     self.fiber.env.bind_all(bindings);
                     if !self.execute_stream_ops(stream, body, budget, output) {
@@ -152,14 +152,14 @@ impl Engine {
     ) -> bool {
         match self.evaluate_expr(expr) {
             Ok(value) => {
-                let item = runtime_value_label(&value);
+                let item: RuntimePayload = value.into();
                 let state = self
                     .fiber
                     .stream_states
                     .entry(stream.clone())
                     .or_insert_with(|| StreamRuntimeState::new(stream.clone()));
                 let sequence = state.push_item(item.clone());
-                output.effects.stream_events.push(StreamEvent {
+                output.effects.stream_events.push(RuntimeStreamEvent {
                     stream: stream.clone(),
                     sequence,
                     kind: SourceEventKind::Item(item),
@@ -259,7 +259,7 @@ impl Engine {
         }
     }
 
-    pub(super) fn pop_queue_item(&mut self, key: &str) -> Option<String> {
+    pub(super) fn pop_queue_item(&mut self, key: &str) -> Option<RuntimePayload> {
         if let Some(source) = key.strip_prefix("source:") {
             return self
                 .fiber

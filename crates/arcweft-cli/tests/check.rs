@@ -915,6 +915,38 @@ bench @bench.audio {
     );
 }
 
+#[test]
+fn check_rejects_non_awft_file_extension() {
+    let mut path = std::env::temp_dir();
+    path.push(format!("arcweft-cli-non-awft-{}.arwt", std::process::id()));
+    fs::write(
+        &path,
+        r#"
+flow @flow.main main {
+    return "done"
+}
+"#,
+    )
+    .expect("write temp non-awft fixture");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg(&path)
+        .output()
+        .expect("arcw check runs");
+
+    fs::remove_file(&path).expect("remove temp non-awft fixture");
+    assert!(
+        !output.status.success(),
+        ".arwt files must not be accepted as Arcweft source"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("not an .awft source file"),
+        "stderr should explain extension policy: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn temp_awft(name: &str, source: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     path.push(format!("arcweft-cli-{name}-{}.awft", std::process::id()));

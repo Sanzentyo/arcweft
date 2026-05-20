@@ -25,21 +25,21 @@ fn source_policy_is_pure_data() {
 
 #[test]
 fn normalizes_source_events_by_source_and_sequence() {
-    let events: Vec<SourceEvent<String, String>> = vec![
+    let events: Vec<RuntimeSourceEvent> = vec![
         SourceEvent {
             source: SourceId("source.b".to_owned()),
             sequence: TaskSequence(2),
-            kind: SourceEventKind::Item("b2".to_owned()),
+            kind: SourceEventKind::Item("b2".into()),
         },
         SourceEvent {
             source: SourceId("source.a".to_owned()),
             sequence: TaskSequence(9),
-            kind: SourceEventKind::Item("a9".to_owned()),
+            kind: SourceEventKind::Item("a9".into()),
         },
         SourceEvent {
             source: SourceId("source.a".to_owned()),
             sequence: TaskSequence(1),
-            kind: SourceEventKind::Item("a1".to_owned()),
+            kind: SourceEventKind::Item("a1".into()),
         },
     ];
 
@@ -73,15 +73,22 @@ fn source_runtime_latest_backpressure_keeps_latest_item() {
     state.apply_event(SourceEvent {
         source: SourceId("source.camera".to_owned()),
         sequence: TaskSequence(0),
-        kind: SourceEventKind::Item("old".to_owned()),
+        kind: SourceEventKind::Item("old".into()),
     });
     state.apply_event(SourceEvent {
         source: SourceId("source.camera".to_owned()),
         sequence: TaskSequence(1),
-        kind: SourceEventKind::Item("new".to_owned()),
+        kind: SourceEventKind::Item("new".into()),
     });
 
-    assert_eq!(state.queue.into_iter().collect::<Vec<_>>(), vec!["new"]);
+    assert_eq!(
+        state
+            .queue
+            .into_iter()
+            .map(|item| item.label())
+            .collect::<Vec<_>>(),
+        vec!["new"]
+    );
 }
 
 #[test]
@@ -105,7 +112,7 @@ fn engine_records_source_events_without_running_adapters() {
             source_events: vec![SourceEvent {
                 source: SourceId("source.camera".to_owned()),
                 sequence: TaskSequence(0),
-                kind: SourceEventKind::Item("frame0".to_owned()),
+                kind: SourceEventKind::Item("frame0".into()),
             }],
             ..RuntimeStepInput::default()
         },
@@ -120,7 +127,7 @@ fn engine_records_source_events_without_running_adapters() {
             .expect("source state exists")
             .queue
             .iter()
-            .cloned()
+            .map(RuntimePayload::label)
             .collect::<Vec<_>>(),
         vec!["frame0".to_owned()]
     );
@@ -156,7 +163,7 @@ fn source_handler_yield_controls_source_queue() {
             source_events: vec![SourceEvent {
                 source: source_id.clone(),
                 sequence: TaskSequence(0),
-                kind: SourceEventKind::Item("frame0".to_owned()),
+                kind: SourceEventKind::Item("frame0".into()),
             }],
             ..RuntimeStepInput::default()
         },
@@ -170,7 +177,7 @@ fn source_handler_yield_controls_source_queue() {
             .expect("source state exists")
             .queue
             .iter()
-            .cloned()
+            .map(RuntimePayload::label)
             .collect::<Vec<_>>(),
         vec!["frame0".to_owned()]
     );

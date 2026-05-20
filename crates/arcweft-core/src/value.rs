@@ -9,6 +9,14 @@ pub struct RuntimeBinding {
     pub value: RuntimeValue,
 }
 
+/// Structured payload exchanged at the host/runtime boundary.
+///
+/// Payloads intentionally retain `RuntimeValue` shape instead of collapsing
+/// source and stream items to debug strings. Hosts may still display `label()`
+/// for logs, but replay and downstream runtime consumers keep typed data.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimePayload(pub RuntimeValue);
+
 /// Deterministic value domain used by the Sans I/O flow runtime.
 ///
 /// Floats are preserved as source strings until a later numeric semantic pass
@@ -211,6 +219,42 @@ impl RuntimeEnv {
         for binding in bindings {
             self.set_root(binding.name, binding.value);
         }
+    }
+}
+
+impl RuntimePayload {
+    pub const fn new(value: RuntimeValue) -> Self {
+        Self(value)
+    }
+
+    pub const fn value(&self) -> &RuntimeValue {
+        &self.0
+    }
+
+    pub fn into_value(self) -> RuntimeValue {
+        self.0
+    }
+
+    pub fn label(&self) -> String {
+        runtime_value_label(&self.0)
+    }
+}
+
+impl From<RuntimeValue> for RuntimePayload {
+    fn from(value: RuntimeValue) -> Self {
+        Self(value)
+    }
+}
+
+impl From<String> for RuntimePayload {
+    fn from(value: String) -> Self {
+        Self(RuntimeValue::String(value))
+    }
+}
+
+impl From<&str> for RuntimePayload {
+    fn from(value: &str) -> Self {
+        Self(RuntimeValue::String(value.to_owned()))
     }
 }
 

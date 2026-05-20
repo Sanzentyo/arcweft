@@ -86,8 +86,14 @@ impl RuntimePlanLowerer {
             match item {
                 HirFlowItem::Dialogue(dialogue) => self.lower_dialogue(flow_id, dialogue),
                 HirFlowItem::Scope(scope) => self.lower_flow_items(flow_id, scope.body()),
-                HirFlowItem::If(block) => self.lower_flow_items(flow_id, block.body()),
-                HirFlowItem::IfLet(block) => self.lower_flow_items(flow_id, block.body()),
+                HirFlowItem::If(block) => {
+                    self.lower_flow_items(flow_id, block.body());
+                    self.lower_flow_items(flow_id, block.else_body());
+                }
+                HirFlowItem::IfLet(block) => {
+                    self.lower_flow_items(flow_id, block.body());
+                    self.lower_flow_items(flow_id, block.else_body());
+                }
                 HirFlowItem::Match(block) => {
                     for arm in block.arms() {
                         self.lower_flow_items(flow_id, arm.body());

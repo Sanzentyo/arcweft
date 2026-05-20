@@ -142,9 +142,13 @@ impl TypeChecker<'_> {
         }
         self.check_flow_items(block.body());
         let then_state = self.snapshot_borrow_state();
+        self.restore_borrow_state(borrow_snapshot.clone());
+        self.locals = outer_locals.clone();
+        self.check_flow_items(block.else_body());
+        let else_state = self.snapshot_borrow_state();
         self.merge_borrow_state_from_paths(
             &borrow_snapshot,
-            &[borrow_snapshot.clone(), then_state],
+            &[borrow_snapshot.clone(), then_state, else_state],
         );
         self.locals = outer_locals;
     }

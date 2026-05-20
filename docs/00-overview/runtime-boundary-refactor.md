@@ -53,9 +53,10 @@ RuntimeStreamEvent
 RuntimePayload
 ```
 
-`RuntimeSourceEvent`, `RuntimeStreamEvent`, and `RuntimePayload` are still the
-next structured-payload follow-up; the current runtime step boundary has the
-batch shape but still carries string payloads for source/stream events.
+`RuntimeSourceEvent`, `RuntimeStreamEvent`, and `RuntimePayload` now carry
+structured runtime values across the source/stream boundary. CLI reports may
+render payload labels for humans, but replay/runtime consumers should use the
+typed payload value rather than treating event contents as strings.
 
 ### Keep `Frame` only here
 
@@ -577,8 +578,8 @@ These encode intentionally rejected constructs, such as absolute OS paths or old
 - [x] Replace `external_values` with `bindings`.
 - [x] Replace top-level `line_effects` with `RuntimeEffectBatch`.
 - [x] Replace top-level `task_requests` with `HostRequestBatch`.
-- [ ] Add `RuntimePayload`.
-- [ ] Replace string-only source/stream events with structured payload events.
+- [x] Add `RuntimePayload`.
+- [x] Replace string-only source/stream events with structured payload events.
 
 ### CLI
 

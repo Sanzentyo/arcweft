@@ -1,7 +1,7 @@
 use crate::effect::LineEffectRequest;
 use crate::plan::FlowEvent;
-use crate::source::{SourceEvent, SourceId};
-use crate::stream::StreamEvent;
+use crate::source::{RuntimeSourceEvent, SourceId};
+use crate::stream::RuntimeStreamEvent;
 use crate::task::{CancelScopeId, TaskEvent, TaskSpec};
 use crate::time::{LogicalDuration, TickId};
 use crate::value::RuntimeBinding;
@@ -15,7 +15,7 @@ pub struct RuntimeStepInput {
     pub task_events: Vec<TaskEvent>,
     pub ui_events: Vec<UiEvent>,
     pub audio_events: Vec<AudioEvent>,
-    pub source_events: Vec<SourceEvent<String, String>>,
+    pub source_events: Vec<RuntimeSourceEvent>,
 }
 
 /// Borrowed adapter-facing view of runtime step inputs.
@@ -32,7 +32,7 @@ pub struct RuntimeStepInputRef<'a> {
     task_events: &'a [TaskEvent],
     ui_events: &'a [UiEvent],
     audio_events: &'a [AudioEvent],
-    source_events: &'a [SourceEvent<String, String>],
+    source_events: &'a [RuntimeSourceEvent],
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -47,8 +47,8 @@ pub struct RuntimeStepOutput {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RuntimeEffectBatch {
     pub line: Vec<LineEffectRequest>,
-    pub source_events: Vec<SourceEvent<String, String>>,
-    pub stream_events: Vec<StreamEvent<String, String>>,
+    pub source_events: Vec<RuntimeSourceEvent>,
+    pub stream_events: Vec<RuntimeStreamEvent>,
 }
 
 /// Host-facing requests emitted by one deterministic runtime step.
@@ -180,7 +180,7 @@ impl<'a> RuntimeStepInputRef<'a> {
         self.audio_events
     }
 
-    pub const fn source_events(&self) -> &'a [SourceEvent<String, String>] {
+    pub const fn source_events(&self) -> &'a [RuntimeSourceEvent] {
         self.source_events
     }
 }

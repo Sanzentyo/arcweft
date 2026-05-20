@@ -178,6 +178,9 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
             for item in block.body() {
                 collect_flow_item(item, uses);
             }
+            for item in block.else_body() {
+                collect_flow_item(item, uses);
+            }
         }
         HirFlowItem::IfLet(block) => {
             collect_expr(block.expr(), uses);
@@ -185,6 +188,9 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 collect_expr(guard, uses);
             }
             for item in block.body() {
+                collect_flow_item(item, uses);
+            }
+            for item in block.else_body() {
                 collect_flow_item(item, uses);
             }
         }

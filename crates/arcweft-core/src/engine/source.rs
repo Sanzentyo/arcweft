@@ -1,13 +1,13 @@
 use super::{
-    Engine, LineEffectRequest, RuntimeBinding, RuntimeDiagnostic, RuntimeStepOutput, RuntimeValue,
-    SourceEvent, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp, SourcePlan, SourcePolicy,
-    SourceRuntimeState, match_runtime_pattern, runtime_value_label,
+    Engine, LineEffectRequest, RuntimeBinding, RuntimeDiagnostic, RuntimePayload,
+    RuntimeSourceEvent, RuntimeStepOutput, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp,
+    SourcePlan, SourcePolicy, SourceRuntimeState, match_runtime_pattern,
 };
 
 impl Engine {
     pub(super) fn apply_source_events(
         &mut self,
-        events: Vec<SourceEvent<String, String>>,
+        events: Vec<RuntimeSourceEvent>,
         output: &mut RuntimeStepOutput,
     ) {
         for event in events {
@@ -29,7 +29,7 @@ impl Engine {
     pub(super) fn dispatch_source_event(
         &mut self,
         plan: &SourcePlan,
-        event: SourceEvent<String, String>,
+        event: RuntimeSourceEvent,
         output: &mut RuntimeStepOutput,
     ) {
         self.record_source_event_state(&event, output);
@@ -48,7 +48,7 @@ impl Engine {
 
     pub(super) fn apply_unhandled_source_event(
         &mut self,
-        event: SourceEvent<String, String>,
+        event: RuntimeSourceEvent,
         output: &mut RuntimeStepOutput,
     ) {
         let state = self
@@ -65,7 +65,7 @@ impl Engine {
 
     pub(super) fn record_source_event_state(
         &mut self,
-        event: &SourceEvent<String, String>,
+        event: &RuntimeSourceEvent,
         output: &mut RuntimeStepOutput,
     ) {
         let state = self
@@ -79,7 +79,7 @@ impl Engine {
             SourceEventKind::Error(error) => {
                 state.last_error = Some(error.clone());
                 output.diagnostics.push(RuntimeDiagnostic {
-                    message: format!("source {} error: {error}", state.id.0),
+                    message: format!("source {} error: {}", state.id.0, error.label()),
                 });
             }
             SourceEventKind::Disconnected
@@ -113,7 +113,7 @@ impl Engine {
     ) {
         match op {
             SourceOp::Yield(expr) => match self.evaluate_expr(expr) {
-                Ok(value) => self.push_source_item(source, runtime_value_label(&value), output),
+                Ok(value) => self.push_source_item(source, value.into(), output),
                 Err(error) => Self::diagnose_runtime_error(error, output),
             },
             SourceOp::Effect(effect) => output.effects.line.push(effect.clone()),
@@ -133,7 +133,7 @@ impl Engine {
     pub(super) fn push_source_item(
         &mut self,
         source: &SourceId,
-        item: String,
+        item: RuntimePayload,
         output: &mut RuntimeStepOutput,
     ) {
         let state = self
@@ -156,13 +156,19 @@ impl Engine {
 
 fn source_handler_match<'a>(
     handler: &'a SourceHandlerPlan,
-    event: &SourceEventKind<String, String>,
+    event: &SourceEventKind<RuntimePayload, RuntimePayload>,
 ) -> Option<(Vec<RuntimeBinding>, &'a [SourceOp])> {
     match (handler, event) {
         (SourceHandlerPlan::Item { pattern, ops }, SourceEventKind::Item(item))
-        | (SourceHandlerPlan::Error { pattern, ops }, SourceEventKind::Error(item))
-        | (SourceHandlerPlan::Progress { pattern, ops }, SourceEventKind::Progress(item)) => {
-            let bindings = match_runtime_pattern(pattern, &RuntimeValue::String(item.clone()))
+        | (SourceHandlerPlan::Error { pattern, ops }, SourceEventKind::Error(item)) => {
+            let bindings = match_runtime_pattern(pattern, item.value())
+                .ok()
+                .flatten()?;
+            Some((bindings, ops))
+        }
+        (SourceHandlerPlan::Progress { pattern, ops }, SourceEventKind::Progress(item)) => {
+            let payload = RuntimePayload::from(item.as_str());
+            let bindings = match_runtime_pattern(pattern, payload.value())
                 .ok()
                 .flatten()?;
             Some((bindings, ops))

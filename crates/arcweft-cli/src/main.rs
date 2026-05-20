@@ -630,6 +630,10 @@ struct CheckedModule {
 }
 
 fn load_and_check(path: &Path) -> Result<CheckedModule, ExitCode> {
+    if !is_awft_path(path) {
+        eprintln!("error: {} is not an .awft source file", path.display());
+        return Err(ExitCode::from(2));
+    }
     let source = fs::read_to_string(path).map_err(|error| {
         eprintln!("error: failed to read {}: {error}", path.display());
         ExitCode::FAILURE
@@ -897,6 +901,10 @@ fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), ExitCod
 
 fn collect_awft_paths(path: &Path) -> Result<Vec<PathBuf>, ExitCode> {
     if path.is_file() {
+        if !is_awft_path(path) {
+            eprintln!("error: {} is not an .awft source file", path.display());
+            return Err(ExitCode::from(2));
+        }
         return Ok(vec![path.to_path_buf()]);
     }
     if !path.is_dir() {
@@ -917,16 +925,18 @@ fn collect_awft_paths(path: &Path) -> Result<Vec<PathBuf>, ExitCode> {
             let entry_path = entry.path();
             if entry_path.is_dir() {
                 stack.push(entry_path);
-            } else if entry_path
-                .extension()
-                .is_some_and(|extension| extension == "awft")
-            {
+            } else if is_awft_path(&entry_path) {
                 paths.push(entry_path);
             }
         }
     }
     paths.sort();
     Ok(paths)
+}
+
+fn is_awft_path(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension == "awft")
 }
 
 fn emit_smt(path: &Path, report: &VerificationReport) -> Result<(), ExitCode> {

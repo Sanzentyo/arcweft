@@ -87,7 +87,7 @@ pub struct RuntimeStepInput {
     pub task_events: Vec<TaskEvent>,
     pub ui_events: Vec<UiEvent>,
     pub audio_events: Vec<AudioEvent>,
-    pub source_events: Vec<SourceEvent<String, String>>,
+    pub source_events: Vec<RuntimeSourceEvent>,
 }
 
 pub struct RuntimeStepOutput {
@@ -96,8 +96,8 @@ pub struct RuntimeStepOutput {
     pub line_effects: Vec<LineEffectRequest>,
     pub task_requests: Vec<TaskSpec>,
     pub cancel_requests: Vec<CancelScopeId>,
-    pub source_events: Vec<SourceEvent<String, String>>,
-    pub stream_events: Vec<StreamEvent<String, String>>,
+    pub source_events: Vec<RuntimeSourceEvent>,
+    pub stream_events: Vec<RuntimeStreamEvent>,
     pub source_close_requests: Vec<SourceId>,
 }
 ```
@@ -120,7 +120,9 @@ branch / match / while-let pattern binding は選択された block scope にだ
 guard 評価後や block 終了後には外側へ漏れない。
 `Goto` / `GotoExpr` / `Return` / `ReturnExpr` は `FlowFiber` の cursor/status を更新する。
 `RuntimeStepInput.source_events` は replay-stable order に正規化され、`SourcePlan` handler と
-`StreamPlan` によって queue state と `StreamEvent` に反映される。`FlowFiber.observations`
+`StreamPlan` によって queue state と `RuntimeStreamEvent` に反映される。source / stream
+payload は `RuntimePayload` として `RuntimeValue` shape を保持し、CLI 表示だけが
+human-readable label に変換する。`FlowFiber.observations`
 は emitted log / signal / metric / event を累積し、CLI/LSP/test/replay tooling が
 JSON で観測できる。
 実 thread、wall-clock、renderer、audio、device、filesystem は adapter 側の責務である。

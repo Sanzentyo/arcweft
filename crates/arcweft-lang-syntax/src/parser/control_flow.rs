@@ -221,10 +221,20 @@ impl Parser {
             return None;
         }
         let condition = head.strip_prefix("if")?.trim();
+        let (body, else_body) = if let Some(parts) = split_embedded_else_body(&body) {
+            parts
+        } else {
+            let else_body = self
+                .take_optional_statement_else_block()
+                .unwrap_or_default();
+            (body, else_body)
+        };
         let body_items = self.parse_flow_body(&body, start_line.start + head.len());
+        let else_items = self.parse_flow_body(&else_body, start_line.start + head.len());
         Some(IfBlock::new(
             parse_expr_lossy(condition),
             body_items,
+            else_items,
             TextRange::new(start_line.start, end),
         ))
     }
@@ -246,13 +256,36 @@ impl Parser {
         let (pattern, expr_and_guard) = split_top_level_binding(rest)?;
         let (expr, guard) = split_top_level_keyword_once(expr_and_guard, "when");
         let guard = guard.map(|guard| parse_expr_lossy(guard.trim()));
+        let (body, else_body) = if let Some(parts) = split_embedded_else_body(&body) {
+            parts
+        } else {
+            let else_body = self
+                .take_optional_statement_else_block()
+                .unwrap_or_default();
+            (body, else_body)
+        };
         Some(IfLetBlock::new(
             parse_pattern(pattern.trim()),
             parse_expr_lossy(expr),
             guard,
             self.parse_flow_body(&body, start_line.start + head.len()),
+            self.parse_flow_body(&else_body, start_line.start + head.len()),
             TextRange::new(start_line.start, end),
         ))
+    }
+
+    fn take_optional_statement_else_block(&mut self) -> Option<String> {
+        self.skip_blank_and_comments();
+        if self.index >= self.events.len() {
+            return None;
+        }
+        let line = self.current().clone();
+        let trimmed = line.text.trim_start();
+        if !trimmed.starts_with("else") && !trimmed.starts_with("} else") {
+            return None;
+        }
+        let (_, body, _, ok) = self.take_brace_block();
+        ok.then_some(body)
     }
 
     pub(super) fn parse_borrow_block(&mut self) -> Option<BorrowBlock> {

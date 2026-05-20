@@ -254,12 +254,15 @@ Current high-confidence state:
   Agent tooling.
 - Source and stream runtime execution now has a first Sans I/O slice.
   `RuntimeStepInput.source_events` are normalized, dispatched through lowered
-  `SourcePlan` handlers, and `yield` pushes items through the declared
+  `SourcePlan` handlers, and `yield` pushes structured `RuntimePayload` items
+  through the declared
   backpressure policy. `StreamPlan` can drain source/stream queues through
   `ForNext` and emit deterministic stream events within a per-step budget.
   `arcw plan --json` reports generation plans, and `arcw run --json` reports
-  source/stream events and queue state. Device acquisition, permissions, and
-  native callbacks remain adapter responsibilities.
+  source/stream events and queue state. CLI output renders payload labels for
+  display while the Sans I/O boundary keeps `RuntimeValue` shape for replay and
+  downstream runtime consumers. Device acquisition, permissions, and native
+  callbacks remain adapter responsibilities.
 - The Phase 2.0 runtime now has an explicit `FlowFiber` control stack for lexical
   scopes and loop continuations. `break` and `continue` discard queued body ops,
   pop body-local scopes, and transfer to the nearest loop/while/while-let entry.

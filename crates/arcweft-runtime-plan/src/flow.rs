@@ -153,7 +153,7 @@ impl FlowRuntimeLowerer {
                     ops.push(FlowOp::If {
                         condition: self.lower_runtime_expr(block.condition()),
                         then_ops: self.lower_flow_items(flow_id, block.body(), flow_index),
-                        else_ops: Vec::new(),
+                        else_ops: self.lower_flow_items(flow_id, block.else_body(), flow_index),
                     });
                 }
                 HirFlowItem::IfLet(block) => {
@@ -162,7 +162,7 @@ impl FlowRuntimeLowerer {
                         expr: self.lower_runtime_expr(block.expr()),
                         guard: self.lower_optional_runtime_expr(block.guard()),
                         then_ops: self.lower_flow_items(flow_id, block.body(), flow_index),
-                        else_ops: Vec::new(),
+                        else_ops: self.lower_flow_items(flow_id, block.else_body(), flow_index),
                     });
                 }
                 HirFlowItem::Match(block) => {

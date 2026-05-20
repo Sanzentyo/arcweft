@@ -21,8 +21,8 @@ runtime-plan, CLI, and LSP behavior actually support the documented syntax.
 - [x] Keep flow-control stack names as `FlowControlStackEntry` and `FlowControlStackEntryKind`.
 - [x] Replace top-level `line_effects` with `RuntimeEffectBatch`.
 - [x] Replace top-level `task_requests` with `HostRequestBatch`.
-- [ ] Add `RuntimePayload`.
-- [ ] Replace string-only source/stream events with structured payload events.
+- [x] Add `RuntimePayload`.
+- [x] Replace string-only source/stream events with structured payload events.
 
 ## Runtime execution
 

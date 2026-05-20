@@ -117,21 +117,12 @@ pub struct HostRequestBatch {
 ## Structured payloads
 
 ```rust
-pub enum RuntimePayload {
-    Unit,
-    Bool(bool),
-    Int(i64),
-    Float(String),
-    String(String),
-    Bytes(Vec<u8>),
-    EntityRef(String),
-    Record(Vec<RuntimeFieldValue>),
-    List(Vec<RuntimePayload>),
-    RuntimeValue(RuntimeValue),
-}
+pub struct RuntimePayload(pub RuntimeValue);
 ```
 
 `SourceEvent<String, String>` and `StreamEvent<String, String>` are removed.
+Use `RuntimeSourceEvent` and `RuntimeStreamEvent`. Display tooling may derive a
+payload label, but the runtime boundary preserves the structured value.
 
 ## Snapshot rule
 

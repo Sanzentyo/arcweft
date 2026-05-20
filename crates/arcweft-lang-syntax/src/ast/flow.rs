@@ -113,6 +113,7 @@ pub struct ScopeExprBlock {
 pub struct IfBlock {
     condition: Expr,
     body: Vec<FlowItem>,
+    else_body: Vec<FlowItem>,
     range: TextRange,
 }
 
@@ -123,6 +124,7 @@ pub struct IfLetBlock {
     expr: Expr,
     guard: Option<Expr>,
     body: Vec<FlowItem>,
+    else_body: Vec<FlowItem>,
     range: TextRange,
 }
 
@@ -487,10 +489,16 @@ impl Flow {
 }
 
 impl IfBlock {
-    pub(crate) const fn new(condition: Expr, body: Vec<FlowItem>, range: TextRange) -> Self {
+    pub(crate) const fn new(
+        condition: Expr,
+        body: Vec<FlowItem>,
+        else_body: Vec<FlowItem>,
+        range: TextRange,
+    ) -> Self {
         Self {
             condition,
             body,
+            else_body,
             range,
         }
     }
@@ -501,6 +509,10 @@ impl IfBlock {
 
     pub fn body(&self) -> &[FlowItem] {
         &self.body
+    }
+
+    pub fn else_body(&self) -> &[FlowItem] {
+        &self.else_body
     }
 
     pub const fn range(&self) -> &TextRange {
@@ -514,6 +526,7 @@ impl IfLetBlock {
         expr: Expr,
         guard: Option<Expr>,
         body: Vec<FlowItem>,
+        else_body: Vec<FlowItem>,
         range: TextRange,
     ) -> Self {
         Self {
@@ -521,6 +534,7 @@ impl IfLetBlock {
             expr,
             guard,
             body,
+            else_body,
             range,
         }
     }
@@ -539,6 +553,10 @@ impl IfLetBlock {
 
     pub fn body(&self) -> &[FlowItem] {
         &self.body
+    }
+
+    pub fn else_body(&self) -> &[FlowItem] {
+        &self.else_body
     }
 
     pub const fn range(&self) -> &TextRange {
