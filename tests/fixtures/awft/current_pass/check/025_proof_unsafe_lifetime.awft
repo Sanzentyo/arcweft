@@ -1,0 +1,11 @@
+proof @proof.safe_promotion {
+    check no_lifetime_below(LineSummary, 'flow)
+}
+
+flow @flow.unsafe_edge unsafe_edge {
+    unsafe lifetime @unsafe.cache reason = "owned clone" {
+        /// SAFETY: value is owned before promotion.
+        let summary = promote_unchecked('flow)
+    }
+    return "done"
+}

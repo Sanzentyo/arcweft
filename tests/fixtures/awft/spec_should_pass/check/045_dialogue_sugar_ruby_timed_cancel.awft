@@ -1,0 +1,15 @@
+pub surface character @character.alice Alice as alice {
+}
+
+flow @flow.dialogue_edge dialogue_edge {
+    alice(voice=auto):
+        今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    with:
+        at(0.42s): alice.face("worried")
+        defer on cancelled:
+            log.info("cancelled")
+        cancel on input .SkipLine {
+            out .Skipped
+        }
+        out .Done
+}

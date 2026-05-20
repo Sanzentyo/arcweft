@@ -737,6 +737,132 @@
       "expected_current": "fail",
       "expected_future": "fail",
       "reason": "negative fixture to keep invalid forms rejected"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/021_keyword_like_identifier_if_else.awft",
+      "category": "current_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "keyword-like identifier and statement if-else remain structured"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/022_family_relative_test_bench_ids.awft",
+      "category": "current_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "family-relative test and bench declaration ids are accepted"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/023_dialogue_cancel_defer_on.awft",
+      "category": "current_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "dialogue colon sugar, with sugar, cancel, defer, and out stay structured"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/024_source_stream_for_yield.awft",
+      "category": "current_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "source, stream, for, and yield shape remains accepted"
+    },
+    {
+      "path": "tests/fixtures/awft/current_pass/check/025_proof_unsafe_lifetime.awft",
+      "category": "current_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "proof and unsafe lifetime audit syntax remains structured"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/041_entry_declaration_edge.awft",
+      "category": "spec_should_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "pass",
+      "reason": "entry declaration is specified but not yet lowered"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/042_fn_result_match_final_expr.awft",
+      "category": "spec_should_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "pass",
+      "reason": "expression if, result construction, function calls, and match final expression should compose"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/043_struct_destructure_multiline_literal.awft",
+      "category": "spec_should_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "struct literal, multiline literal, and struct destructuring are tracked as spec edge cases"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/044_pattern_binding_combo.awft",
+      "category": "spec_should_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "pass",
+      "reason": "structured pattern bindings across let-else, if-let, while-let, and match should compose"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/045_dialogue_sugar_ruby_timed_cancel.awft",
+      "category": "spec_should_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "pass",
+      "reason": "dialogue sugar, ruby text, timed cue, cancel, defer, and out should compose"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/046_source_stream_payload_edge.awft",
+      "category": "spec_should_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "pass",
+      "expected_future": "pass",
+      "reason": "richer source policy and source error handler are tracked as spec edge cases"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/047_relative_declaration_families_edge.awft",
+      "category": "spec_should_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "pass",
+      "reason": "declaration-position relative family ids should behave like implicit names"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_pass/check/048_literals_units_char_edge.awft",
+      "category": "spec_should_pass",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "pass",
+      "reason": "numeric suffixes, unit literals, and char suffix literals should typecheck"
+    },
+    {
+      "path": "tests/fixtures/awft/spec_should_fail/011_await_question_with_rejected.awft",
+      "category": "spec_should_fail",
+      "subtype": "edge_case",
+      "command": "check",
+      "expected_current": "fail",
+      "expected_future": "fail",
+      "reason": "ambiguous await expr? with form must remain rejected with try-await guidance"
     }
   ]
 }

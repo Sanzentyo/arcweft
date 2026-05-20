@@ -1,0 +1,18 @@
+flow @flow.pattern_edge pattern_edge(opt: Option<i32>, events: Vec<GameEvent>) -> i32 {
+    let .Some(first) = opt else {
+        return 0
+    }
+
+    if let .Some(next) = opt when next > first {
+        return next
+    } else {
+        return first
+    }
+
+    while let .Some(event) = events.pop_front() {
+        match event {
+            .ChoiceSelected { id } => log.info("choice")
+            _ => continue
+        }
+    }
+}

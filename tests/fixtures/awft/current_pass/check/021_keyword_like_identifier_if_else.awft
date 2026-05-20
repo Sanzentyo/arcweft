@@ -1,0 +1,7 @@
+flow @flow.keyword_edge keyword_edge(in_value: i32) -> i32 {
+    if in_value > 0 {
+        return in_value
+    } else {
+        return 0
+    }
+}

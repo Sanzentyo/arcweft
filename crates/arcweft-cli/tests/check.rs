@@ -917,17 +917,15 @@ bench @bench.audio {
 
 #[test]
 fn check_rejects_non_awft_file_extension() {
-    let mut path = std::env::temp_dir();
-    path.push(format!("arcweft-cli-non-awft-{}.arwt", std::process::id()));
-    fs::write(
-        &path,
+    let path = temp_file(
+        "non-awft",
+        "arwt",
         r#"
 flow @flow.main main {
     return "done"
 }
 "#,
-    )
-    .expect("write temp non-awft fixture");
+    );
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("check")
@@ -947,9 +945,199 @@ flow @flow.main main {
     );
 }
 
+#[test]
+fn check_rejects_direct_non_awft_edge_extensions() {
+    for extension in ["txt", ""] {
+        let path = temp_file(
+            "direct-extension-edge",
+            extension,
+            r#"
+flow @flow.main main {
+    return "done"
+}
+"#,
+        );
+
+        let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+            .arg("check")
+            .arg(&path)
+            .output()
+            .expect("arcw check runs");
+
+        fs::remove_file(&path).expect("remove temp non-awft fixture");
+        assert!(
+            !output.status.success(),
+            "direct non-awft path with extension `{extension}` must fail"
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("not an .awft source file"),
+            "stderr should explain extension policy: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn tooling_commands_reject_direct_non_awft_paths() {
+    for args in [&["fmt"][..], &["ids", "materialize"][..]] {
+        let path = temp_file(
+            "tooling-non-awft",
+            "arwt",
+            r#"
+flow @flow.main main {
+    return "done"
+}
+"#,
+        );
+
+        let mut command = Command::new(env!("CARGO_BIN_EXE_arcw"));
+        command.args(args).arg(&path);
+        let output = command.output().expect("arcw tooling command runs");
+
+        fs::remove_file(&path).expect("remove temp non-awft fixture");
+        assert!(
+            !output.status.success(),
+            "{args:?} must reject direct non-awft path"
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("not an .awft source file"),
+            "stderr should explain extension policy: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn tooling_directory_scan_ignores_non_awft_files() {
+    let dir = temp_dir("tooling-directory-scan");
+    let awft = dir.join("valid.awft");
+    let arwt = dir.join("invalid.arwt");
+    fs::write(
+        &awft,
+        r#"
+flow @flow.main main {
+    return "done"
+}
+"#,
+    )
+    .expect("write valid awft fixture");
+    fs::write(&arwt, "this is intentionally not awft {").expect("write ignored arwt fixture");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("fmt")
+        .arg(&dir)
+        .output()
+        .expect("arcw fmt runs");
+
+    fs::remove_dir_all(&dir).expect("remove temp fixture dir");
+    assert!(
+        output.status.success(),
+        "tooling directory scan should ignore non-awft files, stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn spec_valid_edge_fixtures_track_current_gaps() {
+    for (relative_path, expected) in [
+        (
+            "tests/fixtures/awft/spec_should_pass/check/041_entry_declaration_edge.awft",
+            "raw top-level item",
+        ),
+        (
+            "tests/fixtures/awft/spec_should_pass/check/042_fn_result_match_final_expr.awft",
+            "raw expression",
+        ),
+        (
+            "tests/fixtures/awft/spec_should_pass/check/044_pattern_binding_combo.awft",
+            "unknown symbol",
+        ),
+        (
+            "tests/fixtures/awft/spec_should_pass/check/045_dialogue_sugar_ruby_timed_cancel.awft",
+            "unknown method",
+        ),
+        (
+            "tests/fixtures/awft/spec_should_pass/check/047_relative_declaration_families_edge.awft",
+            "unknown entity reference kind",
+        ),
+        (
+            "tests/fixtures/awft/spec_should_pass/check/048_literals_units_char_edge.awft",
+            "raw expression",
+        ),
+    ] {
+        let path = workspace_root().join(relative_path);
+        let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+            .arg("check")
+            .arg(&path)
+            .output()
+            .expect("arcw check runs");
+
+        assert!(
+            !output.status.success(),
+            "{} is a spec-valid fixture that should expose a current implementation gap",
+            path.display()
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains(expected),
+            "stderr for {} should contain `{expected}`:\n{}",
+            path.display(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn rejected_await_question_with_fixture_fails_with_guidance() {
+    let path = workspace_root()
+        .join("tests/fixtures/awft/spec_should_fail/011_await_question_with_rejected.awft");
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg(&path)
+        .output()
+        .expect("arcw check runs");
+
+    assert!(!output.status.success(), "ambiguous await form must fail");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("await expr? with") && stderr.contains("try await"),
+        "diagnostic should point to try-await replacement: {stderr}"
+    );
+}
+
 fn temp_awft(name: &str, source: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     path.push(format!("arcweft-cli-{name}-{}.awft", std::process::id()));
     fs::write(&path, source).expect("write temp awft fixture");
     path
+}
+
+fn temp_file(name: &str, extension: &str, source: &str) -> PathBuf {
+    let mut path = std::env::temp_dir();
+    let suffix = if extension.is_empty() {
+        String::new()
+    } else {
+        format!(".{extension}")
+    };
+    path.push(format!(
+        "arcweft-cli-{name}-{}{}",
+        std::process::id(),
+        suffix
+    ));
+    fs::write(&path, source).expect("write temp fixture");
+    path
+}
+
+fn temp_dir(name: &str) -> PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push(format!("arcweft-cli-{name}-{}", std::process::id()));
+    if path.exists() {
+        fs::remove_dir_all(&path).expect("remove stale temp fixture dir");
+    }
+    fs::create_dir_all(&path).expect("create temp fixture dir");
+    path
+}
+
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }

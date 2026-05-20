@@ -1,0 +1,12 @@
+flow @flow.opening opening {
+    return "done"
+}
+
+test @test:.opening scenario {
+    start @flow.opening
+    expect no_assertion_failures
+}
+
+bench @bench:.opening {
+    measure iterations = 1 { opening() }
+}

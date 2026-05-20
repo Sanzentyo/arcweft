@@ -1,0 +1,6 @@
+flow @flow.rejected rejected {
+    let bg = await asset.image(@asset.bg.room)? with:
+        pending p:
+            log.info("loading")
+    return "done"
+}

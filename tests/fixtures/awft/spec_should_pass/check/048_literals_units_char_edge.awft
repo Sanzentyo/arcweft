@@ -1,0 +1,7 @@
+fn literals() -> Unit {
+    let a = 10i32
+    let b = 2.0f32
+    let c = 100pt
+    let d = 1.57rad
+    let ch = "あ"c
+}

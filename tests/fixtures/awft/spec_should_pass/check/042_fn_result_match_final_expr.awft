@@ -1,0 +1,16 @@
+fn piyo(input: i32) -> Result<i32, String> {
+    if input > 0 {
+        Ok(input)
+    } else {
+        bail("Input must be greater than 0")
+    }
+}
+
+flow @flow.main main {
+    let result = piyo(-1)
+    let value = match result {
+        .Ok(value) => value
+        .Err(_) => -1
+    }
+    return value
+}

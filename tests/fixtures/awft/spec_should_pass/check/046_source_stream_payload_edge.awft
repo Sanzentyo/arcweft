@@ -1,0 +1,19 @@
+stream fn passthrough(frames: Stream<IteratorItem, CaptureError>) -> Stream<IteratorItem, CaptureError> {
+    for frame in frames {
+        yield frame
+    }
+}
+
+pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
+    from "fixture"
+    backpressure = bounded(capacity = 4, overflow = drop_oldest)
+    replay = hash_only
+    privacy = transient
+
+    on item frame => yield frame
+    on error err => log.info("source error")
+}
+
+flow @flow.source_stream_edge source_stream_edge {
+    return "done"
+}

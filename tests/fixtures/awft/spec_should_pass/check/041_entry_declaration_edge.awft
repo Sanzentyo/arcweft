@@ -1,0 +1,7 @@
+entry @entry.main {
+    start @flow.opening
+}
+
+flow @flow.opening opening {
+    return "done"
+}
