@@ -208,6 +208,14 @@ impl TypeChecker<'_> {
         }
         if let Some(ty) = ty.as_ref() {
             if let Some(name) = ident_pattern_name(pattern)
+                && name == "RuntimeFrame"
+            {
+                self.errors.push(TypeCheckError::new(
+                    "`RuntimeFrame` is not a valid runtime API name; use `RuntimeStep` terminology"
+                        .to_owned(),
+                ));
+            }
+            if let Some(name) = ident_pattern_name(pattern)
                 && let Some(slot_family) = default_presentation_slot_family(expr)
                 && let Some(previous) = self
                     .active_presentation_defaults

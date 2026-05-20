@@ -408,6 +408,7 @@ impl<'a> Lexer<'a> {
                 '<' if self.starts_with("<=") => self.fixed_op("<=", 2),
                 '|' if self.starts_with("|>") => self.fixed_op("|>", 2),
                 '|' if self.starts_with("||") => self.fixed_op("||", 2),
+                '|' => self.fixed_op("|", 1),
                 '&' if self.starts_with("&&") => self.fixed_op("&&", 2),
                 '&' => self.fixed_op("&", 1),
                 '+' => self.fixed_op("+", 1),
@@ -730,6 +731,7 @@ impl ExprParser {
                 Token::Dot if min_bp <= 100 => {
                     self.bump();
                     let field = self.take_ident("expected field name after `.`")?;
+                    self.skip_method_turbofish()?;
                     if self.peek() == &Token::LParen {
                         let args = self.parse_call_args()?;
                         Expr::MethodCall {
@@ -1033,7 +1035,28 @@ impl ExprParser {
                 body: Box::new(self.parse_expr_bp(0)?),
             });
         }
+        if self.peek() == &Token::Op("|") {
+            return self.parse_closure_arg();
+        }
         self.parse_expr_bp(0)
+    }
+
+    fn parse_closure_arg(&mut self) -> Result<Expr, ExprParseError> {
+        self.expect(&Token::Op("|"))?;
+        let mut params = Vec::new();
+        loop {
+            match self.bump() {
+                Token::Ident(name) | Token::RelativePath(name) => params.push(name),
+                Token::Comma => {}
+                Token::Op("|") => break,
+                Token::Eof => return Err(ExprParseError::new("unclosed closure parameter list")),
+                _ => return Err(ExprParseError::new("expected closure parameter or `|`")),
+            }
+        }
+        Ok(Expr::Closure {
+            params,
+            body: Box::new(self.parse_expr_bp(0)?),
+        })
     }
 
     fn parse_record_fields(&mut self) -> Result<Vec<(String, Expr)>, ExprParseError> {
@@ -1072,6 +1095,30 @@ impl ExprParser {
         match self.bump() {
             Token::Ident(name) | Token::RelativePath(name) => Ok(name),
             _ => Err(ExprParseError::new(message)),
+        }
+    }
+
+    fn skip_method_turbofish(&mut self) -> Result<(), ExprParseError> {
+        if self.peek() != &Token::Op("<") {
+            return Ok(());
+        }
+        let mut depth = 0_i32;
+        loop {
+            match self.bump() {
+                Token::Op("<") => depth += 1,
+                Token::Op(">") => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Ok(());
+                    }
+                }
+                Token::Eof => {
+                    return Err(ExprParseError::new(
+                        "unclosed generic argument list in method call",
+                    ));
+                }
+                _ => {}
+            }
         }
     }
 

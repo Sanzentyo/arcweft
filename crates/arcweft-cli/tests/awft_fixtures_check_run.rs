@@ -60,7 +60,6 @@ fn current_run_fixtures_pass() {
 }
 
 #[test]
-#[ignore = "enable after documented spec gaps are fixed"]
 fn spec_should_pass_check_fixtures_pass_after_refactor() {
     for path in awft_files(&fixture_root().join("spec_should_pass/check")) {
         let output = run_arcw(&["check"], &path);
@@ -69,7 +68,6 @@ fn spec_should_pass_check_fixtures_pass_after_refactor() {
 }
 
 #[test]
-#[ignore = "enable after documented spec gaps are fixed"]
 fn spec_should_pass_run_fixtures_pass_after_refactor() {
     for path in awft_files(&fixture_root().join("spec_should_pass/run")) {
         let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -86,7 +84,6 @@ fn spec_should_pass_run_fixtures_pass_after_refactor() {
 }
 
 #[test]
-#[ignore = "enable after capability policy rejects invalid forms"]
 fn spec_should_fail_fixtures_fail() {
     for path in awft_files(&fixture_root().join("spec_should_fail")) {
         let output = run_arcw(&["check"], &path);

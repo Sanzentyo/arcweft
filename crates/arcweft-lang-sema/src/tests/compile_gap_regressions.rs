@@ -1,7 +1,6 @@
 use super::support::*;
 
 #[test]
-#[ignore = "enable after line-based item parsing is replaced with CST/logical item parsing"]
 fn multiline_state_defaults_are_structured() {
     let tree = parse_ok(
         r"
@@ -18,7 +17,6 @@ pub state GameState {
 }
 
 #[test]
-#[ignore = "enable after runtime value calls are supported"]
 fn pure_function_call_is_runtime_value_expression() {
     let tree = parse_ok(
         r#"

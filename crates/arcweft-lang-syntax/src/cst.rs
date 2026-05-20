@@ -376,7 +376,10 @@ impl CstLineEvents {
             text.push_str(&line.text);
             end = line.end;
             if matches!(rule, CstBlockOpenRule::FunctionBody)
-                && (trimmed == "{" || line_has_unclosed_top_level_open(trimmed))
+                && (trimmed == "{"
+                    || line_has_unclosed_top_level_open(trimmed)
+                    || (looks_like_function_item(trimmed)
+                        && find_top_level_punctuation(trimmed, '{').is_some()))
             {
                 seen_body_open = true;
             }
@@ -928,7 +931,21 @@ fn let_binding_value(trimmed: &str) -> Option<&str> {
 
 fn is_dialogue_call_value(value: &str) -> bool {
     let value = value.trim_start();
-    find_content_bracket(value).is_some() && !value.starts_with('[')
+    let Some(open) = find_content_bracket(value) else {
+        return false;
+    };
+    if value.starts_with('[') {
+        return false;
+    }
+    let target = value[..open].trim();
+    let Some(close) = find_matching_punctuation(value, open, '[', ']') else {
+        // Multiline dialogue result bindings start as `let x = speaker.say()[`
+        // on the first CST line. Classify those as dialogue so the AST parser
+        // can collect the remaining content lines and the following `with:`.
+        return target.contains('(');
+    };
+    let content = value[open + '['.len_utf8()..close].trim();
+    target.contains('(') || crate::expr::parse_expr(content).is_err()
 }
 
 fn parse_scope_head(source: &str) -> bool {

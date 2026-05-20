@@ -67,6 +67,15 @@ pub enum RuntimeExpr {
         target: Box<RuntimeExpr>,
         field: String,
     },
+    Call {
+        callee: String,
+        args: Vec<RuntimeExpr>,
+    },
+    MethodCall {
+        receiver: Box<RuntimeExpr>,
+        method: String,
+        args: Vec<RuntimeExpr>,
+    },
     Unary {
         op: RuntimeUnaryOp,
         expr: Box<RuntimeExpr>,
@@ -368,6 +377,8 @@ pub(crate) fn expr_runtime_label(expr: &RuntimeExpr) -> String {
         RuntimeExpr::Record(fields) => format!("record/{}", fields.len()),
         RuntimeExpr::Variant { name, .. } => format!(".{name}"),
         RuntimeExpr::Field { field, .. } => format!(".{field}"),
+        RuntimeExpr::Call { callee, .. } => format!("{callee}()"),
+        RuntimeExpr::MethodCall { method, .. } => format!(".{method}()"),
         RuntimeExpr::Unary { op, .. } => runtime_unary_op_label(*op).to_owned(),
         RuntimeExpr::Binary { op, .. } => runtime_binary_op_label(*op).to_owned(),
         RuntimeExpr::If { .. } => "if".to_owned(),

@@ -23,8 +23,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   runtime lowering keeps the first flow as the deterministic fallback for
   current headless fixtures.
 - `extern capability` declarations parse and lower as structured HIR
-  declarations. Capability functions are registered for minimal type checking,
-  while effect/capability enforcement remains a separate verifier task.
+  declarations. Capability functions are registered for type checking, their
+  declared `effects { ... }` are enforced against the active flow/function
+  effect scope, and filesystem capability calls reject direct OS absolute path
+  string literals in favor of `VirtualPath` constructors.
 - `arcweft-core` no longer depends on dialogue or presentation; the facade
   crate `arcweft` exposes crate-family namespaces instead of a flat prelude.
 - No renderer, Servo, audio, camera, USB, MCP, or Cranelift JIT implementation.
@@ -34,6 +36,18 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - `phase-0-1-workspace.md`: current crate layout, public types, verification status, and deferred work.
 - `refactor-checklist.md`: direction-package checklist for the runtime boundary,
   entry/capability grammar, RuntimeStep, executor, and fixture-driven gates.
+
+## Verification Snapshot
+
+Last verified for the active workspace after enabling the spec fixture gates:
+
+- `cargo fmt --all`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets --all-features`
+- `arcw check` over `tests/fixtures/awft/spec_should_pass/check`
+- `arcw run --mode drain --steps 16` over `tests/fixtures/awft/spec_should_pass/run`
+- `arcw check` over `tests/fixtures/awft/spec_should_fail`, expecting every
+  fixture to fail with diagnostics
 
 ## Design Reviews Reflected
 

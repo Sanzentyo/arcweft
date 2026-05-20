@@ -74,10 +74,7 @@ impl TypeChecker<'_> {
             Expr::Record { path, fields } => Some(self.check_record_expr(path, fields)),
             Expr::RecordLiteral(fields) => Some(self.check_record_literal_expr(fields)),
             Expr::Binary { lhs, op, rhs } => self.check_binary_expr(lhs, *op, rhs),
-            Expr::Closure { body, .. } => {
-                self.check_expr(body);
-                None
-            }
+            Expr::Closure { params, body } => self.check_closure_expr(params, body),
             Expr::Unary { op, expr } => Some(self.check_unary_expr(*op, expr)),
             Expr::Block { statements, value } => {
                 self.check_block_expr(statements, value.as_deref())
@@ -121,6 +118,27 @@ impl TypeChecker<'_> {
                 None
             }
         }
+    }
+
+    fn check_closure_expr(&mut self, params: &[String], body: &Expr) -> Option<TypeKind> {
+        let previous = params
+            .iter()
+            .map(|param| {
+                (
+                    param.clone(),
+                    self.locals.insert(param.clone(), TypeKind::Int),
+                )
+            })
+            .collect::<Vec<_>>();
+        self.check_expr(body);
+        for (param, old) in previous {
+            if let Some(old) = old {
+                self.locals.insert(param, old);
+            } else {
+                self.locals.remove(&param);
+            }
+        }
+        None
     }
 
     fn in_seq_context(&self) -> bool {
@@ -179,6 +197,12 @@ impl TypeChecker<'_> {
                 }
                 if path == "state" {
                     return Some(TypeKind::Named("GameState".to_owned()));
+                }
+                if path == "line" {
+                    return Some(TypeKind::Named("LineContext".to_owned()));
+                }
+                if path == "auto" {
+                    return Some(TypeKind::Named("Auto".to_owned()));
                 }
                 // Short enum-variant expressions such as `.Instant` rely
                 // on expected type resolution in the full checker. The
@@ -366,6 +390,8 @@ impl TypeChecker<'_> {
                 .cloned()
                 .or_else(|| well_known_runtime_method_type(&name))
         {
+            self.check_virtual_path_call(&name, args);
+            self.check_function_effects(&name);
             let checked_args = if name == "event.emit" {
                 args.iter().skip(1).collect::<Vec<_>>()
             } else {
@@ -491,13 +517,16 @@ impl TypeChecker<'_> {
         method: &str,
         args: &[Expr],
     ) -> Option<TypeKind> {
+        let method_name = method.split_once('<').map_or(method, |(name, _)| name);
         if let Expr::Path(receiver_path) = receiver {
-            let dotted = format!("{receiver_path}.{method}");
+            let dotted = format!("{receiver_path}.{method_name}");
             if let Some(ty) = self
                 .function_type(&dotted)
                 .cloned()
                 .or_else(|| well_known_runtime_method_type(&dotted))
             {
+                self.check_virtual_path_call(&dotted, args);
+                self.check_function_effects(&dotted);
                 let checked_args = if dotted == "event.emit" {
                     args.iter().skip(1).collect::<Vec<_>>()
                 } else {
@@ -513,11 +542,11 @@ impl TypeChecker<'_> {
         for arg in args {
             self.check_expr(arg);
         }
-        if is_drop_name(method) {
+        if is_drop_name(method_name) {
             return Some(TypeKind::Unit);
         }
         receiver_type.and_then(|receiver_type| {
-            if matches!(method, "context" | "with_context") {
+            if matches!(method_name, "context" | "with_context") {
                 return match receiver_type {
                     TypeKind::Need { .. } => Some(receiver_type),
                     TypeKind::Option(inner) => Some(TypeKind::Result {
@@ -531,7 +560,7 @@ impl TypeChecker<'_> {
                     _ => None,
                 };
             }
-            if method == "face"
+            if method_name == "face"
                 && matches!(
                     receiver_type,
                     TypeKind::Ref(EntityKind::Character)
@@ -541,13 +570,25 @@ impl TypeChecker<'_> {
             {
                 return Some(TypeKind::CharacterPatch(EntityKind::Character));
             }
+            if method_name == "say"
+                && matches!(
+                    receiver_type,
+                    TypeKind::Ref(EntityKind::Character)
+                        | TypeKind::Speaker(EntityKind::Character)
+                        | TypeKind::SpeakerPreset(EntityKind::Character)
+                )
+            {
+                return Some(TypeKind::SpeakerPreset(EntityKind::Character));
+            }
             self.env
-                .method_type(&receiver_type, method)
+                .method_type(&receiver_type, method_name)
                 .cloned()
-                .or_else(|| well_known_capacity_method_type(&receiver_type, method, args.len()))
+                .or_else(|| {
+                    well_known_capacity_method_type(&receiver_type, method_name, args.len())
+                })
                 .or_else(|| {
                     self.errors.push(TypeCheckError::new(format!(
-                        "unknown method `{method}` on {receiver_type:?}"
+                        "unknown method `{method_name}` on {receiver_type:?}"
                     )));
                     None
                 })
@@ -567,6 +608,21 @@ impl TypeChecker<'_> {
                     None
                 })
         })
+    }
+
+    fn check_virtual_path_call(&mut self, callee: &str, args: &[Expr]) {
+        if !callee.starts_with("fs.") {
+            return;
+        }
+        for arg in args {
+            if let Expr::Literal(arcweft_lang_syntax::expr::Literal::String(path)) = arg
+                && looks_like_os_absolute_path(path)
+            {
+                self.errors.push(TypeCheckError::new(format!(
+                    "filesystem capability `{callee}` requires a VirtualPath, not an OS absolute path `{path}`"
+                )));
+            }
+        }
     }
 
     fn check_dotted_path_target(&mut self, path: &str) -> Option<TypeKind> {
@@ -861,4 +917,10 @@ impl TypeChecker<'_> {
             }
         }
     }
+}
+
+fn looks_like_os_absolute_path(path: &str) -> bool {
+    path.starts_with('/')
+        || path.starts_with('\\')
+        || path.as_bytes().get(1).is_some_and(|byte| *byte == b':')
 }

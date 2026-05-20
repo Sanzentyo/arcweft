@@ -142,6 +142,12 @@ impl Engine {
                     }),
                 }
             }
+            RuntimeExpr::Call { callee, args } => self.evaluate_call_expr(callee, args),
+            RuntimeExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => self.evaluate_method_call_expr(receiver, method, args),
             RuntimeExpr::Unary { op, expr } => {
                 let value = self.evaluate_expr(expr)?;
                 evaluate_unary(*op, value)
@@ -171,6 +177,32 @@ impl Engine {
             } => self.evaluate_if_let_expr(pattern, expr, guard.as_deref(), then_expr, else_expr),
             RuntimeExpr::Match { scrutinee, arms } => self.evaluate_match_expr(scrutinee, arms),
         }
+    }
+
+    fn evaluate_call_expr(
+        &mut self,
+        callee: &str,
+        args: &[RuntimeExpr],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let args = args
+            .iter()
+            .map(|arg| self.evaluate_expr(arg))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(evaluate_runtime_call(callee, &args))
+    }
+
+    fn evaluate_method_call_expr(
+        &mut self,
+        receiver: &RuntimeExpr,
+        method: &str,
+        args: &[RuntimeExpr],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let receiver = self.evaluate_expr(receiver)?;
+        let args = args
+            .iter()
+            .map(|arg| self.evaluate_expr(arg))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(evaluate_runtime_method_call(receiver, method, &args))
     }
 
     pub(super) fn evaluate_if_let_expr(
@@ -276,5 +308,41 @@ impl Engine {
         let message = error.to_string();
         self.fiber.status = FlowFiberStatus::Failed(message.clone());
         output.diagnostics.push(RuntimeDiagnostic { message });
+    }
+}
+
+fn evaluate_runtime_call(callee: &str, args: &[RuntimeValue]) -> RuntimeValue {
+    match (callee, args) {
+        ("add", [RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)]) => {
+            RuntimeValue::Int(lhs.saturating_add(*rhs))
+        }
+        _ => RuntimeValue::String(format!(
+            "{callee}({})",
+            args.iter()
+                .map(runtime_value_label)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
+}
+
+fn evaluate_runtime_method_call(
+    receiver: RuntimeValue,
+    method: &str,
+    args: &[RuntimeValue],
+) -> RuntimeValue {
+    match (receiver, method, args) {
+        (RuntimeValue::String(value), "trim", []) => {
+            RuntimeValue::String(value.trim_matches(char::is_whitespace).to_owned())
+        }
+        (RuntimeValue::String(value), "to_string", []) => RuntimeValue::String(value),
+        (receiver, method, args) => RuntimeValue::String(format!(
+            "{}.{method}({})",
+            runtime_value_label(&receiver),
+            args.iter()
+                .map(runtime_value_label)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
     }
 }

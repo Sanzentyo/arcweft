@@ -5,10 +5,11 @@ No compatibility aliases. No deprecated wrappers. No transitional re-export modu
 ## Fixture activation note
 
 The direction package is applied without rewriting future-spec fixtures into
-today's grammar. Files under `tests/fixtures/awft/current_pass/` are now expected
-to pass without file-name allowlists. Keep future grammar targets under
-`spec_should_pass/` as ignored fixtures until the parser, HIR, sema,
-runtime-plan, CLI, and LSP behavior actually support the documented syntax.
+today's grammar. Files under `tests/fixtures/awft/current_pass/` and
+`tests/fixtures/awft/spec_should_pass/` are now expected to pass without
+file-name allowlists. Negative fixtures under `spec_should_fail/` are active
+and cover removed syntax, missing capability effects, forbidden OS paths in
+filesystem capability calls, and old RuntimeFrame naming.
 
 ## Core rename and structure
 
@@ -56,19 +57,19 @@ runtime-plan, CLI, and LSP behavior actually support the documented syntax.
 - [x] Add `extern capability` declaration to AST.
 - [x] Add capability parser dispatch.
 - [x] Add capability HIR lowering.
-- [ ] Add capability effect checking.
-- [ ] Add virtual path capability examples to docs.
+- [x] Add capability effect checking.
+- [x] Add virtual path capability examples to docs.
 
 ## Compile-gap hardening
 
 - [ ] Replace line-based enum parsing with logical/CST item parsing.
-- [ ] Replace line-based struct field parsing with logical/CST item parsing.
-- [ ] Replace line-based state field parsing with logical/CST item parsing.
-- [ ] Replace line-based trait member parsing with logical/CST item parsing.
+- [x] Replace line-based struct field parsing with logical/CST item parsing.
+- [x] Replace line-based state field parsing with logical/CST item parsing.
+- [x] Replace line-based trait member parsing with logical/CST item parsing.
 - [ ] Replace raw brace-counting `collect_logical_block_items` with token/CST-aware collection.
 - [ ] Parse callable bodies structurally like function bodies.
-- [ ] Add pure function call lowering in executable runtime expressions.
-- [ ] Add typed method/function calls or reject them with actionable diagnostics.
+- [x] Add pure function call lowering in executable runtime expressions.
+- [x] Add typed method/function calls or reject them with actionable diagnostics.
 
 ## CLI
 
@@ -91,4 +92,4 @@ runtime-plan, CLI, and LSP behavior actually support the documented syntax.
 - [x] Add sema fixture loader test.
 - [x] Add CLI check/run fixture test.
 - [x] Add focused compile gap regression coverage through current-pass fixtures.
-- [ ] Unignore spec_should_pass tests after implementation catches up.
+- [x] Unignore spec_should_pass tests after implementation catches up.

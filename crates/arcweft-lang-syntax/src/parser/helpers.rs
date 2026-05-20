@@ -106,6 +106,9 @@ pub(super) fn is_relative_id_path(path: &str) -> bool {
 
 pub(super) fn parse_attribute(trimmed: &str, range: TextRange) -> Option<Attribute> {
     let rest = trimmed.strip_prefix("#[")?.strip_suffix(']')?.trim();
+    if !rest.contains('(') {
+        return Some(Attribute::new(rest.to_owned(), None, range));
+    }
     let open = find_top_level_punctuation(rest, '(')?;
     let close = find_matching_punctuation(rest, open, '(', ')')?;
     (rest[close + ')'.len_utf8()..].trim().is_empty()).then_some(())?;
@@ -317,8 +320,8 @@ pub(super) fn collect_logical_block_items(body: &str) -> Vec<String> {
         current.push_str(raw_line);
         for ch in raw_line.chars() {
             match ch {
-                '{' => depth += 1,
-                '}' => depth -= 1,
+                '{' | '(' | '[' => depth += 1,
+                '}' | ')' | ']' => depth -= 1,
                 _ => {}
             }
         }
@@ -636,7 +639,8 @@ pub(super) fn split_top_level_binding(source: &str) -> Option<(&str, &str)> {
 
 pub(super) fn parse_expr_with_inline_line_plan(source: &str) -> Expr {
     let Some((expr_source, trailing_plan)) = split_inline_dialogue_line_plan(source) else {
-        return parse_dialogue_call_expr_source(source).unwrap_or_else(|| parse_expr_lossy(source));
+        return parse_dialogue_call_expr_surface(source)
+            .unwrap_or_else(|| parse_expr_lossy(source));
     };
     let mut expr = parse_dialogue_call_expr_source(expr_source.trim())
         .unwrap_or_else(|| parse_expr_lossy(expr_source.trim()));
@@ -648,6 +652,34 @@ pub(super) fn parse_expr_with_inline_line_plan(source: &str) -> Expr {
     } else {
         parse_expr_lossy(source)
     }
+}
+
+fn parse_dialogue_call_expr_surface(source: &str) -> Option<Expr> {
+    if !looks_like_dialogue_call_expr_surface(source) {
+        return None;
+    }
+    parse_dialogue_call_expr_source(source)
+}
+
+fn looks_like_dialogue_call_expr_surface(source: &str) -> bool {
+    let source = source.trim();
+    let source = source.strip_prefix("try ").map_or(source, str::trim);
+    let Some(open) = find_content_bracket(source) else {
+        return false;
+    };
+    let Some(close) = find_matching_punctuation(source, open, '[', ']') else {
+        return false;
+    };
+    if !source[close + 1..].trim().is_empty() {
+        return false;
+    }
+    let callee = source[..open].trim();
+    let content = source[open + 1..close].trim();
+    // In expression position, `target[expr]` is an index unless the target is a
+    // call-like dialogue surface or the bracket payload is not a valid typed
+    // expression. This keeps `nums[0]` out of dialogue parsing while preserving
+    // `alice.say()[text]` and `alice[おはよう。[p]]` surfaces.
+    callee.contains('(') || parse_expr(content).is_err()
 }
 
 pub(super) fn parse_dialogue_call_expr_source(source: &str) -> Option<Expr> {
@@ -666,9 +698,6 @@ pub(super) fn parse_dialogue_call_expr_source(source: &str) -> Option<Expr> {
         return None;
     }
     let content = source[open + 1..close].trim();
-    if crate::expr::parse_expr(content).is_ok() {
-        return None;
-    }
     Some(Expr::DialogueCall {
         callee: Box::new(parse_expr_lossy(callee)),
         content: content.to_owned(),

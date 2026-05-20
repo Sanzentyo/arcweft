@@ -181,4 +181,7 @@ flow @flow.save_profile save_profile
 }
 ```
 
-Release builds may reject undeclared capability effects.
+The current checker rejects calls to capability functions when their declared
+effects are not present in the active flow/function effect scope. Filesystem
+capabilities also reject direct OS absolute path string literals; construct a
+`VirtualPath` with the `path` capability instead.

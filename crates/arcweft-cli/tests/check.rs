@@ -1043,10 +1043,9 @@ flow @flow.main main {
 }
 
 #[test]
-fn spec_valid_run_edge_fixtures_track_current_gaps() {
+fn spec_valid_run_edge_fixture_now_executes() {
     let relative_path =
         "tests/fixtures/awft/spec_should_pass/run/011_dialogue_line_value_and_handle_discard.awft";
-    let expected = "raw expression";
     let path = workspace_root().join(relative_path);
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
@@ -1058,19 +1057,11 @@ fn spec_valid_run_edge_fixtures_track_current_gaps() {
         .expect("arcw run runs");
 
     assert!(
-        !output.status.success(),
-        "{} is a spec-valid runtime fixture that should expose a current implementation gap",
-        path.display()
-    );
-    let combined = format!(
-        "{}{}",
+        output.status.success(),
+        "{} should now execute, stdout: {}, stderr: {}",
+        path.display(),
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(
-        combined.contains(expected),
-        "output for {} should contain `{expected}`:\n{combined}",
-        path.display()
     );
 }
 

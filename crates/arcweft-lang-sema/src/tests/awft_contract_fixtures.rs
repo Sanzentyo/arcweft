@@ -46,7 +46,6 @@ fn current_check_fixtures_pass_parser_hir_sema() {
 }
 
 #[test]
-#[ignore = "enable after documented spec gaps are fixed"]
 fn spec_should_pass_check_fixtures_pass_parser_hir_sema_after_refactor() {
     for path in awft_files(&fixture_root().join("spec_should_pass/check")) {
         assert_check_pipeline(&path);

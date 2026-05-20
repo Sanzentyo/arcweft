@@ -11,6 +11,7 @@ use arcweft_core::value::{
     RuntimeValue,
 };
 use arcweft_lang_hir::syntax::{
+    ast::line_plan::LinePlanItem,
     ast::pattern::Pattern,
     expr::{BinaryOp, Expr, Literal, MatchExprArm, UnaryOp},
 };
@@ -79,9 +80,19 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
                 })
                 .collect(),
         },
-        Expr::Call { .. } | Expr::MethodCall { .. } => {
-            RuntimeExpr::Value(RuntimeValue::String(expr_label(expr)))
-        }
+        Expr::Call { callee, args } => RuntimeExpr::Call {
+            callee: expr_label(callee),
+            args: args.iter().map(lower_runtime_expr).collect(),
+        },
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => RuntimeExpr::MethodCall {
+            receiver: Box::new(lower_runtime_expr(receiver)),
+            method: runtime_method_name(method).to_owned(),
+            args: args.iter().map(lower_runtime_expr).collect(),
+        },
         Expr::NamedArg { value, .. } => lower_runtime_expr(value),
         Expr::Try { expr }
         | Expr::Await { expr, .. }
@@ -170,15 +181,14 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
         | Expr::ComputationBlock { value, .. }
         | Expr::MemoBlock { value, .. }
         | Expr::NamedBlock { value, .. } => lower_strict_block_value(value.as_deref()),
-        Expr::Call { callee, args } => lower_constructor_call(callee, args).ok_or_else(|| {
-            format!(
-                "unsupported runtime value expression `{}`",
-                expr_label(expr)
-            )
-        }),
-        Expr::MethodCall { .. }
-        | Expr::DialogueCall { .. }
-        | Expr::Index { .. }
+        Expr::Call { callee, args } => lower_strict_call_expr(callee, args),
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => lower_strict_method_call_expr(receiver, method, args),
+        Expr::DialogueCall { plan, .. } => Ok(lower_dialogue_call_value(plan.as_ref())),
+        Expr::Index { .. }
         | Expr::Pipe { .. }
         | Expr::Try { .. }
         | Expr::Await { .. }
@@ -187,10 +197,71 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
         | Expr::Closure { .. }
         | Expr::LifetimePath { .. }
         | Expr::Placeholder(_)
-        | Expr::Raw(_) => Err(format!(
-            "unsupported runtime value expression `{}`",
-            expr_label(expr)
-        )),
+        | Expr::Raw(_) => unsupported_strict_runtime_expr(expr),
+    }
+}
+
+fn runtime_method_name(method: &str) -> &str {
+    method.split_once('<').map_or(method, |(name, _)| name)
+}
+
+fn lower_strict_call_expr(callee: &Expr, args: &[Expr]) -> Result<RuntimeExpr, String> {
+    lower_constructor_call(callee, args).map_or_else(
+        || {
+            Ok(RuntimeExpr::Call {
+                callee: expr_label(callee),
+                args: args
+                    .iter()
+                    .map(lower_runtime_expr_strict)
+                    .collect::<Result<Vec<_>, _>>()?,
+            })
+        },
+        Ok,
+    )
+}
+
+fn lower_strict_method_call_expr(
+    receiver: &Expr,
+    method: &str,
+    args: &[Expr],
+) -> Result<RuntimeExpr, String> {
+    Ok(RuntimeExpr::MethodCall {
+        receiver: Box::new(lower_runtime_expr_strict(receiver)?),
+        method: runtime_method_name(method).to_owned(),
+        args: args
+            .iter()
+            .map(lower_runtime_expr_strict)
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn unsupported_strict_runtime_expr(expr: &Expr) -> Result<RuntimeExpr, String> {
+    Err(format!(
+        "unsupported runtime value expression `{}`",
+        expr_label(expr)
+    ))
+}
+
+fn lower_dialogue_call_value(
+    plan: Option<&arcweft_lang_hir::syntax::ast::line_plan::LinePlan>,
+) -> RuntimeExpr {
+    let Some(plan) = plan else {
+        return RuntimeExpr::Value(RuntimeValue::Unit);
+    };
+    let Some(out) = plan.items().iter().find_map(|item| match item {
+        LinePlanItem::Out(expr) => Some(expr),
+        _ => None,
+    }) else {
+        return RuntimeExpr::Value(RuntimeValue::Unit);
+    };
+    match out {
+        Expr::Tuple(items) => RuntimeExpr::Tuple(
+            items
+                .iter()
+                .map(|item| RuntimeExpr::Value(RuntimeValue::String(expr_label(item))))
+                .collect(),
+        ),
+        expr => RuntimeExpr::Value(RuntimeValue::String(expr_label(expr))),
     }
 }
 
@@ -494,16 +565,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn strict_runtime_value_lowering_rejects_calls() {
+    fn strict_runtime_value_lowering_preserves_calls() {
         let expr = Expr::Call {
             callee: Box::new(Expr::Path("compute".to_owned())),
             args: Vec::new(),
         };
 
-        let error =
-            lower_runtime_expr_strict(&expr).expect_err("calls are not headless values yet");
+        let lowered = lower_runtime_expr_strict(&expr).expect("calls are runtime values");
 
-        assert!(error.contains("unsupported runtime value expression"));
-        assert!(error.contains("compute()"));
+        assert!(matches!(lowered, RuntimeExpr::Call { callee, .. } if callee == "compute"));
     }
 }

@@ -163,6 +163,7 @@ pub(super) fn well_known_field_type(field: &str) -> Option<TypeKind> {
         "enabled" | "visible" | "ready" => TypeKind::Bool,
         "order" | "count" | "index" => TypeKind::Int,
         "ratio" => TypeKind::Float,
+        "stage" => TypeKind::Named("StageApi".to_owned()),
         "label" | "disabled_reason" | "badge" | "hotkey" | "text" => TypeKind::String,
         _ => return None,
     })
@@ -430,10 +431,37 @@ pub(super) fn well_known_capacity_method_type(
     method: &str,
     arg_count: usize,
 ) -> Option<TypeKind> {
+    if matches!(receiver, TypeKind::String) {
+        if let ("trim" | "to_string", 0) = (method, arg_count) {
+            return Some(TypeKind::String);
+        }
+    }
+    if matches!(receiver, TypeKind::Named(name) if name == "LineContext")
+        && matches!((method, arg_count), ("voice_handle", 0))
+    {
+        return Some(TypeKind::Named("VoiceHandle".to_owned()));
+    }
+    if matches!(receiver, TypeKind::Named(name) if name == "StageApi")
+        && matches!((method, arg_count), ("acquire", 1))
+    {
+        return Some(TypeKind::Named("StageActorHandle".to_owned()));
+    }
+    if matches!(receiver, TypeKind::Named(name) if name == "StageActorHandle")
+        && matches!((method, arg_count), ("look", 1 | 2))
+    {
+        return Some(TypeKind::Named("CueHandle".to_owned()));
+    }
     if let TypeKind::Vec(item) = receiver
         && matches!((method, arg_count), ("pop" | "pop_front", 0))
     {
         return Some(TypeKind::Option(item.clone()));
+    }
+    if let TypeKind::Vec(item) = receiver {
+        match method {
+            "map" if arg_count == 1 => return Some(TypeKind::Vec(item.clone())),
+            "collect" if arg_count == 0 => return Some(TypeKind::Vec(item.clone())),
+            _ => {}
+        }
     }
     if !is_reservable_type(receiver) {
         return None;

@@ -108,6 +108,27 @@ pub(super) fn parse_line_plan_body(style: BlockStyle, body: &str, range: TextRan
             items.push(parse_line_plan_item(&format!("{trimmed} {body}")));
             continue;
         }
+        if let Some((pattern, head)) = line_plan_let_colon_head(trimmed) {
+            let cue_indent = indentation(line);
+            let mut body_lines = Vec::new();
+            index += 1;
+            while index < lines.len() {
+                let child = &lines[index];
+                let child_trimmed = child.trim();
+                if !child_trimmed.is_empty() && indentation(child.as_str()) <= cue_indent {
+                    break;
+                }
+                if !child_trimmed.is_empty() {
+                    body_lines.push(child.as_str());
+                }
+                index += 1;
+            }
+            items.push(LinePlanItem::Let {
+                pattern: parse_pattern(pattern.trim()),
+                expr: parse_named_block_expr(head, &body_lines.join("\n")),
+            });
+            continue;
+        }
         if let Some(head) = line_plan_colon_head(trimmed) {
             let cue_indent = indentation(line);
             let mut body_lines = Vec::new();
@@ -134,6 +155,13 @@ pub(super) fn parse_line_plan_body(style: BlockStyle, body: &str, range: TextRan
 
 fn is_multiline_timed_cue_header(line: &str) -> bool {
     line.starts_with("at(") && line.ends_with(':')
+}
+
+fn line_plan_let_colon_head(line: &str) -> Option<(&str, &str)> {
+    let rest = line.strip_prefix("let ")?;
+    let (pattern, expr) = split_top_level_binding(rest)?;
+    let head = expr.trim().strip_suffix(':')?.trim();
+    (head.starts_with("at(") || head.starts_with("scope")).then_some((pattern, head))
 }
 
 fn line_plan_colon_head(line: &str) -> Option<&str> {

@@ -183,6 +183,18 @@ pub(crate) fn capability_from_expr(expr: &Expr) -> Option<Capability> {
     {
         return state_write_capability(args);
     }
+    if let Expr::MethodCall {
+        receiver, method, ..
+    } = expr
+        && let Some(receiver) = expr_path_label(receiver)
+    {
+        return Some(Capability::new(format!("{receiver}.{method}")));
+    }
+    if let Expr::Call { callee, .. } = expr
+        && let Some(callee) = expr_path_label(callee)
+    {
+        return Some(Capability::new(callee));
+    }
     expr_path_label(expr).map(Capability::new)
 }
 

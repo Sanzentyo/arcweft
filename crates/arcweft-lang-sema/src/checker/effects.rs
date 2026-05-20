@@ -1,9 +1,26 @@
 //! Effect capability checks for contracts and scoped checker state.
 
-use super::{ContractClause, EffectScope, Expr, TypeChecker, TypeKind, capability_from_expr};
+use super::{
+    ContractClause, EffectScope, Expr, TypeCheckError, TypeChecker, TypeKind, capability_from_expr,
+};
 use std::collections::HashSet;
 
 impl TypeChecker<'_> {
+    pub(super) fn check_function_effects(&mut self, name: &str) {
+        let Some(effects) = self.global_function_effects.get(name).cloned() else {
+            return;
+        };
+        for capability in effects {
+            if !self.effect_capabilities.contains(&capability)
+                && !self.env.has_capability(&capability)
+            {
+                self.errors.push(TypeCheckError::new(format!(
+                    "calling `{name}` requires effect capability `{capability}`"
+                )));
+            }
+        }
+    }
+
     pub(super) fn check_contract_clause(&mut self, contract: &ContractClause) {
         match contract {
             ContractClause::Requires { expr, .. }

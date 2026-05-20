@@ -541,10 +541,11 @@ pub(super) fn parse_enum_variants(body: &str) -> Vec<EnumVariant> {
 
 pub(super) fn parse_struct_fields(body: &str) -> Vec<StructField> {
     let mut docs = PendingDocLines::default();
-    body.lines()
+    collect_logical_block_items(body)
+        .into_iter()
         .enumerate()
-        .filter_map(|(line_index, line)| {
-            let line = line.trim();
+        .filter_map(|(line_index, item)| {
+            let line = item.trim();
             if line.is_empty() {
                 return None;
             }
@@ -562,10 +563,11 @@ pub(super) fn parse_struct_fields(body: &str) -> Vec<StructField> {
 
 pub(super) fn parse_state_fields(body: &str) -> Vec<StateField> {
     let mut docs = PendingDocLines::default();
-    body.lines()
+    collect_logical_block_items(body)
+        .into_iter()
         .enumerate()
-        .filter_map(|(line_index, line)| {
-            let line = line.trim();
+        .filter_map(|(line_index, item)| {
+            let line = item.trim();
             if line.is_empty() {
                 return None;
             }
@@ -711,16 +713,17 @@ fn parse_capability_fn(item: &str) -> Option<CapabilityFn> {
 }
 
 pub(super) fn parse_trait_members(body: &str) -> Vec<TraitMember> {
-    body.lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(parse_trait_member)
+    collect_logical_block_items(body)
+        .into_iter()
+        .map(|item| item.trim().to_owned())
+        .filter(|item| !item.is_empty())
+        .map(|item| parse_trait_member(&item))
         .collect()
 }
 
-fn parse_trait_member(line: &str) -> TraitMember {
-    let line = line.trim_end_matches(';').trim();
-    if let Some(rest) = line.strip_prefix("type ") {
+fn parse_trait_member(item: &str) -> TraitMember {
+    let item = item.trim_end_matches(';').trim();
+    if let Some(rest) = item.strip_prefix("type ") {
         let (name, value) = split_top_level_binding(rest).map_or((rest, None), |(name, value)| {
             (name, parse_type_ref(value).ok())
         });
@@ -731,13 +734,14 @@ fn parse_trait_member(line: &str) -> TraitMember {
             value,
         };
     }
-    if line.starts_with("fn ") {
-        return parse_fn_signature(line).map_or_else(
-            |_| TraitMember::Raw(line.to_owned()),
+    if item.starts_with("fn ") {
+        let signature_source = split_brace_item(item).map_or(item, |(head, _)| head);
+        return parse_fn_signature(signature_source).map_or_else(
+            |_| TraitMember::Raw(item.to_owned()),
             |signature| TraitMember::Function { signature },
         );
     }
-    TraitMember::Raw(line.to_owned())
+    TraitMember::Raw(item.to_owned())
 }
 
 pub(super) fn parse_impl_members(body: &str) -> Vec<ImplMember> {

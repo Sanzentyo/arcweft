@@ -122,9 +122,16 @@ impl TypeChecker<'_> {
                     .signature()
                     .return_type()
                     .map_or(TypeKind::Unit, type_ref_kind);
-                self.global_functions.insert(
-                    format!("{}.{}", item.id(), function.signature().name()),
-                    return_type,
+                let name = format!("{}.{}", item.id(), function.signature().name());
+                self.global_functions.insert(name.clone(), return_type);
+                self.global_function_effects.insert(
+                    name,
+                    function
+                        .effects()
+                        .iter()
+                        .filter_map(crate::fact_layer::capability_from_expr)
+                        .map(|capability| capability.as_str().to_owned())
+                        .collect(),
                 );
             }
         }
