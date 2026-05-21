@@ -1,6 +1,6 @@
 # Example: `?`, context, Option conversion, and error trace
 
-```awft
+```arcw
 mod game::routes::error_context_example
 
 use game::prelude::*
@@ -36,9 +36,10 @@ If `state.route_override` is `None`, `.context(...)` converts it to `Result<T, A
 
 ```text
 flow.error_context_example
-game/routes/error_context_example.awft:6
+game/routes/error_context_example.arcw:6
 state path: GameState.route_override
 context: missing route override for error_context_example
 ```
 
 If `asset.image(...)` fails, the error trace contains the `await` source location, the asset ID, and the context string.
+

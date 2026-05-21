@@ -2,7 +2,7 @@
 
 ## 関数は data-last が標準
 
-```awft
+```arcw
 fn map<A, B>(f: A -> B)(xs: Vec<A>) -> Vec<B>
 fn filter<A>(pred: A -> Bool)(xs: Vec<A>) -> Vec<A>
 fn fold<A, B>(init: B, step: (B, A) -> B)(xs: Vec<A>) -> B
@@ -10,7 +10,7 @@ fn fold<A, B>(init: B, step: (B, A) -> B)(xs: Vec<A>) -> B
 
 これにより、以下が自然になる。
 
-```awft
+```arcw
 choices
     .filter(_.enabled)
     .map(_.label)
@@ -18,13 +18,13 @@ choices
 
 desugar:
 
-```awft
+```arcw
 map(_.label)(filter(_.enabled)(choices))
 ```
 
 ## パイプ
 
-```awft
+```arcw
 choices
     |> filter(_.enabled)
     |> map(_.label)
@@ -34,19 +34,19 @@ choices
 
 ## プレースホルダ付きパイプ
 
-```awft
+```arcw
 raw_score |> clamp(0, ^, 100)
 ```
 
 展開:
 
-```awft
+```arcw
 clamp(0, raw_score, 100)
 ```
 
 `_` と `^` は役割が違う。
 
-```awft
+```arcw
 threshold |> choices.filter(_.score >= ^)
 ```
 
@@ -55,13 +55,13 @@ threshold |> choices.filter(_.score >= ^)
 
 展開:
 
-```awft
+```arcw
 choices.filter(|choice| choice.score >= threshold)
 ```
 
 ## カリー化
 
-```awft
+```arcw
 fn has_affection_at_least(character: Ref<Character>, min: i32)(state: GameState) -> Bool {
     state.affection.get(character).unwrap_or(0) >= min
 }
@@ -72,14 +72,14 @@ if state |> alice_ready { ... }
 
 ## 部分適用
 
-```awft
+```arcw
 let is_high = (_ >= 80)
 let add_alice = add_affection(@character.alice, 1)
 ```
 
 ## Seq と lazy pipeline
 
-```awft
+```arcw
 let choices =
     opening_choices()
         .seq()
@@ -92,12 +92,13 @@ let choices =
 
 ## effectful map は `traverse`
 
-```awft
+```arcw
 let images = await image_paths.traverse(asset.image).parallel(limit = 4)
 ```
 
 - `map`: pure / synchronous。
 - `traverse`: `Task` / `Need` を返す。
+
 
 
 

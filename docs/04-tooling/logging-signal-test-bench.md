@@ -4,13 +4,13 @@
 
 defmt 風に、format string を compile-time intern し、実行時は template id と typed args だけを送る。
 
-```awft
+```arcw
 log.info("selected choice {choice:?}", choice = selected.id)
 ```
 
 LogFrame:
 
-```awft
+```arcw
 pub struct LogFrame {
     pub tick: TickId,
     pub monotonic_ns: u64,
@@ -25,7 +25,7 @@ pub struct LogFrame {
 
 ## Signal
 
-```awft
+```arcw
 pub signal @signal.current_flow: Watch<Ref<Flow>>
 pub signal @signal.loading_progress: Watch<f32>
 pub signal @signal.choice_visible: Watch<Vec<Ref<ChoiceOption>>>
@@ -34,7 +34,7 @@ pub metric gauge @metric.frame_time_ms: f32
 
 更新:
 
-```awft
+```arcw
 signal.set(@signal.current_flow, @flow.opening)
 signal.set(@signal.loading_progress, p.ratio)
 metric.set(@metric.frame_time_ms, frame_time.ms())
@@ -42,7 +42,7 @@ metric.set(@metric.frame_time_ms, frame_time.ms())
 
 Signal kind:
 
-```awft
+```arcw
 Watch     最新値
 Stream    全イベント
 Counter   カウンタ
@@ -52,7 +52,7 @@ Sample    サンプル列
 
 ## assert
 
-```awft
+```arcw
 assert(state.affection[@character.alice] >= 0)
 assert_eq(route_title(@flow.opening), "Opening")
 debug_assert(choices.len() > 0)
@@ -78,7 +78,7 @@ test ID KIND { ... }
 exposes it through the Sans I/O test manifest; actual execution is delegated to
 headless/player adapters.
 
-```awft
+```arcw
 test @test.opening_listen_route scenario {
     start @flow.opening
 
@@ -95,7 +95,7 @@ test @test.opening_listen_route scenario {
 
 Visual test:
 
-```awft
+```arcw
 test @test.opening_choices_visual visual {
     start @flow.opening
     wait object @choice.opening.listen visible
@@ -117,7 +117,7 @@ and `report`. The language layer preserves these sections for tooling; timing,
 offline rendering/audio, allocation counters, and perf collection are backend
 adapter responsibilities.
 
-```awft
+```arcw
 bench @bench.opening_pipeline {
     setup { let state = fixture<GameState>("states/opening.json") }
 
@@ -134,7 +134,7 @@ bench @bench.opening_pipeline {
 
 Audio bench:
 
-```awft
+```arcw
 bench @bench.bgm_mix_120s {
     setup { play @bgm.alice_theme section @music.main }
     measure duration = 120s { render_audio_offline }
@@ -159,7 +159,7 @@ arcw memo invalidate --entity flow.opening
 
 Test:
 
-```awft
+```arcw
 test @test.choice_hook_fires scenario {
     start @flow.opening
     wait object @choice.opening.listen visible
@@ -170,7 +170,7 @@ test @test.choice_hook_fires scenario {
 
 Bench:
 
-```awft
+```arcw
 bench @bench.memo_hit_rate {
     measure iterations = 10000 {
         opening_choices().map(choice_to_view(state)).collect<Vec<ChoiceView>>()
@@ -178,4 +178,5 @@ bench @bench.memo_hit_rate {
     assert(metric.value(@metric.memo_hit_rate) >= 0.95)
 }
 ```
+
 

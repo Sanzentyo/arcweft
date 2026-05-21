@@ -144,7 +144,7 @@ WebUSB constraints:
 
 ## Device profile DSL
 
-```awft
+```arcw
 pub device @device.rhythm_pad: UsbHid {
     permission = user_prompt
 
@@ -224,14 +224,14 @@ pub type RhythmPadPort = DevicePort<RhythmPadInput, RhythmPadLights>;
 
 Generated contracts:
 
-```awft
+```arcw
 ensures parse_input_report(bytes).is_ok() => bytes.len() >= 7
 ensures output_report_bytes(value).len() == 3
 ```
 
 Generated tests:
 
-```awft
+```arcw
 test @test.rhythm_pad_report_parse fixture {
     let bytes = hex("01 03 00 10 00 00 7f")
     let report = parse RhythmPadInput from bytes?
@@ -243,7 +243,7 @@ test @test.rhythm_pad_report_parse fixture {
 
 Opening a device is `Need<Result<DevicePort, DeviceError>, TaskError>` and must show pending/denied UI in player-visible flows.
 
-```awft
+```arcw
 let pad =
     try await device.open(@device.rhythm_pad) with {
         pending p => {
@@ -261,7 +261,7 @@ let pad =
 
 Once granted, scripts do not receive raw handles. They receive a typed port and signals.
 
-```awft
+```arcw
 watch signal @signal.rhythm_pad.buttons from pad.latest().buttons
 ```
 
@@ -269,7 +269,7 @@ watch signal @signal.rhythm_pad.buttons from pad.latest().buttons
 
 Output reports and bulk writes are commands, not arbitrary host calls.
 
-```awft
+```arcw
 command device @device.rhythm_pad send RhythmPadLights {
     led_mask = 0b0000_1111
     brightness = 180
@@ -282,7 +282,7 @@ The command is validated by profile contracts and capability policy.
 
 For non-HID USB, declare endpoint ports:
 
-```awft
+```arcw
 pub device @device.led_board: UsbRaw {
     permission = user_prompt
 
@@ -342,7 +342,7 @@ Agent observation exposes typed state, not raw sensitive bytes by default.
 ```bash
 arcw device list
 arcw device inspect device.rhythm_pad
-arcw device generate game/devices/rhythm_pad.awft --out generated/
+arcw device generate game/devices/rhythm_pad.arcw --out generated/
 arcw device test device.rhythm_pad --fixture fixtures/devices/rhythm_pad.jsonl
 arcw usb list --backend nusb
 arcw usb inspect --vid 1209 --pid A001
@@ -370,14 +370,14 @@ Generated files may be handled in two ways:
 
 ```text
 Source checked-in mode:
-  generated/arcweft/devices/*.awft
+  generated/arcweft/devices/*.arcw
   generated/arcweft/devices/*.rs
 
 Cache mode:
   .arcweft/cache/devices/*
 ```
 
-For stable projects, check in generated `.awft` summaries and Rust stubs. Keep binary tables in cache.
+For stable projects, check in generated `.arcw` summaries and Rust stubs. Keep binary tables in cache.
 
 ## Implementation order
 
@@ -388,3 +388,4 @@ For stable projects, check in generated `.awft` summaries and Rust stubs. Keep b
 5. WebUSB via `web-sys`.
 6. Raw USB endpoint profiles.
 7. Agent/MCP/CLI inspection.
+

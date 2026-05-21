@@ -4,7 +4,7 @@
 
 SVGだけに頼らず、エンジン内の Vector IR を持つ。
 
-```awft
+```arcw
 pub vector @vector.icon.play {
     viewport 0 0 24 24
 
@@ -41,7 +41,7 @@ pub enum VectorItem {
 
 ## Canvas
 
-```awft
+```arcw
 Canvas(size = fill) |ctx| {
     ctx.path {
         move_to(0, 0)
@@ -54,7 +54,7 @@ Canvas は `Props + Theme + LogicalTime -> VectorScene` の純粋関数として
 
 ## SVG import
 
-```awft
+```arcw
 pub svg @svg.icon.settings from "ui/icons/settings.svg"
 sandbox {
     external_resources = false
@@ -89,4 +89,5 @@ pub enum UiRenderBackend {
     WebDomMetadataOnly,
 }
 ```
+
 

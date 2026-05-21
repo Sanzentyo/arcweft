@@ -2,7 +2,7 @@
 
 Arcweft uses `Result<T, E>` and `Option<T>` for recoverable failure and absence. For application-level failures, the default error type is `ArcError`.
 
-```awft
+```arcw
 type ArcResult<T> = Result<T, ArcError>
 ```
 
@@ -10,7 +10,7 @@ type ArcResult<T> = Result<T, ArcError>
 
 ## Error structure
 
-```awft
+```arcw
 pub struct ArcError {
     kind: ErrorKind
     message: Content
@@ -45,7 +45,7 @@ pub struct TraceFrame {
 
 ## Default trace capture
 
-When an error is created in `.awft` code, Arcweft captures:
+When an error is created in `.arcw` code, Arcweft captures:
 
 ```text
 - file path
@@ -64,7 +64,7 @@ When an error is created in `.awft` code, Arcweft captures:
 
 When the error is propagated with `?`, Arcweft appends a lightweight propagation frame at the call site.
 
-```awft
+```arcw
 let bg = load_bg()?   # Err path gets a propagation frame here
 ```
 
@@ -92,11 +92,11 @@ context:
   while entering flow flow.opening
 
 trace:
-  0: game/routes/opening.awft:12:14
+  0: game/routes/opening.arcw:12:14
      flow.opening
      await asset.image(@asset.bg.room)
 
-  1: game/routes/opening.awft:9:5
+  1: game/routes/opening.arcw:9:5
      say.opening.narration.001 / text.opening.narration.001
      地の文: 扉の向こうから、雨の音がした。[p]
 
@@ -111,13 +111,13 @@ ids:
 
 For `Result<T, E>`:
 
-```awft
+```arcw
 let image = load_image()?
 ```
 
 means:
 
-```awft
+```arcw
 let image = match load_image() {
     .Ok(v) => v
     .Err(e) => return Err(IntoError::into_error(e).at_current_site())
@@ -128,28 +128,28 @@ The error branch has type `!`, so the expression has type `Image`.
 
 For `Option<T>` in an `ArcResult` context, `None` becomes `ArcError::missing_value()` with a trace frame. Use `.context(...)` for better messages.
 
-```awft
+```arcw
 let route = state.route_override
     .context("route override is missing")?
 ```
 
 ## Context helpers
 
-```awft
+```arcw
 let save = save_slot.load()
     .context("failed to load save slot")?
 ```
 
 Lazy context:
 
-```awft
+```arcw
 let bg = load_bg(id)
     .with_context(|| "failed to load background " + fmt(id))?
 ```
 
 Typed context:
 
-```awft
+```arcw
 let voice = voice.load(@voice.alice.001)
     .context("voice load failed")
     .field("speaker", @character.alice)
@@ -158,7 +158,7 @@ let voice = voice.load(@voice.alice.001)
 
 On `Option<T>`:
 
-```awft
+```arcw
 let route = state.route_override
     .context("route override missing")?
 ```
@@ -169,7 +169,7 @@ This converts `None` to `Err(ArcError)` and attaches the context.
 
 Context can be attached to the `Need` before awaiting.
 
-```awft
+```arcw
 let bg = try await asset.image(@asset.bg.room)
     .context("while loading opening background")
 with:
@@ -182,7 +182,7 @@ This is preferred.
 
 The explicit parenthesized form is valid but not recommended for hand-written code:
 
-```awft
+```arcw
 let bg = (await asset.image(@asset.bg.room) with:
     pending p:
         scene.show(@scene.loading)
@@ -196,7 +196,7 @@ explicitly asks for prefix-`?` style.
 
 Rejected because postfix `?` groups with the expression before `with:`:
 
-```awft
+```arcw
 await asset.image(@asset.bg.room)? with:
     pending p:
         scene.show(@scene.loading)
@@ -241,7 +241,7 @@ Crash bundle:
 ```text
 crash/
   error.json
-  trace.awftx
+  trace.arcwx
   state_hash.txt
   screenshot.png
   logs.jsonl
@@ -262,7 +262,7 @@ crash/
         "kind": "Await",
         "flow": "flow.opening",
         "source": {
-          "file": "game/routes/opening.awft",
+          "file": "game/routes/opening.arcw",
           "line": 12,
           "column": 14
         },
@@ -278,5 +278,6 @@ crash/
   }
 }
 ```
+
 
 

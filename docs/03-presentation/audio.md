@@ -91,7 +91,7 @@ pub enum AudioCommand {
 
 ## Cue
 
-```awft
+```arcw
 pub cue @cue.se.click from "audio/se/click.ogg" {
     bus = @bus.se
     loudness = -18 LUFS
@@ -107,7 +107,7 @@ pub cue @cue.voice.alice.001 from "audio/voice/alice/001.ogg" {
 
 ## Mixer / Bus
 
-```awft
+```arcw
 pub audio bus @bus.master { volume = 1.0 }
 pub audio bus @bus.bgm parent @bus.master { volume = 0.8 }
 pub audio bus @bus.voice parent @bus.master { volume = 1.0 }
@@ -116,7 +116,7 @@ pub audio bus @bus.se parent @bus.master { volume = 0.9 }
 
 Mixer snapshot:
 
-```awft
+```arcw
 pub mixer snapshot @mix.dialogue {
     @bus.bgm.volume = -8db over 300ms
     @bus.voice.volume = 0db
@@ -129,7 +129,7 @@ pub mixer snapshot @mix.normal {
 
 Ducking:
 
-```awft
+```arcw
 pub ducking @duck.voice_over_bgm {
     trigger = @bus.voice
     target = @bus.bgm
@@ -141,7 +141,7 @@ pub ducking @duck.voice_over_bgm {
 
 ## BGM 再生
 
-```awft
+```arcw
 pub bgm @bgm.alice_theme {
     bus = @bus.bgm
     stem @stem.piano from "audio/bgm/alice/piano.ogg"
@@ -166,14 +166,14 @@ pub bgm @bgm.alice_theme {
 
 使用:
 
-```awft
+```arcw
 let theme = bgm(@bgm.alice_theme, section = @music.intro, fade_in = 1s)
 theme.section(@music.main)
 ```
 
 ## Adaptive music
 
-```awft
+```arcw
 pub music state @music_state.alice_theme {
     intensity: f32 = 0.0
     danger: bool = false
@@ -193,7 +193,7 @@ pub adaptive bgm @bgm.truck_chase {
 
 Activity からは `MusicStateUpdate` を出す。
 
-```awft
+```arcw
 EffectRequest::Audio(AudioCommand::SetMusicState {
     bgm: @bgm.truck_chase,
     key: "intensity",
@@ -205,7 +205,7 @@ EffectRequest::Audio(AudioCommand::SetMusicState {
 
 BGM を完全にAI生成する前提ではなく、まずはゲーム内で使える「作曲データ・編曲データ・ループ/ステム定義」を扱う。
 
-```awft
+```arcw
 pub music pattern @music.pattern.soft_piano {
     tempo = 92bpm
     key = A_minor
@@ -232,7 +232,7 @@ pub bgm @bgm.generated.alice_theme compose {
 
 生成系は `Need<Result<AudioHandle, AudioError>, TaskError>`。
 
-```awft
+```arcw
 let bgm = try await compose_bgm(@bgm.generated.alice_theme) with {
     pending p => { scene.show(@scene.loading_audio); text.show("BGMを生成中"); progress.set(p.ratio) }
 }
@@ -242,7 +242,7 @@ let bgm = try await compose_bgm(@bgm.generated.alice_theme) with {
 
 TTS は `SpeechRequest` として扱い、同期イベントを返す。
 
-```awft
+```arcw
 pub voice profile @voice.alice.tts {
     character = @character.alice
     provider = "local"      // local / web / external / product-config
@@ -255,7 +255,7 @@ pub voice profile @voice.alice.tts {
 
 読み上げ:
 
-```awft
+```arcw
 let speech = try await tts.speak(@voice.alice.tts, "おはよう。") with {
     pending p => scene.show(@scene.loading_voice); progress.set(p.ratio)
 }
@@ -277,7 +277,7 @@ pub struct TtsResult {
 
 字幕・口パク・表情同期に使う。
 
-```awft
+```arcw
 alice.say(voice=@voice.alice.tts)[おはよう。[p]]
 with {
     fallback = subtitle_only
@@ -287,7 +287,7 @@ with {
 
 ## Spatial audio
 
-```awft
+```arcw
 pub audio listener @listener.main {
     position = camera.position
     forward = camera.forward
@@ -306,7 +306,7 @@ pub spatial source @audio_source.truck_engine {
 
 2Dノベルゲームでも、左右の立ち位置に応じた panning を使える。
 
-```awft
+```arcw
 voice(@voice.alice.opening.001, speaker = alice, spatial = true) {
     position = character_position(@character.alice).to_audio_pos()
     mode = screen_space
@@ -329,7 +329,7 @@ Web:
 
 ## Contract
 
-```awft
+```arcw
 pub cue @cue.voice.alice.001 from "audio/voice/alice/001.ogg"
 requires duration <= 10s
 ensures loudness in -24LUFS..-14LUFS
@@ -337,7 +337,7 @@ ensures loudness in -24LUFS..-14LUFS
 
 BGM:
 
-```awft
+```arcw
 pub bgm @bgm.alice_theme
 ensures all sections have loop_points
 ensures no stem clips
@@ -345,7 +345,7 @@ ensures no stem clips
 
 ## Logging / Signal
 
-```awft
+```arcw
 pub signal @signal.current_bgm: Watch<Ref<Bgm>>
 pub signal @signal.audio_bus_levels: Watch<OrderedMap<Ref<AudioBus>, f32>>
 pub signal @signal.tts_progress: Watch<f32>
@@ -359,7 +359,7 @@ log.info(
 
 ## Test
 
-```awft
+```arcw
 test @test.bgm_loop_points audio {
     render_audio @bgm.alice_theme section @music.main duration 64bars
     assert(no_clicks_at_loop())
@@ -402,3 +402,4 @@ arcweft.audio_wait_until_finished
 4. `arcweft-audio-tts` で provider trait と cache を実装。
 5. native/web backend を adapter として分離。
 6. Agent/test/bench から観測できるように signal/metric を出す。
+

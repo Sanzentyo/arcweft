@@ -4,7 +4,7 @@ Arcweft errors preserve source, ID, and runtime trace information by default.
 
 The default user-facing error type is `ArcError`.
 
-```awft
+```arcw
 pub struct ArcError {
     kind: ErrorKind
     message: Content
@@ -22,7 +22,7 @@ The trace is displayed by default in dev/test and summarized in product builds.
 
 ## ErrorTrace
 
-```awft
+```arcw
 pub struct ErrorTrace {
     frames: Vec<ErrorFrame>
     state_hash: Option<StateHash>
@@ -33,7 +33,7 @@ pub struct ErrorTrace {
 
 Frame kinds:
 
-```awft
+```arcw
 pub enum ErrorFrame {
     Flow {
         flow: Ref<Flow>,
@@ -97,11 +97,11 @@ context:
   while entering flow flow.opening
 
 trace:
-  0: game/routes/opening.awft:12:14
+  0: game/routes/opening.arcw:12:14
      flow.opening
      await asset.image(@asset.bg.room)?
 
-  1: game/routes/opening.awft:9:5
+  1: game/routes/opening.arcw:9:5
      say.opening.narration.001 / text.opening.narration.001
      地の文: 扉の向こうから、雨の音がした。[p]
 
@@ -116,7 +116,7 @@ ids:
 
 `.context(...)` and `.with_context(...)` append context frames without discarding the original cause.
 
-```awft
+```arcw
 let bg = try await asset.image(@asset.bg.room)
     .context("while loading opening background")
 with:
@@ -129,7 +129,7 @@ with:
 
 Parenthesized whole-await context is valid but not preferred:
 
-```awft
+```arcw
 let bg = (await asset.image(@asset.bg.room) with:
     pending p:
         scene.show(@scene.loading)
@@ -139,7 +139,7 @@ let bg = (await asset.image(@asset.bg.room) with:
 
 Rejected:
 
-```awft
+```arcw
 await asset.image(@asset.bg.room)? with:
     pending p:
         scene.show(@scene.loading)
@@ -189,7 +189,7 @@ Crash bundle:
 ```text
 crash/
   error.json
-  trace.awftx
+  trace.arcwx
   state_hash.txt
   screenshot.png
   logs.jsonl
@@ -210,7 +210,7 @@ crash/
         "kind": "Await",
         "flow": "flow.opening",
         "source": {
-          "file": "game/routes/opening.awft",
+          "file": "game/routes/opening.arcw",
           "line": 12,
           "column": 14
         },
@@ -226,4 +226,5 @@ crash/
   }
 }
 ```
+
 

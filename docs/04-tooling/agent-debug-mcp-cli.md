@@ -11,7 +11,7 @@ Runtime observation now has a Phase 2.0 headless slice through `arcw run --json`
 The shared diagnostic/action schema produced by `arcweft-verify` and consumed by
 CLI/LSP remains the connection point for future Agent tools.
 
-```awft
+```arcw
 pub trait AgentDebugBus {
     fn observe(&mut self, req: ObserveRequest) -> Result<Observation, AgentError>;
     fn act(&mut self, action: AgentAction) -> Result<ActionResult, AgentError>;
@@ -22,7 +22,7 @@ pub trait AgentDebugBus {
 
 ## Observation
 
-```awft
+```arcw
 pub struct Observation {
     pub session_id: SessionId,
     pub tick: TickId,
@@ -55,7 +55,7 @@ pub struct Observation {
 
 Physical:
 
-```awft
+```arcw
 PointerClick { x, y, space, button }
 PointerDrag { from, to, duration_ms }
 KeyDown / KeyUp
@@ -64,7 +64,7 @@ TypeText
 
 Semantic:
 
-```awft
+```arcw
 Invoke { target, action, args }
 SelectChoice { choice }
 AdvanceText
@@ -133,7 +133,7 @@ arcweft.shader_preview
 
 Capabilities:
 
-```awft
+```arcw
 pub struct AgentPermissions {
     pub observe_image: bool,
     pub observe_state: bool,
@@ -146,3 +146,4 @@ pub struct AgentPermissions {
 ```
 
 Product mode は token、audit log、debug indicator、redaction 必須。
+

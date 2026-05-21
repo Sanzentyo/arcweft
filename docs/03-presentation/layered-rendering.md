@@ -117,7 +117,7 @@ pub struct LayerOrder {
 
 ## LayerRenderSpec
 
-```awft
+```arcw
 pub enum LayerRenderSpec {
     Empty,
     Sprite(SpriteSpec),
@@ -212,7 +212,7 @@ pub enum ObservationSource {
 
 ## DSL: layer 宣言
 
-```awft
+```arcw
 layer @layer.world: World {
     z = 0
     input = passthrough
@@ -231,7 +231,7 @@ layer @layer.modal: Modal {
 
 Scene 内で layer を使う。
 
-```awft
+```arcw
 scene.show(@scene.opening)
 scope {
     layer @layer.background {
@@ -254,7 +254,7 @@ scope {
 
 短く書く場合:
 
-```awft
+```arcw
 scene.show(@scene.opening)
 scope {
     background layer @layer.background image(@asset.bg.room)
@@ -267,7 +267,7 @@ scope {
 
 Game Native UI component は内部的に layer subtree を生成する。
 
-```awft
+```arcw
 component ChoiceList(choices: Vec<ChoiceView>) -> View {
     VStack {
         ForEach(choices, id = _.id) |choice| {
@@ -285,7 +285,7 @@ UI component の `.layer(...)` は描画先 layer と入力 policy を決める�
 
 Rust/WASM/外部 process の Activity も layer を持つ。
 
-```awft
+```arcw
 activity @activity.truck_game TruckGame {
     layer @layer.activity.truck {
         z = 50
@@ -301,7 +301,7 @@ Activity が portable render command を返す場合、その command は該当 
 
 HTML UI は `HtmlUi` layer として扱う。
 
-```awft
+```arcw
 html panel @ui.settings_html from "ui/settings.html" {
     layer @layer.html.settings
     bounds = rect(0, 0, 100vw, 100vh)
@@ -315,7 +315,7 @@ Native では Servo、Web では DOM に差し替えるが、Layer Tree 上で�
 
 layer 単位で shader を適用できる。
 
-```awft
+```arcw
 layer @layer.dialogue {
     TextBox(current_text())
 }
@@ -330,7 +330,7 @@ Group layer に shader を付けると、その subtree を offscreen target へ
 
 Layer にも契約を持てる。
 
-```awft
+```arcw
 layer @layer.modal: Modal
 ensures input.blocks_lower_layers
 ensures z > layer(@layer.dialogue).z
@@ -341,7 +341,7 @@ ensures z > layer(@layer.dialogue).z
 
 UI component の contract と組み合わせる。
 
-```awft
+```arcw
 component ChoiceButton(choice: ChoiceView) -> View
 ensures result.layer.input.accepts_click
 ensures result.has_action("select")
@@ -352,7 +352,7 @@ ensures result.has_action("select")
 
 ## Test
 
-```awft
+```arcw
 test @test.layer_order_opening visual {
     start @flow.opening
 
@@ -367,7 +367,7 @@ test @test.layer_order_opening visual {
 
 Layer は hook 対象である。描画・入力・layout・Agent 観測の各 phase に hook を付けられる。
 
-```awft
+```arcw
 layer @layer.choices: Choice {
     z = 550
     input = hit_test
@@ -392,4 +392,5 @@ check on change layout
 ```
 
 入力 routing では hook の `InputDisposition` が routing 結果に影響する。Modal、pointer capture、debug overlay、Agent overlay はこの仕組みで共通化される。
+
 

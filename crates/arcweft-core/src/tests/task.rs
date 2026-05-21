@@ -71,7 +71,7 @@ fn task_spec_uses_typed_request_and_debug_label() {
 fn host_task_request_covers_sans_io_adapter_work() {
     let requests = [
         HostTaskRequest::FileReadText(FileReadTextRequest {
-            path: "game/config.awft".to_owned(),
+            path: "game/config.arcw".to_owned(),
         }),
         HostTaskRequest::FileReadBytes(FileReadBytesRequest {
             path: "game/blob.bin".to_owned(),

@@ -2,7 +2,7 @@
 
 ## 最小例
 
-```awft
+```arcw
 mod crate::game::routes::opening
 
 use crate::game::prelude::*
@@ -50,7 +50,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
 ## `@` 参照
 
-```awft
+```arcw
 goto @flow.alice_intro
 image(@asset.bg.room)
 #[link(Flow, @flow.alice_intro, level = .soft)]
@@ -58,7 +58,7 @@ image(@asset.bg.room)
 
 境界明示が必要なとき:
 
-```awft
+```arcw
 let result = try await @<activity.truck_game>.run(input) with:
     pending p:
         scene.show(@scene.loading)
@@ -70,7 +70,7 @@ let result = try await @<activity.truck_game>.run(input) with:
 
 Relative ID forms:
 
-```awft
+```arcw
 alice(id=@.opening): おはよう。[p]
 alice(id=@..shared): 共有スコープの台詞です。[p]
 alice(id=@...outer_shared): さらに外側のスコープの台詞です。[p]
@@ -84,7 +84,7 @@ scope outward, so `@...suffix` means two levels up. `@super.suffix` and
 
 ## Literals and primitive values
 
-```awft
+```arcw
 let count: i32 = 10
 let explicit = 10i32
 let alpha: f32 = 2.0
@@ -102,7 +102,7 @@ only when the expected type is `Color`.
 
 ## `[[...]]` コメントリンク
 
-```awft
+```arcw
 /// この台詞は [[flow.alice_intro]] の伏線。
 /// Aliceの好感度は [[state.GameState.affection]] で管理する。
 ```
@@ -111,7 +111,7 @@ only when the expected type is `Color`.
 
 flow 内では、時間のかかる処理に待機時の表示が必須。
 
-```awft
+```arcw
 let assets = try await load_opening_assets() with {
     pending p => {
         scene.show(@scene.loading)
@@ -129,7 +129,7 @@ let assets = try await load_opening_assets() with {
 
 UI でも lazy 値の暗黙 force は禁止。
 
-```awft
+```arcw
 AwaitView(typeset(@typeset.credits)) {
     pending p => Text("組版中")
     ready doc => TypesetView(doc)
@@ -141,7 +141,7 @@ AwaitView(typeset(@typeset.credits)) {
 
 ## Object hooks / memoization
 
-```awft
+```arcw
 hook @hook.opening.choice_visible
 on @choice.opening.listen
 phase AfterLayout
@@ -163,7 +163,7 @@ scope = session
 
 ## Object hook
 
-```awft
+```arcw
 hook @hook.choice.listen_visible
 on @choice.opening.listen
 phase VisibilityChanged
@@ -177,7 +177,7 @@ once
 
 ## memo
 
-```awft
+```arcw
 memo fn visible_opening_choices(state: GameState) -> Vec<ChoiceView>
 key = (state.route, state.flags, state.affection)
 scope = frame
@@ -200,7 +200,7 @@ Object hook と memoization の詳細は [Object Hook / 条件チェック / Mem
 
 For ordinary visual novel writing, Arcweft provides compact line-oriented syntax directly inside `flow`. It is documented in [Flow-Integrated Scenario Syntax / Dialogue Sugar](scenario-surface-syntax.md). Dialogue tags and ruby are documented in [Dialogue Control Tags, Ruby, and Inline Hooks](dialogue-control-tags-and-ruby.md).
 
-```awft
+```arcw
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     bg(@asset.bg.room, fade = 300ms)
     show(@character.alice, .smile, at = .center)
@@ -220,4 +220,5 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 ```
 
 There is no separate `script` item. Concise dialogue statements and typed Arcweft statements are both `FlowItem`s.
+
 

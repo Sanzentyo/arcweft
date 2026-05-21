@@ -1,6 +1,6 @@
 # Audio / BGM / TTS example
 
-```awft
+```arcw
 pub audio bus @bus.master { volume = 1.0 }
 pub audio bus @bus.bgm parent @bus.master { volume = 0.8 }
 pub audio bus @bus.voice parent @bus.master { volume = 1.0 }
@@ -41,4 +41,5 @@ flow @flow.voice_demo demo(state: GameState) -> Result<FlowExit, FlowError> {
     Ok(FlowExit::Done)
 }
 ```
+
 

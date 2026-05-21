@@ -136,7 +136,7 @@ Borrow: &'a T, &'a mut T
 最初の縦断シナリオ:
 
 ```text
-.awft opening
+.arcw opening
   → parse / HIR / typecheck
   → graph build
   → headless run
@@ -148,4 +148,5 @@ Borrow: &'a T, &'a mut T
 ```
 
 これが通れば、以後の WGSL、Audio、UI、JIT、RAG は同じ土台へ載せられる。
+
 

@@ -361,7 +361,7 @@ memory. Reads from an upper scope are allowed when the key is guaranteed, or
 when the access is optional such as `'flow.flags?`. Writes to upper scopes lower
 to replayable state-update events and require explicit capabilities.
 
-```awft
+```arcw
 flow @flow.opening opening(state: GameState)
 effects { state.write('flow), state.write('global) }
 {
@@ -458,3 +458,4 @@ Memoization は pure evaluation と task scheduling の両方に統合される�
 `arcweft-core` は hook を直接副作用として実行しない。各 phase で `HookOutput` を生成し、phase boundary で `GameEvent` / `Command` / `SignalUpdate` として取り込む。
 
 Memoization は `arcweft-core` の意味論を変えない。cache hit/miss は state hash に含めず、pure computation の結果だけを再利用する。詳細は [Hook Runtime / Memo Runtime](hooks-memoization.md) を参照。
+

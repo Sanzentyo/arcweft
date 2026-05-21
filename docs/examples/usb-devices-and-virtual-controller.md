@@ -12,7 +12,7 @@ Related docs:
 
 ## Device declarations
 
-```awft
+```arcw
 mod game::devices
 
 pub device @device.motion_sensor: UsbRaw {
@@ -57,7 +57,7 @@ pub device @device.serial_knob: Serial {
 
 ## Virtual controller
 
-```awft
+```arcw
 mod game::ui::touch_controller
 
 pub virtual_controller @controller.default_touch {
@@ -96,7 +96,7 @@ pub virtual_controller @controller.default_touch {
 
 ## Flow usage
 
-```awft
+```arcw
 pub flow @flow.device_setup setup_devices(state: GameState) -> Result<FlowExit, FlowError> {
     let sensor =
         try await device.open(@device.motion_sensor) with {
@@ -122,7 +122,7 @@ pub flow @flow.device_setup setup_devices(state: GameState) -> Result<FlowExit, 
 
 ## Layer integration
 
-```awft
+```arcw
 layer @layer.touch_controls {
     kind = ui
     input = capture_if_hit
@@ -149,8 +149,9 @@ wait signal signal.device_ready == true
 ## Generator commands
 
 ```bash
-arcw device gen game/devices.awft
+arcw device gen game/devices.arcw
 arcw device check
 arcw device simulate @device.motion_sensor --fixture fixtures/devices/motion_sensor.ndjson
-arcw test game/controllers/touch_controller.awft
+arcw test game/controllers/touch_controller.arcw
 ```
+

@@ -2,19 +2,19 @@
 
 外部入力は必ず `Parser<T, ParseError>` を通す。
 
-```awft
+```arcw
 pub type Parser<T, E>
 ```
 
 parse は `Result<T, ParseError>` を返す。
 
-```awft
+```arcw
 fn parse<T>(parser: Parser<T, ParseError>, input: String) -> Result<T, ParseError>
 ```
 
 ## Player command parser
 
-```awft
+```arcw
 pub enum PlayerCommand {
     Choose { id: Ref<ChoiceOption> },
     Advance,
@@ -40,7 +40,7 @@ ensures result.is_err() => result.err().span.len() > 0
 
 ## Agent script parser
 
-```awft
+```arcw
 pub parser parse_agent_script: Parser<Vec<AgentScriptCommand>, ParseError> {
     many line {
         alt {
@@ -56,7 +56,7 @@ pub parser parse_agent_script: Parser<Vec<AgentScriptCommand>, ParseError> {
 
 ## ref_id<T>()
 
-```awft
+```arcw
 pub parser ref_id<T>: Parser<Ref<T>, ParseError>
 where T: EntityKind
 ```
@@ -71,7 +71,7 @@ choice.opening.listen
 
 ## ParseError
 
-```awft
+```arcw
 pub struct ParseError {
     pub span: TextRange,
     pub expected: Vec<ExpectedToken>,
@@ -83,7 +83,7 @@ pub struct ParseError {
 
 ## zero-copy parser
 
-```awft
+```arcw
 pub parser parse_image_header<'a>: Parser<ImageHeader<'a>, ParseError>
 input &'a [u8]
 ensures result.is_ok() => result.unwrap().width > 0
@@ -93,6 +93,7 @@ ensures result.is_ok() => result.unwrap().width > 0
 ```
 
 borrow は await/yield を跨げない。
+
 
 
 

@@ -113,7 +113,7 @@ fn run_tooling_command(
     options: &ToolingCommandOptions,
     mut run_one: impl FnMut(&str) -> Result<ToolingEditReport, arcweft_tooling::ToolingError>,
 ) -> Result<(), ExitCode> {
-    let paths = collect_awft_paths(&options.path)?;
+    let paths = collect_arcw_paths(&options.path)?;
     let mut reports = Vec::new();
     for path in paths {
         let source = fs::read_to_string(&path).map_err(|error| {
@@ -920,8 +920,8 @@ fn load_and_check(path: &Path) -> Result<CheckedModule, ExitCode> {
 }
 
 fn load_and_check_with_env(path: &Path, env: &TypeCheckEnv) -> Result<CheckedModule, ExitCode> {
-    if !is_awft_path(path) {
-        eprintln!("error: {} is not an .awft source file", path.display());
+    if !is_arcw_path(path) {
+        eprintln!("error: {} is not an .arcw source file", path.display());
         return Err(ExitCode::from(2));
     }
     let source = fs::read_to_string(path).map_err(|error| {
@@ -1254,10 +1254,10 @@ fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), ExitCod
     })
 }
 
-fn collect_awft_paths(path: &Path) -> Result<Vec<PathBuf>, ExitCode> {
+fn collect_arcw_paths(path: &Path) -> Result<Vec<PathBuf>, ExitCode> {
     if path.is_file() {
-        if !is_awft_path(path) {
-            eprintln!("error: {} is not an .awft source file", path.display());
+        if !is_arcw_path(path) {
+            eprintln!("error: {} is not an .arcw source file", path.display());
             return Err(ExitCode::from(2));
         }
         return Ok(vec![path.to_path_buf()]);
@@ -1280,7 +1280,7 @@ fn collect_awft_paths(path: &Path) -> Result<Vec<PathBuf>, ExitCode> {
             let entry_path = entry.path();
             if entry_path.is_dir() {
                 stack.push(entry_path);
-            } else if is_awft_path(&entry_path) {
+            } else if is_arcw_path(&entry_path) {
                 paths.push(entry_path);
             }
         }
@@ -1289,9 +1289,9 @@ fn collect_awft_paths(path: &Path) -> Result<Vec<PathBuf>, ExitCode> {
     Ok(paths)
 }
 
-fn is_awft_path(path: &Path) -> bool {
+fn is_arcw_path(path: &Path) -> bool {
     path.extension()
-        .is_some_and(|extension| extension == "awft")
+        .is_some_and(|extension| extension == "arcw")
 }
 
 fn emit_smt(path: &Path, report: &VerificationReport) -> Result<(), ExitCode> {

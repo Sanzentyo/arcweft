@@ -23,9 +23,9 @@ key,locale,speaker,source_text,target_text,status,source_hash,voice,context,note
 | `context` | flow, choice, UI component, or other context ID |
 | `notes` | translator/reviewer notes |
 
-## `.awftloc` schema
+## `.arcwloc` schema
 
-```awft
+```arcw
 locale en-US from ja-JP {
     line text.opening.alice.002 {
         speaker = @character.alice
@@ -68,3 +68,4 @@ DialogueLine.text_key
 ```
 
 `voice auto` follows the same locale-aware fallback chain, then optional TTS fallback.
+

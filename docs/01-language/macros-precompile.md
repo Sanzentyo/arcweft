@@ -2,7 +2,7 @@
 
 ## 宣言的 macro
 
-```awft
+```arcw
 macro choice_route($id, $label, $target) {
     option $id $label => goto $target
 }
@@ -14,7 +14,7 @@ choice @choice.opening.first {
 
 ## attribute macro
 
-```awft
+```arcw
 #[derive(Serialize, Debug, Format)]
 pub enum GameEvent { ... }
 ```
@@ -23,7 +23,7 @@ pub enum GameEvent { ... }
 
 Template は型付きの高水準 macro。
 
-```awft
+```arcw
 template route_gate(
     character: Ref<Character>,
     required: i32,
@@ -41,7 +41,7 @@ template route_gate(
 
 Rust/WASM で実装された precompiler を module item として扱う。
 
-```awft
+```arcw
 extern precompile mod route_tools from wasm "tools/route_tools.wasm" {
     pub macro generate_route_map
     pub derive RouteCoverage
@@ -55,7 +55,7 @@ mod generated_routes
 
 precompile 出力は raw text ではなく構造化する。
 
-```awft
+```arcw
 pub enum PrecompileOutput {
     ExpandedAst(AstFragment),
     GraphPatch(GraphPatch),
@@ -68,7 +68,7 @@ pub enum PrecompileOutput {
 
 precompile 生成物も `ModuleItem` として lazy realization できる。
 
-```awft
+```arcw
 lazy use generated::route_map::{RouteMap}
 ```
 
@@ -77,4 +77,5 @@ lazy use generated::route_map::{RouteMap}
 - macro expansion は source map を持つ。
 - generated entity にも EntityId を付ける。
 - Graph/RAG/JJ history は macro-generated item を追跡できる。
+
 

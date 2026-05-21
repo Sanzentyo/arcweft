@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn exposes_source_actions_and_inlay_hints() {
-        let uri = "file:///game/routes/opening.awft"
+        let uri = "file:///game/routes/opening.arcw"
             .parse::<Uri>()
             .expect("uri");
         let source = "flow @.opening opening {\n    alice: hi[p]\n}\n";

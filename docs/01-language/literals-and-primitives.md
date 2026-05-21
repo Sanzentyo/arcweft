@@ -49,7 +49,7 @@ use fixed-width integer types instead.
 
 Integer literals preserve their raw spelling, radix, and optional suffix.
 
-```awft
+```arcw
 0
 1_000
 0xffu8
@@ -62,7 +62,7 @@ Integer literals preserve their raw spelling, radix, and optional suffix.
 
 Float literals preserve their raw spelling and optional suffix.
 
-```awft
+```arcw
 1.0
 0.5
 1e-3
@@ -76,7 +76,7 @@ are not separate literal tokens.
 
 Unsuffixed numeric literals require an expected type.
 
-```awft
+```arcw
 let a: i32 = 10       // OK
 let b: f32 = 2.0      // OK
 let c = 10            // error: no expected numeric type
@@ -86,7 +86,7 @@ let e = 2.0f32        // OK
 
 Function signatures also provide expected types.
 
-```awft
+```arcw
 fn add_affection(delta: i32) -> () { ... }
 
 add_affection(3)      // OK: expected i32
@@ -121,7 +121,7 @@ TextCluster:
 Single-character literals use a Rust-like string body with a `c` suffix. The
 body must decode to exactly one Unicode scalar value.
 
-```awft
+```arcw
 let a: Char = "a"c
 let newline: Char = "\n"c
 let light: Char = "💡"c
@@ -130,7 +130,7 @@ let hiragana: Char = "\u{3042}"c
 
 Rejected forms:
 
-```awft
+```arcw
 let empty: Char = ""c
 let two_scalars: Char = "ab"c
 let combining_sequence: Char = "e\u{301}"c
@@ -164,7 +164,7 @@ Audio / music:
 
 Examples:
 
-```awft
+```arcw
 let fade: Duration = 300ms
 let frame: Duration = 16_666us
 let hold: Duration = 1.5s
@@ -183,7 +183,7 @@ let tempo = 92bpm
 `%` is a unit suffix only when it is adjacent to the number. With whitespace it
 is the remainder operator.
 
-```awft
+```arcw
 50%       // unit-number literal
 a % b     // remainder
 ```
@@ -196,7 +196,7 @@ Formatters should normalize uppercase audio units such as `LUFS` to lowercase
 Color is not a bare `#fff` token. It is a normal string literal interpreted as
 `Color` only when the expected type is `Color`.
 
-```awft
+```arcw
 let s: String = "#fff"
 let c: Color = "#fff"
 
@@ -217,7 +217,7 @@ Accepted color strings in `Color` context:
 MVP `Color` is sRGB RGBA. Future color-space-specific values should use
 constructors rather than prefix literals.
 
-```awft
+```arcw
 let c1: Color = "#7aa2ff"
 let c2 = Color::srgb("#7aa2ff")?
 let c3 = Color::linear_srgb(r = 0.2f32, g = 0.4f32, b = 0.8f32, a = 1.0f32)
@@ -227,7 +227,7 @@ let c3 = Color::linear_srgb(r = 0.2f32, g = 0.4f32, b = 0.8f32, a = 1.0f32)
 
 Normal strings use Rust-like escapes.
 
-```awft
+```arcw
 "hello"
 "line\nbreak"
 "quote: \""
@@ -235,7 +235,7 @@ Normal strings use Rust-like escapes.
 
 Raw strings use Rust-like raw string syntax.
 
-```awft
+```arcw
 r"raw string"
 r#"raw string with " quotes"#
 r##"raw string with "# inside"##
@@ -244,7 +244,7 @@ r##"raw string with "# inside"##
 MVP does not include JavaScript-style template literals. Use formatting
 functions for interpolation:
 
-```awft
+```arcw
 format("score={score}", score = score)
 ```
 
@@ -292,3 +292,4 @@ pub struct CharLiteral {
 
 `Literal::Color` should not exist in the syntax AST. Color is a typed
 interpretation of string literals.
+

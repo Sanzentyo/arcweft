@@ -18,7 +18,7 @@ Related:
 
 Arcweft prelude defines a global default dialogue textbox:
 
-```awft
+```arcw
 pub textbox @textbox.0 default_textbox {
     layer = @layer.ui.dialogue
     position = bottom
@@ -30,7 +30,7 @@ pub textbox @textbox.0 default_textbox {
 
 When no window is specified, `@textbox.0` is used.
 
-```awft
+```arcw
 alice.say()[おはよう。[p]]
 
 alice: おはよう。[p]
@@ -44,7 +44,7 @@ Both update `@textbox.0` by default.
 
 A project may replace the default window for all ordinary lines:
 
-```awft
+```arcw
 pub textbox @textbox.main main_textbox {
     layer = @layer.ui.dialogue
     position = bottom
@@ -59,7 +59,7 @@ dialogue defaults {
 
 After this, speaker syntax uses `@textbox.main`:
 
-```awft
+```arcw
 alice: ここは main_textbox に出る。[p]
 ```
 
@@ -69,7 +69,7 @@ alice: ここは main_textbox に出る。[p]
 
 Text windows can be addressed explicitly:
 
-```awft
+```arcw
 pub textbox @textbox.side side_note {
     layer = @layer.ui.overlay
     position = right
@@ -80,7 +80,7 @@ pub textbox @textbox.side side_note {
 
 Use it from a line:
 
-```awft
+```arcw
 narrator.say(window=@textbox.side)[
     右側の注釈ウィンドウに出る。[p]
 ]
@@ -88,7 +88,7 @@ narrator.say(window=@textbox.side)[
 
 Or use object style:
 
-```awft
+```arcw
 @<textbox.side>.append()[
     注釈を追加する。
 ]
@@ -98,7 +98,7 @@ Or use object style:
 
 Textbox methods are typed and effect-checked:
 
-```awft
+```arcw
 pub trait TextboxObject {
     fn append(self: Ref<Textbox>) -> TextboxContentCall
     fn clear(self: Ref<Textbox>) -> Command
@@ -113,7 +113,7 @@ pub trait TextboxObject {
 
 Character definitions may include text colors and nameplate styles. This keeps ordinary dialogue concise.
 
-```awft
+```arcw
 pub character @character.alice alice {
     display_name ja-JP = "アリス"
     display_name en-US = "Alice"
@@ -130,7 +130,7 @@ pub character @character.alice alice {
 
 Then:
 
-```awft
+```arcw
 alice: おはよう。[p]
 ```
 
@@ -138,7 +138,7 @@ uses Alice's default dialogue style.
 
 Narration uses the built-in narrator style:
 
-```awft
+```arcw
 地の文: 扉の向こうから、雨の音がした。[p]
 ```
 
@@ -148,7 +148,7 @@ Narration uses the built-in narrator style:
 
 The project may declare default hooks, reveal behavior, voice behavior, and text-textbox behavior.
 
-```awft
+```arcw
 dialogue defaults {
     window = @textbox.0
     reveal = typewriter(speed=normal)
@@ -165,7 +165,7 @@ dialogue defaults {
 
 Line-specific settings override defaults:
 
-```awft
+```arcw
 alice.say(window=@textbox.side, reveal=instant)[
     ここだけ即時表示。[p]
 ]
@@ -179,13 +179,13 @@ A common pattern is changing line color depending on whether the line has been r
 
 Built-in hook:
 
-```awft
+```arcw
 @hook.dialogue.read_state_color
 ```
 
 Conceptual behavior:
 
-```awft
+```arcw
 hook @hook.dialogue.read_state_color
 on query DialogueLine
 phase before_text_style
@@ -200,7 +200,7 @@ check on change ctx.line.read_state
 
 Use globally:
 
-```awft
+```arcw
 dialogue defaults {
     hooks {
         before_text_style += @hook.dialogue.read_state_color
@@ -210,7 +210,7 @@ dialogue defaults {
 
 Use locally:
 
-```awft
+```arcw
 alice.say(hooks=[@hook.dialogue.read_state_color])[
     この行だけ既読色フックを明示する。[p]
 ]
@@ -222,7 +222,7 @@ alice.say(hooks=[@hook.dialogue.read_state_color])[
 
 Dialogue hooks receive a typed context.
 
-```awft
+```arcw
 pub struct DialogueHookCtx {
     line: DialogueLineInfo
     character: CharacterInfo
@@ -238,7 +238,7 @@ pub struct DialogueHookCtx {
 
 A hook returns either no change or a patch:
 
-```awft
+```arcw
 pub enum DialoguePatch {
     None,
     ReplaceText(RichText),
@@ -257,7 +257,7 @@ Hooks are deterministic unless declared otherwise. Product builds may disable no
 
 Text windows can have contracts.
 
-```awft
+```arcw
 pub textbox @textbox.0 default_textbox
 ensures layout.width > 0
 ensures layout.height > 0
@@ -269,7 +269,7 @@ ensures agent_observable == true
 
 Line calls can assert that the active textbox is available:
 
-```awft
+```arcw
 alice.say(window=@textbox.side)
 requires textbox.visible == true
 [
@@ -298,5 +298,6 @@ Text windows expose:
 ```
 
 This lets LLM debuggers inspect whether a line is visible, partially revealed, read/unread, or blocked by a wait tag.
+
 
 

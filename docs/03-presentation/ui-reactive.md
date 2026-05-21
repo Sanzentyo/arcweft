@@ -4,7 +4,7 @@ Game Native UI は SwiftUI 風の宣言的・リアクティブ UI。HTML/CSS �
 
 ## Component
 
-```awft
+```arcw
 pub component @ui.settings SettingsPanel(
     config: Binding<Config>,
     props: SettingsProps,
@@ -40,7 +40,7 @@ pub component @ui.settings SettingsPanel(
 
 Binding は直接 state を破壊的に書き換えず、lens + event/command。
 
-```awft
+```arcw
 Slider(value = bind state.config.master_volume, range = 0.0..1.0)
 ```
 
@@ -73,7 +73,7 @@ pub enum UiDependency {
 
 ## View / Modifier
 
-```awft
+```arcw
 Text("聞いてみる")
     .font(.body)
     .padding(x = 24, y = 12)
@@ -87,7 +87,7 @@ Text("聞いてみる")
 
 UI でも `Need` の暗黙 force は禁止。
 
-```awft
+```arcw
 AwaitView(load_avatar(user)) {
     pending _ => SkeletonCircle()
     ready img => Image(img)
@@ -116,7 +116,7 @@ pub struct UiNode {
 
 UI component は dependency tracking によって必要部分だけ再評価される。高価な派生値には `memo` を使う。
 
-```awft
+```arcw
 component @ui.choice_list ChoiceList(state: GameState) -> View {
     memo choices key state.route, state.affection {
         opening_choices()
@@ -133,7 +133,7 @@ component @ui.choice_list ChoiceList(state: GameState) -> View {
 
 UI node には hook を付けられる。
 
-```awft
+```arcw
 hook @hook.choice_button_has_action
 on query UiNode where role == .Choice
 phase AfterLayout
@@ -141,4 +141,5 @@ phase AfterLayout
     assert(object.actions.contains("select"))
 }
 ```
+
 

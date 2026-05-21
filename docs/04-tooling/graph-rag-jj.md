@@ -2,11 +2,11 @@
 
 ## Source of truth
 
-- `.awft` source と `.arcweft/entities.toml` / `.arcweft/links.toml` が versioned。
+- `.arcw` source と `.arcweft/entities.toml` / `.arcweft/links.toml` が versioned。
 - graph DB、RAG index、history index は派生 cache。
 
 ```text
-game/**/*.awft
+game/**/*.arcw
   ↓ parse/lower
 Typed Narrative Graph
   ↓
@@ -137,4 +137,5 @@ pub struct RagContextPack {
     pub patch_schema: JsonSchema,
 }
 ```
+
 

@@ -85,7 +85,7 @@ pub struct Watch<T> {
 
 `Need<T, E>` never coerces into `T`. A visible `flow` or `component` must describe what to show while it is pending.
 
-```awft
+```arcw
 let usb =
     try await device.usb(@device.light_panel) with {
         pending p => {
@@ -105,7 +105,7 @@ transforms and for processing a granted stream or port. It must return
 `Stream<T, E>`; `Source<T, E>` is reserved for policy-backed `source`
 declarations.
 
-```awft
+```arcw
 stream fn rms_level(
     frames: Stream<AudioFrame, AudioError>,
 ) -> Stream<f32, AudioError> {
@@ -121,7 +121,7 @@ stream fn rms_level(
 
 The following is not allowed:
 
-```awft
+```arcw
 stream fn unsafe_open_mic() -> Stream<AudioFrame, AudioError> {
     // error: stream fn cannot open devices directly
     let mic = capture.microphone(@capture.player_microphone)
@@ -130,7 +130,7 @@ stream fn unsafe_open_mic() -> Stream<AudioFrame, AudioError> {
 
 Use a granted capture handle instead:
 
-```awft
+```arcw
 let mic =
     try await capture.microphone(@capture.player_microphone) with {
         pending p => scene.show(@scene.permission_wait); progress.set(p.ratio)
@@ -157,7 +157,7 @@ source @source.id: Source<T, E> { on item value => yield value }
 
 Source declarations are declarative and policy-driven:
 
-```awft
+```arcw
 pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     from capture.camera(@capture.face_camera)
     backpressure = latest
@@ -185,7 +185,7 @@ The following may not cross `yield`:
 - raw pointer,
 - borrowed device callback buffer.
 
-```awft
+```arcw
 stream fn bad<'frame>(bytes: &'frame [u8]) -> Stream<u8, Unit> {
     yield bytes[0] // error if bytes is a frame-local borrow that may not outlive yield
 }
@@ -193,7 +193,7 @@ stream fn bad<'frame>(bytes: &'frame [u8]) -> Stream<u8, Unit> {
 
 Own or lease the data explicitly:
 
-```awft
+```arcw
 stream fn ok(bytes: Bytes) -> Stream<u8, Unit> {
     yield bytes[0]
 }
@@ -248,7 +248,7 @@ The following are equivalent:
 let levels = mic.frames().stream_map(rms)
 ```
 
-```awft
+```arcw
 let levels = stream {
     for frame in mic.frames() {
         yield rms(frame)
@@ -268,3 +268,4 @@ Use Watch for latest value.
 Use generator syntax only in explicit seq/stream/source contexts.
 Never let a generator open hardware directly.
 ```
+

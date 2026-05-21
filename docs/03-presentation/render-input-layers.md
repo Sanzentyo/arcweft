@@ -369,7 +369,7 @@ pub struct InputCaptureState {
 
 Modal の例:
 
-```awft
+```arcw
 layer @layer.confirm_dialog phase Modal z 900 {
     input {
         policy = modal
@@ -390,7 +390,7 @@ layer @layer.confirm_dialog phase Modal z 900 {
 
 ### scene layer
 
-```awft
+```arcw
 scene.show(@scene.opening)
 scope {
     layer @layer.bg phase Background z 0 {
@@ -418,7 +418,7 @@ scope {
 
 ### layer block 詳細
 
-```awft
+```arcw
 layer @layer.settings phase Modal z 900
 requires visible => input.policy == .Modal
 {
@@ -444,7 +444,7 @@ requires visible => input.policy == .Modal
 
 ### shorthand
 
-```awft
+```arcw
 layer @layer.bg background {
     image @asset.bg.room
 }
@@ -493,7 +493,7 @@ hit_test = "layout_boxes"
 
 Game Native UI component は暗黙に `NativeUi` layer を生成してもよい。
 
-```awft
+```arcw
 component Hud(state: GameState) -> View {
     HStack {
         Button("設定").agent_target(@ui.settings.open)
@@ -504,7 +504,7 @@ component Hud(state: GameState) -> View {
 
 または scene 側で明示する。
 
-```awft
+```arcw
 layer @layer.hud {
     order = ui(700)
     input = hit_test
@@ -530,7 +530,7 @@ pub struct UiNode {
 
 HTML/CSS UI は `HtmlUi` phase の layer として扱う。
 
-```awft
+```arcw
 layer @layer.html_settings phase HtmlUi z 800 {
     input modal
     html_panel @ui.settings_html
@@ -563,7 +563,7 @@ headless では pixel-perfect DOM/Servo capture が利用できない場合で�
 
 トラックゲームやFPSミニゲームは `ActivityViewport` layer を持つ。
 
-```awft
+```arcw
 layer @layer.truck_game phase World z 100 {
     input capture
     activity_viewport @activity.truck_game {
@@ -586,7 +586,7 @@ pub enum ActivityInputRoute {
 
 Activity が modal/capture を要求する場合:
 
-```awft
+```arcw
 activity @activity.fps_arena {
     input_layer {
         policy = capture
@@ -652,14 +652,14 @@ arcw agent layers --json
 
 layer 状態は test と signal に使える。
 
-```awft
+```arcw
 pub signal @signal.active_modal_layer: Watch<Option<Ref<Layer>>>
 pub signal @signal.focused_layer: Watch<Option<Ref<Layer>>>
 ```
 
 visual test:
 
-```awft
+```arcw
 test @test.settings_blocks_choice visual {
     start @flow.opening
     invoke @ui.settings.open
@@ -674,7 +674,7 @@ test @test.settings_blocks_choice visual {
 
 assert:
 
-```awft
+```arcw
 assert(layer(@layer.settings).input.policy == .Modal)
 assert(no_layer_overlap_interactive(@layer.modal, @layer.debug_overlay))
 ```
@@ -685,7 +685,7 @@ assert(no_layer_overlap_interactive(@layer.modal, @layer.debug_overlay))
 
 layer には契約を付けられる。
 
-```awft
+```arcw
 layer @layer.choices phase Dialogue z 550
 requires choices.len() > 0
 ensures visible => input.policy != .None
@@ -698,7 +698,7 @@ ensures visible => actions.len() == choices.len()
 
 Modal 契約:
 
-```awft
+```arcw
 contract modal_layer(layer: LayerSpec) {
     requires layer.input.policy == .Modal
     ensures layer.input.modal.block_below == true
@@ -765,7 +765,7 @@ arcweft-layer-lsp
 
 Layer は hook 対象である。描画・入力・layout・Agent 観測の各 phase に hook を付けられる。
 
-```awft
+```arcw
 layer @layer.choices: Choice {
     z = 550
     input = hit_test
@@ -790,3 +790,4 @@ check on change layout
 ```
 
 入力 routing では hook の `InputDisposition` が routing 結果に影響する。Modal、pointer capture、debug overlay、Agent overlay はこの仕組みで共通化される。
+

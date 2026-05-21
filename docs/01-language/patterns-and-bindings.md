@@ -4,7 +4,7 @@ Arcweft has one pattern language used by `match`, `if let`, `while let`, `let ..
 
 ## Basic patterns
 
-```awft
+```arcw
 _                    # wildcard
 x                    # binding
 mut x                # mutable local binding, advanced use
@@ -18,7 +18,7 @@ mut x                # mutable local binding, advanced use
 
 ## Tuple patterns
 
-```awft
+```arcw
 let (actor, voice) = pair
 
 match result {
@@ -29,7 +29,7 @@ match result {
 
 Nested tuple destructuring is supported:
 
-```awft
+```arcw
 let (actor, (face0, _, voice)) = line_result
 ```
 
@@ -37,7 +37,7 @@ let (actor, (face0, _, voice)) = line_result
 
 ## Record / struct patterns
 
-```awft
+```arcw
 match event {
     .ChoiceSelected { id } => handle_choice(id)
     .Ui { event: ui_event } => handle_ui(ui_event)
@@ -56,7 +56,7 @@ field: name  binds field to a different local name
 
 ## Enum patterns
 
-```awft
+```arcw
 match maybe_route {
     .Some(route) => goto route
     .None => goto @flow.title
@@ -65,7 +65,7 @@ match maybe_route {
 
 When the expected enum type is known, short `.Variant` syntax is preferred:
 
-```awft
+```arcw
 .Some(x)
 .Err(e)
 .ChoiceSelected { id }
@@ -73,7 +73,7 @@ When the expected enum type is known, short `.Variant` syntax is preferred:
 
 Fully qualified variant names are allowed when needed:
 
-```awft
+```arcw
 Option::Some(x)
 Result::Err(e)
 GameEvent::ChoiceSelected { id }
@@ -83,7 +83,7 @@ GameEvent::ChoiceSelected { id }
 
 Phase 1 syntax supports fixed-length bracket sequence patterns and rest patterns.
 
-```awft
+```arcw
 match items {
     [] => .Empty
     [one] => .One(one)
@@ -101,7 +101,7 @@ Whole-pattern binding is supported without `@`. `@` remains reserved for
 attributes and scenario commands, so pattern binding uses a leading name followed
 by a non-binding pattern in contexts where this is unambiguous.
 
-```awft
+```arcw
 match event {
     ev .ChoiceSelected { id } => {
         log.info("choice event {ev:?}", ev = ev)
@@ -118,7 +118,7 @@ The binding name captures the entire matched value, while nested fields such as
 
 Arcweft uses `when` for pattern guards to align with hooks and contracts.
 
-```awft
+```arcw
 match selected.id {
     @choice.opening.listen when state.affection[@character.alice] >= 3 => @flow.alice_intro
     @choice.opening.listen => @flow.alice_locked
@@ -128,7 +128,7 @@ match selected.id {
 
 `when` bindings can use names bound by the pattern.
 
-```awft
+```arcw
 match event {
     .ChoiceSelected { id } when choice_enabled(id, state) => handle_choice(id)
     _ => ()
@@ -139,7 +139,7 @@ match event {
 
 Bindings introduced by a pattern are scoped to the arm/body where the pattern succeeded.
 
-```awft
+```arcw
 if let .Some(route) = state.route_override {
     goto route
 }
@@ -149,10 +149,11 @@ if let .Some(route) = state.route_override {
 
 For `let ... else`, bindings are visible after the statement because the else branch must diverge.
 
-```awft
+```arcw
 let .Some(route) = state.route_override else {
     goto @flow.title
 }
 
 goto route
 ```
+

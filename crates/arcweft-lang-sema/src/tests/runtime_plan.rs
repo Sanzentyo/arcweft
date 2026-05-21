@@ -493,13 +493,13 @@ fn runtime_plan_lowers_await_calls_to_typed_host_requests() {
     let tree = parse_ok(
         r#"
 flow @flow.loading loading {
-    try await fs.read_text("game/config.awft") with { pending p => progress.set(p.ratio) }
+    try await fs.read_text("game/config.arcw") with { pending p => progress.set(p.ratio) }
     try await http.fetch("https://example.invalid/api", method = "POST", body = "payload") with { pending p => progress.set(p.ratio) }
     try await asset.image(@asset.bg.room) with { pending p => progress.set(p.ratio) }
     try await shader.compile(@shader.fade, entry = "main") with { pending p => progress.set(p.ratio) }
     try await audio.decode(@voice.alice.opening) with { pending p => progress.set(p.ratio) }
     try await tts.synthesize("hello", voice = "alice") with { pending p => progress.set(p.ratio) }
-    try await process.run("arcw", args = ["check", "game.awft"]) with { pending p => progress.set(p.ratio) }
+    try await process.run("arcw", args = ["check", "game.arcw"]) with { pending p => progress.set(p.ratio) }
     try await wasm.call("module", "function", 1) with { pending p => progress.set(p.ratio) }
 }
 "#,
@@ -518,7 +518,7 @@ flow @flow.loading loading {
 
     assert!(matches!(
         requests[0],
-        HostTaskRequest::FileReadText(FileReadTextRequest { path }) if path == "game/config.awft"
+        HostTaskRequest::FileReadText(FileReadTextRequest { path }) if path == "game/config.arcw"
     ));
     assert!(matches!(
         requests[1],
@@ -549,7 +549,7 @@ flow @flow.loading loading {
     assert!(matches!(
         requests[6],
         HostTaskRequest::ProcessRun(ProcessRunRequest { program, args, .. })
-            if program == "arcw" && args == &vec!["check".to_owned(), "game.awft".to_owned()]
+            if program == "arcw" && args == &vec!["check".to_owned(), "game.arcw".to_owned()]
     ));
     assert!(matches!(
         requests[7],

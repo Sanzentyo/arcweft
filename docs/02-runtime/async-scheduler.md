@@ -130,7 +130,7 @@ pub trait CooperativeJob {
 
 flow:
 
-```awft
+```arcw
 let data = try await load() with {
     pending p => scene.show(@scene.loading); progress.set(p.ratio)
 }
@@ -138,7 +138,7 @@ let data = try await load() with {
 
 UI:
 
-```awft
+```arcw
 AwaitView(load_avatar(user)) {
     pending _ => SkeletonCircle()
     ready img => Image(img)
@@ -169,3 +169,4 @@ Recognized capability calls such as `fs.read_text(...)`, `http.fetch(...)`,
 `tts.synthesize(...)`, `process.run(...)`, and `wasm.call(...)` lower to
 dedicated `HostTaskRequest` variants. Unknown awaited call namespaces lower to
 `HostTaskRequest::Custom` with structured argument payloads.
+

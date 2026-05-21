@@ -1,6 +1,6 @@
 # Shader example
 
-```awft
+```arcw
 pub shader @shader.post.crt: PostProcess
 capability { stage = fragment; storage_buffer = false; compute = false }
 params {
@@ -25,4 +25,5 @@ wgsl {
     }
 }
 ```
+
 

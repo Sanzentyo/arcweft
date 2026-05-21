@@ -193,8 +193,9 @@ arcweft-tooling
 - Touch virtual controllers are Game Native UI layers that emit logical input events and Agent action targets.
 
 - USB / HID devices are permissioned DeviceProfiles; scripts consume typed ports and signals, not raw handles.
-- The Device Profile Generator emits parsers, writers, signal bindings, test fixtures, and backend stubs from `.awft` manifests.
+- The Device Profile Generator emits parsers, writers, signal bindings, test fixtures, and backend stubs from `.arcw` manifests.
 - Touch virtual controllers are Game Native UI components attached to input layers and emit logical `ControllerEvent`s.
 
 - Device streams are `Source<T, E>` values with explicit backpressure, replay, privacy, and cancellation policy; do not expose backend callbacks directly to DSL code.
 - USB/HID/Gamepad/VirtualController input emits normalized `InputAction` values into the layer-based input router.
+

@@ -2,7 +2,7 @@
 
 ## `if` as expression
 
-```awft
+```arcw
 let face = if state.affection[@character.alice] >= 3 {
     smile
 } else {
@@ -20,7 +20,7 @@ Rules:
 
 Statement form:
 
-```awft
+```arcw
 if state.flags.contains(.debug) {
     log.info("debug mode")
 }
@@ -28,7 +28,7 @@ if state.flags.contains(.debug) {
 
 Value form:
 
-```awft
+```arcw
 let route = if ready {
     @flow.alice_intro
 } else {
@@ -38,7 +38,7 @@ let route = if ready {
 
 ## `if let`
 
-```awft
+```arcw
 if let .Some(route) = state.route_override {
     goto route
 } else {
@@ -48,7 +48,7 @@ if let .Some(route) = state.route_override {
 
 Value form:
 
-```awft
+```arcw
 let route = if let .Some(route) = state.route_override {
     route
 } else {
@@ -58,7 +58,7 @@ let route = if let .Some(route) = state.route_override {
 
 Optional guard:
 
-```awft
+```arcw
 if let .Some(route) = state.route_override when route_available(route, state) {
     goto route
 }
@@ -66,7 +66,7 @@ if let .Some(route) = state.route_override when route_available(route, state) {
 
 ## `let ... else`
 
-```awft
+```arcw
 let .Some(route) = state.route_override else {
     goto @flow.title
 }
@@ -78,7 +78,7 @@ The `else` block must diverge or leave the current continuation.
 
 Allowed:
 
-```awft
+```arcw
 return Err(.MissingRoute)
 goto @flow.title
 break value
@@ -88,7 +88,7 @@ panic("missing route")
 
 Not allowed:
 
-```awft
+```arcw
 let .Some(route) = maybe_route else {
     @flow.title
 }
@@ -98,7 +98,7 @@ Use `match` for fallback values.
 
 ## `match` as expression
 
-```awft
+```arcw
 let target = match selected.id {
     @choice.opening.listen when state.affection[@character.alice] >= 3 => @flow.alice_intro
     @choice.opening.listen => @flow.alice_locked
@@ -109,7 +109,7 @@ let target = match selected.id {
 
 Structured bindings:
 
-```awft
+```arcw
 match event {
     .ChoiceSelected { id } => handle_choice(id)
     .TruckFinished { result: TruckResult { score, rank, .. } } => handle_rank(rank)
@@ -131,7 +131,7 @@ Rules:
 
 `loop` can return a value.
 
-```awft
+```arcw
 let chosen = loop {
     let event = await_input_event()
 
@@ -154,7 +154,7 @@ Rules:
 
 Unit loop:
 
-```awft
+```arcw
 loop {
     tick()
     if done { break }
@@ -163,7 +163,7 @@ loop {
 
 Value loop:
 
-```awft
+```arcw
 let route = loop {
     let event = wait_event()
     if let .ChoiceSelected { id } = event {
@@ -176,7 +176,7 @@ let route = loop {
 
 `while` is supported but returns `Unit`.
 
-```awft
+```arcw
 while state.loading_tasks > 0 {
     poll_tasks()
 }
@@ -186,7 +186,7 @@ Use `loop { break value }` if a loop must produce a value.
 
 `break expr` is not allowed in `while`.
 
-```awft
+```arcw
 while cond {
     break 1  # error
 }
@@ -194,7 +194,7 @@ while cond {
 
 Use:
 
-```awft
+```arcw
 let value = loop {
     if !cond { break 1 }
 }
@@ -202,7 +202,7 @@ let value = loop {
 
 ## `while let`
 
-```awft
+```arcw
 while let .Some(event) = queue.pop_front() {
     handle_event(event)
 }
@@ -210,7 +210,7 @@ while let .Some(event) = queue.pop_front() {
 
 With guard:
 
-```awft
+```arcw
 while let .Some(event) = queue.pop_front() when event.is_relevant() {
     handle_event(event)
 }
@@ -222,7 +222,7 @@ The expression is evaluated at the start of each iteration. If the pattern fails
 
 Arcweft supports iterator/range loops as statement loops.
 
-```awft
+```arcw
 for i in 0..10 {
     log.debug("i={i}", i = i)
 }
@@ -242,3 +242,4 @@ Range forms:
 ```
 
 `for` returns `Unit`. Use `loop` for value-producing loops.
+

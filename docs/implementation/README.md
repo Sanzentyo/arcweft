@@ -11,7 +11,7 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - Cargo workspace skeleton.
 - Foundational ID, source anchor, Need, and dialogue surface model crates.
 - Syntax and CLI crates with Phase 1 parser/HIR/check surfaces and the
-  `arcw check <file.awft>` developer entry point.
+  `arcw check <file.arcw>` developer entry point.
 - Language responsibilities are now split across `arcweft-lang-syntax`
   (lossless CST, surface AST, parser, syntax lint), `arcweft-lang-hir`
   (HIR types and lowering), `arcweft-lang-sema` (name/symbol/type readiness and
@@ -53,9 +53,9 @@ Last verified for the active workspace after enabling the spec fixture gates:
 - `cargo fmt --all`
 - `cargo test --workspace`
 - `cargo clippy --workspace --all-targets --all-features`
-- `arcw check` over `tests/fixtures/awft/spec_should_pass/check`
-- `arcw run --mode drain --steps 16` over `tests/fixtures/awft/spec_should_pass/run`
-- `arcw check` over `tests/fixtures/awft/spec_should_fail`, expecting every
+- `arcw check` over `tests/fixtures/arcw/spec_should_pass/check`
+- `arcw run --mode drain --steps 16` over `tests/fixtures/arcw/spec_should_pass/run`
+- `arcw check` over `tests/fixtures/arcw/spec_should_fail`, expecting every
   fixture to fail with diagnostics
 
 ## Design Reviews Reflected
@@ -225,7 +225,7 @@ Current high-confidence state:
   patch merge parsing/checking, and recognizes surface aliases plus
   voice/se/bgm/bus/mix/ducking/motion/rig entity families.
 - `pro_review13.md`: adopted Phase 1.5 as the next execution direction. The
-  CLI now provides `arcw check <file.awft> [--json]` and runs parse, HIR lowering,
+  CLI now provides `arcw check <file.arcw> [--json]` and runs parse, HIR lowering,
   reference validation, ID policy lints, typecheck readiness, minimal typecheck,
   and line-plan runtime lowering. `arcweft-runtime-plan::line_task` exposes
   `lower_line_task_groups`, which converts checked dialogue line plans into
@@ -270,11 +270,11 @@ Current high-confidence state:
   `while let`, `for`, `scope`, dynamic `goto`, dynamic `return`, flow-level
   ordinary effects, `out`, and line `cancel on` rules. Unsupported executable
   flow items fail lowering explicitly instead of being converted to `Noop`.
-- `arcw plan <file.awft> [--json]` now exposes lowered line task graph metadata
+- `arcw plan <file.arcw> [--json]` now exposes lowered line task graph metadata
   for CLI, LSP, and Agent inspection. Runtime parallel conflicts are also
   surfaced as verifier obligations so direct verifier users can see the same
   class of graph conflict as `arcw check`.
-- `arcw run <file.awft> [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` now
+- `arcw run <file.arcw> [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` now
   performs a deterministic dry run through the Phase 2.0 headless runtime slice and
   reports per-step flow events, effects, host requests, diagnostics, stop reason,
   and final fiber status. `--value` injects pure runtime bindings such as
@@ -562,4 +562,5 @@ The stable specification locations for the `pro_review4.md` decisions are:
 - `docs/05-build-and-security/native-web-build.md`: native/web runtime target model.
 - `docs/05-build-and-security/packaging.md`: Sans I/O bundle format boundary.
 - `docs/schemas/README.md`: schemas as data formats rather than I/O APIs.
+
 

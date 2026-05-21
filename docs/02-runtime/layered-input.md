@@ -214,7 +214,7 @@ pub enum InputDisposition {
 
 ## DSL: layer input
 
-```awft
+```arcw
 layer @layer.choices: Choice {
     z = 200
     input = hit_test
@@ -230,7 +230,7 @@ layer @layer.modal.settings: Modal {
 
 UI component:
 
-```awft
+```arcw
 Button("閉じる")
     .layer(@layer.modal.settings)
     .agent_target(@ui.settings.close)
@@ -241,7 +241,7 @@ Button("閉じる")
 
 Activity:
 
-```awft
+```arcw
 activity @activity.fps_arena FpsArena {
     layer @layer.activity.fps {
         input = capture_when_active
@@ -291,7 +291,7 @@ TextInput/IME は `TextInput` role の UI node が focus している場合だ�
 
 Agent や test は座標 click ではなく semantic action を優先する。
 
-```awft
+```arcw
 SemanticAction::Invoke {
     target: @choice.opening.listen,
     action: "select",
@@ -380,7 +380,7 @@ bbox_source = UiLayoutExact | UiBridgeApprox | BackendUnavailable
 
 ## Test
 
-```awft
+```arcw
 test @test.modal_blocks_choices scenario {
     start @flow.opening
     open_ui @ui.settings
@@ -396,7 +396,7 @@ test @test.modal_blocks_choices scenario {
 
 ## Contracts
 
-```awft
+```arcw
 layer @layer.modal.settings: Modal
 ensures input.blocks_lower_layers
 ensures focus.trapped_within(self)
@@ -407,7 +407,7 @@ ensures focus.trapped_within(self)
 
 Activity input 契約:
 
-```awft
+```arcw
 activity @activity.fps_arena FpsArena
 requires input_layer(@layer.activity.fps).policy == CaptureWhenActive
 ensures no_lower_layer_receives_keyboard_while_active
@@ -430,7 +430,7 @@ AfterInputRoute
 
 例:
 
-```awft
+```arcw
 hook @hook.modal_block_check
 on @layer.ui.modal
 phase AfterInputRoute
@@ -449,7 +449,7 @@ check on event
 
 Input routing の各 phase では hook を実行できる。`input.capture` hook は modal や drag capture、`input.target` hook は実際に hit した object、`input.bubble` hook は親 layer への伝播に使う。
 
-```awft
+```arcw
 hook @hook.choice.hover
 on @choice.opening.listen
 phase InputTarget
@@ -479,7 +479,7 @@ RawInputEvent
 
 例:
 
-```awft
+```arcw
 hook @hook.choice.hit_trace
 on @layer.ui.choices
 phase InputHitTest
@@ -497,7 +497,7 @@ when object.entity == @choice.opening.listen
 
 Layer は hook 対象である。描画・入力・layout・Agent 観測の各 phase に hook を付けられる。
 
-```awft
+```arcw
 layer @layer.choices: Choice {
     z = 550
     input = hit_test
@@ -528,7 +528,7 @@ check on change layout
 
 Layer routing の各 phase は hook の trigger になる。
 
-```awft
+```arcw
 hook @hook.choice_click
 on @choice.opening.listen
 phase InputTarget
@@ -545,7 +545,7 @@ check on input PointerClick
 
 Layered Input は Object Hook Runtime と接続する。`RoutedInputEvent` が生成されたあと、`OnInputTarget` phase の Hook が評価される。
 
-```awft
+```arcw
 on @choice.opening.listen input click
 when enabled(self)
 {
@@ -566,7 +566,7 @@ RawInputEvent
 
 Hit-test や target resolution が高コストな場合は、frame scoped memo を使う。
 
-```awft
+```arcw
 let routed = memo(scope=frame, key=(raw, layer_tree.routing_hash)) {
     route_input(raw, layer_tree, hit_regions)
 }
@@ -607,3 +607,4 @@ Touch event
 This makes touch, keyboard, gamepad, USB macro pad, and Agent semantic actions converge on the same input model.
 
 See [Touch Virtual Controller](../03-presentation/touch-virtual-controller.md).
+

@@ -16,7 +16,7 @@ The main design documentation is in:
 - `docs/schemas/`
 - `docs/examples/`
 
-Arcweft source files use the extension `.awft`.
+Arcweft source files use the extension `.arcw`.
 
 ## Required skill usage
 
@@ -97,7 +97,7 @@ Recommended first milestones:
    - `DialogueTag`
    - `LinePlan`
    - `CancelScope`
-5. Minimal parser or parser stubs for `.awft`.
+5. Minimal parser or parser stubs for `.arcw`.
 6. Tests for ID generation, dialogue line construction, and `Need` state transitions.
 
 Do not attempt to implement wgpu rendering, Servo, audio, camera, USB, Cranelift JIT, or MCP until the core model compiles and tests pass.
@@ -114,7 +114,7 @@ Keep implementation-state documentation separate from design documentation:
 
 Use code fences consistently:
 
-- Arcweft DSL: `awft`
+- Arcweft DSL: `arcw`
 - Rust implementation: `rust`
 - JSON: `json`
 - TOML: `toml`
@@ -131,3 +131,4 @@ Each task should end with:
 - design deviations, if any
 
 Do not hide failures. If a command fails, report the failure and either fix it or explain why it is out of scope.
+

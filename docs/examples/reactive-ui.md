@@ -1,6 +1,6 @@
 # Reactive UI example
 
-```awft
+```arcw
 pub component @ui.choice_button ChoiceButton(choice: ChoiceView) -> View
 requires choice.label.len() > 0
 ensures result.has_action("select")
@@ -22,3 +22,4 @@ ensures result.has_action("select")
     }
 }
 ```
+

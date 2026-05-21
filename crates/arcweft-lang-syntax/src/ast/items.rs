@@ -8,7 +8,7 @@ use super::ids::{EntityRef, WikiLink};
 use super::proof::{BenchItem, ProofItem, TestItem, TrustedAxiomItem};
 use super::source::SourceItem;
 
-/// Typed syntax view of an `.awft` source with module/use headers and items.
+/// Typed syntax view of an `.arcw` source with module/use headers and items.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypedSyntaxTree {
     source: String,

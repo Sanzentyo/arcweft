@@ -1,7 +1,7 @@
 {
   "fixtures": [
     {
-      "path": "tests/fixtures/awft/current_pass/check/001_minimal_flow_return.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/001_minimal_flow_return.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -10,7 +10,7 @@
       "reason": "baseline should parse/check under current grammar"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/002_two_flow_goto.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/002_two_flow_goto.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -19,7 +19,7 @@
       "reason": "baseline should parse/check under current grammar"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/003_simple_log_effect.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/003_simple_log_effect.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -28,7 +28,7 @@
       "reason": "baseline should parse/check under current grammar"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/004_if_statement.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/004_if_statement.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -37,7 +37,7 @@
       "reason": "baseline should parse/check under current grammar"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/005_match_statement.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/005_match_statement.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -46,7 +46,7 @@
       "reason": "baseline should parse/check under current grammar"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/006_loop_break_value.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/006_loop_break_value.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -55,7 +55,7 @@
       "reason": "baseline should parse/check under current grammar"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/007_scope_value.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/007_scope_value.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -64,7 +64,7 @@
       "reason": "baseline should parse/check under current grammar"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/008_let_else_diverge.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/008_let_else_diverge.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -73,7 +73,7 @@
       "reason": "future Option constructor and let-else binding target; retained as direction fixture until typed Option value construction is implemented"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/009_choice_static_goto.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/009_choice_static_goto.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -82,7 +82,7 @@
       "reason": "baseline should parse/check under current grammar"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/010_dialogue_basic.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/010_dialogue_basic.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -91,7 +91,7 @@
       "reason": "baseline should parse/check under current grammar"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/011_dialogue_with_plan.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/011_dialogue_with_plan.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -100,7 +100,7 @@
       "reason": "future compact line-plan handler syntax; retained until handler arrow sugar lowers without raw recovery"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/012_function_final_expr.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/012_function_final_expr.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -109,7 +109,7 @@
       "reason": "baseline should parse/check under current grammar"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/013_task_fn_await_shape.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/013_task_fn_await_shape.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -118,7 +118,7 @@
       "reason": "future task await fixture requiring typed task/capability function environment"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/014_struct_enum_type_alias.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/014_struct_enum_type_alias.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -127,7 +127,7 @@
       "reason": "future type-alias where/self contract fixture"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/015_state_defaults.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/015_state_defaults.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -136,7 +136,7 @@
       "reason": "future prelude Option constructor default fixture"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/016_source_decl.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/016_source_decl.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -145,7 +145,7 @@
       "reason": "future adapter-backed source fixture"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/017_stream_fn_shape.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/017_stream_fn_shape.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -154,7 +154,7 @@
       "reason": "future stream block yield fixture"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/018_trait_impl_shape.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/018_trait_impl_shape.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -163,7 +163,7 @@
       "reason": "baseline should parse/check under current grammar"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/019_line_defer_cleanup.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/019_line_defer_cleanup.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -172,7 +172,7 @@
       "reason": "baseline should parse/check under current grammar"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/020_relative_ids.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/020_relative_ids.arcw",
       "category": "current_pass",
       "subtype": "check",
       "command": "check",
@@ -181,7 +181,7 @@
       "reason": "baseline should parse/check under current grammar"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/run/001_return_done.awft",
+      "path": "tests/fixtures/arcw/current_pass/run/001_return_done.arcw",
       "category": "current_pass",
       "subtype": "run",
       "command": "run",
@@ -190,7 +190,7 @@
       "reason": "baseline dry-run fixture"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/run/002_goto_done.awft",
+      "path": "tests/fixtures/arcw/current_pass/run/002_goto_done.arcw",
       "category": "current_pass",
       "subtype": "run",
       "command": "run",
@@ -199,7 +199,7 @@
       "reason": "baseline dry-run fixture"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/run/003_log_then_return.awft",
+      "path": "tests/fixtures/arcw/current_pass/run/003_log_then_return.arcw",
       "category": "current_pass",
       "subtype": "run",
       "command": "run",
@@ -208,7 +208,7 @@
       "reason": "baseline dry-run fixture"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/run/004_signal_metric_event.awft",
+      "path": "tests/fixtures/arcw/current_pass/run/004_signal_metric_event.arcw",
       "category": "current_pass",
       "subtype": "run",
       "command": "run",
@@ -217,7 +217,7 @@
       "reason": "future inline effects header and event constructor fixture"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/run/005_loop_break_route.awft",
+      "path": "tests/fixtures/arcw/current_pass/run/005_loop_break_route.arcw",
       "category": "current_pass",
       "subtype": "run",
       "command": "run",
@@ -226,7 +226,7 @@
       "reason": "baseline dry-run fixture"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/run/006_if_goto.awft",
+      "path": "tests/fixtures/arcw/current_pass/run/006_if_goto.arcw",
       "category": "current_pass",
       "subtype": "run",
       "command": "run",
@@ -235,7 +235,7 @@
       "reason": "baseline dry-run fixture"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/run/007_match_return.awft",
+      "path": "tests/fixtures/arcw/current_pass/run/007_match_return.arcw",
       "category": "current_pass",
       "subtype": "run",
       "command": "run",
@@ -244,7 +244,7 @@
       "reason": "baseline dry-run fixture"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/run/008_scope_return.awft",
+      "path": "tests/fixtures/arcw/current_pass/run/008_scope_return.arcw",
       "category": "current_pass",
       "subtype": "run",
       "command": "run",
@@ -253,7 +253,7 @@
       "reason": "baseline dry-run fixture"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/run/009_dialogue_line.awft",
+      "path": "tests/fixtures/arcw/current_pass/run/009_dialogue_line.arcw",
       "category": "current_pass",
       "subtype": "run",
       "command": "run",
@@ -262,7 +262,7 @@
       "reason": "baseline dry-run fixture"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/run/010_line_task_effects.awft",
+      "path": "tests/fixtures/arcw/current_pass/run/010_line_task_effects.arcw",
       "category": "current_pass",
       "subtype": "run",
       "command": "run",
@@ -271,7 +271,7 @@
       "reason": "future compact line-plan handler syntax fixture"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/001_entry_game.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/001_entry_game.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -280,7 +280,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/002_entry_cli.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/002_entry_cli.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -289,7 +289,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/003_entry_server.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/003_entry_server.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -298,7 +298,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/004_entry_activity.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/004_entry_activity.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -307,7 +307,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/005_entry_test.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/005_entry_test.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -316,7 +316,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/006_entry_bench.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/006_entry_bench.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -325,7 +325,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/010_capability_fs_read.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/010_capability_fs_read.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -334,7 +334,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/011_capability_fs_write.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/011_capability_fs_write.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -343,7 +343,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/012_capability_stdio.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/012_capability_stdio.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -352,7 +352,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/013_capability_http_entry.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/013_capability_http_entry.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -361,7 +361,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/014_virtual_path_reject_os_paths_positive.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/014_virtual_path_reject_os_paths_positive.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -370,7 +370,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/020_multiline_struct_field_default.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/020_multiline_struct_field_default.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -379,7 +379,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/021_multiline_enum_variant_payload.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/021_multiline_enum_variant_payload.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -388,7 +388,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/022_multiline_trait_method.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/022_multiline_trait_method.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -397,7 +397,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/023_trait_default_method_body.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/023_trait_default_method_body.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -406,7 +406,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/024_reducer_body_structured.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/024_reducer_body_structured.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -415,7 +415,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/025_view_body_structured.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/025_view_body_structured.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -424,7 +424,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/026_pure_fn_call_value_position.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/026_pure_fn_call_value_position.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -433,7 +433,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/027_method_call_value_position.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/027_method_call_value_position.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -442,7 +442,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/028_index_expr_value_position.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/028_index_expr_value_position.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -451,7 +451,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/029_range_expr_value_position.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/029_range_expr_value_position.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -460,7 +460,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/030_closure_pipeline_value_position.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/030_closure_pipeline_value_position.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -469,7 +469,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/031_nested_braces_in_string.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/031_nested_braces_in_string.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -478,7 +478,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/032_raw_dialogue_braces.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/032_raw_dialogue_braces.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -487,7 +487,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/033_struct_doc_multiline_field.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/033_struct_doc_multiline_field.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -496,7 +496,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/034_function_multiline_signature.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/034_function_multiline_signature.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -505,7 +505,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/035_impl_multiline_fn_body.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/035_impl_multiline_fn_body.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -514,7 +514,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/036_source_handler_block_body.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/036_source_handler_block_body.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -523,7 +523,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/037_entry_selected_not_first_flow.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/037_entry_selected_not_first_flow.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -532,7 +532,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/038_flow_effect_capability_annotation.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/038_flow_effect_capability_annotation.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -541,7 +541,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/039_top_level_test_uses_entry.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/039_top_level_test_uses_entry.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -550,7 +550,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/040_activity_entry.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/040_activity_entry.arcw",
       "category": "spec_should_pass",
       "subtype": "check",
       "command": "check",
@@ -559,7 +559,7 @@
       "reason": "spec should accept after entry/capability/parser/runtime gap fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/run/001_cli_stdout_entry.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/run/001_cli_stdout_entry.arcw",
       "category": "spec_should_pass",
       "subtype": "run",
       "command": "run",
@@ -568,7 +568,7 @@
       "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/run/002_file_read_task.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/run/002_file_read_task.arcw",
       "category": "spec_should_pass",
       "subtype": "run",
       "command": "run",
@@ -577,7 +577,7 @@
       "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/run/003_file_write_task.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/run/003_file_write_task.arcw",
       "category": "spec_should_pass",
       "subtype": "run",
       "command": "run",
@@ -586,7 +586,7 @@
       "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/run/004_server_health.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/run/004_server_health.arcw",
       "category": "spec_should_pass",
       "subtype": "run",
       "command": "run",
@@ -595,7 +595,7 @@
       "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/run/005_pure_call_runtime.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/run/005_pure_call_runtime.arcw",
       "category": "spec_should_pass",
       "subtype": "run",
       "command": "run",
@@ -604,7 +604,7 @@
       "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/run/006_entry_second_flow.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/run/006_entry_second_flow.arcw",
       "category": "spec_should_pass",
       "subtype": "run",
       "command": "run",
@@ -613,7 +613,7 @@
       "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/run/007_source_stream_payload.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/run/007_source_stream_payload.arcw",
       "category": "spec_should_pass",
       "subtype": "run",
       "command": "run",
@@ -622,7 +622,7 @@
       "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/run/008_method_value_runtime.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/run/008_method_value_runtime.arcw",
       "category": "spec_should_pass",
       "subtype": "run",
       "command": "run",
@@ -631,7 +631,7 @@
       "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/run/009_index_runtime.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/run/009_index_runtime.arcw",
       "category": "spec_should_pass",
       "subtype": "run",
       "command": "run",
@@ -640,7 +640,7 @@
       "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/run/010_runtime_step_budget_many_ops.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/run/010_runtime_step_budget_many_ops.arcw",
       "category": "spec_should_pass",
       "subtype": "run",
       "command": "run",
@@ -649,7 +649,7 @@
       "reason": "runtime should run after RuntimeStep/capability/pure-call fixes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/001_absolute_unix_path.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/001_absolute_unix_path.arcw",
       "category": "spec_should_fail",
       "subtype": null,
       "command": "check",
@@ -658,7 +658,7 @@
       "reason": "negative fixture to keep invalid forms rejected"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/002_absolute_windows_path.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/002_absolute_windows_path.arcw",
       "category": "spec_should_fail",
       "subtype": null,
       "command": "check",
@@ -667,7 +667,7 @@
       "reason": "negative fixture to keep invalid forms rejected"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/003_old_at_command.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/003_old_at_command.arcw",
       "category": "spec_should_fail",
       "subtype": null,
       "command": "check",
@@ -676,7 +676,7 @@
       "reason": "negative fixture to keep invalid forms rejected"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/004_face_line_option.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/004_face_line_option.arcw",
       "category": "spec_should_fail",
       "subtype": null,
       "command": "check",
@@ -685,7 +685,7 @@
       "reason": "negative fixture to keep invalid forms rejected"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/005_bare_relative_goto.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/005_bare_relative_goto.arcw",
       "category": "spec_should_fail",
       "subtype": null,
       "command": "check",
@@ -694,7 +694,7 @@
       "reason": "negative fixture to keep invalid forms rejected"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/006_missing_capability_effect.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/006_missing_capability_effect.arcw",
       "category": "spec_should_fail",
       "subtype": null,
       "command": "check",
@@ -703,7 +703,7 @@
       "reason": "negative fixture to keep invalid forms rejected"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/007_direct_network_without_capability.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/007_direct_network_without_capability.arcw",
       "category": "spec_should_fail",
       "subtype": null,
       "command": "check",
@@ -712,7 +712,7 @@
       "reason": "negative fixture to keep invalid forms rejected"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/008_runtime_frame_name_forbidden_doc_sample.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/008_runtime_frame_name_forbidden_doc_sample.arcw",
       "category": "spec_should_fail",
       "subtype": null,
       "command": "check",
@@ -721,7 +721,7 @@
       "reason": "negative fixture to keep invalid forms rejected"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/009_ambiguous_bare_dot_id.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/009_ambiguous_bare_dot_id.arcw",
       "category": "spec_should_fail",
       "subtype": null,
       "command": "check",
@@ -730,7 +730,7 @@
       "reason": "negative fixture to keep invalid forms rejected"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/010_old_spawn_line_plan.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/010_old_spawn_line_plan.arcw",
       "category": "spec_should_fail",
       "subtype": null,
       "command": "check",
@@ -739,7 +739,7 @@
       "reason": "negative fixture to keep invalid forms rejected"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/021_keyword_like_identifier_if_else.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/021_keyword_like_identifier_if_else.arcw",
       "category": "current_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -748,7 +748,7 @@
       "reason": "keyword-like identifier and statement if-else remain structured"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/022_family_relative_test_bench_ids.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/022_family_relative_test_bench_ids.arcw",
       "category": "current_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -757,7 +757,7 @@
       "reason": "family-relative test and bench declaration ids are accepted"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/023_dialogue_cancel_defer_on.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/023_dialogue_cancel_defer_on.arcw",
       "category": "current_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -766,7 +766,7 @@
       "reason": "dialogue colon sugar, with sugar, cancel, defer, and out stay structured"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/024_source_stream_for_yield.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/024_source_stream_for_yield.arcw",
       "category": "current_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -775,7 +775,7 @@
       "reason": "source, stream, for, and yield shape remains accepted"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/025_proof_unsafe_lifetime.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/025_proof_unsafe_lifetime.arcw",
       "category": "current_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -784,7 +784,7 @@
       "reason": "proof and unsafe lifetime audit syntax remains structured"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/041_entry_declaration_edge.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/041_entry_declaration_edge.arcw",
       "category": "spec_should_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -793,7 +793,7 @@
       "reason": "entry declaration is specified but not yet lowered"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/042_fn_result_match_final_expr.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/042_fn_result_match_final_expr.arcw",
       "category": "spec_should_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -802,7 +802,7 @@
       "reason": "expression if, result construction, function calls, and match final expression should compose"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/043_struct_destructure_multiline_literal.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/043_struct_destructure_multiline_literal.arcw",
       "category": "spec_should_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -811,7 +811,7 @@
       "reason": "struct literal, multiline literal, and struct destructuring are tracked as spec edge cases"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/044_pattern_binding_combo.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/044_pattern_binding_combo.arcw",
       "category": "spec_should_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -820,7 +820,7 @@
       "reason": "structured pattern bindings across let-else, if-let, while-let, and match should compose"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/045_dialogue_sugar_ruby_timed_cancel.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/045_dialogue_sugar_ruby_timed_cancel.arcw",
       "category": "spec_should_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -829,7 +829,7 @@
       "reason": "dialogue sugar, ruby text, timed cue, cancel, defer, and out should compose"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/046_source_stream_payload_edge.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/046_source_stream_payload_edge.arcw",
       "category": "spec_should_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -838,7 +838,7 @@
       "reason": "richer source policy and source error handler are tracked as spec edge cases"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/047_relative_declaration_families_edge.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/047_relative_declaration_families_edge.arcw",
       "category": "spec_should_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -847,7 +847,7 @@
       "reason": "declaration-position relative family ids should behave like implicit names"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/048_literals_units_char_edge.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/048_literals_units_char_edge.arcw",
       "category": "spec_should_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -856,7 +856,7 @@
       "reason": "numeric suffixes, unit literals, and char suffix literals should typecheck"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/011_await_question_with_rejected.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/011_await_question_with_rejected.arcw",
       "category": "spec_should_fail",
       "subtype": "edge_case",
       "command": "check",
@@ -865,7 +865,7 @@
       "reason": "ambiguous await expr? with form must remain rejected with try-await guidance"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/026_headless_observation_calls.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/026_headless_observation_calls.arcw",
       "category": "current_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -874,7 +874,7 @@
       "reason": "headless log, signal, metric, and event call syntax remains accepted"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/check/027_dialogue_bare_scope_after_bracket_call.awft",
+      "path": "tests/fixtures/arcw/current_pass/check/027_dialogue_bare_scope_after_bracket_call.arcw",
       "category": "current_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -883,7 +883,7 @@
       "reason": "bare block after bracket dialogue call is treated as a separate lexical scope"
     },
     {
-      "path": "tests/fixtures/awft/current_pass/run/011_source_stream_policy_plan.awft",
+      "path": "tests/fixtures/arcw/current_pass/run/011_source_stream_policy_plan.arcw",
       "category": "current_pass",
       "subtype": "edge_case",
       "command": "run",
@@ -892,7 +892,7 @@
       "reason": "source and stream policy fixture remains runnable in the headless runtime slice"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/049_await_context_option_boundaries.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/049_await_context_option_boundaries.arcw",
       "category": "spec_should_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -901,7 +901,7 @@
       "reason": "try-await, parenthesized await, await? sugar, and Option context should compose"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/050_comments_strings_unicode_paths.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/050_comments_strings_unicode_paths.arcw",
       "category": "spec_should_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -910,7 +910,7 @@
       "reason": "raw strings, braces inside strings, Unicode text, and path-like strings should parse structurally"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/051_collections_vec_array_methods.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/051_collections_vec_array_methods.arcw",
       "category": "spec_should_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -919,7 +919,7 @@
       "reason": "Vec construction, shrink, array literals, and array repeat syntax should typecheck"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/check/052_deep_relative_ids_and_family_refs.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/check/052_deep_relative_ids_and_family_refs.arcw",
       "category": "spec_should_pass",
       "subtype": "edge_case",
       "command": "check",
@@ -928,7 +928,7 @@
       "reason": "deep relative ids and family-relative refs should resolve consistently"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_pass/run/011_dialogue_line_value_and_handle_discard.awft",
+      "path": "tests/fixtures/arcw/spec_should_pass/run/011_dialogue_line_value_and_handle_discard.arcw",
       "category": "spec_should_pass",
       "subtype": "edge_case",
       "command": "run",
@@ -937,7 +937,7 @@
       "reason": "dialogue line return values, handles, and timed cues should lower to runtime"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/012_name_at_pattern_removed_rejected.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/012_name_at_pattern_removed_rejected.arcw",
       "category": "spec_should_fail",
       "subtype": "edge_case",
       "command": "check",
@@ -946,7 +946,7 @@
       "reason": "removed name-at pattern syntax stays rejected"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/013_continue_expr_position_rejected.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/013_continue_expr_position_rejected.arcw",
       "category": "spec_should_fail",
       "subtype": "edge_case",
       "command": "check",
@@ -955,7 +955,7 @@
       "reason": "continue cannot be bound as a value expression"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/014_let_else_non_diverging_rejected.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/014_let_else_non_diverging_rejected.arcw",
       "category": "spec_should_fail",
       "subtype": "edge_case",
       "command": "check",
@@ -964,7 +964,7 @@
       "reason": "let-else else block must diverge"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/015_break_value_in_while_rejected.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/015_break_value_in_while_rejected.arcw",
       "category": "spec_should_fail",
       "subtype": "edge_case",
       "command": "check",
@@ -973,7 +973,7 @@
       "reason": "break expr is only valid for loop, not while"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/016_yield_in_flow_rejected.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/016_yield_in_flow_rejected.arcw",
       "category": "spec_should_fail",
       "subtype": "edge_case",
       "command": "check",
@@ -982,7 +982,7 @@
       "reason": "yield is limited to source and stream generation contexts"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/017_out_in_flow_rejected.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/017_out_in_flow_rejected.arcw",
       "category": "spec_should_fail",
       "subtype": "edge_case",
       "command": "check",
@@ -991,7 +991,7 @@
       "reason": "out is limited to dialogue line plan, cue, and content scopes"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/018_private_full_replay_rejected.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/018_private_full_replay_rejected.arcw",
       "category": "spec_should_fail",
       "subtype": "edge_case",
       "command": "check",
@@ -1000,7 +1000,7 @@
       "reason": "private sources cannot request full replay"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/019_unsafe_lifetime_missing_reason_rejected.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/019_unsafe_lifetime_missing_reason_rejected.arcw",
       "category": "spec_should_fail",
       "subtype": "edge_case",
       "command": "check",
@@ -1009,7 +1009,7 @@
       "reason": "unsafe lifetime audit blocks require a reason"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/020_unsafe_block_missing_safety_doc_rejected.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/020_unsafe_block_missing_safety_doc_rejected.arcw",
       "category": "spec_should_fail",
       "subtype": "edge_case",
       "command": "check",
@@ -1018,7 +1018,7 @@
       "reason": "unsafe lifetime audit blocks require a SAFETY doc comment"
     },
     {
-      "path": "tests/fixtures/awft/spec_should_fail/021_await_question_with_context_rejected.awft",
+      "path": "tests/fixtures/arcw/spec_should_fail/021_await_question_with_context_rejected.arcw",
       "category": "spec_should_fail",
       "subtype": "edge_case",
       "command": "check",

@@ -8,7 +8,7 @@ wgpu を基盤にした、native と WebGPU/WebGL 経路の両方に対応する
 
 ```text
 Game Source / Bundle
-  .awft DSL
+  .arcw DSL
   .wgsl / shader blocks
   .svg / vector
   .typ / rich text / typst blocks
@@ -57,7 +57,7 @@ Engine::step(input: RuntimeStepInput) -> RuntimeStepOutput
 
 ### Data format も Sans I/O
 
-`.awft` source、lossless CST、AST/HIR、Typed IR、bytecode、manifest、schema、save snapshot、`.awfb` bundle はデータ形式であり、filesystem や network を直接触らない。
+`.arcw` source、lossless CST、AST/HIR、Typed IR、bytecode、manifest、schema、save snapshot、`.awfb` bundle はデータ形式であり、filesystem や network を直接触らない。
 
 Data-format crate は Rust 構造体と encode/decode を `&str` / `&[u8]` / `Vec<u8>` の上で提供する。path を開く、環境変数を見る、wall-clock を読む、backend resource を確保する処理は `arcweft-cli`、build tool、native/web player adapter に置く。
 
@@ -128,3 +128,4 @@ MCP と CLI は同じ `arcweft-agent-protocol` を使う。
 ## Capture Device Layer
 
 Microphone and camera input are handled by a dedicated permissioned capture layer. Native audio uses CPAL, native camera prefers `shiguredo_video_device`, optional camera compatibility uses `nokhwa`, and Web capture uses `web-sys` MediaDevices. Capture enters the runtime through `Need`, signals, and Activity ports rather than direct device APIs. See [Microphone / Camera Capture Devices](../03-presentation/capture-devices.md).
+

@@ -1,7 +1,7 @@
 mod support;
 
+mod arcw_contract_fixtures;
 mod await_;
-mod awft_contract_fixtures;
 mod choice;
 mod compile_gap_regressions;
 mod contracts;

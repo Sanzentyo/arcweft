@@ -23,7 +23,7 @@ pub trait HtmlUiHost {
 
 ## DSL
 
-```awft
+```arcw
 html panel @ui.settings_html from "ui/settings.html" {
     mount = overlay
     z = 100
@@ -68,4 +68,5 @@ DOM 版は `data-arcweft-entity` / `data-arcweft-action` を使い、Agent 観�
 ## Headless
 
 headless では実 Servo/DOM がなくても、`HtmlPanelSpec` と UI metadata から仮想 UI tree を返す。
+
 

@@ -3,7 +3,7 @@
 This example shows how named `scope` blocks, relative line IDs, relative choice
 IDs, and module-relative paths work together.
 
-```awft
+```arcw
 mod crate::game::routes::opening
 
 use crate::game::prelude::*
@@ -70,7 +70,7 @@ choice @.first
 the final expression is the value, while the scope name is still used for
 diagnostics, traces, LSP display, and ID-bearing constructs inside the block.
 
-```awft
+```arcw
 let can_enter = scope alice_route_check {
     let affection_ok = state.affection[@character.alice] >= 3
     let has_key = state.inventory.contains(@item.alice_key)
@@ -82,7 +82,7 @@ Relative `.suffix` IDs are not module paths and are not general entity
 references. Module and import paths use `crate::`, `self::`, and `super::`.
 General references that need relative lookup must include the entity family.
 
-```awft
+```arcw
 alice(id=@.greeting):        # relative ID context
 use self::characters::alice # module path context
 goto @flow.opening.next     # ordinary entity reference
@@ -92,3 +92,4 @@ include @frag:.alice_enters # family-relative fragment reference
 
 `parent::` is reserved as an alias for `super::`, but canonical tooling should
 format it as `super::`.
+

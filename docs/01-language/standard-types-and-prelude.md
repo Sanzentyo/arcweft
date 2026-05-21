@@ -6,7 +6,7 @@ and tooling inspection.
 
 ## Core ADT
 
-```awft
+```arcw
 Unit
 Never
 Option<T>
@@ -23,7 +23,7 @@ type position.
 
 ## References and Handles
 
-```awft
+```arcw
 Id<T>
 Ref<T>
 Handle<T>
@@ -40,7 +40,7 @@ Lease<T>
 
 Arcweft uses Rust-like collection names for the default surface vocabulary:
 
-```awft
+```arcw
 Vec<T>
 VecDeque<T>
 SmallList<T, N>
@@ -61,7 +61,7 @@ and is the normal target for bracket sequence literals when no fixed-size contex
 typed as `Array<T, 3>` when the expected type requires exactly three elements.
 Without an expected fixed-length type, the same literal defaults to `Vec<T>`.
 
-```awft
+```arcw
 let dynamic: Vec<i32> = [1, 2, 3]
 let fixed: Array<i32, 3> = [1, 2, 3]
 ```
@@ -69,13 +69,13 @@ let fixed: Array<i32, 3> = [1, 2, 3]
 `[value; N]` is fixed-length array construction. `N` must be an integer
 constant in the current Phase 2 surface.
 
-```awft
+```arcw
 let zeros: Array<i32, 4> = [0; 4]
 ```
 
 Length mismatch is a verifier/type-checking diagnostic:
 
-```awft
+```arcw
 let bad: Array<i32, 2> = [1, 2, 3]  # error
 ```
 
@@ -93,7 +93,7 @@ specific inline-storage implementation.
 Compiler, runtime, presentation, and tooling code use explicit ID-bearing data
 structures instead of naked numeric indexes:
 
-```awft
+```arcw
 Arena<T>
 StableArena<T>
 ArenaId<T>
@@ -125,7 +125,7 @@ dependencies.
 
 These types describe deterministic state deltas and replay-visible logs:
 
-```awft
+```arcw
 StatePath
 Patch<T>
 PatchSet<T>
@@ -164,7 +164,7 @@ observe them through explicit events and replayable queue state.
 Compiler, verifier, formatter, and LSP-facing APIs share source identity and
 diagnostic data:
 
-```awft
+```arcw
 SourceRange
 SourceSpan
 SourceAnchor
@@ -186,7 +186,7 @@ tooling manifests.
 
 Reservable containers provide explicit capacity APIs:
 
-```awft
+```arcw
 let items = Vec<String>.with_capacity(8)
 items.reserve(16)
 items.shrink()
@@ -204,7 +204,7 @@ tooling, parsing, localization, and trace preparation.
 Shared-memory-facing models must not store `Vec<T>`, `String`, hash maps, raw
 pointers, or host handles directly. Use descriptor types instead:
 
-```awft
+```arcw
 Bytes
 Blob
 BlobRef
@@ -223,7 +223,7 @@ buffers, but the core data format remains Sans I/O.
 
 Dialogue and presentation text use structured text data near the prelude:
 
-```awft
+```arcw
 TextKey
 Localized<T>
 LocaleMap<T>
@@ -252,3 +252,4 @@ use arcweft::presentation::PresentationHandle;
 
 Low-level crates should depend on narrow crates directly instead of importing
 the facade crate.
+

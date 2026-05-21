@@ -74,7 +74,7 @@ UnitSuffix       := 'ns' | 'us' | 'ms' | 's' | 'min' | 'h'
 
 Examples:
 
-```awft
+```arcw
 10i32
 2.0f32
 100pt
@@ -471,7 +471,7 @@ RestPattern   := '..' Ident?
 
 Examples:
 
-```awft
+```arcw
 .Some(route)
 .Err(e)
 .ChoiceSelected { id }
@@ -530,3 +530,4 @@ DivergingExpr := ReturnStmt | GotoStmt | BreakStmt | ContinueStmt | PanicStmt | 
 ```
 
 `!` coerces to any expected type. Diagnostics should normally say "this branch never returns" rather than exposing bottom-type theory to non-expert users.
+

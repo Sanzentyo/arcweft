@@ -17,7 +17,7 @@
         "kind": "Flow",
         "flow": "flow.opening",
         "source": {
-          "file": "game/routes/opening.awft",
+          "file": "game/routes/opening.arcw",
           "line": 10,
           "column": 1,
           "byte_start": 212,
@@ -30,7 +30,7 @@
         "text_key": "text.opening.narration.001",
         "speaker": "character.narrator",
         "source": {
-          "file": "game/routes/opening.awft",
+          "file": "game/routes/opening.arcw",
           "line": 12,
           "column": 5
         }
@@ -40,7 +40,7 @@
         "task": "task_0042",
         "awaited": "asset.image(asset.bg.room)",
         "source": {
-          "file": "game/routes/opening.awft",
+          "file": "game/routes/opening.arcw",
           "line": 15,
           "column": 18
         }
@@ -88,3 +88,4 @@ related IDs
 ## Display policy
 
 Tools may redact source text and IDs in product builds, but the crash bundle should preserve the full manifest when allowed by privacy configuration.
+

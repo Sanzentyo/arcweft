@@ -63,7 +63,7 @@ bug-report/
   engine.json
   bundle-manifest.toml
   state-before.bin
-  trace.awftx
+  trace.arcwx
   agent-actions.ndjson
   logs.jsonl
   signals.json

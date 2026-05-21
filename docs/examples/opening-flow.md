@@ -1,6 +1,6 @@
 # Opening flow example
 
-```awft
+```arcw
 mod crate::game::routes::opening
 
 use crate::game::prelude::*
@@ -44,3 +44,4 @@ alice(id=@.hint) -> @say.opening.alice.dream.hint
 choice @.first   -> @choice.opening.dream.first
 @.listen -> @choice.opening.dream.first.listen
 ```
+

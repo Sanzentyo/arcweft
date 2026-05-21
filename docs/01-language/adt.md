@@ -2,7 +2,7 @@
 
 ## enum
 
-```awft
+```arcw
 pub enum Route {
     Opening,
     AliceIntro { from_choice: Ref<ChoiceOption> },
@@ -17,7 +17,7 @@ pub enum BadEndReason {
 
 ## match
 
-```awft
+```arcw
 fn route_title(route: Route) -> String {
     match route {
         .Opening => "Opening",
@@ -31,7 +31,7 @@ match は exhaustive check される。
 
 ## derive
 
-```awft
+```arcw
 #[derive(Clone, Debug, Format, Serialize, Eq)]
 pub enum GameEvent {
     StartGame,
@@ -43,7 +43,7 @@ pub enum GameEvent {
 
 ## struct
 
-```awft
+```arcw
 pub struct SettingsInput {
     text_speed: f32,
     master_volume: f32,
@@ -52,7 +52,7 @@ pub struct SettingsInput {
 
 ## newtype
 
-```awft
+```arcw
 pub type PlayerName = String
 where len(self) >= 1
 where len(self) <= 16
@@ -62,7 +62,8 @@ where len(self) <= 16
 
 組み込み ADT として扱う。
 
-```awft
+```arcw
 Option<T> = Some(T) | None
 Result<T, E> = Ok(T) | Err(E)
 ```
+

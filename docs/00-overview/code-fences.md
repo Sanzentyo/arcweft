@@ -5,7 +5,7 @@ Arcweft の Markdown 仕様書では、Arcweft script の例示に Rust の code
 ## 基本ルール
 
 ```text
-Arcweft source / DSL:      ```awft
+Arcweft source / DSL:      ```arcw
 Arcweft agent script:      ```awfagent
 WGSL shader body only:     ```wgsl
 Rust implementation code:  ```rust
@@ -15,9 +15,9 @@ Shell command:             ```bash
 Plain pipeline/diagram:    ```text
 ```
 
-Arcweft の source extension は `.awft` なので、DSL 例は原則 `awft` fence を使う。
+Arcweft の source extension は `.arcw` なので、DSL 例は原則 `arcw` fence を使う。
 
-```awft
+```arcw
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     alice(id=@say.opening.001): おはよう。[p]
     Ok(FlowExit::Done)
@@ -33,10 +33,11 @@ pub struct RuntimeStepInput {
 }
 ```
 
-WGSL 単体の shader body は `wgsl` を使う。ただし、`shader @shader... { wgsl { ... } }` のような Arcweft DSL 全体の例は `awft` を使う。
+WGSL 単体の shader body は `wgsl` を使う。ただし、`shader @shader... { wgsl { ... } }` のような Arcweft DSL 全体の例は `arcw` を使う。
 
 ## 理由
 
-- `.awft` source と Rust 実装を明確に分ける。
+- `.arcw` source と Rust 実装を明確に分ける。
 - LLM / RAG が Arcweft DSL と Rust API を誤認しにくくする。
-- 将来の syntax highlighter / tree-sitter grammar / docs renderer が `awft` fence を手がかりにできるようにする。
+- 将来の syntax highlighter / tree-sitter grammar / docs renderer が `arcw` fence を手がかりにできるようにする。
+

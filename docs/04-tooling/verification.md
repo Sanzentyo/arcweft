@@ -11,7 +11,7 @@
 
 ## Proof IR
 
-```awft
+```arcw
 pub enum ProofExpr {
     Bool(bool),
     Int(i64),
@@ -29,7 +29,7 @@ pub enum ProofExpr {
 
 ## Backend
 
-```awft
+```arcw
 pub trait SmtBackend {
     fn assert(&mut self, expr: ProofExpr) -> Result<()>;
     fn check(&mut self) -> Result<SmtResult>;
@@ -63,23 +63,23 @@ verifier core must not spawn processes or depend on native solver libraries.
 ## CLI
 
 ```bash
-arcw verify game/main.awft --solver z3
-arcw verify game/main.awft --solver oxiz
-arcw verify game/main.awft --cross-check z3,oxiz
-arcw verify game/main.awft --emit-smt out/proofs
+arcw verify game/main.arcw --solver z3
+arcw verify game/main.arcw --solver oxiz
+arcw verify game/main.arcw --cross-check z3,oxiz
+arcw verify game/main.arcw --emit-smt out/proofs
 arcw verify activity mini_games/truck --kani
-arcw verify game/main.awft --emit-obligations out/proofs
+arcw verify game/main.arcw --emit-obligations out/proofs
 ```
 
 Current implementation supports:
 
 ```bash
-arcw verify game/main.awft --backend emit --json
-arcw verify game/main.awft --backend oxiz
-arcw verify game/main.awft --backend z3 --solver-command z3
-arcw verify game/main.awft --emit-obligations obligations.json
-arcw verify game/main.awft --emit-smt out/proofs
-arcw unsafe game/main.awft --json
+arcw verify game/main.arcw --backend emit --json
+arcw verify game/main.arcw --backend oxiz
+arcw verify game/main.arcw --backend z3 --solver-command z3
+arcw verify game/main.arcw --emit-obligations obligations.json
+arcw verify game/main.arcw --emit-smt out/proofs
+arcw unsafe game/main.arcw --json
 ```
 
 ## Source proof items and unsafe audits
@@ -117,7 +117,7 @@ as `'line.focus` that are not explicitly dropped or transferred.
 Effects are checked as semantic facts, not as ordinary value expressions.
 Flow/function contracts and hook headers grant capabilities in the checked body:
 
-```awft
+```arcw
 flow @flow.effects effects
 effects { signal.write, metric.write, state.write('flow) }
 {
@@ -169,3 +169,4 @@ variants remain stable across serde implementations:
   "suggestion": "Clamp affection after addition"
 }
 ```
+

@@ -40,7 +40,7 @@ There is one `flow` entry-point model.
 
 The canonical dialogue form is a character method call with a content block:
 
-```awft
+```arcw
 alice.say()[
     おはよう。[p]
 ]
@@ -48,7 +48,7 @@ alice.say()[
 
 With common options:
 
-```awft
+```arcw
 alice.say(
     id = @say.opening.greeting,
     voice = auto,
@@ -61,7 +61,7 @@ alice.say(
 
 `alice` is a character alias in scope. If a character is referenced directly by entity ID, use a delimited reference or parentheses before method access:
 
-```awft
+```arcw
 @<character.alice>.say(voice=auto)[
     おはよう。[p]
 ]
@@ -77,13 +77,13 @@ alice.say(
 
 The compact form:
 
-```awft
+```arcw
 alice: おはよう。[p]
 ```
 
 is sugar for:
 
-```awft
+```arcw
 alice.say()[
     おはよう。[p]
 ]
@@ -91,14 +91,14 @@ alice.say()[
 
 Options are written in parentheses and are the same as `say()` options:
 
-```awft
+```arcw
 alice(id=@say.opening.greeting, look=.smile, voice=auto):
     おはよう。[p]
 ```
 
 is sugar for:
 
-```awft
+```arcw
 alice.say(
     id = @say.opening.greeting,
     look = .smile,
@@ -115,7 +115,7 @@ not part of the stable grammar.
 Line IDs may also be relative in the `id` option. Relative line IDs are resolved
 using the current flow, speaker, and named-scope path.
 
-```awft
+```arcw
 scope rain {
     alice(id=@.comment, voice=auto):
         雨、強くなってきたね。[p]
@@ -135,7 +135,7 @@ The long method form is preferred when the line has a custom window, timed cues,
 
 ## Minimal dialogue flow
 
-```awft
+```arcw
 mod crate::game::routes::opening
 
 use crate::game::prelude::*
@@ -170,7 +170,7 @@ scopes and ID namespaces, so `@.sound`, `@.comment`, `@.first`, `@.listen`, and
 Named scopes make compact source IDs practical while keeping registry IDs
 stable and fully qualified.
 
-```awft
+```arcw
 scope dream {
     let can_enter = {
         let affection_ok = state.affection[@character.alice] >= 3
@@ -211,7 +211,7 @@ choice @.first       -> @choice.opening.first
 
 The compact arm form is sugar. `->` advances the flow with `goto`; `=>` outputs a value from the choice expression.
 
-```awft
+```arcw
 let next_flow = choice @choice.opening.first {
     @choice.opening.listen "聞いてみる" => @flow.alice_intro
     @choice.opening.silent "黙っている" => @flow.quiet_intro
@@ -222,7 +222,7 @@ goto next_flow
 
 Use full `option` blocks when the UI needs visible/enabled state, disabled reasons, badges, hotkeys, or a multi-statement selected action.
 
-```awft
+```arcw
 let can_enter_alice = state.affection[@character.alice] >= 3
 
 choice @choice.opening.first {
@@ -250,7 +250,7 @@ choice @choice.opening.first {
 
 Inline arm `if` is enabled-state sugar. A block `if` controls whether an option exists at all.
 
-```awft
+```arcw
 choice @choice.opening.first {
     if state.flags.contains(.alice_route_discovered) {
         @choice.opening.listen "聞いてみる" -> @flow.alice_intro
@@ -262,7 +262,7 @@ choice @choice.opening.first {
 
 Dynamic options use ordinary `for` over lists, sequences, or sorted map entries.
 
-```awft
+```arcw
 choice @choice.opening.routes {
     for route in opening_routes(state) {
         option route.choice_id {
@@ -284,7 +284,7 @@ choice @choice.opening.routes {
 
 `choice ... with { ... }` attaches a choice lifecycle plan. `with:` is indentation sugar, as with dialogue line plans.
 
-```awft
+```arcw
 choice @choice.opening.first {
     @choice.opening.listen "聞いてみる" -> @flow.alice_intro
     @choice.opening.silent "黙っている" -> @flow.quiet_intro
@@ -327,7 +327,7 @@ localized text, a text key, or rich text carrying localization identity. A plain
 runtime `String` is displayable, but tools should warn when it is used where a
 localizable choice label is expected.
 
-```awft
+```arcw
 choice @choice.opening.routes {
     option route in opening_routes(state) {
         id = route.choice_id
@@ -350,7 +350,7 @@ choice @choice.opening.routes {
 Relative choice IDs are resolved from the current flow and named scope path.
 Relative option IDs are resolved under the current choice ID.
 
-```awft
+```arcw
 scope dream {
     choice @.first {
         @.listen "聞いてみる" -> @flow.alice_intro
@@ -371,7 +371,7 @@ choice @.first -> @choice.opening.dream.first
 
 The canonical detailed dialogue shape is an explicit character call. Arcweft also accepts bracket shorthand when the callee is a speaker, character reference, or speaker preset:
 
-```awft
+```arcw
 alice[
     おはよう。[p]
 ]
@@ -379,7 +379,7 @@ alice[
 
 This is sugar for `alice.say()[...]`. A line plan can be attached with canonical `with { ... }` or indentation sugar `with:`.
 
-```awft
+```arcw
 alice[
     おはよう。[p]
 ]
@@ -390,7 +390,7 @@ with:
 
 The same line-plan attachment works with colon syntax:
 
-```awft
+```arcw
 alice:
     おはよう。[p]
 with:
@@ -415,7 +415,7 @@ alice2(voice=auto): text
 
 Use the canonical method form when the line exports handles or values:
 
-```awft
+```arcw
 let (actor, voice) = alice.say(voice=auto)[
     聞いて。[p]
 ]
@@ -431,7 +431,7 @@ with:
 
 The `script` keyword is not part of Arcweft's scenario grammar.
 
-```awft
+```arcw
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     alice: おはよう。[p]
 }
@@ -439,7 +439,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
 Reusable scenario snippets use `fragment`:
 
-```awft
+```arcw
 pub fragment @frag.alice_enters: FlowFragment {
     show(@character.alice, .normal, at = .right, fade = 220ms)
     move(@character.alice, to = .center, time = 300ms, ease = cubic.out)
@@ -457,7 +457,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
 ## Speaker line forms
 
-```awft
+```arcw
 alice: おはよう。
 
 alice(look=.smile): おはよう。
@@ -484,7 +484,7 @@ The implicit window is `@textbox.0` unless the character, line, or project defau
 
 Speaker presets are allowed in the same position:
 
-```awft
+```arcw
 let alice2 = alice(look=.smile, voice=auto, window=@textbox.side)
 
 alice2: おはよう。[p]
@@ -503,7 +503,7 @@ Bracket control tags are special only in dialogue text mode.
 
 Dialogue text mode begins only in these places:
 
-```awft
+```arcw
 alice: inline dialogue text here
 
 alice:
@@ -540,7 +540,7 @@ Outside dialogue text mode, `[...]` is not treated as a dialogue control tag. It
 
 Arcweft prelude defines a built-in narrator-like character:
 
-```awft
+```arcw
 pub character @character.narrator narrator {
     role = narration
     nameplate = hidden
@@ -561,7 +561,7 @@ narrator
 
 All of these are equivalent by default:
 
-```awft
+```arcw
 narrator: 扉の向こうから、雨の音がした。[p]
 地の文: 扉の向こうから、雨の音がした。[p]
 地: 扉の向こうから、雨の音がした。[p]
@@ -587,7 +587,7 @@ Scenario staging is expressed as ordinary effectful calls inside `flow` and
 `fragment` bodies. The older `@bg` / `@show` command family is not part of the
 stable grammar; `@` is reserved for entity references.
 
-```awft
+```arcw
 bg(@asset.bg.school_evening, fade = 600ms)
 show(@character.alice, .normal, at = .center, layer = @layer.characters, fade = 200ms)
 face(@character.alice, .smile, crossfade = 120ms)
@@ -601,7 +601,7 @@ visible presentation value is the lifetime of the returned handle unless the
 handle is explicitly detached, moved into another scope, or cleared through the
 matching clear API.
 
-```awft
+```arcw
 scope opening_view {
     let room = bg(@asset.bg.school_evening, fade = 600ms)
     let alice_on_stage = show(@character.alice, .normal, at = .center)
@@ -616,7 +616,7 @@ static-option-like cell: setting it replaces and returns the previous value if
 one existed, reading it does not change it, and clearing it returns the current
 value if present.
 
-```awft
+```arcw
 let previous_bg = bg(@asset.bg.room, target = @target.scene, slot = @slot.background.main)
 let current_bg = ref bg(target = @target.scene, slot = @slot.background.main)
 let cleared_bg = clear bg(target = @target.scene, slot = @slot.background.main)
@@ -637,7 +637,7 @@ show(character, expression)
 If more than one background or one instance of the same character must coexist,
 the author must specify a different `target` or `slot`:
 
-```awft
+```arcw
 let far = bg(@asset.bg.city_far, slot = @slot.background.far)
 let near = bg(@asset.bg.city_near, slot = @slot.background.near)
 
@@ -657,7 +657,7 @@ for simultaneous values.
 
 ## Complex line with method form
 
-```awft
+```arcw
 alice.say(id=@say.opening.dream_hint, voice=auto, look=.smile)[
     今日は少しだけ、#[fmt("変な夢", color=rgb("#a8b5ff"))]を見たんだ。[p]
 ]
@@ -673,7 +673,7 @@ with {
 
 Colon sugar can attach the same line plan with `with { ... }`:
 
-```awft
+```arcw
 alice(id=@say.opening.dream_hint, voice=auto, look=.smile):
     今日は少しだけ、#[fmt("変な夢", color=rgb("#a8b5ff"))]を見たんだ。[p]
 with {
@@ -682,3 +682,4 @@ with {
 ```
 
 The line plan and `at(...) { ... }` blocks create scoped variables. See [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](dialogue-calls-scopes-cancellation.md).
+

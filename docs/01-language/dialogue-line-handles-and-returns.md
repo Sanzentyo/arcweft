@@ -17,7 +17,7 @@ Related:
 
 The preferred detailed shape is:
 
-```awft
+```arcw
 speaker.say(args)[dialogue]
 with {
     line plan
@@ -26,7 +26,7 @@ with {
 
 For script-like sections, `with:` is indentation sugar for the same block:
 
-```awft
+```arcw
 speaker.say(args)[dialogue]
 with:
     line plan
@@ -34,7 +34,7 @@ with:
 
 For ordinary lines, the speaker itself can receive the content block:
 
-```awft
+```arcw
 alice[
     おはよう。[p]
 ]
@@ -45,7 +45,7 @@ with:
 
 This is equivalent to the canonical detailed form:
 
-```awft
+```arcw
 alice.say()[
     おはよう。[p]
 ]
@@ -56,7 +56,7 @@ with:
 
 The colon form is the shortest speaker-call sugar:
 
-```awft
+```arcw
 alice:
     おはよう。[p]
 with:
@@ -66,7 +66,7 @@ with:
 
 This is equivalent to the same canonical detailed form:
 
-```awft
+```arcw
 alice.say()[
     おはよう。[p]
 ]
@@ -88,13 +88,13 @@ character `.say(...)` call.
 
 It is realistic and useful because `alice[...]` is only interpreted as a dialogue content call when `alice` has type `Speaker`, `Ref<Character>`, or `SpeakerPreset` and appears in flow-item position.
 
-```awft
+```arcw
 alice[おはよう。[p]]
 ```
 
 is a dialogue call.
 
-```awft
+```arcw
 items[index]
 ```
 
@@ -118,14 +118,14 @@ The formatter may expand ambiguous cases to `alice.say()[...]`.
 
 Both block forms are supported. `with { ... }` is canonical; `with:` is syntax sugar for an indented source block.
 
-```awft
+```arcw
 alice[おはよう。[p]]
 with {
     at(0.42s) { alice.stage.look(smile) }
 }
 ```
 
-```awft
+```arcw
 alice[おはよう。[p]]
 with:
     at(0.42s):
@@ -143,7 +143,7 @@ line_plan_style = "indent"   # "indent" | "brace" | "preserve"
 
 A bare block after dialogue content is not a line plan:
 
-```awft
+```arcw
 alice.say()[おはよう。[p]] {
     debug_log()
 }
@@ -157,7 +157,7 @@ The `{ ... }` above is a separate lexical scope. Use `with { ... }` when the blo
 
 The following is a concise complex line. The `alice:` head is syntax sugar for a character dialogue call, and `with:` is syntax sugar for `with { ... }`.
 
-```awft
+```arcw
 alice(voice=auto, look=.smile):
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 with:
@@ -172,7 +172,7 @@ with:
 
 It is equivalent to:
 
-```awft
+```arcw
 alice.say(voice=auto, look=.smile)[
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 ]
@@ -192,7 +192,7 @@ with:
 
 A line plan may export a value with `out`. Without an explicit `out`, the line result is `()`.
 
-```awft
+```arcw
 let handles = alice.say(voice=auto)[
     聞いて。[p]
 ]
@@ -219,7 +219,7 @@ If a cancellation branch can complete the line differently, it must either:
 
 Example with explicit cancel result:
 
-```awft
+```arcw
 let result = try alice.say(voice=auto)[
     聞いて。[p]
 ]
@@ -238,7 +238,7 @@ For most visual-novel lines, cancel handlers use `continue`, `goto`, or `return 
 
 Line results can be destructured.
 
-```awft
+```arcw
 let (line_alice, (face0, face1, voice)) = alice.say(
     id=@say.opening.dream_hint,
     voice=auto,
@@ -258,7 +258,7 @@ with:
 
 `_` explicitly discards a returned value.
 
-```awft
+```arcw
 let (_, (face0, _, voice)) = alice.say(voice=auto)[
     聞いて。[p]
 ]
@@ -278,7 +278,7 @@ For plain values, `_` just discards. For scoped handles, `_` runs the handle's d
 
 Line plans can create handles for voice, BGM, animation, stage leases, subscriptions, and scheduled cues.
 
-```awft
+```arcw
 pub trait ScopedHandle {
     fn drop_policy(self) -> DropPolicy
 }
@@ -307,7 +307,7 @@ Default policies:
 
 A returned handle lives in the receiving scope. When that scope ends, the handle is dropped. Binding it to `_` drops it immediately.
 
-```awft
+```arcw
 let _ = bgm.play(@bgm.tension, scope=line, drop=fade(300ms))
 // BGM is started and then immediately dropped, so it is faded/stopped immediately.
 // LSP warns because this is probably a mistake.
@@ -315,7 +315,7 @@ let _ = bgm.play(@bgm.tension, scope=line, drop=fade(300ms))
 
 To persist BGM beyond the line, detach it or use a global scope explicitly.
 
-```awft
+```arcw
 let bgm_handle = alice.say()[始まるよ。[p]]
 with:
     let bgm = bgm.play(@bgm.tension, scope=line, drop=fade(300ms))
@@ -328,7 +328,7 @@ with:
 
 `with:` creates a lexical scope.
 
-```awft
+```arcw
 alice:
     聞いて。[p]
 with:
@@ -347,7 +347,7 @@ Only values exported with `out` from the line plan can escape the line. Borrowed
 
 Characters expose object-like stage APIs. These APIs return handles that can be scoped, memoized, or preloaded.
 
-```awft
+```arcw
 preload next @flow.alice_intro:
     alice.stage.prefetch(pose=normal, faces=[smile, worried], window=@textbox.0)
     alice.voice_for(@say.alice_intro.001).preload()
@@ -356,7 +356,7 @@ preload next @flow.alice_intro:
 
 Within a line:
 
-```awft
+```arcw
 let actor = alice.stage.acquire(scope=line, memo=true)
 let pose = actor.pose(normal)
 let face = actor.look(smile)
@@ -364,7 +364,7 @@ let face = actor.look(smile)
 
 The `memo=true` flag allows the stage proxy to reuse loaded sprite atlases, expression meshes, and text-layout assets when the same key is requested again.
 
-```awft
+```arcw
 let actor = memo(scope=scene, key=(@character.alice, pose=normal, theme=env.theme.hash)) {
     alice.stage.acquire(scope=line)
 }
@@ -378,7 +378,7 @@ Preload declarations are hints, not hidden blocking operations. If an asset is n
 
 A line result binding may technically shadow a speaker alias:
 
-```awft
+```arcw
 let (alice, _) = alice.say()[おはよう。[p]] with:
     let actor = alice.stage.acquire(scope=line)
     out (actor, ())
@@ -386,7 +386,7 @@ let (alice, _) = alice.say()[おはよう。[p]] with:
 
 This is allowed but discouraged, because after the binding `alice` refers to the stage handle, not the speaker alias. The LSP warns by default. Prefer a distinct name:
 
-```awft
+```arcw
 let (alice_actor, _) = alice.say()[おはよう。[p]] with:
     let actor = alice.stage.acquire(scope=line)
     out (actor, ())
@@ -396,7 +396,7 @@ let (alice_actor, _) = alice.say()[おはよう。[p]] with:
 
 ## Desugaring summary
 
-```awft
+```arcw
 alice[
     おはよう。[p]
 ]
@@ -406,7 +406,7 @@ with:
 
 becomes conceptually:
 
-```awft
+```arcw
 alice.say()[
     おはよう。[p]
 ]
@@ -414,7 +414,7 @@ with:
     at(0.42s): alice.stage.look(smile)
 ```
 
-```awft
+```arcw
 alice:
     おはよう。[p]
 with:
@@ -423,10 +423,11 @@ with:
 
 also becomes the same call.
 
-```awft
+```arcw
 let (_, cue) = alice.say()[おはよう。[p]] with:
     let cue = at(0.42s): alice.stage.look(smile)
     out (line.voice_handle(), cue)
 ```
 
 runs `drop_now` on the discarded voice handle immediately after destructuring, while `cue` remains owned by the surrounding scope.
+

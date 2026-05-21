@@ -15,7 +15,7 @@ SemanticHash 内容・意味のfingerprint
 
 通常:
 
-```awft
+```arcw
 @flow.opening
 @choice.opening.listen
 @asset.bg.room
@@ -24,7 +24,7 @@ SemanticHash 内容・意味のfingerprint
 
 境界明示:
 
-```awft
+```arcw
 @<activity.truck_game>.run(...)
 @<flow.alice_intro@jj:qtnqlkkm>
 @<say.opening.dream_hint@sem:b3_9f2a1c>
@@ -39,7 +39,7 @@ entity-reference marker.
 
 コメント:
 
-```awft
+```arcw
 /// [[flow.alice_intro]]
 /// [[soft:flow.alice_intro]]
 /// [[say.opening.dream_hint@sem:b3_9f2a1c]]
@@ -47,7 +47,7 @@ entity-reference marker.
 
 ## 参照レベル
 
-```awft
+```arcw
 pub enum ReferenceLevel {
     Mention,
     Soft,
@@ -76,7 +76,7 @@ pub enum ReferenceLevel {
 
 ID は省略できる。
 
-```awft
+```arcw
 flow opening(state: GameState) {
     say alice "おはよう。"
 }
@@ -126,7 +126,7 @@ scope = "flow"
 ID を期待する文脈では、一貫性のため family-relative spelling も使える。
 ただし手書きでは短い `@.suffix` を推奨する。
 
-```awft
+```arcw
 flow @.opening {
     goto @flow:.next
 }
@@ -164,7 +164,7 @@ absolute ID を手で連結するより `@flow:.next` のような
 family-relative form を推奨する。family が明示されるので、ID を宣言する
 `@.suffix` と値として参照する `@flow:.suffix` が混ざらない。
 
-```awft
+```arcw
 goto @flow:.next
 include @frag:.intro
 window = @textbox:.side
@@ -197,7 +197,7 @@ TODO(lint): `@...suffix` remains valid syntax for generated code and compact
 authoring, but lint/formatter tooling should recommend `@super.super.suffix`
 when the parent depth is greater than one.
 
-```awft
+```arcw
 alice(id=@.greeting):
     おはよう。[p]
 
@@ -208,7 +208,7 @@ choice @.first {
 
 名前付き scope は、lexical scope であると同時に ID namespace として使う。
 
-```awft
+```arcw
 scope rain {
     地の文(id=@.sound):
         扉の向こうから、雨の音がした。[p]
@@ -257,7 +257,7 @@ choice option id:
 The same rule applies to both narration and character dialogue. The current
 speaker segment is inserted before the named-scope path for dialogue IDs:
 
-```awft
+```arcw
 地の文(id=@.rain):
     扉の向こうから、雨の音がした。[p]
 
@@ -317,7 +317,7 @@ fragment ID, named scopes, and generated relative IDs. It should report IDs that
 do not follow a configured hierarchy, while keeping the core parser/HIR Sans
 I/O and policy-neutral.
 
-```awft
+```arcw
 alice(id=@.greeting):
     おはよう。[p]
 
@@ -362,7 +362,7 @@ When a line ID is omitted, the stable ordinal is generated under the same
 flow/speaker/scope prefix. This keeps later insertions stable while making the
 scope visible in localization and voice manifests.
 
-```awft
+```arcw
 scope rain {
     地の文:
         扉の向こうから、雨の音がした。[p]
@@ -376,7 +376,7 @@ scope rain {
 
 `scope` は入れ子にでき、`scope_path` は外側から順に連結する。
 
-```awft
+```arcw
 scope rain {
     scope window {
         地の文(id=@.rattle):
@@ -395,7 +395,7 @@ scope rain {
 text key の namespace に使う。`scope` 式そのものの値は通常の `{ ... }`
 と同じく最後の式で決まる。
 
-```awft
+```arcw
 let can_enter = scope alice_route_check {
     let affection_ok = state.affection[@character.alice] >= 3
     let has_key = state.inventory.contains(@item.alice_key)
@@ -405,7 +405,7 @@ let can_enter = scope alice_route_check {
 
 ID に反映されるのは、その scope 内の ID-bearing construct だけである。
 
-```awft
+```arcw
 scope dream {
     let can_enter = {
         let affection_ok = state.affection[@character.alice] >= 3
@@ -432,14 +432,14 @@ choice @.first
 `self::`、`super::`、`crate::` を使う。`parent::` は `super::` の予約
 alias で、formatter は `super::` に正規化する。
 
-```awft
+```arcw
 alice(id=@.greeting):       // ID context
 use self::characters::alice // module path context
 ```
 
 Module and import roots are deliberately separate from relative IDs:
 
-```awft
+```arcw
 mod crate::game::routes::opening
 mod self::routes::opening
 mod super::shared
@@ -488,3 +488,4 @@ arcw rename @voice.alice.game.routes.opening.opening.greeting @voice.alice.game.
 arcw resource move assets/voice/ja-JP/alice/game/routes/opening/opening/greeting.ogg assets/voice/ja-JP/alice/game/routes/opening/opening/soft_greeting.ogg --update-refs
 arcw resource move assets/bg/room.png assets/bg/opening/room.png --keep-id
 ```
+

@@ -19,10 +19,10 @@
 
 - エンジン名: **Arcweft Engine**
 - CLI: `arcw`
-- ソース拡張子: `.awft`
+- ソース拡張子: `.arcw`
 - バンドル: `.awfb`
 - セーブ: `.awfs`
-- トレース: `.awftx`
+- トレース: `.arcwx`
 - Agent script: `.awfagent`
 
 詳細は [命名・拡張子・公開識別子](00-overview/naming.md) を参照してください。
@@ -68,3 +68,4 @@
 ## Documentation conventions
 
 - [Code Fence Policy](00-overview/code-fences.md)
+

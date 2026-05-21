@@ -341,10 +341,10 @@ pub struct RuntimePlan {
 `--frames` is removed from runtime execution commands. Use runtime step vocabulary:
 
 ```bash
-arcw run <file.awft> --entry @entry.main --mode game --steps 8
-arcw run <file.awft> --entry @entry.main --mode drain --max-ops 10000
-arcw cli <file.awft> --entry @entry.main -- ARGS...
-arcw serve <file.awft> --entry @entry.http --adapter native-http --listen 127.0.0.1:8080
+arcw run <file.arcw> --entry @entry.main --mode game --steps 8
+arcw run <file.arcw> --entry @entry.main --mode drain --max-ops 10000
+arcw cli <file.arcw> --entry @entry.main -- ARGS...
+arcw serve <file.arcw> --entry @entry.http --adapter native-http --listen 127.0.0.1:8080
 ```
 
 Replace `RuntimeRunOptions.frames` with:
@@ -393,7 +393,7 @@ Output JSON should separate:
 
 ---
 
-## Parser / AWFT syntax gaps that must be fixed
+## Parser / arcw syntax gaps that must be fixed
 
 The current parser is much better split than before, but code reading still shows several compile-able patterns that are likely to be fragile or rejected.
 
@@ -487,7 +487,7 @@ crates/arcweft-cli/src/main.rs
 
 ---
 
-## New AWFT grammar additions
+## New arcw grammar additions
 
 ### Entry declarations
 
@@ -500,19 +500,19 @@ RouteDecl := 'route' HttpMethod String '->' EntityRef
 
 Example:
 
-```awft
+```arcw
 entry game @entry.main {
     start @flow.opening
 }
 ```
 
-```awft
+```arcw
 entry cli @entry.greet {
     run @flow.cli_main
 }
 ```
 
-```awft
+```arcw
 entry server @entry.http {
     route GET "/health" -> @flow.health
     route GET "/hello/:name" -> @flow.hello
@@ -530,7 +530,7 @@ EffectClause := 'effects' '{' CapabilityEffect* '}'
 
 Example:
 
-```awft
+```arcw
 extern capability fs {
     type FsError
 
@@ -544,7 +544,7 @@ extern capability fs {
 
 ### Virtual paths
 
-```awft
+```arcw
 extern capability path {
     fn save(path: String) -> VirtualPath
     fn asset(path: String) -> VirtualPath
@@ -553,20 +553,20 @@ extern capability path {
 }
 ```
 
-OS paths do not appear directly in `.awft` source.
+OS paths do not appear directly in `.arcw` source.
 
 ---
 
 ## Test architecture
 
-Use fixtures as source-of-truth. Parser/HIR/sema tests and CLI tests should load the same `.awft` files.
+Use fixtures as source-of-truth. Parser/HIR/sema tests and CLI tests should load the same `.arcw` files.
 
 ```text
-tests/fixtures/awft/current_pass/check/*.awft
-tests/fixtures/awft/current_pass/run/*.awft
-tests/fixtures/awft/spec_should_pass/check/*.awft
-tests/fixtures/awft/spec_should_pass/run/*.awft
-tests/fixtures/awft/spec_should_fail/*.awft
+tests/fixtures/arcw/current_pass/check/*.arcw
+tests/fixtures/arcw/current_pass/run/*.arcw
+tests/fixtures/arcw/spec_should_pass/check/*.arcw
+tests/fixtures/arcw/spec_should_pass/run/*.arcw
+tests/fixtures/arcw/spec_should_fail/*.arcw
 ```
 
 ### Current-pass fixtures
@@ -641,3 +641,4 @@ runtime-boundary closure checklist.
 - [x] Add spec-should-pass fixtures.
 - [x] Add spec-should-fail fixtures.
 - [x] Unignore spec fixtures as implementation lands.
+

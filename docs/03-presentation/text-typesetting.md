@@ -13,7 +13,7 @@ TypesetBlock:
 
 ## RichText
 
-```awft
+```arcw
 say alice rich """
 今日は少しだけ、{ruby "変な夢" "へんなゆめ"}を見たんだ。
 """
@@ -38,7 +38,7 @@ say alice rich """
 
 ## Content functions
 
-```awft
+```arcw
 fn ruby(base: Content, ruby: Content) -> Content
 fn emph(content: Content) -> Content
 fn strong(content: Content) -> Content
@@ -50,7 +50,7 @@ fn math(src: String) -> Content
 
 ## TypesetBlock
 
-```awft
+```arcw
 pub typeset @typeset.credits typst {
     source """
     @set text(font: "Noto Serif CJK JP", size: 18pt)
@@ -68,7 +68,7 @@ pub typeset @typeset.credits typst {
 
 使用:
 
-```awft
+```arcw
 let doc = try await typeset(@typeset.credits) with {
     pending p => { scene.show(@scene.loading_typeset); text.show("組版中"); progress.set(p.ratio) }
 }
@@ -102,4 +102,5 @@ pub struct TextRunObservation {
     pub source: Option<SourceAnchor>,
 }
 ```
+
 

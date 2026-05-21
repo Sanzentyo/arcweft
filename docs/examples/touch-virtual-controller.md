@@ -1,6 +1,6 @@
 # Example: Touch Virtual Controller
 
-```awft
+```arcw
 mod game::ui::touch_controller
 
 pub layer @layer.input.touch_controller {
@@ -45,7 +45,7 @@ pub virtual_controller @controller.touch_default: TouchController {
 
 ## Test
 
-```awft
+```arcw
 test @test.touch_controller_confirm scenario {
     start @flow.opening
     invoke @control.confirm press
@@ -61,3 +61,4 @@ invoke control.confirm press
 drag control.left_stick axis 0.6 -0.3
 wait signal signal.current_flow == flow.alice_intro
 ```
+

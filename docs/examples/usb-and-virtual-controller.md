@@ -11,7 +11,7 @@ Related chapters:
 
 ## USB report
 
-```awft
+```arcw
 pub struct LightgunReport {
     x: u16,
     y: u16,
@@ -34,7 +34,7 @@ requires input.len() >= 6
 
 ## USB device
 
-```awft
+```arcw
 pub usb @usb.lightgun: UsbRawDevice {
     permission = user_prompt
     filter { vendor_id = 0xCAFE; product_id = 0x4001 }
@@ -51,7 +51,7 @@ pub usb @usb.lightgun: UsbRawDevice {
 
 ## Input map
 
-```awft
+```arcw
 input_map @input.lightgun_map {
     source @usb.lightgun.input
 
@@ -72,7 +72,7 @@ input_map @input.lightgun_map {
 
 ## Touch fallback
 
-```awft
+```arcw
 layer @layer.touch_controls {
     z = 900
     kind = ui_overlay
@@ -102,7 +102,7 @@ pub virtual_controller @vc.shooter_touch: VirtualController {
 
 ## Flow
 
-```awft
+```arcw
 flow @flow.shooting_gallery_intro opening(state: GameState) -> Result<FlowExit, FlowError> {
     let gun =
         try await usb.open(@usb.lightgun).optional() with {
@@ -132,7 +132,7 @@ flow @flow.shooting_gallery_intro opening(state: GameState) -> Result<FlowExit, 
 
 ## Test
 
-```awft
+```arcw
 test @test.shooter_touch_fallback scenario {
     start @flow.shooting_gallery_intro
     deny_permission usb @usb.lightgun
@@ -144,3 +144,4 @@ test @test.shooter_touch_fallback scenario {
     expect input_action ButtonDown(.Fire)
 }
 ```
+

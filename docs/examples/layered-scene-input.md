@@ -1,6 +1,6 @@
 # Example: layered scene and input
 
-```awft
+```arcw
 mod game::routes::opening
 
 use game::prelude::*
@@ -53,7 +53,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
 ## Modal example
 
-```awft
+```arcw
 component @ui.settings SettingsPanel(config: Binding<Config>) -> View {
     VStack {
         Text("Settings")
@@ -71,7 +71,7 @@ component @ui.settings SettingsPanel(config: Binding<Config>) -> View {
 
 ## Test
 
-```awft
+```arcw
 test @test.layered_input_blocks_lower scenario {
     start @flow.opening
 
@@ -85,3 +85,4 @@ test @test.layered_input_blocks_lower scenario {
     expect event GameEvent::ChoiceSelected { id: @choice.opening.listen }
 }
 ```
+

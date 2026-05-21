@@ -1,6 +1,6 @@
 # Example: Touch Virtual Controller
 
-```awft
+```arcw
 mod game::ui::virtual_controller
 
 pub virtual_controller @controller.touch.default {
@@ -33,7 +33,7 @@ pub virtual_controller @controller.touch.default {
 
 Input mapping:
 
-```awft
+```arcw
 input_map @input.touch_controller {
     source @controller.touch.default
     map StickChanged(@control.left_stick, x, y) => InputAction.Move { x, y }
@@ -52,7 +52,7 @@ arcw agent observe --objects --json
 
 Headless test:
 
-```awft
+```arcw
 test @test.virtual_controller_confirm scenario {
     start @flow.action_demo
 
@@ -62,3 +62,4 @@ test @test.virtual_controller_confirm scenario {
     expect signal @signal.last_input == InputAction.Confirm
 }
 ```
+

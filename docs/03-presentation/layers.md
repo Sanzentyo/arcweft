@@ -74,7 +74,7 @@ pub struct LayerNode {
 
 `LayerId` は frame 内部 ID、`entity` は履歴・参照・Graph 用の安定 ID。
 
-```awft
+```arcw
 pub enum LayerKind {
     World,
     Character,
@@ -231,7 +231,7 @@ modal layer は独立した focus scope を持ち、閉じるまで下位 scope 
 
 project / module / scene で layer を宣言できる。
 
-```awft
+```arcw
 pub layer @layer.world.background: World {
     z = -1000
     input = observe_only
@@ -266,7 +266,7 @@ pub layer @layer.debug.agent: Debug {
 
 Scene では layer に content を差し込む。
 
-```awft
+```arcw
 scene.show(@scene.opening)
 scope {
     layer @layer.world.background {
@@ -288,7 +288,7 @@ scope {
 
 layer が省略された場合は default layer に入る。
 
-```awft
+```arcw
 scene {
     background(image(@asset.bg.room))             // desugar: layer @layer.world.background
     show(@character.alice, .normal)               // desugar: layer @layer.world.characters
@@ -303,7 +303,7 @@ default target is `@target.scene`; `bg(...)` writes
 reflections, split-screen layers, or multiple copies of a character, the slot
 or target must be explicit.
 
-```awft
+```arcw
 let far = bg(@asset.bg.city_far, slot = @slot.background.far)
 let near = bg(@asset.bg.city_near, slot = @slot.background.near)
 
@@ -326,7 +326,7 @@ format. The syntax/typecheck layer validates that background calls use
 
 HTML/CSS UI は Game Native UI とは別の `HtmlUi` layer として扱う。
 
-```awft
+```arcw
 html panel @ui.settings_html from "ui/settings.html" {
     layer = @layer.ui.html
     bounds = rect(0, 0, 100vw, 100vh)
@@ -340,7 +340,7 @@ Native では Servo、Web では DOM へ渡す。Agent 観測では同じ `Layer
 
 FPS やトラックゲームなどは独立 Activity layer にできる。
 
-```awft
+```arcw
 activity @activity.truck_game TruckGame {
     render_layer = @layer.activity.truck
     input_layer = @layer.activity.truck
@@ -355,7 +355,7 @@ pub layer @layer.activity.truck: Activity {
 
 Activity が modal minigame の場合:
 
-```awft
+```arcw
 pub layer @layer.activity.fps: Activity {
     z = 2500
     input = modal
@@ -411,7 +411,7 @@ arcw agent click --x 520 --y 540 --layer layer.ui.modal
 
 ## Testing
 
-```awft
+```arcw
 test @test.modal_blocks_world_input scenario {
     start @flow.opening
     open_ui @ui.settings_html
@@ -423,7 +423,7 @@ test @test.modal_blocks_world_input scenario {
 }
 ```
 
-```awft
+```arcw
 test #test_choice_layer_bbox visual {
     start @flow.opening
     wait object @choice.opening.listen visible
@@ -437,7 +437,7 @@ test #test_choice_layer_bbox visual {
 
 layer には契約を付けられる。
 
-```awft
+```arcw
 pub layer @layer.ui.modal: Modal
 ensures input.route == modal
 ensures z > @layer.ui.game.z
@@ -449,7 +449,7 @@ ensures z > @layer.ui.game.z
 
 UI component でも所属 layer を保証できる。
 
-```awft
+```arcw
 component ChoiceList(choices: Vec<ChoiceView>) -> View
 ensures result.layer == @layer.ui.game
 ensures result.actions.all(_.layer == @layer.ui.game)
@@ -485,7 +485,7 @@ ensures result.actions.all(_.layer == @layer.ui.game)
 
 Layer は hook target でもある。描画・layout・input routing の各 phase で hook を実行できる。
 
-```awft
+```arcw
 hook @hook.ui_layer_bbox
 on @layer.ui.game
 phase AfterLayout
@@ -497,7 +497,7 @@ check on change layer.layout_hash
 
 `AfterInputRoute` hook では、入力がどの layer に consumed / blocked / passed-through されたかを検査できる。
 
-```awft
+```arcw
 hook @hook.debug_input_route
 on query Layer where input.enabled
 phase AfterInputRoute
@@ -515,7 +515,7 @@ check on event
 
 Layer は hook target になれる。描画、hit-test、入力、Agent 観測の各 phase で hook を実行できる。
 
-```awft
+```arcw
 hook @hook.modal.block_lower_layers
 on @layer.modal.settings
 at input.capture
@@ -548,7 +548,7 @@ Layer hook は [Hook Runtime / Memoization Runtime](../02-runtime/hooks-memoizat
 
 Layer は hook の重要な対象である。描画・入力・Agent 観測が同じ LayerTree を共有するため、layer phase に hook を差し込める。
 
-```awft
+```arcw
 hook @hook.modal_blocks_input
 on @layer.overlay.modal
 phase InputPreRoute
@@ -576,7 +576,7 @@ InputPostRoute
 
 Layer は hook target になれる。これにより、描画・入力・Agent 観測のタイミングで条件チェックや追加処理を入れられる。
 
-```awft
+```arcw
 hook @hook.modal.blocks_lower_layers
 on layer @layer.ui.modal
 at before_input
@@ -587,7 +587,7 @@ priority 1000
 }
 ```
 
-```awft
+```arcw
 hook @hook.debug.layer_observed
 on layer @layer.debug.agent
 at after_render
@@ -617,7 +617,7 @@ Virtual controller layers usually sit above scene/UI layers and consume touch in
 
 A touch virtual controller is a renderable and input-capable layer.
 
-```awft
+```arcw
 layer @layer.input.touch_controller {
     z = 900
     render = true
@@ -630,4 +630,5 @@ layer @layer.input.touch_controller {
 Controls inside this layer consume only their own hit regions and emit normalized actions. Touches outside controls pass through to lower layers. This allows visual novel UI, minigame input, and mobile controls to coexist.
 
 See [Touch Virtual Controller](touch-virtual-controller.md).
+
 

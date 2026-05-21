@@ -1,12 +1,12 @@
-# Runtime boundary and AWFT grammar refactor checklist
+# Runtime boundary and arcw grammar refactor checklist
 
 No compatibility aliases. No deprecated wrappers. No transitional re-export modules.
 
 ## Fixture activation note
 
 The direction package is applied without rewriting future-spec fixtures into
-today's grammar. Files under `tests/fixtures/awft/current_pass/` and
-`tests/fixtures/awft/spec_should_pass/` are now expected to pass without
+today's grammar. Files under `tests/fixtures/arcw/current_pass/` and
+`tests/fixtures/arcw/spec_should_pass/` are now expected to pass without
 file-name allowlists. Negative fixtures under `spec_should_fail/` are active
 and cover removed syntax, missing capability effects, forbidden OS paths in
 filesystem capability calls, and old RuntimeFrame naming.
@@ -48,7 +48,7 @@ filesystem capability calls, and old RuntimeFrame naming.
 - [x] Add asset/shader/audio/TTS requests.
 - [x] Add custom capability request.
 
-## Parser / AWFT grammar
+## Parser / arcw grammar
 
 - [x] Add `entry` declaration to AST.
 - [x] Add `entry` parser dispatch.
@@ -86,12 +86,13 @@ filesystem capability calls, and old RuntimeFrame naming.
 
 ## Tests and fixtures
 
-- [x] Add `tests/fixtures/awft/current_pass/check`.
-- [x] Add `tests/fixtures/awft/current_pass/run`.
-- [x] Add `tests/fixtures/awft/spec_should_pass/check`.
-- [x] Add `tests/fixtures/awft/spec_should_pass/run`.
-- [x] Add `tests/fixtures/awft/spec_should_fail`.
+- [x] Add `tests/fixtures/arcw/current_pass/check`.
+- [x] Add `tests/fixtures/arcw/current_pass/run`.
+- [x] Add `tests/fixtures/arcw/spec_should_pass/check`.
+- [x] Add `tests/fixtures/arcw/spec_should_pass/run`.
+- [x] Add `tests/fixtures/arcw/spec_should_fail`.
 - [x] Add sema fixture loader test.
 - [x] Add CLI check/run fixture test.
 - [x] Add focused compile gap regression coverage through current-pass fixtures.
 - [x] Unignore spec_should_pass tests after implementation catches up.
+

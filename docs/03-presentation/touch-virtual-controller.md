@@ -40,7 +40,7 @@ It still emits normalized input actions, so gameplay code does not care whether 
 
 ## Declaration
 
-```awft
+```arcw
 pub virtual_controller @controller.touch_default: TouchController {
     layer = @layer.input.touch_controller
     visible_when = platform.touch_available || settings.force_touch_controller
@@ -83,7 +83,7 @@ pub virtual_controller @controller.touch_default: TouchController {
 
 A controller can also be authored as a component.
 
-```awft
+```arcw
 pub component @ui.touch_controller TouchControllerView(
     config: TouchControllerConfig,
 ) -> View {
@@ -125,7 +125,7 @@ raw touch event
 
 The controller does not consume touches outside its hit regions unless configured.
 
-```awft
+```arcw
 layer @layer.input.touch_controller {
     z = 900
     input = true
@@ -152,7 +152,7 @@ A joystick captures the first touch inside its base. Buttons can either capture 
 
 Gestures are optional. They map to actions or higher-level commands.
 
-```awft
+```arcw
 pub gesture @gesture.swipe_skip {
     source = @controller.touch_default
     area = full_screen_except_controls
@@ -188,7 +188,7 @@ Every control exposes an `ActionTarget`.
 
 Tests can use semantic actions instead of coordinates:
 
-```awft
+```arcw
 test @test.touch_confirm scenario {
     start @flow.opening
     invoke @control.confirm press
@@ -221,7 +221,7 @@ This makes the controller visible to visual tests and LLM debugging.
 
 Product builds may expose virtual controller settings:
 
-```awft
+```arcw
 pub state TouchControllerSettings {
     enabled: bool = auto
     opacity: f32 = 0.82
@@ -242,3 +242,4 @@ Rules:
 
 - winit touch events: <https://docs.rs/winit/latest/winit/event/>
 - Gamepad API: <https://developer.mozilla.org/en-US/docs/Web/API/Gamepad_API>
+

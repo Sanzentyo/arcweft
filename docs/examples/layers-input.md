@@ -2,7 +2,7 @@
 
 関連: [Layer System](../03-presentation/layers.md)
 
-```awft
+```arcw
 mod game::presentation::layers
 
 pub layer @layer.world.background: World {
@@ -34,7 +34,7 @@ pub layer @layer.ui.modal: Modal {
 
 Scene での利用:
 
-```awft
+```arcw
 flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     scene.show(@scene.opening)
     scope {
@@ -63,7 +63,7 @@ flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
 
 Modal UI:
 
-```awft
+```arcw
 component @ui.settings SettingsPanel(config: Binding<Config>) -> View {
     VStack {
         Text("Settings")
@@ -77,7 +77,7 @@ component @ui.settings SettingsPanel(config: Binding<Config>) -> View {
 
 Test:
 
-```awft
+```arcw
 test @test.settings_modal_blocks_world scenario {
     start @flow.opening
     invoke @ui.settings.open
@@ -88,3 +88,4 @@ test @test.settings_modal_blocks_world scenario {
     expect no_event GameEvent.CharacterClicked
 }
 ```
+

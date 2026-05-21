@@ -18,7 +18,7 @@ Related:
 
 The following forms enable dialogue-text mode:
 
-```awft
+```arcw
 alice: おはよう。[p]
 
 alice:
@@ -54,7 +54,7 @@ Arcweft has four tag-like forms in dialogue text:
 
 Double brackets are not dialogue tags:
 
-```awft
+```arcw
 /// [[flow.alice_intro]] is a documentation/RAG link, not a dialogue tag.
 ```
 
@@ -108,7 +108,7 @@ Project-specific aliases may map to these names, but canonical names remain rese
 
 ## Wait and newline tags
 
-```awft
+```arcw
 alice: おはよう。[l]今日はいい天気だね。[p]
 ```
 
@@ -121,13 +121,13 @@ Meaning:
 
 Line break:
 
-```awft
+```arcw
 alice: 1行目[r]2行目[p]
 ```
 
 Timed wait:
 
-```awft
+```arcw
 alice: えっと……[w time=500ms]なんでもない。[p]
 ```
 
@@ -146,19 +146,19 @@ Arcweft supports three ruby forms.
 
 ### Natural Japanese ruby
 
-```awft
+```arcw
 alice: 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 ```
 
 ### Bracket tag ruby
 
-```awft
+```arcw
 alice: 今日は少しだけ、[ruby rt="へんなゆめ"]変な夢[/ruby]を見たんだ。[p]
 ```
 
 ### Function/content form
 
-```awft
+```arcw
 alice.say()[
     今日は少しだけ、#[ruby("変な夢", "へんなゆめ")]を見たんだ。[p]
 ]
@@ -191,7 +191,7 @@ zh-CN = "preserve_optional"
 
 `#[expr]` inserts the formatted representation of `expr`. The expression must implement `DisplayText`.
 
-```awft
+```arcw
 narrator.say()[
     #[player_name]は鍵を手に入れた。[p]
 ]
@@ -199,7 +199,7 @@ narrator.say()[
 
 If formatting needs options, use `fmt(...)` explicitly:
 
-```awft
+```arcw
 narrator.say()[
     スコアは#[fmt(score, style="number")]点です。[p]
 ]
@@ -207,7 +207,7 @@ narrator.say()[
 
 The display trait is:
 
-```awft
+```arcw
 pub trait DisplayText {
     fn display_text(self, ctx: DisplayContext) -> Result<Content, DisplayError>
 }
@@ -215,7 +215,7 @@ pub trait DisplayText {
 
 Built-in implementations include common scalar types, `String`, `LocalizedText`, `Ref<T>`, and selected wrappers. `Option<T>` must be explicitly handled or formatted with a fallback:
 
-```awft
+```arcw
 #[fmt(state.nickname, none="名無し")]
 ```
 
@@ -227,7 +227,7 @@ Pure interpolation cannot emit commands, mutate state, play audio, or trigger st
 
 `#[expr]` is runtime expression interpolation. `{name}` is a localization placeholder.
 
-```awft
+```arcw
 narrator.say(args={ player_name = state.player_name })[
     {player_name}は鍵を手に入れた。[p]
 ]
@@ -249,13 +249,13 @@ Translation import checks that required placeholders are present and well-typed.
 
 Use `[call]` for a dialogue-safe function:
 
-```awft
+```arcw
 alice: まぶしい……[call flash(color=#ffffff, time=90ms)][p]
 ```
 
 Use `[mark .name]` to place a zero-width local marker in the line. Handlers live in the line plan; this keeps text markup separate from effectful behavior.
 
-```awft
+```arcw
 alice: 変な夢[mark .keyword][p]
 with:
     on .keyword:
@@ -264,7 +264,7 @@ with:
 
 A dialogue-safe function must declare its effects:
 
-```awft
+```arcw
 pub dialogue fn flash(
     color: Color = rgb("#ffffff"),
     time: Duration = 120ms,
@@ -277,7 +277,7 @@ effects { stage.flash }
 
 A dialogue-safe function used by the handler:
 
-```awft
+```arcw
 pub dialogue fn mark_keyword(
     word: String,
     color: Color,
@@ -310,7 +310,7 @@ Inside dialogue text mode, special characters can be escaped:
 
 Raw span:
 
-```awft
+```arcw
 alice.say()[
     [raw]これは[p]をタグとして解釈しない。[/raw]
 ]
@@ -318,7 +318,7 @@ alice.say()[
 
 Raw block:
 
-```awft
+```arcw
 alice.say()[
     [raw]
     ここでは複数行にわたりタグを解釈しない。
@@ -333,7 +333,7 @@ alice.say()[
 
 Character default colors are defined in the character declaration. Dialogue lines inherit them automatically.
 
-```awft
+```arcw
 pub character @character.alice Alice {
     dialogue_style {
         text_color = rgb("#f7d7ff")
@@ -346,7 +346,7 @@ pub character @character.alice Alice {
 
 Built-in read/unread hook:
 
-```awft
+```arcw
 pub dialogue defaults @dialogue.defaults {
     read_state_style = builtin.read_state_color(
         unread = rgb("#ffffff"),
@@ -357,7 +357,7 @@ pub dialogue defaults @dialogue.defaults {
 
 Custom hook:
 
-```awft
+```arcw
 pub hook @hook.dialogue.read_color
 on query DialogueLine
 phase BeforeTextStyle
@@ -377,7 +377,7 @@ check on change line.read_state
 
 Values used by dialogue interpolation should be defined in the surrounding flow scope or inside a pure `#[...]` expression. Line-plan variables are for cues and cancellation, not for text interpolation that has already been parsed as content.
 
-```awft
+```arcw
 let emphasis_color = rgb("#a8b5ff")
 
 alice.say()[
@@ -387,7 +387,7 @@ alice.say()[
 
 For cue-local values, use the line plan:
 
-```awft
+```arcw
 alice.say()[
     夢を見た。[p]
 ]
@@ -398,4 +398,5 @@ with {
 ```
 
 Line-plan variables are not visible after the line finishes. `at(...) { ... }` creates an even smaller cue-local scope.
+
 

@@ -2,7 +2,7 @@
 
 Arcweft keeps ordinary dialogue concise, but the canonical form is explicit and composable:
 
-```awft
+```arcw
 character.say(args...)[dialogue_content]
 with { line_plan }
 ```
@@ -49,7 +49,7 @@ with { plan } / with:
 
 `@` is the entity-reference marker. A line ID, window, voice, or hook reference is passed like any other option:
 
-```awft
+```arcw
 alice(id=@say.opening.greeting, window=@textbox.side, voice=auto, look=smile):
     おはよう。[p]
 ```
@@ -64,7 +64,7 @@ Older compact option styles without parentheses are not part of the stable gramm
 
 A character can be called with line options to produce a reusable speaker preset. This is the preferred way to avoid repeating `voice`, `look`, `window`, and style options.
 
-```awft
+```arcw
 let alice2 = alice(look=smile, voice=auto, window=@textbox.side)
 
 alice2: おはよう。[p]
@@ -83,7 +83,7 @@ local to a block without mutating `@character.alice`.
 
 ## Canonical form
 
-```awft
+```arcw
 alice.say(
     id = @say.opening.dream_hint,
     window = @textbox.0,
@@ -105,7 +105,7 @@ with {
 
 This creates and executes a `DialogueLine`.
 
-```awft
+```arcw
 pub fn Character.say(
     self: Ref<Character>,
     id: Option<Ref<DialogueLine>> = None,
@@ -119,7 +119,7 @@ pub fn Character.say(
 
 A `DialogueContentCall` accepts a content block and optional line plan, then returns `LineOutcome`.
 
-```awft
+```arcw
 pub enum LineOutcome {
     Completed,
     Cancelled(LineCancel),
@@ -132,13 +132,13 @@ pub enum LineOutcome {
 
 The concise form:
 
-```awft
+```arcw
 alice: おはよう。[p]
 ```
 
 is sugar for:
 
-```awft
+```arcw
 alice.say()[
     おはよう。[p]
 ]
@@ -146,14 +146,14 @@ alice.say()[
 
 Line options go inside parentheses:
 
-```awft
+```arcw
 alice(id=@say.opening.greeting, look=smile, voice=auto):
     おはよう。[p]
 ```
 
 which is sugar for:
 
-```awft
+```arcw
 alice.say(id=@say.opening.greeting, look=smile, voice=auto)[
     おはよう。[p]
 ]
@@ -161,13 +161,13 @@ alice.say(id=@say.opening.greeting, look=smile, voice=auto)[
 
 Narration is the same:
 
-```awft
+```arcw
 地の文: 扉の向こうから、雨の音がした。[p]
 ```
 
 is sugar for:
 
-```awft
+```arcw
 narrator.say()[
     扉の向こうから、雨の音がした。[p]
 ]
@@ -179,7 +179,7 @@ narrator.say()[
 
 Because dialogue text may contain `{player_name}` localization placeholders, a raw `{ ... }` after `speaker:` is not used directly. Attach line-plan behavior with `with { ... }`.
 
-```awft
+```arcw
 alice(voice=auto, look=smile):
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 with {
@@ -197,7 +197,7 @@ with {
 
 Equivalent canonical form:
 
-```awft
+```arcw
 alice.say(voice=auto, look=smile)[
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 ]
@@ -216,7 +216,7 @@ with {
 
 For explicit bracketed content while still using `:`, this form is also allowed:
 
-```awft
+```arcw
 alice(voice=auto):[
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 ]
@@ -235,7 +235,7 @@ This is useful when a line is generated or transformed by tools. Normalized outp
 
 The following compact form is accepted and formatter-supported:
 
-```awft
+```arcw
 alice[
     おはよう。[p]
 ]
@@ -246,7 +246,7 @@ with:
 
 It is equivalent to:
 
-```awft
+```arcw
 alice.say()[
     おはよう。[p]
 ]
@@ -257,7 +257,7 @@ with:
 
 The colon form can use the same line plan attachment:
 
-```awft
+```arcw
 alice:
     おはよう。[p]
 with:
@@ -269,12 +269,12 @@ with:
 
 The brace and indentation styles are equivalent:
 
-```awft
+```arcw
 alice[おはよう。[p]]
 with { at(0.42s) { alice.stage.look(smile) } }
 ```
 
-```awft
+```arcw
 alice[おはよう。[p]]
 with:
     at(0.42s): alice.stage.look(smile)
@@ -288,7 +288,7 @@ See [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handl
 
 A line plan block contains behavior that runs with the line.
 
-```awft
+```arcw
 alice.say(voice=auto)[
     聞いて。[p]
 ]
@@ -330,7 +330,7 @@ completion, early control transfer, line cancellation, and child-task
 cancellation. A cancelled child task must unwind its defer stack before it is
 considered joined.
 
-```awft
+```arcw
 alice.say(look=smile, focus=.soft)[
     今日は少しだけ、変な夢を見たんだ。[mark .release_focus][p]
 ]
@@ -384,7 +384,7 @@ plan grammar; use `defer { ... }` in the relevant runtime scope, line-level
 
 The dialogue content, voice, text reveal, stage cues, and line plan all run under the same line timeline. To start multiple actions at the same time, use `start { ... }`, `together { ... }`, or schedule cues at the same time.
 
-```awft
+```arcw
 alice.say(voice=auto)[
     走って！[p]
 ]
@@ -411,7 +411,7 @@ with {
 
 `at(anchor) { ... }` schedules cues relative to the current line timeline.
 
-```awft
+```arcw
 at(0.35s) { alice.stage.look(blink) }
 at(+120ms) { alice.stage.mouth(open) }
 at(end-200ms) { alice.stage.move(to=left, time=260ms, ease=quad.out) }
@@ -441,7 +441,7 @@ The line-plan cue form is `at(...) { ... }` or the indentation sugar
 
 For simple one-shot events inside dialogue text, inline tags are allowed:
 
-```awft
+```arcw
 alice(voice=auto):
     ねえ。[at 0.42s call=flash(color=#ffffff, time=90ms)]聞いて。[p]
 ```
@@ -454,7 +454,7 @@ This is sugar for a timeline event in the surrounding line. Prefer line-plan `at
 
 Audio can also be the outer call when a voice region controls nested text or cues:
 
-```awft
+```arcw
 alice.voice(@voice.alice.opening.002).play()[
     alice.say()[今日は少しだけ、変な夢を見たんだ。[p]]
 ]
@@ -472,7 +472,7 @@ with {
 
 For ordinary dialogue, prefer:
 
-```awft
+```arcw
 alice.say(voice=auto)[今日は少しだけ、変な夢を見たんだ。[p]]
 ```
 
@@ -482,7 +482,7 @@ alice.say(voice=auto)[今日は少しだけ、変な夢を見たんだ。[p]]
 
 Dialogue lines, voice playback, animations, and timed hooks may be cancelled by input, branch, timeout, or external signals.
 
-```awft
+```arcw
 alice.say(voice=auto)[
     今日は少しだけ、変な夢を見たんだ。[p]
 ]
@@ -508,7 +508,7 @@ with {
 
 Cancellation can return an outcome:
 
-```awft
+```arcw
 let outcome = alice.say(voice=auto)[
     今日は少しだけ、変な夢を見たんだ。[p]
 ]
@@ -532,7 +532,7 @@ If the result is ignored, the default line policy is used. A `goto` cancellation
 
 Content calls, line plan blocks, `with` blocks, and `at` blocks create explicit lexical scopes.
 
-```awft
+```arcw
 alice.say()[
     #[let local_word = "まぶしい"]
     #[local_word]……[p]
@@ -611,7 +611,7 @@ Use normal typed `if`, `match`, `await`, and `return` in the surrounding `flow` 
 
 A function called from dialogue text or cue mode must be declared dialogue-safe.
 
-```awft
+```arcw
 pub dialogue fn flash(
     color: Color = rgb("#ffffff"),
     time: Duration = 120ms,
@@ -624,7 +624,7 @@ effects { stage.flash }
 
 Use from line plan:
 
-```awft
+```arcw
 alice.say()[まぶしい……[p]]
 with {
     at(0.25s) {
@@ -635,13 +635,13 @@ with {
 
 Use from inline text with the reserved `[call]` tag:
 
-```awft
+```arcw
 alice: まぶしい……[call flash(color=#ffffff, time=90ms)][p]
 ```
 
 The function must be in scope through `use dialogue` or `use tag`.
 
-```awft
+```arcw
 use dialogue game::fx::{flash}
 use tag game::fx::{flash as flash_tag}
 ```
@@ -652,7 +652,7 @@ use tag game::fx::{flash as flash_tag}
 
 A custom tag maps bracket syntax to a typed function.
 
-```awft
+```arcw
 pub dialogue tag @tag.shake shake(
     target: Ref<Character>,
     strength: f32 = 0.25,
@@ -667,13 +667,13 @@ effects { stage.animate }
 
 Usage:
 
-```awft
+```arcw
 alice: きゃっ。[shake target=alice strength=0.4 time=160ms][p]
 ```
 
 Hook dispatch:
 
-```awft
+```arcw
 alice: #[player_name]、聞いて。[mark .important][p]
 with:
     on .important:
@@ -686,43 +686,43 @@ Custom tag names cannot collide with reserved built-ins such as `p`, `l`, `ruby`
 
 ## Desugaring summary
 
-```awft
+```arcw
 alice(look=smile, voice=auto):
     おはよう。[p]
 ```
 
 becomes conceptually:
 
-```awft
+```arcw
 alice.say(look=smile, voice=auto)[
     おはよう。[p]
 ]
 ```
 
-```awft
+```arcw
 alice(id=@say.opening.003, look=smile, voice=@voice.alice.003):
     ほら、ここ。覚えてる？[p]
 ```
 
 becomes conceptually:
 
-```awft
+```arcw
 alice.say(id=@say.opening.003, look=smile, voice=@voice.alice.003)[
     ほら、ここ。覚えてる？[p]
 ]
 ```
 
-```awft
+```arcw
 face(@character.alice, .worried, crossfade = 120ms)
 ```
 
 becomes:
 
-```awft
+```arcw
 alice.stage.look(.worried, crossfade = 120ms)
 ```
 
-```awft
+```arcw
 alice(voice=auto):
     聞いて。[p]
 with {
@@ -732,7 +732,7 @@ with {
 
 becomes:
 
-```awft
+```arcw
 alice.say(voice=auto)[
     聞いて。[p]
 ]
@@ -750,7 +750,7 @@ A line plan exports a value with `out`. Do not use `return` for line-plan
 values; `return` exits the nearest `fn`, `task fn`, `parser`, or `flow`.
 `out` is how short-lived line-local handles are exported deliberately.
 
-```awft
+```arcw
 let (actor, (face0, face1, voice)) = alice.say(
     id=@say.opening.dream_hint,
     voice=auto,
@@ -770,7 +770,7 @@ with:
 
 Returned values are ordinary typed values, but many presentation operations return scoped handles. Handles have drop policies. Binding a returned handle to `_` explicitly discards it; for cancellable handles this cancels or releases the operation immediately after destructuring.
 
-```awft
+```arcw
 let (_, (face0, _, voice)) = alice.say(voice=auto)[
     聞いて。[p]
 ]
@@ -786,10 +786,11 @@ with:
 
 BGM, subscriptions, hooks, and stage leases follow the same rule. To keep BGM beyond a line, detach or promote the handle explicitly:
 
-```awft
+```arcw
 let bgm_handle = alice[始まるよ。[p]]
 with:
     let scoped_bgm = bgm.play(@bgm.tension, scope=line, drop=fade(300ms))
     out scoped_bgm.detach()
 ```
+
 

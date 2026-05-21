@@ -10,7 +10,7 @@ Related:
 
 ## Declarations
 
-```awft
+```arcw
 pub capture @capture.player_microphone: Microphone {
     permission = user_prompt
     channels = 1
@@ -38,7 +38,7 @@ watch signal @signal.camera_frame from capture.latest_frame(@capture.face_camera
 
 ## Flow with required pending UI
 
-```awft
+```arcw
 pub flow @flow.capture_setup capture_setup(state: GameState) -> Result<FlowExit, FlowError> {
     let mic =
         try await capture.microphone(@capture.player_microphone) with {
@@ -73,7 +73,7 @@ pub flow @flow.capture_setup capture_setup(state: GameState) -> Result<FlowExit,
 
 ## Activity consuming microphone stream
 
-```awft
+```arcw
 pub activity @activity.voice_minigame VoiceMinigame {
     input {
         mic: stream<AudioFrame>
@@ -96,7 +96,7 @@ let result =
 
 ## Deterministic test devices
 
-```awft
+```arcw
 pub capture @capture.test_camera: Camera {
     backend = virtual_pattern
     resolution = 1280x720
@@ -116,3 +116,4 @@ arcw capture status @capture.face_camera
 arcw agent observe --signals microphone_level,camera_frame
 arcw agent capture start-test-pattern @capture.test_camera
 ```
+

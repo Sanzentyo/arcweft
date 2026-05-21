@@ -28,7 +28,7 @@ pub enum ActivityMode {
 
 ## DSL
 
-```awft
+```arcw
 pub activity @activity.truck_game from rust "mini_games/truck" {
     mode = deterministic
     tick = fixed(60hz)
@@ -52,7 +52,7 @@ pub activity @activity.truck_game from rust "mini_games/truck" {
 
 ## Flow usage
 
-```awft
+```arcw
 let result = try await @<activity.truck_game>.run({ seed = state.seed }) with {
     pending .Realizing(p) => scene.show(@scene.loading_plugin); progress.set(p.ratio)
     pending .Running(p) => scene.show(@scene.truck_loading); progress.set(p.ratio)
@@ -63,7 +63,7 @@ let result = try await @<activity.truck_game>.run({ seed = state.seed }) with {
 
 Portable Activity は `RenderCommandBuffer` を返す。
 
-```awft
+```arcw
 RenderCommand::DrawMesh {
     mesh,
     material: @shader.material.truck_road,
@@ -72,3 +72,4 @@ RenderCommand::DrawMesh {
 ```
 
 Trusted Activity のみ直接 wgpu callback を許可する。
+

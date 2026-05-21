@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 #[test]
-fn check_accepts_valid_awft_file() {
-    let path = temp_awft(
+fn check_accepts_valid_arcw_file() {
+    let path = temp_arcw(
         "valid",
         r"
 pub surface character @character.alice Alice as alice {
@@ -39,7 +39,7 @@ flow @flow.opening opening {
 
 #[test]
 fn check_json_reports_compiler_pipeline_summary() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "valid-json",
         r#"
 flow @flow.opening opening {
@@ -72,7 +72,7 @@ flow @flow.opening opening {
 
 #[test]
 fn check_accepts_state_write_effect_contract() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "state-write-effect",
         r"
 flow @flow.registry registry
@@ -99,7 +99,7 @@ effects { state.write('flow) }
 
 #[test]
 fn check_rejects_unlowered_line_plan_item() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "unsupported-line-plan",
         r"
 pub surface character @character.alice Alice as alice {
@@ -130,8 +130,8 @@ flow @flow.unsupported unsupported {
 }
 
 #[test]
-fn check_rejects_invalid_awft_file() {
-    let path = temp_awft(
+fn check_rejects_invalid_arcw_file() {
+    let path = temp_arcw(
         "invalid",
         r"
 flow @flow.bad bad {
@@ -155,7 +155,7 @@ flow @flow.bad bad {
 
 #[test]
 fn verify_json_reports_missing_promotion_proof() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "verify-missing-proof",
         r"
 flow @flow.verify verify {
@@ -186,7 +186,7 @@ flow @flow.verify verify {
 
 #[test]
 fn verify_json_reports_semantic_thread_join_conflict() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "verify-thread-join",
         r#"
 pub surface character @character.alice Alice as alice {
@@ -224,7 +224,7 @@ flow @flow.thread_join thread_join {
 
 #[test]
 fn verify_json_reports_effect_capability_obligation() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "verify-effect-capability",
         r"
 signal @signal:.current_flow: Watch<Ref<Flow>>
@@ -257,7 +257,7 @@ flow @flow.effects effects {
 
 #[test]
 fn verify_json_accepts_effect_capability_from_flow_contract() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "verify-effect-contract",
         r"
 signal @signal:.current_flow: Watch<Ref<Flow>>
@@ -289,7 +289,7 @@ effects { signal.write }
 
 #[test]
 fn verify_json_reports_invalid_proof_body() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "verify-proof-body",
         r"
 proof @proof.requires_only {
@@ -320,7 +320,7 @@ proof @proof.requires_only {
 
 #[test]
 fn verify_json_reports_unknown_proof_axiom() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "verify-proof-axiom",
         r"
 proof @proof.missing_axiom {
@@ -352,7 +352,7 @@ proof @proof.missing_axiom {
 
 #[test]
 fn verify_json_respects_semantic_defer_cancel_discharge() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "verify-cancel-defer",
         r"
 pub surface character @character.alice Alice as alice {
@@ -391,7 +391,7 @@ flow @flow.cancel_cleanup cancel_cleanup {
 
 #[test]
 fn unsafe_json_lists_audit_regions() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "unsafe-audit",
         r#"
 flow @flow.audit audit {
@@ -424,7 +424,7 @@ flow @flow.audit audit {
 
 #[test]
 fn plan_json_lists_runtime_task_graph() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "runtime-plan",
         r#"
 pub surface character @character.alice Alice as alice {
@@ -464,7 +464,7 @@ flow @flow.plan plan {
 
 #[test]
 fn run_json_steps_runtime_plan() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "runtime-run",
         r"
 pub surface character @character.alice Alice as alice {
@@ -503,7 +503,7 @@ flow @flow.run run {
 
 #[test]
 fn run_json_modes_and_budget_drive_engine_step_boundary() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "runtime-step-modes",
         r#"
 flow @flow.run run {
@@ -586,7 +586,7 @@ flow @flow.run run {
 
 #[test]
 fn cli_json_selects_cli_entry_and_binds_args() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "cli-entry",
         r"
 entry cli @entry.main { run @flow.main }
@@ -620,7 +620,7 @@ flow @flow.main main(argc: i32) {
 
 #[test]
 fn run_json_reports_headless_observations() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "runtime-observations",
         r#"
 signal @signal:.current_flow: Watch<Ref<Flow>>
@@ -665,7 +665,7 @@ effects { signal.write, metric.write }
 
 #[test]
 fn plan_json_lists_generation_plans() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "generation-plan",
         r#"
 stream fn passthrough(frames: Stream<IteratorItem, CaptureError>) -> Stream<IteratorItem, CaptureError> {
@@ -714,7 +714,7 @@ flow @flow.generation generation {
 
 #[test]
 fn run_json_lists_source_and_stream_runtime_state() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "generation-run",
         r#"
 stream fn passthrough(frames: Stream<IteratorItem, CaptureError>) -> Stream<IteratorItem, CaptureError> {
@@ -764,7 +764,7 @@ flow @flow.generation generation {
 
 #[test]
 fn run_json_executes_scope_and_loop_value_bindings() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "runtime-value-bindings",
         r#"
 flow @flow.value_bindings value_bindings {
@@ -810,7 +810,7 @@ flow @flow.done done {
 #[test]
 fn fmt_preserves_sugar_by_default() {
     let source = "flow @flow.opening opening {\n    alice: hi[p]\n}\n";
-    let path = temp_awft("fmt-preserve", source);
+    let path = temp_arcw("fmt-preserve", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("fmt")
@@ -832,7 +832,7 @@ fn fmt_preserves_sugar_by_default() {
 
 #[test]
 fn fmt_expand_sugar_accepts_flags_before_path_and_writes() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "fmt-expand",
         "pub surface character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    alice: hi[p]\n    with:\n        log.info(\"x\")\n    goto parent::next\n}\n",
     );
@@ -859,7 +859,7 @@ fn fmt_expand_sugar_accepts_flags_before_path_and_writes() {
 #[test]
 fn ids_materialize_accepts_flags_before_path_without_write() {
     let source = "flow @flow.opening opening {\n    scope rain {\n        alice(id=@.comment, text_key=@.comment_text):\n            Hi[p]\n    }\n    alice:\n        Omitted[p]\n=== line 地の文 ===\nFlat[p]\n=== with ===\nwait mark .done\n=== /with ===\n=== /line ===\n    choice @.first {\n        @.listen \"Listen\" -> @flow.next\n    }\n}\n";
-    let path = temp_awft("ids-materialize", source);
+    let path = temp_arcw("ids-materialize", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("ids")
@@ -889,7 +889,7 @@ fn ids_materialize_accepts_flags_before_path_without_write() {
 
 #[test]
 fn test_json_lists_script_tests() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "script-test",
         r"
 test @test.opening scenario {
@@ -920,7 +920,7 @@ test @test.opening scenario {
 
 #[test]
 fn test_json_executes_headless_scenario_expectations() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "script-test-headless",
         r#"
 signal @signal:.current_flow: Watch<Ref<Flow>>
@@ -967,7 +967,7 @@ test @test.observed scenario {
 
 #[test]
 fn bench_json_validates_headless_script_benches() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "script-bench",
         r#"
 metric gauge @metric:.memo_hit_rate: f32
@@ -1005,7 +1005,7 @@ bench @bench.opening {
 
 #[test]
 fn bench_json_skips_adapter_only_script_benches() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "script-bench-adapter",
         r"
 bench @bench.audio {
@@ -1037,9 +1037,9 @@ bench @bench.audio {
 }
 
 #[test]
-fn check_rejects_non_awft_file_extension() {
+fn check_rejects_non_arcw_file_extension() {
     let path = temp_file(
-        "non-awft",
+        "non-arcw",
         "arwt",
         r#"
 flow @flow.main main {
@@ -1054,20 +1054,20 @@ flow @flow.main main {
         .output()
         .expect("arcw check runs");
 
-    fs::remove_file(&path).expect("remove temp non-awft fixture");
+    fs::remove_file(&path).expect("remove temp non-arcw fixture");
     assert!(
         !output.status.success(),
         ".arwt files must not be accepted as Arcweft source"
     );
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("not an .awft source file"),
+        String::from_utf8_lossy(&output.stderr).contains("not an .arcw source file"),
         "stderr should explain extension policy: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
 
 #[test]
-fn check_rejects_direct_non_awft_edge_extensions() {
+fn check_rejects_direct_non_arcw_edge_extensions() {
     for extension in ["txt", ""] {
         let path = temp_file(
             "direct-extension-edge",
@@ -1085,13 +1085,13 @@ flow @flow.main main {
             .output()
             .expect("arcw check runs");
 
-        fs::remove_file(&path).expect("remove temp non-awft fixture");
+        fs::remove_file(&path).expect("remove temp non-arcw fixture");
         assert!(
             !output.status.success(),
-            "direct non-awft path with extension `{extension}` must fail"
+            "direct non-arcw path with extension `{extension}` must fail"
         );
         assert!(
-            String::from_utf8_lossy(&output.stderr).contains("not an .awft source file"),
+            String::from_utf8_lossy(&output.stderr).contains("not an .arcw source file"),
             "stderr should explain extension policy: {}",
             String::from_utf8_lossy(&output.stderr)
         );
@@ -1099,10 +1099,10 @@ flow @flow.main main {
 }
 
 #[test]
-fn tooling_commands_reject_direct_non_awft_paths() {
+fn tooling_commands_reject_direct_non_arcw_paths() {
     for args in [&["fmt"][..], &["ids", "materialize"][..]] {
         let path = temp_file(
-            "tooling-non-awft",
+            "tooling-non-arcw",
             "arwt",
             r#"
 flow @flow.main main {
@@ -1115,13 +1115,13 @@ flow @flow.main main {
         command.args(args).arg(&path);
         let output = command.output().expect("arcw tooling command runs");
 
-        fs::remove_file(&path).expect("remove temp non-awft fixture");
+        fs::remove_file(&path).expect("remove temp non-arcw fixture");
         assert!(
             !output.status.success(),
-            "{args:?} must reject direct non-awft path"
+            "{args:?} must reject direct non-arcw path"
         );
         assert!(
-            String::from_utf8_lossy(&output.stderr).contains("not an .awft source file"),
+            String::from_utf8_lossy(&output.stderr).contains("not an .arcw source file"),
             "stderr should explain extension policy: {}",
             String::from_utf8_lossy(&output.stderr)
         );
@@ -1129,20 +1129,20 @@ flow @flow.main main {
 }
 
 #[test]
-fn tooling_directory_scan_ignores_non_awft_files() {
+fn tooling_directory_scan_ignores_non_arcw_files() {
     let dir = temp_dir("tooling-directory-scan");
-    let awft = dir.join("valid.awft");
+    let arcw = dir.join("valid.arcw");
     let arwt = dir.join("invalid.arwt");
     fs::write(
-        &awft,
+        &arcw,
         r#"
 flow @flow.main main {
     return "done"
 }
 "#,
     )
-    .expect("write valid awft fixture");
-    fs::write(&arwt, "this is intentionally not awft {").expect("write ignored arwt fixture");
+    .expect("write valid arcw fixture");
+    fs::write(&arwt, "this is intentionally not arcw {").expect("write ignored arwt fixture");
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("fmt")
@@ -1153,7 +1153,7 @@ flow @flow.main main {
     fs::remove_dir_all(&dir).expect("remove temp fixture dir");
     assert!(
         output.status.success(),
-        "tooling directory scan should ignore non-awft files, stdout: {}, stderr: {}",
+        "tooling directory scan should ignore non-arcw files, stdout: {}, stderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -1162,7 +1162,7 @@ flow @flow.main main {
 #[test]
 fn spec_valid_run_edge_fixture_now_executes() {
     let relative_path =
-        "tests/fixtures/awft/spec_should_pass/run/011_dialogue_line_value_and_handle_discard.awft";
+        "tests/fixtures/arcw/spec_should_pass/run/011_dialogue_line_value_and_handle_discard.arcw";
     let path = workspace_root().join(relative_path);
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
@@ -1185,7 +1185,7 @@ fn spec_valid_run_edge_fixture_now_executes() {
 #[test]
 fn rejected_await_question_with_fixture_fails_with_guidance() {
     let path = workspace_root()
-        .join("tests/fixtures/awft/spec_should_fail/011_await_question_with_rejected.awft");
+        .join("tests/fixtures/arcw/spec_should_fail/011_await_question_with_rejected.arcw");
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("check")
         .arg(&path)
@@ -1204,39 +1204,39 @@ fn rejected_await_question_with_fixture_fails_with_guidance() {
 fn spec_rejected_edge_fixtures_fail_with_diagnostics() {
     for (relative_path, expected) in [
         (
-            "tests/fixtures/awft/spec_should_fail/012_name_at_pattern_removed_rejected.awft",
+            "tests/fixtures/arcw/spec_should_fail/012_name_at_pattern_removed_rejected.arcw",
             "unresolved entity reference",
         ),
         (
-            "tests/fixtures/awft/spec_should_fail/013_continue_expr_position_rejected.awft",
+            "tests/fixtures/arcw/spec_should_fail/013_continue_expr_position_rejected.arcw",
             "unknown symbol `continue`",
         ),
         (
-            "tests/fixtures/awft/spec_should_fail/014_let_else_non_diverging_rejected.awft",
+            "tests/fixtures/arcw/spec_should_fail/014_let_else_non_diverging_rejected.arcw",
             "let-else else block must leave the current continuation",
         ),
         (
-            "tests/fixtures/awft/spec_should_fail/015_break_value_in_while_rejected.awft",
+            "tests/fixtures/arcw/spec_should_fail/015_break_value_in_while_rejected.arcw",
             "break expr",
         ),
         (
-            "tests/fixtures/awft/spec_should_fail/016_yield_in_flow_rejected.awft",
+            "tests/fixtures/arcw/spec_should_fail/016_yield_in_flow_rejected.arcw",
             "yield",
         ),
         (
-            "tests/fixtures/awft/spec_should_fail/017_out_in_flow_rejected.awft",
+            "tests/fixtures/arcw/spec_should_fail/017_out_in_flow_rejected.arcw",
             "`out` can only be used",
         ),
         (
-            "tests/fixtures/awft/spec_should_fail/018_private_full_replay_rejected.awft",
+            "tests/fixtures/arcw/spec_should_fail/018_private_full_replay_rejected.arcw",
             "privacy = private",
         ),
         (
-            "tests/fixtures/awft/spec_should_fail/019_unsafe_lifetime_missing_reason_rejected.awft",
+            "tests/fixtures/arcw/spec_should_fail/019_unsafe_lifetime_missing_reason_rejected.arcw",
             "unsafe lifetime block requires a reason",
         ),
         (
-            "tests/fixtures/awft/spec_should_fail/020_unsafe_block_missing_safety_doc_rejected.awft",
+            "tests/fixtures/arcw/spec_should_fail/020_unsafe_block_missing_safety_doc_rejected.arcw",
             "unsafe lifetime block requires a SAFETY doc comment",
         ),
     ] {
@@ -1263,7 +1263,7 @@ fn spec_rejected_edge_fixtures_fail_with_diagnostics() {
 
 #[test]
 fn serve_json_lists_server_routes() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "serve-routes",
         r#"
 entry server @entry.http {
@@ -1311,7 +1311,7 @@ flow @flow.save save {
 
 #[test]
 fn serve_json_typechecks_route_params_runtime_binding() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "serve-route-params",
         r#"
 entry server @entry.http {
@@ -1345,7 +1345,7 @@ flow @flow.hello hello {
 
 #[test]
 fn serve_json_treats_server_run_entry_as_default_route() {
-    let path = temp_awft(
+    let path = temp_arcw(
         "serve-run",
         r#"
 entry server @entry.server {
@@ -1379,10 +1379,10 @@ flow @flow.main main {
     );
 }
 
-fn temp_awft(name: &str, source: &str) -> PathBuf {
+fn temp_arcw(name: &str, source: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
-    path.push(format!("arcweft-cli-{name}-{}.awft", std::process::id()));
-    fs::write(&path, source).expect("write temp awft fixture");
+    path.push(format!("arcweft-cli-{name}-{}.arcw", std::process::id()));
+    fs::write(&path, source).expect("write temp arcw fixture");
     path
 }
 

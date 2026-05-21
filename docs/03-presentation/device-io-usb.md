@@ -77,7 +77,7 @@ Therefore Web device access is always represented as `Need<Result<DeviceHandle, 
 
 ## Device declarations
 
-```awft
+```arcw
 pub device @device.light_panel: Usb {
     permission = user_prompt
     backend = prefer(native_nusb, web_usb)
@@ -101,7 +101,7 @@ pub device @device.light_panel: Usb {
 
 HID device:
 
-```awft
+```arcw
 pub device @device.macro_pad: Hid {
     permission = user_prompt
     backend = prefer(native_hidapi, web_hid)
@@ -121,7 +121,7 @@ pub device @device.macro_pad: Hid {
 
 Standard gamepad:
 
-```awft
+```arcw
 pub device @device.primary_gamepad: Gamepad {
     backend = prefer(native_gilrs, web_gamepad)
     layout = standard
@@ -132,7 +132,7 @@ pub device @device.primary_gamepad: Gamepad {
 
 ## Starting a device
 
-```awft
+```arcw
 let panel =
     try await device.usb(@device.light_panel) with {
         pending p => {
@@ -161,7 +161,7 @@ pub struct UsbDeviceHandle {
 
 Raw USB/HID bytes should be parsed immediately into typed messages.
 
-```awft
+```arcw
 pub enum LightPanelCommand {
     SetColor { led: u8, color: Color },
     SetBrightness { value: u8 },
@@ -177,7 +177,7 @@ ensures result.is_err() => result.err().span.is_some()
 
 Sending:
 
-```awft
+```arcw
 task fn set_panel_color(
     panel: UsbDeviceHandle,
     led: u8,
@@ -193,7 +193,7 @@ requires led < 64
 
 Receiving:
 
-```awft
+```arcw
 let events: Stream<LightPanelEvent, DeviceError> =
     panel.interrupt_in(0x81)
         .parse_with(parse_light_panel_event)
@@ -203,7 +203,7 @@ let events: Stream<LightPanelEvent, DeviceError> =
 
 Hardware events are mapped into layer-based input.
 
-```awft
+```arcw
 pub input_map @input_map.gamepad_default for @device.primary_gamepad {
     button South -> action confirm
     button East  -> action cancel
@@ -263,3 +263,4 @@ device-virtual = []
 - `hidapi`: <https://docs.rs/hidapi>
 - `gilrs`: <https://docs.rs/gilrs/>
 - Gamepad API: <https://developer.mozilla.org/en-US/docs/Web/API/Gamepad_API>
+

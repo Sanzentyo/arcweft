@@ -19,7 +19,7 @@ pub enum ShaderKind {
 
 ## Shader DSL
 
-```awft
+```arcw
 pub shader @shader.transition.dissolve: Transition
 requires params.progress >= 0.0 && params.progress <= 1.0
 capability {
@@ -66,7 +66,7 @@ wgsl {
 
 ## 使用
 
-```awft
+```arcw
 goto @flow.alice_intro with transition @shader.transition.dissolve {
     duration = 600ms
     params { edge_softness = 0.03 }
@@ -101,9 +101,10 @@ new failure → keep old + diagnostic
 ## Agent / CLI
 
 ```bash
-arcw shader check game/shaders/*.awft
+arcw shader check game/shaders/*.arcw
 arcw shader reflect shader.transition.dissolve --json
 arcw shader preview shader.post.crt --out preview.png
 arcw agent shader set-param shader.post.crt curvature 0.2
 ```
+
 

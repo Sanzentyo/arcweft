@@ -19,7 +19,7 @@ Related:
 
 The canonical ordinary dialogue form is:
 
-```awft
+```arcw
 alice.say()[
     おはよう。[p]
 ]
@@ -27,7 +27,7 @@ alice.say()[
 
 With options:
 
-```awft
+```arcw
 alice.say(
     id = @say.opening.greeting,
     voice = auto,
@@ -40,7 +40,7 @@ alice.say(
 
 Fully qualified entity references are allowed. Because `@character.alice.say` would be ambiguous as a single entity path, use `@<...>` or parentheses when calling a method on an entity reference:
 
-```awft
+```arcw
 @<character.alice>.say(voice=auto)[
     おはよう。[p]
 ]
@@ -52,7 +52,7 @@ Fully qualified entity references are allowed. Because `@character.alice.say` wo
 
 The short `alice` form is a speaker alias resolved from the module's character imports or prelude:
 
-```awft
+```arcw
 use game::characters::{alice, bob}
 ```
 
@@ -65,13 +65,13 @@ For a character alias, the compact speaker-prefix form is sugar for
 the preset and applies the dialogue content without forcing a character
 `.say(...)` rewrite.
 
-```awft
+```arcw
 alice: おはよう。[p]
 ```
 
 is equivalent to:
 
-```awft
+```arcw
 alice.say()[
     おはよう。[p]
 ]
@@ -79,14 +79,14 @@ alice.say()[
 
 Options in parentheses become `say()` options:
 
-```awft
+```arcw
 alice(id=@say.opening.greeting, look=smile, voice=auto):
     おはよう。[p]
 ```
 
 is equivalent to:
 
-```awft
+```arcw
 alice.say(
     id = @say.opening.greeting,
     look = smile,
@@ -118,13 +118,13 @@ window    textbox target
 
 The same rule applies to the built-in narrator aliases:
 
-```awft
+```arcw
 地の文: 扉の向こうから、雨の音がした。[p]
 ```
 
 is equivalent to:
 
-```awft
+```arcw
 @<character.narrator>.say()[
     扉の向こうから、雨の音がした。[p]
 ]
@@ -140,7 +140,7 @@ is equivalent to:
 A character alias or speaker preset may be called directly with a dialogue
 content block.
 
-```awft
+```arcw
 alice[
     おはよう。[p]
 ]
@@ -148,7 +148,7 @@ alice[
 
 For a character alias, this is sugar for:
 
-```awft
+```arcw
 alice.say()[
     おはよう。[p]
 ]
@@ -157,7 +157,7 @@ alice.say()[
 Options still use the parenthesized speaker-preset call or the canonical
 `.say(...)` call.
 
-```awft
+```arcw
 alice(look=smile, voice=auto)[
     おはよう。[p]
 ]
@@ -169,7 +169,7 @@ alice.say(look=smile, voice=auto)[
 
 When a line plan is needed, attach canonical `with { ... }` or indentation sugar `with:`.
 
-```awft
+```arcw
 alice(look=smile, voice=auto)[
     おはよう。[p]
 ]
@@ -188,7 +188,7 @@ A character alias is callable. Calling a character with line options does not
 display text immediately; it returns a **speaker preset** that carries default
 line options.
 
-```awft
+```arcw
 let alice2 = alice(look=smile, voice=auto, window=@textbox.side)
 
 alice2: おはよう。[p]
@@ -199,7 +199,7 @@ alice2(id=@say.opening.side_001):
 
 This is equivalent to:
 
-```awft
+```arcw
 alice(look=smile, voice=auto, window=@textbox.side)[
     おはよう。[p]
 ]
@@ -211,7 +211,7 @@ alice2(id=@say.opening.side_001)[
 
 Presets can be refined by calling them again. Later options override earlier options.
 
-```awft
+```arcw
 let alice_side = alice(window=@textbox.side, voice=auto)
 let alice_worried = alice_side(look=worried)
 
@@ -245,7 +245,7 @@ per-line options
 
 Types:
 
-```awft
+```arcw
 pub type Speaker = Ref<Character> | SpeakerPreset
 
 pub fn Character.call(self, options: SayOptions) -> SpeakerPreset
@@ -255,7 +255,7 @@ pub fn SpeakerPreset.say(self, options: SayOptions = {}) -> DialogueContentCall
 
 The `:` sugar accepts both `Ref<Character>` and `SpeakerPreset`.
 
-```awft
+```arcw
 let phone_alice = alice(window=@textbox.phone_message, voice=auto)
 phone_alice: スマホに通知が届いた。[p]
 ```
@@ -268,7 +268,7 @@ The preset is lexical. It can be local to a block, flow, or helper function. It 
 
 Characters expose object-like stage APIs. The speaker alias remains a pure reference, while `stage` methods create handles for currently displayed presentation objects.
 
-```awft
+```arcw
 let actor = alice.stage.acquire(scope=line)
 let pose = actor.pose(normal)
 let face = actor.look(smile)
@@ -276,7 +276,7 @@ let face = actor.look(smile)
 
 These handles can be memoized or preloaded:
 
-```awft
+```arcw
 let actor = memo(scope=scene, key=(@character.alice, pose=normal, theme=env.theme.hash)) {
     alice.stage.acquire(scope=line)
 }
@@ -284,7 +284,7 @@ let actor = memo(scope=scene, key=(@character.alice, pose=normal, theme=env.them
 
 A `preload next` block explicitly prepares assets for a future flow.
 
-```awft
+```arcw
 preload next @flow.alice_intro:
     alice.stage.prefetch(pose=normal, faces=[smile, worried], window=@textbox.0)
     alice.voice_for(@say.alice_intro.001).preload()
@@ -299,13 +299,13 @@ Preload is a hint, not a hidden blocking operation. If the resource is not ready
 
 A dialogue line always targets a text window. If no window is specified, Arcweft uses the global default dialogue window.
 
-```awft
+```arcw
 alice.say()[おはよう。[p]]
 ```
 
 is equivalent to:
 
-```awft
+```arcw
 alice.say(window=@textbox.0)[おはよう。[p]]
 ```
 
@@ -329,7 +329,7 @@ missing = "textbox.0"
 
 Custom dialogue windows can be declared as UI components or text surfaces:
 
-```awft
+```arcw
 pub textbox @textbox.phone_message PhoneMessageBox {
     layer = @layer.ui.messages
     anchor = bottom_right
@@ -340,7 +340,7 @@ pub textbox @textbox.phone_message PhoneMessageBox {
 
 Use it from dialogue:
 
-```awft
+```arcw
 alice.say(window=@textbox.phone_message, voice=auto)[
     スマホに通知が届いた。[p]
 ]
@@ -356,7 +356,7 @@ A dialogue window target is a stateful UI object. Updating a line in that textbo
 
 Characters can define default dialogue style, nameplate style, and voice/text policies.
 
-```awft
+```arcw
 pub character @character.alice Alice {
     display_name ja-JP = "アリス"
     display_name en-US = "Alice"
@@ -389,7 +389,7 @@ line options
 
 Example:
 
-```awft
+```arcw
 alice.say(color=rgb("#ff8080"))[
     この行だけ赤い。[p]
 ]
@@ -401,7 +401,7 @@ alice.say(color=rgb("#ff8080"))[
 
 Common visual-novel patterns are built in.
 
-```awft
+```arcw
 pub dialogue defaults @dialogue.defaults {
     window = @textbox.0
     read_state_style = builtin.read_state_color(
@@ -414,7 +414,7 @@ pub dialogue defaults @dialogue.defaults {
 
 Character-level override:
 
-```awft
+```arcw
 pub character @character.alice Alice {
     dialogue_style {
         read_state_style = builtin.read_state_color(
@@ -427,7 +427,7 @@ pub character @character.alice Alice {
 
 A custom hook can override or extend this behavior:
 
-```awft
+```arcw
 pub hook @hook.dialogue.alice_read_color
 on query DialogueLine where line.speaker == @character.alice
 phase BeforeTextStyle
@@ -455,7 +455,7 @@ Built-in hook patterns:
 
 Dialogue text may insert values. Insertion is only allowed for values that implement `DisplayText`, or values explicitly wrapped by `fmt(...)`.
 
-```awft
+```arcw
 narrator.say()[
     #[player_name]は鍵を手に入れた。[p]
 ]
@@ -463,13 +463,13 @@ narrator.say()[
 
 This requires:
 
-```awft
+```arcw
 player_name: DisplayText
 ```
 
 Explicit formatting:
 
-```awft
+```arcw
 narrator.say()[
     スコアは#[fmt(score, style="number")]点です。[p]
 ]
@@ -477,7 +477,7 @@ narrator.say()[
 
 Formatting with locale:
 
-```awft
+```arcw
 narrator.say()[
     所持金: #[fmt(money, currency="JPY", locale=state.locale)][p]
 ]
@@ -485,7 +485,7 @@ narrator.say()[
 
 Trait:
 
-```awft
+```arcw
 pub trait DisplayText {
     fn display_text(self, ctx: DisplayContext) -> Result<Content, DisplayError>
 }
@@ -499,7 +499,7 @@ String, LocalizedText, i32, u32, f32, bool, Duration, DateTime, Ref<T>, Option<T
 
 `Option<T>` is displayed only if explicitly formatted or matched. This avoids accidentally showing `None` in player-facing text.
 
-```awft
+```arcw
 match state.player_nickname {
     Some(nick) => alice.say()[#[nick]、おはよう。[p]]
     None => alice.say()[おはよう。[p]]
@@ -508,7 +508,7 @@ match state.player_nickname {
 
 `fmt(...)` can also wrap values into `Content` for hooks and custom tags:
 
-```awft
+```arcw
 #[fmt(route_title(state.route), color=@color.accent)]
 ```
 
@@ -516,7 +516,7 @@ match state.player_nickname {
 
 `#[expr]` is runtime interpolation. `{name}` inside rich text is a localization placeholder.
 
-```awft
+```arcw
 narrator.say()[
     {player_name}は鍵を手に入れた。[p]
 ]
@@ -524,7 +524,7 @@ narrator.say()[
 
 The above is extracted as a localizable string with placeholder `player_name`. At runtime the placeholder must be supplied by the line options or surrounding context:
 
-```awft
+```arcw
 narrator.say(args={ player_name = state.player_name })[
     {player_name}は鍵を手に入れた。[p]
 ]
@@ -553,7 +553,7 @@ Inside dialogue-text mode, the following characters can be escaped:
 
 Raw span:
 
-```awft
+```arcw
 alice.say()[
     [raw]ここでは[p]も#[expr]も解釈されない。[/raw]
 ]
@@ -561,7 +561,7 @@ alice.say()[
 
 Raw block:
 
-```awft
+```arcw
 alice.say()[
     [raw]
     ここでは複数行にわたりタグを解釈しない。
@@ -576,7 +576,7 @@ alice.say()[
 
 `#[...]` is for safe expression/content insertion. Side-effecting local line behavior uses `[mark .name]` with `with: on .name:` or a dialogue-safe `[call ...]`.
 
-```awft
+```arcw
 alice.say()[
     まぶしい……[call flash(color=#ffffff, time=90ms)][p]
 ]
@@ -584,7 +584,7 @@ alice.say()[
 
 Custom hook:
 
-```awft
+```arcw
 pub dialogue hook @hook.dialogue.mark_keyword mark_keyword(
     word: String,
     color: Color = rgb("#ffcc00"),
@@ -596,7 +596,7 @@ pub dialogue hook @hook.dialogue.mark_keyword mark_keyword(
 
 Use:
 
-```awft
+```arcw
 alice.say()[
     変な夢[mark .keyword][p]
 with:
@@ -613,7 +613,7 @@ Hooks may read line context, speaker, dialogue window, read state, locale, and r
 
 `Character.say(...)[...]`, `with { ... }`, `with:`, and `at(...) { ... }` create lexical scopes. `with:` normalizes to `with { ... }`.
 
-```awft
+```arcw
 alice.say(voice=auto)[
 
     今日は少しだけ、変な夢を見たんだ。[p]
@@ -650,7 +650,7 @@ Scope rules:
 
 A character alias also exposes stage-oriented methods. These methods operate on a stage instance and return typed commands or `Need` values when loading is required.
 
-```awft
+```arcw
 alice.stage.show(smile, at=center, fade=200ms)
 alice.stage.look(worried, crossfade=120ms)
 alice.stage.move(to=left, time=300ms, ease=cubic.out)
@@ -660,26 +660,26 @@ alice.stage.hide(fade=180ms)
 
 When the instance matters:
 
-```awft
+```arcw
 alice.stage(@stage.alice.main).move(to=left, time=300ms)
 ```
 
 Fully qualified:
 
-```awft
+```arcw
 @<character.alice>.stage(@stage.alice.main).look(worried)
 ```
 
 Character staging uses ordinary effectful calls and methods. There is no
 separate `@show`, `@face`, or `@move` command family.
 
-```awft
+```arcw
 show(@character.alice, .smile, at = .center, fade = 200ms)
 ```
 
 is sugar for:
 
-```awft
+```arcw
 alice.stage.show(smile, at=center, fade=200ms)
 ```
 
@@ -689,7 +689,7 @@ alice.stage.show(smile, at=center, fade=200ms)
 
 Characters own preload and memoization policies for sprites, expressions, mouth parts, voice metadata, and composed render layers.
 
-```awft
+```arcw
 pub character @character.alice Alice {
     preload_policy {
         sprites = on_flow_anticipate
@@ -707,7 +707,7 @@ pub character @character.alice Alice {
 
 Explicit preload:
 
-```awft
+```arcw
 preload character alice {
     expressions [normal, smile, worried]
     voices for flow @flow.alice_intro locale current
@@ -717,7 +717,7 @@ preload character alice {
 
 Preload for likely next flow:
 
-```awft
+```arcw
 anticipate @flow.alice_intro {
     alice.preload(expressions=[smile, worried], voices=auto, sprites=true)
     asset.preload(@asset.bg.room_evening)
@@ -744,4 +744,5 @@ anticipate @flow.alice_intro {
 10. Character stage methods provide object-oriented sugar for show/face/move/animate/preload.
 11. Character preload and memoization policies are explicit and observable by Agent Debug Bus.
 ```
+
 

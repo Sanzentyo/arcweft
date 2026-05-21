@@ -66,7 +66,7 @@ arcw jit dump-clif fn.logic.affection_score
 arcw jit dump-asm fn.logic.affection_score
 ```
 
-```awft
+```arcw
 property @test.jit_vm_equivalence_affection_score {
     for_all input in gen<AffectionInput>() {
         let vm = eval_vm(@fn.affection_score, input)
@@ -80,7 +80,7 @@ property @test.jit_vm_equivalence_affection_score {
 
 関数は初回使用時に JIT できる。
 
-```awft
+```arcw
 lazy jit fn @fn.layout_choices
 ```
 
@@ -99,7 +99,7 @@ JIT failed:
 
 JIT は契約済み pure subset のみ。
 
-```awft
+```arcw
 fn score(choice: ChoiceDef)(state: GameState) -> i32
 requires choice.is_valid()
 ensures result >= 0
@@ -117,3 +117,4 @@ jit
 - native product では feature flag で有効化。
 - web では runtime JIT 無効。AOT compiled Wasm player + bytecode VM を使用し、必要なら将来の build-time AOT Wasm helper として扱う。
 - Wasmtime は plugin/activity sandbox 用であり、JIT backend ではない。
+

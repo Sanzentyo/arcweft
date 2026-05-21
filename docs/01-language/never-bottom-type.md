@@ -4,7 +4,7 @@ Arcweft has a bottom type. Its canonical name is `Never`; the advanced Rust-like
 
 `Never` / `!` is the type of expressions that never produce a value in the current continuation.
 
-```awft
+```arcw
 fn impossible() -> Never {
     panic("unreachable")
 }
@@ -16,7 +16,7 @@ fn impossible_short() -> ! {
 
 Examples:
 
-```awft
+```arcw
 return Err(.MissingRoute)
 goto @flow.title
 break route
@@ -30,7 +30,7 @@ loop { tick() }
 
 Expression-oriented control flow requires a bottom type. Without it, these common forms cannot type-check cleanly:
 
-```awft
+```arcw
 let route = if let .Some(route) = state.route_override {
     route
 } else {
@@ -42,7 +42,7 @@ The `else` branch does not return a `Ref<Flow>`; it leaves the current continuat
 
 Similarly:
 
-```awft
+```arcw
 let value = match maybe_value {
     .Some(v) => v
     .None => return Err(.MissingValue)
@@ -71,7 +71,7 @@ This applies to:
 
 ## Diverging expressions
 
-```awft
+```arcw
 return expr      # exits current fn / flow / parser / task fn
 goto @flow.x     # exits current flow segment with FlowExit::Goto
 break expr       # exits nearest loop; if loop-valued, contributes expr type
@@ -85,7 +85,7 @@ abort line       # cancel current line and diverge from line continuation
 
 A `loop` with no reachable `break` has type `!`.
 
-```awft
+```arcw
 fn never_returns() -> ! {
     loop {
         wait_frame()
@@ -95,7 +95,7 @@ fn never_returns() -> ! {
 
 A `loop` with `break expr` has the unified type of all break expressions.
 
-```awft
+```arcw
 let route = loop {
     let event = wait_event()
     match event {
@@ -110,7 +110,7 @@ let route = loop {
 
 The `else` part must diverge.
 
-```awft
+```arcw
 let .Some(route) = state.route_override else {
     goto @flow.title
 }
@@ -118,7 +118,7 @@ let .Some(route) = state.route_override else {
 
 Invalid:
 
-```awft
+```arcw
 let .Some(route) = state.route_override else {
     @flow.title
 }
@@ -130,13 +130,13 @@ Use `match` or `unwrap_or` for fallback values.
 
 The `?` operator produces `!` on the error branch and `T` on the success branch.
 
-```awft
+```arcw
 let image = load_image()?   # Ok(image) => image, Err(e) => return Err(e)
 ```
 
 Conceptually:
 
-```awft
+```arcw
 let image = match load_image() {
     .Ok(v) => v
     .Err(e) => return Err(e)
@@ -166,3 +166,4 @@ this branch never returns
 ```
 
 rather than forcing users to understand bottom-type theory.
+

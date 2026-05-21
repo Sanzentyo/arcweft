@@ -114,7 +114,7 @@ root
 
 従来の `RenderSpec.layers: Vec<LayerSpec>` は、`LayerTree` と layer ごとの content に分ける。
 
-```awft
+```arcw
 pub struct RenderSpec {
     pub size: UVec2,
     pub clear: Color,
@@ -196,7 +196,7 @@ Inherit:
 
 例:
 
-```awft
+```arcw
 layer @layer.ui.glass_modal: Modal {
     order = ui.modal(100)
     render_target = offscreen(format = rgba16f) {
@@ -362,7 +362,7 @@ pub struct InputScope {
 
 例:
 
-```awft
+```arcw
 input_scope @input.opening on layer @layer.textbox {
     key Enter => action AdvanceText
     key Space => action AdvanceText
@@ -381,7 +381,7 @@ input_scope @input.choice on layer @layer.choice_ui {
 
 ### layer 宣言
 
-```awft
+```arcw
 layer @layer.background: Background {
     order = background(0)
     input = pass_through
@@ -410,7 +410,7 @@ layer @layer.modal: Modal {
 
 ### scene 内の layer 使用
 
-```awft
+```arcw
 scene.show(@scene.opening)
 scope {
     layer @layer.background {
@@ -436,7 +436,7 @@ scope {
 
 ### UI component での layer 指定
 
-```awft
+```arcw
 ChoiceList(choices)
     .layer(@layer.choice_ui)
     .input_policy(capture_on_hit)
@@ -444,7 +444,7 @@ ChoiceList(choices)
 
 ### modal
 
-```awft
+```arcw
 if state.ui.settings_open {
     layer @layer.modal {
         SettingsPanel(config = bind state.config)
@@ -457,7 +457,7 @@ if state.ui.settings_open {
 
 UI widget の `on_click` は、hit region と semantic action へ lowering される。
 
-```awft
+```arcw
 Button("閉じる")
     .agent_target(@ui.settings.close)
     .on_click { event.emit(UiEvent.SettingsClosed) }
@@ -583,7 +583,7 @@ pub struct FocusTarget {
 
 keyboard/gamepad は原則として focused layer に配送される。modal がある場合、focus は modal 内に trap される。
 
-```awft
+```arcw
 FocusPolicy::TrapWithin(@layer.modal)
 ```
 
@@ -617,7 +617,7 @@ debug overlay:
 
 ## Tests
 
-```awft
+```arcw
 test @test.choice_layer_receives_input scenario {
     start @flow.opening
     wait object @choice.opening.listen visible
@@ -633,7 +633,7 @@ test @test.choice_layer_receives_input scenario {
 
 visual:
 
-```awft
+```arcw
 test @test.layer_order_opening visual {
     start @flow.opening
     capture image overlay as "opening_layers.png"
@@ -669,7 +669,7 @@ test @test.layer_order_opening visual {
 
 Layer は hook の主要対象でもある。入力 routing、modal、focus、Agent 観測、render pass の前後で hook を実行できる。
 
-```awft
+```arcw
 hook @hook.modal.escape
 on @layer.modal
 phase InputCapture
@@ -688,7 +688,7 @@ Layer hook の詳細は [Object Hooks](../01-language/hooks-and-memoization.md) 
 
 Layer は hook 対象である。描画・入力・layout・Agent 観測の各 phase に hook を付けられる。
 
-```awft
+```arcw
 layer @layer.choices: Choice {
     z = 550
     input = hit_test
@@ -718,7 +718,7 @@ layer @layer.choices: Choice {
 
 Layer は Hook target でもある。描画順・visibility・input policy・focus などの変化に対して hook を attach できる。
 
-```awft
+```arcw
 hook @hook.choice_ui_appeared
 on @layer.choice_ui
 phase AfterLayout
@@ -742,7 +742,7 @@ effects { signal_write }
 
 入力 routing に関する高コスト判定は memo 化できる。
 
-```awft
+```arcw
 memo fn choice_hit_regions(tree: LayerTree) -> Vec<HitRegion>
 scope = frame
 depends layer_tree_hash(tree), ui_layout_hash(@layer.choice_ui)
@@ -772,4 +772,5 @@ USB/HID/Gamepad/Keyboard/Touch
 ```
 
 Virtual controller layers usually sit above scene/UI layers and consume touch input inside their hit regions before lower layers receive it.
+
 

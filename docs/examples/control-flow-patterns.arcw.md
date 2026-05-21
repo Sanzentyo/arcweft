@@ -1,6 +1,6 @@
 # Example: Control Flow, Patterns, Await, and Loops
 
-```awft
+```arcw
 mod game::routes::control_flow_example
 
 use game::prelude::*
@@ -52,7 +52,7 @@ pub flow @flow.control_flow_example example(state: GameState) -> Result<FlowExit
 
 Function example with optional semicolon:
 
-```awft
+```arcw
 fn score_bonus(score: i32) -> i32 {
     if score >= 10 {
         3
@@ -65,3 +65,4 @@ fn debug_score(score: i32) -> Unit {
     log.info("score={score}", score = score);
 }
 ```
+

@@ -26,16 +26,16 @@ it is still an interim design.
 - A project-shaped sample exists under `samples/visual-novel-mini/`.
 - `arcweft-lang-syntax` parses speaker preset calls such as:
 
-```awft
+```arcw
 alice(face=.smile, voice=auto, window=@textbox:.side)
 ```
 
 - `arcweft-lang-sema` rejects unresolved bare atoms such as `face=smile` until
   an option/schema/atom registry exists.
 - `.smile` and `.worried` continue to work as short variant-style atoms.
-- `arcw check samples/visual-novel-mini/src/server.awft` rejects
+- `arcw check samples/visual-novel-mini/src/server.arcw` rejects
   `route_params` as an unknown symbol.
-- `arcw serve samples/visual-novel-mini/src/server.awft --adapter native-http`
+- `arcw serve samples/visual-novel-mini/src/server.arcw --adapter native-http`
   accepts it through adapter-provided type context.
 - A small `arcweft-adapter-context` crate holds the native HTTP adapter semantic
   context so it is not hard-coded in `arcweft-lang-sema`.
@@ -109,11 +109,11 @@ Cons:
 - Requires manifest/profile design before more runtime work.
 - Some command UX needs redesign.
 
-### Option C: Put adapter context into `.awft` entry declarations
+### Option C: Put adapter context into `.arcw` entry declarations
 
 Make source entries explicitly declare their adapter context:
 
-```awft
+```arcw
 entry server @entry.http adapter native_http {
     inject request: HttpRequestContext
     inject route_params: Map<String, String>
@@ -130,7 +130,7 @@ Pros:
 Cons:
 
 - Source may become host-profile heavy.
-- Product/dev/local adapter differences can clutter `.awft`.
+- Product/dev/local adapter differences can clutter `.arcw`.
 - Needs a clean story for secrets, ports, env vars, and build profiles.
 
 ## Recommended direction
@@ -145,7 +145,7 @@ AdapterContext is data selected by the profile.
 
 Then allow a limited source-level shorthand only when useful:
 
-```awft
+```arcw
 entry server @entry.http {
     route GET "/hello/:name" -> @flow.hello
 }
@@ -159,7 +159,7 @@ The manifest/profile can attach `native-http` and provide injected symbols.
    `arcw run --profile ...`?
 2. Should adapter-injected symbols live in:
    - project manifest / launch profile,
-   - `.awft` entry declarations,
+   - `.arcw` entry declarations,
    - adapter metadata crate,
    - or a combination?
 3. Should generic `arcw check` accept adapter context when a file contains
@@ -168,7 +168,7 @@ The manifest/profile can attach `native-http` and provide injected symbols.
 4. Should `route_params` be a conventional injected binding, or should route
    params be explicit flow parameters?
 
-```awft
+```arcw
 flow @flow.hello hello(route_params: RouteParams) {
     return route_params.name
 }
@@ -185,4 +185,5 @@ serve/native-http: adapter context applies
 bare unresolved atoms: rejected
 short variant atoms: accepted
 ```
+
 

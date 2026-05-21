@@ -2,7 +2,7 @@
 
 ## State
 
-```awft
+```arcw
 pub state GameState {
     pub route: Ref<Flow> = @flow.opening
     pub config: Config = Config {}
@@ -16,7 +16,7 @@ pub state GameState {
 
 ## Event
 
-```awft
+```arcw
 pub enum GameEvent {
     StartGame,
     TextAdvanced,
@@ -29,7 +29,7 @@ pub enum GameEvent {
 
 ## Reducer
 
-```awft
+```arcw
 pub reducer update(state: GameState, event: GameEvent) -> Result<Update<GameState>, GameError> {
     match event {
         .ChoiceSelected { id: @choice.opening.listen } => {
@@ -51,7 +51,7 @@ Reducer は `await` 禁止。必要なら `Command` / `Task` を返す。
 
 Flow は逐次進行で、suspend/resume 可能。
 
-```awft
+```arcw
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     alice(id=@say.opening.greeting): おはよう。[p]
 
@@ -68,7 +68,7 @@ Flow 内の `await` は `pending` branch 必須。
 
 View は状態から描画仕様を作る純粋関数。
 
-```awft
+```arcw
 pub view current_scene(state: GameState) -> Scene {
     scene {
         layer bg = image(@asset.bg.room)
@@ -81,7 +81,7 @@ View は `await` 禁止。`Need` は `AwaitView` や fallback を使う。
 
 ## Update
 
-```awft
+```arcw
 pub struct Update<S> {
     pub state: S,
     pub commands: Vec<Command>,
@@ -90,10 +90,11 @@ pub struct Update<S> {
 
 状態更新は persistent chain。
 
-```awft
+```arcw
 state
     .set(.config.text_speed, value.clamp(0.1, 3.0))
     .update(.affection[@character.alice], |v| v + 1)
 ```
+
 
 

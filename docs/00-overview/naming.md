@@ -23,7 +23,7 @@ A layered, verified, agent-native narrative engine.
 ```text
 arcweft  正式 prefix
 arcw     CLI command / 開発者向け短縮名
-awft     source extension root
+arcw     source extension root
 ```
 
 CLI は `arcw` を使う。`arcweft` ではなく `arcw` にすることで、コマンド例を短く保つ。
@@ -40,27 +40,27 @@ arcw shader check
 
 ## ファイル拡張子
 
-source extension は **`.awft`** とする。
+source extension は **`.arcw`** とする。
 
 ```text
-.awft     Arcweft DSL source
+.arcw     Arcweft DSL source
 .awfb     Arcweft bundle
 .awfs     Arcweft save snapshot
-.awftx    Arcweft trace / replay trace
+.arcwx    Arcweft trace / replay trace
 .awfagent Arcweft agent script
 ```
 
 推奨 project layout:
 
 ```text
-project.awft.toml
+project.arcw.toml
 arcweft.lock
 
 src/
-  main.awft
-  routes/opening.awft
-  ui/settings.awft
-  shaders/post.awft
+  main.arcw
+  routes/opening.arcw
+  ui/settings.arcw
+  shaders/post.arcw
 
 .arcweft/
   entities.toml
@@ -71,8 +71,8 @@ src/
 versioned file:
 
 ```text
-*.awft
-project.awft.toml
+*.arcw
+project.arcw.toml
 .arcweft/entities.toml
 .arcweft/links.toml
 ```
@@ -84,7 +84,7 @@ generated / local-only file:
 .arcweft/history/
 .arcweft/rag/
 *.awfb
-*.awftx
+*.arcwx
 ```
 
 ## Rust workspace / crate 名
@@ -177,7 +177,7 @@ are not general entity references. `@.suffix` resolves in the current ID scope.
 Each extra dot walks one parent ID scope outward. The explicit readable form is
 `@super.suffix`, `@super.super.suffix`, and so on.
 
-```awft
+```arcw
 alice(id=@.greeting):
     おはよう。[p]
 
@@ -211,7 +211,7 @@ choice @.first
 
 For ordinary entity references, keep the fully qualified `@domain.path` form:
 
-```awft
+```arcw
 goto @flow.opening.next
 ```
 
@@ -236,4 +236,5 @@ game project は、明示的に Arcweft extension crate を実装する場合を
 
 将来、package registry、商標、OSS project などで強い衝突が見つかった場合は、この章を source of truth として、crate 名、CLI、URI scheme、MCP namespace、docs の用語を機械的に更新する。
 
-`.awft` が単独で conflict-free なら extension は維持できるが、product name と extension の両方が混ざりやすくなった場合は同時に再検討する。
+`.arcw` が単独で conflict-free なら extension は維持できるが、product name と extension の両方が混ざりやすくなった場合は同時に再検討する。
+

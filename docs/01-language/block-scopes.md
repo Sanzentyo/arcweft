@@ -4,7 +4,7 @@ Arcweft supports `{ ... }` blocks as lexical scopes. They can be used in typed c
 
 ## Lexical scope
 
-```awft
+```arcw
 let x = {
     let a = 1
     let b = 2
@@ -18,7 +18,7 @@ let x = {
 
 In expression position, the final expression is the block value unless it is explicitly discarded with `;`.
 
-```awft
+```arcw
 let x = {
     let a = 1
     a + 1
@@ -27,7 +27,7 @@ let x = {
 
 Type: `i32`.
 
-```awft
+```arcw
 let unit = {
     compute();
 }
@@ -37,7 +37,7 @@ Type: `Unit`.
 
 The same rule applies to richer control-flow expressions inside the block:
 
-```awft
+```arcw
 let label = {
     let affection = state.affection[@character.alice]
     if affection >= 3 {
@@ -56,7 +56,7 @@ second sugar layer for that unnamed `scope { ... }` form. Its locals do not
 escape, it does not add a segment to generated relative IDs, and any final
 non-`Unit` value must be explicitly discarded.
 
-```awft
+```arcw
 {
     let tmp = route_title(state.route)
     log.debug("route={tmp}", tmp = tmp);
@@ -78,7 +78,7 @@ for body
 
 They do not export a value via final expression. Use explicit transfer:
 
-```awft
+```arcw
 return expr
 out expr
 break expr
@@ -86,7 +86,7 @@ break expr
 
 Line plans and choice plans therefore use `out` for their own result values:
 
-```awft
+```arcw
 let voice = alice(id=@.greeting)[
     おはよう。[p]
 ]
@@ -103,7 +103,7 @@ The canonical statement form is `scope name { ... }`. The bare scope form
 `scope name { ... }` when a lexical block should also name an ID namespace,
 diagnostic frame, trace frame, or LSP/debug region.
 
-```awft
+```arcw
 scope rain {
     地の文(id=@.sound):
         扉の向こうから、雨の音がした。[p]
@@ -130,7 +130,7 @@ alice(id=@.comment)
 If a line ID is omitted, the generated stable slot still includes the current
 named-scope path:
 
-```awft
+```arcw
 scope rain {
     地の文:
         扉の向こうから、雨の音がした。[p]
@@ -144,7 +144,7 @@ scope rain {
 
 Named scopes can nest, and the scope path is appended in order:
 
-```awft
+```arcw
 scope rain {
     scope window {
         地の文(id=@.rattle):
@@ -161,7 +161,7 @@ scope rain {
 `scope` can be used in expression position too. In that case, the final
 expression is the value just like an ordinary `{ ... }` block.
 
-```awft
+```arcw
 let can_enter = scope alice_route_check {
     let affection_ok = state.affection[@character.alice] >= 3
     let has_key = state.inventory.contains(@item.alice_key)
@@ -173,7 +173,7 @@ The name may be omitted. `scope { ... }` is the bare scope expression: it has
 the same lexical and value-producing behavior as `scope name { ... }`, but it
 does not contribute an ID namespace segment.
 
-```awft
+```arcw
 let can_enter = scope {
     let affection_ok = state.affection[@character.alice] >= 3
     affection_ok
@@ -187,7 +187,7 @@ expression.
 For choices, the same scope path is applied to the choice ID first, and
 relative option IDs are then resolved under that normalized choice ID.
 
-```awft
+```arcw
 scope dream {
     choice @.first {
         @.listen "聞いてみる" -> @flow.alice_intro
@@ -212,7 +212,7 @@ choice @.first       -> @choice.opening.first
 
 Values borrowed inside a block cannot escape if their lifetime is shorter than the destination scope.
 
-```awft
+```arcw
 let slice = {
     borrow frame as pixels: &'frame [u8] {
         pixels
@@ -225,7 +225,7 @@ The same rule applies to any region exit. Borrowed values cannot be returned,
 exported with `out`, used as a block final value, or written into an upper
 lifetime registry such as `'flow.*`:
 
-```awft
+```arcw
 let escaped = {
     let pixels: &'asset [Rgba8] = bg.pixels()
     pixels
@@ -242,7 +242,7 @@ bodies are not enough unless every possible path proves the borrow has ended.
 This is a semantic lifetime end for the local borrow; using the dropped binding
 after this point is a checker error in later ownership passes.
 
-```awft
+```arcw
 let pixels: &'asset [Rgba8] = bg.pixels()
 drop(pixels)
 
@@ -253,7 +253,7 @@ try await load_avatar() with:
 
 Use owned values or handles:
 
-```awft
+```arcw
 let owned = {
     borrow frame as pixels: &'frame [u8] {
         pixels.to_owned()
@@ -265,7 +265,7 @@ let owned = {
 
 Dialogue cue blocks create scopes too.
 
-```awft
+```arcw
 alice[おはよう。[p]]
 with:
     let voice = line.voice_handle()
@@ -276,3 +276,4 @@ with:
 ```
 
 `old` is visible only inside the `at` block. `voice` is visible throughout the `with:` block and can be returned with `out`.
+

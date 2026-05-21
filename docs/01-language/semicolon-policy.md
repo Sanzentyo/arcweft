@@ -2,7 +2,7 @@
 
 Arcweft is script-friendly: semicolons are not required for normal flow, dialogue, or scenario-style code.
 
-```awft
+```arcw
 flow @flow.opening {
     alice: おはよう。[p]
     alice: 今日はいい天気だね。[p]
@@ -15,7 +15,7 @@ However, semicolons remain useful after Arcweft gained expression-oriented `if`,
 
 Because expression-oriented blocks need a way to explicitly discard a final value.
 
-```awft
+```arcw
 fn answer() -> i32 {
     42
 }
@@ -43,7 +43,7 @@ newline:
 
 Value-producing blocks:
 
-```awft
+```arcw
 let x = {
     let a = 1
     a + 1
@@ -63,7 +63,7 @@ for body
 
 These do not export a value via final expression. Use explicit control transfer:
 
-```awft
+```arcw
 return expr
 out expr
 break expr
@@ -73,13 +73,13 @@ break expr
 
 Allowed:
 
-```awft
+```arcw
 let a = 1; let b = 2
 ```
 
 Formatter should rewrite to:
 
-```awft
+```arcw
 let a = 1
 let b = 2
 ```
@@ -88,14 +88,14 @@ let b = 2
 
 Two forms are valid:
 
-```awft
+```arcw
 expr;
 let _ = expr
 ```
 
 Use `let _ = expr` when discard is semantically important, especially with scoped handles:
 
-```awft
+```arcw
 let _ = se.play(@se.page_start)
 ```
 
@@ -103,7 +103,7 @@ If the discarded value implements `CancelOnDrop`, discarding triggers drop/cance
 
 Use `expr;` when the only goal is to make a final expression `Unit`:
 
-```awft
+```arcw
 fn debug_log() -> Unit {
     log_debug();
 }
@@ -123,4 +123,5 @@ Handle/resource discard:
 ```
 
 Therefore Arcweft keeps `;`, but it is optional and uncommon in scripts.
+
 

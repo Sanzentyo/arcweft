@@ -2,7 +2,7 @@
 
 ## module
 
-```awft
+```arcw
 mod game::logic::affection
 mod crate::game::routes::opening
 mod self::routes::opening
@@ -11,7 +11,7 @@ mod super::shared
 
 item はデフォルト private。
 
-```awft
+```arcw
 fn internal_helper(...) -> ...
 pub fn public_helper(...) -> ...
 pub(crate) fn crate_helper(...) -> ...
@@ -20,7 +20,7 @@ pub(super) fn parent_helper(...) -> ...
 
 ## use
 
-```awft
+```arcw
 use game::prelude::*
 use game::logic::affection::{affection_of, has_affection_at_least}
 use game::ui::settings as settings_ui
@@ -49,13 +49,13 @@ ModulePath :=
     ("crate" "::" | "self" "::" | "super" "::" | "parent" "::")? IdentPath
 ```
 
-```awft
+```arcw
 mod parent::shared
 ```
 
 normalizes to:
 
-```awft
+```arcw
 mod super::shared
 ```
 
@@ -65,38 +65,38 @@ and choice option IDs.
 Family-relative entity references such as `@flow:.next` are also expression /
 reference syntax, not module path syntax.
 
-```awft
+```arcw
 alice(id=@.greeting):       // relative dialogue line ID
 use self::characters::alice // module-relative import
 ```
 
 This is invalid:
 
-```awft
+```arcw
 use .characters::{alice}
 ```
 
 Write:
 
-```awft
+```arcw
 use self::characters::{alice}
 ```
 
 If `parent::` is accepted in `use`, it normalizes the same way:
 
-```awft
+```arcw
 use parent::common::{route_gate}
 ```
 
 to:
 
-```awft
+```arcw
 use super::common::{route_gate}
 ```
 
 ## lazy use
 
-```awft
+```arcw
 lazy use mini_games::truck::{truck_game, TruckResult}
 lazy use game::shaders::heavy::{crt_postprocess}
 lazy use crate::mini_games::truck::{truck_game, TruckResult}
@@ -108,7 +108,7 @@ lazy use super::shared::{SharedRouteState}
 
 ## eager use
 
-```awft
+```arcw
 eager use game::generated::route_map::{RouteMap}
 eager use self::generated::route_map::{RouteMap}
 eager use crate::game::generated::route_map::{RouteMap}
@@ -124,7 +124,7 @@ import 時副作用は禁止。`eager use` は compile/cache/diagnostics の都�
 
 DSL、Rust、WASM、precompile 生成物を統一する。
 
-```awft
+```arcw
 pub struct ModuleItem {
     pub entity_id: EntityId,
     pub public_id: PublicId,
@@ -137,7 +137,7 @@ pub struct ModuleItem {
 }
 ```
 
-```awft
+```arcw
 pub enum ItemOrigin {
     DslSource(SourceAnchor),
     MacroGenerated(MacroExpansionId),
@@ -150,7 +150,7 @@ pub enum ItemOrigin {
 
 ## Rust export
 
-```awft
+```arcw
 extern rust mod mini_games::truck from crate "truck_game" {
     pub event TruckEvent
     pub type TruckResult
@@ -158,3 +158,4 @@ extern rust mod mini_games::truck from crate "truck_game" {
     pub activity truck_game: Activity<TruckInput, TruckResult>
 }
 ```
+

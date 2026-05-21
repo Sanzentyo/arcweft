@@ -2,7 +2,7 @@
 
 This example shows Arcweft's flow-integrated dialogue surface. There is no separate `script` item: concise dialogue and typed logic coexist inside `flow`. Ordinary lines use `character:` sugar, while complex lines use the canonical `character.say()[...]` form.
 
-```awft
+```arcw
 mod game::routes::opening
 
 use game::prelude::*
@@ -52,7 +52,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
 A dialogue-safe custom content interpolation:
 
-```awft
+```arcw
 pub dialogue tag @tag.flash flash(
     color: Color = rgb("#ffffff"),
     time: Duration = 120ms,
@@ -65,7 +65,7 @@ effects { stage.flash }
 
 Character style excerpt:
 
-```awft
+```arcw
 pub character @character.alice alice {
     display_name ja-JP = "アリス"
     display_name en-US = "Alice"
@@ -104,9 +104,9 @@ text.opening.alice.002,en-US,character.alice,"今日は少しだけ、変な夢�
 text.choice.opening.listen,en-US,,聞いてみる,Ask her about it,translated,b3:12cd...,,choice.opening.first,
 ```
 
-`.awftloc` equivalent:
+`.arcwloc` equivalent:
 
-```awft
+```arcw
 locale en-US from ja-JP {
     line text.opening.alice.001 {
         speaker = @character.alice
@@ -141,7 +141,7 @@ locale en-US from ja-JP {
 
 The same line can be written with bracket speaker-call syntax:
 
-```awft
+```arcw
 alice[
     おはよう、#[player_name]。[l]
 ]
@@ -152,7 +152,7 @@ with:
 
 A complex line may return scoped handles. `_` explicitly discards and drops a returned handle.
 
-```awft
+```arcw
 let (actor, (_, voice)) = alice.say(id=@say.opening.dream_hint, voice=auto)[
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[flash time=90ms][p]
 ]
@@ -171,9 +171,10 @@ Here the initial `face` handle is intentionally discarded with `_`; if the cue i
 
 Preload for a likely next flow can be explicit:
 
-```awft
+```arcw
 preload next @flow.alice_intro:
     alice.stage.prefetch(pose=normal, faces=[smile, worried], window=@textbox.0)
     alice.voice_for(@say.alice_intro.001).preload()
     bgm.prepare(@bgm.alice_theme)
 ```
+

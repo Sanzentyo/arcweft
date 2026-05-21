@@ -4,7 +4,7 @@ The CLI should expose syntax-normalization tools without forcing formatter users
 
 ## Check
 
-`arcw check <file.awft> [--json]` is the first developer-facing vertical slice.
+`arcw check <file.arcw> [--json]` is the first developer-facing vertical slice.
 It keeps file I/O in the CLI adapter and runs the Sans I/O compiler stages over
 the source text:
 
@@ -23,9 +23,9 @@ verify_module --mode dev
 Success prints a compact summary:
 
 ```bash
-arcw check game/routes/opening.awft
-arcw check game/routes/opening.awft --json
-# ok: game/routes/opening.awft (1 flow(s), 1 line task group(s), 0 warning(s), 0 obligation(s))
+arcw check game/routes/opening.arcw
+arcw check game/routes/opening.arcw --json
+# ok: game/routes/opening.arcw (1 flow(s), 1 line task group(s), 0 warning(s), 0 obligation(s))
 ```
 
 Parse, lowering, reference, readiness, typecheck, and line-plan lowering errors
@@ -44,19 +44,19 @@ CLI owns filesystem and optional solver process I/O; the verifier core owns
 only HIR-to-report analysis.
 
 ```bash
-arcw verify game/routes/opening.awft --mode test
-arcw verify game/routes/opening.awft --mode release --json
-arcw verify game/routes/opening.awft --backend oxiz
-arcw verify game/routes/opening.awft --backend z3 --solver-command z3
-arcw verify game/routes/opening.awft --emit-obligations obligations.json
-arcw verify game/routes/opening.awft --emit-smt out/proofs
-arcw unsafe game/routes/opening.awft --json
-arcw plan game/routes/opening.awft --json
-arcw run game/routes/opening.awft --steps 4 --json
-arcw cli game/routes/opening.awft -- --dry-run
-arcw serve game/routes/server.awft --entry http --json
-arcw test game/routes/opening.awft --json
-arcw bench game/routes/opening.awft --json
+arcw verify game/routes/opening.arcw --mode test
+arcw verify game/routes/opening.arcw --mode release --json
+arcw verify game/routes/opening.arcw --backend oxiz
+arcw verify game/routes/opening.arcw --backend z3 --solver-command z3
+arcw verify game/routes/opening.arcw --emit-obligations obligations.json
+arcw verify game/routes/opening.arcw --emit-smt out/proofs
+arcw unsafe game/routes/opening.arcw --json
+arcw plan game/routes/opening.arcw --json
+arcw run game/routes/opening.arcw --steps 4 --json
+arcw cli game/routes/opening.arcw -- --dry-run
+arcw serve game/routes/server.arcw --entry http --json
+arcw test game/routes/opening.arcw --json
+arcw bench game/routes/opening.arcw --json
 ```
 
 Modes:
@@ -83,7 +83,7 @@ audits, thread capture, thread join typing, and simple sibling write conflicts.
 
 ## Runtime Plan Inspection
 
-`arcw plan <file.awft> [--json]` exposes the lowered Sans I/O runtime plan. It
+`arcw plan <file.arcw> [--json]` exposes the lowered Sans I/O runtime plan. It
 runs the same parse, HIR, typecheck, verifier, and line-plan lowering path as
 `arcw check`, then prints a compact line/task summary. JSON output contains each
 line plan's flow id, line id, callee, root node kind, child task count, effect
@@ -93,8 +93,8 @@ declarations: entity id, item/error type text, source policy, handler count,
 stream op count, and stream yield count.
 
 ```bash
-arcw plan game/routes/opening.awft
-arcw plan game/routes/opening.awft --json
+arcw plan game/routes/opening.arcw
+arcw plan game/routes/opening.arcw --json
 ```
 
 This is an inspection command, not an executor. It performs file I/O only in the
@@ -102,7 +102,7 @@ CLI adapter and does not start renderer/audio/device backends.
 
 ## Runtime Dry Run
 
-`arcw run <file.awft> [--entry entry.id|main] [--flow flow.id|name] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
+`arcw run <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
 headless execution entry point. It uses the same parse, HIR, reference
 validation, typecheck, and line-plan lowering path as `arcw check`, then lowers
 checked flows to `arcweft-core::RuntimePlan` and steps `Engine` for up to `N`
@@ -110,12 +110,12 @@ runtime steps. If `--entry` or `--flow` is omitted, the first lowered flow is
 used as a deterministic fallback for headless inspection.
 
 ```bash
-arcw run game/routes/opening.awft --steps 8
-arcw run game/routes/opening.awft --entry main --mode drain --steps 8
-arcw run game/routes/opening.awft --flow opening --mode drain --steps 8
-arcw run game/routes/opening.awft --mode drain --steps 8 --max-ops 32
-arcw run game/routes/opening.awft --steps 8 --value ready=true --value route=@flow.next
-arcw run game/routes/opening.awft --steps 8 --json
+arcw run game/routes/opening.arcw --steps 8
+arcw run game/routes/opening.arcw --entry main --mode drain --steps 8
+arcw run game/routes/opening.arcw --flow opening --mode drain --steps 8
+arcw run game/routes/opening.arcw --mode drain --steps 8 --max-ops 32
+arcw run game/routes/opening.arcw --steps 8 --value ready=true --value route=@flow.next
+arcw run game/routes/opening.arcw --steps 8 --json
 ```
 
 The command is still Sans I/O at the runtime layer. The CLI reads the source
@@ -140,7 +140,7 @@ fails with a runtime-lowering error instead of being silently dropped.
 
 ## CLI Entry Dry Run
 
-`arcw cli <file.awft> [--entry entry.id] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json] -- ARGS...`
+`arcw cli <file.arcw> [--entry entry.id] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json] -- ARGS...`
 executes a source-declared `entry cli` through the same Sans I/O runtime as
 `arcw run`. If `--entry` is omitted, the first `entry cli` that selects a single
 flow is used. The command does not perform script-requested filesystem,
@@ -152,13 +152,13 @@ argc: i32
 ```
 
 ```bash
-arcw cli tools/build.awft -- --profile debug
-arcw cli tools/build.awft --entry main --json -- --profile release
+arcw cli tools/build.arcw -- --profile debug
+arcw cli tools/build.arcw --entry main --json -- --profile release
 ```
 
 ## Server Entry Plan
 
-`arcw serve <file.awft> [--entry entry.id] [--adapter NAME] [--listen ADDR] [--once] [--max-ops N] [--json]`
+`arcw serve <file.arcw> [--entry entry.id] [--adapter NAME] [--listen ADDR] [--once] [--max-ops N] [--json]`
 validates and exposes a source-declared `entry server`. Without `--listen`, it
 is a Sans I/O adapter-plan command: it selects a server entry, lowers its routes,
 verifies that route targets exist, and prints the method/path/flow table that a
@@ -170,10 +170,10 @@ entry with `run @flow.id` is treated as a default `* * -> flow.id` route for
 headless adapter planning.
 
 ```bash
-arcw serve game/routes/server.awft
-arcw serve game/routes/server.awft --entry http --adapter native-http --json
-arcw serve game/routes/server.awft --entry http --adapter native-http --listen 127.0.0.1:8080
-arcw serve game/routes/server.awft --entry http --adapter native-http --listen 127.0.0.1:0 --once --json
+arcw serve game/routes/server.arcw
+arcw serve game/routes/server.arcw --entry http --adapter native-http --json
+arcw serve game/routes/server.arcw --entry http --adapter native-http --listen 127.0.0.1:8080
+arcw serve game/routes/server.arcw --entry http --adapter native-http --listen 127.0.0.1:0 --once --json
 ```
 
 With `--listen`, the CLI owns a minimal native HTTP adapter using `std::net`.
@@ -200,11 +200,11 @@ counters, and benchmark timing remain adapter work; adapter-only sections are
 reported as skipped rather than executed by the Phase 2.0 CLI.
 
 ```bash
-arcw test game/routes/opening.awft
-arcw test game/routes/opening.awft --json
-arcw test game/routes/opening.awft --steps 32 --json
-arcw bench game/routes/opening.awft
-arcw bench game/routes/opening.awft --json
+arcw test game/routes/opening.arcw
+arcw test game/routes/opening.arcw --json
+arcw test game/routes/opening.arcw --steps 32 --json
+arcw bench game/routes/opening.arcw
+arcw bench game/routes/opening.arcw --json
 ```
 
 Headless scenario expectations currently cover `expect no_assertion_failures`,
@@ -224,8 +224,8 @@ implemented.
 Default formatting preserves indentation sugar such as `with:`. Expansion is explicit:
 
 ```bash
-arcw fmt game/routes/opening.awft
-arcw fmt --expand-sugar game/routes/opening.awft
+arcw fmt game/routes/opening.arcw
+arcw fmt --expand-sugar game/routes/opening.arcw
 arcw fmt --expand-sugar --write game/routes/
 ```
 
@@ -252,7 +252,7 @@ syntax. A separate materialization command may rewrite relative IDs to their
 fully normalized registry IDs when a project wants explicit IDs in source:
 
 ```bash
-arcw ids materialize game/routes/opening.awft
+arcw ids materialize game/routes/opening.arcw
 arcw ids materialize --write game/routes/
 ```
 
@@ -271,3 +271,4 @@ materialization treats `with { ... }`, `with:`, and flat `=== with ===` line-pla
 attachments as the same source construct; flat `=== line ... ===` heads are
 materialized with the same `@say...` / `@text...` rules as colon and bracket
 dialogue calls.
+

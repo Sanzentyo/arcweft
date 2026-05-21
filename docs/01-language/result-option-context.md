@@ -4,7 +4,7 @@ Arcweft includes Rust-like `Result`, `Option`, and postfix `?`, plus standard co
 
 ## Result and Option
 
-```awft
+```arcw
 pub enum Result<T, E> {
     Ok(T),
     Err(E),
@@ -18,13 +18,13 @@ pub enum Option<T> {
 
 ## Postfix `?` on Result
 
-```awft
+```arcw
 let config = load_config()?
 ```
 
 Conceptually:
 
-```awft
+```arcw
 let config = match load_config() {
     .Ok(v) => v
     .Err(e) => return .Err(From::from(e))
@@ -39,7 +39,7 @@ Arcweft also reserves prefix `try expr` as equivalent propagation syntax. It is 
 
 In an `Option`-returning function:
 
-```awft
+```arcw
 fn selected_route(state: GameState) -> Option<Ref<Flow>> {
     let route = state.route_override?
     Some(route)
@@ -48,7 +48,7 @@ fn selected_route(state: GameState) -> Option<Ref<Flow>> {
 
 In an `ArcResult<T>` context, `Option<T>?` is allowed as convenience and converts `None` to `ArcError::missing_value()` with a default source trace.
 
-```awft
+```arcw
 fn selected_route(state: GameState) -> ArcResult<Ref<Flow>> {
     let route = state.route_override?
     Ok(route)
@@ -57,7 +57,7 @@ fn selected_route(state: GameState) -> ArcResult<Ref<Flow>> {
 
 For public/user-facing code, prefer explicit context:
 
-```awft
+```arcw
 let route = state.route_override
     .context("route override is missing")?
 ```
@@ -68,7 +68,7 @@ In a typed `Result<T, E>` context that is not `ArcResult`, `Option<T>?` is accep
 
 Arcweft provides `context` and `with_context` for both `Result` and `Option`.
 
-```awft
+```arcw
 let config = load_config()
     .context("failed to load project config")?
 
@@ -81,7 +81,7 @@ let voice = voice_catalog.find(line.voice_key)
 
 Standard traits:
 
-```awft
+```arcw
 trait ResultContext<T> {
     fn context(self, message: impl Into<Content>) -> ArcResult<T>
     fn with_context(self, f: fn() -> Content) -> ArcResult<T>
@@ -102,7 +102,7 @@ trait OptionContext<T> {
 
 Built-ins:
 
-```awft
+```arcw
 Option<T>.ok_or(err) -> Result<T, E>
 Option<T>.ok_or_else(f) -> Result<T, E>
 Option<T>.context(msg) -> ArcResult<T>
@@ -124,7 +124,7 @@ Result<T, E>.with_context(f) -> ArcResult<T>
 
 Transpose:
 
-```awft
+```arcw
 Option<Result<T, E>>.transpose() -> Result<Option<T>, E>
 Result<Option<T>, E>.transpose_option() -> Option<Result<T, E>>
 ```
@@ -135,7 +135,7 @@ The second name is intentionally `transpose_option` rather than another overload
 
 `await need with:` returns `Result<T, E>`. The ergonomic form for propagation is `try await`.
 
-```awft
+```arcw
 let bg = try await asset.image(@asset.bg.room)
     .context("opening background failed")
 with:
@@ -146,7 +146,7 @@ with:
 
 Equivalent explicit form:
 
-```awft
+```arcw
 let bg_result = await asset.image(@asset.bg.room)
     .context("opening background failed")
 with:
@@ -160,7 +160,7 @@ let bg = bg_result?
 `await? expr with:` is accepted as prefix sugar for `try await expr with:`, but
 formatter and examples should prefer `try await` for handwritten code.
 
-```awft
+```arcw
 let bg = await? asset.image(@asset.bg.room)
     .context("opening background failed")
 with:
@@ -172,7 +172,7 @@ with:
 Rejected because `with:` belongs to the await operation and the postfix grouping
 is ambiguous:
 
-```awft
+```arcw
 await asset.image(@asset.bg.room)? with:
     pending p:
         scene.show(@scene.loading)
@@ -182,7 +182,7 @@ await asset.image(@asset.bg.room)? with:
 
 Arcweft standard library includes convenience helpers:
 
-```awft
+```arcw
 bail("invalid route")
 ensure(condition, "message")
 fail(ErrorKind::InvariantBroken)
@@ -203,7 +203,7 @@ fail(kind):
 
 Examples:
 
-```awft
+```arcw
 fn validate_score(score: i32) -> ArcResult<Unit> {
     ensure(score >= 0, "score must be non-negative")
     Ok(())
@@ -216,13 +216,14 @@ fn validate_score(score: i32) -> ArcResult<Unit> {
 
 Preferred:
 
-```awft
+```arcw
 let route = route_override.context("route missing")?
 ```
 
 Instead of:
 
-```awft
+```arcw
 let route = route_override.unwrap()
 ```
+
 

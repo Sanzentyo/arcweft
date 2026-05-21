@@ -1,6 +1,6 @@
 # Localization for Dialogue, Voice, and Text Keys
 
-Arcweft is Japanese-first by default: ordinary `.awft` source can be written directly in Japanese. The compiler extracts each dialogue line, narration line, choice label, and UI label into stable text units with generated IDs shown by LSP inlay hints.
+Arcweft is Japanese-first by default: ordinary `.arcw` source can be written directly in Japanese. The compiler extracts each dialogue line, narration line, choice label, and UI label into stable text units with generated IDs shown by LSP inlay hints.
 
 Related:
 
@@ -14,7 +14,7 @@ Related:
 ## Source locale policy
 
 ```toml
-# project.awft.toml
+# project.arcw.toml
 [locale]
 source = "ja-JP"
 default = "ja-JP"
@@ -30,7 +30,7 @@ Meaning:
 
 ```text
 source = "ja-JP"
-  Text written directly in .awft is Japanese source text.
+  Text written directly in .arcw is Japanese source text.
 
 id_storage = "registry"
   Text IDs are stored in .arcweft/dialogue-lines.toml instead of cluttering source.
@@ -43,7 +43,7 @@ show_inlay = true
 
 ## Source stays concise
 
-```awft
+```arcw
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     bg(@asset.bg.room, fade = 300ms)
     show(@character.alice, .smile, at = .center)
@@ -89,7 +89,7 @@ Speaker     @character.alice
 
 The canonical dialogue form is `speaker.say(...)[...]`; `speaker(...):` is sugar. Dialogue and narration use the same line options:
 
-```awft
+```arcw
 alice.say(
     id = @say.opening.alice.greeting,
     text_key = @text.opening.alice.greeting,
@@ -119,7 +119,7 @@ id = @say.opening.alice.greeting
 Line IDs may be written as relative IDs when the surrounding flow and speaker
 provide the stable prefix:
 
-```awft
+```arcw
 alice(id=@.greeting, voice=auto):
     おはよう。[p]
 
@@ -141,7 +141,7 @@ alice(id=@.greeting)
 
 Named `scope` blocks become part of generated and relative IDs:
 
-```awft
+```arcw
 scope rain {
     地の文(id=@.sound):
         扉の向こうから、雨の音がした。[p]
@@ -168,7 +168,7 @@ scope rain { 地の文: ... }
 
 Narration is the built-in narrator speaker alias and accepts the same options:
 
-```awft
+```arcw
 地の文(id=@say.opening.narrator.rain):
     扉の向こうから、雨の音がした。[p]
 
@@ -176,16 +176,16 @@ narrator(id=@say.opening.narrator.rain):
     扉の向こうから、雨の音がした。[p]
 ```
 
-Locale is split into source locale and runtime locale. `source` in project config describes the language of text written directly in `.awft`. Runtime locale comes from engine state/config and is not normally a line option. Per-line `source_locale` is only for exceptional embedded-language lines:
+Locale is split into source locale and runtime locale. `source` in project config describes the language of text written directly in `.arcw`. Runtime locale comes from engine state/config and is not normally a line option. Per-line `source_locale` is only for exceptional embedded-language lines:
 
-```awft
+```arcw
 alice(id=@say.opening.alice.english_quote, source_locale=en-US):
     Good morning.[p]
 ```
 
 For a scoped override, use a lexical source locale block:
 
-```awft
+```arcw
 source locale en-US {
     alice(id=@say.opening.alice.english_quote):
         Good morning.[p]
@@ -210,7 +210,7 @@ source_locale = "ja-JP"
 source_text = "扉の向こうから、雨の音がした。"
 source_rich_text = "扉の向こうから、雨の音がした。[p]"
 source_hash = "b3:91a2..."
-source_anchor = "game/routes/opening.awft:7:5-7:32"
+source_anchor = "game/routes/opening.arcw:7:5-7:32"
 flow = "flow.opening"
 
 [lines."ent_01JABC_OPENING_ALICE_002"]
@@ -222,7 +222,7 @@ source_locale = "ja-JP"
 source_text = "今日は少しだけ、変な夢を見たんだ。"
 source_rich_text = "今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]"
 source_hash = "b3:f8c0..."
-source_anchor = "game/routes/opening.awft:9:5-9:48"
+source_anchor = "game/routes/opening.arcw:9:5-9:48"
 voice_key = "voice.alice.opening.002"
 flow = "flow.opening"
 
@@ -233,7 +233,7 @@ text_key = "text.choice.opening.listen"
 source_locale = "ja-JP"
 source_text = "聞いてみる"
 source_hash = "b3:12cd..."
-source_anchor = "game/routes/opening.awft:12:9-12:15"
+source_anchor = "game/routes/opening.arcw:12:9-12:15"
 flow = "flow.opening"
 ```
 
@@ -306,16 +306,16 @@ Recommended policy:
 ```text
 standard import/export: long CSV
 small manual review: wide CSV
-structured rich text / voice / notes: .awftloc
+structured rich text / voice / notes: .arcwloc
 ```
 
 ---
 
-## `.awftloc` localization file
+## `.arcwloc` localization file
 
-CSV is intentionally simple. `.awftloc` is used for structured localization metadata.
+CSV is intentionally simple. `.arcwloc` is used for structured localization metadata.
 
-```awft
+```arcw
 locale en-US from ja-JP {
     line text.opening.alice.001 {
         speaker = @character.alice
@@ -356,7 +356,7 @@ locale en-US from ja-JP {
 
 Japanese source may contain ruby and control tags:
 
-```awft
+```arcw
 alice: 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 ```
 
@@ -385,13 +385,13 @@ Arcweft separates localization placeholders from runtime interpolation.
 
 Runtime interpolation with `#[expr]` is not exported as a translator-editable placeholder by default:
 
-```awft
+```arcw
 narrator: #[state.player_name]は鍵を手に入れた。[p]
 ```
 
 A localizable placeholder uses `{name}` and must be supplied by line args or context:
 
-```awft
+```arcw
 narrator.say(args={ player_name = state.player_name })[
     {player_name}は鍵を手に入れた。[p]
 ]
@@ -422,7 +422,7 @@ error[LOCALE_PLACEHOLDER_MISSING]:
 
 Runtime interpolation still requires `DisplayText` or explicit `fmt(...)`:
 
-```awft
+```arcw
 narrator: スコアは#[fmt(score, style="number")]点です。[p]
 ```
 
@@ -447,9 +447,9 @@ key,locale,target_text,voice,status,source_hash
 text.opening.alice.002,en-US,I had a strange dream today.,voice.en-US.alice.opening.002,translated,b3:f8c0...
 ```
 
-`.awftloc` can also set voice:
+`.arcwloc` can also set voice:
 
-```awft
+```arcw
 line text.opening.alice.002 {
     text = "I had a strange dream today."
     voice = @voice.en-US.alice.opening.002
@@ -507,7 +507,7 @@ arcw locale export --format wide-csv --out locales/all.csv
 arcw locale export --flow flow.opening --locale en-US --format csv
 
 arcw locale import locales/en-US.csv
-arcw locale import locales/en-US.awftloc
+arcw locale import locales/en-US.arcwloc
 
 arcw locale missing --locale en-US
 arcw locale open text.opening.alice.002
@@ -561,4 +561,5 @@ Diagnostics:
 - text too long for textbox
 - choice label exceeds layout constraints
 ```
+
 

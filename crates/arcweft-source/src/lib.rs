@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn source_span_preserves_range_positions_and_diagnostics() {
-        let span = SourceSpan::new(SourceName::path("game.awft"), SourceRange::new(2, 8))
+        let span = SourceSpan::new(SourceName::path("game.arcw"), SourceRange::new(2, 8))
             .with_positions(SourcePosition::new(1, 2), SourcePosition::new(1, 8));
         assert_eq!(span.range().as_range(), 2..8);
         assert_eq!(span.start(), Some(SourcePosition::new(1, 2)));

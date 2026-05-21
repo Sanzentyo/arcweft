@@ -4,7 +4,7 @@ Arcweft treats character presentation as a typed stage graph, not as ad-hoc imag
 
 ## Character definition
 
-```awft
+```arcw
 pub surface character @character.alice Alice as alice {
     display_name ja-JP = "アリス"
     display_name en-US = "Alice"
@@ -66,7 +66,7 @@ StageObject<CharacterSprite>
 
 Character aliases are typed objects in Arcweft. They expose presentation, voice, memoized asset, and preload methods.
 
-```awft
+```arcw
 alice.say()[おはよう。[p]]
 alice.stage.show(.smile, at=.center, fade=200ms)
 alice.stage.look(.worried, crossfade=120ms)
@@ -82,13 +82,13 @@ Character staging uses ordinary calls and object methods. There is no
 separate `@show`, `@face`, `@move`, `@scale`, `@rotate`, or `@anim` command
 family.
 
-```awft
+```arcw
 show(@character.alice, .smile, at = .center, fade = 200ms)
 ```
 
 means:
 
-```awft
+```arcw
 alice.stage.show(.smile, at = .center, fade = 200ms)
 ```
 
@@ -96,7 +96,7 @@ alice.stage.show(.smile, at = .center, fade = 200ms)
 not canonical; authoring tools should migrate them to `look = ...` or
 look-patch operands.
 
-```awft
+```arcw
 alice(look=.smile & .casual & .motion.nod, voice=auto):
     おはよう。[p]
 ```
@@ -105,7 +105,7 @@ Object methods are effect-checked. `stage` methods affect the character stage ob
 
 ## Show / hide
 
-```awft
+```arcw
 show(@character.alice, .smile, at = .center, fade = 200ms)
 show(@character.alice, .worried, at = (0.35, 0.92), scale = 1.05, z = 10)
 hide(@character.alice, fade = 180ms)
@@ -118,7 +118,7 @@ was detached or moved to a longer scope.
 
 Object equivalent:
 
-```awft
+```arcw
 alice.stage.show(smile, at=center, fade=200ms)
 ```
 
@@ -131,7 +131,7 @@ slot   = @slot.character.{character}.default
 
 Multiple instances of a character require explicit slots:
 
-```awft
+```arcw
 let alice_main = show(@character.alice, .smile, slot = @slot.character.alice.main)
 let alice_mirror = show(@character.alice, .worried, slot = @slot.character.alice.mirror)
 
@@ -145,7 +145,7 @@ the removed handle/value when the slot was occupied.
 
 ## Face and pose change
 
-```awft
+```arcw
 face(@character.alice, .worried, crossfade = 120ms)
 pose(@character.alice, .hands_front, time = 160ms)
 mouth(@character.alice, .closed)
@@ -155,7 +155,7 @@ look changes are patch operations on sprite parts. They do not recreate the enti
 
 ## Movement and transform
 
-```awft
+```arcw
 move(@character.alice, to = .left, time = 350ms, ease = cubic.out)
 move(@character.alice, by = (-0.08, 0.0), time = 200ms)
 scale(@character.alice, 1.08, time = 240ms)
@@ -173,7 +173,7 @@ Transforms are deterministic animation tracks sampled from logical time.
 
 ## Animation commands
 
-```awft
+```arcw
 anim(@character.alice, @anim.breath, mode=loop)
 anim(@character.alice, @anim.step_forward, mode=once)
 stop_anim(@character.alice, @anim.breath)
@@ -185,7 +185,7 @@ Animations can target transform, opacity, sprite part selection, shader params, 
 
 Dialogue line timeline:
 
-```awft
+```arcw
 alice.say(id=@say.opening.003, look=smile, voice=auto)[
     ほら、ここ。覚えてる？[p]
 ] with {
@@ -200,7 +200,7 @@ The scheduler drives the timeline from the voice cue if present. If the voice is
 
 ## Lip sync
 
-```awft
+```arcw
 alice.say(id=@say.opening.004, voice=@voice.alice.004, lipsync=auto)[
     夢の中では、君もそこにいた。[p]
 ]
@@ -217,7 +217,7 @@ Lip-sync modes:
 
 Manual mouth timeline:
 
-```awft
+```arcw
 alice.say(id=@say.opening.005, voice=auto, lipsync=manual)[
     あのね。[p]
 ] with {
@@ -257,7 +257,7 @@ Agent observation example:
 
 ## Contracts
 
-```awft
+```arcw
 component CharacterStageObject(character: Ref<Character>) -> View
 ensures result.has_bbox()
 ensures result.agent_observable == true
@@ -268,7 +268,7 @@ ensures result.agent_observable == true
 
 Dialogue timelines can also be validated:
 
-```awft
+```arcw
 verify @proof.dialogue_timeline_bounds {
     for_all line in DialogueLine {
         line.timeline.events.all(_.time >= 0ms)
@@ -282,7 +282,7 @@ verify @proof.dialogue_timeline_bounds {
 
 Character stage cues can be scheduled from dialogue line plan blocks, or from colon sugar with `with { ... }`.
 
-```awft
+```arcw
 alice.say(voice=auto)[
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 ] {
@@ -296,7 +296,7 @@ These cues are compiled to `StageTimelineEvent` records owned by the dialogue li
 
 Cancellation policy can stop or complete pending stage cues:
 
-```awft
+```arcw
 alice.say(voice=auto)[
     まだ話している途中……[p]
 ] {
@@ -325,7 +325,7 @@ Cue cancellation policies:
 
 Character aliases act like object handles in flow code. This is syntax over typed stage commands, not mutable global object state.
 
-```awft
+```arcw
 alice.show(look=smile, at=center, fade=200ms)
 alice.look(worried, crossfade=120ms)
 alice.pose(hands_front, time=160ms)
@@ -339,14 +339,14 @@ alice.hide(fade=180ms)
 
 When a stage instance must be specified explicitly:
 
-```awft
+```arcw
 alice.stage(@stage.alice.main).move(to=left, time=300ms)
 @<character.alice>.stage(@stage.alice.sub).look(smile)
 ```
 
 Ordinary calls are sugar over this API:
 
-```awft
+```arcw
 show(@character.alice, .smile, at = .center, fade = 200ms)
 face(@character.alice, .worried, crossfade = 120ms)
 move(@character.alice, to = .left, time = 350ms, ease = cubic.out)
@@ -367,7 +367,7 @@ alice.look(worried)
 
 Characters can declare how their sprite parts, looks, lip-sync data, and voices should be prepared.
 
-```awft
+```arcw
 pub character @character.alice Alice {
     preload_policy {
         sprites = on_flow_anticipate
@@ -381,7 +381,7 @@ pub character @character.alice Alice {
 
 Explicit character preload:
 
-```awft
+```arcw
 preload character alice {
     looks [normal, smile, worried]
     voices for flow @flow.alice_intro locale current
@@ -391,7 +391,7 @@ preload character alice {
 
 Read-ahead for a likely next flow:
 
-```awft
+```arcw
 anticipate @flow.alice_intro {
     alice.preload(looks=[smile, worried], voices=auto, sprites=true)
     asset.preload(@asset.bg.room_evening)
@@ -407,7 +407,7 @@ anticipate @flow.alice_intro {
 
 Expensive character presentation work is memoized by stable keys.
 
-```awft
+```arcw
 pub character @character.alice Alice {
     memo_policy {
         compose_sprite key=(pose, look, mouth, scale_bucket, theme_hash) cache=session
@@ -453,7 +453,7 @@ Agent observation exposes memo status for stage objects:
 
 Dialogue line plan and `at(...) { ... }` blocks can call character stage methods.
 
-```awft
+```arcw
 alice.say(voice=auto)[
     ほら、ここ。覚えてる？[p]
 ] {
@@ -472,7 +472,7 @@ These calls create timeline cues attached to the line. They are cancelled or com
 
 Character presentation resources are memoized by character, pose, look, locale, scale policy, and render target.
 
-```awft
+```arcw
 memo fn Character.sprite(
     self: Ref<Character>,
     look: look,
@@ -487,7 +487,7 @@ key (self, look, pose, env.locale, env.render_profile)
 
 The object API hides the memo function behind concise calls:
 
-```awft
+```arcw
 let smile = try await alice.sprite(smile) with {
     pending p => scene.show(@scene.loading_sprite); progress.set(p.ratio)
 }
@@ -503,7 +503,7 @@ alice.stage.show(smile, at=center)
 
 A flow can declare what to preload for likely next flows.
 
-```awft
+```arcw
 preload next @flow.alice_intro {
     alice.prefetch(flow=@flow.alice_intro, lines=6)
     alice.sprite(smile).preload()
@@ -514,7 +514,7 @@ preload next @flow.alice_intro {
 
 A character may also declare policy-level hints:
 
-```awft
+```arcw
 pub character @character.alice alice {
     preload_policy {
         next_flow_lookahead = 6.lines
@@ -533,7 +533,7 @@ Preload is a hint. If the player reaches a line before preload completes, the no
 
 Stage objects support hooks. These can be used for read-state visual changes, automatic lip sync, debug overlays, or look defaults.
 
-```awft
+```arcw
 hook @hook.character.unread_glow
 on query StageObject where entity == @character.alice
 phase before_render
@@ -555,3 +555,4 @@ Common built-ins:
 @hook.character.prefetch_next_look
 @hook.character.agent_bbox_debug
 ```
+

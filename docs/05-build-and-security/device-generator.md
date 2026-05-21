@@ -54,7 +54,7 @@ Hand-writing all of that makes it easy to forget privacy, bounds, or replay rule
 The generator consumes one or more of:
 
 ```text
-.awft device declaration
+.arcw device declaration
 USB descriptor snapshot
 HID report descriptor
 Serial protocol grammar
@@ -66,7 +66,7 @@ Web permission descriptor
 
 Example input:
 
-```awft
+```arcw
 pub device #device.serial_knob: Serial {
     baud = 115200
     parser line parse_knob_line: Parser<KnobEvent, ParseError>
@@ -91,7 +91,7 @@ pub device #device.serial_knob: Serial {
 10. Rust driver stubs where requested
 ```
 
-Generated items are source-mapped back to the original `.awft` declaration.
+Generated items are source-mapped back to the original `.arcw` declaration.
 
 ---
 
@@ -100,8 +100,8 @@ Generated items are source-mapped back to the original `.awft` declaration.
 ```bash
 arcw device inspect usb --json
 arcw device inspect hid --json
-arcw device new-profile --from-usb --out devices/motion_sensor.awft
-arcw device gen devices/motion_sensor.awft --out generated/
+arcw device new-profile --from-usb --out devices/motion_sensor.arcw
+arcw device gen devices/motion_sensor.arcw --out generated/
 arcw device check
 arcw device simulate #device.motion_sensor --fixture fixtures/devices/motion.ndjson
 arcw device permissions --target web
@@ -129,7 +129,7 @@ impl DeviceDriver for MotionSensorDriver {
 }
 ```
 
-The stub is optional. Simple HID/serial devices can be fully described in `.awft`.
+The stub is optional. Simple HID/serial devices can be fully described in `.arcw`.
 
 ---
 
@@ -164,7 +164,7 @@ The generator is part of `arcweft-precompile` and must be deterministic.
 Source of truth:
 
 ```text
-*.awft
+*.arcw
 .arcweft/entities.toml
 .arcweft/links.toml
 fixtures/devices/*
@@ -283,4 +283,5 @@ Use manual Rust drivers for:
 ```
 
 Both paths feed the same `DeviceProfile` and `DevicePort` runtime model.
+
 

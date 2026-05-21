@@ -69,7 +69,7 @@ Isochronous transfers are intentionally unsupported in the initial Arcweft USB l
 
 ## DSL example
 
-```awft
+```arcw
 pub usb @usb.custom_lightgun: UsbRawDevice {
     permission = user_prompt
     backend = auto
@@ -91,3 +91,4 @@ pub usb @usb.custom_lightgun: UsbRawDevice {
 - Raw packet logging is disabled by default.
 - Wildcard filters require signed QA capability.
 - WebUSB and WebHID must display a user-facing reason string.
+

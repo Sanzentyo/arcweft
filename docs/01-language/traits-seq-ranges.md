@@ -6,7 +6,7 @@ Arcweft は Rust 風の generics を採用するため、`trait` / `impl` / `whe
 
 ## trait / impl / where
 
-```awft
+```arcw
 pub trait Format {
     fn format(self) -> String
 }
@@ -19,7 +19,7 @@ pub trait StableHash {}
 
 実装:
 
-```awft
+```arcw
 pub impl Format for Route {
     fn format(self) -> String {
         match self {
@@ -33,7 +33,7 @@ pub impl Format for Route {
 
 Generic function:
 
-```awft
+```arcw
 pub fn group_by<T, K>(key: T -> K)(xs: Vec<T>) -> OrderedMap<K, Vec<T>>
 where
     K: Eq + Hash
@@ -46,7 +46,7 @@ where
 
 Arcweft は Rust の associated type 風の設計を使う。`map` の戻り wrapper を表すために、GAT 風の associated type constructor を許可する。
 
-```awft
+```arcw
 pub trait Mappable {
     type Item
     type Mapped<B>
@@ -57,7 +57,7 @@ pub trait Mappable {
 
 `Option<T>`:
 
-```awft
+```arcw
 pub impl<T> Mappable for Option<T> {
     type Item = T
     type Mapped<B> = Option<B>
@@ -73,7 +73,7 @@ pub impl<T> Mappable for Option<T> {
 
 `Result<T, E>`:
 
-```awft
+```arcw
 pub impl<T, E> Mappable for Result<T, E> {
     type Item = T
     type Mapped<B> = Result<B, E>
@@ -91,7 +91,7 @@ pub impl<T, E> Mappable for Result<T, E> {
 
 `and_then` / `flat_map` 用の抽象。
 
-```awft
+```arcw
 pub trait Bindable: Mappable {
     type Bound<B>
 
@@ -114,7 +114,7 @@ Source<T, E>    map / filter / throttle / record, but live and permissioned
 
 `?` は `TryLike` により支えられる。
 
-```awft
+```arcw
 pub trait TryLike {
     type Output
     type Residual
@@ -125,7 +125,7 @@ pub trait TryLike {
 
 `Result<T, E>` と `Option<T>` が実装する。
 
-```awft
+```arcw
 fn selected_route(state: GameState) -> Result<Ref<Flow>, GameError> {
     let route = state.route_override.ok_or(.MissingRoute)?
     Ok(route)
@@ -134,7 +134,7 @@ fn selected_route(state: GameState) -> Result<Ref<Flow>, GameError> {
 
 `Need<Result<T, E>, TaskError>` は `T` に暗黙変換できない。先に `await ... with { ... }` が必要。
 
-```awft
+```arcw
 let bg =
     try await asset.image(@asset.bg.room) with {
         pending p => scene.show(@scene.loading); progress.set(p.ratio)
@@ -145,7 +145,7 @@ let bg =
 
 Arcweft の表面 API は Rust の `Iterator` ではなく、pure lazy sequence の `Seq<T>` を使う。
 
-```awft
+```arcw
 pub trait IntoSeq {
     type Item
 
@@ -155,7 +155,7 @@ pub trait IntoSeq {
 
 `Vec<T>` と整数 `Range<T>` は `IntoSeq` を実装する。
 
-```awft
+```arcw
 let labels =
     choices
         .seq()
@@ -166,7 +166,7 @@ let labels =
 
 `for` は `IntoSeq` を要求する。
 
-```awft
+```arcw
 for c in choices {
     option c.id c.label
 }
@@ -178,7 +178,7 @@ Capacity is an allocation hint, not semantic state. Standard containers may
 reserve or shrink storage for performance, but programs must not branch on the
 current capacity and stable data formats must not serialize capacity.
 
-```awft
+```arcw
 pub trait WithCapacity {
     fn with_capacity(capacity: usize) -> Self
 }
@@ -209,7 +209,7 @@ TextCluster
 
 Examples:
 
-```awft
+```arcw
 let names = Vec<String>.with_capacity(8)
 names.reserve(4)
 names.shrink_to(2)
@@ -226,7 +226,7 @@ capacity is deliberately non-observable.
 
 Range 記法を標準で持つ。
 
-```awft
+```arcw
 0..10       // half-open: 0 <= x < 10
 0..=10      // inclusive: 0 <= x <= 10
 ..10        // end-bounded
@@ -236,7 +236,7 @@ Range 記法を標準で持つ。
 
 整数 range は `Step` により `Seq` 化できる。
 
-```awft
+```arcw
 for i in 0..10 {
     log.debug("i={i}", i = i)
 }
@@ -244,7 +244,7 @@ for i in 0..10 {
 
 浮動小数 range は interval として扱う。反復したい場合は sampling を明示する。
 
-```awft
+```arcw
 requires progress in 0.0..=1.0
 
 render_shader @shader.transition.dissolve {
@@ -256,7 +256,7 @@ render_shader @shader.transition.dissolve {
 
 ## Step and Contains
 
-```awft
+```arcw
 pub trait Step: Ord + Clone {
     fn next(self) -> Option<Self>
 }
@@ -268,7 +268,7 @@ pub trait Contains<T> {
 
 `Range<T>` と `RangeInclusive<T>` は `Contains<T>` を実装する。
 
-```awft
+```arcw
 invariant @inv.affection_bounds(state) {
     forall c in CharacterId {
         state.affection[c] in 0..=100
@@ -280,7 +280,7 @@ invariant @inv.affection_bounds(state) {
 
 `map` は pure transformation。`Need` を返す関数を collection に適用する場合は `traverse` を使う。
 
-```awft
+```arcw
 let images =
     await image_ids
         .traverse(asset.image)
@@ -293,7 +293,7 @@ let images =
 
 `Source<T, E>` は live external stream であり、`Seq<T>` とは分離する。
 
-```awft
+```arcw
 Source<MicFrame, CaptureError>
 Source<CameraFrame, CaptureError>
 Source<UsbPacket, UsbError>
@@ -301,7 +301,7 @@ Source<UsbPacket, UsbError>
 
 `Source` は permission、privacy、backpressure、cancel、record/replay を持つため、`Seq` へ暗黙変換しない。
 
-```awft
+```arcw
 let frames =
     await camera_source
         .take(60)
@@ -315,7 +315,7 @@ let frames =
 
 Monad 的な処理は block で読みやすく書ける。
 
-```awft
+```arcw
 let route = result {
     let id = parse_choice_id(raw)?
     let route = route_for_choice(id)?
@@ -323,7 +323,7 @@ let route = result {
 }
 ```
 
-```awft
+```arcw
 let assets = task {
     let bg = await asset.image(@asset.bg.room)?
     let voice = await asset.audio(@asset.voice.alice.001)?
@@ -331,7 +331,7 @@ let assets = task {
 }
 ```
 
-```awft
+```arcw
 let visible_choices = seq {
     for c in opening_choices() {
         if c.enabled {
@@ -347,7 +347,7 @@ let visible_choices = seq {
 
 Memoization には stable key が必要。
 
-```awft
+```arcw
 memo fn route_available(state: GameState, route: Ref<Flow>) -> Bool
 scope = scene
 where
@@ -360,7 +360,7 @@ where
 
 結果を cache に保持する場合は `Clone` も要求できる。
 
-```awft
+```arcw
 memo fn expensive<T>(x: T) -> Computed
 scope = session
 where
@@ -382,4 +382,5 @@ Arcweft は曖昧な method resolution を避けるため、初期仕様では i
 4. blanket impl は core/prelude crate 中心
 5. user blanket impl は将来拡張
 ```
+
 

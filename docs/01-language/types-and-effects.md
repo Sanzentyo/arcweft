@@ -2,14 +2,14 @@
 
 ## null はない
 
-```awft
+```arcw
 let next: Option<Ref<Flow>> = None
 let next = Some(@flow.alice_intro)
 ```
 
 使用:
 
-```awft
+```arcw
 match next {
     Some(flow) => goto flow
     None => goto @flow.title
@@ -18,7 +18,7 @@ match next {
 
 ## Result
 
-```awft
+```arcw
 pub enum Result<T, E> {
     Ok(T),
     Err(E),
@@ -27,7 +27,7 @@ pub enum Result<T, E> {
 
 `?` で伝播。
 
-```awft
+```arcw
 fn parse_choice(input: String) -> Result<Ref<ChoiceOption>, ParseError> {
     let id = parse_ref(input)?
     Ok(id)
@@ -36,7 +36,7 @@ fn parse_choice(input: String) -> Result<Ref<ChoiceOption>, ParseError> {
 
 ## Need
 
-```awft
+```arcw
 pub enum Need<T, E> {
     NotStarted,
     Pending(Progress),
@@ -48,13 +48,13 @@ pub enum Need<T, E> {
 
 暗黙 force は禁止。
 
-```awft
+```arcw
 let bg = asset.image(@asset.bg.room) // Need<ImageHandle, AssetError>
 ```
 
 flow で使うには:
 
-```awft
+```arcw
 let bg = try await asset.image(@asset.bg.room) with {
     pending p => scene.show(@scene.loading); progress.set(p.ratio)
 }
@@ -77,7 +77,7 @@ let bg = try await asset.image(@asset.bg.room) with {
 
 基本は推論。明示は zero-copy / Rust extern / shared memory / parser などで使う。
 
-```awft
+```arcw
 fn first<'a>(xs: &'a [ChoiceView]) -> Option<&'a ChoiceView> { ... }
 ```
 
@@ -94,7 +94,7 @@ fn first<'a>(xs: &'a [ChoiceView]) -> Option<&'a ChoiceView> { ... }
 
 ## EntityRef と BorrowRef
 
-```awft
+```arcw
 Ref<Flow>       // ID参照。lifetime不要。非null。
 &'a T           // メモリ借用。lifetime必要。
 ```
@@ -103,15 +103,16 @@ Ref<Flow>       // ID参照。lifetime不要。非null。
 
 ## Handle と Borrow
 
-```awft
+```arcw
 ImageHandle       // frameを跨げるowned handle
 &'asset [Rgba8]   // borrow block内だけ
 ```
 
-```awft
+```arcw
 borrow bg.pixels() as pixels: &'asset [Rgba8] {
     let average = pixels.average_color()
 }
 ```
+
 
 

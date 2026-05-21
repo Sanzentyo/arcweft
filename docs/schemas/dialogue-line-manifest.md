@@ -13,7 +13,7 @@ A dialogue line is the compiled unit connecting source text, localization key, s
   "source_text": "今日は少しだけ、変な夢を見たんだ。",
   "source_rich_text": "今日は少しだけ、#[fmt(\"変な夢\", color=dream_color)]を見たんだ。[p]",
   "source_hash": "b3:...",
-  "source_anchor": "game/routes/opening.awft:9:5-9:48",
+  "source_anchor": "game/routes/opening.arcw:9:5-9:48",
   "flow": "flow.opening",
   "scope_path": ["dream"],
   "canonical_form": "character.say",
@@ -145,7 +145,7 @@ There is no `script` form in the manifest.
 
 Relative source IDs are normalized before entering the manifest:
 
-```awft
+```arcw
 scope rain {
     alice(id=@.comment, voice=auto):
         雨、強くなってきたね。[p]
@@ -257,3 +257,4 @@ DialogueLine
   -> AgentObservation metadata
   -> Replay trace event
 ```
+

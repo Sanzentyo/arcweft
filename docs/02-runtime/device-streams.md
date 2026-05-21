@@ -118,7 +118,7 @@ deterministic frame-boundary event data.
 
 A `source` block is allowed, but it is declarative and policy-driven.
 
-```awft
+```arcw
 pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     from capture.camera(@capture.face_camera)
     backpressure = latest
@@ -144,7 +144,7 @@ This is not a free-form coroutine. The compiler enforces:
 
 User-visible flows must decide what to do while a source is being acquired.
 
-```awft
+```arcw
 let mic =
     try await capture.microphone(@capture.player_microphone) with {
         pending p => {
@@ -160,7 +160,7 @@ let frames = source.audio_frames(mic)
 
 Once acquired, stream items are consumed by `select`, `poll`, Activity input ports, or signals.
 
-```awft
+```arcw
 select {
     audio = frames.next? => {
         signal.set(@signal.voice_level, audio.rms)
@@ -183,7 +183,7 @@ select {
 
 Standard adapters mirror function-pipeline style, but remain source-aware.
 
-```awft
+```arcw
 let reports =
     usb.interrupt_in(@usb.custom_pad, endpoint = @usb.ep.input)
         .map(parse_custom_pad_report)
@@ -250,3 +250,4 @@ web-sys permission/bootstrap
 ```
 
 Do not expose backend callbacks directly to DSL code. Always convert to `SourceEvent` first.
+

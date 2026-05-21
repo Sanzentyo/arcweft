@@ -1,6 +1,6 @@
 # Example: USB Sensor and HID Dial
 
-```awft
+```arcw
 mod game::devices
 
 pub device @device.usb.sensor: UsbDevice {
@@ -46,7 +46,7 @@ pub device @device.hid.dial: HidDevice {
 
 Use in a flow:
 
-```awft
+```arcw
 flow @flow.device_demo device_demo(state: GameState) -> Result<FlowExit, FlowError> {
     let dev =
         try await device.usb(@device.usb.sensor) with {
@@ -75,3 +75,4 @@ flow @flow.device_demo device_demo(state: GameState) -> Result<FlowExit, FlowErr
     }
 }
 ```
+

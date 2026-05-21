@@ -6,7 +6,7 @@ Arcweft separates five kinds of control transfer.
 
 `return expr` leaves the nearest `fn`, `task fn`, `parser`, or `flow`.
 
-```awft
+```arcw
 pub flow @flow.title title(state: GameState) -> Result<FlowExit, FlowError> {
     if state.config.skip_title {
         return Ok(FlowExit::Goto(@flow.opening))
@@ -20,7 +20,7 @@ pub flow @flow.title title(state: GameState) -> Result<FlowExit, FlowError> {
 
 `out expr` exports a value from a line plan, cue block, or content scope. It does not return from the enclosing flow.
 
-```awft
+```arcw
 let (actor, voice) = alice[おはよう。[p]]
 with:
     let actor = alice.stage.acquire(scope=line)
@@ -36,7 +36,7 @@ Do not use `return` for line-plan values.
 statement with `Unit` type, and the expression must match the item type of the
 surrounding generator-like construct.
 
-```awft
+```arcw
 stream fn rms_level(frames: Stream<AudioFrame, AudioError>) -> Stream<f32, AudioError> {
     for frame in frames {
         yield frame.rms()
@@ -62,7 +62,7 @@ logging.
 Live external sources are declared with policy-backed `source` blocks rather
 than function-like generator declarations.
 
-```awft
+```arcw
 pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     from capture.camera(@capture.face_camera)
     backpressure = latest
@@ -76,7 +76,7 @@ pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
 Do not use `yield` in ordinary functions, task functions, flows, hooks, memo
 functions, or dialogue line plans. Use `out` for line-plan results.
 
-```awft
+```arcw
 let outcome = alice.say()[長い台詞です。[p]]
 with 'line {
     cancel on input .SkipLine {
@@ -88,7 +88,7 @@ with 'line {
 
 Invalid:
 
-```awft
+```arcw
 source camera_frames() -> Source<VideoFrame, CameraError> {
     loop {
         let frame = await camera.next_frame()
@@ -104,7 +104,7 @@ declaration with `from`, `backpressure`, `replay`, and `privacy` headers.
 
 `break` leaves the nearest loop.
 
-```awft
+```arcw
 loop {
     if done {
         break
@@ -114,7 +114,7 @@ loop {
 
 `break expr` gives a `loop` expression its value.
 
-```awft
+```arcw
 let result = loop {
     if ready {
         break value
@@ -124,7 +124,7 @@ let result = loop {
 
 `continue` starts the next iteration.
 
-```awft
+```arcw
 while let .Some(event) = queue.pop_front() {
     if !event.is_relevant() {
         continue
@@ -136,7 +136,7 @@ while let .Some(event) = queue.pop_front() {
 
 Loop scopes may be labeled when an explicit target improves diagnostics or avoids ambiguity.
 
-```awft
+```arcw
 'events: loop {
     let event = await_input_event()
 
@@ -152,7 +152,7 @@ Loop scopes may be labeled when an explicit target improves diagnostics or avoid
 
 `while` and `for` are statement-oriented and return `Unit`.
 
-```awft
+```arcw
 while cond {
     break 1  # error
 }
@@ -164,7 +164,7 @@ Use `loop` if you need a value.
 
 Dialogue `cancel on ...` branches may use `return`, `out`, `goto`, or `continue` depending on their target.
 
-```awft
+```arcw
 alice[長い台詞です。[p]]
 with:
     cancel on input .SkipLine:
@@ -179,7 +179,7 @@ with:
 
 `out` is only valid for line-plan, cue-block, and content-scope outputs. These scopes may also be labeled:
 
-```awft
+```arcw
 alice.say()[長い台詞です。[p]]
 with 'line {
     cancel on input .SkipLine:
@@ -189,3 +189,4 @@ with 'line {
 ```
 
 Diagnostics must state the continuation being exited, for example "this `return` exits flow `flow.opening`" or "this `out` exits line scope `'line`".
+

@@ -92,7 +92,7 @@ suffix such as `10i32`, `2.0f32`, or `42usize`.
 
 Unit-number literals are first-class syntax and resolve by expected type:
 
-```awft
+```arcw
 let fade: Duration = 300ms
 let size: Length = 100pt
 let alpha: Ratio = 85%
@@ -174,7 +174,7 @@ unless that value is discarded with `;` or `let _ = ...`.
 
 Named lexical scopes use the `scope` keyword:
 
-```awft
+```arcw
 scope rain {
     alice(id=@.comment):
         雨、強くなってきたね。[p]
@@ -222,7 +222,7 @@ emitted as an empty path component.
 
 For module and import paths, use Rust-like roots instead:
 
-```awft
+```arcw
 use self::characters::{alice}
 use super::common::{route_gate}
 use crate::game::prelude::*
@@ -258,7 +258,7 @@ Use `match` or `unwrap_or` for fallback values.
 
 `while let PAT = EXPR { ... }` is supported and returns `Unit`.
 
-```awft
+```arcw
 while let .Some(event) = queue.pop_front() {
     handle_event(event)
 }
@@ -287,7 +287,7 @@ This is the most balanced choice after adding expression-oriented `if` / `match`
 
 `?` remains the ordinary Rust-like postfix propagation operator for `Result` and `Option`. Arcweft also reserves prefix `try expr` as a general propagation form equivalent to `expr?`; `try await` is the important readable specialization where `await` and pending handling must group before propagation.
 
-```awft
+```arcw
 let bg_result = await asset.image(@asset.bg.room) with:
     pending p:
         scene @scene.loading
@@ -305,7 +305,7 @@ The parenthesized form `(await ... with: ...)?` is valid but not recommended for
 
 Rejected only for await-with grouping ambiguity:
 
-```awft
+```arcw
 await expr? with: ...
 ```
 
@@ -327,7 +327,7 @@ Arcweft has a real bottom type `!`, shown as `Never` in diagnostics/manifests. I
 
 Control-transfer diagnostics must name the continuation being exited. Scope labels are supported on blocks and loops using Rust-like labels:
 
-```awft
+```arcw
 'choose: loop {
     if done {
         break 'choose route
@@ -342,3 +342,4 @@ with 'line {
 ```
 
 `break` and `continue` may target loop labels. `out` may target a line/cue/content label. `return` exits the nearest `fn`, `task fn`, `parser`, or `flow`; diagnostics should spell that target explicitly, and future syntax may allow `return from 'flow expr` only for named function/flow boundaries if needed.
+

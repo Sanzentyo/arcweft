@@ -1,4 +1,4 @@
-//! Surface parser for `.awft` source files.
+//! Surface parser for `.arcw` source files.
 //!
 //! This crate owns syntax-level parsing only. It keeps enough structure for
 //! formatter, diagnostics, and later HIR lowering, while deliberately avoiding

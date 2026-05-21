@@ -8,7 +8,7 @@ Related:
 
 ## USB HID profile
 
-```awft
+```arcw
 mod game::devices::rhythm_pad
 
 pub device @device.rhythm_pad: UsbHid {
@@ -50,7 +50,7 @@ pub device @device.rhythm_pad: UsbHid {
 
 ## Virtual controller
 
-```awft
+```arcw
 mod game::ui::mobile_controls
 
 pub controller @controller.mobile_default: VirtualTouchController {
@@ -84,7 +84,7 @@ pub controller @controller.mobile_default: VirtualTouchController {
 
 ## Shared controller map
 
-```awft
+```arcw
 pub controller_map @controller_map.action_game {
     button Confirm <- any(button A, keyboard Enter, device @device.rhythm_pad.button(0))
     button Cancel <- any(button B, keyboard Escape, device @device.rhythm_pad.button(1))
@@ -94,7 +94,7 @@ pub controller_map @controller_map.action_game {
 
 ## Flow usage
 
-```awft
+```arcw
 pub flow @flow.enter_truck_game enter_truck_game(state: GameState) -> Result<FlowExit, FlowError> {
     let pad =
         try await device.open(@device.rhythm_pad).optional() with {
@@ -126,7 +126,7 @@ pub flow @flow.enter_truck_game enter_truck_game(state: GameState) -> Result<Flo
 
 ## Test
 
-```awft
+```arcw
 test @test.mobile_controller_drives_truck scenario {
     start @flow.enter_truck_game
 
@@ -142,8 +142,9 @@ test @test.mobile_controller_drives_truck scenario {
 ## Agent CLI
 
 ```bash
-arcw device generate game/devices/rhythm_pad.awft
+arcw device generate game/devices/rhythm_pad.arcw
 arcw device test device.rhythm_pad --fixture fixtures/devices/rhythm_pad.jsonl
 arcw agent invoke control.action_a press
 arcw agent controller axis control.left_stick 1.0 0.0 --frames 60
 ```
+

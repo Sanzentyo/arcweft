@@ -1,4 +1,4 @@
-# AWFT entries, capabilities, virtual paths, and host effects
+# arcw entries, capabilities, virtual paths, and host effects
 
 This document proposes grammar changes that should land destructively. No legacy spellings, aliases, or migration wrappers are added.
 
@@ -18,7 +18,7 @@ HttpMethod := 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
 
 ### Game entry
 
-```awft
+```arcw
 entry game @entry.main {
     start @flow.opening
 }
@@ -31,7 +31,7 @@ flow @flow.opening opening {
 
 ### CLI entry
 
-```awft
+```arcw
 entry cli @entry.main {
     run @flow.cli_main
 }
@@ -49,7 +49,7 @@ flow @flow.cli_main main effects { stdio.write, process.exit } {
 
 ### Server entry
 
-```awft
+```arcw
 entry server @entry.http {
     route GET "/health" -> @flow.health
     route GET "/hello/:name" -> @flow.hello
@@ -74,7 +74,7 @@ EffectClause := 'effects' '{' CapabilityEffect* '}'
 
 ### File system
 
-```awft
+```arcw
 extern capability fs {
     type FsError
 
@@ -88,7 +88,7 @@ extern capability fs {
 
 ### Path virtualization
 
-```awft
+```arcw
 extern capability path {
     fn save(path: String) -> VirtualPath
     fn asset(path: String) -> VirtualPath
@@ -97,22 +97,22 @@ extern capability path {
 }
 ```
 
-Forbidden in AWFT source:
+Forbidden in arcw source:
 
-```awft
+```arcw
 fs.read_text("/Users/me/profile.json")
 fs.read_text("C:\\Users\\me\\profile.json")
 ```
 
 Required:
 
-```awft
+```arcw
 fs.read_text(path.save("profile.json"))
 ```
 
 ### Stdio and process
 
-```awft
+```arcw
 extern capability cli {
     type IoError
 
@@ -132,7 +132,7 @@ extern capability cli {
 
 ### HTTP
 
-```awft
+```arcw
 extern capability http {
     type HttpRequest
     type HttpResponse
@@ -151,7 +151,7 @@ extern capability http {
 
 External live streams still use `source` declarations with explicit backpressure, replay, and privacy policy.
 
-```awft
+```arcw
 source @source.http_requests: Source<HttpRequest, HttpError> {
     from http.requests(@entry.http)
     backpressure = bounded(capacity = 1024, overflow = drop_oldest)
@@ -167,7 +167,7 @@ source @source.http_requests: Source<HttpRequest, HttpError> {
 
 Effects are capability facts.
 
-```awft
+```arcw
 flow @flow.save_profile save_profile
  effects { fs.read(save), fs.write(save), log.write }
 {
@@ -185,3 +185,4 @@ The current checker rejects calls to capability functions when their declared
 effects are not present in the active flow/function effect scope. Filesystem
 capabilities also reject direct OS absolute path string literals; construct a
 `VirtualPath` with the `path` capability instead.
+

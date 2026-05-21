@@ -149,7 +149,7 @@ pub enum CaptureEvent {
 
 Capture requests must be explicit. No script can implicitly access the microphone or camera.
 
-```awft
+```arcw
 pub capture @capture.player_microphone: Microphone {
     permission = user_prompt
     channels = 1
@@ -171,7 +171,7 @@ pub capture @capture.face_camera: Camera {
 
 Starting capture returns a `Need` and therefore must define a pending UI in a player-visible `flow` or `component`.
 
-```awft
+```arcw
 let mic =
     try await capture.microphone(@capture.player_microphone) with {
         pending p => {
@@ -189,7 +189,7 @@ let mic =
 
 Camera capture is the same:
 
-```awft
+```arcw
 let cam =
     try await capture.camera(@capture.face_camera) with {
         pending p => {
@@ -206,7 +206,7 @@ let cam =
 
 Capture exposes latest-state and stream signals:
 
-```awft
+```arcw
 pub signal @signal.microphone_level: Watch<f32>
 pub signal @signal.microphone_vad: Watch<bool>
 pub signal @signal.camera_frame: Watch<VideoFrameHandle>
@@ -216,7 +216,7 @@ pub signal @signal.capture_error: Stream<CaptureError>
 
 Typical usage:
 
-```awft
+```arcw
 watch signal @signal.microphone_level from capture.level(@capture.player_microphone)
 watch signal @signal.camera_frame from capture.latest_frame(@capture.face_camera)
 ```
@@ -231,7 +231,7 @@ Camera frames are treated as live external textures/frames. They may be:
 - exposed to UI as `CameraPreviewView`,
 - used as a shader resource only if the capability permits it.
 
-```awft
+```arcw
 CameraPreview(@capture.face_camera)
     .fit(cover)
     .clip(.rounded_rect(radius = 16))
@@ -244,7 +244,7 @@ For zero-copy or borrowed frame paths, lifetimes follow the existing borrow rule
 
 Activities receive capture through typed ports, not by opening devices themselves.
 
-```awft
+```arcw
 pub activity @activity.voice_minigame VoiceMinigame {
     input {
         mic: stream<AudioFrame>
@@ -258,7 +258,7 @@ pub activity @activity.voice_minigame VoiceMinigame {
 }
 ```
 
-```awft
+```arcw
 let result =
     await #<activity.voice_minigame>.run({
         mic = capture.stream(@capture.player_microphone),
@@ -291,7 +291,7 @@ arcweft.capture_save_recording
 
 Headless test mode should support virtual devices:
 
-```awft
+```arcw
 pub capture @capture.test_camera: Camera {
     backend = virtual_pattern
     resolution = 1280x720
@@ -364,7 +364,7 @@ arcweft-capture-agent
 
 Some capture hardware appears as USB or HID devices rather than ordinary camera/microphone devices. Arcweft treats these through [Device Profiles, Generators, and USB](device-generator-and-usb.md). The device profile may expose typed signals or typed capture frames, but player-visible flows still receive `Need<Result<..., ...>, ...>` and must handle pending/denied branches.
 
-```awft
+```arcw
 pub device @device.depth_camera: UsbRaw {
     permission = user_prompt
     usb { vendor_id = 0x1209 product_id = 0xD001 interface = 1 }
@@ -392,7 +392,7 @@ Watch<VideoFrameHandle> / Watch<f32>
 
 Generator syntax is still useful as a **stream transform**:
 
-```awft
+```arcw
 stream fn microphone_level(
     frames: Stream<AudioFrame, AudioError>,
 ) -> Stream<f32, AudioError> {
@@ -420,3 +420,4 @@ Capture devices, USB/HID/Serial devices, and virtual controllers all use the sam
 ## Device stream policy
 
 Camera and microphone frames are represented as `Source<T, E>` streams after permissioned acquisition. Arcweft does not require a general-purpose generator to model capture devices. Instead, callbacks and browser events are normalized into `SourceEvent` queues with explicit backpressure and replay policy. See [Device Streams](../02-runtime/device-streams.md).
+

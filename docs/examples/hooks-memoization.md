@@ -1,6 +1,6 @@
 # Example: Object Hooks and Memoization
 
-```awft
+```arcw
 mod game::routes::opening
 
 use game::prelude::*
@@ -60,3 +60,4 @@ arcw hook explain hook.opening.listen_enable
 arcw memo inspect --function alice_route_ready
 arcw agent observe --target choice.opening.listen --json
 ```
+

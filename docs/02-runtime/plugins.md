@@ -11,7 +11,7 @@
 
 ## Rust export
 
-```awft
+```arcw
 extern rust mod mini_games::truck from crate "truck_game" {
     pub type TruckInput
     pub type TruckResult
@@ -56,3 +56,4 @@ wasm plugin affection_ai from "plugins/affection_ai.wasm" {
 - fuel / memory / call time limit。
 - WASI preopen なしがデフォルト。
 - Activity から直接 engine state を mutate しない。
+

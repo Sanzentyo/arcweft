@@ -29,7 +29,7 @@ hook は通常の callback ではない。全 hook は compile 時に `HookTable
 
 ## Hook の基本構文
 
-```awft
+```arcw
 hook @hook.choice_listen_clicked
 on @choice.opening.listen
 phase InputTarget
@@ -46,7 +46,7 @@ effects { emit_event, log, input_disposition }
 
 UI modifier 形式も許可するが、内部では hook に正規化する。
 
-```awft
+```arcw
 Button("聞いてみる")
     .agent_target(@choice.opening.listen)
     .on_input(PointerClick) {
@@ -58,7 +58,7 @@ Button("聞いてみる")
 
 ## Hook target
 
-```awft
+```arcw
 on @choice.opening.listen
 on @layer.ui.modal
 on @character.alice
@@ -69,7 +69,7 @@ on @shader.post.crt
 
 query target も使える。
 
-```awft
+```arcw
 hook @hook.disable_all_choices
 on query ChoiceOption where parent == @choice.opening.first
 phase StateChanged
@@ -84,7 +84,7 @@ when state.ui.locked
 
 ## Hook phase
 
-```awft
+```arcw
 pub enum HookPhase {
     FrameStart,
     BeforeInputRoute,
@@ -117,7 +117,7 @@ pub enum HookPhase {
 
 例:
 
-```awft
+```arcw
 hook @hook.alice_affection_watch
 on state .affection[@character.alice]
 phase StateChanged
@@ -129,7 +129,7 @@ once per save
 }
 ```
 
-```awft
+```arcw
 hook @hook.modal_blocks_world
 on @layer.ui.modal
 phase InputCapture
@@ -146,7 +146,7 @@ when layer.visible
 
 `when` は pure expression のみ。hook target と phase が評価契機を決める。
 
-```awft
+```arcw
 hook @hook.alice_route_unlock
 on state .affection[@character.alice]
 phase StateChanged
@@ -159,7 +159,7 @@ once per save
 
 実装内部では hook の評価契機を次のような policy として扱える。
 
-```awft
+```arcw
 pub enum CheckPolicy {
     OnPhase(HookPhase),
     OnStatePath(StatePath),
@@ -175,7 +175,7 @@ pub enum CheckPolicy {
 
 構文例:
 
-```awft
+```arcw
 on signal @signal.loading_progress
 on layer @layer.ui.modal visibility_changed
 on need @task.opening_assets ready
@@ -189,7 +189,7 @@ polling は高コストになりやすいため、LSP は state/signal/layer-eve
 
 phase ごとに許可される effect を制限する。
 
-```awft
+```arcw
 pub enum HookEffect {
     EmitEvent,
     Command,
@@ -204,7 +204,7 @@ pub enum HookEffect {
 
 描画 phase では state mutation を禁止する。
 
-```awft
+```arcw
 hook @hook.bad_render_mutation
 on before render
 {
@@ -214,7 +214,7 @@ on before render
 
 input hook は `InputDisposition` を返せる。
 
-```awft
+```arcw
 hook @hook.choice_keyboard_select
 on @layer.choices
 phase InputTarget
@@ -230,7 +230,7 @@ when event.key == .Enter && focus.target.is_choice
 
 ## once / debounce / throttle
 
-```awft
+```arcw
 hook @hook.show_unlock_once
 on state .affection[@character.alice]
 phase StateChanged
@@ -242,7 +242,7 @@ once per save
 }
 ```
 
-```awft
+```arcw
 hook @hook.log_progress_slowly
 on signal @signal.loading_progress changed
 throttle 250ms
@@ -251,7 +251,7 @@ throttle 250ms
 }
 ```
 
-```awft
+```arcw
 hook @hook.search_text_changed
 on state changed .ui.search_text
 debounce 300ms
@@ -266,7 +266,7 @@ debounce 300ms
 
 ## Memoization の基本
 
-```awft
+```arcw
 memo fn choice_to_view(state: GameState)(choice: ChoiceDef) -> ChoiceView
 scope = scene
 {
@@ -280,7 +280,7 @@ scope = scene
 
 明示構文:
 
-```awft
+```arcw
 memo fn route_graph(root: Ref<Flow>) -> RouteGraph
 scope = bundle
 depends = graph.flows
@@ -296,7 +296,7 @@ memoize できるものは pure / deterministic な計算に限定する。
 
 ## Memo scope
 
-```awft
+```arcw
 pub enum MemoScope {
     Frame,
     Tick,
@@ -311,7 +311,7 @@ pub enum MemoScope {
 
 borrow を含む値は lifetime より長い scope に保存できない。
 
-```awft
+```arcw
 memo fn parse_header<'frame>(bytes: &'frame [u8]) -> Header
 scope = scene
 { ... } // error
@@ -338,7 +338,7 @@ selected dependencies
 
 明示 key:
 
-```awft
+```arcw
 memo fn choice_enabled(state: GameState)(choice: ChoiceDef) -> Bool
 scope = scene
 key = (choice.id, state.affection[@character.alice])
@@ -349,7 +349,7 @@ key = (choice.id, state.affection[@character.alice])
 
 自動依存追跡:
 
-```awft
+```arcw
 memo fn visible_choices(state: GameState) -> Vec<ChoiceView>
 scope = scene
 track = auto
@@ -365,7 +365,7 @@ track = auto
 
 ## Invalidation
 
-```awft
+```arcw
 hook @hook.locale_changed
 on signal @signal.locale changed
 {
@@ -376,7 +376,7 @@ on signal @signal.locale changed
 
 Layer cache invalidation:
 
-```awft
+```arcw
 hook @hook.background_changed
 on state changed .current_bg
 {
@@ -388,7 +388,7 @@ on state changed .current_bg
 
 ## Need / Task memoization
 
-```awft
+```arcw
 task fn load_opening_assets() -> Result<OpeningAssets, AssetError> {
     let assets = memo(scope=scene, key=@asset_pack.opening) {
         load_opening_assets_task()
@@ -411,7 +411,7 @@ task fn load_opening_assets() -> Result<OpeningAssets, AssetError> {
 
 ## UI / Render memoization
 
-```awft
+```arcw
 component SettingsPanel(props: SettingsProps) -> View {
     memo(scope=frame, key=(props, state.config.theme, env.text_scale)) {
         SettingsPanelBody(props)
@@ -419,7 +419,7 @@ component SettingsPanel(props: SettingsProps) -> View {
 }
 ```
 
-```awft
+```arcw
 layer @layer.background: World {
     z = -1000
     cache = until invalidated
@@ -464,4 +464,5 @@ memo_options:= ("scope" "=" memo_scope)? ("key" "=" expr_tuple)? ("depends" "=" 
 9. Need/Task は TaskKey で in-flight 合流し、memo cache と統合する。
 10. Agent/LSP/CLI から hook/memo を検査・可視化できる。
 ```
+
 

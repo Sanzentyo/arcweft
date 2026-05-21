@@ -10,7 +10,7 @@ Related chapters:
 
 ## Rust schema sketch
 
-```awft
+```arcw
 pub struct VirtualControllerManifest {
     pub schema_version: u32,
     pub controllers: Vec<VirtualControllerSpec>,
@@ -53,7 +53,7 @@ pub enum VirtualControlKind {
 
 ## DSL example
 
-```awft
+```arcw
 pub virtual_controller @vc.truck_touch: VirtualController {
     layer = @layer.touch_controls
     visible_when = env.touch_available && activity == @activity.truck_game
@@ -85,3 +85,4 @@ Every visible virtual control must be represented as an `ActionTarget` with:
 - polygon if shape is not rectangular,
 - semantic invoke action,
 - mapped input action summary.
+
