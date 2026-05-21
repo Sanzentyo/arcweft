@@ -5,13 +5,12 @@ use super::headers::{
 };
 use super::{
     BlockStyle, CstFlowItemKind, CstLetFlowItemKind, CstLine, CstStructuredFlowBlockKind,
-    DeferOutcome, DialogueContent, Flow, FlowInit, FlowItem, Parser, RawSyntax, ScopeBlock,
-    SpeakerLine, Stmt, TextRange, indentation, is_await_with_head, is_expression_statement_call,
-    is_typed_stmt, nonempty_string, parse_await_with, parse_defer_outcome, parse_dialogue_tokens,
-    parse_expr_lossy, parse_flat_fence, parse_line_options, parse_line_plan_body,
-    parse_presentation_special_call, parse_scope_head, parse_stmt, parse_stmt_lines,
-    parse_thread_block, parse_unsafe_lifetime_block, parse_word_scenario_command, split_call_head,
-    split_leading_ident,
+    DeferOutcome, Flow, FlowInit, FlowItem, Parser, RawSyntax, ScopeBlock, SpeakerLine, Stmt,
+    TextRange, indentation, is_await_with_head, is_expression_statement_call, is_typed_stmt,
+    nonempty_string, parse_await_with, parse_defer_outcome, parse_expr_lossy, parse_flat_fence,
+    parse_line_options, parse_line_plan_body, parse_presentation_special_call, parse_scope_head,
+    parse_stmt, parse_stmt_lines, parse_thread_block, parse_unsafe_lifetime_block,
+    parse_word_scenario_command, split_call_head, split_leading_ident,
 };
 
 impl Parser {
@@ -518,9 +517,8 @@ impl Parser {
         FlowItem::SpeakerLine(SpeakerLine::new(
             speaker,
             parse_line_options(args.as_deref(), line.start, &mut self.errors),
-            DialogueContent::new(
+            self.dialogue_content(
                 raw_content.clone(),
-                parse_dialogue_tokens(&raw_content),
                 TextRange::new(line.start, self.previous_end()),
             ),
             plan,

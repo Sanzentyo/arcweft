@@ -28,7 +28,7 @@ alice:
 地の文: 扉の向こうから、雨の音がした。[p]
 
 alice.say(voice=auto)[
-    今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 ]
 ```
 
@@ -47,10 +47,10 @@ Arcweft has four tag-like forms in dialogue text:
 | Form | Purpose |
 |---|---|
 | `[p]`, `[l]`, `[r]` | short built-in control tags |
-| `[ruby rt="..."]...[/ruby]` | enclosing rich-text/control tags |
-| `#[expr]`, `#[fmt(...)]` | pure content interpolation |
-| `[call ...]` | dialogue-safe function dispatch |
-| `[mark .name]` | zero-width line-local marker for `with` handlers and waits |
+| `[ruby rt="..."]...[/ruby]`, `[rb rt=...]...[/rb]` | enclosing rich-text/control tags |
+| `#[expr]`, `#[fmt(...)]`, `$(expr)` | pure content interpolation |
+| `[call ...]`, `[! ...]` | dialogue-safe function dispatch |
+| `[mark .name]`, `[.name]` | zero-width line-local marker for `with` handlers and waits |
 
 Double brackets are not dialogue tags:
 
@@ -131,6 +131,14 @@ Timed wait:
 alice: えっと……[w time=500ms]なんでもない。[p]
 ```
 
+Authoring shorthand:
+
+```arcw
+alice: えっと……[w 500ms]なんでもない。[page]
+```
+
+`[page]`, `[wait]`, and `[nl]` normalize to `[p]`, `[l]`, and `[r]`.
+
 `[p]` is not hard-coded to clear the box. It requests a page wait; the active TextBox theme decides whether to clear, scroll, animate, or continue.
 
 ```toml
@@ -142,7 +150,25 @@ default_policy = "wait_then_clear"
 
 ## Ruby
 
-Arcweft supports three ruby forms.
+Arcweft supports these ruby forms. The recommended authoring form is
+`|[base](ruby)` because it is ASCII-friendly and works when the base contains
+spaces or punctuation.
+
+### ASCII explicit ruby
+
+```arcw
+alice: 今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
+```
+
+### ASCII compact ruby
+
+```arcw
+alice: 今日は少しだけ、|変な夢{へんなゆめ}を見たんだ。[p]
+```
+
+Compact ruby is accepted only when the base is non-empty and contains no
+whitespace or reserved markup characters: `[`, `]`, `{`, `}`, `#`, or `|`.
+Use `|[base](ruby)` for longer or ambiguous base text.
 
 ### Natural Japanese ruby
 
@@ -156,6 +182,9 @@ alice: 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ�
 alice: 今日は少しだけ、[ruby rt="へんなゆめ"]変な夢[/ruby]を見たんだ。[p]
 ```
 
+The shorter `[rb rt=へんなゆめ]変な夢[/rb]` spelling is accepted and normalizes
+to the same ruby fragment.
+
 ### Function/content form
 
 ```arcw
@@ -164,7 +193,7 @@ alice.say()[
 ]
 ```
 
-All three forms normalize into the same `Content::Ruby { base, ruby }` fragment.
+All forms normalize into the same `Content::Ruby { base, ruby }` fragment.
 
 Localization import validates ruby fragments:
 
@@ -189,7 +218,9 @@ zh-CN = "preserve_optional"
 
 ## Pure interpolation with `DisplayText`
 
-`#[expr]` inserts the formatted representation of `expr`. The expression must implement `DisplayText`.
+`#[expr]` inserts the formatted representation of `expr`. `$(expr)` is accepted
+as an authoring shorthand for the same pure interpolation. The expression must
+implement `DisplayText`.
 
 ```arcw
 narrator.say()[
@@ -253,10 +284,13 @@ Use `[call]` for a dialogue-safe function:
 alice: まぶしい……[call flash(color=#ffffff, time=90ms)][p]
 ```
 
+The short form `[! flash(color=#ffffff, time=90ms)]` is accepted for the same
+dialogue-safe call.
+
 Use `[mark .name]` to place a zero-width local marker in the line. Handlers live in the line plan; this keeps text markup separate from effectful behavior.
 
 ```arcw
-alice: 変な夢[mark .keyword][p]
+alice: 変な夢[.keyword][p]
 with:
     on .keyword:
         mark_keyword(word="夢", color=@color.dream)
@@ -301,6 +335,10 @@ Inside dialogue text mode, special characters can be escaped:
 | `\[` | literal `[` |
 | `\]` | literal `]` |
 | `\#` | literal `#` |
+| `\$` | literal `$` |
+| `\(` | literal `(` |
+| `\)` | literal `)` |
+| `\|` | literal ASCII ruby bar `|` |
 | `\{` | literal `{` |
 | `\}` | literal `}` |
 | `\:` | literal `:` in contexts where it may be parsed specially |
@@ -316,6 +354,14 @@ alice.say()[
 ]
 ```
 
+Short raw span:
+
+```arcw
+alice.say()[
+    [raw: [p]をタグとして扱わない]
+]
+```
+
 Raw block:
 
 ```arcw
@@ -326,6 +372,20 @@ alice.say()[
     [/raw]
 ]
 ```
+
+---
+
+## Short style spans
+
+Single-span style forms are accepted for common emphasis:
+
+```arcw
+alice: [em:夢]を見た。[strong:本当に]変だった。[p]
+alice: [color #a8b5ff:夜]だけが光っていた。[p]
+```
+
+They normalize to the same rich-text span model as `[em]...[/em]`,
+`[strong]...[/strong]`, and `[color value="..."]...[/color]`.
 
 ---
 

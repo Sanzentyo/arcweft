@@ -35,7 +35,7 @@ effects { signal.write, metric.write }
     }
 
     alice.say(id=@say.opening.alice.001, voice=auto, look=.smile)[
-        今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+        今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
     ]
     with:
         let voice = line.voice_handle()

@@ -34,7 +34,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
         おはよう、#[player_name]。[l]
 
     alice.say(id=@say.opening.dream_hint, voice=auto, look=.normal)[
-        今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[flash time=90ms][p]
+        今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[flash time=90ms][p]
     ]
     with {
         at(0.45s) { alice.stage.look(worried, crossfade=120ms) }
@@ -89,7 +89,7 @@ text_key = "text.opening.alice.002"
 speaker = "character.alice"
 source_locale = "ja-JP"
 source_text = "今日は少しだけ、変な夢を見たんだ。"
-source_rich_text = "今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[flash time=90ms][p]"
+source_rich_text = "今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[flash time=90ms][p]"
 source_hash = "b3:f8c0..."
 voice_key = "voice.alice.opening.002"
 flow = "flow.opening"
@@ -119,7 +119,7 @@ locale en-US from ja-JP {
 
     line text.opening.alice.002 {
         speaker = @character.alice
-        source = rich "今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。"
+        source = rich "今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。"
         text = "I had a strange dream today."
         status = draft
         source_hash = "b3:f8c0..."
@@ -154,7 +154,7 @@ A complex line may return scoped handles. `_` explicitly discards and drops a re
 
 ```arcw
 let (actor, (_, voice)) = alice.say(id=@say.opening.dream_hint, voice=auto)[
-    今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[flash time=90ms][p]
+    今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[flash time=90ms][p]
 ]
 with:
     let actor = alice.stage.acquire(scope=line, memo=true)

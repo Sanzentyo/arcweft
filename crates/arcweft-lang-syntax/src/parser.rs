@@ -18,7 +18,7 @@ use crate::cst::{
 use crate::expr::Expr;
 use crate::pattern::parse_pattern;
 use crate::source::ParsedSource;
-use crate::text::parse_dialogue_tokens;
+use crate::text::parse_dialogue_text;
 use arcweft_source::{SourceAnchor, SourceName};
 
 pub mod await_;
@@ -296,5 +296,23 @@ impl Parser {
                 .collect(),
             SourceAnchor::new(SourceName::path("<memory>"), 0..0),
         ));
+    }
+
+    fn dialogue_content(&mut self, raw: String, range: TextRange) -> DialogueContent {
+        let parsed = parse_dialogue_text(&raw);
+        for diagnostic in parsed.diagnostics() {
+            let diagnostic_range = TextRange::new(
+                range.start() + diagnostic.range().start(),
+                range.start() + diagnostic.range().end(),
+            );
+            self.push_error(
+                diagnostic_range,
+                diagnostic.message(),
+                ["valid dialogue text markup"],
+                raw.get(diagnostic.range().start()..diagnostic.range().end()),
+                [diagnostic.recovery()],
+            );
+        }
+        DialogueContent::new(raw, parsed.into_tokens(), range)
     }
 }

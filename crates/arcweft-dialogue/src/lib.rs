@@ -434,42 +434,134 @@ impl DialogueContent {
 
     pub fn parse_lossy(source: &str) -> Self {
         let mut parts = Vec::new();
-        let mut rest = source;
+        let mut cursor = 0;
+        let mut text_start = 0;
 
-        while let Some(start) = rest.find('｜') {
-            let (before, after_marker) = rest.split_at(start);
-            push_text(&mut parts, before);
-
-            let after_marker = &after_marker['｜'.len_utf8()..];
-            let Some(open) = after_marker.find('《') else {
-                push_text(&mut parts, "｜");
-                rest = after_marker;
-                continue;
+        while cursor < source.len() {
+            let Some(ch) = source[cursor..].chars().next() else {
+                break;
             };
-            let Some(close_relative) = after_marker[open + '《'.len_utf8()..].find('》') else {
-                push_text(&mut parts, "｜");
-                rest = after_marker;
+            if let Some((end, base, ruby)) = parse_lossy_ruby(source, cursor) {
+                push_text(&mut parts, &source[text_start..cursor]);
+                parts.push(DialogueContentPart::Ruby { base, ruby });
+                cursor = end;
+                text_start = cursor;
                 continue;
-            };
-
-            let base = &after_marker[..open];
-            let ruby_start = open + '《'.len_utf8();
-            let ruby_end = ruby_start + close_relative;
-            let ruby = &after_marker[ruby_start..ruby_end];
-            parts.push(DialogueContentPart::Ruby {
-                base: base.to_owned(),
-                ruby: ruby.to_owned(),
-            });
-            rest = &after_marker[ruby_end + '》'.len_utf8()..];
+            }
+            cursor += ch.len_utf8();
         }
 
-        parse_control_tags(rest, &mut parts);
+        push_text(&mut parts, &source[text_start..]);
         Self::new(parts)
     }
 
     pub fn parts(&self) -> &[DialogueContentPart] {
         &self.parts
     }
+}
+
+fn parse_lossy_ruby(source: &str, start: usize) -> Option<(usize, String, String)> {
+    parse_natural_ruby_lossy(source, start)
+        .or_else(|| parse_ascii_explicit_ruby_lossy(source, start))
+        .or_else(|| parse_ascii_compact_ruby_lossy(source, start))
+        .or_else(|| parse_bracket_ruby_lossy(source, start))
+}
+
+fn parse_natural_ruby_lossy(source: &str, start: usize) -> Option<(usize, String, String)> {
+    let after_marker = source.get(start..)?.strip_prefix('｜')?;
+    let open = after_marker.find('《')?;
+    let base = &after_marker[..open];
+    let ruby_start = open + '《'.len_utf8();
+    let ruby_tail = after_marker.get(ruby_start..)?;
+    let close = ruby_tail.find('》')?;
+    let ruby = &ruby_tail[..close];
+    (!base.is_empty() && !ruby.is_empty()).then(|| {
+        (
+            start + '｜'.len_utf8() + ruby_start + close + '》'.len_utf8(),
+            base.to_owned(),
+            ruby.to_owned(),
+        )
+    })
+}
+
+fn parse_ascii_explicit_ruby_lossy(source: &str, start: usize) -> Option<(usize, String, String)> {
+    let after_marker = source.get(start..)?.strip_prefix("|[")?;
+    let base_end = after_marker.find("](")?;
+    let base = &after_marker[..base_end];
+    let ruby_start = base_end + "](".len();
+    let ruby_tail = after_marker.get(ruby_start..)?;
+    let ruby_end = ruby_tail.find(')')?;
+    let ruby = &ruby_tail[..ruby_end];
+    (!base.is_empty() && !ruby.is_empty()).then(|| {
+        (
+            start + "|[".len() + ruby_start + ruby_end + ')'.len_utf8(),
+            base.to_owned(),
+            ruby.to_owned(),
+        )
+    })
+}
+
+fn parse_ascii_compact_ruby_lossy(source: &str, start: usize) -> Option<(usize, String, String)> {
+    let after_marker = source.get(start..)?.strip_prefix('|')?;
+    if after_marker.starts_with('[') {
+        return None;
+    }
+    let open = after_marker.find('{')?;
+    let base = &after_marker[..open];
+    if base.is_empty()
+        || base
+            .chars()
+            .any(|ch| ch.is_whitespace() || matches!(ch, '[' | ']' | '{' | '}' | '#' | '|'))
+    {
+        return None;
+    }
+    let ruby_start = open + '{'.len_utf8();
+    let ruby_tail = after_marker.get(ruby_start..)?;
+    let close = ruby_tail.find('}')?;
+    let ruby = &ruby_tail[..close];
+    (!ruby.is_empty()).then(|| {
+        (
+            start + '|'.len_utf8() + ruby_start + close + '}'.len_utf8(),
+            base.to_owned(),
+            ruby.to_owned(),
+        )
+    })
+}
+
+fn parse_bracket_ruby_lossy(source: &str, start: usize) -> Option<(usize, String, String)> {
+    let after_open = source.get(start..)?.strip_prefix('[')?;
+    let close = after_open.find(']')?;
+    let inside = after_open[..close].trim();
+    let mut parts = inside.splitn(2, char::is_whitespace);
+    let tag = parts.next().unwrap_or_default();
+    let attrs = parts.next().unwrap_or_default().trim();
+    if !matches!(tag, "ruby" | "rb") {
+        return None;
+    }
+    let ruby = parse_ruby_rt_lossy(attrs)?;
+    let body_start = start + '['.len_utf8() + close + ']'.len_utf8();
+    let close_tag = format!("[/{tag}]");
+    let tail = source.get(body_start..)?;
+    let body_end = tail.find(&close_tag)?;
+    let base = tail[..body_end].trim();
+    (!base.is_empty()).then(|| {
+        (
+            body_start + body_end + close_tag.len(),
+            base.to_owned(),
+            ruby,
+        )
+    })
+}
+
+fn parse_ruby_rt_lossy(attrs: &str) -> Option<String> {
+    let value = attrs.trim().strip_prefix("rt")?.trim_start();
+    let value = value.strip_prefix('=')?.trim_start();
+    if let Some(quoted) = value.strip_prefix('"') {
+        let end = quoted.find('"')?;
+        return Some(quoted[..end].to_owned());
+    }
+    let end = value.find(char::is_whitespace).unwrap_or(value.len());
+    (end > 0).then(|| value[..end].to_owned())
 }
 
 fn push_text(parts: &mut Vec<DialogueContentPart>, text: &str) {
@@ -501,13 +593,27 @@ fn parse_control_tags(text: &str, parts: &mut Vec<DialogueContentPart>) {
 
         let tag = &after_open[..close];
         match tag {
-            "p" => parts.push(DialogueContentPart::Tag(DialogueTag::Page)),
-            "l" => parts.push(DialogueContentPart::Tag(DialogueTag::Line)),
-            "r" | "br" => parts.push(DialogueContentPart::Tag(DialogueTag::Break)),
+            "p" | "page" => parts.push(DialogueContentPart::Tag(DialogueTag::Page)),
+            "l" | "wait" => parts.push(DialogueContentPart::Tag(DialogueTag::Line)),
+            "r" | "br" | "nl" => parts.push(DialogueContentPart::Tag(DialogueTag::Break)),
+            value if value.starts_with("w ") => {
+                if let Some(duration) = parse_wait_duration(value.trim_start_matches("w ").trim()) {
+                    parts.push(DialogueContentPart::Tag(DialogueTag::Wait(duration)));
+                } else {
+                    parts.push(DialogueContentPart::Text(format!("[{tag}]")));
+                }
+            }
             _ => parts.push(DialogueContentPart::Text(format!("[{tag}]"))),
         }
         rest = &after_open[close + 1..];
     }
+}
+
+fn parse_wait_duration(value: &str) -> Option<Duration> {
+    value
+        .strip_suffix("ms")
+        .and_then(|ms| ms.parse::<u64>().ok())
+        .map(Duration::from_millis)
 }
 
 impl LinePlan {

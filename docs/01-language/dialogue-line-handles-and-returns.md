@@ -159,7 +159,7 @@ The following is a concise complex line. The `alice:` head is syntax sugar for a
 
 ```arcw
 alice(voice=auto, look=.smile):
-    今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 with:
     at(0.42s):
         alice.stage.look(.worried, crossfade=120ms)
@@ -174,7 +174,7 @@ It is equivalent to:
 
 ```arcw
 alice.say(voice=auto, look=.smile)[
-    今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 ]
 with:
     at(0.42s):
@@ -244,7 +244,7 @@ let (line_alice, (face0, face1, voice)) = alice.say(
     voice=auto,
     look=.smile,
 )[
-    今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 ]
 with:
     let line_alice = alice.stage.acquire(scope=line)

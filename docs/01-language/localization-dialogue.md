@@ -50,7 +50,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
     地の文: 扉の向こうから、雨の音がした。[p]
     alice: おはよう。[l]
-    alice(voice=auto): 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    alice(voice=auto): 今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 
     choice @choice.opening.first {
         @choice.opening.listen "聞いてみる" -> @flow.alice_intro
@@ -68,7 +68,7 @@ LSP inlay view:
 alice: おはよう。[l]
        @say.opening.alice.001 / text.opening.alice.001 / voice.ja-JP.alice.opening.001
 
-alice(voice=auto): 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+alice(voice=auto): 今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
                    @say.opening.alice.002 / text.opening.alice.002 / voice.ja-JP.alice.opening.002
 ```
 
@@ -220,7 +220,7 @@ text_key = "text.opening.alice.002"
 speaker = "character.alice"
 source_locale = "ja-JP"
 source_text = "今日は少しだけ、変な夢を見たんだ。"
-source_rich_text = "今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]"
+source_rich_text = "今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]"
 source_hash = "b3:f8c0..."
 source_anchor = "game/routes/opening.arcw:9:5-9:48"
 voice_key = "voice.alice.opening.002"
@@ -289,7 +289,7 @@ Arcweft supports CSV import/export for translators, spreadsheets, and LLM batch 
 ```csv
 key,locale,speaker,source_text,target_text,status,source_hash,voice,context,notes
 text.opening.alice.001,en-US,character.alice,おはよう。,Good morning.,translated,b3:91a2...,voice.en-US.alice.opening.001,flow.opening,
-text.opening.alice.002,en-US,character.alice,"今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。",I had a strange dream today.,draft,b3:f8c0...,voice.en-US.alice.opening.002,flow.opening,
+text.opening.alice.002,en-US,character.alice,"今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。",I had a strange dream today.,draft,b3:f8c0...,voice.en-US.alice.opening.002,flow.opening,
 text.choice.opening.listen,en-US,,聞いてみる,Ask her about it,translated,b3:12cd...,,choice.opening.first,
 ```
 
@@ -298,7 +298,7 @@ text.choice.opening.listen,en-US,,聞いてみる,Ask her about it,translated,b3
 ```csv
 key,speaker,ja-JP,en-US,zh-CN,status,source_hash,context,notes
 text.opening.alice.001,character.alice,おはよう。,Good morning.,早上好。,translated,b3:91a2...,flow.opening,
-text.opening.alice.002,character.alice,"今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。",I had a strange dream today.,今天我做了一个奇怪的梦。,draft,b3:f8c0...,flow.opening,
+text.opening.alice.002,character.alice,"今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。",I had a strange dream today.,今天我做了一个奇怪的梦。,draft,b3:f8c0...,flow.opening,
 ```
 
 Recommended policy:
@@ -329,7 +329,7 @@ locale en-US from ja-JP {
 
     line text.opening.alice.002 {
         speaker = @character.alice
-        source = rich "今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。"
+        source = rich "今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。"
         text = "I had a strange dream today."
         status = draft
         source_hash = "b3:f8c0..."
@@ -357,14 +357,14 @@ locale en-US from ja-JP {
 Japanese source may contain ruby and control tags:
 
 ```arcw
-alice: 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+alice: 今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 ```
 
 Exported source fields distinguish plain text and rich text:
 
 ```text
 source_text      今日は少しだけ、変な夢を見たんだ。
-source_rich_text 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+source_rich_text 今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 ```
 
 Import validation checks:

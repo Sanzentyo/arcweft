@@ -366,6 +366,126 @@ fn dialogue_tokenizer_normalizes_bracket_ruby_to_ruby_token() {
 }
 
 #[test]
+fn dialogue_tokenizer_normalizes_ascii_ruby_forms_to_ruby_token() {
+    let tokens = parse_dialogue_tokens(
+        "今日は|[変な夢](へんなゆめ)と|悪夢{あくむ}と[rb rt=まぼろし]幻[/rb]を見た。[p]",
+    );
+
+    assert!(tokens.iter().any(
+        |token| matches!(token, DialogueToken::Ruby { base, ruby } if base == "変な夢" && ruby == "へんなゆめ")
+    ));
+    assert!(tokens.iter().any(
+        |token| matches!(token, DialogueToken::Ruby { base, ruby } if base == "悪夢" && ruby == "あくむ")
+    ));
+    assert!(tokens.iter().any(
+        |token| matches!(token, DialogueToken::Ruby { base, ruby } if base == "幻" && ruby == "まぼろし")
+    ));
+}
+
+#[test]
+fn dialogue_tokenizer_reports_invalid_compact_ruby_without_consuming_text() {
+    let parsed = parse_dialogue_text("今日は|変 な夢{へんなゆめ}を見た。[p]");
+
+    assert!(parsed.diagnostics().iter().any(|diagnostic| {
+        diagnostic.message().contains("invalid compact ruby")
+            && diagnostic.recovery().contains("|[base](ruby)")
+    }));
+    assert!(parsed.tokens().iter().any(
+        |token| matches!(token, DialogueToken::Text(text) if text.contains("|変 な夢{へんなゆめ}"))
+    ));
+}
+
+#[test]
+fn dialogue_tokenizer_normalizes_authoring_sugar_tags() {
+    let tokens = parse_dialogue_tokens(
+        r"$(player_name)[! flash(color=#ffffff)][.keyword][w 500ms][page][wait][nl][em:夢][strong:声][color #a8b5ff:夜][raw: [p] literal]",
+    );
+
+    assert!(tokens.iter().any(
+        |token| matches!(token, DialogueToken::Expr(Expr::Path(path)) if path == "player_name")
+    ));
+    assert!(tokens.iter().any(
+        |token| matches!(token, DialogueToken::Tag(tag) if tag.name() == "call" && tag.attrs() == "flash(color=#ffffff)")
+    ));
+    assert!(
+        tokens
+            .iter()
+            .any(|token| matches!(token, DialogueToken::Mark(mark) if mark.name() == ".keyword"))
+    );
+    assert!(tokens.iter().any(
+        |token| matches!(token, DialogueToken::Tag(tag) if tag.name() == "w" && tag.attrs() == "time=500ms")
+    ));
+    assert!(
+        tokens
+            .iter()
+            .any(|token| matches!(token, DialogueToken::Tag(tag) if tag.name() == "p"))
+    );
+    assert!(
+        tokens
+            .iter()
+            .any(|token| matches!(token, DialogueToken::Tag(tag) if tag.name() == "l"))
+    );
+    assert!(
+        tokens
+            .iter()
+            .any(|token| matches!(token, DialogueToken::Tag(tag) if tag.name() == "r"))
+    );
+    assert!(tokens.windows(3).any(|window| matches!(
+        window,
+        [
+            DialogueToken::Tag(tag),
+            DialogueToken::Text(text),
+            DialogueToken::EndTag(end)
+        ] if tag.name() == "em" && text == "夢" && end == "em"
+    )));
+    assert!(tokens.windows(3).any(|window| matches!(
+        window,
+        [
+            DialogueToken::Tag(tag),
+            DialogueToken::Text(text),
+            DialogueToken::EndTag(end)
+        ] if tag.name() == "color" && tag.attrs() == "value=\"#a8b5ff\"" && text == "夜" && end == "color"
+    )));
+    assert!(
+        tokens
+            .iter()
+            .any(|token| matches!(token, DialogueToken::Raw(raw) if raw == "[p] literal"))
+    );
+}
+
+#[test]
+fn parser_surfaces_dialogue_text_diagnostics() {
+    let errors = parse_errors("alice: 今日は|変 な夢{へんなゆめ}を見た。[p]");
+
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("invalid compact ruby"))
+    );
+}
+
+#[test]
+fn typechecker_uses_shorthand_marks_for_line_plan_handlers() {
+    let tree = parse_ok(
+        r#"
+flow @flow.opening opening {
+    alice[待って。[.seen][p]]
+    with:
+        on .seen:
+            log.info("seen")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("shorthand mark lowers");
+
+    typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new().with_symbol("alice", TypeKind::Ref(EntityKind::Character)),
+    )
+    .expect("shorthand mark is visible to line plan handler");
+}
+
+#[test]
 fn lowers_family_relative_dialogue_id_declarations() {
     let tree = parse_ok(
         r"

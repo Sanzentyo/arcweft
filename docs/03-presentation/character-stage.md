@@ -284,7 +284,7 @@ Character stage cues can be scheduled from dialogue line plan blocks, or from co
 
 ```arcw
 alice.say(voice=auto)[
-    今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 ] {
     at(0.42s) { alice.stage.look(worried, crossfade=120ms) }
     at(end-200ms) { alice.stage.move(to=left, time=260ms, ease=quad.out) }

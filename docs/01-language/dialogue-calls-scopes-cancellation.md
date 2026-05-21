@@ -90,7 +90,7 @@ alice.say(
     voice = auto,
     look = smile,
 )[
-    今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 ]
 with {
     at(0.42s) {
@@ -181,7 +181,7 @@ Because dialogue text may contain `{player_name}` localization placeholders, a r
 
 ```arcw
 alice(voice=auto, look=smile):
-    今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 with {
     at(0.42s) {
         alice.stage.look(worried, crossfade=120ms)
@@ -199,7 +199,7 @@ Equivalent canonical form:
 
 ```arcw
 alice.say(voice=auto, look=smile)[
-    今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 ]
 with {
     at(0.42s) {
@@ -218,7 +218,7 @@ For explicit bracketed content while still using `:`, this form is also allowed:
 
 ```arcw
 alice(voice=auto):[
-    今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 ]
 with {
     at(0.42s) { alice.stage.look(worried) }
@@ -756,7 +756,7 @@ let (actor, (face0, face1, voice)) = alice.say(
     voice=auto,
     look=smile,
 )[
-    今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+    今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 ]
 with:
     let actor = alice.stage.acquire(scope=line)

@@ -6,11 +6,11 @@ use super::{
     Parser, ScopeBlock, SpeakerLine, Stmt, TextRange, attach_line_plan_label,
     attach_plan_to_dialogue_expr, contains_dialogue_expr, find_content_bracket,
     find_matching_punctuation, find_top_level_punctuation, indentation, is_with_brace_head,
-    parse_binding_pattern, parse_dialogue_call_expr_source, parse_dialogue_tokens,
-    parse_expr_lossy, parse_flat_fence, parse_inline_with_colon_plan, parse_line_options,
-    parse_line_plan_body, parse_with_brace_label, parse_with_indent_label, punctuation_delta,
-    split_brace_item, split_call_head, split_leading_ident, split_speaker_line,
-    split_top_level_binding, split_top_level_punctuation_once,
+    parse_binding_pattern, parse_dialogue_call_expr_source, parse_expr_lossy, parse_flat_fence,
+    parse_inline_with_colon_plan, parse_line_options, parse_line_plan_body, parse_with_brace_label,
+    parse_with_indent_label, punctuation_delta, split_brace_item, split_call_head,
+    split_leading_ident, split_speaker_line, split_top_level_binding,
+    split_top_level_punctuation_once,
 };
 
 impl Parser {
@@ -133,9 +133,8 @@ impl Parser {
             let content = if inline_content.is_empty() {
                 self.take_indented_dialogue(indentation(&line.text) + 1, line.start)
             } else {
-                DialogueContent::new(
+                self.dialogue_content(
                     inline_content.to_owned(),
-                    parse_dialogue_tokens(inline_content),
                     TextRange::new(line.start, line.end),
                 )
             };
@@ -206,9 +205,8 @@ impl Parser {
             .then(|| self.take_trailing_bare_scope(&text, close, &mut cursor, start.start))
             .flatten();
         self.index = cursor + 1;
-        let content = DialogueContent::new(
+        let content = self.dialogue_content(
             raw_content.clone(),
-            parse_dialogue_tokens(&raw_content),
             TextRange::new(start.start + open + 1, start.start + close),
         );
         let consumed_end = trailing_block
@@ -413,11 +411,7 @@ impl Parser {
             end = line.end;
             self.index += 1;
         }
-        DialogueContent::new(
-            raw.clone(),
-            parse_dialogue_tokens(&raw),
-            TextRange::new(start, end),
-        )
+        self.dialogue_content(raw.clone(), TextRange::new(start, end))
     }
 
     fn take_indented_line_plan(&mut self, min_indent: usize, start: usize) -> LinePlan {

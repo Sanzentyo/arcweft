@@ -24,7 +24,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
     scope dream {
         alice(id=@.hint, voice=@cue.voice.alice.001):
-            今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
+            今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 
         let can_enter_alice = state |> has_affection_at_least(@character.alice, 3)
 

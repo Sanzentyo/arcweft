@@ -14,7 +14,7 @@ fn builder_api_builds_dialogue_line_from_concise_call_shape()
         .say()
         .id(line_id("say.opening.dream_hint"))
         .content(DialogueContent::parse_lossy(
-            "今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]",
+            "今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]",
         ))
         .at(
             Duration::from_millis(420),
@@ -62,4 +62,28 @@ fn builder_api_builds_dialogue_line_from_concise_call_shape()
     assert_eq!(line.plan().cancel_rules()[0].action, CancelAction::Continue);
 
     Ok(())
+}
+
+#[test]
+fn parse_lossy_accepts_dialogue_authoring_ruby_forms() {
+    let content = DialogueContent::parse_lossy(
+        "｜自然《しぜん》 |[明示](めいじ) |短縮{たんしゅく} [rb rt=タグ]形式[/rb][page]",
+    );
+
+    assert!(content.parts().iter().any(
+        |part| matches!(part, DialogueContentPart::Ruby { base, ruby } if base == "自然" && ruby == "しぜん")
+    ));
+    assert!(content.parts().iter().any(
+        |part| matches!(part, DialogueContentPart::Ruby { base, ruby } if base == "明示" && ruby == "めいじ")
+    ));
+    assert!(content.parts().iter().any(
+        |part| matches!(part, DialogueContentPart::Ruby { base, ruby } if base == "短縮" && ruby == "たんしゅく")
+    ));
+    assert!(content.parts().iter().any(
+        |part| matches!(part, DialogueContentPart::Ruby { base, ruby } if base == "形式" && ruby == "タグ")
+    ));
+    assert!(matches!(
+        content.parts().last(),
+        Some(DialogueContentPart::Tag(DialogueTag::Page))
+    ));
 }
