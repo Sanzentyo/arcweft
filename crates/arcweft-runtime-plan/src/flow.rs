@@ -8,7 +8,7 @@ use crate::line_task::{lower_line_plan, lower_line_plan_statements};
 use crate::pattern::lower_runtime_pattern;
 use crate::source::lower_source_plan;
 use crate::stream::lower_stream_function;
-use arcweft_core::effect::{LineEffectRequest, RuntimeCommand};
+use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::line_task::{LineOutRequest, LineTaskGroup};
 use arcweft_core::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
@@ -290,12 +290,6 @@ impl FlowRuntimeLowerer {
                         body: self.lower_flow_items(flow_id, block.body(), flow_index),
                     });
                 }
-                HirFlowItem::Scenario { name, args } => {
-                    ops.push(FlowOp::Effect(LineEffectRequest::Command(RuntimeCommand {
-                        name: name.clone(),
-                        args: args.iter().map(expr_label).collect(),
-                    })));
-                }
                 other => {
                     self.errors.push(RuntimePlanLowerError::new(format!(
                         "unsupported flow item for runtime lowering: {other:?}"
@@ -443,12 +437,6 @@ impl FlowRuntimeLowerer {
             .iter()
             .flat_map(|item| match item {
                 HirFlowItem::Stmt(stmt) => self.lower_flow_statements(std::slice::from_ref(stmt)),
-                HirFlowItem::Scenario { name, args } => {
-                    vec![LineEffectRequest::Command(RuntimeCommand {
-                        name: name.clone(),
-                        args: args.iter().map(expr_label).collect(),
-                    })]
-                }
                 other => {
                     self.errors.push(RuntimePlanLowerError::new(format!(
                         "unsupported await pending item for runtime lowering: {other:?}"
@@ -498,12 +486,6 @@ impl FlowRuntimeLowerer {
                 vec![FlowOp::Effect(LineEffectRequest::Out(LineOutRequest {
                     label: label.clone(),
                     value: expr_label(expr),
-                }))]
-            }
-            Stmt::Command(command) => {
-                vec![FlowOp::Effect(LineEffectRequest::Command(RuntimeCommand {
-                    name: command.name().to_owned(),
-                    args: command.args().iter().map(expr_label).collect(),
                 }))]
             }
             Stmt::If { condition, body } => vec![FlowOp::If {

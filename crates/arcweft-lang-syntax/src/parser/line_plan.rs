@@ -5,8 +5,8 @@ use crate::ast::line_plan::{
     BlockStyle, CancelRuleSyntax, DeferOutcome, LinePlan, LinePlanItem, TriggerPattern,
 };
 use crate::cst::{
-    find_matching_punctuation, find_top_level_punctuation, split_top_level_punctuation_once,
-    split_top_level_punctuation_sequence_once, split_top_level_whitespace,
+    find_matching_punctuation, find_top_level_punctuation, split_top_level_punctuation,
+    split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
 };
 use crate::expr::{Expr, parse_expr};
 use crate::pattern::parse_pattern;
@@ -18,50 +18,56 @@ use super::{
 
 pub(super) fn parse_trigger_pattern(source: &str) -> TriggerPattern {
     let source = source.trim();
-    if let Some(rest) = source.strip_prefix("input ") {
-        return TriggerPattern::Input(parse_pattern(rest.trim()));
-    }
-    if let Some(rest) = source.strip_prefix("event ") {
-        return TriggerPattern::Event(parse_pattern(rest.trim()));
-    }
-    if let Some(rest) = source.strip_prefix("item ") {
-        return TriggerPattern::Event(parse_pattern(rest.trim()));
-    }
-    if let Some(rest) = source.strip_prefix("error ") {
-        return TriggerPattern::Event(parse_pattern(rest.trim()));
-    }
-    if source == "disconnected" {
-        return TriggerPattern::Event(parse_pattern(source));
-    }
-    if let Some(rest) = source.strip_prefix("signal ") {
-        let mut parts = split_top_level_whitespace(rest);
-        let target = parts.first().map_or_else(
-            || Expr::Raw(rest.to_owned()),
-            |target| parse_expr_lossy(target),
-        );
-        let value = (parts.len() > 1)
-            .then(|| parse_pattern(parts.drain(1..).collect::<Vec<_>>().join(" ").trim()));
-        return TriggerPattern::Signal { target, value };
-    }
-    if let Some(rest) = source.strip_prefix("timeout ") {
-        return TriggerPattern::Timeout(parse_expr_lossy(rest.trim()));
-    }
-    if let Some(rest) = source.strip_prefix("mark ") {
-        return TriggerPattern::Mark(parse_pattern(rest.trim()));
-    }
-    if let Some(rest) = source.strip_prefix("select ") {
-        return TriggerPattern::Select(parse_pattern(rest.trim()));
-    }
-    if let Some(rest) = source.strip_prefix("task ") {
-        return TriggerPattern::Task(parse_pattern(rest.trim()));
-    }
-    if let Some(rest) = source.strip_prefix("scope ") {
-        return TriggerPattern::Scope(parse_pattern(rest.trim()));
-    }
-    if source.starts_with('.') {
-        return TriggerPattern::Mark(parse_pattern(source));
+    if let Some(trigger) = parse_trigger_call(source) {
+        return trigger;
     }
     TriggerPattern::Expr(parse_expr_lossy(source))
+}
+
+fn parse_trigger_call(source: &str) -> Option<TriggerPattern> {
+    let open = find_top_level_punctuation(source, '(')?;
+    let close = find_matching_punctuation(source, open, '(', ')')?;
+    if !source[close + ')'.len_utf8()..].trim().is_empty() {
+        return None;
+    }
+    let name = source[..open].trim();
+    let args = split_top_level_punctuation(&source[open + '('.len_utf8()..close], ',');
+    match name {
+        "input" => single_pattern(&args).map(TriggerPattern::Input),
+        "event" | "item" | "error" => single_pattern(&args).map(TriggerPattern::Event),
+        "mark" => single_pattern(&args).map(TriggerPattern::Mark),
+        "select" => single_pattern(&args).map(TriggerPattern::Select),
+        "task" => single_pattern(&args).map(TriggerPattern::Task),
+        "scope" => single_pattern(&args).map(TriggerPattern::Scope),
+        "timeout" => single_expr(&args).map(TriggerPattern::Timeout),
+        "signal" => {
+            let mut args = args;
+            let target = args.first().map(|arg| parse_expr_lossy(arg.trim()))?;
+            let value = (args.len() > 1).then(|| {
+                let rest = args.drain(1..).collect::<Vec<_>>().join(", ");
+                parse_pattern(rest.trim())
+            });
+            Some(TriggerPattern::Signal { target, value })
+        }
+        "disconnected" if args.is_empty() => {
+            Some(TriggerPattern::Event(parse_pattern("disconnected")))
+        }
+        _ => None,
+    }
+}
+
+fn single_pattern(args: &[&str]) -> Option<crate::ast::pattern::Pattern> {
+    let [arg] = args else {
+        return None;
+    };
+    Some(parse_pattern(arg.trim()))
+}
+
+fn single_expr(args: &[&str]) -> Option<Expr> {
+    let [arg] = args else {
+        return None;
+    };
+    Some(parse_expr_lossy(arg.trim()))
 }
 
 pub(super) fn parse_defer_outcome(head: &str) -> Option<DeferOutcome> {
@@ -279,8 +285,11 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
     if let Some(rest) = line.strip_prefix("together ") {
         return LinePlanItem::TogetherGroup(parse_line_plan_nested_items(rest.trim()));
     }
-    if let Some(rest) = line.strip_prefix("memo ") {
-        return parse_line_plan_memo(rest.trim());
+    if line.starts_with("memo ") {
+        return LinePlanItem::Raw(RawSyntax::line_plan_item(
+            line,
+            Some(TextRange::new(0, line.len())),
+        ));
     }
     if is_line_plan_statement(line) {
         return LinePlanItem::Stmt(parse_stmt(line));
@@ -304,6 +313,9 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
 }
 
 fn is_line_plan_statement(line: &str) -> bool {
+    if line.starts_with("wait(") {
+        return true;
+    }
     matches!(
         line.split_whitespace().next(),
         Some(
@@ -395,25 +407,6 @@ pub(super) fn nonempty_string(source: &str) -> Option<String> {
     (!source.is_empty()).then(|| source.to_owned())
 }
 
-fn parse_line_plan_memo(source: &str) -> LinePlanItem {
-    let mut parts = split_scenario_args(source);
-    if parts.is_empty() {
-        return LinePlanItem::Raw(RawSyntax::line_plan_item(
-            "memo",
-            Some(TextRange::new(0, "memo".len())),
-        ));
-    }
-    let name = parts.remove(0).to_owned();
-    let options = parts
-        .into_iter()
-        .filter_map(|part| {
-            split_top_level_punctuation_once(part, '=')
-                .map(|(name, value)| (name.to_owned(), parse_expr_lossy(value)))
-        })
-        .collect();
-    LinePlanItem::Memo { name, options }
-}
-
 fn parse_line_plan_nested_items(source: &str) -> Vec<LinePlanItem> {
     let body = source
         .trim()
@@ -431,10 +424,6 @@ fn parse_line_plan_cancel_action(action: &str) -> Vec<Stmt> {
     } else {
         parse_stmt_lines(action)
     }
-}
-
-fn split_scenario_args(source: &str) -> Vec<&str> {
-    split_top_level_whitespace(source)
 }
 
 fn normalize_timed_cue_body(source: &str) -> &str {

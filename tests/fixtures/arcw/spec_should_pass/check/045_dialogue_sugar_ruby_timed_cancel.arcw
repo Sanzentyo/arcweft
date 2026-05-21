@@ -8,7 +8,7 @@ flow @flow.dialogue_edge dialogue_edge {
         at(0.42s): alice.face("worried")
         defer on cancelled:
             log.info("cancelled")
-        cancel on input .SkipLine {
+        cancel on input(.SkipLine) {
             out .Skipped
         }
         out .Done

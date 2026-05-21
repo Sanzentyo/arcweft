@@ -9,7 +9,7 @@ flow @flow.cancel_edge cancel_edge {
             log.info("completed")
         defer on cancelled:
             log.info("cancelled")
-        cancel on input .SkipLine {
+        cancel on input(.SkipLine) {
             out .Skipped
         }
     return "done"

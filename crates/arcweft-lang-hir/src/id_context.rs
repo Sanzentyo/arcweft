@@ -7,7 +7,7 @@
 
 use arcweft_lang_syntax::{
     ast::common::TextRange,
-    cst::{CstLineKind, cst_lines},
+    cst::{CstLineKind, cst_lines, parse_flat_fence},
     parser::parse_source,
     source::ParsedSource,
 };
@@ -309,7 +309,7 @@ fn update_dialogue_context(
     {
         scopes.pop();
     }
-    if let Some(fence) = flat_fence(trimmed) {
+    if let Some(fence) = parse_flat_fence(trimmed) {
         if fence.close && fence.kind == "scope" {
             scopes.pop();
             return true;
@@ -365,12 +365,11 @@ struct LineIdOption<'a> {
 }
 
 fn dialogue_head(trimmed: &str) -> Option<DialogueHead<'_>> {
-    if let Some(fence) = flat_fence(trimmed)
+    if let Some(fence) = parse_flat_fence(trimmed)
         && !fence.close
         && fence.kind == "line"
     {
-        let head_start = flat_fence_head_start(trimmed)?;
-        return dialogue_head_from_call_head(fence.head, head_start);
+        return dialogue_head_from_call_head(fence.head, fence.head_start);
     }
     let boundary = dialogue_head_boundary(trimmed)?;
     dialogue_head_from_call_head(trimmed[..boundary].trim_end(), 0)
@@ -430,47 +429,6 @@ fn missing_line_options(
         missing.push(IdContextOption::new("text_key", text_key));
     }
     missing
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct FlatFence<'a> {
-    kind: &'a str,
-    head: &'a str,
-    close: bool,
-}
-
-fn flat_fence(source: &str) -> Option<FlatFence<'_>> {
-    let inner = source
-        .trim()
-        .strip_prefix("===")?
-        .strip_suffix("===")?
-        .trim();
-    if let Some(close) = inner.strip_prefix('/') {
-        let kind = close.split_whitespace().next().unwrap_or_default();
-        return Some(FlatFence {
-            kind,
-            head: close.trim(),
-            close: true,
-        });
-    }
-    let (kind, head) = split_leading_word(inner).unwrap_or((inner, ""));
-    Some(FlatFence {
-        kind,
-        head: head.trim(),
-        close: false,
-    })
-}
-
-fn flat_fence_head_start(source: &str) -> Option<usize> {
-    let open = source.find("===")? + "===".len();
-    let after_open = &source[open..];
-    let inner_leading = leading_len(after_open);
-    let inner_start = open + inner_leading;
-    let inner = &source[inner_start..source.rfind("===")?];
-    let (_, head) = split_leading_word(inner.trim())?;
-    source[inner_start..]
-        .find(head)
-        .map(|offset| inner_start + offset)
 }
 
 fn declaration_id_token<'a>(trimmed: &'a str, keyword: &str) -> Option<(usize, &'a str)> {
@@ -783,18 +741,6 @@ fn speaker_slug(callee: &str) -> String {
             .trim()
             .to_ascii_lowercase(),
     }
-}
-
-fn split_leading_word(source: &str) -> Option<(&str, &str)> {
-    let trimmed = source.trim_start();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let end = trimmed
-        .char_indices()
-        .find_map(|(index, ch)| ch.is_whitespace().then_some(index))
-        .unwrap_or(trimmed.len());
-    Some((&trimmed[..end], trimmed[end..].trim_start()))
 }
 
 fn nonempty_identifier(source: &str) -> Option<String> {

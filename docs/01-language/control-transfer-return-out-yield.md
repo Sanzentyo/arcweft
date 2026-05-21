@@ -79,7 +79,7 @@ functions, or dialogue line plans. Use `out` for line-plan results.
 ```arcw
 let outcome = alice.say()[長い台詞です。[p]]
 with 'line {
-    cancel on input .SkipLine {
+    cancel on input(.SkipLine) {
         text.flush(mode = .Instant)
         out 'line .Skipped
     }
@@ -167,11 +167,11 @@ Dialogue `cancel on ...` branches may use `return`, `out`, `goto`, or `continue`
 ```arcw
 alice[長い台詞です。[p]]
 with:
-    cancel on input .SkipLine:
+    cancel on input(.SkipLine):
         text.flush(mode = .Instant)
         out .Skipped
 
-    cancel on input .BackToTitle:
+    cancel on input(.BackToTitle):
         return Ok(FlowExit::Goto(@flow.title))
 ```
 
@@ -182,7 +182,7 @@ with:
 ```arcw
 alice.say()[長い台詞です。[p]]
 with 'line {
-    cancel on input .SkipLine:
+    cancel on input(.SkipLine):
         text.flush(mode = .Instant)
         out 'line .Skipped
 }

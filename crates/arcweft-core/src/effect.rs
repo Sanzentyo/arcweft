@@ -10,14 +10,12 @@ pub enum LineEffectRequest {
     DropHandle {
         key: String,
     },
-    WaitMark(String),
-    Wait(LogicalDuration),
+    Wait(RuntimeWaitTarget),
     Call(RuntimeCall),
     Log(RuntimeLog),
     SignalWrite(RuntimeAssignment),
     MetricWrite(RuntimeAssignment),
     EmitEvent(RuntimeEvent),
-    Command(RuntimeCommand),
     Out(LineOutRequest),
     Return(String),
     Goto(String),
@@ -105,6 +103,14 @@ pub struct RuntimeCall {
     pub args: Vec<String>,
 }
 
+/// Structured target for an ordinary `wait(...)` effect.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeWaitTarget {
+    Duration(LogicalDuration),
+    Mark(String),
+    Expr(String),
+}
+
 /// Structured log request preserved for defmt-style template interning later.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeLog {
@@ -125,14 +131,6 @@ pub struct RuntimeAssignment {
 pub struct RuntimeEvent {
     pub event: String,
     pub fields: Vec<RuntimeField>,
-}
-
-/// Statement-like command retained until the command family is canonicalized as
-/// ordinary calls.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RuntimeCommand {
-    pub name: String,
-    pub args: Vec<String>,
 }
 
 /// Named expression payload preserved in runtime IR without performing I/O.

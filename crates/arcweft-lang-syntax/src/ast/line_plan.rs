@@ -29,7 +29,7 @@ pub enum LinePlanItem {
     Init(Vec<Stmt>),
     /// `thread name { ... }` child task scoped to this line.
     Thread(ThreadBlock),
-    /// `on .mark { ... }` line-local mark/event handler.
+    /// `on mark(.name) { ... }` line-local mark/event handler.
     On {
         trigger: TriggerPattern,
         body: Vec<Stmt>,
@@ -52,10 +52,6 @@ pub enum LinePlanItem {
     },
     StartGroup(Vec<LinePlanItem>),
     TogetherGroup(Vec<LinePlanItem>),
-    Memo {
-        name: String,
-        options: Vec<(String, Expr)>,
-    },
     Assert {
         debug: bool,
         expr: Expr,

@@ -164,7 +164,7 @@ with:
     at(0.42s):
         alice.stage.look(.worried, crossfade=120ms)
 
-    cancel on input .SkipLine:
+    cancel on input(.SkipLine):
         'line.voice |> drop(stop_now)
         text.flush(mode = .Instant)
         continue
@@ -180,7 +180,7 @@ with:
     at(0.42s):
         alice.stage.look(.worried, crossfade=120ms)
 
-    cancel on input .SkipLine:
+    cancel on input(.SkipLine):
         'line.voice |> drop(stop_now)
         text.flush(mode = .Instant)
         continue
@@ -224,7 +224,7 @@ let result = try alice.say(voice=auto)[
     聞いて。[p]
 ]
 with:
-    cancel on input .SkipLine:
+    cancel on input(.SkipLine):
         out Err(LineCancel::Skipped)
 
     out Ok(())

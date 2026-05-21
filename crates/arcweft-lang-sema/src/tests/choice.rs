@@ -247,7 +247,7 @@ with {
     layout = vertical
     default_focus = @choice.opening.listen
     timeout 10s { select @choice.opening.silent }
-    cancel on input .BackToTitle { return Ok(FlowExit::Goto(@flow.title)) }
+    cancel on input(.BackToTitle) { return Ok(FlowExit::Goto(@flow.title)) }
     on select selected { log.info("selected {id:?}", id = selected.id) }
 }
 "#,
@@ -373,7 +373,7 @@ flow @flow.opening opening {
     }
     with {
         timeout 10s { select @choice.opening.listen }
-        cancel on input .BackToTitle { return Ok(FlowExit::Goto(@flow.title)) }
+        cancel on input(.BackToTitle) { return Ok(FlowExit::Goto(@flow.title)) }
         on select selected { log.info("selected {id:?}", id = selected.id) }
     }
 }

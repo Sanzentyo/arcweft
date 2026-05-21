@@ -6,7 +6,7 @@ use crate::flow::sanitize_task_id_part;
 use crate::labels::{duration_expr, expr_label, pattern_label};
 use arcweft_core::effect::{
     ConflictPolicy, LineEffectRequest, ResourceAccess, ResourceAccessMode, RuntimeAssignment,
-    RuntimeCommand, RuntimeField,
+    RuntimeField, RuntimeWaitTarget,
 };
 use arcweft_core::line_task::{
     ChildCancelPolicy, ChildJoinPolicy, LineAssertionRequest, LineBindingRequest,
@@ -214,7 +214,14 @@ impl LinePlanGraphLowerer {
                     children,
                 }]
             }
-            LinePlanItem::Expr(expr) => effect_nodes(self.lower_expr_effect(expr)),
+            LinePlanItem::Expr(expr) => {
+                if let Some(memo) = line_memo_request(expr) {
+                    group.memo.push(memo);
+                    Vec::new()
+                } else {
+                    effect_nodes(self.lower_expr_effect(expr))
+                }
+            }
             LinePlanItem::Option { name, value } => {
                 group.options.push(LineOptionRequest {
                     name: name.clone(),
@@ -241,13 +248,6 @@ impl LinePlanGraphLowerer {
                 group.cancel_rules.push(LineCancelRuleRequest {
                     trigger: rule.trigger().label(),
                     action: self.lower_scoped_stmt_list(rule.action()).into_effects(),
-                });
-                Vec::new()
-            }
-            LinePlanItem::Memo { name, options } => {
-                group.memo.push(LineMemoRequest {
-                    name: name.clone(),
-                    options: runtime_fields(options),
                 });
                 Vec::new()
             }
@@ -383,10 +383,11 @@ impl LinePlanGraphLowerer {
                 key: expr_label(target),
                 handle: expr_label(expr),
             }],
-            Stmt::Wait(WaitTarget::Mark(mark)) => vec![LineEffectRequest::WaitMark(mark.clone())],
             Stmt::Wait(WaitTarget::Duration(expr)) => {
                 if let Some(duration) = duration_expr(expr) {
-                    vec![LineEffectRequest::Wait(duration)]
+                    vec![LineEffectRequest::Wait(RuntimeWaitTarget::Duration(
+                        duration,
+                    ))]
                 } else {
                     self.errors.push(LinePlanLowerError::new(format!(
                         "wait duration must be a literal duration, found {}",
@@ -395,6 +396,9 @@ impl LinePlanGraphLowerer {
                     Vec::new()
                 }
             }
+            Stmt::Wait(WaitTarget::Expr(expr)) => {
+                vec![LineEffectRequest::Wait(lower_wait_target_expr(expr))]
+            }
             Stmt::Signal { target, value } => {
                 vec![LineEffectRequest::SignalWrite(RuntimeAssignment {
                     target: expr_label(target),
@@ -402,10 +406,6 @@ impl LinePlanGraphLowerer {
                 })]
             }
             Stmt::Expr(expr) => self.lower_expr_effect(expr),
-            Stmt::Command(command) => vec![LineEffectRequest::Command(RuntimeCommand {
-                name: command.name().to_owned(),
-                args: command.args().iter().map(expr_label).collect(),
-            })],
             Stmt::Out { label, expr } => vec![LineEffectRequest::Out(LineOutRequest {
                 label: label.clone(),
                 value: expr_label(expr),
@@ -665,10 +665,8 @@ fn effect_accesses(effect: &LineEffectRequest) -> Vec<ResourceAccess> {
             ResourceAccessMode::Control,
             ConflictPolicy::Error,
         )],
-        LineEffectRequest::WaitMark(_)
-        | LineEffectRequest::Wait(_)
+        LineEffectRequest::Wait(_)
         | LineEffectRequest::Call(_)
-        | LineEffectRequest::Command(_)
         | LineEffectRequest::Ensure { .. }
         | LineEffectRequest::Assert(_) => Vec::new(),
     }
@@ -680,6 +678,17 @@ fn resource_access(
     policy: ConflictPolicy,
 ) -> ResourceAccess {
     ResourceAccess { key, mode, policy }
+}
+
+fn lower_wait_target_expr(expr: &Expr) -> RuntimeWaitTarget {
+    if let Expr::Call { callee, args } = expr
+        && matches!(callee.as_ref(), Expr::Path(path) if path == "mark")
+        && args.len() == 1
+    {
+        RuntimeWaitTarget::Mark(expr_label(&args[0]))
+    } else {
+        RuntimeWaitTarget::Expr(expr_label(expr))
+    }
 }
 
 fn accesses_conflict(left: &ResourceAccess, right: &ResourceAccess) -> bool {
@@ -701,14 +710,31 @@ fn accesses_conflict(left: &ResourceAccess, right: &ResourceAccess) -> bool {
     true
 }
 
-fn runtime_fields(fields: &[(String, Expr)]) -> Vec<RuntimeField> {
-    fields
+fn line_memo_request(expr: &Expr) -> Option<LineMemoRequest> {
+    let Expr::Call { callee, args } = expr else {
+        return None;
+    };
+    if !matches!(callee.as_ref(), Expr::Path(path) if path == "memo") {
+        return None;
+    }
+    let (first, rest) = args.split_first()?;
+    let name = match first {
+        Expr::Path(path) => path.trim_start_matches('.').to_owned(),
+        _ => return None,
+    };
+    let options = rest
         .iter()
-        .map(|(name, value)| RuntimeField {
-            name: name.clone(),
-            value: expr_label(value),
+        .filter_map(|arg| {
+            let Expr::NamedArg { name, value } = arg else {
+                return None;
+            };
+            Some(RuntimeField {
+                name: name.clone(),
+                value: expr_label(value),
+            })
         })
-        .collect()
+        .collect();
+    Some(LineMemoRequest { name, options })
 }
 
 fn is_drop_intrinsic(expr: &Expr) -> bool {

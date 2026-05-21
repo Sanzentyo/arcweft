@@ -288,14 +288,12 @@ fn effect_label(effect: &LineEffectRequest) -> String {
     match effect {
         LineEffectRequest::RegisterHandle { key, .. } => format!("register {key}"),
         LineEffectRequest::DropHandle { key } => format!("drop {key}"),
-        LineEffectRequest::WaitMark(mark) => format!("wait mark {mark}"),
-        LineEffectRequest::Wait(duration) => format!("wait {}ns", duration.as_nanos()),
+        LineEffectRequest::Wait(target) => wait_target_label(target),
         LineEffectRequest::Call(call) => format!("call {}", call.callee),
         LineEffectRequest::Log(log) => format!("log.{}", log.level),
         LineEffectRequest::SignalWrite(write) => format!("signal.set {}", write.target),
         LineEffectRequest::MetricWrite(write) => format!("metric.set {}", write.target),
         LineEffectRequest::EmitEvent(event) => format!("event.emit {}", event.event),
-        LineEffectRequest::Command(command) => format!("command {}", command.name),
         LineEffectRequest::Out(_) => "out".to_owned(),
         LineEffectRequest::Return(_) => "return".to_owned(),
         LineEffectRequest::Goto(_) => "goto".to_owned(),
@@ -311,6 +309,16 @@ fn effect_label(effect: &LineEffectRequest) -> String {
         LineEffectRequest::Select(_) => "select".to_owned(),
         LineEffectRequest::Break { .. } => "break".to_owned(),
         LineEffectRequest::Continue { .. } => "continue".to_owned(),
+    }
+}
+
+fn wait_target_label(target: &arcweft_core::effect::RuntimeWaitTarget) -> String {
+    match target {
+        arcweft_core::effect::RuntimeWaitTarget::Duration(duration) => {
+            format!("wait({}ns)", duration.as_nanos())
+        }
+        arcweft_core::effect::RuntimeWaitTarget::Mark(mark) => format!("wait(mark({mark}))"),
+        arcweft_core::effect::RuntimeWaitTarget::Expr(expr) => format!("wait({expr})"),
     }
 }
 

@@ -1071,7 +1071,7 @@ flow @flow.opening opening {
         聞いて。[p]
     ]
     with 'line {
-        cancel on input .SkipLine { out 'missing .Skipped }
+        cancel on input(.SkipLine) { out 'missing .Skipped }
     }
 }
 
@@ -1111,7 +1111,7 @@ fn parses_for_and_select_flow_blocks() {
         r"
 flow @flow.stream stream {
     for c in choices {
-        option c.id c.label
+        option(c.id, label = c.label)
     }
     select {
         audio = frames.next? => {
@@ -1142,7 +1142,7 @@ flow @flow.stream stream {
     assert!(matches!(for_block.source(), Expr::Path(path) if path == "choices"));
     assert!(matches!(
         &for_block.body()[0],
-        FlowItem::ScenarioCommand(command) if command.name() == "option"
+        FlowItem::Stmt(Stmt::Expr(Expr::Call { .. }))
     ));
 
     let FlowItem::Select(select) = &flow.body()[1] else {

@@ -345,8 +345,8 @@ The current CLI implementation routes both commands through the Sans I/O
 emit JSON reports. The current materialization slice covers known top-level
 declaration IDs, explicit dialogue line `id=` / `text_key=` options, omitted
 dialogue line IDs/text keys, choice IDs, and choice-option IDs. Dialogue ID
-materialization treats `with { ... }`, `with:`, and flat `=== with ===` line-plan
-attachments as the same source construct; flat `=== line ... ===` heads are
-materialized with the same `@say...` / `@text...` rules as colon and bracket
-dialogue calls.
+materialization treats `with { ... }`, `with:`, and flat `=== with ===`
+line-plan attachments as the same source construct; flat `=== line ... ===`
+heads are materialized with the same `@say...` / `@text...` rules as colon and
+bracket dialogue calls.
 

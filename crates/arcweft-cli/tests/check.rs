@@ -367,7 +367,7 @@ flow @flow.cancel_cleanup cancel_cleanup {
             'line.focus |> drop_optional
         defer on cancelled:
             'line.focus |> drop_optional
-        cancel on input .SkipLine { out .Skipped }
+        cancel on input(.SkipLine) { out .Skipped }
 }
 ",
     );
@@ -434,8 +434,8 @@ flow @flow.plan plan {
     @<character.alice>.say[待って。[mark .release][p]]
     with:
         thread motion:
-            wait 0.1s
-        on .release:
+            wait(0.1s)
+        on mark(.release):
             log.info("release")
 }
 "#,
@@ -858,7 +858,7 @@ fn fmt_expand_sugar_accepts_flags_before_path_and_writes() {
 
 #[test]
 fn ids_materialize_accepts_flags_before_path_without_write() {
-    let source = "flow @flow.opening opening {\n    scope rain {\n        alice(id=@.comment, text_key=@.comment_text):\n            Hi[p]\n    }\n    alice:\n        Omitted[p]\n=== line 地の文 ===\nFlat[p]\n=== with ===\nwait mark .done\n=== /with ===\n=== /line ===\n    choice @.first {\n        @.listen \"Listen\" -> @flow.next\n    }\n}\n";
+    let source = "flow @flow.opening opening {\n    scope rain {\n        alice(id=@.comment, text_key=@.comment_text):\n            Hi[p]\n    }\n    alice:\n        Omitted[p]\n=== line 地の文 ===\nFlat[p]\n=== with ===\nwait(mark(.done))\n=== /with ===\n=== /line ===\n    choice @.first {\n        @.listen \"Listen\" -> @flow.next\n    }\n}\n";
     let path = temp_arcw("ids-materialize", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))

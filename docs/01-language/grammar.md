@@ -139,10 +139,10 @@ NamedScope      := 'scope' Ident? BlockExpr
 ScopeStmt       := NamedScope | Block
 ScopeExpr       := 'scope' Ident? BlockExpr
 
-StagingExpr     := StagingSet | StagingRef | StagingClear
+StagingExpr     := ExprStmt
 StagingSet      := ('bg' | 'show') CallArgs
-StagingRef      := 'ref' ('bg' | 'show') CallArgs
-StagingClear    := 'clear' 'bg' CallArgs | 'hide' CallArgs
+StagingRef      := ('bg' | 'show') '.ref' CallArgs
+StagingClear    := ('bg' | 'show') '.clear' CallArgs | 'hide' CallArgs
 ```
 
 `crate`, `self`, and `super` are canonical module-path roots. `parent` is a
@@ -172,8 +172,6 @@ DialogueContent:= TextAndDialogueTags*
 LinePlanAttach := 'with' Block
                 | 'with' ':' Newline IndentedItems
                 | 'with' ':' LinePlanItem
-                | FlatWith
-FlatWith       := '=== with ===' FlatLinePlanItem* '=== /with ==='
 LinePlanItem   := InitBlock | ThreadBlock | DeferBlock | OnBlock
                 | LetStmt | TimedCue | CancelRule | OutStmt | ScopeStmt | ExprStmt
 InitBlock      := 'init' Block | 'init' ':' Newline IndentedItems
@@ -183,28 +181,26 @@ ThreadModifier := 'detached'
 DeferBlock     := 'defer' DeferOutcome? Block
                 | 'defer' DeferOutcome? ':' Newline IndentedItems
 DeferOutcome   := 'on' ('completed' | 'cancelled' | 'failed')
-OnBlock        := 'on' TriggerPattern Block
-                | 'on' TriggerPattern ':' Newline IndentedItems
-CancelRule     := 'cancel' 'on' TriggerPattern Block
-                | 'cancel' 'on' TriggerPattern '=>' ControlStmt
-TriggerPattern := 'input' Pattern
-                | 'event' Pattern
-                | 'signal' Expr Pattern?
-                | 'timeout' Expr
-                | 'mark' Pattern
-                | 'select' Pattern
-                | 'task' Pattern
-                | 'scope' Pattern
+OnBlock        := 'on' TriggerExpr Block
+                | 'on' TriggerExpr ':' Newline IndentedItems
+CancelRule     := 'cancel' 'on' TriggerExpr Block
+                | 'cancel' 'on' TriggerExpr '=>' ControlStmt
+TriggerExpr    := 'input' '(' Pattern ')'
+                | 'event' '(' Pattern ')'
+                | 'signal' '(' Expr (',' Pattern)? ')'
+                | 'timeout' '(' Expr ')'
+                | 'mark' '(' Pattern ')'
+                | 'select' '(' Pattern ')'
+                | 'task' '(' Pattern ')'
+                | 'scope' '(' Pattern ')'
 OutStmt        := 'out' Expr
-FlatLine       := '=== line' DialogueCallee '===' DialogueContent FlatWith? '=== /line ==='
-FlatThread     := '=== thread' ThreadModifier? Ident? '===' Item* '=== /thread ==='
-FlatDefer      := '=== defer ===' Item* '=== /defer ==='
-FlatScope      := '=== scope' Ident? '===' Item* '=== /scope ==='
 ```
 
-`with:` is indentation sugar for `with { ... }`. Flat fences are authoring
-sugar and require explicit closing fences. A bare `{ ... }` after a dialogue
-content block is an unnamed `scope` statement, not a line plan.
+`with:` and flat `=== with ===` fences are sugar for the same line-plan model as
+`with { ... }`. Flat `=== line ... ===` / `=== scope ... ===` / `=== thread ... ===`
+fences are dialogue authoring sugar and lower to the corresponding canonical
+line, scope, or task block. A bare `{ ... }` after a dialogue content block is an
+unnamed `scope` statement, not a line plan.
 
 In generic expression parsing, `target[expr]` is always an index/postfix
 expression. Dialogue content brackets are recognized only in dialogue-capable

@@ -6,10 +6,7 @@ use super::{
     TypeKind, YieldContext, default_presentation_slot_family, ident_pattern_name, is_local_ident,
     pattern_bindings_with_fallback, stmts_diverge, type_ref_kind,
 };
-use arcweft_lang_syntax::{
-    ast::{dialogue::ScenarioCommand, flow::StmtMatchArm},
-    types::TypeRef,
-};
+use arcweft_lang_syntax::{ast::flow::StmtMatchArm, types::TypeRef};
 
 impl TypeChecker<'_> {
     pub(super) fn check_stmt(&mut self, stmt: &Stmt) {
@@ -74,7 +71,6 @@ impl TypeChecker<'_> {
                 body,
                 ..
             } => self.check_unsafe_lifetime_stmt(reason.as_ref(), *has_safety_doc, body),
-            Stmt::Command(command) => self.check_command_stmt(command),
             Stmt::If { condition, body } => self.check_if_stmt(condition, body),
             Stmt::Loop { body } => self.check_stmt_loop(body),
             Stmt::While { condition, body } => self.check_stmt_while(condition, body),
@@ -117,7 +113,6 @@ impl TypeChecker<'_> {
                 | Stmt::LifetimeSet { .. }
                 | Stmt::Wait(_)
                 | Stmt::On { .. }
-                | Stmt::Command(_)
                 | Stmt::Select(_)
         ) {
             self.errors.push(TypeCheckError::new(
@@ -173,12 +168,6 @@ impl TypeChecker<'_> {
         }
         for stmt in body {
             self.check_stmt(stmt);
-        }
-    }
-
-    fn check_command_stmt(&mut self, command: &ScenarioCommand) {
-        for arg in command.args() {
-            self.check_expr(arg);
         }
     }
 

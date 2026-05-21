@@ -298,7 +298,7 @@ with {
         select @choice.opening.silent
     }
 
-    cancel on input .BackToTitle {
+    cancel on input(.BackToTitle) {
         return Ok(FlowExit::Goto(@flow.title))
     }
 
@@ -529,7 +529,7 @@ Inside dialogue text mode, Arcweft recognizes:
 #[...]   embedded Arcweft expression/content, requiring DisplayText or fmt(...)
 [call]   dialogue-safe function call
 [mark .name]
-         line-local marker consumed by `with: on .name:`
+         line-local marker consumed by `with: on mark(.name):`
 ```
 
 Outside dialogue text mode, `[...]` is not treated as a dialogue control tag. It remains normal Arcweft syntax such as indexing, lists, attributes, or parser-specific syntax.
@@ -618,8 +618,8 @@ value if present.
 
 ```arcw
 let previous_bg = bg(@asset.bg.room, target = @target.scene, slot = @slot.background.main)
-let current_bg = ref bg(target = @target.scene, slot = @slot.background.main)
-let cleared_bg = clear bg(target = @target.scene, slot = @slot.background.main)
+let current_bg = bg.ref(target = @target.scene, slot = @slot.background.main)
+let cleared_bg = bg.clear(target = @target.scene, slot = @slot.background.main)
 ```
 
 Defaults:
@@ -663,8 +663,8 @@ alice.say(id=@say.opening.dream_hint, voice=auto, look=.smile)[
 ]
 with {
     reveal = voice
-    cancel on input .SkipLine => continue
-    cancel on input .BackToTitle => goto @flow.title
+    cancel on input(.SkipLine) => continue
+    cancel on input(.BackToTitle) => goto @flow.title
 
     at(0.42s) { alice.stage.look(worried, crossfade=120ms) }
     at(end-250ms) { alice.stage.animate(@anim.breath.once) }

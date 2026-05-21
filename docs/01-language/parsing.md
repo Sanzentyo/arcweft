@@ -42,12 +42,12 @@ ensures result.is_err() => result.err().span.len() > 0
 
 ```arcw
 pub parser parse_agent_script: Parser<Vec<AgentScriptCommand>, ParseError> {
-    many line {
+    many(line()) {
         alt {
             "observe" => AgentScriptCommand::Observe,
-            "choose" ws target: ref_id<ChoiceOption>() =>
+            "choose" ws() target: ref_id<ChoiceOption>() =>
                 AgentScriptCommand::Choose { target },
-            "wait signal" ws sig: ref_id<Signal>() ws op: compare_op() ws value: value() =>
+            "wait signal" ws() sig: ref_id<Signal>() ws() op: compare_op() ws() value: value() =>
                 AgentScriptCommand::WaitSignal { signal: sig, op, value },
         }
     }

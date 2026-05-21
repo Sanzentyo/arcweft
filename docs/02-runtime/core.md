@@ -225,14 +225,12 @@ pub enum LineTaskTrigger {
 pub enum LineEffectRequest {
     RegisterHandle { key: String, handle: String },
     DropHandle { key: String },
-    WaitMark(String),
-    Wait(LogicalDuration),
+    Wait(RuntimeWaitTarget),
     Call(RuntimeCall),
     Log(RuntimeLog),
     SignalWrite(RuntimeAssignment),
     MetricWrite(RuntimeAssignment),
     EmitEvent(RuntimeEvent),
-    Command(RuntimeCommand),
     Out(LineOutRequest),
     Return(String),
     Goto(String),
@@ -272,9 +270,9 @@ defer on failed             -> current scope failed_defer_stack
 start { ... }               -> LineTaskNode::Start
 together { ... }            -> LineTaskNode::Parallel(JoinAll)
 at(0.35s) { ... }           -> child task with trigger Delay(0.35s)
-on .mark { ... }            -> child task with trigger Mark(".mark")
-wait mark .x                -> LineEffectRequest::WaitMark(".x")
-wait 0.35s                  -> LineEffectRequest::Wait(...)
+on mark(.mark) { ... }            -> child task with trigger Mark(".mark")
+wait(mark(.x))              -> LineEffectRequest::Wait(RuntimeWaitTarget::Mark(".x"))
+wait(0.35s)                 -> LineEffectRequest::Wait(RuntimeWaitTarget::Duration(...))
 'line.key <- expr           -> LineEffectRequest::RegisterHandle
 'line.key |> drop           -> LineEffectRequest::DropHandle
 call-like expression stmt   -> LineEffectRequest::Call
@@ -323,7 +321,7 @@ scope / bare block         -> FlowOp::Scope
 goto @flow.x / goto route  -> FlowOp::GotoExpr
 return expr                -> FlowOp::ReturnExpr
 out / log / signal / call  -> FlowOp::Effect or line effect
-cancel on input .SkipLine  -> line cancel rule selected from RuntimeStepInput
+cancel on input(.SkipLine)  -> line cancel rule selected from RuntimeStepInput
 ```
 
 This slice is intentionally strict: runtime lowering errors on unsupported flow
@@ -367,7 +365,7 @@ effects { state.write('flow), state.write('global) }
 {
     alice[見たことにする。[mark .seen][p]]
     with {
-        on .seen {
+        on mark(.seen) {
             'flow.flags.seen_alice_intro <- true
             'global.settings.skip_seen <- true
         }

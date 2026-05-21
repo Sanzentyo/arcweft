@@ -346,7 +346,8 @@ alice.say(window=@textbox.phone_message, voice=auto)[
 ]
 ```
 
-The canonical parameter name is `window`. The legacy `textbox` option name is not valid Arcweft source; `textbox` remains the entity kind for dialogue window objects.
+The canonical parameter name is `window`. `textbox` is not a line option name;
+it remains the entity kind for dialogue window objects.
 
 A dialogue window target is a stateful UI object. Updating a line in that textbox affects the selected window only. Agent observation exposes the target window, current line ID, visible text, reveal cursor, and actionable wait state.
 
@@ -574,7 +575,7 @@ alice.say()[
 
 ## Hooks inside dialogue text
 
-`#[...]` is for safe expression/content insertion. Side-effecting local line behavior uses `[mark .name]` with `with: on .name:` or a dialogue-safe `[call ...]`.
+`#[...]` is for safe expression/content insertion. Side-effecting local line behavior uses `[mark .name]` with `with: on mark(.name):` or a dialogue-safe `[call ...]`.
 
 ```arcw
 alice.say()[
@@ -600,7 +601,7 @@ Use:
 alice.say()[
     変な夢[mark .keyword][p]
 with:
-    on .keyword:
+    on mark(.keyword):
         mark_keyword(word="夢", color=@color.dream)
 ]
 ```
@@ -739,7 +740,7 @@ anticipate @flow.alice_intro {
 5. `alice(options)` creates a lexical speaker preset; it does not display text until `:`, `[...]`, or `.say()[...]` is used.
 6. Text interpolation uses `DisplayText` or explicit `fmt(...)`.
 7. Runtime interpolation `#[expr]` is separate from localization placeholders `{name}`.
-8. Dialogue text uses `[mark .name]` with line-plan `on .name:` handlers or `[call ...]`; pure content insertion uses `#[...]`.
+8. Dialogue text uses `[mark .name]` with line-plan `on mark(.name):` handlers or `[call ...]`; pure content insertion uses `#[...]`.
 9. Characters define default text/name colors and may attach read/unread style hooks.
 10. Character stage methods provide object-oriented sugar for show/face/move/animate/preload.
 11. Character preload and memoization policies are explicit and observable by Agent Debug Bus.

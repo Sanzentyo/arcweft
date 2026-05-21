@@ -299,7 +299,7 @@ Syntax parser:
 - Dialogue raw spans and blocks such as `[raw]...[/raw]` tokenize as literal raw content, so inner `[p]` markers and `#[expr]` interpolations are not parsed until the raw span ends.
 - Dialogue markers such as `[mark .release_focus]` tokenize as structured
   `DialogueToken::Mark` values. The checker rejects duplicate line marks,
-  removed local hook tags, and `with: on .name:` handlers that do not match a
+  removed local hook tags, and `with: on mark(.name):` handlers that do not match a
   mark in the same line.
 - Diagnostics use structured `ParseError` values with spans, expected fragments, found text, recovery suggestions, and source anchors.
 - Parser and semantic diagnostics implement `std::error::Error` through `thiserror` while preserving structured fields such as `message`, `range`, and `anchor`.
@@ -323,7 +323,7 @@ Syntax parser:
 - Top-level `extern rust mod ... from crate "..." { ... }` declarations from the module docs parse as structured external-module declarations with ABI, module path, import source, body text, and source range. HIR preserves them as syntax-level declarations for later Rust/WASM adapter work without implementing external runtime loading in Phase 0 / Phase 1.
 - Zero-copy `borrow expr as name: Type { ... }` blocks are parsed into AST/HIR, and the checker treats their non-`'static` lifetimes as active only inside the borrow body.
 - Dialogue `#[...]` content interpolation, record expressions, compact scenario command arguments, same-line and multiline timed-cue anchors/bodies, line-plan options, line-plan `let`/`out`, line-plan assertions, line-plan cancellation actions, line-plan expression items, nested `start`/`together` groups, choice option fields, choice lifecycle plans, source-locale blocks, and `await ... with` carry parsed expressions/statements for later type checking and HIR lowering.
-- Line-plan memo declarations such as `memo rich_text key=(line.id, locale, theme.text_hash) cache=flow` preserve the memo name and typed option expressions for symbol collection and checking.
+- Line-plan memo declarations such as `memo(.rich_text, key=(line.id, locale, theme.text_hash), cache=.flow)` preserve the memo name and typed option expressions for symbol collection and checking.
 - Line-plan cancellation uses canonical ordinary calls such as
   `voice.stop(fade = 40ms)`, `cues.stop(policy = .CancelPending)`, and
   `text.flush(mode = .Instant)`; the checker allows `continue` inside line
@@ -396,11 +396,11 @@ Syntax parser:
   `say.opening.narrator.rain.001`, and omitted `text_key` is derived from the
   normalized `say...` line ID.
 - Line plans preserve `init`, generic `thread name` blocks, scoped
-  `defer { ... }`, `defer on completed|cancelled|failed`, local `on .mark` handlers,
-  `wait mark .name`, duration waits, and `'line.* <- expr` lifetime registry
-  writes as structured statements/items. The parser accepts canonical
-  `with { ... }`, indentation sugar `with:`, and flat `=== with ===` fences
-  over the same model; `spawn` is rejected in favor of `thread`. The current
+  `defer { ... }`, `defer on completed|cancelled|failed`, local `on mark(.name)` handlers,
+  `wait(mark(.name))`, duration waits, and `'line.* <- expr` lifetime registry
+  writes as structured statements/items. The parser accepts `with { ... }`,
+  indentation sugar `with:`, and flat `=== with ===` fences over the same model.
+  `spawn` is rejected in favor of `thread`. The current
   checker validates guaranteed and optional lifetime reads at a minimal level
   and reports double-drop/use-after-drop cases for line registry keys.
 - Dialogue callee checking preserves the documented callee kind: `alice.say()[...]` resolves through `alice: Ref<Character>`, delimited character refs such as `@<character.alice>.say()[...]` generate the same speaker slug, and speaker presets such as `alice2(voice=auto):` / `alice2(voice=auto)[...]` resolve as callable `SpeakerPreset` values rather than being forced through `.say(...)`. Content-call line plans can attach on a following `with { ... }` / `with:` block or on the same line as `with { ... }` / `with: out ...`; line-result bindings such as `let handles = alice.say()[...] with: out (...)` and multiline `let handles = alice.say(...)[ ... ]` followed by `with:` preserve the plan on `Expr::DialogueCall` for symbol collection, HIR lowering, and type checking.
@@ -426,8 +426,8 @@ Syntax parser:
 - `validate_typecheck_ready` rejects lowered HIR that still contains raw expression fragments before the future type checker sees it.
 - `typecheck_hir` provides a minimal semantic checker over HIR with an explicit environment. It validates flow/fragment entity reference families, dialogue callees, `Need<T, E>` awaits, `Duration` timeline anchors, indexed expressions, calls, and methods for parser/HIR integration tests.
 - Presentation calls are parsed and checked through the same AST/HIR/typecheck
-  path. `bg(...)`, `show(...)`, `ref bg(...)`, `ref show(...)`,
-  `clear bg(...)`, and `hide(...)` are recognized as presentation calls; the
+  path. `bg(...)`, `show(...)`, `bg.ref(...)`, `show.ref(...)`,
+  `bg.clear(...)`, and `hide(...)` are recognized as presentation calls; the
   checker validates `@target.*`, family-correct `@slot.background.*` /
   `@slot.character.*`, typed handle/ref/clear return shapes, and duplicate
   default-slot handles in one lexical scope.

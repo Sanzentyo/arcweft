@@ -57,10 +57,7 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, lints: &mut Vec<SyntaxLint
 
 fn lint_flow_item_ids(item: &FlowItem, lints: &mut Vec<SyntaxLint>) {
     match item {
-        FlowItem::Stmt(_)
-        | FlowItem::ScenarioCommand(_)
-        | FlowItem::Include(_)
-        | FlowItem::Raw(_) => {}
+        FlowItem::Stmt(_) | FlowItem::Include(_) | FlowItem::Raw(_) => {}
         FlowItem::SpeakerLine(line) => {
             lint_optional_id(line.options().id(), lints);
             lint_optional_id(line.options().text_key(), lints);

@@ -272,11 +272,6 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 }
             }
         }
-        HirFlowItem::Scenario { args, .. } => {
-            for arg in args {
-                collect_expr(arg, uses);
-            }
-        }
     }
 }
 
@@ -588,11 +583,6 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
             }
             collect_stmt_block(body, uses);
         }
-        Stmt::Command(command) => {
-            for arg in command.args() {
-                collect_expr(arg, uses);
-            }
-        }
         Stmt::If { condition, body } | Stmt::While { condition, body } => {
             collect_expr(condition, uses);
             collect_stmt_block(body, uses);
@@ -706,11 +696,6 @@ fn collect_line_plan_item(item: &LinePlanItem, uses: &mut Vec<SymbolUse>) {
                 collect_line_plan_item(item, uses);
             }
         }
-        LinePlanItem::Memo { options, .. } => {
-            for (_, value) in options {
-                collect_expr(value, uses);
-            }
-        }
         LinePlanItem::Raw(raw) => uses.push(SymbolUse::new(
             SymbolUseKind::RawExpr,
             raw.source().to_owned(),
@@ -751,7 +736,6 @@ fn collect_wait_target(target: &WaitTarget, uses: &mut Vec<SymbolUse>) {
         WaitTarget::Duration(expr) | WaitTarget::Expr(expr) => {
             collect_expr(expr, uses);
         }
-        WaitTarget::Mark(_) => {}
     }
 }
 

@@ -10,6 +10,7 @@ pub(super) use crate::types::{EntityKind, MapKind, TypeKind};
 pub(super) use arcweft_core::{
     effect::{
         LineEffectRequest, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall, RuntimeLog,
+        RuntimeWaitTarget,
     },
     line_task::{LineChildTask, LineOutRequest, LineTaskNode, LineTaskTrigger},
     plan::{FlowOp, FlowRuntimeId},
@@ -29,12 +30,14 @@ pub(super) use arcweft_lang_syntax::{
         choice::{ChoiceAction, ChoiceItem, ChoicePlanItem},
         common::Visibility,
         dialogue::DialogueToken,
-        flow::{AwaitBranchKind, ContractClause, FlowItem, FlowKind, SelectBranchHead, Stmt},
+        flow::{
+            AwaitBranchKind, ContractClause, FlowItem, FlowKind, SelectBranchHead, Stmt, WaitTarget,
+        },
         items::{
             CallableKind, EntityDeclKind, FunctionKind, ImplMember, Item, RawSyntaxFamily,
             TraitMember,
         },
-        line_plan::{BlockStyle, DeferOutcome, LinePlanItem},
+        line_plan::{DeferOutcome, LinePlanItem},
         pattern::{Pattern, VariantPatternPayload},
         proof::{ProofClause, TestKind},
         source::{

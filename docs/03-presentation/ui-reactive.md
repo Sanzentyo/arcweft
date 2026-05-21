@@ -14,11 +14,14 @@ pub component @ui.settings SettingsPanel(
     VStack(spacing = 16) {
         Text("Settings").font(.title)
 
-        Picker(value = bind tab) {
-            option .Audio "Audio"
-            option .Text  "Text"
-            option .Video "Video"
-        }
+        Picker(
+            value = bind(tab),
+            options = [
+                PickerOption(id=.Audio, label="Audio"),
+                PickerOption(id=.Text, label="Text"),
+                PickerOption(id=.Video, label="Video"),
+            ],
+        )
 
         match tab {
             .Audio => AudioSettings(config = config.audio)

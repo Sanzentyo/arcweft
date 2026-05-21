@@ -190,7 +190,7 @@ flow @flow.cancel_cleanup cancel_cleanup {
             'line.focus |> drop_optional
         defer on cancelled:
             'line.focus |> drop_optional
-        cancel on input .SkipLine { out .Skipped }
+        cancel on input(.SkipLine) { out .Skipped }
 }
 ",
         VerificationMode::Test,

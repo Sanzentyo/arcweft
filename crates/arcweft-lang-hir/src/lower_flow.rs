@@ -61,10 +61,6 @@ pub(crate) fn lower_flow_item_with_context(
             await_with: lower_await_with(await_with, context)?,
         }),
         FlowItem::Stmt(stmt) => Ok(HirFlowItem::Stmt(stmt.clone())),
-        FlowItem::ScenarioCommand(command) => Ok(HirFlowItem::Scenario {
-            name: command.name().to_owned(),
-            args: command.args().to_vec(),
-        }),
         FlowItem::SpeakerLine(line) => Ok(HirFlowItem::Dialogue(Box::new(lower_speaker_line(
             line, context,
         )?))),

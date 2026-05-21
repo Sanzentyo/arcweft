@@ -149,7 +149,7 @@ flow @flow.opening opening {
 }
 
 #[test]
-fn rejects_legacy_staging_command_sugar() {
+fn rejects_unparenthesized_presentation_call() {
     let errors = parse_errors(
         r"
 flow @flow.opening opening {

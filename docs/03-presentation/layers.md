@@ -312,8 +312,8 @@ let alice_shadow = show(@character.alice, .shadow, target = @target.scene, slot 
 ```
 
 Slots are typed option-like cells. Setting a slot returns the previous value if
-one was present; `ref bg(...)` / `ref show(...)` read a slot without changing
-ownership; `clear bg(...)` / `hide(...)` clear the slot and return the removed
+one was present; `bg.ref(...)` / `show.ref(...)` read a slot without changing
+ownership; `bg.clear(...)` / `hide(...)` clear the slot and return the removed
 value if present.
 
 The core handle and slot model lives in the Sans I/O `arcweft-presentation`

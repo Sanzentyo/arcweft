@@ -1,5 +1,4 @@
 use crate::ast::common::TextRange;
-use crate::ast::dialogue::ScenarioCommand;
 use crate::ast::flow::{SourceLocaleBlock, Stmt};
 use crate::ast::ids::EntityRef;
 use crate::ast::source::{
@@ -278,16 +277,15 @@ fn parse_source_event_pattern(source: &str) -> SourceEventPattern {
 
 fn parse_source_stmt(trimmed: &str) -> Stmt {
     if let Some(rest) = trimmed.strip_prefix("from ") {
-        return Stmt::Command(ScenarioCommand::new(
-            "from".to_owned(),
-            vec![parse_expr_lossy(rest.trim())],
-            TextRange::new(0, trimmed.len()),
-        ));
+        return Stmt::Expr(Expr::Call {
+            callee: Box::new(Expr::Path("from".to_owned())),
+            args: vec![parse_expr_lossy(rest.trim())],
+        });
     }
     if trimmed.starts_with("on ") {
         // Source handlers are preserved structurally on SourceItem::handlers.
-        // Keep the legacy body-statement view typecheck-ready without
-        // duplicating handler effects into the ordinary statement stream.
+        // Keep the body-statement view typecheck-ready without duplicating
+        // handler effects into the ordinary statement stream.
         return Stmt::Expr(Expr::Tuple(Vec::new()));
     }
     parse_stmt(trimmed)

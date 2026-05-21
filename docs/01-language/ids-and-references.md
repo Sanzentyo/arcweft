@@ -70,7 +70,7 @@ pub enum ReferenceLevel {
 - Runtime / Contract / Checked は rename に追従。
 - Soft は ask。
 - Mention は keep literal がデフォルト。
-- alias と deprecated alias を registry に保持。
+- Canonical ID へ直接 rename する。removed aliases は registry に保持しない。
 
 ## ID 自動生成
 

@@ -1,21 +1,7 @@
-use crate::expr::Expr;
-
 use super::common::{TextRange, Visibility};
 use super::ids::{EntityRef, EntityRefSyntax, IdRef};
 use super::line_plan::LinePlan;
-
-/// Line-oriented scenario command retained for non-call DSL blocks.
-///
-/// Staging operations such as `bg(...)` and `show(...)` are ordinary
-/// expression calls, not `ScenarioCommand`s. This node remains for the small
-/// set of statement-like wait-view and UI DSL rows that have no call-shaped
-/// canonical form yet.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ScenarioCommand {
-    name: String,
-    args: Vec<Expr>,
-    range: TextRange,
-}
+use crate::expr::Expr;
 
 /// Parsed dialogue content.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -129,24 +115,6 @@ pub struct DialogueDefaultOption {
     name: String,
     value: Expr,
     range: TextRange,
-}
-
-impl ScenarioCommand {
-    pub(crate) const fn new(name: String, args: Vec<Expr>, range: TextRange) -> Self {
-        Self { name, args, range }
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn args(&self) -> &[Expr] {
-        &self.args
-    }
-
-    pub const fn range(&self) -> &TextRange {
-        &self.range
-    }
 }
 
 impl DialogueContent {

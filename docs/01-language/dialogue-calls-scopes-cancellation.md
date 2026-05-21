@@ -187,7 +187,7 @@ with {
         alice.stage.look(worried, crossfade=120ms)
     }
 
-    cancel on input .SkipLine {
+    cancel on input(.SkipLine) {
         'line.voice |> drop(stop_now)
         text.flush(mode = .Instant)
         continue
@@ -206,7 +206,7 @@ with {
         alice.stage.look(worried, crossfade=120ms)
     }
 
-    cancel on input .SkipLine {
+    cancel on input(.SkipLine) {
         'line.voice |> drop(stop_now)
         text.flush(mode = .Instant)
         continue
@@ -293,8 +293,8 @@ alice.say(voice=auto)[
     聞いて。[p]
 ]
 with {
-    memo rich_text key=(line.id, locale, theme.text_hash) cache=flow
-    memo voice_cue key=(voice.key, locale) cache=session
+    memo(.rich_text, key=(line.id, locale, theme.text_hash), cache=.flow)
+    memo(.voice_cue, key=(voice.key, locale), cache=.session)
 
     start {
         alice.stage.look(smile)
@@ -308,7 +308,7 @@ with {
         flash(color=rgb("#ffffff"), time=90ms)?
     }
 
-    cancel on input .BackToTitle {
+    cancel on input(.BackToTitle) {
         'line.voice |> drop(stop_now)
         cues.stop(policy = .CancelPending)
         goto @flow.title
@@ -324,7 +324,7 @@ Scoped cleanup uses `defer { ... }` on the current runtime scope. Line-wide
 cleanup is also modeled as line-scope `defer`. Use `defer on completed`,
 `defer on cancelled`, or `defer on failed` when cleanup should run only for a
 specific scope-exit outcome.
-Line-local events use `[mark .name]` in text and `on .name` in the line plan.
+Line-local events use `[mark .name]` in text and `on mark(.name)` in the line plan.
 Registered `defer` blocks run when their owning scope exits, including normal
 completion, early control transfer, line cancellation, and child-task
 cancellation. A cancelled child task must unwind its defer stack before it is
@@ -339,14 +339,14 @@ with {
         'line.focus.main <- acquire_focus()
     }
 
-    on .release_focus {
+    on mark(.release_focus) {
         'line.focus |> drop
         out .Released
     }
 
     thread motion {
-        wait mark .release_focus
-        wait 0.35s
+        wait(mark(.release_focus))
+        wait(0.35s)
         alice.stage.look(worried)
 
         defer {
@@ -416,8 +416,8 @@ at(0.35s) { alice.stage.look(blink) }
 at(+120ms) { alice.stage.mouth(open) }
 at(end-200ms) { alice.stage.move(to=left, time=260ms, ease=quad.out) }
 at(marker("soft_smile")) { alice.stage.look(smile, crossfade=100ms) }
-at(phoneme "a") { alice.stage.mouth(a) }
-at(char 12) { signal.set(@signal.text_reveal_hit, true) }
+at(phoneme("a")) { alice.stage.mouth(a) }
+at(char(12)) { signal.set(@signal.text_reveal_hit, true) }
 ```
 
 Supported anchors:
@@ -428,9 +428,9 @@ Supported anchors:
 | `at(+120ms)` | relative offset after previous cue |
 | `at(end-250ms)` | relative to voice/text reveal end |
 | `at(marker("name"))` | voice marker event |
-| `at(phoneme "a")` | lip-sync phoneme event |
-| `at(char 12)` | character reveal index |
-| `at(word 3)` | word/token reveal index |
+| `at(phoneme("a"))` | lip-sync phoneme event |
+| `at(char(12))` | character reveal index |
+| `at(word(3))` | word/token reveal index |
 
 The line-plan cue form is `at(...) { ... }` or the indentation sugar
 `at(...):`. `at(...)[...]` is not part of the stable grammar.
@@ -459,7 +459,7 @@ alice.voice(@voice.alice.opening.002).play()[
     alice.say()[今日は少しだけ、変な夢を見たんだ。[p]]
 ]
 with {
-    cancel on input .SkipLine {
+    cancel on input(.SkipLine) {
         stop fade=40ms
         continue
     }
@@ -487,19 +487,19 @@ alice.say(voice=auto)[
     今日は少しだけ、変な夢を見たんだ。[p]
 ]
 with {
-    cancel on input .SkipLine {
+    cancel on input(.SkipLine) {
         'line.voice |> drop(stop_now)
         text.flush(mode = .Instant)
         continue
     }
 
-    cancel on input .BackToTitle {
+    cancel on input(.BackToTitle) {
         'line.voice |> drop(stop_now)
         cues.stop(policy = .CancelPending)
         goto @flow.title
     }
 
-    cancel on signal @signal.route_forced {
+    cancel on signal(@signal.route_forced) {
         'line.voice |> drop(stop_now)
         goto signal_value(@signal.route_forced)
     }
@@ -513,8 +513,8 @@ let outcome = alice.say(voice=auto)[
     今日は少しだけ、変な夢を見たんだ。[p]
 ]
 with {
-    cancel on input .SkipLine => LineCancel::Skipped
-    cancel on input .BackToTitle => LineCancel::Goto(@flow.title)
+    cancel on input(.SkipLine) => LineCancel::Skipped
+    cancel on input(.BackToTitle) => LineCancel::Goto(@flow.title)
 }
 
 match outcome {
@@ -583,8 +583,8 @@ Allowed in line plan blocks:
 - init blocks
 - scoped `defer` cleanup on line, init, thread, and handler scopes
 - line-scope `defer` cleanup
-- line-local `on .mark:` handlers
-- `wait mark .name` and duration waits
+- line-local `on mark(.mark):` handlers
+- `wait(mark(.name))` and duration waits
 - line options
 - cancellation rules
 - at(...) cue blocks
@@ -676,7 +676,7 @@ Hook dispatch:
 ```arcw
 alice: #[player_name]、聞いて。[mark .important][p]
 with:
-    on .important:
+    on mark(.important):
         mark_important()
 ```
 

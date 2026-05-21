@@ -42,8 +42,6 @@ fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
         | Stmt::LetScope { .. }
         | Stmt::LetLoop { .. }
         | Stmt::LetAwait { .. }
-        | Stmt::Wait(WaitTarget::Mark(_))
-        | Stmt::Command(_)
         | Stmt::Break { expr: None, .. }
         | Stmt::Continue { .. }
         | Stmt::Raw(_) => false,
@@ -208,9 +206,6 @@ fn line_plan_item_contains_unchecked_promotion(item: &LinePlanItem) -> bool {
         LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => items
             .iter()
             .any(line_plan_item_contains_unchecked_promotion),
-        LinePlanItem::Memo { options, .. } => options
-            .iter()
-            .any(|(_, value)| expr_contains_unchecked_promotion(value)),
         LinePlanItem::Raw(_) => false,
     }
 }

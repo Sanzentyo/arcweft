@@ -31,7 +31,7 @@ Runtime:
 `arcweft-core` は OS callback を直接受け取らない。hook は `Engine::step` 内の phase point、または host 側の `InputRouter` / `RenderOwner` / `SignalBus` から明示的に起動される。
 
 Dialogue line-local markers are not runtime hooks. `[mark .name]` creates a
-line timeline marker, and `with: on .name:` lowers to a handler inside the
+line timeline marker, and `with: on mark(.name):` lowers to a handler inside the
 line task group. Top-level `hook @hook...` remains the mechanism for engine
 phase hooks described in this document.
 

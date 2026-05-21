@@ -34,9 +34,10 @@ alice.say(voice=auto)[
 
 Only in those text regions, and in typed `fn(args)[content]` content blocks whose declared content type is dialogue/rich text, are `[...]`, `[/...]`, and `#[...]` interpreted as dialogue markup. In normal typed code, brackets keep their normal meaning.
 
-Inside a flat-fence `=== line ... ===` block, a physical text line beginning
-with `===` is parsed as a fence. Escape it as `\===` when the literal text
-must start with three equals signs.
+Historical flat-fence imports treat a physical text line beginning with `===`
+as a fence. In stable source, use canonical dialogue calls such as
+`alice.say()[...]`; tooling migrations escape literal text that begins with
+three equals signs as `\===`.
 
 ---
 
@@ -71,11 +72,11 @@ A module may still define a qualified function such as `my_tags::p`, but it cann
 | `p` | page wait / advance and page-break request |
 | `l` | line wait / advance without page clear |
 | `r` | hard line break |
-| `br` | alias of `r` |
+| `br` | hard line break tag |
 | `w` | timed wait |
 | `clear` | clear current message text |
-| `er` | erase current message text, compatibility alias |
-| `cm` | clear message layer, stronger compatibility alias |
+| `er` | erase current message text |
+| `cm` | clear message layer |
 | `ruby` | ruby annotation |
 | `rt` | ruby text shorthand inside ruby-related tags |
 | `em`, `strong` | emphasis spans |
@@ -250,7 +251,7 @@ Built-in implementations include common scalar types, `String`, `LocalizedText`,
 #[fmt(state.nickname, none="名無し")]
 ```
 
-Pure interpolation cannot emit commands, mutate state, play audio, or trigger stage effects. Use `[call]`, `[mark .name]` plus `with: on .name:`, or line-plan `at(...) { ... }` for side-effecting dialogue behavior.
+Pure interpolation cannot emit commands, mutate state, play audio, or trigger stage effects. Use `[call]`, `[mark .name]` plus `with: on mark(.name):`, or line-plan `at(...) { ... }` for side-effecting dialogue behavior.
 
 ---
 
@@ -292,7 +293,7 @@ Use `[mark .name]` to place a zero-width local marker in the line. Handlers live
 ```arcw
 alice: 変な夢[.keyword][p]
 with:
-    on .keyword:
+    on mark(.keyword):
         mark_keyword(word="夢", color=@color.dream)
 ```
 
@@ -321,7 +322,7 @@ pub dialogue fn mark_keyword(
 }
 ```
 
-`[hook ...]`, `#[hook ...]`, `#[mark ...]`, and local `hook name:` blocks are not valid line-local syntax. Top-level `hook @hook...` declarations still exist for engine phase hooks, but dialogue text uses `[mark .name]` and line-plan `on .name:` handlers.
+`[hook ...]`, `#[hook ...]`, `#[mark ...]`, and local `hook name:` blocks are not valid line-local syntax. Top-level `hook @hook...` declarations still exist for engine phase hooks, but dialogue text uses `[mark .name]` and line-plan `on mark(.name):` handlers.
 
 ---
 

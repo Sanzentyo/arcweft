@@ -3,7 +3,7 @@ use crate::types::TypeRef;
 
 use super::choice::ChoiceBlock;
 use super::common::{DocBlock, TextRange, Visibility};
-use super::dialogue::{ContentCall, ScenarioCommand, SpeakerLine};
+use super::dialogue::{ContentCall, SpeakerLine};
 use super::ids::{EntityRefSyntax, IdRef};
 use super::items::RawSyntax;
 use super::line_plan::{DeferOutcome, TriggerPattern};
@@ -63,7 +63,6 @@ pub enum FlowKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FlowItem {
     Stmt(Stmt),
-    ScenarioCommand(ScenarioCommand),
     SpeakerLine(SpeakerLine),
     ContentCall(ContentCall),
     Choice(ChoiceBlock),
@@ -286,7 +285,7 @@ pub enum Stmt {
         target: Expr,
         expr: Expr,
     },
-    /// `wait mark .name` or `wait 0.35s` waits inside a line-local task.
+    /// `wait(mark(.name))` or `wait(0.35s)` waits inside a line-local task.
     Wait(WaitTarget),
     /// `on head => stmt` event branch used by source and plan-like bodies.
     On {
@@ -300,7 +299,6 @@ pub enum Stmt {
         has_safety_doc: bool,
         body: Vec<Stmt>,
     },
-    Command(ScenarioCommand),
     If {
         condition: Expr,
         body: Vec<Stmt>,
@@ -364,7 +362,6 @@ pub enum ThreadModifier {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WaitTarget {
     Duration(Expr),
-    Mark(String),
     Expr(Expr),
 }
 

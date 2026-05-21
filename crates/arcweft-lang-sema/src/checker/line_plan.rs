@@ -88,12 +88,6 @@ impl TypeChecker<'_> {
             LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
                 self.with_child_task_scope(false, |checker| checker.check_line_plan_group(items))
             }
-            LinePlanItem::Memo { options, .. } => {
-                for (_, value) in options {
-                    self.check_expr(value);
-                }
-                None
-            }
             LinePlanItem::Expr(expr) => {
                 self.check_expr(expr);
                 None
@@ -212,7 +206,7 @@ impl TypeChecker<'_> {
                 }
                 DialogueToken::Tag(tag) if tag.name() == "hook" => {
                     self.errors.push(TypeCheckError::new(
-                        "local dialogue `[hook ...]` syntax was removed; use `[mark .name]` with `with: on .name:`".to_owned(),
+                        "local dialogue `[hook ...]` syntax was removed; use `[mark .name]` with `with: on mark(.name):`".to_owned(),
                     ));
                 }
                 DialogueToken::Tag(_)
@@ -250,20 +244,35 @@ impl TypeChecker<'_> {
             WaitTarget::Duration(expr) => {
                 self.expect_expr_type(expr, &TypeKind::Duration, "wait duration");
             }
-            WaitTarget::Mark(name) => {
-                if !self
-                    .line_mark_stack
-                    .last()
-                    .is_some_and(|marks| marks.contains(name))
-                {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "wait mark `{name}` does not name a mark in this dialogue line"
-                    )));
-                }
-            }
             WaitTarget::Expr(expr) => {
+                if let Some(name) = wait_mark_name(expr) {
+                    if !self
+                        .line_mark_stack
+                        .last()
+                        .is_some_and(|marks| marks.contains(&name))
+                    {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "wait(mark({name})) does not name a mark in this dialogue line"
+                        )));
+                    }
+                    return;
+                }
                 self.check_expr(expr);
             }
         }
+    }
+}
+
+fn wait_mark_name(expr: &Expr) -> Option<String> {
+    let Expr::Call { callee, args } = expr else {
+        return None;
+    };
+    if !matches!(callee.as_ref(), Expr::Path(path) if path == "mark") || args.len() != 1 {
+        return None;
+    }
+    match &args[0] {
+        Expr::Path(path) => Some(path.clone()),
+        Expr::EntityRef(entity) => Some(entity.body().to_owned()),
+        _ => None,
     }
 }

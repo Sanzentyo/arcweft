@@ -53,6 +53,15 @@ pub struct CstLine {
     kind: CstLineKind,
 }
 
+/// Parsed `=== ... ===` fence used by flat dialogue and scope sugar.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FlatFence<'a> {
+    pub kind: &'a str,
+    pub head: &'a str,
+    pub close: bool,
+    pub head_start: usize,
+}
+
 /// Relative ID token split from an ID-bearing context.
 ///
 /// `body` excludes the relative marker. `parent_depth` is zero for the current
@@ -209,8 +218,6 @@ pub(crate) enum CstStmtKind {
     On,
     UnsafeLifetime,
     Braced,
-    PresentationCall,
-    ScenarioCommand,
     AmbiguousBlockHead,
     Expr,
 }
@@ -542,7 +549,7 @@ impl CstLine {
 pub(crate) fn classify_stmt(trimmed: &str) -> CstStmtKind {
     if looks_like_lifetime_set(trimmed) {
         CstStmtKind::LifetimeSet
-    } else if trimmed.starts_with("wait ") {
+    } else if trimmed.starts_with("wait(") {
         CstStmtKind::Wait
     } else if trimmed.starts_with("let ") {
         CstStmtKind::Let
@@ -558,10 +565,6 @@ pub(crate) fn classify_stmt(trimmed: &str) -> CstStmtKind {
         CstStmtKind::UnsafeLifetime
     } else if looks_like_braced_stmt(trimmed) {
         CstStmtKind::Braced
-    } else if looks_like_presentation_special_call(trimmed) {
-        CstStmtKind::PresentationCall
-    } else if looks_like_word_scenario_command(trimmed) {
-        CstStmtKind::ScenarioCommand
     } else if matches!(trimmed.split_whitespace().next(), Some("match" | "if")) {
         CstStmtKind::AmbiguousBlockHead
     } else {
@@ -589,31 +592,6 @@ fn looks_like_control_transfer(trimmed: &str) -> bool {
 
 fn looks_like_braced_stmt(trimmed: &str) -> bool {
     find_top_level_punctuation(trimmed, '{').is_some()
-}
-
-fn looks_like_presentation_special_call(trimmed: &str) -> bool {
-    trimmed.starts_with("ref bg")
-        || trimmed.starts_with("ref show")
-        || trimmed.starts_with("clear bg")
-}
-
-fn looks_like_word_scenario_command(trimmed: &str) -> bool {
-    matches!(
-        trimmed.split_whitespace().next(),
-        Some(
-            "scene"
-                | "bg"
-                | "show"
-                | "hide"
-                | "play"
-                | "stop"
-                | "camera"
-                | "focus"
-                | "wait"
-                | "progress"
-                | "text"
-        )
-    )
 }
 
 fn classify_line(text: &str) -> CstLineKind {
@@ -1335,6 +1313,47 @@ pub(crate) fn split_leading_ident(source: &str) -> Option<(&str, &str)> {
         .then(|| (token.text(), source[token.end()..].trim_start()))
 }
 
+/// Parses a flat fence line while preserving the byte offset of the fence head.
+pub fn parse_flat_fence(source: &str) -> Option<FlatFence<'_>> {
+    let trimmed_offset = leading_byte_len(source);
+    let trimmed = source.trim();
+    let inner_source = trimmed.strip_prefix("===")?.strip_suffix("===")?;
+    let inner_leading = leading_byte_len(inner_source);
+    let inner = inner_source.trim();
+    let inner_start = trimmed_offset + "===".len() + inner_leading;
+    if inner.is_empty() {
+        return Some(FlatFence {
+            kind: "",
+            head: "",
+            close: false,
+            head_start: inner_start,
+        });
+    }
+    if let Some(close) = inner.strip_prefix('/') {
+        let close_leading = leading_byte_len(close);
+        let close = close.trim_start();
+        let kind = close.split_whitespace().next().unwrap_or_default();
+        return Some(FlatFence {
+            kind,
+            head: close.trim(),
+            close: true,
+            head_start: inner_start + '/'.len_utf8() + close_leading,
+        });
+    }
+    let (kind, head) = split_leading_ident(inner).unwrap_or((inner, ""));
+    let head_leading = leading_byte_len(head);
+    Some(FlatFence {
+        kind,
+        head: head.trim(),
+        close: false,
+        head_start: inner_start + (inner.len() - head.len()) + head_leading,
+    })
+}
+
+fn leading_byte_len(source: &str) -> usize {
+    source.len() - source.trim_start().len()
+}
+
 /// Splits a leading lifetime name, including the leading apostrophe.
 pub(crate) fn split_leading_lifetime(source: &str) -> Option<(&str, &str)> {
     let rest = source.strip_prefix('\'')?;
@@ -1596,52 +1615,6 @@ pub(crate) fn split_top_level_punctuation(source: &str, delimiter: char) -> Vec<
                 parts.push(source[start..token.start()].trim());
                 start = token.end();
             }
-            _ => {}
-        }
-    }
-    let tail = source[start..].trim();
-    if !tail.is_empty() {
-        parts.push(tail);
-    }
-    parts
-}
-
-/// Splits source on top-level whitespace tokens.
-pub(crate) fn split_top_level_whitespace(source: &str) -> Vec<&str> {
-    let mut paren = 0usize;
-    let mut square = 0usize;
-    let mut brace = 0usize;
-    let mut angle = 0usize;
-    let mut parts = Vec::new();
-    let mut start = 0usize;
-
-    for token in lex_cst(source) {
-        if token.kind() == SyntaxKind::Whitespace
-            && paren == 0
-            && square == 0
-            && brace == 0
-            && angle == 0
-        {
-            let arg = source[start..token.start()].trim();
-            if !arg.is_empty() {
-                parts.push(arg);
-            }
-            start = token.end();
-            continue;
-        }
-
-        if token.kind() != SyntaxKind::Punctuation {
-            continue;
-        }
-        match token.text() {
-            "(" => paren += 1,
-            ")" => paren = paren.saturating_sub(1),
-            "[" => square += 1,
-            "]" => square = square.saturating_sub(1),
-            "{" => brace += 1,
-            "}" => brace = brace.saturating_sub(1),
-            "<" => angle += 1,
-            ">" => angle = angle.saturating_sub(1),
             _ => {}
         }
     }

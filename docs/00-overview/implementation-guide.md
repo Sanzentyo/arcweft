@@ -34,7 +34,7 @@ TokenKind
 - `entities.toml` registry を読み書き。
 - ID 自動推論。
 - rename plan。
-- alias / deprecated alias。
+- canonical ID rename plan。
 - reference level / intent / policy。
 
 ## 2. 型システム

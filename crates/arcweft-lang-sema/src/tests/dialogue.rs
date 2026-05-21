@@ -471,7 +471,7 @@ fn typechecker_uses_shorthand_marks_for_line_plan_handlers() {
 flow @flow.opening opening {
     alice[待って。[.seen][p]]
     with:
-        on .seen:
+        on mark(.seen):
             log.info("seen")
 }
 "#,

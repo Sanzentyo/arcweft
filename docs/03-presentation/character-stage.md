@@ -135,11 +135,11 @@ Multiple instances of a character require explicit slots:
 let alice_main = show(@character.alice, .smile, slot = @slot.character.alice.main)
 let alice_mirror = show(@character.alice, .worried, slot = @slot.character.alice.mirror)
 
-let current_main = ref show(@character.alice, slot = @slot.character.alice.main)
+let current_main = show.ref(@character.alice, slot = @slot.character.alice.main)
 let removed_main = hide(@character.alice, slot = @slot.character.alice.main)
 ```
 
-`ref show(...)` only reads the slot. It does not create or retain a stage
+`show.ref(...)` only reads the slot. It does not create or retain a stage
 object. `hide(...)` is the clear operation paired with `show(...)`; it returns
 the removed handle/value when the slot was occupied.
 
@@ -221,8 +221,8 @@ Manual mouth timeline:
 alice.say(id=@say.opening.005, voice=auto, lipsync=manual)[
     あのね。[p]
 ] with {
-    at(phoneme "a") { alice.stage.mouth(a) }
-    at(phoneme "o") { alice.stage.mouth(o) }
+    at(phoneme("a")) { alice.stage.mouth(a) }
+    at(phoneme("o")) { alice.stage.mouth(o) }
     at(end) { alice.stage.mouth(closed) }
 }
 ```
@@ -300,7 +300,7 @@ Cancellation policy can stop or complete pending stage cues:
 alice.say(voice=auto)[
     まだ話している途中……[p]
 ] {
-    cancel on input .SkipLine {
+    cancel on input(.SkipLine) {
         'line.voice |> drop(stop_now)
         cues.stop(policy = .CompleteCurrent)
         text.flush(mode = .Instant)

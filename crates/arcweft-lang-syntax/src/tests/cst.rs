@@ -7,7 +7,7 @@ use crate::cst::{
     split_last_top_level_punctuation_sequence_once, split_leading_entity_ref_parts,
     split_leading_lifetime, split_leading_relative_id, split_top_level_keyword_once,
     split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
-    split_top_level_whitespace, take_doc_comment_prefix,
+    take_doc_comment_prefix,
 };
 use crate::{ast::items::Item, parser::parse_source};
 
@@ -170,17 +170,14 @@ fn cst_statement_classifier_covers_typed_statement_heads() {
         CstStmtKind::UnsafeLifetime
     );
     assert_eq!(
-        classify_stmt("thread loader { wait mark .done }"),
+        classify_stmt("thread loader { wait(mark(.done)) }"),
         CstStmtKind::Braced
     );
     assert_eq!(
-        classify_stmt("ref bg(@slot.background.main)"),
-        CstStmtKind::PresentationCall
+        classify_stmt("bg.ref(@slot.background.main)"),
+        CstStmtKind::Expr
     );
-    assert_eq!(
-        classify_stmt("scene @scene.loading"),
-        CstStmtKind::ScenarioCommand
-    );
+    assert_eq!(classify_stmt("scene @scene.loading"), CstStmtKind::Expr);
     assert_eq!(classify_stmt("if ready"), CstStmtKind::AmbiguousBlockHead);
 }
 
@@ -267,7 +264,7 @@ fn cst_leading_reference_helpers_keep_precise_tails() {
     let (lifetime, rest) = split_leading_lifetime("'frame [u8]").expect("lifetime");
     let entity = split_leading_entity_ref_parts("@asset.bg.room trailing").expect("entity");
     let at_entity = split_leading_entity_ref_parts("@asset.bg.room trailing").expect("at entity");
-    let legacy_entity = split_leading_entity_ref_parts("#<asset.bg.room> trailing");
+    let delimited_hash_entity = split_leading_entity_ref_parts("#<asset.bg.room> trailing");
     let relative = split_leading_relative_id("@.opening.next)").expect("relative id");
     let explicit_relative =
         split_leading_relative_id("@...opening.next)").expect("explicit relative id");
@@ -285,7 +282,7 @@ fn cst_leading_reference_helpers_keep_precise_tails() {
     assert_eq!(at_entity.raw, "@asset.bg.room");
     assert_eq!(at_entity.body, "asset.bg.room");
     assert_eq!(at_entity.rest, " trailing");
-    assert_eq!(legacy_entity, None);
+    assert_eq!(delimited_hash_entity, None);
     assert_eq!(relative.body, "opening.next");
     assert_eq!(relative.parent_depth, 0);
     assert_eq!(relative.rest, ")");
@@ -322,23 +319,6 @@ fn cst_punctuation_sequence_split_ignores_nested_operators() {
 
     assert_eq!(head, r#"choice.map(|v| v => "raw")"#);
     assert_eq!(tail, "out");
-}
-
-#[test]
-fn cst_whitespace_split_ignores_nested_text_and_strings() {
-    let parts =
-        split_top_level_whitespace(r#"call @scene.loading text("a b") config { ratio = p.ratio }"#);
-
-    assert_eq!(
-        parts,
-        vec![
-            "call",
-            "@scene.loading",
-            r#"text("a b")"#,
-            "config",
-            "{ ratio = p.ratio }"
-        ]
-    );
 }
 
 #[test]

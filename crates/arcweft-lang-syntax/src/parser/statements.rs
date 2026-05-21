@@ -5,9 +5,8 @@ use super::{
     parse_binding_pattern, parse_braced_while_let_stmt, parse_defer_outcome, parse_expr_lossy,
     parse_expr_with_inline_line_plan, parse_memo_block_options, parse_named_block_expr,
     parse_pattern, parse_scope_expr_body, parse_stmt_lines, parse_stmt_match_arms,
-    parse_thread_block, parse_trigger_pattern, parse_word_scenario_command,
-    split_top_level_binding, split_top_level_keyword_once,
-    split_top_level_punctuation_sequence_once,
+    parse_thread_block, parse_trigger_pattern, split_top_level_binding,
+    split_top_level_keyword_once, split_top_level_punctuation_sequence_once,
 };
 
 impl Parser {
@@ -142,10 +141,9 @@ pub(super) fn parse_stmt(trimmed: &str) -> Stmt {
                 expr: parse_expr_lossy(expr.trim()),
             }
         }
-        CstStmtKind::Wait => trimmed
-            .strip_prefix("wait ")
-            .map(str::trim)
-            .map_or_else(|| raw_stmt(trimmed), parse_wait_stmt),
+        CstStmtKind::Wait => {
+            wait_stmt_source(trimmed).map_or_else(|| raw_stmt(trimmed), parse_wait_stmt)
+        }
         CstStmtKind::Let => parse_let_stmt(trimmed),
         CstStmtKind::DeferBlock | CstStmtKind::Braced | CstStmtKind::UnsafeLifetime => {
             parse_braced_stmt(trimmed).unwrap_or_else(|| raw_stmt(trimmed))
@@ -161,13 +159,6 @@ pub(super) fn parse_stmt(trimmed: &str) -> Stmt {
             parse_control_transfer_stmt(trimmed).unwrap_or_else(|| raw_stmt(trimmed))
         }
         CstStmtKind::On => parse_on_stmt(trimmed),
-        CstStmtKind::PresentationCall => {
-            parse_presentation_special_call(trimmed).map_or_else(|| raw_stmt(trimmed), Stmt::Expr)
-        }
-        CstStmtKind::ScenarioCommand => {
-            parse_word_scenario_command(trimmed, TextRange::new(0, trimmed.len()))
-                .map_or_else(|| raw_stmt(trimmed), Stmt::Command)
-        }
         CstStmtKind::AmbiguousBlockHead => raw_stmt(trimmed),
         CstStmtKind::Expr => Stmt::Expr(parse_expr_lossy(trimmed)),
     }
@@ -216,9 +207,6 @@ fn parse_on_stmt(trimmed: &str) -> Stmt {
 }
 
 fn parse_wait_stmt(rest: &str) -> Stmt {
-    if let Some(name) = rest.strip_prefix("mark ") {
-        return Stmt::Wait(WaitTarget::Mark(name.trim().to_owned()));
-    }
     let expr = parse_expr_lossy(rest);
     match expr {
         Expr::Literal(crate::expr::Literal::Duration { .. }) => {
@@ -226,6 +214,13 @@ fn parse_wait_stmt(rest: &str) -> Stmt {
         }
         _ => Stmt::Wait(WaitTarget::Expr(expr)),
     }
+}
+
+fn wait_stmt_source(trimmed: &str) -> Option<&str> {
+    trimmed
+        .strip_prefix("wait(")
+        .and_then(|rest| rest.strip_suffix(')'))
+        .map(str::trim)
 }
 
 fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {
@@ -385,29 +380,6 @@ fn parse_control_transfer_stmt(trimmed: &str) -> Option<Stmt> {
 
 fn split_optional_label_ref(input: &str) -> (Option<String>, &str) {
     parse_label_ref(input).map_or((None, input), |(label, tail)| (Some(label), tail))
-}
-
-fn parse_presentation_special_call(source: &str) -> Option<crate::expr::Expr> {
-    let trimmed = source.trim();
-    let (callee, call_source) = if let Some(rest) = trimmed.strip_prefix("ref bg") {
-        ("ref.bg", rest)
-    } else if let Some(rest) = trimmed.strip_prefix("ref show") {
-        ("ref.show", rest)
-    } else if let Some(rest) = trimmed.strip_prefix("clear bg") {
-        ("clear.bg", rest)
-    } else {
-        return None;
-    };
-    if !call_source.trim_start().starts_with('(') {
-        return None;
-    }
-    let crate::expr::Expr::Call { args, .. } = parse_expr_lossy(&format!("_{call_source}")) else {
-        return None;
-    };
-    Some(crate::expr::Expr::Call {
-        callee: Box::new(crate::expr::Expr::Path(callee.to_owned())),
-        args,
-    })
 }
 
 pub(super) enum ParsedScopeName<'a> {

@@ -6,7 +6,7 @@ flow @flow.dialogue_scope_edge dialogue_scope_edge {
     with:
         init:
             log.info("line init")
-        on .release:
+        on mark(.release):
             log.info("mark release")
         defer on failed:
             log.info("failed")

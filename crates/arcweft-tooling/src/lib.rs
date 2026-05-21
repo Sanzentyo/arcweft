@@ -391,11 +391,7 @@ fn collect_dialogue_text_sugar_edits_from_flow_item(
                 }
             }
         }
-        FlowItem::Stmt(_)
-        | FlowItem::Choice(_)
-        | FlowItem::ScenarioCommand(_)
-        | FlowItem::Include(_)
-        | FlowItem::Raw(_) => {}
+        FlowItem::Stmt(_) | FlowItem::Choice(_) | FlowItem::Include(_) | FlowItem::Raw(_) => {}
     }
 }
 
@@ -796,11 +792,6 @@ fn collect_speaker_presets_from_flow_item(
                 }
             }
         }
-        FlowItem::ScenarioCommand(command) => {
-            for arg in command.args() {
-                collect_speaker_presets_from_expr(arg, character_aliases, presets);
-            }
-        }
         FlowItem::SpeakerLine(line) => {
             if let Some(plan) = line.plan() {
                 for item in plan.items() {
@@ -947,11 +938,6 @@ fn collect_speaker_presets_from_line_plan_item(
                 collect_speaker_presets_from_line_plan_item(item, character_aliases, presets);
             }
         }
-        LinePlanItem::Memo { options, .. } => {
-            for (_, value) in options {
-                collect_speaker_presets_from_expr(value, character_aliases, presets);
-            }
-        }
         LinePlanItem::Raw(_) => {}
     }
 }
@@ -1028,11 +1014,6 @@ fn collect_speaker_presets_from_stmt(
         }
         Stmt::On { body, .. } | Stmt::UnsafeLifetime { body, .. } | Stmt::Loop { body } => {
             collect_speaker_presets_from_stmts(body, character_aliases, presets);
-        }
-        Stmt::Command(command) => {
-            for arg in command.args() {
-                collect_speaker_presets_from_expr(arg, character_aliases, presets);
-            }
         }
         Stmt::If { .. }
         | Stmt::While { .. }
@@ -1512,7 +1493,7 @@ mod tests {
 
     #[test]
     fn materializes_omitted_dialogue_ids_in_colon_call_and_flat_fences() {
-        let source = "flow @flow.opening opening {\n    alice:\n        Hi[p]\n    alice.say()[\n        Again[p]\n    ]\n=== scope rain ===\n=== line 地の文 ===\n雨。[p]\n=== with ===\nwait mark .done\n=== /with ===\n=== /line ===\n=== /scope ===\n}\n";
+        let source = "flow @flow.opening opening {\n    alice:\n        Hi[p]\n    alice.say()[\n        Again[p]\n    ]\n=== scope rain ===\n=== line 地の文 ===\n雨。[p]\n=== with ===\nwait(mark(.done))\n=== /with ===\n=== /line ===\n=== /scope ===\n}\n";
         let report = materialize_ids(source).expect("materialize report");
 
         assert!(

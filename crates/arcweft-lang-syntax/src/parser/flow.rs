@@ -1,16 +1,16 @@
 use super::headers::{
     flow_decl_family, implicit_flow_name_from_id, parse_contract_clause, parse_flow_kind,
     parse_flow_signature, parse_name_and_tail, parse_optional_decl_id_ref,
-    parse_required_entity_ref_syntax, parse_visibility_prefix, simple_error,
+    parse_required_entity_ref_syntax, parse_visibility_prefix,
 };
 use super::{
-    BlockStyle, CstFlowItemKind, CstLetFlowItemKind, CstLine, CstStructuredFlowBlockKind,
-    DeferOutcome, Flow, FlowInit, FlowItem, Parser, RawSyntax, ScopeBlock, SpeakerLine, Stmt,
-    TextRange, indentation, is_await_with_head, is_expression_statement_call, is_typed_stmt,
-    nonempty_string, parse_await_with, parse_defer_outcome, parse_expr_lossy, parse_flat_fence,
-    parse_line_options, parse_line_plan_body, parse_presentation_special_call, parse_scope_head,
-    parse_stmt, parse_stmt_lines, parse_thread_block, parse_unsafe_lifetime_block,
-    parse_word_scenario_command, split_call_head, split_leading_ident,
+    BlockStyle, ContentCall, CstFlowItemKind, CstLetFlowItemKind, CstLine,
+    CstStructuredFlowBlockKind, DeferOutcome, Flow, FlowInit, FlowItem, Parser, RawSyntax,
+    ScopeBlock, Stmt, TextRange, flat_block_head, indentation, is_await_with_head,
+    is_expression_statement_call, is_typed_stmt, is_with_brace_head, parse_await_with,
+    parse_defer_outcome, parse_expr_lossy, parse_flat_fence, parse_line_options,
+    parse_line_plan_attachment, parse_scope_head, parse_stmt, parse_stmt_lines, parse_thread_block,
+    parse_unsafe_lifetime_block, parse_with_brace_label, split_call_head, split_leading_ident,
 };
 
 impl Parser {
@@ -234,26 +234,18 @@ impl Parser {
                 ["use an ordinary statement or function-call style command"],
             );
         }
-        if self.reject_legacy_scenario_call(trimmed, TextRange::new(line.start, line.end)) {
+        if self
+            .reject_unparenthesized_presentation_call(trimmed, TextRange::new(line.start, line.end))
+        {
             self.index += 1;
             return Some(FlowItem::Raw(RawSyntax::flow_item(
                 trimmed,
                 Some(TextRange::new(line.start, line.end)),
             )));
         }
-        if let Some(expr) = parse_presentation_special_call(trimmed) {
-            self.index += 1;
-            return Some(FlowItem::Stmt(Stmt::Expr(expr)));
-        }
         if is_expression_statement_call(trimmed) {
             self.index += 1;
             return Some(FlowItem::Stmt(Stmt::Expr(parse_expr_lossy(trimmed))));
-        }
-        if let Some(command) =
-            parse_word_scenario_command(trimmed, TextRange::new(line.start, line.end))
-        {
-            self.index += 1;
-            return Some(FlowItem::ScenarioCommand(command));
         }
         if let Some(rest) = trimmed.strip_prefix("include ") {
             let entity =
@@ -408,13 +400,7 @@ impl Parser {
     fn parse_flat_flow_item(&mut self, line: &CstLine, trimmed: &str) -> Option<FlowItem> {
         let fence = parse_flat_fence(trimmed)?;
         if fence.close {
-            self.push_error(
-                TextRange::new(line.start, line.end),
-                "flat close fence has no matching open fence",
-                ["=== kind ==="],
-                Some(trimmed),
-                ["remove this close fence or add the missing open fence"],
-            );
+            self.push_flat_close_mismatch("flow item", line);
             self.index += 1;
             return Some(FlowItem::Raw(RawSyntax::flow_item(
                 trimmed,
@@ -422,10 +408,19 @@ impl Parser {
             )));
         }
         match fence.kind {
-            "line" => Some(self.parse_flat_line(line, fence.head)),
+            "line" => Some(self.parse_flat_dialogue_line(line, fence.head, fence.head_start)),
+            "scope" => {
+                let body = self.take_flat_block_body("scope", line.start);
+                let name = (!fence.head.is_empty()).then(|| fence.head.to_owned());
+                Some(FlowItem::Scope(ScopeBlock::new(
+                    name,
+                    self.parse_flow_body(&body, line.start + fence.head_start),
+                    TextRange::new(line.start, self.previous_end()),
+                )))
+            }
             "thread" => {
                 let body = self.take_flat_block_body("thread", line.start);
-                let head = format!("thread {}", fence.head).trim().to_owned();
+                let head = flat_block_head("thread", fence.head);
                 Some(FlowItem::Stmt(Stmt::Thread(parse_thread_block(
                     &head, &body,
                 ))))
@@ -433,27 +428,22 @@ impl Parser {
             "defer" => {
                 let body = self.take_flat_block_body("defer", line.start);
                 Some(FlowItem::Stmt(Stmt::DeferBlock {
-                    outcome: DeferOutcome::Always,
+                    outcome: parse_defer_outcome(&flat_block_head("defer", fence.head))
+                        .unwrap_or(DeferOutcome::Always),
                     statements: parse_stmt_lines(&body),
                 }))
-            }
-            "scope" => {
-                let body = self.take_flat_block_body("scope", line.start);
-                let name = nonempty_string(fence.head.trim());
-                let items = self.parse_flow_body(&body, line.start);
-                Some(FlowItem::Scope(ScopeBlock::new(
-                    name,
-                    items,
-                    TextRange::new(line.start, self.previous_end()),
-                )))
             }
             _ => {
                 self.push_error(
                     TextRange::new(line.start, line.end),
-                    "unsupported flat fence head in flow body",
-                    ["line", "thread", "defer", "scope"],
+                    "unknown flat fence kind",
+                    [
+                        "=== line ... ===",
+                        "=== scope ... ===",
+                        "=== thread ... ===",
+                    ],
                     Some(trimmed),
-                    ["use a supported flat block head"],
+                    ["use a supported flat fence kind"],
                 );
                 self.index += 1;
                 Some(FlowItem::Raw(RawSyntax::flow_item(
@@ -464,69 +454,35 @@ impl Parser {
         }
     }
 
-    fn parse_flat_line(&mut self, line: &CstLine, head: &str) -> FlowItem {
-        self.index += 1;
-        let mut raw_content = String::new();
-        let mut plan = None;
-        let mut closed = false;
-        while self.index < self.events.len() {
-            let current = self.current().clone();
-            let trimmed = current.text.trim();
-            if let Some(fence) = parse_flat_fence(trimmed) {
-                if fence.close {
-                    if fence.kind != "line" {
-                        self.push_flat_close_mismatch("line", &current);
-                    }
-                    self.index += 1;
-                    closed = true;
-                    break;
-                }
-                if fence.kind == "with" {
-                    let body = self.take_flat_block_body("with", current.start);
-                    plan = Some(parse_line_plan_body(
-                        BlockStyle::Flat,
-                        &body,
-                        TextRange::new(current.start, self.previous_end()),
-                    ));
-                    continue;
-                }
-            }
-            if !raw_content.is_empty() {
-                raw_content.push('\n');
-            }
-            let text = current.text.trim_end();
-            if let Some(rest) = current.text.trim_start().strip_prefix("\\===") {
-                let leading = current.text.len() - current.text.trim_start().len();
-                raw_content.push_str(&current.text[..leading]);
-                raw_content.push_str("===");
-                raw_content.push_str(rest.trim_end());
-            } else {
-                raw_content.push_str(text);
-            }
-            self.index += 1;
-        }
-        if !closed {
-            self.errors.push(simple_error(
-                line.start,
-                line.end.saturating_sub(line.start),
-                "missing close fence `=== /line ===`",
-                "=== /line ===",
-            ));
-        }
-        let (speaker, args) = split_call_head(head.trim());
-        FlowItem::SpeakerLine(SpeakerLine::new(
-            speaker,
-            parse_line_options(args.as_deref(), line.start, &mut self.errors),
+    fn parse_flat_dialogue_line(
+        &mut self,
+        line: &CstLine,
+        head: &str,
+        head_start: usize,
+    ) -> FlowItem {
+        let body = self.take_flat_block_body("line", line.start);
+        let (content_source, plan) = split_flat_line_content_and_plan(
+            &body,
+            TextRange::new(line.start, self.previous_end()),
+        );
+        let (callee, args) = split_call_head(head);
+        FlowItem::ContentCall(ContentCall::new(
+            callee,
+            parse_line_options(args.as_deref(), line.start + head_start, &mut self.errors),
             self.dialogue_content(
-                raw_content.clone(),
-                TextRange::new(line.start, self.previous_end()),
+                content_source.trim().to_owned(),
+                TextRange::new(line.end, self.previous_end()),
             ),
             plan,
             TextRange::new(line.start, self.previous_end()),
         ))
     }
 
-    fn reject_legacy_scenario_call(&mut self, trimmed: &str, range: TextRange) -> bool {
+    fn reject_unparenthesized_presentation_call(
+        &mut self,
+        trimmed: &str,
+        range: TextRange,
+    ) -> bool {
         let Some((name, tail)) = split_leading_ident(trimmed) else {
             return false;
         };
@@ -605,6 +561,34 @@ impl Parser {
             CstStructuredFlowBlockKind::Scope => self.parse_scope_block().map(FlowItem::Scope),
         }
     }
+}
+
+fn split_flat_line_content_and_plan(
+    body: &str,
+    range: TextRange,
+) -> (String, Option<super::LinePlan>) {
+    let Some(with_start) = body
+        .rfind("with {")
+        .filter(|index| *index == 0 || body[..*index].ends_with('\n'))
+    else {
+        return (body.to_owned(), None);
+    };
+    let plan_source = &body[with_start..];
+    let Some((head, plan_body)) = super::split_brace_item(plan_source) else {
+        return (body.to_owned(), None);
+    };
+    if !is_with_brace_head(head) {
+        return (body.to_owned(), None);
+    }
+    (
+        body[..with_start].trim_end().to_owned(),
+        Some(parse_line_plan_attachment(
+            BlockStyle::Brace,
+            plan_body,
+            range,
+            parse_with_brace_label(head.trim()),
+        )),
+    )
 }
 
 fn split_inline_flow_contracts(

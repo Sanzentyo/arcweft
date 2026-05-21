@@ -215,16 +215,32 @@ fn typechecks_presentation_handle_calls_and_slot_refs() {
 flow @flow.opening opening {
     let room = bg(@asset.bg.room, target = @target.scene, slot = @slot.background.main)
     let alice_on_stage = show(@character.alice, .normal, slot = @slot.character.alice.main)
-    let current_room = ref bg(target = @target.scene, slot = @slot.background.main)
-    let cleared_room = clear bg(target = @target.scene, slot = @slot.background.main)
-    let current_alice = ref show(@character.alice, slot = @slot.character.alice.main)
+    let current_room = bg.ref(target = @target.scene, slot = @slot.background.main)
+    let cleared_room = bg.clear(target = @target.scene, slot = @slot.background.main)
+    let current_alice = show.ref(@character.alice, slot = @slot.character.alice.main)
     let hidden_alice = hide(@character.alice, slot = @slot.character.alice.main)
 }
 ",
     );
     let hir = lower_to_hir(&tree).expect("presentation fixture lowers");
 
-    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("presentation calls typecheck");
+    typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new()
+            .with_symbol("bg", TypeKind::Named("PresentationSlotApi".to_owned()))
+            .with_symbol("show", TypeKind::Named("PresentationSlotApi".to_owned()))
+            .with_method(
+                TypeKind::Named("PresentationSlotApi".to_owned()),
+                "ref",
+                TypeKind::Named("PresentationHandle".to_owned()),
+            )
+            .with_method(
+                TypeKind::Named("PresentationSlotApi".to_owned()),
+                "clear",
+                TypeKind::Named("PresentationHandle".to_owned()),
+            ),
+    )
+    .expect("presentation calls typecheck");
 }
 
 #[test]
@@ -678,7 +694,7 @@ fn typecheck_does_not_leak_on_handler_locals_into_line_scope() {
 flow @flow.handler_leak handler_leak {
     alice[待って。[mark .seen][p]]
     with:
-        on .seen:
+        on mark(.seen):
             let handler_local = 1
         let later = handler_local
 }

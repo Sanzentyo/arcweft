@@ -14,9 +14,9 @@ TypesetBlock:
 ## RichText
 
 ```arcw
-say alice rich """
+alice.say()[
 今日は少しだけ、{ruby "変な夢" "へんなゆめ"}を見たんだ。
-"""
+]
 ```
 
 サポート:
@@ -52,7 +52,8 @@ fn math(src: String) -> Content
 
 ```arcw
 pub typeset @typeset.credits typst {
-    source """
+    engine = typst
+    source = """
     @set text(font: "Noto Serif CJK JP", size: 18pt)
     #align(center)[
       = Staff
@@ -61,8 +62,8 @@ pub typeset @typeset.credits typst {
       Engine: Arcweft
     ]
     """
-    page width = 720pt
-    page height = auto
+    page.width = 720pt
+    page.height = auto
 }
 ```
 

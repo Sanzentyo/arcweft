@@ -464,11 +464,6 @@ impl<'a> SemanticAnalyzer<'a> {
             HirFlowItem::Borrow(block) => self.collect_borrow(block),
             HirFlowItem::SourceLocale(block) => self.collect_flow_items(block.body(), state),
             HirFlowItem::Scope(block) => self.collect_scope(block),
-            HirFlowItem::Scenario { args, .. } => {
-                for arg in args {
-                    self.collect_expr(arg, state);
-                }
-            }
             HirFlowItem::Include(_) => {}
         }
     }
@@ -674,10 +669,6 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "statement traversal intentionally mirrors Stmt so semantic coverage stays auditable"
-    )]
     fn collect_stmt(&mut self, stmt: &Stmt, state: &mut FlowState) {
         match stmt {
             Stmt::LetElse {
@@ -730,11 +721,6 @@ impl<'a> SemanticAnalyzer<'a> {
                 has_safety_doc,
                 body,
             } => self.collect_unsafe_lifetime(id, reason.as_ref(), *has_safety_doc, body),
-            Stmt::Command(command) => {
-                for arg in command.args() {
-                    self.collect_expr(arg, state);
-                }
-            }
             Stmt::If { condition, body } => {
                 self.collect_expr(condition, state);
                 let mut body_state = state.clone();
@@ -886,12 +872,6 @@ impl<'a> SemanticAnalyzer<'a> {
             LinePlanItem::TimedCue { anchor, body } => {
                 self.collect_expr(anchor, &mut facts);
                 self.collect_expr(body, &mut facts);
-                BlockFlow::from_fallthrough(facts)
-            }
-            LinePlanItem::Memo { options, .. } => {
-                for (_, value) in options {
-                    self.collect_expr(value, &mut facts);
-                }
                 BlockFlow::from_fallthrough(facts)
             }
             LinePlanItem::CancelRule(rule) => {
@@ -1391,7 +1371,6 @@ impl<'a> SemanticAnalyzer<'a> {
     fn collect_wait(&mut self, target: &WaitTarget, state: &mut FlowState) {
         match target {
             WaitTarget::Duration(expr) | WaitTarget::Expr(expr) => self.collect_expr(expr, state),
-            WaitTarget::Mark(_) => {}
         }
     }
 

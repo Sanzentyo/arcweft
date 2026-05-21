@@ -336,7 +336,7 @@ Control-transfer diagnostics must name the continuation being exited. Scope labe
 
 alice.say()[聞いて。[p]]
 with 'line {
-    cancel on input .SkipLine:
+    cancel on input(.SkipLine):
         out 'line .Skipped
 }
 ```

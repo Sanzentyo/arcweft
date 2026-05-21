@@ -64,12 +64,12 @@ flow @flow.opening opening {
             'line.focus.main <- acquire_focus()
             defer { cleanup_init_probe() }
         thread motion:
-            wait mark .release_focus
-            wait 0.35s
+            wait(mark(.release_focus))
+            wait(0.35s)
             tick_motion()
             defer { cleanup_motion() }
         at(0.42s): alice.stage.face(worried)
-        on .release_focus:
+        on mark(.release_focus):
             'line.focus.main |> drop
             defer { cleanup_handler() }
         defer { cleanup_line_scope() }
@@ -117,8 +117,10 @@ flow @flow.opening opening {
     assert_eq!(
         direct_effects(seq(&children[0].scope.node)),
         vec![
-            &LineEffectRequest::WaitMark(".release_focus".to_owned()),
-            &LineEffectRequest::Wait(LogicalDuration::from_nanos(350_000_000)),
+            &LineEffectRequest::Wait(RuntimeWaitTarget::Mark(".release_focus".to_owned())),
+            &LineEffectRequest::Wait(RuntimeWaitTarget::Duration(LogicalDuration::from_nanos(
+                350_000_000
+            ))),
             &call("tick_motion", &[]),
         ]
     );
@@ -278,9 +280,9 @@ flow @flow.semantic semantic {
     with:
         voice = auto
         let actor = alice.stage_handle()
-        memo line_handles(scope=line)
+        memo(.line_handles, scope=line)
         assert(actor.ready())
-        cancel on input .SkipLine { out 'line .Skipped }
+        cancel on input(.SkipLine) { out 'line .Skipped }
         out .Done
 }
 ",
@@ -293,7 +295,9 @@ flow @flow.semantic semantic {
     assert_eq!(group.options[0].name, "voice");
     assert_eq!(group.options[0].value, "auto");
     assert_eq!(group.bindings[0].value, "alice.stage_handle()");
-    assert_eq!(group.memo[0].name, "line_handles(scope=line)");
+    assert_eq!(group.memo[0].name, "line_handles");
+    assert_eq!(group.memo[0].options[0].name, "scope");
+    assert_eq!(group.memo[0].options[0].value, "line");
     assert_eq!(group.assertions[0].expr, "actor.ready()");
     assert_eq!(group.cancel_rules[0].trigger, "input .SkipLine");
     assert_eq!(

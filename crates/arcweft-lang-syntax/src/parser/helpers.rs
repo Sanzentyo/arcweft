@@ -10,15 +10,15 @@ use super::recovery::ParseError;
 use super::statements::parse_label_ref;
 use crate::ast::{
     common::{DocBlock, TextRange, UseItem, UseMode},
-    dialogue::{LineArg, LineOptions, LineOptionsInit, ScenarioCommand},
+    dialogue::{LineArg, LineOptions, LineOptionsInit},
     ids::{EntityRefSyntax, IdRef, WikiLink},
     items::Attribute,
     line_plan::{BlockStyle, LinePlan},
     pattern::Pattern,
 };
 use crate::cst::{
-    collect_wiki_link_ranges, split_leading_ident, split_top_level_keyword_once,
-    split_top_level_punctuation, split_top_level_punctuation_once, split_top_level_whitespace,
+    collect_wiki_link_ranges, split_top_level_keyword_once, split_top_level_punctuation,
+    split_top_level_punctuation_once,
 };
 use crate::cst::{find_matching_punctuation, find_top_level_punctuation};
 use crate::expr::{ComputationBlockKind, Expr, parse_expr};
@@ -28,13 +28,6 @@ use crate::types::parse_type_ref;
 pub(super) enum OptionalLabel {
     None,
     Some(String),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct FlatFence<'a> {
-    pub(super) kind: &'a str,
-    pub(super) head: &'a str,
-    pub(super) close: bool,
 }
 
 #[derive(Default)]
@@ -132,28 +125,6 @@ pub(super) fn collect_wiki_links(source: &str) -> Vec<WikiLink> {
         .collect()
 }
 
-pub(super) fn parse_word_scenario_command(
-    trimmed: &str,
-    range: TextRange,
-) -> Option<ScenarioCommand> {
-    let (name, args) = split_leading_ident(trimmed).unwrap_or((trimmed, ""));
-    if name != "option" {
-        return None;
-    }
-    Some(ScenarioCommand::new(
-        name.to_owned(),
-        parse_scenario_args(args.trim()),
-        range,
-    ))
-}
-
-fn parse_scenario_args(args: &str) -> Vec<crate::expr::Expr> {
-    split_scenario_args(args)
-        .into_iter()
-        .map(parse_expr_lossy)
-        .collect()
-}
-
 pub(super) fn parse_binding_pattern(source: &str) -> (Pattern, Option<crate::types::TypeRef>) {
     split_top_level_punctuation_once(source, ':').map_or_else(
         || (parse_pattern(source.trim()), None),
@@ -162,10 +133,6 @@ pub(super) fn parse_binding_pattern(source: &str) -> (Pattern, Option<crate::typ
             (parse_pattern(pattern.trim()), parsed_ty)
         },
     )
-}
-
-fn split_scenario_args(source: &str) -> Vec<&str> {
-    split_top_level_whitespace(source)
 }
 
 pub(super) fn is_expression_statement_call(trimmed: &str) -> bool {
@@ -399,6 +366,23 @@ pub(super) fn attach_line_plan_label(plan: LinePlan, label: Option<String>) -> L
     }
 }
 
+pub(super) fn parse_line_plan_attachment(
+    style: BlockStyle,
+    body: &str,
+    range: TextRange,
+    label: Option<String>,
+) -> LinePlan {
+    attach_line_plan_label(parse_line_plan_body(style, body, range), label)
+}
+
+pub(super) fn flat_block_head(kind: &str, head: &str) -> String {
+    if head.is_empty() {
+        kind.to_owned()
+    } else {
+        format!("{kind} {head}")
+    }
+}
+
 pub(super) fn parse_with_indent_label(trimmed: &str) -> Option<OptionalLabel> {
     if trimmed == "with:" {
         return Some(OptionalLabel::None);
@@ -420,7 +404,8 @@ pub(super) fn parse_inline_with_colon_plan(trimmed: &str) -> Option<(Option<Stri
 }
 
 pub(super) fn is_with_brace_head(trimmed: &str) -> bool {
-    trimmed.starts_with("with {")
+    trimmed == "with"
+        || trimmed.starts_with("with {")
         || trimmed == "with{"
         || trimmed.starts_with("with '")
         || trimmed.starts_with("with'")
@@ -456,9 +441,6 @@ pub(super) fn parse_expr_lossy(source: &str) -> crate::expr::Expr {
         return crate::expr::Expr::Literal(crate::expr::Literal::String(value));
     }
     if let Some(expr) = parse_static_generic_call(source) {
-        return expr;
-    }
-    if let Some(expr) = parse_presentation_special_call(source) {
         return expr;
     }
     if let Some((head, body)) = split_brace_item(source) {
@@ -520,29 +502,6 @@ fn parse_raw_string_literal(source: &str) -> Option<String> {
     Some(body_end.to_owned())
 }
 
-pub(super) fn parse_presentation_special_call(source: &str) -> Option<crate::expr::Expr> {
-    let trimmed = source.trim();
-    let (callee, call_source) = if let Some(rest) = trimmed.strip_prefix("ref bg") {
-        ("ref.bg", rest)
-    } else if let Some(rest) = trimmed.strip_prefix("ref show") {
-        ("ref.show", rest)
-    } else if let Some(rest) = trimmed.strip_prefix("clear bg") {
-        ("clear.bg", rest)
-    } else {
-        return None;
-    };
-    if !call_source.trim_start().starts_with('(') {
-        return None;
-    }
-    let crate::expr::Expr::Call { args, .. } = parse_expr_lossy(&format!("_{call_source}")) else {
-        return None;
-    };
-    Some(crate::expr::Expr::Call {
-        callee: Box::new(crate::expr::Expr::Path(callee.to_owned())),
-        args,
-    })
-}
-
 fn is_plain_block_callee(source: &str) -> bool {
     !source.is_empty()
         && source
@@ -574,32 +533,6 @@ pub(super) fn is_typed_stmt(trimmed: &str) -> bool {
                 | "continue"
         )
     )
-}
-
-pub(super) fn parse_flat_fence(source: &str) -> Option<FlatFence<'_>> {
-    let trimmed = source.trim();
-    let inner = trimmed.strip_prefix("===")?.strip_suffix("===")?.trim();
-    if inner.is_empty() {
-        return Some(FlatFence {
-            kind: "",
-            head: "",
-            close: false,
-        });
-    }
-    if let Some(close) = inner.strip_prefix('/') {
-        let kind = close.split_whitespace().next().unwrap_or_default();
-        return Some(FlatFence {
-            kind,
-            head: close.trim(),
-            close: true,
-        });
-    }
-    let (kind, head) = split_leading_ident(inner).unwrap_or((inner, ""));
-    Some(FlatFence {
-        kind,
-        head: head.trim(),
-        close: false,
-    })
 }
 
 pub(super) fn parse_memo_block_options(source: &str) -> Option<Vec<(String, Expr)>> {
@@ -734,14 +667,18 @@ fn split_inline_dialogue_line_plan(source: &str) -> Option<(&str, &str)> {
 fn parse_inline_line_plan_source(source: &str) -> Option<LinePlan> {
     if is_with_brace_head(source) {
         let (head, body) = split_brace_item(source)?;
-        return Some(attach_line_plan_label(
-            parse_line_plan_body(BlockStyle::Brace, body, TextRange::new(0, source.len())),
+        return Some(parse_line_plan_attachment(
+            BlockStyle::Brace,
+            body,
+            TextRange::new(0, source.len()),
             parse_with_brace_label(head.trim()),
         ));
     }
     parse_inline_with_colon_plan(source).map(|(label, body)| {
-        attach_line_plan_label(
-            parse_line_plan_body(BlockStyle::Indent, body, TextRange::new(0, source.len())),
+        parse_line_plan_attachment(
+            BlockStyle::Indent,
+            body,
+            TextRange::new(0, source.len()),
             label,
         )
     })

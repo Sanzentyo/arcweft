@@ -115,10 +115,6 @@ pub enum HirFlowItem {
     Scope(HirScope),
     Include(EntityRef),
     Await(HirAwait),
-    Scenario {
-        name: String,
-        args: Vec<Expr>,
-    },
 }
 
 /// Dialogue call normalized enough for type checking to resolve speaker symbols.

@@ -12,8 +12,9 @@ use crate::cst::{
     CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineEvents, CstStmtKind,
     CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxNode,
     classify_stmt, cst_lines, find_matching_punctuation, find_top_level_punctuation,
-    punctuation_delta, source_lines, split_leading_ident, split_top_level_keyword_once,
-    split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
+    parse_flat_fence, punctuation_delta, source_lines, split_leading_ident,
+    split_top_level_keyword_once, split_top_level_punctuation_once,
+    split_top_level_punctuation_sequence_once,
 };
 use crate::expr::Expr;
 use crate::pattern::parse_pattern;
@@ -42,20 +43,16 @@ use control_flow::{
     parse_stmt_lines, parse_stmt_match_arms, split_pattern_guard,
 };
 use helpers::{
-    PendingDocLines, attach_line_plan_label, attach_plan_to_dialogue_expr,
-    collect_logical_block_items, collect_wiki_links, contains_dialogue_expr, find_content_bracket,
-    indentation, is_expression_statement_call, is_typed_stmt, is_with_brace_head,
-    parse_binding_pattern, parse_computation_block_kind, parse_dialogue_call_expr_source,
-    parse_expr_lossy, parse_expr_with_inline_line_plan, parse_flat_fence,
-    parse_inline_with_colon_plan, parse_line_options, parse_memo_block_options,
-    parse_presentation_special_call, parse_with_brace_label, parse_with_indent_label,
-    parse_word_scenario_command, source_take, split_brace_item, split_call_head, split_comma_args,
+    PendingDocLines, attach_plan_to_dialogue_expr, collect_logical_block_items, collect_wiki_links,
+    contains_dialogue_expr, find_content_bracket, flat_block_head, indentation,
+    is_expression_statement_call, is_typed_stmt, is_with_brace_head, parse_binding_pattern,
+    parse_computation_block_kind, parse_dialogue_call_expr_source, parse_expr_lossy,
+    parse_expr_with_inline_line_plan, parse_inline_with_colon_plan, parse_line_options,
+    parse_line_plan_attachment, parse_memo_block_options, parse_with_brace_label,
+    parse_with_indent_label, source_take, split_brace_item, split_call_head, split_comma_args,
     split_optional_block_label, split_speaker_line, split_top_level_binding,
 };
-use line_plan::{
-    nonempty_string, parse_defer_outcome, parse_line_plan_body, parse_thread_block,
-    parse_trigger_pattern,
-};
+use line_plan::{parse_defer_outcome, parse_thread_block, parse_trigger_pattern};
 use recovery::{ParseError, RecoverySuggestion};
 use statements::{parse_scope_head, parse_stmt, parse_unsafe_lifetime_block, raw_stmt};
 

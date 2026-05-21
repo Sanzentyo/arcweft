@@ -629,11 +629,6 @@ impl ObligationCollector {
             HirFlowItem::Borrow(block) => self.collect_borrow(block),
             HirFlowItem::SourceLocale(block) => self.collect_flow_items(block.body()),
             HirFlowItem::Scope(block) => self.collect_scope(block),
-            HirFlowItem::Scenario { args, .. } => {
-                for arg in args {
-                    self.collect_expr(arg);
-                }
-            }
             HirFlowItem::Include(_) => {}
         }
     }
@@ -706,11 +701,6 @@ impl ObligationCollector {
                 self.collect_expr(anchor);
                 self.collect_expr(body);
             }
-            LinePlanItem::Memo { options, .. } => {
-                for (_, value) in options {
-                    self.collect_expr(value);
-                }
-            }
             LinePlanItem::Raw(raw) => {
                 self.add_raw_obligation(
                     format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
@@ -765,11 +755,6 @@ impl ObligationCollector {
                 has_safety_doc,
                 body,
             } => self.collect_unsafe_lifetime(id, reason.as_ref(), *has_safety_doc, body),
-            Stmt::Command(command) => {
-                for arg in command.args() {
-                    self.collect_expr(arg);
-                }
-            }
             Stmt::If { condition, body } | Stmt::While { condition, body } => {
                 self.collect_expr(condition);
                 self.collect_stmts(body);
@@ -1127,7 +1112,6 @@ impl ObligationCollector {
     fn collect_wait(&mut self, target: &WaitTarget) {
         match target {
             WaitTarget::Duration(expr) | WaitTarget::Expr(expr) => self.collect_expr(expr),
-            WaitTarget::Mark(_) => {}
         }
     }
 

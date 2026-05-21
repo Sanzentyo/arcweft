@@ -3,13 +3,13 @@ use crate::ast::dialogue::{DialogueDefaultOption, DialogueDefaultsItem};
 use super::headers::{parse_optional_decl_entity_ref, parse_visibility_prefix, simple_error};
 use super::{
     BlockStyle, ContentCall, ContentCallParse, CstLine, DialogueContent, FlowItem, LinePlan,
-    Parser, ScopeBlock, SpeakerLine, Stmt, TextRange, attach_line_plan_label,
-    attach_plan_to_dialogue_expr, contains_dialogue_expr, find_content_bracket,
-    find_matching_punctuation, find_top_level_punctuation, indentation, is_with_brace_head,
+    Parser, ScopeBlock, SpeakerLine, Stmt, TextRange, attach_plan_to_dialogue_expr,
+    contains_dialogue_expr, find_content_bracket, find_matching_punctuation,
+    find_top_level_punctuation, flat_block_head, indentation, is_with_brace_head,
     parse_binding_pattern, parse_dialogue_call_expr_source, parse_expr_lossy, parse_flat_fence,
-    parse_inline_with_colon_plan, parse_line_options, parse_line_plan_body, parse_with_brace_label,
-    parse_with_indent_label, punctuation_delta, split_brace_item, split_call_head,
-    split_leading_ident, split_speaker_line, split_top_level_binding,
+    parse_inline_with_colon_plan, parse_line_options, parse_line_plan_attachment,
+    parse_with_brace_label, parse_with_indent_label, punctuation_delta, split_brace_item,
+    split_call_head, split_leading_ident, split_speaker_line, split_top_level_binding,
     split_top_level_punctuation_once,
 };
 
@@ -241,20 +241,20 @@ impl Parser {
             }
             let (head, body) = split_brace_item(&block_text)?;
             let range = TextRange::new(base + close_bracket + 1, self.events[*cursor].end);
-            return Some(attach_line_plan_label(
-                parse_line_plan_body(BlockStyle::Brace, body, range),
+            return Some(parse_line_plan_attachment(
+                BlockStyle::Brace,
+                body,
+                range,
                 parse_with_brace_label(head.trim()),
             ));
         }
         parse_inline_with_colon_plan(trailing).map(|(label, body)| {
-            attach_line_plan_label(
-                parse_line_plan_body(
-                    BlockStyle::Indent,
-                    body,
-                    TextRange::new(
-                        base + close_bracket + 1,
-                        base + close_bracket + 1 + trailing.len(),
-                    ),
+            parse_line_plan_attachment(
+                BlockStyle::Indent,
+                body,
+                TextRange::new(
+                    base + close_bracket + 1,
+                    base + close_bracket + 1 + trailing.len(),
                 ),
                 label,
             )
@@ -300,16 +300,20 @@ impl Parser {
             && fence.kind == "with"
         {
             let body = self.take_flat_block_body("with", line.start);
-            return Some(parse_line_plan_body(
+            return Some(parse_line_plan_attachment(
                 BlockStyle::Flat,
                 &body,
                 TextRange::new(line.start, self.previous_end()),
+                parse_with_brace_label(&flat_block_head("with", fence.head)),
             ));
         }
         if let Some(label) = parse_with_indent_label(trimmed) {
             self.index += 1;
-            let plan = self.take_indented_line_plan(indentation(&line.text) + 1, line.start);
-            return Some(attach_line_plan_label(plan, label.into_option()));
+            return Some(self.take_indented_line_plan(
+                indentation(&line.text) + 1,
+                line.start,
+                label.into_option(),
+            ));
         }
         if is_with_brace_head(trimmed) {
             let (head, body, end, ok) = self.take_brace_block();
@@ -323,10 +327,10 @@ impl Parser {
                 );
                 return None;
             }
-            let plan =
-                parse_line_plan_body(BlockStyle::Brace, &body, TextRange::new(line.start, end));
-            return Some(attach_line_plan_label(
-                plan,
+            return Some(parse_line_plan_attachment(
+                BlockStyle::Brace,
+                &body,
+                TextRange::new(line.start, end),
                 parse_with_brace_label(head.trim()),
             ));
         }
@@ -414,7 +418,12 @@ impl Parser {
         self.dialogue_content(raw.clone(), TextRange::new(start, end))
     }
 
-    fn take_indented_line_plan(&mut self, min_indent: usize, start: usize) -> LinePlan {
+    fn take_indented_line_plan(
+        &mut self,
+        min_indent: usize,
+        start: usize,
+        label: Option<String>,
+    ) -> LinePlan {
         let mut raw = String::new();
         let mut end = start;
         while self.index < self.events.len() {
@@ -435,6 +444,6 @@ impl Parser {
             end = line.end;
             self.index += 1;
         }
-        parse_line_plan_body(BlockStyle::Indent, &raw, TextRange::new(start, end))
+        parse_line_plan_attachment(BlockStyle::Indent, &raw, TextRange::new(start, end), label)
     }
 }

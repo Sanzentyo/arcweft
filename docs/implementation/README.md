@@ -105,10 +105,10 @@ Current high-confidence state:
   is not part of the core grammar.
 - `pro_review11.md`: adopted canonical dialogue `look` line options, extended
   `stage` / `portrait` / `focus` / `cleanup` line options, `[mark .name]`
-  zero-width dialogue markers, line-plan `on .name:` handlers, generic
+  zero-width dialogue markers, line-plan `on mark(.name):` handlers, generic
   line-scoped `thread` blocks, scoped `defer { ... }`, outcome-guarded
   `defer on completed|cancelled|failed`, flat `=== ... ===` fence sugar,
-  `wait mark` / duration waits, and `'line.*`
+  `wait(mark(...))` / `wait(duration)` waits, and `'line.*`
   lifetime registry paths with optional `?` reads. Local dialogue `[hook ...]`
   and `#[hook ...]` syntax is removed; top-level engine hooks remain.
 
@@ -187,8 +187,8 @@ Current high-confidence state:
   `PresentationRegistry<T>` enforces scope lifetime at the data-model level by
   clearing registered slots when `exit_scope` is called.
 - `arcweft-lang-syntax` now recognizes presentation set/read/clear calls as
-  type-checkable syntax: `bg(...)`, `show(...)`, `ref bg(...)`,
-  `ref show(...)`, `clear bg(...)`, and `hide(...)`. The checker validates
+  type-checkable ordinary call syntax: `bg(...)`, `show(...)`,
+  `bg.ref(...)`, `show.ref(...)`, `bg.clear(...)`, and `hide(...)`. The checker validates
   `@target.*`, family-correct `@slot.background.*` /
   `@slot.character.*` usage, and reports simultaneous default slot handles
   that should be given explicit slots.
@@ -204,14 +204,15 @@ Current high-confidence state:
   `alice.stage.look(...)` remain ordinary calls.
 - Dialogue text now tokenizes `[mark .name]` into a structured marker token.
   The checker rejects duplicate marks, rejects local `[hook ...]`, and verifies
-  marker-triggered line-plan `on .name:` handlers against marks in the same
+  marker-triggered line-plan `on mark(.name):` handlers against marks in the same
   line.
 - Line plans now preserve `init`, generic `thread name` blocks, scoped
   `defer { ... }`, outcome-guarded `defer on completed|cancelled|failed`, `on`
   handlers, `wait` statements, and `'line.* <- expr` lifetime registry writes
   as structured AST/HIR-checkable syntax. Line cleanup now uses `defer` rather
-  than a separate cleanup construct; `with:` and flat `=== with ===` blocks are source sugar over the
-  same line-plan model; `spawn` is rejected in favor of `thread`.
+  than a separate cleanup construct; `with:`, `with { ... }`, and flat
+  `=== with ===` fences are sugar over the same line-plan model. `spawn` is
+  rejected in favor of `thread`.
 - Syntax-level ID policy linting exists as `lint_id_policy`. It currently
   reports deep dot-run relative IDs such as `@...suffix` and flow IDs whose
   tail does not match the module tail. Further hierarchy checks should build on
@@ -396,8 +397,8 @@ Current high-confidence state:
   without owning an LSP transport. The current ID materialization table covers
   top-level declarations, explicit and omitted dialogue line `id=` /
   `text_key=` options, flat `=== line ... ===` dialogue heads, and
-  choice/choice-option IDs. `with { ... }`, `with:`, and flat `=== with ===`
-  line-plan attachments share the same materialization context.
+  choice/choice-option IDs. Canonical `with { ... }`, `with:`, and flat
+  `=== with ===` line-plan attachments share the same materialization context.
 - The old `arcweft-tooling` dialogue-ID line scanner has been removed from the
   tooling crate. ID materialization now flows through
   `arcweft-lang-hir::collect_id_context`, which emits typed source operations

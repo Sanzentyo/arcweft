@@ -168,7 +168,9 @@ let labels =
 
 ```arcw
 for c in choices {
-    option c.id c.label
+    option c.id {
+        label = c.label
+    }
 }
 ```
 

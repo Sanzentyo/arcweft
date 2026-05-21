@@ -8,7 +8,7 @@ alice(voice=auto, look=smile):
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 with:
     at(0.42s): alice.stage.face(worried)
-    cancel on input .SkipLine => continue
+    cancel on input(.SkipLine) => continue
     out (actor, voice)
 ",
     );
@@ -178,7 +178,7 @@ flow @flow.opening opening {
         キャンセルできる行です。[p]
     ]
     with:
-        cancel on input .SkipLine:
+        cancel on input(.SkipLine):
             out Err(LineCancel::Skipped)
 
         out Ok(())
@@ -297,12 +297,12 @@ flow @flow.opening opening {
     with:
         init:
             'line.focus.main <- acquire_focus()
-            wait mark .release_focus
-        on .release_focus:
+            wait(mark(.release_focus))
+        on mark(.release_focus):
             'line.focus |> drop
             out .Released
         thread motion:
-            wait 0.35s
+            wait(0.35s)
             tick_motion()
             defer { cleanup_motion() }
         defer:
@@ -352,28 +352,14 @@ flow @flow.opening opening {
 }
 
 #[test]
-fn parses_flat_line_plan_thread_and_defer() {
+fn parses_flat_fence_line_sugar_with_line_plan() {
     let tree = parse_ok(
         r"
 flow @flow.flat flat {
 === line alice(.smile, focus = .soft) ===
 聞いて。[mark .release_focus]
-
 === with ===
-=== thread motion ===
-wait 0.35s
-=== defer ===
-cleanup_motion()
-=== /defer ===
-=== /thread ===
-
-=== on .release_focus ===
-'line.focus |> drop
-=== /on ===
-
-=== defer ===
-cleanup_line()
-=== /defer ===
+wait(mark(.release_focus))
 === /with ===
 === /line ===
 }
@@ -383,48 +369,16 @@ cleanup_line()
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
-    let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
-        panic!("expected flat speaker line");
+    let [FlowItem::ContentCall(call)] = flow.body() else {
+        panic!("expected flat line to lower to content call sugar");
     };
-    let plan = line.plan().expect("flat line plan");
-    assert_eq!(plan.style(), BlockStyle::Flat);
-    assert!(
-        matches!(&plan.items()[0], LinePlanItem::Thread(thread) if thread.name() == Some("motion"))
-    );
-    assert!(matches!(&plan.items()[1], LinePlanItem::On { .. }));
+    assert_eq!(call.callee(), "alice");
+    assert!(call.content().raw().contains("聞いて。"));
+    let plan = call.plan().expect("flat with plan");
     assert!(matches!(
-        &plan.items()[2],
-        LinePlanItem::Stmt(Stmt::DeferBlock {
-            outcome: DeferOutcome::Always,
-            statements
-        }) if statements.len() == 1
+        plan.items(),
+        [LinePlanItem::Stmt(Stmt::Wait(WaitTarget::Expr(_)))]
     ));
-}
-
-#[test]
-fn parses_flat_flow_thread_and_scope_blocks() {
-    let tree = parse_ok(
-        r"
-flow @flow.flat flat {
-=== thread detached preload_next ===
-asset.preload(@asset.bg.school_classroom)
-=== /thread ===
-
-=== scope ===
-let tmp = compute()
-use_tmp(tmp)
-=== /scope ===
-}
-",
-    );
-
-    let Item::Flow(flow) = &tree.items()[0] else {
-        panic!("expected flow");
-    };
-    assert!(
-        matches!(&flow.body()[0], FlowItem::Stmt(Stmt::Thread(thread)) if thread.is_detached() && thread.name() == Some("preload_next"))
-    );
-    assert!(matches!(&flow.body()[1], FlowItem::Scope(scope) if scope.name().is_none()));
 }
 
 #[test]
@@ -440,11 +394,11 @@ fn rejects_removed_spawn_and_malformed_flat_fences() {
         ),
         (
             "flow @flow.x x {\n=== line alice ===\nhello\n}",
-            "missing close fence `=== /line ===`",
+            "missing close fence",
         ),
         (
             "flow @flow.x x {\n=== ===\nfoo()\n=== / ===\n}",
-            "unsupported flat fence head",
+            "unknown flat fence kind",
         ),
     ] {
         let errors = parse_errors(source);
@@ -481,7 +435,7 @@ flow @flow.opening opening {
 flow @flow.opening opening {
     alice[待って。[p]]
     with:
-        on .missing:
+        on mark(.missing):
             out .Missing
 }
 ",
@@ -529,8 +483,8 @@ flow @flow.opening opening {
         聞いて。[p]
     ]
     with 'line {
-        cancel on input .SkipLine { out 'line .Skipped }
-        cancel on input .BackToTitle => goto @flow.title
+        cancel on input(.SkipLine) { out 'line .Skipped }
+        cancel on input(.BackToTitle) => goto @flow.title
     }
 }
 ",
@@ -580,7 +534,7 @@ flow @flow.opening opening {
         聞いて。[p]
     ]
     with {
-        cancel on input .SkipLine {
+        cancel on input(.SkipLine) {
             voice.stop(fade = 40ms)
             text.flush(mode = .Instant)
             continue
@@ -721,7 +675,7 @@ flow @flow.opening opening {
     alice:
         聞いて。[p]
     with {
-        memo rich_text key=(line.id, locale, theme.text_hash) cache=flow
+        memo(.rich_text, key=(line.id, locale, theme.text_hash), cache=.flow)
     }
 }
 ",
@@ -733,12 +687,18 @@ flow @flow.opening opening {
         panic!("expected speaker line");
     };
     let plan = line.plan().expect("line plan");
-    let [LinePlanItem::Memo { name, options }] = plan.items() else {
-        panic!("expected memo item");
+    let [LinePlanItem::Expr(Expr::Call { callee, args })] = plan.items() else {
+        panic!("expected memo call item");
     };
-    assert_eq!(name, "rich_text");
-    assert_eq!(options.len(), 2);
-    assert!(matches!(&options[0].1, Expr::Tuple(items) if items.len() == 3));
+    assert!(matches!(callee.as_ref(), Expr::Path(path) if path == "memo"));
+    assert_eq!(args.len(), 3);
+    assert!(matches!(&args[0], Expr::Path(path) if path == ".rich_text"));
+    assert!(
+        matches!(&args[1], Expr::NamedArg { name, value } if name == "key" && matches!(value.as_ref(), Expr::Tuple(items) if items.len() == 3))
+    );
+    assert!(
+        matches!(&args[2], Expr::NamedArg { name, value } if name == "cache" && matches!(value.as_ref(), Expr::Path(path) if path == ".flow"))
+    );
 
     let hir = lower_to_hir(&tree).expect("line plan memo lowers");
     validate_typecheck_ready(&hir).expect("line plan memo is typecheck-ready");
@@ -749,7 +709,8 @@ flow @flow.opening opening {
             .with_symbol("line.id", TypeKind::Ref(EntityKind::DialogueLine))
             .with_symbol("locale", TypeKind::String)
             .with_symbol("theme.text_hash", TypeKind::Named("TextHash".to_owned()))
-            .with_symbol("flow", TypeKind::Named("CacheScope".to_owned())),
+            .with_symbol(".flow", TypeKind::Named("CacheScope".to_owned()))
+            .with_function("memo", TypeKind::Unit),
     )
     .expect("typecheck succeeds");
 }

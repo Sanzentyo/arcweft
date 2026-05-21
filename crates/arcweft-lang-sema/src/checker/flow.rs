@@ -82,11 +82,6 @@ impl TypeChecker<'_> {
             HirFlowItem::Await(await_with) => {
                 self.check_await_item(await_with);
             }
-            HirFlowItem::Scenario { args, .. } => {
-                for arg in args {
-                    self.check_expr(arg);
-                }
-            }
         }
     }
 

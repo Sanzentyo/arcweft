@@ -51,7 +51,10 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - Do not use `unsafe` unless isolated in a clearly named crate/module with an explanation.
 - Do not implement speculative full features before creating minimal stable interfaces.
 - When parser, compiler, or language-surface work requires broad reshaping, move directly toward the final model instead of preserving temporary compatibility layers.
-- Do not use `deprecated` APIs, compatibility aliases, or migration shims inside unfinished compiler/parser code. Let the Rust compiler expose every call site that must be updated.
+- Do not preserve backward compatibility during internal parser/compiler/language-surface refactors. Replace the old model directly and let breakage expose every call site that must be updated.
+- Do not use `deprecated` APIs, compatibility aliases, compatibility modules, wrapper APIs, migration shims, or compatibility shims inside unfinished compiler/parser code.
+- Do not add parser/tooling branches that silently accept removed syntax. Removed syntax should fail through structured parser recovery/diagnostics unless the task explicitly targets an external one-shot migration tool.
+- Prefer root-cause edits over transitional layers: remove obsolete variants/functions/types, run `cargo check` and `cargo clippy`, and fix all resulting call sites.
 - During internal refactors, existing API compatibility may be dropped when it
   conflicts with the target architecture. Prefer explicit `pub mod` namespaces
   over broad pass-through `pub use` exports in non-facade crates/modules.

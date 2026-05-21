@@ -4,6 +4,6 @@ character @character.alice Alice as alice {
 flow @flow.main main {
     alice: hello[mark .end]
     with:
-        on mark .end => log.info("end")
+        on mark(.end) => log.info("end")
     return "done"
 }
