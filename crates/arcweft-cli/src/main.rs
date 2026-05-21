@@ -14,6 +14,7 @@ use arcweft_lang_sema::check::{typecheck_hir, validate_typecheck_ready};
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
 use arcweft_lang_syntax::{lint::lint_id_policy, parser::parse_source};
+use arcweft_launch::{LaunchKind, LaunchProfileManifest, ResolvedLaunchProfile};
 use arcweft_runtime_plan::flow::lower_runtime_plan;
 use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_groups};
 use arcweft_test::{BenchSection, ScriptBench, ScriptStep, ScriptTest, collect_script_tests};
@@ -38,6 +39,8 @@ use std::net::SocketAddr;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+
+const KNOWN_ADAPTERS: &[&str] = &["sans-io", "native-http"];
 
 #[derive(Debug, Parser)]
 #[command(name = "arcw", about = "Arcweft language and runtime tooling")]
@@ -165,7 +168,8 @@ fn run_tooling_command(
 }
 
 fn runtime_plan_command(options: &PlanOptions) -> Result<(), ExitCode> {
-    let checked = load_and_check(&options.path)?;
+    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    let checked = load_and_check_selection(&selection, None)?;
     let report = RuntimePlanReport::from_checked(&checked);
     if options.json {
         print_json(&report)
@@ -183,7 +187,7 @@ fn runtime_plan_command(options: &PlanOptions) -> Result<(), ExitCode> {
         }
         println!(
             "ok: {} ({} line task group(s), {} verifier obligation(s))",
-            options.path.display(),
+            selection.path().display(),
             report.lines.len(),
             report.verifier_obligations
         );
@@ -192,14 +196,44 @@ fn runtime_plan_command(options: &PlanOptions) -> Result<(), ExitCode> {
 }
 
 fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
-    let checked = load_and_check(&options.path)?;
+    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    if let Some(profile) = selection.profile() {
+        match profile.kind() {
+            LaunchKind::Server => {
+                return runtime_serve_selection(
+                    &selection,
+                    options.entry.as_deref(),
+                    None,
+                    None,
+                    false,
+                    options.max_ops,
+                    options.json,
+                );
+            }
+            LaunchKind::Test => {
+                return script_test_selection(
+                    &selection,
+                    options.steps,
+                    options.mode,
+                    options.max_ops,
+                    &options.values,
+                    options.json,
+                );
+            }
+            LaunchKind::Bench => return script_bench_selection(&selection, options.json),
+            LaunchKind::Game | LaunchKind::Cli => {}
+        }
+    }
+
+    let checked = load_and_check_selection(&selection, None)?;
     let mut plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
         for error in errors {
             eprintln!("error: {}", error.message());
         }
         ExitCode::FAILURE
     })?;
-    apply_runtime_entry_selection(&mut plan, options.entry.as_deref(), options.flow.as_deref())?;
+    let entry = options.entry.as_deref().or(selection.entry());
+    apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
     let mut executor = VmExecutor::new(plan);
     let mut steps = Vec::new();
     for step_index in 0..options.steps {
@@ -245,7 +279,7 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
         }
         println!(
             "ok: {} ({} step(s), final_status={})",
-            options.path.display(),
+            selection.path().display(),
             report.steps.len(),
             report.final_status
         );
@@ -254,14 +288,17 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
 }
 
 fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
-    let checked = load_and_check(&options.path)?;
+    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    require_profile_kind(&selection, LaunchKind::Cli, "cli")?;
+    let checked = load_and_check_selection(&selection, None)?;
     let mut plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
         for error in errors {
             eprintln!("error: {error}");
         }
         ExitCode::FAILURE
     })?;
-    apply_runtime_cli_entry_selection(&mut plan, options.entry.as_deref())?;
+    let entry = options.entry.as_deref().or(selection.entry());
+    apply_runtime_cli_entry_selection(&mut plan, entry)?;
     let mut bindings = options.values.clone();
     bindings.push(RuntimeBinding {
         name: "args".to_owned(),
@@ -308,7 +345,7 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
     } else {
         println!(
             "ok: {} ({} cli arg(s), {} step(s), final_status={})",
-            options.path.display(),
+            selection.path().display(),
             options.args.len(),
             report.steps.len(),
             report.final_status
@@ -318,15 +355,39 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
 }
 
 fn runtime_serve_command(options: &ServeOptions) -> Result<(), ExitCode> {
-    let env = server_adapter_typecheck_env();
-    let checked = load_and_check_with_env(&options.path, &env)?;
+    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    require_profile_kind(&selection, LaunchKind::Server, "serve")?;
+    runtime_serve_selection(
+        &selection,
+        options.entry.as_deref(),
+        options.adapter.as_deref(),
+        options.listen,
+        options.once,
+        options.max_ops,
+        options.json,
+    )
+}
+
+fn runtime_serve_selection(
+    selection: &SourceSelection,
+    entry_override: Option<&str>,
+    adapter_override: Option<&str>,
+    listen_override: Option<SocketAddr>,
+    once: bool,
+    max_ops: usize,
+    json: bool,
+) -> Result<(), ExitCode> {
+    let adapter = adapter_override
+        .or(selection.adapter())
+        .unwrap_or("sans-io");
+    let checked = load_and_check_selection(selection, Some(adapter))?;
     let plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
         for error in errors {
             eprintln!("error: {error}");
         }
         ExitCode::FAILURE
     })?;
-    let entry = select_server_entry(&plan, options.entry.as_deref())?;
+    let entry = select_server_entry(&plan, entry_override.or(selection.entry()))?;
     let routes = server_routes(entry);
     if routes.is_empty() {
         eprintln!(
@@ -347,7 +408,7 @@ fn runtime_serve_command(options: &ServeOptions) -> Result<(), ExitCode> {
     let report = ServePlanReport {
         status: "planned".to_owned(),
         entry: entry.id.0.clone(),
-        adapter: options.adapter.clone(),
+        adapter: adapter.to_owned(),
         routes: routes
             .iter()
             .map(|route| ServeRouteReport {
@@ -357,14 +418,18 @@ fn runtime_serve_command(options: &ServeOptions) -> Result<(), ExitCode> {
             })
             .collect(),
     };
-    if let Some(listen) = options.listen {
+    let listen = match listen_override {
+        Some(listen) => Some(listen),
+        None => profile_listen_addr(selection)?,
+    };
+    if let Some(listen) = listen {
         let server_report = serve_native_http(
             &plan,
             &routes,
             NativeHttpServerConfig {
                 listen,
-                once: options.once,
-                max_ops: options.max_ops,
+                once,
+                max_ops,
             },
         )
         .map_err(|error| {
@@ -375,7 +440,7 @@ fn runtime_serve_command(options: &ServeOptions) -> Result<(), ExitCode> {
             plan: report,
             server: server_report,
         };
-        return if options.json {
+        return if json {
             print_json(&report)
         } else {
             println!(
@@ -385,7 +450,7 @@ fn runtime_serve_command(options: &ServeOptions) -> Result<(), ExitCode> {
             Ok(())
         };
     }
-    if options.json {
+    if json {
         print_json(&report)
     } else {
         for route in &report.routes {
@@ -393,7 +458,7 @@ fn runtime_serve_command(options: &ServeOptions) -> Result<(), ExitCode> {
         }
         println!(
             "ok: {} (server entry {}, adapter={}, {} route(s), status={})",
-            options.path.display(),
+            selection.path().display(),
             report.entry,
             report.adapter,
             report.routes.len(),
@@ -527,7 +592,27 @@ fn normalize_entity_selector(value: &str, family: &str) -> String {
 }
 
 fn script_test_command(options: &ScriptTestOptions) -> Result<(), ExitCode> {
-    let checked = load_and_check(&options.path)?;
+    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    require_profile_kind(&selection, LaunchKind::Test, "test")?;
+    script_test_selection(
+        &selection,
+        options.steps,
+        options.mode,
+        options.max_ops,
+        &options.values,
+        options.json,
+    )
+}
+
+fn script_test_selection(
+    selection: &SourceSelection,
+    step_limit: usize,
+    mode: CliRuntimeStepMode,
+    max_ops: usize,
+    values: &[RuntimeBinding],
+    json: bool,
+) -> Result<(), ExitCode> {
+    let checked = load_and_check_selection(selection, None)?;
     let manifest = collect_script_tests(&checked.hir);
     let plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
         for error in errors {
@@ -539,11 +624,11 @@ fn script_test_command(options: &ScriptTestOptions) -> Result<(), ExitCode> {
         tests: manifest
             .tests
             .iter()
-            .map(|test| run_script_test(test, &plan, options))
+            .map(|test| run_script_test(test, &plan, step_limit, mode, max_ops, values))
             .collect(),
     };
     let failed = output.tests.iter().any(|test| test.status == "failed");
-    if options.json {
+    if json {
         print_json(&output)?;
     } else {
         for test in &output.tests {
@@ -557,7 +642,7 @@ fn script_test_command(options: &ScriptTestOptions) -> Result<(), ExitCode> {
         }
         println!(
             "ok: {} ({} script test(s))",
-            options.path.display(),
+            selection.path().display(),
             output.tests.len()
         );
     }
@@ -571,7 +656,10 @@ fn script_test_command(options: &ScriptTestOptions) -> Result<(), ExitCode> {
 fn run_script_test(
     test: &ScriptTest,
     plan: &RuntimePlan,
-    options: &ScriptTestOptions,
+    step_limit: usize,
+    mode: CliRuntimeStepMode,
+    max_ops: usize,
+    values: &[RuntimeBinding],
 ) -> ScriptTestRunSummary {
     if test.kind != "scenario" {
         return ScriptTestRunSummary::skipped(
@@ -594,31 +682,35 @@ fn run_script_test(
     let mut plan = plan.clone();
     plan.entry_flow = Some(FlowRuntimeId(start));
     let mut executor = VmExecutor::new(plan);
-    let mut steps = Vec::new();
-    for step_index in 0..options.steps {
+    let mut step_summaries = Vec::new();
+    for step_index in 0..step_limit {
         let result = executor.step(
             RuntimeStepInput {
-                bindings: options.values.clone(),
+                bindings: values.to_vec(),
                 ..RuntimeStepInput::default()
             },
-            step_options(options.mode, options.max_ops),
+            step_options(mode, max_ops),
         );
         let summary = RuntimeStepRunSummary::from_result(step_index, result, executor.fiber());
         let done = matches!(
             executor.fiber().status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         );
-        steps.push(summary);
+        step_summaries.push(summary);
         if done {
             break;
         }
     }
     let final_status = flow_status_label(&executor.fiber().status);
-    let mut diagnostics = steps
+    let mut diagnostics = step_summaries
         .iter()
         .flat_map(|step| step.diagnostics.iter().cloned())
         .collect::<Vec<_>>();
-    diagnostics.extend(test_expectation_failures(test, executor.engine(), &steps));
+    diagnostics.extend(test_expectation_failures(
+        test,
+        executor.engine(),
+        &step_summaries,
+    ));
     match executor.fiber().status {
         FlowFiberStatus::Done(_) => {}
         FlowFiberStatus::Failed(ref message) => {
@@ -626,13 +718,12 @@ fn run_script_test(
         }
         FlowFiberStatus::Running | FlowFiberStatus::Waiting(_) | FlowFiberStatus::Choice(_) => {
             diagnostics.push(format!(
-                "scenario did not finish within {} step(s): {final_status}",
-                options.steps
+                "scenario did not finish within {step_limit} step(s): {final_status}"
             ));
         }
     }
     let passed = diagnostics.is_empty();
-    ScriptTestRunSummary::completed(test, passed, final_status, diagnostics, steps)
+    ScriptTestRunSummary::completed(test, passed, final_status, diagnostics, step_summaries)
 }
 
 fn test_start_flow(test: &ScriptTest) -> Option<String> {
@@ -708,13 +799,19 @@ fn parse_log_contains_expectation(text: &str) -> Option<(String, String)> {
 }
 
 fn script_bench_command(options: &ScriptBenchOptions) -> Result<(), ExitCode> {
-    let checked = load_and_check(&options.path)?;
+    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    require_profile_kind(&selection, LaunchKind::Bench, "bench")?;
+    script_bench_selection(&selection, options.json)
+}
+
+fn script_bench_selection(selection: &SourceSelection, json: bool) -> Result<(), ExitCode> {
+    let checked = load_and_check_selection(selection, None)?;
     let manifest = collect_script_tests(&checked.hir);
     let output = ScriptBenchRunReport {
         benches: manifest.benches.iter().map(validate_script_bench).collect(),
     };
     let failed = output.benches.iter().any(|bench| bench.status == "failed");
-    if options.json {
+    if json {
         print_json(&output)?;
     } else {
         for bench in &output.benches {
@@ -730,7 +827,7 @@ fn script_bench_command(options: &ScriptBenchOptions) -> Result<(), ExitCode> {
         }
         println!(
             "ok: {} ({} script bench(es))",
-            options.path.display(),
+            selection.path().display(),
             output.benches.len()
         );
     }
@@ -820,7 +917,8 @@ fn unsupported_headless_bench_reason(text: &str) -> Option<String> {
 }
 
 fn check_command(options: &CheckOptions) -> Result<(), ExitCode> {
-    let checked = load_and_check(&options.path)?;
+    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    let checked = load_and_check_selection(&selection, None)?;
     let report = verify_module(
         &checked.hir,
         VerificationPolicy {
@@ -840,7 +938,7 @@ fn check_command(options: &CheckOptions) -> Result<(), ExitCode> {
     if !options.json {
         println!(
             "ok: {} ({} flow(s), {} line task group(s), {} warning(s), {} obligation(s))",
-            options.path.display(),
+            selection.path().display(),
             checked.hir.flows().len(),
             checked.line_task_groups.len(),
             checked.syntax_warnings,
@@ -851,7 +949,8 @@ fn check_command(options: &CheckOptions) -> Result<(), ExitCode> {
 }
 
 fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
-    let checked = load_and_check(&options.path)?;
+    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    let checked = load_and_check_selection(&selection, None)?;
     let report = verify_module(
         &checked.hir,
         VerificationPolicy {
@@ -875,7 +974,7 @@ fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
         print_human_diagnostics(&report);
         println!(
             "ok: {} ({} obligation(s), {} unsafe audit(s))",
-            options.path.display(),
+            selection.path().display(),
             report.obligations.len(),
             report.unsafe_audit_count()
         );
@@ -888,7 +987,8 @@ fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
 }
 
 fn unsafe_command(options: &UnsafeOptions) -> Result<(), ExitCode> {
-    let checked = load_and_check(&options.path)?;
+    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    let checked = load_and_check_selection(&selection, None)?;
     let report = verify_module(
         &checked.hir,
         VerificationPolicy {
@@ -909,14 +1009,127 @@ fn unsafe_command(options: &UnsafeOptions) -> Result<(), ExitCode> {
     Ok(())
 }
 
+#[derive(Clone, Debug)]
+enum SourceSelection {
+    Direct { path: PathBuf },
+    Profile(ResolvedLaunchProfile),
+}
+
+impl SourceSelection {
+    fn path(&self) -> &Path {
+        match self {
+            Self::Direct { path } => path,
+            Self::Profile(profile) => profile.source(),
+        }
+    }
+
+    fn profile(&self) -> Option<&ResolvedLaunchProfile> {
+        match self {
+            Self::Direct { .. } => None,
+            Self::Profile(profile) => Some(profile),
+        }
+    }
+
+    fn entry(&self) -> Option<&str> {
+        self.profile().and_then(ResolvedLaunchProfile::entry)
+    }
+
+    fn adapter(&self) -> Option<&str> {
+        self.profile().and_then(ResolvedLaunchProfile::adapter)
+    }
+}
+
+fn resolve_source_selection(
+    path: Option<&PathBuf>,
+    profile: &ProfileOptions,
+) -> Result<SourceSelection, ExitCode> {
+    match (path, profile.profile.as_deref()) {
+        (Some(_), Some(_)) => {
+            eprintln!("error: source path and --profile cannot be used together");
+            Err(ExitCode::from(2))
+        }
+        (Some(path), None) => Ok(SourceSelection::Direct { path: path.clone() }),
+        (None, Some(profile_id)) => {
+            let source = fs::read_to_string(&profile.manifest).map_err(|error| {
+                eprintln!(
+                    "error: failed to read launch manifest {}: {error}",
+                    profile.manifest.display()
+                );
+                ExitCode::FAILURE
+            })?;
+            let manifest = LaunchProfileManifest::parse_toml(&source).map_err(|error| {
+                eprintln!("error: {error}");
+                ExitCode::FAILURE
+            })?;
+            let manifest_dir = profile.manifest.parent().unwrap_or_else(|| Path::new("."));
+            let resolved = manifest
+                .resolve_profile_with_adapters(profile_id, manifest_dir, KNOWN_ADAPTERS)
+                .map_err(|error| {
+                    eprintln!("error: {error}");
+                    ExitCode::FAILURE
+                })?;
+            Ok(SourceSelection::Profile(resolved))
+        }
+        (None, None) => {
+            eprintln!("error: expected .arcw source path or --profile");
+            Err(ExitCode::from(2))
+        }
+    }
+}
+
+fn require_profile_kind(
+    selection: &SourceSelection,
+    expected: LaunchKind,
+    command: &str,
+) -> Result<(), ExitCode> {
+    let Some(profile) = selection.profile() else {
+        return Ok(());
+    };
+    if profile.kind() == expected {
+        return Ok(());
+    }
+    eprintln!(
+        "error: launch profile `{}` has kind {:?}; use an `{command}` profile for `arcw {command}`",
+        profile.id().as_str(),
+        profile.kind()
+    );
+    Err(ExitCode::from(2))
+}
+
+fn profile_listen_addr(selection: &SourceSelection) -> Result<Option<SocketAddr>, ExitCode> {
+    let Some(raw) = selection.profile().and_then(ResolvedLaunchProfile::listen) else {
+        return Ok(None);
+    };
+    raw.parse::<SocketAddr>().map(Some).map_err(|error| {
+        eprintln!("error: invalid launch profile listen address `{raw}`: {error}");
+        ExitCode::from(2)
+    })
+}
+
+fn load_and_check_selection(
+    selection: &SourceSelection,
+    adapter_override: Option<&str>,
+) -> Result<CheckedModule, ExitCode> {
+    let adapter = adapter_override.or(selection.adapter());
+    let env = typecheck_env_for_adapter(adapter)?;
+    load_and_check_with_env(selection.path(), &env)
+}
+
+fn typecheck_env_for_adapter(adapter: Option<&str>) -> Result<TypeCheckEnv, ExitCode> {
+    match adapter {
+        None | Some("sans-io") => Ok(TypeCheckEnv::new()),
+        Some("native-http") => Ok(server_adapter_typecheck_env()),
+        Some(adapter) => {
+            eprintln!("error: unknown adapter `{adapter}`");
+            Err(ExitCode::from(2))
+        }
+    }
+}
+
 struct CheckedModule {
     hir: arcweft_lang_hir::model::HirModule,
     syntax_warnings: usize,
     line_task_groups: Vec<LoweredLineTaskGroup>,
-}
-
-fn load_and_check(path: &Path) -> Result<CheckedModule, ExitCode> {
-    load_and_check_with_env(path, &TypeCheckEnv::new())
 }
 
 fn load_and_check_with_env(path: &Path, env: &TypeCheckEnv) -> Result<CheckedModule, ExitCode> {
@@ -998,7 +1211,9 @@ fn server_adapter_typecheck_env() -> TypeCheckEnv {
 
 #[derive(Args, Clone, Debug)]
 struct VerifyOptions {
-    path: PathBuf,
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
     #[arg(long, value_parser = parse_verification_mode, default_value = "test")]
     mode: VerificationMode,
     #[arg(long, alias = "solver", value_parser = parse_backend_kind, default_value = "emit")]
@@ -1015,7 +1230,9 @@ struct VerifyOptions {
 
 #[derive(Args, Clone, Debug)]
 struct UnsafeOptions {
-    path: PathBuf,
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
     #[arg(long, value_parser = parse_verification_mode, default_value = "dev")]
     mode: VerificationMode,
     #[arg(long)]
@@ -1024,21 +1241,27 @@ struct UnsafeOptions {
 
 #[derive(Args, Clone, Debug)]
 struct CheckOptions {
-    path: PathBuf,
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
     #[arg(long)]
     json: bool,
 }
 
 #[derive(Args, Clone, Debug)]
 struct PlanOptions {
-    path: PathBuf,
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
     #[arg(long)]
     json: bool,
 }
 
 #[derive(Args, Clone, Debug)]
 struct RuntimeRunOptions {
-    path: PathBuf,
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
     #[arg(long, conflicts_with = "flow")]
     entry: Option<String>,
     #[arg(long, conflicts_with = "entry")]
@@ -1057,7 +1280,9 @@ struct RuntimeRunOptions {
 
 #[derive(Args, Clone, Debug)]
 struct CliRunOptions {
-    path: PathBuf,
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
     #[arg(long)]
     entry: Option<String>,
     #[arg(long, default_value_t = 1)]
@@ -1076,11 +1301,13 @@ struct CliRunOptions {
 
 #[derive(Args, Clone, Debug)]
 struct ServeOptions {
-    path: PathBuf,
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
     #[arg(long)]
     entry: Option<String>,
-    #[arg(long, default_value = "sans-io")]
-    adapter: String,
+    #[arg(long)]
+    adapter: Option<String>,
     #[arg(long)]
     listen: Option<SocketAddr>,
     #[arg(long)]
@@ -1093,7 +1320,9 @@ struct ServeOptions {
 
 #[derive(Args, Clone, Debug)]
 struct ScriptTestOptions {
-    path: PathBuf,
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
     #[arg(long, default_value_t = 32)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -1108,9 +1337,19 @@ struct ScriptTestOptions {
 
 #[derive(Args, Clone, Debug)]
 struct ScriptBenchOptions {
-    path: PathBuf,
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
     #[arg(long)]
     json: bool,
+}
+
+#[derive(Args, Clone, Debug, Default)]
+struct ProfileOptions {
+    #[arg(long)]
+    profile: Option<String>,
+    #[arg(long, default_value = "arcw.toml")]
+    manifest: PathBuf,
 }
 
 #[derive(Args, Clone, Debug)]

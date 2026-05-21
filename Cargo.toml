@@ -9,6 +9,7 @@ members = [
     "crates/arcweft-ref",
     "crates/arcweft",
     "crates/arcweft-lang-hir",
+    "crates/arcweft-launch",
     "crates/arcweft-lang-sema",
     "crates/arcweft-lang-syntax",
     "crates/arcweft-need",
@@ -40,6 +41,7 @@ rowan = "0.16.1"
 serde = "1.0.228"
 serde_json = "1.0.149"
 thiserror = "2.0.18"
+toml = "1.1.2"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -37,6 +37,32 @@ CLI adapter. JSON output reports the successful pipeline summary, including
 flow count, lowered line-task groups, syntax warnings, verifier diagnostics,
 obligations, and unsafe audit count.
 
+`arcw check` remains strict when a direct source path is used. It does not infer
+adapter-provided symbols from source shape alone. If a project launch profile is
+selected, the checker applies the adapter context declared by that profile:
+
+```bash
+arcw check game/routes/server.arcw
+arcw check --manifest arcw.toml --profile server.dev
+```
+
+The second form is the canonical project-context check. `arcw.toml` profiles are
+resolved before parsing and typechecking, and the selected adapter context is
+passed into semantic analysis as data rather than hard-coded language behavior.
+
+```toml
+[profiles."server.dev"]
+kind = "server"
+source = "src/server.arcw"
+entry = "http"
+adapter = "native-http"
+listen = "127.0.0.1:8787"
+```
+
+Direct path and `--profile` are mutually exclusive. This keeps core source mode
+reproducible for verifier, formatter, LSP, and CI use while still allowing
+profile-aware checks for adapter-backed entries.
+
 ## Verify
 
 `arcw verify` is the command-line entry point for the Sans I/O verifier. The
@@ -57,6 +83,10 @@ arcw cli game/routes/opening.arcw -- --dry-run
 arcw serve game/routes/server.arcw --entry http --json
 arcw test game/routes/opening.arcw --json
 arcw bench game/routes/opening.arcw --json
+arcw cli --manifest arcw.toml --profile cli.main -- --dry-run
+arcw serve --manifest arcw.toml --profile server.plan --json
+arcw test --manifest arcw.toml --profile test.opening --json
+arcw bench --manifest arcw.toml --profile bench.opening --json
 ```
 
 Modes:
@@ -109,6 +139,12 @@ checked flows to `arcweft-core::RuntimePlan` and steps `Engine` for up to `N`
 runtime steps. If `--entry` or `--flow` is omitted, the first lowered flow is
 used as a deterministic fallback for headless inspection.
 
+`arcw run --manifest arcw.toml --profile NAME` resolves the same launch profile
+model used by dedicated commands. For `game` and `cli` profiles it runs the
+selected entry through the headless VM. For `server`, `test`, and `bench`
+profiles it dispatches to the corresponding planning/execution path so profile
+selection stays the canonical context model.
+
 ```bash
 arcw run game/routes/opening.arcw --steps 8
 arcw run game/routes/opening.arcw --entry main --mode drain --steps 8
@@ -154,7 +190,12 @@ argc: i32
 ```bash
 arcw cli tools/build.arcw -- --profile debug
 arcw cli tools/build.arcw --entry main --json -- --profile release
+arcw cli --manifest arcw.toml --profile cli.main --json -- --profile release
 ```
+
+When `--profile` is used, `arcw cli` requires a `kind = "cli"` profile. The
+command is a user-facing alias for the launch-profile context plus CLI argument
+binding.
 
 ## Server Entry Plan
 
@@ -174,7 +215,13 @@ arcw serve game/routes/server.arcw
 arcw serve game/routes/server.arcw --entry http --adapter native-http --json
 arcw serve game/routes/server.arcw --entry http --adapter native-http --listen 127.0.0.1:8080
 arcw serve game/routes/server.arcw --entry http --adapter native-http --listen 127.0.0.1:0 --once --json
+arcw serve --manifest arcw.toml --profile server.plan --json
 ```
+
+When `--profile` is used, `arcw serve` requires a `kind = "server"` profile and
+uses the profile's `source`, `entry`, `adapter`, and optional `listen` data. A
+direct source path can still pass `--adapter native-http` to synthesize the same
+temporary context explicitly.
 
 With `--listen`, the CLI owns a minimal native HTTP adapter using `std::net`.
 The adapter parses the request line, matches exact routes and `:param` path
@@ -205,7 +252,13 @@ arcw test game/routes/opening.arcw --json
 arcw test game/routes/opening.arcw --steps 32 --json
 arcw bench game/routes/opening.arcw
 arcw bench game/routes/opening.arcw --json
+arcw test --manifest arcw.toml --profile test.opening --json
+arcw bench --manifest arcw.toml --profile bench.opening --json
 ```
+
+Profile mode requires matching `kind = "test"` or `kind = "bench"` respectively.
+Dedicated commands remain convenient user-facing aliases, but their semantic
+source, entry, and adapter context comes from the resolved launch profile.
 
 Headless scenario expectations currently cover `expect no_assertion_failures`,
 `expect signal @signal.id == VALUE`, and `expect log.LEVEL contains "text"`.

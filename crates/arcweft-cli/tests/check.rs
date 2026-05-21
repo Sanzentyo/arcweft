@@ -1379,6 +1379,317 @@ flow @flow.main main {
     );
 }
 
+#[test]
+fn profile_check_applies_native_http_adapter_context() {
+    let dir = temp_dir("profile-check-native-http");
+    let source = dir.join("server.arcw");
+    let manifest = dir.join("arcw.toml");
+    fs::write(
+        &source,
+        r#"
+entry server @entry.http {
+    route GET "/hello/:name" -> @flow.hello
+}
+
+flow @flow.hello hello {
+    return route_params.name
+}
+"#,
+    )
+    .expect("write server profile source");
+    fs::write(
+        &manifest,
+        r#"
+[profiles."server.dev"]
+kind = "server"
+source = "server.arcw"
+entry = "http"
+adapter = "native-http"
+"#,
+    )
+    .expect("write launch manifest");
+
+    let strict = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg(&source)
+        .output()
+        .expect("arcw check runs");
+    assert!(
+        !strict.status.success(),
+        "direct check must stay strict and reject route_params"
+    );
+
+    let profiled = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("server.dev")
+        .output()
+        .expect("arcw check --profile runs");
+    fs::remove_dir_all(&dir).expect("remove temp profile project");
+    assert!(
+        profiled.status.success(),
+        "profiled check should apply native-http context, stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&profiled.stdout),
+        String::from_utf8_lossy(&profiled.stderr)
+    );
+}
+
+#[test]
+fn serve_profile_alias_lists_server_routes() {
+    let dir = temp_dir("serve-profile-routes");
+    let source = dir.join("server.arcw");
+    let manifest = dir.join("arcw.toml");
+    fs::write(
+        &source,
+        r#"
+entry server @entry.http {
+    route GET "/health" -> @flow.health
+}
+
+flow @flow.health health {
+    return "ok"
+}
+"#,
+    )
+    .expect("write server profile source");
+    fs::write(
+        &manifest,
+        r#"
+[profiles."server.plan"]
+kind = "server"
+source = "server.arcw"
+entry = "http"
+adapter = "native-http"
+"#,
+    )
+    .expect("write launch manifest");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("serve")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("server.plan")
+        .arg("--json")
+        .output()
+        .expect("arcw serve --profile runs");
+    fs::remove_dir_all(&dir).expect("remove temp profile project");
+    assert!(
+        output.status.success(),
+        "serve profile should succeed, stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"entry\": \"entry.http\"")
+            && stdout.contains("\"adapter\": \"native-http\"")
+            && stdout.contains("\"target\": \"flow.health\""),
+        "serve profile JSON should list routes: {stdout}"
+    );
+}
+
+#[test]
+fn profile_source_and_path_are_mutually_exclusive() {
+    let dir = temp_dir("profile-mutual-exclusion");
+    let source = dir.join("main.arcw");
+    let manifest = dir.join("arcw.toml");
+    fs::write(
+        &source,
+        r#"
+flow @flow.main main {
+    return "done"
+}
+"#,
+    )
+    .expect("write profile source");
+    fs::write(
+        &manifest,
+        r#"
+[profiles.game]
+kind = "game"
+source = "main.arcw"
+"#,
+    )
+    .expect("write launch manifest");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg(&source)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("game")
+        .output()
+        .expect("arcw check runs");
+    fs::remove_dir_all(&dir).expect("remove temp profile project");
+    assert!(
+        !output.status.success(),
+        "path plus --profile must be rejected"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("source path and --profile"),
+        "stderr should explain mutually exclusive source selection"
+    );
+}
+
+#[test]
+fn profile_rejects_unknown_adapter() {
+    let dir = temp_dir("profile-unknown-adapter");
+    let source = dir.join("server.arcw");
+    let manifest = dir.join("arcw.toml");
+    fs::write(
+        &source,
+        r#"
+entry server @entry.http { run @flow.main }
+
+flow @flow.main main {
+    return "ok"
+}
+"#,
+    )
+    .expect("write server profile source");
+    fs::write(
+        &manifest,
+        r#"
+[profiles.bad]
+kind = "server"
+source = "server.arcw"
+entry = "http"
+adapter = "custom-http"
+"#,
+    )
+    .expect("write launch manifest");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("bad")
+        .output()
+        .expect("arcw check --profile runs");
+    fs::remove_dir_all(&dir).expect("remove temp profile project");
+    assert!(!output.status.success(), "unknown adapter must fail");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("unknown adapter `custom-http`"),
+        "stderr should explain unknown adapter: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn cli_test_and_bench_profiles_use_profile_sources() {
+    let dir = temp_dir("profile-cli-test-bench");
+    let cli_source = dir.join("tool.arcw");
+    let test_source = dir.join("opening_test.arcw");
+    let bench_source = dir.join("opening_bench.arcw");
+    let manifest = dir.join("arcw.toml");
+    fs::write(
+        &cli_source,
+        r"
+entry cli @entry.main { run @flow.main }
+
+flow @flow.main main(argc: i32) {
+    return argc
+}
+",
+    )
+    .expect("write cli source");
+    fs::write(
+        &test_source,
+        r#"
+test @test.opening scenario {
+    start @flow.opening
+    expect no_assertion_failures
+}
+
+flow @flow.opening opening {
+    return "done"
+}
+"#,
+    )
+    .expect("write test source");
+    fs::write(
+        &bench_source,
+        r#"
+bench @bench.opening {
+    setup { let state = fixture<GameState>("opening.json") }
+    measure iterations = 1 { opening_choices() }
+}
+"#,
+    )
+    .expect("write bench source");
+    fs::write(
+        &manifest,
+        r#"
+[profiles."cli.main"]
+kind = "cli"
+source = "tool.arcw"
+entry = "main"
+
+[profiles."test.opening"]
+kind = "test"
+source = "opening_test.arcw"
+
+[profiles."bench.opening"]
+kind = "bench"
+source = "opening_bench.arcw"
+"#,
+    )
+    .expect("write launch manifest");
+
+    let cli = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("cli")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("cli.main")
+        .arg("--json")
+        .arg("--")
+        .arg("alice")
+        .output()
+        .expect("arcw cli --profile runs");
+    assert!(
+        cli.status.success(),
+        "cli profile should run, stderr: {}",
+        String::from_utf8_lossy(&cli.stderr)
+    );
+
+    let test = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("test")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("test.opening")
+        .arg("--json")
+        .output()
+        .expect("arcw test --profile runs");
+    assert!(
+        test.status.success(),
+        "test profile should run, stderr: {}",
+        String::from_utf8_lossy(&test.stderr)
+    );
+
+    let bench = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("bench.opening")
+        .arg("--json")
+        .output()
+        .expect("arcw bench --profile runs");
+    fs::remove_dir_all(&dir).expect("remove temp profile project");
+    assert!(
+        bench.status.success(),
+        "bench profile should run, stderr: {}",
+        String::from_utf8_lossy(&bench.stderr)
+    );
+}
+
 fn temp_arcw(name: &str, source: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     path.push(format!("arcweft-cli-{name}-{}.arcw", std::process::id()));

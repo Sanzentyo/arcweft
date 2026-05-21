@@ -153,6 +153,34 @@ entry server @entry.http {
 
 The manifest/profile can attach `native-http` and provide injected symbols.
 
+## Resolution from pro review 23
+
+`docs/reviews/pro_review23.md` confirms Option B:
+
+```text
+LaunchProfile is the canonical model.
+Dedicated commands are aliases.
+AdapterContext is data selected by the profile.
+```
+
+The implementation now adds `arcweft-launch`, a Sans I/O manifest/profile model
+for `arcw.toml`, and routes source-loading CLI commands through a shared source
+selection step:
+
+```bash
+arcw check <file.arcw>
+arcw check --manifest arcw.toml --profile server.dev
+arcw serve --manifest arcw.toml --profile server.dev
+arcw cli --manifest arcw.toml --profile cli.main -- ARGS...
+arcw test --manifest arcw.toml --profile test.opening
+arcw bench --manifest arcw.toml --profile bench.opening
+```
+
+Direct source mode remains strict. Profile mode applies the selected adapter
+context before semantic checking. `route_params` remains an interim
+native-HTTP adapter binding; Phase 3 should move it to explicit route-to-flow
+parameters.
+
 ## Decisions needed
 
 1. Should `arcw serve` remain a first-class command, or become a thin alias for
@@ -185,5 +213,9 @@ serve/native-http: adapter context applies
 bare unresolved atoms: rejected
 short variant atoms: accepted
 ```
+
+The current implementation keeps those choices. It additionally rejects unknown
+profile adapters before checking source, so adapter availability is explicit
+project data rather than an ambient language assumption.
 
 

@@ -345,7 +345,16 @@ arcw run <file.arcw> --entry @entry.main --mode game --steps 8
 arcw run <file.arcw> --entry @entry.main --mode drain --max-ops 10000
 arcw cli <file.arcw> --entry @entry.main -- ARGS...
 arcw serve <file.arcw> --entry @entry.http --adapter native-http --listen 127.0.0.1:8080
+arcw check --manifest arcw.toml --profile server.dev
+arcw serve --manifest arcw.toml --profile server.dev --json
 ```
+
+The runtime boundary now has a project-context layer: `arcweft-launch` parses
+`arcw.toml` launch profiles, and source-loading CLI commands can resolve either
+a direct `.arcw` path or a `--profile`. Direct path mode stays strict and does
+not infer adapter symbols from source shape. Profile mode is the canonical
+project execution/check context and selects adapter context as data before sema
+or runtime lowering runs.
 
 Replace `RuntimeRunOptions.frames` with:
 
@@ -607,6 +616,12 @@ These encode intentionally rejected constructs, such as absolute OS paths or old
 - [x] Rename runtime report fields from frames to steps.
 - [x] Add `arcw cli` after entry/capability grammar lands.
 - [x] Add `arcw serve` as a Sans I/O server-entry route-plan command.
+- [x] Add launch profiles from `arcw.toml` and allow `check`, `run`, `cli`,
+      `serve`, `test`, and `bench` to resolve `--profile`.
+- [x] Keep direct `arcw check <file.arcw>` strict while allowing profile-selected
+      adapter context.
+- [x] Treat dedicated commands as launch-profile aliases when `--profile` is
+      used.
 
 ### Parser / language
 

@@ -157,6 +157,7 @@ arcweft-verify-z3
 arcweft-verify-oxiz
 arcweft-jj
 arcweft-tooling
+arcweft-launch
 ```
 
 ## 依存ルール
@@ -184,6 +185,10 @@ arcweft-tooling
 - `arcweft-verify-z3` は外部 Z3 process adapter、`arcweft-verify-oxiz` は pure Rust OxiZ adapter とする。solver依存は `arcweft-verify` や `arcweft-core` に入れない。
 - `arcweft-verify-lsp` は transportなしの LSP helper crate とし、`arcweft-verify` report から diagnostics / code actions を作る。
 - `arcweft-test` は `test` / `bench` 宣言を HIR から Sans I/O manifest に変換する。ファイルI/O、clock、renderer/audio driving、benchmark timers、headless player 実行は CLI / player / adapter crate に置く。
+- `arcweft-launch` は `arcw.toml` launch profiles を typed data と TOML codec
+  として所有する Sans I/O crate とする。ファイル探索、current directory、
+  process 環境、network binding、adapter execution は CLI / player adapter 側の
+  責務。
 - `parse_source` は `ParsedSource { syntax, typed_tree, errors, source_hash, line_index }` のように常に lossless CST と diagnostics を返す。typed source model は `TypedSyntaxTree` として CST / rowan `SyntaxNode` と区別する。内部の行単位 parser は短期 MVP であり、delimiter recovery、top-level punctuation / keyword split、binding split、multi-token punctuation sequence split などの構文走査は CST helper へ集約し、これ以上 `split_top_level` 型の ad hoc parser を拡張しない。
 - Cranelift は `arcweft-lang-jit-cranelift` の native-only 最適化 backend に閉じ込める。`arcweft-core` に `jit-cranelift` feature や Cranelift 依存を置かない。
 - Wasmtime は `arcweft-wasm-wasmtime` の native plugin/activity sandbox 用 adapter であり、Arcweft runtime の主実行系ではない。WIT ABI は `arcweft-wasm-abi`、Wasm validation/generation/inspection は `arcweft-wasm-tools` が担当する。
