@@ -1,12 +1,12 @@
 entry server @entry.http {
     route GET "/health" -> @flow.health
-    route GET "/hello/:name" -> @flow.hello
+    route GET "/hello/:name" -> @flow.hello(name = :name)
 }
 
 flow @flow.health health {
     return "ok"
 }
 
-flow @flow.hello hello {
-    return route_params.name
+flow @flow.hello hello(name: String) {
+    return name
 }

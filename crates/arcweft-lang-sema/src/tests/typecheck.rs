@@ -16,6 +16,56 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 }
 
 #[test]
+fn typechecks_explicit_route_parameter_bindings() {
+    let tree = parse_ok(
+        r#"
+entry server @entry.http {
+    route GET "/hello/:name" -> @flow.hello(name = :name)
+}
+
+flow @flow.hello hello(name: String) -> String {
+    return name
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("route fixture lowers");
+    validate_typecheck_ready(&hir).expect("route fixture is typecheck-ready");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("explicit route binding typechecks");
+}
+
+#[test]
+fn typecheck_rejects_route_parameter_mismatches() {
+    let tree = parse_ok(
+        r#"
+entry server @entry.http {
+    route GET "/hello/:name" -> @flow.hello(person = :missing)
+}
+
+flow @flow.hello hello(name: String) -> String {
+    return name
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("bad route fixture lowers");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("route mismatch is rejected");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("route binding `person` references missing path parameter `:missing`")
+    }));
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("route target `flow.hello` has no flow parameter named `person`")
+    }));
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("requires explicit binding for flow parameter `name`")
+    }));
+}
+
+#[test]
 fn typecheck_rejects_try_on_non_result_expression() {
     let tree = parse_ok(
         r"

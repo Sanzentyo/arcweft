@@ -313,12 +313,26 @@ pub enum EntryItem {
         method: String,
         path: String,
         target: EntityRef,
+        bindings: Vec<EntryRouteBinding>,
     },
     Option {
         name: String,
         value: Expr,
     },
     Raw(String),
+}
+
+/// Explicit route-to-flow argument binding.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EntryRouteBinding {
+    name: String,
+    source: EntryRouteBindingSource,
+}
+
+/// Adapter route value source used by an entry route binding.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EntryRouteBindingSource {
+    PathParam(String),
 }
 
 /// External module import declaration such as
@@ -746,6 +760,35 @@ impl EntryKind {
             Self::Test => "test",
             Self::Bench => "bench",
             Self::Custom(value) => value,
+        }
+    }
+}
+
+impl EntryRouteBinding {
+    pub(crate) fn new(name: impl Into<String>, source: EntryRouteBindingSource) -> Self {
+        Self {
+            name: name.into(),
+            source,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn source(&self) -> &EntryRouteBindingSource {
+        &self.source
+    }
+}
+
+impl EntryRouteBindingSource {
+    pub fn path_param(name: impl Into<String>) -> Self {
+        Self::PathParam(name.into())
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Self::PathParam(name) => name,
         }
     }
 }

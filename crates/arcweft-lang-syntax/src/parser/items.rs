@@ -1,14 +1,15 @@
 use crate::ast::common::TextRange;
 use crate::ast::items::{
     CallableItem, CallableItemInit, CapabilityFn, EntityDeclItem, EntryDeclItem, EntryItem,
-    EntryKind, EnumItem, EnumVariant, ExternCapabilityItem, ExternModItem, FunctionInit,
-    FunctionItem, ImplItem, ImplMember, MemoFn, ParserItem, StateField, StateItem, StructField,
-    StructItem, TraitItem, TraitMember, TypeAliasItem,
+    EntryKind, EntryRouteBinding, EntryRouteBindingSource, EnumItem, EnumVariant,
+    ExternCapabilityItem, ExternModItem, FunctionInit, FunctionItem, ImplItem, ImplMember, MemoFn,
+    ParserItem, StateField, StateItem, StructField, StructItem, TraitItem, TraitMember,
+    TypeAliasItem,
 };
 use crate::cst::{
-    find_matching_angle_group, find_top_level_punctuation, split_first_string_literal,
-    split_leading_ident, split_top_level_punctuation, split_top_level_punctuation_once,
-    split_top_level_punctuation_sequence_once,
+    find_matching_angle_group, find_matching_punctuation, find_top_level_punctuation,
+    split_first_string_literal, split_leading_ident, split_top_level_punctuation,
+    split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
 };
 use crate::types::{parse_fn_signature, parse_type_ref};
 
@@ -16,7 +17,7 @@ use super::headers::{
     parse_callable_kind, parse_contract_clause, parse_contract_expr_list, parse_entity_decl_head,
     parse_extern_mod_head, parse_function_kind_and_signature, parse_name_and_tail,
     parse_optional_angle_head, parse_required_decl_entity_ref_without_name_marker,
-    parse_required_entity_ref, parse_visibility_prefix, split_function_header_lines,
+    parse_required_entity_ref, parse_visibility_prefix, simple_error, split_function_header_lines,
     split_supertraits,
 };
 use super::{
@@ -683,12 +684,110 @@ fn parse_entry_route(
     let (left, target_source) = split_top_level_punctuation_sequence_once(source, &["-", ">"])?;
     let (method, rest) = split_leading_ident(left.trim())?;
     let (path, _) = split_first_string_literal(rest.trim())?;
-    let (target, _) = parse_required_entity_ref(target_source.trim(), base, errors)?;
+    let (target, bindings) = parse_entry_route_target(target_source.trim(), base, errors)?;
     Some(EntryItem::Route {
         method: method.to_owned(),
         path: path.to_owned(),
         target,
+        bindings,
     })
+}
+
+fn parse_entry_route_target(
+    source: &str,
+    base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Option<(crate::ast::ids::EntityRef, Vec<EntryRouteBinding>)> {
+    let (target, rest) = parse_required_entity_ref(source, base, errors)?;
+    let rest = rest.trim();
+    if rest.is_empty() {
+        return Some((target, Vec::new()));
+    }
+    if !rest.starts_with('(') {
+        errors.push(simple_error(
+            base,
+            rest.len(),
+            "unexpected route target suffix",
+            "(name = :path_param)",
+        ));
+        return None;
+    }
+    let Some(close) = find_matching_punctuation(rest, 0, '(', ')') else {
+        errors.push(simple_error(
+            base,
+            rest.len(),
+            "unclosed route target argument list",
+            ")",
+        ));
+        return None;
+    };
+    if !rest[close + ')'.len_utf8()..].trim().is_empty() {
+        errors.push(simple_error(
+            base + close,
+            rest.len() - close,
+            "unexpected route target suffix",
+            "end of route target",
+        ));
+        return None;
+    }
+    let bindings = split_top_level_punctuation(&rest['('.len_utf8()..close], ',')
+        .into_iter()
+        .filter_map(|binding| parse_entry_route_binding(binding.trim(), base, errors))
+        .collect();
+    Some((target, bindings))
+}
+
+fn parse_entry_route_binding(
+    source: &str,
+    base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Option<EntryRouteBinding> {
+    if source.is_empty() {
+        return None;
+    }
+    let Some((name, value)) = split_top_level_punctuation_once(source, '=') else {
+        errors.push(simple_error(
+            base,
+            source.len(),
+            "expected route argument binding",
+            "name = :path_param",
+        ));
+        return None;
+    };
+    let (name, name_rest) = split_leading_ident(name.trim())?;
+    if !name_rest.trim().is_empty() {
+        errors.push(simple_error(
+            base,
+            source.len(),
+            "invalid route argument name",
+            "identifier",
+        ));
+        return None;
+    }
+    let value = value.trim();
+    let Some(param) = value.strip_prefix(':') else {
+        errors.push(simple_error(
+            base,
+            source.len(),
+            "route arguments currently bind path parameters explicitly",
+            ":path_param",
+        ));
+        return None;
+    };
+    let (param, param_rest) = split_leading_ident(param.trim())?;
+    if !param_rest.trim().is_empty() {
+        errors.push(simple_error(
+            base,
+            source.len(),
+            "invalid route path parameter reference",
+            ":path_param",
+        ));
+        return None;
+    }
+    Some(EntryRouteBinding::new(
+        name,
+        EntryRouteBindingSource::path_param(param),
+    ))
 }
 
 fn parse_capability_fns(body: &str) -> Vec<CapabilityFn> {

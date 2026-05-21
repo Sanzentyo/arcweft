@@ -31,7 +31,7 @@ Arcweft の source / project metadata が runtime の意味を十分に表現で
 | `arcw serve` は first-class command か | UX としては残すが、内部的には `arcw run --profile ...` へ lower する alias にする。 |
 | adapter-injected symbols の所在 | canonical definition は adapter metadata / `arcweft-adapter-context`、選択と有効化は LaunchProfile、source には限定的な entry shorthand だけを置く。 |
 | generic `arcw check` で adapter context を使うか | 使わない。generic check は strict。adapter context は `--profile` または明示 adapter 選択時だけ適用する。 |
-| `route_params` の扱い | 恒久仕様としては ambient injected binding ではなく、明示的な flow parameter に寄せる。移行期間だけ conventional injected binding を許容してよい。 |
+| `route_params` の扱い | ambient injected binding は廃止し、明示的な route-to-flow parameter binding に寄せる。 |
 | speaker option atoms | bare atom は registry / schema / expected type がある場合だけ許可する。`.smile` のような short variant atom は引き続き許可してよい。 |
 
 ## 1. Dedicated commands は alias として残す
@@ -147,21 +147,19 @@ flow @flow.hello hello(params: RouteParams<{ name: String }>) -> String {
 
 重要なのは、flow 側から見ると `route_params` が突然存在するのではなく、signature に現れる値として扱えることです。これにより、flow の再利用性、testability、LSP の補完、型検査の説明可能性が上がる。
 
-### 移行期間の扱い
+### 実装後の扱い
 
-既存 sample を壊しすぎないため、短期的には profile-selected adapter context で次を許してよい。
+既存 sample も明示 binding へ更新する。profile-selected adapter context でも
+`route_params` は提供しない。
 
 ```arcw
-flow @flow.hello hello() -> String {
-    return route_params.name
+entry server @entry.http {
+    route GET "/hello/:name" -> @flow.hello(name = :name)
 }
-```
 
-ただし、diagnostic では次のように誘導する。
-
-```text
-`route_params` is provided by adapter context. Prefer explicit flow parameters:
-flow hello(name: String) { ... }
+flow @flow.hello hello(name: String) -> String {
+    return name
+}
 ```
 
 ## 5. speaker option atoms は registry ができるまで strict にする
@@ -259,7 +257,7 @@ LSP は active profile を選べるようにする。profile 未選択時は cor
 
 - route pattern から param schema を抽出する
 - route declaration と flow signature を照合する
-- ambient `route_params` は compatibility diagnostic 付きにする
+- ambient `route_params` は提供せず、明示的な route-to-flow binding を必須にする
 - sample を `server.arcw` に更新する
 
 ### Phase 4: option/schema/atom registry を導入する

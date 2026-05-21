@@ -12,7 +12,8 @@ use arcweft_core::effect::{LineEffectRequest, RuntimeCommand};
 use arcweft_core::line_task::{LineOutRequest, LineTaskGroup};
 use arcweft_core::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
-    RuntimeEntryTarget, RuntimeFlow, RuntimeLineId, RuntimeMatchArm, RuntimePlan, RuntimeRouteSpec,
+    RuntimeEntryTarget, RuntimeFlow, RuntimeLineId, RuntimeMatchArm, RuntimePlan,
+    RuntimeRouteBinding, RuntimeRouteBindingSource, RuntimeRouteSpec,
 };
 use arcweft_core::task::{AwaitTarget, NeedId, TaskId};
 use arcweft_core::value::{RuntimeExpr, RuntimeValue};
@@ -100,10 +101,22 @@ fn lower_entry_target(items: &[EntryItem]) -> RuntimeEntryTarget {
                 method,
                 path,
                 target,
+                bindings,
             } => Some(RuntimeRouteSpec {
                 method: method.clone(),
                 path: path.clone(),
                 target: flow_runtime_id(target),
+                bindings: bindings
+                    .iter()
+                    .map(|binding| RuntimeRouteBinding {
+                        name: binding.name().to_owned(),
+                        source: match binding.source() {
+                            arcweft_lang_hir::syntax::ast::items::EntryRouteBindingSource::PathParam(name) => {
+                                RuntimeRouteBindingSource::PathParam(name.clone())
+                            }
+                        },
+                    })
+                    .collect(),
             }),
             _ => None,
         })

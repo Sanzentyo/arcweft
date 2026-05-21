@@ -12,7 +12,9 @@ EntryKind := 'game' | 'cli' | 'server' | 'activity' | 'test' | 'bench' | Ident
 EntryId   := EntityRef | RelativeId | FamilyRelativeEntityRef
 EntryBlock := '{' EntryItem* '}'
 EntryItem := 'start' EntityRef | 'run' EntityRef | RouteDecl | EntryOption
-RouteDecl := 'route' HttpMethod String '->' EntityRef
+RouteDecl := 'route' HttpMethod String '->' EntityRef RouteArgList?
+RouteArgList := '(' RouteArg (',' RouteArg)* ')'
+RouteArg := Ident '=' ':' Ident
 HttpMethod := 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
 ```
 
@@ -52,13 +54,22 @@ flow @flow.cli_main main effects { stdio.write, process.exit } {
 ```arcw
 entry server @entry.http {
     route GET "/health" -> @flow.health
-    route GET "/hello/:name" -> @flow.hello
+    route GET "/hello/:name" -> @flow.hello(name = :name)
 }
 
-flow @flow.health(req: HttpRequest) -> HttpResponse effects { http.respond } {
-    return http.text(status = 200, body = "ok")
+flow @flow.health() -> String {
+    return "ok"
+}
+
+flow @flow.hello(name: String) -> String {
+    return "hello {name}"
 }
 ```
+
+Route path parameters are not ambient locals. A route must explicitly bind path
+captures to flow parameters with `name = :path_param`. This keeps the target
+flow reusable in tests and non-server profiles, and lets the checker validate
+that a route supplies the parameters required by the flow signature.
 
 ## Capabilities
 

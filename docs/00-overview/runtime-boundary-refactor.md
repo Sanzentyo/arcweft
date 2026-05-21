@@ -524,7 +524,7 @@ entry cli @entry.greet {
 ```arcw
 entry server @entry.http {
     route GET "/health" -> @flow.health
-    route GET "/hello/:name" -> @flow.hello
+    route GET "/hello/:name" -> @flow.hello(name = :name)
 }
 ```
 

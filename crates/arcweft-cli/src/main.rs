@@ -544,6 +544,7 @@ fn server_routes(entry: &RuntimeEntrySpec) -> Vec<RuntimeRouteSpec> {
             method: "*".to_owned(),
             path: "*".to_owned(),
             target: flow.clone(),
+            bindings: Vec::new(),
         }],
     }
 }

@@ -1310,16 +1310,16 @@ flow @flow.save save {
 }
 
 #[test]
-fn serve_json_typechecks_route_params_runtime_binding() {
+fn serve_json_typechecks_explicit_route_parameters() {
     let path = temp_arcw(
-        "serve-route-params",
+        "serve-route-params-explicit",
         r#"
 entry server @entry.http {
-    route GET "/hello/:name" -> @flow.hello
+    route GET "/hello/:name" -> @flow.hello(name = :name)
 }
 
-flow @flow.hello hello {
-    return route_params.name
+flow @flow.hello hello(name: String) {
+    return name
 }
 "#,
     );
@@ -1337,7 +1337,7 @@ flow @flow.hello hello {
 
     assert!(
         output.status.success(),
-        "expected route_params to typecheck in server entry context, stdout: {}, stderr: {}",
+        "expected explicit route parameters to typecheck in server entry context, stdout: {}, stderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -1380,8 +1380,55 @@ flow @flow.main main {
 }
 
 #[test]
-fn profile_check_applies_native_http_adapter_context() {
-    let dir = temp_dir("profile-check-native-http");
+fn profile_check_accepts_explicit_route_parameters() {
+    let dir = temp_dir("profile-check-explicit-routes");
+    let source = dir.join("server.arcw");
+    let manifest = dir.join("arcw.toml");
+    fs::write(
+        &source,
+        r#"
+entry server @entry.http {
+    route GET "/hello/:name" -> @flow.hello(name = :name)
+}
+
+flow @flow.hello hello(name: String) {
+    return name
+}
+"#,
+    )
+    .expect("write server profile source");
+    fs::write(
+        &manifest,
+        r#"
+[profiles."server.dev"]
+kind = "server"
+source = "server.arcw"
+entry = "http"
+adapter = "native-http"
+"#,
+    )
+    .expect("write launch manifest");
+
+    let profiled = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("server.dev")
+        .output()
+        .expect("arcw check --profile runs");
+    fs::remove_dir_all(&dir).expect("remove temp profile project");
+    assert!(
+        profiled.status.success(),
+        "profiled check should accept explicit route parameters, stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&profiled.stdout),
+        String::from_utf8_lossy(&profiled.stderr)
+    );
+}
+
+#[test]
+fn profile_check_rejects_ambient_route_params() {
+    let dir = temp_dir("profile-check-route-params-rejected");
     let source = dir.join("server.arcw");
     let manifest = dir.join("arcw.toml");
     fs::write(
@@ -1409,17 +1456,7 @@ adapter = "native-http"
     )
     .expect("write launch manifest");
 
-    let strict = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("check")
-        .arg(&source)
-        .output()
-        .expect("arcw check runs");
-    assert!(
-        !strict.status.success(),
-        "direct check must stay strict and reject route_params"
-    );
-
-    let profiled = Command::new(env!("CARGO_BIN_EXE_arcw"))
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("check")
         .arg("--manifest")
         .arg(&manifest)
@@ -1429,10 +1466,13 @@ adapter = "native-http"
         .expect("arcw check --profile runs");
     fs::remove_dir_all(&dir).expect("remove temp profile project");
     assert!(
-        profiled.status.success(),
-        "profiled check should apply native-http context, stdout: {}, stderr: {}",
-        String::from_utf8_lossy(&profiled.stdout),
-        String::from_utf8_lossy(&profiled.stderr)
+        !output.status.success(),
+        "ambient route_params must not be accepted by profile context"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("unknown symbol `route_params`"),
+        "stderr should reject route_params: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 

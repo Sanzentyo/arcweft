@@ -5,7 +5,7 @@
 //! injects runtime bindings such as HTTP request data.
 
 use arcweft_lang_sema::env::TypeCheckEnv;
-use arcweft_lang_sema::types::{MapKind, TypeKind};
+use arcweft_lang_sema::types::TypeKind;
 
 /// A symbol injected by a host adapter into the checked source environment.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -70,12 +70,4 @@ impl AdapterTypecheckContext {
 pub fn native_http_server_context() -> AdapterTypecheckContext {
     AdapterTypecheckContext::new()
         .with_symbol("request", TypeKind::Named("HttpRequestContext".to_owned()))
-        .with_symbol(
-            "route_params",
-            TypeKind::Map {
-                kind: MapKind::BTree,
-                key: Box::new(TypeKind::String),
-                value: Box::new(TypeKind::String),
-            },
-        )
 }

@@ -210,6 +210,22 @@ with `route METHOD "PATH" -> @flow.id` exposes those routes directly. A server
 entry with `run @flow.id` is treated as a default `* * -> flow.id` route for
 headless adapter planning.
 
+Routes that capture path parameters bind them explicitly to target flow
+parameters:
+
+```arcw
+entry server @entry.http {
+    route GET "/hello/:name" -> @flow.hello(name = :name)
+}
+
+flow @flow.hello hello(name: String) -> String {
+    return name
+}
+```
+
+The native HTTP adapter injects these bindings by name when a request matches
+the route. It does not provide an ambient `route_params` local.
+
 ```bash
 arcw serve game/routes/server.arcw
 arcw serve game/routes/server.arcw --entry http --adapter native-http --json

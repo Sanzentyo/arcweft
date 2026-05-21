@@ -12,14 +12,12 @@ symbols, Arcweft source and project metadata are probably not expressive enough
 yet.
 ```
 
-The immediate issue was `route_params.name` in a server flow. It should not be
-accepted by the language checker globally, because `route_params` is not an
-Arcweft language builtin. It is a binding injected by a server adapter. The
-current patch therefore keeps generic `arcw check` strict and only makes
-`arcw serve --adapter native-http` type-check with a native HTTP adapter context.
+The immediate issue was the earlier `route_params.name` server-flow style. It
+is no longer accepted, because route path captures are not Arcweft language
+builtins. Server routes now bind path captures to flow parameters explicitly.
 
-That is safer than putting `route_params` directly into `arcweft-lang-sema`, but
-it is still an interim design.
+That is safer than putting route captures directly into `arcweft-lang-sema` as
+ambient symbols and keeps server flows reusable outside the server adapter.
 
 ## Current state in this branch
 
@@ -33,10 +31,10 @@ alice(face=.smile, voice=auto, window=@textbox:.side)
 - `arcweft-lang-sema` rejects unresolved bare atoms such as `face=smile` until
   an option/schema/atom registry exists.
 - `.smile` and `.worried` continue to work as short variant-style atoms.
-- `arcw check samples/visual-novel-mini/src/server.arcw` rejects
-  `route_params` as an unknown symbol.
+- `arcw check samples/visual-novel-mini/src/server.arcw` accepts explicit
+  route-to-flow parameter bindings.
 - `arcw serve samples/visual-novel-mini/src/server.arcw --adapter native-http`
-  accepts it through adapter-provided type context.
+  binds path captures to those flow parameters at request time.
 - A small `arcweft-adapter-context` crate holds the native HTTP adapter semantic
   context so it is not hard-coded in `arcweft-lang-sema`.
 
@@ -116,8 +114,7 @@ Make source entries explicitly declare their adapter context:
 ```arcw
 entry server @entry.http adapter native_http {
     inject request: HttpRequestContext
-    inject route_params: Map<String, String>
-    route GET "/hello/:name" -> @flow.hello
+    route GET "/hello/:name" -> @flow.hello(name = :name)
 }
 ```
 
@@ -147,7 +144,7 @@ Then allow a limited source-level shorthand only when useful:
 
 ```arcw
 entry server @entry.http {
-    route GET "/hello/:name" -> @flow.hello
+    route GET "/hello/:name" -> @flow.hello(name = :name)
 }
 ```
 
@@ -177,9 +174,8 @@ arcw bench --manifest arcw.toml --profile bench.opening
 ```
 
 Direct source mode remains strict. Profile mode applies the selected adapter
-context before semantic checking. `route_params` remains an interim
-native-HTTP adapter binding; Phase 3 should move it to explicit route-to-flow
-parameters.
+context before semantic checking. Route path captures are explicit
+route-to-flow bindings; `route_params` is intentionally not an adapter symbol.
 
 ## Decisions needed
 
@@ -193,12 +189,16 @@ parameters.
 3. Should generic `arcw check` accept adapter context when a file contains
    `entry server`, or should adapter context only be available through a selected
    profile/adapter?
-4. Should `route_params` be a conventional injected binding, or should route
-   params be explicit flow parameters?
+4. Should route captures be conventional injected bindings, or explicit flow
+   parameters?
 
 ```arcw
-flow @flow.hello hello(route_params: RouteParams) {
-    return route_params.name
+entry server @entry.http {
+    route GET "/hello/:name" -> @flow.hello(name = :name)
+}
+
+flow @flow.hello hello(name: String) {
+    return name
 }
 ```
 
@@ -209,7 +209,7 @@ Current patch chooses the strict answer for 3 and 5:
 
 ```text
 generic check: no adapter-injected symbols
-serve/native-http: adapter context applies
+serve/native-http: adapter context applies only for adapter symbols such as request
 bare unresolved atoms: rejected
 short variant atoms: accepted
 ```

@@ -1,6 +1,6 @@
 use arcweft_core::engine::{FlowExit, FlowFiberStatus};
 use arcweft_core::executor::{RuntimeExecutor, VmExecutor};
-use arcweft_core::plan::{FlowRuntimeId, RuntimePlan, RuntimeRouteSpec};
+use arcweft_core::plan::{RuntimePlan, RuntimeRouteBindingSource, RuntimeRouteSpec};
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
 };
@@ -104,28 +104,22 @@ pub(crate) fn handle_http_request(
             body: "not found".to_owned(),
         });
     };
-    Ok(run_route_flow(
-        plan,
-        &route.target,
-        &parsed,
-        params,
-        max_ops,
-    ))
+    Ok(run_route_flow(plan, route, &parsed, &params, max_ops))
 }
 
 fn run_route_flow(
     plan: &RuntimePlan,
-    target: &FlowRuntimeId,
+    route: &RuntimeRouteSpec,
     request: &HttpRequestHead,
-    params: Vec<(String, String)>,
+    params: &[(String, String)],
     max_ops: usize,
 ) -> NativeHttpResponse {
     let mut plan = plan.clone();
-    plan.entry_flow = Some(target.clone());
+    plan.entry_flow = Some(route.target.clone());
     let mut executor = VmExecutor::new(plan);
     let result = executor.step(
         RuntimeStepInput {
-            bindings: request_bindings(request, params),
+            bindings: request_bindings(request, route, params),
             ..RuntimeStepInput::default()
         },
         RuntimeStepOptions {
@@ -163,39 +157,40 @@ fn run_route_flow(
 
 fn request_bindings(
     request: &HttpRequestHead,
-    params: Vec<(String, String)>,
+    route: &RuntimeRouteSpec,
+    params: &[(String, String)],
 ) -> Vec<RuntimeBinding> {
-    vec![
-        RuntimeBinding {
-            name: "request".to_owned(),
-            value: RuntimeValue::Record(vec![
-                RuntimeFieldValue {
-                    name: "method".to_owned(),
-                    value: RuntimeValue::String(request.method.clone()),
-                },
-                RuntimeFieldValue {
-                    name: "path".to_owned(),
-                    value: RuntimeValue::String(request.path.clone()),
-                },
-                RuntimeFieldValue {
-                    name: "body".to_owned(),
-                    value: RuntimeValue::String(request.body.clone()),
-                },
-            ]),
-        },
-        RuntimeBinding {
-            name: "route_params".to_owned(),
-            value: RuntimeValue::Record(
-                params
-                    .into_iter()
-                    .map(|(name, value)| RuntimeFieldValue {
-                        name,
-                        value: RuntimeValue::String(value),
-                    })
-                    .collect(),
-            ),
-        },
-    ]
+    let route_param_bindings = route
+        .bindings
+        .iter()
+        .filter_map(|binding| match &binding.source {
+            RuntimeRouteBindingSource::PathParam(param) => params
+                .iter()
+                .find(|(name, _)| name == param)
+                .map(|(_, value)| RuntimeBinding {
+                    name: binding.name.clone(),
+                    value: RuntimeValue::String(value.clone()),
+                }),
+        });
+    std::iter::once(RuntimeBinding {
+        name: "request".to_owned(),
+        value: RuntimeValue::Record(vec![
+            RuntimeFieldValue {
+                name: "method".to_owned(),
+                value: RuntimeValue::String(request.method.clone()),
+            },
+            RuntimeFieldValue {
+                name: "path".to_owned(),
+                value: RuntimeValue::String(request.path.clone()),
+            },
+            RuntimeFieldValue {
+                name: "body".to_owned(),
+                value: RuntimeValue::String(request.body.clone()),
+            },
+        ]),
+    })
+    .chain(route_param_bindings)
+    .collect()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -293,7 +288,7 @@ fn http_response_bytes(response: &NativeHttpResponse) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_core::plan::{FlowOp, RuntimeFlow};
+    use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow};
 
     #[test]
     fn native_http_adapter_routes_request_to_flow() {
@@ -302,6 +297,7 @@ mod tests {
             method: "GET".to_owned(),
             path: "/health".to_owned(),
             target: FlowRuntimeId("flow.health".to_owned()),
+            bindings: Vec::new(),
         }];
 
         let response = handle_http_request(
@@ -317,22 +313,21 @@ mod tests {
     }
 
     #[test]
-    fn native_http_adapter_binds_route_params() {
+    fn native_http_adapter_binds_explicit_route_parameters() {
         let plan = plan_with_flow(
             "flow.hello",
-            vec![FlowOp::ReturnExpr(
-                arcweft_core::value::RuntimeExpr::Field {
-                    target: Box::new(arcweft_core::value::RuntimeExpr::Local(
-                        "route_params".to_owned(),
-                    )),
-                    field: "name".to_owned(),
-                },
-            )],
+            vec![FlowOp::ReturnExpr(arcweft_core::value::RuntimeExpr::Local(
+                "name".to_owned(),
+            ))],
         );
         let routes = vec![RuntimeRouteSpec {
             method: "GET".to_owned(),
             path: "/hello/:name".to_owned(),
             target: FlowRuntimeId("flow.hello".to_owned()),
+            bindings: vec![arcweft_core::plan::RuntimeRouteBinding {
+                name: "name".to_owned(),
+                source: RuntimeRouteBindingSource::PathParam("name".to_owned()),
+            }],
         }];
 
         let response = handle_http_request(

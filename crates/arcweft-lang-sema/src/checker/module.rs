@@ -6,8 +6,10 @@ use super::{
     choice_output_type, entity_kind_for_decl, ident_pattern_name, stream_return_types,
     type_ref_kind, validate_typecheck_ready,
 };
-use arcweft_lang_syntax::ast::items::EntryItem;
+use arcweft_lang_syntax::ast::items::{EntryItem, EntryRouteBinding, EntryRouteBindingSource};
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
+use arcweft_lang_syntax::types::FnSignature;
+use std::collections::HashSet;
 
 impl TypeChecker<'_> {
     pub(super) fn check_module(&mut self, module: &HirModule) {
@@ -22,6 +24,7 @@ impl TypeChecker<'_> {
         self.bind_top_level_entity_aliases(module);
         self.bind_top_level_functions(module);
         self.bind_extern_capability_functions(module);
+        self.flow_params = collect_flow_params(module);
 
         for flow in module.flows() {
             self.active_borrows.clear();
@@ -252,8 +255,14 @@ impl TypeChecker<'_> {
             EntryItem::Start(target) | EntryItem::Run(target) => {
                 self.expect_entity_kind(target, &EntityKind::Flow, "entry flow target");
             }
-            EntryItem::Route { target, .. } => {
+            EntryItem::Route {
+                target,
+                path,
+                bindings,
+                ..
+            } => {
                 self.expect_entity_kind(target, &EntityKind::Flow, "entry route target");
+                self.check_route_bindings(target, path, bindings);
             }
             EntryItem::Option { value, .. } => {
                 self.check_expr(value);
@@ -261,6 +270,47 @@ impl TypeChecker<'_> {
             EntryItem::Raw(raw) => {
                 self.errors.push(TypeCheckError::new(format!(
                     "raw entry item is not type-checkable: {raw}"
+                )));
+            }
+        }
+    }
+
+    fn check_route_bindings(
+        &mut self,
+        target: &arcweft_lang_syntax::ast::ids::EntityRef,
+        path: &str,
+        bindings: &[EntryRouteBinding],
+    ) {
+        let path_params = route_path_params(path);
+        for binding in bindings {
+            match binding.source() {
+                EntryRouteBindingSource::PathParam(param) if !path_params.contains(param) => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "route binding `{}` references missing path parameter `:{param}`",
+                        binding.name()
+                    )));
+                }
+                EntryRouteBindingSource::PathParam(_) => {}
+            }
+        }
+
+        let Some(flow_params) = self.flow_params.get(target.body()) else {
+            return;
+        };
+        for binding in bindings {
+            if !flow_params.contains(binding.name()) {
+                self.errors.push(TypeCheckError::new(format!(
+                    "route target `{}` has no flow parameter named `{}`",
+                    target.body(),
+                    binding.name()
+                )));
+            }
+        }
+        for param in flow_params {
+            if !bindings.iter().any(|binding| binding.name() == param) {
+                self.errors.push(TypeCheckError::new(format!(
+                    "route target `{}` requires explicit binding for flow parameter `{param}`",
+                    target.body()
                 )));
             }
         }
@@ -393,6 +443,48 @@ impl TypeChecker<'_> {
             }
         });
     }
+}
+
+fn collect_flow_params(module: &HirModule) -> std::collections::HashMap<String, HashSet<String>> {
+    module
+        .flows()
+        .iter()
+        .filter_map(|flow| {
+            Some((
+                flow.id()?.body().to_owned(),
+                flow.signature()
+                    .map(flow_signature_params)
+                    .unwrap_or_default(),
+            ))
+        })
+        .collect()
+}
+
+fn flow_signature_params(signature: &FnSignature) -> HashSet<String> {
+    signature
+        .param_groups()
+        .iter()
+        .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
+        .filter_map(|param| route_bindable_pattern_name(param.pattern()))
+        .collect()
+}
+
+fn route_bindable_pattern_name(pattern: &Pattern) -> Option<String> {
+    match pattern {
+        Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
+            Some(name.clone())
+        }
+        _ => None,
+    }
+}
+
+fn route_path_params(path: &str) -> HashSet<String> {
+    path.trim_matches('/')
+        .split('/')
+        .filter_map(|segment| segment.strip_prefix(':'))
+        .filter(|name| !name.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {

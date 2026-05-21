@@ -51,6 +51,20 @@ pub struct RuntimeRouteSpec {
     pub method: String,
     pub path: String,
     pub target: FlowRuntimeId,
+    pub bindings: Vec<RuntimeRouteBinding>,
+}
+
+/// Explicit route parameter binding for a target flow invocation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeRouteBinding {
+    pub name: String,
+    pub source: RuntimeRouteBindingSource,
+}
+
+/// Adapter route value source used by a route binding.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeRouteBindingSource {
+    PathParam(String),
 }
 
 /// Lowered entry declaration preserved for CLI/LSP/runtime launch selection.
