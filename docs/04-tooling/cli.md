@@ -327,7 +327,9 @@ inside measured headless bench iterations, so `fs.read_text`, `fs.read_bytes`,
 runs through source-local virtual paths. Bench deterministic counters include
 median task requests, task events consumed, pure call counts, pure batch item
 counts, pure thread-pool jobs, and pure argument Vec allocations in addition to
-executed VM ops.
+executed VM ops. Native I/O counters include scheduler submitted/dispatched
+task counts and `max_in_flight`, so `traverse(...).parallel(limit = N)` bench
+sections expose both total task volume and bounded fanout behavior.
 Renderer/audio driving, offline rendering/audio, and allocation counters remain
 adapter work; adapter-only sections are reported as skipped.
 

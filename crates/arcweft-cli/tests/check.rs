@@ -2248,6 +2248,77 @@ flow @flow.bench_io bench_io effects { fs.read(save), fs.write(save) } {
 }
 
 #[test]
+fn bench_json_measures_traverse_parallel_file_tasks() {
+    let dir = temp_dir("bench-traverse-parallel");
+    let source_path = dir.join("bench.arcw");
+    let save_dir = dir.join(".arcweft").join("save");
+    fs::create_dir_all(&save_dir).expect("create virtual save root");
+    fs::write(save_dir.join("a.txt"), "A").expect("seed input a");
+    fs::write(save_dir.join("b.txt"), "B").expect("seed input b");
+    fs::write(save_dir.join("c.txt"), "C").expect("seed input c");
+    fs::write(
+        &source_path,
+        r#"
+extern capability fs {
+    type FsError
+    fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
+    fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError> effects { fs.write }
+}
+extern capability path { fn save(path: String) -> VirtualPath }
+
+bench @bench.parallel_io {
+    measure iterations = 1 { start(@flow.parallel_io) }
+    assert { expect.file(path.save("output.txt"), equals="done") }
+}
+
+flow @flow.parallel_io parallel_io effects { fs.read(save), fs.write(save) } {
+    let paths = [path.save("a.txt"), path.save("b.txt"), path.save("c.txt")]
+    let values = try await paths.traverse(fs.read_text).parallel(limit = 2) with { error e => return "read_failed" }
+    try await fs.write_text(path.save("output.txt"), "done") with { error e => return "write_failed" }
+    return "done"
+}
+"#,
+    )
+    .expect("write traverse parallel bench fixture");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&source_path)
+        .arg("--iterations")
+        .arg("1")
+        .arg("--warmup")
+        .arg("0")
+        .arg("--steps")
+        .arg("12")
+        .arg("--json")
+        .output()
+        .expect("arcw bench runs traverse parallel file tasks");
+
+    assert!(
+        output.status.success(),
+        "traverse parallel bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"status\": \"measured\"")
+            && stdout.contains("\"task_requests_median\": 4")
+            && stdout.contains("\"task_events_in_median\": 4")
+            && stdout.contains("\"completed_tasks\": 4")
+            && stdout.contains("\"submitted\": 4")
+            && stdout.contains("\"dispatched\": 4")
+            && stdout.contains("\"max_in_flight\": 2")
+            && stdout.contains("\"read_ops\": 3")
+            && stdout.contains("\"write_ops\": 1"),
+        "bench JSON should expose bounded traverse fanout counters: {stdout}"
+    );
+    assert_eq!(
+        fs::read_to_string(save_dir.join("output.txt")).expect("read virtual output"),
+        "done"
+    );
+}
+
+#[test]
 fn bench_json_fails_native_file_assertions() {
     let dir = temp_dir("bench-native-file-assert-fail");
     let source_path = dir.join("bench.arcw");
