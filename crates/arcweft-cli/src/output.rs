@@ -1,4 +1,5 @@
 use crate::CheckedModule;
+use crate::native_task::NativeTaskStats;
 use arcweft_core::aot::AotProgramStats;
 use arcweft_core::bytecode::BytecodeStats;
 use arcweft_core::effect::LineEffectRequest;
@@ -341,6 +342,7 @@ fn wait_target_label(target: &arcweft_core::effect::RuntimeWaitTarget) -> String
 pub(crate) struct RuntimeRunReport {
     pub(crate) executor: RuntimeExecutorTier,
     pub(crate) executor_stats: RuntimeExecutorStats,
+    pub(crate) native_io: NativeTaskStats,
     pub(crate) steps: Vec<RuntimeStepRunSummary>,
     pub(crate) final_status: String,
 }
@@ -387,6 +389,7 @@ pub(crate) struct VerifyTypesVerifierSummary {
 pub(crate) struct VerifyTypesRuntimeSelfCheck {
     pub(crate) executor: RuntimeExecutorTier,
     pub(crate) executor_stats: RuntimeExecutorStats,
+    pub(crate) native_io: NativeTaskStats,
     pub(crate) steps_run: usize,
     pub(crate) final_status: String,
     pub(crate) diagnostics: usize,
@@ -645,6 +648,7 @@ pub(crate) struct RuntimeProfilePhase {
 pub(crate) struct RuntimeProfileRuntime {
     pub(crate) executor: RuntimeExecutorTier,
     pub(crate) executor_stats: RuntimeExecutorStats,
+    pub(crate) native_io: NativeTaskStats,
     pub(crate) steps: Vec<RuntimeStepRunSummary>,
     pub(crate) final_status: String,
 }
@@ -698,6 +702,7 @@ pub(crate) struct ScriptBenchSectionRunSummary {
 pub(crate) struct ScriptBenchMeasurementSummary {
     pub(crate) executor: RuntimeExecutorTier,
     pub(crate) executor_stats: RuntimeExecutorStats,
+    pub(crate) native_io: NativeTaskStats,
     pub(crate) warmup: usize,
     pub(crate) iterations: usize,
     pub(crate) steps: usize,

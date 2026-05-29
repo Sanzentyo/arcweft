@@ -46,7 +46,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 mod native_task;
 mod output;
 mod server_adapter;
-use native_task::NativeTaskBridge;
+use native_task::{NativeTaskBridge, NativeTaskStats};
 use output::{
     AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, CheckReport,
     RuntimeExecutorStats, RuntimeExecutorTier, RuntimePlanReport, RuntimeProfileCompiler,
@@ -844,6 +844,7 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
     let report = RuntimeRunReport {
         executor: RuntimeExecutorTier::from(options.executor),
         executor_stats: trace.executor_stats,
+        native_io: trace.native_io,
         steps: trace.steps,
         final_status: flow_status_label(&trace.final_status),
     };
@@ -943,6 +944,7 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
         runtime: RuntimeProfileRuntime {
             executor: RuntimeExecutorTier::from(options.executor),
             executor_stats: trace.executor_stats,
+            native_io: trace.native_io,
             steps: trace.steps,
             final_status,
         },
@@ -1150,6 +1152,9 @@ fn run_runtime_steps(
         steps: summaries,
         final_status: executor.fiber().status.clone(),
         executor_stats: executor.executor_stats(),
+        native_io: host
+            .as_ref()
+            .map_or_else(NativeTaskStats::default, NativeTaskBridge::stats),
     }
 }
 
@@ -1157,6 +1162,7 @@ struct RuntimeRunTrace {
     steps: Vec<RuntimeStepRunSummary>,
     final_status: FlowFiberStatus,
     executor_stats: RuntimeExecutorStats,
+    native_io: NativeTaskStats,
 }
 
 enum RuntimeExecutorInstance {
@@ -1265,6 +1271,7 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
     let report = RuntimeRunReport {
         executor: RuntimeExecutorTier::from(options.executor),
         executor_stats: trace.executor_stats,
+        native_io: trace.native_io,
         steps: trace.steps,
         final_status: flow_status_label(&trace.final_status),
     };
@@ -2189,6 +2196,7 @@ fn run_bench_section(
     let mut task_requests = Vec::new();
     let mut task_events_in = Vec::new();
     let mut aot_fast_path_ops = Vec::new();
+    let mut native_io = NativeTaskStatsSamples::default();
     let mut diagnostics = 0usize;
     for iteration in 0..options.warmup + options.iterations {
         let mut iteration_plan = plan.clone();
@@ -2225,6 +2233,7 @@ fn run_bench_section(
                 .sum(),
         );
         aot_fast_path_ops.push(trace.executor_stats.aot_fast_path_ops);
+        native_io.push(trace.native_io);
         diagnostics += trace
             .steps
             .iter()
@@ -2239,6 +2248,7 @@ fn run_bench_section(
             executor_stats: RuntimeExecutorStats {
                 aot_fast_path_ops: median_usize(&mut aot_fast_path_ops),
             },
+            native_io: native_io.median(),
             warmup: options.warmup,
             iterations: options.iterations,
             steps: options.steps,
@@ -2256,6 +2266,38 @@ fn run_bench_section(
             },
         },
     )
+}
+
+#[derive(Default)]
+struct NativeTaskStatsSamples {
+    completed_tasks: Vec<usize>,
+    failed_tasks: Vec<usize>,
+    read_ops: Vec<usize>,
+    write_ops: Vec<usize>,
+    bytes_read: Vec<usize>,
+    bytes_written: Vec<usize>,
+}
+
+impl NativeTaskStatsSamples {
+    fn push(&mut self, stats: NativeTaskStats) {
+        self.completed_tasks.push(stats.completed_tasks);
+        self.failed_tasks.push(stats.failed_tasks);
+        self.read_ops.push(stats.read_ops);
+        self.write_ops.push(stats.write_ops);
+        self.bytes_read.push(stats.bytes_read);
+        self.bytes_written.push(stats.bytes_written);
+    }
+
+    fn median(&mut self) -> NativeTaskStats {
+        NativeTaskStats {
+            completed_tasks: median_usize(&mut self.completed_tasks),
+            failed_tasks: median_usize(&mut self.failed_tasks),
+            read_ops: median_usize(&mut self.read_ops),
+            write_ops: median_usize(&mut self.write_ops),
+            bytes_read: median_usize(&mut self.bytes_read),
+            bytes_written: median_usize(&mut self.bytes_written),
+        }
+    }
 }
 
 fn bench_start_flow(section: &BenchSection) -> Option<String> {
@@ -2519,6 +2561,7 @@ fn verify_types_runtime_self_check(
     Ok(Some(VerifyTypesRuntimeSelfCheck {
         executor: RuntimeExecutorTier::from(options.executor),
         executor_stats: trace.executor_stats,
+        native_io: trace.native_io,
         steps_run: trace.steps.len(),
         final_status: flow_status_label(&trace.final_status),
         diagnostics: trace.steps.iter().map(|step| step.diagnostics.len()).sum(),

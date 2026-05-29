@@ -989,8 +989,16 @@ flow @flow.profile_io profile_io effects { fs.read(save), fs.write(save) } {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("\"task_events_in\": 1") && stdout.contains("\"source\": \"profile.arcw\""),
-        "profile JSON should include native task event counters without absolute source: {stdout}"
+        stdout.contains("\"task_events_in\": 1")
+            && stdout.contains("\"source\": \"profile.arcw\"")
+            && stdout.contains("\"native_io\"")
+            && stdout.contains("\"completed_tasks\": 2")
+            && stdout.contains("\"failed_tasks\": 0")
+            && stdout.contains("\"read_ops\": 1")
+            && stdout.contains("\"write_ops\": 1")
+            && stdout.contains("\"bytes_read\": 17")
+            && stdout.contains("\"bytes_written\": 17"),
+        "profile JSON should include native task event and I/O counters without absolute source: {stdout}"
     );
     assert!(
         !stdout.contains(&dir.display().to_string()),
@@ -1086,8 +1094,14 @@ flow @flow.main main effects { fs.read(save), fs.write(save) } {
             && stdout.contains("file.read_text save:input.txt")
             && stdout.contains("file.write_text save:output.txt")
             && stdout.contains("task_events_in\": 1")
+            && stdout.contains("\"native_io\"")
+            && stdout.contains("\"completed_tasks\": 2")
+            && stdout.contains("\"read_ops\": 1")
+            && stdout.contains("\"write_ops\": 1")
+            && stdout.contains("\"bytes_read\": 9")
+            && stdout.contains("\"bytes_written\": 9")
             && stdout.contains("return native-ok"),
-        "run JSON should show native file task completion through bytecode VM: {stdout}"
+        "run JSON should show native file task completion and I/O counters through bytecode VM: {stdout}"
     );
     assert_eq!(
         fs::read_to_string(save_dir.join("output.txt")).expect("read virtual output"),
@@ -1773,8 +1787,15 @@ flow @flow.bench_io bench_io effects { fs.read(save), fs.write(save) } {
     assert!(
         stdout.contains("\"status\": \"measured\"")
             && stdout.contains("\"task_requests_median\": 2")
-            && stdout.contains("\"task_events_in_median\": 2"),
-        "bench JSON should include native task request/event counters: {stdout}"
+            && stdout.contains("\"task_events_in_median\": 2")
+            && stdout.contains("\"native_io\"")
+            && stdout.contains("\"completed_tasks\": 2")
+            && stdout.contains("\"failed_tasks\": 0")
+            && stdout.contains("\"read_ops\": 1")
+            && stdout.contains("\"write_ops\": 1")
+            && stdout.contains("\"bytes_read\": 15")
+            && stdout.contains("\"bytes_written\": 15"),
+        "bench JSON should include native task request/event and I/O counters: {stdout}"
     );
     assert_eq!(
         fs::read_to_string(save_dir.join("output.txt")).expect("read virtual output"),

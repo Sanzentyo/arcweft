@@ -73,7 +73,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
   counters in JSON, completes native file task requests through the CLI adapter,
   and evaluates `assert { expect.*(...) }` sections against a separate
   correctness run before reporting a measured bench as successful. Bench reports
-  also expose compile phase timings plus type, borrow, runtime-type, bytecode,
+  also expose native I/O task completion, read/write operation, and byte-count
+  counters, plus compile phase timings and type, borrow, runtime-type, bytecode,
   and AOT dispatch-shape counters so runtime performance can be compared with
   parser/checker/lowering cost.
   `measure { pure(helper_name) }` sections additionally run the selected
@@ -382,6 +383,9 @@ Current high-confidence state:
   keeping `arcweft-core` Sans I/O. The bridge is used by `arcw run`,
   `arcw cli`, `arcw test`, `arcw bench`, and `arcw profile` runtime stepping so
   headless correctness and timing runs can include real file reads/writes.
+  Runtime JSON reports include native I/O counters for completed and failed
+  tasks, read/write operations, and bytes read/written without recording host
+  paths.
 - Phase 2.0 headless observation state is implemented for the current runtime
   slice. `arcweft-core` records
   cumulative log, signal, metric, and event observations from emitted

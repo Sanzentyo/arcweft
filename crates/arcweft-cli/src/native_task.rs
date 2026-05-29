@@ -8,6 +8,17 @@ use std::path::{Component, Path, PathBuf};
 pub(crate) struct NativeTaskBridge {
     io_root: PathBuf,
     sequence: u64,
+    stats: NativeTaskStats,
+}
+
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+pub(crate) struct NativeTaskStats {
+    pub(crate) completed_tasks: usize,
+    pub(crate) failed_tasks: usize,
+    pub(crate) read_ops: usize,
+    pub(crate) write_ops: usize,
+    pub(crate) bytes_read: usize,
+    pub(crate) bytes_written: usize,
 }
 
 impl NativeTaskBridge {
@@ -16,7 +27,12 @@ impl NativeTaskBridge {
         Self {
             io_root: source_dir.join(".arcweft"),
             sequence: 0,
+            stats: NativeTaskStats::default(),
         }
+    }
+
+    pub(crate) const fn stats(&self) -> NativeTaskStats {
+        self.stats
     }
 
     pub(crate) fn complete_tasks(&mut self, tasks: &[TaskSpec]) -> Vec<TaskEvent> {
@@ -26,7 +42,12 @@ impl NativeTaskBridge {
                 let result = match &task.request {
                     HostTaskRequest::FileReadText(request) => {
                         self.virtual_path(&request.path).and_then(|path| {
-                            fs::read_to_string(path).map_err(|error| error.to_string())
+                            fs::read_to_string(path)
+                                .inspect(|text| {
+                                    self.stats.read_ops += 1;
+                                    self.stats.bytes_read += text.len();
+                                })
+                                .map_err(|error| error.to_string())
                         })
                     }
                     HostTaskRequest::FileWriteText(request) => {
@@ -35,6 +56,8 @@ impl NativeTaskBridge {
                                 fs::create_dir_all(parent).map_err(|error| error.to_string())?;
                             }
                             fs::write(path, &request.text).map_err(|error| error.to_string())?;
+                            self.stats.write_ops += 1;
+                            self.stats.bytes_written += request.text.len();
                             Ok(String::new())
                         })
                     }
@@ -42,6 +65,8 @@ impl NativeTaskBridge {
                         self.virtual_path(&request.path).and_then(|path| {
                             fs::read(path)
                                 .map(|bytes| {
+                                    self.stats.read_ops += 1;
+                                    self.stats.bytes_read += bytes.len();
                                     bytes
                                         .iter()
                                         .map(u8::to_string)
@@ -57,12 +82,23 @@ impl NativeTaskBridge {
                                 fs::create_dir_all(parent).map_err(|error| error.to_string())?;
                             }
                             fs::write(path, &request.bytes).map_err(|error| error.to_string())?;
+                            self.stats.write_ops += 1;
+                            self.stats.bytes_written += request.bytes.len();
                             Ok(String::new())
                         })
                     }
                     _ => return None,
                 };
-                let kind = result.map_or_else(TaskEventKind::Err, TaskEventKind::Ready);
+                let kind = result.map_or_else(
+                    |error| {
+                        self.stats.failed_tasks += 1;
+                        TaskEventKind::Err(error)
+                    },
+                    |value| {
+                        self.stats.completed_tasks += 1;
+                        TaskEventKind::Ready(value)
+                    },
+                );
                 let event = TaskEvent {
                     logical_epoch: LogicalEpoch(0),
                     task_id: task.id.clone(),
