@@ -1,6 +1,7 @@
 use arcweft_adapter_context::native_http_server_context;
+use arcweft_core::bytecode::{BytecodeProgram, BytecodeStats};
 use arcweft_core::engine::{Engine, FlowFiberStatus};
-use arcweft_core::executor::{RuntimeExecutor, VmExecutor};
+use arcweft_core::executor::{BytecodeVmExecutor, RuntimeExecutor, VmExecutor};
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimePlan,
     RuntimeRouteSpec,
@@ -348,6 +349,7 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
         compiler: RuntimeProfileCompiler {
             typecheck: TypeCheckProfileStats::from(&compiled.typecheck_stats),
             borrow_check: BorrowCheckProfileStats::from(&compiled.typecheck_stats),
+            bytecode: BytecodeProfileStats::from(&compiled.bytecode_stats),
         },
         phases,
         runtime: RuntimeProfileRuntime {
@@ -377,6 +379,7 @@ struct ProfileCompiledRuntimePlan {
     syntax_warnings: usize,
     line_task_groups: usize,
     typecheck_stats: TypeCheckStats,
+    bytecode_stats: BytecodeStats,
 }
 
 fn compile_profile_runtime_plan(
@@ -430,11 +433,20 @@ fn compile_profile_runtime_plan(
             ExitCode::FAILURE
         })
     })?;
+    let bytecode = run_profile_phase(phases, "bytecode_lower", || {
+        Ok::<BytecodeProgram, ExitCode>(BytecodeProgram::from_runtime_plan(plan))
+    })?;
+    let bytecode_stats = bytecode.stats();
+    let plan = bytecode.into_runtime_plan().map_err(|error| {
+        eprintln!("error: {error}");
+        ExitCode::FAILURE
+    })?;
     Ok(ProfileCompiledRuntimePlan {
         plan,
         syntax_warnings,
         line_task_groups: line_task_groups.len(),
         typecheck_stats,
+        bytecode_stats,
     })
 }
 
@@ -494,7 +506,7 @@ fn run_runtime_steps(
     max_ops: usize,
     values: &[RuntimeBinding],
 ) -> Vec<RuntimeStepRunSummary> {
-    let mut executor = VmExecutor::new(plan);
+    let mut executor = BytecodeVmExecutor::from_runtime_plan(plan);
     let mut summaries = Vec::new();
     for step_index in 0..steps {
         let result = executor.step(
@@ -1825,6 +1837,7 @@ struct RuntimeProfileReport {
 struct RuntimeProfileCompiler {
     typecheck: TypeCheckProfileStats,
     borrow_check: BorrowCheckProfileStats,
+    bytecode: BytecodeProfileStats,
 }
 
 #[derive(serde::Serialize)]
@@ -1873,6 +1886,27 @@ impl From<&TypeCheckStats> for BorrowCheckProfileStats {
             boundary_checks: stats.borrow_boundary_checks,
             escape_checks: stats.borrow_escape_checks,
             max_active_borrows: stats.max_active_borrows,
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct BytecodeProfileStats {
+    flows: usize,
+    instructions: usize,
+    line_task_groups: usize,
+    stream_plans: usize,
+    source_plans: usize,
+}
+
+impl From<&BytecodeStats> for BytecodeProfileStats {
+    fn from(stats: &BytecodeStats) -> Self {
+        Self {
+            flows: stats.flows,
+            instructions: stats.instructions,
+            line_task_groups: stats.line_task_groups,
+            stream_plans: stats.stream_plans,
+            source_plans: stats.source_plans,
         }
     }
 }

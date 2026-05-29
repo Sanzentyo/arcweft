@@ -80,6 +80,13 @@ impl BytecodeVmExecutor {
         Ok(Self { program, vm })
     }
 
+    pub fn from_runtime_plan(plan: RuntimePlan) -> Self {
+        Self {
+            program: BytecodeProgram::from_runtime_plan(plan.clone()),
+            vm: VmExecutor::new(plan),
+        }
+    }
+
     pub const fn program(&self) -> &BytecodeProgram {
         &self.program
     }
