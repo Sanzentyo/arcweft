@@ -4,6 +4,7 @@ use super::{
 };
 use crate::aot::{AotDispatchShape, AotProgram};
 use crate::effect::LineEffectRequest;
+use crate::pure::{RuntimePureCallBackend, VmRuntimePureCallBackend};
 
 impl Engine {
     pub(crate) fn step_aot_linear(
@@ -12,12 +13,24 @@ impl Engine {
         input: RuntimeStepInput,
         options: RuntimeStepOptions,
     ) -> Option<RuntimeStepResult> {
+        let mut pure_backend = VmRuntimePureCallBackend::default();
+        self.step_aot_linear_with_pure_backend(program, input, options, &mut pure_backend)
+    }
+
+    pub(crate) fn step_aot_linear_with_pure_backend(
+        &mut self,
+        program: &AotProgram,
+        input: RuntimeStepInput,
+        options: RuntimeStepOptions,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Option<RuntimeStepResult> {
         if !self.can_start_aot_linear_step(program, &input) {
             return None;
         }
 
         let mut output = RuntimeStepOutput::default();
         let mut executed_ops = 0;
+        let pure_stats_before = pure_backend.stats();
         let pending_ops_before = self.fiber.pending_ops.len();
         self.fiber.env.bind_all_root(input.bindings);
 
@@ -36,7 +49,7 @@ impl Engine {
                 return None;
             }
             let next = cursor.advanced();
-            self.step_aot_linear_op(op, next, &mut output);
+            self.step_aot_linear_op(op, next, &mut output, pure_backend);
             executed_ops += 1;
             if self.should_return_to_host(options.mode, &output, executed_ops) {
                 break;
@@ -48,7 +61,7 @@ impl Engine {
             executed_ops,
             pending_ops_before,
             pending_ops_after: self.fiber.pending_ops.len(),
-            pure: Default::default(),
+            pure: pure_backend.stats().saturating_delta(pure_stats_before),
             task_events_in: 0,
             source_events_in: 0,
             source_events_emitted: 0,
@@ -80,6 +93,7 @@ impl Engine {
         op: FlowOp,
         next: super::FlowCursor,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) {
         match op {
             FlowOp::Bind(bindings) => {
@@ -87,14 +101,16 @@ impl Engine {
                 self.fiber.cursor = Some(next);
             }
             FlowOp::Let { pattern, expr } => {
-                self.evaluate_let(&pattern, &expr, output);
+                self.evaluate_let_with_backend(&pattern, &expr, output, pure_backend);
                 self.fiber.cursor = Some(next);
             }
             FlowOp::Return(value) => self.return_value(value, output),
-            FlowOp::ReturnExpr(expr) => match self.evaluate_expr(&expr) {
-                Ok(value) => self.return_value(super::runtime_value_label(&value), output),
-                Err(error) => self.fail_eval(error, output),
-            },
+            FlowOp::ReturnExpr(expr) => {
+                match self.evaluate_expr_with_backend(&expr, pure_backend) {
+                    Ok(value) => self.return_value(super::runtime_value_label(&value), output),
+                    Err(error) => self.fail_eval(error, output),
+                }
+            }
             FlowOp::Effect(effect) => {
                 output.effects.line.push(effect);
                 self.fiber.cursor = Some(next);
@@ -110,14 +126,16 @@ impl Engine {
                 self.pop_scope_frame();
                 self.fiber.cursor = Some(next);
             }
-            FlowOp::ExitScopeBind { pattern, expr } => match self.evaluate_expr(&expr) {
-                Ok(value) => {
-                    self.pop_scope_frame();
-                    self.bind_value(&pattern, &value, output);
-                    self.fiber.cursor = Some(next);
+            FlowOp::ExitScopeBind { pattern, expr } => {
+                match self.evaluate_expr_with_backend(&expr, pure_backend) {
+                    Ok(value) => {
+                        self.pop_scope_frame();
+                        self.bind_value(&pattern, &value, output);
+                        self.fiber.cursor = Some(next);
+                    }
+                    Err(error) => self.fail_eval(error, output),
                 }
-                Err(error) => self.fail_eval(error, output),
-            },
+            }
             FlowOp::Noop => self.fiber.cursor = Some(next),
             FlowOp::LetElse { .. }
             | FlowOp::Dialogue { .. }

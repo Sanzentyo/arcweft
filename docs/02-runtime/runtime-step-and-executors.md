@@ -22,6 +22,7 @@ pub struct RuntimeStepResult {
     pub output: RuntimeStepOutput,
     pub fiber_status: FlowFiberStatus,
     pub stop_reason: RuntimeStepStopReason,
+    pub stats: RuntimeStepStats,
 }
 ```
 
@@ -62,7 +63,15 @@ pub struct HybridExecutor {
 ```
 
 All executors use the same `RuntimeStepInput`, `RuntimeStepOptions`, and
-`RuntimeStepResult`.
+`RuntimeStepResult`. VM, bytecode VM, and the current AOT executor can also be
+stepped with an adapter-provided `RuntimePureCallBackend`; this keeps pure
+helper acceleration outside `arcweft-core` while allowing ordinary flow code to
+benefit from AOT/JIT pure helpers automatically.
+
+`RuntimeStepStats.pure` reports per-step pure helper calls, JIT/AOT/VM call
+counts, fixed-stack argument packs, Vec argument allocations, and fallback
+counts. These counters are step-local even when an adapter keeps a persistent
+JIT/AOT compile cache across steps.
 
 ## Interpreter / compiled modes
 

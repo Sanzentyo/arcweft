@@ -7,7 +7,7 @@ use arcweft_core::engine::{FlowFiber, FlowFiberStatus};
 use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope, LineTaskTrigger};
 use arcweft_core::plan::FlowEvent;
 use arcweft_core::source::{RuntimeSourceEvent, SourceEventKind, SourcePolicy};
-use arcweft_core::step::{RuntimeStepResult, RuntimeStepStats};
+use arcweft_core::step::{RuntimePureCallStats, RuntimeStepResult, RuntimeStepStats};
 use arcweft_core::stream::{RuntimeStreamEvent, StreamOp};
 use arcweft_core::task::TaskSpec;
 use arcweft_core::value::RuntimePayload;
@@ -915,12 +915,24 @@ pub(crate) struct RuntimeStepStatsSummary {
     pub(crate) executed_ops: usize,
     pub(crate) pending_ops_before: usize,
     pub(crate) pending_ops_after: usize,
+    pub(crate) pure: RuntimePureCallStatsSummary,
     pub(crate) task_events_in: usize,
     pub(crate) source_events_in: usize,
     pub(crate) source_events_emitted: usize,
     pub(crate) stream_events_emitted: usize,
     pub(crate) line_effects: usize,
     pub(crate) diagnostics: usize,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimePureCallStatsSummary {
+    pub(crate) pure_calls: usize,
+    pub(crate) jit_calls: usize,
+    pub(crate) aot_calls: usize,
+    pub(crate) vm_calls: usize,
+    pub(crate) arg_stack_packs: usize,
+    pub(crate) arg_vec_allocations: usize,
+    pub(crate) fallbacks: usize,
 }
 
 #[derive(serde::Serialize)]
@@ -1067,12 +1079,27 @@ impl From<RuntimeStepStats> for RuntimeStepStatsSummary {
             executed_ops: stats.executed_ops,
             pending_ops_before: stats.pending_ops_before,
             pending_ops_after: stats.pending_ops_after,
+            pure: RuntimePureCallStatsSummary::from(stats.pure),
             task_events_in: stats.task_events_in,
             source_events_in: stats.source_events_in,
             source_events_emitted: stats.source_events_emitted,
             stream_events_emitted: stats.stream_events_emitted,
             line_effects: stats.line_effects,
             diagnostics: stats.diagnostics,
+        }
+    }
+}
+
+impl From<RuntimePureCallStats> for RuntimePureCallStatsSummary {
+    fn from(stats: RuntimePureCallStats) -> Self {
+        Self {
+            pure_calls: stats.pure_calls,
+            jit_calls: stats.jit_calls,
+            aot_calls: stats.aot_calls,
+            vm_calls: stats.vm_calls,
+            arg_stack_packs: stats.arg_stack_packs,
+            arg_vec_allocations: stats.arg_vec_allocations,
+            fallbacks: stats.fallbacks,
         }
     }
 }

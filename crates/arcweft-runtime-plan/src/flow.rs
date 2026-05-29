@@ -670,7 +670,6 @@ fn rewrite_flow_ops_pure_calls(
 ) {
     for op in ops {
         match op {
-            FlowOp::Let { expr, .. } => rewrite_expr_pure_calls(expr, helpers),
             FlowOp::LetElse { expr, else_ops, .. } => {
                 rewrite_expr_pure_calls(expr, helpers);
                 rewrite_flow_ops_pure_calls(else_ops, helpers);
@@ -735,7 +734,8 @@ fn rewrite_flow_ops_pure_calls(
                 rewrite_expr_pure_calls(value, helpers);
                 rewrite_flow_ops_pure_calls(ops, helpers);
             }
-            FlowOp::Break(Some(expr))
+            FlowOp::Let { expr, .. }
+            | FlowOp::Break(Some(expr))
             | FlowOp::GotoExpr(expr)
             | FlowOp::ReturnExpr(expr)
             | FlowOp::ExitScopeBind { expr, .. } => rewrite_expr_pure_calls(expr, helpers),

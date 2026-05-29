@@ -31,6 +31,7 @@ use arcweft_lang_syntax::{
     parser::parse_source,
 };
 use arcweft_launch::{LaunchKind, LaunchProfileManifest, ResolvedLaunchProfile};
+use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureBackendMode};
 use arcweft_runtime_plan::flow::lower_runtime_plan;
 use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_groups};
 use arcweft_runtime_plan::pure::{
@@ -1313,20 +1314,26 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
                     &selection,
                     options.entry.as_deref(),
                     None,
-                    None,
-                    false,
-                    options.max_ops,
-                    options.json,
+                    RuntimeServeSelectionConfig {
+                        listen: None,
+                        once: false,
+                        max_ops: options.max_ops,
+                        pure_backend: options.pure_backend,
+                        json: options.json,
+                    },
                 );
             }
             LaunchKind::Test => {
                 return script_test_selection(
                     &selection,
-                    options.steps,
-                    options.mode,
-                    options.max_ops,
+                    RuntimeStepRunConfig {
+                        steps: options.steps,
+                        mode: options.mode,
+                        max_ops: options.max_ops,
+                        executor: options.executor,
+                        pure_backend: options.pure_backend,
+                    },
                     &options.values,
-                    options.executor,
                     options.json,
                 );
             }
@@ -1347,11 +1354,14 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
     let trace = run_runtime_steps(
         plan,
         Some(selection.path()),
-        options.steps,
-        options.mode,
-        options.max_ops,
+        RuntimeStepRunConfig {
+            steps: options.steps,
+            mode: options.mode,
+            max_ops: options.max_ops,
+            executor: options.executor,
+            pure_backend: options.pure_backend,
+        },
         &options.values,
-        options.executor,
     );
     let report = RuntimeRunReport {
         executor: RuntimeExecutorTier::from(options.executor),
@@ -1404,6 +1414,7 @@ fn runtime_run_bench_selection(
         samples: 5,
         input_seed: 0,
         executor: options.executor,
+        pure_backend: options.pure_backend,
         values: options.values.clone(),
         json: options.json,
     };
@@ -1431,11 +1442,14 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
         Ok::<RuntimeRunTrace, ExitCode>(run_runtime_steps(
             plan,
             Some(selection.path()),
-            options.steps,
-            options.mode,
-            options.max_ops,
+            RuntimeStepRunConfig {
+                steps: options.steps,
+                mode: options.mode,
+                max_ops: options.max_ops,
+                executor: options.executor,
+                pure_backend: options.pure_backend,
+            },
             &options.values,
-            options.executor,
         ))
     })?;
     let final_status = flow_status_label(&trace.final_status);
@@ -1627,24 +1641,21 @@ fn profile_validate_hir(
 fn run_runtime_steps(
     plan: RuntimePlan,
     source_path: Option<&Path>,
-    steps: usize,
-    mode: CliRuntimeStepMode,
-    max_ops: usize,
+    config: RuntimeStepRunConfig,
     values: &[RuntimeBinding],
-    executor_tier: CliRuntimeExecutorTier,
 ) -> RuntimeRunTrace {
-    let mut executor = RuntimeExecutorInstance::new(plan, executor_tier);
+    let mut executor = RuntimeExecutorInstance::new(plan, config.executor, config.pure_backend);
     let mut host = source_path.map(NativeTaskBridge::new);
     let mut task_events = Vec::new();
     let mut summaries = Vec::new();
-    for step_index in 0..steps {
+    for step_index in 0..config.steps {
         let result = executor.step(
             RuntimeStepInput {
                 bindings: values.to_vec(),
                 task_events: std::mem::take(&mut task_events),
                 ..RuntimeStepInput::default()
             },
-            step_options(mode, max_ops),
+            step_options(config.mode, config.max_ops),
         );
         let task_requests = result.output.requests.tasks.clone();
         let summary = RuntimeStepRunSummary::from_result(step_index, result, executor.fiber());
@@ -1678,38 +1689,55 @@ struct RuntimeRunTrace {
 }
 
 enum RuntimeExecutorInstance {
-    BytecodeVm(BytecodeVmExecutor),
-    Aot(AotExecutor),
+    BytecodeVm {
+        executor: BytecodeVmExecutor,
+        pure: RuntimePureAccelerator,
+    },
+    Aot {
+        executor: AotExecutor,
+        pure: RuntimePureAccelerator,
+    },
 }
 
 impl RuntimeExecutorInstance {
-    fn new(plan: RuntimePlan, tier: CliRuntimeExecutorTier) -> Self {
+    fn new(
+        plan: RuntimePlan,
+        tier: CliRuntimeExecutorTier,
+        pure_backend: CliRuntimePureBackend,
+    ) -> Self {
+        let pure = RuntimePureAccelerator::new(pure_backend.into(), &plan.pure_helpers);
         match tier {
-            CliRuntimeExecutorTier::BytecodeVm => {
-                Self::BytecodeVm(BytecodeVmExecutor::from_runtime_plan(plan))
-            }
-            CliRuntimeExecutorTier::Aot => Self::Aot(AotExecutor::new(plan)),
+            CliRuntimeExecutorTier::BytecodeVm => Self::BytecodeVm {
+                executor: BytecodeVmExecutor::from_runtime_plan(plan),
+                pure,
+            },
+            CliRuntimeExecutorTier::Aot => Self::Aot {
+                executor: AotExecutor::new(plan),
+                pure,
+            },
         }
     }
 
     fn step(&mut self, input: RuntimeStepInput, options: RuntimeStepOptions) -> RuntimeStepResult {
         match self {
-            Self::BytecodeVm(executor) => executor.step(input, options),
-            Self::Aot(executor) => executor.step(input, options),
+            Self::BytecodeVm { executor, pure } => {
+                executor.step_with_pure_backend(input, options, pure)
+            }
+            Self::Aot { executor, pure } => executor.step_with_pure_backend(input, options, pure),
         }
     }
 
     fn fiber(&self) -> &arcweft_core::engine::FlowFiber {
         match self {
-            Self::BytecodeVm(executor) => executor.fiber(),
-            Self::Aot(executor) => executor.fiber(),
+            Self::BytecodeVm { executor, .. } => executor.fiber(),
+            Self::Aot { executor, .. } => executor.fiber(),
         }
     }
 
     fn executor_stats(&self) -> RuntimeExecutorStats {
         match self {
-            Self::BytecodeVm(_) => RuntimeExecutorStats::default(),
-            Self::Aot(executor) => RuntimeExecutorStats {
+            Self::BytecodeVm { .. } => RuntimeExecutorStats::default(),
+            Self::Aot { executor, .. } => RuntimeExecutorStats {
                 aot_fast_path_ops: executor.fast_path_ops(),
             },
         }
@@ -1774,11 +1802,14 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
     let trace = run_runtime_steps(
         plan,
         Some(selection.path()),
-        options.steps,
-        options.mode,
-        options.max_ops,
+        RuntimeStepRunConfig {
+            steps: options.steps,
+            mode: options.mode,
+            max_ops: options.max_ops,
+            executor: options.executor,
+            pure_backend: options.pure_backend,
+        },
         &bindings,
-        options.executor,
     );
     let report = RuntimeRunReport {
         executor: RuntimeExecutorTier::from(options.executor),
@@ -1808,10 +1839,13 @@ fn runtime_serve_command(options: &ServeOptions) -> Result<(), ExitCode> {
         &selection,
         options.entry.as_deref(),
         options.adapter.as_deref(),
-        options.listen,
-        options.once,
-        options.max_ops,
-        options.json,
+        RuntimeServeSelectionConfig {
+            listen: options.listen,
+            once: options.once,
+            max_ops: options.max_ops,
+            pure_backend: options.pure_backend,
+            json: options.json,
+        },
     )
 }
 
@@ -1819,10 +1853,7 @@ fn runtime_serve_selection(
     selection: &SourceSelection,
     entry_override: Option<&str>,
     adapter_override: Option<&str>,
-    listen_override: Option<SocketAddr>,
-    once: bool,
-    max_ops: usize,
-    json: bool,
+    config: RuntimeServeSelectionConfig,
 ) -> Result<(), ExitCode> {
     let adapter = adapter_override
         .or(selection.adapter())
@@ -1865,7 +1896,7 @@ fn runtime_serve_selection(
             })
             .collect(),
     };
-    let listen = match listen_override {
+    let listen = match config.listen {
         Some(listen) => Some(listen),
         None => profile_listen_addr(selection)?,
     };
@@ -1875,8 +1906,9 @@ fn runtime_serve_selection(
             &routes,
             NativeHttpServerConfig {
                 listen,
-                once,
-                max_ops,
+                once: config.once,
+                max_ops: config.max_ops,
+                pure_backend: config.pure_backend.into(),
             },
         )
         .map_err(|error| {
@@ -1887,7 +1919,7 @@ fn runtime_serve_selection(
             plan: report,
             server: server_report,
         };
-        return if json {
+        return if config.json {
             print_json(&report)
         } else {
             println!(
@@ -1897,7 +1929,7 @@ fn runtime_serve_selection(
             Ok(())
         };
     }
-    if json {
+    if config.json {
         print_json(&report)
     } else {
         for route in &report.routes {
@@ -2044,22 +2076,22 @@ fn script_test_command(options: &ScriptTestOptions) -> Result<(), ExitCode> {
     require_profile_kind(&selection, LaunchKind::Test, "test")?;
     script_test_selection(
         &selection,
-        options.steps,
-        options.mode,
-        options.max_ops,
+        RuntimeStepRunConfig {
+            steps: options.steps,
+            mode: options.mode,
+            max_ops: options.max_ops,
+            executor: options.executor,
+            pure_backend: options.pure_backend,
+        },
         &options.values,
-        options.executor,
         options.json,
     )
 }
 
 fn script_test_selection(
     selection: &SourceSelection,
-    step_limit: usize,
-    mode: CliRuntimeStepMode,
-    max_ops: usize,
+    config: RuntimeStepRunConfig,
     values: &[RuntimeBinding],
-    executor: CliRuntimeExecutorTier,
     json: bool,
 ) -> Result<(), ExitCode> {
     let checked = load_and_check_selection(selection, None)?;
@@ -2074,15 +2106,7 @@ fn script_test_selection(
         tests: manifest
             .tests
             .iter()
-            .map(|test| {
-                let config = RuntimeStepRunConfig {
-                    steps: step_limit,
-                    mode,
-                    max_ops,
-                    executor,
-                };
-                run_script_test(test, &plan, selection.path(), config, values)
-            })
+            .map(|test| run_script_test(test, &plan, selection.path(), config, values))
             .collect(),
     };
     let failed = output.tests.iter().any(|test| test.status == "failed");
@@ -2138,15 +2162,7 @@ fn run_script_test(
     };
     let mut plan = plan.clone();
     plan.entry_flow = Some(FlowRuntimeId(start));
-    let trace = run_runtime_steps(
-        plan,
-        Some(source_path),
-        config.steps,
-        config.mode,
-        config.max_ops,
-        values,
-        config.executor,
-    );
+    let trace = run_runtime_steps(plan, Some(source_path), config, values);
     let final_status = flow_status_label(&trace.final_status);
     let mut diagnostics = trace
         .steps
@@ -2176,6 +2192,16 @@ struct RuntimeStepRunConfig {
     mode: CliRuntimeStepMode,
     max_ops: usize,
     executor: CliRuntimeExecutorTier,
+    pure_backend: CliRuntimePureBackend,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct RuntimeServeSelectionConfig {
+    listen: Option<SocketAddr>,
+    once: bool,
+    max_ops: usize,
+    pure_backend: CliRuntimePureBackend,
+    json: bool,
 }
 
 fn test_start_flow(test: &ScriptTest) -> Option<String> {
@@ -2605,11 +2631,14 @@ fn bench_expectation_failures(
     let frames = run_runtime_steps(
         assertion_plan,
         Some(source_path),
-        options.steps,
-        options.mode,
-        options.max_ops,
+        RuntimeStepRunConfig {
+            steps: options.steps,
+            mode: options.mode,
+            max_ops: options.max_ops,
+            executor: options.executor,
+            pure_backend: options.pure_backend,
+        },
         &options.values,
-        options.executor,
     );
     assertions
         .into_iter()
@@ -2792,11 +2821,14 @@ fn run_bench_section(
         let trace = run_runtime_steps(
             iteration_plan,
             Some(source_path),
-            options.steps,
-            options.mode,
-            options.max_ops,
+            RuntimeStepRunConfig {
+                steps: options.steps,
+                mode: options.mode,
+                max_ops: options.max_ops,
+                executor: options.executor,
+                pure_backend: options.pure_backend,
+            },
             &options.values,
-            options.executor,
         );
         let elapsed_ns = started.elapsed().as_nanos();
         if iteration < options.warmup {
@@ -3138,11 +3170,14 @@ fn verify_types_runtime_self_check(
         Ok(run_runtime_steps(
             runtime_plan,
             Some(selection.path()),
-            options.steps,
-            options.runtime_mode,
-            options.max_ops,
+            RuntimeStepRunConfig {
+                steps: options.steps,
+                mode: options.runtime_mode,
+                max_ops: options.max_ops,
+                executor: options.executor,
+                pure_backend: options.pure_backend,
+            },
             &options.values,
-            options.executor,
         ))
     })?;
     Ok(Some(VerifyTypesRuntimeSelfCheck {
@@ -3408,6 +3443,8 @@ struct VerifyTypesOptions {
     max_ops: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,
+    #[arg(long, value_enum, default_value_t = CliRuntimePureBackend::Auto)]
+    pure_backend: CliRuntimePureBackend,
     #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
     values: Vec<RuntimeBinding>,
     #[arg(long)]
@@ -3454,6 +3491,8 @@ struct RuntimeRunOptions {
     flow: Option<String>,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,
+    #[arg(long, value_enum, default_value_t = CliRuntimePureBackend::Auto)]
+    pure_backend: CliRuntimePureBackend,
     #[arg(long, default_value_t = 1)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::OneOp)]
@@ -3479,6 +3518,8 @@ struct RuntimeProfileOptions {
     adapter: Option<String>,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,
+    #[arg(long, value_enum, default_value_t = CliRuntimePureBackend::Auto)]
+    pure_backend: CliRuntimePureBackend,
     #[arg(long, default_value_t = 1)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -3500,6 +3541,8 @@ struct CliRunOptions {
     entry: Option<String>,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,
+    #[arg(long, value_enum, default_value_t = CliRuntimePureBackend::Auto)]
+    pure_backend: CliRuntimePureBackend,
     #[arg(long, default_value_t = 1)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -3527,6 +3570,8 @@ struct ServeOptions {
     listen: Option<SocketAddr>,
     #[arg(long)]
     once: bool,
+    #[arg(long, value_enum, default_value_t = CliRuntimePureBackend::Auto)]
+    pure_backend: CliRuntimePureBackend,
     #[arg(long, default_value_t = 128)]
     max_ops: usize,
     #[arg(long)]
@@ -3540,6 +3585,8 @@ struct ScriptTestOptions {
     profile: ProfileOptions,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,
+    #[arg(long, value_enum, default_value_t = CliRuntimePureBackend::Auto)]
+    pure_backend: CliRuntimePureBackend,
     #[arg(long, default_value_t = 32)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -3559,6 +3606,8 @@ struct ScriptBenchOptions {
     profile: ProfileOptions,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,
+    #[arg(long, value_enum, default_value_t = CliRuntimePureBackend::Auto)]
+    pure_backend: CliRuntimePureBackend,
     #[arg(long, default_value_t = 32)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -3641,11 +3690,30 @@ enum CliRuntimeExecutorTier {
     Aot,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum CliRuntimePureBackend {
+    Auto,
+    Vm,
+    Aot,
+    Jit,
+}
+
 impl From<CliRuntimeExecutorTier> for RuntimeExecutorTier {
     fn from(tier: CliRuntimeExecutorTier) -> Self {
         match tier {
             CliRuntimeExecutorTier::BytecodeVm => Self::BytecodeVm,
             CliRuntimeExecutorTier::Aot => Self::Aot,
+        }
+    }
+}
+
+impl From<CliRuntimePureBackend> for RuntimePureBackendMode {
+    fn from(value: CliRuntimePureBackend) -> Self {
+        match value {
+            CliRuntimePureBackend::Auto => Self::Auto,
+            CliRuntimePureBackend::Vm => Self::Vm,
+            CliRuntimePureBackend::Aot => Self::Aot,
+            CliRuntimePureBackend::Jit => Self::Jit,
         }
     }
 }

@@ -1,0 +1,17 @@
+[package]
+name = "arcweft-runtime-accelerator"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arcweft-core = { path = "../arcweft-core" }
+arcweft-lang-jit-cranelift = { path = "../arcweft-lang-jit-cranelift" }
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true

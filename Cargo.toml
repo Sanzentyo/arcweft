@@ -16,6 +16,7 @@ members = [
     "crates/arcweft-need",
     "crates/arcweft-presentation",
     "crates/arcweft-runtime-plan",
+    "crates/arcweft-runtime-accelerator",
     "crates/arcweft-source",
     "crates/arcweft-test",
     "crates/arcweft-tooling",

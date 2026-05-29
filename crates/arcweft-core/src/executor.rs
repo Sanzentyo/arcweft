@@ -2,6 +2,7 @@ use crate::aot::AotProgram;
 use crate::bytecode::BytecodeProgram;
 use crate::engine::{Engine, FlowFiber};
 use crate::plan::{RuntimePlan, RuntimePlanError};
+use crate::pure::RuntimePureCallBackend;
 use crate::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult};
 
 /// Sans I/O execution boundary used by CLI, LSP, tests, and future adapters.
@@ -58,6 +59,16 @@ impl VmExecutor {
     pub fn into_engine(self) -> Engine {
         self.engine
     }
+
+    pub fn step_with_pure_backend(
+        &mut self,
+        input: RuntimeStepInput,
+        options: RuntimeStepOptions,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> RuntimeStepResult {
+        self.engine
+            .step_with_pure_backend(input, options, pure_backend)
+    }
 }
 
 impl AotExecutor {
@@ -95,6 +106,24 @@ impl AotExecutor {
     pub fn into_program(self) -> AotProgram {
         self.program
     }
+
+    pub fn step_with_pure_backend(
+        &mut self,
+        input: RuntimeStepInput,
+        options: RuntimeStepOptions,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> RuntimeStepResult {
+        if let Some(result) = self.vm.engine_mut().step_aot_linear_with_pure_backend(
+            &self.program,
+            input.clone(),
+            options,
+            pure_backend,
+        ) {
+            self.fast_path_ops += result.stats.executed_ops;
+            return result;
+        }
+        self.vm.step_with_pure_backend(input, options, pure_backend)
+    }
 }
 
 impl BytecodeVmExecutor {
@@ -120,6 +149,15 @@ impl BytecodeVmExecutor {
 
     pub fn into_program(self) -> BytecodeProgram {
         self.program
+    }
+
+    pub fn step_with_pure_backend(
+        &mut self,
+        input: RuntimeStepInput,
+        options: RuntimeStepOptions,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> RuntimeStepResult {
+        self.vm.step_with_pure_backend(input, options, pure_backend)
     }
 }
 

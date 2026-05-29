@@ -130,6 +130,7 @@ dependencies = [
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
  "arcweft-launch",
+ "arcweft-runtime-accelerator",
  "arcweft-runtime-plan",
  "arcweft-test",
  "arcweft-tooling",
@@ -238,6 +239,14 @@ name = "arcweft-ref"
 version = "0.1.0"
 dependencies = [
  "arcweft-id",
+]
+
+[[package]]
+name = "arcweft-runtime-accelerator"
+version = "0.1.0"
+dependencies = [
+ "arcweft-core",
+ "arcweft-lang-jit-cranelift",
 ]
 
 [[package]]

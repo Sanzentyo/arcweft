@@ -5,18 +5,9 @@ use super::{
     runtime_value_label,
 };
 use crate::pure::{RuntimeI64Args, RuntimePureCallBackend, VmRuntimePureCallBackend};
+use crate::value::RuntimeFieldExpr;
 
 impl Engine {
-    pub(super) fn evaluate_let(
-        &mut self,
-        pattern: &RuntimePattern,
-        expr: &RuntimeExpr,
-        output: &mut RuntimeStepOutput,
-    ) {
-        let mut pure_backend = VmRuntimePureCallBackend::default();
-        self.evaluate_let_with_backend(pattern, expr, output, &mut pure_backend);
-    }
-
     pub(super) fn evaluate_let_with_backend(
         &mut self,
         pattern: &RuntimePattern,
@@ -121,58 +112,11 @@ impl Engine {
             RuntimeExpr::Let { name, expr, body } => {
                 self.evaluate_let_expr(name, expr, body, pure_backend)
             }
-            RuntimeExpr::Tuple(items) => items
-                .iter()
-                .map(|item| self.evaluate_expr_with_backend(item, pure_backend))
-                .collect::<Result<Vec<_>, _>>()
-                .map(RuntimeValue::Tuple),
-            RuntimeExpr::BracketSeq(items) => items
-                .iter()
-                .map(|item| self.evaluate_expr_with_backend(item, pure_backend))
-                .collect::<Result<Vec<_>, _>>()
-                .map(RuntimeValue::BracketSeq),
-            RuntimeExpr::Record(fields) => fields
-                .iter()
-                .map(|field| {
-                    Ok(RuntimeFieldValue {
-                        name: field.name.clone(),
-                        value: self.evaluate_expr_with_backend(&field.value, pure_backend)?,
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map(RuntimeValue::Record),
-            RuntimeExpr::Variant {
-                path,
-                name,
-                payload,
-            } => Ok(RuntimeValue::Variant {
-                path: path.clone(),
-                name: name.clone(),
-                payload: payload
-                    .as_ref()
-                    .map(|expr| {
-                        self.evaluate_expr_with_backend(expr, pure_backend)
-                            .map(Box::new)
-                    })
-                    .transpose()?,
-            }),
-            RuntimeExpr::Field { target, field } => {
-                let value = self.evaluate_expr_with_backend(target, pure_backend)?;
-                match value {
-                    RuntimeValue::Record(fields) => fields
-                        .into_iter()
-                        .find(|candidate| candidate.name == *field)
-                        .map(|field| field.value)
-                        .ok_or_else(|| RuntimeEvalError::MissingField {
-                            field: field.clone(),
-                            value: "record".to_owned(),
-                        }),
-                    value => Err(RuntimeEvalError::MissingField {
-                        field: field.clone(),
-                        value: runtime_value_label(&value),
-                    }),
-                }
-            }
+            RuntimeExpr::Tuple(_)
+            | RuntimeExpr::BracketSeq(_)
+            | RuntimeExpr::Record(_)
+            | RuntimeExpr::Variant { .. }
+            | RuntimeExpr::Field { .. } => self.evaluate_data_expr(expr, pure_backend),
             RuntimeExpr::SpreadArg(_) => Err(RuntimeEvalError::SpreadOutsideCall),
             RuntimeExpr::Call { callee, args } => {
                 self.evaluate_call_expr(callee, args, pure_backend)
@@ -222,6 +166,85 @@ impl Engine {
             RuntimeExpr::Match { scrutinee, arms } => {
                 self.evaluate_match_expr(scrutinee, arms, pure_backend)
             }
+        }
+    }
+
+    fn evaluate_data_expr(
+        &mut self,
+        expr: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        match expr {
+            RuntimeExpr::Tuple(items) => items
+                .iter()
+                .map(|item| self.evaluate_expr_with_backend(item, pure_backend))
+                .collect::<Result<Vec<_>, _>>()
+                .map(RuntimeValue::Tuple),
+            RuntimeExpr::BracketSeq(items) => items
+                .iter()
+                .map(|item| self.evaluate_expr_with_backend(item, pure_backend))
+                .collect::<Result<Vec<_>, _>>()
+                .map(RuntimeValue::BracketSeq),
+            RuntimeExpr::Record(fields) => self.evaluate_record_expr(fields, pure_backend),
+            RuntimeExpr::Variant {
+                path,
+                name,
+                payload,
+            } => Ok(RuntimeValue::Variant {
+                path: path.clone(),
+                name: name.clone(),
+                payload: payload
+                    .as_ref()
+                    .map(|expr| {
+                        self.evaluate_expr_with_backend(expr, pure_backend)
+                            .map(Box::new)
+                    })
+                    .transpose()?,
+            }),
+            RuntimeExpr::Field { target, field } => {
+                self.evaluate_field_expr(target, field, pure_backend)
+            }
+            _ => unreachable!("data expression helper received non-data expression"),
+        }
+    }
+
+    fn evaluate_record_expr(
+        &mut self,
+        fields: &[RuntimeFieldExpr],
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        fields
+            .iter()
+            .map(|field| {
+                Ok(RuntimeFieldValue {
+                    name: field.name.clone(),
+                    value: self.evaluate_expr_with_backend(&field.value, pure_backend)?,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(RuntimeValue::Record)
+    }
+
+    fn evaluate_field_expr(
+        &mut self,
+        target: &RuntimeExpr,
+        field: &str,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let value = self.evaluate_expr_with_backend(target, pure_backend)?;
+        match value {
+            RuntimeValue::Record(fields) => fields
+                .into_iter()
+                .find(|candidate| candidate.name == field)
+                .map(|field| field.value)
+                .ok_or_else(|| RuntimeEvalError::MissingField {
+                    field: field.to_owned(),
+                    value: "record".to_owned(),
+                }),
+            value => Err(RuntimeEvalError::MissingField {
+                field: field.to_owned(),
+                value: runtime_value_label(&value),
+            }),
         }
     }
 

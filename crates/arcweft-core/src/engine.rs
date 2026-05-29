@@ -215,6 +215,7 @@ impl Engine {
     ) -> RuntimeStepResult {
         let mut output = RuntimeStepOutput::default();
         let mut executed_ops = 0;
+        let pure_stats_before = pure_backend.stats();
         let pending_ops_before = self.fiber.pending_ops.len();
         self.fiber.env.bind_all_root(input.bindings.iter().cloned());
         let events = normalize_task_events(std::mem::take(&mut input.task_events));
@@ -244,7 +245,7 @@ impl Engine {
             executed_ops,
             pending_ops_before,
             pending_ops_after: self.fiber.pending_ops.len(),
-            pure: pure_backend.stats(),
+            pure: pure_backend.stats().saturating_delta(pure_stats_before),
             task_events_in,
             source_events_in,
             source_events_emitted: output.effects.source_events.len(),

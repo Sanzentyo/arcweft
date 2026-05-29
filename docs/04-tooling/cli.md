@@ -161,7 +161,7 @@ CLI adapter and does not start renderer/audio/device backends.
 
 ## Runtime Dry Run
 
-`arcw run <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
+`arcw run <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
 headless execution entry point. It uses the same parse, HIR, reference
 validation, typecheck, and line-plan lowering path as `arcw check`, then lowers
 checked flows to `arcweft-core::RuntimePlan`, materializes bytecode, and steps
@@ -171,8 +171,14 @@ dispatch-shape artifact and uses the core-local linear fast path for supported
 straight-line flow ops, falling back to the VM-compatible `RuntimeExecutor`
 state machine for unsupported or stateful cases. JSON reports
 `executor = "bytecode_vm"` or `executor = "aot"` so performance and correctness
-runs can confirm the execution tier. If `--entry` or `--flow` is omitted, the first lowered flow is
-used as a deterministic fallback for headless inspection.
+runs can confirm the execution tier. `--pure-backend auto` is the default and
+lets ordinary flow code call lowered pure helpers through the runtime
+accelerator cache. Supported deterministic `i64` helpers use JIT first, then
+AOT, then VM; `--pure-backend vm|aot|jit` pins that selection for measurement.
+Per-step JSON includes `stats.pure` counters for pure calls, backend call
+counts, stack-packed integer arguments, Vec argument allocations, and fallback
+counts. If `--entry` or `--flow` is omitted, the first lowered flow is used as a
+deterministic fallback for headless inspection.
 The CLI owns a native task adapter for the first filesystem I/O slice:
 `fs.read_text`, `fs.read_bytes`, `fs.write_text`, and `fs.write_bytes` complete
 as `TaskEvent` input on the next VM step. Paths must be virtual path values such
@@ -191,6 +197,7 @@ arcw run game/routes/opening.arcw --entry main --mode drain --steps 8
 arcw run game/routes/opening.arcw --flow opening --mode drain --steps 8
 arcw run game/routes/opening.arcw --mode drain --steps 8 --max-ops 32
 arcw run game/routes/opening.arcw --executor aot --mode drain --steps 8 --json
+arcw run game/routes/opening.arcw --pure-backend jit --mode drain --steps 8 --json
 arcw run game/routes/opening.arcw --steps 8 --value ready=true --value route=@flow.next
 arcw run game/routes/opening.arcw --steps 8 --json
 ```
@@ -240,7 +247,7 @@ binding.
 
 ## Server Entry Plan
 
-`arcw serve <file.arcw> [--entry entry.id] [--adapter NAME] [--listen ADDR] [--once] [--max-ops N] [--json]`
+`arcw serve <file.arcw> [--entry entry.id] [--adapter NAME] [--listen ADDR] [--once] [--pure-backend auto|vm|aot|jit] [--max-ops N] [--json]`
 validates and exposes a source-declared `entry server`. Without `--listen`, it
 is a Sans I/O adapter-plan command: it selects a server entry, lowers its routes,
 verifies that route targets exist, and prints the method/path/flow table that a
@@ -286,8 +293,9 @@ segments, binds request data into the runtime as pure values, runs the target
 flow in `RuntimeStepMode::Server`, and writes a plain-text HTTP response from
 the returned flow value. Native HTTP binding remains outside `arcweft-core`; core
 only sees deterministic `RuntimeStepInput` and produces deterministic runtime
-output. The route-plan report uses `status = "planned"` to make that boundary
-explicit.
+output. The same pure backend selection used by `arcw run` is applied to route
+flow execution. The route-plan report uses `status = "planned"` to make that
+boundary explicit.
 
 ## Test / Bench
 

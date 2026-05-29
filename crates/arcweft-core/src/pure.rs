@@ -234,6 +234,10 @@ impl RuntimeI64Args {
         self.len
     }
 
+    pub const fn is_empty(self) -> bool {
+        self.len == 0
+    }
+
     pub fn as_slice(&self) -> &[i64] {
         &self.values[..self.len]
     }

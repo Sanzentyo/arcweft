@@ -95,6 +95,23 @@ pub struct RuntimePureCallStats {
     pub fallbacks: usize,
 }
 
+impl RuntimePureCallStats {
+    #[must_use]
+    pub fn saturating_delta(self, before: Self) -> Self {
+        Self {
+            pure_calls: self.pure_calls.saturating_sub(before.pure_calls),
+            jit_calls: self.jit_calls.saturating_sub(before.jit_calls),
+            aot_calls: self.aot_calls.saturating_sub(before.aot_calls),
+            vm_calls: self.vm_calls.saturating_sub(before.vm_calls),
+            arg_stack_packs: self.arg_stack_packs.saturating_sub(before.arg_stack_packs),
+            arg_vec_allocations: self
+                .arg_vec_allocations
+                .saturating_sub(before.arg_vec_allocations),
+            fallbacks: self.fallbacks.saturating_sub(before.fallbacks),
+        }
+    }
+}
+
 /// Runtime stepping policy selected by hosts and CLI tooling.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RuntimeStepOptions {

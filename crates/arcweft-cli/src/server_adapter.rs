@@ -5,6 +5,7 @@ use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
 };
 use arcweft_core::value::{RuntimeBinding, RuntimeFieldValue, RuntimeValue};
+use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureBackendMode};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use thiserror::Error;
@@ -14,6 +15,7 @@ pub(crate) struct NativeHttpServerConfig {
     pub(crate) listen: SocketAddr,
     pub(crate) once: bool,
     pub(crate) max_ops: usize,
+    pub(crate) pure_backend: RuntimePureBackendMode,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -59,7 +61,7 @@ pub(crate) fn serve_native_http(
         let (stream, _) = listener
             .accept()
             .map_err(|error| ServerAdapterError::Accept(error.to_string()))?;
-        serve_stream(stream, plan, routes, config.max_ops)?;
+        serve_stream(stream, plan, routes, config.max_ops, config.pure_backend)?;
         handled_requests += 1;
         if config.once {
             break;
@@ -76,13 +78,14 @@ fn serve_stream(
     plan: &RuntimePlan,
     routes: &[RuntimeRouteSpec],
     max_ops: usize,
+    pure_backend: RuntimePureBackendMode,
 ) -> Result<(), ServerAdapterError> {
     let mut buffer = vec![0_u8; 64 * 1024];
     let read = stream
         .read(&mut buffer)
         .map_err(|error| ServerAdapterError::Read(error.to_string()))?;
     let request = String::from_utf8_lossy(&buffer[..read]);
-    let response = handle_http_request(plan, routes, &request, max_ops)?;
+    let response = handle_http_request(plan, routes, &request, max_ops, pure_backend)?;
     stream
         .write_all(http_response_bytes(&response).as_bytes())
         .map_err(|error| ServerAdapterError::Write(error.to_string()))
@@ -93,6 +96,7 @@ pub(crate) fn handle_http_request(
     routes: &[RuntimeRouteSpec],
     request: &str,
     max_ops: usize,
+    pure_backend: RuntimePureBackendMode,
 ) -> Result<NativeHttpResponse, ServerAdapterError> {
     let parsed = parse_http_request(request)?;
     let Some((route, params)) = routes
@@ -104,7 +108,14 @@ pub(crate) fn handle_http_request(
             body: "not found".to_owned(),
         });
     };
-    Ok(run_route_flow(plan, route, &parsed, &params, max_ops))
+    Ok(run_route_flow(
+        plan,
+        route,
+        &parsed,
+        &params,
+        max_ops,
+        pure_backend,
+    ))
 }
 
 fn run_route_flow(
@@ -113,11 +124,13 @@ fn run_route_flow(
     request: &HttpRequestHead,
     params: &[(String, String)],
     max_ops: usize,
+    pure_backend: RuntimePureBackendMode,
 ) -> NativeHttpResponse {
     let mut plan = plan.clone();
     plan.entry_flow = Some(route.target.clone());
+    let mut pure = RuntimePureAccelerator::new(pure_backend, &plan.pure_helpers);
     let mut executor = VmExecutor::new(plan);
-    let result = executor.step(
+    let result = executor.step_with_pure_backend(
         RuntimeStepInput {
             bindings: request_bindings(request, route, params),
             ..RuntimeStepInput::default()
@@ -126,6 +139,7 @@ fn run_route_flow(
             mode: RuntimeStepMode::Server,
             budget: RuntimeStepBudget { max_ops },
         },
+        &mut pure,
     );
     if let Some(diagnostic) = result.output.diagnostics.first() {
         return NativeHttpResponse {
@@ -305,6 +319,7 @@ mod tests {
             &routes,
             "GET /health HTTP/1.1\r\nhost: localhost\r\n\r\n",
             8,
+            RuntimePureBackendMode::Auto,
         )
         .expect("request is handled");
 
@@ -335,6 +350,7 @@ mod tests {
             &routes,
             "GET /hello/alice HTTP/1.1\r\nhost: localhost\r\n\r\n",
             8,
+            RuntimePureBackendMode::Auto,
         )
         .expect("request is handled");
 

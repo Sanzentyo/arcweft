@@ -5,6 +5,14 @@ use super::{
 };
 use crate::pure::RuntimePureCallBackend;
 
+#[derive(Clone, Copy, Debug)]
+pub(super) struct StreamForNext<'a> {
+    stream: &'a StreamRuntimeId,
+    pattern: &'a RuntimePattern,
+    source: &'a RuntimeExpr,
+    body: &'a [StreamOp],
+}
+
 impl Engine {
     pub(super) fn step_stream_plans(
         &mut self,
@@ -62,10 +70,12 @@ impl Engine {
                 source,
                 body,
             } => self.execute_stream_for_next(
-                stream,
-                pattern,
-                source,
-                body,
+                StreamForNext {
+                    stream,
+                    pattern,
+                    source,
+                    body,
+                },
                 budget,
                 output,
                 pure_backend,
@@ -130,24 +140,28 @@ impl Engine {
 
     pub(super) fn execute_stream_for_next(
         &mut self,
-        stream: &StreamRuntimeId,
-        pattern: &RuntimePattern,
-        source: &RuntimeExpr,
-        body: &[StreamOp],
+        args: StreamForNext<'_>,
         budget: &mut usize,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> bool {
-        let Ok(source_key) = self.evaluate_queue_target_with_backend(source, pure_backend) else {
+        let Ok(source_key) = self.evaluate_queue_target_with_backend(args.source, pure_backend)
+        else {
             return true;
         };
         while let Some(item) = self.pop_queue_item(&source_key) {
             let previous = self.fiber.env.clone();
             self.fiber.env.push_scope();
-            match match_runtime_pattern(pattern, item.value()) {
+            match match_runtime_pattern(args.pattern, item.value()) {
                 Ok(Some(bindings)) => {
                     self.fiber.env.bind_all(bindings);
-                    if !self.execute_stream_ops(stream, body, budget, output, pure_backend) {
+                    if !self.execute_stream_ops(
+                        args.stream,
+                        args.body,
+                        budget,
+                        output,
+                        pure_backend,
+                    ) {
                         self.fiber.env = previous;
                         return false;
                     }

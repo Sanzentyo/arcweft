@@ -211,6 +211,50 @@ fn score(base: i64, bonus: i64, scale: i64) -> i64 {
 }
 
 #[test]
+fn run_json_uses_jit_for_runtime_pure_calls_without_arg_vec_allocation() {
+    let path = temp_arcw(
+        "runtime-pure-jit",
+        r"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2)
+}
+
+flow @flow.main main {
+    return score(3, 4)
+}
+",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--json")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("4")
+        .arg("--pure-backend")
+        .arg("jit")
+        .output()
+        .expect("arcw run executes runtime pure JIT source");
+    fs::remove_file(&path).expect("remove temp runtime pure helper");
+
+    assert!(
+        output.status.success(),
+        "runtime pure JIT run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("run output is structured JSON");
+    assert_eq!(json["final_status"], "done Return(\"18\")");
+    let pure = &json["steps"][0]["stats"]["pure"];
+    assert_eq!(pure["pure_calls"], 1);
+    assert_eq!(pure["jit_calls"], 1);
+    assert_eq!(pure["arg_stack_packs"], 1);
+    assert_eq!(pure["arg_vec_allocations"], 0);
+}
+
+#[test]
 fn check_accepts_valid_arcw_file() {
     let path = temp_arcw(
         "valid",

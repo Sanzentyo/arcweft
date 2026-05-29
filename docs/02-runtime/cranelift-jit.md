@@ -61,13 +61,22 @@ generated dispatch is still future work. Pure helper AOT is already executable:
 plan, rejects unsupported helpers, and is checked against `VmPureFunctionBackend`
 before use.
 
-`arcweft-lang-jit-cranelift` is the native adapter crate. Its first executable
-subset compiles deterministic `i64` pure-helper expressions to Cranelift,
-executes the generated code, and compares the result against
+`arcweft-runtime-accelerator` is the runtime adapter crate that owns pure helper
+compile caches and backend selection. `arcweft-core` exposes only
+`RuntimePureCallBackend`, so normal flow execution can call pure helpers through
+VM, typed AOT, or Cranelift JIT without depending on native code generation.
+The CLI default is `--pure-backend auto`: supported deterministic integer pure
+helpers are JIT-compiled once and then called from flow execution through a
+fixed-size `i64` argument pack. Unsupported helpers remain deterministic by
+using the VM path.
+
+`arcweft-lang-jit-cranelift` is the native codegen adapter crate. Its first
+executable subset compiles deterministic `i64` pure-helper expressions to
+Cranelift, executes the generated code, and compares the result against
 `VmPureFunctionBackend`. The current subset covers integer literals, integer
-bindings, `+`, `-`, `*`, integer comparisons, value-producing `if`, and the
-registered pure `add(lhs, rhs)` helper. It also supports lexical `let`
-bindings lowered as structured pure runtime expressions. Helpers can be
+bindings, `+`, `-`, `*`, `/`, unary `-`, integer comparisons, value-producing
+`if`, and the registered pure `add(lhs, rhs)` helper. It also supports lexical
+`let` bindings lowered as structured pure runtime expressions. Helpers can be
 compiled either as no-argument native calls with captured integer bindings or
 as native calls with up to four selected local bindings passed as runtime `i64`
 inputs.
@@ -80,6 +89,8 @@ arcw jit check --case branch-mix --json --julia --iterations 1000 --warmup 10 --
 arcw jit check --case let-chain --json --iterations 1000 --warmup 10 --samples 5 --input-seed 17
 arcw jit check --case four-input-mix --json --iterations 1000 --warmup 10 --samples 5 --input-seed 13
 arcw jit check game/scripts/math.arcw --helper score --json --input-seed 7
+arcw run game/routes/opening.arcw --mode drain --pure-backend auto --json
+arcw run game/routes/opening.arcw --mode drain --pure-backend jit --json
 ```
 
 The command reports workload metadata, VM/AOT/JIT conformance, AOT and JIT
