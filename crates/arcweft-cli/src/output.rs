@@ -735,6 +735,7 @@ pub(crate) struct ScriptBenchPureHelperMeasurementSummary {
     pub(crate) iterations: usize,
     pub(crate) samples: usize,
     pub(crate) timings: ScriptBenchPureHelperTimingSummary,
+    pub(crate) jit_batch: ScriptBenchPureHelperBatchSummary,
     pub(crate) deterministic: ScriptBenchPureHelperDeterministicSummary,
     pub(crate) vm_stats: ScriptBenchPureHelperStatsSummary,
     pub(crate) aot_stats: ScriptBenchPureHelperStatsSummary,
@@ -758,6 +759,16 @@ pub(crate) struct ScriptBenchPureHelperTimingSummary {
     pub(crate) vm_samples: ScriptBenchPureHelperTimingSamples,
 }
 
+#[derive(serde::Serialize)]
+pub(crate) struct ScriptBenchPureHelperBatchSummary {
+    pub(crate) compile_elapsed_ns: u128,
+    pub(crate) elapsed_ns: u128,
+    pub(crate) per_iteration_ns: u128,
+    pub(crate) speedup_x: String,
+    pub(crate) jit_call_speedup_x: String,
+    pub(crate) samples: ScriptBenchPureHelperTimingSamples,
+}
+
 #[derive(Clone, Copy, serde::Serialize)]
 pub(crate) struct ScriptBenchPureHelperTimingSamples {
     pub(crate) min: u128,
@@ -771,6 +782,8 @@ pub(crate) struct ScriptBenchPureHelperDeterministicSummary {
     pub(crate) aot: i64,
     #[serde(rename = "jit_accumulator")]
     pub(crate) jit: i64,
+    #[serde(rename = "jit_batch_accumulator")]
+    pub(crate) jit_batch: i64,
     #[serde(rename = "vm_accumulator")]
     pub(crate) vm: i64,
 }

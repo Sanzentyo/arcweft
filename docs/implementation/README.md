@@ -68,7 +68,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   without persisting the host path. Source-helper JIT reports include the same
   source compiler phase timings plus typecheck and borrow-check counters used by
   `arcw check --json`, so native speedup can be evaluated against front-end
-  compilation cost.
+  compilation cost. Builtin JIT checks now expose `--case score`,
+  `--case branch-mix`, `--case let-chain`, and `--case four-input-mix`, and JSON
+  includes workload metadata plus a JIT-compiled batch loop over the same
+  deterministic input series.
 - `arcw bench` runs measurable `measure { start(@flow.id) }` sections through
   the selected headless runtime executor, includes deterministic runtime
   counters in JSON, completes native file task requests through the CLI adapter,
@@ -81,9 +84,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `expect.file(path.save("output.txt"), equals="...")` while keeping the host
   filesystem path out of JSON.
   `measure { pure(helper_name) }` sections additionally run the selected
-  checked `#[pure] fn` helper through the VM reference, typed AOT plan, and
-  native Cranelift JIT, reporting conformance, deterministic accumulators,
-  timing samples, compile time, and speedup ratios in the same bench JSON.
+  checked `#[pure] fn` helper through the VM reference, typed AOT plan, native
+  Cranelift JIT, and JIT batch loop, reporting conformance, deterministic
+  accumulators, timing samples, compile time, and speedup ratios in the same
+  bench JSON.
 - `arcweft-cli` keeps user-facing JSON report schemas in `output.rs`,
   including check, profile, verify-types, bench, runtime step, and compiler
   counter summaries. `main.rs` remains the command orchestration layer instead

@@ -76,14 +76,21 @@ outside the JIT subset.
 
 ```bash
 arcw jit check --json --iterations 1000 --warmup 10 --samples 5 --input-seed 0
+arcw jit check --case branch-mix --json --julia --iterations 1000 --warmup 10 --samples 5 --input-seed 11
+arcw jit check --case let-chain --json --iterations 1000 --warmup 10 --samples 5 --input-seed 17
+arcw jit check --case four-input-mix --json --iterations 1000 --warmup 10 --samples 5 --input-seed 13
 arcw jit check game/scripts/math.arcw --helper score --json --input-seed 7
 ```
 
-The command reports VM/AOT/JIT conformance, AOT and JIT compile time, repeated
-AOT/native-call time, VM evaluation time, per-iteration medians, speedup
-ratios, deterministic accumulators, input binding names, and pure-helper
-lowering counters. Its timing loop feeds deterministic varying integer inputs
-through the typed AOT plan, compiled JIT function, and VM reference.
+The command reports workload metadata, VM/AOT/JIT conformance, AOT and JIT
+compile time, repeated AOT/native-call time, JIT-compiled batch-loop time, VM
+evaluation time, per-iteration medians, speedup ratios, deterministic
+accumulators, input binding names, and pure-helper lowering counters. Its timing
+loop feeds deterministic varying integer inputs through the typed AOT plan,
+compiled JIT function, JIT batch loop, and VM reference. Builtin cases exercise a
+score helper, branch-heavy arithmetic, lexical `let` chains, and a four-input
+arithmetic/branch mix so the native-call boundary and the compiled loop can be
+compared independently.
 `--input-seed` makes the input series reproducible while allowing local A/B
 comparisons. It does not read source paths or persist host absolute paths.
 

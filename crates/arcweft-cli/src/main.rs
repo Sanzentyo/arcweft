@@ -55,11 +55,12 @@ use output::{
     RuntimeProfilePhase, RuntimeProfileReport, RuntimeProfileRuntime, RuntimeRunReport,
     RuntimeStepRunSummary, RuntimeTypeValidationProfileStats, RuntimeTypeValidationReportSummary,
     ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary,
-    ScriptBenchPureHelperDeterministicSummary, ScriptBenchPureHelperMeasurementSummary,
-    ScriptBenchPureHelperStatsSummary, ScriptBenchPureHelperTimingSamples,
-    ScriptBenchPureHelperTimingSummary, ScriptBenchRunReport, ScriptBenchRunSummary,
-    ScriptBenchSectionRunSummary, ScriptTestRunReport, ScriptTestRunSummary, TypeCheckProfileStats,
-    VerifyTypesReport, VerifyTypesRuntimeSelfCheck, VerifyTypesVerifierSummary, flow_status_label,
+    ScriptBenchPureHelperBatchSummary, ScriptBenchPureHelperDeterministicSummary,
+    ScriptBenchPureHelperMeasurementSummary, ScriptBenchPureHelperStatsSummary,
+    ScriptBenchPureHelperTimingSamples, ScriptBenchPureHelperTimingSummary, ScriptBenchRunReport,
+    ScriptBenchRunSummary, ScriptBenchSectionRunSummary, ScriptTestRunReport, ScriptTestRunSummary,
+    TypeCheckProfileStats, VerifyTypesReport, VerifyTypesRuntimeSelfCheck,
+    VerifyTypesVerifierSummary, flow_status_label,
 };
 use server_adapter::{NativeHttpServerConfig, serve_native_http};
 use std::fs;
@@ -149,6 +150,10 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
         eprintln!("error: --iterations must be greater than zero");
         return Err(ExitCode::from(2));
     }
+    if options.path.is_some() && options.case != JitBuiltinCase::Score {
+        eprintln!("error: --case selects a builtin workload and cannot be combined with PATH");
+        return Err(ExitCode::from(2));
+    }
 
     let target = jit_check_target(options)?;
     let report = run_jit_check(options, &target)?;
@@ -205,6 +210,12 @@ fn jit_check_report(
         helper: target.name.clone(),
         helper_source: target.source.as_str().to_owned(),
         source_compiler: target.source_compiler.clone(),
+        workload: JitCheckWorkloadReport {
+            case: target.name.clone(),
+            loop_kind: "deterministic_input_series".to_owned(),
+            inputs_per_iteration: target.input_names.len(),
+            batch_iterations: options.iterations,
+        },
         input_bindings: target.input_names.clone(),
         dynamic_inputs: !target.input_names.is_empty(),
         input_seed: options.input_seed,
@@ -516,31 +527,128 @@ enum JitCheckHelperSource {
 }
 
 impl JitCheckTarget {
-    fn builtin() -> Self {
+    fn builtin(case: JitBuiltinCase) -> Self {
+        match case {
+            JitBuiltinCase::Score => Self::builtin_score(),
+            JitBuiltinCase::BranchMix => Self::builtin_branch_mix(),
+            JitBuiltinCase::LetChain => Self::builtin_let_chain(),
+            JitBuiltinCase::FourInputMix => Self::builtin_four_input_mix(),
+        }
+    }
+
+    fn builtin_score() -> Self {
         Self {
             name: "score".to_owned(),
             source: JitCheckHelperSource::Builtin,
             source_compiler: None,
             input_names: vec!["base".to_owned(), "bonus".to_owned()],
-            expr: RuntimeExpr::If {
-                condition: Box::new(RuntimeExpr::Binary {
-                    lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-                    op: RuntimeBinaryOp::Ge,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(3))),
-                }),
-                then_expr: Box::new(RuntimeExpr::Binary {
-                    lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-                    op: RuntimeBinaryOp::Mul,
-                    rhs: Box::new(RuntimeExpr::Call {
+            expr: if_i64(
+                binary(local("base"), RuntimeBinaryOp::Ge, int(3)),
+                binary(
+                    local("base"),
+                    RuntimeBinaryOp::Mul,
+                    RuntimeExpr::Call {
                         callee: "add".to_owned(),
-                        args: vec![
-                            RuntimeExpr::Local("bonus".to_owned()),
-                            RuntimeExpr::Value(RuntimeValue::Int(2)),
-                        ],
-                    }),
-                }),
-                else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::Int(0))),
-            },
+                        args: vec![local("bonus"), int(2)],
+                    },
+                ),
+                int(0),
+            ),
+        }
+    }
+
+    fn builtin_branch_mix() -> Self {
+        Self {
+            name: "branch_mix".to_owned(),
+            source: JitCheckHelperSource::Builtin,
+            source_compiler: None,
+            input_names: vec![
+                "base".to_owned(),
+                "bonus".to_owned(),
+                "scale".to_owned(),
+                "offset".to_owned(),
+            ],
+            expr: let_in(
+                "boosted",
+                binary(local("bonus"), RuntimeBinaryOp::Add, int(2)),
+                let_in(
+                    "weighted",
+                    binary(local("base"), RuntimeBinaryOp::Mul, local("boosted")),
+                    let_in(
+                        "shifted",
+                        binary(local("weighted"), RuntimeBinaryOp::Sub, local("offset")),
+                        if_i64(
+                            binary(local("shifted"), RuntimeBinaryOp::Ge, local("scale")),
+                            binary(local("shifted"), RuntimeBinaryOp::Div, local("scale")),
+                            RuntimeExpr::Unary {
+                                op: RuntimeUnaryOp::Neg,
+                                expr: Box::new(local("shifted")),
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        }
+    }
+
+    fn builtin_let_chain() -> Self {
+        Self {
+            name: "let_chain".to_owned(),
+            source: JitCheckHelperSource::Builtin,
+            source_compiler: None,
+            input_names: vec!["a".to_owned(), "b".to_owned(), "c".to_owned()],
+            expr: let_in(
+                "x",
+                binary(local("a"), RuntimeBinaryOp::Mul, local("b")),
+                let_in(
+                    "y",
+                    binary(local("x"), RuntimeBinaryOp::Add, local("c")),
+                    let_in(
+                        "z",
+                        binary(local("y"), RuntimeBinaryOp::Sub, local("a")),
+                        if_i64(
+                            binary(local("z"), RuntimeBinaryOp::Gt, local("b")),
+                            binary(local("z"), RuntimeBinaryOp::Mul, int(3)),
+                            binary(local("z"), RuntimeBinaryOp::Add, local("b")),
+                        ),
+                    ),
+                ),
+            ),
+        }
+    }
+
+    fn builtin_four_input_mix() -> Self {
+        Self {
+            name: "four_input_mix".to_owned(),
+            source: JitCheckHelperSource::Builtin,
+            source_compiler: None,
+            input_names: vec![
+                "a".to_owned(),
+                "b".to_owned(),
+                "c".to_owned(),
+                "d".to_owned(),
+            ],
+            expr: let_in(
+                "left",
+                binary(
+                    binary(local("a"), RuntimeBinaryOp::Add, local("b")),
+                    RuntimeBinaryOp::Mul,
+                    binary(local("c"), RuntimeBinaryOp::Sub, local("d")),
+                ),
+                let_in(
+                    "right",
+                    binary(
+                        binary(local("c"), RuntimeBinaryOp::Add, int(3)),
+                        RuntimeBinaryOp::Mul,
+                        binary(local("d"), RuntimeBinaryOp::Add, int(1)),
+                    ),
+                    if_i64(
+                        binary(local("left"), RuntimeBinaryOp::Ne, local("right")),
+                        binary(local("left"), RuntimeBinaryOp::Sub, local("right")),
+                        binary(local("left"), RuntimeBinaryOp::Add, local("right")),
+                    ),
+                ),
+            ),
         }
     }
 
@@ -593,9 +701,41 @@ impl JitCheckHelperSource {
 
 fn jit_check_target(options: &JitCheckOptions) -> Result<JitCheckTarget, ExitCode> {
     options.path.as_ref().map_or_else(
-        || Ok(JitCheckTarget::builtin()),
+        || Ok(JitCheckTarget::builtin(options.case)),
         |path| jit_check_source_target(path, options.helper.as_deref()),
     )
+}
+
+fn local(name: &str) -> RuntimeExpr {
+    RuntimeExpr::Local(name.to_owned())
+}
+
+fn int(value: i64) -> RuntimeExpr {
+    RuntimeExpr::Value(RuntimeValue::Int(value))
+}
+
+fn binary(lhs: RuntimeExpr, op: RuntimeBinaryOp, rhs: RuntimeExpr) -> RuntimeExpr {
+    RuntimeExpr::Binary {
+        lhs: Box::new(lhs),
+        op,
+        rhs: Box::new(rhs),
+    }
+}
+
+fn let_in(name: &str, expr: RuntimeExpr, body: RuntimeExpr) -> RuntimeExpr {
+    RuntimeExpr::Let {
+        name: name.to_owned(),
+        expr: Box::new(expr),
+        body: Box::new(body),
+    }
+}
+
+fn if_i64(condition: RuntimeExpr, then_expr: RuntimeExpr, else_expr: RuntimeExpr) -> RuntimeExpr {
+    RuntimeExpr::If {
+        condition: Box::new(condition),
+        then_expr: Box::new(then_expr),
+        else_expr: Box::new(else_expr),
+    }
 }
 
 fn jit_check_source_target(
@@ -2562,6 +2702,7 @@ fn run_bench_pure_helper_section(
     let jit_options = JitCheckOptions {
         path: None,
         helper: Some(helper_name),
+        case: JitBuiltinCase::Score,
         julia: false,
         iterations: options.iterations,
         warmup: options.warmup,
@@ -3443,6 +3584,8 @@ struct JitCheckOptions {
     path: Option<PathBuf>,
     #[arg(long)]
     helper: Option<String>,
+    #[arg(long = "case", value_enum, default_value = "score")]
+    case: JitBuiltinCase,
     #[arg(long)]
     julia: bool,
     #[arg(long, default_value_t = 1000)]
@@ -3455,6 +3598,14 @@ struct JitCheckOptions {
     input_seed: u64,
     #[arg(long)]
     json: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum JitBuiltinCase {
+    Score,
+    BranchMix,
+    LetChain,
+    FourInputMix,
 }
 
 #[derive(Args, Clone, Debug, Default)]
@@ -3506,6 +3657,7 @@ struct JitCheckReport {
     helper_source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     source_compiler: Option<JitCheckSourceCompilerReport>,
+    workload: JitCheckWorkloadReport,
     input_bindings: Vec<String>,
     dynamic_inputs: bool,
     input_seed: u64,
@@ -3527,6 +3679,14 @@ struct JitCheckReport {
     vm_stats: PureFunctionStatsReport,
     aot_stats: PureFunctionStatsReport,
     jit_stats: PureFunctionStatsReport,
+}
+
+#[derive(serde::Serialize)]
+struct JitCheckWorkloadReport {
+    case: String,
+    loop_kind: String,
+    inputs_per_iteration: usize,
+    batch_iterations: usize,
 }
 
 #[derive(serde::Serialize)]
@@ -3633,9 +3793,18 @@ impl From<&JitCheckReport> for ScriptBenchPureHelperMeasurementSummary {
                 jit_samples: ScriptBenchPureHelperTimingSamples::from(report.timings.jit_samples),
                 vm_samples: ScriptBenchPureHelperTimingSamples::from(report.timings.vm_samples),
             },
+            jit_batch: ScriptBenchPureHelperBatchSummary {
+                compile_elapsed_ns: report.jit_batch.compile,
+                elapsed_ns: report.jit_batch.elapsed,
+                per_iteration_ns: report.jit_batch.per_iteration,
+                speedup_x: report.jit_batch.speedup_x.clone(),
+                jit_call_speedup_x: report.jit_batch.jit_call_speedup_x.clone(),
+                samples: ScriptBenchPureHelperTimingSamples::from(report.jit_batch.samples),
+            },
             deterministic: ScriptBenchPureHelperDeterministicSummary {
                 aot: report.deterministic.aot,
                 jit: report.deterministic.jit,
+                jit_batch: report.deterministic.jit_batch,
                 vm: report.deterministic.vm,
             },
             vm_stats: ScriptBenchPureHelperStatsSummary::from(&report.vm_stats),

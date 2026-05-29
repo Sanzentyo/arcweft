@@ -341,15 +341,21 @@ gate for future wider pure helper lowering:
 
 ```bash
 arcw jit check --json --iterations 1000 --warmup 10 --samples 5 --input-seed 0
+arcw jit check --case branch-mix --json --julia --iterations 1000 --warmup 10 --samples 5 --input-seed 11
+arcw jit check --case let-chain --json --iterations 1000 --warmup 10 --samples 5 --input-seed 17
+arcw jit check --case four-input-mix --json --iterations 1000 --warmup 10 --samples 5 --input-seed 13
 arcw jit check game/scripts/math.arcw --helper score --json --input-seed 7
 ```
 
-The JSON includes VM/AOT/JIT result equality, AOT and JIT compile elapsed time,
-repeated AOT/native-call elapsed time, VM elapsed time, sample min/median/max,
+The builtin cases cover a small score function, a branch-heavy arithmetic mix,
+a lexical `let` chain, and a four-input arithmetic/branch mix. The JSON includes
+workload metadata, VM/AOT/JIT result equality, AOT and JIT compile elapsed time,
+repeated AOT/native-call elapsed time, a JIT-compiled batch loop over the same
+deterministic input series, VM elapsed time, sample min/median/max,
 per-iteration median time, speedup ratios, deterministic accumulators, dynamic
 input binding names, and pure helper stats. The measurement loop sends
 deterministic varying integer inputs through the typed AOT plan, compiled
-native function, and VM reference.
+native function, JIT batch loop, and VM reference.
 `--input-seed` selects the deterministic input series and is emitted in JSON so
 repeated runs can be compared without embedding local paths. It does not include
 source paths.
@@ -401,12 +407,13 @@ bench @bench.score {
 ```
 
 For `pure(name)` measurements, `arcw bench --json` runs the VM reference, the
-typed AOT plan, and the native Cranelift JIT with deterministic generated
-integer inputs. The report includes conformance, per-backend timing samples,
-compile time, accumulators, and speedup ratios without recording the host source
-path. The manifest preserves the declaration ID, kind, source span, and
-call-based body rows so CLI, LSP, headless player adapters, and Agent tooling
-can share one planning schema without reparsing source text.
+typed AOT plan, the native Cranelift JIT, and the JIT batch loop with
+deterministic generated integer inputs. The report includes conformance,
+per-backend timing samples, compile time, accumulators, and speedup ratios
+without recording the host source path. The manifest preserves the declaration
+ID, kind, source span, and call-based body rows so CLI, LSP, headless player
+adapters, and Agent tooling can share one planning schema without reparsing
+source text.
 
 Line-plan lowering must not silently drop parsed syntax. Stable Phase 2.0 cue
 syntax such as `at(0.35s): ...` is lowered into Sans I/O line task data.

@@ -25,7 +25,7 @@ fn jit_check_json_compares_cranelift_and_vm() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_jit_check_json(&stdout, "builtin", &["base", "bonus"], 7);
+    assert_jit_check_json(&stdout, "score", "builtin", &["base", "bonus"], 7);
 }
 
 #[test]
@@ -55,12 +55,113 @@ fn jit_check_json_can_compare_julia_baseline_without_absolute_source() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_jit_check_json(&stdout, "builtin", &["base", "bonus"], 7);
+    assert_jit_check_json(&stdout, "score", "builtin", &["base", "bonus"], 7);
     assert_julia_baseline_json(&stdout);
     assert!(
         !stdout.contains(&std::env::temp_dir().display().to_string()),
         "jit check Julia JSON must not record absolute temp paths: {stdout}"
     );
+}
+
+#[test]
+fn jit_check_json_measures_branch_mix_case_with_julia_baseline() {
+    if !julia_is_available() {
+        return;
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("jit")
+        .arg("check")
+        .arg("--case")
+        .arg("branch-mix")
+        .arg("--json")
+        .arg("--julia")
+        .arg("--iterations")
+        .arg("4")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--samples")
+        .arg("2")
+        .arg("--input-seed")
+        .arg("11")
+        .output()
+        .expect("arcw jit check branch-mix runs with Julia baseline");
+
+    assert!(
+        output.status.success(),
+        "branch-mix jit check should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_jit_check_json(
+        &stdout,
+        "branch_mix",
+        "builtin",
+        &["base", "bonus", "scale", "offset"],
+        11,
+    );
+    assert_julia_baseline_json(&stdout);
+}
+
+#[test]
+fn jit_check_json_measures_four_input_mix_case() {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("jit")
+        .arg("check")
+        .arg("--case")
+        .arg("four-input-mix")
+        .arg("--json")
+        .arg("--iterations")
+        .arg("4")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--samples")
+        .arg("2")
+        .arg("--input-seed")
+        .arg("13")
+        .output()
+        .expect("arcw jit check four-input-mix runs");
+
+    assert!(
+        output.status.success(),
+        "four-input-mix jit check should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_jit_check_json(
+        &stdout,
+        "four_input_mix",
+        "builtin",
+        &["a", "b", "c", "d"],
+        13,
+    );
+}
+
+#[test]
+fn jit_check_json_measures_let_chain_case() {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("jit")
+        .arg("check")
+        .arg("--case")
+        .arg("let-chain")
+        .arg("--json")
+        .arg("--iterations")
+        .arg("4")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--samples")
+        .arg("2")
+        .arg("--input-seed")
+        .arg("17")
+        .output()
+        .expect("arcw jit check let-chain runs");
+
+    assert!(
+        output.status.success(),
+        "let-chain jit check should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_jit_check_json(&stdout, "let_chain", "builtin", &["a", "b", "c"], 17);
 }
 
 #[test]
@@ -102,7 +203,7 @@ fn score(base: i64, bonus: i64, scale: i64) -> i64 {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_jit_check_json(&stdout, "source", &["base", "bonus", "scale"], 3);
+    assert_jit_check_json(&stdout, "score", "source", &["base", "bonus", "scale"], 3);
     assert!(
         !stdout.contains(&std::env::temp_dir().display().to_string()),
         "jit check JSON must not record absolute temp paths: {stdout}"
@@ -1617,6 +1718,7 @@ bench @bench.pure_score {
             && stdout.contains("\"jit_elapsed_ns\"")
             && stdout.contains("\"vm_elapsed_ns\"")
             && stdout.contains("\"speedup_x\"")
+            && stdout.contains("\"jit_batch\"")
             && stdout.contains("\"jit_accumulator\""),
         "bench JSON should include VM/AOT/JIT pure helper timing: {stdout}"
     );
@@ -1639,6 +1741,10 @@ fn assert_pure_helper_bench_json(stdout: &str) {
     assert_eq!(
         pure_helper["deterministic"]["vm_accumulator"],
         pure_helper["deterministic"]["jit_accumulator"]
+    );
+    assert_eq!(
+        pure_helper["deterministic"]["vm_accumulator"],
+        pure_helper["deterministic"]["jit_batch_accumulator"]
     );
 
     let timings = &pure_helper["timings"];
@@ -1676,6 +1782,27 @@ fn assert_pure_helper_bench_json(stdout: &str) {
             .and_then(|value| value.parse::<f64>().ok())
             .is_some(),
         "AOT speedup should be numeric: {timings}"
+    );
+    let jit_batch = &pure_helper["jit_batch"];
+    assert_eq!(
+        jit_batch["elapsed_ns"], jit_batch["samples"]["median"],
+        "JIT batch median should be exposed both as elapsed and in the sample summary"
+    );
+    assert_sample_summary_is_ordered(&jit_batch["samples"]);
+    assert!(
+        jit_batch["compile_elapsed_ns"].as_u64().is_some()
+            && jit_batch["per_iteration_ns"]
+                .as_u64()
+                .is_some_and(|value| value > 0)
+            && jit_batch["speedup_x"]
+                .as_str()
+                .and_then(|value| value.parse::<f64>().ok())
+                .is_some()
+            && jit_batch["jit_call_speedup_x"]
+                .as_str()
+                .and_then(|value| value.parse::<f64>().ok())
+                .is_some(),
+        "pure helper bench should expose batch loop counters: {jit_batch}"
     );
     assert_eq!(
         pure_helper["vm_stats"]["evaluated_binary_ops"],
@@ -2717,6 +2844,7 @@ fn assert_check_json_pipeline_summary(stdout: &str) {
 
 fn assert_jit_check_json(
     stdout: &str,
+    expected_helper: &str,
     expected_helper_source: &str,
     expected_input_bindings: &[&str],
     expected_seed: u64,
@@ -2724,8 +2852,14 @@ fn assert_jit_check_json(
     let json: serde_json::Value =
         serde_json::from_str(stdout).expect("jit check output is structured JSON");
     assert_eq!(json["status"], "ok");
-    assert_eq!(json["helper"], "score");
+    assert_eq!(json["helper"], expected_helper);
     assert_eq!(json["helper_source"], expected_helper_source);
+    assert_eq!(json["workload"]["case"], expected_helper);
+    assert_eq!(json["workload"]["loop_kind"], "deterministic_input_series");
+    assert_eq!(
+        json["workload"]["inputs_per_iteration"],
+        expected_input_bindings.len()
+    );
     assert_eq!(json["vm_backend"], "vm");
     assert_eq!(json["aot_backend"], "aot");
     assert_eq!(json["jit_backend"], "jit");
