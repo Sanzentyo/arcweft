@@ -160,6 +160,14 @@ impl PureEvaluator {
                 .cloned()
                 .ok_or_else(|| RuntimeEvalError::UnknownBinding(name.clone())),
             RuntimeExpr::EntityRef(target) => Ok(RuntimeValue::EntityRef(target.clone())),
+            RuntimeExpr::Let { name, expr, body } => {
+                let value = self.evaluate_expr(expr)?;
+                self.env.push_scope();
+                self.env.set(name.clone(), value);
+                let result = self.evaluate_expr(body);
+                self.env.pop_scope();
+                result
+            }
             RuntimeExpr::Tuple(items) => items
                 .iter()
                 .map(|item| self.evaluate_expr(item))

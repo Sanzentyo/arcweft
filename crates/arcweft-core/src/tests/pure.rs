@@ -41,6 +41,37 @@ fn vm_pure_backend_evaluates_deterministic_helper_expr() {
 }
 
 #[test]
+fn vm_pure_backend_evaluates_lexical_let_expr() {
+    let request = PureFunctionRequest::new(
+        "score_with_local",
+        RuntimeExpr::Let {
+            name: "boosted".to_owned(),
+            expr: Box::new(RuntimeExpr::Call {
+                callee: "add".to_owned(),
+                args: vec![
+                    RuntimeExpr::Local("bonus".to_owned()),
+                    RuntimeExpr::Value(RuntimeValue::Int(2)),
+                ],
+            }),
+            body: Box::new(RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Local("boosted".to_owned())),
+            }),
+        },
+        [int_binding("base", 3), int_binding("bonus", 4)],
+    );
+
+    let result = VmPureFunctionBackend
+        .evaluate(&request)
+        .expect("pure helper evaluates lexical let");
+
+    assert_eq!(result.value, RuntimeValue::Int(18));
+    assert_eq!(result.stats.evaluated_calls, 1);
+    assert_eq!(result.stats.evaluated_binary_ops, 1);
+}
+
+#[test]
 fn aot_pure_backend_candidate_matches_vm_result() {
     let request = PureFunctionRequest::new(
         "trim_label",

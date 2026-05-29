@@ -59,7 +59,7 @@ pub struct CompiledPureI64Inputs {
 #[derive(Clone, Copy, Debug)]
 enum LoweredI64Binding {
     Const(i64),
-    Param(Value),
+    Value(Value),
 }
 
 impl PureFunctionBackend for CraneliftPureFunctionBackend {
@@ -187,7 +187,7 @@ impl CraneliftPureFunctionBackend {
             builder.switch_to_block(block);
             let params = builder.block_params(block);
             for (name, value) in param_names.iter().zip(params.iter().copied()) {
-                bindings.insert(name.clone(), LoweredI64Binding::Param(value));
+                bindings.insert(name.clone(), LoweredI64Binding::Value(value));
             }
             let value = lower_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
             builder.ins().return_(&[value]);
@@ -318,11 +318,17 @@ fn lower_expr(
         ))),
         RuntimeExpr::Local(name) => match bindings.get(name) {
             Some(LoweredI64Binding::Const(value)) => Ok(builder.ins().iconst(types::I64, *value)),
-            Some(LoweredI64Binding::Param(value)) => Ok(*value),
+            Some(LoweredI64Binding::Value(value)) => Ok(*value),
             None => Err(CraneliftJitError::UnsupportedExpr(format!(
                 "unknown integer binding `{name}`"
             ))),
         },
+        RuntimeExpr::Let { name, expr, body } => {
+            let value = lower_expr(builder, bindings, expr, stats)?;
+            let mut scoped_bindings = bindings.clone();
+            scoped_bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            lower_expr(builder, &scoped_bindings, body, stats)
+        }
         RuntimeExpr::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let lhs = lower_expr(builder, bindings, lhs, stats)?;
@@ -535,6 +541,36 @@ mod tests {
         assert_eq!(compiled.call(&[3, 4]).expect("call succeeds"), 18);
         assert_eq!(compiled.call(&[2, 99]).expect("call succeeds"), 0);
         assert_eq!(compiled.call(&[7, 1]).expect("call succeeds"), 21);
+    }
+
+    #[test]
+    fn cranelift_compiled_helper_evaluates_lexical_let() {
+        let request = PureFunctionRequest::new(
+            "score_with_local",
+            RuntimeExpr::Let {
+                name: "boosted".to_owned(),
+                expr: Box::new(RuntimeExpr::Call {
+                    callee: "add".to_owned(),
+                    args: vec![
+                        RuntimeExpr::Local("bonus".to_owned()),
+                        RuntimeExpr::Value(RuntimeValue::Int(2)),
+                    ],
+                }),
+                body: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                    op: RuntimeBinaryOp::Mul,
+                    rhs: Box::new(RuntimeExpr::Local("boosted".to_owned())),
+                }),
+            },
+            [int_binding("base", 0), int_binding("bonus", 0)],
+        );
+
+        let compiled = CraneliftPureFunctionBackend
+            .compile_i64_with_inputs(&request, ["base", "bonus"])
+            .expect("Cranelift compiles lexical let");
+
+        assert_eq!(compiled.call(&[3, 4]).expect("call succeeds"), 18);
+        assert_eq!(compiled.call(&[5, 1]).expect("call succeeds"), 15);
     }
 
     #[test]

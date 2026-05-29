@@ -64,9 +64,11 @@ subset compiles deterministic `i64` pure-helper expressions to Cranelift,
 executes the generated code, and compares the result against
 `VmPureFunctionBackend`. The current subset covers integer literals, integer
 bindings, `+`, `-`, `*`, integer comparisons, value-producing `if`, and the
-registered pure `add(lhs, rhs)` helper. Helpers can be compiled either as
-no-argument native calls with captured integer bindings or as native calls with
-up to four selected local bindings passed as runtime `i64` inputs.
+registered pure `add(lhs, rhs)` helper. It also supports lexical `let`
+bindings lowered as structured pure runtime expressions. Helpers can be
+compiled either as no-argument native calls with captured integer bindings or
+as native calls with up to four selected local bindings passed as runtime `i64`
+inputs.
 String-heavy helpers, effectful calls, flow control, and pattern control remain
 outside the JIT subset.
 
@@ -85,10 +87,11 @@ or persist host absolute paths.
 
 When a `.arcw` path is provided, `arcw jit check` runs the normal parse, HIR
 lowering, reference validation, typecheck-readiness, and typecheck path first.
-It then selects a `#[pure] fn` helper, lowers the expression body to the runtime
-pure-helper request, and uses the VM as the conformance reference before timing
-the Cranelift function. The current source-backed check supports the same
-0-to-4-input integer subset as the native adapter.
+It then selects a `#[pure] fn` helper, lowers the expression body or a simple
+`let` statement body plus final value to the runtime pure-helper request, and
+uses the VM as the conformance reference before timing the Cranelift function.
+The current source-backed check supports the same 0-to-4-input integer subset
+as the native adapter.
 
 ## IR lowering
 

@@ -93,6 +93,7 @@ impl Engine {
                 .cloned()
                 .ok_or_else(|| RuntimeEvalError::UnknownBinding(name.clone())),
             RuntimeExpr::EntityRef(target) => Ok(RuntimeValue::EntityRef(target.clone())),
+            RuntimeExpr::Let { name, expr, body } => self.evaluate_let_expr(name, expr, body),
             RuntimeExpr::Tuple(items) => items
                 .iter()
                 .map(|item| self.evaluate_expr(item))
@@ -203,6 +204,20 @@ impl Engine {
             .map(|arg| self.evaluate_expr(arg))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(evaluate_runtime_method_call(receiver, method, &args))
+    }
+
+    fn evaluate_let_expr(
+        &mut self,
+        name: &str,
+        expr: &RuntimeExpr,
+        body: &RuntimeExpr,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let value = self.evaluate_expr(expr)?;
+        self.fiber.env.push_scope();
+        self.fiber.env.set(name.to_owned(), value);
+        let result = self.evaluate_expr(body);
+        self.fiber.env.pop_scope();
+        result
     }
 
     pub(super) fn evaluate_if_let_expr(

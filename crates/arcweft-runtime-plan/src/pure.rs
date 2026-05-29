@@ -8,7 +8,7 @@ use arcweft_core::{
 use arcweft_lang_hir::{
     model::{HirFunction, HirModule},
     syntax::{
-        ast::{items::FunctionKind, pattern::Pattern},
+        ast::{flow::Stmt, items::FunctionKind, pattern::Pattern},
         types::{FnParam, TypeRef},
     },
 };
@@ -27,8 +27,10 @@ pub struct PureHelperCandidate {
 pub enum PureHelperLowerError {
     #[error("pure helper `{name}` uses unsupported function kind `{kind:?}`")]
     UnsupportedFunctionKind { name: String, kind: FunctionKind },
-    #[error("pure helper `{name}` must have a single expression body")]
+    #[error("pure helper `{name}` must have a final value expression")]
     UnsupportedBody { name: String },
+    #[error("pure helper `{name}` has unsupported statement `{statement}`")]
+    UnsupportedStatement { name: String, statement: String },
     #[error("pure helper `{name}` has unsupported parameter `{parameter}`")]
     UnsupportedParameter { name: String, parameter: String },
     #[error("pure helper `{name}` has unsupported parameter type `{parameter}`")]
@@ -114,28 +116,64 @@ fn lower_pure_helper_candidate(
             kind: function.kind(),
         });
     }
-    if !function.statements().is_empty() {
-        return Err(PureHelperLowerError::UnsupportedBody {
-            name: function.name().to_owned(),
-        });
-    }
-    let Some(value) = function.value() else {
-        return Err(PureHelperLowerError::UnsupportedBody {
-            name: function.name().to_owned(),
-        });
-    };
     let input_names = pure_helper_input_names(function)?;
-    let expr = lower_runtime_expr_strict(value).map_err(|reason| {
-        PureHelperLowerError::UnsupportedExpr {
-            name: function.name().to_owned(),
-            reason,
-        }
-    })?;
+    let expr = lower_pure_helper_body(function)?;
     Ok(PureHelperCandidate {
         name: function.name().to_owned(),
         input_names,
         expr,
     })
+}
+
+fn lower_pure_helper_body(function: &HirFunction) -> Result<RuntimeExpr, PureHelperLowerError> {
+    let name = function.name();
+    let Some(value) = function.value() else {
+        return Err(PureHelperLowerError::UnsupportedBody {
+            name: name.to_owned(),
+        });
+    };
+    let body = lower_runtime_expr_strict(value).map_err(|reason| {
+        PureHelperLowerError::UnsupportedExpr {
+            name: name.to_owned(),
+            reason,
+        }
+    })?;
+    function
+        .statements()
+        .iter()
+        .rev()
+        .try_fold(body, |body, stmt| {
+            lower_pure_helper_let_stmt(name, stmt).map(|(let_name, expr)| RuntimeExpr::Let {
+                name: let_name,
+                expr: Box::new(expr),
+                body: Box::new(body),
+            })
+        })
+}
+
+fn lower_pure_helper_let_stmt(
+    function_name: &str,
+    stmt: &Stmt,
+) -> Result<(String, RuntimeExpr), PureHelperLowerError> {
+    let Stmt::Let { pattern, expr, .. } = stmt else {
+        return Err(PureHelperLowerError::UnsupportedStatement {
+            name: function_name.to_owned(),
+            statement: format!("{stmt:?}"),
+        });
+    };
+    let name = binding_pattern_name(function_name, pattern).map_err(|parameter| {
+        PureHelperLowerError::UnsupportedStatement {
+            name: function_name.to_owned(),
+            statement: format!("let {parameter}"),
+        }
+    })?;
+    let expr = lower_runtime_expr_strict(expr).map_err(|reason| {
+        PureHelperLowerError::UnsupportedExpr {
+            name: function_name.to_owned(),
+            reason,
+        }
+    })?;
+    Ok((name, expr))
 }
 
 fn pure_helper_input_names(function: &HirFunction) -> Result<Vec<String>, PureHelperLowerError> {
@@ -152,17 +190,12 @@ fn pure_helper_param_name(
     function_name: &str,
     param: &FnParam,
 ) -> Result<String, PureHelperLowerError> {
-    let name = match param.pattern() {
-        Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
-            name.clone()
+    let name = binding_pattern_name(function_name, param.pattern()).map_err(|parameter| {
+        PureHelperLowerError::UnsupportedParameter {
+            name: function_name.to_owned(),
+            parameter,
         }
-        pattern => {
-            return Err(PureHelperLowerError::UnsupportedParameter {
-                name: function_name.to_owned(),
-                parameter: format!("{pattern:?}"),
-            });
-        }
-    };
+    })?;
     if !is_jit_integer_type(param.ty()) {
         return Err(PureHelperLowerError::UnsupportedParameterType {
             name: function_name.to_owned(),
@@ -170,6 +203,15 @@ fn pure_helper_param_name(
         });
     }
     Ok(name)
+}
+
+fn binding_pattern_name(function_name: &str, pattern: &Pattern) -> Result<String, String> {
+    match pattern {
+        Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
+            Ok(name.clone())
+        }
+        pattern => Err(format!("{pattern:?} in `{function_name}`")),
+    }
 }
 
 fn is_jit_integer_type(ty: &TypeRef) -> bool {
@@ -215,13 +257,14 @@ fn score(base: i64, bonus: i64) -> i64 {
     }
 
     #[test]
-    fn rejects_statement_body_pure_helper_candidate() {
+    fn lowers_simple_statement_body_pure_helper_candidate() {
         let parsed = parse_source(
             r"
 #[pure]
-fn score(base: i64) -> i64 {
-    let doubled = base * 2
-    doubled
+fn score(base: i64, bonus: i64) -> i64 {
+    let boosted = add(bonus, 2)
+    let weighted = base * boosted
+    if base >= 3 { weighted } else { 0 }
 }
 ",
         );
@@ -229,12 +272,18 @@ fn score(base: i64) -> i64 {
         let tree = parsed.into_typed_tree();
         let hir = lower_to_hir(&tree).expect("pure function lowers to HIR");
 
-        let errors = lower_pure_helper_candidates(&hir)
-            .expect_err("statement body is outside the executable helper subset");
+        let candidates =
+            lower_pure_helper_candidates(&hir).expect("statement body lowers to helper candidate");
 
+        assert_eq!(candidates.len(), 1);
         assert!(matches!(
-            errors.as_slice(),
-            [PureHelperLowerError::UnsupportedBody { name }] if name == "score"
+            candidates[0].expr(),
+            RuntimeExpr::Let { name, body, .. }
+                if name == "boosted" && matches!(body.as_ref(), RuntimeExpr::Let { name, .. } if name == "weighted")
         ));
+        let request = candidates[0]
+            .request_with_i64_inputs([3, 4])
+            .expect("request builds with matching inputs");
+        assert_eq!(request.bindings.len(), 2);
     }
 }
