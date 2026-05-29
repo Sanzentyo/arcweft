@@ -118,20 +118,6 @@ pub enum TypeKind {
 }
 
 impl TypeKind {
-    /// Default concrete integer type used while unsuffixed literal inference is
-    /// still being tightened.
-    #[must_use]
-    pub const fn default_integer() -> Self {
-        Self::I64
-    }
-
-    /// Default concrete float type used while unsuffixed literal inference is
-    /// still being tightened.
-    #[must_use]
-    pub const fn default_float() -> Self {
-        Self::F64
-    }
-
     #[must_use]
     pub const fn is_integer(&self) -> bool {
         matches!(

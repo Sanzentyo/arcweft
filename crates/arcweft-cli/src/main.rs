@@ -1686,8 +1686,8 @@ fn expectation_value_label(expr: &Expr) -> Option<String> {
         Expr::EntityRef(entity) => Some(format!("@{}", entity.body())),
         Expr::Path(path) => Some(path.clone()),
         Expr::Literal(Literal::Bool(value)) => Some(value.to_string()),
-        Expr::Literal(Literal::Int(value)) => Some(value.to_string()),
-        Expr::Literal(Literal::Float(value) | Literal::String(value)) => Some(value.clone()),
+        Expr::Literal(Literal::Int { value, .. }) => Some(value.to_string()),
+        Expr::Literal(Literal::Float { raw, .. } | Literal::String(raw)) => Some(raw.clone()),
         _ => None,
     }
 }

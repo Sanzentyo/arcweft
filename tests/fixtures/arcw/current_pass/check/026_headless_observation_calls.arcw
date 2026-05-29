@@ -6,7 +6,7 @@ effects { signal.write, metric.write }
 {
     log.info("enter observed")
     signal.set(@signal.current_flow, @flow.observed)
-    metric.set(@metric.frame_count, 1)
+    metric.set(@metric.frame_count, 1i32)
     event.emit("GameEvent::Entered")
     return "done"
 }

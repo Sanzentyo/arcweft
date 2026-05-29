@@ -9,5 +9,5 @@ entry server @entry.http {
 }
 
 flow @flow.health(req: HttpRequest) -> HttpResponse effects { http.respond } {
-    return http.text(status = 200, body = "ok")
+    return http.text(status = 200i32, body = "ok")
 }

@@ -147,11 +147,24 @@ pub struct MatchExprArm {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Literal {
     String(String),
-    Char { raw: String, value: char },
-    Int(i64),
-    Float(String),
+    Char {
+        raw: String,
+        value: char,
+    },
+    Int {
+        raw: String,
+        value: i64,
+        suffix: Option<String>,
+    },
+    Float {
+        raw: String,
+        suffix: Option<String>,
+    },
     Bool(bool),
-    Duration { amount: String, unit: DurationUnit },
+    Duration {
+        amount: String,
+        unit: DurationUnit,
+    },
 }
 
 /// Duration suffix recognized by the syntax parser.
@@ -580,12 +593,22 @@ impl<'a> Lexer<'a> {
         }
         let raw = &self.source[start..self.cursor];
         let (number, suffix) = split_number_suffix(raw);
+        let suffix = (!suffix.is_empty()).then(|| suffix.trim_start_matches('_').to_owned());
         if let Some(duration) = parse_duration(raw) {
             Token::Literal(duration)
-        } else if number.contains('.') || matches!(suffix, "f32" | "f64" | "pt" | "rad") {
-            Token::Literal(Literal::Float(number.to_owned()))
+        } else if number.contains('.')
+            || matches!(suffix.as_deref(), Some("f32" | "f64" | "pt" | "rad"))
+        {
+            Token::Literal(Literal::Float {
+                raw: raw.to_owned(),
+                suffix,
+            })
         } else {
-            Token::Literal(Literal::Int(number.parse().unwrap_or(0)))
+            Token::Literal(Literal::Int {
+                raw: raw.to_owned(),
+                value: number.parse().unwrap_or(0),
+                suffix,
+            })
         }
     }
 
@@ -1185,14 +1208,13 @@ fn token_source(token: &Token) -> String {
     match token {
         Token::Ident(value)
         | Token::RelativePath(value)
-        | Token::Literal(Literal::Float(value)) => value.clone(),
+        | Token::Literal(Literal::Float { raw: value, .. }) => value.clone(),
         Token::Entity(entity) => format!("@{}", entity.body()),
         Token::LifetimePath { key, optional } => {
             format!("'{}{}", key.as_dotted(), if *optional { "?" } else { "" })
         }
         Token::Literal(Literal::String(value)) => format!("\"{value}\""),
-        Token::Literal(Literal::Char { raw, .. }) => raw.clone(),
-        Token::Literal(Literal::Int(value)) => value.to_string(),
+        Token::Literal(Literal::Char { raw, .. } | Literal::Int { raw, .. }) => raw.clone(),
         Token::Literal(Literal::Bool(value)) => value.to_string(),
         Token::Literal(Literal::Duration { amount, unit }) => {
             format!("{amount}{}", duration_unit_suffix(*unit))

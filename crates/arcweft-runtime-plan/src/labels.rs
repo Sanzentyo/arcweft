@@ -67,9 +67,8 @@ pub(crate) fn expr_label(expr: &Expr) -> String {
 pub(crate) fn literal_label(literal: &Literal) -> String {
     match literal {
         Literal::String(value) => format!("\"{value}\""),
-        Literal::Char { raw, .. } => raw.clone(),
-        Literal::Int(value) => value.to_string(),
-        Literal::Float(value) => value.clone(),
+        Literal::Char { raw, .. } | Literal::Float { raw, .. } => raw.clone(),
+        Literal::Int { value, .. } => value.to_string(),
         Literal::Bool(value) => value.to_string(),
         Literal::Duration { amount, unit } => format!(
             "{amount}{}",

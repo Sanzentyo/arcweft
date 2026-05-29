@@ -294,7 +294,7 @@ flow @flow.thread_join thread_join {
     alice[待って。[p]]
     with:
         thread worker:
-            out 1
+            out 1i32
             out "bad"
 }
 "#,
@@ -781,7 +781,7 @@ effects { signal.write, metric.write }
 {
     log.info("enter observed")
     signal.set(@signal.current_flow, @flow.observed)
-    metric.set(@metric.frame_count, 1)
+    metric.set(@metric.frame_count, 1i32)
     event.emit("GameEvent::Entered")
     return "done"
 }

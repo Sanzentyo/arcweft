@@ -1,7 +1,7 @@
 flow @flow.main main {
     let answer = scope calc {
-        let x = 40
-        x + 2
+        let x = 40i32
+        x + 2i32
     }
     log.info("answer", value = answer)
     return "done"

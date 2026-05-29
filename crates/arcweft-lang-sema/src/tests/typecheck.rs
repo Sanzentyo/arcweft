@@ -67,6 +67,77 @@ fn numeric_primitive_types_keep_explicit_widths() {
 }
 
 #[test]
+fn unsuffixed_numeric_literals_require_expected_type() {
+    let tree = parse_ok(
+        r"
+flow @flow.bad bad {
+    let n = 1
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("unsuffixed literal fixture lowers");
+    let errors =
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("untyped integer is rejected");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("unsuffixed integer literal requires an expected integer type")
+    }));
+}
+
+#[test]
+fn unsuffixed_numeric_literals_use_annotations_and_return_context() {
+    let tree = parse_ok(
+        r"
+fn value() -> i32 {
+    return 1
+}
+
+flow @flow.good good(input: i32) -> i32 {
+    let annotated: i32 = 2
+    if input > 0 {
+        return annotated
+    } else {
+        return 0
+    }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("expected numeric fixture lowers");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("expected numeric literals typecheck");
+}
+
+#[test]
+fn numeric_literal_suffixes_are_checked_against_annotations() {
+    let ok = parse_ok(
+        r"
+flow @flow.ok ok {
+    let n: i32 = 1i32
+    let f: f32 = 1.0f32
+}
+",
+    );
+    let hir = lower_to_hir(&ok).expect("suffixed numeric fixture lowers");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("matching numeric suffixes typecheck");
+
+    let bad = parse_ok(
+        r"
+flow @flow.bad bad {
+    let n: i32 = 1u64
+}
+",
+    );
+    let hir = lower_to_hir(&bad).expect("mismatched suffix fixture lowers");
+    let errors =
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("mismatched suffix is rejected");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("let annotation expects I32, but expression has U64")
+    }));
+}
+
+#[test]
 fn typechecks_explicit_route_parameter_bindings() {
     let tree = parse_ok(
         r#"
@@ -434,7 +505,7 @@ fn typecheck_tracks_lifetime_registry_scope_and_write_capabilities() {
     let tree = parse_ok(
         r"
 flow @flow.registry registry {
-    'flow.flags.seen <- 1
+    'flow.flags.seen <- 1i32
 }
 ",
     );
@@ -458,7 +529,7 @@ flow @flow.registry registry {
 flow @flow.registry_contract registry_contract
 effects { state.write('flow) }
 {
-    'flow.flags.seen <- 1
+    'flow.flags.seen <- 1i32
 }
 ",
     );
@@ -645,14 +716,14 @@ fn typechecks_structured_collection_and_capacity_trait_methods() {
     let tree = parse_ok(
         r"
 flow @flow.collections collections {
-    let nums: Vec<i32> = [1, 2, 3]
-    let first: i32 = nums[0]
-    let fixed: Array<i32, 3> = [1, 2, 3]
-    let zeros: Array<i32, 4> = [0; 4]
-    let _ = nums.reserve(4)
+    let nums: Vec<i32> = [1i32, 2i32, 3i32]
+    let first: i32 = nums[0i64]
+    let fixed: Array<i32, 3> = [1i32, 2i32, 3i32]
+    let zeros: Array<i32, 4> = [0i32; 4i64]
+    let _ = nums.reserve(4i64)
     let _ = nums.shrink()
-    let _ = nums.shrink_to(1)
-    let text = String.with_capacity(16)
+    let _ = nums.shrink_to(1i64)
+    let text = String.with_capacity(16usize)
 }
 ",
     );

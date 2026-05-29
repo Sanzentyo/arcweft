@@ -1,6 +1,6 @@
 flow @flow.main main {
-    let xs = [1, 2, 3]
-    let first = xs[0]
+    let xs = [1i32, 2i32, 3i32]
+    let first = xs[0i64]
     log.info("first", value = first)
     return "done"
 }

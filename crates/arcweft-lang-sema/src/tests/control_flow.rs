@@ -168,8 +168,8 @@ fn parses_and_typechecks_plain_block_expression_binding() {
         r"
 flow @flow.block_expr block_expr {
     let total = {
-        let a = 1
-        let b = 2
+        let a = 1i32
+        let b = 2i32
         a + b
     }
 }

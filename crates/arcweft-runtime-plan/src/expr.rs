@@ -364,8 +364,8 @@ fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
     match literal {
         Literal::String(value) => RuntimeValue::String(value.clone()),
         Literal::Char { value, .. } => RuntimeValue::Char(*value),
-        Literal::Int(value) => RuntimeValue::Int(*value),
-        Literal::Float(value) => RuntimeValue::Float(value.clone()),
+        Literal::Int { value, .. } => RuntimeValue::Int(*value),
+        Literal::Float { raw, .. } => RuntimeValue::Float(raw.clone()),
         Literal::Bool(value) => RuntimeValue::Bool(*value),
         Literal::Duration { .. } => duration_expr(&Expr::Literal(literal.clone())).map_or_else(
             || RuntimeValue::String(literal_label(literal)),
@@ -555,7 +555,7 @@ fn lower_runtime_array_repeat_strict(value: &Expr, len: &Expr) -> Result<Runtime
 
 fn array_repeat_len(expr: &Expr) -> Option<usize> {
     match expr {
-        Expr::Literal(Literal::Int(value)) => usize::try_from(*value).ok(),
+        Expr::Literal(Literal::Int { value, .. }) => usize::try_from(*value).ok(),
         _ => None,
     }
 }

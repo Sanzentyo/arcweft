@@ -128,6 +128,13 @@ Current high-confidence state:
   Relative IDs are unified on `@.suffix`, parent-dot forms such as
   `@..suffix` / `@...suffix`, and explicit `@super...` forms; bare `.suffix`
   is not part of the core grammar.
+- `pro_review26.md`: `TypeKind` now keeps explicit primitive widths for
+  `i8` through `i128`, `u8` through `u128`, `isize`, `usize`, `f32`, and `f64`.
+  Numeric literals preserve raw spelling and suffixes in syntax. Unsuffixed
+  integer and float literals are rejected unless the checker has an expected
+  numeric type from an annotation, return context, branch context, unary/binary
+  operand context, range endpoint, collection index, or array context. There is
+  no `Int` / `Float` fallback type in the active checker path.
 - `pro_review11.md`: adopted canonical dialogue `look` line options, extended
   `stage` / `portrait` / `focus` / `cleanup` line options, `[mark .name]`
   zero-width dialogue markers, line-plan `on mark(.name):` handlers, generic

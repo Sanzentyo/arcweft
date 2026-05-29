@@ -294,7 +294,7 @@ HookTarget := 'on' HookTargetExpr
 HookTargetExpr := EntityRef | 'state' StatePath | 'signal' EntityRef | 'query' Type WhereClause?
 HookPhase  := 'phase' Ident
 HookWhen   := 'when' Expr
-HookPriority := 'priority' Int
+HookPriority := 'priority' i32
 HookOnce   := 'once'
 HookEffects:= 'effects' Expr (',' Expr)*
 ```

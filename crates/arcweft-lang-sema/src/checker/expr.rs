@@ -2,8 +2,9 @@
 
 use super::helpers::{
     array_len_matches, array_repeat_len_label, collection_index_type, expr_path_label,
-    first_arg_type, is_drop_name, let_else_bindings, literal_type_with_expected, result_ok_type,
-    well_known_capacity_method_type, well_known_field_type, well_known_runtime_method_type,
+    first_arg_type, is_drop_name, let_else_bindings, named_type_label, numeric_literal_suffix_type,
+    result_ok_type, well_known_capacity_method_type, well_known_field_type,
+    well_known_runtime_method_type,
 };
 use super::{
     BorrowLocalState, EntityKind, EntityRefSyntax, Expr, LifetimeScopeKind, Pattern, Stmt,
@@ -33,7 +34,7 @@ impl TypeChecker<'_> {
     ) -> Option<TypeKind> {
         self.stats.expressions += 1;
         match expr {
-            Expr::Literal(literal) => Some(literal_type_with_expected(literal, expected)),
+            Expr::Literal(literal) => Some(self.check_literal_expr(literal, expected)),
             Expr::EntityRef(entity) => self.check_entity_ref_expr(entity),
             Expr::LifetimePath { key, optional } => self.check_lifetime_path_expr(key, *optional),
             Expr::Path(path) => self.check_path_expr(path),
@@ -169,6 +170,69 @@ impl TypeChecker<'_> {
                 )));
                 None
             })
+    }
+
+    fn check_literal_expr(
+        &mut self,
+        literal: &arcweft_lang_syntax::expr::Literal,
+        expected: Option<&TypeKind>,
+    ) -> TypeKind {
+        match literal {
+            arcweft_lang_syntax::expr::Literal::String(_) => TypeKind::String,
+            arcweft_lang_syntax::expr::Literal::Char { .. } => TypeKind::Char,
+            arcweft_lang_syntax::expr::Literal::Bool(_) => TypeKind::Bool,
+            arcweft_lang_syntax::expr::Literal::Duration { .. } => TypeKind::Duration,
+            arcweft_lang_syntax::expr::Literal::Int { suffix, .. } => {
+                if let Some(suffix) = suffix {
+                    let Some(ty) = numeric_literal_suffix_type(Some(suffix)) else {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "unknown integer literal suffix `{suffix}`"
+                        )));
+                        return TypeKind::Named("_".to_owned());
+                    };
+                    if ty.is_integer() || is_unit_number_type(&ty) {
+                        ty
+                    } else {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "integer literal suffix must be an integer type, found {ty:?}"
+                        )));
+                        TypeKind::Named("_".to_owned())
+                    }
+                } else if let Some(expected) = expected.filter(|ty| ty.is_integer()) {
+                    expected.clone()
+                } else {
+                    self.errors.push(TypeCheckError::new(
+                        "unsuffixed integer literal requires an expected integer type".to_owned(),
+                    ));
+                    TypeKind::Named("_".to_owned())
+                }
+            }
+            arcweft_lang_syntax::expr::Literal::Float { suffix, .. } => {
+                if let Some(suffix) = suffix {
+                    let Some(ty) = numeric_literal_suffix_type(Some(suffix)) else {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "unknown float literal suffix `{suffix}`"
+                        )));
+                        return TypeKind::Named("_".to_owned());
+                    };
+                    if ty.is_float() || is_unit_number_type(&ty) {
+                        ty
+                    } else {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "float literal suffix must be a float type, found {ty:?}"
+                        )));
+                        TypeKind::Named("_".to_owned())
+                    }
+                } else if let Some(expected) = expected.filter(|ty| ty.is_float()) {
+                    expected.clone()
+                } else {
+                    self.errors.push(TypeCheckError::new(
+                        "unsuffixed float literal requires an expected float type".to_owned(),
+                    ));
+                    TypeKind::Named("_".to_owned())
+                }
+            }
+        }
     }
 
     fn check_path_expr(&mut self, path: &str) -> Option<TypeKind> {
@@ -372,11 +436,9 @@ impl TypeChecker<'_> {
     }
 
     fn check_range_expr(&mut self, start: Option<&Expr>, end: Option<&Expr>) -> TypeKind {
-        if let Some(start) = start {
-            self.check_expr(start);
-        }
+        let start_type = start.and_then(|start| self.check_expr(start));
         if let Some(end) = end {
-            self.check_expr(end);
+            self.check_expr_with_expected(end, start_type.as_ref());
         }
         TypeKind::Range
     }
@@ -628,7 +690,19 @@ impl TypeChecker<'_> {
 
     fn check_index_expr(&mut self, target: &Expr, index: &Expr) -> Option<TypeKind> {
         let target_type = self.check_expr(target);
-        self.check_expr(index);
+        if let Some(expected_index) = target_type
+            .as_ref()
+            .and_then(collection_index_key_type)
+            .or_else(|| {
+                target_type
+                    .as_ref()
+                    .and_then(|target_type| self.env.index_type(target_type).map(|_| TypeKind::I64))
+            })
+        {
+            self.expect_expr_type(index, &expected_index, "collection index");
+        } else {
+            self.check_expr(index);
+        }
         target_type.and_then(|target_type| {
             collection_index_type(&target_type)
                 .or_else(|| self.env.index_type(&target_type).cloned())
@@ -907,7 +981,8 @@ impl TypeChecker<'_> {
 
     fn check_binary_expr(&mut self, lhs: &Expr, op: BinaryOp, rhs: &Expr) -> Option<TypeKind> {
         let lhs_type = self.check_expr(lhs);
-        let rhs_type = self.check_expr(rhs);
+        let rhs_expected = rhs_expected_type_for_binary(op, lhs_type.as_ref());
+        let rhs_type = self.check_expr_with_expected(rhs, rhs_expected);
         match op {
             BinaryOp::In => {
                 if rhs_type != Some(TypeKind::Range) {
@@ -966,6 +1041,57 @@ impl TypeChecker<'_> {
             }
         }
     }
+}
+
+fn rhs_expected_type_for_binary(op: BinaryOp, lhs_type: Option<&TypeKind>) -> Option<&TypeKind> {
+    let lhs_type = lhs_type?;
+    match op {
+        BinaryOp::Add
+        | BinaryOp::Sub
+        | BinaryOp::Mul
+        | BinaryOp::Div
+        | BinaryOp::Rem
+        | BinaryOp::Eq
+        | BinaryOp::NotEq
+        | BinaryOp::Gte
+        | BinaryOp::Lte
+        | BinaryOp::Gt
+        | BinaryOp::Lt
+        | BinaryOp::In
+            if lhs_type.is_integer() || lhs_type.is_float() || lhs_type == &TypeKind::Duration =>
+        {
+            Some(lhs_type)
+        }
+        _ => None,
+    }
+}
+
+fn collection_index_key_type(target_type: &TypeKind) -> Option<TypeKind> {
+    match target_type {
+        TypeKind::Vec(_) | TypeKind::Array { .. } | TypeKind::Slice(_) | TypeKind::String => {
+            Some(TypeKind::I64)
+        }
+        TypeKind::Map { key, .. } => Some(key.as_ref().clone()),
+        TypeKind::Named(name) => map_key_type_from_name(name),
+        _ => None,
+    }
+}
+
+fn map_key_type_from_name(name: &str) -> Option<TypeKind> {
+    let (_, args) = name.split_once('<')?;
+    let args = args.strip_suffix('>')?;
+    let (key, _) = args.split_once(',')?;
+    Some(match key.trim() {
+        "Character" | "Ref<Character>" => TypeKind::Ref(EntityKind::Character),
+        other => named_type_label(other),
+    })
+}
+
+fn is_unit_number_type(ty: &TypeKind) -> bool {
+    matches!(ty, TypeKind::Named(name) if matches!(
+        name.as_str(),
+        "Length" | "Angle" | "AudioLevel" | "Tempo"
+    ))
 }
 
 fn looks_like_os_absolute_path(path: &str) -> bool {

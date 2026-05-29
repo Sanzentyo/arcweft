@@ -191,7 +191,7 @@ fn named_payload(args: &[Expr], name: &str) -> Option<RuntimePayload> {
 
 fn named_u16(args: &[Expr], name: &str) -> Option<u16> {
     match named_arg(args, name)? {
-        Expr::Literal(Literal::Int(value)) => u16::try_from(*value).ok(),
+        Expr::Literal(Literal::Int { value, .. }) => u16::try_from(*value).ok(),
         expr => string_arg(expr)?.parse().ok(),
     }
 }
@@ -248,7 +248,7 @@ fn byte_seq(expr: &Expr) -> Option<Vec<u8>> {
     items
         .iter()
         .map(|item| match item {
-            Expr::Literal(Literal::Int(value)) => u8::try_from(*value).ok(),
+            Expr::Literal(Literal::Int { value, .. }) => u8::try_from(*value).ok(),
             _ => None,
         })
         .collect()
@@ -262,8 +262,8 @@ fn payload_value(expr: &Expr) -> RuntimeValue {
     match expr {
         Expr::Literal(Literal::String(value)) => RuntimeValue::String(value.clone()),
         Expr::Literal(Literal::Char { value, .. }) => RuntimeValue::Char(*value),
-        Expr::Literal(Literal::Int(value)) => RuntimeValue::Int(*value),
-        Expr::Literal(Literal::Float(value)) => RuntimeValue::Float(value.clone()),
+        Expr::Literal(Literal::Int { value, .. }) => RuntimeValue::Int(*value),
+        Expr::Literal(Literal::Float { raw, .. }) => RuntimeValue::Float(raw.clone()),
         Expr::Literal(Literal::Bool(value)) => RuntimeValue::Bool(*value),
         Expr::Literal(Literal::Duration { .. }) => duration_expr(expr).map_or_else(
             || RuntimeValue::String(expr_label(expr)),

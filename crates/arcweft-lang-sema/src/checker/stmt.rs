@@ -42,7 +42,8 @@ impl TypeChecker<'_> {
             | Stmt::LetLoop { .. }
             | Stmt::LetAwait { .. } => self.reject_unlowered_stmt_binding(stmt),
             Stmt::Return(expr) | Stmt::Close(expr) => {
-                let ty = self.check_expr(expr);
+                let expected = self.expected_returns.last().cloned();
+                let ty = self.check_expr_with_expected(expr, expected.as_ref());
                 self.reject_borrow_escape(ty.as_ref(), "function or flow return");
             }
             Stmt::Expr(expr) | Stmt::Select(expr) => {

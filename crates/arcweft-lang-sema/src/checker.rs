@@ -147,6 +147,7 @@ struct TypeChecker<'a> {
     dropped_lifetime_keys: HashSet<LifetimeKey>,
     available_lifetimes: Vec<LifetimeScopeKind>,
     effect_capabilities: HashSet<String>,
+    expected_returns: Vec<TypeKind>,
     yield_stack: Vec<YieldContext>,
     stats: TypeCheckStats,
 }
@@ -209,6 +210,7 @@ impl TypeChecker<'_> {
             dropped_lifetime_keys: HashSet::new(),
             available_lifetimes: Vec::new(),
             effect_capabilities: env.capabilities.clone(),
+            expected_returns: Vec::new(),
             yield_stack: Vec::new(),
             stats: TypeCheckStats::default(),
         }

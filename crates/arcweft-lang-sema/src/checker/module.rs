@@ -47,6 +47,10 @@ impl TypeChecker<'_> {
                     }
                 }
             }
+            let expected_return = flow
+                .signature()
+                .and_then(|signature| signature.return_type())
+                .map(type_ref_kind);
             if let Some(id) = flow.id() {
                 match flow.kind() {
                     FlowKind::Flow => self.expect_entity_kind(id, &EntityKind::Flow, "flow id"),
@@ -60,7 +64,9 @@ impl TypeChecker<'_> {
             }
             let effect_scope = EffectScope::from_contracts(flow.contracts());
             let effect_snapshot = self.apply_effect_scope(&effect_scope);
-            self.check_flow_items(flow.body());
+            self.with_expected_return(expected_return.as_ref(), |this| {
+                this.check_flow_items(flow.body());
+            });
             self.effect_capabilities = effect_snapshot;
         }
         for function in module.functions() {
@@ -86,11 +92,13 @@ impl TypeChecker<'_> {
                 continue;
             }
             let expected_return = function.signature().return_type().map(type_ref_kind);
-            let actual = self.check_function_body_expr(
-                function.statements(),
-                function.value(),
-                expected_return.as_ref(),
-            );
+            let actual = self.with_expected_return(expected_return.as_ref(), |this| {
+                this.check_function_body_expr(
+                    function.statements(),
+                    function.value(),
+                    expected_return.as_ref(),
+                )
+            });
             self.effect_capabilities = effect_snapshot;
             if let (Some(expected), Some(actual)) = (expected_return, actual) {
                 if !types_compatible(&expected, &actual) {
@@ -121,6 +129,21 @@ impl TypeChecker<'_> {
                 self.check_tail_return_block_expr_with_expected(statements, expr, expected)
             }
             _ => self.check_block_expr(statements, None),
+        }
+    }
+
+    fn with_expected_return<R>(
+        &mut self,
+        expected: Option<&TypeKind>,
+        check: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        if let Some(expected) = expected {
+            self.expected_returns.push(expected.clone());
+            let result = check(self);
+            self.expected_returns.pop();
+            result
+        } else {
+            check(self)
         }
     }
 

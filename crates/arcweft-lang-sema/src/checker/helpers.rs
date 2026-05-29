@@ -72,32 +72,33 @@ pub(super) fn entity_kind_for_decl(kind: EntityDeclKind) -> EntityKind {
     }
 }
 
-pub(super) fn literal_type(literal: &Literal) -> TypeKind {
+pub(super) fn literal_type(literal: &Literal) -> Option<TypeKind> {
     match literal {
-        Literal::String(_) => TypeKind::String,
-        Literal::Char { .. } => TypeKind::Char,
-        Literal::Int(_) => TypeKind::default_integer(),
-        Literal::Float(_) => TypeKind::default_float(),
-        Literal::Bool(_) => TypeKind::Bool,
-        Literal::Duration { .. } => TypeKind::Duration,
+        Literal::String(_) => Some(TypeKind::String),
+        Literal::Char { .. } => Some(TypeKind::Char),
+        Literal::Int { suffix, .. } | Literal::Float { suffix, .. } => {
+            numeric_literal_suffix_type(suffix.as_deref())
+        }
+        Literal::Bool(_) => Some(TypeKind::Bool),
+        Literal::Duration { .. } => Some(TypeKind::Duration),
     }
 }
 
-pub(super) fn literal_type_with_expected(
-    literal: &Literal,
-    expected: Option<&TypeKind>,
-) -> TypeKind {
-    match literal {
-        Literal::Int(_) => expected
-            .filter(|ty| ty.is_integer())
-            .cloned()
-            .unwrap_or_else(TypeKind::default_integer),
-        Literal::Float(_) => expected
-            .filter(|ty| ty.is_float())
-            .cloned()
-            .unwrap_or_else(TypeKind::default_float),
-        _ => literal_type(literal),
-    }
+pub(super) fn numeric_suffix_type(suffix: Option<&str>) -> Option<TypeKind> {
+    suffix.and_then(TypeKind::primitive_name)
+}
+
+pub(super) fn numeric_literal_suffix_type(suffix: Option<&str>) -> Option<TypeKind> {
+    numeric_suffix_type(suffix).or_else(|| {
+        let suffix = suffix?;
+        Some(match suffix {
+            "px" | "pt" | "em" | "rem" | "vw" | "vh" | "%" => TypeKind::Named("Length".to_owned()),
+            "deg" | "rad" | "turn" => TypeKind::Named("Angle".to_owned()),
+            "db" | "lufs" => TypeKind::Named("AudioLevel".to_owned()),
+            "bpm" => TypeKind::Named("Tempo".to_owned()),
+            _ => return None,
+        })
+    })
 }
 
 pub(super) fn is_dialogue_callee_type(ty: Option<&TypeKind>) -> bool {
@@ -639,7 +640,7 @@ pub(super) fn simple_expr_type(expr: &Expr) -> Option<TypeKind> {
             .as_absolute()
             .and_then(entity_kind)
             .map(TypeKind::Ref),
-        Expr::Literal(literal) => Some(literal_type(literal)),
+        Expr::Literal(literal) => literal_type(literal),
         Expr::Tuple(items) => items
             .iter()
             .map(simple_expr_type)
@@ -666,7 +667,7 @@ pub(super) fn simple_expr_type(expr: &Expr) -> Option<TypeKind> {
 
 pub(super) fn array_repeat_len_label(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Literal(Literal::Int(value)) if *value >= 0 => Some(value.to_string()),
+        Expr::Literal(Literal::Int { value, .. }) if *value >= 0 => Some(value.to_string()),
         _ => None,
     }
 }

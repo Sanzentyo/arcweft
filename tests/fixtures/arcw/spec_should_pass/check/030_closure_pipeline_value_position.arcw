@@ -1,6 +1,6 @@
 flow @flow.main main {
-    let xs = [1, 2, 3]
-    let ys = xs.map(|x| x + 1).collect<Vec<i32>>()
+    let xs = [1i64, 2i64, 3i64]
+    let ys = xs.map(|x| x + 1i64).collect<Vec<i64>>()
     log.info("ys", value = ys)
     return "done"
 }
