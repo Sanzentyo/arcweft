@@ -4,7 +4,10 @@
 
 ```arcw
 macro choice_route($id, $label, $target) {
-    option $id $label => goto $target
+    option $id {
+        label = $label
+        select { goto $target }
+    }
 }
 
 choice @choice.opening.first {

@@ -1836,7 +1836,6 @@ fn unsupported_headless_bench_reason(text: &str) -> Option<String> {
         "audio.",
         "voice.",
         "bgm.",
-        "play @",
         "render.",
     ];
     let lowered = text.to_lowercase();

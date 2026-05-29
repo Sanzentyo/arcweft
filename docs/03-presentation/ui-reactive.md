@@ -121,7 +121,7 @@ UI component は dependency tracking によって必要部分だけ再評価さ�
 
 ```arcw
 component @ui.choice_list ChoiceList(state: GameState) -> View {
-    memo choices key state.route, state.affection {
+    let choices = memo(scope=frame, key=(state.route, state.affection)) {
         opening_choices()
             .filter(choice_available(state))
             .map(choice_to_view(state))

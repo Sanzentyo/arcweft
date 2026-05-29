@@ -1205,7 +1205,7 @@ fn bench_json_skips_adapter_only_script_benches() {
         "script-bench-adapter",
         r"
 bench @bench.audio {
-    setup { play @bgm.alice_theme }
+    setup { audio.play(@bgm.alice_theme) }
     measure iterations = 3 { render_audio_offline() }
 }
 ",

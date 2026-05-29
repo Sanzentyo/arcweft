@@ -17,12 +17,16 @@ pub hook @hook.opening.listen_enable
 on @choice.opening.listen
 phase InputHitTest
 check on change state.affection[@character.alice]
-memo condition scope = state key = [state.affection[@character.alice]]
 when alice_route_ready(state)
 effects { ui.enable, log.debug }
 {
-    event.emit(UiCommand::EnableTarget, target = @choice.opening.listen)
-    log.debug("listen choice enabled")
+    let condition = memo(scope=state, key=(state.affection[@character.alice])) {
+        alice_route_ready(state)
+    }
+    if condition {
+        event.emit(UiCommand::EnableTarget, target = @choice.opening.listen)
+        log.debug("listen choice enabled")
+    }
 }
 
 pub hook @hook.opening.listen_hover

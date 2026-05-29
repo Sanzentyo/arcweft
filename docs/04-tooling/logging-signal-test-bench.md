@@ -136,8 +136,8 @@ Audio bench:
 
 ```arcw
 bench @bench.bgm_mix_120s {
-    setup { play @bgm.alice_theme section @music.main }
-    measure duration = 120s { render_audio_offline }
+    setup { audio.play(@bgm.alice_theme, section=@music.main) }
+    measure duration = 120s { audio.render_offline() }
     report { cpu_time, peak_buffer_bytes, loudness }
 }
 ```
