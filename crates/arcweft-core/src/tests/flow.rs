@@ -1,5 +1,7 @@
 use super::call;
-use crate::{engine::*, line_task::*, pattern::*, plan::*, step::*, task::*, value::*};
+use crate::{
+    engine::*, line_task::*, pattern::*, plan::*, step::*, task::*, time::LogicalDuration, value::*,
+};
 
 #[test]
 fn engine_steps_flow_ops_and_applies_goto() {
@@ -666,6 +668,71 @@ fn runtime_call_spread_expands_sequence_arguments() {
         vec![FlowEvent::Return {
             value: "42".to_owned()
         }]
+    );
+}
+
+#[test]
+fn custom_host_request_spread_preserves_concrete_payload_values() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.log".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.log".to_owned()),
+            ops: vec![FlowOp::Await {
+                binding: None,
+                target: AwaitTarget {
+                    need: NeedId("need.log".to_owned()),
+                    task: TaskId("task.log".to_owned()),
+                    request: HostTaskRequestTemplate::new(
+                        "log",
+                        "emit",
+                        [
+                            HostTaskArgTemplate::positional(RuntimeExpr::Value(
+                                RuntimeValue::String("loaded".to_owned()),
+                            )),
+                            HostTaskArgTemplate::spread(RuntimeExpr::BracketSeq(vec![
+                                RuntimeExpr::Value(RuntimeValue::String("bg.room".to_owned())),
+                                RuntimeExpr::Value(RuntimeValue::Int(3)),
+                                RuntimeExpr::Value(RuntimeValue::Duration(
+                                    LogicalDuration::from_nanos(120_000_000),
+                                )),
+                                RuntimeExpr::Value(RuntimeValue::EntityRef(
+                                    "asset.bg.room".to_owned(),
+                                )),
+                            ])),
+                        ],
+                    ),
+                },
+                pending: Vec::new(),
+            }],
+        }],
+        Vec::new(),
+    )
+    .expect("custom host request plan is valid");
+    let mut engine = Engine::new(plan);
+
+    let output = super::runtime_step(&mut engine, RuntimeStepInput::default());
+    let HostTaskRequest::Custom {
+        capability,
+        operation,
+        args,
+    } = &output.requests.tasks[0].request
+    else {
+        panic!("expected custom host request");
+    };
+
+    assert_eq!(capability.0, "log");
+    assert_eq!(operation, "emit");
+    assert_eq!(
+        args,
+        &vec![
+            RuntimePayload::from("loaded"),
+            RuntimePayload::from("bg.room"),
+            RuntimePayload::new(RuntimeValue::Int(3)),
+            RuntimePayload::new(RuntimeValue::Duration(LogicalDuration::from_nanos(
+                120_000_000
+            ))),
+            RuntimePayload::new(RuntimeValue::EntityRef("asset.bg.room".to_owned())),
+        ]
     );
 }
 
