@@ -288,6 +288,7 @@ and timing gate for future wider pure helper lowering:
 
 ```bash
 arcw jit check --json --iterations 1000 --warmup 10 --samples 5 --input-seed 0
+arcw jit check game/scripts/math.arcw --helper score --json --input-seed 7
 ```
 
 The JSON includes VM/JIT result equality, compile elapsed time, repeated native
@@ -298,6 +299,11 @@ and pure helper stats. The measurement loop sends deterministic varying
 reference. `--input-seed` selects the deterministic input series and is emitted
 in JSON so repeated runs can be compared without embedding local paths. It does
 not include source paths.
+
+With a source path, `arcw jit check` checks the module normally, selects a
+`#[pure] fn` helper by `--helper` or by uniqueness, lowers its expression body
+to a pure-helper request, and reports `"helper_source": "source"` without
+including the local path in JSON.
 
 ```bash
 arcw test game/routes/opening.arcw

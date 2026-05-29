@@ -72,6 +72,7 @@ outside the JIT subset.
 
 ```bash
 arcw jit check --json --iterations 1000 --warmup 10 --samples 5 --input-seed 0
+arcw jit check game/scripts/math.arcw --helper score --json --input-seed 7
 ```
 
 The command reports VM/JIT conformance, JIT compile time, repeated native-call
@@ -81,6 +82,13 @@ loop feeds deterministic varying `base` / `bonus` integer inputs through both
 the compiled JIT function and the VM reference. `--input-seed` makes the input
 series reproducible while allowing local A/B comparisons. It does not read
 source paths or persist host absolute paths.
+
+When a `.arcw` path is provided, `arcw jit check` runs the normal parse, HIR
+lowering, reference validation, typecheck-readiness, and typecheck path first.
+It then selects a `#[pure] fn` helper, lowers the expression body to the runtime
+pure-helper request, and uses the VM as the conformance reference before timing
+the Cranelift function. The current source-backed check supports the same
+two-input integer subset as the native adapter.
 
 ## IR lowering
 

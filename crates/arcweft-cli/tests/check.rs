@@ -48,6 +48,51 @@ fn jit_check_json_compares_cranelift_and_vm() {
 }
 
 #[test]
+fn jit_check_json_uses_source_pure_helper() {
+    let path = temp_arcw(
+        "jit-pure-helper",
+        r"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    if base >= 3 { base * (bonus + 2) } else { 0 }
+}
+",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("jit")
+        .arg("check")
+        .arg(&path)
+        .arg("--helper")
+        .arg("score")
+        .arg("--json")
+        .arg("--iterations")
+        .arg("4")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--samples")
+        .arg("2")
+        .arg("--input-seed")
+        .arg("3")
+        .output()
+        .expect("arcw jit check source helper runs");
+    fs::remove_file(&path).expect("remove temp pure helper");
+
+    assert!(
+        output.status.success(),
+        "jit source check should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"helper\": \"score\"")
+            && stdout.contains("\"helper_source\": \"source\"")
+            && stdout.contains("\"matches_vm\": true")
+            && stdout.contains("\"input_seed\": 3"),
+        "jit check JSON should describe the source helper: {stdout}"
+    );
+}
+
+#[test]
 fn check_accepts_valid_arcw_file() {
     let path = temp_arcw(
         "valid",

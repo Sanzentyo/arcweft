@@ -30,6 +30,7 @@ flow @flow.main main {
 "#,
     );
     let hir = lower_to_hir(&tree).expect("pure function call lowers to HIR");
+    assert!(hir.functions()[0].has_attribute("pure"));
     validate_typecheck_ready(&hir).expect("pure function call is typecheck ready");
     lower_runtime_plan(&hir).expect("pure function call lowers to runtime plan");
 }

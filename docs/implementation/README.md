@@ -53,7 +53,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   runtime `i64` inputs. Generated code executes through an isolated native-call
   boundary, and `arcw jit check --json` exercises it against the VM reference
   backend with deterministic seed-controlled varying inputs, sample timing, and
-  speedup reporting.
+  speedup reporting. `arcw jit check path.arcw --helper NAME --json` now runs
+  the normal checked-source pipeline, extracts a `#[pure] fn` helper from HIR,
+  lowers its expression body to a pure-helper request, and reports the helper
+  source without persisting the host path.
 - No renderer, Servo, audio, camera, USB, or MCP implementation.
 
 ## Files

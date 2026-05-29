@@ -27,6 +27,7 @@ use arcweft_lang_syntax::{lint::lint_id_policy, parser::parse_source};
 use arcweft_launch::{LaunchKind, LaunchProfileManifest, ResolvedLaunchProfile};
 use arcweft_runtime_plan::flow::lower_runtime_plan;
 use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_groups};
+use arcweft_runtime_plan::pure::{PureHelperCandidate, lower_pure_helper_candidates};
 use arcweft_test::{BenchSection, ScriptBench, ScriptStep, ScriptTest, collect_script_tests};
 use arcweft_tooling::{FormatOptions, ToolingEditReport, format_source, materialize_ids};
 use arcweft_verify::{
@@ -131,7 +132,9 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
         return Err(ExitCode::from(2));
     }
 
-    let request = jit_check_request_with_inputs(3, 4);
+    let target = jit_check_target(options)?;
+    let (first_base, first_bonus) = jit_check_input(options.input_seed, 0, 0);
+    let request = target.request_with_inputs(first_base, first_bonus);
     let vm_backend = VmPureFunctionBackend;
     let jit_backend = CraneliftPureFunctionBackend;
     let conformance =
@@ -142,7 +145,11 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
 
     let compile_started = Instant::now();
     let compiled = jit_backend
-        .compile_i64_binary(&request, "base", "bonus")
+        .compile_i64_binary(
+            &request,
+            target.input_names[0].as_str(),
+            target.input_names[1].as_str(),
+        )
         .map_err(|error| {
             eprintln!("error: failed to compile JIT helper: {error}");
             ExitCode::FAILURE
@@ -157,8 +164,9 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
         options.input_seed,
     )?;
 
-    warmup_jit_check_vm(vm_backend, options.warmup, options.input_seed)?;
+    warmup_jit_check_vm(&target, vm_backend, options.warmup, options.input_seed)?;
     let vm_measurement = measure_jit_check_vm(
+        &target,
         vm_backend,
         options.samples,
         options.iterations,
@@ -169,11 +177,9 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
         conformance.matches_vm && jit_measurement.accumulator == vm_measurement.accumulator;
     let report = JitCheckReport {
         status: if matches_vm { "ok" } else { "failed" }.to_owned(),
-        helper: request.name.clone(),
-        input_bindings: [
-            compiled.param_names().0.to_owned(),
-            compiled.param_names().1.to_owned(),
-        ],
+        helper: target.name.clone(),
+        helper_source: target.source.as_str().to_owned(),
+        input_bindings: target.input_names.clone(),
         dynamic_inputs: true,
         input_seed: options.input_seed,
         vm_backend: backend_label(conformance.vm.backend).to_owned(),
@@ -226,41 +232,6 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
     }
 }
 
-fn jit_check_request_with_inputs(base: i64, bonus: i64) -> PureFunctionRequest {
-    PureFunctionRequest::new(
-        "score",
-        RuntimeExpr::If {
-            condition: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-                op: RuntimeBinaryOp::Ge,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(3))),
-            }),
-            then_expr: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-                op: RuntimeBinaryOp::Mul,
-                rhs: Box::new(RuntimeExpr::Call {
-                    callee: "add".to_owned(),
-                    args: vec![
-                        RuntimeExpr::Local("bonus".to_owned()),
-                        RuntimeExpr::Value(RuntimeValue::Int(2)),
-                    ],
-                }),
-            }),
-            else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::Int(0))),
-        },
-        [
-            RuntimeBinding {
-                name: "base".to_owned(),
-                value: RuntimeValue::Int(base),
-            },
-            RuntimeBinding {
-                name: "bonus".to_owned(),
-                value: RuntimeValue::Int(bonus),
-            },
-        ],
-    )
-}
-
 fn jit_check_input(seed: u64, sample: usize, iteration: usize) -> (i64, i64) {
     let sample = u64::try_from(sample).unwrap_or_default();
     let iteration = u64::try_from(iteration).unwrap_or_default();
@@ -274,6 +245,143 @@ fn jit_check_input(seed: u64, sample: usize, iteration: usize) -> (i64, i64) {
     )
     .map_or(1, |value| value + 1);
     (base, bonus)
+}
+
+#[derive(Clone, Debug)]
+struct JitCheckTarget {
+    name: String,
+    source: JitCheckHelperSource,
+    input_names: [String; 2],
+    expr: RuntimeExpr,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum JitCheckHelperSource {
+    Builtin,
+    Source,
+}
+
+impl JitCheckTarget {
+    fn builtin() -> Self {
+        Self {
+            name: "score".to_owned(),
+            source: JitCheckHelperSource::Builtin,
+            input_names: ["base".to_owned(), "bonus".to_owned()],
+            expr: RuntimeExpr::If {
+                condition: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                    op: RuntimeBinaryOp::Ge,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(3))),
+                }),
+                then_expr: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                    op: RuntimeBinaryOp::Mul,
+                    rhs: Box::new(RuntimeExpr::Call {
+                        callee: "add".to_owned(),
+                        args: vec![
+                            RuntimeExpr::Local("bonus".to_owned()),
+                            RuntimeExpr::Value(RuntimeValue::Int(2)),
+                        ],
+                    }),
+                }),
+                else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::Int(0))),
+            },
+        }
+    }
+
+    fn from_candidate(candidate: &PureHelperCandidate) -> Result<Self, ExitCode> {
+        let input_names = match candidate.input_names() {
+            [lhs, rhs] => [lhs.clone(), rhs.clone()],
+            names => {
+                eprintln!(
+                    "error: pure helper `{}` has {} input(s); current JIT check requires exactly 2",
+                    candidate.name(),
+                    names.len()
+                );
+                return Err(ExitCode::from(2));
+            }
+        };
+        Ok(Self {
+            name: candidate.name().to_owned(),
+            source: JitCheckHelperSource::Source,
+            input_names,
+            expr: candidate.expr().clone(),
+        })
+    }
+
+    fn request_with_inputs(&self, lhs: i64, rhs: i64) -> PureFunctionRequest {
+        PureFunctionRequest::new(
+            self.name.clone(),
+            self.expr.clone(),
+            [
+                RuntimeBinding {
+                    name: self.input_names[0].clone(),
+                    value: RuntimeValue::Int(lhs),
+                },
+                RuntimeBinding {
+                    name: self.input_names[1].clone(),
+                    value: RuntimeValue::Int(rhs),
+                },
+            ],
+        )
+    }
+}
+
+impl JitCheckHelperSource {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Builtin => "builtin",
+            Self::Source => "source",
+        }
+    }
+}
+
+fn jit_check_target(options: &JitCheckOptions) -> Result<JitCheckTarget, ExitCode> {
+    options.path.as_ref().map_or_else(
+        || Ok(JitCheckTarget::builtin()),
+        |path| jit_check_source_target(path, options.helper.as_deref()),
+    )
+}
+
+fn jit_check_source_target(
+    path: &Path,
+    helper_name: Option<&str>,
+) -> Result<JitCheckTarget, ExitCode> {
+    let checked = load_and_check_with_env(path, &TypeCheckEnv::new())?;
+    let candidates = lower_pure_helper_candidates(&checked.hir).map_err(|errors| {
+        for error in errors {
+            eprintln!("error: {error}");
+        }
+        ExitCode::FAILURE
+    })?;
+    let candidate = select_jit_helper_candidate(&candidates, helper_name)?;
+    JitCheckTarget::from_candidate(candidate)
+}
+
+fn select_jit_helper_candidate<'a>(
+    candidates: &'a [PureHelperCandidate],
+    helper_name: Option<&str>,
+) -> Result<&'a PureHelperCandidate, ExitCode> {
+    if let Some(name) = helper_name {
+        return candidates
+            .iter()
+            .find(|candidate| candidate.name() == name)
+            .ok_or_else(|| {
+                eprintln!("error: pure helper `{name}` was not found");
+                ExitCode::FAILURE
+            });
+    }
+    match candidates {
+        [candidate] => Ok(candidate),
+        [] => {
+            eprintln!("error: no `#[pure] fn` helper candidates were found");
+            Err(ExitCode::FAILURE)
+        }
+        _ => {
+            eprintln!("error: multiple `#[pure] fn` helper candidates found; pass --helper NAME");
+            Err(ExitCode::from(2))
+        }
+    }
 }
 
 fn warmup_jit_check_jit(compiled: &CompiledPureI64Binary, warmup: usize, input_seed: u64) {
@@ -296,13 +404,14 @@ fn measure_jit_check_jit(
 }
 
 fn warmup_jit_check_vm(
+    target: &JitCheckTarget,
     vm_backend: VmPureFunctionBackend,
     warmup: usize,
     input_seed: u64,
 ) -> Result<(), ExitCode> {
     for index in 0..warmup {
         let (base, bonus) = jit_check_input(input_seed, 0, index);
-        let request = jit_check_request_with_inputs(base, bonus);
+        let request = target.request_with_inputs(base, bonus);
         let _ = vm_backend.evaluate(&request).map_err(|error| {
             eprintln!("error: VM warmup failed: {error}");
             ExitCode::FAILURE
@@ -312,6 +421,7 @@ fn warmup_jit_check_vm(
 }
 
 fn measure_jit_check_vm(
+    target: &JitCheckTarget,
     vm_backend: VmPureFunctionBackend,
     samples: usize,
     iterations: usize,
@@ -319,7 +429,7 @@ fn measure_jit_check_vm(
 ) -> Result<JitRepeatedMeasurement, ExitCode> {
     measure_repeated(samples, iterations, |sample, index| {
         let (base, bonus) = jit_check_input(input_seed, sample, index);
-        let request = jit_check_request_with_inputs(base, bonus);
+        let request = target.request_with_inputs(base, bonus);
         let value = vm_backend.evaluate(&request).map_err(|error| {
             eprintln!("error: VM evaluation failed: {error}");
             ExitCode::FAILURE
@@ -2045,6 +2155,9 @@ struct ScriptBenchOptions {
 
 #[derive(Args, Clone, Debug)]
 struct JitCheckOptions {
+    path: Option<PathBuf>,
+    #[arg(long)]
+    helper: Option<String>,
     #[arg(long, default_value_t = 1000)]
     iterations: usize,
     #[arg(long, default_value_t = 10)]
@@ -2088,6 +2201,7 @@ enum CliRuntimeStepMode {
 struct JitCheckReport {
     status: String,
     helper: String,
+    helper_source: String,
     input_bindings: [String; 2],
     dynamic_inputs: bool,
     input_seed: u64,

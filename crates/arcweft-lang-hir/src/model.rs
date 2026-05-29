@@ -47,6 +47,7 @@ pub struct HirFlow {
 /// HIR-facing function body.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirFunction {
+    pub(crate) attributes: Vec<Attribute>,
     pub(crate) kind: FunctionKind,
     pub(crate) signature: FnSignature,
     pub(crate) contracts: Vec<ContractClause>,
@@ -334,6 +335,16 @@ impl HirFlow {
 }
 
 impl HirFunction {
+    pub fn attributes(&self) -> &[Attribute] {
+        &self.attributes
+    }
+
+    pub fn has_attribute(&self, name: &str) -> bool {
+        self.attributes
+            .iter()
+            .any(|attribute| attribute.name() == name)
+    }
+
     pub const fn kind(&self) -> FunctionKind {
         self.kind
     }
