@@ -355,10 +355,14 @@ Current high-confidence state:
   `start @flow.id`, evaluates initial signal/log/no-assertion expectations, and
   reports pass/fail/skipped JSON. `arcw bench` now validates headless bench
   plans, requires `measure`, accepts `setup`/`measure`/`assert`/`report`
-  sections, and reports validated/skipped/failed JSON without running timers.
-  Visual, audio, fixture, wall-clock, allocation, and performance execution are
-  intentionally outside the Phase 2.0 Sans I/O CLI and remain player/headless
-  adapter responsibilities.
+  sections, measures `measure` bodies that name `start @flow...`, and reports
+  measured/validated/skipped/failed JSON. Visual, audio, fixture, and allocation
+  execution remain player/headless adapter responsibilities.
+- `RuntimeStepResult` now carries deterministic `RuntimeStepStats` for executed
+  VM ops, pending queue depth, incoming task/source events, emitted source/stream
+  events, line effects, and diagnostics. `arcw profile --json` reports compiler
+  phase timings plus those VM counters without recording absolute local source
+  paths.
 - Declaration ID positions whose family is known now accept current-scope and
   family-relative IDs. `flow @.opening`, `flow @flow:.opening`, and bare
   `flow opening` normalize to `flow.opening`; declarations such as

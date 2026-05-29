@@ -176,31 +176,16 @@ fn line_plan_colon_head(line: &str) -> Option<&str> {
         || parse_defer_outcome(head).is_some()
         || head.starts_with("thread")
         || head.starts_with("on ")
+        || head.starts_with("cancel on ")
+        || head == "start"
+        || head == "together"
         || head.starts_with("scope"))
     .then_some(head)
 }
 
 fn parse_line_plan_colon_item(head: &str, body: &str) -> LinePlanItem {
-    if head == "init" {
-        return LinePlanItem::Init(parse_stmt_lines(body));
-    }
-    if let Some(outcome) = parse_defer_outcome(head) {
-        return LinePlanItem::Stmt(Stmt::DeferBlock {
-            outcome,
-            statements: parse_stmt_lines(body),
-        });
-    }
-    if let Some(rest) = head.strip_prefix("thread") {
-        return LinePlanItem::Thread(parse_thread_block(&format!("thread{rest}"), body));
-    }
-    if let Some(rest) = head.strip_prefix("on ") {
-        return LinePlanItem::On {
-            trigger: parse_trigger_pattern(rest.trim()),
-            body: parse_stmt_lines(body),
-        };
-    }
-    if head.starts_with("scope") {
-        return LinePlanItem::Stmt(Stmt::Expr(parse_named_block_expr(head, body)));
+    if let Some(item) = parse_line_plan_block_item(head, body) {
+        return item;
     }
     let source = format!("{head}:\n{body}");
     LinePlanItem::Raw(RawSyntax::line_plan_item(
@@ -211,7 +196,7 @@ fn parse_line_plan_colon_item(head: &str, body: &str) -> LinePlanItem {
 
 fn parse_line_plan_item(line: &str) -> LinePlanItem {
     if let Some((head, body)) = split_brace_item(line) {
-        if let Some(item) = parse_line_plan_braced_item(head, body) {
+        if let Some(item) = parse_line_plan_block_item(head, body) {
             return item;
         }
     }
@@ -332,7 +317,7 @@ fn is_line_plan_statement(line: &str) -> bool {
     )
 }
 
-fn parse_line_plan_braced_item(head: &str, body: &str) -> Option<LinePlanItem> {
+fn parse_line_plan_block_item(head: &str, body: &str) -> Option<LinePlanItem> {
     if head == "init" {
         return Some(LinePlanItem::Init(parse_stmt_lines(body)));
     }
@@ -353,6 +338,12 @@ fn parse_line_plan_braced_item(head: &str, body: &str) -> Option<LinePlanItem> {
             trigger: parse_trigger_pattern(rest.trim()),
             body: parse_stmt_lines(body),
         });
+    }
+    if let Some(rest) = head.strip_prefix("cancel on ") {
+        return Some(LinePlanItem::CancelRule(CancelRuleSyntax::new(
+            parse_trigger_pattern(rest.trim()),
+            parse_stmt_lines(body),
+        )));
     }
     if head == "start" {
         return Some(LinePlanItem::StartGroup(parse_line_plan_nested_items(body)));

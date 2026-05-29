@@ -65,6 +65,21 @@ pub struct RuntimeStepResult {
     pub output: RuntimeStepOutput,
     pub fiber_status: crate::engine::FlowFiberStatus,
     pub stop_reason: RuntimeStepStopReason,
+    pub stats: RuntimeStepStats,
+}
+
+/// Deterministic counters for one runtime step.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RuntimeStepStats {
+    pub executed_ops: usize,
+    pub pending_ops_before: usize,
+    pub pending_ops_after: usize,
+    pub task_events_in: usize,
+    pub source_events_in: usize,
+    pub source_events_emitted: usize,
+    pub stream_events_emitted: usize,
+    pub line_effects: usize,
+    pub diagnostics: usize,
 }
 
 /// Runtime stepping policy selected by hosts and CLI tooling.

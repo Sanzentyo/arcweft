@@ -668,6 +668,80 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn line_plan_block_items_share_brace_and_colon_parsing() {
+    fn parse_plan_items(source: &str) -> Vec<LinePlanItem> {
+        let tree = parse_ok(source);
+        let Item::Flow(flow) = &tree.items()[0] else {
+            panic!("expected flow");
+        };
+        let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
+            panic!("expected speaker line");
+        };
+        line.plan().expect("line plan").items().to_vec()
+    }
+
+    let brace_items = parse_plan_items(
+        r"
+flow @flow.opening opening {
+    alice:
+        合図。[mark .release_focus][p]
+    with {
+        init { setup_line() }
+        on mark(.release_focus) { release_focus() }
+        cancel on input(.SkipLine) { continue }
+        defer on completed { cleanup_line() }
+        start {
+            together {
+                cue_move()
+                cue_face()
+            }
+        }
+    }
+}
+",
+    );
+    let colon_items = parse_plan_items(
+        r"
+flow @flow.opening opening {
+    alice:
+        合図。[mark .release_focus][p]
+    with:
+        init:
+            setup_line()
+        on mark(.release_focus):
+            release_focus()
+        cancel on input(.SkipLine):
+            continue
+        defer on completed:
+            cleanup_line()
+        start:
+            together:
+                cue_move()
+                cue_face()
+}
+",
+    );
+
+    for items in [&brace_items, &colon_items] {
+        assert!(matches!(&items[0], LinePlanItem::Init(statements) if statements.len() == 1));
+        assert!(matches!(&items[1], LinePlanItem::On { body, .. } if body.len() == 1));
+        assert!(matches!(&items[2], LinePlanItem::CancelRule(rule) if rule.action().len() == 1));
+        assert!(matches!(
+            &items[3],
+            LinePlanItem::Stmt(Stmt::DeferBlock {
+                outcome: DeferOutcome::Completed,
+                statements,
+            }) if statements.len() == 1
+        ));
+        assert!(matches!(
+            &items[4],
+            LinePlanItem::StartGroup(start_items)
+                if matches!(start_items.as_slice(), [LinePlanItem::TogetherGroup(together_items)] if together_items.len() == 2)
+        ));
+    }
+}
+
+#[test]
 fn line_plan_memo_keeps_typed_options() {
     let tree = parse_ok(
         r"

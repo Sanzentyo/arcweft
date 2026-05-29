@@ -29,9 +29,10 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 mod output;
 mod server_adapter;
 use output::{
-    CheckReport, RuntimePlanReport, RuntimeRunReport, RuntimeStepRunSummary, ScriptBenchRunReport,
-    ScriptBenchRunSummary, ScriptBenchSectionRunSummary, ScriptTestRunReport, ScriptTestRunSummary,
-    flow_status_label,
+    CheckReport, RuntimePlanReport, RuntimeRunReport, RuntimeStepRunSummary,
+    ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary,
+    ScriptBenchRunReport, ScriptBenchRunSummary, ScriptBenchSectionRunSummary, ScriptTestRunReport,
+    ScriptTestRunSummary, flow_status_label,
 };
 use server_adapter::{NativeHttpServerConfig, serve_native_http};
 use std::fs;
@@ -39,6 +40,7 @@ use std::net::SocketAddr;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::time::Instant;
 
 const KNOWN_ADAPTERS: &[&str] = &["sans-io", "native-http"];
 
@@ -56,6 +58,7 @@ enum CliCommand {
     Unsafe(UnsafeOptions),
     Plan(PlanOptions),
     Run(RuntimeRunOptions),
+    Profile(RuntimeProfileOptions),
     Cli(CliRunOptions),
     Serve(ServeOptions),
     Test(ScriptTestOptions),
@@ -86,6 +89,7 @@ fn run(cli: Cli) -> Result<(), ExitCode> {
         CliCommand::Unsafe(options) => unsafe_command(&options),
         CliCommand::Plan(options) => runtime_plan_command(&options),
         CliCommand::Run(options) => runtime_run_command(&options),
+        CliCommand::Profile(options) => runtime_profile_command(&options),
         CliCommand::Cli(options) => runtime_cli_command(&options),
         CliCommand::Serve(options) => runtime_serve_command(&options),
         CliCommand::Test(options) => script_test_command(&options),
@@ -220,7 +224,7 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
                     options.json,
                 );
             }
-            LaunchKind::Bench => return script_bench_selection(&selection, options.json),
+            LaunchKind::Bench => return runtime_run_bench_selection(&selection, options),
             LaunchKind::Game | LaunchKind::Cli => {}
         }
     }
@@ -285,6 +289,247 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
         );
         Ok(())
     }
+}
+
+fn runtime_run_bench_selection(
+    selection: &SourceSelection,
+    options: &RuntimeRunOptions,
+) -> Result<(), ExitCode> {
+    let bench_options = ScriptBenchOptions {
+        path: None,
+        profile: ProfileOptions::default(),
+        steps: options.steps,
+        mode: options.mode,
+        max_ops: options.max_ops,
+        iterations: 1,
+        warmup: 0,
+        values: options.values.clone(),
+        json: options.json,
+    };
+    script_bench_selection(selection, &bench_options)
+}
+
+fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCode> {
+    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    let adapter = options.adapter.as_deref().or(selection.adapter());
+    let env = typecheck_env_for_adapter(adapter)?;
+    if !is_arcw_path(selection.path()) {
+        eprintln!(
+            "error: {} is not an .arcw source file",
+            selection.path().display()
+        );
+        return Err(ExitCode::from(2));
+    }
+
+    let mut phases = Vec::new();
+    let compiled = compile_profile_runtime_plan(&selection, &env, &mut phases)?;
+    let mut plan = compiled.plan;
+    let entry = options.entry.as_deref().or(selection.entry());
+    apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
+    let steps = run_profile_phase(&mut phases, "run", || {
+        Ok::<Vec<RuntimeStepRunSummary>, ExitCode>(run_runtime_steps(
+            plan,
+            options.steps,
+            options.mode,
+            options.max_ops,
+            &options.values,
+        ))
+    })?;
+    let final_status = steps.last().map_or_else(
+        || "not_started".to_owned(),
+        |step| step.fiber_status.clone(),
+    );
+    let report = RuntimeProfileReport {
+        source: report_path(selection.path()),
+        syntax_warnings: compiled.syntax_warnings,
+        line_task_groups: compiled.line_task_groups,
+        phases,
+        runtime: RuntimeProfileRuntime {
+            steps,
+            final_status,
+        },
+    };
+    if options.json {
+        print_json(&report)
+    } else {
+        println!(
+            "ok: {} ({} phase(s), {} step(s), final_status={})",
+            report.source,
+            report.phases.len(),
+            report.runtime.steps.len(),
+            report.runtime.final_status
+        );
+        for phase in &report.phases {
+            println!("  phase {} {}ns", phase.name, phase.elapsed_ns);
+        }
+        Ok(())
+    }
+}
+
+struct ProfileCompiledRuntimePlan {
+    plan: RuntimePlan,
+    syntax_warnings: usize,
+    line_task_groups: usize,
+}
+
+fn compile_profile_runtime_plan(
+    selection: &SourceSelection,
+    env: &TypeCheckEnv,
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<ProfileCompiledRuntimePlan, ExitCode> {
+    let source = run_profile_phase(phases, "read_source", || {
+        fs::read_to_string(selection.path()).map_err(|error| {
+            eprintln!(
+                "error: failed to read {}: {error}",
+                selection.path().display()
+            );
+            ExitCode::FAILURE
+        })
+    })?;
+    let parsed = run_profile_phase(phases, "parse", || {
+        catch_unwind(AssertUnwindSafe(|| parse_source(source))).map_err(|_| {
+            eprintln!(
+                "error: parser panicked while profiling {}",
+                selection.path().display()
+            );
+            ExitCode::FAILURE
+        })
+    })?;
+    if !parsed.errors().is_empty() {
+        for error in parsed.errors() {
+            eprintln!("error: {}", error.message());
+        }
+        return Err(ExitCode::FAILURE);
+    }
+    let tree = parsed.into_typed_tree();
+    let syntax_warnings = run_profile_phase(phases, "lint", || {
+        Ok::<usize, ExitCode>(lint_id_policy(&tree).len())
+    })?;
+    let hir = profile_lower_hir(&tree, phases)?;
+    profile_validate_hir(&hir, env, phases)?;
+    let line_task_groups = run_profile_phase(phases, "line_task_lower", || {
+        lower_line_task_groups(&hir).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {}", error.message());
+            }
+            ExitCode::FAILURE
+        })
+    })?;
+    let plan = run_profile_phase(phases, "runtime_plan_lower", || {
+        lower_runtime_plan(&hir).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {}", error.message());
+            }
+            ExitCode::FAILURE
+        })
+    })?;
+    Ok(ProfileCompiledRuntimePlan {
+        plan,
+        syntax_warnings,
+        line_task_groups: line_task_groups.len(),
+    })
+}
+
+fn profile_lower_hir(
+    tree: &arcweft_lang_syntax::ast::items::TypedSyntaxTree,
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<arcweft_lang_hir::model::HirModule, ExitCode> {
+    run_profile_phase(phases, "lower_hir", || {
+        lower_to_hir(tree).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {}", error.message());
+            }
+            ExitCode::FAILURE
+        })
+    })
+}
+
+fn profile_validate_hir(
+    hir: &arcweft_lang_hir::model::HirModule,
+    env: &TypeCheckEnv,
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<(), ExitCode> {
+    run_profile_phase(phases, "resolve", || {
+        let registry = registry_from_hir(hir);
+        validate_hir_references(hir, &registry).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {}", error.message());
+            }
+            ExitCode::FAILURE
+        })
+    })?;
+    run_profile_phase(phases, "readiness", || {
+        validate_typecheck_ready(hir).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {}", error.message());
+            }
+            ExitCode::FAILURE
+        })
+    })?;
+    run_profile_phase(phases, "typecheck", || {
+        typecheck_hir(hir, env).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {}", error.message());
+            }
+            ExitCode::FAILURE
+        })
+    })
+}
+
+fn run_runtime_steps(
+    plan: RuntimePlan,
+    steps: usize,
+    mode: CliRuntimeStepMode,
+    max_ops: usize,
+    values: &[RuntimeBinding],
+) -> Vec<RuntimeStepRunSummary> {
+    let mut executor = VmExecutor::new(plan);
+    let mut summaries = Vec::new();
+    for step_index in 0..steps {
+        let result = executor.step(
+            RuntimeStepInput {
+                bindings: values.to_vec(),
+                ..RuntimeStepInput::default()
+            },
+            step_options(mode, max_ops),
+        );
+        let summary = RuntimeStepRunSummary::from_result(step_index, result, executor.fiber());
+        let done = matches!(
+            executor.fiber().status,
+            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+        );
+        summaries.push(summary);
+        if done {
+            break;
+        }
+    }
+    summaries
+}
+
+fn run_profile_phase<T>(
+    phases: &mut Vec<RuntimeProfilePhase>,
+    name: &'static str,
+    run: impl FnOnce() -> Result<T, ExitCode>,
+) -> Result<T, ExitCode> {
+    let started = Instant::now();
+    let result = run();
+    phases.push(RuntimeProfilePhase {
+        name,
+        elapsed_ns: started.elapsed().as_nanos(),
+    });
+    result
+}
+
+fn report_path(path: &Path) -> String {
+    if let Ok(cwd) = std::env::current_dir()
+        && let Ok(relative) = path.strip_prefix(cwd)
+    {
+        return relative.display().to_string();
+    }
+    path.file_name().map_or_else(
+        || path.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    )
 }
 
 fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
@@ -802,17 +1047,30 @@ fn parse_log_contains_expectation(text: &str) -> Option<(String, String)> {
 fn script_bench_command(options: &ScriptBenchOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     require_profile_kind(&selection, LaunchKind::Bench, "bench")?;
-    script_bench_selection(&selection, options.json)
+    script_bench_selection(&selection, options)
 }
 
-fn script_bench_selection(selection: &SourceSelection, json: bool) -> Result<(), ExitCode> {
+fn script_bench_selection(
+    selection: &SourceSelection,
+    options: &ScriptBenchOptions,
+) -> Result<(), ExitCode> {
     let checked = load_and_check_selection(selection, None)?;
+    let plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
+        for error in errors {
+            eprintln!("error: {error}");
+        }
+        ExitCode::FAILURE
+    })?;
     let manifest = collect_script_tests(&checked.hir);
     let output = ScriptBenchRunReport {
-        benches: manifest.benches.iter().map(validate_script_bench).collect(),
+        benches: manifest
+            .benches
+            .iter()
+            .map(|bench| run_script_bench(bench, &plan, options))
+            .collect(),
     };
     let failed = output.benches.iter().any(|bench| bench.status == "failed");
-    if json {
+    if options.json {
         print_json(&output)?;
     } else {
         for bench in &output.benches {
@@ -876,6 +1134,107 @@ fn validate_script_bench(bench: &ScriptBench) -> ScriptBenchRunSummary {
         "validated"
     };
     ScriptBenchRunSummary::new(bench, status, sections, diagnostics)
+}
+
+fn run_script_bench(
+    bench: &ScriptBench,
+    plan: &RuntimePlan,
+    options: &ScriptBenchOptions,
+) -> ScriptBenchRunSummary {
+    let mut summary = validate_script_bench(bench);
+    if summary.status != "validated" {
+        return summary;
+    }
+    let sections = bench
+        .sections
+        .iter()
+        .map(|section| run_bench_section(section, plan, options))
+        .collect::<Vec<_>>();
+    let has_measured = sections.iter().any(|section| section.status == "measured");
+    if has_measured {
+        "measured".clone_into(&mut summary.status);
+        summary.sections = sections;
+    }
+    summary
+}
+
+fn run_bench_section(
+    section: &BenchSection,
+    plan: &RuntimePlan,
+    options: &ScriptBenchOptions,
+) -> ScriptBenchSectionRunSummary {
+    let validated = validate_bench_section(section);
+    if section.name != "measure" || validated.status != "validated" {
+        return validated;
+    }
+    let Some(flow) = bench_start_flow(section) else {
+        return validated;
+    };
+    let mut elapsed = Vec::new();
+    let mut executed_ops = Vec::new();
+    let mut line_effects = Vec::new();
+    let mut diagnostics = 0usize;
+    for iteration in 0..options.warmup + options.iterations {
+        let mut iteration_plan = plan.clone();
+        iteration_plan.entry_flow = Some(FlowRuntimeId(flow.clone()));
+        let started = Instant::now();
+        let steps = run_runtime_steps(
+            iteration_plan,
+            options.steps,
+            options.mode,
+            options.max_ops,
+            &options.values,
+        );
+        let elapsed_ns = started.elapsed().as_nanos();
+        if iteration < options.warmup {
+            continue;
+        }
+        elapsed.push(elapsed_ns);
+        executed_ops.push(steps.iter().map(|step| step.stats.executed_ops).sum());
+        line_effects.push(steps.iter().map(|step| step.stats.line_effects).sum());
+        diagnostics += steps
+            .iter()
+            .map(|step| step.diagnostics.len())
+            .sum::<usize>();
+    }
+    ScriptBenchSectionRunSummary::measured(
+        &section.name,
+        validated.diagnostics,
+        ScriptBenchMeasurementSummary {
+            warmup: options.warmup,
+            iterations: options.iterations,
+            steps: options.steps,
+            elapsed_ns: ScriptBenchElapsedSummary {
+                min: *elapsed.iter().min().unwrap_or(&0),
+                median: median_u128(&mut elapsed),
+                max: *elapsed.iter().max().unwrap_or(&0),
+            },
+            deterministic: ScriptBenchDeterministicSummary {
+                executed_ops_median: median_usize(&mut executed_ops),
+                line_effects_median: median_usize(&mut line_effects),
+                diagnostics,
+            },
+        },
+    )
+}
+
+fn bench_start_flow(section: &BenchSection) -> Option<String> {
+    let start = section.text.find("start @flow.")?;
+    section.text[start + "start @".len()..]
+        .split(|ch: char| ch.is_whitespace() || matches!(ch, '}' | ')' | ';'))
+        .next()
+        .filter(|flow| !flow.is_empty())
+        .map(str::to_owned)
+}
+
+fn median_u128(values: &mut [u128]) -> u128 {
+    values.sort_unstable();
+    values.get(values.len() / 2).copied().unwrap_or_default()
+}
+
+fn median_usize(values: &mut [usize]) -> usize {
+    values.sort_unstable();
+    values.get(values.len() / 2).copied().unwrap_or_default()
 }
 
 fn validate_bench_section(section: &BenchSection) -> ScriptBenchSectionRunSummary {
@@ -1280,6 +1639,29 @@ struct RuntimeRunOptions {
 }
 
 #[derive(Args, Clone, Debug)]
+struct RuntimeProfileOptions {
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
+    #[arg(long, conflicts_with = "flow")]
+    entry: Option<String>,
+    #[arg(long, conflicts_with = "entry")]
+    flow: Option<String>,
+    #[arg(long)]
+    adapter: Option<String>,
+    #[arg(long, default_value_t = 1)]
+    steps: usize,
+    #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
+    mode: CliRuntimeStepMode,
+    #[arg(long, default_value_t = 32)]
+    max_ops: usize,
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    values: Vec<RuntimeBinding>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
 struct CliRunOptions {
     path: Option<PathBuf>,
     #[command(flatten)]
@@ -1341,6 +1723,18 @@ struct ScriptBenchOptions {
     path: Option<PathBuf>,
     #[command(flatten)]
     profile: ProfileOptions,
+    #[arg(long, default_value_t = 32)]
+    steps: usize,
+    #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
+    mode: CliRuntimeStepMode,
+    #[arg(long, default_value_t = 32)]
+    max_ops: usize,
+    #[arg(long, default_value_t = 1)]
+    iterations: usize,
+    #[arg(long, default_value_t = 0)]
+    warmup: usize,
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    values: Vec<RuntimeBinding>,
     #[arg(long)]
     json: bool,
 }
@@ -1404,6 +1798,27 @@ struct ServeRouteReport {
 struct ServeRunReport {
     plan: ServePlanReport,
     server: server_adapter::NativeHttpServerReport,
+}
+
+#[derive(serde::Serialize)]
+struct RuntimeProfileReport {
+    source: String,
+    syntax_warnings: usize,
+    line_task_groups: usize,
+    phases: Vec<RuntimeProfilePhase>,
+    runtime: RuntimeProfileRuntime,
+}
+
+#[derive(serde::Serialize)]
+struct RuntimeProfilePhase {
+    name: &'static str,
+    elapsed_ns: u128,
+}
+
+#[derive(serde::Serialize)]
+struct RuntimeProfileRuntime {
+    steps: Vec<RuntimeStepRunSummary>,
+    final_status: String,
 }
 
 fn parse_runtime_binding_arg(value: &str) -> Result<RuntimeBinding, String> {

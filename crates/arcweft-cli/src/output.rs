@@ -4,7 +4,7 @@ use arcweft_core::engine::{FlowFiber, FlowFiberStatus};
 use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope, LineTaskTrigger};
 use arcweft_core::plan::FlowEvent;
 use arcweft_core::source::{RuntimeSourceEvent, SourceEventKind, SourcePolicy};
-use arcweft_core::step::RuntimeStepResult;
+use arcweft_core::step::{RuntimeStepResult, RuntimeStepStats};
 use arcweft_core::stream::{RuntimeStreamEvent, StreamOp};
 use arcweft_core::task::TaskSpec;
 use arcweft_core::value::RuntimePayload;
@@ -362,6 +362,30 @@ pub(crate) struct ScriptBenchSectionRunSummary {
     pub(crate) name: String,
     pub(crate) status: String,
     pub(crate) diagnostics: Vec<String>,
+    pub(crate) measurement: Option<ScriptBenchMeasurementSummary>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ScriptBenchMeasurementSummary {
+    pub(crate) warmup: usize,
+    pub(crate) iterations: usize,
+    pub(crate) steps: usize,
+    pub(crate) elapsed_ns: ScriptBenchElapsedSummary,
+    pub(crate) deterministic: ScriptBenchDeterministicSummary,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ScriptBenchElapsedSummary {
+    pub(crate) min: u128,
+    pub(crate) median: u128,
+    pub(crate) max: u128,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ScriptBenchDeterministicSummary {
+    pub(crate) executed_ops_median: usize,
+    pub(crate) line_effects_median: usize,
+    pub(crate) diagnostics: usize,
 }
 
 impl ScriptBenchRunSummary {
@@ -390,6 +414,20 @@ impl ScriptBenchSectionRunSummary {
             name: name.into(),
             status: status.into(),
             diagnostics,
+            measurement: None,
+        }
+    }
+
+    pub(crate) fn measured(
+        name: impl Into<String>,
+        diagnostics: Vec<String>,
+        measurement: ScriptBenchMeasurementSummary,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            status: "measured".to_owned(),
+            diagnostics,
+            measurement: Some(measurement),
         }
     }
 }
@@ -431,6 +469,7 @@ pub(crate) struct RuntimeStepRunSummary {
     pub(crate) index: usize,
     pub(crate) stop_reason: String,
     pub(crate) fiber_status: String,
+    pub(crate) stats: RuntimeStepStatsSummary,
     pub(crate) diagnostics: Vec<String>,
     pub(crate) flow_events: Vec<String>,
     pub(crate) line_effects: Vec<String>,
@@ -441,6 +480,19 @@ pub(crate) struct RuntimeStepRunSummary {
     pub(crate) source_close_requests: Vec<String>,
     pub(crate) source_states: Vec<RuntimeQueueStateSummary>,
     pub(crate) stream_states: Vec<RuntimeQueueStateSummary>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeStepStatsSummary {
+    pub(crate) executed_ops: usize,
+    pub(crate) pending_ops_before: usize,
+    pub(crate) pending_ops_after: usize,
+    pub(crate) task_events_in: usize,
+    pub(crate) source_events_in: usize,
+    pub(crate) source_events_emitted: usize,
+    pub(crate) stream_events_emitted: usize,
+    pub(crate) line_effects: usize,
+    pub(crate) diagnostics: usize,
 }
 
 #[derive(serde::Serialize)]
@@ -482,11 +534,13 @@ impl RuntimeStepRunSummary {
             output,
             fiber_status,
             stop_reason,
+            stats,
         } = result;
         Self {
             index,
             stop_reason: format!("{stop_reason:?}"),
             fiber_status: flow_status_label(&fiber_status),
+            stats: RuntimeStepStatsSummary::from(stats),
             diagnostics: output
                 .diagnostics
                 .into_iter()
@@ -575,6 +629,22 @@ impl RuntimeStepRunSummary {
                     overflow_count: 0,
                 })
                 .collect(),
+        }
+    }
+}
+
+impl From<RuntimeStepStats> for RuntimeStepStatsSummary {
+    fn from(stats: RuntimeStepStats) -> Self {
+        Self {
+            executed_ops: stats.executed_ops,
+            pending_ops_before: stats.pending_ops_before,
+            pending_ops_after: stats.pending_ops_after,
+            task_events_in: stats.task_events_in,
+            source_events_in: stats.source_events_in,
+            source_events_emitted: stats.source_events_emitted,
+            stream_events_emitted: stats.stream_events_emitted,
+            line_effects: stats.line_effects,
+            diagnostics: stats.diagnostics,
         }
     }
 }

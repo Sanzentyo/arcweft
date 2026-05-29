@@ -63,6 +63,8 @@ fn runtime_step_modes_apply_internal_drain_and_budget() {
         options(RuntimeStepMode::Drain, 8),
     );
     assert_eq!(drained.stop_reason, RuntimeStepStopReason::Done);
+    assert_eq!(drained.stats.executed_ops, 3);
+    assert_eq!(drained.stats.pending_ops_before, 0);
     assert!(matches!(drain.fiber().status, FlowFiberStatus::Done(_)));
 
     let mut budgeted = Engine::new(linear_plan(vec![
@@ -75,6 +77,7 @@ fn runtime_step_modes_apply_internal_drain_and_budget() {
         options(RuntimeStepMode::Drain, 2),
     );
     assert_eq!(result.stop_reason, RuntimeStepStopReason::BudgetExhausted);
+    assert_eq!(result.stats.executed_ops, 2);
     assert!(matches!(budgeted.fiber().status, FlowFiberStatus::Running));
 
     let mut one_op = Engine::new(linear_plan(vec![
@@ -86,6 +89,7 @@ fn runtime_step_modes_apply_internal_drain_and_budget() {
         options(RuntimeStepMode::OneOp, 8),
     );
     assert_eq!(result.stop_reason, RuntimeStepStopReason::OneOp);
+    assert_eq!(result.stats.executed_ops, 1);
     assert!(matches!(one_op.fiber().status, FlowFiberStatus::Running));
 }
 
@@ -148,6 +152,7 @@ fn game_mode_does_not_stop_for_pure_observations() {
     );
 
     assert_eq!(result.stop_reason, RuntimeStepStopReason::Done);
+    assert_eq!(result.stats.line_effects, 1);
     assert_eq!(engine.fiber().observations.logs.len(), 1);
 }
 

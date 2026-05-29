@@ -12,7 +12,7 @@ use crate::source::{
 };
 use crate::step::{
     RuntimeDiagnostic, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput,
-    RuntimeStepResult, RuntimeStepStopReason,
+    RuntimeStepResult, RuntimeStepStats, RuntimeStepStopReason,
 };
 use crate::stream::{
     RuntimeStreamEvent, StreamMatchArm, StreamOp, StreamRuntimeId, StreamRuntimeState,
@@ -202,9 +202,12 @@ impl Engine {
     ) -> RuntimeStepResult {
         let mut output = RuntimeStepOutput::default();
         let mut executed_ops = 0;
+        let pending_ops_before = self.fiber.pending_ops.len();
         self.fiber.env.bind_all_root(input.bindings.iter().cloned());
         let events = normalize_task_events(std::mem::take(&mut input.task_events));
         let source_events = normalize_source_events(std::mem::take(&mut input.source_events));
+        let task_events_in = events.len();
+        let source_events_in = source_events.len();
         output
             .diagnostics
             .extend(events.iter().map(|event| RuntimeDiagnostic {
@@ -224,7 +227,18 @@ impl Engine {
             }
         }
         self.record_observations(&output.effects.line);
-        self.step_result(output, options, executed_ops)
+        let stats = RuntimeStepStats {
+            executed_ops,
+            pending_ops_before,
+            pending_ops_after: self.fiber.pending_ops.len(),
+            task_events_in,
+            source_events_in,
+            source_events_emitted: output.effects.source_events.len(),
+            stream_events_emitted: output.effects.stream_events.len(),
+            line_effects: output.effects.line.len(),
+            diagnostics: output.diagnostics.len(),
+        };
+        self.step_result(output, options, stats)
     }
 
     fn can_attempt_runtime_op(&self) -> bool {
@@ -285,15 +299,16 @@ impl Engine {
         &self,
         output: RuntimeStepOutput,
         options: RuntimeStepOptions,
-        executed_ops: usize,
+        stats: RuntimeStepStats,
     ) -> RuntimeStepResult {
         let stop_reason = self
             .hard_stop_reason(&output)
-            .unwrap_or_else(|| Self::running_stop_reason(options, executed_ops, &output));
+            .unwrap_or_else(|| Self::running_stop_reason(options, stats.executed_ops, &output));
         RuntimeStepResult {
             output,
             fiber_status: self.fiber.status.clone(),
             stop_reason,
+            stats,
         }
     }
 

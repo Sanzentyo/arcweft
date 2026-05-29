@@ -257,10 +257,17 @@ contains `start @flow.id`; non-headless categories such as `visual` and `audio`
 are reported as skipped until a player adapter owns those backends.
 `arcw bench` validates bench declarations as headless plans. It requires a
 `measure` section, accepts `setup`, `measure`, `assert`, and `report` sections,
-and reports per-bench `validated`, `skipped`, or `failed` status in JSON.
-Renderer/audio driving, wall-clock control, offline rendering/audio, allocation
-counters, and benchmark timing remain adapter work; adapter-only sections are
-reported as skipped rather than executed by the Phase 2.0 CLI.
+measures headless `measure` bodies that name `start @flow...`, and reports
+per-bench `measured`, `validated`, `skipped`, or `failed` status in JSON.
+Renderer/audio driving, offline rendering/audio, and allocation counters remain
+adapter work; adapter-only sections are reported as skipped.
+
+`arcw profile` reports compiler phase timings plus deterministic VM counters.
+The JSON includes read, parse, lint, HIR lowering, reference resolution,
+readiness, typecheck, line-task lowering, runtime-plan lowering, and VM run
+phases. Runtime steps include executed op counts, event counts, emitted
+source/stream events, line effects, diagnostics, and queue depths. Profile and
+bench JSON must not persist absolute local source paths.
 
 ```bash
 arcw test game/routes/opening.arcw

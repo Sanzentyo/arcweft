@@ -532,6 +532,7 @@ flow @flow.run run {
     let one_op_stdout = String::from_utf8_lossy(&one_op.stdout);
     assert!(
         one_op_stdout.contains("\"stop_reason\": \"OneOp\"")
+            && one_op_stdout.contains("\"executed_ops\": 1")
             && one_op_stdout.contains("\"final_status\": \"running\""),
         "one-op should return after one VM op: {one_op_stdout}"
     );
@@ -581,6 +582,49 @@ flow @flow.run run {
     assert!(
         budget_stdout.contains("\"stop_reason\": \"BudgetExhausted\""),
         "drain max-ops should stop with budget exhaustion: {budget_stdout}"
+    );
+}
+
+#[test]
+fn profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source() {
+    let path = temp_arcw(
+        "profile-json",
+        r#"
+flow @flow.profile profile {
+    log.info("profile")
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("profile")
+        .arg(&path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("1")
+        .arg("--json")
+        .output()
+        .expect("arcw profile runs");
+
+    assert!(
+        output.status.success(),
+        "profile should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"name\": \"parse\"")
+            && stdout.contains("\"name\": \"typecheck\"")
+            && stdout.contains("\"name\": \"run\"")
+            && stdout.contains("\"executed_ops\": 2")
+            && stdout.contains("\"source\": \"arcweft-cli-profile-json-"),
+        "profile json should include phase timings and VM stats: {stdout}"
+    );
+    assert!(
+        !stdout.contains(&std::env::temp_dir().display().to_string()),
+        "profile json must not record absolute temp paths: {stdout}"
     );
 }
 
@@ -1000,6 +1044,52 @@ bench @bench.opening {
             && stdout.contains("measure")
             && stdout.contains("report"),
         "bench JSON should include headless validation metadata: {stdout}"
+    );
+}
+
+#[test]
+fn bench_json_measures_headless_runtime_sections() {
+    let path = temp_arcw(
+        "script-bench-measured",
+        r#"
+bench @bench.runtime {
+    measure iterations = 2 { start @flow.bench }
+}
+
+flow @flow.bench bench {
+    log.info("bench")
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("2")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--steps")
+        .arg("1")
+        .arg("--max-ops")
+        .arg("8")
+        .arg("--json")
+        .output()
+        .expect("arcw bench runs");
+
+    assert!(
+        output.status.success(),
+        "measured bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"status\": \"measured\"")
+            && stdout.contains("\"iterations\": 2")
+            && stdout.contains("\"warmup\": 1")
+            && stdout.contains("\"executed_ops_median\": 2"),
+        "bench JSON should include headless measurement: {stdout}"
     );
 }
 
