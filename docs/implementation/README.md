@@ -412,6 +412,11 @@ Current high-confidence state:
   groups, type judgment counts, rule-family judgment counts, bounded judgment
   samples, borrow state snapshots/restores/merges, boundary checks, escape
   checks, and maximum active borrows.
+- `arcweft-verify` exposes `validate_runtime_plan_types(plan, report)` for the
+  post-lowering runtime plan consumed by the VM. `arcw profile --json` now runs
+  this pass between runtime-plan lowering and bytecode lowering and reports
+  deterministic counters for runtime ops, expressions, conditions, guards,
+  targets, returns, and type-judgment evidence.
 - Declaration ID positions whose family is known now accept current-scope and
   family-relative IDs. `flow @.opening`, `flow @flow:.opening`, and bare
   `flow opening` normalize to `flow.opening`; declarations such as

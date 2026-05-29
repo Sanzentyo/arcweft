@@ -97,6 +97,11 @@ pub struct TypeCheckStats {
 pub struct TypeJudgmentId(usize);
 
 impl TypeJudgmentId {
+    /// Creates an identifier from a zero-based judgment index.
+    pub const fn from_index(index: usize) -> Self {
+        Self(index)
+    }
+
     /// Returns the zero-based index of this judgment in its report.
     pub const fn index(self) -> usize {
         self.0

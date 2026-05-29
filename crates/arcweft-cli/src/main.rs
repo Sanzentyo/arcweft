@@ -37,8 +37,8 @@ use arcweft_runtime_plan::pure::{PureHelperCandidate, lower_pure_helper_candidat
 use arcweft_test::{BenchSection, ScriptBench, ScriptStep, ScriptTest, collect_script_tests};
 use arcweft_tooling::{FormatOptions, ToolingEditReport, format_source, materialize_ids};
 use arcweft_verify::{
-    BackendKind, SmtBackend, VerificationMode, VerificationPolicy, VerificationReport,
-    emit_smt_lib, verify_module_with_env,
+    BackendKind, RuntimeTypeValidationStats, SmtBackend, VerificationMode, VerificationPolicy,
+    VerificationReport, emit_smt_lib, validate_runtime_plan_types, verify_module_with_env,
 };
 use arcweft_verify_oxiz::OxizBackend;
 use arcweft_verify_z3::ExternalZ3Backend;
@@ -903,6 +903,9 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
         compiler: RuntimeProfileCompiler {
             typecheck: TypeCheckProfileStats::from(&compiled.typecheck_report),
             borrow_check: BorrowCheckProfileStats::from(&compiled.typecheck_report.stats),
+            runtime_type_validation: RuntimeTypeValidationProfileStats::from(
+                &compiled.runtime_type_validation_stats,
+            ),
             bytecode: BytecodeProfileStats::from(&compiled.bytecode_stats),
         },
         phases,
@@ -933,6 +936,7 @@ struct ProfileCompiledRuntimePlan {
     syntax_warnings: usize,
     line_task_groups: usize,
     typecheck_report: TypeCheckReport,
+    runtime_type_validation_stats: RuntimeTypeValidationStats,
     bytecode_stats: BytecodeStats,
 }
 
@@ -987,6 +991,17 @@ fn compile_profile_runtime_plan(
             ExitCode::FAILURE
         })
     })?;
+    let runtime_type_validation_stats = run_profile_phase(phases, "runtime_type_validate", || {
+        let report = validate_runtime_plan_types(&plan, &typecheck_report);
+        if report.has_errors() {
+            for diagnostic in report.diagnostics {
+                eprintln!("error: {}: {}", diagnostic.path, diagnostic.message);
+            }
+            Err(ExitCode::FAILURE)
+        } else {
+            Ok(report.stats)
+        }
+    })?;
     let bytecode = run_profile_phase(phases, "bytecode_lower", || {
         Ok::<BytecodeProgram, ExitCode>(BytecodeProgram::from_runtime_plan(plan))
     })?;
@@ -1000,6 +1015,7 @@ fn compile_profile_runtime_plan(
         syntax_warnings,
         line_task_groups: line_task_groups.len(),
         typecheck_report,
+        runtime_type_validation_stats,
         bytecode_stats,
     })
 }
@@ -2614,6 +2630,7 @@ struct RuntimeProfileReport {
 struct RuntimeProfileCompiler {
     typecheck: TypeCheckProfileStats,
     borrow_check: BorrowCheckProfileStats,
+    runtime_type_validation: RuntimeTypeValidationProfileStats,
     bytecode: BytecodeProfileStats,
 }
 
@@ -2741,6 +2758,37 @@ impl From<&TypeCheckStats> for BorrowCheckProfileStats {
             boundary_checks: stats.borrow_boundary_checks,
             escape_checks: stats.borrow_escape_checks,
             max_active_borrows: stats.max_active_borrows,
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct RuntimeTypeValidationProfileStats {
+    flows: usize,
+    ops: usize,
+    expressions: usize,
+    conditions: usize,
+    guards: usize,
+    let_bindings: usize,
+    returns: usize,
+    route_targets: usize,
+    choice_targets: usize,
+    type_judgments: usize,
+}
+
+impl From<&RuntimeTypeValidationStats> for RuntimeTypeValidationProfileStats {
+    fn from(stats: &RuntimeTypeValidationStats) -> Self {
+        Self {
+            flows: stats.flows,
+            ops: stats.ops,
+            expressions: stats.expressions,
+            conditions: stats.conditions,
+            guards: stats.guards,
+            let_bindings: stats.let_bindings,
+            returns: stats.returns,
+            route_targets: stats.route_targets,
+            choice_targets: stats.choice_targets,
+            type_judgments: stats.type_judgments,
         }
     }
 }

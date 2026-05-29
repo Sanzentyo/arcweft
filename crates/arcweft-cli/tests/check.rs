@@ -715,11 +715,13 @@ flow @flow.profile profile {
     assert!(
         stdout.contains("\"name\": \"parse\"")
             && stdout.contains("\"name\": \"typecheck\"")
+            && stdout.contains("\"name\": \"runtime_type_validate\"")
             && stdout.contains("\"name\": \"bytecode_lower\"")
             && stdout.contains("\"name\": \"run\"")
             && stdout.contains("\"compiler\"")
             && stdout.contains("\"typecheck\"")
             && stdout.contains("\"borrow_check\"")
+            && stdout.contains("\"runtime_type_validation\"")
             && stdout.contains("\"bytecode\"")
             && stdout.contains("\"instructions\"")
             && stdout.contains("\"expressions\"")

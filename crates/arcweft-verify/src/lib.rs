@@ -32,6 +32,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use thiserror::Error;
 
+pub mod runtime_type;
+
+pub use runtime_type::{
+    RuntimeTypeDiagnostic, RuntimeTypeValidationReport, RuntimeTypeValidationStats,
+    validate_runtime_plan_types,
+};
+
 /// Stable source span used by verifier diagnostics and Agent/LSP tooling.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceSpan {
