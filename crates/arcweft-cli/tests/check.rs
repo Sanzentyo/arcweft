@@ -29,6 +29,41 @@ fn jit_check_json_compares_cranelift_and_vm() {
 }
 
 #[test]
+fn jit_check_json_can_compare_julia_baseline_without_absolute_source() {
+    if !julia_is_available() {
+        return;
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("jit")
+        .arg("check")
+        .arg("--json")
+        .arg("--julia")
+        .arg("--iterations")
+        .arg("4")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--samples")
+        .arg("2")
+        .arg("--input-seed")
+        .arg("7")
+        .output()
+        .expect("arcw jit check runs with Julia baseline");
+
+    assert!(
+        output.status.success(),
+        "jit check with Julia baseline should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_jit_check_json(&stdout, "builtin", &["base", "bonus"], 7);
+    assert_julia_baseline_json(&stdout);
+    assert!(
+        !stdout.contains(&std::env::temp_dir().display().to_string()),
+        "jit check Julia JSON must not record absolute temp paths: {stdout}"
+    );
+}
+
+#[test]
 fn jit_check_json_uses_source_pure_helper() {
     let path = temp_arcw(
         "jit-pure-helper",
@@ -2795,6 +2830,35 @@ fn assert_jit_timing_summary(timings: &serde_json::Value) {
     );
 }
 
+fn assert_julia_baseline_json(stdout: &str) {
+    let json: serde_json::Value =
+        serde_json::from_str(stdout).expect("jit check output is structured JSON");
+    let julia = &json["julia"];
+    assert_eq!(julia["backend"], "julia");
+    assert_eq!(julia["matches_vm"], true);
+    assert_eq!(
+        julia["accumulator"],
+        json["deterministic"]["vm_accumulator"]
+    );
+    assert!(
+        julia["version"]
+            .as_str()
+            .is_some_and(|version| !version.is_empty())
+            && julia["elapsed_ns"].as_u64().is_some()
+            && julia["per_iteration_ns"].as_u64().is_some()
+            && julia["jit_vs_julia_x"]
+                .as_str()
+                .and_then(|value| value.parse::<f64>().ok())
+                .is_some()
+            && julia["julia_vs_jit_x"]
+                .as_str()
+                .and_then(|value| value.parse::<f64>().ok())
+                .is_some(),
+        "Julia baseline should report version, timings, and speed ratios: {julia}"
+    );
+    assert_sample_summary_is_ordered(&julia["samples"]);
+}
+
 fn assert_verify_types_json_summary(stdout: &str) {
     let json: serde_json::Value =
         serde_json::from_str(stdout).expect("verify-types output is structured JSON");
@@ -3013,6 +3077,13 @@ fn assert_phase_timings_include(phases: &serde_json::Value, expected_names: &[&s
             "missing compiler phase `{expected}` in {phases:?}"
         );
     }
+}
+
+fn julia_is_available() -> bool {
+    Command::new("julia")
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
 }
 
 fn workspace_root() -> PathBuf {

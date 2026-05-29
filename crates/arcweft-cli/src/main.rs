@@ -16,7 +16,7 @@ use arcweft_core::{
         PureFunctionRequest, PureFunctionResult, PureFunctionStats, VmPureFunctionBackend,
         compare_pure_function_backend,
     },
-    value::{RuntimeBinaryOp, RuntimeBinding, RuntimeExpr, RuntimeValue},
+    value::{RuntimeBinaryOp, RuntimeBinding, RuntimeExpr, RuntimeUnaryOp, RuntimeValue},
 };
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_jit_cranelift::{CompiledPureI64Inputs, CraneliftPureFunctionBackend};
@@ -64,7 +64,7 @@ use std::fs;
 use std::net::SocketAddr;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 use std::time::Instant;
 
 const KNOWN_ADAPTERS: &[&str] = &["sans-io", "native-http"];
@@ -192,7 +192,11 @@ fn jit_check_report(
     let matches_vm = conformance.aot_matches_vm
         && conformance.jit_matches_vm
         && measurement.jit.accumulator == measurement.vm.accumulator
-        && measurement.aot.accumulator == measurement.vm.accumulator;
+        && measurement.aot.accumulator == measurement.vm.accumulator
+        && measurement
+            .julia
+            .as_ref()
+            .is_none_or(|julia| julia.accumulator == measurement.vm.accumulator);
     JitCheckReport {
         status: if matches_vm { "ok" } else { "failed" }.to_owned(),
         helper: target.name.clone(),
@@ -232,6 +236,17 @@ fn jit_check_report(
             jit_samples: measurement.jit.elapsed,
             vm_samples: measurement.vm.elapsed,
         },
+        julia: measurement.julia.as_ref().map(|julia| JitCheckJuliaReport {
+            backend: "julia".to_owned(),
+            version: julia.version.clone(),
+            matches_vm: julia.accumulator == measurement.vm.accumulator,
+            elapsed: julia.elapsed.median,
+            per_iteration: per_iteration_ns(julia.elapsed.median, options.iterations),
+            samples: julia.elapsed,
+            accumulator: julia.accumulator,
+            jit_vs_julia_x: speedup_x(julia.elapsed.median, measurement.jit.elapsed.median),
+            julia_vs_jit_x: speedup_x(measurement.jit.elapsed.median, julia.elapsed.median),
+        }),
         deterministic: JitCheckDeterministicReport {
             aot: measurement.aot.accumulator,
             jit: measurement.jit.accumulator,
@@ -244,6 +259,12 @@ fn jit_check_report(
 }
 
 fn print_jit_check_human_report(report: &JitCheckReport) {
+    let julia = report.julia.as_ref().map_or(String::new(), |julia| {
+        format!(
+            " julia_median_ns={} jit_vs_julia_x={}",
+            julia.elapsed, julia.jit_vs_julia_x
+        )
+    });
     println!(
         "ok: jit check helper={} matches_vm={} aot_compile_ns={} jit_compile_ns={} aot_median_ns={} jit_median_ns={} vm_median_ns={} jit_speedup_x={}",
         report.helper,
@@ -255,6 +276,9 @@ fn print_jit_check_human_report(report: &JitCheckReport) {
         report.timings.vm,
         report.timings.speedup_x
     );
+    if !julia.is_empty() {
+        println!("{julia}");
+    }
 }
 
 fn jit_check_inputs(seed: u64, sample: usize, iteration: usize, arity: usize) -> Vec<i64> {
@@ -294,6 +318,13 @@ struct JitCheckMeasurements {
     aot: JitRepeatedMeasurement,
     jit: JitRepeatedMeasurement,
     vm: JitRepeatedMeasurement,
+    julia: Option<JitJuliaMeasurement>,
+}
+
+struct JitJuliaMeasurement {
+    version: String,
+    elapsed: JitTimingSamples,
+    accumulator: i64,
 }
 
 fn collect_jit_check_conformance(
@@ -389,6 +420,10 @@ fn measure_jit_check_helpers(
             options.iterations,
             options.input_seed,
         )?,
+        julia: options
+            .julia
+            .then(|| measure_jit_check_julia(target, options))
+            .transpose()?,
     })
 }
 
@@ -644,6 +679,245 @@ fn measure_jit_check_vm(
             Ok(0)
         }
     })
+}
+
+fn measure_jit_check_julia(
+    target: &JitCheckTarget,
+    options: &JitCheckOptions,
+) -> Result<JitJuliaMeasurement, ExitCode> {
+    let code = julia_benchmark_source(target, options)?;
+    let output = Command::new("julia")
+        .arg("--startup-file=no")
+        .arg("--history-file=no")
+        .arg("-e")
+        .arg(code)
+        .output()
+        .map_err(|error| {
+            eprintln!("error: failed to run Julia baseline: {error}");
+            ExitCode::FAILURE
+        })?;
+    if !output.status.success() {
+        eprintln!(
+            "error: Julia baseline failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return Err(ExitCode::FAILURE);
+    }
+    parse_julia_measurement(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn parse_julia_measurement(stdout: &str) -> Result<JitJuliaMeasurement, ExitCode> {
+    let mut version = None;
+    let mut accumulator = None;
+    let mut min = None;
+    let mut median = None;
+    let mut max = None;
+    for line in stdout.lines() {
+        let Some((key, value)) = line.split_once('\t') else {
+            continue;
+        };
+        match key {
+            "version" => version = Some(value.to_owned()),
+            "accumulator" => accumulator = value.parse::<i64>().ok(),
+            "min_ns" => min = value.parse::<u128>().ok(),
+            "median_ns" => median = value.parse::<u128>().ok(),
+            "max_ns" => max = value.parse::<u128>().ok(),
+            _ => {}
+        }
+    }
+    let Some(version) = version else {
+        eprintln!("error: Julia baseline did not report a version");
+        return Err(ExitCode::FAILURE);
+    };
+    let Some(accumulator) = accumulator else {
+        eprintln!("error: Julia baseline did not report an accumulator");
+        return Err(ExitCode::FAILURE);
+    };
+    let Some(min) = min else {
+        eprintln!("error: Julia baseline did not report min_ns");
+        return Err(ExitCode::FAILURE);
+    };
+    let Some(median) = median else {
+        eprintln!("error: Julia baseline did not report median_ns");
+        return Err(ExitCode::FAILURE);
+    };
+    let Some(max) = max else {
+        eprintln!("error: Julia baseline did not report max_ns");
+        return Err(ExitCode::FAILURE);
+    };
+    Ok(JitJuliaMeasurement {
+        version,
+        elapsed: JitTimingSamples { min, median, max },
+        accumulator,
+    })
+}
+
+fn julia_benchmark_source(
+    target: &JitCheckTarget,
+    options: &JitCheckOptions,
+) -> Result<String, ExitCode> {
+    let params = target
+        .input_names
+        .iter()
+        .map(|name| julia_identifier(name))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|message| {
+            eprintln!("error: {message}");
+            ExitCode::from(2)
+        })?;
+    let expr = julia_i64_expr(&target.expr).map_err(|message| {
+        eprintln!(
+            "error: Julia baseline cannot lower helper `{}`: {message}",
+            target.name
+        );
+        ExitCode::from(2)
+    })?;
+    let call_args = (1..=params.len())
+        .map(|index| format!("arcweft_input(seed, sample, iteration, {index})"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Ok(format!(
+        r#"
+function arcweft_score({params})::Int64
+    return {expr}
+end
+
+function arcweft_input(seed::UInt64, sample::Int, iteration::Int, index::Int)::Int64
+    zero_based = UInt64(index - 1)
+    modulus = UInt64(5) + zero_based % UInt64(5)
+    value = (seed * UInt64(index) + UInt64(sample) * (UInt64(3) + zero_based) + UInt64(iteration)) % modulus
+    return Int64(value) + Int64(1)
+end
+
+seed = UInt64({seed})
+warmup = {warmup}
+iterations = {iterations}
+samples = {samples}
+
+function arcweft_run(seed::UInt64, warmup::Int, iterations::Int, samples::Int)
+    accumulator = Int64(0)
+    sample = 0
+    for iteration in 0:(warmup - 1)
+        arcweft_score({call_args})
+    end
+
+    elapsed = Vector{{UInt128}}(undef, samples)
+    for sample in 0:(samples - 1)
+        started = UInt128(time_ns())
+        for iteration in 0:(iterations - 1)
+            accumulator += arcweft_score({call_args})
+        end
+        elapsed[sample + 1] = UInt128(time_ns()) - started
+    end
+    sort!(elapsed)
+    return accumulator, elapsed
+end
+
+arcweft_run(seed, warmup, 1, 1)
+accumulator, elapsed = arcweft_run(seed, warmup, iterations, samples)
+println("version\t", string(VERSION))
+println("accumulator\t", accumulator)
+println("min_ns\t", elapsed[1])
+println("median_ns\t", elapsed[(length(elapsed) ÷ 2) + 1])
+println("max_ns\t", elapsed[end])
+"#,
+        params = params
+            .iter()
+            .map(|name| format!("{name}::Int64"))
+            .collect::<Vec<_>>()
+            .join(", "),
+        seed = options.input_seed,
+        warmup = options.warmup,
+        iterations = options.iterations,
+        samples = options.samples,
+    ))
+}
+
+fn julia_i64_expr(expr: &RuntimeExpr) -> Result<String, String> {
+    match expr {
+        RuntimeExpr::Value(RuntimeValue::Int(value)) => Ok(value.to_string()),
+        RuntimeExpr::Local(name) => julia_identifier(name),
+        RuntimeExpr::Let { name, expr, body } => Ok(format!(
+            "(let {} = {}; {} end)",
+            julia_identifier(name)?,
+            julia_i64_expr(expr)?,
+            julia_i64_expr(body)?
+        )),
+        RuntimeExpr::Call { callee, args } if callee == "add" && args.len() == 2 => Ok(format!(
+            "(({}) + ({}))",
+            julia_i64_expr(&args[0])?,
+            julia_i64_expr(&args[1])?
+        )),
+        RuntimeExpr::Unary {
+            op: RuntimeUnaryOp::Neg,
+            expr,
+        } => Ok(format!("(-({}))", julia_i64_expr(expr)?)),
+        RuntimeExpr::Binary { lhs, op, rhs } => {
+            let lhs = julia_i64_expr(lhs)?;
+            let rhs = julia_i64_expr(rhs)?;
+            match op {
+                RuntimeBinaryOp::Add => Ok(format!("(({lhs}) + ({rhs}))")),
+                RuntimeBinaryOp::Sub => Ok(format!("(({lhs}) - ({rhs}))")),
+                RuntimeBinaryOp::Mul => Ok(format!("(({lhs}) * ({rhs}))")),
+                RuntimeBinaryOp::Div => Ok(format!("div(({lhs}), ({rhs}))")),
+                _ => Err(format!(
+                    "binary operator `{op:?}` is not an i64 Julia result"
+                )),
+            }
+        }
+        RuntimeExpr::If {
+            condition,
+            then_expr,
+            else_expr,
+        } => Ok(format!(
+            "(({}) ? ({}) : ({}))",
+            julia_bool_expr(condition)?,
+            julia_i64_expr(then_expr)?,
+            julia_i64_expr(else_expr)?
+        )),
+        other => Err(format!(
+            "expression `{other:?}` is outside the Julia baseline subset"
+        )),
+    }
+}
+
+fn julia_bool_expr(expr: &RuntimeExpr) -> Result<String, String> {
+    match expr {
+        RuntimeExpr::Value(RuntimeValue::Bool(value)) => Ok(value.to_string()),
+        RuntimeExpr::Binary { lhs, op, rhs } => {
+            let lhs = julia_i64_expr(lhs)?;
+            let rhs = julia_i64_expr(rhs)?;
+            match op {
+                RuntimeBinaryOp::Eq => Ok(format!("(({lhs}) == ({rhs}))")),
+                RuntimeBinaryOp::Ne => Ok(format!("(({lhs}) != ({rhs}))")),
+                RuntimeBinaryOp::Lt => Ok(format!("(({lhs}) < ({rhs}))")),
+                RuntimeBinaryOp::Le => Ok(format!("(({lhs}) <= ({rhs}))")),
+                RuntimeBinaryOp::Gt => Ok(format!("(({lhs}) > ({rhs}))")),
+                RuntimeBinaryOp::Ge => Ok(format!("(({lhs}) >= ({rhs}))")),
+                _ => Err(format!(
+                    "condition operator `{op:?}` is outside the Julia baseline subset"
+                )),
+            }
+        }
+        other => Err(format!(
+            "condition `{other:?}` is outside the Julia baseline subset"
+        )),
+    }
+}
+
+fn julia_identifier(name: &str) -> Result<String, String> {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return Err("Julia baseline input names must be non-empty".to_owned());
+    };
+    if !(first == '_' || first.is_ascii_alphabetic())
+        || !chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+    {
+        return Err(format!(
+            "Julia baseline input `{name}` is not a simple identifier"
+        ));
+    }
+    Ok(name.to_owned())
 }
 
 fn measure_repeated(
@@ -2190,6 +2464,7 @@ fn run_bench_pure_helper_section(
     let jit_options = JitCheckOptions {
         path: None,
         helper: Some(helper_name),
+        julia: false,
         iterations: options.iterations,
         warmup: options.warmup,
         samples: options.samples,
@@ -3070,6 +3345,8 @@ struct JitCheckOptions {
     path: Option<PathBuf>,
     #[arg(long)]
     helper: Option<String>,
+    #[arg(long)]
+    julia: bool,
     #[arg(long, default_value_t = 1000)]
     iterations: usize,
     #[arg(long, default_value_t = 10)]
@@ -3145,6 +3422,8 @@ struct JitCheckReport {
     iterations: usize,
     samples: usize,
     timings: JitCheckTimingReport,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    julia: Option<JitCheckJuliaReport>,
     deterministic: JitCheckDeterministicReport,
     vm_stats: PureFunctionStatsReport,
     aot_stats: PureFunctionStatsReport,
@@ -3174,6 +3453,21 @@ struct JitCheckTimingReport {
     aot_samples: JitTimingSamples,
     jit_samples: JitTimingSamples,
     vm_samples: JitTimingSamples,
+}
+
+#[derive(serde::Serialize)]
+struct JitCheckJuliaReport {
+    backend: String,
+    version: String,
+    matches_vm: bool,
+    #[serde(rename = "elapsed_ns")]
+    elapsed: u128,
+    #[serde(rename = "per_iteration_ns")]
+    per_iteration: u128,
+    samples: JitTimingSamples,
+    accumulator: i64,
+    jit_vs_julia_x: String,
+    julia_vs_jit_x: String,
 }
 
 #[derive(Clone, Copy, Debug, serde::Serialize)]
