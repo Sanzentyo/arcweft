@@ -1351,8 +1351,13 @@ flow @flow.bench bench {
         stdout.contains("\"status\": \"measured\"")
             && stdout.contains("\"iterations\": 2")
             && stdout.contains("\"warmup\": 1")
-            && stdout.contains("\"executed_ops_median\": 2"),
-        "bench JSON should include headless measurement: {stdout}"
+            && stdout.contains("\"executed_ops_median\": 2")
+            && stdout.contains("\"compiler\"")
+            && stdout.contains("\"phases\"")
+            && stdout.contains("\"name\": \"typecheck\"")
+            && stdout.contains("\"borrow_check\"")
+            && stdout.contains("\"boundary_checks\""),
+        "bench JSON should include headless measurement and compiler profiling: {stdout}"
     );
 }
 

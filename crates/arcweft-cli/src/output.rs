@@ -342,11 +342,6 @@ pub(crate) struct ScriptTestRunReport {
 }
 
 #[derive(serde::Serialize)]
-pub(crate) struct ScriptBenchRunReport {
-    pub(crate) benches: Vec<ScriptBenchRunSummary>,
-}
-
-#[derive(serde::Serialize)]
 pub(crate) struct ScriptTestRunSummary {
     pub(crate) id: String,
     pub(crate) kind: String,

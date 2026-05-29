@@ -66,7 +66,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   the headless VM, includes deterministic runtime counters in JSON, completes
   native file task requests through the CLI adapter, and evaluates
   `assert { expect.*(...) }` sections against a separate correctness run before
-  reporting a measured bench as successful.
+  reporting a measured bench as successful. Bench reports also expose compile
+  phase timings plus type, borrow, runtime-type, and bytecode counters so
+  runtime performance can be compared with parser/checker/lowering cost.
 - No renderer, Servo, audio, camera, USB, or MCP implementation.
 
 ## Files

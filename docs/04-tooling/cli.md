@@ -354,10 +354,12 @@ Bench declarations use the same expectation calls inside
 `assert { expect.*(...) }` sections. After a runnable
 `measure { start(@flow.id) }` section is measured, `arcw bench` performs one
 additional headless correctness run and fails the bench if any assert section
-does not match the runtime observations. The manifest preserves the declaration
-ID, kind, source span, and call-based body rows so CLI, LSP, headless player
-adapters, and Agent tooling can share one planning schema without reparsing
-source text.
+does not match the runtime observations. Bench JSON also includes the same
+compiler phase timings and type, borrow, runtime-type, and bytecode counters as
+`arcw profile`, so runtime measurements can be interpreted alongside
+compilation and checking cost. The manifest preserves the declaration ID, kind,
+source span, and call-based body rows so CLI, LSP, headless player adapters, and
+Agent tooling can share one planning schema without reparsing source text.
 
 Line-plan lowering must not silently drop parsed syntax. Stable Phase 2.0 cue
 syntax such as `at(0.35s): ...` is lowered into Sans I/O line task data.

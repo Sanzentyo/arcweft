@@ -50,8 +50,8 @@ use native_task::NativeTaskBridge;
 use output::{
     CheckReport, RuntimeExecutorTier, RuntimePlanReport, RuntimeRunReport, RuntimeStepRunSummary,
     ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary,
-    ScriptBenchRunReport, ScriptBenchRunSummary, ScriptBenchSectionRunSummary, ScriptTestRunReport,
-    ScriptTestRunSummary, flow_status_label,
+    ScriptBenchRunSummary, ScriptBenchSectionRunSummary, ScriptTestRunReport, ScriptTestRunSummary,
+    flow_status_label,
 };
 use server_adapter::{NativeHttpServerConfig, serve_native_http};
 use std::fs;
@@ -941,6 +941,7 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
 }
 
 struct ProfileCompiledRuntimePlan {
+    hir: arcweft_lang_hir::model::HirModule,
     plan: RuntimePlan,
     syntax_warnings: usize,
     line_task_groups: usize,
@@ -1020,6 +1021,7 @@ fn compile_profile_runtime_plan(
         ExitCode::FAILURE
     })?;
     Ok(ProfileCompiledRuntimePlan {
+        hir,
         plan,
         syntax_warnings,
         line_task_groups: line_task_groups.len(),
@@ -1824,19 +1826,27 @@ fn script_bench_selection(
     selection: &SourceSelection,
     options: &ScriptBenchOptions,
 ) -> Result<(), ExitCode> {
-    let checked = load_and_check_selection(selection, None)?;
-    let plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
-        for error in errors {
-            eprintln!("error: {error}");
-        }
-        ExitCode::FAILURE
-    })?;
-    let manifest = collect_script_tests(&checked.hir);
+    let env = typecheck_env_for_adapter(selection.adapter())?;
+    let mut phases = Vec::new();
+    let compiled = compile_profile_runtime_plan(selection, &env, &mut phases)?;
+    let manifest = collect_script_tests(&compiled.hir);
     let output = ScriptBenchRunReport {
+        source: report_path(selection.path()),
+        syntax_warnings: compiled.syntax_warnings,
+        line_task_groups: compiled.line_task_groups,
+        compiler: RuntimeProfileCompiler {
+            typecheck: TypeCheckProfileStats::from(&compiled.typecheck_report),
+            borrow_check: BorrowCheckProfileStats::from(&compiled.typecheck_report.stats),
+            runtime_type_validation: RuntimeTypeValidationProfileStats::from(
+                &compiled.runtime_type_validation_stats,
+            ),
+            bytecode: BytecodeProfileStats::from(&compiled.bytecode_stats),
+        },
+        phases,
         benches: manifest
             .benches
             .iter()
-            .map(|bench| run_script_bench(bench, &plan, selection.path(), options))
+            .map(|bench| run_script_bench(bench, &compiled.plan, selection.path(), options))
             .collect(),
     };
     let failed = output.benches.iter().any(|bench| bench.status == "failed");
@@ -2805,6 +2815,16 @@ struct RuntimeProfileReport {
     compiler: RuntimeProfileCompiler,
     phases: Vec<RuntimeProfilePhase>,
     runtime: RuntimeProfileRuntime,
+}
+
+#[derive(serde::Serialize)]
+struct ScriptBenchRunReport {
+    source: String,
+    syntax_warnings: usize,
+    line_task_groups: usize,
+    compiler: RuntimeProfileCompiler,
+    phases: Vec<RuntimeProfilePhase>,
+    benches: Vec<ScriptBenchRunSummary>,
 }
 
 #[derive(serde::Serialize)]
