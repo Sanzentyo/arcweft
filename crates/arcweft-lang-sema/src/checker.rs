@@ -72,40 +72,59 @@ pub fn validate_typecheck_ready(module: &HirModule) -> Result<(), Vec<TypeCheckR
     }
 }
 
+/// Deterministic counters collected while type checking lowered HIR.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TypeCheckStats {
+    pub flows: usize,
+    pub functions: usize,
+    pub declarations: usize,
+    pub top_level_items: usize,
+    pub statements: usize,
+    pub expressions: usize,
+    pub borrow_binding_groups: usize,
+    pub borrow_bindings: usize,
+    pub borrow_state_snapshots: usize,
+    pub borrow_state_restores: usize,
+    pub borrow_state_merges: usize,
+    pub borrow_boundary_checks: usize,
+    pub borrow_escape_checks: usize,
+    pub max_active_borrows: usize,
+}
+
+/// Machine-readable type-check result used by tooling and profiling.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeCheckReport {
+    pub diagnostics: Vec<TypeCheckError>,
+    pub stats: TypeCheckStats,
+}
+
+impl TypeCheckReport {
+    pub fn into_result(self) -> Result<(), Vec<TypeCheckError>> {
+        if self.diagnostics.is_empty() {
+            Ok(())
+        } else {
+            Err(self.diagnostics)
+        }
+    }
+}
+
+/// Analyzes lowered HIR with an explicit symbol/method environment.
+pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport {
+    let mut checker = TypeChecker::new(env);
+    checker.check_module(module);
+    TypeCheckReport {
+        diagnostics: checker.errors,
+        stats: checker.stats,
+    }
+}
+
 /// Type-checks the lowered HIR with an explicit symbol/method environment.
 ///
 /// This is deliberately small but real: it verifies entity reference families,
 /// dialogue callees, awaited `Need<T, E>` values, timed cue durations, and
 /// expression symbols without reparsing source text.
 pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<TypeCheckError>> {
-    let mut checker = TypeChecker {
-        env,
-        errors: Vec::new(),
-        active_borrows: Vec::new(),
-        borrow_local_lifetimes: HashMap::new(),
-        global_symbols: HashMap::new(),
-        global_functions: HashMap::new(),
-        global_function_effects: HashMap::new(),
-        flow_params: HashMap::new(),
-        locals: HashMap::new(),
-        loop_stack: Vec::new(),
-        line_label_stack: Vec::new(),
-        line_cancel_depth: 0,
-        line_out_depth: 0,
-        active_presentation_defaults: HashMap::new(),
-        line_mark_stack: Vec::new(),
-        lifetime_guarantees: HashSet::new(),
-        dropped_lifetime_keys: HashSet::new(),
-        available_lifetimes: Vec::new(),
-        effect_capabilities: env.capabilities.clone(),
-        yield_stack: Vec::new(),
-    };
-    checker.check_module(module);
-    if checker.errors.is_empty() {
-        Ok(())
-    } else {
-        Err(checker.errors)
-    }
+    analyze_types(module, env).into_result()
 }
 
 struct TypeChecker<'a> {
@@ -129,6 +148,7 @@ struct TypeChecker<'a> {
     available_lifetimes: Vec<LifetimeScopeKind>,
     effect_capabilities: HashSet<String>,
     yield_stack: Vec<YieldContext>,
+    stats: TypeCheckStats,
 }
 
 #[derive(Clone, Debug)]
@@ -168,6 +188,37 @@ struct LoopContext {
 }
 
 impl TypeChecker<'_> {
+    fn new(env: &TypeCheckEnv) -> TypeChecker<'_> {
+        TypeChecker {
+            env,
+            errors: Vec::new(),
+            active_borrows: Vec::new(),
+            borrow_local_lifetimes: HashMap::new(),
+            global_symbols: HashMap::new(),
+            global_functions: HashMap::new(),
+            global_function_effects: HashMap::new(),
+            flow_params: HashMap::new(),
+            locals: HashMap::new(),
+            loop_stack: Vec::new(),
+            line_label_stack: Vec::new(),
+            line_cancel_depth: 0,
+            line_out_depth: 0,
+            active_presentation_defaults: HashMap::new(),
+            line_mark_stack: Vec::new(),
+            lifetime_guarantees: HashSet::new(),
+            dropped_lifetime_keys: HashSet::new(),
+            available_lifetimes: Vec::new(),
+            effect_capabilities: env.capabilities.clone(),
+            yield_stack: Vec::new(),
+            stats: TypeCheckStats::default(),
+        }
+    }
+
+    fn record_active_borrow_depth(&mut self) {
+        self.stats.max_active_borrows =
+            self.stats.max_active_borrows.max(self.active_borrows.len());
+    }
+
     fn symbol_type(&self, name: &str) -> Option<&TypeKind> {
         self.locals
             .get(name)

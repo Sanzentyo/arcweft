@@ -262,12 +262,15 @@ per-bench `measured`, `validated`, `skipped`, or `failed` status in JSON.
 Renderer/audio driving, offline rendering/audio, and allocation counters remain
 adapter work; adapter-only sections are reported as skipped.
 
-`arcw profile` reports compiler phase timings plus deterministic VM counters.
+`arcw profile` reports compiler phase timings plus deterministic compiler and VM counters.
 The JSON includes read, parse, lint, HIR lowering, reference resolution,
 readiness, typecheck, line-task lowering, runtime-plan lowering, and VM run
-phases. Runtime steps include executed op counts, event counts, emitted
-source/stream events, line effects, diagnostics, and queue depths. Profile and
-bench JSON must not persist absolute local source paths.
+phases. It also includes `compiler.typecheck` counters for HIR items,
+statements, and expressions, plus `compiler.borrow_check` counters for borrow
+binding groups, borrow state snapshots/restores/merges, boundary checks, escape
+checks, and maximum active borrows. Runtime steps include executed op counts,
+event counts, emitted source/stream events, line effects, diagnostics, and queue
+depths. Profile and bench JSON must not persist absolute local source paths.
 
 ```bash
 arcw test game/routes/opening.arcw

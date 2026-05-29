@@ -363,6 +363,11 @@ Current high-confidence state:
   events, line effects, and diagnostics. `arcw profile --json` reports compiler
   phase timings plus those VM counters without recording absolute local source
   paths.
+- `arcweft-lang-sema` now exposes `TypeCheckReport` / `TypeCheckStats`.
+  `arcw profile --json` surfaces deterministic typecheck counters and integrated
+  borrow-check counters, including expression/statement counts, borrow binding
+  groups, borrow state snapshots/restores/merges, boundary checks, escape
+  checks, and maximum active borrows.
 - Declaration ID positions whose family is known now accept current-scope and
   family-relative IDs. `flow @.opening`, `flow @flow:.opening`, and bare
   `flow opening` normalize to `flow.opening`; declarations such as

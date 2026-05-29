@@ -31,6 +31,7 @@ impl TypeChecker<'_> {
         expr: &Expr,
         expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
+        self.stats.expressions += 1;
         match expr {
             Expr::Literal(literal) => Some(literal_type(literal)),
             Expr::EntityRef(entity) => self.check_entity_ref_expr(entity),

@@ -618,9 +618,14 @@ flow @flow.profile profile {
         stdout.contains("\"name\": \"parse\"")
             && stdout.contains("\"name\": \"typecheck\"")
             && stdout.contains("\"name\": \"run\"")
+            && stdout.contains("\"compiler\"")
+            && stdout.contains("\"typecheck\"")
+            && stdout.contains("\"borrow_check\"")
+            && stdout.contains("\"expressions\"")
+            && stdout.contains("\"boundary_checks\"")
             && stdout.contains("\"executed_ops\": 2")
             && stdout.contains("\"source\": \"arcweft-cli-profile-json-"),
-        "profile json should include phase timings and VM stats: {stdout}"
+        "profile json should include phase timings, compiler stats, borrow stats, and VM stats: {stdout}"
     );
     assert!(
         !stdout.contains(&std::env::temp_dir().display().to_string()),

@@ -10,6 +10,7 @@ use arcweft_lang_syntax::{ast::flow::StmtMatchArm, types::TypeRef};
 
 impl TypeChecker<'_> {
     pub(super) fn check_stmt(&mut self, stmt: &Stmt) {
+        self.stats.statements += 1;
         self.check_seq_stmt_policy(stmt);
         match stmt {
             Stmt::Let { pattern, ty, expr } => self.check_let_stmt(pattern, ty.as_ref(), expr),

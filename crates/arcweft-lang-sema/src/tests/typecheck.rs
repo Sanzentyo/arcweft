@@ -16,6 +16,41 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 }
 
 #[test]
+fn typecheck_report_counts_type_and_borrow_work() {
+    let tree = parse_ok(
+        r#"
+flow @flow.borrow_stats borrow_stats {
+    borrow pixels() as pixels: &'asset [Rgba8] {
+        let alias = pixels
+        drop(pixels)
+    }
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("borrow stats fixture lowers");
+    validate_typecheck_ready(&hir).expect("borrow stats fixture is typecheck-ready");
+    let report = analyze_types(
+        &hir,
+        &TypeCheckEnv::new().with_function(
+            "pixels",
+            TypeKind::Shared(Box::new(TypeKind::Named("Rgba8".to_owned()))),
+        ),
+    );
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert_eq!(report.stats.flows, 1);
+    assert!(report.stats.statements >= 3);
+    assert!(report.stats.expressions >= 4);
+    assert!(report.stats.borrow_binding_groups >= 1);
+    assert!(report.stats.borrow_bindings >= 1);
+    assert!(report.stats.max_active_borrows >= 1);
+}
+
+#[test]
 fn typechecks_explicit_route_parameter_bindings() {
     let tree = parse_ok(
         r#"

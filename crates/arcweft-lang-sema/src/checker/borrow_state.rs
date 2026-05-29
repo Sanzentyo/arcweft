@@ -21,8 +21,11 @@ impl TypeChecker<'_> {
             if lifetimes.is_empty() {
                 continue;
             }
+            self.stats.borrow_binding_groups += 1;
+            self.stats.borrow_bindings += lifetimes.len();
             self.clear_borrow_local(&name);
             self.active_borrows.extend(lifetimes.iter().cloned());
+            self.record_active_borrow_depth();
             self.borrow_local_lifetimes
                 .insert(name, BorrowLocalState::Live(lifetimes));
         }
@@ -77,7 +80,9 @@ impl TypeChecker<'_> {
         }
     }
 
-    pub(super) fn snapshot_borrow_state(&self) -> BorrowStateSnapshot {
+    pub(super) fn snapshot_borrow_state(&mut self) -> BorrowStateSnapshot {
+        self.stats.borrow_state_snapshots += 1;
+        // This clone is the main cost center for branch-sensitive borrow checks.
         BorrowStateSnapshot {
             active_borrows: self.active_borrows.clone(),
             borrow_local_lifetimes: self.borrow_local_lifetimes.clone(),
@@ -85,8 +90,10 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn restore_borrow_state(&mut self, snapshot: BorrowStateSnapshot) {
+        self.stats.borrow_state_restores += 1;
         self.active_borrows = snapshot.active_borrows;
         self.borrow_local_lifetimes = snapshot.borrow_local_lifetimes;
+        self.record_active_borrow_depth();
     }
 
     pub(super) fn merge_borrow_state_from_paths(
@@ -94,6 +101,7 @@ impl TypeChecker<'_> {
         base: &BorrowStateSnapshot,
         paths: &[BorrowStateSnapshot],
     ) {
+        self.stats.borrow_state_merges += 1;
         let mut merged = HashMap::new();
         for (name, base_state) in &base.borrow_local_lifetimes {
             let states = paths
@@ -113,5 +121,6 @@ impl TypeChecker<'_> {
             .flat_map(BorrowLocalState::lifetimes)
             .cloned()
             .collect();
+        self.record_active_borrow_depth();
     }
 }

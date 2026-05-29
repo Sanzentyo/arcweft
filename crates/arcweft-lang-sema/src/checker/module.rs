@@ -13,6 +13,11 @@ use std::collections::HashSet;
 
 impl TypeChecker<'_> {
     pub(super) fn check_module(&mut self, module: &HirModule) {
+        self.stats.flows += module.flows().len();
+        self.stats.functions += module.functions().len();
+        self.stats.declarations += module.declarations().len();
+        self.stats.top_level_items += module.top_level_items().len();
+
         if let Err(errors) = validate_typecheck_ready(module) {
             self.errors.extend(
                 errors

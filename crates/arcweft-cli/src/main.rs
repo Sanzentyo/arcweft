@@ -10,7 +10,9 @@ use arcweft_core::step::{
 };
 use arcweft_core::value::{RuntimeBinding, RuntimeValue};
 use arcweft_lang_hir::lower::lower_to_hir;
-use arcweft_lang_sema::check::{typecheck_hir, validate_typecheck_ready};
+use arcweft_lang_sema::check::{
+    TypeCheckStats, analyze_types, typecheck_hir, validate_typecheck_ready,
+};
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
 use arcweft_lang_syntax::{lint::lint_id_policy, parser::parse_source};
@@ -343,6 +345,10 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
         source: report_path(selection.path()),
         syntax_warnings: compiled.syntax_warnings,
         line_task_groups: compiled.line_task_groups,
+        compiler: RuntimeProfileCompiler {
+            typecheck: TypeCheckProfileStats::from(&compiled.typecheck_stats),
+            borrow_check: BorrowCheckProfileStats::from(&compiled.typecheck_stats),
+        },
         phases,
         runtime: RuntimeProfileRuntime {
             steps,
@@ -370,6 +376,7 @@ struct ProfileCompiledRuntimePlan {
     plan: RuntimePlan,
     syntax_warnings: usize,
     line_task_groups: usize,
+    typecheck_stats: TypeCheckStats,
 }
 
 fn compile_profile_runtime_plan(
@@ -406,7 +413,7 @@ fn compile_profile_runtime_plan(
         Ok::<usize, ExitCode>(lint_id_policy(&tree).len())
     })?;
     let hir = profile_lower_hir(&tree, phases)?;
-    profile_validate_hir(&hir, env, phases)?;
+    let typecheck_stats = profile_validate_hir(&hir, env, phases)?;
     let line_task_groups = run_profile_phase(phases, "line_task_lower", || {
         lower_line_task_groups(&hir).map_err(|errors| {
             for error in errors {
@@ -427,6 +434,7 @@ fn compile_profile_runtime_plan(
         plan,
         syntax_warnings,
         line_task_groups: line_task_groups.len(),
+        typecheck_stats,
     })
 }
 
@@ -448,7 +456,7 @@ fn profile_validate_hir(
     hir: &arcweft_lang_hir::model::HirModule,
     env: &TypeCheckEnv,
     phases: &mut Vec<RuntimeProfilePhase>,
-) -> Result<(), ExitCode> {
+) -> Result<TypeCheckStats, ExitCode> {
     run_profile_phase(phases, "resolve", || {
         let registry = registry_from_hir(hir);
         validate_hir_references(hir, &registry).map_err(|errors| {
@@ -467,12 +475,15 @@ fn profile_validate_hir(
         })
     })?;
     run_profile_phase(phases, "typecheck", || {
-        typecheck_hir(hir, env).map_err(|errors| {
-            for error in errors {
+        let report = analyze_types(hir, env);
+        if report.diagnostics.is_empty() {
+            Ok(report.stats)
+        } else {
+            for error in report.diagnostics {
                 eprintln!("error: {}", error.message());
             }
-            ExitCode::FAILURE
-        })
+            Err(ExitCode::FAILURE)
+        }
     })
 }
 
@@ -1805,8 +1816,65 @@ struct RuntimeProfileReport {
     source: String,
     syntax_warnings: usize,
     line_task_groups: usize,
+    compiler: RuntimeProfileCompiler,
     phases: Vec<RuntimeProfilePhase>,
     runtime: RuntimeProfileRuntime,
+}
+
+#[derive(serde::Serialize)]
+struct RuntimeProfileCompiler {
+    typecheck: TypeCheckProfileStats,
+    borrow_check: BorrowCheckProfileStats,
+}
+
+#[derive(serde::Serialize)]
+struct TypeCheckProfileStats {
+    flows: usize,
+    functions: usize,
+    declarations: usize,
+    top_level_items: usize,
+    statements: usize,
+    expressions: usize,
+}
+
+impl From<&TypeCheckStats> for TypeCheckProfileStats {
+    fn from(stats: &TypeCheckStats) -> Self {
+        Self {
+            flows: stats.flows,
+            functions: stats.functions,
+            declarations: stats.declarations,
+            top_level_items: stats.top_level_items,
+            statements: stats.statements,
+            expressions: stats.expressions,
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct BorrowCheckProfileStats {
+    binding_groups: usize,
+    bindings: usize,
+    state_snapshots: usize,
+    state_restores: usize,
+    state_merges: usize,
+    boundary_checks: usize,
+    escape_checks: usize,
+    max_active_borrows: usize,
+}
+
+impl From<&TypeCheckStats> for BorrowCheckProfileStats {
+    fn from(stats: &TypeCheckStats) -> Self {
+        Self {
+            binding_groups: stats.borrow_binding_groups,
+            bindings: stats.borrow_bindings,
+            state_snapshots: stats.borrow_state_snapshots,
+            state_restores: stats.borrow_state_restores,
+            state_merges: stats.borrow_state_merges,
+            boundary_checks: stats.borrow_boundary_checks,
+            escape_checks: stats.borrow_escape_checks,
+            max_active_borrows: stats.max_active_borrows,
+        }
+    }
 }
 
 #[derive(serde::Serialize)]

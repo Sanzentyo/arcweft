@@ -188,6 +188,7 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn reject_active_borrows(&mut self, boundary: &str) {
+        self.stats.borrow_boundary_checks += 1;
         if !self.active_borrows.is_empty() {
             self.errors.push(TypeCheckError::new(format!(
                 "borrowed values with lifetimes {:?} cannot cross {boundary}",
@@ -197,6 +198,7 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn reject_borrow_escape(&mut self, ty: Option<&TypeKind>, destination: &str) {
+        self.stats.borrow_escape_checks += 1;
         if ty.is_some_and(type_contains_borrow_ref) {
             self.errors.push(TypeCheckError::new(format!(
                 "borrowed value cannot escape through {destination}"
@@ -204,7 +206,8 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn snapshot_runtime_scope(&self) -> TypeCheckerScopeSnapshot {
+    fn snapshot_runtime_scope(&mut self) -> TypeCheckerScopeSnapshot {
+        self.stats.borrow_state_snapshots += 1;
         TypeCheckerScopeSnapshot {
             active_borrows: self.active_borrows.clone(),
             borrow_local_lifetimes: self.borrow_local_lifetimes.clone(),
@@ -217,8 +220,10 @@ impl TypeChecker<'_> {
     }
 
     fn restore_runtime_scope(&mut self, snapshot: TypeCheckerScopeSnapshot) {
+        self.stats.borrow_state_restores += 1;
         self.active_borrows = snapshot.active_borrows;
         self.borrow_local_lifetimes = snapshot.borrow_local_lifetimes;
+        self.record_active_borrow_depth();
         self.locals = snapshot.locals;
         self.active_presentation_defaults = snapshot.active_presentation_defaults;
         self.lifetime_guarantees = snapshot.lifetime_guarantees;
