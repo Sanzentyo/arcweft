@@ -9,6 +9,22 @@ use super::{
 use arcweft_lang_syntax::{ast::flow::StmtMatchArm, types::TypeRef};
 
 impl TypeChecker<'_> {
+    pub(super) fn check_tail_return_block_expr(
+        &mut self,
+        statements: &[Stmt],
+        expr: &Expr,
+    ) -> Option<TypeKind> {
+        let outer_locals = self.locals.clone();
+        for stmt in statements {
+            self.check_stmt(stmt);
+        }
+        self.stats.statements += 1;
+        let ty = self.check_expr(expr);
+        self.reject_borrow_escape(ty.as_ref(), "function return");
+        self.locals = outer_locals;
+        ty
+    }
+
     pub(super) fn check_stmt(&mut self, stmt: &Stmt) {
         self.stats.statements += 1;
         self.check_seq_stmt_policy(stmt);

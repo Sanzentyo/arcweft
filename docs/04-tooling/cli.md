@@ -304,8 +304,9 @@ source paths.
 
 With a source path, `arcw jit check` checks the module normally, selects a
 `#[pure] fn` helper by `--helper` or by uniqueness, lowers its expression body
-or simple local-`let` statement body to a pure-helper request, and reports
-`"helper_source": "source"` without including the local path in JSON.
+or simple local-`let` statement body with a final value or tail `return` to a
+pure-helper request, and reports `"helper_source": "source"` without including
+the local path in JSON.
 
 ```bash
 arcw test game/routes/opening.arcw

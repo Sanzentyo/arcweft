@@ -2,7 +2,7 @@
 
 use super::{
     EffectScope, EntityKind, FlowKind, FunctionKind, HirModule, HirTopLevelDecl, LifetimeKey,
-    LifetimeScopeKind, Pattern, TypeCheckError, TypeChecker, TypeKind, YieldContext,
+    LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker, TypeKind, YieldContext,
     choice_output_type, entity_kind_for_decl, ident_pattern_name, stream_return_types,
     type_ref_kind, validate_typecheck_ready,
 };
@@ -85,7 +85,7 @@ impl TypeChecker<'_> {
                 self.effect_capabilities = effect_snapshot;
                 continue;
             }
-            let actual = self.check_block_expr(function.statements(), function.value());
+            let actual = self.check_function_body_expr(function.statements(), function.value());
             self.effect_capabilities = effect_snapshot;
             if let (Some(expected), Some(actual)) = (
                 function.signature().return_type().map(type_ref_kind),
@@ -103,6 +103,22 @@ impl TypeChecker<'_> {
             self.check_top_level_decl(declaration);
         }
         self.check_flow_items(module.top_level_items());
+    }
+
+    fn check_function_body_expr(
+        &mut self,
+        statements: &[Stmt],
+        value: Option<&Expr>,
+    ) -> Option<TypeKind> {
+        if value.is_some() {
+            return self.check_block_expr(statements, value);
+        }
+        match statements.split_last() {
+            Some((Stmt::Return(expr), statements)) => {
+                self.check_tail_return_block_expr(statements, expr)
+            }
+            _ => self.check_block_expr(statements, None),
+        }
     }
 
     fn bind_top_level_entity_aliases(&mut self, module: &HirModule) {

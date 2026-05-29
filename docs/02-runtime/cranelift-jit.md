@@ -88,10 +88,10 @@ or persist host absolute paths.
 When a `.arcw` path is provided, `arcw jit check` runs the normal parse, HIR
 lowering, reference validation, typecheck-readiness, and typecheck path first.
 It then selects a `#[pure] fn` helper, lowers the expression body or a simple
-`let` statement body plus final value to the runtime pure-helper request, and
-uses the VM as the conformance reference before timing the Cranelift function.
-The current source-backed check supports the same 0-to-4-input integer subset
-as the native adapter.
+local-`let` statement body with either a final value expression or tail
+`return` to the runtime pure-helper request, and uses the VM as the conformance
+reference before timing the Cranelift function. The current source-backed check
+supports the same 0-to-4-input integer subset as the native adapter.
 
 ## IR lowering
 

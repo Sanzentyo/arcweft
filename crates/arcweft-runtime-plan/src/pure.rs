@@ -9,6 +9,7 @@ use arcweft_lang_hir::{
     model::{HirFunction, HirModule},
     syntax::{
         ast::{flow::Stmt, items::FunctionKind, pattern::Pattern},
+        expr::Expr,
         types::{FnParam, TypeRef},
     },
 };
@@ -127,28 +128,39 @@ fn lower_pure_helper_candidate(
 
 fn lower_pure_helper_body(function: &HirFunction) -> Result<RuntimeExpr, PureHelperLowerError> {
     let name = function.name();
-    let Some(value) = function.value() else {
-        return Err(PureHelperLowerError::UnsupportedBody {
-            name: name.to_owned(),
-        });
-    };
+    let (statements, value) = pure_helper_body_parts(function)?;
     let body = lower_runtime_expr_strict(value).map_err(|reason| {
         PureHelperLowerError::UnsupportedExpr {
             name: name.to_owned(),
             reason,
         }
     })?;
-    function
-        .statements()
-        .iter()
-        .rev()
-        .try_fold(body, |body, stmt| {
-            lower_pure_helper_let_stmt(name, stmt).map(|(let_name, expr)| RuntimeExpr::Let {
-                name: let_name,
-                expr: Box::new(expr),
-                body: Box::new(body),
-            })
+    statements.iter().rev().try_fold(body, |body, stmt| {
+        lower_pure_helper_let_stmt(name, stmt).map(|(let_name, expr)| RuntimeExpr::Let {
+            name: let_name,
+            expr: Box::new(expr),
+            body: Box::new(body),
         })
+    })
+}
+
+fn pure_helper_body_parts(
+    function: &HirFunction,
+) -> Result<(&[Stmt], &Expr), PureHelperLowerError> {
+    if let Some(value) = function.value() {
+        return Ok((function.statements(), value));
+    }
+    let Some((last, statements)) = function.statements().split_last() else {
+        return Err(PureHelperLowerError::UnsupportedBody {
+            name: function.name().to_owned(),
+        });
+    };
+    match last {
+        Stmt::Return(value) => Ok((statements, value)),
+        _ => Err(PureHelperLowerError::UnsupportedBody {
+            name: function.name().to_owned(),
+        }),
+    }
 }
 
 fn lower_pure_helper_let_stmt(
@@ -285,5 +297,31 @@ fn score(base: i64, bonus: i64) -> i64 {
             .request_with_i64_inputs([3, 4])
             .expect("request builds with matching inputs");
         assert_eq!(request.bindings.len(), 2);
+    }
+
+    #[test]
+    fn lowers_tail_return_pure_helper_candidate() {
+        let parsed = parse_source(
+            r"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    let boosted = bonus + 2
+    return base * boosted
+}
+",
+        );
+        assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+        let tree = parsed.into_typed_tree();
+        let hir = lower_to_hir(&tree).expect("pure function lowers to HIR");
+
+        let candidates =
+            lower_pure_helper_candidates(&hir).expect("tail return lowers to helper candidate");
+
+        assert_eq!(candidates.len(), 1);
+        assert!(matches!(
+            candidates[0].expr(),
+            RuntimeExpr::Let { name, body, .. }
+                if name == "boosted" && matches!(body.as_ref(), RuntimeExpr::Binary { .. })
+        ));
     }
 }

@@ -56,9 +56,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   backend with deterministic seed-controlled varying inputs, sample timing, and
   speedup reporting. `arcw jit check path.arcw --helper NAME --json` now runs
   the normal checked-source pipeline, extracts a `#[pure] fn` helper from HIR,
-  lowers its expression body or simple local-`let` statement body to a
-  pure-helper request, and reports the helper source without persisting the host
-  path.
+  lowers its expression body or simple local-`let` statement body with a final
+  value or tail `return` to a pure-helper request, and reports the helper source
+  without persisting the host path.
 - No renderer, Servo, audio, camera, USB, or MCP implementation.
 
 ## Files

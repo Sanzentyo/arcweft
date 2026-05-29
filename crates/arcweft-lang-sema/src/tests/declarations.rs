@@ -609,6 +609,21 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn tail_return_function_body_satisfies_return_type() {
+    let tree = parse_ok(
+        r"
+fn score(base: i64, bonus: i64) -> i64 {
+    let boosted = bonus + 2
+    return base * boosted
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("function lowers");
+
+    typecheck_hir(&hir, &TypeCheckEnv::default()).expect("tail return supplies function body type");
+}
+
+#[test]
 fn declaration_relative_ids_normalize_to_their_decl_family() {
     let tree = parse_ok(
         r"
