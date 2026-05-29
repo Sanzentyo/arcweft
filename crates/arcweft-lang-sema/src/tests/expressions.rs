@@ -15,10 +15,10 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
     };
     assert!(matches!(
         args.as_slice(),
-        [Expr::Field {
+        [CallArg::Positional(Expr::Field {
             target,
             field
-        }] if matches!(target.as_ref(), Expr::Placeholder(Placeholder::Partial)) && field == "label"
+        })] if matches!(target.as_ref(), Expr::Placeholder(Placeholder::Partial)) && field == "label"
     ));
 
     let indexed = parse_expr("state.affection[@character.alice]").expect("index expr parses");

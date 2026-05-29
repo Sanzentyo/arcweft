@@ -1,6 +1,6 @@
 use arcweft_lang_syntax::{
     ast::{flow::ContractClause, proof::ProofClause},
-    expr::{Expr, LifetimeScopeKind},
+    expr::{CallArg, Expr, LifetimeScopeKind},
 };
 use std::collections::BTreeSet;
 
@@ -216,9 +216,9 @@ fn lifetime_scope_arg(expr: &Expr) -> Option<LifetimeScopeKind> {
     }
 }
 
-fn state_write_capability(args: &[Expr]) -> Option<Capability> {
+fn state_write_capability(args: &[CallArg]) -> Option<Capability> {
     args.first()
-        .and_then(lifetime_scope_arg)
+        .and_then(|arg| lifetime_scope_arg(arg.value()))
         .map(|scope| Capability::new(format!("state.write({})", scope.as_str())))
 }
 
@@ -247,12 +247,12 @@ fn collect_resource_accesses_from_expr(expr: &Expr, accesses: &mut BTreeSet<Reso
                 match expr_path_label(receiver).as_deref() {
                     Some("signal") => {
                         accesses.insert(ResourceAccess::write(EffectResource::Signal(expr_label(
-                            target,
+                            target.value(),
                         ))));
                     }
                     Some("metric") => {
                         accesses.insert(ResourceAccess::write(EffectResource::Metric(expr_label(
-                            target,
+                            target.value(),
                         ))));
                     }
                     _ => {}
@@ -260,13 +260,13 @@ fn collect_resource_accesses_from_expr(expr: &Expr, accesses: &mut BTreeSet<Reso
             }
             collect_resource_accesses_from_expr(receiver, accesses);
             for arg in args {
-                collect_resource_accesses_from_expr(arg, accesses);
+                collect_resource_accesses_from_expr(arg.value(), accesses);
             }
         }
         Expr::Call { callee, args } => {
             collect_resource_accesses_from_expr(callee, accesses);
             for arg in args {
-                collect_resource_accesses_from_expr(arg, accesses);
+                collect_resource_accesses_from_expr(arg.value(), accesses);
             }
         }
         Expr::Tuple(items) | Expr::BracketSeq(items) => {
@@ -278,15 +278,14 @@ fn collect_resource_accesses_from_expr(expr: &Expr, accesses: &mut BTreeSet<Reso
             collect_resource_accesses_from_expr(value, accesses);
             collect_resource_accesses_from_expr(len, accesses);
         }
-        Expr::NamedArg { value, .. }
-        | Expr::Field { target: value, .. }
+        Expr::Field { target: value, .. }
         | Expr::Try { expr: value }
         | Expr::Await { expr: value, .. }
         | Expr::Unary { expr: value, .. } => collect_resource_accesses_from_expr(value, accesses),
         Expr::MethodCall { receiver, args, .. } => {
             collect_resource_accesses_from_expr(receiver, accesses);
             for arg in args {
-                collect_resource_accesses_from_expr(arg, accesses);
+                collect_resource_accesses_from_expr(arg.value(), accesses);
             }
         }
         Expr::Binary { lhs, rhs, .. }

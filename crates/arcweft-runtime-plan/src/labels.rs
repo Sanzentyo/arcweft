@@ -2,7 +2,7 @@
 
 use arcweft_core::time::LogicalDuration;
 use arcweft_lang_hir::syntax::ast::pattern::Pattern;
-use arcweft_lang_hir::syntax::expr::{DurationUnit, Expr, Literal};
+use arcweft_lang_hir::syntax::expr::{CallArg, DurationUnit, Expr, Literal};
 use arcweft_lang_hir::syntax::types::TypeRef;
 
 pub(crate) fn named_arg_label(value: &str) -> Option<String> {
@@ -39,12 +39,13 @@ pub(crate) fn expr_label(expr: &Expr) -> String {
         Expr::Path(path) => path.clone(),
         Expr::EntityRef(entity) => format!("@{}", entity.body()),
         Expr::Literal(literal) => literal_label(literal),
-        Expr::NamedArg { name, value } => format!("{name} = {}", expr_label(value)),
-        Expr::SpreadArg { value } => format!("{}...", expr_label(value)),
         Expr::Call { callee, args } => format!(
             "{}({})",
             expr_label(callee),
-            args.iter().map(expr_label).collect::<Vec<_>>().join(", ")
+            args.iter()
+                .map(call_arg_label)
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
         Expr::MethodCall {
             receiver,
@@ -54,7 +55,10 @@ pub(crate) fn expr_label(expr: &Expr) -> String {
             "{}.{}({})",
             expr_label(receiver),
             method,
-            args.iter().map(expr_label).collect::<Vec<_>>().join(", ")
+            args.iter()
+                .map(call_arg_label)
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
         Expr::Field { target, field } => format!("{}.{}", expr_label(target), field),
         Expr::Pipe { lhs, rhs } => format!("{} |> {}", expr_label(lhs), expr_label(rhs)),
@@ -62,6 +66,14 @@ pub(crate) fn expr_label(expr: &Expr) -> String {
             format!("[{}; {}]", expr_label(value), expr_label(len))
         }
         other => format!("{other:?}"),
+    }
+}
+
+pub(crate) fn call_arg_label(arg: &CallArg) -> String {
+    match arg {
+        CallArg::Positional(value) => expr_label(value),
+        CallArg::Named { name, value } => format!("{name} = {}", expr_label(value)),
+        CallArg::Spread { value } => format!("{}...", expr_label(value)),
     }
 }
 

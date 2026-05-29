@@ -132,7 +132,9 @@ Current high-confidence state:
 - `pro_review28.md`: adopted the first general variadic signature slice as
   `param: ...T`. Syntax stores rest parameters as parameter kind, semantic
   checking binds them as `Vec<T>`, and function-call checking consumes remaining
-  positional arguments as rest items. Positional call-site spread now parses as
+  positional arguments as rest items. Call and method-call syntax now carries
+  `CallArg::{Positional, Named, Spread}` instead of embedding named/spread
+  argument markers as expression variants. Positional call-site spread parses as
   `expr...`, typechecks only when it splices a sequence into a rest parameter,
   and is preserved into runtime/host call templates so the VM expands tuple and
   bracket-sequence values at the call boundary.

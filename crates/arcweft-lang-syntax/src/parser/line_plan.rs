@@ -509,7 +509,7 @@ fn parse_assert_call(expr: &Expr) -> Option<LinePlanItem> {
     };
     Some(LinePlanItem::Assert {
         debug,
-        expr: condition.clone(),
+        expr: condition.value().clone(),
     })
 }
 

@@ -22,7 +22,7 @@ use arcweft_lang_hir::syntax::{
         line_plan::{DeferOutcome, LinePlan, LinePlanItem, TriggerPattern},
         pattern::Pattern,
     },
-    expr::Expr,
+    expr::{CallArg, Expr},
 };
 
 /// Runtime task plan produced from one checked dialogue line plan.
@@ -685,7 +685,7 @@ fn lower_wait_target_expr(expr: &Expr) -> RuntimeWaitTarget {
         && matches!(callee.as_ref(), Expr::Path(path) if path == "mark")
         && args.len() == 1
     {
-        RuntimeWaitTarget::Mark(expr_label(&args[0]))
+        RuntimeWaitTarget::Mark(expr_label(args[0].value()))
     } else {
         RuntimeWaitTarget::Expr(expr_label(expr))
     }
@@ -719,13 +719,13 @@ fn line_memo_request(expr: &Expr) -> Option<LineMemoRequest> {
     }
     let (first, rest) = args.split_first()?;
     let name = match first {
-        Expr::Path(path) => path.trim_start_matches('.').to_owned(),
+        CallArg::Positional(Expr::Path(path)) => path.trim_start_matches('.').to_owned(),
         _ => return None,
     };
     let options = rest
         .iter()
         .filter_map(|arg| {
-            let Expr::NamedArg { name, value } = arg else {
+            let CallArg::Named { name, value } = arg else {
                 return None;
             };
             Some(RuntimeField {

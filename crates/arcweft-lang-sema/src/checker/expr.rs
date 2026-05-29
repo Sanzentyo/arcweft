@@ -13,7 +13,7 @@ use super::{
     types_compatible,
 };
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
-use arcweft_lang_syntax::expr::{BinaryOp, ComputationBlockKind, MatchExprArm, UnaryOp};
+use arcweft_lang_syntax::expr::{BinaryOp, CallArg, ComputationBlockKind, MatchExprArm, UnaryOp};
 
 impl TypeChecker<'_> {
     pub(super) fn expect_expr_type(&mut self, expr: &Expr, expected: &TypeKind, context: &str) {
@@ -60,7 +60,6 @@ impl TypeChecker<'_> {
                 Some(self.check_array_repeat_expr(value, len, expected))
             }
             Expr::Call { callee, args } => self.check_call_expr(callee, args),
-            Expr::NamedArg { value, .. } | Expr::SpreadArg { value } => self.check_expr(value),
             Expr::MethodCall {
                 receiver,
                 method,
@@ -483,7 +482,7 @@ impl TypeChecker<'_> {
         TypeKind::Range
     }
 
-    fn check_call_expr(&mut self, callee: &Expr, args: &[Expr]) -> Option<TypeKind> {
+    fn check_call_expr(&mut self, callee: &Expr, args: &[CallArg]) -> Option<TypeKind> {
         if let Some(ty) = self.check_builtin_call_expr(callee, args) {
             return Some(ty);
         }
@@ -508,10 +507,10 @@ impl TypeChecker<'_> {
                 return Some(ty);
             }
             if matches!(name.as_str(), "promote" | "promote_unchecked") {
-                for arg in args
-                    .iter()
-                    .filter(|arg| matches!(arg, Expr::NamedArg { .. }))
-                {
+                for arg in args.iter().filter_map(|arg| match arg {
+                    CallArg::Named { value, .. } => Some(value.as_ref()),
+                    CallArg::Positional(_) | CallArg::Spread { .. } => None,
+                }) {
                     self.check_expr(arg);
                 }
                 return Some(TypeKind::Named("Promoted".to_owned()));
@@ -521,19 +520,19 @@ impl TypeChecker<'_> {
             }
             if self.symbol_type(name) == Some(&TypeKind::Ref(EntityKind::Character)) {
                 for arg in args {
-                    self.check_expr(arg);
+                    self.check_expr(arg.value());
                 }
                 return Some(TypeKind::SpeakerPreset(EntityKind::Character));
             }
             if self.symbol_type(name) == Some(&TypeKind::SpeakerPreset(EntityKind::Character)) {
                 for arg in args {
-                    self.check_expr(arg);
+                    self.check_expr(arg.value());
                 }
                 return Some(TypeKind::SpeakerPreset(EntityKind::Character));
             }
             let arg_types = args
                 .iter()
-                .map(|arg| self.check_expr(arg))
+                .map(|arg| self.check_expr(arg.value()))
                 .collect::<Vec<_>>();
             if name == "Ok" {
                 return Some(TypeKind::Result {
@@ -559,25 +558,25 @@ impl TypeChecker<'_> {
         match self.check_expr(callee) {
             Some(TypeKind::Speaker(entity) | TypeKind::SpeakerPreset(entity)) => {
                 for arg in args {
-                    self.check_expr(arg);
+                    self.check_expr(arg.value());
                 }
                 Some(TypeKind::SpeakerPreset(entity))
             }
             other => {
                 for arg in args {
-                    self.check_expr(arg);
+                    self.check_expr(arg.value());
                 }
                 other
             }
         }
     }
 
-    fn check_builtin_call_expr(&mut self, callee: &Expr, args: &[Expr]) -> Option<TypeKind> {
+    fn check_builtin_call_expr(&mut self, callee: &Expr, args: &[CallArg]) -> Option<TypeKind> {
         let name = expr_path_label(callee)?;
         match name.as_str() {
             "panic" | "fail" | "bail" => {
                 for arg in args {
-                    self.check_expr(arg);
+                    self.check_expr(arg.value());
                 }
                 Some(TypeKind::Never)
             }
@@ -593,14 +592,14 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_untyped_function_args(&mut self, name: &str, args: &[Expr]) {
+    fn check_untyped_function_args(&mut self, name: &str, args: &[CallArg]) {
         let checked_args = if name == "event.emit" {
             args.iter().skip(1).collect::<Vec<_>>()
         } else {
             args.iter().collect::<Vec<_>>()
         };
         for arg in checked_args {
-            self.check_expr(arg);
+            self.check_expr(arg.value());
         }
     }
 
@@ -608,7 +607,7 @@ impl TypeChecker<'_> {
         &mut self,
         name: &str,
         signature: &FunctionSignatureType,
-        args: &[Expr],
+        args: &[CallArg],
     ) {
         let fixed = signature
             .params
@@ -621,7 +620,7 @@ impl TypeChecker<'_> {
 
         for arg in args {
             match arg {
-                Expr::NamedArg {
+                CallArg::Named {
                     name: arg_name,
                     value,
                 } => {
@@ -634,10 +633,10 @@ impl TypeChecker<'_> {
                         &mut provided_fixed,
                     );
                 }
-                Expr::SpreadArg { value } => {
+                CallArg::Spread { value } => {
                     self.check_signature_spread_arg(name, value, rest, &fixed, &provided_fixed);
                 }
-                positional => {
+                CallArg::Positional(positional) => {
                     while positional_index < fixed.len() && provided_fixed[positional_index] {
                         positional_index += 1;
                     }
@@ -761,16 +760,20 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_assert_like_args(&mut self, args: &[Expr], name: &str) {
+    fn check_assert_like_args(&mut self, args: &[CallArg], name: &str) {
         if let Some(condition) = args.first() {
-            self.expect_expr_type(condition, &TypeKind::Bool, &format!("{name} condition"));
+            self.expect_expr_type(
+                condition.value(),
+                &TypeKind::Bool,
+                &format!("{name} condition"),
+            );
         } else {
             self.errors.push(TypeCheckError::new(format!(
                 "{name} requires a condition argument"
             )));
         }
         for arg in args.iter().skip(1) {
-            self.check_expr(arg);
+            self.check_expr(arg.value());
         }
     }
 
@@ -802,7 +805,7 @@ impl TypeChecker<'_> {
         &mut self,
         receiver: &Expr,
         method: &str,
-        args: &[Expr],
+        args: &[CallArg],
     ) -> Option<TypeKind> {
         let method_name = method.split_once('<').map_or(method, |(name, _)| name);
         if let Expr::Path(receiver_path) = receiver {
@@ -826,14 +829,14 @@ impl TypeChecker<'_> {
         let receiver_type = self.check_expr(receiver);
         if is_drop_name(method_name) {
             for arg in args {
-                self.check_expr(arg);
+                self.check_expr(arg.value());
             }
             return Some(TypeKind::Unit);
         }
         receiver_type.and_then(|receiver_type| {
             if matches!(method_name, "context" | "with_context") {
                 for arg in args {
-                    self.check_expr(arg);
+                    self.check_expr(arg.value());
                 }
                 return match receiver_type {
                     TypeKind::Need { .. } => Some(receiver_type),
@@ -857,7 +860,7 @@ impl TypeChecker<'_> {
                 )
             {
                 for arg in args {
-                    self.check_expr(arg);
+                    self.check_expr(arg.value());
                 }
                 return Some(TypeKind::CharacterPatch(EntityKind::Character));
             }
@@ -870,12 +873,12 @@ impl TypeChecker<'_> {
                 )
             {
                 for arg in args {
-                    self.check_expr(arg);
+                    self.check_expr(arg.value());
                 }
                 return Some(TypeKind::SpeakerPreset(EntityKind::Character));
             }
             for arg in args {
-                self.check_expr(arg);
+                self.check_expr(arg.value());
             }
             self.env
                 .method_type(&receiver_type, method_name)
@@ -919,12 +922,12 @@ impl TypeChecker<'_> {
         })
     }
 
-    fn check_virtual_path_call(&mut self, callee: &str, args: &[Expr]) {
+    fn check_virtual_path_call(&mut self, callee: &str, args: &[CallArg]) {
         if !callee.starts_with("fs.") {
             return;
         }
         for arg in args {
-            if let Expr::Literal(arcweft_lang_syntax::expr::Literal::String(path)) = arg
+            if let Expr::Literal(arcweft_lang_syntax::expr::Literal::String(path)) = arg.value()
                 && looks_like_os_absolute_path(path)
             {
                 self.errors.push(TypeCheckError::new(format!(
@@ -1353,8 +1356,6 @@ fn expr_kind_name(expr: &Expr) -> &'static str {
         Expr::BracketSeq(_) => "bracket_seq",
         Expr::ArrayRepeat { .. } => "array_repeat",
         Expr::Call { .. } => "call",
-        Expr::NamedArg { .. } => "named_arg",
-        Expr::SpreadArg { .. } => "spread_arg",
         Expr::MethodCall { .. } => "method_call",
         Expr::Field { .. } => "field",
         Expr::DialogueCall { .. } => "dialogue_call",

@@ -2,7 +2,7 @@ use crate::ast::{
     common::TextRange,
     dialogue::{DialogueTag, DialogueToken, LineMark},
 };
-use crate::expr::{Expr, Literal, parse_expr};
+use crate::expr::{CallArg, Expr, Literal, parse_expr};
 
 /// Parsed dialogue-text tokens plus recoverable text-mode diagnostics.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -522,8 +522,8 @@ fn function_ruby_token(expr: &Expr) -> Option<DialogueToken> {
         return None;
     }
     let [
-        Expr::Literal(Literal::String(base)),
-        Expr::Literal(Literal::String(ruby)),
+        CallArg::Positional(Expr::Literal(Literal::String(base))),
+        CallArg::Positional(Expr::Literal(Literal::String(ruby))),
     ] = args.as_slice()
     else {
         return None;

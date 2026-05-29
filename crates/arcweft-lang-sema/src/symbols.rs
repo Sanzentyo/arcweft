@@ -763,10 +763,9 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
             }
             collect_expr(callee, uses);
             for arg in args {
-                collect_expr(arg, uses);
+                collect_expr(arg.value(), uses);
             }
         }
-        Expr::NamedArg { value, .. } | Expr::SpreadArg { value } => collect_expr(value, uses),
         Expr::MethodCall {
             receiver,
             method,
@@ -775,7 +774,7 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
             uses.push(SymbolUse::new(SymbolUseKind::Method, method.clone()));
             collect_expr(receiver, uses);
             for arg in args {
-                collect_expr(arg, uses);
+                collect_expr(arg.value(), uses);
             }
         }
         Expr::Field { target, .. } => collect_expr(target, uses),

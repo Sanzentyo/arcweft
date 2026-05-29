@@ -13,7 +13,7 @@ use arcweft_lang_syntax::{
         flow::{FlowItem, Stmt},
         items::{Item, RawSyntaxFamily},
     },
-    expr::{BinaryOp, Expr, UnaryOp, parse_expr},
+    expr::{BinaryOp, CallArg, Expr, UnaryOp, parse_expr},
     types::{TypeRef, parse_type_ref},
 };
 
@@ -90,9 +90,9 @@ fn speaker_preset_call_arguments_are_typed_expressions() {
     };
     assert!(matches!(callee.as_ref(), Expr::Path(path) if path == "alice"));
     assert_eq!(args.len(), 3);
-    assert!(args.iter().all(|arg| matches!(arg, Expr::NamedArg { .. })));
+    assert!(args.iter().all(|arg| matches!(arg, CallArg::Named { .. })));
     assert!(
-        matches!(&args[0], Expr::NamedArg { value, .. } if matches!(value.as_ref(), Expr::Path(path) if path == ".smile"))
+        matches!(&args[0], CallArg::Named { value, .. } if matches!(value.as_ref(), Expr::Path(path) if path == ".smile"))
     );
 }
 
@@ -107,7 +107,7 @@ fn call_arguments_keep_positional_spread_nodes() {
     assert_eq!(args.len(), 2);
     assert!(matches!(
         &args[1],
-        Expr::SpreadArg { value } if matches!(value.as_ref(), Expr::Path(path) if path == "fields")
+        CallArg::Spread { value } if matches!(value.as_ref(), Expr::Path(path) if path == "fields")
     ));
 }
 

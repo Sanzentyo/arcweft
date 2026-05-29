@@ -270,7 +270,7 @@ fn wait_mark_name(expr: &Expr) -> Option<String> {
     if !matches!(callee.as_ref(), Expr::Path(path) if path == "mark") || args.len() != 1 {
         return None;
     }
-    match &args[0] {
+    match args[0].value() {
         Expr::Path(path) => Some(path.clone()),
         Expr::EntityRef(entity) => Some(entity.body().to_owned()),
         _ => None,

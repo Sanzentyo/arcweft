@@ -81,7 +81,9 @@ fn expr_contains_unchecked_promotion(expr: &Expr) -> bool {
         Expr::Call { callee, args } => {
             matches!(callee.as_ref(), Expr::Path(path) if path == "promote_unchecked")
                 || expr_contains_unchecked_promotion(callee)
-                || args.iter().any(expr_contains_unchecked_promotion)
+                || args
+                    .iter()
+                    .any(|arg| expr_contains_unchecked_promotion(arg.value()))
         }
         Expr::MethodCall {
             receiver,
@@ -90,7 +92,9 @@ fn expr_contains_unchecked_promotion(expr: &Expr) -> bool {
         } => {
             method == "promote_unchecked"
                 || expr_contains_unchecked_promotion(receiver)
-                || args.iter().any(expr_contains_unchecked_promotion)
+                || args
+                    .iter()
+                    .any(|arg| expr_contains_unchecked_promotion(arg.value()))
         }
         Expr::Tuple(items) | Expr::BracketSeq(items) => {
             items.iter().any(expr_contains_unchecked_promotion)
@@ -98,9 +102,7 @@ fn expr_contains_unchecked_promotion(expr: &Expr) -> bool {
         Expr::ArrayRepeat { value, len } => {
             expr_contains_unchecked_promotion(value) || expr_contains_unchecked_promotion(len)
         }
-        Expr::NamedArg { value, .. }
-        | Expr::SpreadArg { value }
-        | Expr::Field { target: value, .. }
+        Expr::Field { target: value, .. }
         | Expr::Try { expr: value }
         | Expr::Await { expr: value, .. }
         | Expr::Unary { expr: value, .. }
@@ -360,7 +362,7 @@ fn collect_expr_drop_keys(expr: &Expr, keys: &mut HashSet<LifetimeKey>) {
         }
         Expr::Call { callee, args } if matches!(callee.as_ref(), Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional" | "on_drop")) => {
             for arg in args {
-                if let Expr::LifetimePath { key, .. } = arg {
+                if let Expr::LifetimePath { key, .. } = arg.value() {
                     keys.insert(key.clone());
                 }
             }
@@ -374,13 +376,13 @@ fn collect_expr_drop_keys(expr: &Expr, keys: &mut HashSet<LifetimeKey>) {
                 keys.insert(key.clone());
             }
             for arg in args {
-                collect_expr_drop_keys(arg, keys);
+                collect_expr_drop_keys(arg.value(), keys);
             }
         }
         Expr::Call { callee, args } => {
             collect_expr_drop_keys(callee, keys);
             for arg in args {
-                collect_expr_drop_keys(arg, keys);
+                collect_expr_drop_keys(arg.value(), keys);
             }
         }
         Expr::Tuple(items) | Expr::BracketSeq(items) => {
@@ -388,15 +390,14 @@ fn collect_expr_drop_keys(expr: &Expr, keys: &mut HashSet<LifetimeKey>) {
                 collect_expr_drop_keys(item, keys);
             }
         }
-        Expr::NamedArg { value, .. }
-        | Expr::Field { target: value, .. }
+        Expr::Field { target: value, .. }
         | Expr::Try { expr: value }
         | Expr::Await { expr: value, .. }
         | Expr::Unary { expr: value, .. } => collect_expr_drop_keys(value, keys),
         Expr::MethodCall { receiver, args, .. } => {
             collect_expr_drop_keys(receiver, keys);
             for arg in args {
-                collect_expr_drop_keys(arg, keys);
+                collect_expr_drop_keys(arg.value(), keys);
             }
         }
         Expr::Binary { lhs, rhs, .. }
@@ -448,7 +449,12 @@ fn collect_stmt_write_accesses(stmt: &Stmt, accesses: &mut BTreeSet<ResourceAcce
 fn collect_expr_write_accesses(expr: &Expr, accesses: &mut BTreeSet<ResourceAccess>) {
     accesses.extend(resource_accesses_from_expr(expr));
     match expr {
-        Expr::Call { args, .. } | Expr::Tuple(args) | Expr::BracketSeq(args) => {
+        Expr::Call { args, .. } => {
+            for arg in args {
+                collect_expr_write_accesses(arg.value(), accesses);
+            }
+        }
+        Expr::Tuple(args) | Expr::BracketSeq(args) => {
             for arg in args {
                 collect_expr_write_accesses(arg, accesses);
             }
@@ -457,15 +463,14 @@ fn collect_expr_write_accesses(expr: &Expr, accesses: &mut BTreeSet<ResourceAcce
             collect_expr_write_accesses(value, accesses);
             collect_expr_write_accesses(len, accesses);
         }
-        Expr::NamedArg { value, .. }
-        | Expr::Field { target: value, .. }
+        Expr::Field { target: value, .. }
         | Expr::Try { expr: value }
         | Expr::Await { expr: value, .. }
         | Expr::Unary { expr: value, .. } => collect_expr_write_accesses(value, accesses),
         Expr::MethodCall { receiver, args, .. } => {
             collect_expr_write_accesses(receiver, accesses);
             for arg in args {
-                collect_expr_write_accesses(arg, accesses);
+                collect_expr_write_accesses(arg.value(), accesses);
             }
         }
         Expr::Binary { lhs, rhs, .. }

@@ -24,7 +24,7 @@ use arcweft_lang_sema::check::{TypeCheckReport, analyze_types, validate_typechec
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
 use arcweft_lang_syntax::{
-    expr::{Expr, Literal, parse_expr},
+    expr::{CallArg, Expr, Literal, parse_expr},
     lint::lint_id_policy,
     parser::parse_source,
 };
@@ -1736,7 +1736,7 @@ fn parse_start_flow_call(text: &str) -> Option<String> {
     let [flow] = args.as_slice() else {
         return None;
     };
-    entity_ref_label(flow)
+    entity_ref_label(flow.value())
 }
 
 fn parse_expect_signal_call(text: &str) -> Option<(String, String)> {
@@ -1748,8 +1748,8 @@ fn parse_expect_signal_call(text: &str) -> Option<(String, String)> {
         return None;
     };
     Some((
-        expectation_value_label(target)?,
-        expectation_value_label(expected)?,
+        expectation_value_label(target.value())?,
+        expectation_value_label(expected.value())?,
     ))
 }
 
@@ -1766,14 +1766,14 @@ fn parse_expect_log_call(text: &str) -> Option<(String, String)> {
     let [level, contains] = args.as_slice() else {
         return None;
     };
-    let level = match level {
+    let level = match level.value() {
         Expr::Path(path) => path.trim_start_matches('.').to_owned(),
         Expr::Field { target, field } if matches!(target.as_ref(), Expr::Path(path) if path == "log") => {
             field.clone()
         }
         _ => return None,
     };
-    let Expr::NamedArg { name, value } = contains else {
+    let CallArg::Named { name, value } = contains else {
         return None;
     };
     if name != "contains" {
@@ -1782,7 +1782,7 @@ fn parse_expect_log_call(text: &str) -> Option<(String, String)> {
     Some((level, string_literal_value(value)?))
 }
 
-fn parse_expect_method_call(text: &str) -> Option<(String, Vec<Expr>)> {
+fn parse_expect_method_call(text: &str) -> Option<(String, Vec<CallArg>)> {
     let Expr::MethodCall {
         receiver,
         method,
@@ -2128,7 +2128,7 @@ fn bench_pure_helper_name(section: &BenchSection) -> Option<String> {
     let [helper] = args.as_slice() else {
         return None;
     };
-    match helper {
+    match helper.value() {
         Expr::Path(name) => Some(name.clone()),
         _ => None,
     }

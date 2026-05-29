@@ -1,6 +1,6 @@
 use crate::diagnostics::TypeCheckError;
 use crate::types::{EntityKind, TypeKind};
-use arcweft_lang_syntax::expr::Expr;
+use arcweft_lang_syntax::expr::{CallArg, Expr};
 
 use super::{TypeChecker, entity_kind};
 
@@ -8,7 +8,7 @@ impl TypeChecker<'_> {
     pub(super) fn check_presentation_call(
         &mut self,
         name: &str,
-        args: &[Expr],
+        args: &[CallArg],
     ) -> Option<TypeKind> {
         match name {
             "bg" => {
@@ -56,14 +56,17 @@ impl TypeChecker<'_> {
 
     fn check_positional_entity_arg(
         &mut self,
-        args: &[Expr],
+        args: &[CallArg],
         index: usize,
         expected: &EntityKind,
         context: &str,
     ) {
         let Some(arg) = args
             .iter()
-            .filter(|arg| !matches!(arg, Expr::NamedArg { .. }))
+            .filter_map(|arg| match arg {
+                CallArg::Positional(value) => Some(value),
+                CallArg::Named { .. } | CallArg::Spread { .. } => None,
+            })
             .nth(index)
         else {
             self.errors.push(TypeCheckError::new(format!(
@@ -91,9 +94,9 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_presentation_named_args(&mut self, args: &[Expr], slot_family: &str) {
+    fn check_presentation_named_args(&mut self, args: &[CallArg], slot_family: &str) {
         for arg in args {
-            let Expr::NamedArg { name, value } = arg else {
+            let CallArg::Named { name, value } = arg else {
                 continue;
             };
             match name.as_str() {

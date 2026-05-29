@@ -17,7 +17,7 @@ use arcweft_lang_hir::syntax::{
         ids::{EntityRefSyntax, IdRef},
         line_plan::{LinePlan, LinePlanItem, TriggerPattern},
     },
-    expr::{Expr, LifetimeKey, LifetimeScopeKind},
+    expr::{CallArg, Expr, LifetimeKey, LifetimeScopeKind},
 };
 use arcweft_lang_sema::{
     env::TypeCheckEnv,
@@ -936,7 +936,6 @@ impl ObligationCollector {
             Expr::Call { callee, args } => {
                 self.collect_call(callee, args);
             }
-            Expr::NamedArg { value, .. } | Expr::SpreadArg { value } => self.collect_expr(value),
             Expr::MethodCall {
                 receiver,
                 method,
@@ -1044,7 +1043,7 @@ impl ObligationCollector {
         }
     }
 
-    fn collect_call(&mut self, callee: &Expr, args: &[Expr]) {
+    fn collect_call(&mut self, callee: &Expr, args: &[CallArg]) {
         if let Expr::Path(name) = callee {
             match name.as_str() {
                 "promote" => self.add_promote_obligation(args, false),
@@ -1056,11 +1055,11 @@ impl ObligationCollector {
         }
         self.collect_expr(callee);
         for arg in args {
-            self.collect_expr(arg);
+            self.collect_expr(arg.value());
         }
     }
 
-    fn collect_method_call(&mut self, receiver: &Expr, method: &str, args: &[Expr]) {
+    fn collect_method_call(&mut self, receiver: &Expr, method: &str, args: &[CallArg]) {
         match method {
             "promote" => self.add_promote_obligation(args, false),
             "promote_unchecked" => self.add_promote_obligation(args, true),
@@ -1073,13 +1072,13 @@ impl ObligationCollector {
         }
         self.collect_expr(receiver);
         for arg in args {
-            self.collect_expr(arg);
+            self.collect_expr(arg.value());
         }
     }
 
-    fn add_promote_obligation(&mut self, args: &[Expr], unchecked: bool) {
+    fn add_promote_obligation(&mut self, args: &[CallArg], unchecked: bool) {
         let proof = proof_arg(args);
-        let target = args.first().and_then(lifetime_label_arg);
+        let target = args.first().and_then(|arg| lifetime_label_arg(arg.value()));
         let discharge = if unchecked {
             self.unsafe_stack
                 .last()
@@ -1104,7 +1103,7 @@ impl ObligationCollector {
         );
     }
 
-    fn add_assume_obligation(&mut self, args: &[Expr]) {
+    fn add_assume_obligation(&mut self, args: &[CallArg]) {
         let discharge = axiom_arg(args)
             .filter(|id| self.known_axioms.contains(id))
             .map_or(ProofDischarge::Missing, |id| ProofDischarge::TrustedAxiom {
@@ -1192,9 +1191,9 @@ impl ObligationCollector {
         }
     }
 
-    fn collect_drop_args(&mut self, args: &[Expr]) {
+    fn collect_drop_args(&mut self, args: &[CallArg]) {
         for arg in args {
-            if let Expr::LifetimePath { key, .. } = arg {
+            if let Expr::LifetimePath { key, .. } = arg.value() {
                 self.lifetime_drops.insert(key.clone());
             }
         }
@@ -1459,17 +1458,17 @@ fn id_ref_label(id: &IdRef, default_family: &str) -> String {
     }
 }
 
-fn proof_arg(args: &[Expr]) -> Option<String> {
+fn proof_arg(args: &[CallArg]) -> Option<String> {
     named_entity_arg(args, "proof")
 }
 
-fn axiom_arg(args: &[Expr]) -> Option<String> {
+fn axiom_arg(args: &[CallArg]) -> Option<String> {
     named_entity_arg(args, "axiom").or_else(|| named_entity_arg(args, "trusted_axiom"))
 }
 
-fn named_entity_arg(args: &[Expr], name: &str) -> Option<String> {
+fn named_entity_arg(args: &[CallArg], name: &str) -> Option<String> {
     args.iter().find_map(|arg| match arg {
-        Expr::NamedArg {
+        CallArg::Named {
             name: arg_name,
             value,
         } if arg_name == name => match value.as_ref() {

@@ -137,14 +137,14 @@ flow @flow.opening opening {
         panic!("expected call statement");
     };
     assert!(matches!(callee.as_ref(), Expr::Path(path) if path == "show"));
-    assert!(matches!(&args[0], Expr::EntityRef(_)));
+    assert!(matches!(&args[0], CallArg::Positional(Expr::EntityRef(_))));
     assert!(matches!(
         &args[2],
-        Expr::NamedArg { name, value } if name == "at" && matches!(value.as_ref(), Expr::Path(path) if path == ".right")
+        CallArg::Named { name, value } if name == "at" && matches!(value.as_ref(), Expr::Path(path) if path == ".right")
     ));
     assert!(matches!(
         &args[3],
-        Expr::NamedArg { name, value } if name == "fade" && matches!(value.as_ref(), Expr::Literal(_))
+        CallArg::Named { name, value } if name == "fade" && matches!(value.as_ref(), Expr::Literal(_))
     ));
 }
 

@@ -1,6 +1,8 @@
 //! Runtime expression and effect-call lowering.
 
-use crate::labels::{duration_expr, expr_label, literal_label, named_arg_label, named_arg_value};
+use crate::labels::{
+    call_arg_label, duration_expr, expr_label, literal_label, named_arg_label, named_arg_value,
+};
 use crate::pattern::lower_runtime_pattern;
 use arcweft_core::effect::{
     LineEffectRequest, RuntimeAssertion, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall,
@@ -13,7 +15,7 @@ use arcweft_core::value::{
 use arcweft_lang_hir::syntax::{
     ast::line_plan::LinePlanItem,
     ast::pattern::Pattern,
-    expr::{BinaryOp, Expr, Literal, MatchExprArm, UnaryOp},
+    expr::{BinaryOp, CallArg, Expr, Literal, MatchExprArm, UnaryOp},
 };
 
 /// Lowers an expression into a runtime value expression, preserving a lossy
@@ -93,8 +95,6 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
             method: runtime_method_name(method).to_owned(),
             args: args.iter().map(lower_runtime_call_arg).collect(),
         },
-        Expr::NamedArg { value, .. } => lower_runtime_expr(value),
-        Expr::SpreadArg { value } => RuntimeExpr::SpreadArg(Box::new(lower_runtime_expr(value))),
         Expr::Try { expr }
         | Expr::Await { expr, .. }
         | Expr::Index { target: expr, .. }
@@ -177,9 +177,6 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
             else_branch.as_deref(),
         ),
         Expr::Match { scrutinee, arms } => lower_strict_match_expr(scrutinee, arms),
-        Expr::NamedArg { value, .. } | Expr::SpreadArg { value } => {
-            lower_runtime_expr_strict(value)
-        }
         Expr::Block { value, .. }
         | Expr::ComputationBlock { value, .. }
         | Expr::MemoBlock { value, .. }
@@ -208,7 +205,7 @@ fn runtime_method_name(method: &str) -> &str {
     method.split_once('<').map_or(method, |(name, _)| name)
 }
 
-fn lower_strict_call_expr(callee: &Expr, args: &[Expr]) -> Result<RuntimeExpr, String> {
+fn lower_strict_call_expr(callee: &Expr, args: &[CallArg]) -> Result<RuntimeExpr, String> {
     lower_constructor_call(callee, args).map_or_else(
         || {
             Ok(RuntimeExpr::Call {
@@ -226,7 +223,7 @@ fn lower_strict_call_expr(callee: &Expr, args: &[Expr]) -> Result<RuntimeExpr, S
 fn lower_strict_method_call_expr(
     receiver: &Expr,
     method: &str,
-    args: &[Expr],
+    args: &[CallArg],
 ) -> Result<RuntimeExpr, String> {
     Ok(RuntimeExpr::MethodCall {
         receiver: Box::new(lower_runtime_expr_strict(receiver)?),
@@ -238,19 +235,19 @@ fn lower_strict_method_call_expr(
     })
 }
 
-fn lower_runtime_call_arg(arg: &Expr) -> RuntimeExpr {
+fn lower_runtime_call_arg(arg: &CallArg) -> RuntimeExpr {
     match arg {
-        Expr::SpreadArg { value } => RuntimeExpr::SpreadArg(Box::new(lower_runtime_expr(value))),
-        value => lower_runtime_expr(value),
+        CallArg::Spread { value } => RuntimeExpr::SpreadArg(Box::new(lower_runtime_expr(value))),
+        value => lower_runtime_expr(value.value()),
     }
 }
 
-fn lower_strict_call_arg(arg: &Expr) -> Result<RuntimeExpr, String> {
+fn lower_strict_call_arg(arg: &CallArg) -> Result<RuntimeExpr, String> {
     match arg {
-        Expr::SpreadArg { value } => Ok(RuntimeExpr::SpreadArg(Box::new(
+        CallArg::Spread { value } => Ok(RuntimeExpr::SpreadArg(Box::new(
             lower_runtime_expr_strict(value)?,
         ))),
-        value => lower_runtime_expr_strict(value),
+        value => lower_runtime_expr_strict(value.value()),
     }
 }
 
@@ -344,7 +341,7 @@ fn lower_strict_match_expr(scrutinee: &Expr, arms: &[MatchExprArm]) -> Result<Ru
     })
 }
 
-fn lower_constructor_call(callee: &Expr, args: &[Expr]) -> Option<RuntimeExpr> {
+fn lower_constructor_call(callee: &Expr, args: &[CallArg]) -> Option<RuntimeExpr> {
     let Expr::Path(callee) = callee else {
         return None;
     };
@@ -354,6 +351,10 @@ fn lower_constructor_call(callee: &Expr, args: &[Expr]) -> Option<RuntimeExpr> {
     }
     let payload = args
         .first()
+        .and_then(|arg| match arg {
+            CallArg::Positional(value) => Some(value),
+            CallArg::Named { .. } | CallArg::Spread { .. } => None,
+        })
         .map(lower_runtime_expr_strict)
         .transpose()
         .ok()?
@@ -422,7 +423,7 @@ fn runtime_call(expr: &Expr) -> RuntimeCall {
     match expr {
         Expr::Call { callee, args } => RuntimeCall {
             callee: expr_label(callee),
-            args: args.iter().map(expr_label).collect(),
+            args: args.iter().map(call_arg_label).collect(),
         },
         Expr::MethodCall {
             receiver,
@@ -430,7 +431,7 @@ fn runtime_call(expr: &Expr) -> RuntimeCall {
             args,
         } => RuntimeCall {
             callee: format!("{}.{}", expr_label(receiver), method),
-            args: args.iter().map(expr_label).collect(),
+            args: args.iter().map(call_arg_label).collect(),
         },
         Expr::Path(path) => RuntimeCall {
             callee: path.clone(),

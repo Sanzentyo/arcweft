@@ -22,7 +22,7 @@ use arcweft_lang_syntax::{
             SourceReplayPolicy,
         },
     },
-    expr::{Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind, Literal},
+    expr::{CallArg, Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind, Literal},
     types::{FnParam, FnParamKind, FnSignature, TypeRef},
 };
 use std::collections::{HashMap, HashSet};

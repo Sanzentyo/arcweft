@@ -7,7 +7,7 @@ use crate::ast::line_plan::LinePlan;
 use crate::ast::pattern::Pattern;
 use crate::cst::{
     find_last_top_level_punctuation, find_top_level_punctuation, split_leading_entity_ref_parts,
-    split_leading_relative_entity_ref, split_top_level_punctuation_once,
+    split_leading_relative_entity_ref,
 };
 use arcweft_source::{SourceAnchor, SourceName};
 use thiserror::Error;
@@ -36,19 +36,12 @@ pub enum Expr {
     },
     Call {
         callee: Box<Expr>,
-        args: Vec<Expr>,
-    },
-    NamedArg {
-        name: String,
-        value: Box<Expr>,
-    },
-    SpreadArg {
-        value: Box<Expr>,
+        args: Vec<CallArg>,
     },
     MethodCall {
         receiver: Box<Expr>,
         method: String,
-        args: Vec<Expr>,
+        args: Vec<CallArg>,
     },
     Field {
         target: Box<Expr>,
@@ -136,6 +129,14 @@ pub enum Expr {
         arms: Vec<MatchExprArm>,
     },
     Raw(String),
+}
+
+/// One argument in a call or method-call argument list.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CallArg {
+    Positional(Expr),
+    Named { name: String, value: Box<Expr> },
+    Spread { value: Box<Expr> },
 }
 
 /// One value-producing `match` arm.
@@ -327,12 +328,6 @@ pub fn parse_expr(source: &str) -> Result<Expr, ExprParseError> {
         return Ok(Expr::Closure {
             params,
             body: Box::new(parse_expr(body)?),
-        });
-    }
-    if let Some((name, value)) = split_named_arg(trimmed) {
-        return Ok(Expr::NamedArg {
-            name: name.to_owned(),
-            value: Box::new(parse_expr(value)?),
         });
     }
     if let Some((target, index)) = split_bracket_postfix(trimmed) {
@@ -968,7 +963,7 @@ impl ExprParser {
         }
     }
 
-    fn parse_call_args(&mut self) -> Result<Vec<Expr>, ExprParseError> {
+    fn parse_call_args(&mut self) -> Result<Vec<CallArg>, ExprParseError> {
         self.expect(&Token::LParen)?;
         let mut args = Vec::new();
         if self.peek() == &Token::RParen {
@@ -1045,36 +1040,36 @@ impl ExprParser {
         })
     }
 
-    fn parse_arg_expr(&mut self) -> Result<Expr, ExprParseError> {
+    fn parse_arg_expr(&mut self) -> Result<CallArg, ExprParseError> {
         if let (Token::Ident(name), Some(Token::Op("="))) =
             (self.peek(), self.tokens.get(self.cursor + 1))
         {
             let name = name.clone();
             self.bump();
             self.bump();
-            return Ok(Expr::NamedArg {
+            return Ok(CallArg::Named {
                 name,
                 value: Box::new(self.parse_expr_bp(0)?),
             });
         }
         if self.peek() == &Token::Op("||") {
             self.bump();
-            return Ok(Expr::Closure {
+            return Ok(CallArg::Positional(Expr::Closure {
                 params: Vec::new(),
                 body: Box::new(self.parse_expr_bp(0)?),
-            });
+            }));
         }
         if self.peek() == &Token::Op("|") {
-            return self.parse_closure_arg();
+            return self.parse_closure_arg().map(CallArg::Positional);
         }
         let expr = self.parse_expr_bp(0)?;
         if self.peek() == &Token::Op("...") {
             self.bump();
-            return Ok(Expr::SpreadArg {
+            return Ok(CallArg::Spread {
                 value: Box::new(expr),
             });
         }
-        Ok(expr)
+        Ok(CallArg::Positional(expr))
     }
 
     fn parse_closure_arg(&mut self) -> Result<Expr, ExprParseError> {
@@ -1356,31 +1351,8 @@ fn split_closure(source: &str) -> Option<(Vec<String>, &str)> {
     (!body.is_empty()).then_some((params, body))
 }
 
-fn split_named_arg(source: &str) -> Option<(&str, &str)> {
-    let (name, value) = split_top_level_punctuation_once(source, '=')?;
-    if name.is_empty()
-        || value.is_empty()
-        || source.contains("==")
-        || source.contains("!=")
-        || source.contains(">=")
-        || source.contains("<=")
-        || !is_identifier(name)
-    {
-        return None;
-    }
-    Some((name, value))
-}
-
 fn find_last_top_level_open_bracket(source: &str) -> Option<usize> {
     find_last_top_level_punctuation(source, '[')
-}
-
-fn is_identifier(source: &str) -> bool {
-    source
-        .chars()
-        .next()
-        .is_some_and(|ch| ch.is_alphabetic() || ch == '_')
-        && source.chars().all(|ch| ch.is_alphanumeric() || ch == '_')
 }
 
 fn is_numeric_duration(source: &str) -> bool {
@@ -1477,5 +1449,28 @@ impl MatchExprArm {
     /// Value produced by the arm.
     pub fn value(&self) -> &Expr {
         &self.value
+    }
+}
+
+impl CallArg {
+    /// Expression carried by this argument.
+    pub fn value(&self) -> &Expr {
+        match self {
+            Self::Positional(value) => value,
+            Self::Named { value, .. } | Self::Spread { value } => value.as_ref(),
+        }
+    }
+
+    /// Name for a named argument.
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            Self::Named { name, .. } => Some(name),
+            Self::Positional(_) | Self::Spread { .. } => None,
+        }
+    }
+
+    /// Whether this is a positional spread argument.
+    pub const fn is_spread(&self) -> bool {
+        matches!(self, Self::Spread { .. })
     }
 }

@@ -486,6 +486,7 @@ fn parse_static_generic_call(source: &str) -> Option<crate::expr::Expr> {
         args: split_comma_args(&source[open + '('.len_utf8()..close])
             .into_iter()
             .map(parse_expr_lossy)
+            .map(crate::expr::CallArg::Positional)
             .collect(),
     })
 }

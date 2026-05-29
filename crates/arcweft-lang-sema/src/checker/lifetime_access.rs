@@ -67,7 +67,7 @@ impl TypeChecker<'_> {
         match expr {
             Expr::Call { callee, args } if is_drop_callee(callee) => {
                 for arg in args {
-                    if let Expr::Path(name) = arg {
+                    if let Expr::Path(name) = arg.value() {
                         self.release_borrow_local(name);
                     }
                 }

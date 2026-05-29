@@ -21,7 +21,7 @@ use arcweft_lang_hir::syntax::{
         line_plan::{LinePlan, LinePlanItem, TriggerPattern},
         pattern::Pattern,
     },
-    expr::{Expr, LifetimeScopeKind, Literal},
+    expr::{CallArg, Expr, LifetimeScopeKind, Literal},
 };
 use facts::{BlockFlow, DeferredCleanup, ExitPath, ExitReason, FlowFacts, transfer_reason};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -933,9 +933,6 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.collect_expr(len, state);
             }
             Expr::Call { callee, args } => self.collect_call(callee, args, state),
-            Expr::NamedArg { value, .. } | Expr::SpreadArg { value } => {
-                self.collect_expr(value, state);
-            }
             Expr::MethodCall {
                 receiver,
                 method,
@@ -1060,7 +1057,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn collect_call(&mut self, callee: &Expr, args: &[Expr], state: &mut FlowState) {
+    fn collect_call(&mut self, callee: &Expr, args: &[CallArg], state: &mut FlowState) {
         if let Some(capability) = write_capability_for_call(callee) {
             self.add_effect_capability_obligation(&capability);
         }
@@ -1079,7 +1076,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
         self.collect_expr(callee, state);
         for arg in args {
-            self.collect_expr(arg, state);
+            self.collect_expr(arg.value(), state);
         }
     }
 
@@ -1087,7 +1084,7 @@ impl<'a> SemanticAnalyzer<'a> {
         &mut self,
         receiver: &Expr,
         method: &str,
-        args: &[Expr],
+        args: &[CallArg],
         state: &mut FlowState,
     ) {
         match method {
@@ -1102,7 +1099,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 if let Expr::LifetimePath { key, .. } = receiver {
                     state.remove_must_drop(key);
                     for arg in args {
-                        self.collect_expr(arg, state);
+                        self.collect_expr(arg.value(), state);
                     }
                     return;
                 }
@@ -1111,13 +1108,13 @@ impl<'a> SemanticAnalyzer<'a> {
         }
         self.collect_expr(receiver, state);
         for arg in args {
-            self.collect_expr(arg, state);
+            self.collect_expr(arg.value(), state);
         }
     }
 
-    fn add_promote_obligation(&mut self, args: &[Expr], unchecked: bool) {
+    fn add_promote_obligation(&mut self, args: &[CallArg], unchecked: bool) {
         let proof = proof_arg(args);
-        let target = args.first().and_then(lifetime_label_arg);
+        let target = args.first().and_then(|arg| lifetime_label_arg(arg.value()));
         let discharge = if unchecked {
             self.unsafe_stack
                 .last()
@@ -1176,7 +1173,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 .any(|scope| scope.contains(capability))
     }
 
-    fn add_assume_obligation(&mut self, args: &[Expr]) {
+    fn add_assume_obligation(&mut self, args: &[CallArg]) {
         let discharge = axiom_arg(args)
             .filter(|id| self.known_axioms.contains(id))
             .map_or(SemanticDischarge::Missing, |id| {
@@ -1362,9 +1359,9 @@ impl<'a> SemanticAnalyzer<'a> {
         false
     }
 
-    fn collect_drop_args(args: &[Expr], state: &mut FlowState) {
+    fn collect_drop_args(args: &[CallArg], state: &mut FlowState) {
         for arg in args {
-            if let Expr::LifetimePath { key, .. } = arg {
+            if let Expr::LifetimePath { key, .. } = arg.value() {
                 state.remove_must_drop(key);
             }
         }
@@ -1695,17 +1692,17 @@ fn id_ref_label(id: &IdRef, default_family: &str) -> String {
     }
 }
 
-fn proof_arg(args: &[Expr]) -> Option<String> {
+fn proof_arg(args: &[CallArg]) -> Option<String> {
     named_entity_arg(args, "proof")
 }
 
-fn axiom_arg(args: &[Expr]) -> Option<String> {
+fn axiom_arg(args: &[CallArg]) -> Option<String> {
     named_entity_arg(args, "axiom").or_else(|| named_entity_arg(args, "trusted_axiom"))
 }
 
-fn named_entity_arg(args: &[Expr], name: &str) -> Option<String> {
+fn named_entity_arg(args: &[CallArg], name: &str) -> Option<String> {
     args.iter().find_map(|arg| match arg {
-        Expr::NamedArg {
+        CallArg::Named {
             name: arg_name,
             value,
         } if arg_name == name => match value.as_ref() {

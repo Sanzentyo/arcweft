@@ -1110,16 +1110,13 @@ fn collect_speaker_presets_from_expr(
         Expr::Call { callee, args } => {
             collect_speaker_presets_from_expr(callee, character_aliases, presets);
             for arg in args {
-                collect_speaker_presets_from_expr(arg, character_aliases, presets);
+                collect_speaker_presets_from_expr(arg.value(), character_aliases, presets);
             }
-        }
-        Expr::NamedArg { value, .. } | Expr::SpreadArg { value } => {
-            collect_speaker_presets_from_expr(value, character_aliases, presets);
         }
         Expr::MethodCall { receiver, args, .. } => {
             collect_speaker_presets_from_expr(receiver, character_aliases, presets);
             for arg in args {
-                collect_speaker_presets_from_expr(arg, character_aliases, presets);
+                collect_speaker_presets_from_expr(arg.value(), character_aliases, presets);
             }
         }
         Expr::Field { target, .. } | Expr::Try { expr: target } => {

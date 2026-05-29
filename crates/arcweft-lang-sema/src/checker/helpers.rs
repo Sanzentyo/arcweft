@@ -1,6 +1,7 @@
 use super::{
-    AwaitBranchKind, ChoiceAction, EntityDeclKind, EntityKind, EntityRef, Expr, LifetimeScopeKind,
-    Literal, MapKind, Pattern, Stmt, TypeCheckError, TypeKind, TypeRef, VariantPatternPayload,
+    AwaitBranchKind, CallArg, ChoiceAction, EntityDeclKind, EntityKind, EntityRef, Expr,
+    LifetimeScopeKind, Literal, MapKind, Pattern, Stmt, TypeCheckError, TypeKind, TypeRef,
+    VariantPatternPayload,
 };
 
 pub(super) fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
@@ -686,7 +687,7 @@ pub(super) fn default_presentation_slot_family(expr: &Expr) -> Option<&'static s
     };
     if args
         .iter()
-        .any(|arg| matches!(arg, Expr::NamedArg { name, .. } if name == "slot"))
+        .any(|arg| matches!(arg, CallArg::Named { name, .. } if name == "slot"))
     {
         return None;
     }

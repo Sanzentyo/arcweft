@@ -910,12 +910,12 @@ flow @flow.opening opening {
     };
     assert!(matches!(callee.as_ref(), Expr::Path(path) if path == "memo"));
     assert_eq!(args.len(), 3);
-    assert!(matches!(&args[0], Expr::Path(path) if path == ".rich_text"));
+    assert!(matches!(&args[0], CallArg::Positional(Expr::Path(path)) if path == ".rich_text"));
     assert!(
-        matches!(&args[1], Expr::NamedArg { name, value } if name == "key" && matches!(value.as_ref(), Expr::Tuple(items) if items.len() == 3))
+        matches!(&args[1], CallArg::Named { name, value } if name == "key" && matches!(value.as_ref(), Expr::Tuple(items) if items.len() == 3))
     );
     assert!(
-        matches!(&args[2], Expr::NamedArg { name, value } if name == "cache" && matches!(value.as_ref(), Expr::Path(path) if path == ".flow"))
+        matches!(&args[2], CallArg::Named { name, value } if name == "cache" && matches!(value.as_ref(), Expr::Path(path) if path == ".flow"))
     );
 
     let hir = lower_to_hir(&tree).expect("line plan memo lowers");

@@ -9,7 +9,7 @@ use crate::cst::{
     find_matching_punctuation, find_top_level_punctuation,
     split_top_level_punctuation_sequence_once,
 };
-use crate::expr::Expr;
+use crate::expr::{CallArg, Expr};
 use crate::pattern::parse_pattern;
 use crate::types::parse_type_ref;
 
@@ -124,7 +124,7 @@ pub(super) fn parse_source_stmt_lines(body: &str) -> Vec<Stmt> {
         .into_iter()
         .map(|line| line.trim().to_owned())
         .filter(|line| !line.is_empty())
-        .map(|line| parse_source_stmt(&line))
+        .filter_map(|line| parse_source_stmt(&line))
         .collect()
 }
 
@@ -275,18 +275,21 @@ fn parse_source_event_pattern(source: &str) -> SourceEventPattern {
     }
 }
 
-fn parse_source_stmt(trimmed: &str) -> Stmt {
+fn parse_source_stmt(trimmed: &str) -> Option<Stmt> {
+    if parse_source_header(trimmed).is_some() {
+        return None;
+    }
     if let Some(rest) = trimmed.strip_prefix("from ") {
-        return Stmt::Expr(Expr::Call {
+        return Some(Stmt::Expr(Expr::Call {
             callee: Box::new(Expr::Path("from".to_owned())),
-            args: vec![parse_expr_lossy(rest.trim())],
-        });
+            args: vec![CallArg::Positional(parse_expr_lossy(rest.trim()))],
+        }));
     }
     if trimmed.starts_with("on ") {
         // Source handlers are preserved structurally on SourceItem::handlers.
         // Keep the body-statement view typecheck-ready without duplicating
         // handler effects into the ordinary statement stream.
-        return Stmt::Expr(Expr::Tuple(Vec::new()));
+        return Some(Stmt::Expr(Expr::Tuple(Vec::new())));
     }
-    parse_stmt(trimmed)
+    Some(parse_stmt(trimmed))
 }
