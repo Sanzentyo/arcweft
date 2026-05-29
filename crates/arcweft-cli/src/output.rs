@@ -326,6 +326,7 @@ fn wait_target_label(target: &arcweft_core::effect::RuntimeWaitTarget) -> String
 #[derive(serde::Serialize)]
 pub(crate) struct RuntimeRunReport {
     pub(crate) executor: RuntimeExecutorTier,
+    pub(crate) executor_stats: RuntimeExecutorStats,
     pub(crate) steps: Vec<RuntimeStepRunSummary>,
     pub(crate) final_status: String,
 }
@@ -335,6 +336,11 @@ pub(crate) struct RuntimeRunReport {
 pub(crate) enum RuntimeExecutorTier {
     BytecodeVm,
     Aot,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
+pub(crate) struct RuntimeExecutorStats {
+    pub(crate) aot_fast_path_ops: usize,
 }
 
 #[derive(serde::Serialize)]
@@ -373,6 +379,7 @@ pub(crate) struct ScriptBenchSectionRunSummary {
 #[derive(serde::Serialize)]
 pub(crate) struct ScriptBenchMeasurementSummary {
     pub(crate) executor: RuntimeExecutorTier,
+    pub(crate) executor_stats: RuntimeExecutorStats,
     pub(crate) warmup: usize,
     pub(crate) iterations: usize,
     pub(crate) steps: usize,

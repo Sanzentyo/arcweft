@@ -51,12 +51,12 @@ mod output;
 mod server_adapter;
 use native_task::NativeTaskBridge;
 use output::{
-    CheckReport, RuntimeExecutorTier, RuntimePlanReport, RuntimeRunReport, RuntimeStepRunSummary,
-    ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary,
-    ScriptBenchPureHelperDeterministicSummary, ScriptBenchPureHelperMeasurementSummary,
-    ScriptBenchPureHelperStatsSummary, ScriptBenchPureHelperTimingSamples,
-    ScriptBenchPureHelperTimingSummary, ScriptBenchRunSummary, ScriptBenchSectionRunSummary,
-    ScriptTestRunReport, ScriptTestRunSummary, flow_status_label,
+    CheckReport, RuntimeExecutorStats, RuntimeExecutorTier, RuntimePlanReport, RuntimeRunReport,
+    RuntimeStepRunSummary, ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary,
+    ScriptBenchMeasurementSummary, ScriptBenchPureHelperDeterministicSummary,
+    ScriptBenchPureHelperMeasurementSummary, ScriptBenchPureHelperStatsSummary,
+    ScriptBenchPureHelperTimingSamples, ScriptBenchPureHelperTimingSummary, ScriptBenchRunSummary,
+    ScriptBenchSectionRunSummary, ScriptTestRunReport, ScriptTestRunSummary, flow_status_label,
 };
 use server_adapter::{NativeHttpServerConfig, serve_native_http};
 use std::fs;
@@ -814,6 +814,7 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
     );
     let report = RuntimeRunReport {
         executor: RuntimeExecutorTier::from(options.executor),
+        executor_stats: trace.executor_stats,
         steps: trace.steps,
         final_status: flow_status_label(&trace.final_status),
     };
@@ -912,6 +913,7 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
         phases,
         runtime: RuntimeProfileRuntime {
             executor: RuntimeExecutorTier::from(options.executor),
+            executor_stats: trace.executor_stats,
             steps: trace.steps,
             final_status,
         },
@@ -1118,12 +1120,14 @@ fn run_runtime_steps(
     RuntimeRunTrace {
         steps: summaries,
         final_status: executor.fiber().status.clone(),
+        executor_stats: executor.executor_stats(),
     }
 }
 
 struct RuntimeRunTrace {
     steps: Vec<RuntimeStepRunSummary>,
     final_status: FlowFiberStatus,
+    executor_stats: RuntimeExecutorStats,
 }
 
 enum RuntimeExecutorInstance {
@@ -1152,6 +1156,15 @@ impl RuntimeExecutorInstance {
         match self {
             Self::BytecodeVm(executor) => executor.fiber(),
             Self::Aot(executor) => executor.fiber(),
+        }
+    }
+
+    fn executor_stats(&self) -> RuntimeExecutorStats {
+        match self {
+            Self::BytecodeVm(_) => RuntimeExecutorStats::default(),
+            Self::Aot(executor) => RuntimeExecutorStats {
+                aot_fast_path_ops: executor.fast_path_ops(),
+            },
         }
     }
 }
@@ -1222,6 +1235,7 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
     );
     let report = RuntimeRunReport {
         executor: RuntimeExecutorTier::from(options.executor),
+        executor_stats: trace.executor_stats,
         steps: trace.steps,
         final_status: flow_status_label(&trace.final_status),
     };
@@ -2145,6 +2159,7 @@ fn run_bench_section(
     let mut line_effects = Vec::new();
     let mut task_requests = Vec::new();
     let mut task_events_in = Vec::new();
+    let mut aot_fast_path_ops = Vec::new();
     let mut diagnostics = 0usize;
     for iteration in 0..options.warmup + options.iterations {
         let mut iteration_plan = plan.clone();
@@ -2180,6 +2195,7 @@ fn run_bench_section(
                 .map(|step| step.stats.task_events_in)
                 .sum(),
         );
+        aot_fast_path_ops.push(trace.executor_stats.aot_fast_path_ops);
         diagnostics += trace
             .steps
             .iter()
@@ -2191,6 +2207,9 @@ fn run_bench_section(
         validated.diagnostics,
         ScriptBenchMeasurementSummary {
             executor: RuntimeExecutorTier::from(options.executor),
+            executor_stats: RuntimeExecutorStats {
+                aot_fast_path_ops: median_usize(&mut aot_fast_path_ops),
+            },
             warmup: options.warmup,
             iterations: options.iterations,
             steps: options.steps,
@@ -3273,6 +3292,7 @@ struct RuntimeProfilePhase {
 #[derive(serde::Serialize)]
 struct RuntimeProfileRuntime {
     executor: RuntimeExecutorTier,
+    executor_stats: RuntimeExecutorStats,
     steps: Vec<RuntimeStepRunSummary>,
     final_status: String,
 }

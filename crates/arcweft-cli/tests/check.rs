@@ -671,9 +671,11 @@ flow @flow.run run {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("\"executor\": \"aot\"")
+            && stdout.contains("\"executor_stats\"")
+            && stdout.contains("\"aot_fast_path_ops\": 2")
             && stdout.contains("\"final_status\": \"done")
             && stdout.contains("return done"),
-        "run JSON should report AOT executor and preserve VM-equivalent semantics: {stdout}"
+        "run JSON should report AOT executor, fast-path ops, and preserve VM-equivalent semantics: {stdout}"
     );
 }
 
@@ -794,9 +796,10 @@ flow @flow.profile profile {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("\"executor\": \"aot\"")
+            && stdout.contains("\"aot_fast_path_ops\": 2")
             && stdout.contains("\"name\": \"run\"")
             && stdout.contains("\"source\": \"arcweft-cli-profile-aot-"),
-        "profile JSON should include AOT executor and relative source label: {stdout}"
+        "profile JSON should include AOT executor, fast-path stats, and relative source label: {stdout}"
     );
     assert!(
         !stdout.contains(&std::env::temp_dir().display().to_string()),
@@ -1489,8 +1492,9 @@ flow @flow.bench bench {
     assert!(
         stdout.contains("\"status\": \"measured\"")
             && stdout.contains("\"executor\": \"aot\"")
+            && stdout.contains("\"aot_fast_path_ops\": 2")
             && stdout.contains("\"executed_ops_median\": 2"),
-        "bench JSON should include AOT executor measurement: {stdout}"
+        "bench JSON should include AOT executor measurement and fast-path stats: {stdout}"
     );
 }
 
