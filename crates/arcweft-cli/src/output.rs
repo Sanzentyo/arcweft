@@ -783,6 +783,8 @@ pub(crate) struct ScriptBenchPureHelperMeasurementSummary {
     pub(crate) samples: usize,
     pub(crate) timings: ScriptBenchPureHelperTimingSummary,
     pub(crate) jit_batch: ScriptBenchPureHelperBatchSummary,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) runtime_batch: Option<ScriptBenchPureHelperRuntimeBatchSummary>,
     pub(crate) deterministic: ScriptBenchPureHelperDeterministicSummary,
     pub(crate) vm_stats: ScriptBenchPureHelperStatsSummary,
     pub(crate) aot_stats: ScriptBenchPureHelperStatsSummary,
@@ -814,6 +816,19 @@ pub(crate) struct ScriptBenchPureHelperBatchSummary {
     pub(crate) speedup_x: String,
     pub(crate) jit_call_speedup_x: String,
     pub(crate) samples: ScriptBenchPureHelperTimingSamples,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ScriptBenchPureHelperRuntimeBatchSummary {
+    pub(crate) matches_vm: bool,
+    pub(crate) accumulator: i64,
+    pub(crate) elapsed_ns: u128,
+    pub(crate) per_iteration_ns: u128,
+    pub(crate) speedup_x: String,
+    pub(crate) samples: ScriptBenchPureHelperTimingSamples,
+    pub(crate) config: RuntimeExecutorPureConfigSummary,
+    pub(crate) compile: RuntimeExecutorPureCompileStatsSummary,
+    pub(crate) stats: RuntimePureCallStatsSummary,
 }
 
 #[derive(Clone, Copy, serde::Serialize)]

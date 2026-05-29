@@ -119,6 +119,10 @@ batch threshold, helper acceleration summary, compile attempts, cache
 hits/misses, and compile elapsed time. These counters are meant to show whether
 natural flow code is staying on the zero-allocation scalar path or crossing into
 batch/thread-pool execution.
+`arcw bench --json` pure-helper sections also include a `runtime_batch` summary
+that exercises `RuntimePureAccelerator::call_i64_batch` under the selected
+worker and batch-threshold settings, so AOT/JIT helper timing can be compared
+with the runtime batch/thread-pool path in one path-free report.
 
 When a `.arcw` path is provided, `arcw jit check` runs the normal parse, HIR
 lowering, reference validation, typecheck-readiness, and typecheck path first.

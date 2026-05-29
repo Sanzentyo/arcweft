@@ -451,8 +451,12 @@ For `pure(name)` measurements, `arcw bench --json` runs the VM reference, the
 typed AOT plan, the native Cranelift JIT, and the JIT batch loop with
 deterministic generated integer inputs. The report includes conformance,
 per-backend timing samples, compile time, accumulators, and speedup ratios
-without recording the host source path. The manifest preserves the declaration
-ID, kind, source span, and call-based body rows so CLI, LSP, headless player
+without recording the host source path. It also includes a `runtime_batch`
+section driven by `--pure-backend`, `--pure-workers`, and
+`--pure-batch-min-len`; that section uses the normal runtime accelerator batch
+API and reports compile counters, resolved workers, thread-pool jobs, argument
+allocations, and timing samples. The manifest preserves the declaration ID,
+kind, source span, and call-based body rows so CLI, LSP, headless player
 adapters, and Agent tooling can share one planning schema without reparsing
 source text.
 

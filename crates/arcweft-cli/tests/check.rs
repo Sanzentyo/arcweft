@@ -2126,6 +2126,12 @@ bench @bench.pure_score {
         .arg("2")
         .arg("--input-seed")
         .arg("5")
+        .arg("--pure-backend")
+        .arg("aot")
+        .arg("--pure-workers")
+        .arg("2")
+        .arg("--pure-batch-min-len")
+        .arg("2")
         .arg("--json")
         .output()
         .expect("arcw bench runs pure helper measurement");
@@ -2145,6 +2151,7 @@ bench @bench.pure_score {
             && stdout.contains("\"vm_elapsed_ns\"")
             && stdout.contains("\"speedup_x\"")
             && stdout.contains("\"jit_batch\"")
+            && stdout.contains("\"runtime_batch\"")
             && stdout.contains("\"jit_accumulator\""),
         "bench JSON should include VM/AOT/JIT pure helper timing: {stdout}"
     );
@@ -2230,6 +2237,7 @@ fn assert_pure_helper_bench_json(stdout: &str) {
                 .is_some(),
         "pure helper bench should expose batch loop counters: {jit_batch}"
     );
+    assert_runtime_pure_batch_json(pure_helper);
     assert_eq!(
         pure_helper["vm_stats"]["evaluated_binary_ops"],
         pure_helper["aot_stats"]["evaluated_binary_ops"]
@@ -2248,6 +2256,31 @@ fn assert_pure_helper_bench_json(stdout: &str) {
         pure_helper["vm_stats"]["evaluated_exprs"]
             .as_u64()
             .is_some_and(|value| value > 0)
+    );
+}
+
+fn assert_runtime_pure_batch_json(pure_helper: &serde_json::Value) {
+    let runtime_batch = &pure_helper["runtime_batch"];
+    assert_eq!(runtime_batch["matches_vm"], true);
+    assert_eq!(
+        runtime_batch["accumulator"],
+        pure_helper["deterministic"]["vm_accumulator"]
+    );
+    assert_eq!(runtime_batch["config"]["backend"], "aot");
+    assert_eq!(runtime_batch["config"]["workers"]["fixed"], 2);
+    assert_eq!(runtime_batch["config"]["resolved_workers"], 2);
+    assert_eq!(runtime_batch["config"]["batch_min_len"], 2);
+    assert_eq!(runtime_batch["compile"]["aot_successes"], 1);
+    assert_eq!(runtime_batch["stats"]["batch_calls"], 2);
+    assert_eq!(runtime_batch["stats"]["batch_items"], 8);
+    assert_eq!(runtime_batch["stats"]["pure_calls"], 8);
+    assert_eq!(runtime_batch["stats"]["aot_calls"], 8);
+    assert_eq!(runtime_batch["stats"]["arg_vec_allocations"], 0);
+    assert!(
+        runtime_batch["stats"]["thread_pool_jobs"]
+            .as_u64()
+            .is_some_and(|jobs| jobs >= 2),
+        "runtime pure batch should use the configured worker pool: {runtime_batch}"
     );
 }
 
