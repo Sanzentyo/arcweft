@@ -109,6 +109,7 @@ pub enum FlowOp {
         options: Vec<ChoiceRuntimeOption>,
     },
     Await {
+        binding: Option<RuntimePattern>,
         target: AwaitTarget,
         pending: Vec<LineEffectRequest>,
     },

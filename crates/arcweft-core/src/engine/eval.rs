@@ -331,6 +331,13 @@ fn evaluate_runtime_call(callee: &str, args: &[RuntimeValue]) -> RuntimeValue {
         ("add", [RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)]) => {
             RuntimeValue::Int(lhs.saturating_add(*rhs))
         }
+        (
+            "path.save" | "path.asset" | "path.temp" | "path.export",
+            [RuntimeValue::String(path)],
+        ) => {
+            let space = callee.strip_prefix("path.").unwrap_or(callee);
+            RuntimeValue::String(format!("{space}:{path}"))
+        }
         _ => RuntimeValue::String(format!(
             "{callee}({})",
             args.iter()

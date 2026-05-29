@@ -226,8 +226,15 @@ impl FlowRuntimeLowerer {
                 HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
                     ops.push(self.lower_choice(choice));
                 }
-                HirFlowItem::Await(await_with) | HirFlowItem::LetAwait { await_with, .. } => {
-                    ops.push(self.lower_await(await_with));
+                HirFlowItem::Await(await_with) => {
+                    ops.push(self.lower_await(None, await_with));
+                }
+                HirFlowItem::LetAwait {
+                    pattern,
+                    await_with,
+                    ..
+                } => {
+                    ops.push(self.lower_await(Some(pattern), await_with));
                 }
                 HirFlowItem::Stmt(stmt) => {
                     ops.extend(self.lower_flow_stmt(stmt));
@@ -413,7 +420,7 @@ impl FlowRuntimeLowerer {
         }
     }
 
-    fn lower_await(&mut self, await_with: &HirAwait) -> FlowOp {
+    fn lower_await(&mut self, binding: Option<&Pattern>, await_with: &HirAwait) -> FlowOp {
         let label = expr_label(await_with.expr());
         let task_name = sanitize_task_id_part(&label);
         let pending = await_with
@@ -423,6 +430,7 @@ impl FlowRuntimeLowerer {
             .flat_map(|branch| self.lower_pending_flow_items(branch.body()))
             .collect();
         FlowOp::Await {
+            binding: binding.map(lower_runtime_pattern),
             target: AwaitTarget::new(
                 NeedId(format!("need.await.{task_name}")),
                 TaskId(format!("task.await.{task_name}")),

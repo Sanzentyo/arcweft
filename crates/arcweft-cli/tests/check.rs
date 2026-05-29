@@ -813,6 +813,63 @@ flow @flow.main main(argc: i32) {
 }
 
 #[test]
+fn run_json_executes_native_file_tasks_through_bytecode_vm() {
+    let dir = temp_dir("native-file-task");
+    let source_path = dir.join("main.arcw");
+    let save_dir = dir.join(".arcweft").join("save");
+    fs::create_dir_all(&save_dir).expect("create virtual save root");
+    fs::write(save_dir.join("input.txt"), "native-ok").expect("seed virtual input");
+    fs::write(
+        &source_path,
+        r#"
+extern capability fs {
+    type FsError
+    fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
+    fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError> effects { fs.write }
+}
+extern capability path { fn save(path: String) -> VirtualPath }
+entry cli @entry.main { run(@flow.main) }
+flow @flow.main main effects { fs.read(save), fs.write(save) } {
+    let text = try await fs.read_text(path.save("input.txt")) with { error e => return "read_failed" }
+    try await fs.write_text(path.save("output.txt"), text) with { error e => return "write_failed" }
+    return text
+}
+"#,
+    )
+    .expect("write native file task fixture");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&source_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("8")
+        .arg("--json")
+        .output()
+        .expect("arcw run executes native file tasks");
+
+    assert!(
+        output.status.success(),
+        "native file task run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"executor\": \"bytecode_vm\"")
+            && stdout.contains("file.read_text save:input.txt")
+            && stdout.contains("file.write_text save:output.txt")
+            && stdout.contains("task_events_in\": 1")
+            && stdout.contains("return native-ok"),
+        "run JSON should show native file task completion through bytecode VM: {stdout}"
+    );
+    assert_eq!(
+        fs::read_to_string(save_dir.join("output.txt")).expect("read virtual output"),
+        "native-ok"
+    );
+}
+
+#[test]
 fn run_json_reports_headless_observations() {
     let path = temp_arcw(
         "runtime-observations",

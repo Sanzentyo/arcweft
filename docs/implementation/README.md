@@ -330,6 +330,11 @@ Current high-confidence state:
   `executor = "bytecode_vm"` tier as an explicit conformance and performance
   observation, and `arcw profile --json` includes bytecode lowering time plus
   deterministic bytecode flow/instruction/source/stream counters.
+- `arcweft-cli::native_task` owns the native task bridge for the first real I/O
+  slice. It completes `fs.read_text`, `fs.read_bytes`, `fs.write_text`, and
+  `fs.write_bytes` task requests as VM `TaskEvent` input on the next step,
+  resolving virtual paths under source-local `.arcweft/<space>/...` roots while
+  keeping `arcweft-core` Sans I/O.
 - Phase 2.0 headless observation state is implemented for the current runtime
   slice. `arcweft-core` records
   cumulative log, signal, metric, and event observations from emitted

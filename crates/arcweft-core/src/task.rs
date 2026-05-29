@@ -1,4 +1,4 @@
-use crate::value::RuntimePayload;
+use crate::value::{RuntimeExpr, RuntimePayload};
 
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TaskId(pub String);
@@ -25,7 +25,20 @@ pub struct TaskPriority(pub i32);
 pub struct AwaitTarget {
     pub need: NeedId,
     pub task: TaskId,
-    pub request: HostTaskRequest,
+    pub request: HostTaskRequestTemplate,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HostTaskRequestTemplate {
+    pub capability: HostCapabilityId,
+    pub operation: String,
+    pub args: Vec<HostTaskArgTemplate>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HostTaskArgTemplate {
+    pub name: Option<String>,
+    pub value: RuntimeExpr,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -220,11 +233,38 @@ impl TaskSpec {
 }
 
 impl AwaitTarget {
-    pub fn new(need: NeedId, task: TaskId, request: HostTaskRequest) -> Self {
+    pub fn new(need: NeedId, task: TaskId, request: HostTaskRequestTemplate) -> Self {
         Self {
             need,
             task,
             request,
+        }
+    }
+}
+
+impl HostTaskRequestTemplate {
+    pub fn new(
+        capability: impl Into<String>,
+        operation: impl Into<String>,
+        args: impl IntoIterator<Item = HostTaskArgTemplate>,
+    ) -> Self {
+        Self {
+            capability: HostCapabilityId(capability.into()),
+            operation: operation.into(),
+            args: args.into_iter().collect(),
+        }
+    }
+}
+
+impl HostTaskArgTemplate {
+    pub fn positional(value: RuntimeExpr) -> Self {
+        Self { name: None, value }
+    }
+
+    pub fn named(name: impl Into<String>, value: RuntimeExpr) -> Self {
+        Self {
+            name: Some(name.into()),
+            value,
         }
     }
 }

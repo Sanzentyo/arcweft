@@ -1,4 +1,3 @@
-use super::suspend::await_task_spec;
 use super::{
     AwaitState, ChoiceState, Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowCursor,
     FlowEvent, FlowFiberStatus, FlowOp, FlowRuntimeId, RuntimeBinding, RuntimeDiagnostic,
@@ -87,14 +86,22 @@ impl Engine {
                         .unwrap_or_default(),
                 });
             }
-            FlowOp::Await { target, pending } => {
+            FlowOp::Await {
+                binding,
+                target,
+                pending,
+            } => {
                 output.flow_events.push(FlowEvent::AwaitStarted {
                     need: target.need.clone(),
                     task: target.task.clone(),
                 });
                 output.effects.line.extend(pending);
-                output.requests.tasks.push(await_task_spec(&target));
+                let Some(task) = self.await_task_spec(&target, output) else {
+                    return;
+                };
+                output.requests.tasks.push(task);
                 self.fiber.status = FlowFiberStatus::Waiting(AwaitState {
+                    binding,
                     target,
                     resume: next
                         .or_else(|| self.fiber.cursor.clone())

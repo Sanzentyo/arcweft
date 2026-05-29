@@ -520,48 +520,24 @@ flow @flow.loading loading {
         })
         .collect::<Vec<_>>();
 
-    assert!(matches!(
-        requests[0],
-        HostTaskRequest::FileReadText(FileReadTextRequest { path }) if path == "game/config.arcw"
-    ));
-    assert!(matches!(
-        requests[1],
-        HostTaskRequest::HttpFetch(HttpFetchRequest { url, method, body: Some(body), .. })
-            if url == "https://example.invalid/api"
-                && method == "POST"
-                && body.value() == &RuntimeValue::String("payload".to_owned())
-    ));
-    assert!(matches!(
-        requests[2],
-        HostTaskRequest::AssetLoad(AssetRequest { id, kind })
-            if id == "asset.bg.room" && kind == "image"
-    ));
-    assert!(matches!(
-        requests[3],
-        HostTaskRequest::ShaderCompile(ShaderRequest { id, entry: Some(entry) })
-            if id == "shader.fade" && entry == "main"
-    ));
-    assert!(matches!(
-        requests[4],
-        HostTaskRequest::AudioDecode(AudioDecodeRequest { id }) if id == "voice.alice.opening"
-    ));
-    assert!(matches!(
-        requests[5],
-        HostTaskRequest::TtsSynthesis(TtsRequest { voice: Some(voice), text })
-            if voice == "alice" && text == "hello"
-    ));
-    assert!(matches!(
-        requests[6],
-        HostTaskRequest::ProcessRun(ProcessRunRequest { program, args, .. })
-            if program == "arcw" && args == &vec!["check".to_owned(), "game.arcw".to_owned()]
-    ));
-    assert!(matches!(
-        requests[7],
-        HostTaskRequest::WasmCall(WasmCallRequest { module, function, args })
-            if module == "module"
-                && function == "function"
-                && args == &vec![RuntimePayload::new(RuntimeValue::Int(1))]
-    ));
+    let expected = [
+        ("fs", "read_text", 1),
+        ("http", "fetch", 3),
+        ("asset", "image", 1),
+        ("shader", "compile", 2),
+        ("audio", "decode", 1),
+        ("tts", "synthesize", 2),
+        ("process", "run", 2),
+        ("wasm", "call", 3),
+    ];
+    for (request, (capability, operation, args)) in requests.iter().zip(expected) {
+        assert_eq!(request.capability.0, capability);
+        assert_eq!(request.operation, operation);
+        assert_eq!(request.args.len(), args);
+    }
+    assert_eq!(requests[1].args[1].name.as_deref(), Some("method"));
+    assert_eq!(requests[1].args[2].name.as_deref(), Some("body"));
+    assert_eq!(requests[6].args[1].name.as_deref(), Some("args"));
 }
 
 #[test]

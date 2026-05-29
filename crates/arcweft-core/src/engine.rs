@@ -99,6 +99,7 @@ pub enum FlowFiberStatus {
 /// Suspended `await ... with` state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AwaitState {
+    pub binding: Option<RuntimePattern>,
     pub target: AwaitTarget,
     pub resume: FlowCursor,
 }

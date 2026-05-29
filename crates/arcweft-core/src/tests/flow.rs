@@ -128,10 +128,13 @@ fn engine_waits_for_await_task_event() {
     let target = AwaitTarget {
         need: NeedId("need.bg".to_owned()),
         task: TaskId("task.bg".to_owned()),
-        request: HostTaskRequest::AssetLoad(AssetRequest {
-            id: "asset.bg.room".to_owned(),
-            kind: "image".to_owned(),
-        }),
+        request: HostTaskRequestTemplate::new(
+            "asset",
+            "image",
+            [HostTaskArgTemplate::positional(RuntimeExpr::Value(
+                RuntimeValue::String("asset.bg.room".to_owned()),
+            ))],
+        ),
     };
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.opening".to_owned())),
@@ -139,6 +142,7 @@ fn engine_waits_for_await_task_event() {
             id: FlowRuntimeId("flow.opening".to_owned()),
             ops: vec![
                 FlowOp::Await {
+                    binding: None,
                     target: target.clone(),
                     pending: vec![call("show_loading")],
                 },
@@ -153,7 +157,13 @@ fn engine_waits_for_await_task_event() {
     let waiting = super::runtime_step(&mut engine, RuntimeStepInput::default());
     assert_eq!(waiting.effects.line, vec![call("show_loading")]);
     assert_eq!(waiting.requests.tasks[0].id, target.task);
-    assert_eq!(waiting.requests.tasks[0].request, target.request);
+    assert_eq!(
+        waiting.requests.tasks[0].request,
+        HostTaskRequest::AssetLoad(AssetRequest {
+            id: "asset.bg.room".to_owned(),
+            kind: "image".to_owned(),
+        })
+    );
     assert!(matches!(engine.fiber().status, FlowFiberStatus::Waiting(_)));
 
     let ready = super::runtime_step(

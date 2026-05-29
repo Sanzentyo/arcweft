@@ -43,8 +43,10 @@ use arcweft_verify::{
 use arcweft_verify_oxiz::OxizBackend;
 use arcweft_verify_z3::ExternalZ3Backend;
 use clap::{Args, Parser, Subcommand, ValueEnum};
+mod native_task;
 mod output;
 mod server_adapter;
+use native_task::NativeTaskBridge;
 use output::{
     CheckReport, RuntimeExecutorTier, RuntimePlanReport, RuntimeRunReport, RuntimeStepRunSummary,
     ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary,
@@ -796,15 +798,19 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
     let mut executor = BytecodeVmExecutor::from_runtime_plan(plan);
+    let mut host = NativeTaskBridge::new(selection.path());
+    let mut task_events = Vec::new();
     let mut steps = Vec::new();
     for step_index in 0..options.steps {
         let result = executor.step(
             RuntimeStepInput {
                 bindings: options.values.clone(),
+                task_events: std::mem::take(&mut task_events),
                 ..RuntimeStepInput::default()
             },
             step_options(options.mode, options.max_ops),
         );
+        let task_requests = result.output.requests.tasks.clone();
         let summary = RuntimeStepRunSummary::from_result(step_index, result, executor.fiber());
         let done = matches!(
             executor.fiber().status,
@@ -814,6 +820,7 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
         if done {
             break;
         }
+        task_events = host.complete_tasks(&task_requests);
     }
     let report = RuntimeRunReport {
         executor: RuntimeExecutorTier::BytecodeVm,
@@ -1156,15 +1163,19 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
     });
 
     let mut executor = BytecodeVmExecutor::from_runtime_plan(plan);
+    let mut host = NativeTaskBridge::new(selection.path());
+    let mut task_events = Vec::new();
     let mut steps = Vec::new();
     for step_index in 0..options.steps {
         let result = executor.step(
             RuntimeStepInput {
                 bindings: bindings.clone(),
+                task_events: std::mem::take(&mut task_events),
                 ..RuntimeStepInput::default()
             },
             step_options(options.mode, options.max_ops),
         );
+        let task_requests = result.output.requests.tasks.clone();
         let summary = RuntimeStepRunSummary::from_result(step_index, result, executor.fiber());
         let done = matches!(
             executor.fiber().status,
@@ -1174,6 +1185,7 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
         if done {
             break;
         }
+        task_events = host.complete_tasks(&task_requests);
     }
     let report = RuntimeRunReport {
         executor: RuntimeExecutorTier::BytecodeVm,
@@ -1465,7 +1477,17 @@ fn script_test_selection(
         tests: manifest
             .tests
             .iter()
-            .map(|test| run_script_test(test, &plan, step_limit, mode, max_ops, values))
+            .map(|test| {
+                run_script_test(
+                    test,
+                    &plan,
+                    selection.path(),
+                    step_limit,
+                    mode,
+                    max_ops,
+                    values,
+                )
+            })
             .collect(),
     };
     let failed = output.tests.iter().any(|test| test.status == "failed");
@@ -1497,6 +1519,7 @@ fn script_test_selection(
 fn run_script_test(
     test: &ScriptTest,
     plan: &RuntimePlan,
+    source_path: &Path,
     step_limit: usize,
     mode: CliRuntimeStepMode,
     max_ops: usize,
@@ -1523,15 +1546,19 @@ fn run_script_test(
     let mut plan = plan.clone();
     plan.entry_flow = Some(FlowRuntimeId(start));
     let mut executor = BytecodeVmExecutor::from_runtime_plan(plan);
+    let mut host = NativeTaskBridge::new(source_path);
+    let mut task_events = Vec::new();
     let mut step_summaries = Vec::new();
     for step_index in 0..step_limit {
         let result = executor.step(
             RuntimeStepInput {
                 bindings: values.to_vec(),
+                task_events: std::mem::take(&mut task_events),
                 ..RuntimeStepInput::default()
             },
             step_options(mode, max_ops),
         );
+        let task_requests = result.output.requests.tasks.clone();
         let summary = RuntimeStepRunSummary::from_result(step_index, result, executor.fiber());
         let done = matches!(
             executor.fiber().status,
@@ -1541,6 +1568,7 @@ fn run_script_test(
         if done {
             break;
         }
+        task_events = host.complete_tasks(&task_requests);
     }
     let final_status = flow_status_label(&executor.fiber().status);
     let mut diagnostics = step_summaries

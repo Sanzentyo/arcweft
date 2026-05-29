@@ -149,6 +149,11 @@ the bytecode VM executor for up to `N` runtime steps. JSON reports
 `executor = "bytecode_vm"` so performance and correctness runs can confirm the
 execution tier. If `--entry` or `--flow` is omitted, the first lowered flow is
 used as a deterministic fallback for headless inspection.
+The CLI owns a native task adapter for the first filesystem I/O slice:
+`fs.read_text`, `fs.read_bytes`, `fs.write_text`, and `fs.write_bytes` complete
+as `TaskEvent` input on the next VM step. Paths must be virtual path values such
+as `path.save("profile.json")`; the adapter resolves them under a source-local
+`.arcweft/<space>/...` root and rejects absolute or parent-relative paths.
 
 `arcw run --manifest arcw.toml --profile NAME` resolves the same launch profile
 model used by dedicated commands. For `game` and `cli` profiles it runs the
