@@ -674,6 +674,7 @@ pub(crate) struct RuntimeExecutorStats {
 pub(crate) struct RuntimeExecutorPureConfigSummary {
     pub(crate) backend: &'static str,
     pub(crate) workers: RuntimeExecutorPureWorkerSummary,
+    pub(crate) resolved_workers: usize,
     pub(crate) batch_min_len: usize,
 }
 

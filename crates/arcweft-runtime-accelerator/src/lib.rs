@@ -64,6 +64,7 @@ pub struct RuntimePureAccelerator {
     compile_stats: RuntimePureCompileStats,
     helper_summary: RuntimePureAccelerationSummary,
     pool: Option<ThreadPool>,
+    resolved_workers: usize,
 }
 
 enum RuntimePureCacheEntry {
@@ -81,6 +82,7 @@ impl fmt::Debug for RuntimePureAccelerator {
             .field("compile_stats", &self.compile_stats)
             .field("helper_summary", &self.helper_summary)
             .field("has_pool", &self.pool.is_some())
+            .field("resolved_workers", &self.resolved_workers)
             .finish()
     }
 }
@@ -103,6 +105,7 @@ impl RuntimePureAccelerator {
         let started = std::time::Instant::now();
         let mut compile_stats = RuntimePureCompileStats::default();
         let helper_summary = helper_summary_from_helpers(helpers);
+        let resolved_workers = resolve_worker_count(config.workers);
         let cache = helpers
             .iter()
             .map(|helper| {
@@ -119,7 +122,8 @@ impl RuntimePureAccelerator {
             stats: RuntimePureCallStats::default(),
             compile_stats,
             helper_summary,
-            pool: build_thread_pool(config.workers),
+            pool: build_thread_pool(resolved_workers),
+            resolved_workers,
         }
     }
 
@@ -133,6 +137,10 @@ impl RuntimePureAccelerator {
 
     pub const fn compile_stats(&self) -> RuntimePureCompileStats {
         self.compile_stats
+    }
+
+    pub const fn resolved_worker_count(&self) -> usize {
+        self.resolved_workers
     }
 
     pub fn call_i64_batch(
@@ -202,22 +210,11 @@ impl RuntimePureAccelerator {
     }
 
     fn should_parallelize(&self, len: usize) -> bool {
-        self.pool.is_some()
-            && len >= self.config.batch_min_len
-            && self.resolved_worker_count().unwrap_or(1) > 1
+        self.pool.is_some() && len >= self.config.batch_min_len && self.resolved_workers > 1
     }
 
     fn parallel_jobs(&self, len: usize) -> usize {
-        self.resolved_worker_count().unwrap_or(1).min(len)
-    }
-
-    fn resolved_worker_count(&self) -> Option<usize> {
-        match self.config.workers {
-            RuntimePureWorkerCount::Auto => std::thread::available_parallelism()
-                .ok()
-                .map(std::num::NonZeroUsize::get),
-            RuntimePureWorkerCount::Fixed(value) => Some(value.max(1)),
-        }
+        self.resolved_workers.min(len)
     }
 }
 
@@ -372,13 +369,16 @@ fn compile_aot(
     compiled.map(RuntimePureCacheEntry::Aot)
 }
 
-fn build_thread_pool(workers: RuntimePureWorkerCount) -> Option<ThreadPool> {
-    let worker_count = match workers {
+fn resolve_worker_count(workers: RuntimePureWorkerCount) -> usize {
+    match workers {
         RuntimePureWorkerCount::Auto => std::thread::available_parallelism()
             .ok()
             .map_or(1, std::num::NonZeroUsize::get),
         RuntimePureWorkerCount::Fixed(value) => value.max(1),
-    };
+    }
+}
+
+fn build_thread_pool(worker_count: usize) -> Option<ThreadPool> {
     (worker_count > 1)
         .then(|| {
             ThreadPoolBuilder::new()
@@ -627,6 +627,7 @@ mod tests {
         assert_eq!(accelerator.stats().pure_calls, 1);
         assert_eq!(accelerator.stats().arg_stack_packs, 1);
         assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+        assert!(accelerator.resolved_worker_count() >= 1);
         assert_eq!(accelerator.summary().jit, 1);
     }
 
@@ -672,6 +673,7 @@ mod tests {
         assert_eq!(accelerator.stats().batch_items, 4);
         assert_eq!(accelerator.stats().aot_calls, 4);
         assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+        assert_eq!(accelerator.resolved_worker_count(), 2);
         assert!(accelerator.stats().thread_pool_jobs > 0);
     }
 }

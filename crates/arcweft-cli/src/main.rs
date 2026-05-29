@@ -1777,6 +1777,7 @@ fn runtime_executor_stats(
                     output::RuntimeExecutorPureWorkerSummary::Fixed(value)
                 }
             },
+            resolved_workers: pure.resolved_worker_count(),
             batch_min_len: config.batch_min_len,
         },
         pure_acceleration: RuntimeExecutorPureAccelerationSummary {

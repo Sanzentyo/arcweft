@@ -258,6 +258,7 @@ flow @flow.main main {
     assert_eq!(pure["arg_vec_allocations"], 0);
     assert_eq!(json["executor_stats"]["pure_config"]["backend"], "jit");
     assert_eq!(json["executor_stats"]["pure_config"]["workers"]["fixed"], 1);
+    assert_eq!(json["executor_stats"]["pure_config"]["resolved_workers"], 1);
     assert_eq!(json["executor_stats"]["pure_config"]["batch_min_len"], 2);
     assert_eq!(json["executor_stats"]["pure_compile"]["jit_successes"], 1);
 }
