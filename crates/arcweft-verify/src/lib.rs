@@ -936,7 +936,7 @@ impl ObligationCollector {
             Expr::Call { callee, args } => {
                 self.collect_call(callee, args);
             }
-            Expr::NamedArg { value, .. } => self.collect_expr(value),
+            Expr::NamedArg { value, .. } | Expr::SpreadArg { value } => self.collect_expr(value),
             Expr::MethodCall {
                 receiver,
                 method,

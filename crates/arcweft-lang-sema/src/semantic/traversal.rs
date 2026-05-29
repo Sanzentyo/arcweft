@@ -99,6 +99,7 @@ fn expr_contains_unchecked_promotion(expr: &Expr) -> bool {
             expr_contains_unchecked_promotion(value) || expr_contains_unchecked_promotion(len)
         }
         Expr::NamedArg { value, .. }
+        | Expr::SpreadArg { value }
         | Expr::Field { target: value, .. }
         | Expr::Try { expr: value }
         | Expr::Await { expr: value, .. }

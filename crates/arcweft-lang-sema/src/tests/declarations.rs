@@ -285,7 +285,9 @@ fn log(message: String, fields: ...String) -> Unit {
 }
 
 flow @flow.ok ok {
+    let fields: Vec<String> = ["asset", "elapsed"]
     log("loaded", "asset", "elapsed")
+    log("loaded", fields...)
 }
 "#,
     );
@@ -303,7 +305,9 @@ fn variadic(prefix: String, fields: ...String) -> Unit {
 flow @flow.bad bad {
     fixed("one")
     fixed("one", "two", "three")
+    fixed("one", ["two"]...)
     variadic("ok", 1i32)
+    variadic("ok", "bad"...)
     variadic(prefix = "ok", fields = "named")
 }
 "#,
@@ -339,6 +343,18 @@ flow @flow.bad bad {
             .iter()
             .any(|message| message.contains("rest parameter `fields` is positional-only")),
         "expected named rest diagnostic, got {messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("does not accept spread arguments")),
+        "expected non-variadic spread diagnostic, got {messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("spread argument must have sequence type")),
+        "expected non-sequence spread diagnostic, got {messages:?}"
     );
 }
 

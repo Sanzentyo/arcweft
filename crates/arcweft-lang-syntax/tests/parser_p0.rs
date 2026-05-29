@@ -97,6 +97,21 @@ fn speaker_preset_call_arguments_are_typed_expressions() {
 }
 
 #[test]
+fn call_arguments_keep_positional_spread_nodes() {
+    let expr =
+        parse_expr("log_info(\"loaded\", fields...)").expect("positional spread argument parses");
+    let Expr::Call { args, .. } = expr else {
+        panic!("expected call expression");
+    };
+
+    assert_eq!(args.len(), 2);
+    assert!(matches!(
+        &args[1],
+        Expr::SpreadArg { value } if matches!(value.as_ref(), Expr::Path(path) if path == "fields")
+    ));
+}
+
+#[test]
 fn at_is_entity_ref_and_slash_comments_are_comments() {
     let tree = parse_ok(
         r"

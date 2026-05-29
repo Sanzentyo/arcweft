@@ -93,7 +93,7 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
             method: runtime_method_name(method).to_owned(),
             args: args.iter().map(lower_runtime_expr).collect(),
         },
-        Expr::NamedArg { value, .. } => lower_runtime_expr(value),
+        Expr::NamedArg { value, .. } | Expr::SpreadArg { value } => lower_runtime_expr(value),
         Expr::Try { expr }
         | Expr::Await { expr, .. }
         | Expr::Index { target: expr, .. }
@@ -176,7 +176,9 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
             else_branch.as_deref(),
         ),
         Expr::Match { scrutinee, arms } => lower_strict_match_expr(scrutinee, arms),
-        Expr::NamedArg { value, .. } => lower_runtime_expr_strict(value),
+        Expr::NamedArg { value, .. } | Expr::SpreadArg { value } => {
+            lower_runtime_expr_strict(value)
+        }
         Expr::Block { value, .. }
         | Expr::ComputationBlock { value, .. }
         | Expr::MemoBlock { value, .. }

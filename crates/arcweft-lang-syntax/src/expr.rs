@@ -42,6 +42,9 @@ pub enum Expr {
         name: String,
         value: Box<Expr>,
     },
+    SpreadArg {
+        value: Box<Expr>,
+    },
     MethodCall {
         receiver: Box<Expr>,
         method: String,
@@ -410,6 +413,7 @@ impl<'a> Lexer<'a> {
                 '!' if self.starts_with("!=") => self.fixed_op("!=", 2),
                 '!' => self.single(Token::Bang),
                 '-' => self.fixed_op("-", 1),
+                '.' if self.starts_with("...") => self.fixed_op("...", 3),
                 '.' if self.starts_with("..=") => self.fixed_op("..=", 3),
                 '.' if self.starts_with("..") => self.fixed_op("..", 2),
                 '.' if self.dot_starts_relative_path() => self.lex_relative_path(),
@@ -1063,7 +1067,14 @@ impl ExprParser {
         if self.peek() == &Token::Op("|") {
             return self.parse_closure_arg();
         }
-        self.parse_expr_bp(0)
+        let expr = self.parse_expr_bp(0)?;
+        if self.peek() == &Token::Op("...") {
+            self.bump();
+            return Ok(Expr::SpreadArg {
+                value: Box::new(expr),
+            });
+        }
+        Ok(expr)
     }
 
     fn parse_closure_arg(&mut self) -> Result<Expr, ExprParseError> {

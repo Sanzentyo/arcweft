@@ -933,7 +933,9 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.collect_expr(len, state);
             }
             Expr::Call { callee, args } => self.collect_call(callee, args, state),
-            Expr::NamedArg { value, .. } => self.collect_expr(value, state),
+            Expr::NamedArg { value, .. } | Expr::SpreadArg { value } => {
+                self.collect_expr(value, state);
+            }
             Expr::MethodCall {
                 receiver,
                 method,

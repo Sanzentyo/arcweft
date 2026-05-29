@@ -1113,7 +1113,7 @@ fn collect_speaker_presets_from_expr(
                 collect_speaker_presets_from_expr(arg, character_aliases, presets);
             }
         }
-        Expr::NamedArg { value, .. } => {
+        Expr::NamedArg { value, .. } | Expr::SpreadArg { value } => {
             collect_speaker_presets_from_expr(value, character_aliases, presets);
         }
         Expr::MethodCall { receiver, args, .. } => {

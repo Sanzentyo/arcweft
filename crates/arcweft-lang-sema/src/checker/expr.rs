@@ -60,7 +60,7 @@ impl TypeChecker<'_> {
                 Some(self.check_array_repeat_expr(value, len, expected))
             }
             Expr::Call { callee, args } => self.check_call_expr(callee, args),
-            Expr::NamedArg { value, .. } => self.check_expr(value),
+            Expr::NamedArg { value, .. } | Expr::SpreadArg { value } => self.check_expr(value),
             Expr::MethodCall {
                 receiver,
                 method,
@@ -634,6 +634,9 @@ impl TypeChecker<'_> {
                         &mut provided_fixed,
                     );
                 }
+                Expr::SpreadArg { value } => {
+                    self.check_signature_spread_arg(name, value, rest, &fixed, &provided_fixed);
+                }
                 positional => {
                     while positional_index < fixed.len() && provided_fixed[positional_index] {
                         positional_index += 1;
@@ -664,6 +667,51 @@ impl TypeChecker<'_> {
                     "function `{name}` missing required argument `{label}`"
                 )));
             }
+        }
+    }
+
+    fn check_signature_spread_arg(
+        &mut self,
+        function_name: &str,
+        value: &Expr,
+        rest: Option<&FunctionParamType>,
+        fixed: &[&FunctionParamType],
+        provided_fixed: &[bool],
+    ) {
+        let Some(rest) = rest else {
+            self.errors.push(TypeCheckError::new(format!(
+                "function `{function_name}` does not accept spread arguments"
+            )));
+            self.check_expr(value);
+            return;
+        };
+        if fixed
+            .iter()
+            .zip(provided_fixed.iter().copied())
+            .any(|(param, provided)| !provided && !param.has_default)
+        {
+            self.errors.push(TypeCheckError::new(format!(
+                "function `{function_name}` spread argument must appear after required fixed arguments"
+            )));
+            self.check_expr(value);
+            return;
+        }
+        let actual = self.check_expr(value);
+        let Some(actual) = actual.as_ref() else {
+            return;
+        };
+        let Some(item) = spread_item_type(actual) else {
+            self.errors.push(TypeCheckError::new(format!(
+                "function `{function_name}` spread argument must have sequence type for rest parameter `{}`",
+                rest.name.as_deref().unwrap_or("#rest")
+            )));
+            return;
+        };
+        if !types_compatible(&rest.ty, item) {
+            self.errors.push(TypeCheckError::new(format!(
+                "function `{function_name}` spread items must have type {:?}, found {:?}",
+                rest.ty, item
+            )));
         }
     }
 
@@ -1253,6 +1301,16 @@ fn unique_numeric_choice_alternative(
         .then(|| selected.clone())
 }
 
+fn spread_item_type(ty: &TypeKind) -> Option<&TypeKind> {
+    match ty {
+        TypeKind::Vec(item)
+        | TypeKind::Seq(item)
+        | TypeKind::Slice(item)
+        | TypeKind::Array { item, .. } => Some(item),
+        _ => None,
+    }
+}
+
 fn join_branch_types(left: TypeKind, right: TypeKind) -> TypeKind {
     if left == right {
         left
@@ -1296,6 +1354,7 @@ fn expr_kind_name(expr: &Expr) -> &'static str {
         Expr::ArrayRepeat { .. } => "array_repeat",
         Expr::Call { .. } => "call",
         Expr::NamedArg { .. } => "named_arg",
+        Expr::SpreadArg { .. } => "spread_arg",
         Expr::MethodCall { .. } => "method_call",
         Expr::Field { .. } => "field",
         Expr::DialogueCall { .. } => "dialogue_call",

@@ -766,7 +766,7 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
                 collect_expr(arg, uses);
             }
         }
-        Expr::NamedArg { value, .. } => collect_expr(value, uses),
+        Expr::NamedArg { value, .. } | Expr::SpreadArg { value } => collect_expr(value, uses),
         Expr::MethodCall {
             receiver,
             method,

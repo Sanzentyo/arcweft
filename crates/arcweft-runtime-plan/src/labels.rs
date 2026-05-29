@@ -40,6 +40,7 @@ pub(crate) fn expr_label(expr: &Expr) -> String {
         Expr::EntityRef(entity) => format!("@{}", entity.body()),
         Expr::Literal(literal) => literal_label(literal),
         Expr::NamedArg { name, value } => format!("{name} = {}", expr_label(value)),
+        Expr::SpreadArg { value } => format!("{}...", expr_label(value)),
         Expr::Call { callee, args } => format!(
             "{}({})",
             expr_label(callee),

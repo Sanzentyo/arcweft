@@ -128,7 +128,8 @@ Current high-confidence state:
 - `pro_review28.md`: adopted the first general variadic signature slice as
   `param: ...T`. Syntax stores rest parameters as parameter kind, semantic
   checking binds them as `Vec<T>`, and function-call checking consumes remaining
-  positional arguments as rest items without adding call-site spread syntax yet.
+  positional arguments as rest items. Positional call-site spread now parses as
+  `expr...` and typechecks only when it splices a sequence into a rest parameter.
 - `pro_review29.md`: adopted anonymous sum types as `A | B`, where alternatives
   are types rather than named variant rows. Syntax and semantic checking now
   reject duplicate alternatives and alias collapse, expected-type checking

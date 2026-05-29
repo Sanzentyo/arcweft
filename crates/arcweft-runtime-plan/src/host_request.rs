@@ -75,6 +75,7 @@ fn lower_arg_template(arg: &Expr) -> HostTaskArgTemplate {
         Expr::NamedArg { name, value } => {
             HostTaskArgTemplate::named(name.clone(), lower_host_arg_expr(value))
         }
+        Expr::SpreadArg { value } => HostTaskArgTemplate::positional(lower_host_arg_expr(value)),
         value => HostTaskArgTemplate::positional(lower_host_arg_expr(value)),
     }
 }

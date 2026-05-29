@@ -155,8 +155,8 @@ DialogueLine :=
     SpeakerRef CallArgs? ':' DialogueText
   | Callee CallArgs? '[' DialogueContent ']'
 
-CallArgs       := '(' NamedArg (',' NamedArg)* ','? ')'
-NamedArg       := Ident '=' Expr
+CallArgs       := '(' CallArg (',' CallArg)* ','? ')'
+CallArg        := Expr | Ident '=' Expr | Expr '...'
 RelativeLineId := RelativeId | FamilyRelativeEntityRef
 LineOption     := 'id' '=' (EntityRef | RelativeId | FamilyRelativeEntityRef)
                 | 'text_key' '=' (EntityRef | RelativeId | FamilyRelativeEntityRef)
@@ -341,9 +341,10 @@ are syntax errors.
 `param: ...T` declares one positional rest parameter. A signature may contain at
 most one rest parameter, it must be the last parameter of the final parameter
 group, and it cannot declare a default value. The function body sees the binding
-as `Vec<T>`. Calls pass ordinary positional arguments; spread and named rest are
-not part of this syntax slice. Rest element type may be an anonymous sum such as
-`fields: ...(String | i64 | Duration)`.
+as `Vec<T>`. Calls pass ordinary positional arguments and may splice an existing
+sequence into the rest tail with `expr...`, as in `log("loaded", fields...)`.
+Named rest is not part of this syntax slice. Rest element type may be an
+anonymous sum such as `fields: ...(String | i64 | Duration)`.
 
 `stream fn` must declare `-> Stream<T, E>`. Hand-written stream transforms do
 not return `Source<T, E>`; live external sources use `source` declarations so
