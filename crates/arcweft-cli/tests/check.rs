@@ -40,6 +40,7 @@ fn jit_check_json_compares_cranelift_and_vm() {
     assert!(
         stdout.contains("\"speedup_x\"")
             && stdout.contains("\"dynamic_inputs\": true")
+            && !stdout.contains("\"source_compiler\"")
             && stdout.contains("\"input_seed\": 7")
             && stdout.contains("\"input_bindings\"")
             && stdout.contains("\"jit_per_iteration_ns\"")
@@ -93,10 +94,22 @@ fn score(base: i64, bonus: i64, scale: i64) -> i64 {
     assert!(
         stdout.contains("\"helper\": \"score\"")
             && stdout.contains("\"helper_source\": \"source\"")
+            && stdout.contains("\"source_compiler\"")
+            && stdout.contains("\"typecheck\"")
+            && stdout.contains("\"borrow_check\"")
+            && stdout.contains("\"phases\"")
+            && stdout.contains("\"name\": \"parse\"")
+            && stdout.contains("\"name\": \"typecheck\"")
+            && stdout.contains("\"judgments\"")
+            && stdout.contains("\"boundary_checks\"")
             && stdout.contains("\"matches_vm\": true")
             && stdout.contains("\"scale\"")
             && stdout.contains("\"input_seed\": 3"),
-        "jit check JSON should describe the source helper: {stdout}"
+        "jit check JSON should describe the source helper and source compiler evidence: {stdout}"
+    );
+    assert!(
+        !stdout.contains(&std::env::temp_dir().display().to_string()),
+        "jit check JSON must not record absolute temp paths: {stdout}"
     );
 }
 

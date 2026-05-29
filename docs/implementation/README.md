@@ -64,7 +64,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   the normal checked-source pipeline, extracts a `#[pure] fn` helper from HIR,
   lowers its expression body or simple local-`let` statement body with a final
   value or tail `return` to a pure-helper request, and reports the helper source
-  without persisting the host path.
+  without persisting the host path. Source-helper JIT reports include the same
+  source compiler phase timings plus typecheck and borrow-check counters used by
+  `arcw check --json`, so native speedup can be evaluated against front-end
+  compilation cost.
 - `arcw bench` runs measurable `measure { start(@flow.id) }` sections through
   the selected headless runtime executor, includes deterministic runtime
   counters in JSON, completes native file task requests through the CLI adapter,

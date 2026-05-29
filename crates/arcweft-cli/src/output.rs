@@ -413,7 +413,7 @@ pub(crate) struct RuntimeProfileCompiler {
     pub(crate) aot: AotProfileStats,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 pub(crate) struct TypeCheckProfileStats {
     pub(crate) flows: usize,
     pub(crate) functions: usize,
@@ -457,7 +457,7 @@ impl From<&TypeCheckReport> for TypeCheckProfileStats {
     }
 }
 
-#[derive(Default, serde::Serialize)]
+#[derive(Clone, Default, serde::Serialize)]
 struct TypeCheckJudgmentRuleStats {
     expr: usize,
     expected: usize,
@@ -481,7 +481,7 @@ impl TypeCheckJudgmentRuleStats {
     }
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 struct TypeCheckJudgmentSample {
     id: usize,
     subject: String,
@@ -523,7 +523,7 @@ const fn type_judgment_rule_label(rule: TypeJudgmentRule) -> &'static str {
     }
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 pub(crate) struct BorrowCheckProfileStats {
     binding_groups: usize,
     bindings: usize,

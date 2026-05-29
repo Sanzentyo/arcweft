@@ -197,6 +197,7 @@ fn jit_check_report(
         status: if matches_vm { "ok" } else { "failed" }.to_owned(),
         helper: target.name.clone(),
         helper_source: target.source.as_str().to_owned(),
+        source_compiler: target.source_compiler.clone(),
         input_bindings: target.input_names.clone(),
         dynamic_inputs: !target.input_names.is_empty(),
         input_seed: options.input_seed,
@@ -391,12 +392,29 @@ fn measure_jit_check_helpers(
     })
 }
 
-#[derive(Clone, Debug)]
 struct JitCheckTarget {
     name: String,
     source: JitCheckHelperSource,
+    source_compiler: Option<JitCheckSourceCompilerReport>,
     input_names: Vec<String>,
     expr: RuntimeExpr,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct JitCheckSourceCompilerReport {
+    typecheck: TypeCheckProfileStats,
+    borrow_check: BorrowCheckProfileStats,
+    phases: Vec<RuntimeProfilePhase>,
+}
+
+impl From<&CheckedModule> for JitCheckSourceCompilerReport {
+    fn from(checked: &CheckedModule) -> Self {
+        Self {
+            typecheck: TypeCheckProfileStats::from(&checked.typecheck_report),
+            borrow_check: BorrowCheckProfileStats::from(&checked.typecheck_report.stats),
+            phases: checked.phases.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -410,6 +428,7 @@ impl JitCheckTarget {
         Self {
             name: "score".to_owned(),
             source: JitCheckHelperSource::Builtin,
+            source_compiler: None,
             input_names: vec!["base".to_owned(), "bonus".to_owned()],
             expr: RuntimeExpr::If {
                 condition: Box::new(RuntimeExpr::Binary {
@@ -433,7 +452,10 @@ impl JitCheckTarget {
         }
     }
 
-    fn from_candidate(candidate: &PureHelperCandidate) -> Result<Self, ExitCode> {
+    fn from_candidate(
+        candidate: &PureHelperCandidate,
+        source_compiler: Option<JitCheckSourceCompilerReport>,
+    ) -> Result<Self, ExitCode> {
         let input_names = candidate.input_names().to_vec();
         if input_names.len() > 4 {
             eprintln!(
@@ -446,6 +468,7 @@ impl JitCheckTarget {
         Ok(Self {
             name: candidate.name().to_owned(),
             source: JitCheckHelperSource::Source,
+            source_compiler,
             input_names,
             expr: candidate.expr().clone(),
         })
@@ -495,7 +518,10 @@ fn jit_check_source_target(
         ExitCode::FAILURE
     })?;
     let candidate = select_jit_helper_candidate(&candidates, helper_name)?;
-    JitCheckTarget::from_candidate(candidate)
+    JitCheckTarget::from_candidate(
+        candidate,
+        Some(JitCheckSourceCompilerReport::from(&checked)),
+    )
 }
 
 fn select_jit_helper_candidate<'a>(
@@ -2069,7 +2095,7 @@ fn run_bench_pure_helper_section(
             vec![format!("pure helper `{helper_name}` was not found")],
         );
     };
-    let target = match JitCheckTarget::from_candidate(candidate) {
+    let target = match JitCheckTarget::from_candidate(candidate, None) {
         Ok(target) => target,
         Err(code) => {
             return ScriptBenchSectionRunSummary::new(
@@ -2987,6 +3013,8 @@ struct JitCheckReport {
     status: String,
     helper: String,
     helper_source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_compiler: Option<JitCheckSourceCompilerReport>,
     input_bindings: Vec<String>,
     dynamic_inputs: bool,
     input_seed: u64,
