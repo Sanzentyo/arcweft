@@ -409,8 +409,9 @@ Current high-confidence state:
   return checks.
   `arcw profile --json` surfaces deterministic typecheck counters and integrated
   borrow-check counters, including expression/statement counts, borrow binding
-  groups, type judgment counts, borrow state snapshots/restores/merges, boundary
-  checks, escape checks, and maximum active borrows.
+  groups, type judgment counts, rule-family judgment counts, bounded judgment
+  samples, borrow state snapshots/restores/merges, boundary checks, escape
+  checks, and maximum active borrows.
 - Declaration ID positions whose family is known now accept current-scope and
   family-relative IDs. `flow @.opening`, `flow @flow:.opening`, and bare
   `flow opening` normalize to `flow.opening`; declarations such as

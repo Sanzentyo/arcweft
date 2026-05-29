@@ -20,7 +20,8 @@ use arcweft_core::{
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_jit_cranelift::{CompiledPureI64Inputs, CraneliftPureFunctionBackend};
 use arcweft_lang_sema::check::{
-    TypeCheckStats, analyze_types, typecheck_hir, validate_typecheck_ready,
+    TypeCheckReport, TypeCheckStats, TypeJudgment, TypeJudgmentRule, TypeJudgmentSubject,
+    analyze_types, typecheck_hir, validate_typecheck_ready,
 };
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
@@ -900,8 +901,8 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
         syntax_warnings: compiled.syntax_warnings,
         line_task_groups: compiled.line_task_groups,
         compiler: RuntimeProfileCompiler {
-            typecheck: TypeCheckProfileStats::from(&compiled.typecheck_stats),
-            borrow_check: BorrowCheckProfileStats::from(&compiled.typecheck_stats),
+            typecheck: TypeCheckProfileStats::from(&compiled.typecheck_report),
+            borrow_check: BorrowCheckProfileStats::from(&compiled.typecheck_report.stats),
             bytecode: BytecodeProfileStats::from(&compiled.bytecode_stats),
         },
         phases,
@@ -931,7 +932,7 @@ struct ProfileCompiledRuntimePlan {
     plan: RuntimePlan,
     syntax_warnings: usize,
     line_task_groups: usize,
-    typecheck_stats: TypeCheckStats,
+    typecheck_report: TypeCheckReport,
     bytecode_stats: BytecodeStats,
 }
 
@@ -969,7 +970,7 @@ fn compile_profile_runtime_plan(
         Ok::<usize, ExitCode>(lint_id_policy(&tree).len())
     })?;
     let hir = profile_lower_hir(&tree, phases)?;
-    let typecheck_stats = profile_validate_hir(&hir, env, phases)?;
+    let typecheck_report = profile_validate_hir(&hir, env, phases)?;
     let line_task_groups = run_profile_phase(phases, "line_task_lower", || {
         lower_line_task_groups(&hir).map_err(|errors| {
             for error in errors {
@@ -998,7 +999,7 @@ fn compile_profile_runtime_plan(
         plan,
         syntax_warnings,
         line_task_groups: line_task_groups.len(),
-        typecheck_stats,
+        typecheck_report,
         bytecode_stats,
     })
 }
@@ -1021,7 +1022,7 @@ fn profile_validate_hir(
     hir: &arcweft_lang_hir::model::HirModule,
     env: &TypeCheckEnv,
     phases: &mut Vec<RuntimeProfilePhase>,
-) -> Result<TypeCheckStats, ExitCode> {
+) -> Result<TypeCheckReport, ExitCode> {
     run_profile_phase(phases, "resolve", || {
         let registry = registry_from_hir(hir);
         validate_hir_references(hir, &registry).map_err(|errors| {
@@ -1042,7 +1043,7 @@ fn profile_validate_hir(
     run_profile_phase(phases, "typecheck", || {
         let report = analyze_types(hir, env);
         if report.diagnostics.is_empty() {
-            Ok(report.stats)
+            Ok(report)
         } else {
             for error in report.diagnostics {
                 eprintln!("error: {}", error.message());
@@ -2625,10 +2626,13 @@ struct TypeCheckProfileStats {
     statements: usize,
     expressions: usize,
     judgments: usize,
+    judgment_rules: TypeCheckJudgmentRuleStats,
+    judgment_samples: Vec<TypeCheckJudgmentSample>,
 }
 
-impl From<&TypeCheckStats> for TypeCheckProfileStats {
-    fn from(stats: &TypeCheckStats) -> Self {
+impl From<&TypeCheckReport> for TypeCheckProfileStats {
+    fn from(report: &TypeCheckReport) -> Self {
+        let stats = &report.stats;
         Self {
             flows: stats.flows,
             functions: stats.functions,
@@ -2637,7 +2641,80 @@ impl From<&TypeCheckStats> for TypeCheckProfileStats {
             statements: stats.statements,
             expressions: stats.expressions,
             judgments: stats.judgments,
+            judgment_rules: TypeCheckJudgmentRuleStats::from_judgments(&report.judgments),
+            judgment_samples: report
+                .judgments
+                .iter()
+                .take(8)
+                .map(TypeCheckJudgmentSample::from)
+                .collect(),
         }
+    }
+}
+
+#[derive(Default, serde::Serialize)]
+struct TypeCheckJudgmentRuleStats {
+    expr: usize,
+    expected: usize,
+    let_binding: usize,
+    #[serde(rename = "return")]
+    return_: usize,
+}
+
+impl TypeCheckJudgmentRuleStats {
+    fn from_judgments(judgments: &[TypeJudgment]) -> Self {
+        let mut stats = Self::default();
+        for judgment in judgments {
+            match judgment.rule {
+                TypeJudgmentRule::Expr => stats.expr += 1,
+                TypeJudgmentRule::Expected => stats.expected += 1,
+                TypeJudgmentRule::LetBinding => stats.let_binding += 1,
+                TypeJudgmentRule::Return => stats.return_ += 1,
+            }
+        }
+        stats
+    }
+}
+
+#[derive(serde::Serialize)]
+struct TypeCheckJudgmentSample {
+    id: usize,
+    subject: String,
+    rule: &'static str,
+    ty: String,
+    expected: Option<String>,
+}
+
+impl From<&TypeJudgment> for TypeCheckJudgmentSample {
+    fn from(judgment: &TypeJudgment) -> Self {
+        Self {
+            id: judgment.id.index(),
+            subject: type_judgment_subject_label(&judgment.subject),
+            rule: type_judgment_rule_label(judgment.rule),
+            ty: format!("{:?}", judgment.ty),
+            expected: judgment
+                .expected
+                .as_ref()
+                .map(|expected| format!("{expected:?}")),
+        }
+    }
+}
+
+fn type_judgment_subject_label(subject: &TypeJudgmentSubject) -> String {
+    match subject {
+        TypeJudgmentSubject::Expr { kind } => format!("expr:{kind}"),
+        TypeJudgmentSubject::LetBinding { pattern } => format!("let:{pattern}"),
+        TypeJudgmentSubject::Return { context } => format!("return:{context}"),
+        TypeJudgmentSubject::Expected { context } => format!("expected:{context}"),
+    }
+}
+
+const fn type_judgment_rule_label(rule: TypeJudgmentRule) -> &'static str {
+    match rule {
+        TypeJudgmentRule::Expr => "expr",
+        TypeJudgmentRule::Expected => "expected",
+        TypeJudgmentRule::LetBinding => "let_binding",
+        TypeJudgmentRule::Return => "return",
     }
 }
 

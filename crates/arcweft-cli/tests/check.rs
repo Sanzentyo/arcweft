@@ -724,6 +724,8 @@ flow @flow.profile profile {
             && stdout.contains("\"instructions\"")
             && stdout.contains("\"expressions\"")
             && stdout.contains("\"judgments\"")
+            && stdout.contains("\"judgment_rules\"")
+            && stdout.contains("\"judgment_samples\"")
             && stdout.contains("\"boundary_checks\"")
             && stdout.contains("\"executed_ops\": 2")
             && stdout.contains("\"source\": \"arcweft-cli-profile-json-"),

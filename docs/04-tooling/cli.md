@@ -271,11 +271,13 @@ The JSON includes read, parse, lint, HIR lowering, reference resolution,
 readiness, typecheck, line-task lowering, runtime-plan lowering, and VM run
 phases, plus bytecode lowering before execution. CLI runtime execution goes
 through the bytecode VM boundary. The JSON also includes `compiler.typecheck` counters for HIR items,
-statements, and expressions, plus `compiler.borrow_check` counters for borrow
-binding groups, borrow state snapshots/restores/merges, boundary checks, escape
-checks, maximum active borrows, and `compiler.bytecode` counters for flow and
-instruction counts. Runtime steps include executed op counts, event counts,
-emitted source/stream events, line effects, diagnostics, and queue depths.
+statements, expressions, type judgments, rule-family judgment counts, and a
+bounded judgment sample for inspection, plus `compiler.borrow_check` counters
+for borrow binding groups, borrow state snapshots/restores/merges, boundary
+checks, escape checks, maximum active borrows, and `compiler.bytecode` counters
+for flow and instruction counts. Runtime steps include executed op counts,
+event counts, emitted source/stream events, line effects, diagnostics, and queue
+depths.
 Profile and bench JSON must not persist absolute local source paths.
 
 ## JIT
