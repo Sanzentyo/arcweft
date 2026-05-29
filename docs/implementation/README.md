@@ -237,7 +237,9 @@ Current high-confidence state:
   as structured AST/HIR-checkable syntax. Line cleanup now uses `defer` rather
   than a separate cleanup construct; `with:`, `with { ... }`, and flat
   `=== with ===` fences are sugar over the same line-plan model. `spawn` is
-  rejected in favor of `thread`.
+  rejected in favor of `thread`. Line-plan flat fence blocks report parser
+  diagnostics for unknown fence kinds, close mismatches, and missing close
+  fences instead of relying on later raw-node rejection.
 - Syntax-level ID policy linting exists as `lint_id_policy`. It currently
   reports deep dot-run relative IDs such as `@...suffix` and flow IDs whose
   tail does not match the module tail. Further hierarchy checks should build on

@@ -587,6 +587,7 @@ fn split_flat_line_content_and_plan(
             plan_body,
             range,
             parse_with_brace_label(head.trim()),
+            &mut Vec::new(),
         )),
     )
 }

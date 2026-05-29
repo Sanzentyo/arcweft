@@ -323,6 +323,8 @@ flat fence sugar. For example, `start { ... }`, `start:`, and
 `=== start === ... === /start ===` all lower through the same line-plan item
 model. The same rule applies to `init`, `thread`, `on mark(...)`,
 `cancel on ...`, `defer on ...`, `start`, `together`, and `scope` block items.
+Malformed flat fences are not migration syntax: unknown fence kinds, close
+mismatches, and missing close fences are parser diagnostics before HIR lowering.
 
 `init` runs before reveal begins. `thread name` creates a line-scoped child task
 owned by the line task group; it is a Sans I/O runtime task, not an OS thread.

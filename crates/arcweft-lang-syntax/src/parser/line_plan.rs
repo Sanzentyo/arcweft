@@ -14,9 +14,10 @@ use crate::cst::{
 use crate::expr::{Expr, parse_expr};
 use crate::pattern::parse_pattern;
 
+use super::headers::simple_error;
 use super::{
-    collect_logical_block_items, indentation, parse_expr_lossy, parse_named_block_expr, parse_stmt,
-    parse_stmt_lines, split_brace_item, split_top_level_binding,
+    ParseError, collect_logical_block_items, indentation, parse_expr_lossy, parse_named_block_expr,
+    parse_stmt, parse_stmt_lines, split_brace_item, split_top_level_binding,
 };
 
 pub(super) fn parse_trigger_pattern(source: &str) -> TriggerPattern {
@@ -87,8 +88,13 @@ pub(super) fn parse_defer_outcome(head: &str) -> Option<DeferOutcome> {
     }
 }
 
-pub(super) fn parse_line_plan_body(style: BlockStyle, body: &str, range: TextRange) -> LinePlan {
-    let normalized_body = normalize_line_plan_flat_blocks(body);
+pub(super) fn parse_line_plan_body(
+    style: BlockStyle,
+    body: &str,
+    range: TextRange,
+    errors: &mut Vec<ParseError>,
+) -> LinePlan {
+    let normalized_body = normalize_line_plan_flat_blocks(body, range.start(), errors);
     let lines = collect_logical_block_items(&normalized_body);
     let mut items = Vec::new();
     let mut index = 0;
@@ -163,14 +169,18 @@ pub(super) fn parse_line_plan_body(style: BlockStyle, body: &str, range: TextRan
     LinePlan::new(style, items, range)
 }
 
-fn normalize_line_plan_flat_blocks(source: &str) -> Cow<'_, str> {
+fn normalize_line_plan_flat_blocks<'a>(
+    source: &'a str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Cow<'a, str> {
     if !source
         .lines()
         .any(|line| parse_flat_fence(line.trim()).is_some())
     {
         return Cow::Borrowed(source);
     }
-    if !line_plan_flat_fences_are_balanced(source) {
+    if !line_plan_flat_fences_are_well_formed(source, base, errors) {
         return Cow::Borrowed(source);
     }
     let lines = source.lines().collect::<Vec<_>>();
@@ -178,24 +188,87 @@ fn normalize_line_plan_flat_blocks(source: &str) -> Cow<'_, str> {
     Cow::Owned(flat_fence_lines_to_brace_blocks(&lines, &mut index).join("\n"))
 }
 
-fn line_plan_flat_fences_are_balanced(source: &str) -> bool {
-    let mut stack = Vec::new();
+fn line_plan_flat_fences_are_well_formed(
+    source: &str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> bool {
+    let mut stack: Vec<OpenFlatFence> = Vec::new();
+    let mut well_formed = true;
+    let mut offset = 0;
     for line in source.lines() {
+        let line_start = base + offset;
+        offset += line.len() + '\n'.len_utf8();
+        let leading = line.len() - line.trim_start().len();
+        let trimmed = line.trim();
         let Some(fence) = parse_flat_fence(line.trim()) else {
             continue;
         };
-        if fence.kind.is_empty() {
-            return false;
+        if !line_plan_flat_fence_kind_is_supported(fence.kind) {
+            errors.push(simple_error(
+                line_start + leading,
+                trimmed.len(),
+                "unknown flat fence kind",
+                "=== init ===",
+            ));
+            well_formed = false;
+            continue;
         }
         if fence.close {
-            if stack.pop().as_deref() != Some(fence.kind) {
-                return false;
+            let Some(open) = stack.pop() else {
+                errors.push(simple_error(
+                    line_start + leading,
+                    trimmed.len(),
+                    "flat fence close mismatch; no matching open fence",
+                    &format!("=== {} ===", fence.kind),
+                ));
+                well_formed = false;
+                continue;
+            };
+            if open.kind != fence.kind {
+                errors.push(simple_error(
+                    line_start + leading,
+                    trimmed.len(),
+                    &format!(
+                        "flat fence close mismatch; expected `=== /{} ===`",
+                        open.kind
+                    ),
+                    &format!("=== /{} ===", open.kind),
+                ));
+                well_formed = false;
             }
         } else {
-            stack.push(fence.kind.to_owned());
+            stack.push(OpenFlatFence {
+                kind: fence.kind.to_owned(),
+                start: line_start + leading,
+                len: trimmed.len(),
+            });
         }
     }
-    stack.is_empty()
+    for open in stack {
+        errors.push(simple_error(
+            open.start,
+            open.len,
+            &format!("missing close fence `=== /{} ===`", open.kind),
+            &format!("=== /{} ===", open.kind),
+        ));
+        well_formed = false;
+    }
+    well_formed
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct OpenFlatFence {
+    kind: String,
+    start: usize,
+    len: usize,
+}
+
+fn line_plan_flat_fence_kind_is_supported(kind: &str) -> bool {
+    matches!(
+        kind,
+        "init" | "thread" | "on" | "cancel" | "defer" | "start" | "together" | "scope"
+    )
 }
 
 fn flat_fence_lines_to_brace_blocks(lines: &[&str], index: &mut usize) -> Vec<String> {
@@ -468,9 +541,15 @@ fn parse_line_plan_nested_items(source: &str) -> Vec<LinePlanItem> {
         .strip_prefix('{')
         .and_then(|value| value.strip_suffix('}'))
         .unwrap_or_else(|| source.trim());
-    parse_line_plan_body(BlockStyle::Brace, body, TextRange::new(0, body.len()))
-        .items()
-        .to_vec()
+    let mut errors = Vec::new();
+    parse_line_plan_body(
+        BlockStyle::Brace,
+        body,
+        TextRange::new(0, body.len()),
+        &mut errors,
+    )
+    .items()
+    .to_vec()
 }
 
 fn parse_line_plan_cancel_action(action: &str) -> Vec<Stmt> {

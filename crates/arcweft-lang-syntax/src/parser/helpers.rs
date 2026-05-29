@@ -371,8 +371,9 @@ pub(super) fn parse_line_plan_attachment(
     body: &str,
     range: TextRange,
     label: Option<String>,
+    errors: &mut Vec<ParseError>,
 ) -> LinePlan {
-    attach_line_plan_label(parse_line_plan_body(style, body, range), label)
+    attach_line_plan_label(parse_line_plan_body(style, body, range, errors), label)
 }
 
 pub(super) fn flat_block_head(kind: &str, head: &str) -> String {
@@ -672,6 +673,7 @@ fn parse_inline_line_plan_source(source: &str) -> Option<LinePlan> {
             body,
             TextRange::new(0, source.len()),
             parse_with_brace_label(head.trim()),
+            &mut Vec::new(),
         ));
     }
     parse_inline_with_colon_plan(source).map(|(label, body)| {
@@ -680,6 +682,7 @@ fn parse_inline_line_plan_source(source: &str) -> Option<LinePlan> {
             body,
             TextRange::new(0, source.len()),
             label,
+            &mut Vec::new(),
         )
     })
 }

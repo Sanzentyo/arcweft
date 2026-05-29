@@ -799,6 +799,59 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn rejects_malformed_line_plan_flat_fences() {
+    for (source, message) in [
+        (
+            r"
+flow @flow.opening opening {
+    alice:
+        合図。[p]
+    with:
+        === init ===
+        setup_line()
+}
+",
+            "missing close fence",
+        ),
+        (
+            r"
+flow @flow.opening opening {
+    alice:
+        合図。[p]
+    with:
+        === start ===
+        === together ===
+        cue_move()
+        === /start ===
+        === /together ===
+}
+",
+            "flat fence close mismatch",
+        ),
+        (
+            r"
+flow @flow.opening opening {
+    alice:
+        合図。[p]
+    with {
+        === pulse ===
+        cue_move()
+        === /pulse ===
+    }
+}
+",
+            "unknown flat fence kind",
+        ),
+    ] {
+        let errors = parse_errors(source);
+        assert!(
+            errors.iter().any(|error| error.message().contains(message)),
+            "expected `{message}` in {errors:?}"
+        );
+    }
+}
+
+#[test]
 fn line_plan_memo_keeps_typed_options() {
     let tree = parse_ok(
         r"

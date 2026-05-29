@@ -246,6 +246,7 @@ impl Parser {
                 body,
                 range,
                 parse_with_brace_label(head.trim()),
+                &mut self.errors,
             ));
         }
         parse_inline_with_colon_plan(trailing).map(|(label, body)| {
@@ -257,6 +258,7 @@ impl Parser {
                     base + close_bracket + 1 + trailing.len(),
                 ),
                 label,
+                &mut self.errors,
             )
         })
     }
@@ -305,6 +307,7 @@ impl Parser {
                 &body,
                 TextRange::new(line.start, self.previous_end()),
                 parse_with_brace_label(&flat_block_head("with", fence.head)),
+                &mut self.errors,
             ));
         }
         if let Some(label) = parse_with_indent_label(trimmed) {
@@ -332,6 +335,7 @@ impl Parser {
                 &body,
                 TextRange::new(line.start, end),
                 parse_with_brace_label(head.trim()),
+                &mut self.errors,
             ));
         }
         None
@@ -444,6 +448,12 @@ impl Parser {
             end = line.end;
             self.index += 1;
         }
-        parse_line_plan_attachment(BlockStyle::Indent, &raw, TextRange::new(start, end), label)
+        parse_line_plan_attachment(
+            BlockStyle::Indent,
+            &raw,
+            TextRange::new(start, end),
+            label,
+            &mut self.errors,
+        )
     }
 }
