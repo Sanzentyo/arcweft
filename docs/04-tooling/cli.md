@@ -15,7 +15,7 @@ registry_from_hir
 validate_hir_references
 lint_id_policy
 validate_typecheck_ready
-typecheck_hir
+analyze_types
 line_task::lower_line_task_groups
 verify_module --mode dev
 ```
@@ -80,6 +80,7 @@ arcw verify game/routes/opening.arcw --backend oxiz
 arcw verify game/routes/opening.arcw --backend z3 --solver-command z3
 arcw verify game/routes/opening.arcw --emit-obligations obligations.json
 arcw verify game/routes/opening.arcw --emit-smt out/proofs
+arcw verify-types game/routes/opening.arcw --json
 arcw unsafe game/routes/opening.arcw --json
 arcw plan game/routes/opening.arcw --json
 arcw run game/routes/opening.arcw --steps 4 --json
@@ -119,6 +120,22 @@ recorded in `solver_checks`. In `test` and `release` mode, a required missing
 obligation whose solver outcome is `sat`, `unknown`, or an adapter error is
 reported as a verification error; `unsat` is the passing solver outcome for a
 required check.
+
+## Verify Types
+
+`arcw verify-types <file.arcw> [--mode dev|test|release] [--json]` is the
+executable type-soundness inspection entry point. It runs the same checked
+source pipeline as `arcw check`, keeps the full `TypeCheckReport`, lowers the
+module to `RuntimePlan`, and validates the executable runtime IR against the
+type-check evidence with `validate_runtime_plan_types`.
+
+JSON output reports the source label without absolute host paths, syntax warning
+count, lowered line task groups, typecheck counters, borrow-check counters,
+runtime-plan type validation diagnostics and stats, plus semantic verifier
+diagnostic/obligation counts. The command fails if type checking, runtime-plan
+type validation, or semantic verification reports an error. It is intended for
+CI gates and local regression checks that need stronger evidence than a green
+runtime dry run.
 
 ## Runtime Plan Inspection
 

@@ -454,6 +454,11 @@ Current high-confidence state:
   this pass between runtime-plan lowering and bytecode lowering and reports
   deterministic counters for runtime ops, expressions, conditions, guards,
   targets, returns, and type-judgment evidence.
+- `arcw verify-types` is the direct CLI gate for executable type-soundness
+  inspection. It keeps the successful `TypeCheckReport`, lowers to
+  `RuntimePlan`, runs `validate_runtime_plan_types`, and reports typecheck,
+  borrow-check, runtime-plan type validation, and semantic verifier counters in
+  one JSON document without recording absolute source paths.
 - `VerificationReport` now records solver outcomes as typed `solver_checks`.
   CLI solver I/O remains outside the Sans I/O verifier core, but `arcw verify
   --backend oxiz|z3 --json` writes each outcome back to the report. Required

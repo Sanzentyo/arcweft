@@ -808,6 +808,48 @@ flow @flow.profile profile {
 }
 
 #[test]
+fn verify_types_json_reports_type_and_runtime_validation_without_absolute_source() {
+    let path = temp_arcw(
+        "verify-types",
+        r#"
+flow @flow.verify_types verify_types {
+    log.info("verify types")
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("verify-types")
+        .arg(&path)
+        .arg("--json")
+        .output()
+        .expect("arcw verify-types runs");
+
+    assert!(
+        output.status.success(),
+        "verify-types should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"status\": \"ok\"")
+            && stdout.contains("\"typecheck\"")
+            && stdout.contains("\"borrow_check\"")
+            && stdout.contains("\"runtime_type_validation\"")
+            && stdout.contains("\"verifier\"")
+            && stdout.contains("\"judgments\"")
+            && stdout.contains("\"type_judgments\"")
+            && stdout.contains("\"source\": \"arcweft-cli-verify-types-"),
+        "verify-types JSON should include type, borrow, runtime validation, and verifier evidence: {stdout}"
+    );
+    assert!(
+        !stdout.contains(&std::env::temp_dir().display().to_string()),
+        "verify-types JSON must not record absolute temp paths: {stdout}"
+    );
+}
+
+#[test]
 fn profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source() {
     let path = temp_arcw(
         "profile-json",

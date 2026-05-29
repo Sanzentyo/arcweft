@@ -22,7 +22,7 @@ use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_jit_cranelift::{CompiledPureI64Inputs, CraneliftPureFunctionBackend};
 use arcweft_lang_sema::check::{
     TypeCheckReport, TypeCheckStats, TypeJudgment, TypeJudgmentRule, TypeJudgmentSubject,
-    analyze_types, typecheck_hir, validate_typecheck_ready,
+    analyze_types, validate_typecheck_ready,
 };
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
@@ -79,6 +79,7 @@ struct Cli {
 enum CliCommand {
     Check(CheckOptions),
     Verify(VerifyOptions),
+    VerifyTypes(VerifyTypesOptions),
     Unsafe(UnsafeOptions),
     Plan(PlanOptions),
     Run(RuntimeRunOptions),
@@ -119,6 +120,7 @@ fn run(cli: Cli) -> Result<(), ExitCode> {
     match cli.command {
         CliCommand::Check(options) => check_command(&options),
         CliCommand::Verify(options) => verify_command(&options),
+        CliCommand::VerifyTypes(options) => verify_types_command(&options),
         CliCommand::Unsafe(options) => unsafe_command(&options),
         CliCommand::Plan(options) => runtime_plan_command(&options),
         CliCommand::Run(options) => runtime_run_command(&options),
@@ -2355,6 +2357,71 @@ fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
     }
 }
 
+fn verify_types_command(options: &VerifyTypesOptions) -> Result<(), ExitCode> {
+    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    let checked = load_and_check_selection(&selection, None)?;
+    let runtime_plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
+        for error in errors {
+            eprintln!("error: {}", error.message());
+        }
+        ExitCode::FAILURE
+    })?;
+    let runtime_type_validation =
+        validate_runtime_plan_types(&runtime_plan, &checked.typecheck_report);
+    let verification = verify_module_with_env(
+        &checked.hir,
+        &checked.env,
+        VerificationPolicy {
+            mode: options.mode,
+            backend: BackendKind::Emit,
+        },
+    );
+    let status = if runtime_type_validation.has_errors() || verification.has_errors() {
+        "failed"
+    } else {
+        "ok"
+    };
+    let report = VerifyTypesReport {
+        status: status.to_owned(),
+        source: report_path(selection.path()),
+        syntax_warnings: checked.syntax_warnings,
+        line_task_groups: checked.line_task_groups.len(),
+        typecheck: TypeCheckProfileStats::from(&checked.typecheck_report),
+        borrow_check: BorrowCheckProfileStats::from(&checked.typecheck_report.stats),
+        runtime_type_validation: RuntimeTypeValidationReportSummary {
+            diagnostics: runtime_type_validation.diagnostics.len(),
+            errors: runtime_type_validation
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.severity == arcweft_verify::Severity::Error)
+                .count(),
+            stats: RuntimeTypeValidationProfileStats::from(&runtime_type_validation.stats),
+        },
+        verifier: VerifyTypesVerifierSummary {
+            diagnostics: verification.diagnostics.len(),
+            obligations: verification.obligations.len(),
+            unsafe_audits: verification.unsafe_audit_count(),
+        },
+    };
+    if options.json {
+        print_json(&report)?;
+    } else {
+        println!(
+            "{}: {} (type_judgments={}, runtime_type_errors={}, obligations={})",
+            report.status,
+            report.source,
+            report.typecheck.judgments,
+            report.runtime_type_validation.errors,
+            report.verifier.obligations
+        );
+    }
+    if status == "ok" {
+        Ok(())
+    } else {
+        Err(ExitCode::FAILURE)
+    }
+}
+
 fn unsafe_command(options: &UnsafeOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let checked = load_and_check_selection(&selection, None)?;
@@ -2501,6 +2568,7 @@ struct CheckedModule {
     env: TypeCheckEnv,
     syntax_warnings: usize,
     line_task_groups: Vec<LoweredLineTaskGroup>,
+    typecheck_report: TypeCheckReport,
 }
 
 fn load_and_check_with_env(path: &Path, env: &TypeCheckEnv) -> Result<CheckedModule, ExitCode> {
@@ -2552,8 +2620,9 @@ fn load_and_check_with_env(path: &Path, env: &TypeCheckEnv) -> Result<CheckedMod
         return Err(ExitCode::FAILURE);
     }
 
-    if let Err(errors) = typecheck_hir(&hir, env) {
-        for error in errors {
+    let typecheck_report = analyze_types(&hir, env);
+    if !typecheck_report.diagnostics.is_empty() {
+        for error in typecheck_report.diagnostics {
             eprintln!("error: {}", error.message());
         }
         return Err(ExitCode::FAILURE);
@@ -2574,6 +2643,7 @@ fn load_and_check_with_env(path: &Path, env: &TypeCheckEnv) -> Result<CheckedMod
         env: env.clone(),
         syntax_warnings: lints.len(),
         line_task_groups,
+        typecheck_report,
     })
 }
 
@@ -2598,6 +2668,17 @@ struct VerifyOptions {
     emit_smt: Option<PathBuf>,
     #[arg(long, alias = "z3-command")]
     z3_command: Option<String>,
+}
+
+#[derive(Args, Clone, Debug)]
+struct VerifyTypesOptions {
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
+    #[arg(long, value_parser = parse_verification_mode, default_value = "test")]
+    mode: VerificationMode,
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -3049,6 +3130,32 @@ struct RuntimeProfileReport {
     compiler: RuntimeProfileCompiler,
     phases: Vec<RuntimeProfilePhase>,
     runtime: RuntimeProfileRuntime,
+}
+
+#[derive(serde::Serialize)]
+struct VerifyTypesReport {
+    status: String,
+    source: String,
+    syntax_warnings: usize,
+    line_task_groups: usize,
+    typecheck: TypeCheckProfileStats,
+    borrow_check: BorrowCheckProfileStats,
+    runtime_type_validation: RuntimeTypeValidationReportSummary,
+    verifier: VerifyTypesVerifierSummary,
+}
+
+#[derive(serde::Serialize)]
+struct RuntimeTypeValidationReportSummary {
+    diagnostics: usize,
+    errors: usize,
+    stats: RuntimeTypeValidationProfileStats,
+}
+
+#[derive(serde::Serialize)]
+struct VerifyTypesVerifierSummary {
+    diagnostics: usize,
+    obligations: usize,
+    unsafe_audits: usize,
 }
 
 #[derive(serde::Serialize)]
