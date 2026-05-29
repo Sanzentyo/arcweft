@@ -1,6 +1,6 @@
 # Runtime boundary and arcw grammar refactor checklist
 
-No compatibility aliases. No deprecated wrappers. No transitional re-export modules.
+No compatibility aliases. No obsolete wrappers. No transitional re-export modules.
 
 ## Fixture activation note
 

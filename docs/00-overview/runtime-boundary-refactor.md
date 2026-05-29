@@ -2,7 +2,7 @@
 
 ## Premise
 
-This document intentionally does **not** preserve backward compatibility. Do not add `deprecated` names, type aliases, compatibility modules, or wrapper APIs. The project is still early enough that the correct names and shapes should replace the wrong ones directly.
+This document intentionally does **not** preserve backward compatibility. Do not add obsolete names, type aliases, compatibility modules, or wrapper APIs. The project is still early enough that the correct names and shapes should replace the wrong ones directly.
 
 The current implementation exposes `RuntimeStepInput`, `RuntimeStepInputRef`,
 `RuntimeStepOutput`, `RuntimeStepOutputSink`, `RuntimeStepResult`, and
