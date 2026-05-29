@@ -92,6 +92,7 @@ arcw jit check --json --iterations 1000 --warmup 10 --samples 5 --input-seed 0
 arcw jit check --case branch-mix --json --julia --iterations 1000 --warmup 10 --samples 5 --input-seed 11
 arcw jit check --case let-chain --json --iterations 1000 --warmup 10 --samples 5 --input-seed 17
 arcw jit check --case four-input-mix --json --iterations 1000 --warmup 10 --samples 5 --input-seed 13
+arcw jit check --case accumulation-mix --json --iterations 1000 --warmup 10 --samples 5 --input-seed 19
 arcw jit check game/scripts/math.arcw --helper score --json --input-seed 7
 arcw run game/routes/opening.arcw --mode drain --pure-backend auto --json
 arcw run game/routes/opening.arcw --mode drain --pure-backend jit --json
@@ -103,9 +104,9 @@ evaluation time, per-iteration medians, speedup ratios, deterministic
 accumulators, input binding names, and pure-helper lowering counters. Its timing
 loop feeds deterministic varying integer inputs through the typed AOT plan,
 compiled JIT function, JIT batch loop, and VM reference. Builtin cases exercise a
-score helper, branch-heavy arithmetic, lexical `let` chains, and a four-input
-arithmetic/branch mix so the native-call boundary and the compiled loop can be
-compared independently.
+score helper, branch-heavy arithmetic, lexical `let` chains, a four-input
+arithmetic/branch mix, and a denser accumulation-style arithmetic mix so the
+native-call boundary and the compiled loop can be compared independently.
 `--input-seed` makes the input series reproducible while allowing local A/B
 comparisons. It does not read source paths or persist host absolute paths.
 
@@ -113,10 +114,11 @@ Flow execution and bench JSON expose the same accelerator boundary. Per-step
 pure stats include scalar calls, batch calls, batch item counts, backend call
 counts, stack-packed argument calls, copied argument/result byte counts,
 thread-pool jobs, Vec argument allocations, and VM fallback counts. Executor
-stats include the selected pure backend, worker policy, batch threshold, helper
-acceleration summary, compile attempts, cache hits/misses, and compile elapsed
-time. These counters are meant to show whether natural flow code is staying on
-the zero-allocation scalar path or crossing into batch/thread-pool execution.
+stats include the selected pure backend, worker policy, resolved worker count,
+batch threshold, helper acceleration summary, compile attempts, cache
+hits/misses, and compile elapsed time. These counters are meant to show whether
+natural flow code is staying on the zero-allocation scalar path or crossing into
+batch/thread-pool execution.
 
 When a `.arcw` path is provided, `arcw jit check` runs the normal parse, HIR
 lowering, reference validation, typecheck-readiness, and typecheck path first.

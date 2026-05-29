@@ -424,6 +424,11 @@ Current high-confidence state:
   `system.available_parallelism()` calls now lower to typed system-info task
   requests. The CLI adapter resolves them from the host runtime, reports
   `system_info_ops`, and keeps the JSON output path-free.
+- The CLI regression harness now rejects generated `.arcweft` directories under
+  checked-in fixtures and scans non-review source/docs/tests for removed
+  whitespace-command DSL or compatibility-shim text. Run fixtures execute from
+  temporary copies so native file I/O benchmarks do not leave repository-local
+  runtime artifacts.
 - Phase 2.0 headless observation state is implemented for the current runtime
   slice. `arcweft-core` records
   cumulative log, signal, metric, and event observations from emitted
