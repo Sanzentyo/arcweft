@@ -282,21 +282,31 @@ fn print_jit_check_human_report(report: &JitCheckReport) {
 }
 
 fn jit_check_inputs(seed: u64, sample: usize, iteration: usize, arity: usize) -> Vec<i64> {
+    (0..arity)
+        .map(|index| jit_check_input_value(seed, sample, iteration, index))
+        .collect()
+}
+
+fn jit_check_input_array(seed: u64, sample: usize, iteration: usize, arity: usize) -> [i64; 4] {
+    let mut values = [0_i64; 4];
+    for (index, slot) in values.iter_mut().enumerate().take(arity) {
+        *slot = jit_check_input_value(seed, sample, iteration, index);
+    }
+    values
+}
+
+fn jit_check_input_value(seed: u64, sample: usize, iteration: usize, index: usize) -> i64 {
     let sample = u64::try_from(sample).unwrap_or_default();
     let iteration = u64::try_from(iteration).unwrap_or_default();
-    (0..arity)
-        .map(|index| {
-            let index = u64::try_from(index).unwrap_or_default();
-            let modulus = 5 + index % 5;
-            i64::try_from(
-                seed.saturating_mul(index + 1)
-                    .saturating_add(sample.saturating_mul(3 + index))
-                    .saturating_add(iteration)
-                    % modulus,
-            )
-            .map_or(1, |value| value + 1)
-        })
-        .collect()
+    let index = u64::try_from(index).unwrap_or_default();
+    let modulus = 5 + index % 5;
+    i64::try_from(
+        seed.saturating_mul(index + 1)
+            .saturating_add(sample.saturating_mul(3 + index))
+            .saturating_add(iteration)
+            % modulus,
+    )
+    .map_or(1, |value| value + 1)
 }
 
 struct JitCheckConformanceSet {
@@ -586,9 +596,10 @@ fn select_jit_helper_candidate<'a>(
 }
 
 fn warmup_jit_check_jit(compiled: &CompiledPureI64Inputs, warmup: usize, input_seed: u64) {
+    let arity = compiled.param_names().len();
     for index in 0..warmup {
-        let inputs = jit_check_inputs(input_seed, 0, index, compiled.param_names().len());
-        let _ = compiled.call(&inputs);
+        let inputs = jit_check_input_array(input_seed, 0, index, arity);
+        let _ = compiled.call(&inputs[..arity]);
     }
 }
 
@@ -598,9 +609,10 @@ fn measure_jit_check_jit(
     iterations: usize,
     input_seed: u64,
 ) -> Result<JitRepeatedMeasurement, ExitCode> {
+    let arity = compiled.param_names().len();
     measure_repeated(samples, iterations, |sample, index| {
-        let inputs = jit_check_inputs(input_seed, sample, index, compiled.param_names().len());
-        compiled.call(&inputs).map_err(|error| {
+        let inputs = jit_check_input_array(input_seed, sample, index, arity);
+        compiled.call(&inputs[..arity]).map_err(|error| {
             eprintln!("error: JIT evaluation failed: {error}");
             ExitCode::FAILURE
         })
@@ -614,11 +626,13 @@ fn warmup_jit_check_aot(
     input_seed: u64,
 ) -> Result<(), ExitCode> {
     for index in 0..warmup {
-        let inputs = jit_check_inputs(input_seed, 0, index, arity);
-        let _ = compiled.call_with_inputs(&inputs).map_err(|error| {
-            eprintln!("error: AOT warmup failed: {error}");
-            ExitCode::FAILURE
-        })?;
+        let inputs = jit_check_input_array(input_seed, 0, index, arity);
+        let _ = compiled
+            .call_with_inputs(&inputs[..arity])
+            .map_err(|error| {
+                eprintln!("error: AOT warmup failed: {error}");
+                ExitCode::FAILURE
+            })?;
     }
     Ok(())
 }
@@ -631,9 +645,9 @@ fn measure_jit_check_aot(
     input_seed: u64,
 ) -> Result<JitRepeatedMeasurement, ExitCode> {
     measure_repeated(samples, iterations, |sample, index| {
-        let inputs = jit_check_inputs(input_seed, sample, index, arity);
+        let inputs = jit_check_input_array(input_seed, sample, index, arity);
         compiled
-            .call_with_inputs(&inputs)
+            .call_with_inputs(&inputs[..arity])
             .map(|(value, _stats)| value)
             .map_err(|error| {
                 eprintln!("error: AOT evaluation failed: {error}");
