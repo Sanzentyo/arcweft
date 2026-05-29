@@ -78,9 +78,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   native Cranelift JIT, reporting conformance, deterministic accumulators,
   timing samples, compile time, and speedup ratios in the same bench JSON.
 - `arcweft-cli` keeps user-facing JSON report schemas in `output.rs`,
-  including profile, verify-types, bench, runtime step, and compiler counter
-  summaries. `main.rs` remains the command orchestration layer instead of also
-  owning these report data models.
+  including check, profile, verify-types, bench, runtime step, and compiler
+  counter summaries. `main.rs` remains the command orchestration layer instead
+  of also owning these report data models.
 - No renderer, Servo, audio, camera, USB, or MCP implementation.
 
 ## Files
@@ -461,11 +461,12 @@ Current high-confidence state:
 - `arcweft-lang-sema` now exposes `TypeCheckReport` / `TypeCheckStats` plus
   typed `TypeJudgment` evidence for successful expression, let-binding, and
   return checks.
-  `arcw profile --json` surfaces deterministic typecheck counters and integrated
-  borrow-check counters, including expression/statement counts, borrow binding
-  groups, type judgment counts, rule-family judgment counts, bounded judgment
-  samples, borrow state snapshots/restores/merges, boundary checks, escape
-  checks, and maximum active borrows.
+  `arcw check --json`, `arcw profile --json`, `arcw bench --json`, and
+  `arcw verify-types --json` surface deterministic typecheck counters and
+  integrated borrow-check counters, including expression/statement counts,
+  borrow binding groups, type judgment counts, rule-family judgment counts,
+  bounded judgment samples, borrow state snapshots/restores/merges, boundary
+  checks, escape checks, and maximum active borrows.
 - `arcweft-verify` exposes `validate_runtime_plan_types(plan, report)` for the
   post-lowering runtime plan consumed by the VM. `arcw profile --json` now runs
   this pass between runtime-plan lowering and bytecode lowering and reports
@@ -475,10 +476,13 @@ Current high-confidence state:
   inspection. It keeps the successful `TypeCheckReport`, lowers to
   `RuntimePlan`, runs `validate_runtime_plan_types`, and reports typecheck,
   borrow-check, runtime-plan type validation, and semantic verifier counters in
-  one JSON document without recording absolute source paths. With `--run`, it
-  also performs a bounded headless runtime progress self-check through the
-  selected executor and records per-step runtime evidence plus AOT fast-path
-  counters.
+  one JSON document without recording absolute source paths. Its JSON also
+  includes compiler phase timings for read, parse, lint, HIR lowering,
+  reference resolution, readiness, typecheck, line-task lowering,
+  runtime-plan lowering, runtime type validation, verification, and optional
+  bounded runtime execution. With `--run`, it also performs a bounded headless
+  runtime progress self-check through the selected executor and records
+  per-step runtime evidence plus AOT fast-path counters.
 - `VerificationReport` now records solver outcomes as typed `solver_checks`.
   CLI solver I/O remains outside the Sans I/O verifier core, but `arcw verify
   --backend oxiz|z3 --json` writes each outcome back to the report. Required

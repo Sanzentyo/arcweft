@@ -2288,15 +2288,17 @@ fn unsupported_headless_bench_reason(text: &str) -> Option<String> {
 
 fn check_command(options: &CheckOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
-    let checked = load_and_check_selection(&selection, None)?;
-    let report = verify_module_with_env(
-        &checked.hir,
-        &checked.env,
-        VerificationPolicy {
-            mode: VerificationMode::Dev,
-            backend: BackendKind::Emit,
-        },
-    );
+    let mut checked = load_and_check_selection(&selection, None)?;
+    let report = run_profile_phase(&mut checked.phases, "verify", || {
+        Ok::<arcweft_verify::VerificationReport, ExitCode>(verify_module_with_env(
+            &checked.hir,
+            &checked.env,
+            VerificationPolicy {
+                mode: VerificationMode::Dev,
+                backend: BackendKind::Emit,
+            },
+        ))
+    })?;
     if options.json {
         print_json(&CheckReport::from_checked(&checked, &report))?;
     } else {
@@ -2364,47 +2366,12 @@ fn verify_types_command(options: &VerifyTypesOptions) -> Result<(), ExitCode> {
         return Err(ExitCode::from(2));
     }
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
-    let checked = load_and_check_selection(&selection, None)?;
-    let mut runtime_plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
-        for error in errors {
-            eprintln!("error: {}", error.message());
-        }
-        ExitCode::FAILURE
-    })?;
-    let entry = options.entry.as_deref().or(selection.entry());
-    apply_runtime_entry_selection(&mut runtime_plan, entry, options.flow.as_deref())?;
+    let mut checked = load_and_check_selection(&selection, None)?;
+    let runtime_plan = verify_types_runtime_plan(&mut checked, &selection, options)?;
     let runtime_type_validation =
-        validate_runtime_plan_types(&runtime_plan, &checked.typecheck_report);
-    let verification = verify_module_with_env(
-        &checked.hir,
-        &checked.env,
-        VerificationPolicy {
-            mode: options.mode,
-            backend: BackendKind::Emit,
-        },
-    );
-    let runtime = if options.run {
-        let trace = run_runtime_steps(
-            runtime_plan,
-            Some(selection.path()),
-            options.steps,
-            options.runtime_mode,
-            options.max_ops,
-            &options.values,
-            options.executor,
-        );
-        Some(VerifyTypesRuntimeSelfCheck {
-            executor: RuntimeExecutorTier::from(options.executor),
-            executor_stats: trace.executor_stats,
-            steps_run: trace.steps.len(),
-            final_status: flow_status_label(&trace.final_status),
-            diagnostics: trace.steps.iter().map(|step| step.diagnostics.len()).sum(),
-            failed: matches!(trace.final_status, FlowFiberStatus::Failed(_)),
-            steps: trace.steps,
-        })
-    } else {
-        None
-    };
+        verify_types_runtime_type_validation(&mut checked, &runtime_plan)?;
+    let verification = verify_types_semantics(&mut checked, options.mode)?;
+    let runtime = verify_types_runtime_self_check(runtime_plan, &selection, options, &mut checked)?;
     let runtime_failed = runtime
         .as_ref()
         .is_some_and(|runtime| runtime.failed || runtime.diagnostics > 0);
@@ -2419,6 +2386,7 @@ fn verify_types_command(options: &VerifyTypesOptions) -> Result<(), ExitCode> {
         source: report_path(selection.path()),
         syntax_warnings: checked.syntax_warnings,
         line_task_groups: checked.line_task_groups.len(),
+        phases: checked.phases.clone(),
         typecheck: TypeCheckProfileStats::from(&checked.typecheck_report),
         borrow_check: BorrowCheckProfileStats::from(&checked.typecheck_report.stats),
         runtime_type_validation: RuntimeTypeValidationReportSummary {
@@ -2454,6 +2422,83 @@ fn verify_types_command(options: &VerifyTypesOptions) -> Result<(), ExitCode> {
     } else {
         Err(ExitCode::FAILURE)
     }
+}
+
+fn verify_types_runtime_plan(
+    checked: &mut CheckedModule,
+    selection: &SourceSelection,
+    options: &VerifyTypesOptions,
+) -> Result<RuntimePlan, ExitCode> {
+    let mut runtime_plan = run_profile_phase(&mut checked.phases, "runtime_plan_lower", || {
+        lower_runtime_plan(&checked.hir).map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {}", error.message());
+            }
+            ExitCode::FAILURE
+        })
+    })?;
+    let entry = options.entry.as_deref().or(selection.entry());
+    apply_runtime_entry_selection(&mut runtime_plan, entry, options.flow.as_deref())?;
+    Ok(runtime_plan)
+}
+
+fn verify_types_runtime_type_validation(
+    checked: &mut CheckedModule,
+    runtime_plan: &RuntimePlan,
+) -> Result<arcweft_verify::RuntimeTypeValidationReport, ExitCode> {
+    run_profile_phase(&mut checked.phases, "runtime_type_validate", || {
+        Ok(validate_runtime_plan_types(
+            runtime_plan,
+            &checked.typecheck_report,
+        ))
+    })
+}
+
+fn verify_types_semantics(
+    checked: &mut CheckedModule,
+    mode: VerificationMode,
+) -> Result<arcweft_verify::VerificationReport, ExitCode> {
+    run_profile_phase(&mut checked.phases, "verify", || {
+        Ok(verify_module_with_env(
+            &checked.hir,
+            &checked.env,
+            VerificationPolicy {
+                mode,
+                backend: BackendKind::Emit,
+            },
+        ))
+    })
+}
+
+fn verify_types_runtime_self_check(
+    runtime_plan: RuntimePlan,
+    selection: &SourceSelection,
+    options: &VerifyTypesOptions,
+    checked: &mut CheckedModule,
+) -> Result<Option<VerifyTypesRuntimeSelfCheck>, ExitCode> {
+    if !options.run {
+        return Ok(None);
+    }
+    let trace = run_profile_phase(&mut checked.phases, "run", || {
+        Ok(run_runtime_steps(
+            runtime_plan,
+            Some(selection.path()),
+            options.steps,
+            options.runtime_mode,
+            options.max_ops,
+            &options.values,
+            options.executor,
+        ))
+    })?;
+    Ok(Some(VerifyTypesRuntimeSelfCheck {
+        executor: RuntimeExecutorTier::from(options.executor),
+        executor_stats: trace.executor_stats,
+        steps_run: trace.steps.len(),
+        final_status: flow_status_label(&trace.final_status),
+        diagnostics: trace.steps.iter().map(|step| step.diagnostics.len()).sum(),
+        failed: matches!(trace.final_status, FlowFiberStatus::Failed(_)),
+        steps: trace.steps,
+    }))
 }
 
 fn unsafe_command(options: &UnsafeOptions) -> Result<(), ExitCode> {
@@ -2603,6 +2648,7 @@ struct CheckedModule {
     syntax_warnings: usize,
     line_task_groups: Vec<LoweredLineTaskGroup>,
     typecheck_report: TypeCheckReport,
+    phases: Vec<RuntimeProfilePhase>,
 }
 
 fn load_and_check_with_env(path: &Path, env: &TypeCheckEnv) -> Result<CheckedModule, ExitCode> {
@@ -2610,15 +2656,20 @@ fn load_and_check_with_env(path: &Path, env: &TypeCheckEnv) -> Result<CheckedMod
         eprintln!("error: {} is not an .arcw source file", path.display());
         return Err(ExitCode::from(2));
     }
-    let source = fs::read_to_string(path).map_err(|error| {
-        eprintln!("error: failed to read {}: {error}", path.display());
-        ExitCode::FAILURE
+    let mut phases = Vec::new();
+    let source = run_profile_phase(&mut phases, "read_source", || {
+        fs::read_to_string(path).map_err(|error| {
+            eprintln!("error: failed to read {}: {error}", path.display());
+            ExitCode::FAILURE
+        })
     })?;
 
-    let Ok(parsed) = catch_unwind(AssertUnwindSafe(|| parse_source(source))) else {
-        eprintln!("error: parser panicked while checking {}", path.display());
-        return Err(ExitCode::FAILURE);
-    };
+    let parsed = run_profile_phase(&mut phases, "parse", || {
+        catch_unwind(AssertUnwindSafe(|| parse_source(source))).map_err(|_| {
+            eprintln!("error: parser panicked while checking {}", path.display());
+            ExitCode::FAILURE
+        })
+    })?;
     if !parsed.errors().is_empty() {
         for error in parsed.errors() {
             eprintln!("error: {}", error.message());
@@ -2627,50 +2678,25 @@ fn load_and_check_with_env(path: &Path, env: &TypeCheckEnv) -> Result<CheckedMod
     }
 
     let tree = parsed.into_typed_tree();
-    let lints = lint_id_policy(&tree);
+    let lints = run_profile_phase(&mut phases, "lint", || {
+        Ok::<Vec<arcweft_lang_syntax::lint::SyntaxLint>, ExitCode>(lint_id_policy(&tree))
+    })?;
     for lint in &lints {
         eprintln!("warning[{:?}]: {}", lint.code(), lint.message());
     }
 
-    let hir = lower_to_hir(&tree).map_err(|errors| {
-        for error in errors {
-            eprintln!("error: {}", error.message());
-        }
-        ExitCode::FAILURE
-    })?;
+    let hir = profile_lower_hir(&tree, &mut phases)?;
 
-    let registry = registry_from_hir(&hir);
-    if let Err(errors) = validate_hir_references(&hir, &registry) {
-        for error in errors {
-            eprintln!("error: {}", error.message());
-        }
-        return Err(ExitCode::FAILURE);
-    }
+    let typecheck_report = profile_validate_hir(&hir, env, &mut phases)?;
 
-    if let Err(errors) = validate_typecheck_ready(&hir) {
-        for error in errors {
-            eprintln!("error: {}", error.message());
-        }
-        return Err(ExitCode::FAILURE);
-    }
-
-    let typecheck_report = analyze_types(&hir, env);
-    if !typecheck_report.diagnostics.is_empty() {
-        for error in typecheck_report.diagnostics {
-            eprintln!("error: {}", error.message());
-        }
-        return Err(ExitCode::FAILURE);
-    }
-
-    let line_task_groups = match lower_line_task_groups(&hir) {
-        Ok(groups) => groups,
-        Err(errors) => {
+    let line_task_groups = run_profile_phase(&mut phases, "line_task_lower", || {
+        lower_line_task_groups(&hir).map_err(|errors| {
             for error in errors {
                 eprintln!("error: {}", error.message());
             }
-            return Err(ExitCode::FAILURE);
-        }
-    };
+            ExitCode::FAILURE
+        })
+    })?;
 
     Ok(CheckedModule {
         hir,
@@ -2678,6 +2704,7 @@ fn load_and_check_with_env(path: &Path, env: &TypeCheckEnv) -> Result<CheckedMod
         syntax_warnings: lints.len(),
         line_task_groups,
         typecheck_report,
+        phases,
     })
 }
 

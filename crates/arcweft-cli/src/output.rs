@@ -27,6 +27,9 @@ pub(crate) struct CheckReport {
     pub(crate) flows: usize,
     pub(crate) line_task_groups: usize,
     pub(crate) syntax_warnings: usize,
+    pub(crate) typecheck: TypeCheckProfileStats,
+    pub(crate) borrow_check: BorrowCheckProfileStats,
+    pub(crate) phases: Vec<RuntimeProfilePhase>,
     pub(crate) verifier_diagnostics: usize,
     pub(crate) verifier_obligations: usize,
     pub(crate) unsafe_audits: usize,
@@ -127,6 +130,9 @@ impl CheckReport {
             flows: checked.hir.flows().len(),
             line_task_groups: checked.line_task_groups.len(),
             syntax_warnings: checked.syntax_warnings,
+            typecheck: TypeCheckProfileStats::from(&checked.typecheck_report),
+            borrow_check: BorrowCheckProfileStats::from(&checked.typecheck_report.stats),
+            phases: checked.phases.clone(),
             verifier_diagnostics: verification.diagnostics.len(),
             verifier_obligations: verification.obligations.len(),
             unsafe_audits: verification.unsafe_audit_count(),
@@ -355,6 +361,7 @@ pub(crate) struct VerifyTypesReport {
     pub(crate) source: String,
     pub(crate) syntax_warnings: usize,
     pub(crate) line_task_groups: usize,
+    pub(crate) phases: Vec<RuntimeProfilePhase>,
     pub(crate) typecheck: TypeCheckProfileStats,
     pub(crate) borrow_check: BorrowCheckProfileStats,
     pub(crate) runtime_type_validation: RuntimeTypeValidationReportSummary,
@@ -628,7 +635,7 @@ impl From<&AotProgramStats> for AotProfileStats {
     }
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 pub(crate) struct RuntimeProfilePhase {
     pub(crate) name: &'static str,
     pub(crate) elapsed_ns: u128,

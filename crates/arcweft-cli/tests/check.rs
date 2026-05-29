@@ -163,8 +163,18 @@ flow @flow.opening opening {
         stdout.contains("\"status\": \"ok\"")
             && stdout.contains("\"flows\": 1")
             && stdout.contains("\"line_task_groups\"")
+            && stdout.contains("\"typecheck\"")
+            && stdout.contains("\"borrow_check\"")
+            && stdout.contains("\"phases\"")
+            && stdout.contains("\"name\": \"parse\"")
+            && stdout.contains("\"name\": \"typecheck\"")
+            && stdout.contains("\"name\": \"line_task_lower\"")
+            && stdout.contains("\"name\": \"verify\"")
+            && stdout.contains("\"elapsed_ns\"")
+            && stdout.contains("\"judgments\"")
+            && stdout.contains("\"boundary_checks\"")
             && stdout.contains("\"verifier_obligations\""),
-        "check JSON should include pipeline summary: {stdout}"
+        "check JSON should include compiler timing and counter summary: {stdout}"
     );
 }
 
@@ -841,6 +851,11 @@ flow @flow.verify_types verify_types {
         stdout.contains("\"status\": \"ok\"")
             && stdout.contains("\"typecheck\"")
             && stdout.contains("\"borrow_check\"")
+            && stdout.contains("\"phases\"")
+            && stdout.contains("\"name\": \"runtime_plan_lower\"")
+            && stdout.contains("\"name\": \"runtime_type_validate\"")
+            && stdout.contains("\"name\": \"verify\"")
+            && stdout.contains("\"name\": \"run\"")
             && stdout.contains("\"runtime_type_validation\"")
             && stdout.contains("\"verifier\"")
             && stdout.contains("\"runtime\"")
