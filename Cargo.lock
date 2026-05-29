@@ -132,6 +132,7 @@ dependencies = [
  "arcweft-launch",
  "arcweft-runtime-accelerator",
  "arcweft-runtime-plan",
+ "arcweft-runtime-scheduler",
  "arcweft-test",
  "arcweft-tooling",
  "arcweft-verify",
@@ -257,6 +258,13 @@ dependencies = [
  "arcweft-core",
  "arcweft-lang-hir",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "arcweft-runtime-scheduler"
+version = "0.1.0"
+dependencies = [
+ "arcweft-core",
 ]
 
 [[package]]

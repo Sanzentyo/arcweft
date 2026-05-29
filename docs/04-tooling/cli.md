@@ -353,6 +353,11 @@ Profile and bench JSON must not persist absolute local source paths. Runtime
 pure configuration from `[profiles.NAME.pure]` is applied to `run`, `cli`,
 `serve`, `test`, `bench`, and `verify-types --run`; explicit CLI flags override
 the profile's `backend`, `workers`, and `batch_min_len` values.
+Native file task execution goes through the deterministic runtime scheduler
+before the CLI adapter performs filesystem work. `native_io.scheduler` reports
+submitted, joined, dispatched, completed, failed, cancelled, requested cancel,
+current in-flight, and maximum in-flight task counts without recording host
+paths.
 
 ## JIT
 

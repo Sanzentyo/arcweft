@@ -405,6 +405,12 @@ Current high-confidence state:
   Runtime JSON reports include native I/O counters for completed and failed
   tasks, read/write operations, and bytes read/written without recording host
   paths.
+- `arcweft-runtime-scheduler` is the first Sans I/O scheduler crate. It depends
+  only on `arcweft-core`, accepts `TaskSpec` values, deduplicates in-flight
+  `JoinSameKey` work, dispatches by priority and stable submission order,
+  records cancellation requests as data, normalizes completed events, and
+  exposes scheduler counters. The CLI native task bridge now routes file tasks
+  through this scheduler before performing adapter-owned filesystem I/O.
 - Phase 2.0 headless observation state is implemented for the current runtime
   slice. `arcweft-core` records
   cumulative log, signal, metric, and event observations from emitted

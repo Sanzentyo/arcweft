@@ -35,6 +35,13 @@ key. `debug_label` is for diagnostics only and is never an execution
 discriminator. Backends such as Tokio, Rayon, web workers, or a cooperative test
 executor sit outside core.
 
+The current Rust implementation keeps the deterministic scheduling layer in
+`arcweft-runtime-scheduler`. It depends only on `arcweft-core`, accepts
+`TaskSpec` values, joins in-flight `JoinSameKey` tasks, sorts dispatch by
+priority and stable submission order, records cancellation requests as data,
+and normalizes completed `TaskEvent` values. CLI native file tasks use this
+scheduler before performing adapter-owned filesystem work.
+
 ```rust
 pub enum HostTaskRequest {
     FileReadText(FileReadTextRequest),
@@ -122,6 +129,20 @@ pub trait CooperativeJob {
     type Output;
     fn resume(&mut self, budget: JobBudget) -> JobPoll<Self::Output>;
 }
+```
+
+Scheduler JSON counters are adapter-visible and path-free:
+
+```text
+submitted
+joined
+dispatched
+completed
+failed
+cancelled
+cancel_requested
+in_flight
+max_in_flight
 ```
 
 ## Need handling

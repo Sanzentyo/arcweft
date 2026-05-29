@@ -1,0 +1,334 @@
+//! Sans I/O runtime task scheduler.
+//!
+//! The scheduler owns deterministic task submission, key-based joining,
+//! cancellation bookkeeping, and dispatch ordering. Host adapters still own
+//! actual I/O, worker pools, clocks, and OS integration.
+
+use arcweft_core::task::{
+    CancelScopeId, SchedulerBudget, TaskEvent, TaskEventKind, TaskId, TaskKey, TaskPolicy,
+    TaskSpec, normalize_task_events,
+};
+use std::collections::{BTreeMap, BTreeSet};
+
+/// Scheduler policy chosen by a host adapter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeSchedulerConfig {
+    pub default_budget: SchedulerBudget,
+}
+
+/// Deterministic runtime scheduler state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeScheduler {
+    config: RuntimeSchedulerConfig,
+    next_order: u64,
+    pending: Vec<ScheduledTask>,
+    in_flight: BTreeMap<TaskId, InFlightTask>,
+    in_flight_by_key: BTreeMap<TaskKey, TaskId>,
+    cancel_scopes: BTreeSet<CancelScopeId>,
+    stats: RuntimeSchedulerStats,
+}
+
+/// Tasks and cancellations ready for a host adapter.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SchedulerDispatchBatch {
+    pub tasks: Vec<TaskSpec>,
+    pub cancel_scopes: Vec<CancelScopeId>,
+}
+
+/// Cumulative scheduler counters.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RuntimeSchedulerStats {
+    pub submitted: usize,
+    pub joined: usize,
+    pub dispatched: usize,
+    pub completed: usize,
+    pub failed: usize,
+    pub cancelled: usize,
+    pub cancel_requested: usize,
+    pub in_flight: usize,
+    pub max_in_flight: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ScheduledTask {
+    spec: TaskSpec,
+    order: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct InFlightTask {
+    key: TaskKey,
+    policy: TaskPolicy,
+}
+
+impl RuntimeScheduler {
+    /// Creates an empty deterministic scheduler.
+    pub const fn new(config: RuntimeSchedulerConfig) -> Self {
+        Self {
+            config,
+            next_order: 0,
+            pending: Vec::new(),
+            in_flight: BTreeMap::new(),
+            in_flight_by_key: BTreeMap::new(),
+            cancel_scopes: BTreeSet::new(),
+            stats: RuntimeSchedulerStats {
+                submitted: 0,
+                joined: 0,
+                dispatched: 0,
+                completed: 0,
+                failed: 0,
+                cancelled: 0,
+                cancel_requested: 0,
+                in_flight: 0,
+                max_in_flight: 0,
+            },
+        }
+    }
+
+    /// Submits runtime tasks and joins same-key work according to policy.
+    pub fn submit(&mut self, tasks: impl IntoIterator<Item = TaskSpec>) {
+        for spec in tasks {
+            self.submit_one(spec);
+        }
+    }
+
+    /// Records a cancellation request for the next dispatch batch.
+    pub fn cancel_scope(&mut self, scope: CancelScopeId) {
+        if self.cancel_scopes.insert(scope) {
+            self.stats.cancel_requested += 1;
+        }
+    }
+
+    /// Dispatches pending tasks in deterministic priority order.
+    pub fn dispatch(&mut self, budget: SchedulerBudget) -> SchedulerDispatchBatch {
+        let max_events = if budget.max_events == 0 {
+            self.config.default_budget.max_events
+        } else {
+            budget.max_events
+        };
+        self.pending.sort_by(compare_scheduled_tasks);
+        let dispatch_count = self.pending.len().min(max_events);
+        let dispatched = self.pending.drain(..dispatch_count).collect::<Vec<_>>();
+        let tasks = dispatched
+            .into_iter()
+            .map(|scheduled| scheduled.spec)
+            .collect::<Vec<_>>();
+        self.stats.dispatched += tasks.len();
+        SchedulerDispatchBatch {
+            tasks,
+            cancel_scopes: std::mem::take(&mut self.cancel_scopes)
+                .into_iter()
+                .collect(),
+        }
+    }
+
+    /// Completes in-flight tasks and returns replay-normalized task events.
+    pub fn complete(&mut self, events: impl IntoIterator<Item = TaskEvent>) -> Vec<TaskEvent> {
+        let events = normalize_task_events(events.into_iter().collect());
+        for event in &events {
+            self.complete_one(event);
+        }
+        self.refresh_in_flight_stats();
+        events
+    }
+
+    /// Returns current cumulative scheduler counters.
+    pub fn stats(&self) -> RuntimeSchedulerStats {
+        let mut stats = self.stats;
+        stats.in_flight = self.in_flight.len();
+        stats
+    }
+
+    fn submit_one(&mut self, spec: TaskSpec) {
+        if spec.policy == TaskPolicy::JoinSameKey && self.in_flight_by_key.contains_key(&spec.key) {
+            self.stats.joined += 1;
+            return;
+        }
+        let order = self.next_order;
+        self.next_order = self.next_order.saturating_add(1);
+        self.track_in_flight(&spec);
+        self.pending.push(ScheduledTask { spec, order });
+        self.stats.submitted += 1;
+        self.refresh_in_flight_stats();
+    }
+
+    fn track_in_flight(&mut self, spec: &TaskSpec) {
+        self.in_flight.insert(
+            spec.id.clone(),
+            InFlightTask {
+                key: spec.key.clone(),
+                policy: spec.policy.clone(),
+            },
+        );
+        if spec.policy == TaskPolicy::JoinSameKey {
+            self.in_flight_by_key
+                .insert(spec.key.clone(), spec.id.clone());
+        }
+    }
+
+    fn complete_one(&mut self, event: &TaskEvent) {
+        let Some(task) = self.in_flight.remove(&event.task_id) else {
+            return;
+        };
+        if task.policy == TaskPolicy::JoinSameKey {
+            self.in_flight_by_key.remove(&task.key);
+        }
+        match event.kind {
+            TaskEventKind::Ready(_) | TaskEventKind::Progress(_) => {
+                self.stats.completed += 1;
+            }
+            TaskEventKind::Err(_) => {
+                self.stats.failed += 1;
+            }
+            TaskEventKind::Cancelled => {
+                self.stats.cancelled += 1;
+            }
+        }
+    }
+
+    fn refresh_in_flight_stats(&mut self) {
+        self.stats.in_flight = self.in_flight.len();
+        self.stats.max_in_flight = self.stats.max_in_flight.max(self.in_flight.len());
+    }
+}
+
+impl Default for RuntimeScheduler {
+    fn default() -> Self {
+        Self::new(RuntimeSchedulerConfig::default())
+    }
+}
+
+impl Default for RuntimeSchedulerConfig {
+    fn default() -> Self {
+        Self {
+            default_budget: SchedulerBudget {
+                max_events: usize::MAX,
+            },
+        }
+    }
+}
+
+fn compare_scheduled_tasks(left: &ScheduledTask, right: &ScheduledTask) -> std::cmp::Ordering {
+    right
+        .spec
+        .priority
+        .cmp(&left.spec.priority)
+        .then_with(|| left.order.cmp(&right.order))
+        .then_with(|| left.spec.id.cmp(&right.spec.id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_core::task::{
+        FileReadTextRequest, HostTaskRequest, LogicalEpoch, TaskPriority, TaskSequence,
+    };
+
+    #[test]
+    fn joins_same_key_in_flight_tasks() {
+        let mut scheduler = RuntimeScheduler::default();
+        scheduler.submit([task("a", "asset.bg", TaskPolicy::JoinSameKey, 0)]);
+        scheduler.submit([task("b", "asset.bg", TaskPolicy::JoinSameKey, 0)]);
+
+        let batch = scheduler.dispatch(SchedulerBudget { max_events: 8 });
+
+        assert_eq!(batch.tasks.len(), 1);
+        assert_eq!(batch.tasks[0].id, TaskId("a".to_owned()));
+        assert_eq!(scheduler.stats().submitted, 1);
+        assert_eq!(scheduler.stats().joined, 1);
+        assert_eq!(scheduler.stats().in_flight, 1);
+    }
+
+    #[test]
+    fn always_start_does_not_join_same_key_tasks() {
+        let mut scheduler = RuntimeScheduler::default();
+        scheduler.submit([
+            task("a", "asset.bg", TaskPolicy::AlwaysStart, 0),
+            task("b", "asset.bg", TaskPolicy::AlwaysStart, 0),
+        ]);
+
+        let batch = scheduler.dispatch(SchedulerBudget { max_events: 8 });
+
+        assert_eq!(batch.tasks.len(), 2);
+        assert_eq!(scheduler.stats().joined, 0);
+        assert_eq!(scheduler.stats().max_in_flight, 2);
+    }
+
+    #[test]
+    fn dispatches_by_priority_then_submission_order() {
+        let mut scheduler = RuntimeScheduler::default();
+        scheduler.submit([
+            task("low", "low", TaskPolicy::AlwaysStart, 1),
+            task("high-a", "high-a", TaskPolicy::AlwaysStart, 9),
+            task("high-b", "high-b", TaskPolicy::AlwaysStart, 9),
+        ]);
+
+        let batch = scheduler.dispatch(SchedulerBudget { max_events: 2 });
+
+        let ids = batch
+            .tasks
+            .iter()
+            .map(|task| task.id.0.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, ["high-a", "high-b"]);
+        assert_eq!(scheduler.stats().dispatched, 2);
+    }
+
+    #[test]
+    fn completion_updates_stats_and_normalizes_events() {
+        let mut scheduler = RuntimeScheduler::default();
+        scheduler.submit([
+            task("a", "a", TaskPolicy::AlwaysStart, 0),
+            task("b", "b", TaskPolicy::AlwaysStart, 0),
+        ]);
+        scheduler.dispatch(SchedulerBudget { max_events: 8 });
+
+        let events = scheduler.complete([
+            event("b", 2, TaskEventKind::Err("failed".to_owned())),
+            event("a", 1, TaskEventKind::Ready("ok".to_owned())),
+        ]);
+
+        assert_eq!(events[0].task_id, TaskId("a".to_owned()));
+        assert_eq!(scheduler.stats().completed, 1);
+        assert_eq!(scheduler.stats().failed, 1);
+        assert_eq!(scheduler.stats().in_flight, 0);
+    }
+
+    #[test]
+    fn cancellation_requests_are_dispatched_once() {
+        let mut scheduler = RuntimeScheduler::default();
+        scheduler.cancel_scope(CancelScopeId("flow".to_owned()));
+        scheduler.cancel_scope(CancelScopeId("flow".to_owned()));
+
+        let batch = scheduler.dispatch(SchedulerBudget { max_events: 0 });
+
+        assert_eq!(batch.cancel_scopes, [CancelScopeId("flow".to_owned())]);
+        assert_eq!(scheduler.stats().cancel_requested, 1);
+    }
+
+    fn task(id: &str, key: &str, policy: TaskPolicy, priority: i32) -> TaskSpec {
+        TaskSpec::new(
+            TaskId(id.to_owned()),
+            TaskKey(key.to_owned()),
+            HostTaskRequest::FileReadText(FileReadTextRequest {
+                path: "save:test.txt".to_owned(),
+            })
+            .task_class(),
+            TaskPriority(priority),
+            CancelScopeId("test".to_owned()),
+            policy,
+            HostTaskRequest::FileReadText(FileReadTextRequest {
+                path: "save:test.txt".to_owned(),
+            }),
+        )
+    }
+
+    fn event(id: &str, sequence: u64, kind: TaskEventKind) -> TaskEvent {
+        TaskEvent {
+            logical_epoch: LogicalEpoch(0),
+            task_id: TaskId(id.to_owned()),
+            sequence: TaskSequence(sequence),
+            kind,
+        }
+    }
+}

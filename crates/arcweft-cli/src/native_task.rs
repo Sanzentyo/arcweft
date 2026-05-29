@@ -1,6 +1,8 @@
 use arcweft_core::task::{
-    HostTaskRequest, LogicalEpoch, TaskEvent, TaskEventKind, TaskSequence, TaskSpec,
+    HostTaskRequest, LogicalEpoch, SchedulerBudget, TaskEvent, TaskEventKind, TaskSequence,
+    TaskSpec,
 };
+use arcweft_runtime_scheduler::{RuntimeScheduler, RuntimeSchedulerStats};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -8,6 +10,7 @@ use std::path::{Component, Path, PathBuf};
 pub(crate) struct NativeTaskBridge {
     io_root: PathBuf,
     sequence: u64,
+    scheduler: RuntimeScheduler,
     stats: NativeTaskStats,
 }
 
@@ -19,6 +22,20 @@ pub(crate) struct NativeTaskStats {
     pub(crate) write_ops: usize,
     pub(crate) bytes_read: usize,
     pub(crate) bytes_written: usize,
+    pub(crate) scheduler: NativeSchedulerStats,
+}
+
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+pub(crate) struct NativeSchedulerStats {
+    pub(crate) submitted: usize,
+    pub(crate) joined: usize,
+    pub(crate) dispatched: usize,
+    pub(crate) completed: usize,
+    pub(crate) failed: usize,
+    pub(crate) cancelled: usize,
+    pub(crate) cancel_requested: usize,
+    pub(crate) in_flight: usize,
+    pub(crate) max_in_flight: usize,
 }
 
 impl NativeTaskBridge {
@@ -27,12 +44,15 @@ impl NativeTaskBridge {
         Self {
             io_root: source_dir.join(".arcweft"),
             sequence: 0,
+            scheduler: RuntimeScheduler::default(),
             stats: NativeTaskStats::default(),
         }
     }
 
-    pub(crate) const fn stats(&self) -> NativeTaskStats {
-        self.stats
+    pub(crate) fn stats(&self) -> NativeTaskStats {
+        let mut stats = self.stats;
+        stats.scheduler = NativeSchedulerStats::from(self.scheduler.stats());
+        stats
     }
 
     pub(crate) fn read_text_snapshot(source_path: &Path, value: &str) -> Result<String, String> {
@@ -42,7 +62,12 @@ impl NativeTaskBridge {
     }
 
     pub(crate) fn complete_tasks(&mut self, tasks: &[TaskSpec]) -> Vec<TaskEvent> {
-        tasks
+        self.scheduler.submit(tasks.iter().cloned());
+        let dispatch = self.scheduler.dispatch(SchedulerBudget {
+            max_events: usize::MAX,
+        });
+        let events = dispatch
+            .tasks
             .iter()
             .filter_map(|task| {
                 let result = match &task.request {
@@ -114,7 +139,8 @@ impl NativeTaskBridge {
                 self.sequence = self.sequence.saturating_add(1);
                 Some(event)
             })
-            .collect()
+            .collect::<Vec<_>>();
+        self.scheduler.complete(events)
     }
 
     fn virtual_path(&self, value: &str) -> Result<PathBuf, String> {
@@ -137,5 +163,21 @@ impl NativeTaskBridge {
             return Err("virtual path must be relative and normalized".to_owned());
         }
         Ok(self.io_root.join(space).join(relative_path))
+    }
+}
+
+impl From<RuntimeSchedulerStats> for NativeSchedulerStats {
+    fn from(stats: RuntimeSchedulerStats) -> Self {
+        Self {
+            submitted: stats.submitted,
+            joined: stats.joined,
+            dispatched: stats.dispatched,
+            completed: stats.completed,
+            failed: stats.failed,
+            cancelled: stats.cancelled,
+            cancel_requested: stats.cancel_requested,
+            in_flight: stats.in_flight,
+            max_in_flight: stats.max_in_flight,
+        }
     }
 }

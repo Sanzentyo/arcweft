@@ -52,7 +52,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 mod native_task;
 mod output;
 mod server_adapter;
-use native_task::{NativeTaskBridge, NativeTaskStats};
+use native_task::{NativeSchedulerStats, NativeTaskBridge, NativeTaskStats};
 use output::{
     AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, CheckReport,
     RuntimeExecutorPureAccelerationSummary, RuntimeExecutorPureCompileStatsSummary,
@@ -3067,6 +3067,7 @@ struct NativeTaskStatsSamples {
     write_ops: Vec<usize>,
     bytes_read: Vec<usize>,
     bytes_written: Vec<usize>,
+    scheduler: NativeSchedulerStatsSamples,
 }
 
 impl NativeTaskStatsSamples {
@@ -3077,6 +3078,7 @@ impl NativeTaskStatsSamples {
         self.write_ops.push(stats.write_ops);
         self.bytes_read.push(stats.bytes_read);
         self.bytes_written.push(stats.bytes_written);
+        self.scheduler.push(stats.scheduler);
     }
 
     fn median(&mut self) -> NativeTaskStats {
@@ -3087,6 +3089,48 @@ impl NativeTaskStatsSamples {
             write_ops: median_usize(&mut self.write_ops),
             bytes_read: median_usize(&mut self.bytes_read),
             bytes_written: median_usize(&mut self.bytes_written),
+            scheduler: self.scheduler.median(),
+        }
+    }
+}
+
+#[derive(Default)]
+struct NativeSchedulerStatsSamples {
+    submitted: Vec<usize>,
+    joined: Vec<usize>,
+    dispatched: Vec<usize>,
+    completed: Vec<usize>,
+    failed: Vec<usize>,
+    cancelled: Vec<usize>,
+    cancel_requested: Vec<usize>,
+    in_flight: Vec<usize>,
+    max_in_flight: Vec<usize>,
+}
+
+impl NativeSchedulerStatsSamples {
+    fn push(&mut self, stats: NativeSchedulerStats) {
+        self.submitted.push(stats.submitted);
+        self.joined.push(stats.joined);
+        self.dispatched.push(stats.dispatched);
+        self.completed.push(stats.completed);
+        self.failed.push(stats.failed);
+        self.cancelled.push(stats.cancelled);
+        self.cancel_requested.push(stats.cancel_requested);
+        self.in_flight.push(stats.in_flight);
+        self.max_in_flight.push(stats.max_in_flight);
+    }
+
+    fn median(&mut self) -> NativeSchedulerStats {
+        NativeSchedulerStats {
+            submitted: median_usize(&mut self.submitted),
+            joined: median_usize(&mut self.joined),
+            dispatched: median_usize(&mut self.dispatched),
+            completed: median_usize(&mut self.completed),
+            failed: median_usize(&mut self.failed),
+            cancelled: median_usize(&mut self.cancelled),
+            cancel_requested: median_usize(&mut self.cancel_requested),
+            in_flight: median_usize(&mut self.in_flight),
+            max_in_flight: median_usize(&mut self.max_in_flight),
         }
     }
 }
