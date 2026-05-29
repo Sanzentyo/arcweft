@@ -13,6 +13,7 @@ use arcweft_core::{
     value::{RuntimeBinding, RuntimeEvalError, RuntimeValue},
 };
 use arcweft_lang_jit_cranelift::{CompiledPureI64Inputs, CraneliftPureFunctionBackend};
+use rayon::{ThreadPool, ThreadPoolBuilder, prelude::*};
 use std::{collections::BTreeMap, fmt};
 
 /// Runtime pure backend selection used by CLI/player adapters.
@@ -25,11 +26,44 @@ pub enum RuntimePureBackendMode {
     Auto,
 }
 
+/// Runtime pure batch worker-count policy.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RuntimePureWorkerCount {
+    #[default]
+    Auto,
+    Fixed(usize),
+}
+
+/// Adapter-owned pure helper acceleration settings.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimePureAcceleratorConfig {
+    pub backend: RuntimePureBackendMode,
+    pub workers: RuntimePureWorkerCount,
+    pub batch_min_len: usize,
+}
+
+/// Compile-cache and runtime cache counters for pure acceleration.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RuntimePureCompileStats {
+    pub jit_attempts: usize,
+    pub jit_successes: usize,
+    pub jit_failures: usize,
+    pub aot_attempts: usize,
+    pub aot_successes: usize,
+    pub aot_failures: usize,
+    pub cache_hits: usize,
+    pub cache_misses: usize,
+    pub compile_elapsed_ns: u128,
+}
+
 /// Compile-cache backed runtime pure helper accelerator.
 pub struct RuntimePureAccelerator {
-    mode: RuntimePureBackendMode,
+    config: RuntimePureAcceleratorConfig,
     cache: BTreeMap<RuntimePureHelperId, RuntimePureCacheEntry>,
     stats: RuntimePureCallStats,
+    compile_stats: RuntimePureCompileStats,
+    helper_summary: RuntimePureAccelerationSummary,
+    pool: Option<ThreadPool>,
 }
 
 enum RuntimePureCacheEntry {
@@ -41,28 +75,149 @@ enum RuntimePureCacheEntry {
 impl fmt::Debug for RuntimePureAccelerator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RuntimePureAccelerator")
-            .field("mode", &self.mode)
+            .field("config", &self.config)
             .field("cache_entries", &self.cache.len())
             .field("stats", &self.stats)
+            .field("compile_stats", &self.compile_stats)
+            .field("helper_summary", &self.helper_summary)
+            .field("has_pool", &self.pool.is_some())
             .finish()
     }
 }
 
 impl RuntimePureAccelerator {
     pub fn new(mode: RuntimePureBackendMode, helpers: &[RuntimePureHelper]) -> Self {
+        Self::with_config(
+            RuntimePureAcceleratorConfig {
+                backend: mode,
+                ..RuntimePureAcceleratorConfig::default()
+            },
+            helpers,
+        )
+    }
+
+    pub fn with_config(
+        config: RuntimePureAcceleratorConfig,
+        helpers: &[RuntimePureHelper],
+    ) -> Self {
+        let started = std::time::Instant::now();
+        let mut compile_stats = RuntimePureCompileStats::default();
+        let helper_summary = helper_summary_from_helpers(helpers);
         let cache = helpers
             .iter()
-            .map(|helper| (helper.id, compile_helper(mode, helper)))
+            .map(|helper| {
+                (
+                    helper.id,
+                    compile_helper(config.backend, helper, &mut compile_stats),
+                )
+            })
             .collect();
+        compile_stats.compile_elapsed_ns = started.elapsed().as_nanos();
         Self {
-            mode,
+            config,
             cache,
             stats: RuntimePureCallStats::default(),
+            compile_stats,
+            helper_summary,
+            pool: build_thread_pool(config.workers),
         }
     }
 
     pub const fn mode(&self) -> RuntimePureBackendMode {
-        self.mode
+        self.config.backend
+    }
+
+    pub const fn config(&self) -> RuntimePureAcceleratorConfig {
+        self.config
+    }
+
+    pub const fn compile_stats(&self) -> RuntimePureCompileStats {
+        self.compile_stats
+    }
+
+    pub fn call_i64_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        rows: &[RuntimeI64Args],
+        out: &mut [i64],
+    ) -> Result<(), RuntimeEvalError> {
+        if rows.len() != out.len() {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: format!(
+                    "pure batch expected {} output slot(s), got {}",
+                    rows.len(),
+                    out.len()
+                ),
+            });
+        }
+        self.stats.batch_calls += 1;
+        self.stats.batch_items += rows.len();
+        self.stats.pure_calls += rows.len();
+        self.stats.arg_stack_packs += rows.len();
+        self.stats.arg_bytes_copied += rows
+            .iter()
+            .map(|row| row.len() * std::mem::size_of::<i64>())
+            .sum::<usize>();
+        self.stats.result_bytes_copied += std::mem::size_of_val(out);
+        if rows.is_empty() {
+            return Ok(());
+        }
+        match self.cache.get(&helper.id) {
+            Some(RuntimePureCacheEntry::Jit(compiled)) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.jit_calls += rows.len();
+                call_jit_batch(compiled, rows, out, helper)
+            }
+            Some(RuntimePureCacheEntry::Aot(compiled)) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.aot_calls += rows.len();
+                if self.should_parallelize(rows.len()) {
+                    self.stats.thread_pool_jobs += self.parallel_jobs(rows.len());
+                    call_aot_batch_parallel(self.pool.as_ref(), compiled, rows, out)
+                } else {
+                    call_aot_batch(compiled, rows, out)
+                }
+            }
+            Some(RuntimePureCacheEntry::Vm) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.vm_calls += rows.len();
+                self.stats.fallbacks += rows.len();
+                self.stats.arg_vec_allocations += rows.len();
+                if self.should_parallelize(rows.len()) {
+                    self.stats.thread_pool_jobs += self.parallel_jobs(rows.len());
+                    call_vm_batch_parallel(self.pool.as_ref(), helper, rows, out)
+                } else {
+                    call_vm_batch(helper, rows, out)
+                }
+            }
+            None => {
+                self.compile_stats.cache_misses += 1;
+                self.stats.vm_calls += rows.len();
+                self.stats.fallbacks += rows.len();
+                self.stats.arg_vec_allocations += rows.len();
+                call_vm_batch(helper, rows, out)
+            }
+        }
+    }
+
+    fn should_parallelize(&self, len: usize) -> bool {
+        self.pool.is_some()
+            && len >= self.config.batch_min_len
+            && self.resolved_worker_count().unwrap_or(1) > 1
+    }
+
+    fn parallel_jobs(&self, len: usize) -> usize {
+        self.resolved_worker_count().unwrap_or(1).min(len)
+    }
+
+    fn resolved_worker_count(&self) -> Option<usize> {
+        match self.config.workers {
+            RuntimePureWorkerCount::Auto => std::thread::available_parallelism()
+                .ok()
+                .map(std::num::NonZeroUsize::get),
+            RuntimePureWorkerCount::Fixed(value) => Some(value.max(1)),
+        }
     }
 }
 
@@ -76,6 +231,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         self.stats.arg_stack_packs += 1;
         match self.cache.get(&helper.id) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
+                self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += 1;
                 compiled.call(args.as_slice()).map(Some).map_err(|error| {
                     RuntimeEvalError::UnsupportedPure {
@@ -85,13 +241,20 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                 })
             }
             Some(RuntimePureCacheEntry::Aot(compiled)) => {
+                self.compile_stats.cache_hits += 1;
                 self.stats.aot_calls += 1;
                 compiled
                     .call_with_inputs(args.as_slice())
                     .map(|(value, _)| Some(value))
             }
             Some(RuntimePureCacheEntry::Vm) | None => {
+                if self.cache.contains_key(&helper.id) {
+                    self.compile_stats.cache_hits += 1;
+                } else {
+                    self.compile_stats.cache_misses += 1;
+                }
                 self.stats.vm_calls += 1;
+                self.stats.fallbacks += 1;
                 self.call_vm_i64(helper, args).map(Some)
             }
         }
@@ -104,6 +267,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         self.stats.pure_calls += 1;
         self.stats.vm_calls += 1;
+        self.stats.fallbacks += 1;
         self.stats.arg_vec_allocations += 1;
         evaluate_vm(helper, args)
     }
@@ -154,37 +318,178 @@ fn runtime_value_kind(value: &RuntimeValue) -> String {
 fn compile_helper(
     mode: RuntimePureBackendMode,
     helper: &RuntimePureHelper,
+    stats: &mut RuntimePureCompileStats,
 ) -> RuntimePureCacheEntry {
     match mode {
         RuntimePureBackendMode::Vm => RuntimePureCacheEntry::Vm,
-        RuntimePureBackendMode::Aot => compile_aot(helper).unwrap_or(RuntimePureCacheEntry::Vm),
-        RuntimePureBackendMode::Jit => compile_jit(helper)
-            .unwrap_or_else(|| compile_aot(helper).unwrap_or(RuntimePureCacheEntry::Vm)),
-        RuntimePureBackendMode::Auto => compile_jit(helper)
-            .or_else(|| compile_aot(helper))
+        RuntimePureBackendMode::Aot => {
+            compile_aot(helper, stats).unwrap_or(RuntimePureCacheEntry::Vm)
+        }
+        RuntimePureBackendMode::Jit => {
+            compile_jit(helper, stats).unwrap_or(RuntimePureCacheEntry::Vm)
+        }
+        RuntimePureBackendMode::Auto => compile_jit(helper, stats)
+            .or_else(|| compile_aot(helper, stats))
             .unwrap_or(RuntimePureCacheEntry::Vm),
     }
 }
 
-fn compile_jit(helper: &RuntimePureHelper) -> Option<RuntimePureCacheEntry> {
-    CraneliftPureFunctionBackend
+fn compile_jit(
+    helper: &RuntimePureHelper,
+    stats: &mut RuntimePureCompileStats,
+) -> Option<RuntimePureCacheEntry> {
+    stats.jit_attempts += 1;
+    let compiled = CraneliftPureFunctionBackend
         .compile_i64_with_inputs(
             &compile_request(helper),
             helper.input_names.iter().map(String::as_str),
         )
-        .ok()
-        .map(Box::new)
-        .map(RuntimePureCacheEntry::Jit)
+        .ok();
+    if compiled.is_some() {
+        stats.jit_successes += 1;
+    } else {
+        stats.jit_failures += 1;
+    }
+    compiled.map(Box::new).map(RuntimePureCacheEntry::Jit)
 }
 
-fn compile_aot(helper: &RuntimePureHelper) -> Option<RuntimePureCacheEntry> {
-    AotPureFunctionBackend::new()
+fn compile_aot(
+    helper: &RuntimePureHelper,
+    stats: &mut RuntimePureCompileStats,
+) -> Option<RuntimePureCacheEntry> {
+    stats.aot_attempts += 1;
+    let compiled = AotPureFunctionBackend::new()
         .compile_i64_with_inputs(
             &compile_request(helper),
             helper.input_names.iter().map(String::as_str),
         )
-        .ok()
-        .map(RuntimePureCacheEntry::Aot)
+        .ok();
+    if compiled.is_some() {
+        stats.aot_successes += 1;
+    } else {
+        stats.aot_failures += 1;
+    }
+    compiled.map(RuntimePureCacheEntry::Aot)
+}
+
+fn build_thread_pool(workers: RuntimePureWorkerCount) -> Option<ThreadPool> {
+    let worker_count = match workers {
+        RuntimePureWorkerCount::Auto => std::thread::available_parallelism()
+            .ok()
+            .map_or(1, std::num::NonZeroUsize::get),
+        RuntimePureWorkerCount::Fixed(value) => value.max(1),
+    };
+    (worker_count > 1)
+        .then(|| {
+            ThreadPoolBuilder::new()
+                .num_threads(worker_count)
+                .build()
+                .ok()
+        })
+        .flatten()
+}
+
+fn call_jit_batch(
+    compiled: &CompiledPureI64Inputs,
+    rows: &[RuntimeI64Args],
+    out: &mut [i64],
+    helper: &RuntimePureHelper,
+) -> Result<(), RuntimeEvalError> {
+    rows.iter().zip(out.iter_mut()).try_for_each(|(row, slot)| {
+        compiled
+            .call(row.as_slice())
+            .map(|value| *slot = value)
+            .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: error.to_string(),
+            })
+    })
+}
+
+fn call_aot_batch(
+    compiled: &AotPureI64Plan,
+    rows: &[RuntimeI64Args],
+    out: &mut [i64],
+) -> Result<(), RuntimeEvalError> {
+    rows.iter().zip(out.iter_mut()).try_for_each(|(row, slot)| {
+        compiled
+            .call_with_inputs(row.as_slice())
+            .map(|(value, _)| *slot = value)
+    })
+}
+
+fn call_aot_batch_parallel(
+    pool: Option<&ThreadPool>,
+    compiled: &AotPureI64Plan,
+    rows: &[RuntimeI64Args],
+    out: &mut [i64],
+) -> Result<(), RuntimeEvalError> {
+    let mut run = || {
+        rows.par_iter()
+            .zip(out.par_iter_mut())
+            .try_for_each(|(row, slot)| {
+                compiled
+                    .call_with_inputs(row.as_slice())
+                    .map(|(value, _)| *slot = value)
+            })
+    };
+    match pool {
+        Some(pool) => pool.install(run),
+        None => run(),
+    }
+}
+
+fn call_vm_batch(
+    helper: &RuntimePureHelper,
+    rows: &[RuntimeI64Args],
+    out: &mut [i64],
+) -> Result<(), RuntimeEvalError> {
+    rows.iter().zip(out.iter_mut()).try_for_each(|(row, slot)| {
+        let values = row
+            .as_slice()
+            .iter()
+            .copied()
+            .map(RuntimeValue::Int)
+            .collect::<Vec<_>>();
+        match evaluate_vm(helper, &values)? {
+            RuntimeValue::Int(value) => {
+                *slot = value;
+                Ok(())
+            }
+            value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+        }
+    })
+}
+
+fn call_vm_batch_parallel(
+    pool: Option<&ThreadPool>,
+    helper: &RuntimePureHelper,
+    rows: &[RuntimeI64Args],
+    out: &mut [i64],
+) -> Result<(), RuntimeEvalError> {
+    let mut run = || {
+        rows.par_iter()
+            .zip(out.par_iter_mut())
+            .try_for_each(|(row, slot)| {
+                let values = row
+                    .as_slice()
+                    .iter()
+                    .copied()
+                    .map(RuntimeValue::Int)
+                    .collect::<Vec<_>>();
+                match evaluate_vm(helper, &values)? {
+                    RuntimeValue::Int(value) => {
+                        *slot = value;
+                        Ok(())
+                    }
+                    value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+                }
+            })
+    };
+    match pool {
+        Some(pool) => pool.install(run),
+        None => run(),
+    }
 }
 
 fn compile_request(helper: &RuntimePureHelper) -> PureFunctionRequest {
@@ -229,7 +534,7 @@ fn evaluate_vm(
 }
 
 /// Summary of helpers selected for acceleration.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RuntimePureAccelerationSummary {
     pub annotated: usize,
     pub inferred: usize,
@@ -239,12 +544,7 @@ pub struct RuntimePureAccelerationSummary {
 }
 
 impl RuntimePureAccelerator {
-    pub fn summary(&self, helpers: &[RuntimePureHelper]) -> RuntimePureAccelerationSummary {
-        let annotated = helpers
-            .iter()
-            .filter(|helper| helper.origin == RuntimePureHelperOrigin::Annotated)
-            .count();
-        let inferred = helpers.len().saturating_sub(annotated);
+    pub fn summary(&self) -> RuntimePureAccelerationSummary {
         let mut jit = 0;
         let mut aot = 0;
         let mut vm = 0;
@@ -256,11 +556,35 @@ impl RuntimePureAccelerator {
             }
         }
         RuntimePureAccelerationSummary {
-            annotated,
-            inferred,
+            annotated: self.helper_summary.annotated,
+            inferred: self.helper_summary.inferred,
             jit,
             aot,
             vm,
+        }
+    }
+}
+
+fn helper_summary_from_helpers(helpers: &[RuntimePureHelper]) -> RuntimePureAccelerationSummary {
+    let annotated = helpers
+        .iter()
+        .filter(|helper| helper.origin == RuntimePureHelperOrigin::Annotated)
+        .count();
+    RuntimePureAccelerationSummary {
+        annotated,
+        inferred: helpers.len().saturating_sub(annotated),
+        jit: 0,
+        aot: 0,
+        vm: 0,
+    }
+}
+
+impl Default for RuntimePureAcceleratorConfig {
+    fn default() -> Self {
+        Self {
+            backend: RuntimePureBackendMode::Auto,
+            workers: RuntimePureWorkerCount::Auto,
+            batch_min_len: 1024,
         }
     }
 }
@@ -303,6 +627,51 @@ mod tests {
         assert_eq!(accelerator.stats().pure_calls, 1);
         assert_eq!(accelerator.stats().arg_stack_packs, 1);
         assert_eq!(accelerator.stats().arg_vec_allocations, 0);
-        assert_eq!(accelerator.summary(&[helper]).jit, 1);
+        assert_eq!(accelerator.summary().jit, 1);
+    }
+
+    #[test]
+    fn aot_batch_matches_scalar_results_and_records_parallel_stats() {
+        let helper = RuntimePureHelper {
+            id: RuntimePureHelperId(0),
+            name: "score".to_owned(),
+            input_names: vec!["base".to_owned(), "bonus".to_owned()],
+            expr: RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+                }),
+            },
+            origin: RuntimePureHelperOrigin::Inferred,
+        };
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                backend: RuntimePureBackendMode::Aot,
+                workers: RuntimePureWorkerCount::Fixed(2),
+                batch_min_len: 2,
+            },
+            std::slice::from_ref(&helper),
+        );
+        let rows = [
+            RuntimeI64Args::new([3, 4, 0, 0], 2),
+            RuntimeI64Args::new([5, 1, 0, 0], 2),
+            RuntimeI64Args::new([2, 8, 0, 0], 2),
+            RuntimeI64Args::new([7, 0, 0, 0], 2),
+        ];
+        let mut out = [0; 4];
+
+        accelerator
+            .call_i64_batch(&helper, &rows, &mut out)
+            .expect("batch succeeds");
+
+        assert_eq!(out, [18, 15, 20, 14]);
+        assert_eq!(accelerator.stats().batch_calls, 1);
+        assert_eq!(accelerator.stats().batch_items, 4);
+        assert_eq!(accelerator.stats().aot_calls, 4);
+        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+        assert!(accelerator.stats().thread_pool_jobs > 0);
     }
 }

@@ -26,6 +26,16 @@ pub enum LaunchKind {
     Bench,
 }
 
+/// Pure helper execution backend selected by a launch profile.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LaunchPureBackend {
+    Auto,
+    Vm,
+    Aot,
+    Jit,
+}
+
 /// Project-level profile manifest parsed from `arcw.toml`.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct LaunchProfileManifest {
@@ -44,6 +54,19 @@ pub struct LaunchProfileSpec {
     adapter: Option<String>,
     #[serde(default)]
     listen: Option<String>,
+    #[serde(default)]
+    pure: Option<LaunchPureProfileSpec>,
+}
+
+/// Optional pure-helper execution policy for one launch profile.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+pub struct LaunchPureProfileSpec {
+    #[serde(default)]
+    backend: Option<LaunchPureBackend>,
+    #[serde(default)]
+    workers: Option<String>,
+    #[serde(default)]
+    batch_min_len: Option<usize>,
 }
 
 /// Fully resolved launch profile ready for CLI/runtime use.
@@ -55,6 +78,7 @@ pub struct ResolvedLaunchProfile {
     entry: Option<String>,
     adapter: Option<String>,
     listen: Option<String>,
+    pure: Option<LaunchPureProfileSpec>,
 }
 
 /// Errors from parsing or resolving launch profile data.
@@ -132,6 +156,7 @@ impl LaunchProfileManifest {
             entry: spec.entry.clone(),
             adapter: spec.adapter.clone(),
             listen: spec.listen.clone(),
+            pure: spec.pure.clone(),
         })
     }
 
@@ -171,6 +196,28 @@ impl ResolvedLaunchProfile {
     pub fn listen(&self) -> Option<&str> {
         self.listen.as_deref()
     }
+
+    /// Optional pure-helper execution policy selected by the profile.
+    pub const fn pure(&self) -> Option<&LaunchPureProfileSpec> {
+        self.pure.as_ref()
+    }
+}
+
+impl LaunchPureProfileSpec {
+    /// Optional pure backend selected by the profile.
+    pub const fn backend(&self) -> Option<LaunchPureBackend> {
+        self.backend
+    }
+
+    /// Optional worker-count policy, either `auto` or a positive integer.
+    pub fn workers(&self) -> Option<&str> {
+        self.workers.as_deref()
+    }
+
+    /// Optional minimum item count before batch parallelism is considered.
+    pub const fn batch_min_len(&self) -> Option<usize> {
+        self.batch_min_len
+    }
 }
 
 #[cfg(test)]
@@ -187,6 +234,11 @@ source = "src/server.arcw"
 entry = "http"
 adapter = "native-http"
 listen = "127.0.0.1:8787"
+
+[profiles."server.dev".pure]
+backend = "jit"
+workers = "auto"
+batch_min_len = 2048
 "#,
         )
         .expect("manifest parses");
@@ -200,6 +252,10 @@ listen = "127.0.0.1:8787"
         assert_eq!(resolved.entry(), Some("http"));
         assert_eq!(resolved.adapter(), Some("native-http"));
         assert_eq!(resolved.listen(), Some("127.0.0.1:8787"));
+        let pure = resolved.pure().expect("pure profile resolves");
+        assert_eq!(pure.backend(), Some(LaunchPureBackend::Jit));
+        assert_eq!(pure.workers(), Some("auto"));
+        assert_eq!(pure.batch_min_len(), Some(2048));
     }
 
     #[test]

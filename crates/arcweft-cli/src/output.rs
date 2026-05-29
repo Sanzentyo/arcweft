@@ -663,6 +663,46 @@ pub(crate) enum RuntimeExecutorTier {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
 pub(crate) struct RuntimeExecutorStats {
     pub(crate) aot_fast_path_ops: usize,
+    pub(crate) pure_config: RuntimeExecutorPureConfigSummary,
+    pub(crate) pure_acceleration: RuntimeExecutorPureAccelerationSummary,
+    pub(crate) pure_compile: RuntimeExecutorPureCompileStatsSummary,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
+pub(crate) struct RuntimeExecutorPureConfigSummary {
+    pub(crate) backend: &'static str,
+    pub(crate) workers: RuntimeExecutorPureWorkerSummary,
+    pub(crate) batch_min_len: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RuntimeExecutorPureWorkerSummary {
+    #[default]
+    Auto,
+    Fixed(usize),
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
+pub(crate) struct RuntimeExecutorPureAccelerationSummary {
+    pub(crate) annotated: usize,
+    pub(crate) inferred: usize,
+    pub(crate) jit: usize,
+    pub(crate) aot: usize,
+    pub(crate) vm: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
+pub(crate) struct RuntimeExecutorPureCompileStatsSummary {
+    pub(crate) jit_attempts: usize,
+    pub(crate) jit_successes: usize,
+    pub(crate) jit_failures: usize,
+    pub(crate) aot_attempts: usize,
+    pub(crate) aot_successes: usize,
+    pub(crate) aot_failures: usize,
+    pub(crate) cache_hits: usize,
+    pub(crate) cache_misses: usize,
+    pub(crate) compile_elapsed_ns: u128,
 }
 
 #[derive(serde::Serialize)]
@@ -723,6 +763,10 @@ pub(crate) struct ScriptBenchDeterministicSummary {
     pub(crate) line_effects_median: usize,
     pub(crate) task_requests_median: usize,
     pub(crate) task_events_in_median: usize,
+    pub(crate) pure_calls_median: usize,
+    pub(crate) pure_batch_items_median: usize,
+    pub(crate) pure_thread_pool_jobs_median: usize,
+    pub(crate) pure_arg_vec_allocations_median: usize,
     pub(crate) diagnostics: usize,
 }
 
@@ -927,11 +971,16 @@ pub(crate) struct RuntimeStepStatsSummary {
 #[derive(serde::Serialize)]
 pub(crate) struct RuntimePureCallStatsSummary {
     pub(crate) pure_calls: usize,
+    pub(crate) batch_calls: usize,
+    pub(crate) batch_items: usize,
     pub(crate) jit_calls: usize,
     pub(crate) aot_calls: usize,
     pub(crate) vm_calls: usize,
     pub(crate) arg_stack_packs: usize,
     pub(crate) arg_vec_allocations: usize,
+    pub(crate) arg_bytes_copied: usize,
+    pub(crate) result_bytes_copied: usize,
+    pub(crate) thread_pool_jobs: usize,
     pub(crate) fallbacks: usize,
 }
 
@@ -1094,11 +1143,16 @@ impl From<RuntimePureCallStats> for RuntimePureCallStatsSummary {
     fn from(stats: RuntimePureCallStats) -> Self {
         Self {
             pure_calls: stats.pure_calls,
+            batch_calls: stats.batch_calls,
+            batch_items: stats.batch_items,
             jit_calls: stats.jit_calls,
             aot_calls: stats.aot_calls,
             vm_calls: stats.vm_calls,
             arg_stack_packs: stats.arg_stack_packs,
             arg_vec_allocations: stats.arg_vec_allocations,
+            arg_bytes_copied: stats.arg_bytes_copied,
+            result_bytes_copied: stats.result_bytes_copied,
+            thread_pool_jobs: stats.thread_pool_jobs,
             fallbacks: stats.fallbacks,
         }
     }

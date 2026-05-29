@@ -58,6 +58,11 @@ source = "src/server.arcw"
 entry = "http"
 adapter = "native-http"
 listen = "127.0.0.1:8787"
+
+[profiles."server.dev".pure]
+backend = "auto"
+workers = "auto"
+batch_min_len = 1024
 ```
 
 Direct path and `--profile` are mutually exclusive. This keeps core source mode
@@ -161,7 +166,7 @@ CLI adapter and does not start renderer/audio/device backends.
 
 ## Runtime Dry Run
 
-`arcw run <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
+`arcw run <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
 headless execution entry point. It uses the same parse, HIR, reference
 validation, typecheck, and line-plan lowering path as `arcw check`, then lowers
 checked flows to `arcweft-core::RuntimePlan`, materializes bytecode, and steps
@@ -175,10 +180,16 @@ runs can confirm the execution tier. `--pure-backend auto` is the default and
 lets ordinary flow code call lowered pure helpers through the runtime
 accelerator cache. Supported deterministic `i64` helpers use JIT first, then
 AOT, then VM; `--pure-backend vm|aot|jit` pins that selection for measurement.
-Per-step JSON includes `stats.pure` counters for pure calls, backend call
-counts, stack-packed integer arguments, Vec argument allocations, and fallback
-counts. If `--entry` or `--flow` is omitted, the first lowered flow is used as a
-deterministic fallback for headless inspection.
+Per-step JSON includes `stats.pure` counters for scalar and batch pure calls,
+batch item counts, backend call counts, stack-packed integer arguments, copied
+argument/result bytes, thread-pool jobs, Vec argument allocations, and fallback
+counts. Executor JSON also reports the selected pure backend, worker policy,
+batch threshold, helper acceleration summary, compile attempts, cache hits and
+misses, and compile elapsed time. `--pure-workers auto|N` controls the runtime
+accelerator's Rayon pool for batchable pure helpers. `--pure-batch-min-len N`
+sets the minimum batch size before the dedicated pool is used. If `--entry` or
+`--flow` is omitted, the first lowered flow is used as a deterministic fallback
+for headless inspection.
 The CLI owns a native task adapter for the first filesystem I/O slice:
 `fs.read_text`, `fs.read_bytes`, `fs.write_text`, and `fs.write_bytes` complete
 as `TaskEvent` input on the next VM step. Paths must be virtual path values such
@@ -198,6 +209,7 @@ arcw run game/routes/opening.arcw --flow opening --mode drain --steps 8
 arcw run game/routes/opening.arcw --mode drain --steps 8 --max-ops 32
 arcw run game/routes/opening.arcw --executor aot --mode drain --steps 8 --json
 arcw run game/routes/opening.arcw --pure-backend jit --mode drain --steps 8 --json
+arcw run game/routes/opening.arcw --pure-backend aot --pure-workers 4 --pure-batch-min-len 512 --json
 arcw run game/routes/opening.arcw --steps 8 --value ready=true --value route=@flow.next
 arcw run game/routes/opening.arcw --steps 8 --json
 ```
@@ -247,7 +259,7 @@ binding.
 
 ## Server Entry Plan
 
-`arcw serve <file.arcw> [--entry entry.id] [--adapter NAME] [--listen ADDR] [--once] [--pure-backend auto|vm|aot|jit] [--max-ops N] [--json]`
+`arcw serve <file.arcw> [--entry entry.id] [--adapter NAME] [--listen ADDR] [--once] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--max-ops N] [--json]`
 validates and exposes a source-declared `entry server`. Without `--listen`, it
 is a Sans I/O adapter-plan command: it selects a server entry, lowers its routes,
 verifies that route targets exist, and prints the method/path/flow table that a
@@ -312,7 +324,9 @@ The same native file task bridge used by `arcw run` and `arcw test` is active
 inside measured headless bench iterations, so `fs.read_text`, `fs.read_bytes`,
 `fs.write_text`, and `fs.write_bytes` can participate in correctness and timing
 runs through source-local virtual paths. Bench deterministic counters include
-median task requests and task events consumed in addition to executed VM ops.
+median task requests, task events consumed, pure call counts, pure batch item
+counts, pure thread-pool jobs, and pure argument Vec allocations in addition to
+executed VM ops.
 Renderer/audio driving, offline rendering/audio, and allocation counters remain
 adapter work; adapter-only sections are reported as skipped.
 
@@ -335,7 +349,10 @@ source/stream events, line effects, diagnostics, and queue depths.
 When runtime steps emit supported native file tasks, profile mode feeds the
 completed task events into subsequent VM steps and records the resulting task
 event counters.
-Profile and bench JSON must not persist absolute local source paths.
+Profile and bench JSON must not persist absolute local source paths. Runtime
+pure configuration from `[profiles.NAME.pure]` is applied to `run`, `cli`,
+`serve`, `test`, `bench`, and `verify-types --run`; explicit CLI flags override
+the profile's `backend`, `workers`, and `batch_min_len` values.
 
 ## JIT
 

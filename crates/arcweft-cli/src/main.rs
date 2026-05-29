@@ -30,8 +30,11 @@ use arcweft_lang_syntax::{
     lint::lint_id_policy,
     parser::parse_source,
 };
-use arcweft_launch::{LaunchKind, LaunchProfileManifest, ResolvedLaunchProfile};
-use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureBackendMode};
+use arcweft_launch::{LaunchKind, LaunchProfileManifest, LaunchPureBackend, ResolvedLaunchProfile};
+use arcweft_runtime_accelerator::{
+    RuntimePureAccelerator, RuntimePureAcceleratorConfig, RuntimePureBackendMode,
+    RuntimePureCompileStats, RuntimePureWorkerCount,
+};
 use arcweft_runtime_plan::flow::lower_runtime_plan;
 use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_groups};
 use arcweft_runtime_plan::pure::{
@@ -52,16 +55,17 @@ mod server_adapter;
 use native_task::{NativeTaskBridge, NativeTaskStats};
 use output::{
     AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, CheckReport,
-    RuntimeExecutorStats, RuntimeExecutorTier, RuntimePlanReport, RuntimeProfileCompiler,
-    RuntimeProfilePhase, RuntimeProfileReport, RuntimeProfileRuntime, RuntimeRunReport,
-    RuntimeStepRunSummary, RuntimeTypeValidationProfileStats, RuntimeTypeValidationReportSummary,
-    ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary,
-    ScriptBenchPureHelperBatchSummary, ScriptBenchPureHelperDeterministicSummary,
-    ScriptBenchPureHelperMeasurementSummary, ScriptBenchPureHelperStatsSummary,
-    ScriptBenchPureHelperTimingSamples, ScriptBenchPureHelperTimingSummary, ScriptBenchRunReport,
-    ScriptBenchRunSummary, ScriptBenchSectionRunSummary, ScriptTestRunReport, ScriptTestRunSummary,
-    TypeCheckProfileStats, VerifyTypesReport, VerifyTypesRuntimeSelfCheck,
-    VerifyTypesVerifierSummary, flow_status_label,
+    RuntimeExecutorPureAccelerationSummary, RuntimeExecutorPureCompileStatsSummary,
+    RuntimeExecutorPureConfigSummary, RuntimeExecutorStats, RuntimeExecutorTier, RuntimePlanReport,
+    RuntimeProfileCompiler, RuntimeProfilePhase, RuntimeProfileReport, RuntimeProfileRuntime,
+    RuntimeRunReport, RuntimeStepRunSummary, RuntimeTypeValidationProfileStats,
+    RuntimeTypeValidationReportSummary, ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary,
+    ScriptBenchMeasurementSummary, ScriptBenchPureHelperBatchSummary,
+    ScriptBenchPureHelperDeterministicSummary, ScriptBenchPureHelperMeasurementSummary,
+    ScriptBenchPureHelperStatsSummary, ScriptBenchPureHelperTimingSamples,
+    ScriptBenchPureHelperTimingSummary, ScriptBenchRunReport, ScriptBenchRunSummary,
+    ScriptBenchSectionRunSummary, ScriptTestRunReport, ScriptTestRunSummary, TypeCheckProfileStats,
+    VerifyTypesReport, VerifyTypesRuntimeSelfCheck, VerifyTypesVerifierSummary, flow_status_label,
 };
 use server_adapter::{NativeHttpServerConfig, serve_native_http};
 use std::fs;
@@ -1307,6 +1311,12 @@ fn runtime_plan_command(options: &PlanOptions) -> Result<(), ExitCode> {
 
 fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    let pure_config = runtime_pure_config_for_selection(
+        &selection,
+        options.pure_backend,
+        options.pure_workers,
+        options.pure_batch_min_len,
+    )?;
     if let Some(profile) = selection.profile() {
         match profile.kind() {
             LaunchKind::Server => {
@@ -1318,7 +1328,7 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
                         listen: None,
                         once: false,
                         max_ops: options.max_ops,
-                        pure_backend: options.pure_backend,
+                        pure_config,
                         json: options.json,
                     },
                 );
@@ -1331,7 +1341,7 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
                         mode: options.mode,
                         max_ops: options.max_ops,
                         executor: options.executor,
-                        pure_backend: options.pure_backend,
+                        pure_config,
                     },
                     &options.values,
                     options.json,
@@ -1359,7 +1369,7 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
             mode: options.mode,
             max_ops: options.max_ops,
             executor: options.executor,
-            pure_backend: options.pure_backend,
+            pure_config,
         },
         &options.values,
     );
@@ -1415,6 +1425,8 @@ fn runtime_run_bench_selection(
         input_seed: 0,
         executor: options.executor,
         pure_backend: options.pure_backend,
+        pure_workers: options.pure_workers,
+        pure_batch_min_len: options.pure_batch_min_len,
         values: options.values.clone(),
         json: options.json,
     };
@@ -1423,6 +1435,12 @@ fn runtime_run_bench_selection(
 
 fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    let pure_config = runtime_pure_config_for_selection(
+        &selection,
+        options.pure_backend,
+        options.pure_workers,
+        options.pure_batch_min_len,
+    )?;
     let adapter = options.adapter.as_deref().or(selection.adapter());
     let env = typecheck_env_for_adapter(adapter)?;
     if !is_arcw_path(selection.path()) {
@@ -1447,7 +1465,7 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
                 mode: options.mode,
                 max_ops: options.max_ops,
                 executor: options.executor,
-                pure_backend: options.pure_backend,
+                pure_config,
             },
             &options.values,
         ))
@@ -1644,7 +1662,7 @@ fn run_runtime_steps(
     config: RuntimeStepRunConfig,
     values: &[RuntimeBinding],
 ) -> RuntimeRunTrace {
-    let mut executor = RuntimeExecutorInstance::new(plan, config.executor, config.pure_backend);
+    let mut executor = RuntimeExecutorInstance::new(plan, config.executor, config.pure_config);
     let mut host = source_path.map(NativeTaskBridge::new);
     let mut task_events = Vec::new();
     let mut summaries = Vec::new();
@@ -1703,9 +1721,9 @@ impl RuntimeExecutorInstance {
     fn new(
         plan: RuntimePlan,
         tier: CliRuntimeExecutorTier,
-        pure_backend: CliRuntimePureBackend,
+        pure_config: RuntimePureAcceleratorConfig,
     ) -> Self {
-        let pure = RuntimePureAccelerator::new(pure_backend.into(), &plan.pure_helpers);
+        let pure = RuntimePureAccelerator::with_config(pure_config, &plan.pure_helpers);
         match tier {
             CliRuntimeExecutorTier::BytecodeVm => Self::BytecodeVm {
                 executor: BytecodeVmExecutor::from_runtime_plan(plan),
@@ -1736,11 +1754,39 @@ impl RuntimeExecutorInstance {
 
     fn executor_stats(&self) -> RuntimeExecutorStats {
         match self {
-            Self::BytecodeVm { .. } => RuntimeExecutorStats::default(),
-            Self::Aot { executor, .. } => RuntimeExecutorStats {
-                aot_fast_path_ops: executor.fast_path_ops(),
-            },
+            Self::BytecodeVm { pure, .. } => runtime_executor_stats(0, pure),
+            Self::Aot { executor, pure } => runtime_executor_stats(executor.fast_path_ops(), pure),
         }
+    }
+}
+
+fn runtime_executor_stats(
+    aot_fast_path_ops: usize,
+    pure: &RuntimePureAccelerator,
+) -> RuntimeExecutorStats {
+    let config = pure.config();
+    let summary = pure.summary();
+    let compile = pure.compile_stats();
+    RuntimeExecutorStats {
+        aot_fast_path_ops,
+        pure_config: RuntimeExecutorPureConfigSummary {
+            backend: runtime_pure_backend_label(config.backend),
+            workers: match config.workers {
+                RuntimePureWorkerCount::Auto => output::RuntimeExecutorPureWorkerSummary::Auto,
+                RuntimePureWorkerCount::Fixed(value) => {
+                    output::RuntimeExecutorPureWorkerSummary::Fixed(value)
+                }
+            },
+            batch_min_len: config.batch_min_len,
+        },
+        pure_acceleration: RuntimeExecutorPureAccelerationSummary {
+            annotated: summary.annotated,
+            inferred: summary.inferred,
+            jit: summary.jit,
+            aot: summary.aot,
+            vm: summary.vm,
+        },
+        pure_compile: RuntimeExecutorPureCompileStatsSummary::from(compile),
     }
 }
 
@@ -1772,6 +1818,12 @@ fn report_path(path: &Path) -> String {
 
 fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    let pure_config = runtime_pure_config_for_selection(
+        &selection,
+        options.pure_backend,
+        options.pure_workers,
+        options.pure_batch_min_len,
+    )?;
     require_profile_kind(&selection, LaunchKind::Cli, "cli")?;
     let checked = load_and_check_selection(&selection, None)?;
     let mut plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
@@ -1807,7 +1859,7 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
             mode: options.mode,
             max_ops: options.max_ops,
             executor: options.executor,
-            pure_backend: options.pure_backend,
+            pure_config,
         },
         &bindings,
     );
@@ -1835,6 +1887,12 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
 fn runtime_serve_command(options: &ServeOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     require_profile_kind(&selection, LaunchKind::Server, "serve")?;
+    let pure_config = runtime_pure_config_for_selection(
+        &selection,
+        options.pure_backend,
+        options.pure_workers,
+        options.pure_batch_min_len,
+    )?;
     runtime_serve_selection(
         &selection,
         options.entry.as_deref(),
@@ -1843,7 +1901,7 @@ fn runtime_serve_command(options: &ServeOptions) -> Result<(), ExitCode> {
             listen: options.listen,
             once: options.once,
             max_ops: options.max_ops,
-            pure_backend: options.pure_backend,
+            pure_config,
             json: options.json,
         },
     )
@@ -1908,7 +1966,7 @@ fn runtime_serve_selection(
                 listen,
                 once: config.once,
                 max_ops: config.max_ops,
-                pure_backend: config.pure_backend.into(),
+                pure_config: config.pure_config,
             },
         )
         .map_err(|error| {
@@ -2074,6 +2132,12 @@ fn normalize_entity_selector(value: &str, family: &str) -> String {
 fn script_test_command(options: &ScriptTestOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     require_profile_kind(&selection, LaunchKind::Test, "test")?;
+    let pure_config = runtime_pure_config_for_selection(
+        &selection,
+        options.pure_backend,
+        options.pure_workers,
+        options.pure_batch_min_len,
+    )?;
     script_test_selection(
         &selection,
         RuntimeStepRunConfig {
@@ -2081,7 +2145,7 @@ fn script_test_command(options: &ScriptTestOptions) -> Result<(), ExitCode> {
             mode: options.mode,
             max_ops: options.max_ops,
             executor: options.executor,
-            pure_backend: options.pure_backend,
+            pure_config,
         },
         &options.values,
         options.json,
@@ -2192,7 +2256,7 @@ struct RuntimeStepRunConfig {
     mode: CliRuntimeStepMode,
     max_ops: usize,
     executor: CliRuntimeExecutorTier,
-    pure_backend: CliRuntimePureBackend,
+    pure_config: RuntimePureAcceleratorConfig,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -2200,7 +2264,7 @@ struct RuntimeServeSelectionConfig {
     listen: Option<SocketAddr>,
     once: bool,
     max_ops: usize,
-    pure_backend: CliRuntimePureBackend,
+    pure_config: RuntimePureAcceleratorConfig,
     json: bool,
 }
 
@@ -2469,6 +2533,12 @@ fn script_bench_selection(
     selection: &SourceSelection,
     options: &ScriptBenchOptions,
 ) -> Result<(), ExitCode> {
+    let pure_config = runtime_pure_config_for_selection(
+        selection,
+        options.pure_backend,
+        options.pure_workers,
+        options.pure_batch_min_len,
+    )?;
     let env = typecheck_env_for_adapter(selection.adapter())?;
     let mut phases = Vec::new();
     let compiled = compile_profile_runtime_plan(selection, &env, &mut phases)?;
@@ -2498,6 +2568,7 @@ fn script_bench_selection(
                     &pure_helpers,
                     selection.path(),
                     options,
+                    pure_config,
                 )
             })
             .collect(),
@@ -2575,6 +2646,7 @@ fn run_script_bench(
     pure_helpers: &Result<Vec<PureHelperCandidate>, Vec<PureHelperLowerError>>,
     source_path: &Path,
     options: &ScriptBenchOptions,
+    pure_config: RuntimePureAcceleratorConfig,
 ) -> ScriptBenchRunSummary {
     let mut summary = validate_script_bench(bench);
     if summary.status != "validated" {
@@ -2583,7 +2655,16 @@ fn run_script_bench(
     let sections = bench
         .sections
         .iter()
-        .map(|section| run_bench_section(section, plan, pure_helpers, source_path, options))
+        .map(|section| {
+            run_bench_section(
+                section,
+                plan,
+                pure_helpers,
+                source_path,
+                options,
+                pure_config,
+            )
+        })
         .collect::<Vec<_>>();
     let section_failures = sections
         .iter()
@@ -2598,7 +2679,8 @@ fn run_script_bench(
     } else if has_measured {
         "measured".clone_into(&mut summary.status);
         summary.sections = sections;
-        let diagnostics = bench_expectation_failures(bench, plan, source_path, options);
+        let diagnostics =
+            bench_expectation_failures(bench, plan, source_path, options, pure_config);
         if !diagnostics.is_empty() {
             "failed".clone_into(&mut summary.status);
             summary.diagnostics.extend(diagnostics);
@@ -2612,6 +2694,7 @@ fn bench_expectation_failures(
     plan: &RuntimePlan,
     source_path: &Path,
     options: &ScriptBenchOptions,
+    pure_config: RuntimePureAcceleratorConfig,
 ) -> Vec<String> {
     let assertions = bench
         .sections
@@ -2636,7 +2719,7 @@ fn bench_expectation_failures(
             mode: options.mode,
             max_ops: options.max_ops,
             executor: options.executor,
-            pure_backend: options.pure_backend,
+            pure_config,
         },
         &options.values,
     );
@@ -2795,6 +2878,7 @@ fn run_bench_section(
     pure_helpers: &Result<Vec<PureHelperCandidate>, Vec<PureHelperLowerError>>,
     source_path: &Path,
     options: &ScriptBenchOptions,
+    pure_config: RuntimePureAcceleratorConfig,
 ) -> ScriptBenchSectionRunSummary {
     let validated = validate_bench_section(section);
     if section.name != "measure" || validated.status != "validated" {
@@ -2806,17 +2890,30 @@ fn run_bench_section(
     let Some(flow) = bench_start_flow(section) else {
         return validated;
     };
-    let mut elapsed = Vec::new();
-    let mut executed_ops = Vec::new();
-    let mut line_effects = Vec::new();
-    let mut task_requests = Vec::new();
-    let mut task_events_in = Vec::new();
-    let mut aot_fast_path_ops = Vec::new();
-    let mut native_io = NativeTaskStatsSamples::default();
-    let mut diagnostics = 0usize;
+    run_bench_flow_section(
+        section,
+        plan,
+        &flow,
+        source_path,
+        options,
+        pure_config,
+        validated,
+    )
+}
+
+fn run_bench_flow_section(
+    section: &BenchSection,
+    plan: &RuntimePlan,
+    flow: &str,
+    source_path: &Path,
+    options: &ScriptBenchOptions,
+    pure_config: RuntimePureAcceleratorConfig,
+    validated: ScriptBenchSectionRunSummary,
+) -> ScriptBenchSectionRunSummary {
+    let mut samples = RuntimeBenchSamples::default();
     for iteration in 0..options.warmup + options.iterations {
         let mut iteration_plan = plan.clone();
-        iteration_plan.entry_flow = Some(FlowRuntimeId(flow.clone()));
+        iteration_plan.entry_flow = Some(FlowRuntimeId(flow.to_owned()));
         let started = Instant::now();
         let trace = run_runtime_steps(
             iteration_plan,
@@ -2826,7 +2923,7 @@ fn run_bench_section(
                 mode: options.mode,
                 max_ops: options.max_ops,
                 executor: options.executor,
-                pure_backend: options.pure_backend,
+                pure_config,
             },
             &options.values,
         );
@@ -2834,57 +2931,132 @@ fn run_bench_section(
         if iteration < options.warmup {
             continue;
         }
-        elapsed.push(elapsed_ns);
-        executed_ops.push(trace.steps.iter().map(|step| step.stats.executed_ops).sum());
-        line_effects.push(trace.steps.iter().map(|step| step.stats.line_effects).sum());
-        task_requests.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.task_requests.len())
-                .sum(),
-        );
-        task_events_in.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.stats.task_events_in)
-                .sum(),
-        );
-        aot_fast_path_ops.push(trace.executor_stats.aot_fast_path_ops);
-        native_io.push(trace.native_io);
-        diagnostics += trace
-            .steps
-            .iter()
-            .map(|step| step.diagnostics.len())
-            .sum::<usize>();
+        samples.push(elapsed_ns, &trace);
     }
     ScriptBenchSectionRunSummary::measured(
         &section.name,
         validated.diagnostics,
         ScriptBenchMeasurementSummary {
             executor: RuntimeExecutorTier::from(options.executor),
-            executor_stats: RuntimeExecutorStats {
-                aot_fast_path_ops: median_usize(&mut aot_fast_path_ops),
-            },
-            native_io: native_io.median(),
+            executor_stats: samples.executor_stats(),
+            native_io: samples.native_io.median(),
             warmup: options.warmup,
             iterations: options.iterations,
             steps: options.steps,
-            elapsed_ns: ScriptBenchElapsedSummary {
-                min: *elapsed.iter().min().unwrap_or(&0),
-                median: median_u128(&mut elapsed),
-                max: *elapsed.iter().max().unwrap_or(&0),
-            },
-            deterministic: ScriptBenchDeterministicSummary {
-                executed_ops_median: median_usize(&mut executed_ops),
-                line_effects_median: median_usize(&mut line_effects),
-                task_requests_median: median_usize(&mut task_requests),
-                task_events_in_median: median_usize(&mut task_events_in),
-                diagnostics,
-            },
+            elapsed_ns: samples.elapsed_summary(),
+            deterministic: samples.deterministic_summary(),
         },
     )
+}
+
+#[derive(Default)]
+struct RuntimeBenchSamples {
+    elapsed: Vec<u128>,
+    executed_ops: Vec<usize>,
+    line_effects: Vec<usize>,
+    task_requests: Vec<usize>,
+    task_events_in: Vec<usize>,
+    pure_calls: Vec<usize>,
+    pure_batch_items: Vec<usize>,
+    pure_thread_pool_jobs: Vec<usize>,
+    pure_arg_vec_allocations: Vec<usize>,
+    aot_fast_path_ops: Vec<usize>,
+    executor_stats_samples: Vec<RuntimeExecutorStats>,
+    native_io: NativeTaskStatsSamples,
+    diagnostics: usize,
+}
+
+impl RuntimeBenchSamples {
+    fn push(&mut self, elapsed_ns: u128, trace: &RuntimeRunTrace) {
+        self.elapsed.push(elapsed_ns);
+        self.executed_ops
+            .push(trace.steps.iter().map(|step| step.stats.executed_ops).sum());
+        self.line_effects
+            .push(trace.steps.iter().map(|step| step.stats.line_effects).sum());
+        self.task_requests.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.task_requests.len())
+                .sum(),
+        );
+        self.task_events_in.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.stats.task_events_in)
+                .sum(),
+        );
+        self.pure_calls.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.stats.pure.pure_calls)
+                .sum(),
+        );
+        self.pure_batch_items.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.stats.pure.batch_items)
+                .sum(),
+        );
+        self.pure_thread_pool_jobs.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.stats.pure.thread_pool_jobs)
+                .sum(),
+        );
+        self.pure_arg_vec_allocations.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.stats.pure.arg_vec_allocations)
+                .sum(),
+        );
+        self.aot_fast_path_ops
+            .push(trace.executor_stats.aot_fast_path_ops);
+        self.executor_stats_samples.push(trace.executor_stats);
+        self.native_io.push(trace.native_io);
+        self.diagnostics += trace
+            .steps
+            .iter()
+            .map(|step| step.diagnostics.len())
+            .sum::<usize>();
+    }
+
+    fn executor_stats(&mut self) -> RuntimeExecutorStats {
+        let mut executor_stats = self
+            .executor_stats_samples
+            .first()
+            .copied()
+            .unwrap_or_else(RuntimeExecutorStats::default);
+        executor_stats.aot_fast_path_ops = median_usize(&mut self.aot_fast_path_ops);
+        executor_stats
+    }
+
+    fn elapsed_summary(&mut self) -> ScriptBenchElapsedSummary {
+        ScriptBenchElapsedSummary {
+            min: *self.elapsed.iter().min().unwrap_or(&0),
+            median: median_u128(&mut self.elapsed),
+            max: *self.elapsed.iter().max().unwrap_or(&0),
+        }
+    }
+
+    fn deterministic_summary(&mut self) -> ScriptBenchDeterministicSummary {
+        ScriptBenchDeterministicSummary {
+            executed_ops_median: median_usize(&mut self.executed_ops),
+            line_effects_median: median_usize(&mut self.line_effects),
+            task_requests_median: median_usize(&mut self.task_requests),
+            task_events_in_median: median_usize(&mut self.task_events_in),
+            pure_calls_median: median_usize(&mut self.pure_calls),
+            pure_batch_items_median: median_usize(&mut self.pure_batch_items),
+            pure_thread_pool_jobs_median: median_usize(&mut self.pure_thread_pool_jobs),
+            pure_arg_vec_allocations_median: median_usize(&mut self.pure_arg_vec_allocations),
+            diagnostics: self.diagnostics,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -3166,6 +3338,12 @@ fn verify_types_runtime_self_check(
     if !options.run {
         return Ok(None);
     }
+    let pure_config = runtime_pure_config_for_selection(
+        selection,
+        options.pure_backend,
+        options.pure_workers,
+        options.pure_batch_min_len,
+    )?;
     let trace = run_profile_phase(&mut checked.phases, "run", || {
         Ok(run_runtime_steps(
             runtime_plan,
@@ -3175,7 +3353,7 @@ fn verify_types_runtime_self_check(
                 mode: options.runtime_mode,
                 max_ops: options.max_ops,
                 executor: options.executor,
-                pure_backend: options.pure_backend,
+                pure_config,
             },
             &options.values,
         ))
@@ -3243,6 +3421,75 @@ impl SourceSelection {
 
     fn adapter(&self) -> Option<&str> {
         self.profile().and_then(ResolvedLaunchProfile::adapter)
+    }
+}
+
+fn runtime_pure_config_for_selection(
+    selection: &SourceSelection,
+    backend: Option<CliRuntimePureBackend>,
+    workers: Option<CliRuntimePureWorkers>,
+    batch_min_len: Option<usize>,
+) -> Result<RuntimePureAcceleratorConfig, ExitCode> {
+    let mut config = RuntimePureAcceleratorConfig::default();
+    if let Some(profile) = selection.profile().and_then(ResolvedLaunchProfile::pure) {
+        if let Some(backend) = profile.backend() {
+            config.backend = launch_pure_backend_mode(backend);
+        }
+        if let Some(workers) = profile.workers() {
+            config.workers = parse_runtime_pure_workers(workers)
+                .map(RuntimePureWorkerCount::from)
+                .map_err(|message| {
+                    eprintln!("error: invalid launch profile pure.workers: {message}");
+                    ExitCode::from(2)
+                })?;
+        }
+        if let Some(batch_min_len) = profile.batch_min_len() {
+            config.batch_min_len = batch_min_len;
+        }
+    }
+    if let Some(backend) = backend {
+        config.backend = backend.into();
+    }
+    if let Some(workers) = workers {
+        config.workers = workers.into();
+    }
+    if let Some(batch_min_len) = batch_min_len {
+        config.batch_min_len = batch_min_len;
+    }
+    Ok(config)
+}
+
+fn launch_pure_backend_mode(value: LaunchPureBackend) -> RuntimePureBackendMode {
+    match value {
+        LaunchPureBackend::Auto => RuntimePureBackendMode::Auto,
+        LaunchPureBackend::Vm => RuntimePureBackendMode::Vm,
+        LaunchPureBackend::Aot => RuntimePureBackendMode::Aot,
+        LaunchPureBackend::Jit => RuntimePureBackendMode::Jit,
+    }
+}
+
+fn runtime_pure_backend_label(value: RuntimePureBackendMode) -> &'static str {
+    match value {
+        RuntimePureBackendMode::Auto => "auto",
+        RuntimePureBackendMode::Vm => "vm",
+        RuntimePureBackendMode::Aot => "aot",
+        RuntimePureBackendMode::Jit => "jit",
+    }
+}
+
+impl From<RuntimePureCompileStats> for RuntimeExecutorPureCompileStatsSummary {
+    fn from(stats: RuntimePureCompileStats) -> Self {
+        Self {
+            jit_attempts: stats.jit_attempts,
+            jit_successes: stats.jit_successes,
+            jit_failures: stats.jit_failures,
+            aot_attempts: stats.aot_attempts,
+            aot_successes: stats.aot_successes,
+            aot_failures: stats.aot_failures,
+            cache_hits: stats.cache_hits,
+            cache_misses: stats.cache_misses,
+            compile_elapsed_ns: stats.compile_elapsed_ns,
+        }
     }
 }
 
@@ -3443,8 +3690,12 @@ struct VerifyTypesOptions {
     max_ops: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,
-    #[arg(long, value_enum, default_value_t = CliRuntimePureBackend::Auto)]
-    pure_backend: CliRuntimePureBackend,
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
     #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
     values: Vec<RuntimeBinding>,
     #[arg(long)]
@@ -3491,8 +3742,12 @@ struct RuntimeRunOptions {
     flow: Option<String>,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,
-    #[arg(long, value_enum, default_value_t = CliRuntimePureBackend::Auto)]
-    pure_backend: CliRuntimePureBackend,
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
     #[arg(long, default_value_t = 1)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::OneOp)]
@@ -3518,8 +3773,12 @@ struct RuntimeProfileOptions {
     adapter: Option<String>,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,
-    #[arg(long, value_enum, default_value_t = CliRuntimePureBackend::Auto)]
-    pure_backend: CliRuntimePureBackend,
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
     #[arg(long, default_value_t = 1)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -3541,8 +3800,12 @@ struct CliRunOptions {
     entry: Option<String>,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,
-    #[arg(long, value_enum, default_value_t = CliRuntimePureBackend::Auto)]
-    pure_backend: CliRuntimePureBackend,
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
     #[arg(long, default_value_t = 1)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -3570,8 +3833,12 @@ struct ServeOptions {
     listen: Option<SocketAddr>,
     #[arg(long)]
     once: bool,
-    #[arg(long, value_enum, default_value_t = CliRuntimePureBackend::Auto)]
-    pure_backend: CliRuntimePureBackend,
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
     #[arg(long, default_value_t = 128)]
     max_ops: usize,
     #[arg(long)]
@@ -3585,8 +3852,12 @@ struct ScriptTestOptions {
     profile: ProfileOptions,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,
-    #[arg(long, value_enum, default_value_t = CliRuntimePureBackend::Auto)]
-    pure_backend: CliRuntimePureBackend,
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
     #[arg(long, default_value_t = 32)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -3606,8 +3877,12 @@ struct ScriptBenchOptions {
     profile: ProfileOptions,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,
-    #[arg(long, value_enum, default_value_t = CliRuntimePureBackend::Auto)]
-    pure_backend: CliRuntimePureBackend,
+    #[arg(long, value_enum)]
+    pure_backend: Option<CliRuntimePureBackend>,
+    #[arg(long, value_parser = parse_runtime_pure_workers)]
+    pure_workers: Option<CliRuntimePureWorkers>,
+    #[arg(long)]
+    pure_batch_min_len: Option<usize>,
     #[arg(long, default_value_t = 32)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -3698,6 +3973,12 @@ enum CliRuntimePureBackend {
     Jit,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CliRuntimePureWorkers {
+    Auto,
+    Fixed(usize),
+}
+
 impl From<CliRuntimeExecutorTier> for RuntimeExecutorTier {
     fn from(tier: CliRuntimeExecutorTier) -> Self {
         match tier {
@@ -3714,6 +3995,15 @@ impl From<CliRuntimePureBackend> for RuntimePureBackendMode {
             CliRuntimePureBackend::Vm => Self::Vm,
             CliRuntimePureBackend::Aot => Self::Aot,
             CliRuntimePureBackend::Jit => Self::Jit,
+        }
+    }
+}
+
+impl From<CliRuntimePureWorkers> for RuntimePureWorkerCount {
+    fn from(value: CliRuntimePureWorkers) -> Self {
+        match value {
+            CliRuntimePureWorkers::Auto => Self::Auto,
+            CliRuntimePureWorkers::Fixed(value) => Self::Fixed(value),
         }
     }
 }
@@ -4014,6 +4304,19 @@ fn parse_runtime_value(raw: &str) -> RuntimeValue {
             RuntimeValue::Int,
         ),
     }
+}
+
+fn parse_runtime_pure_workers(raw: &str) -> Result<CliRuntimePureWorkers, String> {
+    if raw == "auto" {
+        return Ok(CliRuntimePureWorkers::Auto);
+    }
+    let value = raw.parse::<usize>().map_err(|_| {
+        format!("pure worker count must be `auto` or a positive integer, got `{raw}`")
+    })?;
+    if value == 0 {
+        return Err("pure worker count must be greater than zero".to_owned());
+    }
+    Ok(CliRuntimePureWorkers::Fixed(value))
 }
 
 fn parse_verification_mode(value: &str) -> Result<VerificationMode, String> {

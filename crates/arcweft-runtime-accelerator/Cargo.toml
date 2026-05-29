@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 arcweft-core = { path = "../arcweft-core" }
 arcweft-lang-jit-cranelift = { path = "../arcweft-lang-jit-cranelift" }
+rayon.workspace = true
 
 [lib]
 path = "src/lib.rs"

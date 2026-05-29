@@ -87,11 +87,16 @@ pub struct RuntimeStepStats {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RuntimePureCallStats {
     pub pure_calls: usize,
+    pub batch_calls: usize,
+    pub batch_items: usize,
     pub jit_calls: usize,
     pub aot_calls: usize,
     pub vm_calls: usize,
     pub arg_stack_packs: usize,
     pub arg_vec_allocations: usize,
+    pub arg_bytes_copied: usize,
+    pub result_bytes_copied: usize,
+    pub thread_pool_jobs: usize,
     pub fallbacks: usize,
 }
 
@@ -100,6 +105,8 @@ impl RuntimePureCallStats {
     pub fn saturating_delta(self, before: Self) -> Self {
         Self {
             pure_calls: self.pure_calls.saturating_sub(before.pure_calls),
+            batch_calls: self.batch_calls.saturating_sub(before.batch_calls),
+            batch_items: self.batch_items.saturating_sub(before.batch_items),
             jit_calls: self.jit_calls.saturating_sub(before.jit_calls),
             aot_calls: self.aot_calls.saturating_sub(before.aot_calls),
             vm_calls: self.vm_calls.saturating_sub(before.vm_calls),
@@ -107,6 +114,15 @@ impl RuntimePureCallStats {
             arg_vec_allocations: self
                 .arg_vec_allocations
                 .saturating_sub(before.arg_vec_allocations),
+            arg_bytes_copied: self
+                .arg_bytes_copied
+                .saturating_sub(before.arg_bytes_copied),
+            result_bytes_copied: self
+                .result_bytes_copied
+                .saturating_sub(before.result_bytes_copied),
+            thread_pool_jobs: self
+                .thread_pool_jobs
+                .saturating_sub(before.thread_pool_jobs),
             fallbacks: self.fallbacks.saturating_sub(before.fallbacks),
         }
     }

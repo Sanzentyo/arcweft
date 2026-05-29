@@ -386,6 +386,15 @@ Current high-confidence state:
   bytecode and AOT lowering time plus deterministic bytecode
   flow/instruction/source/stream counters and AOT linear/mixed dispatch
   counters.
+- `arcweft-runtime-accelerator` now owns the pure-helper execution policy used
+  by ordinary flow execution. The CLI and launch profiles can select
+  `auto`/`vm`/`aot`/`jit`, `auto` or fixed worker counts, and a batch threshold.
+  Scalar pure helper calls use the fixed `i64` argument pack; batch AOT calls can
+  use an accelerator-owned Rayon pool when the batch length reaches the
+  threshold. Runtime JSON reports scalar/batch call counts, copied
+  argument/result bytes, thread-pool jobs, Vec argument allocations, fallback
+  counts, compile attempts, cache hits/misses, and compile elapsed time without
+  writing host absolute paths.
 - `arcweft-cli::native_task` owns the native task bridge for the first real I/O
   slice. It completes `fs.read_text`, `fs.read_bytes`, `fs.write_text`, and
   `fs.write_bytes` task requests as VM `TaskEvent` input on the next step,

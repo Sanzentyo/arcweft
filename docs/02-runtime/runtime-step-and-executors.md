@@ -68,10 +68,13 @@ stepped with an adapter-provided `RuntimePureCallBackend`; this keeps pure
 helper acceleration outside `arcweft-core` while allowing ordinary flow code to
 benefit from AOT/JIT pure helpers automatically.
 
-`RuntimeStepStats.pure` reports per-step pure helper calls, JIT/AOT/VM call
-counts, fixed-stack argument packs, Vec argument allocations, and fallback
-counts. These counters are step-local even when an adapter keeps a persistent
-JIT/AOT compile cache across steps.
+`RuntimeStepStats.pure` reports per-step pure helper calls, batch calls, batch
+item counts, JIT/AOT/VM call counts, fixed-stack argument packs, copied
+argument/result byte counts, thread-pool jobs, Vec argument allocations, and
+fallback counts. These counters are step-local even when an adapter keeps a
+persistent JIT/AOT compile cache across steps. Executor-level stats report the
+selected pure backend, worker policy, batch threshold, helper acceleration
+summary, compile attempts, cache hits/misses, and compile elapsed time.
 
 ## Interpreter / compiled modes
 

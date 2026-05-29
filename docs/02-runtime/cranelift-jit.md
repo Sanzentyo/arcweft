@@ -66,9 +66,13 @@ compile caches and backend selection. `arcweft-core` exposes only
 `RuntimePureCallBackend`, so normal flow execution can call pure helpers through
 VM, typed AOT, or Cranelift JIT without depending on native code generation.
 The CLI default is `--pure-backend auto`: supported deterministic integer pure
-helpers are JIT-compiled once and then called from flow execution through a
-fixed-size `i64` argument pack. Unsupported helpers remain deterministic by
-using the VM path.
+helpers are compiled once and then called from ordinary flow execution through
+a fixed-size `i64` argument pack. Auto mode tries JIT, then typed AOT, then VM.
+Pinned `--pure-backend jit|aot|vm` runs only that selected native/helper tier
+before falling back to the VM for unsupported helpers. `--pure-workers auto|N`
+and `--pure-batch-min-len N` configure the accelerator-owned thread pool used
+for batchable typed AOT helper calls. Scalar flow calls stay on the direct
+fixed-argument path so pure helper use does not introduce a Vec allocation.
 
 `arcweft-lang-jit-cranelift` is the native codegen adapter crate. Its first
 executable subset compiles deterministic `i64` pure-helper expressions to
@@ -104,6 +108,15 @@ arithmetic/branch mix so the native-call boundary and the compiled loop can be
 compared independently.
 `--input-seed` makes the input series reproducible while allowing local A/B
 comparisons. It does not read source paths or persist host absolute paths.
+
+Flow execution and bench JSON expose the same accelerator boundary. Per-step
+pure stats include scalar calls, batch calls, batch item counts, backend call
+counts, stack-packed argument calls, copied argument/result byte counts,
+thread-pool jobs, Vec argument allocations, and VM fallback counts. Executor
+stats include the selected pure backend, worker policy, batch threshold, helper
+acceleration summary, compile attempts, cache hits/misses, and compile elapsed
+time. These counters are meant to show whether natural flow code is staying on
+the zero-allocation scalar path or crossing into batch/thread-pool execution.
 
 When a `.arcw` path is provided, `arcw jit check` runs the normal parse, HIR
 lowering, reference validation, typecheck-readiness, and typecheck path first.

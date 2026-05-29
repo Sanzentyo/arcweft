@@ -235,6 +235,10 @@ flow @flow.main main {
         .arg("4")
         .arg("--pure-backend")
         .arg("jit")
+        .arg("--pure-workers")
+        .arg("1")
+        .arg("--pure-batch-min-len")
+        .arg("2")
         .output()
         .expect("arcw run executes runtime pure JIT source");
     fs::remove_file(&path).expect("remove temp runtime pure helper");
@@ -252,6 +256,10 @@ flow @flow.main main {
     assert_eq!(pure["jit_calls"], 1);
     assert_eq!(pure["arg_stack_packs"], 1);
     assert_eq!(pure["arg_vec_allocations"], 0);
+    assert_eq!(json["executor_stats"]["pure_config"]["backend"], "jit");
+    assert_eq!(json["executor_stats"]["pure_config"]["workers"]["fixed"], 1);
+    assert_eq!(json["executor_stats"]["pure_config"]["batch_min_len"], 2);
+    assert_eq!(json["executor_stats"]["pure_compile"]["jit_successes"], 1);
 }
 
 #[test]
