@@ -1,5 +1,5 @@
 use crate::borrow::{BorrowLocalState, BorrowStateSnapshot, merge_borrow_local_states};
-use crate::diagnostics::{TypeCheckError, TypeCheckReadinessError};
+use crate::diagnostics::{TypeCheckError, TypeCheckReadinessError, TypeCheckWarning};
 use crate::env::TypeCheckEnv;
 use crate::fact_layer::{EffectScope, capability_from_expr};
 use crate::lifetime::{
@@ -148,6 +148,7 @@ pub struct TypeJudgment {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeCheckReport {
     pub diagnostics: Vec<TypeCheckError>,
+    pub warnings: Vec<TypeCheckWarning>,
     pub stats: TypeCheckStats,
     pub judgments: Vec<TypeJudgment>,
 }
@@ -168,6 +169,7 @@ pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport 
     checker.check_module(module);
     TypeCheckReport {
         diagnostics: checker.errors,
+        warnings: checker.warnings,
         stats: checker.stats,
         judgments: checker.judgments,
     }
@@ -185,6 +187,7 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
 struct TypeChecker<'a> {
     env: &'a TypeCheckEnv,
     errors: Vec<TypeCheckError>,
+    warnings: Vec<TypeCheckWarning>,
     active_borrows: Vec<String>,
     borrow_local_lifetimes: HashMap<String, BorrowLocalState>,
     global_symbols: HashMap<String, TypeKind>,
@@ -270,6 +273,7 @@ impl TypeChecker<'_> {
         TypeChecker {
             env,
             errors: Vec::new(),
+            warnings: Vec::new(),
             active_borrows: Vec::new(),
             borrow_local_lifetimes: HashMap::new(),
             global_symbols: HashMap::new(),

@@ -7,9 +7,13 @@ use super::{
     ident_pattern_name, normalize_choice_type, stream_return_types, type_ref_kind,
     types_compatible, validate_typecheck_ready,
 };
-use crate::checker::helpers::type_kind_label;
+use crate::checker::helpers::{type_kind_label, type_ref_label};
+use crate::diagnostics::TypeCheckWarning;
 use arcweft_lang_hir::model::{HirFlow, HirFunction};
-use arcweft_lang_syntax::ast::items::{EntryItem, EntryRouteBinding, EntryRouteBindingSource};
+use arcweft_lang_syntax::ast::common::Visibility;
+use arcweft_lang_syntax::ast::items::{
+    EntryItem, EntryRouteBinding, EntryRouteBindingSource, TypeAliasItem,
+};
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
 use arcweft_lang_syntax::types::{FnSignature, TypeRef};
 use std::collections::{HashMap, HashSet};
@@ -96,6 +100,7 @@ impl TypeChecker<'_> {
             self.loop_stack.clear();
             self.yield_stack.clear();
             self.active_presentation_defaults.clear();
+            self.warn_public_signature_anonymous_sum(function);
             self.check_signature_type_refs(function.signature());
             for group in function.signature().param_groups() {
                 for param in group.params() {
@@ -147,6 +152,40 @@ impl TypeChecker<'_> {
             }
             _ => self.check_block_expr(statements, None),
         }
+    }
+
+    fn warn_public_signature_anonymous_sum(&mut self, function: &HirFunction) {
+        if function.visibility() != Some(Visibility::Public) {
+            return;
+        }
+        for group in function.signature().param_groups() {
+            for param in group.params() {
+                self.warn_public_type_ref_anonymous_sum(
+                    param.ty(),
+                    &format!(
+                        "public function `{}` parameter `{}`",
+                        function.name(),
+                        pattern_public_label(param.pattern())
+                    ),
+                );
+            }
+        }
+        if let Some(return_type) = function.signature().return_type() {
+            self.warn_public_type_ref_anonymous_sum(
+                return_type,
+                &format!("public function `{}` return type", function.name()),
+            );
+        }
+    }
+
+    fn warn_public_type_ref_anonymous_sum(&mut self, ty: &TypeRef, context: &str) {
+        if !type_ref_contains_choice(ty) {
+            return;
+        }
+        self.warnings.push(TypeCheckWarning::new(format!(
+            "{context} exposes anonymous sum `{}`; public ABI and save data are more stable with a nominal enum",
+            type_ref_label(ty)
+        )));
     }
 
     fn with_expected_return<R>(
@@ -287,14 +326,7 @@ impl TypeChecker<'_> {
                 }
             }
             HirTopLevelDecl::TypeAlias(item) => {
-                self.check_type_ref_shape(item.target());
-                let outer_locals = self.locals.clone();
-                self.locals
-                    .insert("self".to_owned(), type_ref_kind(item.target()));
-                for clause in item.where_clauses() {
-                    self.check_expr(clause);
-                }
-                self.locals = outer_locals;
+                self.check_type_alias_decl(item);
             }
             HirTopLevelDecl::Hook(item) => {
                 self.expect_entity_kind(item.id(), &EntityKind::Hook, "hook id");
@@ -331,6 +363,23 @@ impl TypeChecker<'_> {
                 self.check_source_item(item);
             }
         }
+    }
+
+    fn check_type_alias_decl(&mut self, item: &TypeAliasItem) {
+        if item.visibility() == Some(Visibility::Public) {
+            self.warn_public_type_ref_anonymous_sum(
+                item.target(),
+                &format!("public type alias `{}`", item.name()),
+            );
+        }
+        self.check_type_ref_shape(item.target());
+        let outer_locals = self.locals.clone();
+        self.locals
+            .insert("self".to_owned(), type_ref_kind(item.target()));
+        for clause in item.where_clauses() {
+            self.check_expr(clause);
+        }
+        self.locals = outer_locals;
     }
 
     fn check_entry_item(&mut self, item: &EntryItem) {
@@ -669,6 +718,19 @@ fn collect_flow_params(module: &HirModule) -> std::collections::HashMap<String, 
             ))
         })
         .collect()
+}
+
+fn type_ref_contains_choice(ty: &TypeRef) -> bool {
+    match ty {
+        TypeRef::Choice(_) => true,
+        TypeRef::Generic { args, .. } => args.iter().any(type_ref_contains_choice),
+        TypeRef::Ref { inner, .. } | TypeRef::Slice(inner) => type_ref_contains_choice(inner),
+        TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) => false,
+    }
+}
+
+fn pattern_public_label(pattern: &Pattern) -> String {
+    ident_pattern_name(pattern).map_or_else(|| format!("{pattern:?}"), ToOwned::to_owned)
 }
 
 fn flow_signature_params(signature: &FnSignature) -> HashSet<String> {

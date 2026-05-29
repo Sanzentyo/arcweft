@@ -703,6 +703,7 @@ mod tests {
         assert!(has_required_type_evidence(&type_report()));
         assert!(!has_required_type_evidence(&TypeCheckReport {
             diagnostics: Vec::new(),
+            warnings: Vec::new(),
             stats: TypeCheckStats::default(),
             judgments: Vec::new(),
         }));
@@ -740,6 +741,7 @@ mod tests {
         ];
         TypeCheckReport {
             diagnostics: Vec::new(),
+            warnings: Vec::new(),
             stats: TypeCheckStats {
                 judgments: judgments.len(),
                 ..TypeCheckStats::default()

@@ -1,7 +1,7 @@
 use arcweft_lang_syntax::{
     ast::{
         choice::{ChoiceAction, ChoiceItem, ChoicePlan},
-        common::TextRange,
+        common::{TextRange, Visibility},
         dialogue::{DialogueContent, DialogueDefaultsItem, LineArg},
         flow::{AwaitBranchKind, ContractClause, FlowKind, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax},
@@ -49,6 +49,7 @@ pub struct HirFlow {
 pub struct HirFunction {
     pub(crate) attributes: Vec<Attribute>,
     pub(crate) kind: FunctionKind,
+    pub(crate) visibility: Option<Visibility>,
     pub(crate) signature: FnSignature,
     pub(crate) contracts: Vec<ContractClause>,
     pub(crate) statements: Vec<Stmt>,
@@ -347,6 +348,10 @@ impl HirFunction {
 
     pub const fn kind(&self) -> FunctionKind {
         self.kind
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
     }
 
     pub fn name(&self) -> &str {

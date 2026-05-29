@@ -3246,6 +3246,8 @@ struct TypeCheckProfileStats {
     top_level_items: usize,
     statements: usize,
     expressions: usize,
+    warnings: usize,
+    warning_samples: Vec<String>,
     judgments: usize,
     judgment_rules: TypeCheckJudgmentRuleStats,
     judgment_samples: Vec<TypeCheckJudgmentSample>,
@@ -3261,6 +3263,13 @@ impl From<&TypeCheckReport> for TypeCheckProfileStats {
             top_level_items: stats.top_level_items,
             statements: stats.statements,
             expressions: stats.expressions,
+            warnings: report.warnings.len(),
+            warning_samples: report
+                .warnings
+                .iter()
+                .take(8)
+                .map(|warning| warning.message().to_owned())
+                .collect(),
             judgments: stats.judgments,
             judgment_rules: TypeCheckJudgmentRuleStats::from_judgments(&report.judgments),
             judgment_samples: report

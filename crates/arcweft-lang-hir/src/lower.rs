@@ -168,6 +168,7 @@ fn lower_function(function: &FunctionItem, attributes: Vec<Attribute>) -> HirFun
     HirFunction {
         attributes,
         kind: function.kind(),
+        visibility: function.visibility(),
         signature: function.signature().clone(),
         contracts: function.contracts().to_vec(),
         statements: function.body_statements().to_vec(),

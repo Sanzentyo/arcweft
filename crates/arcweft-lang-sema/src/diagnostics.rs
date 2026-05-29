@@ -7,6 +7,13 @@ pub struct TypeCheckError {
     message: String,
 }
 
+/// Non-fatal semantic lint emitted by type analysis.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("{message}")]
+pub struct TypeCheckWarning {
+    message: String,
+}
+
 /// Syntax-to-HIR readiness error for the future type checker.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error("{message}")]
@@ -31,6 +38,17 @@ impl TypeCheckError {
     }
 
     /// Human-readable type-checking failure.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl TypeCheckWarning {
+    pub(crate) fn new(message: String) -> Self {
+        Self { message }
+    }
+
+    /// Human-readable type-analysis warning.
     pub fn message(&self) -> &str {
         &self.message
     }

@@ -460,6 +460,52 @@ flow @flow.bad bad {
 }
 
 #[test]
+fn public_anonymous_sum_abi_is_linted_without_rejecting_module() {
+    let tree = parse_ok(
+        r#"
+pub type Payload = String | Bytes
+
+pub fn read_payload(path: VirtualPath) -> String | Bytes {
+    "payload"
+}
+
+fn private_helper(value: String | Bytes) -> Unit {
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("public anonymous sum fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "anonymous sums in public ABI should lint, not fail: {:?}",
+        report.diagnostics
+    );
+    let warnings = report
+        .warnings
+        .iter()
+        .map(crate::diagnostics::TypeCheckWarning::message)
+        .collect::<Vec<_>>();
+    assert!(
+        warnings
+            .iter()
+            .any(|message| message.contains("public type alias `Payload`")),
+        "expected public type alias warning, got {warnings:?}"
+    );
+    assert!(
+        warnings
+            .iter()
+            .any(|message| message.contains("public function `read_payload` return type")),
+        "expected public function return warning, got {warnings:?}"
+    );
+    assert!(
+        warnings
+            .iter()
+            .all(|message| !message.contains("private_helper")),
+        "private anonymous sum helper should not lint, got {warnings:?}"
+    );
+}
+
+#[test]
 fn parses_documented_state_reducer_and_view_items() {
     let tree = parse_ok(
         r"

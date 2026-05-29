@@ -134,7 +134,9 @@ Current high-confidence state:
   reject duplicate alternatives and alias collapse, expected-type checking
   injects values into a unique branch, `if`/`match` joins can produce anonymous
   sums, typed match patterns eliminate branches, and runtime typed patterns
-  check value shape before binding.
+  check value shape before binding. Public function signatures and public type
+  aliases that expose anonymous sums now emit non-fatal type-analysis warnings
+  steering stable ABI/save-data surfaces toward nominal enums.
 - `pro_review7.md`: adopted rowan-compatible lossless CST as the public parsing
   foundation for `arcweft-lang-syntax`, with `ParsedSource` returning syntax,
   typed syntax views, diagnostics, source text metadata, and line index even for
