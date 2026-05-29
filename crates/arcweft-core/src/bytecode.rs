@@ -1,7 +1,7 @@
 use crate::line_task::LineTaskGroup;
 use crate::plan::{
     EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
-    RuntimeFlow, RuntimePlan, RuntimePlanError,
+    RuntimeFlow, RuntimePlan, RuntimePlanError, RuntimePureHelper,
 };
 use crate::source::SourcePlan;
 use crate::stream::StreamPlan;
@@ -12,6 +12,7 @@ pub struct BytecodeProgram {
     pub entry_flow: Option<FlowRuntimeId>,
     pub entries: Vec<BytecodeEntry>,
     pub flows: Vec<BytecodeFlow>,
+    pub pure_helpers: Vec<RuntimePureHelper>,
     pub line_task_groups: Vec<LineTaskGroup>,
     pub stream_plans: Vec<StreamPlan>,
     pub source_plans: Vec<SourcePlan>,
@@ -58,6 +59,7 @@ impl BytecodeProgram {
             entry_flow: plan.entry_flow,
             entries: plan.entries.into_iter().map(BytecodeEntry::from).collect(),
             flows: plan.flows.into_iter().map(BytecodeFlow::from).collect(),
+            pure_helpers: plan.pure_helpers,
             line_task_groups: plan.line_task_groups,
             stream_plans: plan.stream_plans,
             source_plans: plan.source_plans,
@@ -77,6 +79,7 @@ impl BytecodeProgram {
                     .map(RuntimeEntrySpec::from)
                     .collect(),
             )
+            .with_pure_helpers(self.pure_helpers)
             .with_generation_plans(self.stream_plans, self.source_plans)
         })
     }

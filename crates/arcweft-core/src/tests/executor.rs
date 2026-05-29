@@ -2,9 +2,13 @@ use crate::aot::{AotDispatchShape, AotProgram};
 use crate::bytecode::BytecodeProgram;
 use crate::effect::{LineEffectRequest, RuntimeLog};
 use crate::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor, VmExecutor};
-use crate::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
+use crate::plan::{
+    FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan, RuntimePureHelper, RuntimePureHelperId,
+    RuntimePureHelperOrigin,
+};
 use crate::step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions};
 use crate::task::{AwaitTarget, HostCapabilityId, HostTaskRequestTemplate, NeedId, TaskId};
+use crate::value::{RuntimeExpr, RuntimeValue};
 
 #[test]
 fn aot_executor_matches_vm_executor_at_runtime_boundary() {
@@ -64,7 +68,14 @@ fn aot_program_records_nested_dispatch_shape() {
         }],
         Vec::new(),
     )
-    .expect("plan is valid");
+    .expect("plan is valid")
+    .with_pure_helpers(vec![RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "one".to_owned(),
+        input_names: Vec::new(),
+        expr: RuntimeExpr::Value(RuntimeValue::Int(1)),
+        origin: RuntimePureHelperOrigin::Annotated,
+    }]);
 
     let program = AotProgram::from_runtime_plan(plan);
     assert_eq!(program.flows().len(), 1);

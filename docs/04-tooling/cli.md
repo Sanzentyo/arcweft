@@ -330,6 +330,10 @@ counts, pure thread-pool jobs, and pure argument Vec allocations in addition to
 executed VM ops. Native I/O counters include scheduler submitted/dispatched
 task counts and `max_in_flight`, so `traverse(...).parallel(limit = N)` bench
 sections expose both total task volume and bounded fanout behavior.
+Measured bench runs go through the bytecode VM artifact boundary, and that
+artifact preserves pure-helper metadata. This lets natural flow code such as
+`for` loops that call `#[pure] fn` helpers report the same JIT/AOT compile and
+zero-argument-Vec scalar-call counters as `arcw run --pure-backend ...`.
 Renderer/audio driving, offline rendering/audio, and allocation counters remain
 adapter work; adapter-only sections are reported as skipped.
 

@@ -441,6 +441,8 @@ Current high-confidence state:
   through the declared
   backpressure policy. `StreamPlan` can drain source/stream queues through
   `ForNext` and emit deterministic stream events within a per-step budget.
+  Flow `for` loops also lower to bounded `ForNext` continuations instead of
+  unrolling the whole iteration space into a single step queue.
   `arcw plan --json` reports generation plans, and `arcw run --json` reports
   source/stream events and queue state. CLI output renders payload labels for
   display while the Sans I/O boundary keeps `RuntimeValue` shape for replay and
@@ -453,6 +455,10 @@ Current high-confidence state:
   guard evaluation uses temporary bindings and restores the previous runtime
   environment. `RuntimeStepInput::bindings` bind into the root runtime scope so
   ambient per-step values are not lost when a nested scope exits.
+- Bytecode VM artifacts preserve pure-helper metadata alongside flow ops,
+  entries, line-task groups, and source/stream plans. `arcw bench` and
+  `arcw profile` therefore exercise the same automatic pure JIT/AOT call path
+  as `arcw run`, including natural `for` loop bodies that call pure helpers.
 - Gap audit result: broad runtime docs still exceed the Phase 2.0 headless
   target. Full story VM value execution, complete expression evaluation, source
   adapter execution, hook/memo runtime tables, save/replay traces, activities,

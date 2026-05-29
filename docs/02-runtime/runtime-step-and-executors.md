@@ -75,6 +75,9 @@ fallback counts. These counters are step-local even when an adapter keeps a
 persistent JIT/AOT compile cache across steps. Executor-level stats report the
 selected pure backend, worker policy, batch threshold, helper acceleration
 summary, compile attempts, cache hits/misses, and compile elapsed time.
+Bytecode VM programs preserve the runtime plan's pure-helper table, so executor
+artifact lowering does not change whether ordinary flow calls can use the
+adapter-provided pure backend.
 
 ## Interpreter / compiled modes
 

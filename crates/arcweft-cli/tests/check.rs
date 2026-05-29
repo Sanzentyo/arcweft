@@ -2015,6 +2015,89 @@ flow @flow.bench bench {
 }
 
 #[test]
+fn bench_json_measures_for_loop_pure_jit_without_arg_vec_allocation() {
+    let path = temp_arcw(
+        "script-bench-for-pure-jit",
+        r#"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+bench @bench.for_pure {
+    measure iterations = 2 { start(@flow.for_pure) }
+}
+
+flow @flow.for_pure for_pure {
+    let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
+    for item in values {
+        let scored = score(item, 2i64)
+        log.info(scored)
+    }
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("2")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--steps")
+        .arg("32")
+        .arg("--max-ops")
+        .arg("8")
+        .arg("--pure-backend")
+        .arg("jit")
+        .arg("--json")
+        .output()
+        .expect("arcw bench measures for-loop pure JIT calls");
+
+    assert!(
+        output.status.success(),
+        "for-loop pure JIT bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&std::env::temp_dir().display().to_string()),
+        "bench JSON must not record absolute temp paths: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let section = &json["benches"][0]["sections"][0];
+    assert_eq!(section["status"], "measured");
+
+    let measurement = &section["measurement"];
+    assert_eq!(measurement["executor"], "bytecode_vm");
+    assert_eq!(measurement["warmup"], 1);
+    assert_eq!(measurement["iterations"], 2);
+    assert_eq!(measurement["steps"], 32);
+    assert_eq!(measurement["deterministic"]["pure_calls_median"], 4);
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_vec_allocations_median"],
+        0
+    );
+    assert_eq!(
+        measurement["executor_stats"]["pure_config"]["backend"],
+        "jit"
+    );
+    assert_eq!(
+        measurement["executor_stats"]["pure_compile"]["jit_successes"],
+        1
+    );
+    assert!(
+        measurement["executor_stats"]["pure_config"]["resolved_workers"]
+            .as_u64()
+            .is_some_and(|value| value >= 1),
+        "bench JSON should expose resolved pure worker count: {measurement}"
+    );
+}
+
+#[test]
 fn bench_json_measures_pure_helper_with_vm_aot_and_jit() {
     let path = temp_arcw(
         "script-bench-pure-helper",
