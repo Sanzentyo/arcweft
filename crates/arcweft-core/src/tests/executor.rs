@@ -1,7 +1,9 @@
+use crate::aot::{AotDispatchShape, AotProgram};
 use crate::bytecode::BytecodeProgram;
 use crate::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor, VmExecutor};
 use crate::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
 use crate::step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions};
+use crate::task::{AwaitTarget, HostCapabilityId, HostTaskRequestTemplate, NeedId, TaskId};
 
 #[test]
 fn aot_executor_matches_vm_executor_at_runtime_boundary() {
@@ -20,12 +22,59 @@ fn aot_executor_matches_vm_executor_at_runtime_boundary() {
     };
     let mut vm = VmExecutor::new(plan.clone());
     let mut aot = AotExecutor::new(plan);
+    assert_eq!(aot.program().stats().flows, 1);
+    assert_eq!(aot.program().stats().linear_dispatch_flows, 1);
 
     let vm_result = vm.step(RuntimeStepInput::default(), options);
     let aot_result = aot.step(RuntimeStepInput::default(), options);
 
     assert_eq!(aot_result, vm_result);
     assert_eq!(aot.fiber().status, vm.fiber().status);
+}
+
+#[test]
+fn aot_program_records_nested_dispatch_shape() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![
+                FlowOp::Noop,
+                FlowOp::If {
+                    condition: crate::value::RuntimeExpr::Value(crate::value::RuntimeValue::Bool(
+                        true,
+                    )),
+                    then_ops: vec![FlowOp::Return("then".to_owned())],
+                    else_ops: vec![FlowOp::Await {
+                        binding: None,
+                        target: AwaitTarget {
+                            need: NeedId("need.ready".to_owned()),
+                            task: TaskId("task.ready".to_owned()),
+                            request: HostTaskRequestTemplate {
+                                capability: HostCapabilityId("clock".to_owned()),
+                                operation: "ready".to_owned(),
+                                args: Vec::new(),
+                            },
+                        },
+                        pending: Vec::new(),
+                    }],
+                },
+            ],
+        }],
+        Vec::new(),
+    )
+    .expect("plan is valid");
+
+    let program = AotProgram::from_runtime_plan(plan);
+    assert_eq!(program.flows().len(), 1);
+    assert_eq!(program.flows()[0].dispatch, AotDispatchShape::Mixed);
+    assert_eq!(program.flows()[0].linear_prefix_ops, 1);
+    assert_eq!(program.stats().flows, 1);
+    assert_eq!(program.stats().ops, 4);
+    assert_eq!(program.stats().linear_ops, 2);
+    assert_eq!(program.stats().branch_ops, 1);
+    assert_eq!(program.stats().await_ops, 1);
+    assert_eq!(program.stats().mixed_dispatch_flows, 1);
 }
 
 #[test]

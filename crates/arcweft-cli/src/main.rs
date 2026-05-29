@@ -1,4 +1,5 @@
 use arcweft_adapter_context::native_http_server_context;
+use arcweft_core::aot::{AotProgram, AotProgramStats};
 use arcweft_core::bytecode::{BytecodeProgram, BytecodeStats};
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor};
@@ -906,6 +907,7 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
                 &compiled.runtime_type_validation_stats,
             ),
             bytecode: BytecodeProfileStats::from(&compiled.bytecode_stats),
+            aot: AotProfileStats::from(&compiled.aot_stats),
         },
         phases,
         runtime: RuntimeProfileRuntime {
@@ -939,6 +941,7 @@ struct ProfileCompiledRuntimePlan {
     typecheck_report: TypeCheckReport,
     runtime_type_validation_stats: RuntimeTypeValidationStats,
     bytecode_stats: BytecodeStats,
+    aot_stats: AotProgramStats,
 }
 
 fn compile_profile_runtime_plan(
@@ -1003,6 +1006,10 @@ fn compile_profile_runtime_plan(
             Ok(report.stats)
         }
     })?;
+    let aot = run_profile_phase(phases, "aot_lower", || {
+        Ok::<AotProgram, ExitCode>(AotProgram::from_runtime_plan(plan.clone()))
+    })?;
+    let aot_stats = aot.stats().clone();
     let bytecode = run_profile_phase(phases, "bytecode_lower", || {
         Ok::<BytecodeProgram, ExitCode>(BytecodeProgram::from_runtime_plan(plan))
     })?;
@@ -1019,6 +1026,7 @@ fn compile_profile_runtime_plan(
         typecheck_report,
         runtime_type_validation_stats,
         bytecode_stats,
+        aot_stats,
     })
 }
 
@@ -1820,6 +1828,7 @@ fn script_bench_selection(
                 &compiled.runtime_type_validation_stats,
             ),
             bytecode: BytecodeProfileStats::from(&compiled.bytecode_stats),
+            aot: AotProfileStats::from(&compiled.aot_stats),
         },
         phases,
         benches: manifest
@@ -3039,6 +3048,7 @@ struct RuntimeProfileCompiler {
     borrow_check: BorrowCheckProfileStats,
     runtime_type_validation: RuntimeTypeValidationProfileStats,
     bytecode: BytecodeProfileStats,
+    aot: AotProfileStats,
 }
 
 #[derive(serde::Serialize)]
@@ -3217,6 +3227,39 @@ impl From<&BytecodeStats> for BytecodeProfileStats {
             line_task_groups: stats.line_task_groups,
             stream_plans: stats.stream_plans,
             source_plans: stats.source_plans,
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct AotProfileStats {
+    flows: usize,
+    ops: usize,
+    linear_ops: usize,
+    branch_ops: usize,
+    effect_ops: usize,
+    await_ops: usize,
+    choice_ops: usize,
+    dialogue_ops: usize,
+    jump_ops: usize,
+    linear_dispatch_flows: usize,
+    mixed_dispatch_flows: usize,
+}
+
+impl From<&AotProgramStats> for AotProfileStats {
+    fn from(stats: &AotProgramStats) -> Self {
+        Self {
+            flows: stats.flows,
+            ops: stats.ops,
+            linear_ops: stats.linear_ops,
+            branch_ops: stats.branch_ops,
+            effect_ops: stats.effect_ops,
+            await_ops: stats.await_ops,
+            choice_ops: stats.choice_ops,
+            dialogue_ops: stats.dialogue_ops,
+            jump_ops: stats.jump_ops,
+            linear_dispatch_flows: stats.linear_dispatch_flows,
+            mixed_dispatch_flows: stats.mixed_dispatch_flows,
         }
     }
 }

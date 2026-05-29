@@ -1,3 +1,4 @@
+use crate::aot::AotProgram;
 use crate::bytecode::BytecodeProgram;
 use crate::engine::{Engine, FlowFiber};
 use crate::plan::{RuntimePlan, RuntimePlanError};
@@ -20,14 +21,14 @@ pub struct VmExecutor {
     engine: Engine,
 }
 
-/// AOT executor boundary that currently preserves VM-equivalent semantics.
+/// AOT executor boundary backed by a typed AOT program artifact.
 ///
-/// The Phase 2 implementation intentionally delegates to `VmExecutor` rather
-/// than introducing a second semantic engine. Native or generated dispatch can
-/// replace the backend behind this type once bytecode/state-machine generation
-/// exists, while callers already depend on the stable `RuntimeExecutor` shape.
+/// The current backend runs through the VM-compatible state machine after AOT
+/// shape analysis. Generated dispatch can replace that backend without changing
+/// host-facing executor selection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AotExecutor {
+    program: AotProgram,
     vm: VmExecutor,
 }
 
@@ -60,17 +61,26 @@ impl VmExecutor {
 
 impl AotExecutor {
     pub fn new(plan: RuntimePlan) -> Self {
-        Self {
-            vm: VmExecutor::new(plan),
-        }
+        let program = AotProgram::from_runtime_plan(plan);
+        let vm = VmExecutor::new(program.plan().clone());
+        Self { program, vm }
+    }
+
+    pub fn from_program(program: AotProgram) -> Self {
+        let vm = VmExecutor::new(program.plan().clone());
+        Self { program, vm }
+    }
+
+    pub const fn program(&self) -> &AotProgram {
+        &self.program
     }
 
     pub const fn vm(&self) -> &VmExecutor {
         &self.vm
     }
 
-    pub fn into_vm(self) -> VmExecutor {
-        self.vm
+    pub fn into_program(self) -> AotProgram {
+        self.program
     }
 }
 

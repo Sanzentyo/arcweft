@@ -39,8 +39,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   pass the resolved profile adapter `TypeCheckEnv` through both type checking
   and semantic verification. Generic direct-path mode still uses the empty
   Sans I/O environment.
-- `AotExecutor` exists as a VM-equivalent `RuntimeExecutor` boundary. Generated
-  flow dispatch remains future work, but `arcw run`, `arcw cli`,
+- `arcweft-core::aot` provides a pure `AotProgram` artifact with typed flow
+  dispatch-shape analysis and deterministic operation-class counters. Generated
+  flow dispatch remains future work, but `AotExecutor` owns this artifact before
+  executing through the VM-compatible state machine. `arcw run`, `arcw cli`,
   `arcw test`, `arcw profile`, and runtime `arcw bench` sections can select the
   AOT boundary with `--executor aot` and report that tier in JSON without
   introducing different semantics. Pure helper AOT is implemented separately:
@@ -68,8 +70,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
   counters in JSON, completes native file task requests through the CLI adapter,
   and evaluates `assert { expect.*(...) }` sections against a separate
   correctness run before reporting a measured bench as successful. Bench reports
-  also expose compile phase timings plus type, borrow, runtime-type, and
-  bytecode counters so runtime performance can be compared with
+  also expose compile phase timings plus type, borrow, runtime-type, bytecode,
+  and AOT dispatch-shape counters so runtime performance can be compared with
   parser/checker/lowering cost.
   `measure { pure(helper_name) }` sections additionally run the selected
   checked `#[pure] fn` helper through the VM reference, typed AOT plan, and
@@ -339,14 +341,19 @@ Current high-confidence state:
   presentation-visible output while pure observations can drain to a harder
   boundary.
 - `arcweft-core::bytecode` provides a pure `BytecodeProgram` bundle and
-  deterministic bytecode stats. `BytecodeVmExecutor` executes that bundle through
-  the semantic VM so VM, bytecode, AOT, and future JIT tiers have a shared
-  conformance boundary before generated dispatch is introduced.
+  deterministic bytecode stats. `arcweft-core::aot` provides a pure `AotProgram`
+  bundle with flow dispatch-shape and operation-class stats. `BytecodeVmExecutor`
+  executes bytecode through the semantic VM, and `AotExecutor` owns the AOT
+  artifact before using the same VM-compatible state machine so VM, bytecode,
+  AOT, and future JIT tiers have a shared conformance boundary before generated
+  dispatch is introduced.
 - CLI runtime stepping now routes `arcw run`, `arcw cli`, `arcw test`, and
-  `arcw profile` through `BytecodeVmExecutor`. Run/CLI JSON reports the typed
-  `executor = "bytecode_vm"` tier as an explicit conformance and performance
-  observation, and `arcw profile --json` includes bytecode lowering time plus
-  deterministic bytecode flow/instruction/source/stream counters.
+  `arcw profile` through the selected runtime executor. Run/CLI JSON reports the
+  typed `executor = "bytecode_vm"` or `executor = "aot"` tier as an explicit
+  conformance and performance observation, and `arcw profile --json` includes
+  bytecode and AOT lowering time plus deterministic bytecode
+  flow/instruction/source/stream counters and AOT linear/mixed dispatch
+  counters.
 - `arcweft-cli::native_task` owns the native task bridge for the first real I/O
   slice. It completes `fs.read_text`, `fs.read_bytes`, `fs.write_text`, and
   `fs.write_bytes` task requests as VM `TaskEvent` input on the next step,

@@ -146,8 +146,9 @@ headless execution entry point. It uses the same parse, HIR, reference
 validation, typecheck, and line-plan lowering path as `arcw check`, then lowers
 checked flows to `arcweft-core::RuntimePlan`, materializes bytecode, and steps
 the selected executor for up to `N` runtime steps. `bytecode-vm` is the semantic
-reference tier. `aot` currently uses the stable `RuntimeExecutor` AOT boundary
-with VM-equivalent semantics so CLI, tests, and benches can compare tier
+reference tier. `aot` builds the typed `arcweft-core::aot::AotProgram`
+dispatch-shape artifact and currently runs it through the VM-compatible
+`RuntimeExecutor` state machine so CLI, tests, and benches can compare tier
 selection before generated flow dispatch is introduced. JSON reports
 `executor = "bytecode_vm"` or `executor = "aot"` so performance and correctness
 runs can confirm the execution tier. If `--entry` or `--flow` is omitted, the first lowered flow is
@@ -290,15 +291,16 @@ adapter work; adapter-only sections are reported as skipped.
 `arcw profile` reports compiler phase timings plus deterministic compiler and VM counters.
 The JSON includes read, parse, lint, HIR lowering, reference resolution,
 readiness, typecheck, line-task lowering, runtime-plan lowering, and VM run
-phases, plus bytecode lowering before execution. CLI runtime execution goes
-through the bytecode VM boundary. Runtime-plan type validation runs between
-runtime-plan lowering and bytecode lowering. The JSON also includes
+phases, plus AOT and bytecode lowering before execution. CLI runtime execution
+goes through the selected executor boundary. Runtime-plan type validation runs
+between runtime-plan lowering and executor-artifact lowering. The JSON also includes
 `compiler.typecheck` counters for HIR items,
 statements, expressions, type judgments, rule-family judgment counts, and a
 bounded judgment sample for inspection, plus `compiler.borrow_check` counters
 for borrow binding groups, borrow state snapshots/restores/merges, boundary
-checks, escape checks, maximum active borrows, and `compiler.bytecode` counters
-for flow and instruction counts. `compiler.runtime_type_validation` reports
+checks, escape checks, maximum active borrows, `compiler.bytecode` counters for
+flow and instruction counts, and `compiler.aot` counters for linear/mixed
+dispatch shape plus operation classes. `compiler.runtime_type_validation` reports
 runtime flow op, expression, condition, guard, target, return, and judgment
 counters. Runtime steps include executed op counts, event counts, emitted
 source/stream events, line effects, diagnostics, and queue depths.
@@ -359,10 +361,10 @@ Bench declarations use the same expectation calls inside
 `measure { start(@flow.id) }` section is measured, `arcw bench` performs one
 additional headless correctness run and fails the bench if any assert section
 does not match the runtime observations. Bench JSON also includes the same
-compiler phase timings and type, borrow, runtime-type, and bytecode counters as
+compiler phase timings and type, borrow, runtime-type, bytecode, and AOT counters as
 `arcw profile`, so runtime measurements can be interpreted alongside
 compilation and checking cost. `arcw bench --executor aot` uses the same
-VM-equivalent AOT runtime boundary as `arcw run --executor aot`, and measured
+typed AOT runtime boundary as `arcw run --executor aot`, and measured
 runtime sections record the selected executor in JSON.
 
 Bench `measure` sections can also target a checked pure helper:
