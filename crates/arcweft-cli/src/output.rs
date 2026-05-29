@@ -1,4 +1,6 @@
 use crate::CheckedModule;
+use arcweft_core::aot::AotProgramStats;
+use arcweft_core::bytecode::BytecodeStats;
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::engine::{FlowFiber, FlowFiberStatus};
 use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope, LineTaskTrigger};
@@ -8,10 +10,16 @@ use arcweft_core::step::{RuntimeStepResult, RuntimeStepStats};
 use arcweft_core::stream::{RuntimeStreamEvent, StreamOp};
 use arcweft_core::task::TaskSpec;
 use arcweft_core::value::RuntimePayload;
+use arcweft_lang_sema::check::{
+    TypeCheckReport, TypeCheckStats, TypeJudgment, TypeJudgmentRule, TypeJudgmentSubject,
+};
 use arcweft_runtime_plan::flow::lower_runtime_plan;
 use arcweft_runtime_plan::line_task::LoweredLineTaskGroup;
 use arcweft_test::{ScriptBench, ScriptTest};
-use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy, verify_module_with_env};
+use arcweft_verify::{
+    BackendKind, RuntimeTypeValidationStats, VerificationMode, VerificationPolicy,
+    verify_module_with_env,
+};
 
 #[derive(serde::Serialize)]
 pub(crate) struct CheckReport {
@@ -325,6 +333,309 @@ fn wait_target_label(target: &arcweft_core::effect::RuntimeWaitTarget) -> String
 
 #[derive(serde::Serialize)]
 pub(crate) struct RuntimeRunReport {
+    pub(crate) executor: RuntimeExecutorTier,
+    pub(crate) executor_stats: RuntimeExecutorStats,
+    pub(crate) steps: Vec<RuntimeStepRunSummary>,
+    pub(crate) final_status: String,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeProfileReport {
+    pub(crate) source: String,
+    pub(crate) syntax_warnings: usize,
+    pub(crate) line_task_groups: usize,
+    pub(crate) compiler: RuntimeProfileCompiler,
+    pub(crate) phases: Vec<RuntimeProfilePhase>,
+    pub(crate) runtime: RuntimeProfileRuntime,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct VerifyTypesReport {
+    pub(crate) status: String,
+    pub(crate) source: String,
+    pub(crate) syntax_warnings: usize,
+    pub(crate) line_task_groups: usize,
+    pub(crate) typecheck: TypeCheckProfileStats,
+    pub(crate) borrow_check: BorrowCheckProfileStats,
+    pub(crate) runtime_type_validation: RuntimeTypeValidationReportSummary,
+    pub(crate) verifier: VerifyTypesVerifierSummary,
+    pub(crate) runtime: Option<VerifyTypesRuntimeSelfCheck>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeTypeValidationReportSummary {
+    pub(crate) diagnostics: usize,
+    pub(crate) errors: usize,
+    pub(crate) stats: RuntimeTypeValidationProfileStats,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct VerifyTypesVerifierSummary {
+    pub(crate) diagnostics: usize,
+    pub(crate) obligations: usize,
+    pub(crate) unsafe_audits: usize,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct VerifyTypesRuntimeSelfCheck {
+    pub(crate) executor: RuntimeExecutorTier,
+    pub(crate) executor_stats: RuntimeExecutorStats,
+    pub(crate) steps_run: usize,
+    pub(crate) final_status: String,
+    pub(crate) diagnostics: usize,
+    pub(crate) failed: bool,
+    pub(crate) steps: Vec<RuntimeStepRunSummary>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ScriptBenchRunReport {
+    pub(crate) source: String,
+    pub(crate) syntax_warnings: usize,
+    pub(crate) line_task_groups: usize,
+    pub(crate) compiler: RuntimeProfileCompiler,
+    pub(crate) phases: Vec<RuntimeProfilePhase>,
+    pub(crate) benches: Vec<ScriptBenchRunSummary>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeProfileCompiler {
+    pub(crate) typecheck: TypeCheckProfileStats,
+    pub(crate) borrow_check: BorrowCheckProfileStats,
+    pub(crate) runtime_type_validation: RuntimeTypeValidationProfileStats,
+    pub(crate) bytecode: BytecodeProfileStats,
+    pub(crate) aot: AotProfileStats,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct TypeCheckProfileStats {
+    pub(crate) flows: usize,
+    pub(crate) functions: usize,
+    pub(crate) declarations: usize,
+    pub(crate) top_level_items: usize,
+    pub(crate) statements: usize,
+    pub(crate) expressions: usize,
+    pub(crate) warnings: usize,
+    pub(crate) warning_samples: Vec<String>,
+    pub(crate) judgments: usize,
+    judgment_rules: TypeCheckJudgmentRuleStats,
+    judgment_samples: Vec<TypeCheckJudgmentSample>,
+}
+
+impl From<&TypeCheckReport> for TypeCheckProfileStats {
+    fn from(report: &TypeCheckReport) -> Self {
+        let stats = &report.stats;
+        Self {
+            flows: stats.flows,
+            functions: stats.functions,
+            declarations: stats.declarations,
+            top_level_items: stats.top_level_items,
+            statements: stats.statements,
+            expressions: stats.expressions,
+            warnings: report.warnings.len(),
+            warning_samples: report
+                .warnings
+                .iter()
+                .take(8)
+                .map(|warning| warning.message().to_owned())
+                .collect(),
+            judgments: stats.judgments,
+            judgment_rules: TypeCheckJudgmentRuleStats::from_judgments(&report.judgments),
+            judgment_samples: report
+                .judgments
+                .iter()
+                .take(8)
+                .map(TypeCheckJudgmentSample::from)
+                .collect(),
+        }
+    }
+}
+
+#[derive(Default, serde::Serialize)]
+struct TypeCheckJudgmentRuleStats {
+    expr: usize,
+    expected: usize,
+    let_binding: usize,
+    #[serde(rename = "return")]
+    return_: usize,
+}
+
+impl TypeCheckJudgmentRuleStats {
+    fn from_judgments(judgments: &[TypeJudgment]) -> Self {
+        let mut stats = Self::default();
+        for judgment in judgments {
+            match judgment.rule {
+                TypeJudgmentRule::Expr => stats.expr += 1,
+                TypeJudgmentRule::Expected => stats.expected += 1,
+                TypeJudgmentRule::LetBinding => stats.let_binding += 1,
+                TypeJudgmentRule::Return => stats.return_ += 1,
+            }
+        }
+        stats
+    }
+}
+
+#[derive(serde::Serialize)]
+struct TypeCheckJudgmentSample {
+    id: usize,
+    subject: String,
+    rule: &'static str,
+    ty: String,
+    expected: Option<String>,
+}
+
+impl From<&TypeJudgment> for TypeCheckJudgmentSample {
+    fn from(judgment: &TypeJudgment) -> Self {
+        Self {
+            id: judgment.id.index(),
+            subject: type_judgment_subject_label(&judgment.subject),
+            rule: type_judgment_rule_label(judgment.rule),
+            ty: format!("{:?}", judgment.ty),
+            expected: judgment
+                .expected
+                .as_ref()
+                .map(|expected| format!("{expected:?}")),
+        }
+    }
+}
+
+fn type_judgment_subject_label(subject: &TypeJudgmentSubject) -> String {
+    match subject {
+        TypeJudgmentSubject::Expr { kind } => format!("expr:{kind}"),
+        TypeJudgmentSubject::LetBinding { pattern } => format!("let:{pattern}"),
+        TypeJudgmentSubject::Return { context } => format!("return:{context}"),
+        TypeJudgmentSubject::Expected { context } => format!("expected:{context}"),
+    }
+}
+
+const fn type_judgment_rule_label(rule: TypeJudgmentRule) -> &'static str {
+    match rule {
+        TypeJudgmentRule::Expr => "expr",
+        TypeJudgmentRule::Expected => "expected",
+        TypeJudgmentRule::LetBinding => "let_binding",
+        TypeJudgmentRule::Return => "return",
+    }
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct BorrowCheckProfileStats {
+    binding_groups: usize,
+    bindings: usize,
+    state_snapshots: usize,
+    state_restores: usize,
+    state_merges: usize,
+    boundary_checks: usize,
+    escape_checks: usize,
+    max_active_borrows: usize,
+}
+
+impl From<&TypeCheckStats> for BorrowCheckProfileStats {
+    fn from(stats: &TypeCheckStats) -> Self {
+        Self {
+            binding_groups: stats.borrow_binding_groups,
+            bindings: stats.borrow_bindings,
+            state_snapshots: stats.borrow_state_snapshots,
+            state_restores: stats.borrow_state_restores,
+            state_merges: stats.borrow_state_merges,
+            boundary_checks: stats.borrow_boundary_checks,
+            escape_checks: stats.borrow_escape_checks,
+            max_active_borrows: stats.max_active_borrows,
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeTypeValidationProfileStats {
+    flows: usize,
+    ops: usize,
+    expressions: usize,
+    conditions: usize,
+    guards: usize,
+    let_bindings: usize,
+    returns: usize,
+    route_targets: usize,
+    choice_targets: usize,
+    type_judgments: usize,
+}
+
+impl From<&RuntimeTypeValidationStats> for RuntimeTypeValidationProfileStats {
+    fn from(stats: &RuntimeTypeValidationStats) -> Self {
+        Self {
+            flows: stats.flows,
+            ops: stats.ops,
+            expressions: stats.expressions,
+            conditions: stats.conditions,
+            guards: stats.guards,
+            let_bindings: stats.let_bindings,
+            returns: stats.returns,
+            route_targets: stats.route_targets,
+            choice_targets: stats.choice_targets,
+            type_judgments: stats.type_judgments,
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct BytecodeProfileStats {
+    flows: usize,
+    instructions: usize,
+    line_task_groups: usize,
+    stream_plans: usize,
+    source_plans: usize,
+}
+
+impl From<&BytecodeStats> for BytecodeProfileStats {
+    fn from(stats: &BytecodeStats) -> Self {
+        Self {
+            flows: stats.flows,
+            instructions: stats.instructions,
+            line_task_groups: stats.line_task_groups,
+            stream_plans: stats.stream_plans,
+            source_plans: stats.source_plans,
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct AotProfileStats {
+    flows: usize,
+    ops: usize,
+    linear_ops: usize,
+    branch_ops: usize,
+    effect_ops: usize,
+    await_ops: usize,
+    choice_ops: usize,
+    dialogue_ops: usize,
+    jump_ops: usize,
+    linear_dispatch_flows: usize,
+    mixed_dispatch_flows: usize,
+}
+
+impl From<&AotProgramStats> for AotProfileStats {
+    fn from(stats: &AotProgramStats) -> Self {
+        Self {
+            flows: stats.flows,
+            ops: stats.ops,
+            linear_ops: stats.linear_ops,
+            branch_ops: stats.branch_ops,
+            effect_ops: stats.effect_ops,
+            await_ops: stats.await_ops,
+            choice_ops: stats.choice_ops,
+            dialogue_ops: stats.dialogue_ops,
+            jump_ops: stats.jump_ops,
+            linear_dispatch_flows: stats.linear_dispatch_flows,
+            mixed_dispatch_flows: stats.mixed_dispatch_flows,
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeProfilePhase {
+    pub(crate) name: &'static str,
+    pub(crate) elapsed_ns: u128,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeProfileRuntime {
     pub(crate) executor: RuntimeExecutorTier,
     pub(crate) executor_stats: RuntimeExecutorStats,
     pub(crate) steps: Vec<RuntimeStepRunSummary>,

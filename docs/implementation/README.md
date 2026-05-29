@@ -77,6 +77,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   checked `#[pure] fn` helper through the VM reference, typed AOT plan, and
   native Cranelift JIT, reporting conformance, deterministic accumulators,
   timing samples, compile time, and speedup ratios in the same bench JSON.
+- `arcweft-cli` keeps user-facing JSON report schemas in `output.rs`,
+  including profile, verify-types, bench, runtime step, and compiler counter
+  summaries. `main.rs` remains the command orchestration layer instead of also
+  owning these report data models.
 - No renderer, Servo, audio, camera, USB, or MCP implementation.
 
 ## Files
