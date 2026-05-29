@@ -76,7 +76,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   also expose native I/O task completion, read/write operation, and byte-count
   counters, plus compile phase timings and type, borrow, runtime-type, bytecode,
   and AOT dispatch-shape counters so runtime performance can be compared with
-  parser/checker/lowering cost.
+  parser/checker/lowering cost. Bench assertions can check real file output with
+  `expect.file(path.save("output.txt"), equals="...")` while keeping the host
+  filesystem path out of JSON.
   `measure { pure(helper_name) }` sections additionally run the selected
   checked `#[pure] fn` helper through the VM reference, typed AOT plan, and
   native Cranelift JIT, reporting conformance, deterministic accumulators,

@@ -1684,42 +1684,58 @@ fn evaluate_test_expectation(
     step: &ScriptStep,
     frames: &[RuntimeStepRunSummary],
 ) -> Result<(), String> {
-    evaluate_runtime_expectation(step.text.trim(), &RuntimeExpectationView::Frames(frames))
+    evaluate_runtime_expectation(step.text.trim(), &RuntimeExpectationView::new(frames))
 }
 
-enum RuntimeExpectationView<'a> {
-    Frames(&'a [RuntimeStepRunSummary]),
+struct RuntimeExpectationView<'a> {
+    frames: &'a [RuntimeStepRunSummary],
+    source_path: Option<&'a Path>,
 }
 
-impl RuntimeExpectationView<'_> {
-    fn frames(&self) -> &[RuntimeStepRunSummary] {
-        match self {
-            Self::Frames(frames) => frames,
+impl<'a> RuntimeExpectationView<'a> {
+    const fn new(frames: &'a [RuntimeStepRunSummary]) -> Self {
+        Self {
+            frames,
+            source_path: None,
         }
+    }
+
+    const fn with_source_path(frames: &'a [RuntimeStepRunSummary], source_path: &'a Path) -> Self {
+        Self {
+            frames,
+            source_path: Some(source_path),
+        }
+    }
+
+    fn frames(&self) -> &[RuntimeStepRunSummary] {
+        self.frames
     }
 
     fn signal_value(&self, target: &str) -> Option<&str> {
-        match self {
-            Self::Frames(frames) => frames
-                .last()?
-                .observations
-                .signals
-                .iter()
-                .find(|signal| signal.target == target)
-                .map(|signal| signal.value.as_str()),
-        }
+        self.frames
+            .last()?
+            .observations
+            .signals
+            .iter()
+            .find(|signal| signal.target == target)
+            .map(|signal| signal.value.as_str())
     }
 
     fn has_log(&self, level: &str, needle: &str) -> bool {
-        match self {
-            Self::Frames(frames) => frames.last().is_some_and(|frame| {
-                frame
-                    .observations
-                    .logs
-                    .iter()
-                    .any(|log| log.level == level && log.message.contains(needle))
-            }),
-        }
+        self.frames.last().is_some_and(|frame| {
+            frame
+                .observations
+                .logs
+                .iter()
+                .any(|log| log.level == level && log.message.contains(needle))
+        })
+    }
+
+    fn file_text(&self, virtual_path: &str) -> Result<String, String> {
+        let Some(source_path) = self.source_path else {
+            return Err("file expectations require a source-backed runtime".to_owned());
+        };
+        NativeTaskBridge::read_text_snapshot(source_path, virtual_path)
     }
 }
 
@@ -1752,6 +1768,15 @@ fn evaluate_runtime_expectation(
             return Ok(());
         }
         return Err(format!("expected log.{level} containing `{needle}`"));
+    }
+    if let Some((virtual_path, expected)) = parse_expect_file_call(text) {
+        let actual = observations.file_text(&virtual_path)?;
+        if actual == expected {
+            return Ok(());
+        }
+        return Err(format!(
+            "expected file {virtual_path} == `{expected}`, found `{actual}`"
+        ));
     }
     Err(format!("unsupported runtime expectation `{text}`"))
 }
@@ -1815,6 +1840,26 @@ fn parse_expect_log_call(text: &str) -> Option<(String, String)> {
     Some((level, string_literal_value(value)?))
 }
 
+fn parse_expect_file_call(text: &str) -> Option<(String, String)> {
+    let (method, args) = parse_expect_method_call(text)?;
+    if method != "file" {
+        return None;
+    }
+    let [path, expected] = args.as_slice() else {
+        return None;
+    };
+    let CallArg::Named { name, value } = expected else {
+        return None;
+    };
+    if name != "equals" {
+        return None;
+    }
+    Some((
+        virtual_path_label(path.value())?,
+        string_literal_value(value)?,
+    ))
+}
+
 fn parse_expect_method_call(text: &str) -> Option<(String, Vec<CallArg>)> {
     let Expr::MethodCall {
         receiver,
@@ -1825,6 +1870,30 @@ fn parse_expect_method_call(text: &str) -> Option<(String, Vec<CallArg>)> {
         return None;
     };
     matches!(receiver.as_ref(), Expr::Path(path) if path == "expect").then_some((method, args))
+}
+
+fn virtual_path_label(expr: &Expr) -> Option<String> {
+    let Expr::MethodCall {
+        receiver,
+        method,
+        args,
+    } = expr
+    else {
+        return None;
+    };
+    if !matches!(receiver.as_ref(), Expr::Path(path) if path == "path") {
+        return None;
+    }
+    if !matches!(method.as_str(), "save" | "asset" | "temp" | "export") {
+        return None;
+    }
+    let [relative] = args.as_slice() else {
+        return None;
+    };
+    Some(format!(
+        "{method}:{}",
+        string_literal_value(relative.value())?
+    ))
 }
 
 fn entity_ref_label(expr: &Expr) -> Option<String> {
@@ -2032,20 +2101,24 @@ fn bench_expectation_failures(
     );
     assertions
         .into_iter()
-        .flat_map(|section| bench_assertion_failures(section, &frames.steps))
+        .flat_map(|section| bench_assertion_failures(section, &frames.steps, source_path))
         .collect()
 }
 
 fn bench_assertion_failures(
     section: &BenchSection,
     frames: &[RuntimeStepRunSummary],
+    source_path: &Path,
 ) -> Vec<String> {
     match bench_assertion_text(section) {
-        Ok(text) => evaluate_runtime_expectation(text, &RuntimeExpectationView::Frames(frames))
-            .err()
-            .map(|failure| format!("bench assert failed: {failure}"))
-            .into_iter()
-            .collect(),
+        Ok(text) => evaluate_runtime_expectation(
+            text,
+            &RuntimeExpectationView::with_source_path(frames, source_path),
+        )
+        .err()
+        .map(|failure| format!("bench assert failed: {failure}"))
+        .into_iter()
+        .collect(),
         Err(failure) => vec![failure],
     }
 }

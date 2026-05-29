@@ -1754,6 +1754,7 @@ extern capability path { fn save(path: String) -> VirtualPath }
 
 bench @bench.native_io {
     measure iterations = 1 { start(@flow.bench_io) }
+    assert { expect.file(path.save("output.txt"), equals="bench-native-ok") }
 }
 
 flow @flow.bench_io bench_io effects { fs.read(save), fs.write(save) } {
@@ -1800,6 +1801,62 @@ flow @flow.bench_io bench_io effects { fs.read(save), fs.write(save) } {
     assert_eq!(
         fs::read_to_string(save_dir.join("output.txt")).expect("read virtual output"),
         "bench-native-ok"
+    );
+}
+
+#[test]
+fn bench_json_fails_native_file_assertions() {
+    let dir = temp_dir("bench-native-file-assert-fail");
+    let source_path = dir.join("bench.arcw");
+    fs::write(
+        &source_path,
+        r#"
+extern capability fs {
+    type FsError
+    fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError> effects { fs.write }
+}
+extern capability path { fn save(path: String) -> VirtualPath }
+
+bench @bench.native_file_assert {
+    measure iterations = 1 { start(@flow.write_actual) }
+    assert { expect.file(path.save("output.txt"), equals="expected") }
+}
+
+flow @flow.write_actual write_actual effects { fs.write(save) } {
+    try await fs.write_text(path.save("output.txt"), "actual") with { error e => return "write_failed" }
+    return "done"
+}
+"#,
+    )
+    .expect("write failing native file assertion fixture");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&source_path)
+        .arg("--iterations")
+        .arg("1")
+        .arg("--warmup")
+        .arg("0")
+        .arg("--steps")
+        .arg("4")
+        .arg("--json")
+        .output()
+        .expect("arcw bench runs failing native file assertion");
+
+    assert!(
+        !output.status.success(),
+        "native file assertion mismatch should fail the command"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"status\": \"failed\"")
+            && stdout.contains("bench assert failed")
+            && stdout.contains("expected file save:output.txt == `expected`, found `actual`"),
+        "bench JSON should report native file assertion mismatch without host paths: {stdout}"
+    );
+    assert!(
+        !stdout.contains(&dir.display().to_string()),
+        "bench JSON must not record absolute temp paths: {stdout}"
     );
 }
 

@@ -35,6 +35,12 @@ impl NativeTaskBridge {
         self.stats
     }
 
+    pub(crate) fn read_text_snapshot(source_path: &Path, value: &str) -> Result<String, String> {
+        Self::new(source_path)
+            .virtual_path(value)
+            .and_then(|path| fs::read_to_string(path).map_err(|error| error.to_string()))
+    }
+
     pub(crate) fn complete_tasks(&mut self, tasks: &[TaskSpec]) -> Vec<TaskEvent> {
         tasks
             .iter()
