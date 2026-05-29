@@ -5,7 +5,7 @@ use crate::pattern::RuntimePattern;
 use crate::source::SourcePlan;
 use crate::stream::StreamPlan;
 use crate::task::{AwaitManyTarget, AwaitTarget, NeedId, TaskId};
-use crate::value::{RuntimeBinding, RuntimeExpr};
+use crate::value::{RuntimeBinding, RuntimeExpr, RuntimeValue};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -189,6 +189,12 @@ pub enum FlowOp {
     For {
         pattern: RuntimePattern,
         source: RuntimeExpr,
+        body: Vec<FlowOp>,
+    },
+    ForNext {
+        pattern: RuntimePattern,
+        items: Vec<RuntimeValue>,
+        index: usize,
         body: Vec<FlowOp>,
     },
     Thread {

@@ -619,6 +619,34 @@ fn while_continue_reruns_condition_and_skips_remaining_body() {
 }
 
 #[test]
+fn for_loop_expands_one_iteration_at_a_time() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.for".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.for".to_owned()),
+            ops: vec![FlowOp::For {
+                pattern: RuntimePattern::Ident("item".to_owned()),
+                source: RuntimeExpr::BracketSeq(vec![
+                    RuntimeExpr::Value(RuntimeValue::Int(1)),
+                    RuntimeExpr::Value(RuntimeValue::Int(2)),
+                    RuntimeExpr::Value(RuntimeValue::Int(3)),
+                    RuntimeExpr::Value(RuntimeValue::Int(4)),
+                ]),
+                body: vec![FlowOp::Effect(call("observe.item"))],
+            }],
+        }],
+        Vec::new(),
+    )
+    .expect("for plan is valid");
+    let mut engine = Engine::new(plan);
+
+    let first = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+
+    assert_eq!(first.stats.executed_ops, 1);
+    assert_eq!(first.stats.pending_ops_after, 5);
+}
+
+#[test]
 fn branch_pattern_bindings_do_not_leak_after_branch_scope() {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.branch".to_owned())),

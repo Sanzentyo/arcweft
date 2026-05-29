@@ -287,17 +287,7 @@ impl Engine {
                 self.advance_if_needed(next);
                 match self.evaluate_expr_with_backend(&source, pure_backend) {
                     Ok(RuntimeValue::BracketSeq(items)) => {
-                        let mut ops = Vec::new();
-                        for item in items {
-                            ops.push(FlowOp::EnterScope);
-                            ops.push(FlowOp::Let {
-                                pattern: pattern.clone(),
-                                expr: RuntimeExpr::Value(item),
-                            });
-                            ops.extend(body.clone());
-                            ops.push(FlowOp::ExitScope);
-                        }
-                        self.push_ops(ops);
+                        self.push_for_next(pattern, items, 0, body);
                     }
                     Ok(value) => {
                         self.fail_eval(
@@ -307,6 +297,14 @@ impl Engine {
                     }
                     Err(error) => self.fail_eval(error, output),
                 }
+            }
+            FlowOp::ForNext {
+                pattern,
+                items,
+                index,
+                body,
+            } => {
+                self.push_for_next(pattern, items, index, body);
             }
             FlowOp::Thread { name, body } => {
                 self.advance_if_needed(next);
@@ -496,6 +494,34 @@ impl Engine {
             pattern,
             expr,
             guard,
+            body,
+        });
+        self.push_ops(ops);
+    }
+
+    pub(super) fn push_for_next(
+        &mut self,
+        pattern: RuntimePattern,
+        items: Vec<RuntimeValue>,
+        index: usize,
+        body: Vec<FlowOp>,
+    ) {
+        let Some(item) = items.get(index).cloned() else {
+            return;
+        };
+        let mut scoped = body.clone();
+        scoped.insert(
+            0,
+            FlowOp::Let {
+                pattern: pattern.clone(),
+                expr: RuntimeExpr::Value(item),
+            },
+        );
+        let mut ops = Self::scoped_ops(scoped);
+        ops.push(FlowOp::ForNext {
+            pattern,
+            items,
+            index: index + 1,
             body,
         });
         self.push_ops(ops);

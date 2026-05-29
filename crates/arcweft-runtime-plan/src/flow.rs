@@ -835,7 +835,8 @@ fn rewrite_flow_ops_pure_calls(
             | FlowOp::LetLoop { body, .. }
             | FlowOp::LoopNext { body }
             | FlowOp::Scope(body)
-            | FlowOp::Thread { body, .. } => rewrite_flow_ops_pure_calls(body, helpers),
+            | FlowOp::Thread { body, .. }
+            | FlowOp::ForNext { body, .. } => rewrite_flow_ops_pure_calls(body, helpers),
             FlowOp::While { condition, body } | FlowOp::WhileNext { condition, body } => {
                 rewrite_expr_pure_calls(condition, helpers);
                 rewrite_flow_ops_pure_calls(body, helpers);

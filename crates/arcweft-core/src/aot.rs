@@ -156,6 +156,7 @@ impl AotFlowBlock {
             | FlowOp::WhileLet { .. }
             | FlowOp::WhileLetNext { .. }
             | FlowOp::For { .. }
+            | FlowOp::ForNext { .. }
             | FlowOp::Thread { .. } => false,
         }
     }
@@ -185,6 +186,7 @@ impl AotOpClass {
             | FlowOp::WhileLet { .. }
             | FlowOp::WhileLetNext { .. }
             | FlowOp::For { .. }
+            | FlowOp::ForNext { .. }
             | FlowOp::Thread { .. }
             | FlowOp::Scope(_) => Self::Branch,
             FlowOp::Effect(_) => Self::Effect,
@@ -226,6 +228,7 @@ impl AotProgramStats {
                 | FlowOp::WhileLet { body, .. }
                 | FlowOp::WhileLetNext { body, .. }
                 | FlowOp::For { body, .. }
+                | FlowOp::ForNext { body, .. }
                 | FlowOp::Thread { body, .. } => self.record_ops(body),
                 FlowOp::Scope(ops) | FlowOp::LetScope { ops, .. } => self.record_ops(ops),
                 FlowOp::Bind(_)

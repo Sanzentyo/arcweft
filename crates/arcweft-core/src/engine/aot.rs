@@ -154,6 +154,7 @@ impl Engine {
             | FlowOp::WhileLet { .. }
             | FlowOp::WhileLetNext { .. }
             | FlowOp::For { .. }
+            | FlowOp::ForNext { .. }
             | FlowOp::Thread { .. }
             | FlowOp::Scope(_)
             | FlowOp::LetScope { .. }
@@ -199,6 +200,7 @@ fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::WhileLet { .. }
         | FlowOp::WhileLetNext { .. }
         | FlowOp::For { .. }
+        | FlowOp::ForNext { .. }
         | FlowOp::Thread { .. }
         | FlowOp::Scope(_)
         | FlowOp::LetScope { .. }
