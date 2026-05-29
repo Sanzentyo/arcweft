@@ -535,9 +535,32 @@ flow @flow.loading loading {
         assert_eq!(request.operation, operation);
         assert_eq!(request.args.len(), args);
     }
-    assert_eq!(requests[1].args[1].name.as_deref(), Some("method"));
-    assert_eq!(requests[1].args[2].name.as_deref(), Some("body"));
-    assert_eq!(requests[6].args[1].name.as_deref(), Some("args"));
+    assert_eq!(requests[1].args[1].name(), Some("method"));
+    assert_eq!(requests[1].args[2].name(), Some("body"));
+    assert_eq!(requests[6].args[1].name(), Some("args"));
+}
+
+#[test]
+fn runtime_plan_preserves_host_request_spread_args() {
+    let tree = parse_ok(
+        r#"
+flow @flow.loading loading {
+    let args = ["save/out.txt", "hello"]
+    try await fs.write(args...) with { pending p => progress.set(p.ratio) }
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("spread host request fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("spread host request lowers");
+    let FlowOp::Await { target, .. } = &plan.flows[0].ops[1] else {
+        panic!("expected await op");
+    };
+
+    assert_eq!(target.request.capability.0, "fs");
+    assert_eq!(target.request.operation, "write");
+    assert_eq!(target.request.args.len(), 1);
+    assert!(target.request.args[0].is_spread());
 }
 
 #[test]

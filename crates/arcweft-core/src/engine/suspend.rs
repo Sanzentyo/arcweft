@@ -6,8 +6,9 @@ use super::{
 };
 use crate::task::{
     AssetRequest, AudioDecodeRequest, FileReadBytesRequest, FileReadTextRequest,
-    FileWriteBytesRequest, FileWriteTextRequest, HostTaskRequest, HttpFetchRequest,
-    HttpRespondRequest, ProcessRunRequest, ShaderRequest, TtsRequest, WasmCallRequest,
+    FileWriteBytesRequest, FileWriteTextRequest, HostTaskArgTemplate, HostTaskRequest,
+    HttpFetchRequest, HttpRespondRequest, ProcessRunRequest, ShaderRequest, TtsRequest,
+    WasmCallRequest,
 };
 
 impl Engine {
@@ -154,25 +155,36 @@ impl Engine {
         &mut self,
         target: &AwaitTarget,
     ) -> Result<HostTaskRequest, String> {
-        let args = target
-            .request
-            .args
-            .iter()
-            .map(|arg| {
-                self.evaluate_expr(&arg.value)
-                    .map(|value| EvaluatedHostArg {
-                        name: arg.name.clone(),
-                        value,
-                    })
-                    .map_err(|error| error.to_string())
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let args = self.evaluate_host_task_args(&target.request.args)?;
         let call = EvaluatedHostCall {
             capability: target.request.capability.0.as_str(),
             operation: target.request.operation.as_str(),
             args: &args,
         };
         lower_evaluated_host_request(&call)
+    }
+
+    fn evaluate_host_task_args(
+        &mut self,
+        args: &[HostTaskArgTemplate],
+    ) -> Result<Vec<EvaluatedHostArg>, String> {
+        let mut evaluated = Vec::new();
+        for arg in args {
+            let value = self
+                .evaluate_expr(arg.value())
+                .map_err(|error| error.to_string())?;
+            if arg.is_spread() {
+                for value in spread_host_arg_values(value)? {
+                    evaluated.push(EvaluatedHostArg { name: None, value });
+                }
+            } else {
+                evaluated.push(EvaluatedHostArg {
+                    name: arg.name().map(str::to_owned),
+                    value,
+                });
+            }
+        }
+        Ok(evaluated)
     }
 }
 
@@ -185,6 +197,16 @@ struct EvaluatedHostCall<'a> {
     capability: &'a str,
     operation: &'a str,
     args: &'a [EvaluatedHostArg],
+}
+
+fn spread_host_arg_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, String> {
+    match value {
+        RuntimeValue::Tuple(items) | RuntimeValue::BracketSeq(items) => Ok(items),
+        value => Err(format!(
+            "spread host argument requires a tuple or bracket sequence, found {}",
+            super::runtime_value_label(&value)
+        )),
+    }
 }
 
 fn lower_evaluated_host_request(call: &EvaluatedHostCall<'_>) -> Result<HostTaskRequest, String> {

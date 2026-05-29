@@ -129,7 +129,9 @@ Current high-confidence state:
   `param: ...T`. Syntax stores rest parameters as parameter kind, semantic
   checking binds them as `Vec<T>`, and function-call checking consumes remaining
   positional arguments as rest items. Positional call-site spread now parses as
-  `expr...` and typechecks only when it splices a sequence into a rest parameter.
+  `expr...`, typechecks only when it splices a sequence into a rest parameter,
+  and is preserved into runtime/host call templates so the VM expands tuple and
+  bracket-sequence values at the call boundary.
 - `pro_review29.md`: adopted anonymous sum types as `A | B`, where alternatives
   are types rather than named variant rows. Syntax and semantic checking now
   reject duplicate alternatives and alias collapse, expected-type checking

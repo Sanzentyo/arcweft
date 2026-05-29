@@ -143,6 +143,7 @@ impl Engine {
                     }),
                 }
             }
+            RuntimeExpr::SpreadArg(_) => Err(RuntimeEvalError::SpreadOutsideCall),
             RuntimeExpr::Call { callee, args } => self.evaluate_call_expr(callee, args),
             RuntimeExpr::MethodCall {
                 receiver,
@@ -185,10 +186,7 @@ impl Engine {
         callee: &str,
         args: &[RuntimeExpr],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let args = args
-            .iter()
-            .map(|arg| self.evaluate_expr(arg))
-            .collect::<Result<Vec<_>, _>>()?;
+        let args = self.evaluate_call_args(args)?;
         Ok(evaluate_runtime_call(callee, &args))
     }
 
@@ -199,11 +197,25 @@ impl Engine {
         args: &[RuntimeExpr],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let receiver = self.evaluate_expr(receiver)?;
-        let args = args
-            .iter()
-            .map(|arg| self.evaluate_expr(arg))
-            .collect::<Result<Vec<_>, _>>()?;
+        let args = self.evaluate_call_args(args)?;
         Ok(evaluate_runtime_method_call(receiver, method, &args))
+    }
+
+    fn evaluate_call_args(
+        &mut self,
+        args: &[RuntimeExpr],
+    ) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {
+        let mut values = Vec::new();
+        for arg in args {
+            match arg {
+                RuntimeExpr::SpreadArg(expr) => {
+                    let spread = self.evaluate_expr(expr)?;
+                    values.extend(spread_runtime_values(spread)?);
+                }
+                expr => values.push(self.evaluate_expr(expr)?),
+            }
+        }
+        Ok(values)
     }
 
     fn evaluate_let_expr(
@@ -323,6 +335,13 @@ impl Engine {
         let message = error.to_string();
         self.fiber.status = FlowFiberStatus::Failed(message.clone());
         output.diagnostics.push(RuntimeDiagnostic { message });
+    }
+}
+
+fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {
+    match value {
+        RuntimeValue::Tuple(items) | RuntimeValue::BracketSeq(items) => Ok(items),
+        value => Err(RuntimeEvalError::InvalidSpread(runtime_value_label(&value))),
     }
 }
 

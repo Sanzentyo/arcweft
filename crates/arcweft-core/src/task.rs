@@ -36,9 +36,10 @@ pub struct HostTaskRequestTemplate {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HostTaskArgTemplate {
-    pub name: Option<String>,
-    pub value: RuntimeExpr,
+pub enum HostTaskArgTemplate {
+    Positional(RuntimeExpr),
+    Named { name: String, value: RuntimeExpr },
+    Spread(RuntimeExpr),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -258,14 +259,35 @@ impl HostTaskRequestTemplate {
 
 impl HostTaskArgTemplate {
     pub fn positional(value: RuntimeExpr) -> Self {
-        Self { name: None, value }
+        Self::Positional(value)
     }
 
     pub fn named(name: impl Into<String>, value: RuntimeExpr) -> Self {
-        Self {
-            name: Some(name.into()),
+        Self::Named {
+            name: name.into(),
             value,
         }
+    }
+
+    pub fn spread(value: RuntimeExpr) -> Self {
+        Self::Spread(value)
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            Self::Named { name, .. } => Some(name),
+            Self::Positional(_) | Self::Spread(_) => None,
+        }
+    }
+
+    pub fn value(&self) -> &RuntimeExpr {
+        match self {
+            Self::Positional(value) | Self::Named { value, .. } | Self::Spread(value) => value,
+        }
+    }
+
+    pub const fn is_spread(&self) -> bool {
+        matches!(self, Self::Spread(_))
     }
 }
 

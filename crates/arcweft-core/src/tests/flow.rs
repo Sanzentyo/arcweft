@@ -588,17 +588,13 @@ fn fs_write_dispatches_string_and_bytes_payloads() {
                         request: HostTaskRequestTemplate::new(
                             "fs",
                             "write",
-                            [
-                                HostTaskArgTemplate::positional(RuntimeExpr::Value(
-                                    RuntimeValue::String("save/out.bin".to_owned()),
-                                )),
-                                HostTaskArgTemplate::positional(RuntimeExpr::Value(
-                                    RuntimeValue::BracketSeq(vec![
-                                        RuntimeValue::Int(1),
-                                        RuntimeValue::Int(2),
-                                    ]),
-                                )),
-                            ],
+                            [HostTaskArgTemplate::spread(RuntimeExpr::BracketSeq(vec![
+                                RuntimeExpr::Value(RuntimeValue::String("save/out.bin".to_owned())),
+                                RuntimeExpr::Value(RuntimeValue::BracketSeq(vec![
+                                    RuntimeValue::Int(1),
+                                    RuntimeValue::Int(2),
+                                ])),
+                            ]))],
                         ),
                     },
                     pending: Vec::new(),
@@ -641,6 +637,36 @@ fn fs_write_dispatches_string_and_bytes_payloads() {
         HostTaskRequest::FileWriteBytes(FileWriteBytesRequest { path, bytes })
             if path == "save/out.bin" && bytes == &[1, 2]
     ));
+}
+
+#[test]
+fn runtime_call_spread_expands_sequence_arguments() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.spread".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.spread".to_owned()),
+            ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Call {
+                callee: "add".to_owned(),
+                args: vec![RuntimeExpr::SpreadArg(Box::new(RuntimeExpr::BracketSeq(
+                    vec![
+                        RuntimeExpr::Value(RuntimeValue::Int(20)),
+                        RuntimeExpr::Value(RuntimeValue::Int(22)),
+                    ],
+                )))],
+            })],
+        }],
+        Vec::new(),
+    )
+    .expect("runtime plan is valid");
+    let mut engine = Engine::new(plan);
+    let output = super::runtime_step(&mut engine, RuntimeStepInput::default());
+
+    assert_eq!(
+        output.flow_events,
+        vec![FlowEvent::Return {
+            value: "42".to_owned()
+        }]
+    );
 }
 
 #[test]

@@ -382,9 +382,10 @@ impl<'a> RuntimeTypeValidator<'a> {
                 arcweft_core::value::RuntimeValue::Record(_) => RuntimeShape::Record,
                 arcweft_core::value::RuntimeValue::Variant { .. } => RuntimeShape::Variant,
             },
-            RuntimeExpr::Local(_) | RuntimeExpr::Field { .. } | RuntimeExpr::Call { .. } => {
-                RuntimeShape::Unknown
-            }
+            RuntimeExpr::Local(_)
+            | RuntimeExpr::Field { .. }
+            | RuntimeExpr::Call { .. }
+            | RuntimeExpr::SpreadArg(_) => RuntimeShape::Unknown,
             RuntimeExpr::EntityRef(_) => RuntimeShape::EntityRef,
             RuntimeExpr::Let { expr, body, .. } => {
                 self.report.stats.let_bindings += 1;

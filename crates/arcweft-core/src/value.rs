@@ -76,6 +76,7 @@ pub enum RuntimeExpr {
         callee: String,
         args: Vec<RuntimeExpr>,
     },
+    SpreadArg(Box<RuntimeExpr>),
     MethodCall {
         receiver: Box<RuntimeExpr>,
         method: String,
@@ -168,6 +169,10 @@ pub enum RuntimeEvalError {
     ExpectedBracketSeq(String),
     #[error("field `{field}` does not exist on {value}")]
     MissingField { field: String, value: String },
+    #[error("spread argument requires a tuple or bracket sequence, found {0}")]
+    InvalidSpread(String),
+    #[error("spread argument cannot be evaluated outside a call argument list")]
+    SpreadOutsideCall,
     #[error("operator `{op}` is not supported for {lhs} and {rhs}")]
     UnsupportedBinary {
         op: &'static str,
@@ -386,6 +391,7 @@ pub(crate) fn expr_runtime_label(expr: &RuntimeExpr) -> String {
         RuntimeExpr::Variant { name, .. } => format!(".{name}"),
         RuntimeExpr::Field { field, .. } => format!(".{field}"),
         RuntimeExpr::Call { callee, .. } => format!("{callee}()"),
+        RuntimeExpr::SpreadArg(expr) => format!("{}...", expr_runtime_label(expr)),
         RuntimeExpr::MethodCall { method, .. } => format!(".{method}()"),
         RuntimeExpr::Unary { op, .. } => runtime_unary_op_label(*op).to_owned(),
         RuntimeExpr::Binary { op, .. } => runtime_binary_op_label(*op).to_owned(),

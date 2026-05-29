@@ -449,6 +449,10 @@ fn compile_aot_i64_expr(
                 rhs: Box::new(compile_aot_i64_expr(helper_name, &args[1], ctx)?),
             })
         }
+        RuntimeExpr::SpreadArg(_) => Err(unsupported_aot(
+            helper_name,
+            "spread arguments are expanded by the VM call boundary",
+        )),
         RuntimeExpr::Unary { op, expr } => match op {
             RuntimeUnaryOp::Neg => Ok(AotI64Expr::Unary {
                 op: *op,
@@ -611,24 +615,9 @@ impl PureEvaluator {
                     .map(|expr| self.evaluate_expr(expr).map(Box::new))
                     .transpose()?,
             }),
-            RuntimeExpr::Field { target, field } => {
-                let value = self.evaluate_expr(target)?;
-                match value {
-                    RuntimeValue::Record(fields) => fields
-                        .into_iter()
-                        .find(|candidate| candidate.name == *field)
-                        .map(|field| field.value)
-                        .ok_or_else(|| RuntimeEvalError::MissingField {
-                            field: field.clone(),
-                            value: "record".to_owned(),
-                        }),
-                    value => Err(RuntimeEvalError::MissingField {
-                        field: field.clone(),
-                        value: runtime_value_label(&value),
-                    }),
-                }
-            }
+            RuntimeExpr::Field { target, field } => self.evaluate_field_expr(target, field),
             RuntimeExpr::Call { callee, args } => self.evaluate_call_expr(callee, args),
+            RuntimeExpr::SpreadArg(_) => Err(RuntimeEvalError::SpreadOutsideCall),
             RuntimeExpr::MethodCall {
                 receiver,
                 method,
@@ -670,10 +659,7 @@ impl PureEvaluator {
         args: &[RuntimeExpr],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         self.stats.evaluated_calls += 1;
-        let args = args
-            .iter()
-            .map(|arg| self.evaluate_expr(arg))
-            .collect::<Result<Vec<_>, _>>()?;
+        let args = self.evaluate_call_args(args)?;
         match (callee, args.as_slice()) {
             ("add", [RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)]) => {
                 Ok(RuntimeValue::Int(lhs.saturating_add(*rhs)))
@@ -681,6 +667,28 @@ impl PureEvaluator {
             _ => Err(RuntimeEvalError::UnsupportedPure {
                 name: callee.to_owned(),
                 reason: "call is not registered as a pure helper".to_owned(),
+            }),
+        }
+    }
+
+    fn evaluate_field_expr(
+        &mut self,
+        target: &RuntimeExpr,
+        field: &str,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let value = self.evaluate_expr(target)?;
+        match value {
+            RuntimeValue::Record(fields) => fields
+                .into_iter()
+                .find(|candidate| candidate.name == field)
+                .map(|field| field.value)
+                .ok_or_else(|| RuntimeEvalError::MissingField {
+                    field: field.to_owned(),
+                    value: "record".to_owned(),
+                }),
+            value => Err(RuntimeEvalError::MissingField {
+                field: field.to_owned(),
+                value: runtime_value_label(&value),
             }),
         }
     }
@@ -693,10 +701,7 @@ impl PureEvaluator {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         self.stats.evaluated_method_calls += 1;
         let receiver = self.evaluate_expr(receiver)?;
-        let args = args
-            .iter()
-            .map(|arg| self.evaluate_expr(arg))
-            .collect::<Result<Vec<_>, _>>()?;
+        let args = self.evaluate_call_args(args)?;
         match (receiver, method, args.as_slice()) {
             (RuntimeValue::String(value), "trim", []) => {
                 Ok(RuntimeValue::String(value.trim().to_owned()))
@@ -717,5 +722,29 @@ impl PureEvaluator {
             RuntimeValue::Bool(value) => Ok(value),
             value => Err(RuntimeEvalError::ExpectedBool(runtime_value_label(&value))),
         }
+    }
+
+    fn evaluate_call_args(
+        &mut self,
+        args: &[RuntimeExpr],
+    ) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {
+        let mut values = Vec::new();
+        for arg in args {
+            match arg {
+                RuntimeExpr::SpreadArg(expr) => {
+                    let spread = self.evaluate_expr(expr)?;
+                    values.extend(spread_runtime_values(spread)?);
+                }
+                expr => values.push(self.evaluate_expr(expr)?),
+            }
+        }
+        Ok(values)
+    }
+}
+
+fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {
+    match value {
+        RuntimeValue::Tuple(items) | RuntimeValue::BracketSeq(items) => Ok(items),
+        value => Err(RuntimeEvalError::InvalidSpread(runtime_value_label(&value))),
     }
 }

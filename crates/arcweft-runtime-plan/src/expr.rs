@@ -82,7 +82,7 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
         },
         Expr::Call { callee, args } => RuntimeExpr::Call {
             callee: expr_label(callee),
-            args: args.iter().map(lower_runtime_expr).collect(),
+            args: args.iter().map(lower_runtime_call_arg).collect(),
         },
         Expr::MethodCall {
             receiver,
@@ -91,9 +91,10 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
         } => RuntimeExpr::MethodCall {
             receiver: Box::new(lower_runtime_expr(receiver)),
             method: runtime_method_name(method).to_owned(),
-            args: args.iter().map(lower_runtime_expr).collect(),
+            args: args.iter().map(lower_runtime_call_arg).collect(),
         },
-        Expr::NamedArg { value, .. } | Expr::SpreadArg { value } => lower_runtime_expr(value),
+        Expr::NamedArg { value, .. } => lower_runtime_expr(value),
+        Expr::SpreadArg { value } => RuntimeExpr::SpreadArg(Box::new(lower_runtime_expr(value))),
         Expr::Try { expr }
         | Expr::Await { expr, .. }
         | Expr::Index { target: expr, .. }
@@ -214,7 +215,7 @@ fn lower_strict_call_expr(callee: &Expr, args: &[Expr]) -> Result<RuntimeExpr, S
                 callee: expr_label(callee),
                 args: args
                     .iter()
-                    .map(lower_runtime_expr_strict)
+                    .map(lower_strict_call_arg)
                     .collect::<Result<Vec<_>, _>>()?,
             })
         },
@@ -232,9 +233,25 @@ fn lower_strict_method_call_expr(
         method: runtime_method_name(method).to_owned(),
         args: args
             .iter()
-            .map(lower_runtime_expr_strict)
+            .map(lower_strict_call_arg)
             .collect::<Result<Vec<_>, _>>()?,
     })
+}
+
+fn lower_runtime_call_arg(arg: &Expr) -> RuntimeExpr {
+    match arg {
+        Expr::SpreadArg { value } => RuntimeExpr::SpreadArg(Box::new(lower_runtime_expr(value))),
+        value => lower_runtime_expr(value),
+    }
+}
+
+fn lower_strict_call_arg(arg: &Expr) -> Result<RuntimeExpr, String> {
+    match arg {
+        Expr::SpreadArg { value } => Ok(RuntimeExpr::SpreadArg(Box::new(
+            lower_runtime_expr_strict(value)?,
+        ))),
+        value => lower_runtime_expr_strict(value),
+    }
 }
 
 fn unsupported_strict_runtime_expr(expr: &Expr) -> Result<RuntimeExpr, String> {
