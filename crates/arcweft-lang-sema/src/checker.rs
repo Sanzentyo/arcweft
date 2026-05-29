@@ -224,6 +224,9 @@ struct TypeCheckerScopeSnapshot {
     available_lifetimes: Vec<LifetimeScopeKind>,
 }
 
+#[derive(Clone, Debug, Default)]
+struct LocalBindingSnapshot(Vec<(String, Option<TypeKind>)>);
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum YieldContext {
     Seq {
@@ -297,6 +300,31 @@ impl TypeChecker<'_> {
             yield_stack: Vec::new(),
             stats: TypeCheckStats::default(),
             judgments: Vec::new(),
+        }
+    }
+
+    fn insert_scoped_locals(
+        &mut self,
+        bindings: impl IntoIterator<Item = (String, TypeKind)>,
+    ) -> LocalBindingSnapshot {
+        LocalBindingSnapshot(
+            bindings
+                .into_iter()
+                .map(|(name, ty)| {
+                    let previous = self.locals.insert(name.clone(), ty);
+                    (name, previous)
+                })
+                .collect(),
+        )
+    }
+
+    fn restore_scoped_locals(&mut self, snapshot: LocalBindingSnapshot) {
+        for (name, previous) in snapshot.0.into_iter().rev() {
+            if let Some(ty) = previous {
+                self.locals.insert(name, ty);
+            } else {
+                self.locals.remove(&name);
+            }
         }
     }
 

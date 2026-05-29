@@ -2,8 +2,9 @@
 
 use super::helpers::let_else_bindings;
 use super::{
-    SourceBackpressurePolicy, SourceEventPattern, SourceHeader, SourcePrivacyPolicy,
-    SourceReplayPolicy, TypeCheckError, TypeChecker, TypeKind, YieldContext, source_return_types,
+    LocalBindingSnapshot, SourceBackpressurePolicy, SourceEventPattern, SourceHeader,
+    SourcePrivacyPolicy, SourceReplayPolicy, TypeCheckError, TypeChecker, TypeKind, YieldContext,
+    source_return_types,
 };
 use arcweft_lang_syntax::ast::source::SourceItem;
 
@@ -27,8 +28,8 @@ impl TypeChecker<'_> {
             }
         }
         for handler in item.handlers() {
-            let outer_locals = self.locals.clone();
-            self.bind_source_handler_pattern(handler.event(), &item_ty, &error_ty);
+            let local_snapshot =
+                self.bind_source_handler_pattern(handler.event(), &item_ty, &error_ty);
             self.yield_stack.push(YieldContext::Source {
                 item_ty: item_ty.clone(),
                 error_ty: error_ty.clone(),
@@ -38,7 +39,7 @@ impl TypeChecker<'_> {
                 self.check_stmt(stmt);
             }
             self.yield_stack.pop();
-            self.locals = outer_locals;
+            self.restore_scoped_locals(local_snapshot);
         }
     }
 
@@ -96,16 +97,13 @@ impl TypeChecker<'_> {
         event: &SourceEventPattern,
         item_ty: &TypeKind,
         error_ty: &TypeKind,
-    ) {
+    ) -> LocalBindingSnapshot {
         let pattern_ty = match event {
             SourceEventPattern::Item(pattern) => Some((pattern, item_ty)),
             SourceEventPattern::Error(pattern) => Some((pattern, error_ty)),
             SourceEventPattern::Progress(pattern) => {
                 let ty = TypeKind::String;
-                for (name, binding_ty) in let_else_bindings(pattern, Some(&ty)) {
-                    self.locals.insert(name, binding_ty);
-                }
-                None
+                return self.insert_scoped_locals(let_else_bindings(pattern, Some(&ty)));
             }
             SourceEventPattern::Raw(raw) => {
                 self.errors.push(TypeCheckError::new(format!(
@@ -118,9 +116,9 @@ impl TypeChecker<'_> {
             | SourceEventPattern::End => None,
         };
         if let Some((pattern, ty)) = pattern_ty {
-            for (name, binding_ty) in let_else_bindings(pattern, Some(ty)) {
-                self.locals.insert(name, binding_ty);
-            }
+            self.insert_scoped_locals(let_else_bindings(pattern, Some(ty)))
+        } else {
+            LocalBindingSnapshot::default()
         }
     }
 }

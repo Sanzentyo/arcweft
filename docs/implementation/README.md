@@ -523,6 +523,9 @@ Current high-confidence state:
   borrow binding groups, type judgment counts, rule-family judgment counts,
   bounded judgment samples, borrow state snapshots/restores/merges, boundary
   checks, escape checks, and maximum active borrows.
+  Loop and source-handler local scopes restore only inserted or shadowed
+  bindings, so typecheck performance counters are not distorted by full local
+  environment clones at common scoped-binding boundaries.
 - `arcweft-verify` exposes `validate_runtime_plan_types(plan, report)` for the
   post-lowering runtime plan consumed by the VM. `arcw profile --json` now runs
   this pass between runtime-plan lowering and bytecode lowering and reports

@@ -370,10 +370,8 @@ impl TypeChecker<'_> {
     ) {
         let expr_type = self.check_expr(expr);
         let borrow_snapshot = self.snapshot_borrow_state();
-        let outer_locals = self.locals.clone();
-        for (name, ty) in let_else_bindings(pattern, expr_type.as_ref()) {
-            self.locals.insert(name, ty);
-        }
+        let local_snapshot =
+            self.insert_scoped_locals(let_else_bindings(pattern, expr_type.as_ref()));
         if let Some(guard) = guard {
             self.expect_expr_type(guard, &TypeKind::Bool, "while-let guard");
         }
@@ -383,17 +381,15 @@ impl TypeChecker<'_> {
             }
         });
         self.restore_borrow_state(borrow_snapshot);
-        self.locals = outer_locals;
+        self.restore_scoped_locals(local_snapshot);
     }
 
     fn check_stmt_for(&mut self, pattern: &Pattern, source: &Expr, body: &[Stmt]) {
         let source_ty = self.check_expr(source);
         let borrow_snapshot = self.snapshot_borrow_state();
-        let outer_locals = self.locals.clone();
         let item_ty = iter_item_type(source_ty.as_ref());
-        for (name, ty) in pattern_bindings_with_fallback(pattern, &item_ty) {
-            self.locals.insert(name, ty);
-        }
+        let local_snapshot =
+            self.insert_scoped_locals(pattern_bindings_with_fallback(pattern, &item_ty));
         self.register_borrow_bindings(pattern, &item_ty);
         self.with_statement_loop(|this| {
             for stmt in body {
@@ -401,7 +397,7 @@ impl TypeChecker<'_> {
             }
         });
         self.restore_borrow_state(borrow_snapshot);
-        self.locals = outer_locals;
+        self.restore_scoped_locals(local_snapshot);
     }
 
     fn check_match_stmt(&mut self, expr: &Expr, arms: &[StmtMatchArm]) {
