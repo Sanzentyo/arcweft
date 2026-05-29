@@ -637,6 +637,47 @@ flow @flow.run run {
 }
 
 #[test]
+fn run_json_can_select_aot_executor() {
+    let path = temp_arcw(
+        "runtime-run-aot",
+        r#"
+flow @flow.run run {
+    log.info("aot")
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--executor")
+        .arg("aot")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("1")
+        .arg("--max-ops")
+        .arg("8")
+        .arg("--json")
+        .output()
+        .expect("arcw run runs with AOT executor");
+
+    assert!(
+        output.status.success(),
+        "AOT run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"executor\": \"aot\"")
+            && stdout.contains("\"final_status\": \"done")
+            && stdout.contains("return done"),
+        "run JSON should report AOT executor and preserve VM-equivalent semantics: {stdout}"
+    );
+}
+
+#[test]
 fn run_json_modes_and_budget_drive_engine_step_boundary() {
     let path = temp_arcw(
         "runtime-step-modes",
@@ -717,6 +758,49 @@ flow @flow.run run {
     assert!(
         budget_stdout.contains("\"stop_reason\": \"BudgetExhausted\""),
         "drain max-ops should stop with budget exhaustion: {budget_stdout}"
+    );
+}
+
+#[test]
+fn profile_json_can_select_aot_executor_without_absolute_source() {
+    let path = temp_arcw(
+        "profile-aot",
+        r#"
+flow @flow.profile profile {
+    log.info("profile aot")
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("profile")
+        .arg(&path)
+        .arg("--executor")
+        .arg("aot")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("1")
+        .arg("--json")
+        .output()
+        .expect("arcw profile runs with AOT executor");
+
+    assert!(
+        output.status.success(),
+        "AOT profile should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"executor\": \"aot\"")
+            && stdout.contains("\"name\": \"run\"")
+            && stdout.contains("\"source\": \"arcweft-cli-profile-aot-"),
+        "profile JSON should include AOT executor and relative source label: {stdout}"
+    );
+    assert!(
+        !stdout.contains(&std::env::temp_dir().display().to_string()),
+        "profile JSON must not record absolute temp paths: {stdout}"
     );
 }
 
@@ -1358,6 +1442,51 @@ flow @flow.bench bench {
             && stdout.contains("\"borrow_check\"")
             && stdout.contains("\"boundary_checks\""),
         "bench JSON should include headless measurement and compiler profiling: {stdout}"
+    );
+}
+
+#[test]
+fn bench_json_can_measure_aot_executor_sections() {
+    let path = temp_arcw(
+        "script-bench-aot",
+        r#"
+bench @bench.runtime_aot {
+    measure iterations = 1 { start(@flow.bench) }
+}
+
+flow @flow.bench bench {
+    log.info("bench aot")
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--executor")
+        .arg("aot")
+        .arg("--iterations")
+        .arg("1")
+        .arg("--warmup")
+        .arg("0")
+        .arg("--steps")
+        .arg("1")
+        .arg("--json")
+        .output()
+        .expect("arcw bench runs with AOT executor");
+
+    assert!(
+        output.status.success(),
+        "AOT bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"status\": \"measured\"")
+            && stdout.contains("\"executor\": \"aot\"")
+            && stdout.contains("\"executed_ops_median\": 2"),
+        "bench JSON should include AOT executor measurement: {stdout}"
     );
 }
 

@@ -40,11 +40,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
   and semantic verification. Generic direct-path mode still uses the empty
   Sans I/O environment.
 - `AotExecutor` exists as a VM-equivalent `RuntimeExecutor` boundary. Generated
-  flow dispatch remains future work, but tooling can now target the AOT
-  executor shape without introducing different semantics. Pure helper AOT is
-  implemented separately: `AotPureFunctionBackend` compiles the deterministic
-  `i64` subset to a typed plan and rejects unsupported helpers instead of
-  delegating to the VM.
+  flow dispatch remains future work, but `arcw run`, `arcw cli`,
+  `arcw test`, `arcw profile`, and runtime `arcw bench` sections can select the
+  AOT boundary with `--executor aot` and report that tier in JSON without
+  introducing different semantics. Pure helper AOT is implemented separately:
+  `AotPureFunctionBackend` compiles the deterministic `i64` subset to a typed
+  plan and rejects unsupported helpers instead of delegating to the VM.
 - `arcweft-core::pure` exposes the pure-helper backend contract used by future
   AOT/JIT adapters. `VmPureFunctionBackend` is the semantic reference,
   candidate backends report deterministic evaluation stats, and conformance
@@ -63,12 +64,13 @@ Phase 0 / Phase 1 minimal Rust workspace:
   value or tail `return` to a pure-helper request, and reports the helper source
   without persisting the host path.
 - `arcw bench` runs measurable `measure { start(@flow.id) }` sections through
-  the headless VM, includes deterministic runtime counters in JSON, completes
-  native file task requests through the CLI adapter, and evaluates
-  `assert { expect.*(...) }` sections against a separate correctness run before
-  reporting a measured bench as successful. Bench reports also expose compile
-  phase timings plus type, borrow, runtime-type, and bytecode counters so
-  runtime performance can be compared with parser/checker/lowering cost.
+  the selected headless runtime executor, includes deterministic runtime
+  counters in JSON, completes native file task requests through the CLI adapter,
+  and evaluates `assert { expect.*(...) }` sections against a separate
+  correctness run before reporting a measured bench as successful. Bench reports
+  also expose compile phase timings plus type, borrow, runtime-type, and
+  bytecode counters so runtime performance can be compared with
+  parser/checker/lowering cost.
   `measure { pure(helper_name) }` sections additionally run the selected
   checked `#[pure] fn` helper through the VM reference, typed AOT plan, and
   native Cranelift JIT, reporting conformance, deterministic accumulators,

@@ -141,13 +141,16 @@ CLI adapter and does not start renderer/audio/device backends.
 
 ## Runtime Dry Run
 
-`arcw run <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
+`arcw run <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
 headless execution entry point. It uses the same parse, HIR, reference
 validation, typecheck, and line-plan lowering path as `arcw check`, then lowers
 checked flows to `arcweft-core::RuntimePlan`, materializes bytecode, and steps
-the bytecode VM executor for up to `N` runtime steps. JSON reports
-`executor = "bytecode_vm"` so performance and correctness runs can confirm the
-execution tier. If `--entry` or `--flow` is omitted, the first lowered flow is
+the selected executor for up to `N` runtime steps. `bytecode-vm` is the semantic
+reference tier. `aot` currently uses the stable `RuntimeExecutor` AOT boundary
+with VM-equivalent semantics so CLI, tests, and benches can compare tier
+selection before generated flow dispatch is introduced. JSON reports
+`executor = "bytecode_vm"` or `executor = "aot"` so performance and correctness
+runs can confirm the execution tier. If `--entry` or `--flow` is omitted, the first lowered flow is
 used as a deterministic fallback for headless inspection.
 The CLI owns a native task adapter for the first filesystem I/O slice:
 `fs.read_text`, `fs.read_bytes`, `fs.write_text`, and `fs.write_bytes` complete
@@ -166,6 +169,7 @@ arcw run game/routes/opening.arcw --steps 8
 arcw run game/routes/opening.arcw --entry main --mode drain --steps 8
 arcw run game/routes/opening.arcw --flow opening --mode drain --steps 8
 arcw run game/routes/opening.arcw --mode drain --steps 8 --max-ops 32
+arcw run game/routes/opening.arcw --executor aot --mode drain --steps 8 --json
 arcw run game/routes/opening.arcw --steps 8 --value ready=true --value route=@flow.next
 arcw run game/routes/opening.arcw --steps 8 --json
 ```
@@ -357,7 +361,9 @@ additional headless correctness run and fails the bench if any assert section
 does not match the runtime observations. Bench JSON also includes the same
 compiler phase timings and type, borrow, runtime-type, and bytecode counters as
 `arcw profile`, so runtime measurements can be interpreted alongside
-compilation and checking cost.
+compilation and checking cost. `arcw bench --executor aot` uses the same
+VM-equivalent AOT runtime boundary as `arcw run --executor aot`, and measured
+runtime sections record the selected executor in JSON.
 
 Bench `measure` sections can also target a checked pure helper:
 

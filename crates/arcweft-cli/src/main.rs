@@ -1,13 +1,13 @@
 use arcweft_adapter_context::native_http_server_context;
 use arcweft_core::bytecode::{BytecodeProgram, BytecodeStats};
-use arcweft_core::engine::{Engine, FlowFiberStatus};
-use arcweft_core::executor::{BytecodeVmExecutor, RuntimeExecutor};
+use arcweft_core::engine::FlowFiberStatus;
+use arcweft_core::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor};
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimePlan,
     RuntimeRouteSpec,
 };
 use arcweft_core::step::{
-    RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
+    RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepResult,
 };
 use arcweft_core::{
     pure::{
@@ -784,6 +784,7 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
                     options.mode,
                     options.max_ops,
                     &options.values,
+                    options.executor,
                     options.json,
                 );
             }
@@ -801,35 +802,19 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
     })?;
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
-    let mut executor = BytecodeVmExecutor::from_runtime_plan(plan);
-    let mut host = NativeTaskBridge::new(selection.path());
-    let mut task_events = Vec::new();
-    let mut steps = Vec::new();
-    for step_index in 0..options.steps {
-        let result = executor.step(
-            RuntimeStepInput {
-                bindings: options.values.clone(),
-                task_events: std::mem::take(&mut task_events),
-                ..RuntimeStepInput::default()
-            },
-            step_options(options.mode, options.max_ops),
-        );
-        let task_requests = result.output.requests.tasks.clone();
-        let summary = RuntimeStepRunSummary::from_result(step_index, result, executor.fiber());
-        let done = matches!(
-            executor.fiber().status,
-            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
-        );
-        steps.push(summary);
-        if done {
-            break;
-        }
-        task_events = host.complete_tasks(&task_requests);
-    }
+    let trace = run_runtime_steps(
+        plan,
+        Some(selection.path()),
+        options.steps,
+        options.mode,
+        options.max_ops,
+        &options.values,
+        options.executor,
+    );
     let report = RuntimeRunReport {
-        executor: RuntimeExecutorTier::BytecodeVm,
-        steps,
-        final_status: flow_status_label(&executor.fiber().status),
+        executor: RuntimeExecutorTier::from(options.executor),
+        steps: trace.steps,
+        final_status: flow_status_label(&trace.final_status),
     };
     if options.json {
         print_json(&report)
@@ -874,6 +859,7 @@ fn runtime_run_bench_selection(
         warmup: 0,
         samples: 5,
         input_seed: 0,
+        executor: options.executor,
         values: options.values.clone(),
         json: options.json,
     };
@@ -897,20 +883,18 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
     let mut plan = compiled.plan;
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
-    let steps = run_profile_phase(&mut phases, "run", || {
-        Ok::<Vec<RuntimeStepRunSummary>, ExitCode>(run_runtime_steps(
+    let trace = run_profile_phase(&mut phases, "run", || {
+        Ok::<RuntimeRunTrace, ExitCode>(run_runtime_steps(
             plan,
             Some(selection.path()),
             options.steps,
             options.mode,
             options.max_ops,
             &options.values,
+            options.executor,
         ))
     })?;
-    let final_status = steps.last().map_or_else(
-        || "not_started".to_owned(),
-        |step| step.fiber_status.clone(),
-    );
+    let final_status = flow_status_label(&trace.final_status);
     let report = RuntimeProfileReport {
         source: report_path(selection.path()),
         syntax_warnings: compiled.syntax_warnings,
@@ -925,7 +909,8 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
         },
         phases,
         runtime: RuntimeProfileRuntime {
-            steps,
+            executor: RuntimeExecutorTier::from(options.executor),
+            steps: trace.steps,
             final_status,
         },
     };
@@ -1093,8 +1078,9 @@ fn run_runtime_steps(
     mode: CliRuntimeStepMode,
     max_ops: usize,
     values: &[RuntimeBinding],
-) -> Vec<RuntimeStepRunSummary> {
-    let mut executor = BytecodeVmExecutor::from_runtime_plan(plan);
+    executor_tier: CliRuntimeExecutorTier,
+) -> RuntimeRunTrace {
+    let mut executor = RuntimeExecutorInstance::new(plan, executor_tier);
     let mut host = source_path.map(NativeTaskBridge::new);
     let mut task_events = Vec::new();
     let mut summaries = Vec::new();
@@ -1121,7 +1107,45 @@ fn run_runtime_steps(
             task_events = host.complete_tasks(&task_requests);
         }
     }
-    summaries
+    RuntimeRunTrace {
+        steps: summaries,
+        final_status: executor.fiber().status.clone(),
+    }
+}
+
+struct RuntimeRunTrace {
+    steps: Vec<RuntimeStepRunSummary>,
+    final_status: FlowFiberStatus,
+}
+
+enum RuntimeExecutorInstance {
+    BytecodeVm(BytecodeVmExecutor),
+    Aot(AotExecutor),
+}
+
+impl RuntimeExecutorInstance {
+    fn new(plan: RuntimePlan, tier: CliRuntimeExecutorTier) -> Self {
+        match tier {
+            CliRuntimeExecutorTier::BytecodeVm => {
+                Self::BytecodeVm(BytecodeVmExecutor::from_runtime_plan(plan))
+            }
+            CliRuntimeExecutorTier::Aot => Self::Aot(AotExecutor::new(plan)),
+        }
+    }
+
+    fn step(&mut self, input: RuntimeStepInput, options: RuntimeStepOptions) -> RuntimeStepResult {
+        match self {
+            Self::BytecodeVm(executor) => executor.step(input, options),
+            Self::Aot(executor) => executor.step(input, options),
+        }
+    }
+
+    fn fiber(&self) -> &arcweft_core::engine::FlowFiber {
+        match self {
+            Self::BytecodeVm(executor) => executor.fiber(),
+            Self::Aot(executor) => executor.fiber(),
+        }
+    }
 }
 
 fn run_profile_phase<T>(
@@ -1179,35 +1203,19 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
         value: RuntimeValue::Int(i64::try_from(options.args.len()).unwrap_or(i64::MAX)),
     });
 
-    let mut executor = BytecodeVmExecutor::from_runtime_plan(plan);
-    let mut host = NativeTaskBridge::new(selection.path());
-    let mut task_events = Vec::new();
-    let mut steps = Vec::new();
-    for step_index in 0..options.steps {
-        let result = executor.step(
-            RuntimeStepInput {
-                bindings: bindings.clone(),
-                task_events: std::mem::take(&mut task_events),
-                ..RuntimeStepInput::default()
-            },
-            step_options(options.mode, options.max_ops),
-        );
-        let task_requests = result.output.requests.tasks.clone();
-        let summary = RuntimeStepRunSummary::from_result(step_index, result, executor.fiber());
-        let done = matches!(
-            executor.fiber().status,
-            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
-        );
-        steps.push(summary);
-        if done {
-            break;
-        }
-        task_events = host.complete_tasks(&task_requests);
-    }
+    let trace = run_runtime_steps(
+        plan,
+        Some(selection.path()),
+        options.steps,
+        options.mode,
+        options.max_ops,
+        &bindings,
+        options.executor,
+    );
     let report = RuntimeRunReport {
-        executor: RuntimeExecutorTier::BytecodeVm,
-        steps,
-        final_status: flow_status_label(&executor.fiber().status),
+        executor: RuntimeExecutorTier::from(options.executor),
+        steps: trace.steps,
+        final_status: flow_status_label(&trace.final_status),
     };
     if options.json {
         print_json(&report)
@@ -1470,6 +1478,7 @@ fn script_test_command(options: &ScriptTestOptions) -> Result<(), ExitCode> {
         options.mode,
         options.max_ops,
         &options.values,
+        options.executor,
         options.json,
     )
 }
@@ -1480,6 +1489,7 @@ fn script_test_selection(
     mode: CliRuntimeStepMode,
     max_ops: usize,
     values: &[RuntimeBinding],
+    executor: CliRuntimeExecutorTier,
     json: bool,
 ) -> Result<(), ExitCode> {
     let checked = load_and_check_selection(selection, None)?;
@@ -1495,15 +1505,13 @@ fn script_test_selection(
             .tests
             .iter()
             .map(|test| {
-                run_script_test(
-                    test,
-                    &plan,
-                    selection.path(),
-                    step_limit,
+                let config = RuntimeStepRunConfig {
+                    steps: step_limit,
                     mode,
                     max_ops,
-                    values,
-                )
+                    executor,
+                };
+                run_script_test(test, &plan, selection.path(), config, values)
             })
             .collect(),
     };
@@ -1537,9 +1545,7 @@ fn run_script_test(
     test: &ScriptTest,
     plan: &RuntimePlan,
     source_path: &Path,
-    step_limit: usize,
-    mode: CliRuntimeStepMode,
-    max_ops: usize,
+    config: RuntimeStepRunConfig,
     values: &[RuntimeBinding],
 ) -> ScriptTestRunSummary {
     if test.kind != "scenario" {
@@ -1562,54 +1568,44 @@ fn run_script_test(
     };
     let mut plan = plan.clone();
     plan.entry_flow = Some(FlowRuntimeId(start));
-    let mut executor = BytecodeVmExecutor::from_runtime_plan(plan);
-    let mut host = NativeTaskBridge::new(source_path);
-    let mut task_events = Vec::new();
-    let mut step_summaries = Vec::new();
-    for step_index in 0..step_limit {
-        let result = executor.step(
-            RuntimeStepInput {
-                bindings: values.to_vec(),
-                task_events: std::mem::take(&mut task_events),
-                ..RuntimeStepInput::default()
-            },
-            step_options(mode, max_ops),
-        );
-        let task_requests = result.output.requests.tasks.clone();
-        let summary = RuntimeStepRunSummary::from_result(step_index, result, executor.fiber());
-        let done = matches!(
-            executor.fiber().status,
-            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
-        );
-        step_summaries.push(summary);
-        if done {
-            break;
-        }
-        task_events = host.complete_tasks(&task_requests);
-    }
-    let final_status = flow_status_label(&executor.fiber().status);
-    let mut diagnostics = step_summaries
+    let trace = run_runtime_steps(
+        plan,
+        Some(source_path),
+        config.steps,
+        config.mode,
+        config.max_ops,
+        values,
+        config.executor,
+    );
+    let final_status = flow_status_label(&trace.final_status);
+    let mut diagnostics = trace
+        .steps
         .iter()
         .flat_map(|step| step.diagnostics.iter().cloned())
         .collect::<Vec<_>>();
-    diagnostics.extend(test_expectation_failures(
-        test,
-        executor.vm().engine(),
-        &step_summaries,
-    ));
-    match executor.fiber().status {
+    diagnostics.extend(test_expectation_failures(test, &trace.steps));
+    match trace.final_status {
         FlowFiberStatus::Done(_) => {}
         FlowFiberStatus::Failed(ref message) => {
             diagnostics.push(format!("runtime failed: {message}"));
         }
         FlowFiberStatus::Running | FlowFiberStatus::Waiting(_) | FlowFiberStatus::Choice(_) => {
             diagnostics.push(format!(
-                "scenario did not finish within {step_limit} step(s): {final_status}"
+                "scenario did not finish within {} step(s): {final_status}",
+                config.steps
             ));
         }
     }
     let passed = diagnostics.is_empty();
-    ScriptTestRunSummary::completed(test, passed, final_status, diagnostics, step_summaries)
+    ScriptTestRunSummary::completed(test, passed, final_status, diagnostics, trace.steps)
+}
+
+#[derive(Clone, Copy, Debug)]
+struct RuntimeStepRunConfig {
+    steps: usize,
+    mode: CliRuntimeStepMode,
+    max_ops: usize,
+    executor: CliRuntimeExecutorTier,
 }
 
 fn test_start_flow(test: &ScriptTest) -> Option<String> {
@@ -1618,52 +1614,34 @@ fn test_start_flow(test: &ScriptTest) -> Option<String> {
         .find_map(|step| parse_start_flow_call(&step.text))
 }
 
-fn test_expectation_failures(
-    test: &ScriptTest,
-    engine: &Engine,
-    frames: &[RuntimeStepRunSummary],
-) -> Vec<String> {
+fn test_expectation_failures(test: &ScriptTest, frames: &[RuntimeStepRunSummary]) -> Vec<String> {
     test.steps
         .iter()
         .filter(|step| step.command == "expect" || step.command.starts_with("expect."))
-        .filter_map(|step| evaluate_test_expectation(step, engine, frames).err())
+        .filter_map(|step| evaluate_test_expectation(step, frames).err())
         .collect()
 }
 
 fn evaluate_test_expectation(
     step: &ScriptStep,
-    engine: &Engine,
     frames: &[RuntimeStepRunSummary],
 ) -> Result<(), String> {
-    evaluate_runtime_expectation(
-        step.text.trim(),
-        &RuntimeExpectationView::Engine { engine, frames },
-    )
+    evaluate_runtime_expectation(step.text.trim(), &RuntimeExpectationView::Frames(frames))
 }
 
 enum RuntimeExpectationView<'a> {
-    Engine {
-        engine: &'a Engine,
-        frames: &'a [RuntimeStepRunSummary],
-    },
     Frames(&'a [RuntimeStepRunSummary]),
 }
 
 impl RuntimeExpectationView<'_> {
     fn frames(&self) -> &[RuntimeStepRunSummary] {
         match self {
-            Self::Engine { frames, .. } | Self::Frames(frames) => frames,
+            Self::Frames(frames) => frames,
         }
     }
 
     fn signal_value(&self, target: &str) -> Option<&str> {
         match self {
-            Self::Engine { engine, .. } => engine
-                .fiber()
-                .observations
-                .signals
-                .get(target)
-                .map(String::as_str),
             Self::Frames(frames) => frames
                 .last()?
                 .observations
@@ -1676,12 +1654,6 @@ impl RuntimeExpectationView<'_> {
 
     fn has_log(&self, level: &str, needle: &str) -> bool {
         match self {
-            Self::Engine { engine, .. } => engine
-                .fiber()
-                .observations
-                .logs
-                .iter()
-                .any(|log| log.level == level && log.message.contains(needle)),
             Self::Frames(frames) => frames.last().is_some_and(|frame| {
                 frame
                     .observations
@@ -1997,10 +1969,11 @@ fn bench_expectation_failures(
         options.mode,
         options.max_ops,
         &options.values,
+        options.executor,
     );
     assertions
         .into_iter()
-        .flat_map(|section| bench_assertion_failures(section, &frames))
+        .flat_map(|section| bench_assertion_failures(section, &frames.steps))
         .collect()
 }
 
@@ -2168,24 +2141,38 @@ fn run_bench_section(
         let mut iteration_plan = plan.clone();
         iteration_plan.entry_flow = Some(FlowRuntimeId(flow.clone()));
         let started = Instant::now();
-        let steps = run_runtime_steps(
+        let trace = run_runtime_steps(
             iteration_plan,
             Some(source_path),
             options.steps,
             options.mode,
             options.max_ops,
             &options.values,
+            options.executor,
         );
         let elapsed_ns = started.elapsed().as_nanos();
         if iteration < options.warmup {
             continue;
         }
         elapsed.push(elapsed_ns);
-        executed_ops.push(steps.iter().map(|step| step.stats.executed_ops).sum());
-        line_effects.push(steps.iter().map(|step| step.stats.line_effects).sum());
-        task_requests.push(steps.iter().map(|step| step.task_requests.len()).sum());
-        task_events_in.push(steps.iter().map(|step| step.stats.task_events_in).sum());
-        diagnostics += steps
+        executed_ops.push(trace.steps.iter().map(|step| step.stats.executed_ops).sum());
+        line_effects.push(trace.steps.iter().map(|step| step.stats.line_effects).sum());
+        task_requests.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.task_requests.len())
+                .sum(),
+        );
+        task_events_in.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.stats.task_events_in)
+                .sum(),
+        );
+        diagnostics += trace
+            .steps
             .iter()
             .map(|step| step.diagnostics.len())
             .sum::<usize>();
@@ -2194,6 +2181,7 @@ fn run_bench_section(
         &section.name,
         validated.diagnostics,
         ScriptBenchMeasurementSummary {
+            executor: RuntimeExecutorTier::from(options.executor),
             warmup: options.warmup,
             iterations: options.iterations,
             steps: options.steps,
@@ -2622,6 +2610,8 @@ struct RuntimeRunOptions {
     entry: Option<String>,
     #[arg(long, conflicts_with = "entry")]
     flow: Option<String>,
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
     #[arg(long, default_value_t = 1)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::OneOp)]
@@ -2645,6 +2635,8 @@ struct RuntimeProfileOptions {
     flow: Option<String>,
     #[arg(long)]
     adapter: Option<String>,
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
     #[arg(long, default_value_t = 1)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -2664,6 +2656,8 @@ struct CliRunOptions {
     profile: ProfileOptions,
     #[arg(long)]
     entry: Option<String>,
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
     #[arg(long, default_value_t = 1)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -2702,6 +2696,8 @@ struct ScriptTestOptions {
     path: Option<PathBuf>,
     #[command(flatten)]
     profile: ProfileOptions,
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
     #[arg(long, default_value_t = 32)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -2719,6 +2715,8 @@ struct ScriptBenchOptions {
     path: Option<PathBuf>,
     #[command(flatten)]
     profile: ProfileOptions,
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
     #[arg(long, default_value_t = 32)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -2781,6 +2779,21 @@ enum CliRuntimeStepMode {
     Drain,
     Game,
     Server,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum CliRuntimeExecutorTier {
+    BytecodeVm,
+    Aot,
+}
+
+impl From<CliRuntimeExecutorTier> for RuntimeExecutorTier {
+    fn from(tier: CliRuntimeExecutorTier) -> Self {
+        match tier {
+            CliRuntimeExecutorTier::BytecodeVm => Self::BytecodeVm,
+            CliRuntimeExecutorTier::Aot => Self::Aot,
+        }
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -3216,6 +3229,7 @@ struct RuntimeProfilePhase {
 
 #[derive(serde::Serialize)]
 struct RuntimeProfileRuntime {
+    executor: RuntimeExecutorTier,
     steps: Vec<RuntimeStepRunSummary>,
     final_status: String,
 }

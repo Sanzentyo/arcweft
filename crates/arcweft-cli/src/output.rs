@@ -334,6 +334,7 @@ pub(crate) struct RuntimeRunReport {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum RuntimeExecutorTier {
     BytecodeVm,
+    Aot,
 }
 
 #[derive(serde::Serialize)]
@@ -371,6 +372,7 @@ pub(crate) struct ScriptBenchSectionRunSummary {
 
 #[derive(serde::Serialize)]
 pub(crate) struct ScriptBenchMeasurementSummary {
+    pub(crate) executor: RuntimeExecutorTier,
     pub(crate) warmup: usize,
     pub(crate) iterations: usize,
     pub(crate) steps: usize,
