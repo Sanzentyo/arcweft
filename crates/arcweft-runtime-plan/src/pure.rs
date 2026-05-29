@@ -230,7 +230,7 @@ fn is_jit_integer_type(ty: &TypeRef) -> bool {
     matches!(
         ty,
         TypeRef::Path(name)
-            if matches!(name.as_str(), "i8" | "i16" | "i32" | "i64" | "isize" | "Int")
+            if matches!(name.as_str(), "i8" | "i16" | "i32" | "i64" | "isize")
     )
 }
 
@@ -266,6 +266,30 @@ fn score(base: i64, bonus: i64) -> i64 {
             .expect("request builds with matching inputs");
         assert_eq!(request.name, "score");
         assert_eq!(request.bindings.len(), 2);
+    }
+
+    #[test]
+    fn pure_function_candidate_rejects_removed_int_alias() {
+        let parsed = parse_source(
+            r"
+#[pure]
+fn score(base: Int) -> i64 {
+    base
+}
+",
+        );
+        assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+        let tree = parsed.into_typed_tree();
+        let hir = lower_to_hir(&tree).expect("pure function lowers to HIR");
+        let errors = lower_pure_helper_candidates(&hir)
+            .expect_err("removed Int alias is rejected")
+            .into_iter()
+            .collect::<Vec<_>>();
+        assert!(
+            errors
+                .iter()
+                .any(|err| matches!(err, PureHelperLowerError::UnsupportedParameterType { .. }))
+        );
     }
 
     #[test]
