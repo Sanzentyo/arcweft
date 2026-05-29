@@ -25,32 +25,7 @@ fn jit_check_json_compares_cranelift_and_vm() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("\"status\": \"ok\"")
-            && stdout.contains("\"jit_backend\": \"jit\"")
-            && stdout.contains("\"aot_backend\": \"aot\"")
-            && stdout.contains("\"matches_vm\": true")
-            && stdout.contains("\"aot_compile_elapsed_ns\"")
-            && stdout.contains("\"compile_elapsed_ns\"")
-            && stdout.contains("\"aot_elapsed_ns\"")
-            && stdout.contains("\"jit_elapsed_ns\"")
-            && stdout.contains("\"vm_elapsed_ns\""),
-        "jit check JSON should include conformance and timing data: {stdout}"
-    );
-    assert!(
-        stdout.contains("\"speedup_x\"")
-            && stdout.contains("\"dynamic_inputs\": true")
-            && !stdout.contains("\"source_compiler\"")
-            && stdout.contains("\"input_seed\": 7")
-            && stdout.contains("\"input_bindings\"")
-            && stdout.contains("\"jit_per_iteration_ns\"")
-            && stdout.contains("\"aot_per_iteration_ns\"")
-            && stdout.contains("\"vm_per_iteration_ns\"")
-            && stdout.contains("\"aot_samples\"")
-            && stdout.contains("\"jit_samples\"")
-            && stdout.contains("\"vm_samples\""),
-        "jit check JSON should include conformance and timing data: {stdout}"
-    );
+    assert_jit_check_json(&stdout, "builtin", &["base", "bonus"], 7);
 }
 
 #[test]
@@ -92,22 +67,7 @@ fn score(base: i64, bonus: i64, scale: i64) -> i64 {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("\"helper\": \"score\"")
-            && stdout.contains("\"helper_source\": \"source\"")
-            && stdout.contains("\"source_compiler\"")
-            && stdout.contains("\"typecheck\"")
-            && stdout.contains("\"borrow_check\"")
-            && stdout.contains("\"phases\"")
-            && stdout.contains("\"name\": \"parse\"")
-            && stdout.contains("\"name\": \"typecheck\"")
-            && stdout.contains("\"judgments\"")
-            && stdout.contains("\"boundary_checks\"")
-            && stdout.contains("\"matches_vm\": true")
-            && stdout.contains("\"scale\"")
-            && stdout.contains("\"input_seed\": 3"),
-        "jit check JSON should describe the source helper and source compiler evidence: {stdout}"
-    );
+    assert_jit_check_json(&stdout, "source", &["base", "bonus", "scale"], 3);
     assert!(
         !stdout.contains(&std::env::temp_dir().display().to_string()),
         "jit check JSON must not record absolute temp paths: {stdout}"
@@ -862,26 +822,7 @@ flow @flow.verify_types verify_types {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("\"status\": \"ok\"")
-            && stdout.contains("\"typecheck\"")
-            && stdout.contains("\"borrow_check\"")
-            && stdout.contains("\"phases\"")
-            && stdout.contains("\"name\": \"runtime_plan_lower\"")
-            && stdout.contains("\"name\": \"runtime_type_validate\"")
-            && stdout.contains("\"name\": \"verify\"")
-            && stdout.contains("\"name\": \"run\"")
-            && stdout.contains("\"runtime_type_validation\"")
-            && stdout.contains("\"verifier\"")
-            && stdout.contains("\"runtime\"")
-            && stdout.contains("\"executor\": \"aot\"")
-            && stdout.contains("\"aot_fast_path_ops\": 2")
-            && stdout.contains("\"failed\": false")
-            && stdout.contains("\"judgments\"")
-            && stdout.contains("\"type_judgments\"")
-            && stdout.contains("\"source\": \"arcweft-cli-verify-types-"),
-        "verify-types JSON should include type, borrow, runtime validation, and verifier evidence: {stdout}"
-    );
+    assert_verify_types_json_summary(&stdout);
     assert!(
         !stdout.contains(&std::env::temp_dir().display().to_string()),
         "verify-types JSON must not record absolute temp paths: {stdout}"
@@ -2737,6 +2678,193 @@ fn assert_check_json_pipeline_summary(stdout: &str) {
 
     assert_typecheck_metrics(&json["typecheck"]);
     assert_borrow_check_metrics(&json["borrow_check"]);
+}
+
+fn assert_jit_check_json(
+    stdout: &str,
+    expected_helper_source: &str,
+    expected_input_bindings: &[&str],
+    expected_seed: u64,
+) {
+    let json: serde_json::Value =
+        serde_json::from_str(stdout).expect("jit check output is structured JSON");
+    assert_eq!(json["status"], "ok");
+    assert_eq!(json["helper"], "score");
+    assert_eq!(json["helper_source"], expected_helper_source);
+    assert_eq!(json["vm_backend"], "vm");
+    assert_eq!(json["aot_backend"], "aot");
+    assert_eq!(json["jit_backend"], "jit");
+    assert_eq!(json["matches_vm"], true);
+    assert_eq!(json["dynamic_inputs"], true);
+    assert_eq!(json["input_seed"], expected_seed);
+    assert_eq!(json["warmup"], 1);
+    assert_eq!(json["iterations"], 4);
+    assert_eq!(json["samples"], 2);
+    assert_eq!(
+        json["input_bindings"]
+            .as_array()
+            .expect("input bindings should be an array")
+            .iter()
+            .map(|binding| binding.as_str().expect("input binding should be text"))
+            .collect::<Vec<_>>(),
+        expected_input_bindings
+    );
+    assert_eq!(json["vm_value"], json["aot_value"]);
+    assert_eq!(json["vm_value"], json["jit_value"]);
+    assert_eq!(
+        json["deterministic"]["vm_accumulator"],
+        json["deterministic"]["aot_accumulator"]
+    );
+    assert_eq!(
+        json["deterministic"]["vm_accumulator"],
+        json["deterministic"]["jit_accumulator"]
+    );
+    assert_jit_timing_summary(&json["timings"]);
+    assert_eq!(
+        json["vm_stats"]["evaluated_binary_ops"],
+        json["aot_stats"]["evaluated_binary_ops"]
+    );
+    assert!(
+        json["vm_stats"]["evaluated_exprs"]
+            .as_u64()
+            .is_some_and(|value| value > 0)
+            && json["jit_stats"]["evaluated_exprs"]
+                .as_u64()
+                .is_some_and(|value| value > 0)
+            && json["jit_stats"]["evaluated_binary_ops"].as_u64()
+                >= json["vm_stats"]["evaluated_binary_ops"].as_u64(),
+        "VM/AOT/JIT eval counters should be populated: {json}"
+    );
+
+    if expected_helper_source == "source" {
+        let source_compiler = &json["source_compiler"];
+        assert_typecheck_metrics(&source_compiler["typecheck"]);
+        assert_borrow_check_metrics(&source_compiler["borrow_check"]);
+        assert_phase_timings_include(
+            &source_compiler["phases"],
+            &[
+                "read_source",
+                "parse",
+                "lint",
+                "lower_hir",
+                "resolve",
+                "readiness",
+                "typecheck",
+                "line_task_lower",
+            ],
+        );
+    } else {
+        assert!(
+            json.get("source_compiler").is_none(),
+            "builtin helper should not report source compiler metrics: {json}"
+        );
+    }
+}
+
+fn assert_jit_timing_summary(timings: &serde_json::Value) {
+    assert_eq!(timings["aot_elapsed_ns"], timings["aot_samples"]["median"]);
+    assert_eq!(timings["jit_elapsed_ns"], timings["jit_samples"]["median"]);
+    assert_eq!(timings["vm_elapsed_ns"], timings["vm_samples"]["median"]);
+    assert_sample_summary_is_ordered(&timings["aot_samples"]);
+    assert_sample_summary_is_ordered(&timings["jit_samples"]);
+    assert_sample_summary_is_ordered(&timings["vm_samples"]);
+    assert!(
+        timings["aot_compile_elapsed_ns"].as_u64().is_some()
+            && timings["compile_elapsed_ns"].as_u64().is_some()
+            && timings["aot_per_iteration_ns"]
+                .as_u64()
+                .is_some_and(|value| value > 0)
+            && timings["jit_per_iteration_ns"]
+                .as_u64()
+                .is_some_and(|value| value > 0)
+            && timings["vm_per_iteration_ns"]
+                .as_u64()
+                .is_some_and(|value| value > 0),
+        "JIT timing counters should be populated: {timings}"
+    );
+    assert!(
+        timings["aot_speedup_x"]
+            .as_str()
+            .and_then(|value| value.parse::<f64>().ok())
+            .is_some()
+            && timings["speedup_x"]
+                .as_str()
+                .and_then(|value| value.parse::<f64>().ok())
+                .is_some(),
+        "JIT speedups should be numeric strings: {timings}"
+    );
+}
+
+fn assert_verify_types_json_summary(stdout: &str) {
+    let json: serde_json::Value =
+        serde_json::from_str(stdout).expect("verify-types output is structured JSON");
+    assert_eq!(json["status"], "ok");
+    assert!(
+        json["source"]
+            .as_str()
+            .is_some_and(|source| source.starts_with("arcweft-cli-verify-types-")),
+        "verify-types should report only a source label, not an absolute path: {json}"
+    );
+    assert!(
+        json["line_task_groups"].as_u64().is_some(),
+        "line task group count should be numeric: {json}"
+    );
+    assert_phase_timings_include(
+        &json["phases"],
+        &[
+            "read_source",
+            "parse",
+            "lint",
+            "lower_hir",
+            "resolve",
+            "readiness",
+            "typecheck",
+            "line_task_lower",
+            "runtime_plan_lower",
+            "runtime_type_validate",
+            "verify",
+            "run",
+        ],
+    );
+    assert_typecheck_metrics(&json["typecheck"]);
+    assert_borrow_check_metrics(&json["borrow_check"]);
+    assert!(
+        json["runtime_type_validation"]["diagnostics"]
+            .as_u64()
+            .is_some()
+            && json["runtime_type_validation"]["errors"].as_u64().is_some()
+            && json["runtime_type_validation"]["stats"]["flows"]
+                .as_u64()
+                .is_some_and(|value| value > 0)
+            && json["runtime_type_validation"]["stats"]["ops"]
+                .as_u64()
+                .is_some_and(|value| value > 0)
+            && json["runtime_type_validation"]["stats"]["type_judgments"]
+                .as_u64()
+                .is_some(),
+        "runtime type validation counters should be populated: {json}"
+    );
+    assert!(
+        json["verifier"]["diagnostics"].as_u64().is_some()
+            && json["verifier"]["obligations"].as_u64().is_some()
+            && json["verifier"]["unsafe_audits"].as_u64().is_some(),
+        "verifier counters should be populated: {json}"
+    );
+
+    let runtime = &json["runtime"];
+    assert_eq!(runtime["executor"], "aot");
+    assert_eq!(runtime["failed"], false);
+    assert_eq!(runtime["executor_stats"]["aot_fast_path_ops"], 2);
+    assert!(
+        runtime["steps_run"]
+            .as_u64()
+            .is_some_and(|value| value == 1)
+            && runtime["steps"][0]["stats"]["executed_ops"]
+                .as_u64()
+                .is_some_and(|value| value == 2)
+            && runtime["native_io"]["completed_tasks"].as_u64().is_some(),
+        "verify-types runtime counters should be populated: {runtime}"
+    );
 }
 
 fn assert_profile_json_summary(stdout: &str) {
