@@ -6,6 +6,7 @@ use crate::plan::{
     ChoiceRuntimeOption, FlowEvent, FlowOp, FlowRuntimeId, RuntimeMatchArm, RuntimeMatchSelection,
     RuntimePlan,
 };
+use crate::pure::{RuntimePureCallBackend, VmRuntimePureCallBackend};
 use crate::source::{
     RuntimeSourceEvent, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp, SourcePlan,
     SourcePolicy, SourceRuntimeState, normalize_source_events,
@@ -199,8 +200,18 @@ impl Engine {
 
     pub fn step(
         &mut self,
+        input: RuntimeStepInput,
+        options: RuntimeStepOptions,
+    ) -> RuntimeStepResult {
+        let mut pure_backend = VmRuntimePureCallBackend::default();
+        self.step_with_pure_backend(input, options, &mut pure_backend)
+    }
+
+    pub fn step_with_pure_backend(
+        &mut self,
         mut input: RuntimeStepInput,
         options: RuntimeStepOptions,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> RuntimeStepResult {
         let mut output = RuntimeStepOutput::default();
         let mut executed_ops = 0;
@@ -218,11 +229,11 @@ impl Engine {
                     event.task_id.0, event.sequence.0
                 ),
             }));
-        self.apply_source_events(source_events, &mut output);
-        self.step_stream_plans(&mut output);
+        self.apply_source_events(source_events, &mut output, pure_backend);
+        self.step_stream_plans(&mut output, pure_backend);
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
-            self.step_runtime_op(&input, &events, &mut output);
+            self.step_runtime_op(&input, &events, &mut output, pure_backend);
             executed_ops += 1;
             if self.should_return_to_host(options.mode, &output, executed_ops) {
                 break;
@@ -233,6 +244,7 @@ impl Engine {
             executed_ops,
             pending_ops_before,
             pending_ops_after: self.fiber.pending_ops.len(),
+            pure: pure_backend.stats(),
             task_events_in,
             source_events_in,
             source_events_emitted: output.effects.source_events.len(),
@@ -255,15 +267,16 @@ impl Engine {
         input: &RuntimeStepInput,
         events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) {
-        if self.resume_suspended(input, events, output) {
+        if self.resume_suspended(input, events, output, pure_backend) {
             return;
         }
         if !matches!(self.fiber.status, FlowFiberStatus::Running) {
             return;
         }
         if self.fiber.cursor.is_some() {
-            self.step_flow(input, output);
+            self.step_flow(input, output, pure_backend);
         } else {
             self.step_line_only(input, output);
         }

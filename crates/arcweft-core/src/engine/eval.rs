@@ -4,6 +4,7 @@ use super::{
     RuntimeStepOutput, RuntimeValue, evaluate_binary, evaluate_unary, match_runtime_pattern,
     runtime_value_label,
 };
+use crate::pure::{RuntimeI64Args, RuntimePureCallBackend, VmRuntimePureCallBackend};
 
 impl Engine {
     pub(super) fn evaluate_let(
@@ -12,10 +13,23 @@ impl Engine {
         expr: &RuntimeExpr,
         output: &mut RuntimeStepOutput,
     ) {
-        match self.evaluate_expr(expr).and_then(|value| {
-            self.try_bind_pattern(pattern, &value)
-                .map(|matched| (matched, value))
-        }) {
+        let mut pure_backend = VmRuntimePureCallBackend::default();
+        self.evaluate_let_with_backend(pattern, expr, output, &mut pure_backend);
+    }
+
+    pub(super) fn evaluate_let_with_backend(
+        &mut self,
+        pattern: &RuntimePattern,
+        expr: &RuntimeExpr,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) {
+        match self
+            .evaluate_expr_with_backend(expr, pure_backend)
+            .and_then(|value| {
+                self.try_bind_pattern(pattern, &value)
+                    .map(|matched| (matched, value))
+            }) {
             Ok((true, _)) => {}
             Ok((false, value)) => {
                 self.fail_eval(
@@ -27,20 +41,21 @@ impl Engine {
         }
     }
 
-    pub(super) fn evaluate_if_let(
+    pub(super) fn evaluate_if_let_with_backend(
         &mut self,
         pattern: &RuntimePattern,
         expr: &RuntimeExpr,
         guard: Option<&RuntimeExpr>,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<Option<Vec<RuntimeBinding>>, RuntimeEvalError> {
-        let value = self.evaluate_expr(expr)?;
+        let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
         let Some(bindings) = match_runtime_pattern(pattern, &value)? else {
             return Ok(None);
         };
         if let Some(guard) = guard {
             let previous = self.fiber.env.clone();
             self.fiber.env.bind_all(bindings.clone());
-            let matched = self.evaluate_bool(guard);
+            let matched = self.evaluate_bool_with_backend(guard, pure_backend);
             self.fiber.env = previous;
             let matched = matched?;
             if !matched {
@@ -50,12 +65,13 @@ impl Engine {
         Ok(Some(bindings))
     }
 
-    pub(super) fn evaluate_match(
+    pub(super) fn evaluate_match_with_backend(
         &mut self,
         scrutinee: &RuntimeExpr,
         arms: &[RuntimeMatchArm],
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeMatchSelection, RuntimeEvalError> {
-        let value = self.evaluate_expr(scrutinee)?;
+        let value = self.evaluate_expr_with_backend(scrutinee, pure_backend)?;
         for arm in arms {
             let Some(bindings) = match_runtime_pattern(&arm.pattern, &value)? else {
                 continue;
@@ -63,7 +79,7 @@ impl Engine {
             let previous = self.fiber.env.clone();
             self.fiber.env.bind_all(bindings.clone());
             if let Some(guard) = arm.guard.as_ref()
-                && !match self.evaluate_bool(guard) {
+                && !match self.evaluate_bool_with_backend(guard, pure_backend) {
                     Ok(matched) => matched,
                     Err(error) => {
                         self.fiber.env = previous;
@@ -84,6 +100,15 @@ impl Engine {
         &mut self,
         expr: &RuntimeExpr,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let mut pure_backend = VmRuntimePureCallBackend::default();
+        self.evaluate_expr_with_backend(expr, &mut pure_backend)
+    }
+
+    pub(super) fn evaluate_expr_with_backend(
+        &mut self,
+        expr: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
         match expr {
             RuntimeExpr::Value(value) => Ok(value.clone()),
             RuntimeExpr::Local(name) => self
@@ -93,15 +118,17 @@ impl Engine {
                 .cloned()
                 .ok_or_else(|| RuntimeEvalError::UnknownBinding(name.clone())),
             RuntimeExpr::EntityRef(target) => Ok(RuntimeValue::EntityRef(target.clone())),
-            RuntimeExpr::Let { name, expr, body } => self.evaluate_let_expr(name, expr, body),
+            RuntimeExpr::Let { name, expr, body } => {
+                self.evaluate_let_expr(name, expr, body, pure_backend)
+            }
             RuntimeExpr::Tuple(items) => items
                 .iter()
-                .map(|item| self.evaluate_expr(item))
+                .map(|item| self.evaluate_expr_with_backend(item, pure_backend))
                 .collect::<Result<Vec<_>, _>>()
                 .map(RuntimeValue::Tuple),
             RuntimeExpr::BracketSeq(items) => items
                 .iter()
-                .map(|item| self.evaluate_expr(item))
+                .map(|item| self.evaluate_expr_with_backend(item, pure_backend))
                 .collect::<Result<Vec<_>, _>>()
                 .map(RuntimeValue::BracketSeq),
             RuntimeExpr::Record(fields) => fields
@@ -109,7 +136,7 @@ impl Engine {
                 .map(|field| {
                     Ok(RuntimeFieldValue {
                         name: field.name.clone(),
-                        value: self.evaluate_expr(&field.value)?,
+                        value: self.evaluate_expr_with_backend(&field.value, pure_backend)?,
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()
@@ -123,11 +150,14 @@ impl Engine {
                 name: name.clone(),
                 payload: payload
                     .as_ref()
-                    .map(|expr| self.evaluate_expr(expr).map(Box::new))
+                    .map(|expr| {
+                        self.evaluate_expr_with_backend(expr, pure_backend)
+                            .map(Box::new)
+                    })
                     .transpose()?,
             }),
             RuntimeExpr::Field { target, field } => {
-                let value = self.evaluate_expr(target)?;
+                let value = self.evaluate_expr_with_backend(target, pure_backend)?;
                 match value {
                     RuntimeValue::Record(fields) => fields
                         .into_iter()
@@ -144,19 +174,24 @@ impl Engine {
                 }
             }
             RuntimeExpr::SpreadArg(_) => Err(RuntimeEvalError::SpreadOutsideCall),
-            RuntimeExpr::Call { callee, args } => self.evaluate_call_expr(callee, args),
+            RuntimeExpr::Call { callee, args } => {
+                self.evaluate_call_expr(callee, args, pure_backend)
+            }
+            RuntimeExpr::PureCall { helper, args } => {
+                self.evaluate_pure_call_expr(*helper, args, pure_backend)
+            }
             RuntimeExpr::MethodCall {
                 receiver,
                 method,
                 args,
-            } => self.evaluate_method_call_expr(receiver, method, args),
+            } => self.evaluate_method_call_expr(receiver, method, args, pure_backend),
             RuntimeExpr::Unary { op, expr } => {
-                let value = self.evaluate_expr(expr)?;
+                let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
                 evaluate_unary(*op, value)
             }
             RuntimeExpr::Binary { lhs, op, rhs } => {
-                let lhs = self.evaluate_expr(lhs)?;
-                let rhs = self.evaluate_expr(rhs)?;
+                let lhs = self.evaluate_expr_with_backend(lhs, pure_backend)?;
+                let rhs = self.evaluate_expr_with_backend(rhs, pure_backend)?;
                 evaluate_binary(lhs, *op, rhs)
             }
             RuntimeExpr::If {
@@ -164,10 +199,10 @@ impl Engine {
                 then_expr,
                 else_expr,
             } => {
-                if self.evaluate_bool(condition)? {
-                    self.evaluate_expr(then_expr)
+                if self.evaluate_bool_with_backend(condition, pure_backend)? {
+                    self.evaluate_expr_with_backend(then_expr, pure_backend)
                 } else {
-                    self.evaluate_expr(else_expr)
+                    self.evaluate_expr_with_backend(else_expr, pure_backend)
                 }
             }
             RuntimeExpr::IfLet {
@@ -176,8 +211,17 @@ impl Engine {
                 guard,
                 then_expr,
                 else_expr,
-            } => self.evaluate_if_let_expr(pattern, expr, guard.as_deref(), then_expr, else_expr),
-            RuntimeExpr::Match { scrutinee, arms } => self.evaluate_match_expr(scrutinee, arms),
+            } => self.evaluate_if_let_expr(
+                pattern,
+                expr,
+                guard.as_deref(),
+                then_expr,
+                else_expr,
+                pure_backend,
+            ),
+            RuntimeExpr::Match { scrutinee, arms } => {
+                self.evaluate_match_expr(scrutinee, arms, pure_backend)
+            }
         }
     }
 
@@ -185,9 +229,43 @@ impl Engine {
         &mut self,
         callee: &str,
         args: &[RuntimeExpr],
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let args = self.evaluate_call_args(args)?;
+        let args = self.evaluate_call_args(args, pure_backend)?;
         Ok(evaluate_runtime_call(callee, &args))
+    }
+
+    fn evaluate_pure_call_expr(
+        &mut self,
+        helper: crate::plan::RuntimePureHelperId,
+        args: &[RuntimeExpr],
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let Some(helper) = self.plan.pure_helpers.get(helper.0).cloned() else {
+            return Err(RuntimeEvalError::UnknownPureHelper(helper.0));
+        };
+        if args.len() <= RuntimeI64Args::MAX
+            && !args
+                .iter()
+                .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
+        {
+            let mut values = [0_i64; RuntimeI64Args::MAX];
+            for (index, arg) in args.iter().enumerate() {
+                match self.evaluate_expr_with_backend(arg, pure_backend)? {
+                    RuntimeValue::Int(value) => values[index] = value,
+                    value => {
+                        return Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value)));
+                    }
+                }
+            }
+            if let Some(value) =
+                pure_backend.call_i64(&helper, RuntimeI64Args::new(values, args.len()))?
+            {
+                return Ok(RuntimeValue::Int(value));
+            }
+        }
+        let args = self.evaluate_call_args(args, pure_backend)?;
+        pure_backend.call_values(&helper, &args)
     }
 
     fn evaluate_method_call_expr(
@@ -195,24 +273,26 @@ impl Engine {
         receiver: &RuntimeExpr,
         method: &str,
         args: &[RuntimeExpr],
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let receiver = self.evaluate_expr(receiver)?;
-        let args = self.evaluate_call_args(args)?;
+        let receiver = self.evaluate_expr_with_backend(receiver, pure_backend)?;
+        let args = self.evaluate_call_args(args, pure_backend)?;
         Ok(evaluate_runtime_method_call(receiver, method, &args))
     }
 
     fn evaluate_call_args(
         &mut self,
         args: &[RuntimeExpr],
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {
         let mut values = Vec::new();
         for arg in args {
             match arg {
                 RuntimeExpr::SpreadArg(expr) => {
-                    let spread = self.evaluate_expr(expr)?;
+                    let spread = self.evaluate_expr_with_backend(expr, pure_backend)?;
                     values.extend(spread_runtime_values(spread)?);
                 }
-                expr => values.push(self.evaluate_expr(expr)?),
+                expr => values.push(self.evaluate_expr_with_backend(expr, pure_backend)?),
             }
         }
         Ok(values)
@@ -223,11 +303,12 @@ impl Engine {
         name: &str,
         expr: &RuntimeExpr,
         body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let value = self.evaluate_expr(expr)?;
+        let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
         self.fiber.env.push_scope();
         self.fiber.env.set(name.to_owned(), value);
-        let result = self.evaluate_expr(body);
+        let result = self.evaluate_expr_with_backend(body, pure_backend);
         self.fiber.env.pop_scope();
         result
     }
@@ -239,22 +320,25 @@ impl Engine {
         guard: Option<&RuntimeExpr>,
         then_expr: &RuntimeExpr,
         else_expr: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let value = self.evaluate_expr(expr)?;
+        let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
         let Some(bindings) = match_runtime_pattern(pattern, &value)? else {
-            return self.evaluate_expr(else_expr);
+            return self.evaluate_expr_with_backend(else_expr, pure_backend);
         };
         let previous = self.fiber.env.clone();
         self.fiber.env.bind_all(bindings);
-        match guard.map_or(Ok(true), |guard| self.evaluate_bool(guard)) {
+        match guard.map_or(Ok(true), |guard| {
+            self.evaluate_bool_with_backend(guard, pure_backend)
+        }) {
             Ok(true) => {
-                let result = self.evaluate_expr(then_expr);
+                let result = self.evaluate_expr_with_backend(then_expr, pure_backend);
                 self.fiber.env = previous;
                 result
             }
             Ok(false) => {
                 self.fiber.env = previous;
-                self.evaluate_expr(else_expr)
+                self.evaluate_expr_with_backend(else_expr, pure_backend)
             }
             Err(error) => {
                 self.fiber.env = previous;
@@ -267,8 +351,9 @@ impl Engine {
         &mut self,
         scrutinee: &RuntimeExpr,
         arms: &[RuntimeExprMatchArm],
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let value = self.evaluate_expr(scrutinee)?;
+        let value = self.evaluate_expr_with_backend(scrutinee, pure_backend)?;
         for arm in arms {
             let Some(bindings) = match_runtime_pattern(&arm.pattern, &value)? else {
                 continue;
@@ -276,7 +361,7 @@ impl Engine {
             let previous = self.fiber.env.clone();
             self.fiber.env.bind_all(bindings);
             if let Some(guard) = arm.guard.as_ref()
-                && !match self.evaluate_bool(guard) {
+                && !match self.evaluate_bool_with_backend(guard, pure_backend) {
                     Ok(matched) => matched,
                     Err(error) => {
                         self.fiber.env = previous;
@@ -287,7 +372,7 @@ impl Engine {
                 self.fiber.env = previous;
                 continue;
             }
-            let result = self.evaluate_expr(&arm.value);
+            let result = self.evaluate_expr_with_backend(&arm.value, pure_backend);
             self.fiber.env = previous;
             return result;
         }
@@ -296,8 +381,12 @@ impl Engine {
         )))
     }
 
-    pub(super) fn evaluate_bool(&mut self, expr: &RuntimeExpr) -> Result<bool, RuntimeEvalError> {
-        match self.evaluate_expr(expr)? {
+    pub(super) fn evaluate_bool_with_backend(
+        &mut self,
+        expr: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<bool, RuntimeEvalError> {
+        match self.evaluate_expr_with_backend(expr, pure_backend)? {
             RuntimeValue::Bool(value) => Ok(value),
             value => Err(RuntimeEvalError::ExpectedBool(runtime_value_label(&value))),
         }

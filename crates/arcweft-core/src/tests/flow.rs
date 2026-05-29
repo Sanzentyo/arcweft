@@ -64,6 +64,61 @@ fn engine_steps_flow_ops_and_applies_goto() {
 }
 
 #[test]
+fn engine_executes_runtime_pure_call_from_flow() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![FlowOp::ReturnExpr(RuntimeExpr::PureCall {
+                helper: RuntimePureHelperId(0),
+                args: vec![
+                    RuntimeExpr::Value(RuntimeValue::Int(3)),
+                    RuntimeExpr::Value(RuntimeValue::Int(4)),
+                ],
+            })],
+        }],
+        Vec::new(),
+    )
+    .expect("flow plan is valid")
+    .with_pure_helpers(vec![RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "score".to_owned(),
+        input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        expr: RuntimeExpr::If {
+            condition: Box::new(RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Ge,
+                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(3))),
+            }),
+            then_expr: Box::new(RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Call {
+                    callee: "add".to_owned(),
+                    args: vec![
+                        RuntimeExpr::Local("bonus".to_owned()),
+                        RuntimeExpr::Value(RuntimeValue::Int(2)),
+                    ],
+                }),
+            }),
+            else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::Int(0))),
+        },
+        origin: RuntimePureHelperOrigin::Annotated,
+    }]);
+    let mut engine = Engine::new(plan);
+
+    let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+
+    assert!(matches!(
+        result.fiber_status,
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "18"
+    ));
+    assert_eq!(result.stats.pure.pure_calls, 1);
+    assert_eq!(result.stats.pure.vm_calls, 1);
+    assert_eq!(result.stats.pure.arg_stack_packs, 1);
+}
+
+#[test]
 fn engine_waits_for_choice_input() {
     let option = ChoiceRuntimeOption {
         id: Some("choice.listen".to_owned()),

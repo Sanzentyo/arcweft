@@ -2,6 +2,7 @@
 
 use crate::expr::lower_runtime_expr_strict;
 use arcweft_core::{
+    plan::RuntimePureHelperOrigin,
     pure::PureFunctionRequest,
     value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
@@ -21,6 +22,7 @@ pub struct PureHelperCandidate {
     name: String,
     input_names: Vec<String>,
     expr: RuntimeExpr,
+    origin: RuntimePureHelperOrigin,
 }
 
 /// Error produced while selecting or lowering a pure helper function.
@@ -54,6 +56,11 @@ impl PureHelperCandidate {
     /// Runtime expression body used by pure helper backends.
     pub const fn expr(&self) -> &RuntimeExpr {
         &self.expr
+    }
+
+    /// Whether this helper was explicitly annotated or inferred from a pure body.
+    pub const fn origin(&self) -> RuntimePureHelperOrigin {
+        self.origin
     }
 
     /// Builds a concrete VM/JIT request using integer input values.
@@ -91,18 +98,25 @@ impl PureHelperCandidate {
 pub fn lower_pure_helper_candidates(
     module: &HirModule,
 ) -> Result<Vec<PureHelperCandidate>, Vec<PureHelperLowerError>> {
-    let (candidates, errors): (Vec<_>, Vec<_>) = module
-        .functions()
-        .iter()
-        .filter(|function| function.has_attribute("pure"))
-        .map(lower_pure_helper_candidate)
-        .partition(Result::is_ok);
-    let errors = errors
-        .into_iter()
-        .filter_map(Result::err)
-        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    let mut errors = Vec::new();
+    for function in module.functions() {
+        let annotated = function.has_attribute("pure");
+        match lower_pure_helper_candidate(
+            function,
+            if annotated {
+                RuntimePureHelperOrigin::Annotated
+            } else {
+                RuntimePureHelperOrigin::Inferred
+            },
+        ) {
+            Ok(candidate) => candidates.push(candidate),
+            Err(error) if annotated => errors.push(error),
+            Err(_) => {}
+        }
+    }
     if errors.is_empty() {
-        Ok(candidates.into_iter().filter_map(Result::ok).collect())
+        Ok(candidates)
     } else {
         Err(errors)
     }
@@ -110,6 +124,7 @@ pub fn lower_pure_helper_candidates(
 
 fn lower_pure_helper_candidate(
     function: &HirFunction,
+    origin: RuntimePureHelperOrigin,
 ) -> Result<PureHelperCandidate, PureHelperLowerError> {
     if function.kind() != FunctionKind::Function {
         return Err(PureHelperLowerError::UnsupportedFunctionKind {
@@ -123,6 +138,7 @@ fn lower_pure_helper_candidate(
         name: function.name().to_owned(),
         input_names,
         expr,
+        origin,
     })
 }
 

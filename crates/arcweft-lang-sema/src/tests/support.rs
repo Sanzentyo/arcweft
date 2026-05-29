@@ -19,6 +19,7 @@ pub(super) use arcweft_core::{
     source::{SourceHandlerPlan, SourceOp},
     stream::StreamOp,
     time::LogicalDuration,
+    value::RuntimeExpr,
 };
 pub(super) use arcweft_lang_hir::lower::lower_to_hir;
 pub(super) use arcweft_lang_hir::model::{HirFlowItem, HirTopLevelDecl};

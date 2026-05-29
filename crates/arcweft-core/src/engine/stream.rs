@@ -3,13 +3,18 @@ use super::{
     RuntimeStepOutput, RuntimeStreamEvent, RuntimeValue, SourceEventKind, SourceId, StreamMatchArm,
     StreamOp, StreamRuntimeId, StreamRuntimeState, match_runtime_pattern, runtime_value_label,
 };
+use crate::pure::RuntimePureCallBackend;
 
 impl Engine {
-    pub(super) fn step_stream_plans(&mut self, output: &mut RuntimeStepOutput) {
+    pub(super) fn step_stream_plans(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) {
         let stream_plans = self.plan.stream_plans.clone();
         for plan in stream_plans {
             let mut budget = 64usize;
-            if !self.execute_stream_ops(&plan.id, &plan.ops, &mut budget, output) {
+            if !self.execute_stream_ops(&plan.id, &plan.ops, &mut budget, output, pure_backend) {
                 continue;
             }
             if budget == 0 {
@@ -26,13 +31,14 @@ impl Engine {
         ops: &[StreamOp],
         budget: &mut usize,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> bool {
         for op in ops {
             if *budget == 0 {
                 return true;
             }
             *budget -= 1;
-            if !self.execute_stream_op(stream, op, budget, output) {
+            if !self.execute_stream_op(stream, op, budget, output, pure_backend) {
                 return false;
             }
         }
@@ -45,29 +51,42 @@ impl Engine {
         op: &StreamOp,
         budget: &mut usize,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> bool {
         match op {
-            StreamOp::Let { pattern, expr } => self.bind_stream_let(pattern, expr, output),
+            StreamOp::Let { pattern, expr } => {
+                self.bind_stream_let(pattern, expr, output, pure_backend)
+            }
             StreamOp::ForNext {
                 pattern,
                 source,
                 body,
-            } => self.execute_stream_for_next(stream, pattern, source, body, budget, output),
-            StreamOp::Yield { expr } => self.yield_stream_item(stream, expr, output),
+            } => self.execute_stream_for_next(
+                stream,
+                pattern,
+                source,
+                body,
+                budget,
+                output,
+                pure_backend,
+            ),
+            StreamOp::Yield { expr } => self.yield_stream_item(stream, expr, output, pure_backend),
             StreamOp::If {
                 condition,
                 then_ops,
                 else_ops,
-            } => match self.evaluate_bool(condition) {
-                Ok(true) => self.execute_stream_ops(stream, then_ops, budget, output),
-                Ok(false) => self.execute_stream_ops(stream, else_ops, budget, output),
+            } => match self.evaluate_bool_with_backend(condition, pure_backend) {
+                Ok(true) => self.execute_stream_ops(stream, then_ops, budget, output, pure_backend),
+                Ok(false) => {
+                    self.execute_stream_ops(stream, else_ops, budget, output, pure_backend)
+                }
                 Err(error) => {
                     Self::diagnose_runtime_error(error, output);
                     true
                 }
             },
             StreamOp::Match { scrutinee, arms } => {
-                self.execute_stream_match(stream, scrutinee, arms, budget, output)
+                self.execute_stream_match(stream, scrutinee, arms, budget, output, pure_backend)
             }
             StreamOp::Close { source } => {
                 self.close_stream_source(source, output);
@@ -83,8 +102,9 @@ impl Engine {
         pattern: &RuntimePattern,
         expr: &RuntimeExpr,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> bool {
-        match self.evaluate_expr(expr) {
+        match self.evaluate_expr_with_backend(expr, pure_backend) {
             Ok(value) => match self.try_bind_pattern(pattern, &value) {
                 Ok(true) => true,
                 Ok(false) => {
@@ -116,8 +136,9 @@ impl Engine {
         body: &[StreamOp],
         budget: &mut usize,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> bool {
-        let Ok(source_key) = self.evaluate_queue_target(source) else {
+        let Ok(source_key) = self.evaluate_queue_target_with_backend(source, pure_backend) else {
             return true;
         };
         while let Some(item) = self.pop_queue_item(&source_key) {
@@ -126,7 +147,7 @@ impl Engine {
             match match_runtime_pattern(pattern, item.value()) {
                 Ok(Some(bindings)) => {
                     self.fiber.env.bind_all(bindings);
-                    if !self.execute_stream_ops(stream, body, budget, output) {
+                    if !self.execute_stream_ops(stream, body, budget, output, pure_backend) {
                         self.fiber.env = previous;
                         return false;
                     }
@@ -149,8 +170,9 @@ impl Engine {
         stream: &StreamRuntimeId,
         expr: &RuntimeExpr,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> bool {
-        match self.evaluate_expr(expr) {
+        match self.evaluate_expr_with_backend(expr, pure_backend) {
             Ok(value) => {
                 let item: RuntimePayload = value.into();
                 let state = self
@@ -177,8 +199,9 @@ impl Engine {
         arms: &[StreamMatchArm],
         budget: &mut usize,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> bool {
-        let value = match self.evaluate_expr(scrutinee) {
+        let value = match self.evaluate_expr_with_backend(scrutinee, pure_backend) {
             Ok(value) => value,
             Err(error) => {
                 Self::diagnose_runtime_error(error, output);
@@ -191,12 +214,12 @@ impl Engine {
             };
             let previous = self.fiber.env.clone();
             self.fiber.env.bind_all(bindings);
-            let guard_matches = arm
-                .guard
-                .as_ref()
-                .map_or(Ok(true), |guard| self.evaluate_bool(guard));
+            let guard_matches = arm.guard.as_ref().map_or(Ok(true), |guard| {
+                self.evaluate_bool_with_backend(guard, pure_backend)
+            });
             if matches!(guard_matches, Ok(true)) {
-                let should_continue = self.execute_stream_ops(stream, &arm.ops, budget, output);
+                let should_continue =
+                    self.execute_stream_ops(stream, &arm.ops, budget, output, pure_backend);
                 self.fiber.env = previous;
                 return should_continue;
             }
@@ -235,7 +258,16 @@ impl Engine {
         &mut self,
         expr: &RuntimeExpr,
     ) -> Result<String, RuntimeEvalError> {
-        match self.evaluate_expr(expr)? {
+        let mut pure_backend = crate::pure::VmRuntimePureCallBackend::default();
+        self.evaluate_queue_target_with_backend(expr, &mut pure_backend)
+    }
+
+    pub(super) fn evaluate_queue_target_with_backend(
+        &mut self,
+        expr: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<String, RuntimeEvalError> {
+        match self.evaluate_expr_with_backend(expr, pure_backend)? {
             RuntimeValue::EntityRef(target) | RuntimeValue::String(target) => {
                 if self
                     .fiber

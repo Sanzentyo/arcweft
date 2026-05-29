@@ -4,6 +4,7 @@ use super::{
     RuntimeStepInput, RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey,
     TaskPolicy, TaskPriority, TaskSpec,
 };
+use crate::pure::RuntimePureCallBackend;
 use crate::task::{
     AssetRequest, AudioDecodeRequest, FileReadBytesRequest, FileReadTextRequest,
     FileWriteBytesRequest, FileWriteTextRequest, HostTaskArgTemplate, HostTaskRequest,
@@ -17,6 +18,7 @@ impl Engine {
         input: &RuntimeStepInput,
         events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
+        _pure_backend: &mut impl RuntimePureCallBackend,
     ) -> bool {
         match self.fiber.status.clone() {
             FlowFiberStatus::Waiting(state) => {
@@ -132,8 +134,9 @@ impl Engine {
         &mut self,
         target: &AwaitTarget,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Option<TaskSpec> {
-        let request = match self.evaluate_host_task_request(target) {
+        let request = match self.evaluate_host_task_request(target, pure_backend) {
             Ok(request) => request,
             Err(error) => {
                 self.fail_eval(error, output);
@@ -154,8 +157,9 @@ impl Engine {
     fn evaluate_host_task_request(
         &mut self,
         target: &AwaitTarget,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<HostTaskRequest, String> {
-        let args = self.evaluate_host_task_args(&target.request.args)?;
+        let args = self.evaluate_host_task_args(&target.request.args, pure_backend)?;
         let call = EvaluatedHostCall {
             capability: target.request.capability.0.as_str(),
             operation: target.request.operation.as_str(),
@@ -167,11 +171,12 @@ impl Engine {
     fn evaluate_host_task_args(
         &mut self,
         args: &[HostTaskArgTemplate],
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<Vec<EvaluatedHostArg>, String> {
         let mut evaluated = Vec::new();
         for arg in args {
             let value = self
-                .evaluate_expr(arg.value())
+                .evaluate_expr_with_backend(arg.value(), pure_backend)
                 .map_err(|error| error.to_string())?;
             if arg.is_spread() {
                 for value in spread_host_arg_values(value)? {

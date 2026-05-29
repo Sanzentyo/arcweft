@@ -48,6 +48,7 @@ impl Engine {
             executed_ops,
             pending_ops_before,
             pending_ops_after: self.fiber.pending_ops.len(),
+            pure: Default::default(),
             task_events_in: 0,
             source_events_in: 0,
             source_events_emitted: 0,

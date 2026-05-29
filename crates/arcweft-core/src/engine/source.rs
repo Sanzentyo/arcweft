@@ -3,12 +3,14 @@ use super::{
     RuntimeSourceEvent, RuntimeStepOutput, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp,
     SourcePlan, SourcePolicy, SourceRuntimeState, match_runtime_pattern,
 };
+use crate::pure::RuntimePureCallBackend;
 
 impl Engine {
     pub(super) fn apply_source_events(
         &mut self,
         events: Vec<RuntimeSourceEvent>,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) {
         for event in events {
             output.effects.source_events.push(event.clone());
@@ -19,7 +21,7 @@ impl Engine {
                 .find(|plan| plan.id == event.source)
                 .cloned();
             if let Some(plan) = plan {
-                self.dispatch_source_event(&plan, event, output);
+                self.dispatch_source_event(&plan, event, output, pure_backend);
             } else {
                 self.apply_unhandled_source_event(event, output);
             }
@@ -31,6 +33,7 @@ impl Engine {
         plan: &SourcePlan,
         event: RuntimeSourceEvent,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) {
         self.record_source_event_state(&event, output);
         let mut handled = false;
@@ -39,7 +42,7 @@ impl Engine {
                 continue;
             };
             handled = true;
-            self.execute_source_ops(&plan.id, ops, bindings, output);
+            self.execute_source_ops(&plan.id, ops, bindings, output, pure_backend);
         }
         if !handled && matches!(event.kind, SourceEventKind::Item(_)) {
             self.apply_unhandled_source_event(event, output);
@@ -95,12 +98,13 @@ impl Engine {
         ops: &[SourceOp],
         bindings: Vec<RuntimeBinding>,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) {
         let previous = self.fiber.env.clone();
         self.fiber.env.push_scope();
         self.fiber.env.bind_all(bindings);
         for op in ops {
-            self.execute_source_op(source, op, output);
+            self.execute_source_op(source, op, output, pure_backend);
         }
         self.fiber.env = previous;
     }
@@ -110,9 +114,10 @@ impl Engine {
         source: &SourceId,
         op: &SourceOp,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) {
         match op {
-            SourceOp::Yield(expr) => match self.evaluate_expr(expr) {
+            SourceOp::Yield(expr) => match self.evaluate_expr_with_backend(expr, pure_backend) {
                 Ok(value) => self.push_source_item(source, value.into(), output),
                 Err(error) => Self::diagnose_runtime_error(error, output),
             },

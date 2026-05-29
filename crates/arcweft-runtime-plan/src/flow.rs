@@ -6,6 +6,7 @@ use crate::host_request::lower_host_task_request;
 use crate::labels::expr_label;
 use crate::line_task::{lower_line_plan, lower_line_plan_statements};
 use crate::pattern::lower_runtime_pattern;
+use crate::pure::{PureHelperCandidate, lower_pure_helper_candidates};
 use crate::source::lower_source_plan;
 use crate::stream::lower_stream_function;
 use arcweft_core::effect::LineEffectRequest;
@@ -13,8 +14,11 @@ use arcweft_core::line_task::{LineOutRequest, LineTaskGroup};
 use arcweft_core::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
     RuntimeEntryTarget, RuntimeFlow, RuntimeLineId, RuntimeMatchArm, RuntimePlan,
-    RuntimeRouteBinding, RuntimeRouteBindingSource, RuntimeRouteSpec,
+    RuntimePureHelper, RuntimePureHelperId, RuntimeRouteBinding, RuntimeRouteBindingSource,
+    RuntimeRouteSpec,
 };
+use arcweft_core::source::{SourceHandlerPlan, SourceOp, SourcePlan};
+use arcweft_core::stream::{StreamMatchArm, StreamOp, StreamPlan};
 use arcweft_core::task::{AwaitTarget, NeedId, TaskId};
 use arcweft_core::value::{RuntimeExpr, RuntimeValue};
 use arcweft_lang_hir::model::{
@@ -29,6 +33,7 @@ use arcweft_lang_hir::syntax::ast::{
     pattern::Pattern,
 };
 use arcweft_lang_hir::syntax::expr::Expr;
+use std::collections::BTreeMap;
 
 pub(crate) struct LoweredRuntimeFlows {
     pub(crate) flows: Vec<RuntimeFlow>,
@@ -42,6 +47,14 @@ pub(crate) struct LoweredRuntimeFlows {
 /// different story than the source describes.
 pub fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<RuntimePlanLowerError>> {
     let lowered_flows = lower_runtime_flows(module)?;
+    let pure_candidates = lower_pure_helper_candidates(module).map_err(|errors| {
+        errors
+            .into_iter()
+            .map(|error| RuntimePlanLowerError::new(error.to_string()))
+            .collect::<Vec<_>>()
+    })?;
+    let pure_helpers = runtime_pure_helpers(&pure_candidates);
+    let pure_map = pure_helper_map(&pure_helpers);
     let entries = lower_runtime_entries(module);
     let entry = implicit_entry_flow(&entries, &lowered_flows.flows);
     let stream_plans = module
@@ -60,10 +73,51 @@ pub fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<Runtime
         .collect::<Result<Vec<_>, _>>()?;
     RuntimePlan::new(entry, lowered_flows.flows, lowered_flows.line_task_groups)
         .map(|plan| {
-            plan.with_entries(entries)
-                .with_generation_plans(stream_plans, source_plans)
+            rewrite_runtime_plan_pure_calls(
+                plan.with_entries(entries)
+                    .with_generation_plans(stream_plans, source_plans)
+                    .with_pure_helpers(pure_helpers),
+                &pure_map,
+            )
         })
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
+}
+
+fn runtime_pure_helpers(candidates: &[PureHelperCandidate]) -> Vec<RuntimePureHelper> {
+    candidates
+        .iter()
+        .enumerate()
+        .map(|(index, candidate)| RuntimePureHelper {
+            id: RuntimePureHelperId(index),
+            name: candidate.name().to_owned(),
+            input_names: candidate.input_names().to_vec(),
+            expr: candidate.expr().clone(),
+            origin: candidate.origin(),
+        })
+        .collect()
+}
+
+fn pure_helper_map(helpers: &[RuntimePureHelper]) -> BTreeMap<String, RuntimePureHelperId> {
+    helpers
+        .iter()
+        .map(|helper| (helper.name.clone(), helper.id))
+        .collect()
+}
+
+fn rewrite_runtime_plan_pure_calls(
+    mut plan: RuntimePlan,
+    helpers: &BTreeMap<String, RuntimePureHelperId>,
+) -> RuntimePlan {
+    for flow in &mut plan.flows {
+        rewrite_flow_ops_pure_calls(&mut flow.ops, helpers);
+    }
+    for source in &mut plan.source_plans {
+        rewrite_source_plan_pure_calls(source, helpers);
+    }
+    for stream in &mut plan.stream_plans {
+        rewrite_stream_plan_pure_calls(stream, helpers);
+    }
+    plan
 }
 
 fn lower_runtime_entries(module: &HirModule) -> Vec<RuntimeEntrySpec> {
@@ -608,4 +662,263 @@ pub(crate) fn sanitize_task_id_part(name: &str) -> String {
 
 fn flow_runtime_id(id: &EntityRef) -> FlowRuntimeId {
     FlowRuntimeId(id.body().to_owned())
+}
+
+fn rewrite_flow_ops_pure_calls(
+    ops: &mut [FlowOp],
+    helpers: &BTreeMap<String, RuntimePureHelperId>,
+) {
+    for op in ops {
+        match op {
+            FlowOp::Let { expr, .. } => rewrite_expr_pure_calls(expr, helpers),
+            FlowOp::LetElse { expr, else_ops, .. } => {
+                rewrite_expr_pure_calls(expr, helpers);
+                rewrite_flow_ops_pure_calls(else_ops, helpers);
+            }
+            FlowOp::If {
+                condition,
+                then_ops,
+                else_ops,
+            } => {
+                rewrite_expr_pure_calls(condition, helpers);
+                rewrite_flow_ops_pure_calls(then_ops, helpers);
+                rewrite_flow_ops_pure_calls(else_ops, helpers);
+            }
+            FlowOp::IfLet {
+                expr,
+                guard,
+                then_ops,
+                else_ops,
+                ..
+            } => {
+                rewrite_expr_pure_calls(expr, helpers);
+                if let Some(guard) = guard {
+                    rewrite_expr_pure_calls(guard, helpers);
+                }
+                rewrite_flow_ops_pure_calls(then_ops, helpers);
+                rewrite_flow_ops_pure_calls(else_ops, helpers);
+            }
+            FlowOp::Match { scrutinee, arms } => {
+                rewrite_expr_pure_calls(scrutinee, helpers);
+                for arm in arms {
+                    if let Some(guard) = &mut arm.guard {
+                        rewrite_expr_pure_calls(guard, helpers);
+                    }
+                    rewrite_flow_ops_pure_calls(&mut arm.ops, helpers);
+                }
+            }
+            FlowOp::Loop { body }
+            | FlowOp::LetLoop { body, .. }
+            | FlowOp::LoopNext { body }
+            | FlowOp::Scope(body) => rewrite_flow_ops_pure_calls(body, helpers),
+            FlowOp::While { condition, body } | FlowOp::WhileNext { condition, body } => {
+                rewrite_expr_pure_calls(condition, helpers);
+                rewrite_flow_ops_pure_calls(body, helpers);
+            }
+            FlowOp::WhileLet {
+                expr, guard, body, ..
+            }
+            | FlowOp::WhileLetNext {
+                expr, guard, body, ..
+            } => {
+                rewrite_expr_pure_calls(expr, helpers);
+                if let Some(guard) = guard {
+                    rewrite_expr_pure_calls(guard, helpers);
+                }
+                rewrite_flow_ops_pure_calls(body, helpers);
+            }
+            FlowOp::For { source, body, .. } => {
+                rewrite_expr_pure_calls(source, helpers);
+                rewrite_flow_ops_pure_calls(body, helpers);
+            }
+            FlowOp::LetScope { value, ops, .. } => {
+                rewrite_expr_pure_calls(value, helpers);
+                rewrite_flow_ops_pure_calls(ops, helpers);
+            }
+            FlowOp::Break(Some(expr))
+            | FlowOp::GotoExpr(expr)
+            | FlowOp::ReturnExpr(expr)
+            | FlowOp::ExitScopeBind { expr, .. } => rewrite_expr_pure_calls(expr, helpers),
+            FlowOp::Bind(_)
+            | FlowOp::Dialogue { .. }
+            | FlowOp::Choice { .. }
+            | FlowOp::Await { .. }
+            | FlowOp::Effect(_)
+            | FlowOp::EnterScope
+            | FlowOp::ExitScope
+            | FlowOp::Break(None)
+            | FlowOp::Continue
+            | FlowOp::Goto(_)
+            | FlowOp::Return(_)
+            | FlowOp::Noop => {}
+        }
+    }
+}
+
+fn rewrite_source_plan_pure_calls(
+    source: &mut SourcePlan,
+    helpers: &BTreeMap<String, RuntimePureHelperId>,
+) {
+    rewrite_expr_pure_calls(&mut source.from, helpers);
+    for handler in &mut source.handlers {
+        let ops = match handler {
+            SourceHandlerPlan::Item { ops, .. }
+            | SourceHandlerPlan::Error { ops, .. }
+            | SourceHandlerPlan::Progress { ops, .. }
+            | SourceHandlerPlan::Disconnected { ops }
+            | SourceHandlerPlan::PermissionRevoked { ops }
+            | SourceHandlerPlan::End { ops } => ops,
+        };
+        rewrite_source_ops_pure_calls(ops, helpers);
+    }
+}
+
+fn rewrite_source_ops_pure_calls(
+    ops: &mut [SourceOp],
+    helpers: &BTreeMap<String, RuntimePureHelperId>,
+) {
+    for op in ops {
+        if let SourceOp::Yield(expr) = op {
+            rewrite_expr_pure_calls(expr, helpers);
+        }
+    }
+}
+
+fn rewrite_stream_plan_pure_calls(
+    stream: &mut StreamPlan,
+    helpers: &BTreeMap<String, RuntimePureHelperId>,
+) {
+    rewrite_stream_ops_pure_calls(&mut stream.ops, helpers);
+}
+
+fn rewrite_stream_ops_pure_calls(
+    ops: &mut [StreamOp],
+    helpers: &BTreeMap<String, RuntimePureHelperId>,
+) {
+    for op in ops {
+        match op {
+            StreamOp::Let { expr, .. }
+            | StreamOp::Yield { expr }
+            | StreamOp::Close { source: expr } => rewrite_expr_pure_calls(expr, helpers),
+            StreamOp::ForNext { source, body, .. } => {
+                rewrite_expr_pure_calls(source, helpers);
+                rewrite_stream_ops_pure_calls(body, helpers);
+            }
+            StreamOp::If {
+                condition,
+                then_ops,
+                else_ops,
+            } => {
+                rewrite_expr_pure_calls(condition, helpers);
+                rewrite_stream_ops_pure_calls(then_ops, helpers);
+                rewrite_stream_ops_pure_calls(else_ops, helpers);
+            }
+            StreamOp::Match { scrutinee, arms } => {
+                rewrite_expr_pure_calls(scrutinee, helpers);
+                for arm in arms {
+                    rewrite_stream_match_arm_pure_calls(arm, helpers);
+                }
+            }
+            StreamOp::Return | StreamOp::Noop => {}
+        }
+    }
+}
+
+fn rewrite_stream_match_arm_pure_calls(
+    arm: &mut StreamMatchArm,
+    helpers: &BTreeMap<String, RuntimePureHelperId>,
+) {
+    if let Some(guard) = &mut arm.guard {
+        rewrite_expr_pure_calls(guard, helpers);
+    }
+    rewrite_stream_ops_pure_calls(&mut arm.ops, helpers);
+}
+
+fn rewrite_expr_pure_calls(
+    expr: &mut RuntimeExpr,
+    helpers: &BTreeMap<String, RuntimePureHelperId>,
+) {
+    match expr {
+        RuntimeExpr::Call { callee, args } => {
+            for arg in args.iter_mut() {
+                rewrite_expr_pure_calls(arg, helpers);
+            }
+            if let Some(helper) = helpers.get(callee).copied() {
+                *expr = RuntimeExpr::PureCall {
+                    helper,
+                    args: std::mem::take(args),
+                };
+            }
+        }
+        RuntimeExpr::PureCall { args, .. }
+        | RuntimeExpr::Tuple(args)
+        | RuntimeExpr::BracketSeq(args) => {
+            for arg in args {
+                rewrite_expr_pure_calls(arg, helpers);
+            }
+        }
+        RuntimeExpr::Let {
+            expr: value, body, ..
+        } => {
+            rewrite_expr_pure_calls(value, helpers);
+            rewrite_expr_pure_calls(body, helpers);
+        }
+        RuntimeExpr::Record(fields) => {
+            for field in fields {
+                rewrite_expr_pure_calls(&mut field.value, helpers);
+            }
+        }
+        RuntimeExpr::Variant { payload, .. } => {
+            if let Some(payload) = payload {
+                rewrite_expr_pure_calls(payload, helpers);
+            }
+        }
+        RuntimeExpr::Field { target, .. } | RuntimeExpr::SpreadArg(target) => {
+            rewrite_expr_pure_calls(target, helpers);
+        }
+        RuntimeExpr::MethodCall { receiver, args, .. } => {
+            rewrite_expr_pure_calls(receiver, helpers);
+            for arg in args {
+                rewrite_expr_pure_calls(arg, helpers);
+            }
+        }
+        RuntimeExpr::Unary { expr, .. } => rewrite_expr_pure_calls(expr, helpers),
+        RuntimeExpr::Binary { lhs, rhs, .. } => {
+            rewrite_expr_pure_calls(lhs, helpers);
+            rewrite_expr_pure_calls(rhs, helpers);
+        }
+        RuntimeExpr::If {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            rewrite_expr_pure_calls(condition, helpers);
+            rewrite_expr_pure_calls(then_expr, helpers);
+            rewrite_expr_pure_calls(else_expr, helpers);
+        }
+        RuntimeExpr::IfLet {
+            expr,
+            guard,
+            then_expr,
+            else_expr,
+            ..
+        } => {
+            rewrite_expr_pure_calls(expr, helpers);
+            if let Some(guard) = guard {
+                rewrite_expr_pure_calls(guard, helpers);
+            }
+            rewrite_expr_pure_calls(then_expr, helpers);
+            rewrite_expr_pure_calls(else_expr, helpers);
+        }
+        RuntimeExpr::Match { scrutinee, arms } => {
+            rewrite_expr_pure_calls(scrutinee, helpers);
+            for arm in arms {
+                if let Some(guard) = &mut arm.guard {
+                    rewrite_expr_pure_calls(guard, helpers);
+                }
+                rewrite_expr_pure_calls(&mut arm.value, helpers);
+            }
+        }
+        RuntimeExpr::Value(_) | RuntimeExpr::Local(_) | RuntimeExpr::EntityRef(_) => {}
+    }
 }

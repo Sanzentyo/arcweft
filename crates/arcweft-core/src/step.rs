@@ -74,12 +74,25 @@ pub struct RuntimeStepStats {
     pub executed_ops: usize,
     pub pending_ops_before: usize,
     pub pending_ops_after: usize,
+    pub pure: RuntimePureCallStats,
     pub task_events_in: usize,
     pub source_events_in: usize,
     pub source_events_emitted: usize,
     pub stream_events_emitted: usize,
     pub line_effects: usize,
     pub diagnostics: usize,
+}
+
+/// Deterministic counters for runtime pure helper acceleration.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RuntimePureCallStats {
+    pub pure_calls: usize,
+    pub jit_calls: usize,
+    pub aot_calls: usize,
+    pub vm_calls: usize,
+    pub arg_stack_packs: usize,
+    pub arg_vec_allocations: usize,
+    pub fallbacks: usize,
 }
 
 /// Runtime stepping policy selected by hosts and CLI tooling.

@@ -13,6 +13,7 @@ pub struct RuntimePlan {
     pub entry_flow: Option<FlowRuntimeId>,
     pub entries: Vec<RuntimeEntrySpec>,
     pub flows: Vec<RuntimeFlow>,
+    pub pure_helpers: Vec<RuntimePureHelper>,
     pub line_task_groups: Vec<LineTaskGroup>,
     pub stream_plans: Vec<StreamPlan>,
     pub source_plans: Vec<SourcePlan>,
@@ -84,6 +85,27 @@ pub struct RuntimeLineId(pub String);
 pub struct RuntimeFlow {
     pub id: FlowRuntimeId,
     pub ops: Vec<FlowOp>,
+}
+
+/// Runtime identifier for a lowered deterministic pure helper.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimePureHelperId(pub usize);
+
+/// Lowered deterministic pure helper callable from runtime expressions.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimePureHelper {
+    pub id: RuntimePureHelperId,
+    pub name: String,
+    pub input_names: Vec<String>,
+    pub expr: RuntimeExpr,
+    pub origin: RuntimePureHelperOrigin,
+}
+
+/// Source of a runtime pure helper candidate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimePureHelperOrigin {
+    Annotated,
+    Inferred,
 }
 
 /// Runtime identifier for a lowered stream transform.
@@ -242,6 +264,7 @@ impl RuntimePlan {
             entry_flow,
             entries: Vec::new(),
             flows,
+            pure_helpers: Vec::new(),
             line_task_groups,
             stream_plans: Vec::new(),
             source_plans: Vec::new(),
@@ -260,6 +283,12 @@ impl RuntimePlan {
     }
 
     #[must_use]
+    pub fn with_pure_helpers(mut self, pure_helpers: Vec<RuntimePureHelper>) -> Self {
+        self.pure_helpers = pure_helpers;
+        self
+    }
+
+    #[must_use]
     pub fn with_entries(mut self, entries: Vec<RuntimeEntrySpec>) -> Self {
         self.entries = entries;
         self
@@ -270,6 +299,7 @@ impl RuntimePlan {
             entry_flow: None,
             entries: Vec::new(),
             flows: Vec::new(),
+            pure_helpers: Vec::new(),
             line_task_groups,
             stream_plans: Vec::new(),
             source_plans: Vec::new(),

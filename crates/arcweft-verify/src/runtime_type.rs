@@ -385,6 +385,7 @@ impl<'a> RuntimeTypeValidator<'a> {
             RuntimeExpr::Local(_)
             | RuntimeExpr::Field { .. }
             | RuntimeExpr::Call { .. }
+            | RuntimeExpr::PureCall { .. }
             | RuntimeExpr::SpreadArg(_) => RuntimeShape::Unknown,
             RuntimeExpr::EntityRef(_) => RuntimeShape::EntityRef,
             RuntimeExpr::Let { expr, body, .. } => {

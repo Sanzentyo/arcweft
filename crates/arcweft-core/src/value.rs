@@ -1,4 +1,5 @@
 use crate::pattern::RuntimePattern;
+use crate::plan::RuntimePureHelperId;
 use crate::time::LogicalDuration;
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -74,6 +75,10 @@ pub enum RuntimeExpr {
     },
     Call {
         callee: String,
+        args: Vec<RuntimeExpr>,
+    },
+    PureCall {
+        helper: RuntimePureHelperId,
         args: Vec<RuntimeExpr>,
     },
     SpreadArg(Box<RuntimeExpr>),
@@ -173,6 +178,16 @@ pub enum RuntimeEvalError {
     InvalidSpread(String),
     #[error("spread argument cannot be evaluated outside a call argument list")]
     SpreadOutsideCall,
+    #[error(
+        "runtime pure helper `{helper}` expected at most {max} fast-path argument(s), found {found}"
+    )]
+    TooManyPureArgs {
+        helper: String,
+        max: usize,
+        found: usize,
+    },
+    #[error("runtime pure helper id {0} does not exist")]
+    UnknownPureHelper(usize),
     #[error("operator `{op}` is not supported for {lhs} and {rhs}")]
     UnsupportedBinary {
         op: &'static str,
@@ -391,6 +406,7 @@ pub(crate) fn expr_runtime_label(expr: &RuntimeExpr) -> String {
         RuntimeExpr::Variant { name, .. } => format!(".{name}"),
         RuntimeExpr::Field { field, .. } => format!(".{field}"),
         RuntimeExpr::Call { callee, .. } => format!("{callee}()"),
+        RuntimeExpr::PureCall { helper, .. } => format!("pure#{}()", helper.0),
         RuntimeExpr::SpreadArg(expr) => format!("{}...", expr_runtime_label(expr)),
         RuntimeExpr::MethodCall { method, .. } => format!(".{method}()"),
         RuntimeExpr::Unary { op, .. } => runtime_unary_op_label(*op).to_owned(),

@@ -586,6 +586,41 @@ flow @flow.next next {
 }
 
 #[test]
+fn runtime_plan_rewrites_pure_function_calls_to_typed_pure_call() {
+    let tree = parse_ok(
+        r#"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    if base >= 3 { base * add(bonus, 2) } else { 0 }
+}
+
+fn inferred(base: i64) -> i64 {
+    base + 1
+}
+
+flow @flow.main main {
+    let explicit = score(3, 4)
+    let auto = inferred(explicit)
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("pure call fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("pure call runtime plan lowers");
+
+    assert_eq!(plan.pure_helpers.len(), 2);
+    let FlowOp::Let { expr, .. } = &plan.flows[0].ops[0] else {
+        panic!("expected explicit pure call let");
+    };
+    assert!(matches!(expr, RuntimeExpr::PureCall { helper, .. } if helper.0 == 0));
+    let FlowOp::Let { expr, .. } = &plan.flows[0].ops[1] else {
+        panic!("expected inferred pure call let");
+    };
+    assert!(matches!(expr, RuntimeExpr::PureCall { helper, .. } if helper.0 == 1));
+}
+
+#[test]
 fn runtime_plan_lowering_preserves_structured_if_and_match() {
     let tree = parse_ok(
         r#"

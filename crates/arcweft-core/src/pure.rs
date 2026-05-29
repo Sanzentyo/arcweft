@@ -1,3 +1,5 @@
+use crate::plan::RuntimePureHelper;
+use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeFieldValue,
     RuntimeUnaryOp, RuntimeValue, evaluate_binary, evaluate_unary, runtime_value_label,
@@ -37,6 +39,30 @@ pub struct PureFunctionStats {
     pub evaluated_binary_ops: usize,
 }
 
+/// Fixed-size integer argument pack for runtime pure helper fast paths.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeI64Args {
+    len: usize,
+    values: [i64; Self::MAX],
+}
+
+/// Runtime-facing backend for deterministic pure helper calls.
+pub trait RuntimePureCallBackend {
+    fn call_i64(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: RuntimeI64Args,
+    ) -> Result<Option<i64>, RuntimeEvalError>;
+
+    fn call_values(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[RuntimeValue],
+    ) -> Result<RuntimeValue, RuntimeEvalError>;
+
+    fn stats(&self) -> RuntimePureCallStats;
+}
+
 /// Backend contract for pure deterministic helper evaluation.
 pub trait PureFunctionBackend {
     fn kind(&self) -> PureFunctionBackendKind;
@@ -54,6 +80,12 @@ pub struct VmPureFunctionBackend;
 /// AOT backend for deterministic pure helpers.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct AotPureFunctionBackend;
+
+/// VM runtime backend used when no external pure accelerator is provided.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct VmRuntimePureCallBackend {
+    stats: RuntimePureCallStats,
+}
 
 /// Compiled AOT plan for the current deterministic `i64` pure-helper subset.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -188,6 +220,79 @@ impl PureFunctionBackend for AotPureFunctionBackend {
             value: RuntimeValue::Int(value),
             stats,
         })
+    }
+}
+
+impl RuntimeI64Args {
+    pub const MAX: usize = 4;
+
+    pub const fn new(values: [i64; Self::MAX], len: usize) -> Self {
+        Self { len, values }
+    }
+
+    pub const fn len(self) -> usize {
+        self.len
+    }
+
+    pub fn as_slice(&self) -> &[i64] {
+        &self.values[..self.len]
+    }
+}
+
+impl RuntimePureCallBackend for VmRuntimePureCallBackend {
+    fn call_i64(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: RuntimeI64Args,
+    ) -> Result<Option<i64>, RuntimeEvalError> {
+        self.stats.pure_calls += 1;
+        self.stats.vm_calls += 1;
+        self.stats.arg_stack_packs += 1;
+        let value = self.call_values(
+            helper,
+            &args
+                .as_slice()
+                .iter()
+                .copied()
+                .map(RuntimeValue::Int)
+                .collect::<Vec<_>>(),
+        )?;
+        match value {
+            RuntimeValue::Int(value) => Ok(Some(value)),
+            value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
+        }
+    }
+
+    fn call_values(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[RuntimeValue],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if args.len() != helper.input_names.len() {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: helper.input_names.len(),
+                found: args.len(),
+            });
+        }
+        self.stats.arg_vec_allocations += 1;
+        let request = PureFunctionRequest::new(
+            helper.name.clone(),
+            helper.expr.clone(),
+            helper
+                .input_names
+                .iter()
+                .cloned()
+                .zip(args.iter().cloned())
+                .map(|(name, value)| RuntimeBinding { name, value }),
+        );
+        VmPureFunctionBackend
+            .evaluate(&request)
+            .map(|result| result.value)
+    }
+
+    fn stats(&self) -> RuntimePureCallStats {
+        self.stats
     }
 }
 
@@ -481,6 +586,10 @@ fn compile_aot_i64_expr(
             helper_name,
             format!("call `{callee}` is outside the AOT i64 subset"),
         )),
+        RuntimeExpr::PureCall { .. } => Err(unsupported_aot(
+            helper_name,
+            "nested runtime pure calls are outside the AOT i64 subset",
+        )),
         other => Err(unsupported_aot(
             helper_name,
             format!("expression `{other:?}` is outside the AOT i64 subset"),
@@ -617,6 +726,10 @@ impl PureEvaluator {
             }),
             RuntimeExpr::Field { target, field } => self.evaluate_field_expr(target, field),
             RuntimeExpr::Call { callee, args } => self.evaluate_call_expr(callee, args),
+            RuntimeExpr::PureCall { .. } => Err(RuntimeEvalError::UnsupportedPure {
+                name: "pure call".to_owned(),
+                reason: "nested runtime pure calls require a runtime pure backend".to_owned(),
+            }),
             RuntimeExpr::SpreadArg(_) => Err(RuntimeEvalError::SpreadOutsideCall),
             RuntimeExpr::MethodCall {
                 receiver,

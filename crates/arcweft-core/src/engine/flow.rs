@@ -4,12 +4,18 @@ use super::{
     RuntimeEvalError, RuntimeExpr, RuntimePattern, RuntimeStepInput, RuntimeStepOutput,
     RuntimeValue, expr_runtime_label, run_line_task_group_for_input, runtime_value_label,
 };
+use crate::pure::RuntimePureCallBackend;
 
 impl Engine {
     // Keep the opcode dispatcher contiguous while the Phase 1 runtime surface is
     // still changing; extracting each arm now would obscure grammar coverage.
     #[allow(clippy::too_many_lines)]
-    pub(super) fn step_flow(&mut self, input: &RuntimeStepInput, output: &mut RuntimeStepOutput) {
+    pub(super) fn step_flow(
+        &mut self,
+        input: &RuntimeStepInput,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) {
         let (op, next) = if let Some(op) = self.fiber.pending_ops.pop_front() {
             (op, None)
         } else {
@@ -36,7 +42,7 @@ impl Engine {
                 self.advance_if_needed(next);
             }
             FlowOp::Let { pattern, expr } => {
-                self.evaluate_let(&pattern, &expr, output);
+                self.evaluate_let_with_backend(&pattern, &expr, output, pure_backend);
                 self.advance_if_needed(next);
             }
             FlowOp::LetElse {
@@ -44,10 +50,12 @@ impl Engine {
                 expr,
                 else_ops,
             } => {
-                match self.evaluate_expr(&expr).and_then(|value| {
-                    self.try_bind_pattern(&pattern, &value)
-                        .map(|matched| (matched, value))
-                }) {
+                match self
+                    .evaluate_expr_with_backend(&expr, pure_backend)
+                    .and_then(|value| {
+                        self.try_bind_pattern(&pattern, &value)
+                            .map(|matched| (matched, value))
+                    }) {
                     Ok((true, _)) => self.advance_if_needed(next),
                     Ok((false, value)) => {
                         self.advance_if_needed(next);
@@ -96,7 +104,7 @@ impl Engine {
                     task: target.task.clone(),
                 });
                 output.effects.line.extend(pending);
-                let Some(task) = self.await_task_spec(&target, output) else {
+                let Some(task) = self.await_task_spec(&target, output, pure_backend) else {
                     return;
                 };
                 output.requests.tasks.push(task);
@@ -112,7 +120,7 @@ impl Engine {
                 condition,
                 then_ops,
                 else_ops,
-            } => match self.evaluate_bool(&condition) {
+            } => match self.evaluate_bool_with_backend(&condition, pure_backend) {
                 Ok(true) => {
                     self.advance_if_needed(next);
                     self.push_scoped_ops(then_ops);
@@ -129,7 +137,12 @@ impl Engine {
                 guard,
                 then_ops,
                 else_ops,
-            } => match self.evaluate_if_let(&pattern, &expr, guard.as_ref()) {
+            } => match self.evaluate_if_let_with_backend(
+                &pattern,
+                &expr,
+                guard.as_ref(),
+                pure_backend,
+            ) {
                 Ok(Some(bindings)) => {
                     self.advance_if_needed(next);
                     self.push_scoped_ops_with_bindings(bindings, then_ops);
@@ -140,17 +153,19 @@ impl Engine {
                 }
                 Err(error) => self.fail_eval(error, output),
             },
-            FlowOp::Match { scrutinee, arms } => match self.evaluate_match(&scrutinee, &arms) {
-                Ok(Some((bindings, ops))) => {
-                    self.advance_if_needed(next);
-                    self.push_scoped_ops_with_bindings(bindings, ops);
+            FlowOp::Match { scrutinee, arms } => {
+                match self.evaluate_match_with_backend(&scrutinee, &arms, pure_backend) {
+                    Ok(Some((bindings, ops))) => {
+                        self.advance_if_needed(next);
+                        self.push_scoped_ops_with_bindings(bindings, ops);
+                    }
+                    Ok(None) => self.fail_eval(
+                        RuntimeEvalError::PatternMismatch(expr_runtime_label(&scrutinee)),
+                        output,
+                    ),
+                    Err(error) => self.fail_eval(error, output),
                 }
-                Ok(None) => self.fail_eval(
-                    RuntimeEvalError::PatternMismatch(expr_runtime_label(&scrutinee)),
-                    output,
-                ),
-                Err(error) => self.fail_eval(error, output),
-            },
+            }
             FlowOp::Loop { body } => {
                 self.advance_if_needed(next);
                 self.fiber.control_stack.push(FlowControlStackEntry {
@@ -174,35 +189,44 @@ impl Engine {
             FlowOp::LoopNext { body } => {
                 self.push_loop_iteration(body);
             }
-            FlowOp::While { condition, body } => match self.evaluate_bool(&condition) {
-                Ok(true) => {
-                    self.advance_if_needed(next);
-                    self.fiber.control_stack.push(FlowControlStackEntry {
-                        kind: FlowControlStackEntryKind::While {
-                            condition: condition.clone(),
-                            body: body.clone(),
-                        },
-                    });
-                    self.push_while_iteration(condition, body);
+            FlowOp::While { condition, body } => {
+                match self.evaluate_bool_with_backend(&condition, pure_backend) {
+                    Ok(true) => {
+                        self.advance_if_needed(next);
+                        self.fiber.control_stack.push(FlowControlStackEntry {
+                            kind: FlowControlStackEntryKind::While {
+                                condition: condition.clone(),
+                                body: body.clone(),
+                            },
+                        });
+                        self.push_while_iteration(condition, body);
+                    }
+                    Ok(false) => self.advance_if_needed(next),
+                    Err(error) => self.fail_eval(error, output),
                 }
-                Ok(false) => self.advance_if_needed(next),
-                Err(error) => self.fail_eval(error, output),
-            },
-            FlowOp::WhileNext { condition, body } => match self.evaluate_bool(&condition) {
-                Ok(true) => {
-                    self.push_while_iteration(condition, body);
+            }
+            FlowOp::WhileNext { condition, body } => {
+                match self.evaluate_bool_with_backend(&condition, pure_backend) {
+                    Ok(true) => {
+                        self.push_while_iteration(condition, body);
+                    }
+                    Ok(false) => {
+                        self.pop_loop_frame();
+                    }
+                    Err(error) => self.fail_eval(error, output),
                 }
-                Ok(false) => {
-                    self.pop_loop_frame();
-                }
-                Err(error) => self.fail_eval(error, output),
-            },
+            }
             FlowOp::WhileLet {
                 pattern,
                 expr,
                 guard,
                 body,
-            } => match self.evaluate_if_let(&pattern, &expr, guard.as_ref()) {
+            } => match self.evaluate_if_let_with_backend(
+                &pattern,
+                &expr,
+                guard.as_ref(),
+                pure_backend,
+            ) {
                 Ok(Some(bindings)) => {
                     self.advance_if_needed(next);
                     self.fiber.control_stack.push(FlowControlStackEntry {
@@ -223,7 +247,12 @@ impl Engine {
                 expr,
                 guard,
                 body,
-            } => match self.evaluate_if_let(&pattern, &expr, guard.as_ref()) {
+            } => match self.evaluate_if_let_with_backend(
+                &pattern,
+                &expr,
+                guard.as_ref(),
+                pure_backend,
+            ) {
                 Ok(Some(bindings)) => {
                     self.push_while_let_iteration(pattern, expr, guard, body, bindings);
                 }
@@ -238,7 +267,7 @@ impl Engine {
                 body,
             } => {
                 self.advance_if_needed(next);
-                match self.evaluate_expr(&source) {
+                match self.evaluate_expr_with_backend(&source, pure_backend) {
                     Ok(RuntimeValue::BracketSeq(items)) => {
                         let mut ops = Vec::new();
                         for item in items {
@@ -280,7 +309,7 @@ impl Engine {
             }
             FlowOp::Break(expr) => {
                 let value = match expr {
-                    Some(expr) => match self.evaluate_expr(&expr) {
+                    Some(expr) => match self.evaluate_expr_with_backend(&expr, pure_backend) {
                         Ok(value) => value,
                         Err(error) => {
                             self.fail_eval(error, output);
@@ -308,10 +337,12 @@ impl Engine {
                 Err(error) => self.fail_eval(error, output),
             },
             FlowOp::Return(value) => self.return_value(value, output),
-            FlowOp::ReturnExpr(expr) => match self.evaluate_expr(&expr) {
-                Ok(value) => self.return_value(runtime_value_label(&value), output),
-                Err(error) => self.fail_eval(error, output),
-            },
+            FlowOp::ReturnExpr(expr) => {
+                match self.evaluate_expr_with_backend(&expr, pure_backend) {
+                    Ok(value) => self.return_value(runtime_value_label(&value), output),
+                    Err(error) => self.fail_eval(error, output),
+                }
+            }
             FlowOp::Effect(effect) => {
                 output.effects.line.push(effect);
                 if !self.apply_control_effects(output) {
@@ -330,7 +361,7 @@ impl Engine {
                 self.advance_if_needed(next);
             }
             FlowOp::ExitScopeBind { pattern, expr } => {
-                let value = match self.evaluate_expr(&expr) {
+                let value = match self.evaluate_expr_with_backend(&expr, pure_backend) {
                     Ok(value) => value,
                     Err(error) => {
                         self.fail_eval(error, output);
