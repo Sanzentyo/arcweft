@@ -62,6 +62,7 @@ pub enum HostTaskRequest {
     AudioDecode(AudioDecodeRequest),
     TtsSynthesis(TtsRequest),
     WasmCall(WasmCallRequest),
+    SystemInfo(SystemInfoRequest),
     Custom {
         capability: HostCapabilityId,
         operation: String,
@@ -69,6 +70,11 @@ pub enum HostTaskRequest {
     },
 }
 ```
+
+`system.core_count()`, `system.thread_count()`, and
+`system.available_parallelism()` lower to `HostTaskRequest::SystemInfo`. The
+request is still Sans I/O data in core; native adapters resolve it from the
+host runtime and report the numeric result as the awaited ready value.
 
 ## Task class
 
@@ -142,6 +148,7 @@ Scheduler JSON counters are adapter-visible and path-free:
 ```text
 submitted
 joined
+joined_completed
 dispatched
 completed
 failed

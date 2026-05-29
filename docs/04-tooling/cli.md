@@ -356,8 +356,12 @@ the profile's `backend`, `workers`, and `batch_min_len` values.
 Native file task execution, line-plan child task markers, and source-level flow
 `thread` markers go through the deterministic runtime scheduler before the CLI
 adapter performs completion work. `native_io.scheduler` reports submitted,
-joined, dispatched, completed, failed, cancelled, requested cancel, current
-in-flight, and maximum in-flight task counts without recording host paths.
+joined, joined-completed, dispatched, completed, failed, cancelled, requested
+cancel, current in-flight, and maximum in-flight task counts without recording
+host paths.
+Awaited `system.core_count()`, `system.thread_count()`, and
+`system.available_parallelism()` calls are completed by the CLI adapter as
+path-free system-info tasks.
 
 ## JIT
 

@@ -415,6 +415,10 @@ Current high-confidence state:
   `thread` blocks lower to a deterministic scheduler marker plus scoped
   cooperative body execution; detached flow threads remain rejected until the
   detach contract is checked explicitly.
+- Awaited `system.core_count()`, `system.thread_count()`, and
+  `system.available_parallelism()` calls now lower to typed system-info task
+  requests. The CLI adapter resolves them from the host runtime, reports
+  `system_info_ops`, and keeps the JSON output path-free.
 - Phase 2.0 headless observation state is implemented for the current runtime
   slice. `arcweft-core` records
   cumulative log, signal, metric, and event observations from emitted

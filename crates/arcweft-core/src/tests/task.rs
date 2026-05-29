@@ -117,6 +117,9 @@ fn host_task_request_covers_sans_io_adapter_work() {
             function: "rank".to_owned(),
             args: vec![RuntimePayload::from("choice")],
         }),
+        HostTaskRequest::SystemInfo(SystemInfoRequest {
+            kind: SystemInfoKind::CoreCount,
+        }),
         HostTaskRequest::custom("custom.capability", "op", [RuntimePayload::from("arg")]),
     ];
 

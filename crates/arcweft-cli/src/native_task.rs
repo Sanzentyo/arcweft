@@ -1,6 +1,6 @@
 use arcweft_core::task::{
-    HostTaskRequest, LogicalEpoch, SchedulerBudget, TaskEvent, TaskEventKind, TaskSequence,
-    TaskSpec,
+    HostTaskRequest, LogicalEpoch, SchedulerBudget, SystemInfoKind, TaskEvent, TaskEventKind,
+    TaskSequence, TaskSpec,
 };
 use arcweft_runtime_scheduler::{RuntimeScheduler, RuntimeSchedulerStats};
 use std::fs;
@@ -20,6 +20,7 @@ pub(crate) struct NativeTaskStats {
     pub(crate) failed_tasks: usize,
     pub(crate) read_ops: usize,
     pub(crate) write_ops: usize,
+    pub(crate) system_info_ops: usize,
     pub(crate) bytes_read: usize,
     pub(crate) bytes_written: usize,
     pub(crate) scheduler: NativeSchedulerStats,
@@ -34,6 +35,7 @@ pub(crate) struct NativeSchedulerStats {
     pub(crate) failed: usize,
     pub(crate) cancelled: usize,
     pub(crate) cancel_requested: usize,
+    pub(crate) joined_completed: usize,
     pub(crate) in_flight: usize,
     pub(crate) max_in_flight: usize,
 }
@@ -124,6 +126,10 @@ impl NativeTaskBridge {
                         operation,
                         ..
                     } if is_scheduler_marker(capability.0.as_str(), operation) => Ok(String::new()),
+                    HostTaskRequest::SystemInfo(request) => {
+                        self.stats.system_info_ops += 1;
+                        Ok(system_info_value(request.kind).to_string())
+                    }
                     _ => return None,
                 };
                 let kind = result.map_or_else(
@@ -177,7 +183,8 @@ fn can_complete_task(task: &TaskSpec) -> bool {
         HostTaskRequest::FileReadText(_)
         | HostTaskRequest::FileWriteText(_)
         | HostTaskRequest::FileReadBytes(_)
-        | HostTaskRequest::FileWriteBytes(_) => true,
+        | HostTaskRequest::FileWriteBytes(_)
+        | HostTaskRequest::SystemInfo(_) => true,
         HostTaskRequest::Custom {
             capability,
             operation,
@@ -191,6 +198,16 @@ fn is_scheduler_marker(capability: &str, operation: &str) -> bool {
     matches!(capability, "line_task" | "flow_thread") && operation == "run_child"
 }
 
+fn system_info_value(kind: SystemInfoKind) -> usize {
+    match kind {
+        SystemInfoKind::CoreCount
+        | SystemInfoKind::ThreadCount
+        | SystemInfoKind::AvailableParallelism => {
+            std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
+        }
+    }
+}
+
 impl From<RuntimeSchedulerStats> for NativeSchedulerStats {
     fn from(stats: RuntimeSchedulerStats) -> Self {
         Self {
@@ -201,6 +218,7 @@ impl From<RuntimeSchedulerStats> for NativeSchedulerStats {
             failed: stats.failed,
             cancelled: stats.cancelled,
             cancel_requested: stats.cancel_requested,
+            joined_completed: stats.joined_completed,
             in_flight: stats.in_flight,
             max_in_flight: stats.max_in_flight,
         }

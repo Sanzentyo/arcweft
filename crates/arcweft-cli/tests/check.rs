@@ -1249,6 +1249,55 @@ flow @flow.main main effects { fs.read(save), fs.write(save) } {
 }
 
 #[test]
+fn run_json_reports_runtime_system_info_tasks() {
+    let path = temp_arcw(
+        "system-info-task",
+        r#"
+extern capability system {
+    type SystemError
+    fn core_count() -> Need<String, SystemError> effects { system.read }
+    fn thread_count() -> Need<String, SystemError> effects { system.read }
+}
+entry cli @entry.main { run(@flow.main) }
+flow @flow.main main effects { system.read } {
+    let cores = try await system.core_count() with { error e => return "core_failed" }
+    let threads = try await system.thread_count() with { error e => return "thread_failed" }
+    log.info(threads)
+    return cores
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("8")
+        .arg("--json")
+        .output()
+        .expect("arcw run executes system info tasks");
+
+    assert!(
+        output.status.success(),
+        "system info task run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("system.core_count")
+            && stdout.contains("system.thread_count")
+            && stdout.contains("\"completed_tasks\": 2")
+            && stdout.contains("\"system_info_ops\": 2")
+            && stdout.contains("\"scheduler\"")
+            && stdout.contains("\"submitted\": 2")
+            && stdout.contains("\"in_flight\": 0"),
+        "run JSON should show runtime system info task completion: {stdout}"
+    );
+}
+
+#[test]
 fn run_json_observes_line_child_tasks_through_scheduler() {
     let path = temp_arcw(
         "line-child-scheduler",

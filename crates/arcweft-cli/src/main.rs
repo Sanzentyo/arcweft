@@ -3065,6 +3065,7 @@ struct NativeTaskStatsSamples {
     failed_tasks: Vec<usize>,
     read_ops: Vec<usize>,
     write_ops: Vec<usize>,
+    system_info_ops: Vec<usize>,
     bytes_read: Vec<usize>,
     bytes_written: Vec<usize>,
     scheduler: NativeSchedulerStatsSamples,
@@ -3076,6 +3077,7 @@ impl NativeTaskStatsSamples {
         self.failed_tasks.push(stats.failed_tasks);
         self.read_ops.push(stats.read_ops);
         self.write_ops.push(stats.write_ops);
+        self.system_info_ops.push(stats.system_info_ops);
         self.bytes_read.push(stats.bytes_read);
         self.bytes_written.push(stats.bytes_written);
         self.scheduler.push(stats.scheduler);
@@ -3087,6 +3089,7 @@ impl NativeTaskStatsSamples {
             failed_tasks: median_usize(&mut self.failed_tasks),
             read_ops: median_usize(&mut self.read_ops),
             write_ops: median_usize(&mut self.write_ops),
+            system_info_ops: median_usize(&mut self.system_info_ops),
             bytes_read: median_usize(&mut self.bytes_read),
             bytes_written: median_usize(&mut self.bytes_written),
             scheduler: self.scheduler.median(),
@@ -3103,6 +3106,7 @@ struct NativeSchedulerStatsSamples {
     failed: Vec<usize>,
     cancelled: Vec<usize>,
     cancel_requested: Vec<usize>,
+    joined_completed: Vec<usize>,
     in_flight: Vec<usize>,
     max_in_flight: Vec<usize>,
 }
@@ -3116,6 +3120,7 @@ impl NativeSchedulerStatsSamples {
         self.failed.push(stats.failed);
         self.cancelled.push(stats.cancelled);
         self.cancel_requested.push(stats.cancel_requested);
+        self.joined_completed.push(stats.joined_completed);
         self.in_flight.push(stats.in_flight);
         self.max_in_flight.push(stats.max_in_flight);
     }
@@ -3129,6 +3134,7 @@ impl NativeSchedulerStatsSamples {
             failed: median_usize(&mut self.failed),
             cancelled: median_usize(&mut self.cancelled),
             cancel_requested: median_usize(&mut self.cancel_requested),
+            joined_completed: median_usize(&mut self.joined_completed),
             in_flight: median_usize(&mut self.in_flight),
             max_in_flight: median_usize(&mut self.max_in_flight),
         }

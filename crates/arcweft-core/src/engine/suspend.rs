@@ -8,8 +8,8 @@ use crate::pure::RuntimePureCallBackend;
 use crate::task::{
     AssetRequest, AudioDecodeRequest, FileReadBytesRequest, FileReadTextRequest,
     FileWriteBytesRequest, FileWriteTextRequest, HostTaskArgTemplate, HostTaskRequest,
-    HttpFetchRequest, HttpRespondRequest, ProcessRunRequest, ShaderRequest, TtsRequest,
-    WasmCallRequest,
+    HttpFetchRequest, HttpRespondRequest, ProcessRunRequest, ShaderRequest, SystemInfoKind,
+    SystemInfoRequest, TtsRequest, WasmCallRequest,
 };
 
 impl Engine {
@@ -282,6 +282,13 @@ fn lower_evaluated_host_request(call: &EvaluatedHostCall<'_>) -> Result<HostTask
                 .map(|value| RuntimePayload::new(value.clone()))
                 .collect(),
         })),
+        ("system" | "runtime", "core_count") => Ok(system_info_request(SystemInfoKind::CoreCount)),
+        ("system" | "runtime", "thread_count") => {
+            Ok(system_info_request(SystemInfoKind::ThreadCount))
+        }
+        ("system" | "runtime", "available_parallelism") => {
+            Ok(system_info_request(SystemInfoKind::AvailableParallelism))
+        }
         _ => Ok(HostTaskRequest::custom(
             call.capability,
             call.operation,
@@ -290,6 +297,10 @@ fn lower_evaluated_host_request(call: &EvaluatedHostCall<'_>) -> Result<HostTask
                 .map(|arg| RuntimePayload::new(arg.value.clone())),
         )),
     }
+}
+
+fn system_info_request(kind: SystemInfoKind) -> HostTaskRequest {
+    HostTaskRequest::SystemInfo(SystemInfoRequest { kind })
 }
 
 fn lower_file_write_request(args: &[EvaluatedHostArg]) -> Result<HostTaskRequest, String> {

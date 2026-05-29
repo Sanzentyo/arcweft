@@ -24,6 +24,7 @@ pub struct RuntimeScheduler {
     pending: Vec<ScheduledTask>,
     in_flight: BTreeMap<TaskId, InFlightTask>,
     in_flight_by_key: BTreeMap<TaskKey, TaskId>,
+    joined_waiters: BTreeMap<TaskId, Vec<TaskId>>,
     cancel_scopes: BTreeSet<CancelScopeId>,
     stats: RuntimeSchedulerStats,
 }
@@ -45,6 +46,7 @@ pub struct RuntimeSchedulerStats {
     pub failed: usize,
     pub cancelled: usize,
     pub cancel_requested: usize,
+    pub joined_completed: usize,
     pub in_flight: usize,
     pub max_in_flight: usize,
 }
@@ -70,6 +72,7 @@ impl RuntimeScheduler {
             pending: Vec::new(),
             in_flight: BTreeMap::new(),
             in_flight_by_key: BTreeMap::new(),
+            joined_waiters: BTreeMap::new(),
             cancel_scopes: BTreeSet::new(),
             stats: RuntimeSchedulerStats {
                 submitted: 0,
@@ -79,6 +82,7 @@ impl RuntimeScheduler {
                 failed: 0,
                 cancelled: 0,
                 cancel_requested: 0,
+                joined_completed: 0,
                 in_flight: 0,
                 max_in_flight: 0,
             },
@@ -124,10 +128,13 @@ impl RuntimeScheduler {
 
     /// Completes in-flight tasks and returns replay-normalized task events.
     pub fn complete(&mut self, events: impl IntoIterator<Item = TaskEvent>) -> Vec<TaskEvent> {
-        let events = normalize_task_events(events.into_iter().collect());
+        let mut events = normalize_task_events(events.into_iter().collect());
+        let mut joined_events = Vec::new();
         for event in &events {
-            self.complete_one(event);
+            joined_events.extend(self.complete_one(event));
         }
+        events.extend(joined_events);
+        let events = normalize_task_events(events);
         self.refresh_in_flight_stats();
         events
     }
@@ -140,8 +147,14 @@ impl RuntimeScheduler {
     }
 
     fn submit_one(&mut self, spec: TaskSpec) {
-        if spec.policy == TaskPolicy::JoinSameKey && self.in_flight_by_key.contains_key(&spec.key) {
+        if let (TaskPolicy::JoinSameKey, Some(owner)) =
+            (&spec.policy, self.in_flight_by_key.get(&spec.key))
+        {
             self.stats.joined += 1;
+            self.joined_waiters
+                .entry(owner.clone())
+                .or_default()
+                .push(spec.id);
             return;
         }
         let order = self.next_order;
@@ -166,9 +179,9 @@ impl RuntimeScheduler {
         }
     }
 
-    fn complete_one(&mut self, event: &TaskEvent) {
+    fn complete_one(&mut self, event: &TaskEvent) -> Vec<TaskEvent> {
         let Some(task) = self.in_flight.remove(&event.task_id) else {
-            return;
+            return Vec::new();
         };
         if task.policy == TaskPolicy::JoinSameKey {
             self.in_flight_by_key.remove(&task.key);
@@ -184,6 +197,23 @@ impl RuntimeScheduler {
                 self.stats.cancelled += 1;
             }
         }
+        self.complete_joined_waiters(event)
+    }
+
+    fn complete_joined_waiters(&mut self, event: &TaskEvent) -> Vec<TaskEvent> {
+        let Some(waiters) = self.joined_waiters.remove(&event.task_id) else {
+            return Vec::new();
+        };
+        self.stats.joined_completed += waiters.len();
+        waiters
+            .into_iter()
+            .map(|task_id| TaskEvent {
+                logical_epoch: event.logical_epoch,
+                task_id,
+                sequence: event.sequence,
+                kind: event.kind.clone(),
+            })
+            .collect()
     }
 
     fn refresh_in_flight_stats(&mut self) {
@@ -237,6 +267,33 @@ mod tests {
         assert_eq!(scheduler.stats().submitted, 1);
         assert_eq!(scheduler.stats().joined, 1);
         assert_eq!(scheduler.stats().in_flight, 1);
+    }
+
+    #[test]
+    fn joined_tasks_receive_owner_completion_events() {
+        let mut scheduler = RuntimeScheduler::default();
+        scheduler.submit([task("owner", "asset.bg", TaskPolicy::JoinSameKey, 0)]);
+        scheduler.dispatch(SchedulerBudget { max_events: 8 });
+        scheduler.submit([
+            task("waiter-a", "asset.bg", TaskPolicy::JoinSameKey, 0),
+            task("waiter-b", "asset.bg", TaskPolicy::JoinSameKey, 0),
+        ]);
+
+        let events =
+            scheduler.complete([event("owner", 1, TaskEventKind::Ready("shared".to_owned()))]);
+        let ids = events
+            .iter()
+            .map(|event| event.task_id.0.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(ids, ["owner", "waiter-a", "waiter-b"]);
+        assert!(events.iter().all(|event| {
+            matches!(&event.kind, TaskEventKind::Ready(value) if value == "shared")
+        }));
+        assert_eq!(scheduler.stats().completed, 1);
+        assert_eq!(scheduler.stats().joined, 2);
+        assert_eq!(scheduler.stats().joined_completed, 2);
+        assert_eq!(scheduler.stats().in_flight, 0);
     }
 
     #[test]

@@ -105,6 +105,7 @@ pub enum HostTaskRequest {
     AudioDecode(AudioDecodeRequest),
     TtsSynthesis(TtsRequest),
     WasmCall(WasmCallRequest),
+    SystemInfo(SystemInfoRequest),
     Custom {
         capability: HostCapabilityId,
         operation: String,
@@ -185,6 +186,18 @@ pub struct WasmCallRequest {
     pub module: String,
     pub function: String,
     pub args: Vec<RuntimePayload>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SystemInfoRequest {
+    pub kind: SystemInfoKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SystemInfoKind {
+    CoreCount,
+    ThreadCount,
+    AvailableParallelism,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -327,6 +340,7 @@ impl HostTaskRequest {
             Self::WasmCall(request) => {
                 format!("wasm.call {}::{}", request.module, request.function)
             }
+            Self::SystemInfo(request) => format!("system.{}", request.kind.as_str()),
             Self::Custom {
                 capability,
                 operation,
@@ -349,7 +363,18 @@ impl HostTaskRequest {
             Self::AudioDecode(_) => TaskClass::AudioDecode,
             Self::TtsSynthesis(_) => TaskClass::TtsSynthesis,
             Self::WasmCall(_) => TaskClass::WasmCall,
+            Self::SystemInfo(_) => TaskClass::Cpu,
             Self::Custom { .. } => TaskClass::Background,
+        }
+    }
+}
+
+impl SystemInfoKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::CoreCount => "core_count",
+            Self::ThreadCount => "thread_count",
+            Self::AvailableParallelism => "available_parallelism",
         }
     }
 }
