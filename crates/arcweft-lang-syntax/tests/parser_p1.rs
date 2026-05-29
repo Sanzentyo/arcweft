@@ -11,7 +11,7 @@ fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::Typed
 use arcweft_lang_syntax::{
     ast::{flow::FlowItem, items::Item},
     expr::Expr,
-    types::{GenericParam, TypeRef, parse_fn_signature},
+    types::{FnParamKind, GenericParam, TypeRef, parse_fn_signature},
 };
 
 #[test]
@@ -47,6 +47,31 @@ fn function_signatures_reject_trailing_garbage() {
         .expect_err("trailing tokens after return type are rejected");
 
     assert!(error.to_string().contains("unexpected"));
+}
+
+#[test]
+fn function_signatures_keep_rest_parameters() {
+    let signature = parse_fn_signature("fn log(message: String, fields: ...LogField) -> Unit")
+        .expect("rest parameter signature parses");
+    let params = signature.param_groups()[0].params();
+
+    assert_eq!(params[0].kind(), FnParamKind::Fixed);
+    assert_eq!(params[1].kind(), FnParamKind::Rest);
+    assert!(matches!(params[1].ty(), TypeRef::Path(path) if path == "LogField"));
+}
+
+#[test]
+fn function_signatures_reject_misplaced_rest_parameters() {
+    let in_middle = parse_fn_signature("fn f(xs: ...Int, y: Int) -> Unit")
+        .expect_err("rest in the middle is rejected");
+    let curried = parse_fn_signature("fn f(xs: ...Int)(y: Int) -> Unit")
+        .expect_err("rest before a curried group is rejected");
+    let defaulted = parse_fn_signature("fn f(xs: ...Int = []) -> Unit")
+        .expect_err("defaulted rest is rejected");
+
+    assert!(in_middle.to_string().contains("last parameter"));
+    assert!(curried.to_string().contains("final group"));
+    assert!(defaulted.to_string().contains("default"));
 }
 
 #[test]

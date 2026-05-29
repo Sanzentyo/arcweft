@@ -23,7 +23,7 @@ use arcweft_lang_syntax::{
         },
     },
     expr::{Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind, Literal},
-    types::TypeRef,
+    types::{FnParam, FnParamKind, FnSignature, TypeRef},
 };
 use std::collections::{HashMap, HashSet};
 
@@ -189,6 +189,7 @@ struct TypeChecker<'a> {
     borrow_local_lifetimes: HashMap<String, BorrowLocalState>,
     global_symbols: HashMap<String, TypeKind>,
     global_functions: HashMap<String, TypeKind>,
+    global_function_signatures: HashMap<String, FunctionSignatureType>,
     global_function_effects: HashMap<String, Vec<String>>,
     flow_params: HashMap<String, HashSet<String>>,
     locals: HashMap<String, TypeKind>,
@@ -244,6 +245,25 @@ struct LoopContext {
     break_types: Vec<TypeKind>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct FunctionSignatureType {
+    params: Vec<FunctionParamType>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct FunctionParamType {
+    name: Option<String>,
+    ty: TypeKind,
+    kind: FnParamKind,
+    has_default: bool,
+}
+
+impl FunctionParamType {
+    const fn is_rest(&self) -> bool {
+        matches!(self.kind, FnParamKind::Rest)
+    }
+}
+
 impl TypeChecker<'_> {
     fn new(env: &TypeCheckEnv) -> TypeChecker<'_> {
         TypeChecker {
@@ -253,6 +273,7 @@ impl TypeChecker<'_> {
             borrow_local_lifetimes: HashMap::new(),
             global_symbols: HashMap::new(),
             global_functions: HashMap::new(),
+            global_function_signatures: HashMap::new(),
             global_function_effects: HashMap::new(),
             flow_params: HashMap::new(),
             locals: HashMap::new(),
@@ -310,6 +331,10 @@ impl TypeChecker<'_> {
             .or_else(|| self.env.function_type(name))
     }
 
+    fn function_signature(&self, name: &str) -> Option<&FunctionSignatureType> {
+        self.global_function_signatures.get(name)
+    }
+
     fn is_dialogue_callee(&self, callee: &str) -> bool {
         if is_dialogue_callee_type(self.symbol_type(callee)) {
             return true;
@@ -331,5 +356,69 @@ impl TypeChecker<'_> {
             "{context} `{}` must be a {expected:?} reference",
             entity.body()
         )));
+    }
+}
+
+fn function_signature_type(signature: &FnSignature) -> FunctionSignatureType {
+    let params = signature
+        .param_groups()
+        .iter()
+        .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
+        .map(function_param_type)
+        .collect();
+    FunctionSignatureType { params }
+}
+
+fn function_param_type(param: &FnParam) -> FunctionParamType {
+    FunctionParamType {
+        name: pattern_param_name(param.pattern()),
+        ty: type_ref_kind(param.ty()),
+        kind: param.kind(),
+        has_default: param.default().is_some(),
+    }
+}
+
+fn function_param_local_type(param: &FnParam) -> TypeKind {
+    let ty = type_ref_kind(param.ty());
+    if param.is_rest() {
+        TypeKind::Vec(Box::new(ty))
+    } else {
+        ty
+    }
+}
+
+fn pattern_param_name(pattern: &Pattern) -> Option<String> {
+    match pattern {
+        Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
+            Some(name.clone())
+        }
+        _ => None,
+    }
+}
+
+fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {
+    if expected == actual || matches!(expected, TypeKind::Named(name) if name == "_") {
+        return true;
+    }
+    match (expected, actual) {
+        (
+            TypeKind::Result {
+                ok: expected_ok,
+                error: expected_error,
+            },
+            TypeKind::Result {
+                ok: actual_ok,
+                error: actual_error,
+            },
+        ) => {
+            types_compatible(expected_ok, actual_ok)
+                && (types_compatible(expected_error, actual_error)
+                    || matches!(actual_error.as_ref(), TypeKind::Named(name) if name == "_"))
+        }
+        (TypeKind::Option(expected), TypeKind::Option(actual)) => {
+            types_compatible(expected, actual)
+                || matches!(actual.as_ref(), TypeKind::Named(name) if name == "_")
+        }
+        _ => false,
     }
 }

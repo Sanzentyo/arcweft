@@ -277,6 +277,72 @@ fn function_signatures_keep_default_parameters() {
 }
 
 #[test]
+fn function_rest_parameters_bind_vec_and_check_call_arity() {
+    let tree = parse_ok(
+        r#"
+fn log(message: String, fields: ...String) -> Unit {
+    let copied: Vec<String> = fields
+}
+
+flow @flow.ok ok {
+    log("loaded", "asset", "elapsed")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("rest parameter function lowers");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("rest parameters typecheck as Vec<T>");
+
+    let bad_tree = parse_ok(
+        r#"
+fn fixed(a: String, b: String) -> Unit {
+}
+
+fn variadic(prefix: String, fields: ...String) -> Unit {
+}
+
+flow @flow.bad bad {
+    fixed("one")
+    fixed("one", "two", "three")
+    variadic("ok", 1i32)
+    variadic(prefix = "ok", fields = "named")
+}
+"#,
+    );
+    let bad_hir = lower_to_hir(&bad_tree).expect("invalid rest call fixture still lowers");
+    let errors = typecheck_hir(&bad_hir, &TypeCheckEnv::new())
+        .expect_err("arity and rest argument issues are rejected");
+    let messages = errors
+        .iter()
+        .map(|error| error.message().to_owned())
+        .collect::<Vec<_>>();
+
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("missing required argument `b`")),
+        "expected missing fixed argument diagnostic, got {messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("too many positional arguments")),
+        "expected too many argument diagnostic, got {messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("must have type String")),
+        "expected rest item type diagnostic, got {messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("rest parameter `fields` is positional-only")),
+        "expected named rest diagnostic, got {messages:?}"
+    );
+}
+
+#[test]
 fn parses_documented_state_reducer_and_view_items() {
     let tree = parse_ok(
         r"

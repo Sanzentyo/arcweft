@@ -7,9 +7,9 @@ use super::helpers::{
     well_known_runtime_method_type,
 };
 use super::{
-    BorrowLocalState, EntityKind, EntityRefSyntax, Expr, LifetimeScopeKind, Pattern, Stmt,
-    TypeCheckError, TypeChecker, TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext,
-    entity_kind,
+    BorrowLocalState, EntityKind, EntityRefSyntax, Expr, FunctionParamType, FunctionSignatureType,
+    LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker, TypeJudgmentRule,
+    TypeJudgmentSubject, TypeKind, YieldContext, entity_kind, types_compatible,
 };
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{BinaryOp, ComputationBlockKind, MatchExprArm, UnaryOp};
@@ -475,15 +475,13 @@ impl TypeChecker<'_> {
                 .cloned()
                 .or_else(|| well_known_runtime_method_type(&name))
         {
+            let signature = self.function_signature(&name).cloned();
             self.check_virtual_path_call(&name, args);
             self.check_function_effects(&name);
-            let checked_args = if name == "event.emit" {
-                args.iter().skip(1).collect::<Vec<_>>()
+            if let Some(signature) = signature {
+                self.check_signature_call_args(&name, &signature, args);
             } else {
-                args.iter().collect::<Vec<_>>()
-            };
-            for arg in checked_args {
-                self.check_expr(arg);
+                self.check_untyped_function_args(&name, args);
             }
             return Some(ty);
         }
@@ -577,6 +575,126 @@ impl TypeChecker<'_> {
         }
     }
 
+    fn check_untyped_function_args(&mut self, name: &str, args: &[Expr]) {
+        let checked_args = if name == "event.emit" {
+            args.iter().skip(1).collect::<Vec<_>>()
+        } else {
+            args.iter().collect::<Vec<_>>()
+        };
+        for arg in checked_args {
+            self.check_expr(arg);
+        }
+    }
+
+    fn check_signature_call_args(
+        &mut self,
+        name: &str,
+        signature: &FunctionSignatureType,
+        args: &[Expr],
+    ) {
+        let fixed = signature
+            .params
+            .iter()
+            .filter(|param| !param.is_rest())
+            .collect::<Vec<_>>();
+        let rest = signature.params.iter().find(|param| param.is_rest());
+        let mut provided_fixed = vec![false; fixed.len()];
+        let mut positional_index = 0;
+
+        for arg in args {
+            match arg {
+                Expr::NamedArg {
+                    name: arg_name,
+                    value,
+                } => {
+                    self.check_named_signature_arg(
+                        name,
+                        arg_name,
+                        value,
+                        &fixed,
+                        rest,
+                        &mut provided_fixed,
+                    );
+                }
+                positional => {
+                    while positional_index < fixed.len() && provided_fixed[positional_index] {
+                        positional_index += 1;
+                    }
+                    if let Some(param) = fixed.get(positional_index) {
+                        provided_fixed[positional_index] = true;
+                        positional_index += 1;
+                        self.expect_signature_arg_type(name, positional, &param.ty);
+                    } else if let Some(param) = rest {
+                        self.expect_signature_arg_type(name, positional, &param.ty);
+                    } else {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "function `{name}` received too many positional arguments"
+                        )));
+                        self.check_expr(positional);
+                    }
+                }
+            }
+        }
+
+        for (index, param) in fixed.iter().enumerate() {
+            if !provided_fixed[index] && !param.has_default {
+                let label = param
+                    .name
+                    .as_deref()
+                    .map_or_else(|| format!("#{index}"), ToOwned::to_owned);
+                self.errors.push(TypeCheckError::new(format!(
+                    "function `{name}` missing required argument `{label}`"
+                )));
+            }
+        }
+    }
+
+    fn check_named_signature_arg(
+        &mut self,
+        function_name: &str,
+        arg_name: &str,
+        value: &Expr,
+        fixed: &[&FunctionParamType],
+        rest: Option<&FunctionParamType>,
+        provided_fixed: &mut [bool],
+    ) {
+        if rest.and_then(|param| param.name.as_deref()) == Some(arg_name) {
+            self.errors.push(TypeCheckError::new(format!(
+                "function `{function_name}` rest parameter `{arg_name}` is positional-only"
+            )));
+            self.check_expr(value);
+            return;
+        }
+        let Some(index) = fixed
+            .iter()
+            .position(|param| param.name.as_deref() == Some(arg_name))
+        else {
+            self.errors.push(TypeCheckError::new(format!(
+                "function `{function_name}` has no parameter named `{arg_name}`"
+            )));
+            self.check_expr(value);
+            return;
+        };
+        if provided_fixed[index] {
+            self.errors.push(TypeCheckError::new(format!(
+                "function `{function_name}` argument `{arg_name}` was provided more than once"
+            )));
+        }
+        provided_fixed[index] = true;
+        self.expect_signature_arg_type(function_name, value, &fixed[index].ty);
+    }
+
+    fn expect_signature_arg_type(&mut self, function_name: &str, arg: &Expr, expected: &TypeKind) {
+        let actual = self.check_expr_with_expected(arg, Some(expected));
+        if let Some(actual) = actual.as_ref()
+            && !types_compatible(expected, actual)
+        {
+            self.errors.push(TypeCheckError::new(format!(
+                "function `{function_name}` argument must have type {expected:?}, found {actual:?}"
+            )));
+        }
+    }
+
     fn check_assert_like_args(&mut self, args: &[Expr], name: &str) {
         if let Some(condition) = args.first() {
             self.expect_expr_type(condition, &TypeKind::Bool, &format!("{name} condition"));
@@ -628,15 +746,13 @@ impl TypeChecker<'_> {
                 .cloned()
                 .or_else(|| well_known_runtime_method_type(&dotted))
             {
+                let signature = self.function_signature(&dotted).cloned();
                 self.check_virtual_path_call(&dotted, args);
                 self.check_function_effects(&dotted);
-                let checked_args = if dotted == "event.emit" {
-                    args.iter().skip(1).collect::<Vec<_>>()
+                if let Some(signature) = signature {
+                    self.check_signature_call_args(&dotted, &signature, args);
                 } else {
-                    args.iter().collect::<Vec<_>>()
-                };
-                for arg in checked_args {
-                    self.check_expr(arg);
+                    self.check_untyped_function_args(&dotted, args);
                 }
                 return Some(ty);
             }

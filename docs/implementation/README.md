@@ -110,6 +110,10 @@ Current high-confidence state:
   curried parameter groups and `where` clauses; structured hook headers
   (`when`, `priority`, `once`, `effects`); structured dialogue line options; and
   a parsed `dialogue defaults` top-level declaration.
+- `pro_review28.md`: adopted the first general variadic signature slice as
+  `param: ...T`. Syntax stores rest parameters as parameter kind, semantic
+  checking binds them as `Vec<T>`, and function-call checking consumes remaining
+  positional arguments as rest items without adding call-site spread syntax yet.
 - `pro_review7.md`: adopted rowan-compatible lossless CST as the public parsing
   foundation for `arcweft-lang-syntax`, with `ParsedSource` returning syntax,
   typed syntax views, diagnostics, source text metadata, and line index even for

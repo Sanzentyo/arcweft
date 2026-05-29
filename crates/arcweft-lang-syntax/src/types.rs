@@ -62,7 +62,17 @@ pub struct FnParam {
     doc: Option<DocBlock>,
     pattern: Pattern,
     ty: TypeRef,
+    kind: FnParamKind,
     default: Option<Expr>,
+}
+
+/// Function parameter arity role.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FnParamKind {
+    /// A normal fixed parameter.
+    Fixed,
+    /// A positional rest parameter declared as `name: ...T`.
+    Rest,
 }
 
 /// One `where` clause predicate.
@@ -150,6 +160,7 @@ fn parse_fn_param_groups(source: &str) -> Result<(Vec<FnParamGroup>, &str), Type
     if groups.is_empty() {
         return Err(TypeParseError::new("expected parameter list"));
     }
+    validate_rest_parameters(&groups)?;
     Ok((groups, rest))
 }
 
@@ -159,6 +170,7 @@ fn parse_fn_param(source: &str) -> Result<FnParam, TypeParseError> {
             doc: None,
             pattern: Pattern::Ident("self".to_owned()),
             ty: TypeRef::Path("Self".to_owned()),
+            kind: FnParamKind::Fixed,
             default: None,
         });
     }
@@ -169,12 +181,53 @@ fn parse_fn_param(source: &str) -> Result<FnParam, TypeParseError> {
         .map_or((ty.trim(), None), |(ty, default)| {
             (ty.trim(), parse_expr(default.trim()).ok())
         });
+    let (kind, ty) = ty
+        .strip_prefix("...")
+        .map_or((FnParamKind::Fixed, ty), |rest_ty| {
+            (FnParamKind::Rest, rest_ty.trim_start())
+        });
+    if ty.is_empty() {
+        return Err(TypeParseError::new(
+            "expected rest parameter type after `...`",
+        ));
+    }
+    if kind == FnParamKind::Rest && default.is_some() {
+        return Err(TypeParseError::new(
+            "rest parameter cannot declare a default value",
+        ));
+    }
     Ok(FnParam {
         doc,
         pattern: parse_pattern(pattern),
         ty: parse_type_ref(ty)?,
+        kind,
         default,
     })
+}
+
+fn validate_rest_parameters(groups: &[FnParamGroup]) -> Result<(), TypeParseError> {
+    let mut rest_count = 0;
+    let final_group_index = groups.len().saturating_sub(1);
+    for (group_index, group) in groups.iter().enumerate() {
+        let final_param_index = group.params.len().saturating_sub(1);
+        for (param_index, param) in group.params.iter().enumerate() {
+            if param.kind != FnParamKind::Rest {
+                continue;
+            }
+            rest_count += 1;
+            if rest_count > 1 {
+                return Err(TypeParseError::new(
+                    "signature can declare at most one rest parameter",
+                ));
+            }
+            if group_index != final_group_index || param_index != final_param_index {
+                return Err(TypeParseError::new(
+                    "rest parameter must be the last parameter of the final group",
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn take_param_doc(source: &str) -> (Option<DocBlock>, &str) {
@@ -391,6 +444,16 @@ impl FnParam {
     /// Parameter type annotation.
     pub const fn ty(&self) -> &TypeRef {
         &self.ty
+    }
+
+    /// Parameter arity role.
+    pub const fn kind(&self) -> FnParamKind {
+        self.kind
+    }
+
+    /// Whether this parameter is a positional rest parameter.
+    pub const fn is_rest(&self) -> bool {
+        matches!(self.kind, FnParamKind::Rest)
     }
 
     pub const fn default(&self) -> Option<&Expr> {

@@ -3,8 +3,9 @@
 use super::{
     EffectScope, EntityKind, FlowKind, FunctionKind, HirModule, HirTopLevelDecl, LifetimeKey,
     LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker, TypeKind, YieldContext,
-    choice_output_type, entity_kind_for_decl, ident_pattern_name, stream_return_types,
-    type_ref_kind, validate_typecheck_ready,
+    choice_output_type, entity_kind_for_decl, function_param_local_type, function_signature_type,
+    ident_pattern_name, stream_return_types, type_ref_kind, types_compatible,
+    validate_typecheck_ready,
 };
 use arcweft_lang_syntax::ast::items::{EntryItem, EntryRouteBinding, EntryRouteBindingSource};
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
@@ -43,7 +44,10 @@ impl TypeChecker<'_> {
             if let Some(signature) = flow.signature() {
                 for group in signature.param_groups() {
                     for param in group.params() {
-                        self.bind_function_param(param.pattern(), &type_ref_kind(param.ty()));
+                        self.bind_function_param(
+                            param.pattern(),
+                            &function_param_local_type(param),
+                        );
                     }
                 }
             }
@@ -78,7 +82,7 @@ impl TypeChecker<'_> {
             self.active_presentation_defaults.clear();
             for group in function.signature().param_groups() {
                 for param in group.params() {
-                    self.bind_function_param(param.pattern(), &type_ref_kind(param.ty()));
+                    self.bind_function_param(param.pattern(), &function_param_local_type(param));
                 }
             }
             for contract in function.contracts() {
@@ -174,6 +178,8 @@ impl TypeChecker<'_> {
                     .map_or(TypeKind::Unit, type_ref_kind);
                 let name = format!("{}.{}", item.id(), function.signature().name());
                 self.global_functions.insert(name.clone(), return_type);
+                self.global_function_signatures
+                    .insert(name.clone(), function_signature_type(function.signature()));
                 self.global_function_effects.insert(
                     name,
                     function
@@ -195,6 +201,10 @@ impl TypeChecker<'_> {
                 .map_or(TypeKind::Unit, type_ref_kind);
             self.global_functions
                 .insert(function.name().to_owned(), return_type);
+            self.global_function_signatures.insert(
+                function.name().to_owned(),
+                function_signature_type(function.signature()),
+            );
         }
     }
 
@@ -532,31 +542,4 @@ fn route_path_params(path: &str) -> HashSet<String> {
         .filter(|name| !name.is_empty())
         .map(ToOwned::to_owned)
         .collect()
-}
-
-fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {
-    if expected == actual || matches!(expected, TypeKind::Named(name) if name == "_") {
-        return true;
-    }
-    match (expected, actual) {
-        (
-            TypeKind::Result {
-                ok: expected_ok,
-                error: expected_error,
-            },
-            TypeKind::Result {
-                ok: actual_ok,
-                error: actual_error,
-            },
-        ) => {
-            types_compatible(expected_ok, actual_ok)
-                && (types_compatible(expected_error, actual_error)
-                    || matches!(actual_error.as_ref(), TypeKind::Named(name) if name == "_"))
-        }
-        (TypeKind::Option(expected), TypeKind::Option(actual)) => {
-            types_compatible(expected, actual)
-                || matches!(actual.as_ref(), TypeKind::Named(name) if name == "_")
-        }
-        _ => false,
-    }
 }

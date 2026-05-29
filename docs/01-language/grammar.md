@@ -311,7 +311,7 @@ FunctionKind  := 'fn' | 'task fn' | 'dialogue fn' | 'stream fn'
 GenericParams := '<' GenericParam (',' GenericParam)* ','? '>'
 GenericParam  := Lifetime | IdentPath
 ParamGroup    := '(' Param (',' Param)* ','? ')'
-Param         := DocComment* Pattern ':' Type | 'self' | '&self' | '&mut self' | 'mut self'
+Param         := DocComment* Pattern ':' Type | DocComment* Pattern ':' '...' Type | 'self' | '&self' | '&mut self' | 'mut self'
 ReturnType    := '->' Type
 WhereClause   := 'where' WherePredicate (',' WherePredicate)* ','?
 WherePredicate:= Type ':' Type ('+' Type)*
@@ -320,6 +320,12 @@ WherePredicate:= Type ':' Type ('+' Type)*
 Multiple `ParamGroup` entries are curried parameter groups and are preserved as
 separate syntax groups. Unexpected tokens after the return type or where clause
 are syntax errors.
+
+`param: ...T` declares one positional rest parameter. A signature may contain at
+most one rest parameter, it must be the last parameter of the final parameter
+group, and it cannot declare a default value. The function body sees the binding
+as `Vec<T>`. Calls pass ordinary positional arguments; spread and named rest are
+not part of this syntax slice.
 
 `stream fn` must declare `-> Stream<T, E>`. Hand-written stream transforms do
 not return `Source<T, E>`; live external sources use `source` declarations so
