@@ -116,6 +116,13 @@ impl TypeChecker<'_> {
             arm_states.push(self.snapshot_borrow_state());
             self.locals = outer_locals;
         }
+        self.check_choice_match_exhaustive(
+            expr_type.as_ref(),
+            block
+                .arms()
+                .iter()
+                .map(arcweft_lang_hir::model::HirMatchArm::pattern),
+        );
         if arm_states.is_empty() {
             self.restore_borrow_state(base_borrow_snapshot);
         } else {

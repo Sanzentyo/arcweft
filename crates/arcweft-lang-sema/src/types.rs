@@ -113,6 +113,7 @@ pub enum TypeKind {
     FocusPatch,
     Named(String),
     Tuple(Vec<TypeKind>),
+    Choice(Vec<TypeKind>),
     Unit,
     Never,
 }

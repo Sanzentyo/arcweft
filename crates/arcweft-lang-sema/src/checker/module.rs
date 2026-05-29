@@ -4,13 +4,15 @@ use super::{
     EffectScope, EntityKind, FlowKind, FunctionKind, HirModule, HirTopLevelDecl, LifetimeKey,
     LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker, TypeKind, YieldContext,
     choice_output_type, entity_kind_for_decl, function_param_local_type, function_signature_type,
-    ident_pattern_name, stream_return_types, type_ref_kind, types_compatible,
-    validate_typecheck_ready,
+    ident_pattern_name, normalize_choice_type, stream_return_types, type_ref_kind,
+    types_compatible, validate_typecheck_ready,
 };
+use crate::checker::helpers::type_kind_label;
+use arcweft_lang_hir::model::{HirFlow, HirFunction};
 use arcweft_lang_syntax::ast::items::{EntryItem, EntryRouteBinding, EntryRouteBindingSource};
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
-use arcweft_lang_syntax::types::FnSignature;
-use std::collections::HashSet;
+use arcweft_lang_syntax::types::{FnSignature, TypeRef};
+use std::collections::{HashMap, HashSet};
 
 impl TypeChecker<'_> {
     pub(super) fn check_module(&mut self, module: &HirModule) {
@@ -28,11 +30,21 @@ impl TypeChecker<'_> {
         }
 
         self.bind_top_level_entity_aliases(module);
+        self.bind_top_level_type_aliases(module);
         self.bind_top_level_functions(module);
         self.bind_extern_capability_functions(module);
         self.flow_params = collect_flow_params(module);
 
-        for flow in module.flows() {
+        self.check_module_flows(module.flows());
+        self.check_module_functions(module.functions());
+        for declaration in module.declarations() {
+            self.check_top_level_decl(declaration);
+        }
+        self.check_flow_items(module.top_level_items());
+    }
+
+    fn check_module_flows(&mut self, flows: &[HirFlow]) {
+        for flow in flows {
             self.active_borrows.clear();
             self.borrow_local_lifetimes.clear();
             self.locals.clear();
@@ -42,6 +54,7 @@ impl TypeChecker<'_> {
             self.lifetime_guarantees.clear();
             self.dropped_lifetime_keys.clear();
             if let Some(signature) = flow.signature() {
+                self.check_signature_type_refs(signature);
                 for group in signature.param_groups() {
                     for param in group.params() {
                         self.bind_function_param(
@@ -73,13 +86,17 @@ impl TypeChecker<'_> {
             });
             self.effect_capabilities = effect_snapshot;
         }
-        for function in module.functions() {
+    }
+
+    fn check_module_functions(&mut self, functions: &[HirFunction]) {
+        for function in functions {
             self.active_borrows.clear();
             self.borrow_local_lifetimes.clear();
             self.locals.clear();
             self.loop_stack.clear();
             self.yield_stack.clear();
             self.active_presentation_defaults.clear();
+            self.check_signature_type_refs(function.signature());
             for group in function.signature().param_groups() {
                 for param in group.params() {
                     self.bind_function_param(param.pattern(), &function_param_local_type(param));
@@ -104,19 +121,15 @@ impl TypeChecker<'_> {
                 )
             });
             self.effect_capabilities = effect_snapshot;
-            if let (Some(expected), Some(actual)) = (expected_return, actual) {
-                if !types_compatible(&expected, &actual) {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "function `{}` returns {expected:?}, but body has {actual:?}",
-                        function.name()
-                    )));
-                }
+            if let (Some(expected), Some(actual)) = (expected_return, actual)
+                && !types_compatible(&expected, &actual)
+            {
+                self.errors.push(TypeCheckError::new(format!(
+                    "function `{}` returns {expected:?}, but body has {actual:?}",
+                    function.name()
+                )));
             }
         }
-        for declaration in module.declarations() {
-            self.check_top_level_decl(declaration);
-        }
-        self.check_flow_items(module.top_level_items());
     }
 
     fn check_function_body_expr(
@@ -166,12 +179,23 @@ impl TypeChecker<'_> {
         }
     }
 
+    fn bind_top_level_type_aliases(&mut self, module: &HirModule) {
+        for declaration in module.declarations() {
+            let HirTopLevelDecl::TypeAlias(item) = declaration else {
+                continue;
+            };
+            self.global_type_aliases
+                .insert(item.name().to_owned(), type_ref_kind(item.target()));
+        }
+    }
+
     fn bind_extern_capability_functions(&mut self, module: &HirModule) {
         for declaration in module.declarations() {
             let HirTopLevelDecl::ExternCapability(item) = declaration else {
                 continue;
             };
             for function in item.functions() {
+                self.check_signature_type_refs(function.signature());
                 let return_type = function
                     .signature()
                     .return_type()
@@ -195,6 +219,7 @@ impl TypeChecker<'_> {
 
     fn bind_top_level_functions(&mut self, module: &HirModule) {
         for function in module.functions() {
+            self.check_signature_type_refs(function.signature());
             let return_type = function
                 .signature()
                 .return_type()
@@ -262,6 +287,7 @@ impl TypeChecker<'_> {
                 }
             }
             HirTopLevelDecl::TypeAlias(item) => {
+                self.check_type_ref_shape(item.target());
                 let outer_locals = self.locals.clone();
                 self.locals
                     .insert("self".to_owned(), type_ref_kind(item.target()));
@@ -499,6 +525,134 @@ impl TypeChecker<'_> {
                 checker.line_out_depth -= 1;
             }
         });
+    }
+
+    fn check_signature_type_refs(&mut self, signature: &FnSignature) {
+        for param in signature
+            .param_groups()
+            .iter()
+            .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
+        {
+            self.check_type_ref_shape(param.ty());
+        }
+        if let Some(return_type) = signature.return_type() {
+            self.check_type_ref_shape(return_type);
+        }
+        for clause in signature.where_clauses() {
+            self.check_type_ref_shape(clause.subject());
+            for bound in clause.bounds() {
+                self.check_type_ref_shape(bound);
+            }
+        }
+    }
+
+    fn check_type_ref_shape(&mut self, ty: &TypeRef) {
+        match ty {
+            TypeRef::Choice(alternatives) => {
+                let mut erased = HashMap::<String, String>::new();
+                for alternative in alternatives {
+                    self.check_type_ref_shape(alternative);
+                    let source_label = crate::checker::helpers::type_ref_label(alternative);
+                    let erased_label =
+                        type_kind_label(&self.erase_aliases(&type_ref_kind(alternative)));
+                    if let Some(previous) =
+                        erased.insert(erased_label.clone(), source_label.clone())
+                    {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "anonymous sum alternatives `{previous}` and `{source_label}` erase to the same type `{erased_label}`"
+                        )));
+                    }
+                }
+            }
+            TypeRef::Generic { args, .. } => {
+                for arg in args {
+                    self.check_type_ref_shape(arg);
+                }
+            }
+            TypeRef::Ref { inner, .. } | TypeRef::Slice(inner) => self.check_type_ref_shape(inner),
+            TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) => {}
+        }
+    }
+
+    fn erase_aliases(&self, ty: &TypeKind) -> TypeKind {
+        self.erase_aliases_with_seen(ty, &mut HashSet::new())
+    }
+
+    fn erase_aliases_with_seen(&self, ty: &TypeKind, seen: &mut HashSet<String>) -> TypeKind {
+        match ty {
+            TypeKind::Named(name) => {
+                if !seen.insert(name.clone()) {
+                    return ty.clone();
+                }
+                self.global_type_aliases.get(name).map_or_else(
+                    || ty.clone(),
+                    |aliased| self.erase_aliases_with_seen(aliased, seen),
+                )
+            }
+            TypeKind::Vec(inner) => {
+                TypeKind::Vec(Box::new(self.erase_aliases_with_seen(inner, seen)))
+            }
+            TypeKind::Array { item, len } => TypeKind::Array {
+                item: Box::new(self.erase_aliases_with_seen(item, seen)),
+                len: len.clone(),
+            },
+            TypeKind::Slice(inner) => {
+                TypeKind::Slice(Box::new(self.erase_aliases_with_seen(inner, seen)))
+            }
+            TypeKind::Seq(inner) => {
+                TypeKind::Seq(Box::new(self.erase_aliases_with_seen(inner, seen)))
+            }
+            TypeKind::Map { kind, key, value } => TypeKind::Map {
+                kind: *kind,
+                key: Box::new(self.erase_aliases_with_seen(key, seen)),
+                value: Box::new(self.erase_aliases_with_seen(value, seen)),
+            },
+            TypeKind::BorrowRef { lifetime, inner } => TypeKind::BorrowRef {
+                lifetime: lifetime.clone(),
+                inner: Box::new(self.erase_aliases_with_seen(inner, seen)),
+            },
+            TypeKind::Need { ready, error } => TypeKind::Need {
+                ready: Box::new(self.erase_aliases_with_seen(ready, seen)),
+                error: Box::new(self.erase_aliases_with_seen(error, seen)),
+            },
+            TypeKind::Stream { item, error } => TypeKind::Stream {
+                item: Box::new(self.erase_aliases_with_seen(item, seen)),
+                error: Box::new(self.erase_aliases_with_seen(error, seen)),
+            },
+            TypeKind::Source { item, error } => TypeKind::Source {
+                item: Box::new(self.erase_aliases_with_seen(item, seen)),
+                error: Box::new(self.erase_aliases_with_seen(error, seen)),
+            },
+            TypeKind::Result { ok, error } => TypeKind::Result {
+                ok: Box::new(self.erase_aliases_with_seen(ok, seen)),
+                error: Box::new(self.erase_aliases_with_seen(error, seen)),
+            },
+            TypeKind::Option(inner) => {
+                TypeKind::Option(Box::new(self.erase_aliases_with_seen(inner, seen)))
+            }
+            TypeKind::ThreadHandle(inner) => {
+                TypeKind::ThreadHandle(Box::new(self.erase_aliases_with_seen(inner, seen)))
+            }
+            TypeKind::Shared(inner) => {
+                TypeKind::Shared(Box::new(self.erase_aliases_with_seen(inner, seen)))
+            }
+            TypeKind::Function { return_type } => TypeKind::Function {
+                return_type: Box::new(self.erase_aliases_with_seen(return_type, seen)),
+            },
+            TypeKind::Tuple(items) => TypeKind::Tuple(
+                items
+                    .iter()
+                    .map(|item| self.erase_aliases_with_seen(item, seen))
+                    .collect(),
+            ),
+            TypeKind::Choice(alternatives) => normalize_choice_type(
+                alternatives
+                    .iter()
+                    .map(|alternative| self.erase_aliases_with_seen(alternative, seen))
+                    .collect(),
+            ),
+            _ => ty.clone(),
+        }
     }
 }
 

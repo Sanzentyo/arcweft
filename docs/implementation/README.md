@@ -129,6 +129,12 @@ Current high-confidence state:
   `param: ...T`. Syntax stores rest parameters as parameter kind, semantic
   checking binds them as `Vec<T>`, and function-call checking consumes remaining
   positional arguments as rest items without adding call-site spread syntax yet.
+- `pro_review29.md`: adopted anonymous sum types as `A | B`, where alternatives
+  are types rather than named variant rows. Syntax and semantic checking now
+  reject duplicate alternatives and alias collapse, expected-type checking
+  injects values into a unique branch, `if`/`match` joins can produce anonymous
+  sums, typed match patterns eliminate branches, and runtime typed patterns
+  check value shape before binding.
 - `pro_review7.md`: adopted rowan-compatible lossless CST as the public parsing
   foundation for `arcweft-lang-syntax`, with `ParsedSource` returning syntax,
   typed syntax views, diagnostics, source text metadata, and line index even for

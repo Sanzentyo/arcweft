@@ -205,6 +205,7 @@ fn lower_evaluated_host_request(call: &EvaluatedHostCall<'_>) -> Result<HostTask
                 bytes: positional_bytes(call.args, 1)?,
             }))
         }
+        ("file" | "fs", "write") => lower_file_write_request(call.args),
         ("http", "fetch") => Ok(HostTaskRequest::HttpFetch(HttpFetchRequest {
             url: positional_string(call.args, 0)?,
             method: named_string(call.args, "method").unwrap_or_else(|| "GET".to_owned()),
@@ -260,6 +261,26 @@ fn lower_evaluated_host_request(call: &EvaluatedHostCall<'_>) -> Result<HostTask
             call.args
                 .iter()
                 .map(|arg| RuntimePayload::new(arg.value.clone())),
+        )),
+    }
+}
+
+fn lower_file_write_request(args: &[EvaluatedHostArg]) -> Result<HostTaskRequest, String> {
+    let path = positional_string(args, 0)?;
+    let body =
+        positional_arg(args, 1).ok_or_else(|| "missing positional argument #1".to_owned())?;
+    match body {
+        RuntimeValue::String(text) => Ok(HostTaskRequest::FileWriteText(FileWriteTextRequest {
+            path,
+            text: text.clone(),
+        })),
+        RuntimeValue::BracketSeq(_) => Ok(HostTaskRequest::FileWriteBytes(FileWriteBytesRequest {
+            path,
+            bytes: runtime_value_to_bytes(body)?,
+        })),
+        value => Err(format!(
+            "fs.write body must be String or byte sequence, found {}",
+            super::runtime_value_label(value)
         )),
     }
 }

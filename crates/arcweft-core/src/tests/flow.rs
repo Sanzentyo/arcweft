@@ -491,6 +491,159 @@ fn duplicate_pattern_bindings_fail_before_env_mutation() {
 }
 
 #[test]
+fn typed_runtime_patterns_match_value_shape() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.typed".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.typed".to_owned()),
+            ops: vec![FlowOp::Match {
+                scrutinee: RuntimeExpr::Local("payload".to_owned()),
+                arms: vec![
+                    RuntimeMatchArm {
+                        pattern: RuntimePattern::Typed {
+                            name: "text".to_owned(),
+                            ty: "String".to_owned(),
+                        },
+                        guard: None,
+                        ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Local("text".to_owned()))],
+                    },
+                    RuntimeMatchArm {
+                        pattern: RuntimePattern::Typed {
+                            name: "bytes".to_owned(),
+                            ty: "Bytes".to_owned(),
+                        },
+                        guard: None,
+                        ops: vec![FlowOp::Return("bytes".to_owned())],
+                    },
+                ],
+            }],
+        }],
+        Vec::new(),
+    )
+    .expect("typed pattern plan is valid");
+    let mut engine = Engine::new(plan);
+
+    super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            bindings: vec![RuntimeBinding {
+                name: "payload".to_owned(),
+                value: RuntimeValue::String("hello".to_owned()),
+            }],
+            ..RuntimeStepInput::default()
+        },
+    );
+    let mut output = RuntimeStepOutput::default();
+    for _ in 0..4 {
+        output = super::runtime_step(&mut engine, RuntimeStepInput::default());
+        if output
+            .flow_events
+            .iter()
+            .any(|event| matches!(event, FlowEvent::Return { .. }))
+        {
+            break;
+        }
+    }
+
+    assert_eq!(
+        output.flow_events,
+        vec![FlowEvent::Return {
+            value: "hello".to_owned()
+        }]
+    );
+}
+
+#[test]
+fn fs_write_dispatches_string_and_bytes_payloads() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.write".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.write".to_owned()),
+            ops: vec![
+                FlowOp::Await {
+                    binding: None,
+                    target: AwaitTarget {
+                        need: NeedId("need.text".to_owned()),
+                        task: TaskId("task.text".to_owned()),
+                        request: HostTaskRequestTemplate::new(
+                            "fs",
+                            "write",
+                            [
+                                HostTaskArgTemplate::positional(RuntimeExpr::Value(
+                                    RuntimeValue::String("save/out.txt".to_owned()),
+                                )),
+                                HostTaskArgTemplate::positional(RuntimeExpr::Value(
+                                    RuntimeValue::String("hello".to_owned()),
+                                )),
+                            ],
+                        ),
+                    },
+                    pending: Vec::new(),
+                },
+                FlowOp::Await {
+                    binding: None,
+                    target: AwaitTarget {
+                        need: NeedId("need.bytes".to_owned()),
+                        task: TaskId("task.bytes".to_owned()),
+                        request: HostTaskRequestTemplate::new(
+                            "fs",
+                            "write",
+                            [
+                                HostTaskArgTemplate::positional(RuntimeExpr::Value(
+                                    RuntimeValue::String("save/out.bin".to_owned()),
+                                )),
+                                HostTaskArgTemplate::positional(RuntimeExpr::Value(
+                                    RuntimeValue::BracketSeq(vec![
+                                        RuntimeValue::Int(1),
+                                        RuntimeValue::Int(2),
+                                    ]),
+                                )),
+                            ],
+                        ),
+                    },
+                    pending: Vec::new(),
+                },
+            ],
+        }],
+        Vec::new(),
+    )
+    .expect("fs.write plan is valid");
+    let mut engine = Engine::new(plan);
+
+    let text = super::runtime_step(&mut engine, RuntimeStepInput::default());
+    assert!(matches!(
+        &text.requests.tasks[0].request,
+        HostTaskRequest::FileWriteText(FileWriteTextRequest { path, text })
+            if path == "save/out.txt" && text == "hello"
+    ));
+
+    super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            task_events: vec![TaskEvent {
+                logical_epoch: LogicalEpoch(0),
+                task_id: TaskId("task.text".to_owned()),
+                sequence: TaskSequence(0),
+                kind: TaskEventKind::Ready("ok".to_owned()),
+            }],
+            ..RuntimeStepInput::default()
+        },
+    );
+    let mut bytes = RuntimeStepOutput::default();
+    for _ in 0..4 {
+        bytes = super::runtime_step(&mut engine, RuntimeStepInput::default());
+        if !bytes.requests.tasks.is_empty() {
+            break;
+        }
+    }
+    assert!(matches!(
+        &bytes.requests.tasks[0].request,
+        HostTaskRequest::FileWriteBytes(FileWriteBytesRequest { path, bytes })
+            if path == "save/out.bin" && bytes == &[1, 2]
+    ));
+}
+
+#[test]
 fn if_let_expression_binds_only_success_branch() {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.if_let".to_owned())),

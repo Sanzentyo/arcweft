@@ -29,6 +29,40 @@ fn route_title(route: Route) -> String {
 
 match は exhaustive check される。
 
+## anonymous sum
+
+匿名直和は variant 名ではなく型そのもので分岐する。
+
+```arcw
+fn read_payload(path: VirtualPath) -> String | Bytes {
+    if is_text(path) { read_text(path) } else { read_bytes(path) }
+}
+
+match read_payload(path) {
+    text: String => render_text(text)
+    bytes: Bytes => render_bytes(bytes)
+}
+```
+
+`A | B` は型だけで区別できる private helper、local return、error set、
+variadic argument に向く。branch 名が意味を持つ場合は `enum` を使う。
+
+```arcw
+// OK: type identity is enough
+String | Bytes
+IoError | ParseError
+
+// Not anonymous sum syntax. Use enum when labels matter.
+enum Payload {
+    Text(String),
+    Binary(Bytes),
+}
+```
+
+`String | String` や transparent alias が同じ型に消える `Name | Email` は
+取り出し時に区別できないためエラー。型レベルで区別したい場合は
+refined/nominal newtype を使う。
+
 ## derive
 
 ```arcw

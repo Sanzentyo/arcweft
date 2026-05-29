@@ -85,6 +85,11 @@ pub(crate) fn type_label(ty: &TypeRef) -> String {
         TypeRef::Never => "Never".to_owned(),
         TypeRef::ConstInt(value) => value.to_string(),
         TypeRef::Path(path) => path.clone(),
+        TypeRef::Choice(alternatives) => alternatives
+            .iter()
+            .map(type_label)
+            .collect::<Vec<_>>()
+            .join(" | "),
         TypeRef::Generic { base, args } => format!(
             "{base}<{}>",
             args.iter().map(type_label).collect::<Vec<_>>().join(", ")

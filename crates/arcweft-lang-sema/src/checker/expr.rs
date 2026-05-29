@@ -3,13 +3,14 @@
 use super::helpers::{
     array_len_matches, array_repeat_len_label, collection_index_type, expr_path_label,
     first_arg_type, is_drop_name, let_else_bindings, named_type_label, numeric_literal_suffix_type,
-    result_ok_type, well_known_capacity_method_type, well_known_field_type,
-    well_known_runtime_method_type,
+    result_ok_type, type_kind_label, type_ref_kind, well_known_capacity_method_type,
+    well_known_field_type, well_known_runtime_method_type,
 };
 use super::{
     BorrowLocalState, EntityKind, EntityRefSyntax, Expr, FunctionParamType, FunctionSignatureType,
     LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker, TypeJudgmentRule,
-    TypeJudgmentSubject, TypeKind, YieldContext, entity_kind, types_compatible,
+    TypeJudgmentSubject, TypeKind, YieldContext, entity_kind, normalize_choice_type,
+    types_compatible,
 };
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{BinaryOp, ComputationBlockKind, MatchExprArm, UnaryOp};
@@ -27,7 +28,10 @@ impl TypeChecker<'_> {
                 Some(expected),
             );
         }
-        if actual.as_ref() != Some(expected) {
+        if !actual
+            .as_ref()
+            .is_some_and(|actual| types_compatible(expected, actual))
+        {
             self.errors.push(TypeCheckError::new(format!(
                 "{context} must have type {expected:?}, found {actual:?}"
             )));
@@ -222,6 +226,11 @@ impl TypeChecker<'_> {
                     }
                 } else if let Some(expected) = expected.filter(|ty| ty.is_integer()) {
                     expected.clone()
+                } else if let Some(expected) = expected
+                    && let Some(ty) =
+                        unique_numeric_choice_alternative(expected, TypeKind::is_integer)
+                {
+                    ty
                 } else {
                     self.errors.push(TypeCheckError::new(
                         "unsuffixed integer literal requires an expected integer type".to_owned(),
@@ -247,6 +256,11 @@ impl TypeChecker<'_> {
                     }
                 } else if let Some(expected) = expected.filter(|ty| ty.is_float()) {
                     expected.clone()
+                } else if let Some(expected) = expected
+                    && let Some(ty) =
+                        unique_numeric_choice_alternative(expected, TypeKind::is_float)
+                {
+                    ty
                 } else {
                     self.errors.push(TypeCheckError::new(
                         "unsuffixed float literal requires an expected float type".to_owned(),
@@ -362,14 +376,18 @@ impl TypeChecker<'_> {
             let next_type = self
                 .check_expr_with_expected(item, expected_item)
                 .unwrap_or(TypeKind::Unit);
+            let next_item_type = expected_item
+                .filter(|expected| types_compatible(expected, &next_type))
+                .cloned()
+                .unwrap_or(next_type);
             match &item_type {
-                Some(existing) if existing != &next_type => {
+                Some(existing) if existing != &next_item_type => {
                     self.errors.push(TypeCheckError::new(format!(
-                        "sequence literal items must have the same type, found {existing:?} and {next_type:?}"
+                        "sequence literal items must have the same type, found {existing:?} and {next_item_type:?}"
                     )));
                 }
                 Some(_) => {}
-                None => item_type = Some(next_type),
+                None => item_type = Some(next_item_type),
             }
         }
         let item_type = item_type.unwrap_or(TypeKind::Unit);
@@ -904,7 +922,10 @@ impl TypeChecker<'_> {
 
     fn check_try_expr(&mut self, expr: &Expr) -> Option<TypeKind> {
         match self.check_expr(expr) {
-            Some(TypeKind::Result { ok, .. }) => Some(*ok),
+            Some(TypeKind::Result { ok, error }) => {
+                self.check_try_error(error.as_ref());
+                Some(*ok)
+            }
             Some(TypeKind::Named(name)) => result_ok_type(&name).or_else(|| {
                 self.errors.push(TypeCheckError::new(format!(
                     "`?` requires Result<T, E> or Option<T>, found Named({name:?})"
@@ -918,6 +939,18 @@ impl TypeChecker<'_> {
                 None
             }
             None => None,
+        }
+    }
+
+    fn check_try_error(&mut self, actual_error: &TypeKind) {
+        let Some(TypeKind::Result { error, .. }) = self.expected_returns.last() else {
+            return;
+        };
+        if !types_compatible(error, actual_error) {
+            self.errors.push(TypeCheckError::new(format!(
+                "`?` error type {actual_error:?} cannot be injected into return error type {:?}",
+                error.as_ref()
+            )));
         }
     }
 
@@ -1012,13 +1045,7 @@ impl TypeChecker<'_> {
         match (then_type, else_type) {
             (Some(TypeKind::Never), Some(else_type)) => Some(else_type),
             (Some(then_type), Some(TypeKind::Never)) => Some(then_type),
-            (Some(then_type), Some(else_type)) if then_type == else_type => Some(then_type),
-            (Some(then_type), Some(else_type)) => {
-                self.errors.push(TypeCheckError::new(format!(
-                    "if expression branches must have the same type, found {then_type:?} and {else_type:?}"
-                )));
-                None
-            }
+            (Some(then_type), Some(else_type)) => Some(join_branch_types(then_type, else_type)),
             _ => None,
         }
     }
@@ -1056,15 +1083,17 @@ impl TypeChecker<'_> {
                     inferred = Some(ty);
                 }
                 (Some(existing), Some(ty)) => {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "match expression arms must have the same type, found {existing:?} and {ty:?}"
-                    )));
-                    return None;
+                    inferred = Some(join_branch_types(existing.clone(), ty));
                 }
                 (_, None) => return None,
             }
             arm_states.push(self.snapshot_borrow_state());
         }
+        self.check_choice_match_exhaustive(
+            scrutinee_type.as_ref(),
+            arms.iter()
+                .map(arcweft_lang_syntax::expr::MatchExprArm::pattern),
+        );
         self.merge_borrow_state_from_paths(&base_borrow_snapshot, &arm_states);
         inferred
     }
@@ -1106,13 +1135,7 @@ impl TypeChecker<'_> {
             );
         }
         match (then_type, else_type) {
-            (Some(then_type), Some(else_type)) if then_type == else_type => Some(then_type),
-            (Some(then_type), Some(else_type)) => {
-                self.errors.push(TypeCheckError::new(format!(
-                    "if-let expression branches must have the same type, found {then_type:?} and {else_type:?}"
-                )));
-                None
-            }
+            (Some(then_type), Some(else_type)) => Some(join_branch_types(then_type, else_type)),
             _ => None,
         }
     }
@@ -1178,6 +1201,63 @@ impl TypeChecker<'_> {
                 }
             }
         }
+    }
+
+    pub(super) fn check_choice_match_exhaustive<'a>(
+        &mut self,
+        scrutinee_type: Option<&TypeKind>,
+        patterns: impl IntoIterator<Item = &'a Pattern>,
+    ) {
+        let Some(TypeKind::Choice(alternatives)) = scrutinee_type else {
+            return;
+        };
+        let covered = patterns
+            .into_iter()
+            .filter_map(pattern_choice_alternative)
+            .collect::<Vec<_>>();
+        let missing = alternatives
+            .iter()
+            .filter(|alternative| !covered.iter().any(|pattern| pattern == *alternative))
+            .map(type_kind_label)
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            self.errors.push(TypeCheckError::new(format!(
+                "non-exhaustive match on anonymous sum; missing alternative(s): {}",
+                missing.join(", ")
+            )));
+        }
+    }
+}
+
+fn pattern_choice_alternative(pattern: &Pattern) -> Option<TypeKind> {
+    match pattern {
+        Pattern::Typed { ty, .. } => Some(type_ref_kind(ty)),
+        _ => None,
+    }
+}
+
+fn unique_numeric_choice_alternative(
+    expected: &TypeKind,
+    predicate: impl Fn(&TypeKind) -> bool,
+) -> Option<TypeKind> {
+    let TypeKind::Choice(alternatives) = expected else {
+        return None;
+    };
+    let mut compatible_alternatives = alternatives
+        .iter()
+        .filter(|alternative| predicate(alternative));
+    let selected = compatible_alternatives.next()?;
+    compatible_alternatives
+        .next()
+        .is_none()
+        .then(|| selected.clone())
+}
+
+fn join_branch_types(left: TypeKind, right: TypeKind) -> TypeKind {
+    if left == right {
+        left
+    } else {
+        normalize_choice_type(vec![left, right])
     }
 }
 

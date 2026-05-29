@@ -58,6 +58,11 @@ pub(crate) fn collect_type_kind_lifetimes(ty: &TypeKind, lifetimes: &mut Vec<Str
                 collect_type_kind_lifetimes(item, lifetimes);
             }
         }
+        TypeKind::Choice(alternatives) => {
+            for alternative in alternatives {
+                collect_type_kind_lifetimes(alternative, lifetimes);
+            }
+        }
         _ => {}
     }
 }
@@ -82,6 +87,7 @@ pub(crate) fn type_contains_borrow_ref(ty: &TypeKind) -> bool {
             type_contains_borrow_ref(ready) || type_contains_borrow_ref(error)
         }
         TypeKind::Tuple(items) => items.iter().any(type_contains_borrow_ref),
+        TypeKind::Choice(alternatives) => alternatives.iter().any(type_contains_borrow_ref),
         _ => false,
     }
 }

@@ -35,6 +35,19 @@ The error path has type `!`, so the expression has type `T`.
 
 Arcweft also reserves prefix `try expr` as equivalent propagation syntax. It is mainly useful when another prefix construct must group before propagation, most notably `try await expr with { ... }`.
 
+When the surrounding result type uses an anonymous error sum, `?` widens only
+through exact branch injection:
+
+```arcw
+fn load_config(path: VirtualPath) -> Result<Config, FsError | ParseError> {
+    let text = read_text(path)?
+    parse_config(text)?
+}
+```
+
+No trait-based implicit conversion is used to choose anonymous sum branches; use
+an explicit conversion when the target branch is not the expression's exact type.
+
 ## Postfix `?` on Option
 
 In an `Option`-returning function:

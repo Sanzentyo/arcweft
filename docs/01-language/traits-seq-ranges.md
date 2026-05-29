@@ -132,6 +132,16 @@ fn selected_route(state: GameState) -> Result<Ref<Flow>, GameError> {
 }
 ```
 
+`Result` の error parameter は anonymous sum にできる。`?` は
+`FsError` や `ParseError` を期待される `FsError | ParseError` へ一意に注入する。
+
+```arcw
+fn load_config(path: VirtualPath) -> Result<Config, FsError | ParseError> {
+    let text = read_text(path)?
+    parse_config(text)?
+}
+```
+
 `Need<Result<T, E>, TaskError>` は `T` に暗黙変換できない。先に `await ... with { ... }` が必要。
 
 ```arcw

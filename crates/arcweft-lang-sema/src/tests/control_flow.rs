@@ -629,28 +629,34 @@ flow @flow.branching branching {
 }
 
 #[test]
-fn typecheck_rejects_value_if_branch_type_mismatch() {
+fn typecheck_joins_value_if_branch_types_as_anonymous_sum() {
     let tree = parse_ok(
         r#"
 flow @flow.branching branching {
     let face = if ready {
         "smile"
     } else {
-        1
+        1i64
     }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("mismatched value if fixture lowers");
-    let errors = typecheck_hir(
+    let hir = lower_to_hir(&tree).expect("anonymous sum value if fixture lowers");
+    let report = analyze_types(
         &hir,
         &TypeCheckEnv::new().with_symbol("ready", TypeKind::Bool),
-    )
-    .expect_err("mismatched value if branches are rejected");
-    assert!(errors.iter().any(|error| {
-        error
-            .message()
-            .contains("if expression branches must have the same type")
+    );
+    assert!(
+        report.diagnostics.is_empty(),
+        "anonymous sum value if typechecks: {:?}",
+        report.diagnostics
+    );
+    assert!(report.judgments.iter().any(|judgment| {
+        judgment.subject
+            == TypeJudgmentSubject::LetBinding {
+                pattern: "Ident(\"face\")".to_owned(),
+            }
+            && judgment.ty == TypeKind::Choice(vec![TypeKind::String, TypeKind::I64])
     }));
 }
 
@@ -788,7 +794,7 @@ flow @flow.branching branching {
 }
 
 #[test]
-fn typecheck_rejects_value_match_branch_type_mismatch() {
+fn typecheck_joins_value_match_branch_types_as_anonymous_sum() {
     let tree = parse_ok(
         r#"
 flow @flow.branching branching {
@@ -799,16 +805,23 @@ flow @flow.branching branching {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("mismatched value match fixture lowers");
-    let errors = typecheck_hir(
+    let hir = lower_to_hir(&tree).expect("anonymous sum value match fixture lowers");
+    let report = analyze_types(
         &hir,
         &TypeCheckEnv::new().with_symbol("selected", TypeKind::Ref(EntityKind::ChoiceOption)),
-    )
-    .expect_err("mismatched value match arms are rejected");
-    assert!(errors.iter().any(|error| {
-        error
-            .message()
-            .contains("match expression arms must have the same type")
+    );
+    assert!(
+        report.diagnostics.is_empty(),
+        "anonymous sum value match typechecks: {:?}",
+        report.diagnostics
+    );
+    assert!(report.judgments.iter().any(|judgment| {
+        judgment.subject
+            == TypeJudgmentSubject::LetBinding {
+                pattern: "Ident(\"route\")".to_owned(),
+            }
+            && judgment.ty
+                == TypeKind::Choice(vec![TypeKind::Ref(EntityKind::Flow), TypeKind::String])
     }));
 }
 

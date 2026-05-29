@@ -343,6 +343,123 @@ flow @flow.bad bad {
 }
 
 #[test]
+fn parses_anonymous_sum_type_refs_and_rejects_variant_rows() {
+    let choice = parse_type_ref("Result<Payload, FsError | ParseError>")
+        .expect("anonymous sum in generic argument parses");
+    assert!(matches!(
+        choice,
+        TypeRef::Generic { base, args }
+            if base == "Result"
+                && matches!(args.as_slice(), [_, TypeRef::Choice(alternatives)] if alternatives.len() == 2)
+    ));
+
+    let rest_signature =
+        parse_fn_signature("fn log(message: String, fields: ...(String | i64 | Duration)) -> Unit")
+            .expect("rest parameter choice parses");
+    let rest = &rest_signature.param_groups()[0].params()[1];
+    assert!(rest.is_rest());
+    assert!(matches!(
+        rest.ty(),
+        TypeRef::Choice(alternatives) if alternatives.len() == 3
+    ));
+
+    let duplicate = parse_type_ref("String | String").expect_err("duplicate branch is rejected");
+    assert!(
+        duplicate
+            .to_string()
+            .contains("duplicate alternative `String`")
+    );
+
+    let rows = parse_type_ref("Text(String) | Binary(Bytes)")
+        .expect_err("variant rows are not anonymous sums");
+    assert!(rows.to_string().contains("not variant rows"));
+}
+
+#[test]
+fn anonymous_sum_typechecking_injects_joins_and_checks_exhaustiveness() {
+    let tree = parse_ok(
+        r#"
+fn payload(flag: Bool) -> String | Bytes {
+    if flag { "text" } else { bytes }
+}
+
+fn log(message: String, fields: ...(String | i64 | Duration)) -> Unit {
+}
+
+flow @flow.ok ok(flag: Bool) {
+    let body: String | Bytes = "hello"
+    let joined = payload(flag)
+    let label = match body {
+        text: String => text
+        raw: Bytes => "bytes"
+    }
+    log("loaded", "asset", 3i64, 120ms)
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("anonymous sum fixture lowers");
+    typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new().with_symbol("bytes", TypeKind::Named("Bytes".to_owned())),
+    )
+    .expect("anonymous sum fixture typechecks");
+
+    let missing = parse_ok(
+        r#"
+flow @flow.bad bad {
+    let body: String | Bytes = "hello"
+    let label = match body {
+        text: String => text
+    }
+}
+"#,
+    );
+    let missing_hir = lower_to_hir(&missing).expect("missing fixture lowers");
+    let errors = typecheck_hir(&missing_hir, &TypeCheckEnv::new())
+        .expect_err("anonymous sum match must be exhaustive");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("non-exhaustive match"))
+    );
+}
+
+#[test]
+fn anonymous_sum_rejects_alias_collapse_and_numeric_ambiguity() {
+    let aliases = parse_ok(
+        r"
+type Name = String
+type Email = String
+type Contact = Name | Email
+",
+    );
+    let alias_hir = lower_to_hir(&aliases).expect("alias collapse fixture lowers");
+    let alias_errors =
+        typecheck_hir(&alias_hir, &TypeCheckEnv::new()).expect_err("alias collapse is rejected");
+    assert!(
+        alias_errors
+            .iter()
+            .any(|error| error.message().contains("erase to the same type"))
+    );
+
+    let numeric = parse_ok(
+        r"
+flow @flow.bad bad {
+    let value: i32 | i64 = 1
+}
+",
+    );
+    let numeric_hir = lower_to_hir(&numeric).expect("numeric fixture lowers");
+    let numeric_errors = typecheck_hir(&numeric_hir, &TypeCheckEnv::new())
+        .expect_err("ambiguous numeric branch is rejected");
+    assert!(numeric_errors.iter().any(|error| {
+        error
+            .message()
+            .contains("unsuffixed integer literal requires an expected integer type")
+    }));
+}
+
+#[test]
 fn parses_documented_state_reducer_and_view_items() {
     let tree = parse_ok(
         r"

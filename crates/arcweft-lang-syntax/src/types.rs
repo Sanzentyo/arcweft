@@ -22,6 +22,7 @@ pub enum TypeRef {
     Never,
     ConstInt(usize),
     Path(String),
+    Choice(Vec<TypeRef>),
     Generic {
         base: String,
         args: Vec<TypeRef>,
@@ -95,7 +96,7 @@ pub fn parse_type_ref(source: &str) -> Result<TypeRef, TypeParseError> {
     if source.is_empty() {
         return Err(TypeParseError::new("expected type"));
     }
-    Ok(parse_type_atom(source))
+    parse_type_choice(source)
 }
 
 /// Parses the head of a function signature, including generics and curried parameter groups.
@@ -245,12 +246,43 @@ fn take_param_doc(source: &str) -> (Option<DocBlock>, &str) {
     )
 }
 
-fn parse_type_atom(source: &str) -> TypeRef {
+fn parse_type_choice(source: &str) -> Result<TypeRef, TypeParseError> {
+    let alternatives = split_top_level_punctuation(source, '|');
+    if alternatives.len() <= 1 {
+        return parse_type_atom(source);
+    }
+    let mut labels = Vec::new();
+    let mut parsed = Vec::new();
+    for alternative in alternatives {
+        let alternative = alternative.trim();
+        if alternative.is_empty() {
+            return Err(TypeParseError::new(
+                "anonymous sum alternative cannot be empty",
+            ));
+        }
+        reject_variant_row_type(alternative)?;
+        let ty = parse_type_atom(alternative)?;
+        let label = type_ref_parse_label(&ty);
+        if labels.iter().any(|existing| existing == &label) {
+            return Err(TypeParseError::new(&format!(
+                "duplicate alternative `{label}` in anonymous sum"
+            )));
+        }
+        labels.push(label);
+        parsed.push(ty);
+    }
+    Ok(TypeRef::Choice(parsed))
+}
+
+fn parse_type_atom(source: &str) -> Result<TypeRef, TypeParseError> {
+    if let Some(inner) = parenthesized_type(source) {
+        return parse_type_ref(inner);
+    }
     if let Ok(value) = source.parse::<usize>() {
-        return TypeRef::ConstInt(value);
+        return Ok(TypeRef::ConstInt(value));
     }
     if matches!(source, "!" | "Never") {
-        return TypeRef::Never;
+        return Ok(TypeRef::Never);
     }
     if let Some(rest) = source.strip_prefix('&') {
         let rest = rest.trim_start();
@@ -259,27 +291,54 @@ fn parse_type_atom(source: &str) -> TypeRef {
         } else {
             (None, rest)
         };
-        return TypeRef::Ref {
+        return Ok(TypeRef::Ref {
             lifetime,
-            inner: Box::new(parse_type_atom(inner)),
-        };
+            inner: Box::new(parse_type_ref(inner)?),
+        });
     }
     if let Some(inner) = source
         .strip_prefix('[')
         .and_then(|value| value.strip_suffix(']'))
     {
-        return TypeRef::Slice(Box::new(parse_type_atom(inner.trim())));
+        return Ok(TypeRef::Slice(Box::new(parse_type_ref(inner.trim())?)));
     }
     if let Some((base, args)) = split_generic_type(source) {
-        return TypeRef::Generic {
+        return Ok(TypeRef::Generic {
             base: base.to_owned(),
             args: split_type_args(args)
                 .into_iter()
-                .map(parse_type_atom)
-                .collect(),
-        };
+                .map(parse_type_ref)
+                .collect::<Result<Vec<_>, _>>()?,
+        });
     }
-    TypeRef::Path(source.to_owned())
+    Ok(TypeRef::Path(source.to_owned()))
+}
+
+fn parenthesized_type(source: &str) -> Option<&str> {
+    source.strip_prefix('(')?;
+    let close = find_matching_punctuation(source, 0, '(', ')')?;
+    (close == source.len().saturating_sub(1)).then(|| source[1..close].trim())
+}
+
+fn reject_variant_row_type(source: &str) -> Result<(), TypeParseError> {
+    let Some(open) = find_top_level_punctuation(source, '(') else {
+        return Ok(());
+    };
+    let Some(close) = find_matching_punctuation(source, open, '(', ')') else {
+        return Ok(());
+    };
+    if close != source.len().saturating_sub(1) {
+        return Ok(());
+    }
+    let head = source[..open].trim();
+    if head.chars().next().is_some_and(char::is_uppercase)
+        && head.chars().all(|ch| ch.is_alphanumeric() || ch == '_')
+    {
+        return Err(TypeParseError::new(
+            "anonymous sum alternatives are types, not variant rows; use `A | B` or a nominal enum",
+        ));
+    }
+    Ok(())
 }
 
 fn split_generic_type(source: &str) -> Option<(&str, &str)> {
@@ -346,10 +405,39 @@ fn type_ref_has_whitespace_path(ty: &TypeRef) -> bool {
     match ty {
         TypeRef::Never | TypeRef::ConstInt(_) => false,
         TypeRef::Path(path) => path.chars().any(char::is_whitespace),
+        TypeRef::Choice(alternatives) => alternatives.iter().any(type_ref_has_whitespace_path),
         TypeRef::Generic { base, args } => {
             base.chars().any(char::is_whitespace) || args.iter().any(type_ref_has_whitespace_path)
         }
         TypeRef::Ref { inner, .. } | TypeRef::Slice(inner) => type_ref_has_whitespace_path(inner),
+    }
+}
+
+fn type_ref_parse_label(ty: &TypeRef) -> String {
+    match ty {
+        TypeRef::Never => "Never".to_owned(),
+        TypeRef::ConstInt(value) => value.to_string(),
+        TypeRef::Path(path) => path.clone(),
+        TypeRef::Choice(alternatives) => alternatives
+            .iter()
+            .map(type_ref_parse_label)
+            .collect::<Vec<_>>()
+            .join(" | "),
+        TypeRef::Generic { base, args } => format!(
+            "{base}<{}>",
+            args.iter()
+                .map(type_ref_parse_label)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        TypeRef::Ref { lifetime, inner } => {
+            let lifetime = lifetime
+                .as_ref()
+                .map(|lifetime| format!("'{} ", lifetime.name()))
+                .unwrap_or_default();
+            format!("&{lifetime}{}", type_ref_parse_label(inner))
+        }
+        TypeRef::Slice(inner) => format!("[{}]", type_ref_parse_label(inner)),
     }
 }
 

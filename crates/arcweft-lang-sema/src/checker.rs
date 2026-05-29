@@ -44,7 +44,7 @@ pub mod suspension;
 use helpers::{
     await_branch_pattern_type, choice_output_type, default_presentation_slot_family, entity_kind,
     entity_kind_for_decl, ident_pattern_name, is_character_entity_literal, is_dialogue_callee_type,
-    is_drop_callee, is_local_ident, iter_item_type, merge_line_output,
+    is_drop_callee, is_local_ident, iter_item_type, merge_line_output, normalize_choice_type,
     pattern_bindings_with_fallback, source_return_types, stmts_diverge, stream_return_types,
     type_ref_kind, typed_pattern_binding, unify_loop_break_types,
 };
@@ -191,6 +191,7 @@ struct TypeChecker<'a> {
     global_functions: HashMap<String, TypeKind>,
     global_function_signatures: HashMap<String, FunctionSignatureType>,
     global_function_effects: HashMap<String, Vec<String>>,
+    global_type_aliases: HashMap<String, TypeKind>,
     flow_params: HashMap<String, HashSet<String>>,
     locals: HashMap<String, TypeKind>,
     loop_stack: Vec<LoopContext>,
@@ -275,6 +276,7 @@ impl TypeChecker<'_> {
             global_functions: HashMap::new(),
             global_function_signatures: HashMap::new(),
             global_function_effects: HashMap::new(),
+            global_type_aliases: HashMap::new(),
             flow_params: HashMap::new(),
             locals: HashMap::new(),
             loop_stack: Vec::new(),
@@ -401,6 +403,17 @@ fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {
         return true;
     }
     match (expected, actual) {
+        (TypeKind::Choice(alternatives), TypeKind::Choice(actual_alternatives)) => {
+            actual_alternatives
+                .iter()
+                .all(|actual| choice_injection_target(alternatives, actual).is_some())
+        }
+        (TypeKind::Choice(alternatives), actual) => {
+            choice_injection_target(alternatives, actual).is_some()
+        }
+        (expected, TypeKind::Choice(alternatives)) => alternatives
+            .iter()
+            .all(|actual| types_compatible(expected, actual)),
         (
             TypeKind::Result {
                 ok: expected_ok,
@@ -421,4 +434,15 @@ fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {
         }
         _ => false,
     }
+}
+
+fn choice_injection_target<'a>(
+    alternatives: &'a [TypeKind],
+    actual: &TypeKind,
+) -> Option<&'a TypeKind> {
+    let mut compatible_alternatives = alternatives
+        .iter()
+        .filter(|alternative| types_compatible(alternative, actual));
+    let selected = compatible_alternatives.next()?;
+    compatible_alternatives.next().is_none().then_some(selected)
 }

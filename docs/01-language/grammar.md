@@ -303,6 +303,23 @@ HookEffects:= 'effects' Expr (',' Expr)*
 Dialogue defaults preserve structured assignment expressions for later style,
 window, voice, hook, and localization lowering.
 
+## Types
+
+```text
+Type        := TypeChoice
+TypeChoice  := TypeAtom ('|' TypeAtom)+ | TypeAtom
+TypeAtom    := NeverType | ConstInt | TypePath | GenericType | BorrowType | SliceType
+GenericType := TypePath '<' Type (',' Type)* ','? '>'
+BorrowType  := '&' Lifetime? Type
+SliceType   := '[' Type ']'
+```
+
+`A | B` is an anonymous sum whose alternatives are types, not variant rows.
+`Text(String) | Binary(Bytes)` is invalid; use `String | Bytes` when labels are
+unnecessary, or a nominal `enum` when branch names carry meaning. Duplicate
+alternatives are rejected, including alternatives that erase through transparent
+aliases to the same type.
+
 ## Functions
 
 ```text
@@ -325,7 +342,8 @@ are syntax errors.
 most one rest parameter, it must be the last parameter of the final parameter
 group, and it cannot declare a default value. The function body sees the binding
 as `Vec<T>`. Calls pass ordinary positional arguments; spread and named rest are
-not part of this syntax slice.
+not part of this syntax slice. Rest element type may be an anonymous sum such as
+`fields: ...(String | i64 | Duration)`.
 
 `stream fn` must declare `-> Stream<T, E>`. Hand-written stream transforms do
 not return `Source<T, E>`; live external sources use `source` declarations so

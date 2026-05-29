@@ -229,13 +229,21 @@ impl TypeChecker<'_> {
             let expected = annotated_ty
                 .clone()
                 .unwrap_or_else(|| type_ref_kind(annotation));
-            if &expected != actual {
+            if !super::types_compatible(&expected, actual) {
                 self.errors.push(TypeCheckError::new(format!(
                     "let annotation expects {expected:?}, but expression has {actual:?}"
                 )));
             }
         }
-        if let Some(ty) = ty.as_ref() {
+        let binding_ty = annotated_ty
+            .as_ref()
+            .filter(|expected| {
+                ty.as_ref()
+                    .is_some_and(|actual| super::types_compatible(expected, actual))
+            })
+            .cloned()
+            .or_else(|| ty.clone());
+        if let Some(ty) = binding_ty.as_ref() {
             self.record_type_judgment(
                 TypeJudgmentSubject::LetBinding {
                     pattern: format!("{pattern:?}"),
@@ -414,6 +422,11 @@ impl TypeChecker<'_> {
             arm_states.push(self.snapshot_borrow_state());
             self.locals = outer_locals;
         }
+        self.check_choice_match_exhaustive(
+            expr_type.as_ref(),
+            arms.iter()
+                .map(arcweft_lang_syntax::ast::flow::StmtMatchArm::pattern),
+        );
         if arm_states.is_empty() {
             self.restore_borrow_state(base_borrow_snapshot);
         } else {

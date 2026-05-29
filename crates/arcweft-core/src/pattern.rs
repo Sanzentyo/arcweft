@@ -70,9 +70,17 @@ fn collect_pattern_bindings(
     bindings: &mut Vec<RuntimeBinding>,
 ) -> Result<bool, RuntimeEvalError> {
     match pattern {
-        RuntimePattern::Ident(name)
-        | RuntimePattern::MutIdent(name)
-        | RuntimePattern::Typed { name, .. } => {
+        RuntimePattern::Ident(name) | RuntimePattern::MutIdent(name) => {
+            bindings.push(RuntimeBinding {
+                name: name.clone(),
+                value: value.clone(),
+            });
+            Ok(true)
+        }
+        RuntimePattern::Typed { name, ty } => {
+            if !runtime_value_matches_type_label(value, ty) {
+                return Ok(false);
+            }
             bindings.push(RuntimeBinding {
                 name: name.clone(),
                 value: value.clone(),
@@ -94,67 +102,22 @@ fn collect_pattern_bindings(
             collect_pattern_list(patterns, values, bindings)
         }
         RuntimePattern::Record { fields, rest, .. } => {
-            let RuntimeValue::Record(values) = value else {
-                return Ok(false);
-            };
-            if !rest && fields.len() != values.len() {
-                return Ok(false);
-            }
-            for field in fields {
-                let Some(value_field) =
-                    values.iter().find(|candidate| candidate.name == field.name)
-                else {
-                    return Ok(false);
-                };
-                if !collect_pattern_bindings(&field.pattern, &value_field.value, bindings)? {
-                    return Ok(false);
-                }
-            }
-            Ok(true)
+            collect_record_pattern_bindings(fields, *rest, value, bindings)
         }
         RuntimePattern::BracketSeq { items, rest } => {
-            let RuntimeValue::BracketSeq(values) = value else {
-                return Ok(false);
-            };
-            if rest.is_none() && items.len() != values.len() {
-                return Ok(false);
-            }
-            if rest.is_some() && items.len() > values.len() {
-                return Ok(false);
-            }
-            if !collect_pattern_list(items, &values[..items.len()], bindings)? {
-                return Ok(false);
-            }
-            if let Some(name) = rest {
-                bindings.push(RuntimeBinding {
-                    name: name.clone(),
-                    value: RuntimeValue::BracketSeq(values[items.len()..].to_vec()),
-                });
-            }
-            Ok(true)
+            collect_bracket_seq_pattern_bindings(items, rest.as_deref(), value, bindings)
         }
         RuntimePattern::Variant {
             path,
             name,
             payload,
-        } => {
-            let RuntimeValue::Variant {
-                path: actual_path,
-                name: actual_name,
-                payload: actual_payload,
-            } = value
-            else {
-                return Ok(false);
-            };
-            if path != actual_path || name != actual_name {
-                return Ok(false);
-            }
-            match (payload, actual_payload) {
-                (Some(pattern), Some(value)) => collect_pattern_bindings(pattern, value, bindings),
-                (None, None | Some(_)) => Ok(true),
-                (Some(_), None) => Ok(false),
-            }
-        }
+        } => collect_variant_pattern_bindings(
+            path.as_ref(),
+            name,
+            payload.as_deref(),
+            value,
+            bindings,
+        ),
         RuntimePattern::Whole { name, pattern } => {
             if !collect_pattern_bindings(pattern, value, bindings)? {
                 return Ok(false);
@@ -165,6 +128,138 @@ fn collect_pattern_bindings(
             });
             Ok(true)
         }
+    }
+}
+
+fn collect_record_pattern_bindings(
+    fields: &[RuntimeRecordPatternField],
+    rest: bool,
+    value: &RuntimeValue,
+    bindings: &mut Vec<RuntimeBinding>,
+) -> Result<bool, RuntimeEvalError> {
+    let RuntimeValue::Record(values) = value else {
+        return Ok(false);
+    };
+    if !rest && fields.len() != values.len() {
+        return Ok(false);
+    }
+    for field in fields {
+        let Some(value_field) = values.iter().find(|candidate| candidate.name == field.name) else {
+            return Ok(false);
+        };
+        if !collect_pattern_bindings(&field.pattern, &value_field.value, bindings)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn collect_bracket_seq_pattern_bindings(
+    items: &[RuntimePattern],
+    rest: Option<&str>,
+    value: &RuntimeValue,
+    bindings: &mut Vec<RuntimeBinding>,
+) -> Result<bool, RuntimeEvalError> {
+    let RuntimeValue::BracketSeq(values) = value else {
+        return Ok(false);
+    };
+    if rest.is_none() && items.len() != values.len() {
+        return Ok(false);
+    }
+    if rest.is_some() && items.len() > values.len() {
+        return Ok(false);
+    }
+    if !collect_pattern_list(items, &values[..items.len()], bindings)? {
+        return Ok(false);
+    }
+    if let Some(name) = rest {
+        bindings.push(RuntimeBinding {
+            name: name.to_owned(),
+            value: RuntimeValue::BracketSeq(values[items.len()..].to_vec()),
+        });
+    }
+    Ok(true)
+}
+
+fn collect_variant_pattern_bindings(
+    path: Option<&String>,
+    name: &str,
+    payload: Option<&RuntimePattern>,
+    value: &RuntimeValue,
+    bindings: &mut Vec<RuntimeBinding>,
+) -> Result<bool, RuntimeEvalError> {
+    let RuntimeValue::Variant {
+        path: actual_path,
+        name: actual_name,
+        payload: actual_payload,
+    } = value
+    else {
+        return Ok(false);
+    };
+    if path != actual_path.as_ref() || name != actual_name {
+        return Ok(false);
+    }
+    match (payload, actual_payload) {
+        (Some(pattern), Some(value)) => collect_pattern_bindings(pattern, value, bindings),
+        (None, None | Some(_)) => Ok(true),
+        (Some(_), None) => Ok(false),
+    }
+}
+
+fn runtime_value_matches_type_label(value: &RuntimeValue, ty: &str) -> bool {
+    let ty = ty.trim();
+    if ty.contains('|') {
+        return ty
+            .split('|')
+            .map(str::trim)
+            .any(|alternative| runtime_value_matches_type_label(value, alternative));
+    }
+    if matches!(
+        (value, ty),
+        (RuntimeValue::Unit, "()" | "Unit")
+            | (RuntimeValue::Bool(_), "Bool" | "bool")
+            | (
+                RuntimeValue::Int(_),
+                "i8" | "i16"
+                    | "i32"
+                    | "i64"
+                    | "i128"
+                    | "isize"
+                    | "u8"
+                    | "u16"
+                    | "u32"
+                    | "u64"
+                    | "u128"
+                    | "usize"
+            )
+            | (RuntimeValue::Float(_), "f32" | "f64")
+            | (RuntimeValue::String(_), "String")
+            | (RuntimeValue::Char(_), "Char" | "char")
+            | (RuntimeValue::Duration(_), "Duration")
+            | (RuntimeValue::Record(_), "Record")
+    ) {
+        return true;
+    }
+    match value {
+        RuntimeValue::EntityRef(_) if ty.starts_with("Ref<") => true,
+        RuntimeValue::Tuple(_) if ty.starts_with('(') => true,
+        RuntimeValue::BracketSeq(_)
+            if ty.starts_with("Vec<")
+                || ty.starts_with("Seq<")
+                || ty.starts_with("Array<")
+                || ty == "Bytes"
+                || ty.starts_with('[') =>
+        {
+            true
+        }
+        RuntimeValue::Variant { name, path, .. } => {
+            ty == name
+                || ty == format!(".{name}")
+                || path
+                    .as_ref()
+                    .is_some_and(|path| ty == format!("{path}::{name}"))
+        }
+        _ => false,
     }
 }
 

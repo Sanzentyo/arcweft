@@ -728,6 +728,9 @@ pub(crate) fn type_ref_kind(ty: &TypeRef) -> TypeKind {
         TypeRef::Never => TypeKind::Never,
         TypeRef::ConstInt(value) => TypeKind::Named(value.to_string()),
         TypeRef::Path(path) => named_type_label(path),
+        TypeRef::Choice(alternatives) => {
+            normalize_choice_type(alternatives.iter().map(type_ref_kind).collect::<Vec<_>>())
+        }
         TypeRef::Generic { base, args } if base == "Vec" && args.len() == 1 => {
             TypeKind::Vec(Box::new(type_ref_kind(&args[0])))
         }
@@ -823,6 +826,11 @@ pub(super) fn type_ref_label(ty: &TypeRef) -> String {
         TypeRef::Never => "Never".to_owned(),
         TypeRef::ConstInt(value) => value.to_string(),
         TypeRef::Path(path) => path.clone(),
+        TypeRef::Choice(alternatives) => alternatives
+            .iter()
+            .map(type_ref_label)
+            .collect::<Vec<_>>()
+            .join(" | "),
         TypeRef::Generic { base, args } => format!(
             "{base}<{}>",
             args.iter()
@@ -838,5 +846,118 @@ pub(super) fn type_ref_label(ty: &TypeRef) -> String {
             format!("&{lifetime}{}", type_ref_label(inner))
         }
         TypeRef::Slice(inner) => format!("[{}]", type_ref_label(inner)),
+    }
+}
+
+pub(super) fn normalize_choice_type(alternatives: Vec<TypeKind>) -> TypeKind {
+    let mut flattened = alternatives
+        .into_iter()
+        .flat_map(|ty| match ty {
+            TypeKind::Choice(alternatives) => alternatives,
+            ty => vec![ty],
+        })
+        .collect::<Vec<_>>();
+    flattened.sort_by_key(type_kind_label);
+    flattened.dedup();
+    match flattened.as_slice() {
+        [single] => single.clone(),
+        _ => TypeKind::Choice(flattened),
+    }
+}
+
+pub(super) fn type_kind_label(ty: &TypeKind) -> String {
+    match ty {
+        TypeKind::Bool => "Bool".to_owned(),
+        TypeKind::I8 => "i8".to_owned(),
+        TypeKind::I16 => "i16".to_owned(),
+        TypeKind::I32 => "i32".to_owned(),
+        TypeKind::I64 => "i64".to_owned(),
+        TypeKind::I128 => "i128".to_owned(),
+        TypeKind::ISize => "isize".to_owned(),
+        TypeKind::U8 => "u8".to_owned(),
+        TypeKind::U16 => "u16".to_owned(),
+        TypeKind::U32 => "u32".to_owned(),
+        TypeKind::U64 => "u64".to_owned(),
+        TypeKind::U128 => "u128".to_owned(),
+        TypeKind::USize => "usize".to_owned(),
+        TypeKind::F32 => "f32".to_owned(),
+        TypeKind::F64 => "f64".to_owned(),
+        TypeKind::String => "String".to_owned(),
+        TypeKind::Char => "Char".to_owned(),
+        TypeKind::TextCluster => "TextCluster".to_owned(),
+        TypeKind::Duration => "Duration".to_owned(),
+        TypeKind::Range => "Range".to_owned(),
+        TypeKind::DisplayText => "DisplayText".to_owned(),
+        TypeKind::Ref(kind) => format!("Ref<{kind:?}>"),
+        TypeKind::Vec(inner) => format!("Vec<{}>", type_kind_label(inner)),
+        TypeKind::Array { item, len } => format!("Array<{}, {len}>", type_kind_label(item)),
+        TypeKind::Slice(inner) => format!("[{}]", type_kind_label(inner)),
+        TypeKind::Seq(inner) => format!("Seq<{}>", type_kind_label(inner)),
+        TypeKind::Map { kind, key, value } => format!(
+            "{kind:?}<{}, {}>",
+            type_kind_label(key),
+            type_kind_label(value)
+        ),
+        TypeKind::BorrowRef { lifetime, inner } => {
+            format!("&{lifetime:?} {}", type_kind_label(inner))
+        }
+        TypeKind::Need { ready, error } => {
+            format!(
+                "Need<{}, {}>",
+                type_kind_label(ready),
+                type_kind_label(error)
+            )
+        }
+        TypeKind::Stream { item, error } => {
+            format!(
+                "Stream<{}, {}>",
+                type_kind_label(item),
+                type_kind_label(error)
+            )
+        }
+        TypeKind::Source { item, error } => {
+            format!(
+                "Source<{}, {}>",
+                type_kind_label(item),
+                type_kind_label(error)
+            )
+        }
+        TypeKind::Result { ok, error } => {
+            format!(
+                "Result<{}, {}>",
+                type_kind_label(ok),
+                type_kind_label(error)
+            )
+        }
+        TypeKind::Option(inner) => format!("Option<{}>", type_kind_label(inner)),
+        TypeKind::Handle {
+            name,
+            lifetime,
+            state,
+            must_drop,
+        } => format!("Handle<{name}, {lifetime:?}, {state:?}, {must_drop}>"),
+        TypeKind::ThreadHandle(inner) => format!("ThreadHandle<{}>", type_kind_label(inner)),
+        TypeKind::Shared(inner) => format!("Shared<{}>", type_kind_label(inner)),
+        TypeKind::Function { return_type } => format!("fn -> {}", type_kind_label(return_type)),
+        TypeKind::Speaker(kind) => format!("Speaker<{kind:?}>"),
+        TypeKind::SpeakerPreset(kind) => format!("SpeakerPreset<{kind:?}>"),
+        TypeKind::CharacterPatch(kind) => format!("CharacterPatch<{kind:?}>"),
+        TypeKind::FocusPatch => "FocusPatch".to_owned(),
+        TypeKind::Named(name) => name.clone(),
+        TypeKind::Tuple(items) => format!(
+            "({})",
+            items
+                .iter()
+                .map(type_kind_label)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        TypeKind::Choice(alternatives) => alternatives
+            .iter()
+            .map(type_kind_label)
+            .collect::<Vec<_>>()
+            .join(" | "),
+        TypeKind::Unit => "()".to_owned(),
+        TypeKind::Never => "Never".to_owned(),
     }
 }
