@@ -278,6 +278,20 @@ instruction counts. Runtime steps include executed op counts, event counts,
 emitted source/stream events, line effects, diagnostics, and queue depths.
 Profile and bench JSON must not persist absolute local source paths.
 
+## JIT
+
+`arcw jit check` runs the native Cranelift pure-helper adapter against the VM
+reference backend. The current executable subset is integer-only and is meant as
+the first conformance and timing gate for future wider pure helper lowering:
+
+```bash
+arcw jit check --json --iterations 1000 --warmup 10
+```
+
+The JSON includes VM/JIT result equality, compile elapsed time, repeated native
+call elapsed time, VM elapsed time, deterministic accumulators, and pure helper
+stats. It does not include source paths.
+
 ```bash
 arcw test game/routes/opening.arcw
 arcw test game/routes/opening.arcw --json

@@ -59,6 +59,22 @@ The current AOT boundary is intentionally VM-equivalent. Generated dispatch and
 Cranelift lowering belong in adapter crates after the pure subset and
 conformance tests are stable.
 
+`arcweft-lang-jit-cranelift` is the native adapter crate. Its first executable
+subset compiles deterministic `i64` pure-helper expressions to Cranelift,
+executes the generated code, and compares the result against
+`VmPureFunctionBackend`. The current subset covers integer literals, integer
+bindings, `+`, `-`, `*`, and the registered pure `add(lhs, rhs)` helper.
+String-heavy helpers, effectful calls, flow control, and pattern control remain
+outside the JIT subset.
+
+```bash
+arcw jit check --json --iterations 1000 --warmup 10
+```
+
+The command reports VM/JIT conformance, JIT compile time, repeated native-call
+time, VM evaluation time, deterministic accumulators, and pure-helper lowering
+counters. It does not read source paths or persist host absolute paths.
+
 ## IR lowering
 
 ```text
@@ -80,7 +96,7 @@ absolute paths into snapshots, profile JSON, benchmark JSON, or CLIF/assembly
 dump metadata.
 
 ```bash
-arcw jit check --compare-vm
+arcw jit check --json
 arcw jit dump-clif fn.logic.affection_score
 arcw jit dump-asm fn.logic.affection_score
 ```

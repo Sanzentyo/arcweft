@@ -1,0 +1,15 @@
+[package]
+name = "arcweft-lang-jit-cranelift"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arcweft-core = { path = "../arcweft-core" }
+cranelift.workspace = true
+thiserror.workspace = true
+
+[lib]
+path = "src/lib.rs"

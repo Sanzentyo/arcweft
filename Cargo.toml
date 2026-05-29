@@ -10,6 +10,7 @@ members = [
     "crates/arcweft",
     "crates/arcweft-lang-hir",
     "crates/arcweft-launch",
+    "crates/arcweft-lang-jit-cranelift",
     "crates/arcweft-lang-sema",
     "crates/arcweft-lang-syntax",
     "crates/arcweft-need",
@@ -35,6 +36,7 @@ repository = "https://example.invalid/arcweft"
 [workspace.dependencies]
 blake3 = "1.8.5"
 clap = "4.6.1"
+cranelift = { version = "0.121.2", features = ["jit", "module", "native"] }
 lsp-types = "0.97.0"
 oxiz-solver = "0.2.1"
 rowan = "0.16.1"

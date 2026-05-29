@@ -47,7 +47,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   candidate backends report deterministic evaluation stats, and conformance
   checks compare candidate output against VM output without recording host
   absolute paths.
-- No renderer, Servo, audio, camera, USB, MCP, or Cranelift JIT implementation.
+- `arcweft-lang-jit-cranelift` now owns the first native Cranelift adapter. It
+  JIT-compiles deterministic `i64` pure helper expressions, executes generated
+  code through an isolated native-call boundary, and is exercised by
+  `arcw jit check --json` against the VM reference backend.
+- No renderer, Servo, audio, camera, USB, or MCP implementation.
 
 ## Files
 
@@ -62,6 +66,7 @@ Last verified for the active workspace after enabling the spec fixture gates:
 - `cargo fmt --all`
 - `cargo test --workspace`
 - `cargo clippy --workspace --all-targets --all-features`
+- `arcw jit check --json`
 - `arcw check` over `tests/fixtures/arcw/spec_should_pass/check`
 - `arcw run --mode drain --steps 16` over `tests/fixtures/arcw/spec_should_pass/run`
 - `arcw check` over `tests/fixtures/arcw/spec_should_fail`, expecting every

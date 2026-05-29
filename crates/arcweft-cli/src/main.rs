@@ -9,8 +9,15 @@ use arcweft_core::plan::{
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
 };
-use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+use arcweft_core::{
+    pure::{
+        PureFunctionBackend, PureFunctionBackendKind, PureFunctionRequest, PureFunctionStats,
+        VmPureFunctionBackend, compare_pure_function_backend,
+    },
+    value::{RuntimeBinaryOp, RuntimeBinding, RuntimeExpr, RuntimeValue},
+};
 use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_jit_cranelift::CraneliftPureFunctionBackend;
 use arcweft_lang_sema::check::{
     TypeCheckStats, analyze_types, typecheck_hir, validate_typecheck_ready,
 };
@@ -66,6 +73,10 @@ enum CliCommand {
     Serve(ServeOptions),
     Test(ScriptTestOptions),
     Bench(ScriptBenchOptions),
+    Jit {
+        #[command(subcommand)]
+        command: JitCommand,
+    },
     Fmt(ToolingCommandOptions),
     Ids {
         #[command(subcommand)]
@@ -76,6 +87,11 @@ enum CliCommand {
 #[derive(Debug, Subcommand)]
 enum IdsCommand {
     Materialize(ToolingCommandOptions),
+}
+
+#[derive(Debug, Subcommand)]
+enum JitCommand {
+    Check(JitCheckOptions),
 }
 
 fn main() -> ExitCode {
@@ -97,9 +113,144 @@ fn run(cli: Cli) -> Result<(), ExitCode> {
         CliCommand::Serve(options) => runtime_serve_command(&options),
         CliCommand::Test(options) => script_test_command(&options),
         CliCommand::Bench(options) => script_bench_command(&options),
+        CliCommand::Jit { command } => jit_command(command),
         CliCommand::Fmt(options) => format_command(&options),
         CliCommand::Ids { command } => ids_command(command),
     }
+}
+
+fn jit_command(command: JitCommand) -> Result<(), ExitCode> {
+    match command {
+        JitCommand::Check(options) => jit_check_command(&options),
+    }
+}
+
+fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
+    if options.iterations == 0 {
+        eprintln!("error: --iterations must be greater than zero");
+        return Err(ExitCode::from(2));
+    }
+
+    let request = jit_check_request();
+    let vm_backend = VmPureFunctionBackend;
+    let jit_backend = CraneliftPureFunctionBackend;
+    let conformance =
+        compare_pure_function_backend(&vm_backend, &jit_backend, &request).map_err(|error| {
+            eprintln!("error: JIT/VM conformance check failed: {error}");
+            ExitCode::FAILURE
+        })?;
+
+    let compile_started = Instant::now();
+    let compiled = jit_backend.compile_i64(&request).map_err(|error| {
+        eprintln!("error: failed to compile JIT helper: {error}");
+        ExitCode::FAILURE
+    })?;
+    let compile_elapsed_ns = compile_started.elapsed().as_nanos();
+
+    for _ in 0..options.warmup {
+        let _ = compiled.call();
+    }
+
+    let jit_started = Instant::now();
+    let mut jit_accumulator = 0_i64;
+    for _ in 0..options.iterations {
+        jit_accumulator = jit_accumulator.saturating_add(compiled.call());
+    }
+    let jit_elapsed_ns = jit_started.elapsed().as_nanos();
+
+    for _ in 0..options.warmup {
+        let _ = vm_backend.evaluate(&request).map_err(|error| {
+            eprintln!("error: VM warmup failed: {error}");
+            ExitCode::FAILURE
+        })?;
+    }
+
+    let vm_started = Instant::now();
+    let mut vm_accumulator = 0_i64;
+    for _ in 0..options.iterations {
+        let value = vm_backend.evaluate(&request).map_err(|error| {
+            eprintln!("error: VM evaluation failed: {error}");
+            ExitCode::FAILURE
+        })?;
+        if let RuntimeValue::Int(value) = value.value {
+            vm_accumulator = vm_accumulator.saturating_add(value);
+        }
+    }
+    let vm_elapsed_ns = vm_started.elapsed().as_nanos();
+
+    let report = JitCheckReport {
+        status: if conformance.matches_vm {
+            "ok"
+        } else {
+            "failed"
+        }
+        .to_owned(),
+        helper: request.name.clone(),
+        vm_backend: backend_label(conformance.vm.backend).to_owned(),
+        jit_backend: backend_label(conformance.candidate.backend).to_owned(),
+        matches_vm: conformance.matches_vm,
+        vm_value: runtime_value_summary(&conformance.vm.value),
+        jit_value: runtime_value_summary(&conformance.candidate.value),
+        warmup: options.warmup,
+        iterations: options.iterations,
+        timings: JitCheckTimingReport {
+            compile: compile_elapsed_ns,
+            jit: jit_elapsed_ns,
+            vm: vm_elapsed_ns,
+        },
+        deterministic: JitCheckDeterministicReport {
+            jit_accumulator,
+            vm_accumulator,
+        },
+        vm_stats: PureFunctionStatsReport::from_stats(&conformance.vm.stats),
+        jit_stats: PureFunctionStatsReport::from_stats(compiled.stats()),
+    };
+
+    if options.json {
+        print_json(&report)?;
+    } else {
+        println!(
+            "ok: jit check helper={} matches_vm={} compile_ns={} jit_ns={} vm_ns={}",
+            report.helper,
+            report.matches_vm,
+            report.timings.compile,
+            report.timings.jit,
+            report.timings.vm
+        );
+    }
+
+    if report.matches_vm {
+        Ok(())
+    } else {
+        Err(ExitCode::FAILURE)
+    }
+}
+
+fn jit_check_request() -> PureFunctionRequest {
+    PureFunctionRequest::new(
+        "score",
+        RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+            op: RuntimeBinaryOp::Mul,
+            rhs: Box::new(RuntimeExpr::Call {
+                callee: "add".to_owned(),
+                args: vec![
+                    RuntimeExpr::Local("bonus".to_owned()),
+                    RuntimeExpr::Value(RuntimeValue::Int(2)),
+                ],
+            }),
+        },
+        [
+            RuntimeBinding {
+                name: "base".to_owned(),
+                value: RuntimeValue::Int(3),
+            },
+            RuntimeBinding {
+                name: "bonus".to_owned(),
+                value: RuntimeValue::Int(4),
+            },
+        ],
+    )
 }
 
 fn format_command(options: &ToolingCommandOptions) -> Result<(), ExitCode> {
@@ -1767,6 +1918,16 @@ struct ScriptBenchOptions {
     json: bool,
 }
 
+#[derive(Args, Clone, Debug)]
+struct JitCheckOptions {
+    #[arg(long, default_value_t = 1000)]
+    iterations: usize,
+    #[arg(long, default_value_t = 10)]
+    warmup: usize,
+    #[arg(long)]
+    json: bool,
+}
+
 #[derive(Args, Clone, Debug, Default)]
 struct ProfileOptions {
     #[arg(long)]
@@ -1792,6 +1953,92 @@ enum CliRuntimeStepMode {
     Drain,
     Game,
     Server,
+}
+
+#[derive(serde::Serialize)]
+struct JitCheckReport {
+    status: String,
+    helper: String,
+    vm_backend: String,
+    jit_backend: String,
+    matches_vm: bool,
+    vm_value: String,
+    jit_value: String,
+    warmup: usize,
+    iterations: usize,
+    timings: JitCheckTimingReport,
+    deterministic: JitCheckDeterministicReport,
+    vm_stats: PureFunctionStatsReport,
+    jit_stats: PureFunctionStatsReport,
+}
+
+#[derive(serde::Serialize)]
+struct JitCheckTimingReport {
+    #[serde(rename = "compile_elapsed_ns")]
+    compile: u128,
+    #[serde(rename = "jit_elapsed_ns")]
+    jit: u128,
+    #[serde(rename = "vm_elapsed_ns")]
+    vm: u128,
+}
+
+#[derive(serde::Serialize)]
+struct JitCheckDeterministicReport {
+    jit_accumulator: i64,
+    vm_accumulator: i64,
+}
+
+#[derive(serde::Serialize)]
+struct PureFunctionStatsReport {
+    #[serde(rename = "evaluated_exprs")]
+    exprs: usize,
+    #[serde(rename = "evaluated_calls")]
+    calls: usize,
+    #[serde(rename = "evaluated_method_calls")]
+    method_calls: usize,
+    #[serde(rename = "evaluated_binary_ops")]
+    binary_ops: usize,
+}
+
+impl PureFunctionStatsReport {
+    fn from_stats(stats: &PureFunctionStats) -> Self {
+        Self {
+            exprs: stats.evaluated_exprs,
+            calls: stats.evaluated_calls,
+            method_calls: stats.evaluated_method_calls,
+            binary_ops: stats.evaluated_binary_ops,
+        }
+    }
+}
+
+fn backend_label(kind: PureFunctionBackendKind) -> &'static str {
+    match kind {
+        PureFunctionBackendKind::Vm => "vm",
+        PureFunctionBackendKind::Aot => "aot",
+        PureFunctionBackendKind::Jit => "jit",
+    }
+}
+
+fn runtime_value_summary(value: &RuntimeValue) -> String {
+    match value {
+        RuntimeValue::Unit => "()".to_owned(),
+        RuntimeValue::Bool(value) => value.to_string(),
+        RuntimeValue::Int(value) => value.to_string(),
+        RuntimeValue::Float(value) | RuntimeValue::String(value) => value.clone(),
+        RuntimeValue::Char(value) => value.to_string(),
+        RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
+        RuntimeValue::EntityRef(value) => format!("@{value}"),
+        RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
+        RuntimeValue::BracketSeq(values) => format!("bracket_seq/{}", values.len()),
+        RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
+        RuntimeValue::Variant { name, payload, .. } => {
+            if payload.is_some() {
+                format!(".{name}(...)")
+            } else {
+                format!(".{name}")
+            }
+        }
+    }
 }
 
 #[derive(serde::Serialize)]

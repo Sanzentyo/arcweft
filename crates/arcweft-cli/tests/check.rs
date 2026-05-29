@@ -3,6 +3,36 @@ use std::path::PathBuf;
 use std::process::Command;
 
 #[test]
+fn jit_check_json_compares_cranelift_and_vm() {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("jit")
+        .arg("check")
+        .arg("--json")
+        .arg("--iterations")
+        .arg("4")
+        .arg("--warmup")
+        .arg("1")
+        .output()
+        .expect("arcw jit check runs");
+
+    assert!(
+        output.status.success(),
+        "jit check should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"status\": \"ok\"")
+            && stdout.contains("\"jit_backend\": \"jit\"")
+            && stdout.contains("\"matches_vm\": true")
+            && stdout.contains("\"compile_elapsed_ns\"")
+            && stdout.contains("\"jit_elapsed_ns\"")
+            && stdout.contains("\"vm_elapsed_ns\""),
+        "jit check JSON should include conformance and timing data: {stdout}"
+    );
+}
+
+#[test]
 fn check_accepts_valid_arcw_file() {
     let path = temp_arcw(
         "valid",
