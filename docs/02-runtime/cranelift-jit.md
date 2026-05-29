@@ -63,17 +63,23 @@ conformance tests are stable.
 subset compiles deterministic `i64` pure-helper expressions to Cranelift,
 executes the generated code, and compares the result against
 `VmPureFunctionBackend`. The current subset covers integer literals, integer
-bindings, `+`, `-`, `*`, and the registered pure `add(lhs, rhs)` helper.
+bindings, `+`, `-`, `*`, integer comparisons, value-producing `if`, and the
+registered pure `add(lhs, rhs)` helper. Helpers can be compiled either as
+no-argument native calls with captured integer bindings or as two-argument
+native calls where selected local bindings are passed as runtime `i64` inputs.
 String-heavy helpers, effectful calls, flow control, and pattern control remain
 outside the JIT subset.
 
 ```bash
-arcw jit check --json --iterations 1000 --warmup 10
+arcw jit check --json --iterations 1000 --warmup 10 --samples 5
 ```
 
 The command reports VM/JIT conformance, JIT compile time, repeated native-call
-time, VM evaluation time, deterministic accumulators, and pure-helper lowering
-counters. It does not read source paths or persist host absolute paths.
+time, VM evaluation time, per-iteration medians, speedup ratio, deterministic
+accumulators, input binding names, and pure-helper lowering counters. Its timing
+loop feeds deterministic varying `base` / `bonus` integer inputs through both
+the compiled JIT function and the VM reference. It does not read source paths or
+persist host absolute paths.
 
 ## IR lowering
 

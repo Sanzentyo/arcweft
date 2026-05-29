@@ -17,8 +17,8 @@ use cranelift::codegen::ir::UserFuncName;
 use cranelift::jit::{JITBuilder, JITModule};
 use cranelift::module::{Linkage, Module, ModuleError, default_libcall_names};
 use cranelift::prelude::{
-    AbiParam, Configurable, FunctionBuilder, FunctionBuilderContext, InstBuilder, Value, settings,
-    types,
+    AbiParam, Configurable, FunctionBuilder, FunctionBuilderContext, InstBuilder, IntCC, Value,
+    settings, types,
 };
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -45,6 +45,24 @@ pub struct CompiledPureI64 {
     stats: PureFunctionStats,
 }
 
+/// Compiled two-argument native helper returning an `i64`.
+///
+/// The parameter names are Arcweft local binding names. Non-parameter locals
+/// are captured from the request bindings as compile-time constants.
+pub struct CompiledPureI64Binary {
+    _module: JITModule,
+    code: *const u8,
+    lhs_name: String,
+    rhs_name: String,
+    stats: PureFunctionStats,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum LoweredI64Binding {
+    Const(i64),
+    Param(Value),
+}
+
 impl PureFunctionBackend for CraneliftPureFunctionBackend {
     fn kind(&self) -> PureFunctionBackendKind {
         PureFunctionBackendKind::Jit
@@ -66,7 +84,8 @@ impl CraneliftPureFunctionBackend {
     /// Compiles and runs a pure helper request through Cranelift.
     ///
     /// The first supported subset is deterministic `i64` arithmetic over
-    /// literal and bound-local values, including the registered `add` helper.
+    /// literal and bound-local values, integer comparisons, `if` expressions,
+    /// and the registered `add` helper.
     pub fn evaluate_jit(
         &self,
         request: &PureFunctionRequest,
@@ -122,12 +141,93 @@ impl CraneliftPureFunctionBackend {
             stats,
         })
     }
+
+    /// Compiles a pure helper request to a reusable two-argument native function.
+    ///
+    /// `lhs_name` and `rhs_name` name local bindings that become runtime i64
+    /// parameters. Other integer locals are captured from the request.
+    pub fn compile_i64_binary(
+        &self,
+        request: &PureFunctionRequest,
+        lhs_name: impl Into<String>,
+        rhs_name: impl Into<String>,
+    ) -> Result<CompiledPureI64Binary, CraneliftJitError> {
+        let lhs_name = lhs_name.into();
+        let rhs_name = rhs_name.into();
+        if lhs_name.is_empty() || rhs_name.is_empty() || lhs_name == rhs_name {
+            return Err(CraneliftJitError::UnsupportedExpr(
+                "JIT binary parameters must be distinct non-empty local names".to_owned(),
+            ));
+        }
+
+        let mut module = jit_module()?;
+        let mut ctx = module.make_context();
+        let mut func_ctx = FunctionBuilderContext::new();
+        let mut signature = module.make_signature();
+        signature.params.push(AbiParam::new(types::I64));
+        signature.params.push(AbiParam::new(types::I64));
+        signature.returns.push(AbiParam::new(types::I64));
+
+        let func_id = module
+            .declare_function("arcweft_pure_helper_binary", Linkage::Local, &signature)
+            .map_err(jit_error)?;
+        ctx.func.signature = signature;
+        ctx.func.name = UserFuncName::user(0, func_id.as_u32());
+
+        let mut bindings = int_bindings(&request.bindings)?;
+        let mut stats = arcweft_core::pure::PureFunctionStats::default();
+        {
+            let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
+            let block = builder.create_block();
+            builder.append_block_params_for_function_params(block);
+            builder.switch_to_block(block);
+            let params = builder.block_params(block);
+            bindings.insert(lhs_name.clone(), LoweredI64Binding::Param(params[0]));
+            bindings.insert(rhs_name.clone(), LoweredI64Binding::Param(params[1]));
+            let value = lower_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
+            builder.ins().return_(&[value]);
+            builder.seal_all_blocks();
+            builder.finalize();
+        }
+
+        module
+            .define_function(func_id, &mut ctx)
+            .map_err(jit_error)?;
+        module.clear_context(&mut ctx);
+        module.finalize_definitions().map_err(jit_error)?;
+        let code = module.get_finalized_function(func_id);
+
+        Ok(CompiledPureI64Binary {
+            _module: module,
+            code,
+            lhs_name,
+            rhs_name,
+            stats,
+        })
+    }
 }
 
 impl CompiledPureI64 {
     /// Calls the compiled helper.
     pub fn call(&self) -> i64 {
         native_call::call_i64(self.code)
+    }
+
+    /// Returns lowering counters captured during compilation.
+    pub const fn stats(&self) -> &PureFunctionStats {
+        &self.stats
+    }
+}
+
+impl CompiledPureI64Binary {
+    /// Calls the compiled helper with two runtime integer inputs.
+    pub fn call(&self, lhs: i64, rhs: i64) -> i64 {
+        native_call::call_i64_binary(self.code, lhs, rhs)
+    }
+
+    /// Returns the local binding names used as runtime parameters.
+    pub fn param_names(&self) -> (&str, &str) {
+        (&self.lhs_name, &self.rhs_name)
     }
 
     /// Returns lowering counters captured during compilation.
@@ -155,11 +255,13 @@ fn jit_module() -> Result<JITModule, CraneliftJitError> {
     )))
 }
 
-fn int_bindings(bindings: &[RuntimeBinding]) -> Result<BTreeMap<String, i64>, CraneliftJitError> {
+fn int_bindings(
+    bindings: &[RuntimeBinding],
+) -> Result<BTreeMap<String, LoweredI64Binding>, CraneliftJitError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
-            RuntimeValue::Int(value) => Ok((binding.name.clone(), value)),
+            RuntimeValue::Int(value) => Ok((binding.name.clone(), LoweredI64Binding::Const(value))),
             _ => Err(CraneliftJitError::UnsupportedExpr(format!(
                 "binding `{}` is not an i64 integer",
                 binding.name
@@ -170,7 +272,7 @@ fn int_bindings(bindings: &[RuntimeBinding]) -> Result<BTreeMap<String, i64>, Cr
 
 fn lower_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, i64>,
+    bindings: &BTreeMap<String, LoweredI64Binding>,
     expr: &RuntimeExpr,
     stats: &mut arcweft_core::pure::PureFunctionStats,
 ) -> Result<Value, CraneliftJitError> {
@@ -182,14 +284,13 @@ fn lower_expr(
         RuntimeExpr::Value(value) => Err(CraneliftJitError::UnsupportedExpr(format!(
             "literal {value:?} is not an i64 integer"
         ))),
-        RuntimeExpr::Local(name) => bindings.get(name).map_or_else(
-            || {
-                Err(CraneliftJitError::UnsupportedExpr(format!(
-                    "unknown integer binding `{name}`"
-                )))
-            },
-            |value| Ok(builder.ins().iconst(types::I64, *value)),
-        ),
+        RuntimeExpr::Local(name) => match bindings.get(name) {
+            Some(LoweredI64Binding::Const(value)) => Ok(builder.ins().iconst(types::I64, *value)),
+            Some(LoweredI64Binding::Param(value)) => Ok(*value),
+            None => Err(CraneliftJitError::UnsupportedExpr(format!(
+                "unknown integer binding `{name}`"
+            ))),
+        },
         RuntimeExpr::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let lhs = lower_expr(builder, bindings, lhs, stats)?;
@@ -209,12 +310,91 @@ fn lower_expr(
             let rhs = lower_expr(builder, bindings, &args[1], stats)?;
             Ok(builder.ins().iadd(lhs, rhs))
         }
+        RuntimeExpr::If {
+            condition,
+            then_expr,
+            else_expr,
+        } => lower_if_expr(builder, bindings, condition, then_expr, else_expr, stats),
         RuntimeExpr::Call { callee, .. } => Err(CraneliftJitError::UnsupportedExpr(format!(
             "call `{callee}` is outside the JIT subset"
         ))),
         other => Err(CraneliftJitError::UnsupportedExpr(format!(
             "expression `{other:?}` is outside the JIT subset"
         ))),
+    }
+}
+
+fn lower_if_expr(
+    builder: &mut FunctionBuilder<'_>,
+    bindings: &BTreeMap<String, LoweredI64Binding>,
+    condition: &RuntimeExpr,
+    then_expr: &RuntimeExpr,
+    else_expr: &RuntimeExpr,
+    stats: &mut PureFunctionStats,
+) -> Result<Value, CraneliftJitError> {
+    let condition = lower_condition(builder, bindings, condition, stats)?;
+    let then_block = builder.create_block();
+    let else_block = builder.create_block();
+    let merge_block = builder.create_block();
+    builder.append_block_param(merge_block, types::I64);
+    builder
+        .ins()
+        .brif(condition, then_block, &[], else_block, &[]);
+
+    builder.switch_to_block(then_block);
+    let then_value = lower_expr(builder, bindings, then_expr, stats)?;
+    builder.ins().jump(merge_block, &[then_value.into()]);
+
+    builder.switch_to_block(else_block);
+    let else_value = lower_expr(builder, bindings, else_expr, stats)?;
+    builder.ins().jump(merge_block, &[else_value.into()]);
+
+    builder.switch_to_block(merge_block);
+    Ok(builder.block_params(merge_block)[0])
+}
+
+fn lower_condition(
+    builder: &mut FunctionBuilder<'_>,
+    bindings: &BTreeMap<String, LoweredI64Binding>,
+    expr: &RuntimeExpr,
+    stats: &mut PureFunctionStats,
+) -> Result<Value, CraneliftJitError> {
+    stats.evaluated_exprs += 1;
+    match expr {
+        RuntimeExpr::Value(RuntimeValue::Bool(value)) => {
+            Ok(builder.ins().iconst(types::I8, i64::from(*value)))
+        }
+        RuntimeExpr::Binary { lhs, op, rhs } => {
+            stats.evaluated_binary_ops += 1;
+            let Some(condition) = int_condition(*op) else {
+                return Err(CraneliftJitError::UnsupportedExpr(format!(
+                    "condition operator `{op:?}` is outside the JIT subset"
+                )));
+            };
+            let lhs = lower_expr(builder, bindings, lhs, stats)?;
+            let rhs = lower_expr(builder, bindings, rhs, stats)?;
+            Ok(builder.ins().icmp(condition, lhs, rhs))
+        }
+        other => Err(CraneliftJitError::UnsupportedExpr(format!(
+            "condition `{other:?}` is outside the JIT subset"
+        ))),
+    }
+}
+
+fn int_condition(op: RuntimeBinaryOp) -> Option<IntCC> {
+    match op {
+        RuntimeBinaryOp::Eq => Some(IntCC::Equal),
+        RuntimeBinaryOp::Ne => Some(IntCC::NotEqual),
+        RuntimeBinaryOp::Lt => Some(IntCC::SignedLessThan),
+        RuntimeBinaryOp::Le => Some(IntCC::SignedLessThanOrEqual),
+        RuntimeBinaryOp::Gt => Some(IntCC::SignedGreaterThan),
+        RuntimeBinaryOp::Ge => Some(IntCC::SignedGreaterThanOrEqual),
+        RuntimeBinaryOp::Add
+        | RuntimeBinaryOp::Sub
+        | RuntimeBinaryOp::Mul
+        | RuntimeBinaryOp::Div
+        | RuntimeBinaryOp::And
+        | RuntimeBinaryOp::Or => None,
     }
 }
 
@@ -287,6 +467,73 @@ mod tests {
         assert_eq!(compiled.call(), 42);
         assert_eq!(compiled.call(), 42);
         assert_eq!(compiled.stats().evaluated_binary_ops, 1);
+    }
+
+    #[test]
+    fn cranelift_compiled_helper_accepts_runtime_integer_inputs() {
+        let request = PureFunctionRequest::new(
+            "score_inputs",
+            RuntimeExpr::If {
+                condition: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                    op: RuntimeBinaryOp::Ge,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(3))),
+                }),
+                then_expr: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                    op: RuntimeBinaryOp::Mul,
+                    rhs: Box::new(RuntimeExpr::Call {
+                        callee: "add".to_owned(),
+                        args: vec![
+                            RuntimeExpr::Local("bonus".to_owned()),
+                            RuntimeExpr::Value(RuntimeValue::Int(2)),
+                        ],
+                    }),
+                }),
+                else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::Int(0))),
+            },
+            [int_binding("base", 3), int_binding("bonus", 4)],
+        );
+
+        let compiled = CraneliftPureFunctionBackend
+            .compile_i64_binary(&request, "base", "bonus")
+            .expect("Cranelift compiles parameterized integer helper");
+
+        assert_eq!(compiled.param_names(), ("base", "bonus"));
+        assert_eq!(compiled.call(3, 4), 18);
+        assert_eq!(compiled.call(2, 99), 0);
+        assert_eq!(compiled.call(7, 1), 21);
+    }
+
+    #[test]
+    fn cranelift_jit_evaluates_integer_if_and_matches_vm() {
+        let request = PureFunctionRequest::new(
+            "score_branch",
+            RuntimeExpr::If {
+                condition: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("score".to_owned())),
+                    op: RuntimeBinaryOp::Ge,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(10))),
+                }),
+                then_expr: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("score".to_owned())),
+                    op: RuntimeBinaryOp::Mul,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+                }),
+                else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::Int(0))),
+            },
+            [int_binding("score", 12)],
+        );
+
+        let conformance = compare_pure_function_backend(
+            &VmPureFunctionBackend,
+            &CraneliftPureFunctionBackend,
+            &request,
+        )
+        .expect("Cranelift JIT matches VM for integer if helper");
+
+        assert!(conformance.matches_vm);
+        assert_eq!(conformance.candidate.value, RuntimeValue::Int(24));
     }
 
     #[test]

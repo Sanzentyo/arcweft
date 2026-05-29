@@ -12,6 +12,8 @@ fn jit_check_json_compares_cranelift_and_vm() {
         .arg("4")
         .arg("--warmup")
         .arg("1")
+        .arg("--samples")
+        .arg("2")
         .output()
         .expect("arcw jit check runs");
 
@@ -28,6 +30,16 @@ fn jit_check_json_compares_cranelift_and_vm() {
             && stdout.contains("\"compile_elapsed_ns\"")
             && stdout.contains("\"jit_elapsed_ns\"")
             && stdout.contains("\"vm_elapsed_ns\""),
+        "jit check JSON should include conformance and timing data: {stdout}"
+    );
+    assert!(
+        stdout.contains("\"speedup_x\"")
+            && stdout.contains("\"dynamic_inputs\": true")
+            && stdout.contains("\"input_bindings\"")
+            && stdout.contains("\"jit_per_iteration_ns\"")
+            && stdout.contains("\"vm_per_iteration_ns\"")
+            && stdout.contains("\"jit_samples\"")
+            && stdout.contains("\"vm_samples\""),
         "jit check JSON should include conformance and timing data: {stdout}"
     );
 }

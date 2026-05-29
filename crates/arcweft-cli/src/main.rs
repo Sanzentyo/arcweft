@@ -17,7 +17,7 @@ use arcweft_core::{
     value::{RuntimeBinaryOp, RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
 use arcweft_lang_hir::lower::lower_to_hir;
-use arcweft_lang_jit_cranelift::CraneliftPureFunctionBackend;
+use arcweft_lang_jit_cranelift::{CompiledPureI64Binary, CraneliftPureFunctionBackend};
 use arcweft_lang_sema::check::{
     TypeCheckStats, analyze_types, typecheck_hir, validate_typecheck_ready,
 };
@@ -131,7 +131,7 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
         return Err(ExitCode::from(2));
     }
 
-    let request = jit_check_request();
+    let request = jit_check_request_with_inputs(3, 4);
     let vm_backend = VmPureFunctionBackend;
     let jit_backend = CraneliftPureFunctionBackend;
     let conformance =
@@ -141,66 +141,54 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
         })?;
 
     let compile_started = Instant::now();
-    let compiled = jit_backend.compile_i64(&request).map_err(|error| {
-        eprintln!("error: failed to compile JIT helper: {error}");
-        ExitCode::FAILURE
-    })?;
+    let compiled = jit_backend
+        .compile_i64_binary(&request, "base", "bonus")
+        .map_err(|error| {
+            eprintln!("error: failed to compile JIT helper: {error}");
+            ExitCode::FAILURE
+        })?;
     let compile_elapsed_ns = compile_started.elapsed().as_nanos();
 
-    for _ in 0..options.warmup {
-        let _ = compiled.call();
-    }
+    warmup_jit_check_jit(&compiled, options.warmup);
+    let jit_measurement = measure_jit_check_jit(&compiled, options.samples, options.iterations)?;
 
-    let jit_started = Instant::now();
-    let mut jit_accumulator = 0_i64;
-    for _ in 0..options.iterations {
-        jit_accumulator = jit_accumulator.saturating_add(compiled.call());
-    }
-    let jit_elapsed_ns = jit_started.elapsed().as_nanos();
+    warmup_jit_check_vm(vm_backend, options.warmup)?;
+    let vm_measurement = measure_jit_check_vm(vm_backend, options.samples, options.iterations)?;
 
-    for _ in 0..options.warmup {
-        let _ = vm_backend.evaluate(&request).map_err(|error| {
-            eprintln!("error: VM warmup failed: {error}");
-            ExitCode::FAILURE
-        })?;
-    }
-
-    let vm_started = Instant::now();
-    let mut vm_accumulator = 0_i64;
-    for _ in 0..options.iterations {
-        let value = vm_backend.evaluate(&request).map_err(|error| {
-            eprintln!("error: VM evaluation failed: {error}");
-            ExitCode::FAILURE
-        })?;
-        if let RuntimeValue::Int(value) = value.value {
-            vm_accumulator = vm_accumulator.saturating_add(value);
-        }
-    }
-    let vm_elapsed_ns = vm_started.elapsed().as_nanos();
-
+    let matches_vm =
+        conformance.matches_vm && jit_measurement.accumulator == vm_measurement.accumulator;
     let report = JitCheckReport {
-        status: if conformance.matches_vm {
-            "ok"
-        } else {
-            "failed"
-        }
-        .to_owned(),
+        status: if matches_vm { "ok" } else { "failed" }.to_owned(),
         helper: request.name.clone(),
+        input_bindings: [
+            compiled.param_names().0.to_owned(),
+            compiled.param_names().1.to_owned(),
+        ],
+        dynamic_inputs: true,
         vm_backend: backend_label(conformance.vm.backend).to_owned(),
         jit_backend: backend_label(conformance.candidate.backend).to_owned(),
-        matches_vm: conformance.matches_vm,
+        matches_vm,
         vm_value: runtime_value_summary(&conformance.vm.value),
         jit_value: runtime_value_summary(&conformance.candidate.value),
         warmup: options.warmup,
         iterations: options.iterations,
+        samples: options.samples,
         timings: JitCheckTimingReport {
             compile: compile_elapsed_ns,
-            jit: jit_elapsed_ns,
-            vm: vm_elapsed_ns,
+            jit: jit_measurement.elapsed.median,
+            vm: vm_measurement.elapsed.median,
+            jit_per_iteration: per_iteration_ns(jit_measurement.elapsed.median, options.iterations),
+            vm_per_iteration: per_iteration_ns(vm_measurement.elapsed.median, options.iterations),
+            speedup_x: speedup_x(
+                vm_measurement.elapsed.median,
+                jit_measurement.elapsed.median,
+            ),
+            jit_samples: jit_measurement.elapsed,
+            vm_samples: vm_measurement.elapsed,
         },
         deterministic: JitCheckDeterministicReport {
-            jit_accumulator,
-            vm_accumulator,
+            jit_accumulator: jit_measurement.accumulator,
+            vm_accumulator: vm_measurement.accumulator,
         },
         vm_stats: PureFunctionStatsReport::from_stats(&conformance.vm.stats),
         jit_stats: PureFunctionStatsReport::from_stats(compiled.stats()),
@@ -210,12 +198,13 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
         print_json(&report)?;
     } else {
         println!(
-            "ok: jit check helper={} matches_vm={} compile_ns={} jit_ns={} vm_ns={}",
+            "ok: jit check helper={} matches_vm={} compile_ns={} jit_median_ns={} vm_median_ns={} speedup_x={}",
             report.helper,
             report.matches_vm,
             report.timings.compile,
             report.timings.jit,
-            report.timings.vm
+            report.timings.vm,
+            report.timings.speedup_x
         );
     }
 
@@ -226,31 +215,142 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
     }
 }
 
-fn jit_check_request() -> PureFunctionRequest {
+fn jit_check_request_with_inputs(base: i64, bonus: i64) -> PureFunctionRequest {
     PureFunctionRequest::new(
         "score",
-        RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Call {
-                callee: "add".to_owned(),
-                args: vec![
-                    RuntimeExpr::Local("bonus".to_owned()),
-                    RuntimeExpr::Value(RuntimeValue::Int(2)),
-                ],
+        RuntimeExpr::If {
+            condition: Box::new(RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Ge,
+                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(3))),
             }),
+            then_expr: Box::new(RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Call {
+                    callee: "add".to_owned(),
+                    args: vec![
+                        RuntimeExpr::Local("bonus".to_owned()),
+                        RuntimeExpr::Value(RuntimeValue::Int(2)),
+                    ],
+                }),
+            }),
+            else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::Int(0))),
         },
         [
             RuntimeBinding {
                 name: "base".to_owned(),
-                value: RuntimeValue::Int(3),
+                value: RuntimeValue::Int(base),
             },
             RuntimeBinding {
                 name: "bonus".to_owned(),
-                value: RuntimeValue::Int(4),
+                value: RuntimeValue::Int(bonus),
             },
         ],
     )
+}
+
+fn jit_check_input(sample: usize, iteration: usize) -> (i64, i64) {
+    let base = i64::try_from(sample.saturating_add(iteration) % 8).map_or(1, |value| value + 1);
+    let bonus = i64::try_from(sample.saturating_mul(3).saturating_add(iteration) % 5)
+        .map_or(1, |value| value + 1);
+    (base, bonus)
+}
+
+fn warmup_jit_check_jit(compiled: &CompiledPureI64Binary, warmup: usize) {
+    for index in 0..warmup {
+        let (base, bonus) = jit_check_input(0, index);
+        let _ = compiled.call(base, bonus);
+    }
+}
+
+fn measure_jit_check_jit(
+    compiled: &CompiledPureI64Binary,
+    samples: usize,
+    iterations: usize,
+) -> Result<JitRepeatedMeasurement, ExitCode> {
+    measure_repeated(samples, iterations, |sample, index| {
+        let (base, bonus) = jit_check_input(sample, index);
+        Ok(compiled.call(base, bonus))
+    })
+}
+
+fn warmup_jit_check_vm(vm_backend: VmPureFunctionBackend, warmup: usize) -> Result<(), ExitCode> {
+    for index in 0..warmup {
+        let (base, bonus) = jit_check_input(0, index);
+        let request = jit_check_request_with_inputs(base, bonus);
+        let _ = vm_backend.evaluate(&request).map_err(|error| {
+            eprintln!("error: VM warmup failed: {error}");
+            ExitCode::FAILURE
+        })?;
+    }
+    Ok(())
+}
+
+fn measure_jit_check_vm(
+    vm_backend: VmPureFunctionBackend,
+    samples: usize,
+    iterations: usize,
+) -> Result<JitRepeatedMeasurement, ExitCode> {
+    measure_repeated(samples, iterations, |sample, index| {
+        let (base, bonus) = jit_check_input(sample, index);
+        let request = jit_check_request_with_inputs(base, bonus);
+        let value = vm_backend.evaluate(&request).map_err(|error| {
+            eprintln!("error: VM evaluation failed: {error}");
+            ExitCode::FAILURE
+        })?;
+        if let RuntimeValue::Int(value) = value.value {
+            Ok(value)
+        } else {
+            Ok(0)
+        }
+    })
+}
+
+fn measure_repeated(
+    samples: usize,
+    iterations: usize,
+    mut call: impl FnMut(usize, usize) -> Result<i64, ExitCode>,
+) -> Result<JitRepeatedMeasurement, ExitCode> {
+    if samples == 0 {
+        eprintln!("error: --samples must be greater than zero");
+        return Err(ExitCode::from(2));
+    }
+    let mut elapsed = Vec::with_capacity(samples);
+    let mut accumulator = 0_i64;
+    for sample in 0..samples {
+        let started = Instant::now();
+        for iteration in 0..iterations {
+            accumulator = accumulator.saturating_add(call(sample, iteration)?);
+        }
+        elapsed.push(started.elapsed().as_nanos());
+    }
+    Ok(JitRepeatedMeasurement {
+        elapsed: timing_samples(elapsed),
+        accumulator,
+    })
+}
+
+fn timing_samples(mut values: Vec<u128>) -> JitTimingSamples {
+    values.sort_unstable();
+    let len = values.len();
+    JitTimingSamples {
+        min: values.first().copied().unwrap_or_default(),
+        median: values[len / 2],
+        max: values.last().copied().unwrap_or_default(),
+    }
+}
+
+fn per_iteration_ns(elapsed_ns: u128, iterations: usize) -> u128 {
+    elapsed_ns / iterations.max(1) as u128
+}
+
+fn speedup_x(vm_elapsed_ns: u128, jit_elapsed_ns: u128) -> String {
+    if jit_elapsed_ns == 0 {
+        return "0.000".to_owned();
+    }
+    let milli = vm_elapsed_ns.saturating_mul(1000) / jit_elapsed_ns;
+    format!("{}.{:03}", milli / 1000, milli % 1000)
 }
 
 fn format_command(options: &ToolingCommandOptions) -> Result<(), ExitCode> {
@@ -1924,6 +2024,8 @@ struct JitCheckOptions {
     iterations: usize,
     #[arg(long, default_value_t = 10)]
     warmup: usize,
+    #[arg(long, default_value_t = 5)]
+    samples: usize,
     #[arg(long)]
     json: bool,
 }
@@ -1959,6 +2061,8 @@ enum CliRuntimeStepMode {
 struct JitCheckReport {
     status: String,
     helper: String,
+    input_bindings: [String; 2],
+    dynamic_inputs: bool,
     vm_backend: String,
     jit_backend: String,
     matches_vm: bool,
@@ -1966,6 +2070,7 @@ struct JitCheckReport {
     jit_value: String,
     warmup: usize,
     iterations: usize,
+    samples: usize,
     timings: JitCheckTimingReport,
     deterministic: JitCheckDeterministicReport,
     vm_stats: PureFunctionStatsReport,
@@ -1980,6 +2085,26 @@ struct JitCheckTimingReport {
     jit: u128,
     #[serde(rename = "vm_elapsed_ns")]
     vm: u128,
+    #[serde(rename = "jit_per_iteration_ns")]
+    jit_per_iteration: u128,
+    #[serde(rename = "vm_per_iteration_ns")]
+    vm_per_iteration: u128,
+    speedup_x: String,
+    jit_samples: JitTimingSamples,
+    vm_samples: JitTimingSamples,
+}
+
+#[derive(Clone, Copy, Debug, serde::Serialize)]
+struct JitTimingSamples {
+    min: u128,
+    median: u128,
+    max: u128,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct JitRepeatedMeasurement {
+    elapsed: JitTimingSamples,
+    accumulator: i64,
 }
 
 #[derive(serde::Serialize)]

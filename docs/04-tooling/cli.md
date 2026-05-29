@@ -281,16 +281,21 @@ Profile and bench JSON must not persist absolute local source paths.
 ## JIT
 
 `arcw jit check` runs the native Cranelift pure-helper adapter against the VM
-reference backend. The current executable subset is integer-only and is meant as
-the first conformance and timing gate for future wider pure helper lowering:
+reference backend. The current executable subset covers deterministic `i64`
+arithmetic, integer comparisons, value-producing `if`, and selected local
+bindings passed as runtime `i64` inputs. It is meant as the first conformance
+and timing gate for future wider pure helper lowering:
 
 ```bash
-arcw jit check --json --iterations 1000 --warmup 10
+arcw jit check --json --iterations 1000 --warmup 10 --samples 5
 ```
 
 The JSON includes VM/JIT result equality, compile elapsed time, repeated native
-call elapsed time, VM elapsed time, deterministic accumulators, and pure helper
-stats. It does not include source paths.
+call elapsed time, VM elapsed time, sample min/median/max, per-iteration median
+time, speedup ratio, deterministic accumulators, dynamic input binding names,
+and pure helper stats. The measurement loop sends deterministic varying
+`base` / `bonus` inputs through both the compiled native function and the VM
+reference. It does not include source paths.
 
 ```bash
 arcw test game/routes/opening.arcw
