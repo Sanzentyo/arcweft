@@ -287,6 +287,10 @@ Current high-confidence state:
   `RuntimeStepBudget::max_ops` inside the VM loop. `Game` mode returns on
   presentation-visible output while pure observations can drain to a harder
   boundary.
+- `arcweft-core::bytecode` provides a pure `BytecodeProgram` bundle and
+  deterministic bytecode stats. `BytecodeVmExecutor` executes that bundle through
+  the semantic VM so VM, bytecode, AOT, and future JIT tiers have a shared
+  conformance boundary before generated dispatch is introduced.
 - Phase 2.0 headless observation state is implemented for the current runtime
   slice. `arcweft-core` records
   cumulative log, signal, metric, and event observations from emitted

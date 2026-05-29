@@ -1,3 +1,4 @@
+pub mod bytecode;
 pub mod effect;
 pub mod engine;
 pub mod executor;

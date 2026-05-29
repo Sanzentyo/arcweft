@@ -1,5 +1,6 @@
+use crate::bytecode::BytecodeProgram;
 use crate::engine::{Engine, FlowFiber};
-use crate::plan::RuntimePlan;
+use crate::plan::{RuntimePlan, RuntimePlanError};
 use crate::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult};
 
 /// Sans I/O execution boundary used by CLI, LSP, tests, and future adapters.
@@ -27,6 +28,13 @@ pub struct VmExecutor {
 /// exists, while callers already depend on the stable `RuntimeExecutor` shape.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AotExecutor {
+    vm: VmExecutor,
+}
+
+/// Runtime executor backed by a bytecode bundle.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BytecodeVmExecutor {
+    program: BytecodeProgram,
     vm: VmExecutor,
 }
 
@@ -66,6 +74,25 @@ impl AotExecutor {
     }
 }
 
+impl BytecodeVmExecutor {
+    pub fn new(program: BytecodeProgram) -> Result<Self, RuntimePlanError> {
+        let vm = VmExecutor::new(program.clone().into_runtime_plan()?);
+        Ok(Self { program, vm })
+    }
+
+    pub const fn program(&self) -> &BytecodeProgram {
+        &self.program
+    }
+
+    pub const fn vm(&self) -> &VmExecutor {
+        &self.vm
+    }
+
+    pub fn into_program(self) -> BytecodeProgram {
+        self.program
+    }
+}
+
 impl RuntimeExecutor for VmExecutor {
     fn step(&mut self, input: RuntimeStepInput, options: RuntimeStepOptions) -> RuntimeStepResult {
         self.engine.step(input, options)
@@ -77,6 +104,16 @@ impl RuntimeExecutor for VmExecutor {
 }
 
 impl RuntimeExecutor for AotExecutor {
+    fn step(&mut self, input: RuntimeStepInput, options: RuntimeStepOptions) -> RuntimeStepResult {
+        self.vm.step(input, options)
+    }
+
+    fn fiber(&self) -> &FlowFiber {
+        self.vm.fiber()
+    }
+}
+
+impl RuntimeExecutor for BytecodeVmExecutor {
     fn step(&mut self, input: RuntimeStepInput, options: RuntimeStepOptions) -> RuntimeStepResult {
         self.vm.step(input, options)
     }

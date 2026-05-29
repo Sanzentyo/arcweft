@@ -27,9 +27,13 @@ pub struct RuntimeStepResult {
 
 `Engine` implements `RuntimeExecutor` directly. `VmExecutor` is the current
 semantic executor wrapper used by CLI tooling; it delegates to `Engine` and keeps
-the VM as the source of truth. `AotExecutor` also implements `RuntimeExecutor`
-today, but its Phase 2 implementation deliberately delegates to `VmExecutor` so
-the public AOT boundary can be tested without creating a second semantic engine.
+the VM as the source of truth. `BytecodeProgram` is the pure data bundle between
+runtime-plan lowering and VM/AOT/JIT execution. `BytecodeVmExecutor` executes a
+bytecode bundle through the semantic VM so bytecode generation can be tested
+before a separate dispatch loop exists. `AotExecutor` also implements
+`RuntimeExecutor` today, but its Phase 2 implementation deliberately delegates to
+`VmExecutor` so the public AOT boundary can be tested without creating a second
+semantic engine.
 
 Snapshot/restore remains a future shared contract. It must use executor-neutral
 data when added so VM, AOT, replay, and LSP tooling can compare equivalent
@@ -43,6 +47,11 @@ pub struct VmExecutor {
 }
 
 pub struct AotExecutor {
+    vm: VmExecutor,
+}
+
+pub struct BytecodeVmExecutor {
+    program: BytecodeProgram,
     vm: VmExecutor,
 }
 
