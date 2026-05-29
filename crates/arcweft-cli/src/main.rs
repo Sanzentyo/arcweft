@@ -538,6 +538,7 @@ impl JitCheckTarget {
             JitBuiltinCase::BranchMix => Self::builtin_branch_mix(),
             JitBuiltinCase::LetChain => Self::builtin_let_chain(),
             JitBuiltinCase::FourInputMix => Self::builtin_four_input_mix(),
+            JitBuiltinCase::AccumulationMix => Self::builtin_accumulation_mix(),
         }
     }
 
@@ -651,6 +652,55 @@ impl JitCheckTarget {
                         binary(local("left"), RuntimeBinaryOp::Ne, local("right")),
                         binary(local("left"), RuntimeBinaryOp::Sub, local("right")),
                         binary(local("left"), RuntimeBinaryOp::Add, local("right")),
+                    ),
+                ),
+            ),
+        }
+    }
+
+    fn builtin_accumulation_mix() -> Self {
+        let pair_ab = binary(local("a"), RuntimeBinaryOp::Mul, local("b"));
+        let pair_cd = binary(local("c"), RuntimeBinaryOp::Mul, local("d"));
+        Self {
+            name: "accumulation_mix".to_owned(),
+            source: JitCheckHelperSource::Builtin,
+            source_compiler: None,
+            input_names: vec![
+                "a".to_owned(),
+                "b".to_owned(),
+                "c".to_owned(),
+                "d".to_owned(),
+            ],
+            expr: let_in(
+                "sum0",
+                binary(pair_ab.clone(), RuntimeBinaryOp::Add, pair_cd.clone()),
+                let_in(
+                    "sum1",
+                    binary(
+                        binary(local("sum0"), RuntimeBinaryOp::Add, local("a")),
+                        RuntimeBinaryOp::Sub,
+                        local("d"),
+                    ),
+                    let_in(
+                        "sum2",
+                        binary(
+                            binary(local("sum1"), RuntimeBinaryOp::Mul, int(3)),
+                            RuntimeBinaryOp::Add,
+                            binary(local("b"), RuntimeBinaryOp::Mul, local("c")),
+                        ),
+                        let_in(
+                            "sum3",
+                            binary(
+                                binary(local("sum2"), RuntimeBinaryOp::Sub, pair_ab),
+                                RuntimeBinaryOp::Add,
+                                pair_cd,
+                            ),
+                            binary(
+                                binary(local("sum3"), RuntimeBinaryOp::Add, local("sum2")),
+                                RuntimeBinaryOp::Sub,
+                                local("sum1"),
+                            ),
+                        ),
                     ),
                 ),
             ),
@@ -3982,6 +4032,7 @@ enum JitBuiltinCase {
     BranchMix,
     LetChain,
     FourInputMix,
+    AccumulationMix,
 }
 
 #[derive(Args, Clone, Debug, Default)]

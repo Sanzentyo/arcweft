@@ -137,6 +137,40 @@ fn jit_check_json_measures_four_input_mix_case() {
 }
 
 #[test]
+fn jit_check_json_measures_accumulation_mix_case() {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("jit")
+        .arg("check")
+        .arg("--case")
+        .arg("accumulation-mix")
+        .arg("--json")
+        .arg("--iterations")
+        .arg("4")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--samples")
+        .arg("2")
+        .arg("--input-seed")
+        .arg("19")
+        .output()
+        .expect("arcw jit check accumulation-mix runs");
+
+    assert!(
+        output.status.success(),
+        "accumulation-mix jit check should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_jit_check_json(
+        &stdout,
+        "accumulation_mix",
+        "builtin",
+        &["a", "b", "c", "d"],
+        19,
+    );
+}
+
+#[test]
 fn jit_check_json_measures_let_chain_case() {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("jit")
