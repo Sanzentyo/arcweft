@@ -1642,6 +1642,82 @@ bench @bench.pure_score {
             && stdout.contains("\"jit_accumulator\""),
         "bench JSON should include VM/AOT/JIT pure helper timing: {stdout}"
     );
+    assert_pure_helper_bench_json(&stdout);
+}
+
+fn assert_pure_helper_bench_json(stdout: &str) {
+    let json: serde_json::Value =
+        serde_json::from_str(stdout).expect("bench output is structured JSON");
+    let pure_helper = &json["benches"][0]["sections"][0]["pure_helper"];
+    assert_eq!(pure_helper["helper"], "score");
+    assert_eq!(pure_helper["matches_vm"], true);
+    assert_eq!(pure_helper["warmup"], 1);
+    assert_eq!(pure_helper["iterations"], 4);
+    assert_eq!(pure_helper["samples"], 2);
+    assert_eq!(
+        pure_helper["deterministic"]["vm_accumulator"],
+        pure_helper["deterministic"]["aot_accumulator"]
+    );
+    assert_eq!(
+        pure_helper["deterministic"]["vm_accumulator"],
+        pure_helper["deterministic"]["jit_accumulator"]
+    );
+
+    let timings = &pure_helper["timings"];
+    assert_eq!(
+        timings["vm_elapsed_ns"], timings["vm_samples"]["median"],
+        "VM median should be exposed both as the top-level elapsed value and in the sample summary"
+    );
+    assert_eq!(timings["aot_elapsed_ns"], timings["aot_samples"]["median"]);
+    assert_eq!(timings["jit_elapsed_ns"], timings["jit_samples"]["median"]);
+    assert_sample_summary_is_ordered(&timings["vm_samples"]);
+    assert_sample_summary_is_ordered(&timings["aot_samples"]);
+    assert_sample_summary_is_ordered(&timings["jit_samples"]);
+    assert!(
+        timings["vm_per_iteration_ns"]
+            .as_u64()
+            .is_some_and(|value| value > 0)
+            && timings["aot_per_iteration_ns"]
+                .as_u64()
+                .is_some_and(|value| value > 0)
+            && timings["jit_per_iteration_ns"]
+                .as_u64()
+                .is_some_and(|value| value > 0),
+        "per-iteration timings should be positive: {timings}"
+    );
+    assert!(
+        timings["speedup_x"]
+            .as_str()
+            .and_then(|value| value.parse::<f64>().ok())
+            .is_some(),
+        "JIT speedup should be numeric: {timings}"
+    );
+    assert!(
+        timings["aot_speedup_x"]
+            .as_str()
+            .and_then(|value| value.parse::<f64>().ok())
+            .is_some(),
+        "AOT speedup should be numeric: {timings}"
+    );
+    assert_eq!(
+        pure_helper["vm_stats"]["evaluated_binary_ops"],
+        pure_helper["aot_stats"]["evaluated_binary_ops"]
+    );
+    let vm_binary_ops = pure_helper["vm_stats"]["evaluated_binary_ops"]
+        .as_u64()
+        .expect("VM binary op count is numeric");
+    let jit_binary_ops = pure_helper["jit_stats"]["evaluated_binary_ops"]
+        .as_u64()
+        .expect("JIT binary op count is numeric");
+    assert!(
+        jit_binary_ops >= vm_binary_ops && vm_binary_ops > 0,
+        "JIT compile stats cover the full expression while VM/AOT runtime stats cover the exercised branch: {pure_helper}"
+    );
+    assert!(
+        pure_helper["vm_stats"]["evaluated_exprs"]
+            .as_u64()
+            .is_some_and(|value| value > 0)
+    );
 }
 
 #[test]
@@ -2619,6 +2695,18 @@ fn temp_dir(name: &str) -> PathBuf {
     }
     fs::create_dir_all(&path).expect("create temp fixture dir");
     path
+}
+
+fn assert_sample_summary_is_ordered(samples: &serde_json::Value) {
+    let min = samples["min"].as_u64().expect("sample min is an integer");
+    let median = samples["median"]
+        .as_u64()
+        .expect("sample median is an integer");
+    let max = samples["max"].as_u64().expect("sample max is an integer");
+    assert!(
+        min <= median && median <= max,
+        "sample summary should satisfy min <= median <= max: {samples}"
+    );
 }
 
 fn workspace_root() -> PathBuf {
