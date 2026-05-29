@@ -140,7 +140,9 @@ pub(super) fn iter_item_type(source_type: Option<&TypeKind>) -> TypeKind {
             TypeKind::Vec(item)
             | TypeKind::Array { item, .. }
             | TypeKind::Seq(item)
-            | TypeKind::Slice(item),
+            | TypeKind::Slice(item)
+            | TypeKind::Stream { item, .. }
+            | TypeKind::Source { item, .. },
         ) => item.as_ref().clone(),
         Some(TypeKind::Named(name)) => named_iter_item_type(name).map_or_else(
             || TypeKind::Named("ChoiceOptionSource".to_owned()),

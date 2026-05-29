@@ -88,6 +88,22 @@ flow @flow.for_pure for_pure {
 }
 
 #[test]
+fn typecheck_for_loop_binds_stream_item_type() {
+    let tree = parse_ok(
+        r"
+stream fn passthrough(frames: Stream<IteratorItem, CaptureError>) -> Stream<IteratorItem, CaptureError> {
+    for frame in frames {
+        yield frame
+    }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("stream for fixture lowers");
+    validate_typecheck_ready(&hir).expect("stream for fixture is typecheck-ready");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("stream for item binds as stream item");
+}
+
+#[test]
 fn numeric_primitive_types_keep_explicit_widths() {
     assert_eq!(TypeKind::primitive_name("i32"), Some(TypeKind::I32));
     assert_eq!(TypeKind::primitive_name("i64"), Some(TypeKind::I64));
