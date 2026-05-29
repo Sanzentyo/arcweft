@@ -1,5 +1,5 @@
 entry activity @entry.activity {
-    run @flow.main
+    run(@flow.main)
 }
 
 flow @flow.main main {

@@ -79,7 +79,7 @@ Test:
 
 ```arcw
 test @test.settings_modal_blocks_world scenario {
-    start @flow.opening
+    start(@flow.opening)
     invoke @ui.settings.open
 
     click @character.alice

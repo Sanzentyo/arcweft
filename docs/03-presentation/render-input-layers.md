@@ -661,7 +661,7 @@ visual test:
 
 ```arcw
 test @test.settings_blocks_choice visual {
-    start @flow.opening
+    start(@flow.opening)
     invoke @ui.settings.open
 
     expect layer @layer.settings modal visible

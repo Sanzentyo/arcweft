@@ -128,14 +128,14 @@ pub flow @flow.enter_truck_game enter_truck_game(state: GameState) -> Result<Flo
 
 ```arcw
 test @test.mobile_controller_drives_truck scenario {
-    start @flow.enter_truck_game
+    start(@flow.enter_truck_game)
 
     wait object @control.action_a visible
 
     controller press @control.action_a for 8 frames
     controller axis @control.left_stick = vec2(1.0, 0.0) for 60 frames
 
-    expect signal @signal.truck.speed > 10.0
+    expect.signal(@signal.truck.speed, 10.0)
 }
 ```
 

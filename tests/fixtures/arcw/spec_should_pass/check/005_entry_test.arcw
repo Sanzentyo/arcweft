@@ -1,5 +1,5 @@
 entry test @entry.test {
-    run @flow.main
+    run(@flow.main)
 }
 
 flow @flow.main main {

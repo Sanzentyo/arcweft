@@ -739,7 +739,7 @@ fn cli_json_selects_cli_entry_and_binds_args() {
     let path = temp_arcw(
         "cli-entry",
         r"
-entry cli @entry.main { run @flow.main }
+entry cli @entry.main { run(@flow.main) }
 
 flow @flow.main main(argc: i32) {
     return argc
@@ -1043,8 +1043,8 @@ fn test_json_lists_script_tests() {
         "script-test",
         r"
 test @test.opening scenario {
-    start @flow.opening
-    expect no_assertion_failures
+    start(@flow.opening)
+    expect.no_assertion_failures()
 }
 ",
     );
@@ -1084,10 +1084,10 @@ effects { signal.write }
 }
 
 test @test.observed scenario {
-    start @flow.observed
-    expect log.info contains "enter observed"
-    expect signal @signal.current_flow == @flow.observed
-    expect no_assertion_failures
+    start(@flow.observed)
+    expect.log(.info, contains="enter observed")
+    expect.signal(@signal.current_flow, @flow.observed)
+    expect.no_assertion_failures()
 }
 "#,
     );
@@ -1159,7 +1159,7 @@ fn bench_json_measures_headless_runtime_sections() {
         "script-bench-measured",
         r#"
 bench @bench.runtime {
-    measure iterations = 2 { start @flow.bench }
+    measure iterations = 2 { start(@flow.bench) }
 }
 
 flow @flow.bench bench {
@@ -1545,7 +1545,7 @@ fn serve_json_treats_server_run_entry_as_default_route() {
         "serve-run",
         r#"
 entry server @entry.server {
-    run @flow.main
+    run(@flow.main)
 }
 
 flow @flow.main main {
@@ -1779,7 +1779,7 @@ fn profile_rejects_unknown_adapter() {
     fs::write(
         &source,
         r#"
-entry server @entry.http { run @flow.main }
+entry server @entry.http { run(@flow.main) }
 
 flow @flow.main main {
     return "ok"
@@ -1826,7 +1826,7 @@ fn cli_test_and_bench_profiles_use_profile_sources() {
     fs::write(
         &cli_source,
         r"
-entry cli @entry.main { run @flow.main }
+entry cli @entry.main { run(@flow.main) }
 
 flow @flow.main main(argc: i32) {
     return argc
@@ -1838,8 +1838,8 @@ flow @flow.main main(argc: i32) {
         &test_source,
         r#"
 test @test.opening scenario {
-    start @flow.opening
-    expect no_assertion_failures
+    start(@flow.opening)
+    expect.no_assertion_failures()
 }
 
 flow @flow.opening opening {

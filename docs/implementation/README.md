@@ -386,10 +386,10 @@ Current high-confidence state:
   parsed as structured declarations and lowered into HIR metadata. The
   `arcweft-test` crate extracts a Sans I/O manifest. `arcw test` now executes
   `scenario` declarations through the headless runtime when they contain
-  `start @flow.id`, evaluates initial signal/log/no-assertion expectations, and
+  `start(@flow.id)`, evaluates initial signal/log/no-assertion expectations, and
   reports pass/fail/skipped JSON. `arcw bench` now validates headless bench
   plans, requires `measure`, accepts `setup`/`measure`/`assert`/`report`
-  sections, measures `measure` bodies that name `start @flow...`, and reports
+  sections, measures `measure` bodies that name `start(@flow...)`, and reports
   measured/validated/skipped/failed JSON. Visual, audio, fixture, and allocation
   execution remain player/headless adapter responsibilities.
 - `RuntimeStepResult` now carries deterministic `RuntimeStepStats` for executed

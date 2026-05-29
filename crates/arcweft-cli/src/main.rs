@@ -24,7 +24,11 @@ use arcweft_lang_sema::check::{
 };
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
-use arcweft_lang_syntax::{lint::lint_id_policy, parser::parse_source};
+use arcweft_lang_syntax::{
+    expr::{Expr, Literal, parse_expr},
+    lint::lint_id_policy,
+    parser::parse_source,
+};
 use arcweft_launch::{LaunchKind, LaunchProfileManifest, ResolvedLaunchProfile};
 use arcweft_runtime_plan::flow::lower_runtime_plan;
 use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_groups};
@@ -1493,7 +1497,7 @@ fn run_script_test(
             test,
             false,
             "not_started".to_owned(),
-            vec!["scenario test requires `start @flow.id`".to_owned()],
+            vec!["scenario test requires `start(@flow.id)`".to_owned()],
             Vec::new(),
         );
     };
@@ -1545,11 +1549,9 @@ fn run_script_test(
 }
 
 fn test_start_flow(test: &ScriptTest) -> Option<String> {
-    test.steps.iter().find_map(|step| {
-        let rest = step.text.strip_prefix("start ")?;
-        let id = rest.split_whitespace().next()?.trim_start_matches('@');
-        Some(id.to_owned())
-    })
+    test.steps
+        .iter()
+        .find_map(|step| parse_start_flow_call(&step.text))
 }
 
 fn test_expectation_failures(
@@ -1559,7 +1561,7 @@ fn test_expectation_failures(
 ) -> Vec<String> {
     test.steps
         .iter()
-        .filter(|step| step.command == "expect")
+        .filter(|step| step.command == "expect" || step.command.starts_with("expect."))
         .filter_map(|step| evaluate_test_expectation(step, engine, frames).err())
         .collect()
 }
@@ -1570,13 +1572,13 @@ fn evaluate_test_expectation(
     frames: &[RuntimeStepRunSummary],
 ) -> Result<(), String> {
     let text = step.text.trim();
-    if text == "expect no_assertion_failures" {
+    if is_expect_no_assertion_failures_call(text) {
         if frames.iter().all(|frame| frame.diagnostics.is_empty()) {
             return Ok(());
         }
         return Err("expected no assertion/runtime diagnostics".to_owned());
     }
-    if let Some((target, expected)) = parse_signal_expectation(text) {
+    if let Some((target, expected)) = parse_expect_signal_call(text) {
         let actual = engine.fiber().observations.signals.get(&target);
         if actual == Some(&expected) {
             return Ok(());
@@ -1586,7 +1588,7 @@ fn evaluate_test_expectation(
             actual.cloned().unwrap_or_else(|| "<missing>".to_owned())
         ));
     }
-    if let Some((level, needle)) = parse_log_contains_expectation(text) {
+    if let Some((level, needle)) = parse_expect_log_call(text) {
         if engine
             .fiber()
             .observations
@@ -1601,19 +1603,100 @@ fn evaluate_test_expectation(
     Err(format!("unsupported scenario expectation `{text}`"))
 }
 
-fn parse_signal_expectation(text: &str) -> Option<(String, String)> {
-    let rest = text.strip_prefix("expect signal ")?;
-    let (target, expected) = rest.split_once(" == ")?;
-    Some((target.trim().to_owned(), expected.trim().to_owned()))
+fn parse_start_flow_call(text: &str) -> Option<String> {
+    let Expr::Call { callee, args } = parse_expr(text).ok()? else {
+        return None;
+    };
+    let Expr::Path(name) = callee.as_ref() else {
+        return None;
+    };
+    if name != "start" {
+        return None;
+    }
+    let [flow] = args.as_slice() else {
+        return None;
+    };
+    entity_ref_label(flow)
 }
 
-fn parse_log_contains_expectation(text: &str) -> Option<(String, String)> {
-    let rest = text.strip_prefix("expect log.")?;
-    let (level, needle) = rest.split_once(" contains ")?;
+fn parse_expect_signal_call(text: &str) -> Option<(String, String)> {
+    let (method, args) = parse_expect_method_call(text)?;
+    if method != "signal" {
+        return None;
+    }
+    let [target, expected] = args.as_slice() else {
+        return None;
+    };
     Some((
-        level.trim().to_owned(),
-        needle.trim().trim_matches('"').to_owned(),
+        expectation_value_label(target)?,
+        expectation_value_label(expected)?,
     ))
+}
+
+fn is_expect_no_assertion_failures_call(text: &str) -> bool {
+    parse_expect_method_call(text)
+        .is_some_and(|(method, args)| method == "no_assertion_failures" && args.is_empty())
+}
+
+fn parse_expect_log_call(text: &str) -> Option<(String, String)> {
+    let (method, args) = parse_expect_method_call(text)?;
+    if method != "log" {
+        return None;
+    }
+    let [level, contains] = args.as_slice() else {
+        return None;
+    };
+    let level = match level {
+        Expr::Path(path) => path.trim_start_matches('.').to_owned(),
+        Expr::Field { target, field } if matches!(target.as_ref(), Expr::Path(path) if path == "log") => {
+            field.clone()
+        }
+        _ => return None,
+    };
+    let Expr::NamedArg { name, value } = contains else {
+        return None;
+    };
+    if name != "contains" {
+        return None;
+    }
+    Some((level, string_literal_value(value)?))
+}
+
+fn parse_expect_method_call(text: &str) -> Option<(String, Vec<Expr>)> {
+    let Expr::MethodCall {
+        receiver,
+        method,
+        args,
+    } = parse_expr(text).ok()?
+    else {
+        return None;
+    };
+    matches!(receiver.as_ref(), Expr::Path(path) if path == "expect").then_some((method, args))
+}
+
+fn entity_ref_label(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::EntityRef(entity) => Some(entity.body().to_owned()),
+        _ => None,
+    }
+}
+
+fn expectation_value_label(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::EntityRef(entity) => Some(format!("@{}", entity.body())),
+        Expr::Path(path) => Some(path.clone()),
+        Expr::Literal(Literal::Bool(value)) => Some(value.to_string()),
+        Expr::Literal(Literal::Int(value)) => Some(value.to_string()),
+        Expr::Literal(Literal::Float(value) | Literal::String(value)) => Some(value.clone()),
+        _ => None,
+    }
+}
+
+fn string_literal_value(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Literal(Literal::String(value)) => Some(value.clone()),
+        _ => None,
+    }
 }
 
 fn script_bench_command(options: &ScriptBenchOptions) -> Result<(), ExitCode> {
@@ -1791,12 +1874,10 @@ fn run_bench_section(
 }
 
 fn bench_start_flow(section: &BenchSection) -> Option<String> {
-    let start = section.text.find("start @flow.")?;
-    section.text[start + "start @".len()..]
-        .split(|ch: char| ch.is_whitespace() || matches!(ch, '}' | ')' | ';'))
-        .next()
-        .filter(|flow| !flow.is_empty())
-        .map(str::to_owned)
+    let start = section.text.find("start(")?;
+    let tail = &section.text[start..];
+    let close = tail.find(')')?;
+    parse_start_flow_call(&tail[..=close])
 }
 
 fn median_u128(values: &mut [u128]) -> u128 {

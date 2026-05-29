@@ -9,8 +9,8 @@ flow @flow:.next next {
 }
 
 test @test:.opening scenario {
-    start @flow:.main
-    expect no_assertion_failures
+    start(@flow:.main)
+    expect.no_assertion_failures()
 }
 
 bench @bench:.opening {

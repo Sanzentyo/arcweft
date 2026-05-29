@@ -190,7 +190,7 @@ Tests can use semantic actions instead of coordinates:
 
 ```arcw
 test @test.touch_confirm scenario {
-    start @flow.opening
+    start(@flow.opening)
     invoke @control.confirm press
     expect event InputAction.confirm
 }

@@ -1,5 +1,5 @@
 entry @entry.main {
-    start @flow.opening
+    start(@flow.opening)
 }
 
 flow @flow.opening opening {

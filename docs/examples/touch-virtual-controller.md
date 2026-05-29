@@ -47,7 +47,7 @@ pub virtual_controller @controller.touch_default: TouchController {
 
 ```arcw
 test @test.touch_controller_confirm scenario {
-    start @flow.opening
+    start(@flow.opening)
     invoke @control.confirm press
     expect event InputAction.confirm
 }

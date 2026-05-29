@@ -1,6 +1,6 @@
 extern capability fs { type FsError fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read } }
 extern capability path { fn save(path: String) -> VirtualPath }
-entry cli @entry.main { run @flow.main }
+entry cli @entry.main { run(@flow.main) }
 flow @flow.main main effects { fs.read(save) } {
     let text = try await fs.read_text(path.save("profile.json")) with { error e => return "missing" }
     return text

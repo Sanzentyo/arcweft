@@ -1,5 +1,5 @@
 entry cli @entry.cli {
-    run @flow.main
+    run(@flow.main)
 }
 
 flow @flow.main main {

@@ -651,17 +651,11 @@ fn parse_entry_body_item(
     base: usize,
     errors: &mut Vec<super::recovery::ParseError>,
 ) -> EntryItem {
-    if let Some(rest) = item.strip_prefix("start ") {
-        return parse_required_entity_ref(rest.trim(), base, errors).map_or_else(
-            || EntryItem::Raw(item.to_owned()),
-            |(target, _)| EntryItem::Start(target),
-        );
+    if let Some(target) = parse_entry_target_call(item, "start", base, errors) {
+        return EntryItem::Start(target);
     }
-    if let Some(rest) = item.strip_prefix("run ") {
-        return parse_required_entity_ref(rest.trim(), base, errors).map_or_else(
-            || EntryItem::Raw(item.to_owned()),
-            |(target, _)| EntryItem::Run(target),
-        );
+    if let Some(target) = parse_entry_target_call(item, "run", base, errors) {
+        return EntryItem::Run(target);
     }
     if let Some(rest) = item.strip_prefix("route ") {
         return parse_entry_route(rest, base, errors)
@@ -674,6 +668,23 @@ fn parse_entry_body_item(
         };
     }
     EntryItem::Raw(item.to_owned())
+}
+
+fn parse_entry_target_call(
+    item: &str,
+    name: &str,
+    base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Option<crate::ast::ids::EntityRef> {
+    let args = item
+        .strip_prefix(name)?
+        .trim_start()
+        .strip_prefix('(')?
+        .trim_end()
+        .strip_suffix(')')?
+        .trim();
+    let (target, rest) = parse_required_entity_ref(args, base, errors)?;
+    rest.trim().is_empty().then_some(target)
 }
 
 fn parse_entry_route(

@@ -4,7 +4,7 @@ extern capability fs {
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 
-entry cli @entry.main { run @flow.main }
+entry cli @entry.main { run(@flow.main) }
 
 flow @flow.main main effects { fs.read(save) } {
     let profile = try await fs.read_text(path.save("profile.json")) with {

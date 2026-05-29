@@ -354,7 +354,7 @@ ensures result.has_action("select")
 
 ```arcw
 test @test.layer_order_opening visual {
-    start @flow.opening
+    start(@flow.opening)
 
     assert(layer(@layer.background).below(@layer.characters))
     assert(layer(@layer.choices).above(@layer.dialogue))

@@ -279,7 +279,7 @@ pub struct EntityDeclItem {
     range: TextRange,
 }
 
-/// Program entry declaration such as `entry game @entry.main { start @flow.opening }`.
+/// Program entry declaration such as `entry game @entry.main { start(@flow.opening) }`.
 ///
 /// Entries are launch manifests in source form. They select an executable flow
 /// or adapter route without making the first flow in a file special.

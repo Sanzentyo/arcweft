@@ -140,8 +140,8 @@ mod tests {
         let parsed = parse_source(
             r#"
 test @test.opening scenario {
-    start @flow.opening
-    expect no_assertion_failures
+    start(@flow.opening)
+    expect.no_assertion_failures()
 }
 
 bench @bench.opening {

@@ -382,7 +382,7 @@ bbox_source = UiLayoutExact | UiBridgeApprox | BackendUnavailable
 
 ```arcw
 test @test.modal_blocks_choices scenario {
-    start @flow.opening
+    start(@flow.opening)
     open_ui @ui.settings
 
     click @choice.opening.listen

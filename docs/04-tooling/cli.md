@@ -211,7 +211,7 @@ host adapter should bind.
 
 If `--entry` is omitted, the first `entry server` is selected. A server entry
 with `route METHOD "PATH" -> @flow.id` exposes those routes directly. A server
-entry with `run @flow.id` is treated as a default `* * -> flow.id` route for
+entry with `run(@flow.id)` is treated as a default `* * -> flow.id` route for
 headless adapter planning.
 
 Routes that capture path parameters bind them explicitly to target flow
@@ -257,11 +257,11 @@ explicit.
 `arcw test` and `arcw bench` expose Sans I/O script test data. They parse,
 lower, resolve, and typecheck the module before reporting test or bench status.
 `arcw test` executes `scenario` tests through the headless runtime when the test
-contains `start @flow.id`; non-headless categories such as `visual` and `audio`
+contains `start(@flow.id)`; non-headless categories such as `visual` and `audio`
 are reported as skipped until a player adapter owns those backends.
 `arcw bench` validates bench declarations as headless plans. It requires a
 `measure` section, accepts `setup`, `measure`, `assert`, and `report` sections,
-measures headless `measure` bodies that name `start @flow...`, and reports
+measures headless `measure` bodies that name `start(@flow...)`, and reports
 per-bench `measured`, `validated`, `skipped`, or `failed` status in JSON.
 Renderer/audio driving, offline rendering/audio, and allocation counters remain
 adapter work; adapter-only sections are reported as skipped.
@@ -323,8 +323,8 @@ Profile mode requires matching `kind = "test"` or `kind = "bench"` respectively.
 Dedicated commands remain convenient user-facing aliases, but their semantic
 source, entry, and adapter context comes from the resolved launch profile.
 
-Headless scenario expectations currently cover `expect no_assertion_failures`,
-`expect signal @signal.id == VALUE`, and `expect log.LEVEL contains "text"`.
+Headless scenario expectations currently cover `expect.no_assertion_failures()`,
+`expect.signal(@signal.id, value)`, and `expect.log(.level, contains="text")`.
 The manifest preserves the declaration ID, kind, source span, and command-like
 body rows so CLI, LSP, headless player adapters, and Agent tooling can share one
 planning schema without reparsing source text.

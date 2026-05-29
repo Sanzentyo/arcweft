@@ -39,7 +39,7 @@ flow @flow.main main {
 fn entry_selects_runtime_start_flow() {
     let tree = parse_ok(
         r#"
-entry game @entry.main { start @flow.second }
+entry game @entry.main { start(@flow.second) }
 flow @flow.first first { return "wrong" }
 flow @flow.second second { return "right" }
 "#,
@@ -62,7 +62,7 @@ extern capability fs {
     fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
 }
 extern capability path { fn save(path: String) -> VirtualPath }
-entry cli @entry.main { run @flow.main }
+entry cli @entry.main { run(@flow.main) }
 flow @flow.main main effects { fs.read(save) } {
     let text = try await fs.read_text(path.save("profile.json")) with {
         error e => return "missing"

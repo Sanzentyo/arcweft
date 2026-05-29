@@ -80,16 +80,16 @@ headless/player adapters.
 
 ```arcw
 test @test.opening_listen_route scenario {
-    start @flow.opening
+    start(@flow.opening)
 
-    expect log.info contains "enter flow"
-    expect signal @signal.current_flow == @flow.opening
+    expect.log(.info, contains="enter flow")
+    expect.signal(@signal.current_flow, @flow.opening)
 
     wait object @choice.opening.listen visible
     choose @choice.opening.listen
 
-    expect signal @signal.current_flow eventually == @flow.alice_intro
-    expect no_assertion_failures
+    expect.signal(@signal.current_flow, @flow.alice_intro)
+    expect.no_assertion_failures()
 }
 ```
 
@@ -97,7 +97,7 @@ Visual test:
 
 ```arcw
 test @test.opening_choices_visual visual {
-    start @flow.opening
+    start(@flow.opening)
     wait object @choice.opening.listen visible
     capture image overlay as "opening_choices.png"
     assert_bbox @choice.opening.listen within rect(400, 500, 400, 80)
@@ -161,10 +161,10 @@ Test:
 
 ```arcw
 test @test.choice_hook_fires scenario {
-    start @flow.opening
+    start(@flow.opening)
     wait object @choice.opening.listen visible
     expect hook @hook.opening.choice_visible fired
-    expect signal @signal.choice_visible == true
+    expect.signal(@signal.choice_visible, true)
 }
 ```
 

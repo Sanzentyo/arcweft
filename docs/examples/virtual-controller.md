@@ -54,12 +54,12 @@ Headless test:
 
 ```arcw
 test @test.virtual_controller_confirm scenario {
-    start @flow.action_demo
+    start(@flow.action_demo)
 
     invoke @control.confirm press
 
-    expect log.info contains "confirm pressed"
-    expect signal @signal.last_input == InputAction.Confirm
+    expect.log(.info, contains="confirm pressed")
+    expect.signal(@signal.last_input, InputAction.Confirm)
 }
 ```
 

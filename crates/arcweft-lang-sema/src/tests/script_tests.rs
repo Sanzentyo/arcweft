@@ -5,8 +5,8 @@ fn parses_top_level_test_and_bench_items() {
     let tree = parse_ok(
         r#"
 test @test.opening scenario {
-    start @flow.opening
-    expect no_assertion_failures
+    start(@flow.opening)
+    expect.no_assertion_failures()
 }
 
 bench @bench.opening {
@@ -21,7 +21,7 @@ bench @bench.opening {
         Item::Test(item)
             if item.id().body() == "test.opening"
                 && item.kind() == &TestKind::Scenario
-                && item.body().contains("start @flow.opening")
+                && item.body().contains("start(@flow.opening)")
     ));
     assert!(matches!(
         &tree.items()[1],
@@ -61,7 +61,7 @@ fn parses_family_relative_test_and_bench_ids() {
     let tree = parse_ok(
         r"
 test @test:.opening scenario {
-    start @flow.opening
+    start(@flow.opening)
 }
 
 bench @bench:.opening {
