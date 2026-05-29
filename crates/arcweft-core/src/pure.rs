@@ -61,6 +61,7 @@ pub struct AotPureI64Plan {
     name: String,
     expr: AotI64Expr,
     initial_slots: Vec<i64>,
+    input_slots: Vec<usize>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -161,6 +162,15 @@ impl AotPureFunctionBackend {
     ) -> Result<AotPureI64Plan, RuntimeEvalError> {
         AotPureI64Plan::compile(request)
     }
+
+    /// Compiles a deterministic helper request with selected runtime integer inputs.
+    pub fn compile_i64_with_inputs(
+        &self,
+        request: &PureFunctionRequest,
+        input_names: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> Result<AotPureI64Plan, RuntimeEvalError> {
+        AotPureI64Plan::compile_with_inputs(request, input_names)
+    }
 }
 
 impl PureFunctionBackend for AotPureFunctionBackend {
@@ -183,19 +193,57 @@ impl PureFunctionBackend for AotPureFunctionBackend {
 
 impl AotPureI64Plan {
     fn compile(request: &PureFunctionRequest) -> Result<Self, RuntimeEvalError> {
+        Self::compile_with_inputs(request, std::iter::empty::<&str>())
+    }
+
+    fn compile_with_inputs(
+        request: &PureFunctionRequest,
+        input_names: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> Result<Self, RuntimeEvalError> {
         let mut ctx = AotCompileContext::from_request(request)?;
         let expr = compile_aot_i64_expr(&request.name, &request.expr, &mut ctx)?;
+        let input_slots = input_names
+            .into_iter()
+            .map(|name| ctx.input_slot(&request.name, name.as_ref()))
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             name: request.name.clone(),
             expr,
             initial_slots: AotCompileContext::initial_slots(request)?,
+            input_slots,
         })
     }
 
     /// Calls the compiled helper and returns the integer value plus evaluation stats.
     pub fn call(&self) -> (i64, PureFunctionStats) {
+        self.evaluate_with_slots(self.initial_slots.clone())
+    }
+
+    /// Calls the compiled helper with runtime integer inputs.
+    pub fn call_with_inputs(
+        &self,
+        inputs: &[i64],
+    ) -> Result<(i64, PureFunctionStats), RuntimeEvalError> {
+        if inputs.len() != self.input_slots.len() {
+            return Err(unsupported_aot(
+                &self.name,
+                format!(
+                    "AOT helper expected {} input(s), got {}",
+                    self.input_slots.len(),
+                    inputs.len()
+                ),
+            ));
+        }
+        let mut slots = self.initial_slots.clone();
+        for (slot, value) in self.input_slots.iter().zip(inputs.iter().copied()) {
+            slots[*slot] = value;
+        }
+        Ok(self.evaluate_with_slots(slots))
+    }
+
+    fn evaluate_with_slots(&self, slots: Vec<i64>) -> (i64, PureFunctionStats) {
         let mut evaluator = AotI64Evaluator {
-            slots: self.initial_slots.clone(),
+            slots,
             stats: PureFunctionStats::default(),
         };
         let value = evaluator.eval_i64(&self.expr);
@@ -245,6 +293,21 @@ impl AotCompileContext {
 
     fn local_slot(&self, name: &str) -> Option<usize> {
         self.slots.get(name).copied()
+    }
+
+    fn input_slot(&self, helper_name: &str, name: &str) -> Result<usize, RuntimeEvalError> {
+        if name.is_empty() {
+            return Err(unsupported_aot(
+                helper_name,
+                "AOT runtime input names must be non-empty",
+            ));
+        }
+        self.local_slot(name).ok_or_else(|| {
+            unsupported_aot(
+                helper_name,
+                format!("AOT runtime input `{name}` is not a helper binding"),
+            )
+        })
     }
 
     fn with_let_binding(

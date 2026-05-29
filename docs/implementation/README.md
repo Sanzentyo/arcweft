@@ -56,8 +56,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
   bindings passed as runtime `i64` inputs. The native call boundary supports 0
   to 4 runtime integer inputs. Generated code executes through an isolated native-call
   boundary, and `arcw jit check --json` exercises it against the VM reference
-  backend with deterministic seed-controlled varying inputs, sample timing, and
-  speedup reporting. `arcw jit check path.arcw --helper NAME --json` now runs
+  backend and the typed AOT plan with deterministic seed-controlled varying
+  inputs, sample timing, and speedup reporting. `arcw jit check path.arcw --helper NAME --json` now runs
   the normal checked-source pipeline, extracts a `#[pure] fn` helper from HIR,
   lowers its expression body or simple local-`let` statement body with a final
   value or tail `return` to a pure-helper request, and reports the helper source

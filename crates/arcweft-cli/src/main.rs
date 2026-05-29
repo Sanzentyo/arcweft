@@ -11,8 +11,9 @@ use arcweft_core::step::{
 };
 use arcweft_core::{
     pure::{
-        PureFunctionBackend, PureFunctionBackendKind, PureFunctionRequest, PureFunctionStats,
-        VmPureFunctionBackend, compare_pure_function_backend,
+        AotPureFunctionBackend, AotPureI64Plan, PureFunctionBackend, PureFunctionBackendKind,
+        PureFunctionRequest, PureFunctionResult, PureFunctionStats, VmPureFunctionBackend,
+        compare_pure_function_backend,
     },
     value::{RuntimeBinaryOp, RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
@@ -133,92 +134,12 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
     }
 
     let target = jit_check_target(options)?;
-    let first_inputs = jit_check_inputs(options.input_seed, 0, 0, target.input_names.len());
-    let request = target.request_with_inputs(&first_inputs);
-    let vm_backend = VmPureFunctionBackend;
-    let jit_backend = CraneliftPureFunctionBackend;
-    let conformance =
-        compare_pure_function_backend(&vm_backend, &jit_backend, &request).map_err(|error| {
-            eprintln!("error: JIT/VM conformance check failed: {error}");
-            ExitCode::FAILURE
-        })?;
-
-    let compile_started = Instant::now();
-    let compiled = jit_backend
-        .compile_i64_with_inputs(&request, target.input_names.iter().map(String::as_str))
-        .map_err(|error| {
-            eprintln!("error: failed to compile JIT helper: {error}");
-            ExitCode::FAILURE
-        })?;
-    let compile_elapsed_ns = compile_started.elapsed().as_nanos();
-
-    warmup_jit_check_jit(&compiled, options.warmup, options.input_seed);
-    let jit_measurement = measure_jit_check_jit(
-        &compiled,
-        options.samples,
-        options.iterations,
-        options.input_seed,
-    )?;
-
-    warmup_jit_check_vm(&target, vm_backend, options.warmup, options.input_seed)?;
-    let vm_measurement = measure_jit_check_vm(
-        &target,
-        vm_backend,
-        options.samples,
-        options.iterations,
-        options.input_seed,
-    )?;
-
-    let matches_vm =
-        conformance.matches_vm && jit_measurement.accumulator == vm_measurement.accumulator;
-    let report = JitCheckReport {
-        status: if matches_vm { "ok" } else { "failed" }.to_owned(),
-        helper: target.name.clone(),
-        helper_source: target.source.as_str().to_owned(),
-        input_bindings: target.input_names.clone(),
-        dynamic_inputs: !target.input_names.is_empty(),
-        input_seed: options.input_seed,
-        vm_backend: backend_label(conformance.vm.backend).to_owned(),
-        jit_backend: backend_label(conformance.candidate.backend).to_owned(),
-        matches_vm,
-        vm_value: runtime_value_summary(&conformance.vm.value),
-        jit_value: runtime_value_summary(&conformance.candidate.value),
-        warmup: options.warmup,
-        iterations: options.iterations,
-        samples: options.samples,
-        timings: JitCheckTimingReport {
-            compile: compile_elapsed_ns,
-            jit: jit_measurement.elapsed.median,
-            vm: vm_measurement.elapsed.median,
-            jit_per_iteration: per_iteration_ns(jit_measurement.elapsed.median, options.iterations),
-            vm_per_iteration: per_iteration_ns(vm_measurement.elapsed.median, options.iterations),
-            speedup_x: speedup_x(
-                vm_measurement.elapsed.median,
-                jit_measurement.elapsed.median,
-            ),
-            jit_samples: jit_measurement.elapsed,
-            vm_samples: vm_measurement.elapsed,
-        },
-        deterministic: JitCheckDeterministicReport {
-            jit_accumulator: jit_measurement.accumulator,
-            vm_accumulator: vm_measurement.accumulator,
-        },
-        vm_stats: PureFunctionStatsReport::from_stats(&conformance.vm.stats),
-        jit_stats: PureFunctionStatsReport::from_stats(compiled.stats()),
-    };
+    let report = run_jit_check(options, &target)?;
 
     if options.json {
         print_json(&report)?;
     } else {
-        println!(
-            "ok: jit check helper={} matches_vm={} compile_ns={} jit_median_ns={} vm_median_ns={} speedup_x={}",
-            report.helper,
-            report.matches_vm,
-            report.timings.compile,
-            report.timings.jit,
-            report.timings.vm,
-            report.timings.speedup_x
-        );
+        print_jit_check_human_report(&report);
     }
 
     if report.matches_vm {
@@ -226,6 +147,98 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
     } else {
         Err(ExitCode::FAILURE)
     }
+}
+
+fn run_jit_check(
+    options: &JitCheckOptions,
+    target: &JitCheckTarget,
+) -> Result<JitCheckReport, ExitCode> {
+    let first_inputs = jit_check_inputs(options.input_seed, 0, 0, target.input_names.len());
+    let request = target.request_with_inputs(&first_inputs);
+    let conformance = collect_jit_check_conformance(&request)?;
+    let compiled = compile_jit_check_helpers(&request, target)?;
+    let measurement = measure_jit_check_helpers(options, target, &compiled)?;
+    Ok(jit_check_report(
+        options,
+        target,
+        &conformance,
+        &compiled,
+        &measurement,
+    ))
+}
+
+fn jit_check_report(
+    options: &JitCheckOptions,
+    target: &JitCheckTarget,
+    conformance: &JitCheckConformanceSet,
+    compiled: &JitCheckCompiledHelpers,
+    measurement: &JitCheckMeasurements,
+) -> JitCheckReport {
+    let matches_vm = conformance.aot_matches_vm
+        && conformance.jit_matches_vm
+        && measurement.jit.accumulator == measurement.vm.accumulator
+        && measurement.aot.accumulator == measurement.vm.accumulator;
+    JitCheckReport {
+        status: if matches_vm { "ok" } else { "failed" }.to_owned(),
+        helper: target.name.clone(),
+        helper_source: target.source.as_str().to_owned(),
+        input_bindings: target.input_names.clone(),
+        dynamic_inputs: !target.input_names.is_empty(),
+        input_seed: options.input_seed,
+        vm_backend: backend_label(conformance.vm.backend).to_owned(),
+        aot_backend: backend_label(conformance.aot.backend).to_owned(),
+        jit_backend: backend_label(conformance.jit.backend).to_owned(),
+        matches_vm,
+        vm_value: runtime_value_summary(&conformance.vm.value),
+        aot_value: runtime_value_summary(&conformance.aot.value),
+        jit_value: runtime_value_summary(&conformance.jit.value),
+        warmup: options.warmup,
+        iterations: options.iterations,
+        samples: options.samples,
+        timings: JitCheckTimingReport {
+            aot_compile: compiled.aot_compile_elapsed_ns,
+            compile: compiled.jit_compile_elapsed_ns,
+            aot: measurement.aot.elapsed.median,
+            jit: measurement.jit.elapsed.median,
+            vm: measurement.vm.elapsed.median,
+            aot_per_iteration: per_iteration_ns(measurement.aot.elapsed.median, options.iterations),
+            jit_per_iteration: per_iteration_ns(measurement.jit.elapsed.median, options.iterations),
+            vm_per_iteration: per_iteration_ns(measurement.vm.elapsed.median, options.iterations),
+            aot_speedup_x: speedup_x(
+                measurement.vm.elapsed.median,
+                measurement.aot.elapsed.median,
+            ),
+            speedup_x: speedup_x(
+                measurement.vm.elapsed.median,
+                measurement.jit.elapsed.median,
+            ),
+            aot_samples: measurement.aot.elapsed,
+            jit_samples: measurement.jit.elapsed,
+            vm_samples: measurement.vm.elapsed,
+        },
+        deterministic: JitCheckDeterministicReport {
+            aot: measurement.aot.accumulator,
+            jit: measurement.jit.accumulator,
+            vm: measurement.vm.accumulator,
+        },
+        vm_stats: PureFunctionStatsReport::from_stats(&conformance.vm.stats),
+        aot_stats: PureFunctionStatsReport::from_stats(&conformance.aot.stats),
+        jit_stats: PureFunctionStatsReport::from_stats(compiled.jit.stats()),
+    }
+}
+
+fn print_jit_check_human_report(report: &JitCheckReport) {
+    println!(
+        "ok: jit check helper={} matches_vm={} aot_compile_ns={} jit_compile_ns={} aot_median_ns={} jit_median_ns={} vm_median_ns={} jit_speedup_x={}",
+        report.helper,
+        report.matches_vm,
+        report.timings.aot_compile,
+        report.timings.compile,
+        report.timings.aot,
+        report.timings.jit,
+        report.timings.vm,
+        report.timings.speedup_x
+    );
 }
 
 fn jit_check_inputs(seed: u64, sample: usize, iteration: usize, arity: usize) -> Vec<i64> {
@@ -244,6 +257,123 @@ fn jit_check_inputs(seed: u64, sample: usize, iteration: usize, arity: usize) ->
             .map_or(1, |value| value + 1)
         })
         .collect()
+}
+
+struct JitCheckConformanceSet {
+    vm: PureFunctionResult,
+    aot: PureFunctionResult,
+    jit: PureFunctionResult,
+    aot_matches_vm: bool,
+    jit_matches_vm: bool,
+}
+
+struct JitCheckCompiledHelpers {
+    aot: AotPureI64Plan,
+    jit: CompiledPureI64Inputs,
+    aot_compile_elapsed_ns: u128,
+    jit_compile_elapsed_ns: u128,
+}
+
+struct JitCheckMeasurements {
+    aot: JitRepeatedMeasurement,
+    jit: JitRepeatedMeasurement,
+    vm: JitRepeatedMeasurement,
+}
+
+fn collect_jit_check_conformance(
+    request: &PureFunctionRequest,
+) -> Result<JitCheckConformanceSet, ExitCode> {
+    let vm_backend = VmPureFunctionBackend;
+    let aot = compare_pure_function_backend(&vm_backend, &AotPureFunctionBackend::new(), request)
+        .map_err(|error| {
+        eprintln!("error: AOT/VM conformance check failed: {error}");
+        ExitCode::FAILURE
+    })?;
+    let jit = compare_pure_function_backend(&vm_backend, &CraneliftPureFunctionBackend, request)
+        .map_err(|error| {
+            eprintln!("error: JIT/VM conformance check failed: {error}");
+            ExitCode::FAILURE
+        })?;
+    Ok(JitCheckConformanceSet {
+        vm: jit.vm,
+        aot: aot.candidate,
+        jit: jit.candidate,
+        aot_matches_vm: aot.matches_vm,
+        jit_matches_vm: jit.matches_vm,
+    })
+}
+
+fn compile_jit_check_helpers(
+    request: &PureFunctionRequest,
+    target: &JitCheckTarget,
+) -> Result<JitCheckCompiledHelpers, ExitCode> {
+    let aot_started = Instant::now();
+    let aot = AotPureFunctionBackend::new()
+        .compile_i64_with_inputs(request, target.input_names.iter().map(String::as_str))
+        .map_err(|error| {
+            eprintln!("error: failed to compile AOT helper: {error}");
+            ExitCode::FAILURE
+        })?;
+    let aot_compile_elapsed_ns = aot_started.elapsed().as_nanos();
+
+    let jit_started = Instant::now();
+    let jit = CraneliftPureFunctionBackend
+        .compile_i64_with_inputs(request, target.input_names.iter().map(String::as_str))
+        .map_err(|error| {
+            eprintln!("error: failed to compile JIT helper: {error}");
+            ExitCode::FAILURE
+        })?;
+    let jit_compile_elapsed_ns = jit_started.elapsed().as_nanos();
+
+    Ok(JitCheckCompiledHelpers {
+        aot,
+        jit,
+        aot_compile_elapsed_ns,
+        jit_compile_elapsed_ns,
+    })
+}
+
+fn measure_jit_check_helpers(
+    options: &JitCheckOptions,
+    target: &JitCheckTarget,
+    compiled: &JitCheckCompiledHelpers,
+) -> Result<JitCheckMeasurements, ExitCode> {
+    warmup_jit_check_jit(&compiled.jit, options.warmup, options.input_seed);
+    warmup_jit_check_aot(
+        &compiled.aot,
+        target.input_names.len(),
+        options.warmup,
+        options.input_seed,
+    )?;
+    warmup_jit_check_vm(
+        target,
+        VmPureFunctionBackend,
+        options.warmup,
+        options.input_seed,
+    )?;
+
+    Ok(JitCheckMeasurements {
+        aot: measure_jit_check_aot(
+            &compiled.aot,
+            target.input_names.len(),
+            options.samples,
+            options.iterations,
+            options.input_seed,
+        )?,
+        jit: measure_jit_check_jit(
+            &compiled.jit,
+            options.samples,
+            options.iterations,
+            options.input_seed,
+        )?,
+        vm: measure_jit_check_vm(
+            target,
+            VmPureFunctionBackend,
+            options.samples,
+            options.iterations,
+            options.input_seed,
+        )?,
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -398,6 +528,41 @@ fn measure_jit_check_jit(
             eprintln!("error: JIT evaluation failed: {error}");
             ExitCode::FAILURE
         })
+    })
+}
+
+fn warmup_jit_check_aot(
+    compiled: &AotPureI64Plan,
+    arity: usize,
+    warmup: usize,
+    input_seed: u64,
+) -> Result<(), ExitCode> {
+    for index in 0..warmup {
+        let inputs = jit_check_inputs(input_seed, 0, index, arity);
+        let _ = compiled.call_with_inputs(&inputs).map_err(|error| {
+            eprintln!("error: AOT warmup failed: {error}");
+            ExitCode::FAILURE
+        })?;
+    }
+    Ok(())
+}
+
+fn measure_jit_check_aot(
+    compiled: &AotPureI64Plan,
+    arity: usize,
+    samples: usize,
+    iterations: usize,
+    input_seed: u64,
+) -> Result<JitRepeatedMeasurement, ExitCode> {
+    measure_repeated(samples, iterations, |sample, index| {
+        let inputs = jit_check_inputs(input_seed, sample, index, arity);
+        compiled
+            .call_with_inputs(&inputs)
+            .map(|(value, _stats)| value)
+            .map_err(|error| {
+                eprintln!("error: AOT evaluation failed: {error}");
+                ExitCode::FAILURE
+            })
     })
 }
 
@@ -2204,9 +2369,11 @@ struct JitCheckReport {
     dynamic_inputs: bool,
     input_seed: u64,
     vm_backend: String,
+    aot_backend: String,
     jit_backend: String,
     matches_vm: bool,
     vm_value: String,
+    aot_value: String,
     jit_value: String,
     warmup: usize,
     iterations: usize,
@@ -2214,22 +2381,31 @@ struct JitCheckReport {
     timings: JitCheckTimingReport,
     deterministic: JitCheckDeterministicReport,
     vm_stats: PureFunctionStatsReport,
+    aot_stats: PureFunctionStatsReport,
     jit_stats: PureFunctionStatsReport,
 }
 
 #[derive(serde::Serialize)]
 struct JitCheckTimingReport {
+    #[serde(rename = "aot_compile_elapsed_ns")]
+    aot_compile: u128,
     #[serde(rename = "compile_elapsed_ns")]
     compile: u128,
+    #[serde(rename = "aot_elapsed_ns")]
+    aot: u128,
     #[serde(rename = "jit_elapsed_ns")]
     jit: u128,
     #[serde(rename = "vm_elapsed_ns")]
     vm: u128,
+    #[serde(rename = "aot_per_iteration_ns")]
+    aot_per_iteration: u128,
     #[serde(rename = "jit_per_iteration_ns")]
     jit_per_iteration: u128,
     #[serde(rename = "vm_per_iteration_ns")]
     vm_per_iteration: u128,
+    aot_speedup_x: String,
     speedup_x: String,
+    aot_samples: JitTimingSamples,
     jit_samples: JitTimingSamples,
     vm_samples: JitTimingSamples,
 }
@@ -2249,8 +2425,12 @@ struct JitRepeatedMeasurement {
 
 #[derive(serde::Serialize)]
 struct JitCheckDeterministicReport {
-    jit_accumulator: i64,
-    vm_accumulator: i64,
+    #[serde(rename = "aot_accumulator")]
+    aot: i64,
+    #[serde(rename = "jit_accumulator")]
+    jit: i64,
+    #[serde(rename = "vm_accumulator")]
+    vm: i64,
 }
 
 #[derive(serde::Serialize)]

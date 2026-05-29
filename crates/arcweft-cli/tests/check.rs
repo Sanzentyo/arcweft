@@ -28,8 +28,11 @@ fn jit_check_json_compares_cranelift_and_vm() {
     assert!(
         stdout.contains("\"status\": \"ok\"")
             && stdout.contains("\"jit_backend\": \"jit\"")
+            && stdout.contains("\"aot_backend\": \"aot\"")
             && stdout.contains("\"matches_vm\": true")
+            && stdout.contains("\"aot_compile_elapsed_ns\"")
             && stdout.contains("\"compile_elapsed_ns\"")
+            && stdout.contains("\"aot_elapsed_ns\"")
             && stdout.contains("\"jit_elapsed_ns\"")
             && stdout.contains("\"vm_elapsed_ns\""),
         "jit check JSON should include conformance and timing data: {stdout}"
@@ -40,7 +43,9 @@ fn jit_check_json_compares_cranelift_and_vm() {
             && stdout.contains("\"input_seed\": 7")
             && stdout.contains("\"input_bindings\"")
             && stdout.contains("\"jit_per_iteration_ns\"")
+            && stdout.contains("\"aot_per_iteration_ns\"")
             && stdout.contains("\"vm_per_iteration_ns\"")
+            && stdout.contains("\"aot_samples\"")
             && stdout.contains("\"jit_samples\"")
             && stdout.contains("\"vm_samples\""),
         "jit check JSON should include conformance and timing data: {stdout}"

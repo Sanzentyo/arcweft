@@ -280,24 +280,25 @@ Profile and bench JSON must not persist absolute local source paths.
 
 ## JIT
 
-`arcw jit check` runs the native Cranelift pure-helper adapter against the VM
-reference backend. The current executable subset covers deterministic `i64`
-arithmetic, integer comparisons, value-producing `if`, lexical `let`
-bindings, and selected local bindings passed as runtime `i64` inputs. The
-native call boundary currently supports 0 to 4 runtime integer inputs. It is
-meant as the first conformance and timing gate for future wider pure helper
-lowering:
+`arcw jit check` runs both the typed AOT pure-helper plan and the native
+Cranelift pure-helper adapter against the VM reference backend. The current
+executable subset covers deterministic `i64` arithmetic, integer comparisons,
+value-producing `if`, lexical `let` bindings, and selected local bindings
+passed as runtime `i64` inputs. The native call boundary currently supports 0
+to 4 runtime integer inputs. It is meant as the first conformance and timing
+gate for future wider pure helper lowering:
 
 ```bash
 arcw jit check --json --iterations 1000 --warmup 10 --samples 5 --input-seed 0
 arcw jit check game/scripts/math.arcw --helper score --json --input-seed 7
 ```
 
-The JSON includes VM/JIT result equality, compile elapsed time, repeated native
-call elapsed time, VM elapsed time, sample min/median/max, per-iteration median
-time, speedup ratio, deterministic accumulators, dynamic input binding names,
-and pure helper stats. The measurement loop sends deterministic varying
-integer inputs through both the compiled native function and the VM reference.
+The JSON includes VM/AOT/JIT result equality, AOT and JIT compile elapsed time,
+repeated AOT/native-call elapsed time, VM elapsed time, sample min/median/max,
+per-iteration median time, speedup ratios, deterministic accumulators, dynamic
+input binding names, and pure helper stats. The measurement loop sends
+deterministic varying integer inputs through the typed AOT plan, compiled
+native function, and VM reference.
 `--input-seed` selects the deterministic input series and is emitted in JSON so
 repeated runs can be compared without embedding local paths. It does not include
 source paths.

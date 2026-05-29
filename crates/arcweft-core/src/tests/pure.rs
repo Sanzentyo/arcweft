@@ -135,6 +135,34 @@ fn aot_compiled_i64_plan_can_be_called_repeatedly() {
 }
 
 #[test]
+fn aot_compiled_i64_plan_accepts_runtime_inputs() {
+    let request = PureFunctionRequest::new(
+        "score_inputs",
+        RuntimeExpr::If {
+            condition: Box::new(RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Ge,
+                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(3))),
+            }),
+            then_expr: Box::new(RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+            }),
+            else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::Int(0))),
+        },
+        [int_binding("base", 0), int_binding("bonus", 0)],
+    );
+
+    let plan = AotPureFunctionBackend::new()
+        .compile_i64_with_inputs(&request, ["base", "bonus"])
+        .expect("AOT compiles parameterized helper");
+
+    assert_eq!(plan.call_with_inputs(&[3, 4]).expect("call succeeds").0, 12);
+    assert_eq!(plan.call_with_inputs(&[2, 99]).expect("call succeeds").0, 0);
+}
+
+#[test]
 fn aot_pure_backend_rejects_non_integer_helpers() {
     let request = PureFunctionRequest::new(
         "trim_label",

@@ -79,13 +79,13 @@ arcw jit check --json --iterations 1000 --warmup 10 --samples 5 --input-seed 0
 arcw jit check game/scripts/math.arcw --helper score --json --input-seed 7
 ```
 
-The command reports VM/JIT conformance, JIT compile time, repeated native-call
-time, VM evaluation time, per-iteration medians, speedup ratio, deterministic
-accumulators, input binding names, and pure-helper lowering counters. Its timing
-loop feeds deterministic varying integer inputs through both the compiled JIT
-function and the VM reference. `--input-seed` makes the input series
-reproducible while allowing local A/B comparisons. It does not read source paths
-or persist host absolute paths.
+The command reports VM/AOT/JIT conformance, AOT and JIT compile time, repeated
+AOT/native-call time, VM evaluation time, per-iteration medians, speedup
+ratios, deterministic accumulators, input binding names, and pure-helper
+lowering counters. Its timing loop feeds deterministic varying integer inputs
+through the typed AOT plan, compiled JIT function, and VM reference.
+`--input-seed` makes the input series reproducible while allowing local A/B
+comparisons. It does not read source paths or persist host absolute paths.
 
 When a `.arcw` path is provided, `arcw jit check` runs the normal parse, HIR
 lowering, reference validation, typecheck-readiness, and typecheck path first.
