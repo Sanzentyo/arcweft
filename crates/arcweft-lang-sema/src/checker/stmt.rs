@@ -4,7 +4,7 @@ use super::helpers::let_else_bindings;
 use super::{
     EntityKind, Expr, LoopContext, Pattern, Stmt, TriggerPattern, TypeCheckError, TypeChecker,
     TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext,
-    default_presentation_slot_family, ident_pattern_name, is_local_ident,
+    default_presentation_slot_family, ident_pattern_name, is_local_ident, iter_item_type,
     pattern_bindings_with_fallback, stmts_diverge, type_ref_kind,
 };
 use arcweft_lang_syntax::{ast::flow::StmtMatchArm, types::TypeRef};
@@ -387,13 +387,14 @@ impl TypeChecker<'_> {
     }
 
     fn check_stmt_for(&mut self, pattern: &Pattern, source: &Expr, body: &[Stmt]) {
-        self.check_expr(source);
+        let source_ty = self.check_expr(source);
         let borrow_snapshot = self.snapshot_borrow_state();
         let outer_locals = self.locals.clone();
-        if let Some(name) = ident_pattern_name(pattern) {
-            self.locals
-                .insert(name.to_owned(), TypeKind::Named("IteratorItem".to_owned()));
+        let item_ty = iter_item_type(source_ty.as_ref());
+        for (name, ty) in pattern_bindings_with_fallback(pattern, &item_ty) {
+            self.locals.insert(name, ty);
         }
+        self.register_borrow_bindings(pattern, &item_ty);
         self.with_statement_loop(|this| {
             for stmt in body {
                 this.check_stmt(stmt);

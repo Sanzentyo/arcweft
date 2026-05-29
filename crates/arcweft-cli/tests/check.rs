@@ -298,6 +298,56 @@ flow @flow.main main {
 }
 
 #[test]
+fn run_json_uses_jit_for_for_loop_pure_calls_without_arg_vec_allocation() {
+    let path = temp_arcw(
+        "runtime-for-pure-jit",
+        r#"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+flow @flow.for_pure for_pure {
+    let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
+    for item in values {
+        let scored = score(item, 2i64)
+        log.info(scored)
+    }
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("32")
+        .arg("--pure-backend")
+        .arg("jit")
+        .arg("--json")
+        .output()
+        .expect("arcw run executes for-loop pure calls");
+
+    assert!(
+        output.status.success(),
+        "runtime for-loop pure JIT run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("run output is structured JSON");
+    assert_eq!(json["final_status"], "done Return(\"done\")");
+    let pure_calls = sum_step_pure_counter(&json, "pure_calls");
+    assert_eq!(pure_calls, 4);
+    assert_eq!(sum_step_pure_counter(&json, "jit_calls"), 4);
+    assert_eq!(sum_step_pure_counter(&json, "arg_vec_allocations"), 0);
+    assert_eq!(json["executor_stats"]["pure_config"]["backend"], "jit");
+    assert_eq!(json["executor_stats"]["pure_compile"]["jit_successes"], 1);
+}
+
+#[test]
 fn check_accepts_valid_arcw_file() {
     let path = temp_arcw(
         "valid",
@@ -3300,6 +3350,15 @@ fn assert_jit_check_json(
             "builtin helper should not report source compiler metrics: {json}"
         );
     }
+}
+
+fn sum_step_pure_counter(json: &serde_json::Value, key: &str) -> u64 {
+    json["steps"]
+        .as_array()
+        .expect("run JSON steps should be an array")
+        .iter()
+        .map(|step| step["stats"]["pure"][key].as_u64().unwrap_or(0))
+        .sum()
 }
 
 fn assert_jit_timing_summary(timings: &serde_json::Value) {

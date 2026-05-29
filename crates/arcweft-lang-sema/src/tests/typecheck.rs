@@ -64,6 +64,30 @@ flow @flow.borrow_stats borrow_stats {
 }
 
 #[test]
+fn typecheck_for_loop_binds_sequence_item_type() {
+    let tree = parse_ok(
+        r#"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+flow @flow.for_pure for_pure {
+    let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
+    for item in values {
+        let scored = score(item, 2i64)
+        log.info(scored)
+    }
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("for pure fixture lowers");
+    validate_typecheck_ready(&hir).expect("for pure fixture is typecheck-ready");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("for item binds as i64");
+}
+
+#[test]
 fn numeric_primitive_types_keep_explicit_widths() {
     assert_eq!(TypeKind::primitive_name("i32"), Some(TypeKind::I32));
     assert_eq!(TypeKind::primitive_name("i64"), Some(TypeKind::I64));
