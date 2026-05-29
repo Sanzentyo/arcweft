@@ -401,12 +401,6 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
             body: parse_expr_lossy(normalize_timed_cue_body(body)),
         };
     }
-    if let Some(rest) = line.strip_prefix("start ") {
-        return LinePlanItem::StartGroup(parse_line_plan_nested_items(rest.trim()));
-    }
-    if let Some(rest) = line.strip_prefix("together ") {
-        return LinePlanItem::TogetherGroup(parse_line_plan_nested_items(rest.trim()));
-    }
     if line.starts_with("memo ") {
         return LinePlanItem::Raw(RawSyntax::line_plan_item(
             line,

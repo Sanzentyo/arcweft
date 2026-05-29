@@ -137,11 +137,11 @@ layer @layer.touch_controls {
 ## Agent script
 
 ```text
-observe
-invoke control.action_a press
-axis control.move [0.0, -1.0]
-inject device.motion_sensor MotionSample { accel = [0.0, 1.0, 0.0] }
-wait signal signal.device_ready == true
+observe()
+invoke(control.action_a, .press)
+axis(control.move, value=[0.0, -1.0])
+inject(device.motion_sensor, MotionSample { accel = [0.0, 1.0, 0.0] })
+wait.signal(signal.device_ready, equals=true)
 ```
 
 ---

@@ -620,14 +620,14 @@ debug overlay:
 ```arcw
 test @test.choice_layer_receives_input scenario {
     start(@flow.opening)
-    wait object @choice.opening.listen visible
+    wait.object(@choice.opening.listen, state=.visible)
 
     let hit = hit_test(x = 520, y = 540)
     assert_eq hit.layer, @layer.choice_ui
     assert_eq hit.target, Some(@choice.opening.listen)
 
-    click layer @layer.choice_ui target @choice.opening.listen
-    expect event GameEvent::ChoiceSelected { id: @choice.opening.listen }
+    input.click(layer=@layer.choice_ui, target=@choice.opening.listen)
+    expect.event(GameEvent::ChoiceSelected, id=@choice.opening.listen)
 }
 ```
 
@@ -636,9 +636,9 @@ visual:
 ```arcw
 test @test.layer_order_opening visual {
     start(@flow.opening)
-    capture image overlay as "opening_layers.png"
-    assert_layer_above @layer.textbox @layer.characters
-    assert_layer_input_policy @layer.choice_ui capture_on_hit
+    capture.image(.overlay, path="opening_layers.png")
+    assert.layer_above(@layer.textbox, @layer.characters)
+    assert.layer_input_policy(@layer.choice_ui, .capture_on_hit)
 }
 ```
 

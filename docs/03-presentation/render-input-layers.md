@@ -662,13 +662,13 @@ visual test:
 ```arcw
 test @test.settings_blocks_choice visual {
     start(@flow.opening)
-    invoke @ui.settings.open
+    invoke(@ui.settings.open)
 
-    expect layer @layer.settings modal visible
-    expect layer @layer.choices blocked_by @layer.settings
+    expect.layer(@layer.settings, state=.modal_visible)
+    expect.layer(@layer.choices, blocked_by=@layer.settings)
 
-    click @choice.opening.listen
-    expect no event GameEvent::ChoiceSelected
+    input.click(@choice.opening.listen)
+    expect.no_event(GameEvent::ChoiceSelected)
 }
 ```
 

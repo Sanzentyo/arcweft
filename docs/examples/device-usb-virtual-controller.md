@@ -130,10 +130,10 @@ pub flow @flow.enter_truck_game enter_truck_game(state: GameState) -> Result<Flo
 test @test.mobile_controller_drives_truck scenario {
     start(@flow.enter_truck_game)
 
-    wait object @control.action_a visible
+    wait.object(@control.action_a, state=.visible)
 
-    controller press @control.action_a for 8 frames
-    controller axis @control.left_stick = vec2(1.0, 0.0) for 60 frames
+    controller.press(@control.action_a, frames=8)
+    controller.axis(@control.left_stick, value=vec2(1.0, 0.0), frames=60)
 
     expect.signal(@signal.truck.speed, 10.0)
 }

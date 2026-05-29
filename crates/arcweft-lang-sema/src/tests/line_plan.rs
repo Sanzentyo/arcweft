@@ -237,6 +237,40 @@ with:
 }
 
 #[test]
+fn rejects_inline_parallel_group_heads_without_block_delimiters() {
+    for (source, raw_fragment) in [
+        (
+            r"
+alice[おはよう。[p]]
+with:
+    start cue_move()
+",
+            "start cue_move()",
+        ),
+        (
+            r"
+alice[おはよう。[p]]
+with:
+    together cue_move()
+",
+            "together cue_move()",
+        ),
+    ] {
+        let tree = parse_ok(source);
+        let hir = lower_to_hir(&tree).expect("lossy line plan still lowers");
+        let errors =
+            validate_typecheck_ready(&hir).expect_err("inline line-plan group head is rejected");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message().contains("raw")
+                    && error.message().contains(raw_fragment)),
+            "expected raw line plan error for `{raw_fragment}` in {errors:?}"
+        );
+    }
+}
+
+#[test]
 fn reports_unclosed_line_plan_block_after_cue() {
     let errors = parse_errors(
         r"

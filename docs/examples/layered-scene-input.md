@@ -75,14 +75,14 @@ component @ui.settings SettingsPanel(config: Binding<Config>) -> View {
 test @test.layered_input_blocks_lower scenario {
     start(@flow.opening)
 
-    open_ui @ui.settings
+    ui.open(@ui.settings)
 
-    choose @choice.opening.listen
-    expect no_event GameEvent::ChoiceSelected
+    choose(@choice.opening.listen)
+    expect.no_event(GameEvent::ChoiceSelected)
 
-    invoke @ui.settings.close "click"
-    choose @choice.opening.listen
-    expect event GameEvent::ChoiceSelected { id: @choice.opening.listen }
+    invoke(@ui.settings.close, "click")
+    choose(@choice.opening.listen)
+    expect.event(GameEvent::ChoiceSelected, id=@choice.opening.listen)
 }
 ```
 

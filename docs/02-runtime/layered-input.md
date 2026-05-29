@@ -383,14 +383,14 @@ bbox_source = UiLayoutExact | UiBridgeApprox | BackendUnavailable
 ```arcw
 test @test.modal_blocks_choices scenario {
     start(@flow.opening)
-    open_ui @ui.settings
+    ui.open(@ui.settings)
 
-    click @choice.opening.listen
-    expect no_event GameEvent::ChoiceSelected
+    input.click(@choice.opening.listen)
+    expect.no_event(GameEvent::ChoiceSelected)
 
-    click @ui.settings.close
-    click @choice.opening.listen
-    expect event GameEvent::ChoiceSelected { id: @choice.opening.listen }
+    input.click(@ui.settings.close)
+    input.click(@choice.opening.listen)
+    expect.event(GameEvent::ChoiceSelected, id=@choice.opening.listen)
 }
 ```
 

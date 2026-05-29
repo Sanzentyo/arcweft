@@ -36,7 +36,7 @@ pub struct ScriptBench {
     pub source: ManifestSpan,
 }
 
-/// A command-like row inside a script test body.
+/// A call-based row inside a script test body.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ScriptStep {
     pub command: String,

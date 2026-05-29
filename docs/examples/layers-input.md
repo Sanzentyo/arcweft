@@ -80,12 +80,12 @@ Test:
 ```arcw
 test @test.settings_modal_blocks_world scenario {
     start(@flow.opening)
-    invoke @ui.settings.open
+    invoke(@ui.settings.open)
 
-    click @character.alice
+    input.click(@character.alice)
 
-    expect input blocked_by @layer.ui.modal
-    expect no_event GameEvent.CharacterClicked
+    expect.input(blocked_by=@layer.ui.modal)
+    expect.no_event(GameEvent.CharacterClicked)
 }
 ```
 

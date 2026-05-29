@@ -1910,7 +1910,6 @@ fn is_known_bench_section(name: &str) -> bool {
 fn unsupported_headless_bench_reason(text: &str) -> Option<String> {
     const UNSUPPORTED_MARKERS: &[&str] = &[
         "render_audio_offline",
-        "capture image",
         "capture.image",
         "snapshot.image",
         "screenshot",

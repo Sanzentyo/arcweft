@@ -74,9 +74,9 @@ test ID KIND { ... }
 ```
 
 `KIND` is a test adapter category such as `scenario`, `visual`, `audio`, or
-`fixture`. Parser/HIR support treats the body as command-like test plan rows and
-exposes it through the Sans I/O test manifest; actual execution is delegated to
-headless/player adapters.
+`fixture`. Parser/HIR support treats the body as canonical call-based test plan
+statements and exposes it through the Sans I/O test manifest; actual execution
+is delegated to headless/player adapters.
 
 ```arcw
 test @test.opening_listen_route scenario {
@@ -85,8 +85,8 @@ test @test.opening_listen_route scenario {
     expect.log(.info, contains="enter flow")
     expect.signal(@signal.current_flow, @flow.opening)
 
-    wait object @choice.opening.listen visible
-    choose @choice.opening.listen
+    wait.object(@choice.opening.listen, state=.visible)
+    choose(@choice.opening.listen)
 
     expect.signal(@signal.current_flow, @flow.alice_intro)
     expect.no_assertion_failures()
@@ -98,9 +98,9 @@ Visual test:
 ```arcw
 test @test.opening_choices_visual visual {
     start(@flow.opening)
-    wait object @choice.opening.listen visible
-    capture image overlay as "opening_choices.png"
-    assert_bbox @choice.opening.listen within rect(400, 500, 400, 80)
+    wait.object(@choice.opening.listen, state=.visible)
+    capture.image(.overlay, path="opening_choices.png")
+    assert.bbox(@choice.opening.listen, within=rect(400, 500, 400, 80))
 }
 ```
 
@@ -112,7 +112,7 @@ test @test.opening_choices_visual visual {
 bench ID { ... }
 ```
 
-Bench bodies use command-like sections such as `setup`, `measure`, `assert`,
+Bench bodies use structured sections such as `setup`, `measure`, `assert`,
 and `report`. The language layer preserves these sections for tooling; timing,
 offline rendering/audio, allocation counters, and perf collection are backend
 adapter responsibilities.
@@ -162,8 +162,8 @@ Test:
 ```arcw
 test @test.choice_hook_fires scenario {
     start(@flow.opening)
-    wait object @choice.opening.listen visible
-    expect hook @hook.opening.choice_visible fired
+    wait.object(@choice.opening.listen, state=.visible)
+    expect.hook(@hook.opening.choice_visible, state=.fired)
     expect.signal(@signal.choice_visible, true)
 }
 ```

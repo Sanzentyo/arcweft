@@ -414,22 +414,22 @@ arcw agent click --x 520 --y 540 --layer layer.ui.modal
 ```arcw
 test @test.modal_blocks_world_input scenario {
     start(@flow.opening)
-    open_ui @ui.settings_html
+    ui.open(@ui.settings_html)
 
-    click @character.alice
+    input.click(@character.alice)
 
-    expect input blocked_by @layer.ui.modal
-    expect no_event GameEvent.CharacterClicked
+    expect.input(blocked_by=@layer.ui.modal)
+    expect.no_event(GameEvent.CharacterClicked)
 }
 ```
 
 ```arcw
 test #test_choice_layer_bbox visual {
     start(@flow.opening)
-    wait object @choice.opening.listen visible
+    wait.object(@choice.opening.listen, state=.visible)
 
-    assert_layer @choice.opening.listen == @layer.ui.game
-    assert_bbox @choice.opening.listen within rect(400, 500, 500, 80)
+    assert.layer(@choice.opening.listen, equals=@layer.ui.game)
+    assert.bbox(@choice.opening.listen, within=rect(400, 500, 500, 80))
 }
 ```
 

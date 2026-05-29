@@ -185,8 +185,8 @@ pub adaptive bgm @bgm.truck_chase {
     stem @stem.danger from "audio/bgm/truck/danger.ogg"
 
     rule {
-        if state.intensity > 0.5 { enable @stem.drums fade 2bars }
-        if state.danger { enable @stem.danger fade 1bar }
+        if state.intensity > 0.5 { stem.enable(@stem.drums, fade=2bars) }
+        if state.danger { stem.enable(@stem.danger, fade=1bar) }
     }
 }
 ```

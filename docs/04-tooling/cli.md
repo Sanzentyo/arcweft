@@ -325,7 +325,7 @@ source, entry, and adapter context comes from the resolved launch profile.
 
 Headless scenario expectations currently cover `expect.no_assertion_failures()`,
 `expect.signal(@signal.id, value)`, and `expect.log(.level, contains="text")`.
-The manifest preserves the declaration ID, kind, source span, and command-like
+The manifest preserves the declaration ID, kind, source span, and call-based
 body rows so CLI, LSP, headless player adapters, and Agent tooling can share one
 planning schema without reparsing source text.
 

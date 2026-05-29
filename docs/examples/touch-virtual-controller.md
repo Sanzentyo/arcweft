@@ -48,17 +48,17 @@ pub virtual_controller @controller.touch_default: TouchController {
 ```arcw
 test @test.touch_controller_confirm scenario {
     start(@flow.opening)
-    invoke @control.confirm press
-    expect event InputAction.confirm
+    invoke(@control.confirm, .press)
+    expect.event(InputAction.confirm)
 }
 ```
 
 ## Agent script
 
 ```text
-observe
-invoke control.confirm press
-drag control.left_stick axis 0.6 -0.3
-wait signal signal.current_flow == flow.alice_intro
+observe()
+invoke(control.confirm, .press)
+drag(control.left_stick, .axis, x=0.6, y=-0.3)
+wait.signal(signal.current_flow, equals=flow.alice_intro)
 ```
 

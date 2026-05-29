@@ -67,7 +67,7 @@ wgsl {
 ## 使用
 
 ```arcw
-goto @flow.alice_intro with transition @shader.transition.dissolve {
+transition.goto(@flow.alice_intro, shader=@shader.transition.dissolve) {
     duration = 600ms
     params { edge_softness = 0.03 }
 }

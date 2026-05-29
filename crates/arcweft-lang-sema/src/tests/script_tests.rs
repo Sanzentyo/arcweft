@@ -36,7 +36,7 @@ fn lowers_test_and_bench_to_hir_declarations() {
     let tree = parse_ok(
         r#"
 test @test.choice visual {
-    capture image overlay as "choice.png"
+    capture.image(.overlay, path="choice.png")
 }
 
 bench @bench.choice {
