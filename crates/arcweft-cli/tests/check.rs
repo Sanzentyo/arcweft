@@ -630,8 +630,9 @@ flow @flow.run run {
     assert!(
         stdout.contains("\"flow_events\"")
             && stdout.contains("dialogue")
-            && stdout.contains("done"),
-        "run JSON should include step events and final status: {stdout}"
+            && stdout.contains("done")
+            && stdout.contains("\"executor\": \"bytecode_vm\""),
+        "run JSON should include bytecode executor, step events, and final status: {stdout}"
     );
 }
 
@@ -804,8 +805,10 @@ flow @flow.main main(argc: i32) {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("\"final_status\": \"done") && stdout.contains("return 2"),
-        "cli entry should bind argc from trailing args: {stdout}"
+        stdout.contains("\"executor\": \"bytecode_vm\"")
+            && stdout.contains("\"final_status\": \"done")
+            && stdout.contains("return 2"),
+        "cli entry should run through bytecode VM and bind argc from trailing args: {stdout}"
     );
 }
 

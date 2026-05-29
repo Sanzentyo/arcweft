@@ -325,8 +325,15 @@ fn wait_target_label(target: &arcweft_core::effect::RuntimeWaitTarget) -> String
 
 #[derive(serde::Serialize)]
 pub(crate) struct RuntimeRunReport {
+    pub(crate) executor: RuntimeExecutorTier,
     pub(crate) steps: Vec<RuntimeStepRunSummary>,
     pub(crate) final_status: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RuntimeExecutorTier {
+    BytecodeVm,
 }
 
 #[derive(serde::Serialize)]

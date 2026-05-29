@@ -1,7 +1,7 @@
 use arcweft_adapter_context::native_http_server_context;
 use arcweft_core::bytecode::{BytecodeProgram, BytecodeStats};
 use arcweft_core::engine::{Engine, FlowFiberStatus};
-use arcweft_core::executor::{BytecodeVmExecutor, RuntimeExecutor, VmExecutor};
+use arcweft_core::executor::{BytecodeVmExecutor, RuntimeExecutor};
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimePlan,
     RuntimeRouteSpec,
@@ -46,7 +46,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 mod output;
 mod server_adapter;
 use output::{
-    CheckReport, RuntimePlanReport, RuntimeRunReport, RuntimeStepRunSummary,
+    CheckReport, RuntimeExecutorTier, RuntimePlanReport, RuntimeRunReport, RuntimeStepRunSummary,
     ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary,
     ScriptBenchRunReport, ScriptBenchRunSummary, ScriptBenchSectionRunSummary, ScriptTestRunReport,
     ScriptTestRunSummary, flow_status_label,
@@ -795,7 +795,7 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
     })?;
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
-    let mut executor = VmExecutor::new(plan);
+    let mut executor = BytecodeVmExecutor::from_runtime_plan(plan);
     let mut steps = Vec::new();
     for step_index in 0..options.steps {
         let result = executor.step(
@@ -816,6 +816,7 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
         }
     }
     let report = RuntimeRunReport {
+        executor: RuntimeExecutorTier::BytecodeVm,
         steps,
         final_status: flow_status_label(&executor.fiber().status),
     };
@@ -1154,7 +1155,7 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
         value: RuntimeValue::Int(i64::try_from(options.args.len()).unwrap_or(i64::MAX)),
     });
 
-    let mut executor = VmExecutor::new(plan);
+    let mut executor = BytecodeVmExecutor::from_runtime_plan(plan);
     let mut steps = Vec::new();
     for step_index in 0..options.steps {
         let result = executor.step(
@@ -1175,6 +1176,7 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
         }
     }
     let report = RuntimeRunReport {
+        executor: RuntimeExecutorTier::BytecodeVm,
         steps,
         final_status: flow_status_label(&executor.fiber().status),
     };
@@ -1520,7 +1522,7 @@ fn run_script_test(
     };
     let mut plan = plan.clone();
     plan.entry_flow = Some(FlowRuntimeId(start));
-    let mut executor = VmExecutor::new(plan);
+    let mut executor = BytecodeVmExecutor::from_runtime_plan(plan);
     let mut step_summaries = Vec::new();
     for step_index in 0..step_limit {
         let result = executor.step(
@@ -1547,7 +1549,7 @@ fn run_script_test(
         .collect::<Vec<_>>();
     diagnostics.extend(test_expectation_failures(
         test,
-        executor.engine(),
+        executor.vm().engine(),
         &step_summaries,
     ));
     match executor.fiber().status {

@@ -325,9 +325,11 @@ Current high-confidence state:
   deterministic bytecode stats. `BytecodeVmExecutor` executes that bundle through
   the semantic VM so VM, bytecode, AOT, and future JIT tiers have a shared
   conformance boundary before generated dispatch is introduced.
-- CLI runtime stepping now routes through `BytecodeVmExecutor`, and
-  `arcw profile --json` includes bytecode lowering time plus deterministic
-  bytecode flow/instruction/source/stream counters.
+- CLI runtime stepping now routes `arcw run`, `arcw cli`, `arcw test`, and
+  `arcw profile` through `BytecodeVmExecutor`. Run/CLI JSON reports the typed
+  `executor = "bytecode_vm"` tier as an explicit conformance and performance
+  observation, and `arcw profile --json` includes bytecode lowering time plus
+  deterministic bytecode flow/instruction/source/stream counters.
 - Phase 2.0 headless observation state is implemented for the current runtime
   slice. `arcweft-core` records
   cumulative log, signal, metric, and event observations from emitted

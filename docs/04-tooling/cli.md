@@ -144,13 +144,15 @@ CLI adapter and does not start renderer/audio/device backends.
 `arcw run <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
 headless execution entry point. It uses the same parse, HIR, reference
 validation, typecheck, and line-plan lowering path as `arcw check`, then lowers
-checked flows to `arcweft-core::RuntimePlan` and steps `Engine` for up to `N`
-runtime steps. If `--entry` or `--flow` is omitted, the first lowered flow is
+checked flows to `arcweft-core::RuntimePlan`, materializes bytecode, and steps
+the bytecode VM executor for up to `N` runtime steps. JSON reports
+`executor = "bytecode_vm"` so performance and correctness runs can confirm the
+execution tier. If `--entry` or `--flow` is omitted, the first lowered flow is
 used as a deterministic fallback for headless inspection.
 
 `arcw run --manifest arcw.toml --profile NAME` resolves the same launch profile
 model used by dedicated commands. For `game` and `cli` profiles it runs the
-selected entry through the headless VM. For `server`, `test`, and `bench`
+selected entry through the bytecode VM. For `server`, `test`, and `bench`
 profiles it dispatches to the corresponding planning/execution path so profile
 selection stays the canonical context model.
 
