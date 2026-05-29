@@ -75,6 +75,9 @@ fallback counts. These counters are step-local even when an adapter keeps a
 persistent JIT/AOT compile cache across steps. Executor-level stats report the
 selected pure backend, worker policy, batch threshold, helper acceleration
 summary, compile attempts, cache hits/misses, and compile elapsed time.
+For deterministic integer helpers, VM fallback evaluation also consumes the
+fixed-stack argument pack directly; `arg_vec_allocations` therefore identifies
+value-slice fallback calls rather than normal scalar or batch integer calls.
 Bytecode VM programs preserve the runtime plan's pure-helper table, so executor
 artifact lowering does not change whether ordinary flow calls can use the
 adapter-provided pure backend.

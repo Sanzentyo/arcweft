@@ -191,7 +191,6 @@ impl RuntimePureAccelerator {
                 self.compile_stats.cache_hits += 1;
                 self.stats.vm_calls += rows.len();
                 self.stats.fallbacks += rows.len();
-                self.stats.arg_vec_allocations += rows.len();
                 if self.should_parallelize(rows.len()) {
                     self.stats.thread_pool_jobs += self.parallel_jobs(rows.len());
                     call_vm_batch_parallel(self.pool.as_ref(), helper, rows, out)
@@ -203,7 +202,6 @@ impl RuntimePureAccelerator {
                 self.compile_stats.cache_misses += 1;
                 self.stats.vm_calls += rows.len();
                 self.stats.fallbacks += rows.len();
-                self.stats.arg_vec_allocations += rows.len();
                 call_vm_batch(helper, rows, out)
             }
         }
@@ -252,7 +250,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                 }
                 self.stats.vm_calls += 1;
                 self.stats.fallbacks += 1;
-                self.call_vm_i64(helper, args).map(Some)
+                Self::call_vm_i64(helper, args).map(Some)
             }
         }
     }
@@ -276,18 +274,10 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
 impl RuntimePureAccelerator {
     fn call_vm_i64(
-        &mut self,
         helper: &RuntimePureHelper,
         args: RuntimeI64Args,
     ) -> Result<i64, RuntimeEvalError> {
-        self.stats.arg_vec_allocations += 1;
-        let values = args
-            .as_slice()
-            .iter()
-            .copied()
-            .map(RuntimeValue::Int)
-            .collect::<Vec<_>>();
-        match evaluate_vm(helper, &values)? {
+        match VmPureFunctionBackend.evaluate_i64_args(helper, args)? {
             RuntimeValue::Int(value) => Ok(value),
             value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
         }
@@ -445,13 +435,7 @@ fn call_vm_batch(
     out: &mut [i64],
 ) -> Result<(), RuntimeEvalError> {
     rows.iter().zip(out.iter_mut()).try_for_each(|(row, slot)| {
-        let values = row
-            .as_slice()
-            .iter()
-            .copied()
-            .map(RuntimeValue::Int)
-            .collect::<Vec<_>>();
-        match evaluate_vm(helper, &values)? {
+        match VmPureFunctionBackend.evaluate_i64_args(helper, *row)? {
             RuntimeValue::Int(value) => {
                 *slot = value;
                 Ok(())
@@ -471,13 +455,7 @@ fn call_vm_batch_parallel(
         rows.par_iter()
             .zip(out.par_iter_mut())
             .try_for_each(|(row, slot)| {
-                let values = row
-                    .as_slice()
-                    .iter()
-                    .copied()
-                    .map(RuntimeValue::Int)
-                    .collect::<Vec<_>>();
-                match evaluate_vm(helper, &values)? {
+                match VmPureFunctionBackend.evaluate_i64_args(helper, *row)? {
                     RuntimeValue::Int(value) => {
                         *slot = value;
                         Ok(())
@@ -675,5 +653,50 @@ mod tests {
         assert_eq!(accelerator.stats().arg_vec_allocations, 0);
         assert_eq!(accelerator.resolved_worker_count(), 2);
         assert!(accelerator.stats().thread_pool_jobs > 0);
+    }
+
+    #[test]
+    fn vm_batch_uses_i64_args_without_value_vec_allocation() {
+        let helper = RuntimePureHelper {
+            id: RuntimePureHelperId(0),
+            name: "score".to_owned(),
+            input_names: vec!["base".to_owned(), "bonus".to_owned()],
+            expr: RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+                }),
+            },
+            origin: RuntimePureHelperOrigin::Annotated,
+        };
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                backend: RuntimePureBackendMode::Vm,
+                workers: RuntimePureWorkerCount::Fixed(2),
+                batch_min_len: 2,
+            },
+            std::slice::from_ref(&helper),
+        );
+        let rows = [
+            RuntimeI64Args::new([3, 4, 0, 0], 2),
+            RuntimeI64Args::new([5, 1, 0, 0], 2),
+        ];
+        let mut out = [0; 2];
+
+        accelerator
+            .call_i64_batch(&helper, &rows, &mut out)
+            .expect("VM batch succeeds");
+
+        assert_eq!(out, [18, 15]);
+        assert_eq!(accelerator.stats().batch_calls, 1);
+        assert_eq!(accelerator.stats().batch_items, 2);
+        assert_eq!(accelerator.stats().vm_calls, 2);
+        assert_eq!(accelerator.stats().fallbacks, 2);
+        assert_eq!(accelerator.stats().arg_stack_packs, 2);
+        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+        assert_eq!(accelerator.stats().thread_pool_jobs, 2);
     }
 }

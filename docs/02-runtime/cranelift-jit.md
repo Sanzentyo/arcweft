@@ -73,6 +73,9 @@ before falling back to the VM for unsupported helpers. `--pure-workers auto|N`
 and `--pure-batch-min-len N` configure the accelerator-owned thread pool used
 for batchable typed AOT helper calls. Scalar flow calls stay on the direct
 fixed-argument path so pure helper use does not introduce a Vec allocation.
+The VM fallback path uses the same `RuntimeI64Args` pack for deterministic
+integer helpers, including batch calls, so fallback correctness checks do not
+add argument Vec allocation noise.
 
 `arcweft-lang-jit-cranelift` is the native codegen adapter crate. Its first
 executable subset compiles deterministic `i64` pure-helper expressions to

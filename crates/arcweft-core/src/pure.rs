@@ -182,6 +182,24 @@ impl PureFunctionBackend for VmPureFunctionBackend {
     }
 }
 
+impl VmPureFunctionBackend {
+    pub fn evaluate_i64_args(
+        &self,
+        helper: &RuntimePureHelper,
+        args: RuntimeI64Args,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if args.len() != helper.input_names.len() {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: helper.input_names.len(),
+                found: args.len(),
+            });
+        }
+        let mut evaluator = PureEvaluator::new_i64_args(&helper.input_names, args);
+        evaluator.evaluate_expr(&helper.expr)
+    }
+}
+
 impl AotPureFunctionBackend {
     pub const fn new() -> Self {
         Self
@@ -672,6 +690,18 @@ impl PureEvaluator {
     fn new(bindings: Vec<RuntimeBinding>) -> Self {
         let mut env = RuntimeEnv::default();
         env.bind_all(bindings);
+        Self {
+            env,
+            stats: PureFunctionStats::default(),
+        }
+    }
+
+    fn new_i64_args(input_names: &[String], args: RuntimeI64Args) -> Self {
+        let mut env = RuntimeEnv::default();
+        input_names
+            .iter()
+            .zip(args.as_slice().iter().copied())
+            .for_each(|(name, value)| env.set(name.clone(), RuntimeValue::Int(value)));
         Self {
             env,
             stats: PureFunctionStats::default(),
