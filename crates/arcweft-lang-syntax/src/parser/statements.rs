@@ -1,3 +1,4 @@
+use super::control_flow::parse_final_block_expr;
 use super::headers::parse_required_id_ref;
 use super::{
     CstStmtKind, DeferOutcome, Expr, IdRef, ParseError, Parser, RawSyntax, RelativeId,
@@ -373,9 +374,13 @@ fn parse_control_transfer_stmt(trimmed: &str) -> Option<Stmt> {
         trimmed
             .strip_prefix(prefix)
             .map(str::trim)
-            .map(parse_expr_lossy)
+            .map(parse_stmt_value_expr)
             .map(build)
     })
+}
+
+fn parse_stmt_value_expr(source: &str) -> Expr {
+    parse_final_block_expr(source).unwrap_or_else(|| parse_expr_lossy(source))
 }
 
 fn split_optional_label_ref(input: &str) -> (Option<String>, &str) {

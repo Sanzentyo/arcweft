@@ -614,13 +614,18 @@ fn tail_return_function_body_satisfies_return_type() {
         r"
 fn score(base: i64, bonus: i64) -> i64 {
     let boosted = bonus + 2
-    return base * boosted
+    return if base >= 3 { base * boosted } else { boosted }
 }
 ",
     );
     let hir = lower_to_hir(&tree).expect("function lowers");
+    assert!(matches!(
+        hir.functions()[0].statements().last(),
+        Some(Stmt::Return(Expr::If { .. }))
+    ));
 
-    typecheck_hir(&hir, &TypeCheckEnv::default()).expect("tail return supplies function body type");
+    typecheck_hir(&hir, &TypeCheckEnv::default())
+        .expect("tail return if expression supplies function body type");
 }
 
 #[test]

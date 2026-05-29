@@ -618,7 +618,7 @@ pub(super) fn parse_scope_expr_body(body: &str) -> (Vec<Stmt>, Option<crate::exp
     }
 }
 
-fn parse_final_block_expr(source: &str) -> Option<crate::expr::Expr> {
+pub(super) fn parse_final_block_expr(source: &str) -> Option<crate::expr::Expr> {
     if let Some((condition, then_body, else_body)) = split_inline_if_else_expr(source) {
         return Some(crate::expr::Expr::If {
             condition: Box::new(parse_expr_lossy(condition)),
