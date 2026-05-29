@@ -62,7 +62,8 @@ impl NativeTaskBridge {
     }
 
     pub(crate) fn complete_tasks(&mut self, tasks: &[TaskSpec]) -> Vec<TaskEvent> {
-        self.scheduler.submit(tasks.iter().cloned());
+        self.scheduler
+            .submit(tasks.iter().filter(|task| can_complete_task(task)).cloned());
         let dispatch = self.scheduler.dispatch(SchedulerBudget {
             max_events: usize::MAX,
         });
@@ -118,6 +119,13 @@ impl NativeTaskBridge {
                             Ok(String::new())
                         })
                     }
+                    HostTaskRequest::Custom {
+                        capability,
+                        operation,
+                        ..
+                    } if capability.0 == "line_task" && operation == "run_child" => {
+                        Ok(String::new())
+                    }
                     _ => return None,
                 };
                 let kind = result.map_or_else(
@@ -163,6 +171,21 @@ impl NativeTaskBridge {
             return Err("virtual path must be relative and normalized".to_owned());
         }
         Ok(self.io_root.join(space).join(relative_path))
+    }
+}
+
+fn can_complete_task(task: &TaskSpec) -> bool {
+    match &task.request {
+        HostTaskRequest::FileReadText(_)
+        | HostTaskRequest::FileWriteText(_)
+        | HostTaskRequest::FileReadBytes(_)
+        | HostTaskRequest::FileWriteBytes(_) => true,
+        HostTaskRequest::Custom {
+            capability,
+            operation,
+            ..
+        } => capability.0 == "line_task" && operation == "run_child",
+        _ => false,
     }
 }
 

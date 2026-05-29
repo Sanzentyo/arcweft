@@ -1249,6 +1249,53 @@ flow @flow.main main effects { fs.read(save), fs.write(save) } {
 }
 
 #[test]
+fn run_json_observes_line_child_tasks_through_scheduler() {
+    let path = temp_arcw(
+        "line-child-scheduler",
+        r#"
+pub surface character @character.alice Alice as alice {
+}
+
+flow @flow.main main {
+    alice[待って。[p]]
+    with:
+        thread motion:
+            log.info("motion")
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--mode")
+        .arg("one-op")
+        .arg("--steps")
+        .arg("3")
+        .arg("--json")
+        .output()
+        .expect("arcw run observes line child task");
+
+    assert!(
+        output.status.success(),
+        "line child task run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("line_task.run_child")
+            && stdout.contains("\"native_io\"")
+            && stdout.contains("\"completed_tasks\": 1")
+            && stdout.contains("\"scheduler\"")
+            && stdout.contains("\"submitted\": 1")
+            && stdout.contains("\"dispatched\": 1")
+            && stdout.contains("\"in_flight\": 0"),
+        "run JSON should observe line child task dispatch and completion: {stdout}"
+    );
+}
+
+#[test]
 fn run_json_reports_headless_observations() {
     let path = temp_arcw(
         "runtime-observations",

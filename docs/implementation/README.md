@@ -410,7 +410,8 @@ Current high-confidence state:
   `JoinSameKey` work, dispatches by priority and stable submission order,
   records cancellation requests as data, normalizes completed events, and
   exposes scheduler counters. The CLI native task bridge now routes file tasks
-  through this scheduler before performing adapter-owned filesystem I/O.
+  and line-plan child task markers through this scheduler before performing
+  adapter-owned completion work.
 - Phase 2.0 headless observation state is implemented for the current runtime
   slice. `arcweft-core` records
   cumulative log, signal, metric, and event observations from emitted

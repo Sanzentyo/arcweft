@@ -39,8 +39,9 @@ The current Rust implementation keeps the deterministic scheduling layer in
 `arcweft-runtime-scheduler`. It depends only on `arcweft-core`, accepts
 `TaskSpec` values, joins in-flight `JoinSameKey` tasks, sorts dispatch by
 priority and stable submission order, records cancellation requests as data,
-and normalizes completed `TaskEvent` values. CLI native file tasks use this
-scheduler before performing adapter-owned filesystem work.
+and normalizes completed `TaskEvent` values. CLI native file tasks and
+line-plan child task markers use this scheduler before adapter-owned completion
+work runs.
 
 ```rust
 pub enum HostTaskRequest {
