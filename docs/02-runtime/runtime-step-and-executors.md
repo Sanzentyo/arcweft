@@ -78,6 +78,7 @@ AOT compiled player
 Pure AOT/JIT helper
   - pure deterministic functions only
   - VM fallback and VM equivalence checks required
+  - current AOT helper compiles deterministic i64 expressions to a typed plan
 
 Full script AOT
   - late release backend
@@ -88,6 +89,9 @@ AOT never directly touches filesystem, network, renderer, audio, or wall-clock.
 It emits `RuntimeEffectBatch` and `HostRequestBatch` just like the VM.
 Generated AOT dispatch remains future work; until then, `AotExecutor` is a
 VM-equivalent conformance boundary.
+Pure helper AOT is narrower and already executable: `AotPureFunctionBackend`
+rejects unsupported helpers instead of falling back, then compares its typed
+integer plan against `VmPureFunctionBackend` in tests.
 
 ## Step options
 

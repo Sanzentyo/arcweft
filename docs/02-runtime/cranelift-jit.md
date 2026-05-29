@@ -55,9 +55,11 @@ a Cranelift dependency:
 - AOT/JIT candidates are checked through the same backend trait and compared
   against the VM result before they are allowed to replace VM execution.
 
-The current AOT boundary is intentionally VM-equivalent. Generated dispatch and
-Cranelift lowering belong in adapter crates after the pure subset and
-conformance tests are stable.
+The flow-level AOT executor boundary is intentionally VM-equivalent while
+generated dispatch is still future work. Pure helper AOT is already executable:
+`AotPureFunctionBackend` compiles the deterministic `i64` subset to a typed
+plan, rejects unsupported helpers, and is checked against `VmPureFunctionBackend`
+before use.
 
 `arcweft-lang-jit-cranelift` is the native adapter crate. Its first executable
 subset compiles deterministic `i64` pure-helper expressions to Cranelift,

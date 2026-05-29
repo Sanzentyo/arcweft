@@ -40,8 +40,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   and semantic verification. Generic direct-path mode still uses the empty
   Sans I/O environment.
 - `AotExecutor` exists as a VM-equivalent `RuntimeExecutor` boundary. Generated
-  dispatch remains future work, but tooling can now target the AOT executor
-  shape without introducing different semantics.
+  flow dispatch remains future work, but tooling can now target the AOT
+  executor shape without introducing different semantics. Pure helper AOT is
+  implemented separately: `AotPureFunctionBackend` compiles the deterministic
+  `i64` subset to a typed plan and rejects unsupported helpers instead of
+  delegating to the VM.
 - `arcweft-core::pure` exposes the pure-helper backend contract used by future
   AOT/JIT adapters. `VmPureFunctionBackend` is the semantic reference,
   candidate backends report deterministic evaluation stats, and conformance

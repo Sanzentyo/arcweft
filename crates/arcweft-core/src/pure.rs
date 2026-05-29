@@ -1,7 +1,8 @@
 use crate::value::{
-    RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeFieldValue, RuntimeValue,
-    evaluate_binary, evaluate_unary, runtime_value_label,
+    RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeFieldValue,
+    RuntimeUnaryOp, RuntimeValue, evaluate_binary, evaluate_unary, runtime_value_label,
 };
+use std::collections::BTreeMap;
 
 /// Request for evaluating a deterministic pure helper expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -50,10 +51,61 @@ pub trait PureFunctionBackend {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct VmPureFunctionBackend;
 
-/// AOT boundary that currently delegates to the VM fallback.
+/// AOT backend for deterministic pure helpers.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct AotPureFunctionBackend {
-    vm: VmPureFunctionBackend,
+pub struct AotPureFunctionBackend;
+
+/// Compiled AOT plan for the current deterministic `i64` pure-helper subset.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AotPureI64Plan {
+    name: String,
+    expr: AotI64Expr,
+    initial_slots: Vec<i64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum AotI64Expr {
+    Const(i64),
+    Local(usize),
+    Let {
+        slot: usize,
+        expr: Box<AotI64Expr>,
+        body: Box<AotI64Expr>,
+    },
+    AddCall {
+        lhs: Box<AotI64Expr>,
+        rhs: Box<AotI64Expr>,
+    },
+    Unary {
+        op: RuntimeUnaryOp,
+        expr: Box<AotI64Expr>,
+    },
+    Binary {
+        lhs: Box<AotI64Expr>,
+        op: RuntimeBinaryOp,
+        rhs: Box<AotI64Expr>,
+    },
+    If {
+        condition: AotBoolExpr,
+        then_expr: Box<AotI64Expr>,
+        else_expr: Box<AotI64Expr>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum AotBoolExpr {
+    Const(bool),
+    Compare {
+        lhs: Box<AotI64Expr>,
+        op: RuntimeBinaryOp,
+        rhs: Box<AotI64Expr>,
+    },
+}
+
+#[derive(Clone, Debug)]
+struct AotCompileContext {
+    slots: BTreeMap<String, usize>,
+    next_slot: usize,
 }
 
 /// VM/JIT conformance result for deterministic helper execution.
@@ -99,9 +151,15 @@ impl PureFunctionBackend for VmPureFunctionBackend {
 
 impl AotPureFunctionBackend {
     pub const fn new() -> Self {
-        Self {
-            vm: VmPureFunctionBackend,
-        }
+        Self
+    }
+
+    /// Compiles a deterministic helper request to a typed `i64` AOT plan.
+    pub fn compile_i64(
+        &self,
+        request: &PureFunctionRequest,
+    ) -> Result<AotPureI64Plan, RuntimeEvalError> {
+        AotPureI64Plan::compile(request)
     }
 }
 
@@ -114,9 +172,299 @@ impl PureFunctionBackend for AotPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
     ) -> Result<PureFunctionResult, RuntimeEvalError> {
-        let mut result = self.vm.evaluate(request)?;
-        result.backend = self.kind();
-        Ok(result)
+        let (value, stats) = self.compile_i64(request)?.call();
+        Ok(PureFunctionResult {
+            backend: self.kind(),
+            value: RuntimeValue::Int(value),
+            stats,
+        })
+    }
+}
+
+impl AotPureI64Plan {
+    fn compile(request: &PureFunctionRequest) -> Result<Self, RuntimeEvalError> {
+        let mut ctx = AotCompileContext::from_request(request)?;
+        let expr = compile_aot_i64_expr(&request.name, &request.expr, &mut ctx)?;
+        Ok(Self {
+            name: request.name.clone(),
+            expr,
+            initial_slots: AotCompileContext::initial_slots(request)?,
+        })
+    }
+
+    /// Calls the compiled helper and returns the integer value plus evaluation stats.
+    pub fn call(&self) -> (i64, PureFunctionStats) {
+        let mut evaluator = AotI64Evaluator {
+            slots: self.initial_slots.clone(),
+            stats: PureFunctionStats::default(),
+        };
+        let value = evaluator.eval_i64(&self.expr);
+        (value, evaluator.stats)
+    }
+
+    /// Helper name captured from the original request.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl AotCompileContext {
+    fn from_request(request: &PureFunctionRequest) -> Result<Self, RuntimeEvalError> {
+        let mut slots = BTreeMap::new();
+        for binding in &request.bindings {
+            if !matches!(binding.value, RuntimeValue::Int(_)) {
+                return Err(unsupported_aot(
+                    &request.name,
+                    format!("binding `{}` is not an i64 integer", binding.name),
+                ));
+            }
+            if slots.insert(binding.name.clone(), slots.len()).is_some() {
+                return Err(unsupported_aot(
+                    &request.name,
+                    format!("binding `{}` is duplicated", binding.name),
+                ));
+            }
+        }
+        let next_slot = slots.len();
+        Ok(Self { slots, next_slot })
+    }
+
+    fn initial_slots(request: &PureFunctionRequest) -> Result<Vec<i64>, RuntimeEvalError> {
+        request
+            .bindings
+            .iter()
+            .map(|binding| match binding.value {
+                RuntimeValue::Int(value) => Ok(value),
+                _ => Err(unsupported_aot(
+                    &request.name,
+                    format!("binding `{}` is not an i64 integer", binding.name),
+                )),
+            })
+            .collect()
+    }
+
+    fn local_slot(&self, name: &str) -> Option<usize> {
+        self.slots.get(name).copied()
+    }
+
+    fn with_let_binding(
+        &mut self,
+        name: &str,
+        compile_body: impl FnOnce(&mut Self, usize) -> Result<AotI64Expr, RuntimeEvalError>,
+    ) -> Result<AotI64Expr, RuntimeEvalError> {
+        let slot = self.next_slot;
+        self.next_slot += 1;
+        let previous = self.slots.insert(name.to_owned(), slot);
+        let body = compile_body(self, slot);
+        if let Some(previous) = previous {
+            self.slots.insert(name.to_owned(), previous);
+        } else {
+            self.slots.remove(name);
+        }
+        body
+    }
+}
+
+struct AotI64Evaluator {
+    slots: Vec<i64>,
+    stats: PureFunctionStats,
+}
+
+impl AotI64Evaluator {
+    fn eval_i64(&mut self, expr: &AotI64Expr) -> i64 {
+        self.stats.evaluated_exprs += 1;
+        match expr {
+            AotI64Expr::Const(value) => *value,
+            AotI64Expr::Local(slot) => self.slots[*slot],
+            AotI64Expr::Let { slot, expr, body } => {
+                let value = self.eval_i64(expr);
+                if self.slots.len() <= *slot {
+                    self.slots.resize(*slot + 1, 0);
+                }
+                let previous = self.slots[*slot];
+                self.slots[*slot] = value;
+                let result = self.eval_i64(body);
+                self.slots[*slot] = previous;
+                result
+            }
+            AotI64Expr::AddCall { lhs, rhs } => {
+                self.stats.evaluated_calls += 1;
+                self.eval_i64(lhs).saturating_add(self.eval_i64(rhs))
+            }
+            AotI64Expr::Unary { op, expr } => match op {
+                RuntimeUnaryOp::Neg => -self.eval_i64(expr),
+                RuntimeUnaryOp::Not => unreachable!("bool unary is not compiled as i64"),
+            },
+            AotI64Expr::Binary { lhs, op, rhs } => {
+                self.stats.evaluated_binary_ops += 1;
+                let lhs = self.eval_i64(lhs);
+                let rhs = self.eval_i64(rhs);
+                match op {
+                    RuntimeBinaryOp::Add => lhs + rhs,
+                    RuntimeBinaryOp::Sub => lhs - rhs,
+                    RuntimeBinaryOp::Mul => lhs * rhs,
+                    RuntimeBinaryOp::Div => lhs / rhs,
+                    RuntimeBinaryOp::Eq
+                    | RuntimeBinaryOp::Ne
+                    | RuntimeBinaryOp::Lt
+                    | RuntimeBinaryOp::Le
+                    | RuntimeBinaryOp::Gt
+                    | RuntimeBinaryOp::Ge
+                    | RuntimeBinaryOp::And
+                    | RuntimeBinaryOp::Or => unreachable!("non-i64 binary op in AOT i64 expr"),
+                }
+            }
+            AotI64Expr::If {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                if self.eval_bool(condition) {
+                    self.eval_i64(then_expr)
+                } else {
+                    self.eval_i64(else_expr)
+                }
+            }
+        }
+    }
+
+    fn eval_bool(&mut self, expr: &AotBoolExpr) -> bool {
+        self.stats.evaluated_exprs += 1;
+        match expr {
+            AotBoolExpr::Const(value) => *value,
+            AotBoolExpr::Compare { lhs, op, rhs } => {
+                self.stats.evaluated_binary_ops += 1;
+                let lhs = self.eval_i64(lhs);
+                let rhs = self.eval_i64(rhs);
+                match op {
+                    RuntimeBinaryOp::Eq => lhs == rhs,
+                    RuntimeBinaryOp::Ne => lhs != rhs,
+                    RuntimeBinaryOp::Lt => lhs < rhs,
+                    RuntimeBinaryOp::Le => lhs <= rhs,
+                    RuntimeBinaryOp::Gt => lhs > rhs,
+                    RuntimeBinaryOp::Ge => lhs >= rhs,
+                    RuntimeBinaryOp::Add
+                    | RuntimeBinaryOp::Sub
+                    | RuntimeBinaryOp::Mul
+                    | RuntimeBinaryOp::Div
+                    | RuntimeBinaryOp::And
+                    | RuntimeBinaryOp::Or => unreachable!("non-comparison op in AOT bool expr"),
+                }
+            }
+        }
+    }
+}
+
+fn compile_aot_i64_expr(
+    helper_name: &str,
+    expr: &RuntimeExpr,
+    ctx: &mut AotCompileContext,
+) -> Result<AotI64Expr, RuntimeEvalError> {
+    match expr {
+        RuntimeExpr::Value(RuntimeValue::Int(value)) => Ok(AotI64Expr::Const(*value)),
+        RuntimeExpr::Value(value) => Err(unsupported_aot(
+            helper_name,
+            format!("literal {value:?} is not an i64 integer"),
+        )),
+        RuntimeExpr::Local(name) => ctx
+            .local_slot(name)
+            .map(AotI64Expr::Local)
+            .ok_or_else(|| RuntimeEvalError::UnknownBinding(name.clone())),
+        RuntimeExpr::Let { name, expr, body } => {
+            let expr = compile_aot_i64_expr(helper_name, expr, ctx)?;
+            ctx.with_let_binding(name, |ctx, slot| {
+                Ok(AotI64Expr::Let {
+                    slot,
+                    expr: Box::new(expr),
+                    body: Box::new(compile_aot_i64_expr(helper_name, body, ctx)?),
+                })
+            })
+        }
+        RuntimeExpr::Call { callee, args } if callee == "add" && args.len() == 2 => {
+            Ok(AotI64Expr::AddCall {
+                lhs: Box::new(compile_aot_i64_expr(helper_name, &args[0], ctx)?),
+                rhs: Box::new(compile_aot_i64_expr(helper_name, &args[1], ctx)?),
+            })
+        }
+        RuntimeExpr::Unary { op, expr } => match op {
+            RuntimeUnaryOp::Neg => Ok(AotI64Expr::Unary {
+                op: *op,
+                expr: Box::new(compile_aot_i64_expr(helper_name, expr, ctx)?),
+            }),
+            RuntimeUnaryOp::Not => Err(unsupported_aot(
+                helper_name,
+                "boolean negation is not an i64 result",
+            )),
+        },
+        RuntimeExpr::Binary { lhs, op, rhs } if is_aot_i64_binary(*op) => Ok(AotI64Expr::Binary {
+            lhs: Box::new(compile_aot_i64_expr(helper_name, lhs, ctx)?),
+            op: *op,
+            rhs: Box::new(compile_aot_i64_expr(helper_name, rhs, ctx)?),
+        }),
+        RuntimeExpr::If {
+            condition,
+            then_expr,
+            else_expr,
+        } => Ok(AotI64Expr::If {
+            condition: compile_aot_bool_expr(helper_name, condition, ctx)?,
+            then_expr: Box::new(compile_aot_i64_expr(helper_name, then_expr, ctx)?),
+            else_expr: Box::new(compile_aot_i64_expr(helper_name, else_expr, ctx)?),
+        }),
+        RuntimeExpr::Call { callee, .. } => Err(unsupported_aot(
+            helper_name,
+            format!("call `{callee}` is outside the AOT i64 subset"),
+        )),
+        other => Err(unsupported_aot(
+            helper_name,
+            format!("expression `{other:?}` is outside the AOT i64 subset"),
+        )),
+    }
+}
+
+fn compile_aot_bool_expr(
+    helper_name: &str,
+    expr: &RuntimeExpr,
+    ctx: &mut AotCompileContext,
+) -> Result<AotBoolExpr, RuntimeEvalError> {
+    match expr {
+        RuntimeExpr::Value(RuntimeValue::Bool(value)) => Ok(AotBoolExpr::Const(*value)),
+        RuntimeExpr::Binary { lhs, op, rhs } if is_aot_comparison(*op) => {
+            Ok(AotBoolExpr::Compare {
+                lhs: Box::new(compile_aot_i64_expr(helper_name, lhs, ctx)?),
+                op: *op,
+                rhs: Box::new(compile_aot_i64_expr(helper_name, rhs, ctx)?),
+            })
+        }
+        other => Err(unsupported_aot(
+            helper_name,
+            format!("condition `{other:?}` is outside the AOT i64 subset"),
+        )),
+    }
+}
+
+fn is_aot_i64_binary(op: RuntimeBinaryOp) -> bool {
+    matches!(
+        op,
+        RuntimeBinaryOp::Add | RuntimeBinaryOp::Sub | RuntimeBinaryOp::Mul | RuntimeBinaryOp::Div
+    )
+}
+
+fn is_aot_comparison(op: RuntimeBinaryOp) -> bool {
+    matches!(
+        op,
+        RuntimeBinaryOp::Eq
+            | RuntimeBinaryOp::Ne
+            | RuntimeBinaryOp::Lt
+            | RuntimeBinaryOp::Le
+            | RuntimeBinaryOp::Gt
+            | RuntimeBinaryOp::Ge
+    )
+}
+
+fn unsupported_aot(name: &str, reason: impl Into<String>) -> RuntimeEvalError {
+    RuntimeEvalError::UnsupportedPure {
+        name: name.to_owned(),
+        reason: reason.into(),
     }
 }
 
