@@ -405,11 +405,20 @@ fn log(message: String, fields: ...(String | i64 | Duration)) -> Unit {
 flow @flow.ok ok(flag: Bool) {
     let body: String | Bytes = "hello"
     let joined = payload(flag)
+    let fields: Vec<String | i64 | Duration> = ["asset", 3i64, 120ms]
     let label = match body {
         text: String => text
         raw: Bytes => "bytes"
     }
+    let fallback = match body {
+        text: String => text
+        _ => "bytes"
+    }
+    let captured = match body {
+        value => "captured"
+    }
     log("loaded", "asset", 3i64, 120ms)
+    log("loaded", fields...)
 }
 "#,
     );

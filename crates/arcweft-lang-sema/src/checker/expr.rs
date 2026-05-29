@@ -1262,13 +1262,13 @@ impl TypeChecker<'_> {
         let Some(TypeKind::Choice(alternatives)) = scrutinee_type else {
             return;
         };
-        let covered = patterns
+        let coverage = patterns
             .into_iter()
-            .filter_map(pattern_choice_alternative)
+            .map(choice_pattern_coverage)
             .collect::<Vec<_>>();
         let missing = alternatives
             .iter()
-            .filter(|alternative| !covered.iter().any(|pattern| pattern == *alternative))
+            .filter(|alternative| !coverage.iter().any(|coverage| coverage.covers(alternative)))
             .map(type_kind_label)
             .collect::<Vec<_>>();
         if !missing.is_empty() {
@@ -1280,10 +1280,32 @@ impl TypeChecker<'_> {
     }
 }
 
-fn pattern_choice_alternative(pattern: &Pattern) -> Option<TypeKind> {
+enum ChoicePatternCoverage {
+    All,
+    Type(TypeKind),
+}
+
+impl ChoicePatternCoverage {
+    fn covers(&self, alternative: &TypeKind) -> bool {
+        match self {
+            Self::All => true,
+            Self::Type(ty) => types_compatible(ty, alternative),
+        }
+    }
+}
+
+fn choice_pattern_coverage(pattern: &Pattern) -> ChoicePatternCoverage {
     match pattern {
-        Pattern::Typed { ty, .. } => Some(type_ref_kind(ty)),
-        _ => None,
+        Pattern::Typed { ty, .. } => ChoicePatternCoverage::Type(type_ref_kind(ty)),
+        Pattern::Whole { pattern, .. } => choice_pattern_coverage(pattern),
+        Pattern::Ident(_) | Pattern::MutIdent(_) | Pattern::Discard => ChoicePatternCoverage::All,
+        Pattern::Literal(_)
+        | Pattern::Entity(_)
+        | Pattern::Variant { .. }
+        | Pattern::Tuple(_)
+        | Pattern::Record { .. }
+        | Pattern::BracketSeq { .. }
+        | Pattern::Raw(_) => ChoicePatternCoverage::Type(TypeKind::Never),
     }
 }
 
