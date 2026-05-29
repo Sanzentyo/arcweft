@@ -2358,14 +2358,20 @@ fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
 }
 
 fn verify_types_command(options: &VerifyTypesOptions) -> Result<(), ExitCode> {
+    if options.run && options.steps == 0 {
+        eprintln!("error: --steps must be greater than zero when --run is used");
+        return Err(ExitCode::from(2));
+    }
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let checked = load_and_check_selection(&selection, None)?;
-    let runtime_plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
+    let mut runtime_plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
         for error in errors {
             eprintln!("error: {}", error.message());
         }
         ExitCode::FAILURE
     })?;
+    let entry = options.entry.as_deref().or(selection.entry());
+    apply_runtime_entry_selection(&mut runtime_plan, entry, options.flow.as_deref())?;
     let runtime_type_validation =
         validate_runtime_plan_types(&runtime_plan, &checked.typecheck_report);
     let verification = verify_module_with_env(
@@ -2376,11 +2382,37 @@ fn verify_types_command(options: &VerifyTypesOptions) -> Result<(), ExitCode> {
             backend: BackendKind::Emit,
         },
     );
-    let status = if runtime_type_validation.has_errors() || verification.has_errors() {
-        "failed"
+    let runtime = if options.run {
+        let trace = run_runtime_steps(
+            runtime_plan,
+            Some(selection.path()),
+            options.steps,
+            options.runtime_mode,
+            options.max_ops,
+            &options.values,
+            options.executor,
+        );
+        Some(VerifyTypesRuntimeSelfCheck {
+            executor: RuntimeExecutorTier::from(options.executor),
+            executor_stats: trace.executor_stats,
+            steps_run: trace.steps.len(),
+            final_status: flow_status_label(&trace.final_status),
+            diagnostics: trace.steps.iter().map(|step| step.diagnostics.len()).sum(),
+            failed: matches!(trace.final_status, FlowFiberStatus::Failed(_)),
+            steps: trace.steps,
+        })
     } else {
-        "ok"
+        None
     };
+    let runtime_failed = runtime
+        .as_ref()
+        .is_some_and(|runtime| runtime.failed || runtime.diagnostics > 0);
+    let status =
+        if runtime_type_validation.has_errors() || verification.has_errors() || runtime_failed {
+            "failed"
+        } else {
+            "ok"
+        };
     let report = VerifyTypesReport {
         status: status.to_owned(),
         source: report_path(selection.path()),
@@ -2402,6 +2434,7 @@ fn verify_types_command(options: &VerifyTypesOptions) -> Result<(), ExitCode> {
             obligations: verification.obligations.len(),
             unsafe_audits: verification.unsafe_audit_count(),
         },
+        runtime,
     };
     if options.json {
         print_json(&report)?;
@@ -2675,8 +2708,24 @@ struct VerifyTypesOptions {
     path: Option<PathBuf>,
     #[command(flatten)]
     profile: ProfileOptions,
+    #[arg(long)]
+    entry: Option<String>,
+    #[arg(long)]
+    flow: Option<String>,
     #[arg(long, value_parser = parse_verification_mode, default_value = "test")]
     mode: VerificationMode,
+    #[arg(long)]
+    run: bool,
+    #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
+    runtime_mode: CliRuntimeStepMode,
+    #[arg(long, default_value_t = 1)]
+    steps: usize,
+    #[arg(long, default_value_t = 64)]
+    max_ops: usize,
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    values: Vec<RuntimeBinding>,
     #[arg(long)]
     json: bool,
 }
@@ -3142,6 +3191,7 @@ struct VerifyTypesReport {
     borrow_check: BorrowCheckProfileStats,
     runtime_type_validation: RuntimeTypeValidationReportSummary,
     verifier: VerifyTypesVerifierSummary,
+    runtime: Option<VerifyTypesRuntimeSelfCheck>,
 }
 
 #[derive(serde::Serialize)]
@@ -3156,6 +3206,17 @@ struct VerifyTypesVerifierSummary {
     diagnostics: usize,
     obligations: usize,
     unsafe_audits: usize,
+}
+
+#[derive(serde::Serialize)]
+struct VerifyTypesRuntimeSelfCheck {
+    executor: RuntimeExecutorTier,
+    executor_stats: RuntimeExecutorStats,
+    steps_run: usize,
+    final_status: String,
+    diagnostics: usize,
+    failed: bool,
+    steps: Vec<RuntimeStepRunSummary>,
 }
 
 #[derive(serde::Serialize)]

@@ -123,7 +123,7 @@ required check.
 
 ## Verify Types
 
-`arcw verify-types <file.arcw> [--mode dev|test|release] [--json]` is the
+`arcw verify-types <file.arcw> [--mode dev|test|release] [--run] [--executor bytecode-vm|aot] [--steps N] [--max-ops N] [--json]` is the
 executable type-soundness inspection entry point. It runs the same checked
 source pipeline as `arcw check`, keeps the full `TypeCheckReport`, lowers the
 module to `RuntimePlan`, and validates the executable runtime IR against the
@@ -132,9 +132,12 @@ type-check evidence with `validate_runtime_plan_types`.
 JSON output reports the source label without absolute host paths, syntax warning
 count, lowered line task groups, typecheck counters, borrow-check counters,
 runtime-plan type validation diagnostics and stats, plus semantic verifier
-diagnostic/obligation counts. The command fails if type checking, runtime-plan
-type validation, or semantic verification reports an error. It is intended for
-CI gates and local regression checks that need stronger evidence than a green
+diagnostic/obligation counts. With `--run`, it also performs a bounded headless
+runtime progress self-check through the selected executor and records per-step
+runtime evidence plus executor stats such as AOT fast-path op count. The command
+fails if type checking, runtime-plan type validation, semantic verification, or
+the optional runtime progress check reports an error. It is intended for CI
+gates and local regression checks that need stronger evidence than a green
 runtime dry run.
 
 ## Runtime Plan Inspection

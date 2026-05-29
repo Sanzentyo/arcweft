@@ -458,7 +458,10 @@ Current high-confidence state:
   inspection. It keeps the successful `TypeCheckReport`, lowers to
   `RuntimePlan`, runs `validate_runtime_plan_types`, and reports typecheck,
   borrow-check, runtime-plan type validation, and semantic verifier counters in
-  one JSON document without recording absolute source paths.
+  one JSON document without recording absolute source paths. With `--run`, it
+  also performs a bounded headless runtime progress self-check through the
+  selected executor and records per-step runtime evidence plus AOT fast-path
+  counters.
 - `VerificationReport` now records solver outcomes as typed `solver_checks`.
   CLI solver I/O remains outside the Sans I/O verifier core, but `arcw verify
   --backend oxiz|z3 --json` writes each outcome back to the report. Required

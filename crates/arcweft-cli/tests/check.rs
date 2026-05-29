@@ -822,6 +822,11 @@ flow @flow.verify_types verify_types {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("verify-types")
         .arg(&path)
+        .arg("--run")
+        .arg("--executor")
+        .arg("aot")
+        .arg("--max-ops")
+        .arg("8")
         .arg("--json")
         .output()
         .expect("arcw verify-types runs");
@@ -838,6 +843,10 @@ flow @flow.verify_types verify_types {
             && stdout.contains("\"borrow_check\"")
             && stdout.contains("\"runtime_type_validation\"")
             && stdout.contains("\"verifier\"")
+            && stdout.contains("\"runtime\"")
+            && stdout.contains("\"executor\": \"aot\"")
+            && stdout.contains("\"aot_fast_path_ops\": 2")
+            && stdout.contains("\"failed\": false")
             && stdout.contains("\"judgments\"")
             && stdout.contains("\"type_judgments\"")
             && stdout.contains("\"source\": \"arcweft-cli-verify-types-"),
