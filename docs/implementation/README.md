@@ -52,8 +52,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
   comparisons, value-producing `if`, and selected local bindings passed as
   runtime `i64` inputs. Generated code executes through an isolated native-call
   boundary, and `arcw jit check --json` exercises it against the VM reference
-  backend with deterministic varying inputs, sample timing, and speedup
-  reporting.
+  backend with deterministic seed-controlled varying inputs, sample timing, and
+  speedup reporting.
 - No renderer, Servo, audio, camera, USB, or MCP implementation.
 
 ## Files

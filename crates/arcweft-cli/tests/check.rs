@@ -14,6 +14,8 @@ fn jit_check_json_compares_cranelift_and_vm() {
         .arg("1")
         .arg("--samples")
         .arg("2")
+        .arg("--input-seed")
+        .arg("7")
         .output()
         .expect("arcw jit check runs");
 
@@ -35,6 +37,7 @@ fn jit_check_json_compares_cranelift_and_vm() {
     assert!(
         stdout.contains("\"speedup_x\"")
             && stdout.contains("\"dynamic_inputs\": true")
+            && stdout.contains("\"input_seed\": 7")
             && stdout.contains("\"input_bindings\"")
             && stdout.contains("\"jit_per_iteration_ns\"")
             && stdout.contains("\"vm_per_iteration_ns\"")

@@ -71,15 +71,16 @@ String-heavy helpers, effectful calls, flow control, and pattern control remain
 outside the JIT subset.
 
 ```bash
-arcw jit check --json --iterations 1000 --warmup 10 --samples 5
+arcw jit check --json --iterations 1000 --warmup 10 --samples 5 --input-seed 0
 ```
 
 The command reports VM/JIT conformance, JIT compile time, repeated native-call
 time, VM evaluation time, per-iteration medians, speedup ratio, deterministic
 accumulators, input binding names, and pure-helper lowering counters. Its timing
 loop feeds deterministic varying `base` / `bonus` integer inputs through both
-the compiled JIT function and the VM reference. It does not read source paths or
-persist host absolute paths.
+the compiled JIT function and the VM reference. `--input-seed` makes the input
+series reproducible while allowing local A/B comparisons. It does not read
+source paths or persist host absolute paths.
 
 ## IR lowering
 

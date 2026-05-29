@@ -149,11 +149,21 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
         })?;
     let compile_elapsed_ns = compile_started.elapsed().as_nanos();
 
-    warmup_jit_check_jit(&compiled, options.warmup);
-    let jit_measurement = measure_jit_check_jit(&compiled, options.samples, options.iterations)?;
+    warmup_jit_check_jit(&compiled, options.warmup, options.input_seed);
+    let jit_measurement = measure_jit_check_jit(
+        &compiled,
+        options.samples,
+        options.iterations,
+        options.input_seed,
+    )?;
 
-    warmup_jit_check_vm(vm_backend, options.warmup)?;
-    let vm_measurement = measure_jit_check_vm(vm_backend, options.samples, options.iterations)?;
+    warmup_jit_check_vm(vm_backend, options.warmup, options.input_seed)?;
+    let vm_measurement = measure_jit_check_vm(
+        vm_backend,
+        options.samples,
+        options.iterations,
+        options.input_seed,
+    )?;
 
     let matches_vm =
         conformance.matches_vm && jit_measurement.accumulator == vm_measurement.accumulator;
@@ -165,6 +175,7 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
             compiled.param_names().1.to_owned(),
         ],
         dynamic_inputs: true,
+        input_seed: options.input_seed,
         vm_backend: backend_label(conformance.vm.backend).to_owned(),
         jit_backend: backend_label(conformance.candidate.backend).to_owned(),
         matches_vm,
@@ -250,16 +261,24 @@ fn jit_check_request_with_inputs(base: i64, bonus: i64) -> PureFunctionRequest {
     )
 }
 
-fn jit_check_input(sample: usize, iteration: usize) -> (i64, i64) {
-    let base = i64::try_from(sample.saturating_add(iteration) % 8).map_or(1, |value| value + 1);
-    let bonus = i64::try_from(sample.saturating_mul(3).saturating_add(iteration) % 5)
+fn jit_check_input(seed: u64, sample: usize, iteration: usize) -> (i64, i64) {
+    let sample = u64::try_from(sample).unwrap_or_default();
+    let iteration = u64::try_from(iteration).unwrap_or_default();
+    let base = i64::try_from(seed.saturating_add(sample).saturating_add(iteration) % 8)
         .map_or(1, |value| value + 1);
+    let bonus = i64::try_from(
+        seed.saturating_mul(3)
+            .saturating_add(sample.saturating_mul(3))
+            .saturating_add(iteration)
+            % 5,
+    )
+    .map_or(1, |value| value + 1);
     (base, bonus)
 }
 
-fn warmup_jit_check_jit(compiled: &CompiledPureI64Binary, warmup: usize) {
+fn warmup_jit_check_jit(compiled: &CompiledPureI64Binary, warmup: usize, input_seed: u64) {
     for index in 0..warmup {
-        let (base, bonus) = jit_check_input(0, index);
+        let (base, bonus) = jit_check_input(input_seed, 0, index);
         let _ = compiled.call(base, bonus);
     }
 }
@@ -268,16 +287,21 @@ fn measure_jit_check_jit(
     compiled: &CompiledPureI64Binary,
     samples: usize,
     iterations: usize,
+    input_seed: u64,
 ) -> Result<JitRepeatedMeasurement, ExitCode> {
     measure_repeated(samples, iterations, |sample, index| {
-        let (base, bonus) = jit_check_input(sample, index);
+        let (base, bonus) = jit_check_input(input_seed, sample, index);
         Ok(compiled.call(base, bonus))
     })
 }
 
-fn warmup_jit_check_vm(vm_backend: VmPureFunctionBackend, warmup: usize) -> Result<(), ExitCode> {
+fn warmup_jit_check_vm(
+    vm_backend: VmPureFunctionBackend,
+    warmup: usize,
+    input_seed: u64,
+) -> Result<(), ExitCode> {
     for index in 0..warmup {
-        let (base, bonus) = jit_check_input(0, index);
+        let (base, bonus) = jit_check_input(input_seed, 0, index);
         let request = jit_check_request_with_inputs(base, bonus);
         let _ = vm_backend.evaluate(&request).map_err(|error| {
             eprintln!("error: VM warmup failed: {error}");
@@ -291,9 +315,10 @@ fn measure_jit_check_vm(
     vm_backend: VmPureFunctionBackend,
     samples: usize,
     iterations: usize,
+    input_seed: u64,
 ) -> Result<JitRepeatedMeasurement, ExitCode> {
     measure_repeated(samples, iterations, |sample, index| {
-        let (base, bonus) = jit_check_input(sample, index);
+        let (base, bonus) = jit_check_input(input_seed, sample, index);
         let request = jit_check_request_with_inputs(base, bonus);
         let value = vm_backend.evaluate(&request).map_err(|error| {
             eprintln!("error: VM evaluation failed: {error}");
@@ -2026,6 +2051,8 @@ struct JitCheckOptions {
     warmup: usize,
     #[arg(long, default_value_t = 5)]
     samples: usize,
+    #[arg(long, default_value_t = 0)]
+    input_seed: u64,
     #[arg(long)]
     json: bool,
 }
@@ -2063,6 +2090,7 @@ struct JitCheckReport {
     helper: String,
     input_bindings: [String; 2],
     dynamic_inputs: bool,
+    input_seed: u64,
     vm_backend: String,
     jit_backend: String,
     matches_vm: bool,
