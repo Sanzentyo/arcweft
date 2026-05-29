@@ -208,8 +208,8 @@ impl TypeChecker<'_> {
 
     fn snapshot_runtime_scope(&mut self) -> TypeCheckerScopeSnapshot {
         self.stats.borrow_state_snapshots += 1;
+        self.stats.borrow_state_cloned_bindings += self.borrow_local_lifetimes.len();
         TypeCheckerScopeSnapshot {
-            active_borrows: self.active_borrows.clone(),
             borrow_local_lifetimes: self.borrow_local_lifetimes.clone(),
             locals: self.locals.clone(),
             active_presentation_defaults: self.active_presentation_defaults.clone(),
@@ -221,9 +221,8 @@ impl TypeChecker<'_> {
 
     fn restore_runtime_scope(&mut self, snapshot: TypeCheckerScopeSnapshot) {
         self.stats.borrow_state_restores += 1;
-        self.active_borrows = snapshot.active_borrows;
         self.borrow_local_lifetimes = snapshot.borrow_local_lifetimes;
-        self.record_active_borrow_depth();
+        self.rebuild_active_borrows();
         self.locals = snapshot.locals;
         self.active_presentation_defaults = snapshot.active_presentation_defaults;
         self.lifetime_guarantees = snapshot.lifetime_guarantees;

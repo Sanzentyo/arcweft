@@ -82,18 +82,16 @@ impl TypeChecker<'_> {
 
     pub(super) fn snapshot_borrow_state(&mut self) -> BorrowStateSnapshot {
         self.stats.borrow_state_snapshots += 1;
-        // This clone is the main cost center for branch-sensitive borrow checks.
+        self.stats.borrow_state_cloned_bindings += self.borrow_local_lifetimes.len();
         BorrowStateSnapshot {
-            active_borrows: self.active_borrows.clone(),
             borrow_local_lifetimes: self.borrow_local_lifetimes.clone(),
         }
     }
 
     pub(super) fn restore_borrow_state(&mut self, snapshot: BorrowStateSnapshot) {
         self.stats.borrow_state_restores += 1;
-        self.active_borrows = snapshot.active_borrows;
         self.borrow_local_lifetimes = snapshot.borrow_local_lifetimes;
-        self.record_active_borrow_depth();
+        self.rebuild_active_borrows();
     }
 
     pub(super) fn merge_borrow_state_from_paths(

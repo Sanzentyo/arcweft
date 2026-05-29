@@ -170,8 +170,7 @@ impl TypeChecker<'_> {
 
     fn check_borrow_block(&mut self, block: &arcweft_lang_hir::model::HirBorrow) {
         self.check_expr(block.source());
-        let borrow_start = self.active_borrows.len();
-        let borrow_local_start = self.borrow_local_lifetimes.clone();
+        let borrow_snapshot = self.snapshot_borrow_state();
         let locals_start = self.locals.clone();
         if let Some((name, ty)) = typed_pattern_binding(block.binding()) {
             let ty = type_ref_kind(ty);
@@ -181,8 +180,7 @@ impl TypeChecker<'_> {
         for item in block.body() {
             self.check_flow_item(item);
         }
-        self.active_borrows.truncate(borrow_start);
-        self.borrow_local_lifetimes = borrow_local_start;
+        self.restore_borrow_state(borrow_snapshot);
         self.locals = locals_start;
     }
 

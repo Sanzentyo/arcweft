@@ -3540,6 +3540,7 @@ fn assert_borrow_check_metrics(borrow_check: &serde_json::Value) {
         "state_snapshots",
         "state_restores",
         "state_merges",
+        "state_cloned_bindings",
         "boundary_checks",
         "escape_checks",
         "max_active_borrows",

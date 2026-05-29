@@ -4,7 +4,6 @@ use std::collections::{BTreeSet, HashMap};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BorrowStateSnapshot {
-    pub(crate) active_borrows: Vec<String>,
     pub(crate) borrow_local_lifetimes: HashMap<String, BorrowLocalState>,
 }
 

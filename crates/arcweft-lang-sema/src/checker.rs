@@ -87,6 +87,7 @@ pub struct TypeCheckStats {
     pub borrow_state_snapshots: usize,
     pub borrow_state_restores: usize,
     pub borrow_state_merges: usize,
+    pub borrow_state_cloned_bindings: usize,
     pub borrow_boundary_checks: usize,
     pub borrow_escape_checks: usize,
     pub max_active_borrows: usize,
@@ -215,7 +216,6 @@ struct TypeChecker<'a> {
 
 #[derive(Clone, Debug)]
 struct TypeCheckerScopeSnapshot {
-    active_borrows: Vec<String>,
     borrow_local_lifetimes: HashMap<String, BorrowLocalState>,
     locals: HashMap<String, TypeKind>,
     active_presentation_defaults: HashMap<String, String>,
