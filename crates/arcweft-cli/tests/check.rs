@@ -62,7 +62,8 @@ fn jit_check_json_uses_source_pure_helper() {
 fn score(base: i64, bonus: i64, scale: i64) -> i64 {
     let boosted = bonus + 2
     let weighted = base * boosted
-    return if base >= 3 { weighted + scale } else { scale }
+    let adjusted = -weighted / scale
+    return if base >= 3 { adjusted + scale } else { scale }
 }
 ",
     );

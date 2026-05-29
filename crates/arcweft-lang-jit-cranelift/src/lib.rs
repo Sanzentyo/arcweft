@@ -11,7 +11,7 @@ use arcweft_core::pure::{
     PureFunctionStats,
 };
 use arcweft_core::value::{
-    RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeValue,
+    RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeUnaryOp, RuntimeValue,
 };
 use cranelift::codegen::ir::UserFuncName;
 use cranelift::jit::{JITBuilder, JITModule};
@@ -329,6 +329,19 @@ fn lower_expr(
             scoped_bindings.insert(name.clone(), LoweredI64Binding::Value(value));
             lower_expr(builder, &scoped_bindings, body, stats)
         }
+        RuntimeExpr::Unary {
+            op: RuntimeUnaryOp::Neg,
+            expr,
+        } => {
+            let value = lower_expr(builder, bindings, expr, stats)?;
+            Ok(builder.ins().ineg(value))
+        }
+        RuntimeExpr::Unary {
+            op: RuntimeUnaryOp::Not,
+            ..
+        } => Err(CraneliftJitError::UnsupportedExpr(
+            "boolean negation is not an i64 result".to_owned(),
+        )),
         RuntimeExpr::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let lhs = lower_expr(builder, bindings, lhs, stats)?;
@@ -337,6 +350,7 @@ fn lower_expr(
                 RuntimeBinaryOp::Add => Ok(builder.ins().iadd(lhs, rhs)),
                 RuntimeBinaryOp::Sub => Ok(builder.ins().isub(lhs, rhs)),
                 RuntimeBinaryOp::Mul => Ok(builder.ins().imul(lhs, rhs)),
+                RuntimeBinaryOp::Div => Ok(builder.ins().sdiv(lhs, rhs)),
                 _ => Err(CraneliftJitError::UnsupportedExpr(format!(
                     "binary operator `{op:?}` is outside the JIT subset"
                 ))),
@@ -603,6 +617,38 @@ mod tests {
             .expect("Cranelift compiles four-input integer helper");
 
         assert_eq!(compiled.call(&[2, 3, 10, 4]).expect("call succeeds"), 30);
+    }
+
+    #[test]
+    fn cranelift_compiled_helper_evaluates_division_and_negation() {
+        let request = PureFunctionRequest::new(
+            "normalized_delta",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Unary {
+                    op: RuntimeUnaryOp::Neg,
+                    expr: Box::new(RuntimeExpr::Binary {
+                        lhs: Box::new(RuntimeExpr::Local("score".to_owned())),
+                        op: RuntimeBinaryOp::Sub,
+                        rhs: Box::new(RuntimeExpr::Local("baseline".to_owned())),
+                    }),
+                }),
+                op: RuntimeBinaryOp::Div,
+                rhs: Box::new(RuntimeExpr::Local("scale".to_owned())),
+            },
+            [
+                int_binding("score", 0),
+                int_binding("baseline", 0),
+                int_binding("scale", 1),
+            ],
+        );
+
+        let compiled = CraneliftPureFunctionBackend
+            .compile_i64_with_inputs(&request, ["score", "baseline", "scale"])
+            .expect("Cranelift compiles i64 div and unary negation");
+
+        assert_eq!(compiled.call(&[21, 9, 3]).expect("call succeeds"), -4);
+        assert_eq!(compiled.call(&[8, 20, 4]).expect("call succeeds"), 3);
+        assert_eq!(compiled.stats().evaluated_binary_ops, 2);
     }
 
     #[test]
