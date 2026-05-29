@@ -33,7 +33,9 @@ use arcweft_lang_syntax::{
 use arcweft_launch::{LaunchKind, LaunchProfileManifest, ResolvedLaunchProfile};
 use arcweft_runtime_plan::flow::lower_runtime_plan;
 use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_groups};
-use arcweft_runtime_plan::pure::{PureHelperCandidate, lower_pure_helper_candidates};
+use arcweft_runtime_plan::pure::{
+    PureHelperCandidate, PureHelperLowerError, lower_pure_helper_candidates,
+};
 use arcweft_test::{BenchSection, ScriptBench, ScriptStep, ScriptTest, collect_script_tests};
 use arcweft_tooling::{FormatOptions, ToolingEditReport, format_source, materialize_ids};
 use arcweft_verify::{
@@ -50,8 +52,10 @@ use native_task::NativeTaskBridge;
 use output::{
     CheckReport, RuntimeExecutorTier, RuntimePlanReport, RuntimeRunReport, RuntimeStepRunSummary,
     ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary,
-    ScriptBenchRunSummary, ScriptBenchSectionRunSummary, ScriptTestRunReport, ScriptTestRunSummary,
-    flow_status_label,
+    ScriptBenchPureHelperDeterministicSummary, ScriptBenchPureHelperMeasurementSummary,
+    ScriptBenchPureHelperStatsSummary, ScriptBenchPureHelperTimingSamples,
+    ScriptBenchPureHelperTimingSummary, ScriptBenchRunSummary, ScriptBenchSectionRunSummary,
+    ScriptTestRunReport, ScriptTestRunSummary, flow_status_label,
 };
 use server_adapter::{NativeHttpServerConfig, serve_native_http};
 use std::fs;
@@ -868,6 +872,8 @@ fn runtime_run_bench_selection(
         max_ops: options.max_ops,
         iterations: 1,
         warmup: 0,
+        samples: 5,
+        input_seed: 0,
         values: options.values.clone(),
         json: options.json,
     };
@@ -1830,6 +1836,7 @@ fn script_bench_selection(
     let mut phases = Vec::new();
     let compiled = compile_profile_runtime_plan(selection, &env, &mut phases)?;
     let manifest = collect_script_tests(&compiled.hir);
+    let pure_helpers = lower_pure_helper_candidates(&compiled.hir);
     let output = ScriptBenchRunReport {
         source: report_path(selection.path()),
         syntax_warnings: compiled.syntax_warnings,
@@ -1846,7 +1853,15 @@ fn script_bench_selection(
         benches: manifest
             .benches
             .iter()
-            .map(|bench| run_script_bench(bench, &compiled.plan, selection.path(), options))
+            .map(|bench| {
+                run_script_bench(
+                    bench,
+                    &compiled.plan,
+                    &pure_helpers,
+                    selection.path(),
+                    options,
+                )
+            })
             .collect(),
     };
     let failed = output.benches.iter().any(|bench| bench.status == "failed");
@@ -1919,6 +1934,7 @@ fn validate_script_bench(bench: &ScriptBench) -> ScriptBenchRunSummary {
 fn run_script_bench(
     bench: &ScriptBench,
     plan: &RuntimePlan,
+    pure_helpers: &Result<Vec<PureHelperCandidate>, Vec<PureHelperLowerError>>,
     source_path: &Path,
     options: &ScriptBenchOptions,
 ) -> ScriptBenchRunSummary {
@@ -1929,10 +1945,19 @@ fn run_script_bench(
     let sections = bench
         .sections
         .iter()
-        .map(|section| run_bench_section(section, plan, source_path, options))
+        .map(|section| run_bench_section(section, plan, pure_helpers, source_path, options))
+        .collect::<Vec<_>>();
+    let section_failures = sections
+        .iter()
+        .filter(|section| section.status == "failed")
+        .flat_map(|section| section.diagnostics.iter().cloned())
         .collect::<Vec<_>>();
     let has_measured = sections.iter().any(|section| section.status == "measured");
-    if has_measured {
+    if !section_failures.is_empty() {
+        "failed".clone_into(&mut summary.status);
+        summary.sections = sections;
+        summary.diagnostics.extend(section_failures);
+    } else if has_measured {
         "measured".clone_into(&mut summary.status);
         summary.sections = sections;
         let diagnostics = bench_expectation_failures(bench, plan, source_path, options);
@@ -2013,15 +2038,122 @@ fn bench_assertion_text(section: &BenchSection) -> Result<&str, String> {
     Ok(body)
 }
 
+fn run_bench_pure_helper_section(
+    section: &BenchSection,
+    pure_helpers: &Result<Vec<PureHelperCandidate>, Vec<PureHelperLowerError>>,
+    options: &ScriptBenchOptions,
+    validated: ScriptBenchSectionRunSummary,
+) -> ScriptBenchSectionRunSummary {
+    let Some(helper_name) = bench_pure_helper_name(section) else {
+        return validated;
+    };
+    let candidates = match pure_helpers {
+        Ok(candidates) => candidates,
+        Err(errors) => {
+            return ScriptBenchSectionRunSummary::new(
+                &section.name,
+                "failed",
+                errors
+                    .iter()
+                    .map(|error| format!("pure helper lowering failed: {error}"))
+                    .collect(),
+            );
+        }
+    };
+    let Some(candidate) = candidates
+        .iter()
+        .find(|candidate| candidate.name() == helper_name)
+    else {
+        return ScriptBenchSectionRunSummary::new(
+            &section.name,
+            "failed",
+            vec![format!("pure helper `{helper_name}` was not found")],
+        );
+    };
+    let target = match JitCheckTarget::from_candidate(candidate) {
+        Ok(target) => target,
+        Err(code) => {
+            return ScriptBenchSectionRunSummary::new(
+                &section.name,
+                "failed",
+                vec![format!(
+                    "pure helper `{helper_name}` cannot be measured by the current JIT tier: exit code {code:?}"
+                )],
+            );
+        }
+    };
+    let jit_options = JitCheckOptions {
+        path: None,
+        helper: Some(helper_name),
+        iterations: options.iterations,
+        warmup: options.warmup,
+        samples: options.samples,
+        input_seed: options.input_seed,
+        json: false,
+    };
+    match run_jit_check(&jit_options, &target) {
+        Ok(report) if report.matches_vm => ScriptBenchSectionRunSummary::measured_pure_helper(
+            &section.name,
+            validated.diagnostics,
+            ScriptBenchPureHelperMeasurementSummary::from(&report),
+        ),
+        Ok(report) => ScriptBenchSectionRunSummary::new(
+            &section.name,
+            "failed",
+            vec![format!(
+                "pure helper `{}` did not match the VM reference",
+                report.helper
+            )],
+        ),
+        Err(code) => ScriptBenchSectionRunSummary::new(
+            &section.name,
+            "failed",
+            vec![format!(
+                "pure helper `{}` failed during VM/AOT/JIT measurement: exit code {code:?}",
+                target.name
+            )],
+        ),
+    }
+}
+
+fn bench_pure_helper_name(section: &BenchSection) -> Option<String> {
+    let Expr::Call { callee, args } = parse_expr(bench_measure_body(section)?).ok()? else {
+        return None;
+    };
+    let Expr::Path(callee) = callee.as_ref() else {
+        return None;
+    };
+    if callee != "pure" {
+        return None;
+    }
+    let [helper] = args.as_slice() else {
+        return None;
+    };
+    match helper {
+        Expr::Path(name) => Some(name.clone()),
+        _ => None,
+    }
+}
+
+fn bench_measure_body(section: &BenchSection) -> Option<&str> {
+    let rest = section.text.trim().strip_prefix("measure")?;
+    let open = rest.find('{')?;
+    rest[open + 1..].strip_suffix('}').map(str::trim)
+}
+
 fn run_bench_section(
     section: &BenchSection,
     plan: &RuntimePlan,
+    pure_helpers: &Result<Vec<PureHelperCandidate>, Vec<PureHelperLowerError>>,
     source_path: &Path,
     options: &ScriptBenchOptions,
 ) -> ScriptBenchSectionRunSummary {
     let validated = validate_bench_section(section);
     if section.name != "measure" || validated.status != "validated" {
         return validated;
+    }
+    if bench_pure_helper_name(section).is_some() {
+        return run_bench_pure_helper_section(section, pure_helpers, options, validated);
     }
     let Some(flow) = bench_start_flow(section) else {
         return validated;
@@ -2597,6 +2729,10 @@ struct ScriptBenchOptions {
     iterations: usize,
     #[arg(long, default_value_t = 0)]
     warmup: usize,
+    #[arg(long, default_value_t = 5)]
+    samples: usize,
+    #[arg(long, default_value_t = 0)]
+    input_seed: u64,
     #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
     values: Vec<RuntimeBinding>,
     #[arg(long)]
@@ -2720,6 +2856,52 @@ struct JitCheckDeterministicReport {
     vm: i64,
 }
 
+impl From<&JitCheckReport> for ScriptBenchPureHelperMeasurementSummary {
+    fn from(report: &JitCheckReport) -> Self {
+        Self {
+            helper: report.helper.clone(),
+            input_bindings: report.input_bindings.clone(),
+            matches_vm: report.matches_vm,
+            warmup: report.warmup,
+            iterations: report.iterations,
+            samples: report.samples,
+            timings: ScriptBenchPureHelperTimingSummary {
+                aot_compile_elapsed_ns: report.timings.aot_compile,
+                compile_elapsed_ns: report.timings.compile,
+                aot_elapsed_ns: report.timings.aot,
+                jit_elapsed_ns: report.timings.jit,
+                vm_elapsed_ns: report.timings.vm,
+                aot_per_iteration_ns: report.timings.aot_per_iteration,
+                jit_per_iteration_ns: report.timings.jit_per_iteration,
+                vm_per_iteration_ns: report.timings.vm_per_iteration,
+                aot_speedup_x: report.timings.aot_speedup_x.clone(),
+                speedup_x: report.timings.speedup_x.clone(),
+                aot_samples: ScriptBenchPureHelperTimingSamples::from(report.timings.aot_samples),
+                jit_samples: ScriptBenchPureHelperTimingSamples::from(report.timings.jit_samples),
+                vm_samples: ScriptBenchPureHelperTimingSamples::from(report.timings.vm_samples),
+            },
+            deterministic: ScriptBenchPureHelperDeterministicSummary {
+                aot: report.deterministic.aot,
+                jit: report.deterministic.jit,
+                vm: report.deterministic.vm,
+            },
+            vm_stats: ScriptBenchPureHelperStatsSummary::from(&report.vm_stats),
+            aot_stats: ScriptBenchPureHelperStatsSummary::from(&report.aot_stats),
+            jit_stats: ScriptBenchPureHelperStatsSummary::from(&report.jit_stats),
+        }
+    }
+}
+
+impl From<JitTimingSamples> for ScriptBenchPureHelperTimingSamples {
+    fn from(samples: JitTimingSamples) -> Self {
+        Self {
+            min: samples.min,
+            median: samples.median,
+            max: samples.max,
+        }
+    }
+}
+
 #[derive(serde::Serialize)]
 struct PureFunctionStatsReport {
     #[serde(rename = "evaluated_exprs")]
@@ -2730,6 +2912,17 @@ struct PureFunctionStatsReport {
     method_calls: usize,
     #[serde(rename = "evaluated_binary_ops")]
     binary_ops: usize,
+}
+
+impl From<&PureFunctionStatsReport> for ScriptBenchPureHelperStatsSummary {
+    fn from(stats: &PureFunctionStatsReport) -> Self {
+        Self {
+            exprs: stats.exprs,
+            calls: stats.calls,
+            method_calls: stats.method_calls,
+            binary_ops: stats.binary_ops,
+        }
+    }
 }
 
 impl PureFunctionStatsReport {

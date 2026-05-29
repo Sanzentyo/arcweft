@@ -366,6 +366,7 @@ pub(crate) struct ScriptBenchSectionRunSummary {
     pub(crate) status: String,
     pub(crate) diagnostics: Vec<String>,
     pub(crate) measurement: Option<ScriptBenchMeasurementSummary>,
+    pub(crate) pure_helper: Option<ScriptBenchPureHelperMeasurementSummary>,
 }
 
 #[derive(serde::Serialize)]
@@ -391,6 +392,67 @@ pub(crate) struct ScriptBenchDeterministicSummary {
     pub(crate) task_requests_median: usize,
     pub(crate) task_events_in_median: usize,
     pub(crate) diagnostics: usize,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ScriptBenchPureHelperMeasurementSummary {
+    pub(crate) helper: String,
+    pub(crate) input_bindings: Vec<String>,
+    pub(crate) matches_vm: bool,
+    pub(crate) warmup: usize,
+    pub(crate) iterations: usize,
+    pub(crate) samples: usize,
+    pub(crate) timings: ScriptBenchPureHelperTimingSummary,
+    pub(crate) deterministic: ScriptBenchPureHelperDeterministicSummary,
+    pub(crate) vm_stats: ScriptBenchPureHelperStatsSummary,
+    pub(crate) aot_stats: ScriptBenchPureHelperStatsSummary,
+    pub(crate) jit_stats: ScriptBenchPureHelperStatsSummary,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ScriptBenchPureHelperTimingSummary {
+    pub(crate) aot_compile_elapsed_ns: u128,
+    pub(crate) compile_elapsed_ns: u128,
+    pub(crate) aot_elapsed_ns: u128,
+    pub(crate) jit_elapsed_ns: u128,
+    pub(crate) vm_elapsed_ns: u128,
+    pub(crate) aot_per_iteration_ns: u128,
+    pub(crate) jit_per_iteration_ns: u128,
+    pub(crate) vm_per_iteration_ns: u128,
+    pub(crate) aot_speedup_x: String,
+    pub(crate) speedup_x: String,
+    pub(crate) aot_samples: ScriptBenchPureHelperTimingSamples,
+    pub(crate) jit_samples: ScriptBenchPureHelperTimingSamples,
+    pub(crate) vm_samples: ScriptBenchPureHelperTimingSamples,
+}
+
+#[derive(Clone, Copy, serde::Serialize)]
+pub(crate) struct ScriptBenchPureHelperTimingSamples {
+    pub(crate) min: u128,
+    pub(crate) median: u128,
+    pub(crate) max: u128,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ScriptBenchPureHelperDeterministicSummary {
+    #[serde(rename = "aot_accumulator")]
+    pub(crate) aot: i64,
+    #[serde(rename = "jit_accumulator")]
+    pub(crate) jit: i64,
+    #[serde(rename = "vm_accumulator")]
+    pub(crate) vm: i64,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ScriptBenchPureHelperStatsSummary {
+    #[serde(rename = "evaluated_exprs")]
+    pub(crate) exprs: usize,
+    #[serde(rename = "evaluated_calls")]
+    pub(crate) calls: usize,
+    #[serde(rename = "evaluated_method_calls")]
+    pub(crate) method_calls: usize,
+    #[serde(rename = "evaluated_binary_ops")]
+    pub(crate) binary_ops: usize,
 }
 
 impl ScriptBenchRunSummary {
@@ -420,6 +482,7 @@ impl ScriptBenchSectionRunSummary {
             status: status.into(),
             diagnostics,
             measurement: None,
+            pure_helper: None,
         }
     }
 
@@ -433,6 +496,21 @@ impl ScriptBenchSectionRunSummary {
             status: "measured".to_owned(),
             diagnostics,
             measurement: Some(measurement),
+            pure_helper: None,
+        }
+    }
+
+    pub(crate) fn measured_pure_helper(
+        name: impl Into<String>,
+        diagnostics: Vec<String>,
+        pure_helper: ScriptBenchPureHelperMeasurementSummary,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            status: "measured".to_owned(),
+            diagnostics,
+            measurement: None,
+            pure_helper: Some(pure_helper),
         }
     }
 }

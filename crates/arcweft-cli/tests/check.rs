@@ -1362,6 +1362,58 @@ flow @flow.bench bench {
 }
 
 #[test]
+fn bench_json_measures_pure_helper_with_vm_aot_and_jit() {
+    let path = temp_arcw(
+        "script-bench-pure-helper",
+        r"
+#[pure]
+fn score(base: i64, bonus: i64, scale: i64) -> i64 {
+    let boosted = bonus + 2
+    let weighted = base * boosted
+    return if base >= 3 { weighted + scale } else { scale }
+}
+
+bench @bench.pure_score {
+    measure iterations = 4 { pure(score) }
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("4")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--samples")
+        .arg("2")
+        .arg("--input-seed")
+        .arg("5")
+        .arg("--json")
+        .output()
+        .expect("arcw bench runs pure helper measurement");
+
+    assert!(
+        output.status.success(),
+        "pure helper bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("bench.pure_score")
+            && stdout.contains("\"pure_helper\"")
+            && stdout.contains("\"helper\": \"score\"")
+            && stdout.contains("\"matches_vm\": true")
+            && stdout.contains("\"jit_elapsed_ns\"")
+            && stdout.contains("\"vm_elapsed_ns\"")
+            && stdout.contains("\"speedup_x\"")
+            && stdout.contains("\"jit_accumulator\""),
+        "bench JSON should include VM/AOT/JIT pure helper timing: {stdout}"
+    );
+}
+
+#[test]
 fn bench_json_checks_runtime_assert_sections() {
     let path = temp_arcw(
         "script-bench-assert",

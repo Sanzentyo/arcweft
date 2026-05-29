@@ -69,6 +69,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   reporting a measured bench as successful. Bench reports also expose compile
   phase timings plus type, borrow, runtime-type, and bytecode counters so
   runtime performance can be compared with parser/checker/lowering cost.
+  `measure { pure(helper_name) }` sections additionally run the selected
+  checked `#[pure] fn` helper through the VM reference, typed AOT plan, and
+  native Cranelift JIT, reporting conformance, deterministic accumulators,
+  timing samples, compile time, and speedup ratios in the same bench JSON.
 - No renderer, Servo, audio, camera, USB, or MCP implementation.
 
 ## Files

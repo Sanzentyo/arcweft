@@ -357,9 +357,28 @@ additional headless correctness run and fails the bench if any assert section
 does not match the runtime observations. Bench JSON also includes the same
 compiler phase timings and type, borrow, runtime-type, and bytecode counters as
 `arcw profile`, so runtime measurements can be interpreted alongside
-compilation and checking cost. The manifest preserves the declaration ID, kind,
-source span, and call-based body rows so CLI, LSP, headless player adapters, and
-Agent tooling can share one planning schema without reparsing source text.
+compilation and checking cost.
+
+Bench `measure` sections can also target a checked pure helper:
+
+```arcw
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    if base >= 3 { base * add(bonus, 2) } else { 0 }
+}
+
+bench @bench.score {
+    measure iterations = 1000 { pure(score) }
+}
+```
+
+For `pure(name)` measurements, `arcw bench --json` runs the VM reference, the
+typed AOT plan, and the native Cranelift JIT with deterministic generated
+integer inputs. The report includes conformance, per-backend timing samples,
+compile time, accumulators, and speedup ratios without recording the host source
+path. The manifest preserves the declaration ID, kind, source span, and
+call-based body rows so CLI, LSP, headless player adapters, and Agent tooling
+can share one planning schema without reparsing source text.
 
 Line-plan lowering must not silently drop parsed syntax. Stable Phase 2.0 cue
 syntax such as `at(0.35s): ...` is lowered into Sans I/O line task data.
