@@ -3,7 +3,8 @@
 use super::helpers::let_else_bindings;
 use super::{
     EntityKind, Expr, LoopContext, Pattern, Stmt, TriggerPattern, TypeCheckError, TypeChecker,
-    TypeKind, YieldContext, default_presentation_slot_family, ident_pattern_name, is_local_ident,
+    TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext,
+    default_presentation_slot_family, ident_pattern_name, is_local_ident,
     pattern_bindings_with_fallback, stmts_diverge, type_ref_kind,
 };
 use arcweft_lang_syntax::{ast::flow::StmtMatchArm, types::TypeRef};
@@ -21,6 +22,16 @@ impl TypeChecker<'_> {
         }
         self.stats.statements += 1;
         let ty = self.check_expr_with_expected(expr, expected);
+        if let Some(ty) = ty.as_ref() {
+            self.record_type_judgment(
+                TypeJudgmentSubject::Return {
+                    context: "tail block expression".to_owned(),
+                },
+                TypeJudgmentRule::Return,
+                ty.clone(),
+                expected,
+            );
+        }
         self.reject_borrow_escape(ty.as_ref(), "function return");
         self.locals = outer_locals;
         ty
@@ -44,6 +55,16 @@ impl TypeChecker<'_> {
             Stmt::Return(expr) | Stmt::Close(expr) => {
                 let expected = self.expected_returns.last().cloned();
                 let ty = self.check_expr_with_expected(expr, expected.as_ref());
+                if let Some(ty) = ty.as_ref() {
+                    self.record_type_judgment(
+                        TypeJudgmentSubject::Return {
+                            context: "return statement".to_owned(),
+                        },
+                        TypeJudgmentRule::Return,
+                        ty.clone(),
+                        expected.as_ref(),
+                    );
+                }
                 self.reject_borrow_escape(ty.as_ref(), "function or flow return");
             }
             Stmt::Expr(expr) | Stmt::Select(expr) => {
@@ -215,6 +236,14 @@ impl TypeChecker<'_> {
             }
         }
         if let Some(ty) = ty.as_ref() {
+            self.record_type_judgment(
+                TypeJudgmentSubject::LetBinding {
+                    pattern: format!("{pattern:?}"),
+                },
+                TypeJudgmentRule::LetBinding,
+                ty.clone(),
+                annotated_ty.as_ref(),
+            );
             if let Some(name) = ident_pattern_name(pattern)
                 && name == "RuntimeFrame"
             {

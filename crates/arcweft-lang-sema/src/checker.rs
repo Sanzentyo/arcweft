@@ -81,6 +81,7 @@ pub struct TypeCheckStats {
     pub top_level_items: usize,
     pub statements: usize,
     pub expressions: usize,
+    pub judgments: usize,
     pub borrow_binding_groups: usize,
     pub borrow_bindings: usize,
     pub borrow_state_snapshots: usize,
@@ -91,11 +92,59 @@ pub struct TypeCheckStats {
     pub max_active_borrows: usize,
 }
 
+/// Stable identifier for a recorded type-check judgment.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TypeJudgmentId(usize);
+
+impl TypeJudgmentId {
+    /// Returns the zero-based index of this judgment in its report.
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
+
+/// HIR subject proven by a type-check judgment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TypeJudgmentSubject {
+    /// An expression was assigned a type.
+    Expr { kind: String },
+    /// A let binding pattern was assigned a type.
+    LetBinding { pattern: String },
+    /// A function or flow return expression was assigned a type.
+    Return { context: String },
+    /// A contextual expected-type check was applied.
+    Expected { context: String },
+}
+
+/// Rule family used to derive a type-check judgment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TypeJudgmentRule {
+    /// General expression inference or checking.
+    Expr,
+    /// Expression checked against an expected type.
+    Expected,
+    /// Let binding annotation and expression reconciliation.
+    LetBinding,
+    /// Return context checking.
+    Return,
+}
+
+/// Machine-readable evidence for one successful type-check decision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeJudgment {
+    pub id: TypeJudgmentId,
+    pub subject: TypeJudgmentSubject,
+    pub ty: TypeKind,
+    pub rule: TypeJudgmentRule,
+    pub expected: Option<TypeKind>,
+}
+
 /// Machine-readable type-check result used by tooling and profiling.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeCheckReport {
     pub diagnostics: Vec<TypeCheckError>,
     pub stats: TypeCheckStats,
+    pub judgments: Vec<TypeJudgment>,
 }
 
 impl TypeCheckReport {
@@ -115,6 +164,7 @@ pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport 
     TypeCheckReport {
         diagnostics: checker.errors,
         stats: checker.stats,
+        judgments: checker.judgments,
     }
 }
 
@@ -150,6 +200,7 @@ struct TypeChecker<'a> {
     expected_returns: Vec<TypeKind>,
     yield_stack: Vec<YieldContext>,
     stats: TypeCheckStats,
+    judgments: Vec<TypeJudgment>,
 }
 
 #[derive(Clone, Debug)]
@@ -213,7 +264,27 @@ impl TypeChecker<'_> {
             expected_returns: Vec::new(),
             yield_stack: Vec::new(),
             stats: TypeCheckStats::default(),
+            judgments: Vec::new(),
         }
+    }
+
+    fn record_type_judgment(
+        &mut self,
+        subject: TypeJudgmentSubject,
+        rule: TypeJudgmentRule,
+        ty: TypeKind,
+        expected: Option<&TypeKind>,
+    ) -> TypeJudgmentId {
+        let id = TypeJudgmentId(self.judgments.len());
+        self.judgments.push(TypeJudgment {
+            id,
+            subject,
+            ty,
+            rule,
+            expected: expected.cloned(),
+        });
+        self.stats.judgments = self.judgments.len();
+        id
     }
 
     fn record_active_borrow_depth(&mut self) {

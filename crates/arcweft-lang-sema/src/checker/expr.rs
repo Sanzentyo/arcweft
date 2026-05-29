@@ -8,14 +8,25 @@ use super::helpers::{
 };
 use super::{
     BorrowLocalState, EntityKind, EntityRefSyntax, Expr, LifetimeScopeKind, Pattern, Stmt,
-    TypeCheckError, TypeChecker, TypeKind, YieldContext, entity_kind,
+    TypeCheckError, TypeChecker, TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext,
+    entity_kind,
 };
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{BinaryOp, ComputationBlockKind, MatchExprArm, UnaryOp};
 
 impl TypeChecker<'_> {
     pub(super) fn expect_expr_type(&mut self, expr: &Expr, expected: &TypeKind, context: &str) {
-        let actual = self.check_expr(expr);
+        let actual = self.check_expr_with_expected(expr, Some(expected));
+        if let Some(actual) = actual.as_ref() {
+            self.record_type_judgment(
+                TypeJudgmentSubject::Expected {
+                    context: context.to_owned(),
+                },
+                TypeJudgmentRule::Expected,
+                actual.clone(),
+                Some(expected),
+            );
+        }
         if actual.as_ref() != Some(expected) {
             self.errors.push(TypeCheckError::new(format!(
                 "{context} must have type {expected:?}, found {actual:?}"
@@ -33,7 +44,7 @@ impl TypeChecker<'_> {
         expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
         self.stats.expressions += 1;
-        match expr {
+        let ty = match expr {
             Expr::Literal(literal) => Some(self.check_literal_expr(literal, expected)),
             Expr::EntityRef(entity) => self.check_entity_ref_expr(entity),
             Expr::LifetimePath { key, optional } => self.check_lifetime_path_expr(key, *optional),
@@ -119,7 +130,18 @@ impl TypeChecker<'_> {
                 )));
                 None
             }
+        };
+        if let Some(ty) = ty.as_ref() {
+            self.record_type_judgment(
+                TypeJudgmentSubject::Expr {
+                    kind: expr_kind_name(expr).to_owned(),
+                },
+                expected.map_or(TypeJudgmentRule::Expr, |_| TypeJudgmentRule::Expected),
+                ty.clone(),
+                expected,
+            );
         }
+        ty
     }
 
     fn check_closure_expr(&mut self, params: &[String], body: &Expr) -> Option<TypeKind> {
@@ -1063,6 +1085,43 @@ fn rhs_expected_type_for_binary(op: BinaryOp, lhs_type: Option<&TypeKind>) -> Op
             Some(lhs_type)
         }
         _ => None,
+    }
+}
+
+fn expr_kind_name(expr: &Expr) -> &'static str {
+    match expr {
+        Expr::Literal(_) => "literal",
+        Expr::EntityRef(_) => "entity_ref",
+        Expr::LifetimePath { .. } => "lifetime_path",
+        Expr::Path(_) => "path",
+        Expr::Placeholder(_) => "placeholder",
+        Expr::Tuple(_) => "tuple",
+        Expr::BracketSeq(_) => "bracket_seq",
+        Expr::ArrayRepeat { .. } => "array_repeat",
+        Expr::Call { .. } => "call",
+        Expr::NamedArg { .. } => "named_arg",
+        Expr::MethodCall { .. } => "method_call",
+        Expr::Field { .. } => "field",
+        Expr::DialogueCall { .. } => "dialogue_call",
+        Expr::Index { .. } => "index",
+        Expr::Pipe { .. } => "pipe",
+        Expr::Try { .. } => "try",
+        Expr::Await { .. } => "await",
+        Expr::Thread { .. } => "thread",
+        Expr::Range { .. } => "range",
+        Expr::Record { .. } => "record",
+        Expr::RecordLiteral(_) => "record_literal",
+        Expr::Binary { .. } => "binary",
+        Expr::Closure { .. } => "closure",
+        Expr::Unary { .. } => "unary",
+        Expr::Block { .. } => "block",
+        Expr::ComputationBlock { .. } => "computation_block",
+        Expr::NamedBlock { .. } => "named_block",
+        Expr::MemoBlock { .. } => "memo_block",
+        Expr::If { .. } => "if",
+        Expr::IfLet { .. } => "if_let",
+        Expr::Match { .. } => "match",
+        Expr::Raw(_) => "raw",
     }
 }
 

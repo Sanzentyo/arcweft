@@ -723,6 +723,7 @@ flow @flow.profile profile {
             && stdout.contains("\"bytecode\"")
             && stdout.contains("\"instructions\"")
             && stdout.contains("\"expressions\"")
+            && stdout.contains("\"judgments\"")
             && stdout.contains("\"boundary_checks\"")
             && stdout.contains("\"executed_ops\": 2")
             && stdout.contains("\"source\": \"arcweft-cli-profile-json-"),

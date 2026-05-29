@@ -48,6 +48,19 @@ flow @flow.borrow_stats borrow_stats {
     assert!(report.stats.borrow_binding_groups >= 1);
     assert!(report.stats.borrow_bindings >= 1);
     assert!(report.stats.max_active_borrows >= 1);
+    assert_eq!(report.stats.judgments, report.judgments.len());
+    assert!(
+        report
+            .judgments
+            .iter()
+            .any(|judgment| matches!(&judgment.subject, TypeJudgmentSubject::LetBinding { .. }))
+    );
+    assert!(
+        report
+            .judgments
+            .iter()
+            .any(|judgment| matches!(&judgment.subject, TypeJudgmentSubject::Return { .. }))
+    );
 }
 
 #[test]
@@ -104,7 +117,22 @@ flow @flow.good good(input: i32) -> i32 {
 ",
     );
     let hir = lower_to_hir(&tree).expect("expected numeric fixture lowers");
-    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("expected numeric literals typecheck");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(report.judgments.iter().any(|judgment| {
+        matches!(
+            (&judgment.subject, judgment.rule, judgment.expected.as_ref()),
+            (
+                TypeJudgmentSubject::Expr { kind },
+                TypeJudgmentRule::Expected,
+                Some(TypeKind::I32)
+            ) if kind == "literal"
+        )
+    }));
 }
 
 #[test]

@@ -4,5 +4,6 @@
 //! as borrow, lifetime, and language-family checkers are split out.
 
 pub use crate::checker::{
-    TypeCheckReport, TypeCheckStats, analyze_types, typecheck_hir, validate_typecheck_ready,
+    TypeCheckReport, TypeCheckStats, TypeJudgment, TypeJudgmentId, TypeJudgmentRule,
+    TypeJudgmentSubject, analyze_types, typecheck_hir, validate_typecheck_ready,
 };

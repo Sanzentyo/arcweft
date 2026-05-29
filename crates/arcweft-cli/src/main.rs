@@ -2624,6 +2624,7 @@ struct TypeCheckProfileStats {
     top_level_items: usize,
     statements: usize,
     expressions: usize,
+    judgments: usize,
 }
 
 impl From<&TypeCheckStats> for TypeCheckProfileStats {
@@ -2635,6 +2636,7 @@ impl From<&TypeCheckStats> for TypeCheckProfileStats {
             top_level_items: stats.top_level_items,
             statements: stats.statements,
             expressions: stats.expressions,
+            judgments: stats.judgments,
         }
     }
 }
