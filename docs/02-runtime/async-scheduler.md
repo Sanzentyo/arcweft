@@ -43,10 +43,10 @@ and normalizes completed `TaskEvent` values. CLI native file tasks, line-plan
 child task markers, and source-level flow `thread` markers use this scheduler
 before adapter-owned completion work runs. Joinable source `thread name { ... }`
 lowers to `FlowOp::Thread`; entering the op emits a `flow_thread.run_child`
-marker and then runs the child body as scoped cooperative runtime ops. This is
-deterministic runtime scheduling data, not OS thread creation. Detached
-`thread` blocks are rejected by runtime-plan lowering until detached capture and
-cancellation contracts are checked explicitly.
+marker and spawns the body as a scoped VM child fiber. Child fibers are stepped
+cooperatively by the VM and are deterministic runtime scheduling data, not OS
+thread creation. Detached `thread` blocks are rejected by runtime-plan lowering
+until detached capture and cancellation contracts are checked explicitly.
 
 ```rust
 pub enum HostTaskRequest {

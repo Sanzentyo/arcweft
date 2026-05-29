@@ -61,6 +61,7 @@ impl Engine {
             executed_ops,
             pending_ops_before,
             pending_ops_after: self.fiber.pending_ops.len(),
+            child_fibers: self.child_fiber_count(),
             pure: pure_backend.stats().saturating_delta(pure_stats_before),
             task_events_in: 0,
             source_events_in: 0,

@@ -299,7 +299,7 @@ impl Engine {
                     .requests
                     .tasks
                     .push(flow_thread_task_spec(name.as_deref()));
-                self.push_scoped_ops(body);
+                self.spawn_child_fiber(body);
             }
             FlowOp::Scope(ops) => {
                 self.advance_if_needed(next);
@@ -347,11 +347,23 @@ impl Engine {
                 Ok(target) => self.goto(FlowRuntimeId(target), output),
                 Err(error) => self.fail_eval(error, output),
             },
-            FlowOp::Return(value) => self.return_value(value, output),
+            FlowOp::Return(value) => {
+                if self.has_active_child_fibers() {
+                    self.push_ops(vec![FlowOp::Return(value)]);
+                    self.run_child_next = true;
+                } else {
+                    self.return_value(value, output);
+                }
+            }
             FlowOp::ReturnExpr(expr) => {
-                match self.evaluate_expr_with_backend(&expr, pure_backend) {
-                    Ok(value) => self.return_value(runtime_value_label(&value), output),
-                    Err(error) => self.fail_eval(error, output),
+                if self.has_active_child_fibers() {
+                    self.push_ops(vec![FlowOp::ReturnExpr(expr)]);
+                    self.run_child_next = true;
+                } else {
+                    match self.evaluate_expr_with_backend(&expr, pure_backend) {
+                        Ok(value) => self.return_value(runtime_value_label(&value), output),
+                        Err(error) => self.fail_eval(error, output),
+                    }
                 }
             }
             FlowOp::Effect(effect) => {

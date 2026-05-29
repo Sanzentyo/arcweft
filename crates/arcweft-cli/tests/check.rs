@@ -1364,7 +1364,7 @@ flow @flow.main main {
         .arg("--mode")
         .arg("one-op")
         .arg("--steps")
-        .arg("5")
+        .arg("8")
         .arg("--json")
         .output()
         .expect("arcw run executes source thread marker");
@@ -1379,6 +1379,7 @@ flow @flow.main main {
         stdout.contains("flow_thread.run_child")
             && stdout.contains("\"message\": \"worker\"")
             && stdout.contains("return done")
+            && stdout.contains("\"child_fibers\": 1")
             && stdout.contains("\"completed_tasks\": 1")
             && stdout.contains("\"scheduler\"")
             && stdout.contains("\"submitted\": 1")

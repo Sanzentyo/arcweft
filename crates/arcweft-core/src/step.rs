@@ -74,6 +74,7 @@ pub struct RuntimeStepStats {
     pub executed_ops: usize,
     pub pending_ops_before: usize,
     pub pending_ops_after: usize,
+    pub child_fibers: usize,
     pub pure: RuntimePureCallStats,
     pub task_events_in: usize,
     pub source_events_in: usize,

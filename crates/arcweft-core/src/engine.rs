@@ -40,6 +40,8 @@ pub mod suspend;
 pub struct Engine {
     plan: RuntimePlan,
     fiber: FlowFiber,
+    child_fibers: VecDeque<FlowFiber>,
+    run_child_next: bool,
 }
 
 /// Current flow execution cursor.
@@ -191,11 +193,17 @@ impl Engine {
                 stream_states,
                 status,
             },
+            child_fibers: VecDeque::new(),
+            run_child_next: false,
         }
     }
 
     pub const fn fiber(&self) -> &FlowFiber {
         &self.fiber
+    }
+
+    pub fn child_fiber_count(&self) -> usize {
+        self.child_fibers.len()
     }
 
     pub fn step(
@@ -216,7 +224,7 @@ impl Engine {
         let mut output = RuntimeStepOutput::default();
         let mut executed_ops = 0;
         let pure_stats_before = pure_backend.stats();
-        let pending_ops_before = self.fiber.pending_ops.len();
+        let pending_ops_before = self.pending_ops_len();
         self.fiber.env.bind_all_root(input.bindings.iter().cloned());
         let events = normalize_task_events(std::mem::take(&mut input.task_events));
         let source_events = normalize_source_events(std::mem::take(&mut input.source_events));
@@ -244,7 +252,8 @@ impl Engine {
         let stats = RuntimeStepStats {
             executed_ops,
             pending_ops_before,
-            pending_ops_after: self.fiber.pending_ops.len(),
+            pending_ops_after: self.pending_ops_len(),
+            child_fibers: self.child_fibers.len(),
             pure: pure_backend.stats().saturating_delta(pure_stats_before),
             task_events_in,
             source_events_in,
@@ -257,13 +266,104 @@ impl Engine {
     }
 
     fn can_attempt_runtime_op(&self) -> bool {
+        self.main_fiber_can_attempt_runtime_op() || self.has_active_child_fibers()
+    }
+
+    fn step_runtime_op(
+        &mut self,
+        input: &RuntimeStepInput,
+        events: &[TaskEvent],
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) {
+        if self.run_child_next && self.step_next_child_fiber(input, events, output, pure_backend) {
+            self.run_child_next = false;
+            return;
+        }
+        self.run_child_next = true;
+        if !self.main_fiber_can_attempt_runtime_op() {
+            self.step_next_child_fiber(input, events, output, pure_backend);
+            return;
+        }
+        if self.resume_suspended(input, events, output, pure_backend) {
+            return;
+        }
+        if !matches!(self.fiber.status, FlowFiberStatus::Running) {
+            return;
+        }
+        if self.fiber.cursor.is_some() {
+            self.step_flow(input, output, pure_backend);
+        } else {
+            self.step_line_only(input, output);
+        }
+    }
+
+    fn main_fiber_can_attempt_runtime_op(&self) -> bool {
         !matches!(
             self.fiber.status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         )
     }
 
-    fn step_runtime_op(
+    pub(super) fn has_active_child_fibers(&self) -> bool {
+        self.child_fibers
+            .iter()
+            .any(|fiber| !matches!(fiber.status, FlowFiberStatus::Done(_)))
+    }
+
+    fn pending_ops_len(&self) -> usize {
+        self.fiber.pending_ops.len()
+            + self
+                .child_fibers
+                .iter()
+                .map(|fiber| fiber.pending_ops.len())
+                .sum::<usize>()
+    }
+
+    pub(super) fn spawn_child_fiber(&mut self, body: Vec<FlowOp>) {
+        let mut pending_ops = VecDeque::new();
+        for op in Self::scoped_ops(body).into_iter().rev() {
+            pending_ops.push_front(op);
+        }
+        self.child_fibers.push_back(FlowFiber {
+            line_cursor: 0,
+            cursor: None,
+            pending_ops,
+            control_stack: Vec::new(),
+            env: self.fiber.env.clone(),
+            observations: RuntimeObservationState::default(),
+            source_states: BTreeMap::new(),
+            stream_states: BTreeMap::new(),
+            status: FlowFiberStatus::Running,
+        });
+        self.run_child_next = true;
+    }
+
+    fn step_next_child_fiber(
+        &mut self,
+        input: &RuntimeStepInput,
+        events: &[TaskEvent],
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> bool {
+        let Some(mut child) = self.child_fibers.pop_front() else {
+            return false;
+        };
+        std::mem::swap(&mut self.fiber, &mut child);
+        self.step_active_child_fiber(input, events, output, pure_backend);
+        self.finish_active_child_if_exhausted();
+        std::mem::swap(&mut self.fiber, &mut child);
+        match child.status {
+            FlowFiberStatus::Done(_) => {}
+            FlowFiberStatus::Failed(message) => {
+                self.fiber.status = FlowFiberStatus::Failed(message);
+            }
+            _ => self.child_fibers.push_back(child),
+        }
+        true
+    }
+
+    fn step_active_child_fiber(
         &mut self,
         input: &RuntimeStepInput,
         events: &[TaskEvent],
@@ -276,10 +376,17 @@ impl Engine {
         if !matches!(self.fiber.status, FlowFiberStatus::Running) {
             return;
         }
-        if self.fiber.cursor.is_some() {
+        if self.fiber.cursor.is_some() || !self.fiber.pending_ops.is_empty() {
             self.step_flow(input, output, pure_backend);
-        } else {
-            self.step_line_only(input, output);
+        }
+    }
+
+    fn finish_active_child_if_exhausted(&mut self) {
+        if matches!(self.fiber.status, FlowFiberStatus::Running)
+            && self.fiber.cursor.is_none()
+            && self.fiber.pending_ops.is_empty()
+        {
+            self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
         }
     }
 
@@ -322,13 +429,34 @@ impl Engine {
             .unwrap_or_else(|| Self::running_stop_reason(options, stats.executed_ops, &output));
         RuntimeStepResult {
             output,
-            fiber_status: self.fiber.status.clone(),
+            fiber_status: self.effective_fiber_status(),
             stop_reason,
             stats,
         }
     }
 
+    fn effective_fiber_status(&self) -> FlowFiberStatus {
+        if self.has_active_child_fibers()
+            && matches!(
+                self.fiber.status,
+                FlowFiberStatus::Done(_) | FlowFiberStatus::Waiting(_) | FlowFiberStatus::Choice(_)
+            )
+        {
+            FlowFiberStatus::Running
+        } else {
+            self.fiber.status.clone()
+        }
+    }
+
     fn hard_stop_reason(&self, output: &RuntimeStepOutput) -> Option<RuntimeStepStopReason> {
+        if self.has_active_child_fibers()
+            && matches!(
+                self.fiber.status,
+                FlowFiberStatus::Done(_) | FlowFiberStatus::Waiting(_) | FlowFiberStatus::Choice(_)
+            )
+        {
+            return None;
+        }
         match self.fiber.status {
             FlowFiberStatus::Done(_) => Some(RuntimeStepStopReason::Done),
             FlowFiberStatus::Failed(_) => Some(RuntimeStepStopReason::Failed),

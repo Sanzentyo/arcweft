@@ -180,10 +180,10 @@ runs can confirm the execution tier. `--pure-backend auto` is the default and
 lets ordinary flow code call lowered pure helpers through the runtime
 accelerator cache. Supported deterministic `i64` helpers use JIT first, then
 AOT, then VM; `--pure-backend vm|aot|jit` pins that selection for measurement.
-Per-step JSON includes `stats.pure` counters for scalar and batch pure calls,
-batch item counts, backend call counts, stack-packed integer arguments, copied
-argument/result bytes, thread-pool jobs, Vec argument allocations, and fallback
-counts. Executor JSON also reports the selected pure backend, worker policy,
+Per-step JSON includes child fiber counts and `stats.pure` counters for scalar
+and batch pure calls, batch item counts, backend call counts, stack-packed
+integer arguments, copied argument/result bytes, thread-pool jobs, Vec argument
+allocations, and fallback counts. Executor JSON also reports the selected pure backend, worker policy,
 batch threshold, helper acceleration summary, compile attempts, cache hits and
 misses, and compile elapsed time. `--pure-workers auto|N` controls the runtime
 accelerator's Rayon pool for batchable pure helpers. `--pure-batch-min-len N`

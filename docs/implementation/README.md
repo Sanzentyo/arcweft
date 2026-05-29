@@ -412,9 +412,9 @@ Current high-confidence state:
   exposes scheduler counters. The CLI native task bridge now routes file tasks,
   line-plan child task markers, and source-level flow `thread` markers through
   this scheduler before performing adapter-owned completion work. Joinable flow
-  `thread` blocks lower to a deterministic scheduler marker plus scoped
-  cooperative body execution; detached flow threads remain rejected until the
-  detach contract is checked explicitly.
+  `thread` blocks lower to a deterministic scheduler marker plus a scoped VM
+  child fiber; detached flow threads remain rejected until the detach contract
+  is checked explicitly.
 - Awaited `system.core_count()`, `system.thread_count()`, and
   `system.available_parallelism()` calls now lower to typed system-info task
   requests. The CLI adapter resolves them from the host runtime, reports

@@ -119,6 +119,49 @@ fn engine_executes_runtime_pure_call_from_flow() {
 }
 
 #[test]
+fn engine_runs_flow_thread_body_as_child_fiber() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![
+                FlowOp::Thread {
+                    name: Some("worker".to_owned()),
+                    body: vec![FlowOp::Effect(call("child.work"))],
+                },
+                FlowOp::Return("done".to_owned()),
+            ],
+        }],
+        Vec::new(),
+    )
+    .expect("flow plan is valid");
+    let mut engine = Engine::new(plan);
+
+    let first = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+    assert_eq!(first.output.requests.tasks.len(), 1);
+    assert_eq!(first.stats.child_fibers, 1);
+    assert_eq!(engine.child_fiber_count(), 1);
+
+    let second = engine.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget { max_ops: 8 },
+        },
+    );
+
+    assert_eq!(second.output.effects.line, vec![call("child.work")]);
+    assert!(second.output.flow_events.contains(&FlowEvent::Return {
+        value: "done".to_owned()
+    }));
+    assert_eq!(engine.child_fiber_count(), 0);
+    assert!(matches!(
+        engine.fiber().status,
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "done"
+    ));
+}
+
+#[test]
 fn engine_waits_for_choice_input() {
     let option = ChoiceRuntimeOption {
         id: Some("choice.listen".to_owned()),
