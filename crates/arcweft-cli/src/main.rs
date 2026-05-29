@@ -2865,6 +2865,22 @@ fn run_bench_pure_helper_section(
             );
         }
     };
+    match script_bench_pure_helper_summary(helper_name, &target, options, pure_config) {
+        Ok(summary) => ScriptBenchSectionRunSummary::measured_pure_helper(
+            &section.name,
+            validated.diagnostics,
+            summary,
+        ),
+        Err(message) => ScriptBenchSectionRunSummary::new(&section.name, "failed", vec![message]),
+    }
+}
+
+fn script_bench_pure_helper_summary(
+    helper_name: String,
+    target: &JitCheckTarget,
+    options: &ScriptBenchOptions,
+    pure_config: RuntimePureAcceleratorConfig,
+) -> Result<ScriptBenchPureHelperMeasurementSummary, String> {
     let jit_options = JitCheckOptions {
         path: None,
         helper: Some(helper_name),
@@ -2876,51 +2892,34 @@ fn run_bench_pure_helper_section(
         input_seed: options.input_seed,
         json: false,
     };
-    match run_jit_check(&jit_options, &target) {
-        Ok(report) if report.matches_vm => {
-            let runtime_batch = match measure_script_bench_runtime_pure_batch(
-                &target,
-                &report,
-                options,
-                pure_config,
-            ) {
-                Ok(batch) => batch,
-                Err(code) => {
-                    return ScriptBenchSectionRunSummary::new(
-                        &section.name,
-                        "failed",
-                        vec![format!(
-                            "pure helper `{}` failed during runtime accelerator batch measurement: exit code {code:?}",
-                            target.name
-                        )],
-                    );
-                }
-            };
-            let mut summary = ScriptBenchPureHelperMeasurementSummary::from(&report);
-            summary.runtime_batch = Some(runtime_batch);
-            ScriptBenchSectionRunSummary::measured_pure_helper(
-                &section.name,
-                validated.diagnostics,
-                summary,
-            )
-        }
-        Ok(report) => ScriptBenchSectionRunSummary::new(
-            &section.name,
-            "failed",
-            vec![format!(
-                "pure helper `{}` did not match the VM reference",
-                report.helper
-            )],
-        ),
-        Err(code) => ScriptBenchSectionRunSummary::new(
-            &section.name,
-            "failed",
-            vec![format!(
-                "pure helper `{}` failed during VM/AOT/JIT measurement: exit code {code:?}",
-                target.name
-            )],
-        ),
+    let report = run_jit_check(&jit_options, target).map_err(|code| {
+        format!(
+            "pure helper `{}` failed during VM/AOT/JIT measurement: exit code {code:?}",
+            target.name
+        )
+    })?;
+    if !report.matches_vm {
+        return Err(format!(
+            "pure helper `{}` did not match the VM reference",
+            report.helper
+        ));
     }
+    let runtime_batch = measure_script_bench_runtime_pure_batch(target, &report, options, pure_config)
+        .map_err(|code| {
+            format!(
+                "pure helper `{}` failed during runtime accelerator batch measurement: exit code {code:?}",
+                target.name
+            )
+        })?;
+    if !runtime_batch.matches_vm {
+        return Err(format!(
+            "pure helper `{}` runtime accelerator batch did not match the VM reference",
+            target.name
+        ));
+    }
+    let mut summary = ScriptBenchPureHelperMeasurementSummary::from(&report);
+    summary.runtime_batch = Some(runtime_batch);
+    Ok(summary)
 }
 
 fn measure_script_bench_runtime_pure_batch(
