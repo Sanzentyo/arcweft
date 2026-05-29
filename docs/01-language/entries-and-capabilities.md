@@ -111,8 +111,7 @@ extern capability path {
 Forbidden in arcw source:
 
 ```arcw
-fs.read_text("/Users/me/profile.json")
-fs.read_text("C:\\Users\\me\\profile.json")
+fs.read_text("<host-absolute-profile-path>")
 ```
 
 Required:

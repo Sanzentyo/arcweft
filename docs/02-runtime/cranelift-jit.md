@@ -44,6 +44,21 @@ pub enum ExecBackend {
 
 The VM must remain available as fallback whenever JIT compilation is pending, rejected, or failed.
 
+`arcweft-core` exposes the stable pure-helper execution boundary without taking
+a Cranelift dependency:
+
+- `PureFunctionRequest` carries the helper name, runtime expression, and typed
+  bindings.
+- `PureFunctionBackend` evaluates the request and returns deterministic
+  `PureFunctionStats`.
+- `VmPureFunctionBackend` is the semantic reference implementation.
+- AOT/JIT candidates are checked through the same backend trait and compared
+  against the VM result before they are allowed to replace VM execution.
+
+The current AOT boundary is intentionally VM-equivalent. Generated dispatch and
+Cranelift lowering belong in adapter crates after the pure subset and
+conformance tests are stable.
+
 ## IR lowering
 
 ```text
@@ -59,6 +74,10 @@ Typed IR function
 ## 同値性検査
 
 JIT対象関数は、dev/test profile で VM と比較する。
+
+The comparison must use deterministic input values and must not write host
+absolute paths into snapshots, profile JSON, benchmark JSON, or CLIF/assembly
+dump metadata.
 
 ```bash
 arcw jit check --compare-vm

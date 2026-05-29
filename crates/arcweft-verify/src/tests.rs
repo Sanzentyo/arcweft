@@ -1,5 +1,6 @@
 use super::*;
 use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_syntax::parser::parse_source;
 
 fn report(source: &str, mode: VerificationMode) -> VerificationReport {
@@ -14,6 +15,13 @@ fn report(source: &str, mode: VerificationMode) -> VerificationReport {
             backend: BackendKind::Emit,
         },
     )
+}
+
+fn hir(source: &str) -> arcweft_lang_hir::model::HirModule {
+    let parsed = parse_source(source.to_owned());
+    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+    let tree = parsed.into_typed_tree();
+    lower_to_hir(&tree).expect("fixture lowers")
 }
 
 #[test]
@@ -112,6 +120,39 @@ flow @flow.effects effects {
     assert!(report.obligations.iter().any(|obligation| {
         obligation.kind == ProofObligationKind::EffectCapability
             && obligation.discharge == ProofDischarge::Missing
+            && obligation.subject.as_deref() == Some("signal.write")
+    }));
+}
+
+#[test]
+fn verifier_uses_adapter_typecheck_env_for_semantic_discharge() {
+    let hir = hir(r"
+flow @flow.effects effects {
+    signal.set(@signal.current_flow, @flow.effects)
+}
+");
+
+    let without_env = verify_module(
+        &hir,
+        VerificationPolicy {
+            mode: VerificationMode::Test,
+            backend: BackendKind::Emit,
+        },
+    );
+    let with_env = verify_module_with_env(
+        &hir,
+        &TypeCheckEnv::new().with_capability("signal.write"),
+        VerificationPolicy {
+            mode: VerificationMode::Test,
+            backend: BackendKind::Emit,
+        },
+    );
+
+    assert!(without_env.has_errors());
+    assert!(!with_env.has_errors());
+    assert!(with_env.obligations.iter().any(|obligation| {
+        obligation.kind == ProofObligationKind::EffectCapability
+            && obligation.discharge == ProofDischarge::Automatic
             && obligation.subject.as_deref() == Some("signal.write")
     }));
 }

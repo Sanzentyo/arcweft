@@ -6,6 +6,7 @@ mod executor;
 mod flow;
 mod line_task;
 mod observation;
+mod pure;
 mod source;
 mod step;
 mod stream;

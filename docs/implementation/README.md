@@ -35,9 +35,18 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - `arcw serve --listen` owns a minimal native HTTP adapter in the CLI layer. It
   consumes lowered server route plans and executes matched flows through
   `RuntimeStepMode::Server`; `arcweft-core` remains free of network I/O.
+- `arcw check`, `arcw verify`, `arcw unsafe`, and plan/report generation now
+  pass the resolved profile adapter `TypeCheckEnv` through both type checking
+  and semantic verification. Generic direct-path mode still uses the empty
+  Sans I/O environment.
 - `AotExecutor` exists as a VM-equivalent `RuntimeExecutor` boundary. Generated
   dispatch remains future work, but tooling can now target the AOT executor
   shape without introducing different semantics.
+- `arcweft-core::pure` exposes the pure-helper backend contract used by future
+  AOT/JIT adapters. `VmPureFunctionBackend` is the semantic reference,
+  candidate backends report deterministic evaluation stats, and conformance
+  checks compare candidate output against VM output without recording host
+  absolute paths.
 - No renderer, Servo, audio, camera, USB, MCP, or Cranelift JIT implementation.
 
 ## Files

@@ -242,11 +242,20 @@ pub trait SmtBackend {
 
 /// Verifies an HIR module according to the selected policy.
 pub fn verify_module(module: &HirModule, policy: VerificationPolicy) -> VerificationReport {
+    verify_module_with_env(module, &TypeCheckEnv::new(), policy)
+}
+
+/// Verifies an HIR module with the same type-check environment used by the caller.
+pub fn verify_module_with_env(
+    module: &HirModule,
+    env: &TypeCheckEnv,
+    policy: VerificationPolicy,
+) -> VerificationReport {
     let mut collector = ObligationCollector::new(policy);
     collector.collect_module(module);
     let semantic_report = analyze_semantics(
         module,
-        &TypeCheckEnv::new(),
+        env,
         SemanticPolicy {
             mode: semantic_mode(policy.mode),
         },

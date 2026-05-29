@@ -171,6 +171,8 @@ pub enum RuntimeEvalError {
     },
     #[error("operator `{op}` is not supported for {value}")]
     UnsupportedUnary { op: &'static str, value: String },
+    #[error("pure helper `{name}` cannot evaluate {reason}")]
+    UnsupportedPure { name: String, reason: String },
     #[error("pattern did not match {0}")]
     PatternMismatch(String),
     #[error("pattern binds `{0}` more than once")]

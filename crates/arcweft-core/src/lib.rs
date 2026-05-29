@@ -6,6 +6,7 @@ pub mod line_task;
 pub mod observation;
 pub mod pattern;
 pub mod plan;
+pub mod pure;
 pub mod source;
 pub mod step;
 pub mod stream;

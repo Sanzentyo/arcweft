@@ -48,7 +48,8 @@ arcw check --manifest arcw.toml --profile server.dev
 
 The second form is the canonical project-context check. `arcw.toml` profiles are
 resolved before parsing and typechecking, and the selected adapter context is
-passed into semantic analysis as data rather than hard-coded language behavior.
+passed into type checking and semantic verification as data rather than
+hard-coded language behavior.
 
 ```toml
 [profiles."server.dev"]
@@ -67,7 +68,10 @@ profile-aware checks for adapter-backed entries.
 
 `arcw verify` is the command-line entry point for the Sans I/O verifier. The
 CLI owns filesystem and optional solver process I/O; the verifier core owns
-only HIR-to-report analysis.
+only HIR-to-report analysis. Profile-selected adapter context is the same
+`TypeCheckEnv` used by `arcw check`, so semantic obligations such as adapter
+capability grants are verified against the selected profile instead of an empty
+generic environment.
 
 ```bash
 arcw verify game/routes/opening.arcw --mode test

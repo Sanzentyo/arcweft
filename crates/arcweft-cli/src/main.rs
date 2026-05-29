@@ -24,7 +24,7 @@ use arcweft_test::{BenchSection, ScriptBench, ScriptStep, ScriptTest, collect_sc
 use arcweft_tooling::{FormatOptions, ToolingEditReport, format_source, materialize_ids};
 use arcweft_verify::{
     BackendKind, SmtBackend, VerificationMode, VerificationPolicy, VerificationReport,
-    emit_smt_lib, verify_module,
+    emit_smt_lib, verify_module_with_env,
 };
 use arcweft_verify_oxiz::OxizBackend;
 use arcweft_verify_z3::ExternalZ3Backend;
@@ -1302,8 +1302,9 @@ fn unsupported_headless_bench_reason(text: &str) -> Option<String> {
 fn check_command(options: &CheckOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let checked = load_and_check_selection(&selection, None)?;
-    let report = verify_module(
+    let report = verify_module_with_env(
         &checked.hir,
+        &checked.env,
         VerificationPolicy {
             mode: VerificationMode::Dev,
             backend: BackendKind::Emit,
@@ -1334,8 +1335,9 @@ fn check_command(options: &CheckOptions) -> Result<(), ExitCode> {
 fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let checked = load_and_check_selection(&selection, None)?;
-    let report = verify_module(
+    let report = verify_module_with_env(
         &checked.hir,
+        &checked.env,
         VerificationPolicy {
             mode: options.mode,
             backend: options.backend,
@@ -1372,8 +1374,9 @@ fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
 fn unsafe_command(options: &UnsafeOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let checked = load_and_check_selection(&selection, None)?;
-    let report = verify_module(
+    let report = verify_module_with_env(
         &checked.hir,
+        &checked.env,
         VerificationPolicy {
             mode: options.mode,
             backend: BackendKind::Emit,
@@ -1511,6 +1514,7 @@ fn typecheck_env_for_adapter(adapter: Option<&str>) -> Result<TypeCheckEnv, Exit
 
 struct CheckedModule {
     hir: arcweft_lang_hir::model::HirModule,
+    env: TypeCheckEnv,
     syntax_warnings: usize,
     line_task_groups: Vec<LoweredLineTaskGroup>,
 }
@@ -1583,6 +1587,7 @@ fn load_and_check_with_env(path: &Path, env: &TypeCheckEnv) -> Result<CheckedMod
 
     Ok(CheckedModule {
         hir,
+        env: env.clone(),
         syntax_warnings: lints.len(),
         line_task_groups,
     })

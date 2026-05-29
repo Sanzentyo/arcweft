@@ -11,7 +11,7 @@ use arcweft_core::value::RuntimePayload;
 use arcweft_runtime_plan::flow::lower_runtime_plan;
 use arcweft_runtime_plan::line_task::LoweredLineTaskGroup;
 use arcweft_test::{ScriptBench, ScriptTest};
-use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy, verify_module};
+use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy, verify_module_with_env};
 
 #[derive(serde::Serialize)]
 pub(crate) struct CheckReport {
@@ -128,8 +128,9 @@ impl CheckReport {
 
 impl RuntimePlanReport {
     pub(crate) fn from_checked(checked: &CheckedModule) -> Self {
-        let verification = verify_module(
+        let verification = verify_module_with_env(
             &checked.hir,
+            &checked.env,
             VerificationPolicy {
                 mode: VerificationMode::Dev,
                 backend: BackendKind::Emit,
