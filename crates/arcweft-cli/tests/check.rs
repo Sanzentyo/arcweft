@@ -190,6 +190,7 @@ flow @flow.opening opening {
             && stdout.contains("\"verifier_obligations\""),
         "check JSON should include compiler timing and counter summary: {stdout}"
     );
+    assert_check_json_pipeline_summary(&stdout);
 }
 
 #[test]
@@ -2707,6 +2708,87 @@ fn assert_sample_summary_is_ordered(samples: &serde_json::Value) {
         min <= median && median <= max,
         "sample summary should satisfy min <= median <= max: {samples}"
     );
+}
+
+fn assert_check_json_pipeline_summary(stdout: &str) {
+    let json: serde_json::Value =
+        serde_json::from_str(stdout).expect("check output is structured JSON");
+    assert_eq!(json["status"], "ok");
+    assert_eq!(json["flows"], 1);
+    assert!(
+        json["line_task_groups"].as_u64().is_some(),
+        "line task group count should be numeric: {json}"
+    );
+    assert_phase_timings_include(
+        &json["phases"],
+        &[
+            "read_source",
+            "parse",
+            "lint",
+            "lower_hir",
+            "resolve",
+            "readiness",
+            "typecheck",
+            "line_task_lower",
+            "verify",
+        ],
+    );
+
+    let typecheck = &json["typecheck"];
+    assert!(
+        typecheck["expressions"]
+            .as_u64()
+            .is_some_and(|value| value > 0)
+            && typecheck["judgments"]
+                .as_u64()
+                .is_some_and(|value| value > 0)
+            && typecheck["judgment_rules"]["expr"]
+                .as_u64()
+                .is_some_and(|value| value > 0),
+        "typecheck performance counters should be populated: {typecheck}"
+    );
+    assert!(
+        typecheck["judgment_samples"]
+            .as_array()
+            .is_some_and(|samples| !samples.is_empty()),
+        "typecheck should expose bounded judgment samples: {typecheck}"
+    );
+
+    let borrow_check = &json["borrow_check"];
+    for key in [
+        "binding_groups",
+        "bindings",
+        "state_snapshots",
+        "state_restores",
+        "state_merges",
+        "boundary_checks",
+        "escape_checks",
+        "max_active_borrows",
+    ] {
+        assert!(
+            borrow_check[key].as_u64().is_some(),
+            "borrow-check counter `{key}` should be numeric: {borrow_check}"
+        );
+    }
+}
+
+fn assert_phase_timings_include(phases: &serde_json::Value, expected_names: &[&str]) {
+    let phases = phases.as_array().expect("phases should be an array");
+    for phase in phases {
+        assert!(
+            phase["name"].as_str().is_some_and(|name| !name.is_empty())
+                && phase["elapsed_ns"].as_u64().is_some(),
+            "each phase should include a name and elapsed_ns: {phase}"
+        );
+    }
+    for expected in expected_names {
+        assert!(
+            phases
+                .iter()
+                .any(|phase| phase["name"].as_str() == Some(expected)),
+            "missing compiler phase `{expected}` in {phases:?}"
+        );
+    }
 }
 
 fn workspace_root() -> PathBuf {
