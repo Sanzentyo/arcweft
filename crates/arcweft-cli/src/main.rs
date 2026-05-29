@@ -19,7 +19,9 @@ use arcweft_core::{
     value::{RuntimeBinaryOp, RuntimeBinding, RuntimeExpr, RuntimeUnaryOp, RuntimeValue},
 };
 use arcweft_lang_hir::lower::lower_to_hir;
-use arcweft_lang_jit_cranelift::{CompiledPureI64Inputs, CraneliftPureFunctionBackend};
+use arcweft_lang_jit_cranelift::{
+    CompiledPureI64Batch, CompiledPureI64Inputs, CraneliftPureFunctionBackend,
+};
 use arcweft_lang_sema::check::{TypeCheckReport, analyze_types, validate_typecheck_ready};
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
@@ -192,6 +194,7 @@ fn jit_check_report(
     let matches_vm = conformance.aot_matches_vm
         && conformance.jit_matches_vm
         && measurement.jit.accumulator == measurement.vm.accumulator
+        && measurement.jit_batch.accumulator == measurement.vm.accumulator
         && measurement.aot.accumulator == measurement.vm.accumulator
         && measurement
             .julia
@@ -250,7 +253,27 @@ fn jit_check_report(
         deterministic: JitCheckDeterministicReport {
             aot: measurement.aot.accumulator,
             jit: measurement.jit.accumulator,
+            jit_batch: measurement.jit_batch.accumulator,
             vm: measurement.vm.accumulator,
+        },
+        jit_batch: JitCheckBatchReport {
+            backend: "jit_batch".to_owned(),
+            compile: compiled.jit_batch_compile_elapsed_ns,
+            matches_vm: measurement.jit_batch.accumulator == measurement.vm.accumulator,
+            elapsed: measurement.jit_batch.elapsed.median,
+            per_iteration: per_iteration_ns(
+                measurement.jit_batch.elapsed.median,
+                options.iterations,
+            ),
+            speedup_x: speedup_x(
+                measurement.vm.elapsed.median,
+                measurement.jit_batch.elapsed.median,
+            ),
+            jit_call_speedup_x: speedup_x(
+                measurement.jit.elapsed.median,
+                measurement.jit_batch.elapsed.median,
+            ),
+            samples: measurement.jit_batch.elapsed,
         },
         vm_stats: PureFunctionStatsReport::from_stats(&conformance.vm.stats),
         aot_stats: PureFunctionStatsReport::from_stats(&conformance.aot.stats),
@@ -275,6 +298,10 @@ fn print_jit_check_human_report(report: &JitCheckReport) {
         report.timings.jit,
         report.timings.vm,
         report.timings.speedup_x
+    );
+    println!(
+        "jit_batch_median_ns={} jit_batch_speedup_x={} jit_call_speedup_x={}",
+        report.jit_batch.elapsed, report.jit_batch.speedup_x, report.jit_batch.jit_call_speedup_x
     );
     if !julia.is_empty() {
         println!("{julia}");
@@ -320,13 +347,16 @@ struct JitCheckConformanceSet {
 struct JitCheckCompiledHelpers {
     aot: AotPureI64Plan,
     jit: CompiledPureI64Inputs,
+    jit_batch: CompiledPureI64Batch,
     aot_compile_elapsed_ns: u128,
     jit_compile_elapsed_ns: u128,
+    jit_batch_compile_elapsed_ns: u128,
 }
 
 struct JitCheckMeasurements {
     aot: JitRepeatedMeasurement,
     jit: JitRepeatedMeasurement,
+    jit_batch: JitRepeatedMeasurement,
     vm: JitRepeatedMeasurement,
     julia: Option<JitJuliaMeasurement>,
 }
@@ -382,11 +412,22 @@ fn compile_jit_check_helpers(
         })?;
     let jit_compile_elapsed_ns = jit_started.elapsed().as_nanos();
 
+    let jit_batch_started = Instant::now();
+    let jit_batch = CraneliftPureFunctionBackend
+        .compile_i64_batch(request, target.input_names.iter().map(String::as_str))
+        .map_err(|error| {
+            eprintln!("error: failed to compile JIT batch helper: {error}");
+            ExitCode::FAILURE
+        })?;
+    let jit_batch_compile_elapsed_ns = jit_batch_started.elapsed().as_nanos();
+
     Ok(JitCheckCompiledHelpers {
         aot,
         jit,
+        jit_batch,
         aot_compile_elapsed_ns,
         jit_compile_elapsed_ns,
+        jit_batch_compile_elapsed_ns,
     })
 }
 
@@ -419,6 +460,12 @@ fn measure_jit_check_helpers(
         )?,
         jit: measure_jit_check_jit(
             &compiled.jit,
+            options.samples,
+            options.iterations,
+            options.input_seed,
+        )?,
+        jit_batch: measure_jit_check_batch(
+            &compiled.jit_batch,
             options.samples,
             options.iterations,
             options.input_seed,
@@ -616,6 +663,22 @@ fn measure_jit_check_jit(
             eprintln!("error: JIT evaluation failed: {error}");
             ExitCode::FAILURE
         })
+    })
+}
+
+fn measure_jit_check_batch(
+    compiled: &CompiledPureI64Batch,
+    samples: usize,
+    iterations: usize,
+    input_seed: u64,
+) -> Result<JitRepeatedMeasurement, ExitCode> {
+    measure_repeated_samples(samples, |sample| {
+        compiled
+            .call(input_seed, sample, iterations)
+            .map_err(|error| {
+                eprintln!("error: JIT batch evaluation failed: {error}");
+                ExitCode::FAILURE
+            })
     })
 }
 
@@ -950,6 +1013,27 @@ fn measure_repeated(
         for iteration in 0..iterations {
             accumulator = accumulator.saturating_add(call(sample, iteration)?);
         }
+        elapsed.push(started.elapsed().as_nanos());
+    }
+    Ok(JitRepeatedMeasurement {
+        elapsed: timing_samples(elapsed),
+        accumulator,
+    })
+}
+
+fn measure_repeated_samples(
+    samples: usize,
+    mut call: impl FnMut(usize) -> Result<i64, ExitCode>,
+) -> Result<JitRepeatedMeasurement, ExitCode> {
+    if samples == 0 {
+        eprintln!("error: --samples must be greater than zero");
+        return Err(ExitCode::from(2));
+    }
+    let mut elapsed = Vec::with_capacity(samples);
+    let mut accumulator = 0_i64;
+    for sample in 0..samples {
+        let started = Instant::now();
+        accumulator = accumulator.saturating_add(call(sample)?);
         elapsed.push(started.elapsed().as_nanos());
     }
     Ok(JitRepeatedMeasurement {
@@ -3439,6 +3523,7 @@ struct JitCheckReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     julia: Option<JitCheckJuliaReport>,
     deterministic: JitCheckDeterministicReport,
+    jit_batch: JitCheckBatchReport,
     vm_stats: PureFunctionStatsReport,
     aot_stats: PureFunctionStatsReport,
     jit_stats: PureFunctionStatsReport,
@@ -3484,6 +3569,21 @@ struct JitCheckJuliaReport {
     julia_vs_jit_x: String,
 }
 
+#[derive(serde::Serialize)]
+struct JitCheckBatchReport {
+    backend: String,
+    #[serde(rename = "compile_elapsed_ns")]
+    compile: u128,
+    matches_vm: bool,
+    #[serde(rename = "elapsed_ns")]
+    elapsed: u128,
+    #[serde(rename = "per_iteration_ns")]
+    per_iteration: u128,
+    speedup_x: String,
+    jit_call_speedup_x: String,
+    samples: JitTimingSamples,
+}
+
 #[derive(Clone, Copy, Debug, serde::Serialize)]
 struct JitTimingSamples {
     min: u128,
@@ -3503,6 +3603,8 @@ struct JitCheckDeterministicReport {
     aot: i64,
     #[serde(rename = "jit_accumulator")]
     jit: i64,
+    #[serde(rename = "jit_batch_accumulator")]
+    jit_batch: i64,
     #[serde(rename = "vm_accumulator")]
     vm: i64,
 }

@@ -2754,7 +2754,12 @@ fn assert_jit_check_json(
         json["deterministic"]["vm_accumulator"],
         json["deterministic"]["jit_accumulator"]
     );
+    assert_eq!(
+        json["deterministic"]["vm_accumulator"],
+        json["deterministic"]["jit_batch_accumulator"]
+    );
     assert_jit_timing_summary(&json["timings"]);
+    assert_jit_batch_json(&json["jit_batch"]);
     assert_eq!(
         json["vm_stats"]["evaluated_binary_ops"],
         json["aot_stats"]["evaluated_binary_ops"]
@@ -2827,6 +2832,26 @@ fn assert_jit_timing_summary(timings: &serde_json::Value) {
                 .and_then(|value| value.parse::<f64>().ok())
                 .is_some(),
         "JIT speedups should be numeric strings: {timings}"
+    );
+}
+
+fn assert_jit_batch_json(batch: &serde_json::Value) {
+    assert_eq!(batch["backend"], "jit_batch");
+    assert_eq!(batch["matches_vm"], true);
+    assert_sample_summary_is_ordered(&batch["samples"]);
+    assert!(
+        batch["compile_elapsed_ns"].as_u64().is_some()
+            && batch["elapsed_ns"].as_u64().is_some()
+            && batch["per_iteration_ns"].as_u64().is_some()
+            && batch["speedup_x"]
+                .as_str()
+                .and_then(|value| value.parse::<f64>().ok())
+                .is_some()
+            && batch["jit_call_speedup_x"]
+                .as_str()
+                .and_then(|value| value.parse::<f64>().ok())
+                .is_some(),
+        "JIT batch should expose compile, elapsed, and speedup counters: {batch}"
     );
 }
 

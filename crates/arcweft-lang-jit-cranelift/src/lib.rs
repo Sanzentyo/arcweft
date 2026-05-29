@@ -56,6 +56,18 @@ pub struct CompiledPureI64Inputs {
     stats: PureFunctionStats,
 }
 
+/// Compiled native batch runner for deterministic benchmark input series.
+///
+/// The emitted function receives `seed`, `sample`, and `iterations`, generates
+/// the same bounded integer input series as `arcw jit check`, evaluates the
+/// pure helper in a native loop, and returns the accumulator.
+pub struct CompiledPureI64Batch {
+    _module: JITModule,
+    code: *const u8,
+    param_names: Vec<String>,
+    stats: PureFunctionStats,
+}
+
 #[derive(Clone, Copy, Debug)]
 enum LoweredI64Binding {
     Const(i64),
@@ -209,6 +221,106 @@ impl CraneliftPureFunctionBackend {
             stats,
         })
     }
+
+    /// Compiles a batch benchmark runner for a pure helper request.
+    pub fn compile_i64_batch(
+        &self,
+        request: &PureFunctionRequest,
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<CompiledPureI64Batch, CraneliftJitError> {
+        let param_names = param_names
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<String>>();
+        validate_param_names(&param_names)?;
+        if param_names.len() > 4 {
+            return Err(CraneliftJitError::UnsupportedExpr(format!(
+                "JIT batch helper supports at most 4 runtime inputs, got {}",
+                param_names.len()
+            )));
+        }
+
+        let mut module = jit_module()?;
+        let mut ctx = module.make_context();
+        let mut func_ctx = FunctionBuilderContext::new();
+        let mut signature = module.make_signature();
+        signature.params.extend([
+            AbiParam::new(types::I64),
+            AbiParam::new(types::I64),
+            AbiParam::new(types::I64),
+        ]);
+        signature.returns.push(AbiParam::new(types::I64));
+
+        let func_id = module
+            .declare_function("arcweft_pure_helper_batch", Linkage::Local, &signature)
+            .map_err(jit_error)?;
+        ctx.func.signature = signature;
+        ctx.func.name = UserFuncName::user(0, func_id.as_u32());
+
+        let captured_bindings = int_bindings(&request.bindings)?;
+        let mut stats = arcweft_core::pure::PureFunctionStats::default();
+        {
+            let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
+            let entry = builder.create_block();
+            builder.append_block_params_for_function_params(entry);
+            builder.switch_to_block(entry);
+            let seed = builder.block_params(entry)[0];
+            let sample = builder.block_params(entry)[1];
+            let iterations = builder.block_params(entry)[2];
+
+            let loop_block = builder.create_block();
+            let body_block = builder.create_block();
+            let done_block = builder.create_block();
+            builder.append_block_param(loop_block, types::I64);
+            builder.append_block_param(loop_block, types::I64);
+
+            let zero = builder.ins().iconst(types::I64, 0);
+            builder.ins().jump(loop_block, &[zero.into(), zero.into()]);
+
+            builder.switch_to_block(loop_block);
+            let index = builder.block_params(loop_block)[0];
+            let accumulator = builder.block_params(loop_block)[1];
+            let keep_going = builder
+                .ins()
+                .icmp(IntCC::UnsignedLessThan, index, iterations);
+            builder
+                .ins()
+                .brif(keep_going, body_block, &[], done_block, &[]);
+
+            builder.switch_to_block(body_block);
+            let mut bindings = captured_bindings.clone();
+            for (param_index, name) in param_names.iter().enumerate() {
+                let value = lower_input_value(&mut builder, seed, sample, index, param_index);
+                bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+            }
+            let value = lower_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
+            let next_accumulator = builder.ins().iadd(accumulator, value);
+            let one = builder.ins().iconst(types::I64, 1);
+            let next_index = builder.ins().iadd(index, one);
+            builder
+                .ins()
+                .jump(loop_block, &[next_index.into(), next_accumulator.into()]);
+
+            builder.switch_to_block(done_block);
+            builder.ins().return_(&[accumulator]);
+            builder.seal_all_blocks();
+            builder.finalize();
+        }
+
+        module
+            .define_function(func_id, &mut ctx)
+            .map_err(jit_error)?;
+        module.clear_context(&mut ctx);
+        module.finalize_definitions().map_err(jit_error)?;
+        let code = module.get_finalized_function(func_id);
+
+        Ok(CompiledPureI64Batch {
+            _module: module,
+            code,
+            param_names,
+            stats,
+        })
+    }
 }
 
 impl CompiledPureI64 {
@@ -250,6 +362,63 @@ impl CompiledPureI64Inputs {
     pub const fn stats(&self) -> &PureFunctionStats {
         &self.stats
     }
+}
+
+impl CompiledPureI64Batch {
+    /// Calls the compiled batch helper for a deterministic input series.
+    pub fn call(
+        &self,
+        seed: u64,
+        sample: usize,
+        iterations: usize,
+    ) -> Result<i64, CraneliftJitError> {
+        let seed = i64::try_from(seed).map_err(|_| {
+            CraneliftJitError::UnsupportedExpr("JIT batch seed must fit i64".to_owned())
+        })?;
+        let sample = i64::try_from(sample).map_err(|_| {
+            CraneliftJitError::UnsupportedExpr("JIT batch sample index must fit i64".to_owned())
+        })?;
+        let iterations = i64::try_from(iterations).map_err(|_| {
+            CraneliftJitError::UnsupportedExpr("JIT batch iterations must fit i64".to_owned())
+        })?;
+        Ok(native_call::call_i64_batch(
+            self.code, seed, sample, iterations,
+        ))
+    }
+
+    /// Returns the local binding names used as runtime parameters.
+    pub fn param_names(&self) -> &[String] {
+        &self.param_names
+    }
+
+    /// Returns lowering counters captured during compilation.
+    pub const fn stats(&self) -> &PureFunctionStats {
+        &self.stats
+    }
+}
+
+fn lower_input_value(
+    builder: &mut FunctionBuilder<'_>,
+    seed: Value,
+    sample: Value,
+    iteration: Value,
+    param_index: usize,
+) -> Value {
+    let input_index = i64::try_from(param_index + 1).unwrap_or(i64::MAX);
+    let zero_based = i64::try_from(param_index).unwrap_or(i64::MAX);
+    let multiplier = builder.ins().iconst(types::I64, input_index);
+    let sample_scale = builder.ins().iconst(types::I64, 3 + zero_based);
+    let modulus = builder.ins().iconst(
+        types::I64,
+        5 + i64::try_from(param_index % 5).unwrap_or_default(),
+    );
+    let seed_term = builder.ins().imul(seed, multiplier);
+    let sample_term = builder.ins().imul(sample, sample_scale);
+    let sum = builder.ins().iadd(seed_term, sample_term);
+    let sum = builder.ins().iadd(sum, iteration);
+    let value = builder.ins().urem(sum, modulus);
+    let one = builder.ins().iconst(types::I64, 1);
+    builder.ins().iadd(value, one)
 }
 
 fn validate_param_names(param_names: &[String]) -> Result<(), CraneliftJitError> {
@@ -555,6 +724,52 @@ mod tests {
         assert_eq!(compiled.call(&[3, 4]).expect("call succeeds"), 18);
         assert_eq!(compiled.call(&[2, 99]).expect("call succeeds"), 0);
         assert_eq!(compiled.call(&[7, 1]).expect("call succeeds"), 21);
+    }
+
+    #[test]
+    fn cranelift_compiled_batch_matches_repeated_input_calls() {
+        let request = PureFunctionRequest::new(
+            "score_inputs",
+            RuntimeExpr::If {
+                condition: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                    op: RuntimeBinaryOp::Ge,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(3))),
+                }),
+                then_expr: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                    op: RuntimeBinaryOp::Mul,
+                    rhs: Box::new(RuntimeExpr::Call {
+                        callee: "add".to_owned(),
+                        args: vec![
+                            RuntimeExpr::Local("bonus".to_owned()),
+                            RuntimeExpr::Value(RuntimeValue::Int(2)),
+                        ],
+                    }),
+                }),
+                else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::Int(0))),
+            },
+            [int_binding("base", 3), int_binding("bonus", 4)],
+        );
+
+        let backend = CraneliftPureFunctionBackend;
+        let compiled = backend
+            .compile_i64_with_inputs(&request, ["base", "bonus"])
+            .expect("Cranelift compiles parameterized integer helper");
+        let batch = backend
+            .compile_i64_batch(&request, ["base", "bonus"])
+            .expect("Cranelift compiles batch helper");
+        let expected = (0..8)
+            .map(|iteration| {
+                let base = i64::from((7 + iteration) % 5) + 1;
+                let bonus = i64::from((14 + iteration) % 6) + 1;
+                compiled.call(&[base, bonus]).expect("call succeeds")
+            })
+            .sum::<i64>();
+
+        assert_eq!(batch.param_names(), ["base", "bonus"]);
+        assert_eq!(batch.call(7, 0, 8).expect("batch call succeeds"), expected);
+        assert_eq!(batch.stats().evaluated_binary_ops, 2);
     }
 
     #[test]
