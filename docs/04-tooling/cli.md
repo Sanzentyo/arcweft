@@ -350,9 +350,14 @@ source, entry, and adapter context comes from the resolved launch profile.
 
 Headless scenario expectations currently cover `expect.no_assertion_failures()`,
 `expect.signal(@signal.id, value)`, and `expect.log(.level, contains="text")`.
-The manifest preserves the declaration ID, kind, source span, and call-based
-body rows so CLI, LSP, headless player adapters, and Agent tooling can share one
-planning schema without reparsing source text.
+Bench declarations use the same expectation calls inside
+`assert { expect.*(...) }` sections. After a runnable
+`measure { start(@flow.id) }` section is measured, `arcw bench` performs one
+additional headless correctness run and fails the bench if any assert section
+does not match the runtime observations. The manifest preserves the declaration
+ID, kind, source span, and call-based body rows so CLI, LSP, headless player
+adapters, and Agent tooling can share one planning schema without reparsing
+source text.
 
 Line-plan lowering must not silently drop parsed syntax. Stable Phase 2.0 cue
 syntax such as `at(0.35s): ...` is lowered into Sans I/O line task data.

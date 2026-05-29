@@ -1627,36 +1627,95 @@ fn evaluate_test_expectation(
     engine: &Engine,
     frames: &[RuntimeStepRunSummary],
 ) -> Result<(), String> {
-    let text = step.text.trim();
+    evaluate_runtime_expectation(
+        step.text.trim(),
+        &RuntimeExpectationView::Engine { engine, frames },
+    )
+}
+
+enum RuntimeExpectationView<'a> {
+    Engine {
+        engine: &'a Engine,
+        frames: &'a [RuntimeStepRunSummary],
+    },
+    Frames(&'a [RuntimeStepRunSummary]),
+}
+
+impl RuntimeExpectationView<'_> {
+    fn frames(&self) -> &[RuntimeStepRunSummary] {
+        match self {
+            Self::Engine { frames, .. } | Self::Frames(frames) => frames,
+        }
+    }
+
+    fn signal_value(&self, target: &str) -> Option<&str> {
+        match self {
+            Self::Engine { engine, .. } => engine
+                .fiber()
+                .observations
+                .signals
+                .get(target)
+                .map(String::as_str),
+            Self::Frames(frames) => frames
+                .last()?
+                .observations
+                .signals
+                .iter()
+                .find(|signal| signal.target == target)
+                .map(|signal| signal.value.as_str()),
+        }
+    }
+
+    fn has_log(&self, level: &str, needle: &str) -> bool {
+        match self {
+            Self::Engine { engine, .. } => engine
+                .fiber()
+                .observations
+                .logs
+                .iter()
+                .any(|log| log.level == level && log.message.contains(needle)),
+            Self::Frames(frames) => frames.last().is_some_and(|frame| {
+                frame
+                    .observations
+                    .logs
+                    .iter()
+                    .any(|log| log.level == level && log.message.contains(needle))
+            }),
+        }
+    }
+}
+
+fn evaluate_runtime_expectation(
+    text: &str,
+    observations: &RuntimeExpectationView<'_>,
+) -> Result<(), String> {
     if is_expect_no_assertion_failures_call(text) {
-        if frames.iter().all(|frame| frame.diagnostics.is_empty()) {
+        if observations
+            .frames()
+            .iter()
+            .all(|frame| frame.diagnostics.is_empty())
+        {
             return Ok(());
         }
         return Err("expected no assertion/runtime diagnostics".to_owned());
     }
     if let Some((target, expected)) = parse_expect_signal_call(text) {
-        let actual = engine.fiber().observations.signals.get(&target);
-        if actual == Some(&expected) {
+        let actual = observations.signal_value(&target);
+        if actual == Some(expected.as_str()) {
             return Ok(());
         }
         return Err(format!(
             "expected signal {target} == {expected}, found {}",
-            actual.cloned().unwrap_or_else(|| "<missing>".to_owned())
+            actual.unwrap_or("<missing>")
         ));
     }
     if let Some((level, needle)) = parse_expect_log_call(text) {
-        if engine
-            .fiber()
-            .observations
-            .logs
-            .iter()
-            .any(|log| log.level == level && log.message.contains(&needle))
-        {
+        if observations.has_log(&level, &needle) {
             return Ok(());
         }
         return Err(format!("expected log.{level} containing `{needle}`"));
     }
-    Err(format!("unsupported scenario expectation `{text}`"))
+    Err(format!("unsupported runtime expectation `{text}`"))
 }
 
 fn parse_start_flow_call(text: &str) -> Option<String> {
@@ -1866,8 +1925,82 @@ fn run_script_bench(
     if has_measured {
         "measured".clone_into(&mut summary.status);
         summary.sections = sections;
+        let diagnostics = bench_expectation_failures(bench, plan, source_path, options);
+        if !diagnostics.is_empty() {
+            "failed".clone_into(&mut summary.status);
+            summary.diagnostics.extend(diagnostics);
+        }
     }
     summary
+}
+
+fn bench_expectation_failures(
+    bench: &ScriptBench,
+    plan: &RuntimePlan,
+    source_path: &Path,
+    options: &ScriptBenchOptions,
+) -> Vec<String> {
+    let assertions = bench
+        .sections
+        .iter()
+        .filter(|section| section.name == "assert")
+        .collect::<Vec<_>>();
+    if assertions.is_empty() {
+        return Vec::new();
+    }
+    let Some(flow) = bench.sections.iter().find_map(bench_start_flow) else {
+        return vec![
+            "bench assertions require a runnable `measure { start(@flow.id) }` section".to_owned(),
+        ];
+    };
+    let mut assertion_plan = plan.clone();
+    assertion_plan.entry_flow = Some(FlowRuntimeId(flow));
+    let frames = run_runtime_steps(
+        assertion_plan,
+        Some(source_path),
+        options.steps,
+        options.mode,
+        options.max_ops,
+        &options.values,
+    );
+    assertions
+        .into_iter()
+        .flat_map(|section| bench_assertion_failures(section, &frames))
+        .collect()
+}
+
+fn bench_assertion_failures(
+    section: &BenchSection,
+    frames: &[RuntimeStepRunSummary],
+) -> Vec<String> {
+    match bench_assertion_text(section) {
+        Ok(text) => evaluate_runtime_expectation(text, &RuntimeExpectationView::Frames(frames))
+            .err()
+            .map(|failure| format!("bench assert failed: {failure}"))
+            .into_iter()
+            .collect(),
+        Err(failure) => vec![failure],
+    }
+}
+
+fn bench_assertion_text(section: &BenchSection) -> Result<&str, String> {
+    let rest = section
+        .text
+        .trim()
+        .strip_prefix("assert")
+        .map(str::trim_start)
+        .ok_or_else(|| format!("invalid assert section `{}`", section.text))?;
+    let Some(body) = rest
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+    else {
+        return Err("bench assert must use `assert { expect.*(...) }`".to_owned());
+    };
+    let body = body.trim();
+    if body.is_empty() {
+        return Err("bench assert body must contain an expectation call".to_owned());
+    }
+    Ok(body)
 }
 
 fn run_bench_section(

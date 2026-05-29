@@ -1357,6 +1357,98 @@ flow @flow.bench bench {
 }
 
 #[test]
+fn bench_json_checks_runtime_assert_sections() {
+    let path = temp_arcw(
+        "script-bench-assert",
+        r#"
+signal @signal:.bench_done: Watch<Bool>
+
+bench @bench.runtime_assert {
+    measure iterations = 1 { start(@flow.bench) }
+    assert { expect.log(.info, contains="bench observed") }
+    assert { expect.signal(@signal.bench_done, true) }
+    assert { expect.no_assertion_failures() }
+}
+
+flow @flow.bench bench effects { signal.write } {
+    log.info("bench observed")
+    signal.set(@signal.bench_done, true)
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("1")
+        .arg("--warmup")
+        .arg("0")
+        .arg("--steps")
+        .arg("4")
+        .arg("--json")
+        .output()
+        .expect("arcw bench runs runtime assertions");
+
+    assert!(
+        output.status.success(),
+        "bench assertions should pass, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("bench.runtime_assert") && stdout.contains("\"status\": \"measured\""),
+        "bench JSON should keep measured status when assertions pass: {stdout}"
+    );
+}
+
+#[test]
+fn bench_json_fails_runtime_assert_sections() {
+    let path = temp_arcw(
+        "script-bench-assert-fail",
+        r#"
+signal @signal:.bench_done: Watch<Bool>
+
+bench @bench.runtime_assert_fail {
+    measure iterations = 1 { start(@flow.bench) }
+    assert { expect.signal(@signal.bench_done, false) }
+}
+
+flow @flow.bench bench effects { signal.write } {
+    signal.set(@signal.bench_done, true)
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("1")
+        .arg("--warmup")
+        .arg("0")
+        .arg("--steps")
+        .arg("4")
+        .arg("--json")
+        .output()
+        .expect("arcw bench runs failing runtime assertions");
+
+    assert!(
+        !output.status.success(),
+        "failing bench assertions should fail the command"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"status\": \"failed\"")
+            && stdout.contains("bench assert failed")
+            && stdout.contains("expected signal @signal.bench_done == false"),
+        "bench JSON should report assertion diagnostics: {stdout}"
+    );
+}
+
+#[test]
 fn bench_json_measures_native_file_tasks() {
     let dir = temp_dir("bench-native-file-task");
     let source_path = dir.join("bench.arcw");

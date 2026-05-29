@@ -62,6 +62,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   lowers its expression body or simple local-`let` statement body with a final
   value or tail `return` to a pure-helper request, and reports the helper source
   without persisting the host path.
+- `arcw bench` runs measurable `measure { start(@flow.id) }` sections through
+  the headless VM, includes deterministic runtime counters in JSON, completes
+  native file task requests through the CLI adapter, and evaluates
+  `assert { expect.*(...) }` sections against a separate correctness run before
+  reporting a measured bench as successful.
 - No renderer, Servo, audio, camera, USB, or MCP implementation.
 
 ## Files
