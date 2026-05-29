@@ -2143,6 +2143,10 @@ bench @bench.pure_score {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
+        !stdout.contains(&std::env::temp_dir().display().to_string()),
+        "pure helper bench JSON must not record absolute temp paths: {stdout}"
+    );
+    assert!(
         stdout.contains("bench.pure_score")
             && stdout.contains("\"pure_helper\"")
             && stdout.contains("\"helper\": \"score\"")
