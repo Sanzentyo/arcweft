@@ -53,8 +53,8 @@ fn jit_check_json_uses_source_pure_helper() {
         "jit-pure-helper",
         r"
 #[pure]
-fn score(base: i64, bonus: i64) -> i64 {
-    if base >= 3 { base * (bonus + 2) } else { 0 }
+fn score(base: i64, bonus: i64, scale: i64) -> i64 {
+    if base >= 3 { base * (bonus + 2) + scale } else { scale }
 }
 ",
     );
@@ -87,6 +87,7 @@ fn score(base: i64, bonus: i64) -> i64 {
         stdout.contains("\"helper\": \"score\"")
             && stdout.contains("\"helper_source\": \"source\"")
             && stdout.contains("\"matches_vm\": true")
+            && stdout.contains("\"scale\"")
             && stdout.contains("\"input_seed\": 3"),
         "jit check JSON should describe the source helper: {stdout}"
     );

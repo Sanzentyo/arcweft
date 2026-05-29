@@ -17,7 +17,7 @@ use arcweft_core::{
     value::{RuntimeBinaryOp, RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
 use arcweft_lang_hir::lower::lower_to_hir;
-use arcweft_lang_jit_cranelift::{CompiledPureI64Binary, CraneliftPureFunctionBackend};
+use arcweft_lang_jit_cranelift::{CompiledPureI64Inputs, CraneliftPureFunctionBackend};
 use arcweft_lang_sema::check::{
     TypeCheckStats, analyze_types, typecheck_hir, validate_typecheck_ready,
 };
@@ -133,8 +133,8 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
     }
 
     let target = jit_check_target(options)?;
-    let (first_base, first_bonus) = jit_check_input(options.input_seed, 0, 0);
-    let request = target.request_with_inputs(first_base, first_bonus);
+    let first_inputs = jit_check_inputs(options.input_seed, 0, 0, target.input_names.len());
+    let request = target.request_with_inputs(&first_inputs);
     let vm_backend = VmPureFunctionBackend;
     let jit_backend = CraneliftPureFunctionBackend;
     let conformance =
@@ -145,11 +145,7 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
 
     let compile_started = Instant::now();
     let compiled = jit_backend
-        .compile_i64_binary(
-            &request,
-            target.input_names[0].as_str(),
-            target.input_names[1].as_str(),
-        )
+        .compile_i64_with_inputs(&request, target.input_names.iter().map(String::as_str))
         .map_err(|error| {
             eprintln!("error: failed to compile JIT helper: {error}");
             ExitCode::FAILURE
@@ -180,7 +176,7 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
         helper: target.name.clone(),
         helper_source: target.source.as_str().to_owned(),
         input_bindings: target.input_names.clone(),
-        dynamic_inputs: true,
+        dynamic_inputs: !target.input_names.is_empty(),
         input_seed: options.input_seed,
         vm_backend: backend_label(conformance.vm.backend).to_owned(),
         jit_backend: backend_label(conformance.candidate.backend).to_owned(),
@@ -232,26 +228,29 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
     }
 }
 
-fn jit_check_input(seed: u64, sample: usize, iteration: usize) -> (i64, i64) {
+fn jit_check_inputs(seed: u64, sample: usize, iteration: usize, arity: usize) -> Vec<i64> {
     let sample = u64::try_from(sample).unwrap_or_default();
     let iteration = u64::try_from(iteration).unwrap_or_default();
-    let base = i64::try_from(seed.saturating_add(sample).saturating_add(iteration) % 8)
-        .map_or(1, |value| value + 1);
-    let bonus = i64::try_from(
-        seed.saturating_mul(3)
-            .saturating_add(sample.saturating_mul(3))
-            .saturating_add(iteration)
-            % 5,
-    )
-    .map_or(1, |value| value + 1);
-    (base, bonus)
+    (0..arity)
+        .map(|index| {
+            let index = u64::try_from(index).unwrap_or_default();
+            let modulus = 5 + index % 5;
+            i64::try_from(
+                seed.saturating_mul(index + 1)
+                    .saturating_add(sample.saturating_mul(3 + index))
+                    .saturating_add(iteration)
+                    % modulus,
+            )
+            .map_or(1, |value| value + 1)
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug)]
 struct JitCheckTarget {
     name: String,
     source: JitCheckHelperSource,
-    input_names: [String; 2],
+    input_names: Vec<String>,
     expr: RuntimeExpr,
 }
 
@@ -266,7 +265,7 @@ impl JitCheckTarget {
         Self {
             name: "score".to_owned(),
             source: JitCheckHelperSource::Builtin,
-            input_names: ["base".to_owned(), "bonus".to_owned()],
+            input_names: vec!["base".to_owned(), "bonus".to_owned()],
             expr: RuntimeExpr::If {
                 condition: Box::new(RuntimeExpr::Binary {
                     lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
@@ -290,17 +289,15 @@ impl JitCheckTarget {
     }
 
     fn from_candidate(candidate: &PureHelperCandidate) -> Result<Self, ExitCode> {
-        let input_names = match candidate.input_names() {
-            [lhs, rhs] => [lhs.clone(), rhs.clone()],
-            names => {
-                eprintln!(
-                    "error: pure helper `{}` has {} input(s); current JIT check requires exactly 2",
-                    candidate.name(),
-                    names.len()
-                );
-                return Err(ExitCode::from(2));
-            }
-        };
+        let input_names = candidate.input_names().to_vec();
+        if input_names.len() > 4 {
+            eprintln!(
+                "error: pure helper `{}` has {} input(s); current JIT check supports at most 4",
+                candidate.name(),
+                input_names.len()
+            );
+            return Err(ExitCode::from(2));
+        }
         Ok(Self {
             name: candidate.name().to_owned(),
             source: JitCheckHelperSource::Source,
@@ -309,20 +306,18 @@ impl JitCheckTarget {
         })
     }
 
-    fn request_with_inputs(&self, lhs: i64, rhs: i64) -> PureFunctionRequest {
+    fn request_with_inputs(&self, inputs: &[i64]) -> PureFunctionRequest {
         PureFunctionRequest::new(
             self.name.clone(),
             self.expr.clone(),
-            [
-                RuntimeBinding {
-                    name: self.input_names[0].clone(),
-                    value: RuntimeValue::Int(lhs),
-                },
-                RuntimeBinding {
-                    name: self.input_names[1].clone(),
-                    value: RuntimeValue::Int(rhs),
-                },
-            ],
+            self.input_names
+                .iter()
+                .cloned()
+                .zip(inputs.iter().copied())
+                .map(|(name, value)| RuntimeBinding {
+                    name,
+                    value: RuntimeValue::Int(value),
+                }),
         )
     }
 }
@@ -384,22 +379,25 @@ fn select_jit_helper_candidate<'a>(
     }
 }
 
-fn warmup_jit_check_jit(compiled: &CompiledPureI64Binary, warmup: usize, input_seed: u64) {
+fn warmup_jit_check_jit(compiled: &CompiledPureI64Inputs, warmup: usize, input_seed: u64) {
     for index in 0..warmup {
-        let (base, bonus) = jit_check_input(input_seed, 0, index);
-        let _ = compiled.call(base, bonus);
+        let inputs = jit_check_inputs(input_seed, 0, index, compiled.param_names().len());
+        let _ = compiled.call(&inputs);
     }
 }
 
 fn measure_jit_check_jit(
-    compiled: &CompiledPureI64Binary,
+    compiled: &CompiledPureI64Inputs,
     samples: usize,
     iterations: usize,
     input_seed: u64,
 ) -> Result<JitRepeatedMeasurement, ExitCode> {
     measure_repeated(samples, iterations, |sample, index| {
-        let (base, bonus) = jit_check_input(input_seed, sample, index);
-        Ok(compiled.call(base, bonus))
+        let inputs = jit_check_inputs(input_seed, sample, index, compiled.param_names().len());
+        compiled.call(&inputs).map_err(|error| {
+            eprintln!("error: JIT evaluation failed: {error}");
+            ExitCode::FAILURE
+        })
     })
 }
 
@@ -410,8 +408,8 @@ fn warmup_jit_check_vm(
     input_seed: u64,
 ) -> Result<(), ExitCode> {
     for index in 0..warmup {
-        let (base, bonus) = jit_check_input(input_seed, 0, index);
-        let request = target.request_with_inputs(base, bonus);
+        let inputs = jit_check_inputs(input_seed, 0, index, target.input_names.len());
+        let request = target.request_with_inputs(&inputs);
         let _ = vm_backend.evaluate(&request).map_err(|error| {
             eprintln!("error: VM warmup failed: {error}");
             ExitCode::FAILURE
@@ -428,8 +426,8 @@ fn measure_jit_check_vm(
     input_seed: u64,
 ) -> Result<JitRepeatedMeasurement, ExitCode> {
     measure_repeated(samples, iterations, |sample, index| {
-        let (base, bonus) = jit_check_input(input_seed, sample, index);
-        let request = target.request_with_inputs(base, bonus);
+        let inputs = jit_check_inputs(input_seed, sample, index, target.input_names.len());
+        let request = target.request_with_inputs(&inputs);
         let value = vm_backend.evaluate(&request).map_err(|error| {
             eprintln!("error: VM evaluation failed: {error}");
             ExitCode::FAILURE
@@ -2202,7 +2200,7 @@ struct JitCheckReport {
     status: String,
     helper: String,
     helper_source: String,
-    input_bindings: [String; 2],
+    input_bindings: Vec<String>,
     dynamic_inputs: bool,
     input_seed: u64,
     vm_backend: String,

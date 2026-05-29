@@ -283,8 +283,9 @@ Profile and bench JSON must not persist absolute local source paths.
 `arcw jit check` runs the native Cranelift pure-helper adapter against the VM
 reference backend. The current executable subset covers deterministic `i64`
 arithmetic, integer comparisons, value-producing `if`, and selected local
-bindings passed as runtime `i64` inputs. It is meant as the first conformance
-and timing gate for future wider pure helper lowering:
+bindings passed as runtime `i64` inputs. The native call boundary currently
+supports 0 to 4 runtime integer inputs. It is meant as the first conformance and
+timing gate for future wider pure helper lowering:
 
 ```bash
 arcw jit check --json --iterations 1000 --warmup 10 --samples 5 --input-seed 0
@@ -295,10 +296,10 @@ The JSON includes VM/JIT result equality, compile elapsed time, repeated native
 call elapsed time, VM elapsed time, sample min/median/max, per-iteration median
 time, speedup ratio, deterministic accumulators, dynamic input binding names,
 and pure helper stats. The measurement loop sends deterministic varying
-`base` / `bonus` inputs through both the compiled native function and the VM
-reference. `--input-seed` selects the deterministic input series and is emitted
-in JSON so repeated runs can be compared without embedding local paths. It does
-not include source paths.
+integer inputs through both the compiled native function and the VM reference.
+`--input-seed` selects the deterministic input series and is emitted in JSON so
+repeated runs can be compared without embedding local paths. It does not include
+source paths.
 
 With a source path, `arcw jit check` checks the module normally, selects a
 `#[pure] fn` helper by `--helper` or by uniqueness, lowers its expression body

@@ -45,15 +45,14 @@ pub struct CompiledPureI64 {
     stats: PureFunctionStats,
 }
 
-/// Compiled two-argument native helper returning an `i64`.
+/// Compiled native helper returning an `i64` with selected runtime inputs.
 ///
 /// The parameter names are Arcweft local binding names. Non-parameter locals
 /// are captured from the request bindings as compile-time constants.
-pub struct CompiledPureI64Binary {
+pub struct CompiledPureI64Inputs {
     _module: JITModule,
     code: *const u8,
-    lhs_name: String,
-    rhs_name: String,
+    param_names: Vec<String>,
     stats: PureFunctionStats,
 }
 
@@ -142,34 +141,39 @@ impl CraneliftPureFunctionBackend {
         })
     }
 
-    /// Compiles a pure helper request to a reusable two-argument native function.
+    /// Compiles a pure helper request to a reusable native function with runtime
+    /// integer inputs.
     ///
-    /// `lhs_name` and `rhs_name` name local bindings that become runtime i64
+    /// `param_names` names local bindings that become runtime `i64`
     /// parameters. Other integer locals are captured from the request.
-    pub fn compile_i64_binary(
+    pub fn compile_i64_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        lhs_name: impl Into<String>,
-        rhs_name: impl Into<String>,
-    ) -> Result<CompiledPureI64Binary, CraneliftJitError> {
-        let lhs_name = lhs_name.into();
-        let rhs_name = rhs_name.into();
-        if lhs_name.is_empty() || rhs_name.is_empty() || lhs_name == rhs_name {
-            return Err(CraneliftJitError::UnsupportedExpr(
-                "JIT binary parameters must be distinct non-empty local names".to_owned(),
-            ));
+        param_names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<CompiledPureI64Inputs, CraneliftJitError> {
+        let param_names = param_names
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<String>>();
+        validate_param_names(&param_names)?;
+        if param_names.len() > 4 {
+            return Err(CraneliftJitError::UnsupportedExpr(format!(
+                "JIT integer helper supports at most 4 runtime inputs, got {}",
+                param_names.len()
+            )));
         }
 
         let mut module = jit_module()?;
         let mut ctx = module.make_context();
         let mut func_ctx = FunctionBuilderContext::new();
         let mut signature = module.make_signature();
-        signature.params.push(AbiParam::new(types::I64));
-        signature.params.push(AbiParam::new(types::I64));
+        signature
+            .params
+            .extend(param_names.iter().map(|_| AbiParam::new(types::I64)));
         signature.returns.push(AbiParam::new(types::I64));
 
         let func_id = module
-            .declare_function("arcweft_pure_helper_binary", Linkage::Local, &signature)
+            .declare_function("arcweft_pure_helper_inputs", Linkage::Local, &signature)
             .map_err(jit_error)?;
         ctx.func.signature = signature;
         ctx.func.name = UserFuncName::user(0, func_id.as_u32());
@@ -182,8 +186,9 @@ impl CraneliftPureFunctionBackend {
             builder.append_block_params_for_function_params(block);
             builder.switch_to_block(block);
             let params = builder.block_params(block);
-            bindings.insert(lhs_name.clone(), LoweredI64Binding::Param(params[0]));
-            bindings.insert(rhs_name.clone(), LoweredI64Binding::Param(params[1]));
+            for (name, value) in param_names.iter().zip(params.iter().copied()) {
+                bindings.insert(name.clone(), LoweredI64Binding::Param(value));
+            }
             let value = lower_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
             builder.ins().return_(&[value]);
             builder.seal_all_blocks();
@@ -197,11 +202,10 @@ impl CraneliftPureFunctionBackend {
         module.finalize_definitions().map_err(jit_error)?;
         let code = module.get_finalized_function(func_id);
 
-        Ok(CompiledPureI64Binary {
+        Ok(CompiledPureI64Inputs {
             _module: module,
             code,
-            lhs_name,
-            rhs_name,
+            param_names,
             stats,
         })
     }
@@ -219,21 +223,49 @@ impl CompiledPureI64 {
     }
 }
 
-impl CompiledPureI64Binary {
-    /// Calls the compiled helper with two runtime integer inputs.
-    pub fn call(&self, lhs: i64, rhs: i64) -> i64 {
-        native_call::call_i64_binary(self.code, lhs, rhs)
+impl CompiledPureI64Inputs {
+    /// Calls the compiled helper with runtime integer inputs.
+    pub fn call(&self, inputs: &[i64]) -> Result<i64, CraneliftJitError> {
+        if inputs.len() != self.param_names.len() {
+            return Err(CraneliftJitError::UnsupportedExpr(format!(
+                "JIT helper expected {} input(s), got {}",
+                self.param_names.len(),
+                inputs.len()
+            )));
+        }
+        native_call::call_i64_inputs(self.code, inputs).ok_or_else(|| {
+            CraneliftJitError::UnsupportedExpr(format!(
+                "JIT helper arity {} is outside the native call boundary",
+                inputs.len()
+            ))
+        })
     }
 
     /// Returns the local binding names used as runtime parameters.
-    pub fn param_names(&self) -> (&str, &str) {
-        (&self.lhs_name, &self.rhs_name)
+    pub fn param_names(&self) -> &[String] {
+        &self.param_names
     }
 
     /// Returns lowering counters captured during compilation.
     pub const fn stats(&self) -> &PureFunctionStats {
         &self.stats
     }
+}
+
+fn validate_param_names(param_names: &[String]) -> Result<(), CraneliftJitError> {
+    for (index, name) in param_names.iter().enumerate() {
+        if name.is_empty() {
+            return Err(CraneliftJitError::UnsupportedExpr(
+                "JIT runtime input names must be non-empty".to_owned(),
+            ));
+        }
+        if param_names[..index].contains(name) {
+            return Err(CraneliftJitError::UnsupportedExpr(format!(
+                "JIT runtime input `{name}` is duplicated"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn jit_module() -> Result<JITModule, CraneliftJitError> {
@@ -496,13 +528,45 @@ mod tests {
         );
 
         let compiled = CraneliftPureFunctionBackend
-            .compile_i64_binary(&request, "base", "bonus")
+            .compile_i64_with_inputs(&request, ["base", "bonus"])
             .expect("Cranelift compiles parameterized integer helper");
 
-        assert_eq!(compiled.param_names(), ("base", "bonus"));
-        assert_eq!(compiled.call(3, 4), 18);
-        assert_eq!(compiled.call(2, 99), 0);
-        assert_eq!(compiled.call(7, 1), 21);
+        assert_eq!(compiled.param_names(), ["base", "bonus"]);
+        assert_eq!(compiled.call(&[3, 4]).expect("call succeeds"), 18);
+        assert_eq!(compiled.call(&[2, 99]).expect("call succeeds"), 0);
+        assert_eq!(compiled.call(&[7, 1]).expect("call succeeds"), 21);
+    }
+
+    #[test]
+    fn cranelift_compiled_helper_accepts_four_runtime_integer_inputs() {
+        let request = PureFunctionRequest::new(
+            "sum4",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("a".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Local("b".to_owned())),
+                }),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("c".to_owned())),
+                    op: RuntimeBinaryOp::Sub,
+                    rhs: Box::new(RuntimeExpr::Local("d".to_owned())),
+                }),
+            },
+            [
+                int_binding("a", 0),
+                int_binding("b", 0),
+                int_binding("c", 0),
+                int_binding("d", 0),
+            ],
+        );
+
+        let compiled = CraneliftPureFunctionBackend
+            .compile_i64_with_inputs(&request, ["a", "b", "c", "d"])
+            .expect("Cranelift compiles four-input integer helper");
+
+        assert_eq!(compiled.call(&[2, 3, 10, 4]).expect("call succeeds"), 30);
     }
 
     #[test]

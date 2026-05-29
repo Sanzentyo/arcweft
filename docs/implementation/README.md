@@ -50,7 +50,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - `arcweft-lang-jit-cranelift` now owns the first native Cranelift adapter. It
   JIT-compiles deterministic `i64` pure helper expressions, including integer
   comparisons, value-producing `if`, and selected local bindings passed as
-  runtime `i64` inputs. Generated code executes through an isolated native-call
+  runtime `i64` inputs. The native call boundary supports 0 to 4 runtime
+  integer inputs. Generated code executes through an isolated native-call
   boundary, and `arcw jit check --json` exercises it against the VM reference
   backend with deterministic seed-controlled varying inputs, sample timing, and
   speedup reporting. `arcw jit check path.arcw --helper NAME --json` now runs
