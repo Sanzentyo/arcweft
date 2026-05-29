@@ -93,11 +93,15 @@ let choices =
 ## effectful map は `traverse`
 
 ```arcw
-let images = await image_paths.traverse(asset.image).parallel(limit = 4)
+let images = try await image_paths.traverse(asset.image).parallel(limit = 4) with {
+    pending p => progress.set(p.ratio)
+}
 ```
 
 - `map`: pure / synchronous。
 - `traverse`: `Task` / `Need` を返す。
+- `.parallel(limit = N)`: bounded fanout。VM は一度に最大 `N` 件の
+  `TaskSpec` を出し、結果を入力順の `Vec` として返す。
 
 
 

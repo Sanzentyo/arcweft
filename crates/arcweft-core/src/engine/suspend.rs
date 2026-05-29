@@ -1,15 +1,15 @@
 use super::{
-    AwaitState, AwaitTarget, CancelScopeId, ChoiceRuntimeOption, ChoiceState, Engine, FlowEvent,
-    FlowFiberStatus, LineEffectRequest, RuntimeDiagnostic, RuntimeFieldValue, RuntimePayload,
-    RuntimeStepInput, RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey,
-    TaskPolicy, TaskPriority, TaskSpec,
+    AwaitManyInFlight, AwaitManyState, AwaitState, AwaitTarget, CancelScopeId, ChoiceRuntimeOption,
+    ChoiceState, Engine, FlowEvent, FlowFiberStatus, LineEffectRequest, RuntimeDiagnostic,
+    RuntimeEvalError, RuntimeFieldValue, RuntimePayload, RuntimeStepInput, RuntimeStepOutput,
+    RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
 };
 use crate::pure::RuntimePureCallBackend;
 use crate::task::{
-    AssetRequest, AudioDecodeRequest, FileReadBytesRequest, FileReadTextRequest,
+    AssetRequest, AudioDecodeRequest, AwaitManyTarget, FileReadBytesRequest, FileReadTextRequest,
     FileWriteBytesRequest, FileWriteTextRequest, HostTaskArgTemplate, HostTaskRequest,
-    HttpFetchRequest, HttpRespondRequest, ProcessRunRequest, ShaderRequest, SystemInfoKind,
-    SystemInfoRequest, TtsRequest, WasmCallRequest,
+    HostTaskRequestTemplate, HttpFetchRequest, HttpRespondRequest, NeedId, ProcessRunRequest,
+    ShaderRequest, SystemInfoKind, SystemInfoRequest, TaskId, TtsRequest, WasmCallRequest,
 };
 
 impl Engine {
@@ -18,11 +18,15 @@ impl Engine {
         input: &RuntimeStepInput,
         events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
-        _pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimePureCallBackend,
     ) -> bool {
         match self.fiber.status.clone() {
             FlowFiberStatus::Waiting(state) => {
                 self.resume_await_state(state, events, output);
+                true
+            }
+            FlowFiberStatus::WaitingMany(state) => {
+                self.resume_await_many_state(*state, events, output, pure_backend);
                 true
             }
             FlowFiberStatus::Choice(state) => {
@@ -154,15 +158,217 @@ impl Engine {
         ))
     }
 
+    pub(super) fn start_await_many_state(
+        &mut self,
+        binding: Option<crate::pattern::RuntimePattern>,
+        target: AwaitManyTarget,
+        resume: crate::engine::FlowCursor,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) {
+        let items = match self.evaluate_expr_with_backend(&target.source, pure_backend) {
+            Ok(RuntimeValue::BracketSeq(items)) => items,
+            Ok(value) => {
+                self.fail_eval(
+                    RuntimeEvalError::ExpectedBracketSeq(super::runtime_value_label(&value)),
+                    output,
+                );
+                return;
+            }
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        };
+        let mut state = AwaitManyState {
+            binding,
+            target,
+            resume,
+            next_index: 0,
+            in_flight: Vec::new(),
+            results: vec![None; items.len()],
+            items,
+        };
+        if self.fill_await_many_queue(&mut state, output, pure_backend) {
+            self.commit_await_many_state(state, output);
+        }
+    }
+
+    pub(super) fn resume_await_many_state(
+        &mut self,
+        mut state: AwaitManyState,
+        events: &[TaskEvent],
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) {
+        for event in events {
+            let Some(position) = state
+                .in_flight
+                .iter()
+                .position(|task| task.task == event.task_id)
+            else {
+                continue;
+            };
+            let in_flight = state.in_flight[position].clone();
+            match &event.kind {
+                TaskEventKind::Ready(value) => {
+                    state.results[in_flight.index] = Some(value.clone());
+                    state.in_flight.remove(position);
+                    output.flow_events.push(FlowEvent::AwaitReady {
+                        need: in_flight.need,
+                        value: value.clone(),
+                    });
+                }
+                TaskEventKind::Progress(progress) => {
+                    output.flow_events.push(FlowEvent::AwaitProgress {
+                        need: in_flight.need,
+                        progress: progress.clone(),
+                    });
+                }
+                TaskEventKind::Err(error) => {
+                    self.fiber.status = FlowFiberStatus::Failed(error.clone());
+                    output.diagnostics.push(RuntimeDiagnostic {
+                        message: format!(
+                            "await task {} at index {} failed: {error}",
+                            in_flight.task.0, in_flight.index
+                        ),
+                    });
+                    return;
+                }
+                TaskEventKind::Cancelled => {
+                    let message = format!(
+                        "await task {} at index {} was cancelled",
+                        in_flight.task.0, in_flight.index
+                    );
+                    self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                    output.diagnostics.push(RuntimeDiagnostic { message });
+                    return;
+                }
+            }
+        }
+        if self.fill_await_many_queue(&mut state, output, pure_backend) {
+            self.commit_await_many_state(state, output);
+        }
+    }
+
+    fn fill_await_many_queue(
+        &mut self,
+        state: &mut AwaitManyState,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> bool {
+        while state.in_flight.len() < state.target.limit && state.next_index < state.items.len() {
+            let index = state.next_index;
+            let item = state.items[index].clone();
+            let need = indexed_need_id(&state.target.need, index);
+            let task = indexed_task_id(&state.target.task, index);
+            let Some(spec) =
+                self.await_many_task_spec(&state.target, index, &item, &task, output, pure_backend)
+            else {
+                return false;
+            };
+            output.flow_events.push(FlowEvent::AwaitStarted {
+                need: need.clone(),
+                task: task.clone(),
+            });
+            output.requests.tasks.push(spec);
+            state
+                .in_flight
+                .push(AwaitManyInFlight { index, task, need });
+            state.next_index += 1;
+        }
+        true
+    }
+
+    fn commit_await_many_state(&mut self, state: AwaitManyState, output: &mut RuntimeStepOutput) {
+        if !state.in_flight.is_empty() || state.results.iter().any(Option::is_none) {
+            self.fiber.status = FlowFiberStatus::WaitingMany(Box::new(state));
+            return;
+        }
+        let values = state
+            .results
+            .iter()
+            .map(|value| RuntimeValue::String(value.clone().unwrap_or_default()))
+            .collect::<Vec<_>>();
+        if let Some(binding) = &state.binding {
+            let ready_value = RuntimeValue::BracketSeq(values);
+            match self.try_bind_pattern(binding, &ready_value) {
+                Ok(true) => {}
+                Ok(false) => {
+                    self.fiber.status = FlowFiberStatus::Failed(
+                        "await result did not match binding pattern".to_owned(),
+                    );
+                    output.diagnostics.push(RuntimeDiagnostic {
+                        message: "await result did not match binding pattern".to_owned(),
+                    });
+                    return;
+                }
+                Err(error) => {
+                    self.fail_eval(error, output);
+                    return;
+                }
+            }
+        }
+        output.flow_events.push(FlowEvent::AwaitReady {
+            need: state.target.need,
+            value: format!("{} item(s)", state.results.len()),
+        });
+        self.fiber.cursor = Some(state.resume);
+        self.fiber.status = FlowFiberStatus::Running;
+    }
+
+    fn await_many_task_spec(
+        &mut self,
+        target: &AwaitManyTarget,
+        index: usize,
+        item: &RuntimeValue,
+        task: &TaskId,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Option<TaskSpec> {
+        let previous = self.fiber.env.clone();
+        self.fiber.env.push_scope();
+        self.fiber
+            .env
+            .set(target.item_binding.clone(), item.clone());
+        let request = match self.evaluate_host_task_request_template(&target.request, pure_backend)
+        {
+            Ok(request) => request,
+            Err(error) => {
+                self.fiber.env = previous;
+                self.fail_eval(format!("await many item {index}: {error}"), output);
+                return None;
+            }
+        };
+        self.fiber.env = previous;
+        Some(TaskSpec::new(
+            task.clone(),
+            TaskKey(request.debug_label()),
+            request.task_class(),
+            TaskPriority(0),
+            CancelScopeId("flow".to_owned()),
+            TaskPolicy::JoinSameKey,
+            request,
+        ))
+    }
+
     fn evaluate_host_task_request(
         &mut self,
         target: &AwaitTarget,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<HostTaskRequest, String> {
-        let args = self.evaluate_host_task_args(&target.request.args, pure_backend)?;
+        self.evaluate_host_task_request_template(&target.request, pure_backend)
+    }
+
+    fn evaluate_host_task_request_template(
+        &mut self,
+        template: &HostTaskRequestTemplate,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<HostTaskRequest, String> {
+        let args = self.evaluate_host_task_args(&template.args, pure_backend)?;
         let call = EvaluatedHostCall {
-            capability: target.request.capability.0.as_str(),
-            operation: target.request.operation.as_str(),
+            capability: template.capability.0.as_str(),
+            operation: template.operation.as_str(),
             args: &args,
         };
         lower_evaluated_host_request(&call)
@@ -301,6 +507,14 @@ fn lower_evaluated_host_request(call: &EvaluatedHostCall<'_>) -> Result<HostTask
 
 fn system_info_request(kind: SystemInfoKind) -> HostTaskRequest {
     HostTaskRequest::SystemInfo(SystemInfoRequest { kind })
+}
+
+fn indexed_need_id(base: &NeedId, index: usize) -> NeedId {
+    NeedId(format!("{}.{}", base.0, index))
+}
+
+fn indexed_task_id(base: &TaskId, index: usize) -> TaskId {
+    TaskId(format!("{}.{}", base.0, index))
 }
 
 fn lower_file_write_request(args: &[EvaluatedHostArg]) -> Result<HostTaskRequest, String> {

@@ -19,8 +19,8 @@ use crate::stream::{
     RuntimeStreamEvent, StreamMatchArm, StreamOp, StreamRuntimeId, StreamRuntimeState,
 };
 use crate::task::{
-    AwaitTarget, CancelScopeId, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
-    TaskSpec, normalize_task_events,
+    AwaitManyTarget, AwaitTarget, CancelScopeId, NeedId, TaskEvent, TaskEventKind, TaskId, TaskKey,
+    TaskPolicy, TaskPriority, TaskSpec, normalize_task_events,
 };
 use crate::value::{
     RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm,
@@ -95,6 +95,7 @@ pub struct FlowCursor {
 pub enum FlowFiberStatus {
     Running,
     Waiting(AwaitState),
+    WaitingMany(Box<AwaitManyState>),
     Choice(ChoiceState),
     Done(FlowExit),
     Failed(String),
@@ -106,6 +107,26 @@ pub struct AwaitState {
     pub binding: Option<RuntimePattern>,
     pub target: AwaitTarget,
     pub resume: FlowCursor,
+}
+
+/// Suspended bounded fanout await state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AwaitManyState {
+    pub binding: Option<RuntimePattern>,
+    pub target: AwaitManyTarget,
+    pub resume: FlowCursor,
+    pub items: Vec<RuntimeValue>,
+    pub next_index: usize,
+    pub in_flight: Vec<AwaitManyInFlight>,
+    pub results: Vec<Option<String>>,
+}
+
+/// One in-flight child task inside a bounded fanout await.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AwaitManyInFlight {
+    pub index: usize,
+    pub task: TaskId,
+    pub need: NeedId,
 }
 
 /// Suspended choice state.
@@ -439,7 +460,10 @@ impl Engine {
         if self.has_active_child_fibers()
             && matches!(
                 self.fiber.status,
-                FlowFiberStatus::Done(_) | FlowFiberStatus::Waiting(_) | FlowFiberStatus::Choice(_)
+                FlowFiberStatus::Done(_)
+                    | FlowFiberStatus::Waiting(_)
+                    | FlowFiberStatus::WaitingMany(_)
+                    | FlowFiberStatus::Choice(_)
             )
         {
             FlowFiberStatus::Running
@@ -452,7 +476,10 @@ impl Engine {
         if self.has_active_child_fibers()
             && matches!(
                 self.fiber.status,
-                FlowFiberStatus::Done(_) | FlowFiberStatus::Waiting(_) | FlowFiberStatus::Choice(_)
+                FlowFiberStatus::Done(_)
+                    | FlowFiberStatus::Waiting(_)
+                    | FlowFiberStatus::WaitingMany(_)
+                    | FlowFiberStatus::Choice(_)
             )
         {
             return None;
@@ -460,9 +487,9 @@ impl Engine {
         match self.fiber.status {
             FlowFiberStatus::Done(_) => Some(RuntimeStepStopReason::Done),
             FlowFiberStatus::Failed(_) => Some(RuntimeStepStopReason::Failed),
-            FlowFiberStatus::Waiting(_) | FlowFiberStatus::Choice(_) => {
-                Some(RuntimeStepStopReason::Blocked)
-            }
+            FlowFiberStatus::Waiting(_)
+            | FlowFiberStatus::WaitingMany(_)
+            | FlowFiberStatus::Choice(_) => Some(RuntimeStepStopReason::Blocked),
             FlowFiberStatus::Running if has_host_requests(output) => {
                 Some(RuntimeStepStopReason::Output)
             }

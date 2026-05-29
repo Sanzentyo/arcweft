@@ -1,5 +1,7 @@
 use crate::value::{RuntimeExpr, RuntimePayload};
 
+pub const AWAIT_MANY_ITEM_BINDING: &str = "__arcweft_await_many_item";
+
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TaskId(pub String);
 
@@ -25,6 +27,16 @@ pub struct TaskPriority(pub i32);
 pub struct AwaitTarget {
     pub need: NeedId,
     pub task: TaskId,
+    pub request: HostTaskRequestTemplate,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AwaitManyTarget {
+    pub need: NeedId,
+    pub task: TaskId,
+    pub source: RuntimeExpr,
+    pub item_binding: String,
+    pub limit: usize,
     pub request: HostTaskRequestTemplate,
 }
 
@@ -251,6 +263,26 @@ impl AwaitTarget {
         Self {
             need,
             task,
+            request,
+        }
+    }
+}
+
+impl AwaitManyTarget {
+    pub fn new(
+        need: NeedId,
+        task: TaskId,
+        source: RuntimeExpr,
+        item_binding: impl Into<String>,
+        limit: usize,
+        request: HostTaskRequestTemplate,
+    ) -> Self {
+        Self {
+            need,
+            task,
+            source,
+            item_binding: item_binding.into(),
+            limit,
             request,
         }
     }

@@ -1249,6 +1249,65 @@ flow @flow.main main effects { fs.read(save), fs.write(save) } {
 }
 
 #[test]
+fn run_json_executes_traverse_parallel_file_tasks() {
+    let dir = temp_dir("native-traverse-parallel");
+    let source_path = dir.join("main.arcw");
+    let save_dir = dir.join(".arcweft").join("save");
+    fs::create_dir_all(&save_dir).expect("create virtual save root");
+    fs::write(save_dir.join("a.txt"), "A").expect("seed input a");
+    fs::write(save_dir.join("b.txt"), "B").expect("seed input b");
+    fs::write(save_dir.join("c.txt"), "C").expect("seed input c");
+    fs::write(
+        &source_path,
+        r#"
+extern capability fs {
+    type FsError
+    fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
+}
+extern capability path { fn save(path: String) -> VirtualPath }
+entry cli @entry.main { run(@flow.main) }
+flow @flow.main main effects { fs.read(save) } {
+    let paths = [path.save("a.txt"), path.save("b.txt"), path.save("c.txt")]
+    let values = try await paths.traverse(fs.read_text).parallel(limit = 2) with { error e => return "read_failed" }
+    log.info("parallel done")
+    return "done"
+}
+"#,
+    )
+    .expect("write traverse parallel task fixture");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&source_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("12")
+        .arg("--json")
+        .output()
+        .expect("arcw run executes traverse parallel file tasks");
+
+    assert!(
+        output.status.success(),
+        "traverse parallel run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("file.read_text save:a.txt")
+            && stdout.contains("file.read_text save:b.txt")
+            && stdout.contains("file.read_text save:c.txt")
+            && stdout.contains("\"completed_tasks\": 3")
+            && stdout.contains("\"submitted\": 3")
+            && stdout.contains("\"dispatched\": 3")
+            && stdout.contains("\"max_in_flight\": 2")
+            && stdout.contains("\"read_ops\": 3")
+            && stdout.contains("return done"),
+        "run JSON should show bounded traverse fanout and native reads: {stdout}"
+    );
+}
+
+#[test]
 fn run_json_reports_runtime_system_info_tasks() {
     let path = temp_arcw(
         "system-info-task",

@@ -294,12 +294,14 @@ invariant @inv.affection_bounds(state) {
 
 ```arcw
 let images =
-    await image_ids
-        .traverse(asset.image)
-        .parallel(limit = 4)? with {
-            pending p => scene.show(@scene.loading); progress.set(p.ratio)
-        }
+    try await image_ids.traverse(asset.image).parallel(limit = 4) with {
+        pending p => scene.show(@scene.loading); progress.set(p.ratio)
+    }
 ```
+
+The current runtime-supported form is `Vec<T>.traverse(capability.fn)
+.parallel(limit = N)`, where the function returns `Need<U, E>`. It is lowered
+to bounded fanout and returns `Vec<U>` in source order after `try await`.
 
 ## Source is not Seq
 

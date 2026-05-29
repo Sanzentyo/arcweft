@@ -1211,6 +1211,12 @@ pub(crate) fn flow_status_label(status: &FlowFiberStatus) -> String {
     match status {
         FlowFiberStatus::Running => "running".to_owned(),
         FlowFiberStatus::Waiting(state) => format!("waiting {}", state.target.task.0),
+        FlowFiberStatus::WaitingMany(state) => format!(
+            "waiting_many {} {}/{}",
+            state.target.task.0,
+            state.results.iter().filter(|value| value.is_some()).count(),
+            state.results.len()
+        ),
         FlowFiberStatus::Choice(state) => {
             format!("choice {}", state.id.as_deref().unwrap_or("-"))
         }

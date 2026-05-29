@@ -187,6 +187,22 @@ must execute. Entering the op emits a `TaskSpec` using that request and switches
 `FlowFiberStatus` to `Waiting`. The runtime resumes only when a matching
 `TaskEvent` arrives in a later `RuntimeStepInput`.
 
+Bounded effectful traversal lowers to `FlowOp::AwaitMany`:
+
+```arcw
+let texts = try await paths.traverse(fs.read_text).parallel(limit = 4) with {
+    pending p => progress.set(p.ratio)
+}
+```
+
+`AwaitMany` evaluates the source `Vec<T>` once, creates at most `limit`
+in-flight `TaskSpec`s, and resumes with a `Vec` of ready values in source order.
+Each child task uses a deterministic indexed task id and a same-request task key,
+so duplicate requests can join through `TaskPolicy::JoinSameKey` while still
+delivering completion events to each waiting index. The VM owns only the
+bounded fanout state; actual thread pools, async runtimes, and filesystem or
+network I/O remain adapter responsibilities.
+
 ```text
 TaskEventKind::Ready(value)    -> resume the flow after the await op
 TaskEventKind::Progress(value) -> keep waiting and emit an await-progress event

@@ -834,6 +834,12 @@ impl TypeChecker<'_> {
             return Some(TypeKind::Unit);
         }
         receiver_type.and_then(|receiver_type| {
+            if method_name == "traverse" {
+                return self.check_traverse_method_call(&receiver_type, args);
+            }
+            if method_name == "parallel" {
+                return self.check_parallel_method_call(&receiver_type, args);
+            }
             if matches!(method_name, "context" | "with_context") {
                 for arg in args {
                     self.check_expr(arg.value());
@@ -893,6 +899,88 @@ impl TypeChecker<'_> {
                     None
                 })
         })
+    }
+
+    fn check_traverse_method_call(
+        &mut self,
+        receiver_type: &TypeKind,
+        args: &[CallArg],
+    ) -> Option<TypeKind> {
+        let TypeKind::Vec(item) = receiver_type else {
+            self.errors.push(TypeCheckError::new(format!(
+                "traverse receiver must be Vec<T>, found {receiver_type:?}"
+            )));
+            return None;
+        };
+        let [arg] = args else {
+            self.errors.push(TypeCheckError::new(
+                "traverse requires exactly one task function".to_owned(),
+            ));
+            return None;
+        };
+        if arg.name().is_some() || arg.is_spread() {
+            self.errors.push(TypeCheckError::new(
+                "traverse task function must be a positional argument".to_owned(),
+            ));
+            return None;
+        }
+        let Some(function_name) = expr_path_label(arg.value()) else {
+            self.errors.push(TypeCheckError::new(
+                "traverse task function must be capability-qualified".to_owned(),
+            ));
+            return None;
+        };
+        let Some(TypeKind::Need { ready, error }) = self.function_type(&function_name).cloned()
+        else {
+            self.errors.push(TypeCheckError::new(format!(
+                "traverse task function `{function_name}` must return Need<T, E>"
+            )));
+            return None;
+        };
+        if let Some(signature) = self.function_signature(&function_name).cloned()
+            && let Some(first) = signature.params.first()
+            && !types_compatible(&first.ty, item)
+        {
+            self.errors.push(TypeCheckError::new(format!(
+                "traverse item type must match `{function_name}` first parameter {:?}, found {:?}",
+                first.ty, item
+            )));
+        }
+        self.check_function_effects(&function_name);
+        Some(TypeKind::Need {
+            ready: Box::new(TypeKind::Vec(ready)),
+            error,
+        })
+    }
+
+    fn check_parallel_method_call(
+        &mut self,
+        receiver_type: &TypeKind,
+        args: &[CallArg],
+    ) -> Option<TypeKind> {
+        let [arg] = args else {
+            self.errors.push(TypeCheckError::new(
+                "parallel requires exactly `limit = N`".to_owned(),
+            ));
+            return None;
+        };
+        if arg.name() != Some("limit") || arg.is_spread() {
+            self.errors.push(TypeCheckError::new(
+                "parallel requires a named `limit = N` argument".to_owned(),
+            ));
+            self.check_expr(arg.value());
+            return None;
+        }
+        self.expect_expr_type(arg.value(), &TypeKind::I64, "parallel limit");
+        match receiver_type {
+            TypeKind::Need { .. } => Some(receiver_type.clone()),
+            other => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "parallel receiver must be Need<Vec<T>, E>, found {other:?}"
+                )));
+                None
+            }
+        }
     }
 
     fn check_index_expr(&mut self, target: &Expr, index: &Expr) -> Option<TypeKind> {

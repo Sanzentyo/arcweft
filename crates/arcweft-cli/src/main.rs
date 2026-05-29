@@ -2239,12 +2239,13 @@ fn run_script_test(
         FlowFiberStatus::Failed(ref message) => {
             diagnostics.push(format!("runtime failed: {message}"));
         }
-        FlowFiberStatus::Running | FlowFiberStatus::Waiting(_) | FlowFiberStatus::Choice(_) => {
-            diagnostics.push(format!(
-                "scenario did not finish within {} step(s): {final_status}",
-                config.steps
-            ));
-        }
+        FlowFiberStatus::Running
+        | FlowFiberStatus::Waiting(_)
+        | FlowFiberStatus::WaitingMany(_)
+        | FlowFiberStatus::Choice(_) => diagnostics.push(format!(
+            "scenario did not finish within {} step(s): {final_status}",
+            config.steps
+        )),
     }
     let passed = diagnostics.is_empty();
     ScriptTestRunSummary::completed(test, passed, final_status, diagnostics, trace.steps)

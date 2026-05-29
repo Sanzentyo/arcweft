@@ -142,6 +142,7 @@ impl Engine {
             | FlowOp::Dialogue { .. }
             | FlowOp::Choice { .. }
             | FlowOp::Await { .. }
+            | FlowOp::AwaitMany { .. }
             | FlowOp::If { .. }
             | FlowOp::IfLet { .. }
             | FlowOp::Match { .. }
@@ -186,6 +187,7 @@ fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::Dialogue { .. }
         | FlowOp::Choice { .. }
         | FlowOp::Await { .. }
+        | FlowOp::AwaitMany { .. }
         | FlowOp::If { .. }
         | FlowOp::IfLet { .. }
         | FlowOp::Match { .. }

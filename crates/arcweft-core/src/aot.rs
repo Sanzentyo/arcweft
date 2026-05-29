@@ -144,6 +144,7 @@ impl AotFlowBlock {
             FlowOp::LetElse { .. }
             | FlowOp::Choice { .. }
             | FlowOp::Await { .. }
+            | FlowOp::AwaitMany { .. }
             | FlowOp::If { .. }
             | FlowOp::IfLet { .. }
             | FlowOp::Match { .. }
@@ -187,7 +188,7 @@ impl AotOpClass {
             | FlowOp::Thread { .. }
             | FlowOp::Scope(_) => Self::Branch,
             FlowOp::Effect(_) => Self::Effect,
-            FlowOp::Await { .. } => Self::Await,
+            FlowOp::Await { .. } | FlowOp::AwaitMany { .. } => Self::Await,
             FlowOp::Choice { .. } => Self::Choice,
             FlowOp::Dialogue { .. } => Self::Dialogue,
             FlowOp::Break(_) | FlowOp::Continue | FlowOp::Goto(_) | FlowOp::GotoExpr(_) => {
@@ -232,6 +233,7 @@ impl AotProgramStats {
                 | FlowOp::Dialogue { .. }
                 | FlowOp::Choice { .. }
                 | FlowOp::Await { .. }
+                | FlowOp::AwaitMany { .. }
                 | FlowOp::Break(_)
                 | FlowOp::Continue
                 | FlowOp::Goto(_)

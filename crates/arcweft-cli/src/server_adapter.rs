@@ -160,12 +160,13 @@ fn run_route_flow(
             status: 500,
             body: message.clone(),
         },
-        FlowFiberStatus::Running | FlowFiberStatus::Waiting(_) | FlowFiberStatus::Choice(_) => {
-            NativeHttpResponse {
-                status: 202,
-                body: "route did not complete in this server step".to_owned(),
-            }
-        }
+        FlowFiberStatus::Running
+        | FlowFiberStatus::Waiting(_)
+        | FlowFiberStatus::WaitingMany(_)
+        | FlowFiberStatus::Choice(_) => NativeHttpResponse {
+            status: 202,
+            body: "route did not complete in this server step".to_owned(),
+        },
     }
 }
 

@@ -19,7 +19,10 @@ use arcweft_core::plan::{
 };
 use arcweft_core::source::{SourceHandlerPlan, SourceOp, SourcePlan};
 use arcweft_core::stream::{StreamMatchArm, StreamOp, StreamPlan};
-use arcweft_core::task::{AwaitTarget, NeedId, TaskId};
+use arcweft_core::task::{
+    AWAIT_MANY_ITEM_BINDING, AwaitManyTarget, AwaitTarget, HostTaskArgTemplate,
+    HostTaskRequestTemplate, NeedId, TaskId,
+};
 use arcweft_core::value::{RuntimeExpr, RuntimeValue};
 use arcweft_lang_hir::model::{
     HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirLoop, HirMatch,
@@ -483,6 +486,20 @@ impl FlowRuntimeLowerer {
             .filter(|branch| branch.kind() == AwaitBranchKind::Pending)
             .flat_map(|branch| self.lower_pending_flow_items(branch.body()))
             .collect();
+        match self.lower_await_many_target(await_with.expr(), &task_name) {
+            Ok(Some(target)) => {
+                return FlowOp::AwaitMany {
+                    binding: binding.map(lower_runtime_pattern),
+                    target,
+                    pending,
+                };
+            }
+            Ok(None) => {}
+            Err(message) => {
+                self.errors.push(RuntimePlanLowerError::new(message));
+                return FlowOp::Noop;
+            }
+        }
         FlowOp::Await {
             binding: binding.map(lower_runtime_pattern),
             target: AwaitTarget::new(
@@ -492,6 +509,56 @@ impl FlowRuntimeLowerer {
             ),
             pending,
         }
+    }
+
+    fn lower_await_many_target(
+        &mut self,
+        expr: &Expr,
+        task_name: &str,
+    ) -> Result<Option<AwaitManyTarget>, String> {
+        let Expr::MethodCall {
+            receiver: parallel_receiver,
+            method,
+            args: parallel_args,
+        } = expr
+        else {
+            return Ok(None);
+        };
+        if method_name(method) != "parallel" {
+            return Ok(None);
+        }
+        let Expr::MethodCall {
+            receiver: source,
+            method: traverse_method,
+            args: traverse_args,
+        } = parallel_receiver.as_ref()
+        else {
+            return Err(
+                "parallel await requires `source.traverse(call).parallel(limit = N)`".to_owned(),
+            );
+        };
+        if method_name(traverse_method) != "traverse" {
+            return Err(
+                "parallel await requires `traverse(...)` before `.parallel(...)`".to_owned(),
+            );
+        }
+        let callee = traverse_callee(traverse_args)?;
+        let (capability, operation) = split_capability_operation(&expr_label(callee))?;
+        let limit = parallel_limit(parallel_args)?;
+        Ok(Some(AwaitManyTarget::new(
+            NeedId(format!("need.await_many.{task_name}")),
+            TaskId(format!("task.await_many.{task_name}")),
+            self.lower_runtime_expr(source),
+            AWAIT_MANY_ITEM_BINDING,
+            limit,
+            HostTaskRequestTemplate::new(
+                capability,
+                operation,
+                [HostTaskArgTemplate::positional(RuntimeExpr::Local(
+                    AWAIT_MANY_ITEM_BINDING.to_owned(),
+                ))],
+            ),
+        )))
     }
 
     fn lower_pending_flow_items(&mut self, items: &[HirFlowItem]) -> Vec<LineEffectRequest> {
@@ -680,6 +747,48 @@ fn flow_runtime_id(id: &EntityRef) -> FlowRuntimeId {
     FlowRuntimeId(id.body().to_owned())
 }
 
+fn method_name(method: &str) -> &str {
+    method.split_once('<').map_or(method, |(name, _)| name)
+}
+
+fn traverse_callee(args: &[arcweft_lang_hir::syntax::expr::CallArg]) -> Result<&Expr, String> {
+    let [arg] = args else {
+        return Err("traverse(...) requires exactly one positional task function".to_owned());
+    };
+    if arg.name().is_some() || arg.is_spread() {
+        return Err("traverse(...) task function must be a positional argument".to_owned());
+    }
+    Ok(arg.value())
+}
+
+fn split_capability_operation(name: &str) -> Result<(String, String), String> {
+    name.rsplit_once('.').map_or_else(
+        || {
+            Err(format!(
+                "traverse task function `{name}` must be capability-qualified"
+            ))
+        },
+        |(capability, operation)| Ok((capability.to_owned(), operation.to_owned())),
+    )
+}
+
+fn parallel_limit(args: &[arcweft_lang_hir::syntax::expr::CallArg]) -> Result<usize, String> {
+    let [arg] = args else {
+        return Err("parallel(...) requires exactly `limit = N`".to_owned());
+    };
+    if arg.name() != Some("limit") || arg.is_spread() {
+        return Err("parallel(...) requires a named `limit = N` argument".to_owned());
+    }
+    let Expr::Literal(arcweft_lang_hir::syntax::expr::Literal::Int { value, .. }) = arg.value()
+    else {
+        return Err("parallel limit must be an integer literal".to_owned());
+    };
+    usize::try_from(*value)
+        .ok()
+        .filter(|value| *value > 0)
+        .ok_or_else(|| "parallel limit must be greater than zero".to_owned())
+}
+
 fn rewrite_flow_ops_pure_calls(
     ops: &mut [FlowOp],
     helpers: &BTreeMap<String, RuntimePureHelperId>,
@@ -746,6 +855,9 @@ fn rewrite_flow_ops_pure_calls(
             FlowOp::For { source, body, .. } => {
                 rewrite_expr_pure_calls(source, helpers);
                 rewrite_flow_ops_pure_calls(body, helpers);
+            }
+            FlowOp::AwaitMany { target, .. } => {
+                rewrite_expr_pure_calls(&mut target.source, helpers);
             }
             FlowOp::LetScope { value, ops, .. } => {
                 rewrite_expr_pure_calls(value, helpers);

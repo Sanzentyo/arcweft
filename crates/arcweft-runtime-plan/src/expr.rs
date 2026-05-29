@@ -90,11 +90,13 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
             receiver,
             method,
             args,
-        } => RuntimeExpr::MethodCall {
-            receiver: Box::new(lower_runtime_expr(receiver)),
-            method: runtime_method_name(method).to_owned(),
-            args: args.iter().map(lower_runtime_call_arg).collect(),
-        },
+        } => lower_runtime_path_method_call(receiver, method, args).unwrap_or_else(|| {
+            RuntimeExpr::MethodCall {
+                receiver: Box::new(lower_runtime_expr(receiver)),
+                method: runtime_method_name(method).to_owned(),
+                args: args.iter().map(lower_runtime_call_arg).collect(),
+            }
+        }),
         Expr::Try { expr }
         | Expr::Await { expr, .. }
         | Expr::Index { target: expr, .. }
@@ -186,7 +188,10 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
             receiver,
             method,
             args,
-        } => lower_strict_method_call_expr(receiver, method, args),
+        } => match lower_strict_path_method_call(receiver, method, args) {
+            Some(lowered) => lowered,
+            None => lower_strict_method_call_expr(receiver, method, args),
+        },
         Expr::DialogueCall { plan, .. } => Ok(lower_dialogue_call_value(plan.as_ref())),
         Expr::Index { .. }
         | Expr::Pipe { .. }
@@ -203,6 +208,56 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
 
 fn runtime_method_name(method: &str) -> &str {
     method.split_once('<').map_or(method, |(name, _)| name)
+}
+
+fn lower_runtime_path_method_call(
+    receiver: &Expr,
+    method: &str,
+    args: &[CallArg],
+) -> Option<RuntimeExpr> {
+    let Expr::Path(receiver) = receiver else {
+        return None;
+    };
+    let method = runtime_method_name(method);
+    if receiver != "path" || !matches!(method, "save" | "asset" | "temp" | "export") {
+        return None;
+    }
+    let [arg] = args else {
+        return None;
+    };
+    if arg.name().is_some() || arg.is_spread() {
+        return None;
+    }
+    Some(RuntimeExpr::Call {
+        callee: format!("path.{method}"),
+        args: vec![lower_runtime_expr(arg.value())],
+    })
+}
+
+fn lower_strict_path_method_call(
+    receiver: &Expr,
+    method: &str,
+    args: &[CallArg],
+) -> Option<Result<RuntimeExpr, String>> {
+    let Expr::Path(receiver) = receiver else {
+        return None;
+    };
+    let method = runtime_method_name(method);
+    if receiver != "path" || !matches!(method, "save" | "asset" | "temp" | "export") {
+        return None;
+    }
+    let [arg] = args else {
+        return None;
+    };
+    if arg.name().is_some() || arg.is_spread() {
+        return None;
+    }
+    Some(
+        lower_runtime_expr_strict(arg.value()).map(|arg| RuntimeExpr::Call {
+            callee: format!("path.{method}"),
+            args: vec![arg],
+        }),
+    )
 }
 
 fn lower_strict_call_expr(callee: &Expr, args: &[CallArg]) -> Result<RuntimeExpr, String> {

@@ -119,6 +119,21 @@ impl Engine {
                         .unwrap_or_default(),
                 });
             }
+            FlowOp::AwaitMany {
+                binding,
+                target,
+                pending,
+            } => {
+                output.effects.line.extend(pending);
+                self.start_await_many_state(
+                    binding,
+                    target,
+                    next.or_else(|| self.fiber.cursor.clone())
+                        .unwrap_or_default(),
+                    output,
+                    pure_backend,
+                );
+            }
             FlowOp::If {
                 condition,
                 then_ops,

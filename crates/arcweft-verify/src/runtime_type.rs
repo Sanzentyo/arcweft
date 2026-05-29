@@ -249,6 +249,7 @@ impl<'a> RuntimeTypeValidator<'a> {
                 self.report.stats.returns += 1;
             }
             FlowOp::Await { .. }
+            | FlowOp::AwaitMany { .. }
             | FlowOp::Effect(_)
             | FlowOp::EnterScope
             | FlowOp::ExitScope

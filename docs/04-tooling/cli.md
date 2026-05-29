@@ -224,15 +224,16 @@ observations, diagnostics, and the final fiber status.
 
 Current runtime lowering is strict and still intentionally bounded. It supports
 the Phase 2.0 headless flow slice: dialogue lines, line task groups, `choice`, `await
-with`, `let`, `let else`, `if`, `if let`, `match`, `loop`, `while`,
-`while let`, `for`, `scope`, dynamic `goto`, dynamic `return`, `out`, ordinary
-call-shaped effects, and line `cancel on` rules. The runtime also executes the
-first generation slice: source handlers can route normalized `RuntimeStepInput`
-source events into bounded source queues, and stream plans can drain
-source/stream queues and emit stream events under a deterministic per-step
-budget. `--value` injects pure `RuntimeValue` bindings into `RuntimeStepInput`; this
-is for deterministic CLI/LSP inspection, not host I/O. Unsupported flow syntax
-fails with a runtime-lowering error instead of being silently dropped.
+with`, bounded `traverse(...).parallel(limit = N)` fanout, `let`, `let else`,
+`if`, `if let`, `match`, `loop`, `while`, `while let`, `for`, `scope`, dynamic
+`goto`, dynamic `return`, `out`, ordinary call-shaped effects, and line
+`cancel on` rules. The runtime also executes the first generation slice: source
+handlers can route normalized `RuntimeStepInput` source events into bounded
+source queues, and stream plans can drain source/stream queues and emit stream
+events under a deterministic per-step budget. `--value` injects pure
+`RuntimeValue` bindings into `RuntimeStepInput`; this is for deterministic
+CLI/LSP inspection, not host I/O. Unsupported flow syntax fails with a
+runtime-lowering error instead of being silently dropped.
 
 ## CLI Entry Dry Run
 

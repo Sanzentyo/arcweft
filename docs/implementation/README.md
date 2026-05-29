@@ -32,6 +32,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - Awaited capability calls now carry typed `HostTaskRequest` data through
   `AwaitTarget` into emitted `TaskSpec`s. The core remains Sans I/O; adapters
   consume the request data and later return deterministic `TaskEvent`s.
+- `Vec<T>.traverse(capability.fn).parallel(limit = N)` is implemented for
+  awaited capability fanout. Runtime-plan lowering emits `FlowOp::AwaitMany`,
+  the VM keeps bounded in-flight task state, duplicate same-request tasks use
+  joinable scheduler keys, and native CLI runs can execute real file reads while
+  reporting `max_in_flight` without recording host absolute paths.
 - `arcw serve --listen` owns a minimal native HTTP adapter in the CLI layer. It
   consumes lowered server route plans and executes matched flows through
   `RuntimeStepMode::Server`; `arcweft-core` remains free of network I/O.

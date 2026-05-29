@@ -564,6 +564,37 @@ flow @flow.loading loading {
 }
 
 #[test]
+fn runtime_plan_lowers_traverse_parallel_to_await_many() {
+    let tree = parse_ok(
+        r#"
+flow @flow.loading loading {
+    let paths = [path.save("a.txt"), path.save("b.txt"), path.save("c.txt")]
+    let values = try await paths.traverse(fs.read_text).parallel(limit = 2) with { pending p => progress.set(p.ratio) }
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("traverse parallel fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("traverse parallel runtime plan lowers");
+    let FlowOp::AwaitMany {
+        binding,
+        target,
+        pending,
+    } = &plan.flows[0].ops[1]
+    else {
+        panic!("expected await many op");
+    };
+
+    assert!(binding.is_some());
+    assert_eq!(target.limit, 2);
+    assert_eq!(target.request.capability.0, "fs");
+    assert_eq!(target.request.operation, "read_text");
+    assert_eq!(target.request.args.len(), 1);
+    assert_eq!(pending.len(), 1);
+}
+
+#[test]
 fn runtime_plan_lowering_preserves_let_and_dynamic_goto() {
     let tree = parse_ok(
         r"

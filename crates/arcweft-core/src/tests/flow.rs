@@ -286,6 +286,118 @@ fn engine_waits_for_await_task_event() {
 }
 
 #[test]
+fn engine_runs_bounded_await_many_tasks_in_source_order() {
+    let mut engine = Engine::new(await_many_read_plan());
+
+    let first = super::runtime_step(&mut engine, RuntimeStepInput::default());
+    assert_eq!(first.requests.tasks.len(), 2);
+    assert_eq!(
+        first.requests.tasks[0].id,
+        TaskId("task.read_many.0".to_owned())
+    );
+    assert_eq!(
+        first.requests.tasks[1].id,
+        TaskId("task.read_many.1".to_owned())
+    );
+    assert!(matches!(
+        engine.fiber().status,
+        FlowFiberStatus::WaitingMany(_)
+    ));
+
+    let second = super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            task_events: vec![
+                ready_event("task.read_many.0", 0, "A"),
+                ready_event("task.read_many.1", 1, "B"),
+            ],
+            ..RuntimeStepInput::default()
+        },
+    );
+    assert_eq!(second.requests.tasks.len(), 1);
+    assert_eq!(
+        second.requests.tasks[0].id,
+        TaskId("task.read_many.2".to_owned())
+    );
+    assert!(matches!(
+        engine.fiber().status,
+        FlowFiberStatus::WaitingMany(_)
+    ));
+
+    let third = super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            task_events: vec![ready_event("task.read_many.2", 2, "C")],
+            ..RuntimeStepInput::default()
+        },
+    );
+    assert_eq!(
+        third.flow_events.last(),
+        Some(&FlowEvent::AwaitReady {
+            need: NeedId("need.read_many".to_owned()),
+            value: "3 item(s)".to_owned(),
+        })
+    );
+
+    let returned = super::runtime_step(&mut engine, RuntimeStepInput::default());
+    assert_eq!(
+        returned.flow_events,
+        vec![FlowEvent::Return {
+            value: "bracket_seq/3".to_owned()
+        }]
+    );
+}
+
+fn await_many_read_plan() -> RuntimePlan {
+    RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![
+                FlowOp::AwaitMany {
+                    binding: Some(RuntimePattern::Ident("values".to_owned())),
+                    target: await_many_read_target(),
+                    pending: Vec::new(),
+                },
+                FlowOp::ReturnExpr(RuntimeExpr::Local("values".to_owned())),
+            ],
+        }],
+        Vec::new(),
+    )
+    .expect("await many plan is valid")
+}
+
+fn await_many_read_target() -> AwaitManyTarget {
+    AwaitManyTarget::new(
+        NeedId("need.read_many".to_owned()),
+        TaskId("task.read_many".to_owned()),
+        RuntimeExpr::BracketSeq(vec![
+            RuntimeExpr::Value(RuntimeValue::String("save/a.txt".to_owned())),
+            RuntimeExpr::Value(RuntimeValue::String("save/b.txt".to_owned())),
+            RuntimeExpr::Value(RuntimeValue::String("save/c.txt".to_owned())),
+        ]),
+        AWAIT_MANY_ITEM_BINDING,
+        2,
+        HostTaskRequestTemplate::new(
+            "fs",
+            "read_text",
+            [HostTaskArgTemplate::positional(RuntimeExpr::Local(
+                AWAIT_MANY_ITEM_BINDING.to_owned(),
+            ))],
+        ),
+    )
+}
+
+fn ready_event(task_id: &str, sequence: u64, value: &str) -> TaskEvent {
+    TaskEvent {
+        logical_epoch: LogicalEpoch(0),
+        task_id: TaskId(task_id.to_owned()),
+        sequence: TaskSequence(sequence),
+        kind: TaskEventKind::Ready(value.to_owned()),
+    }
+}
+
+#[test]
 fn engine_binds_runtime_values_and_gotos_entity_refs() {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.opening".to_owned())),

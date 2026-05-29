@@ -4,7 +4,7 @@ use crate::line_task::{LineOutRequest, LineTaskGroup};
 use crate::pattern::RuntimePattern;
 use crate::source::SourcePlan;
 use crate::stream::StreamPlan;
-use crate::task::{AwaitTarget, NeedId, TaskId};
+use crate::task::{AwaitManyTarget, AwaitTarget, NeedId, TaskId};
 use crate::value::{RuntimeBinding, RuntimeExpr};
 use thiserror::Error;
 
@@ -133,6 +133,11 @@ pub enum FlowOp {
     Await {
         binding: Option<RuntimePattern>,
         target: AwaitTarget,
+        pending: Vec<LineEffectRequest>,
+    },
+    AwaitMany {
+        binding: Option<RuntimePattern>,
+        target: AwaitManyTarget,
         pending: Vec<LineEffectRequest>,
     },
     If {
