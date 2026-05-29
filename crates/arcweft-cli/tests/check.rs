@@ -946,6 +946,7 @@ flow @flow.profile profile {
         !stdout.contains(&std::env::temp_dir().display().to_string()),
         "profile json must not record absolute temp paths: {stdout}"
     );
+    assert_profile_json_summary(&stdout);
 }
 
 #[test]
@@ -2734,7 +2735,101 @@ fn assert_check_json_pipeline_summary(stdout: &str) {
         ],
     );
 
-    let typecheck = &json["typecheck"];
+    assert_typecheck_metrics(&json["typecheck"]);
+    assert_borrow_check_metrics(&json["borrow_check"]);
+}
+
+fn assert_profile_json_summary(stdout: &str) {
+    let json: serde_json::Value =
+        serde_json::from_str(stdout).expect("profile output is structured JSON");
+    assert!(
+        json["source"]
+            .as_str()
+            .is_some_and(|source| source.starts_with("arcweft-cli-profile-json-")),
+        "profile should report only a source label, not an absolute path: {json}"
+    );
+    assert_phase_timings_include(
+        &json["phases"],
+        &[
+            "read_source",
+            "parse",
+            "lint",
+            "lower_hir",
+            "resolve",
+            "readiness",
+            "typecheck",
+            "line_task_lower",
+            "runtime_plan_lower",
+            "runtime_type_validate",
+            "aot_lower",
+            "bytecode_lower",
+            "run",
+        ],
+    );
+
+    let compiler = &json["compiler"];
+    assert_typecheck_metrics(&compiler["typecheck"]);
+    assert_borrow_check_metrics(&compiler["borrow_check"]);
+    assert!(
+        compiler["runtime_type_validation"]["flows"]
+            .as_u64()
+            .is_some_and(|value| value > 0)
+            && compiler["runtime_type_validation"]["ops"]
+                .as_u64()
+                .is_some_and(|value| value > 0)
+            && compiler["runtime_type_validation"]["type_judgments"]
+                .as_u64()
+                .is_some(),
+        "runtime type validation counters should be populated: {compiler}"
+    );
+    assert!(
+        compiler["bytecode"]["flows"]
+            .as_u64()
+            .is_some_and(|value| value > 0)
+            && compiler["bytecode"]["instructions"]
+                .as_u64()
+                .is_some_and(|value| value > 0),
+        "bytecode lowering counters should be populated: {compiler}"
+    );
+    assert!(
+        compiler["aot"]["flows"]
+            .as_u64()
+            .is_some_and(|value| value > 0)
+            && compiler["aot"]["ops"]
+                .as_u64()
+                .is_some_and(|value| value > 0)
+            && compiler["aot"]["linear_dispatch_flows"].as_u64().is_some()
+            && compiler["aot"]["mixed_dispatch_flows"].as_u64().is_some(),
+        "AOT lowering counters should be populated: {compiler}"
+    );
+
+    let runtime = &json["runtime"];
+    assert_eq!(runtime["executor"], "bytecode_vm");
+    assert!(
+        runtime["final_status"]
+            .as_str()
+            .is_some_and(|status| status.contains("Return")),
+        "runtime should finish by returning from the profiled flow: {runtime}"
+    );
+    assert!(
+        runtime["steps"]
+            .as_array()
+            .is_some_and(|steps| steps.len() == 1),
+        "profile runtime should record one requested step: {runtime}"
+    );
+    assert!(
+        runtime["steps"][0]["stats"]["executed_ops"]
+            .as_u64()
+            .is_some_and(|value| value == 2)
+            && runtime["executor_stats"]["aot_fast_path_ops"]
+                .as_u64()
+                .is_some()
+            && runtime["native_io"]["completed_tasks"].as_u64().is_some(),
+        "runtime execution counters should be populated: {runtime}"
+    );
+}
+
+fn assert_typecheck_metrics(typecheck: &serde_json::Value) {
     assert!(
         typecheck["expressions"]
             .as_u64()
@@ -2753,8 +2848,9 @@ fn assert_check_json_pipeline_summary(stdout: &str) {
             .is_some_and(|samples| !samples.is_empty()),
         "typecheck should expose bounded judgment samples: {typecheck}"
     );
+}
 
-    let borrow_check = &json["borrow_check"];
+fn assert_borrow_check_metrics(borrow_check: &serde_json::Value) {
     for key in [
         "binding_groups",
         "bindings",
