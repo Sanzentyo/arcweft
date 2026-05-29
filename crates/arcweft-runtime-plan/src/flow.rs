@@ -27,7 +27,7 @@ use arcweft_lang_hir::model::{
 };
 use arcweft_lang_hir::syntax::ast::{
     choice::ChoiceAction,
-    flow::{AwaitBranchKind, FlowItem, Stmt, StmtMatchArm},
+    flow::{AwaitBranchKind, FlowItem, Stmt, StmtMatchArm, ThreadBlock},
     ids::{EntityRef, EntityRefSyntax},
     items::{EntryItem, EntryKind, FunctionKind},
     pattern::Pattern,
@@ -582,6 +582,7 @@ impl FlowRuntimeLowerer {
                 source: self.lower_runtime_expr(source),
                 body: self.lower_flow_stmt_list(body),
             }],
+            Stmt::Thread(thread) => self.lower_thread_stmt(thread),
             Stmt::Match { expr, arms } => vec![FlowOp::Match {
                 scrutinee: self.lower_runtime_expr(expr),
                 arms: self.lower_stmt_match_arms(arms),
@@ -609,6 +610,21 @@ impl FlowRuntimeLowerer {
                 ops: self.lower_flow_stmt_list(arm.body()),
             })
             .collect()
+    }
+
+    fn lower_thread_stmt(&mut self, thread: &ThreadBlock) -> Vec<FlowOp> {
+        if thread.is_detached() {
+            self.errors.push(RuntimePlanLowerError::new(
+                "detached flow thread runtime lowering requires a checked detach contract"
+                    .to_owned(),
+            ));
+            Vec::new()
+        } else {
+            vec![FlowOp::Thread {
+                name: thread.name().map(str::to_owned),
+                body: self.lower_flow_stmt_list(thread.body()),
+            }]
+        }
     }
 
     fn lower_flow_stmt_list(&mut self, statements: &[Stmt]) -> Vec<FlowOp> {
@@ -709,7 +725,8 @@ fn rewrite_flow_ops_pure_calls(
             FlowOp::Loop { body }
             | FlowOp::LetLoop { body, .. }
             | FlowOp::LoopNext { body }
-            | FlowOp::Scope(body) => rewrite_flow_ops_pure_calls(body, helpers),
+            | FlowOp::Scope(body)
+            | FlowOp::Thread { body, .. } => rewrite_flow_ops_pure_calls(body, helpers),
             FlowOp::While { condition, body } | FlowOp::WhileNext { condition, body } => {
                 rewrite_expr_pure_calls(condition, helpers);
                 rewrite_flow_ops_pure_calls(body, helpers);

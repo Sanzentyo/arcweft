@@ -409,9 +409,12 @@ Current high-confidence state:
   only on `arcweft-core`, accepts `TaskSpec` values, deduplicates in-flight
   `JoinSameKey` work, dispatches by priority and stable submission order,
   records cancellation requests as data, normalizes completed events, and
-  exposes scheduler counters. The CLI native task bridge now routes file tasks
-  and line-plan child task markers through this scheduler before performing
-  adapter-owned completion work.
+  exposes scheduler counters. The CLI native task bridge now routes file tasks,
+  line-plan child task markers, and source-level flow `thread` markers through
+  this scheduler before performing adapter-owned completion work. Joinable flow
+  `thread` blocks lower to a deterministic scheduler marker plus scoped
+  cooperative body execution; detached flow threads remain rejected until the
+  detach contract is checked explicitly.
 - Phase 2.0 headless observation state is implemented for the current runtime
   slice. `arcweft-core` records
   cumulative log, signal, metric, and event observations from emitted

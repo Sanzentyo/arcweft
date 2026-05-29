@@ -123,9 +123,7 @@ impl NativeTaskBridge {
                         capability,
                         operation,
                         ..
-                    } if capability.0 == "line_task" && operation == "run_child" => {
-                        Ok(String::new())
-                    }
+                    } if is_scheduler_marker(capability.0.as_str(), operation) => Ok(String::new()),
                     _ => return None,
                 };
                 let kind = result.map_or_else(
@@ -184,9 +182,13 @@ fn can_complete_task(task: &TaskSpec) -> bool {
             capability,
             operation,
             ..
-        } => capability.0 == "line_task" && operation == "run_child",
+        } => is_scheduler_marker(capability.0.as_str(), operation),
         _ => false,
     }
+}
+
+fn is_scheduler_marker(capability: &str, operation: &str) -> bool {
+    matches!(capability, "line_task" | "flow_thread") && operation == "run_child"
 }
 
 impl From<RuntimeSchedulerStats> for NativeSchedulerStats {

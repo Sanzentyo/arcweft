@@ -5,6 +5,9 @@ use super::{
     RuntimeValue, expr_runtime_label, run_line_task_group_for_input, runtime_value_label,
 };
 use crate::pure::RuntimePureCallBackend;
+use crate::task::{
+    CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
+};
 
 impl Engine {
     // Keep the opcode dispatcher contiguous while the Phase 1 runtime surface is
@@ -290,6 +293,14 @@ impl Engine {
                     Err(error) => self.fail_eval(error, output),
                 }
             }
+            FlowOp::Thread { name, body } => {
+                self.advance_if_needed(next);
+                output
+                    .requests
+                    .tasks
+                    .push(flow_thread_task_spec(name.as_deref()));
+                self.push_scoped_ops(body);
+            }
             FlowOp::Scope(ops) => {
                 self.advance_if_needed(next);
                 self.push_scoped_ops(ops);
@@ -572,4 +583,18 @@ impl Engine {
         }
         true
     }
+}
+
+fn flow_thread_task_spec(name: Option<&str>) -> TaskSpec {
+    let label = name.unwrap_or("anonymous");
+    let id = TaskId(format!("flow.thread.{label}"));
+    TaskSpec::new(
+        id,
+        TaskKey(format!("flow.thread.{label}")),
+        TaskClass::Cpu,
+        TaskPriority(0),
+        CancelScopeId("flow".to_owned()),
+        TaskPolicy::AlwaysStart,
+        HostTaskRequest::custom("flow_thread", "run_child", [label.into()]),
+    )
 }

@@ -186,6 +186,10 @@ pub enum FlowOp {
         source: RuntimeExpr,
         body: Vec<FlowOp>,
     },
+    Thread {
+        name: Option<String>,
+        body: Vec<FlowOp>,
+    },
     Scope(Vec<FlowOp>),
     LetScope {
         pattern: RuntimePattern,

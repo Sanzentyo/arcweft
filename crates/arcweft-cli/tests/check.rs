@@ -232,7 +232,7 @@ flow @flow.main main {
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
-        .arg("4")
+        .arg("5")
         .arg("--pure-backend")
         .arg("jit")
         .arg("--pure-workers")
@@ -1292,6 +1292,49 @@ flow @flow.main main {
             && stdout.contains("\"dispatched\": 1")
             && stdout.contains("\"in_flight\": 0"),
         "run JSON should observe line child task dispatch and completion: {stdout}"
+    );
+}
+
+#[test]
+fn run_json_executes_source_thread_through_scheduler_marker() {
+    let path = temp_arcw(
+        "source-thread-scheduler",
+        r#"
+flow @flow.main main {
+    thread worker {
+        log.info("worker")
+    }
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--mode")
+        .arg("one-op")
+        .arg("--steps")
+        .arg("5")
+        .arg("--json")
+        .output()
+        .expect("arcw run executes source thread marker");
+
+    assert!(
+        output.status.success(),
+        "source thread run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("flow_thread.run_child")
+            && stdout.contains("\"message\": \"worker\"")
+            && stdout.contains("return done")
+            && stdout.contains("\"completed_tasks\": 1")
+            && stdout.contains("\"scheduler\"")
+            && stdout.contains("\"submitted\": 1")
+            && stdout.contains("\"in_flight\": 0"),
+        "run JSON should execute source thread body and observe scheduler marker: {stdout}"
     );
 }
 
