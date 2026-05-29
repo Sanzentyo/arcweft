@@ -894,6 +894,7 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
     let steps = run_profile_phase(&mut phases, "run", || {
         Ok::<Vec<RuntimeStepRunSummary>, ExitCode>(run_runtime_steps(
             plan,
+            Some(selection.path()),
             options.steps,
             options.mode,
             options.max_ops,
@@ -1079,21 +1080,26 @@ fn profile_validate_hir(
 
 fn run_runtime_steps(
     plan: RuntimePlan,
+    source_path: Option<&Path>,
     steps: usize,
     mode: CliRuntimeStepMode,
     max_ops: usize,
     values: &[RuntimeBinding],
 ) -> Vec<RuntimeStepRunSummary> {
     let mut executor = BytecodeVmExecutor::from_runtime_plan(plan);
+    let mut host = source_path.map(NativeTaskBridge::new);
+    let mut task_events = Vec::new();
     let mut summaries = Vec::new();
     for step_index in 0..steps {
         let result = executor.step(
             RuntimeStepInput {
                 bindings: values.to_vec(),
+                task_events: std::mem::take(&mut task_events),
                 ..RuntimeStepInput::default()
             },
             step_options(mode, max_ops),
         );
+        let task_requests = result.output.requests.tasks.clone();
         let summary = RuntimeStepRunSummary::from_result(step_index, result, executor.fiber());
         let done = matches!(
             executor.fiber().status,
@@ -1102,6 +1108,9 @@ fn run_runtime_steps(
         summaries.push(summary);
         if done {
             break;
+        }
+        if let Some(host) = host.as_mut() {
+            task_events = host.complete_tasks(&task_requests);
         }
     }
     summaries
@@ -1768,7 +1777,7 @@ fn script_bench_selection(
         benches: manifest
             .benches
             .iter()
-            .map(|bench| run_script_bench(bench, &plan, options))
+            .map(|bench| run_script_bench(bench, &plan, selection.path(), options))
             .collect(),
     };
     let failed = output.benches.iter().any(|bench| bench.status == "failed");
@@ -1841,6 +1850,7 @@ fn validate_script_bench(bench: &ScriptBench) -> ScriptBenchRunSummary {
 fn run_script_bench(
     bench: &ScriptBench,
     plan: &RuntimePlan,
+    source_path: &Path,
     options: &ScriptBenchOptions,
 ) -> ScriptBenchRunSummary {
     let mut summary = validate_script_bench(bench);
@@ -1850,7 +1860,7 @@ fn run_script_bench(
     let sections = bench
         .sections
         .iter()
-        .map(|section| run_bench_section(section, plan, options))
+        .map(|section| run_bench_section(section, plan, source_path, options))
         .collect::<Vec<_>>();
     let has_measured = sections.iter().any(|section| section.status == "measured");
     if has_measured {
@@ -1863,6 +1873,7 @@ fn run_script_bench(
 fn run_bench_section(
     section: &BenchSection,
     plan: &RuntimePlan,
+    source_path: &Path,
     options: &ScriptBenchOptions,
 ) -> ScriptBenchSectionRunSummary {
     let validated = validate_bench_section(section);
@@ -1875,6 +1886,8 @@ fn run_bench_section(
     let mut elapsed = Vec::new();
     let mut executed_ops = Vec::new();
     let mut line_effects = Vec::new();
+    let mut task_requests = Vec::new();
+    let mut task_events_in = Vec::new();
     let mut diagnostics = 0usize;
     for iteration in 0..options.warmup + options.iterations {
         let mut iteration_plan = plan.clone();
@@ -1882,6 +1895,7 @@ fn run_bench_section(
         let started = Instant::now();
         let steps = run_runtime_steps(
             iteration_plan,
+            Some(source_path),
             options.steps,
             options.mode,
             options.max_ops,
@@ -1894,6 +1908,8 @@ fn run_bench_section(
         elapsed.push(elapsed_ns);
         executed_ops.push(steps.iter().map(|step| step.stats.executed_ops).sum());
         line_effects.push(steps.iter().map(|step| step.stats.line_effects).sum());
+        task_requests.push(steps.iter().map(|step| step.task_requests.len()).sum());
+        task_events_in.push(steps.iter().map(|step| step.stats.task_events_in).sum());
         diagnostics += steps
             .iter()
             .map(|step| step.diagnostics.len())
@@ -1914,6 +1930,8 @@ fn run_bench_section(
             deterministic: ScriptBenchDeterministicSummary {
                 executed_ops_median: median_usize(&mut executed_ops),
                 line_effects_median: median_usize(&mut line_effects),
+                task_requests_median: median_usize(&mut task_requests),
+                task_events_in_median: median_usize(&mut task_events_in),
                 diagnostics,
             },
         },

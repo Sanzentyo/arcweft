@@ -777,6 +777,62 @@ flow @flow.profile profile {
 }
 
 #[test]
+fn profile_json_runs_native_file_tasks_without_absolute_source() {
+    let dir = temp_dir("profile-native-file-task");
+    let source_path = dir.join("profile.arcw");
+    let save_dir = dir.join(".arcweft").join("save");
+    fs::create_dir_all(&save_dir).expect("create virtual save root");
+    fs::write(save_dir.join("input.txt"), "profile-native-ok").expect("seed virtual input");
+    fs::write(
+        &source_path,
+        r#"
+extern capability fs {
+    type FsError
+    fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
+    fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError> effects { fs.write }
+}
+extern capability path { fn save(path: String) -> VirtualPath }
+flow @flow.profile_io profile_io effects { fs.read(save), fs.write(save) } {
+    let text = try await fs.read_text(path.save("input.txt")) with { error e => return "read_failed" }
+    try await fs.write_text(path.save("output.txt"), text) with { error e => return "write_failed" }
+    return text
+}
+"#,
+    )
+    .expect("write native profile fixture");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("profile")
+        .arg(&source_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("5")
+        .arg("--json")
+        .output()
+        .expect("arcw profile runs native file task");
+
+    assert!(
+        output.status.success(),
+        "native file task profile should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"task_events_in\": 1") && stdout.contains("\"source\": \"profile.arcw\""),
+        "profile JSON should include native task event counters without absolute source: {stdout}"
+    );
+    assert!(
+        !stdout.contains(&dir.display().to_string()),
+        "profile JSON must not record absolute temp paths: {stdout}"
+    );
+    assert_eq!(
+        fs::read_to_string(save_dir.join("output.txt")).expect("read virtual output"),
+        "profile-native-ok"
+    );
+}
+
+#[test]
 fn cli_json_selects_cli_entry_and_binds_args() {
     let path = temp_arcw(
         "cli-entry",
@@ -1297,6 +1353,67 @@ flow @flow.bench bench {
             && stdout.contains("\"warmup\": 1")
             && stdout.contains("\"executed_ops_median\": 2"),
         "bench JSON should include headless measurement: {stdout}"
+    );
+}
+
+#[test]
+fn bench_json_measures_native_file_tasks() {
+    let dir = temp_dir("bench-native-file-task");
+    let source_path = dir.join("bench.arcw");
+    let save_dir = dir.join(".arcweft").join("save");
+    fs::create_dir_all(&save_dir).expect("create virtual save root");
+    fs::write(save_dir.join("input.txt"), "bench-native-ok").expect("seed virtual input");
+    fs::write(
+        &source_path,
+        r#"
+extern capability fs {
+    type FsError
+    fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
+    fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError> effects { fs.write }
+}
+extern capability path { fn save(path: String) -> VirtualPath }
+
+bench @bench.native_io {
+    measure iterations = 1 { start(@flow.bench_io) }
+}
+
+flow @flow.bench_io bench_io effects { fs.read(save), fs.write(save) } {
+    let text = try await fs.read_text(path.save("input.txt")) with { error e => return "read_failed" }
+    try await fs.write_text(path.save("output.txt"), text) with { error e => return "write_failed" }
+    return text
+}
+"#,
+    )
+    .expect("write native bench fixture");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&source_path)
+        .arg("--iterations")
+        .arg("1")
+        .arg("--warmup")
+        .arg("0")
+        .arg("--steps")
+        .arg("5")
+        .arg("--json")
+        .output()
+        .expect("arcw bench runs native file task");
+
+    assert!(
+        output.status.success(),
+        "native file task bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"status\": \"measured\"")
+            && stdout.contains("\"task_requests_median\": 2")
+            && stdout.contains("\"task_events_in_median\": 2"),
+        "bench JSON should include native task request/event counters: {stdout}"
+    );
+    assert_eq!(
+        fs::read_to_string(save_dir.join("output.txt")).expect("read virtual output"),
+        "bench-native-ok"
     );
 }
 

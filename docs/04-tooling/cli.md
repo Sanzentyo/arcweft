@@ -275,6 +275,11 @@ are reported as skipped until a player adapter owns those backends.
 `measure` section, accepts `setup`, `measure`, `assert`, and `report` sections,
 measures headless `measure` bodies that name `start(@flow...)`, and reports
 per-bench `measured`, `validated`, `skipped`, or `failed` status in JSON.
+The same native file task bridge used by `arcw run` and `arcw test` is active
+inside measured headless bench iterations, so `fs.read_text`, `fs.read_bytes`,
+`fs.write_text`, and `fs.write_bytes` can participate in correctness and timing
+runs through source-local virtual paths. Bench deterministic counters include
+median task requests and task events consumed in addition to executed VM ops.
 Renderer/audio driving, offline rendering/audio, and allocation counters remain
 adapter work; adapter-only sections are reported as skipped.
 
@@ -293,6 +298,9 @@ for flow and instruction counts. `compiler.runtime_type_validation` reports
 runtime flow op, expression, condition, guard, target, return, and judgment
 counters. Runtime steps include executed op counts, event counts, emitted
 source/stream events, line effects, diagnostics, and queue depths.
+When runtime steps emit supported native file tasks, profile mode feeds the
+completed task events into subsequent VM steps and records the resulting task
+event counters.
 Profile and bench JSON must not persist absolute local source paths.
 
 ## JIT

@@ -338,7 +338,9 @@ Current high-confidence state:
   slice. It completes `fs.read_text`, `fs.read_bytes`, `fs.write_text`, and
   `fs.write_bytes` task requests as VM `TaskEvent` input on the next step,
   resolving virtual paths under source-local `.arcweft/<space>/...` roots while
-  keeping `arcweft-core` Sans I/O.
+  keeping `arcweft-core` Sans I/O. The bridge is used by `arcw run`,
+  `arcw cli`, `arcw test`, `arcw bench`, and `arcw profile` runtime stepping so
+  headless correctness and timing runs can include real file reads/writes.
 - Phase 2.0 headless observation state is implemented for the current runtime
   slice. `arcweft-core` records
   cumulative log, signal, metric, and event observations from emitted
@@ -408,8 +410,11 @@ Current high-confidence state:
   reports pass/fail/skipped JSON. `arcw bench` now validates headless bench
   plans, requires `measure`, accepts `setup`/`measure`/`assert`/`report`
   sections, measures `measure` bodies that name `start(@flow...)`, and reports
-  measured/validated/skipped/failed JSON. Visual, audio, fixture, and allocation
-  execution remain player/headless adapter responsibilities.
+  measured/validated/skipped/failed JSON. Measured bench counters include
+  median task requests and task events consumed, allowing native file I/O
+  sections to be timed and checked without embedding local absolute paths.
+  Visual, audio, fixture, and allocation execution remain player/headless
+  adapter responsibilities.
 - `RuntimeStepResult` now carries deterministic `RuntimeStepStats` for executed
   VM ops, pending queue depth, incoming task/source events, emitted source/stream
   events, line effects, and diagnostics. `arcw profile --json` reports compiler
