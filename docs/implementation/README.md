@@ -344,9 +344,10 @@ Current high-confidence state:
   deterministic bytecode stats. `arcweft-core::aot` provides a pure `AotProgram`
   bundle with flow dispatch-shape and operation-class stats. `BytecodeVmExecutor`
   executes bytecode through the semantic VM, and `AotExecutor` owns the AOT
-  artifact before using the same VM-compatible state machine so VM, bytecode,
-  AOT, and future JIT tiers have a shared conformance boundary before generated
-  dispatch is introduced.
+  artifact before using a core-local linear fast path for supported straight-line
+  flow ops. Unsupported or stateful cases fall back to the same VM-compatible
+  state machine so VM, bytecode, AOT, and future JIT tiers have a shared
+  conformance boundary while generated dispatch is expanded.
 - CLI runtime stepping now routes `arcw run`, `arcw cli`, `arcw test`, and
   `arcw profile` through the selected runtime executor. Run/CLI JSON reports the
   typed `executor = "bytecode_vm"` or `executor = "aot"` tier as an explicit

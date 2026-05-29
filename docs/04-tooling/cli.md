@@ -147,9 +147,9 @@ validation, typecheck, and line-plan lowering path as `arcw check`, then lowers
 checked flows to `arcweft-core::RuntimePlan`, materializes bytecode, and steps
 the selected executor for up to `N` runtime steps. `bytecode-vm` is the semantic
 reference tier. `aot` builds the typed `arcweft-core::aot::AotProgram`
-dispatch-shape artifact and currently runs it through the VM-compatible
-`RuntimeExecutor` state machine so CLI, tests, and benches can compare tier
-selection before generated flow dispatch is introduced. JSON reports
+dispatch-shape artifact and uses the core-local linear fast path for supported
+straight-line flow ops, falling back to the VM-compatible `RuntimeExecutor`
+state machine for unsupported or stateful cases. JSON reports
 `executor = "bytecode_vm"` or `executor = "aot"` so performance and correctness
 runs can confirm the execution tier. If `--entry` or `--flow` is omitted, the first lowered flow is
 used as a deterministic fallback for headless inspection.

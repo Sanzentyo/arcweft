@@ -1,5 +1,6 @@
 use crate::aot::{AotDispatchShape, AotProgram};
 use crate::bytecode::BytecodeProgram;
+use crate::effect::{LineEffectRequest, RuntimeLog};
 use crate::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor, VmExecutor};
 use crate::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
 use crate::step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions};
@@ -75,6 +76,68 @@ fn aot_program_records_nested_dispatch_shape() {
     assert_eq!(program.stats().branch_ops, 1);
     assert_eq!(program.stats().await_ops, 1);
     assert_eq!(program.stats().mixed_dispatch_flows, 1);
+}
+
+#[test]
+fn aot_executor_uses_fast_path_for_supported_linear_flow() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![
+                FlowOp::Noop,
+                FlowOp::Effect(LineEffectRequest::Log(RuntimeLog {
+                    level: "info".to_owned(),
+                    message: "fast".to_owned(),
+                    fields: Vec::new(),
+                })),
+                FlowOp::Return("done".to_owned()),
+            ],
+        }],
+        Vec::new(),
+    )
+    .expect("plan is valid");
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::Drain,
+        budget: RuntimeStepBudget { max_ops: 8 },
+    };
+    let mut vm = VmExecutor::new(plan.clone());
+    let mut aot = AotExecutor::new(plan);
+
+    let vm_result = vm.step(RuntimeStepInput::default(), options);
+    let aot_result = aot.step(RuntimeStepInput::default(), options);
+
+    assert_eq!(aot_result, vm_result);
+    assert_eq!(aot.fast_path_ops(), 3);
+}
+
+#[test]
+fn aot_executor_falls_back_for_branching_flow() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![FlowOp::If {
+                condition: crate::value::RuntimeExpr::Value(crate::value::RuntimeValue::Bool(true)),
+                then_ops: vec![FlowOp::Return("then".to_owned())],
+                else_ops: vec![FlowOp::Return("else".to_owned())],
+            }],
+        }],
+        Vec::new(),
+    )
+    .expect("plan is valid");
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::Drain,
+        budget: RuntimeStepBudget { max_ops: 8 },
+    };
+    let mut vm = VmExecutor::new(plan.clone());
+    let mut aot = AotExecutor::new(plan);
+
+    let vm_result = vm.step(RuntimeStepInput::default(), options);
+    let aot_result = aot.step(RuntimeStepInput::default(), options);
+
+    assert_eq!(aot_result, vm_result);
+    assert_eq!(aot.fast_path_ops(), 0);
 }
 
 #[test]

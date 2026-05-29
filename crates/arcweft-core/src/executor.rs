@@ -30,6 +30,7 @@ pub struct VmExecutor {
 pub struct AotExecutor {
     program: AotProgram,
     vm: VmExecutor,
+    fast_path_ops: usize,
 }
 
 /// Runtime executor backed by a bytecode bundle.
@@ -63,12 +64,20 @@ impl AotExecutor {
     pub fn new(plan: RuntimePlan) -> Self {
         let program = AotProgram::from_runtime_plan(plan);
         let vm = VmExecutor::new(program.plan().clone());
-        Self { program, vm }
+        Self {
+            program,
+            vm,
+            fast_path_ops: 0,
+        }
     }
 
     pub fn from_program(program: AotProgram) -> Self {
         let vm = VmExecutor::new(program.plan().clone());
-        Self { program, vm }
+        Self {
+            program,
+            vm,
+            fast_path_ops: 0,
+        }
     }
 
     pub const fn program(&self) -> &AotProgram {
@@ -77,6 +86,10 @@ impl AotExecutor {
 
     pub const fn vm(&self) -> &VmExecutor {
         &self.vm
+    }
+
+    pub const fn fast_path_ops(&self) -> usize {
+        self.fast_path_ops
     }
 
     pub fn into_program(self) -> AotProgram {
@@ -122,6 +135,14 @@ impl RuntimeExecutor for VmExecutor {
 
 impl RuntimeExecutor for AotExecutor {
     fn step(&mut self, input: RuntimeStepInput, options: RuntimeStepOptions) -> RuntimeStepResult {
+        if let Some(result) =
+            self.vm
+                .engine_mut()
+                .step_aot_linear(&self.program, input.clone(), options)
+        {
+            self.fast_path_ops += result.stats.executed_ops;
+            return result;
+        }
         self.vm.step(input, options)
     }
 

@@ -27,6 +27,7 @@ use crate::value::{
     expr_runtime_label, runtime_value_label,
 };
 use std::collections::{BTreeMap, VecDeque};
+pub mod aot;
 pub mod eval;
 pub mod flow;
 pub mod line;
