@@ -352,7 +352,7 @@ flow @flow.title title {}
     typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("score", TypeKind::Int)
+            .with_symbol("score", TypeKind::I64)
             .with_symbol("scene", TypeKind::Named("MemoScope".to_owned())),
     )
     .expect("typecheck succeeds");

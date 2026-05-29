@@ -721,7 +721,7 @@ fn load_score() -> i32 {
     let env = TypeCheckEnv::new().with_function(
         "read_score",
         TypeKind::Result {
-            ok: Box::new(TypeKind::Int),
+            ok: Box::new(TypeKind::I32),
             error: Box::new(TypeKind::Named("ScoreError".to_owned())),
         },
     );

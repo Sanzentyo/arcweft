@@ -645,7 +645,7 @@ flow @flow.opening opening {
         &TypeCheckEnv::new()
             .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
             .with_symbol("textbox_ready", TypeKind::Bool)
-            .with_symbol("route_count", TypeKind::Int),
+            .with_symbol("route_count", TypeKind::I64),
     )
     .expect("typecheck succeeds");
 }

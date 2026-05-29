@@ -2,7 +2,7 @@
 
 use super::helpers::{
     array_len_matches, array_repeat_len_label, collection_index_type, expr_path_label,
-    first_arg_type, is_drop_name, let_else_bindings, literal_type, result_ok_type,
+    first_arg_type, is_drop_name, let_else_bindings, literal_type_with_expected, result_ok_type,
     well_known_capacity_method_type, well_known_field_type, well_known_runtime_method_type,
 };
 use super::{
@@ -33,7 +33,7 @@ impl TypeChecker<'_> {
     ) -> Option<TypeKind> {
         self.stats.expressions += 1;
         match expr {
-            Expr::Literal(literal) => Some(literal_type(literal)),
+            Expr::Literal(literal) => Some(literal_type_with_expected(literal, expected)),
             Expr::EntityRef(entity) => self.check_entity_ref_expr(entity),
             Expr::LifetimePath { key, optional } => self.check_lifetime_path_expr(key, *optional),
             Expr::Path(path) => self.check_path_expr(path),
@@ -76,7 +76,7 @@ impl TypeChecker<'_> {
             Expr::RecordLiteral(fields) => Some(self.check_record_literal_expr(fields)),
             Expr::Binary { lhs, op, rhs } => self.check_binary_expr(lhs, *op, rhs),
             Expr::Closure { params, body } => self.check_closure_expr(params, body),
-            Expr::Unary { op, expr } => Some(self.check_unary_expr(*op, expr)),
+            Expr::Unary { op, expr } => Some(self.check_unary_expr(*op, expr, expected)),
             Expr::Block { statements, value } => {
                 self.check_block_expr(statements, value.as_deref())
             }
@@ -127,7 +127,7 @@ impl TypeChecker<'_> {
             .map(|param| {
                 (
                     param.clone(),
-                    self.locals.insert(param.clone(), TypeKind::Int),
+                    self.locals.insert(param.clone(), TypeKind::I64),
                 )
             })
             .collect::<Vec<_>>();
@@ -327,7 +327,7 @@ impl TypeChecker<'_> {
             ));
             "_".to_owned()
         });
-        self.expect_expr_type(len, &TypeKind::Int, "array repeat length");
+        self.expect_expr_type(len, &TypeKind::I64, "array repeat length");
 
         if let Some(TypeKind::Array { item, len }) = expected {
             if len != &len_label && len_label != "_" {
@@ -506,15 +506,19 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_unary_expr(&mut self, op: UnaryOp, expr: &Expr) -> TypeKind {
+    fn check_unary_expr(
+        &mut self,
+        op: UnaryOp,
+        expr: &Expr,
+        expected: Option<&TypeKind>,
+    ) -> TypeKind {
         match op {
             UnaryOp::Not => {
                 self.expect_expr_type(expr, &TypeKind::Bool, "not operand");
                 TypeKind::Bool
             }
-            UnaryOp::Neg => match self.check_expr(expr) {
-                Some(TypeKind::Int) => TypeKind::Int,
-                Some(TypeKind::Float) => TypeKind::Float,
+            UnaryOp::Neg => match self.check_expr_with_expected(expr, expected) {
+                Some(ty) if ty.is_integer() || ty.is_float() => ty,
                 Some(TypeKind::Duration) => TypeKind::Duration,
                 other => {
                     self.errors.push(TypeCheckError::new(format!(
@@ -710,11 +714,22 @@ impl TypeChecker<'_> {
         statements: &[Stmt],
         value: Option<&Expr>,
     ) -> Option<TypeKind> {
+        self.check_block_expr_with_expected(statements, value, None)
+    }
+
+    pub(super) fn check_block_expr_with_expected(
+        &mut self,
+        statements: &[Stmt],
+        value: Option<&Expr>,
+        expected: Option<&TypeKind>,
+    ) -> Option<TypeKind> {
         let outer_locals = self.locals.clone();
         for stmt in statements {
             self.check_stmt(stmt);
         }
-        let ty = value.map_or(Some(TypeKind::Unit), |value| self.check_expr(value));
+        let ty = value.map_or(Some(TypeKind::Unit), |value| {
+            self.check_expr_with_expected(value, expected)
+        });
         self.reject_borrow_escape(ty.as_ref(), "block final value");
         self.locals = outer_locals;
         ty
@@ -817,7 +832,7 @@ impl TypeChecker<'_> {
             if let Some(guard) = arm.guard() {
                 self.expect_expr_type(guard, &TypeKind::Bool, "match arm guard");
             }
-            let arm_type = self.check_expr(arm.value());
+            let arm_type = self.check_expr_with_expected(arm.value(), inferred.as_ref());
             self.locals = outer_locals;
             match (&inferred, arm_type) {
                 (None, Some(ty)) => inferred = Some(ty),
@@ -937,10 +952,11 @@ impl TypeChecker<'_> {
             BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem => {
                 if lhs_type == Some(TypeKind::Duration) && rhs_type == Some(TypeKind::Duration) {
                     Some(TypeKind::Duration)
-                } else if lhs_type == Some(TypeKind::Int) && rhs_type == Some(TypeKind::Int) {
-                    Some(TypeKind::Int)
-                } else if lhs_type == Some(TypeKind::Float) && rhs_type == Some(TypeKind::Float) {
-                    Some(TypeKind::Float)
+                } else if matches!(
+                    (&lhs_type, &rhs_type),
+                    (Some(lhs), Some(rhs)) if lhs == rhs && (lhs.is_integer() || lhs.is_float())
+                ) {
+                    lhs_type
                 } else {
                     self.errors.push(TypeCheckError::new(format!(
                         "arithmetic expression operands must have a supported numeric or Duration type, found {lhs_type:?} and {rhs_type:?}"

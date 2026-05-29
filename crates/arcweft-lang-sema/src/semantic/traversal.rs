@@ -536,8 +536,8 @@ fn expr_type_label(expr: &Expr) -> String {
     match expr {
         Expr::Literal(Literal::String(_)) => "String".to_owned(),
         Expr::Literal(Literal::Char { .. }) => "Char".to_owned(),
-        Expr::Literal(Literal::Int(_)) => "Int".to_owned(),
-        Expr::Literal(Literal::Float(_)) => "Float".to_owned(),
+        Expr::Literal(Literal::Int(_)) => "i64".to_owned(),
+        Expr::Literal(Literal::Float(_)) => "f64".to_owned(),
         Expr::Literal(Literal::Bool(_)) => "Bool".to_owned(),
         Expr::Literal(Literal::Duration { .. }) => "Duration".to_owned(),
         Expr::Tuple(items) => {

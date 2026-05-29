@@ -135,7 +135,7 @@ extern capability cli {
     fn stderr(text: String)
         effects { stdio.write }
 
-    fn exit(code: Int) -> Never
+    fn exit(code: i32) -> Never
         effects { process.exit }
 }
 ```

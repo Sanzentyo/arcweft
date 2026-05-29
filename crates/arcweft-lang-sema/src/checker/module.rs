@@ -85,12 +85,14 @@ impl TypeChecker<'_> {
                 self.effect_capabilities = effect_snapshot;
                 continue;
             }
-            let actual = self.check_function_body_expr(function.statements(), function.value());
+            let expected_return = function.signature().return_type().map(type_ref_kind);
+            let actual = self.check_function_body_expr(
+                function.statements(),
+                function.value(),
+                expected_return.as_ref(),
+            );
             self.effect_capabilities = effect_snapshot;
-            if let (Some(expected), Some(actual)) = (
-                function.signature().return_type().map(type_ref_kind),
-                actual,
-            ) {
+            if let (Some(expected), Some(actual)) = (expected_return, actual) {
                 if !types_compatible(&expected, &actual) {
                     self.errors.push(TypeCheckError::new(format!(
                         "function `{}` returns {expected:?}, but body has {actual:?}",
@@ -109,13 +111,14 @@ impl TypeChecker<'_> {
         &mut self,
         statements: &[Stmt],
         value: Option<&Expr>,
+        expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
         if value.is_some() {
-            return self.check_block_expr(statements, value);
+            return self.check_block_expr_with_expected(statements, value, expected);
         }
         match statements.split_last() {
             Some((Stmt::Return(expr), statements)) => {
-                self.check_tail_return_block_expr(statements, expr)
+                self.check_tail_return_block_expr_with_expected(statements, expr, expected)
             }
             _ => self.check_block_expr(statements, None),
         }

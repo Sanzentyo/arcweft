@@ -51,6 +51,22 @@ flow @flow.borrow_stats borrow_stats {
 }
 
 #[test]
+fn numeric_primitive_types_keep_explicit_widths() {
+    assert_eq!(TypeKind::primitive_name("i32"), Some(TypeKind::I32));
+    assert_eq!(TypeKind::primitive_name("i64"), Some(TypeKind::I64));
+    assert_eq!(TypeKind::primitive_name("usize"), Some(TypeKind::USize));
+    assert_eq!(TypeKind::primitive_name("f32"), Some(TypeKind::F32));
+    assert_ne!(
+        TypeKind::primitive_name("i32"),
+        TypeKind::primitive_name("usize")
+    );
+    assert_ne!(
+        TypeKind::primitive_name("f32"),
+        TypeKind::primitive_name("f64")
+    );
+}
+
+#[test]
 fn typechecks_explicit_route_parameter_bindings() {
     let tree = parse_ok(
         r#"
@@ -112,7 +128,7 @@ flow @flow.trying trying {
     let hir = lower_to_hir(&tree).expect("bad try fixture lowers");
     let errors = typecheck_hir(
         &hir,
-        &TypeCheckEnv::new().with_symbol("score", TypeKind::Int),
+        &TypeCheckEnv::new().with_symbol("score", TypeKind::I64),
     )
     .expect_err("try on non-result expression is rejected");
     assert!(errors.iter().any(|error| {
@@ -154,7 +170,7 @@ flow @flow.branching branching {
     let hir = lower_to_hir(&tree).expect("unary not fixture lowers");
     let errors = typecheck_hir(
         &hir,
-        &TypeCheckEnv::new().with_symbol("state.count", TypeKind::Int),
+        &TypeCheckEnv::new().with_symbol("state.count", TypeKind::I64),
     )
     .expect_err("unary not on non-bool is rejected");
 
@@ -214,7 +230,7 @@ flow @flow.opening opening {
         .with_symbol("end", TypeKind::Duration)
         .with_symbol(
             "state.affection",
-            TypeKind::Named("OrderedMap<Ref<Character>, Int>".to_owned()),
+            TypeKind::Named("OrderedMap<Ref<Character>, i64>".to_owned()),
         )
         .with_function("show", TypeKind::Unit)
         .with_function("fmt", TypeKind::DisplayText)
@@ -236,8 +252,8 @@ flow @flow.opening opening {
             TypeKind::Named("StageCue".to_owned()),
         )
         .with_index(
-            TypeKind::Named("OrderedMap<Ref<Character>, Int>".to_owned()),
-            TypeKind::Int,
+            TypeKind::Named("OrderedMap<Ref<Character>, i64>".to_owned()),
+            TypeKind::I64,
         );
 
     typecheck_hir(&hir, &env).expect("edge fixture typechecks");
@@ -320,13 +336,13 @@ flow @flow.opening opening {
 #[test]
 fn type_ref_keeps_explicit_map_kind() {
     let ordered = crate::checker::helpers::type_ref_kind(
-        &parse_type_ref("OrderedMap<Ref<Character>, Int>").expect("ordered map type parses"),
+        &parse_type_ref("OrderedMap<Ref<Character>, i64>").expect("ordered map type parses"),
     );
     let sorted = crate::checker::helpers::type_ref_kind(
-        &parse_type_ref("SortedMap<Ref<Character>, Int>").expect("sorted map type parses"),
+        &parse_type_ref("SortedMap<Ref<Character>, i64>").expect("sorted map type parses"),
     );
     let btree = crate::checker::helpers::type_ref_kind(
-        &parse_type_ref("BTreeMap<Ref<Character>, Int>").expect("btree map type parses"),
+        &parse_type_ref("BTreeMap<Ref<Character>, i64>").expect("btree map type parses"),
     );
     assert!(matches!(
         ordered,
@@ -592,7 +608,7 @@ flow @flow.thread_expr thread_expr {
     validate_typecheck_ready(&hir).expect("thread expression body is structured");
     let env = TypeCheckEnv::new()
         .with_symbol("state", TypeKind::Named("GameState".to_owned()))
-        .with_function("route_score", TypeKind::Int);
+        .with_function("route_score", TypeKind::I64);
     typecheck_hir(&hir, &env).expect("thread expression typechecks");
 }
 

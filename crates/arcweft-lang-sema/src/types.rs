@@ -42,8 +42,20 @@ pub enum EntityKind {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum TypeKind {
     Bool,
-    Int,
-    Float,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    ISize,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    USize,
+    F32,
+    F64,
     String,
     Char,
     TextCluster,
@@ -103,6 +115,73 @@ pub enum TypeKind {
     Tuple(Vec<TypeKind>),
     Unit,
     Never,
+}
+
+impl TypeKind {
+    /// Default concrete integer type used while unsuffixed literal inference is
+    /// still being tightened.
+    #[must_use]
+    pub const fn default_integer() -> Self {
+        Self::I64
+    }
+
+    /// Default concrete float type used while unsuffixed literal inference is
+    /// still being tightened.
+    #[must_use]
+    pub const fn default_float() -> Self {
+        Self::F64
+    }
+
+    #[must_use]
+    pub const fn is_integer(&self) -> bool {
+        matches!(
+            self,
+            Self::I8
+                | Self::I16
+                | Self::I32
+                | Self::I64
+                | Self::I128
+                | Self::ISize
+                | Self::U8
+                | Self::U16
+                | Self::U32
+                | Self::U64
+                | Self::U128
+                | Self::USize
+        )
+    }
+
+    #[must_use]
+    pub const fn is_float(&self) -> bool {
+        matches!(self, Self::F32 | Self::F64)
+    }
+
+    #[must_use]
+    pub fn primitive_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "bool" | "Bool" => Self::Bool,
+            "i8" => Self::I8,
+            "i16" => Self::I16,
+            "i32" => Self::I32,
+            "i64" => Self::I64,
+            "i128" => Self::I128,
+            "isize" => Self::ISize,
+            "u8" => Self::U8,
+            "u16" => Self::U16,
+            "u32" => Self::U32,
+            "u64" => Self::U64,
+            "u128" => Self::U128,
+            "usize" => Self::USize,
+            "f32" => Self::F32,
+            "f64" => Self::F64,
+            "String" => Self::String,
+            "char" | "Char" => Self::Char,
+            "TextCluster" => Self::TextCluster,
+            "Duration" => Self::Duration,
+            "()" | "Unit" => Self::Unit,
+            _ => return None,
+        })
+    }
 }
 
 /// Deterministic map family preserved by semantic type checking.

@@ -76,10 +76,27 @@ pub(super) fn literal_type(literal: &Literal) -> TypeKind {
     match literal {
         Literal::String(_) => TypeKind::String,
         Literal::Char { .. } => TypeKind::Char,
-        Literal::Int(_) => TypeKind::Int,
-        Literal::Float(_) => TypeKind::Float,
+        Literal::Int(_) => TypeKind::default_integer(),
+        Literal::Float(_) => TypeKind::default_float(),
         Literal::Bool(_) => TypeKind::Bool,
         Literal::Duration { .. } => TypeKind::Duration,
+    }
+}
+
+pub(super) fn literal_type_with_expected(
+    literal: &Literal,
+    expected: Option<&TypeKind>,
+) -> TypeKind {
+    match literal {
+        Literal::Int(_) => expected
+            .filter(|ty| ty.is_integer())
+            .cloned()
+            .unwrap_or_else(TypeKind::default_integer),
+        Literal::Float(_) => expected
+            .filter(|ty| ty.is_float())
+            .cloned()
+            .unwrap_or_else(TypeKind::default_float),
+        _ => literal_type(literal),
     }
 }
 
@@ -161,8 +178,8 @@ pub(super) fn well_known_field_type(field: &str) -> Option<TypeKind> {
         "route_override" => TypeKind::Option(Box::new(TypeKind::Ref(EntityKind::Flow))),
         "target" => TypeKind::Ref(EntityKind::Flow),
         "enabled" | "visible" | "ready" => TypeKind::Bool,
-        "order" | "count" | "index" => TypeKind::Int,
-        "ratio" => TypeKind::Float,
+        "order" | "count" | "index" => TypeKind::I64,
+        "ratio" => TypeKind::F64,
         "stage" => TypeKind::Named("StageApi".to_owned()),
         "label" | "disabled_reason" | "badge" | "hotkey" | "text" => TypeKind::String,
         _ => return None,
@@ -319,7 +336,7 @@ pub(super) fn option_payload_type(expr_type: Option<&TypeKind>) -> Option<TypeKi
             Some(TypeKind::Ref(EntityKind::Flow))
         }
         Some(TypeKind::Named(name)) if name == "Option<Bool>" => Some(TypeKind::Bool),
-        Some(TypeKind::Named(name)) if name == "Option<Int>" => Some(TypeKind::Int),
+        Some(TypeKind::Named(name)) if name == "Option<i64>" => Some(TypeKind::I64),
         Some(TypeKind::Named(name)) if name == "Option<String>" => Some(TypeKind::String),
         _ => None,
     }
@@ -387,7 +404,7 @@ pub(super) fn well_known_runtime_method_type(name: &str) -> Option<TypeKind> {
         });
     }
     if name == "len" {
-        return Some(TypeKind::Int);
+        return Some(TypeKind::I64);
     }
     (name.starts_with("log.")
         || matches!(
@@ -553,17 +570,7 @@ pub(super) fn is_placeholder_type(ty: &TypeKind) -> bool {
 }
 
 pub(super) fn named_type_label(name: &str) -> TypeKind {
-    match name {
-        "bool" | "Bool" => TypeKind::Bool,
-        "i32" | "i64" | "usize" | "Int" => TypeKind::Int,
-        "f32" | "f64" | "Float" => TypeKind::Float,
-        "String" => TypeKind::String,
-        "char" | "Char" => TypeKind::Char,
-        "TextCluster" => TypeKind::TextCluster,
-        "Duration" => TypeKind::Duration,
-        "()" | "Unit" => TypeKind::Unit,
-        other => TypeKind::Named(other.to_owned()),
-    }
+    TypeKind::primitive_name(name).unwrap_or_else(|| TypeKind::Named(name.to_owned()))
 }
 
 pub(super) fn unify_loop_break_types(types: &[TypeKind]) -> Option<TypeKind> {

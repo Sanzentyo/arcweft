@@ -145,19 +145,19 @@ ensures no_effect network.request
     );
     let hir = lower_to_hir(&tree).expect("contract typecheck fixture lowers");
     let env = TypeCheckEnv::new()
-        .with_symbol("delta", TypeKind::Int)
-        .with_symbol("progress", TypeKind::Float)
+        .with_symbol("delta", TypeKind::I64)
+        .with_symbol("progress", TypeKind::F64)
         .with_symbol(
             "result.affection",
-            TypeKind::Named("OrderedMap<Character, Int>".to_owned()),
+            TypeKind::Named("OrderedMap<Character, i64>".to_owned()),
         )
         .with_symbol("character", TypeKind::Ref(EntityKind::Character))
         .with_symbol("asset.read", TypeKind::Named("Effect".to_owned()))
         .with_symbol("ui.show", TypeKind::Named("Effect".to_owned()))
         .with_symbol("network.request", TypeKind::Named("Effect".to_owned()))
         .with_index(
-            TypeKind::Named("OrderedMap<Character, Int>".to_owned()),
-            TypeKind::Int,
+            TypeKind::Named("OrderedMap<Character, i64>".to_owned()),
+            TypeKind::I64,
         );
 
     typecheck_hir(&hir, &env).expect("contract expressions typecheck");

@@ -113,7 +113,7 @@ impl TypeChecker<'_> {
             self.expect_expr_type(visible, &TypeKind::Bool, "choice visible");
         }
         if let Some(order) = option.order() {
-            self.expect_expr_type(order, &TypeKind::Int, "choice order");
+            self.expect_expr_type(order, &TypeKind::I64, "choice order");
         }
         if let Some(hotkey) = option.hotkey() {
             self.check_expr(hotkey);

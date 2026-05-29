@@ -101,7 +101,7 @@ flow @flow.alice_intro alice_intro {
     let env = TypeCheckEnv::new()
         .with_symbol(
             "state.affection",
-            TypeKind::Named("OrderedMap<Character, Int>".to_owned()),
+            TypeKind::Named("OrderedMap<Character, i64>".to_owned()),
         )
         .with_symbol("state.inventory", TypeKind::Named("Inventory".to_owned()))
         .with_method(
@@ -110,8 +110,8 @@ flow @flow.alice_intro alice_intro {
             TypeKind::Bool,
         )
         .with_index(
-            TypeKind::Named("OrderedMap<Character, Int>".to_owned()),
-            TypeKind::Int,
+            TypeKind::Named("OrderedMap<Character, i64>".to_owned()),
+            TypeKind::I64,
         );
     typecheck_hir(&hir, &env).expect("scope expression typechecks");
 }
@@ -337,7 +337,7 @@ flow @flow.validate validate {
     let hir = lower_to_hir(&tree).expect("bail and ensure fixture lowers");
     validate_typecheck_ready(&hir).expect("bail and ensure are typecheck-ready");
     let env = TypeCheckEnv::new()
-        .with_symbol("score", TypeKind::Int)
+        .with_symbol("score", TypeKind::I64)
         .with_symbol("valid", TypeKind::Bool);
     typecheck_hir(&hir, &env).expect("bail and ensure typecheck");
 }
@@ -438,7 +438,7 @@ flow @flow.title title {}
         &hir,
         &TypeCheckEnv::new()
             .with_symbol("frames", TypeKind::Named("Stream".to_owned()))
-            .with_function("rms", TypeKind::Int),
+            .with_function("rms", TypeKind::I64),
     )
     .expect("typecheck succeeds");
 }
@@ -496,7 +496,7 @@ flow @flow.validate validate {
     let hir = lower_to_hir(&tree).expect("non-bool ensure fixture lowers");
     let errors = typecheck_hir(
         &hir,
-        &TypeCheckEnv::new().with_symbol("score", TypeKind::Int),
+        &TypeCheckEnv::new().with_symbol("score", TypeKind::I64),
     )
     .expect_err("non-bool ensure condition is rejected");
 
@@ -732,7 +732,7 @@ flow @flow.branching branching {
                 "state.route_override",
                 TypeKind::Named("Option<Ref<Flow>>".to_owned()),
             )
-            .with_symbol("route_count", TypeKind::Int),
+            .with_symbol("route_count", TypeKind::I64),
     )
     .expect_err("non-bool value if-let guard is rejected");
     assert!(errors.iter().any(|error| {
@@ -889,7 +889,7 @@ flow @flow.branching branching {
             "state.route_override",
             TypeKind::Named("Option<Ref<Flow>>".to_owned()),
         )
-        .with_symbol("route_count", TypeKind::Int);
+        .with_symbol("route_count", TypeKind::I64);
     let errors = typecheck_hir(&hir, &env).expect_err("non-bool if-let guard is rejected");
     assert!(
         errors
@@ -950,7 +950,7 @@ flow @flow.loading loading {
     let hir = lower_to_hir(&tree).expect("non-bool while fixture lowers");
     let errors = typecheck_hir(
         &hir,
-        &TypeCheckEnv::new().with_symbol("loading_count", TypeKind::Int),
+        &TypeCheckEnv::new().with_symbol("loading_count", TypeKind::I64),
     )
     .expect_err("non-bool while condition is rejected");
     assert!(errors.iter().any(|error| {
@@ -1373,7 +1373,7 @@ flow @flow.branching branching {
             "state.route_override",
             TypeKind::Named("Option<Ref<Flow>>".to_owned()),
         )
-        .with_symbol("route_count", TypeKind::Int);
+        .with_symbol("route_count", TypeKind::I64);
     let errors = typecheck_hir(&hir, &env).expect_err("non-bool match guard is rejected");
     assert!(errors.iter().any(|error| {
         error
