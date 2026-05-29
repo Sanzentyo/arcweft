@@ -197,10 +197,12 @@ OutStmt        := 'out' Expr
 ```
 
 `with:` and flat `=== with ===` fences are sugar for the same line-plan model as
-`with { ... }`. Flat `=== line ... ===` / `=== scope ... ===` / `=== thread ... ===`
-fences are dialogue authoring sugar and lower to the corresponding canonical
-line, scope, or task block. A bare `{ ... }` after a dialogue content block is an
-unnamed `scope` statement, not a line plan.
+`with { ... }`. Inside a line plan, flat fences such as `=== start ===` and
+`=== on mark(.name) ===` are block sugar for the same item heads as `start { ... }`
+and `on mark(.name) { ... }`. Flat `=== line ... ===` / `=== scope ... ===` /
+`=== thread ... ===` fences are dialogue authoring sugar and lower to the
+corresponding canonical line, scope, or task block. A bare `{ ... }` after a
+dialogue content block is an unnamed `scope` statement, not a line plan.
 
 In generic expression parsing, `target[expr]` is always an index/postfix
 expression. Dialogue content brackets are recognized only in dialogue-capable

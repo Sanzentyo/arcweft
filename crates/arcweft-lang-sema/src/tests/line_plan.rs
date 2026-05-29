@@ -742,6 +742,63 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn line_plan_flat_blocks_share_block_item_parsing() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    alice:
+        合図。[mark .release_focus][p]
+    with:
+        === init ===
+        setup_line()
+        === /init ===
+        === on mark(.release_focus) ===
+        release_focus()
+        === /on ===
+        === cancel on input(.SkipLine) ===
+        continue
+        === /cancel ===
+        === start ===
+        === together ===
+        cue_move()
+        cue_face()
+        === /together ===
+        === /start ===
+}
+",
+    );
+
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
+        panic!("expected speaker line");
+    };
+    let plan = line.plan().expect("line plan");
+    assert!(matches!(&plan.items()[0], LinePlanItem::Init(statements) if statements.len() == 1));
+    assert!(matches!(&plan.items()[1], LinePlanItem::On { body, .. } if body.len() == 1));
+    assert!(matches!(&plan.items()[2], LinePlanItem::CancelRule(rule) if rule.action().len() == 1));
+    assert!(matches!(
+        &plan.items()[3],
+        LinePlanItem::StartGroup(start_items)
+            if matches!(start_items.as_slice(), [LinePlanItem::TogetherGroup(together_items)] if together_items.len() == 2)
+    ));
+
+    let hir = lower_to_hir(&tree).expect("flat line plan blocks lower");
+    validate_typecheck_ready(&hir).expect("flat line plan blocks are typecheck-ready");
+    typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new()
+            .with_symbol("alice", TypeKind::Ref(EntityKind::Character))
+            .with_function("setup_line", TypeKind::Unit)
+            .with_function("release_focus", TypeKind::Unit)
+            .with_function("cue_move", TypeKind::Unit)
+            .with_function("cue_face", TypeKind::Unit),
+    )
+    .expect("typecheck succeeds");
+}
+
+#[test]
 fn line_plan_memo_keeps_typed_options() {
     let tree = parse_ok(
         r"

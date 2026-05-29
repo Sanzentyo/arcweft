@@ -318,6 +318,12 @@ with {
 
 Line plan statements are scoped to the line and cannot leak variables outward.
 
+Line-plan block heads may use the canonical brace form, indentation sugar, or
+flat fence sugar. For example, `start { ... }`, `start:`, and
+`=== start === ... === /start ===` all lower through the same line-plan item
+model. The same rule applies to `init`, `thread`, `on mark(...)`,
+`cancel on ...`, `defer on ...`, `start`, `together`, and `scope` block items.
+
 `init` runs before reveal begins. `thread name` creates a line-scoped child task
 owned by the line task group; it is a Sans I/O runtime task, not an OS thread.
 Scoped cleanup uses `defer { ... }` on the current runtime scope. Line-wide

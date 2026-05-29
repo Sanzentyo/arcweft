@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::ast::common::TextRange;
 use crate::ast::flow::{Stmt, ThreadBlock, ThreadModifier};
 use crate::ast::items::RawSyntax;
@@ -5,8 +7,9 @@ use crate::ast::line_plan::{
     BlockStyle, CancelRuleSyntax, DeferOutcome, LinePlan, LinePlanItem, TriggerPattern,
 };
 use crate::cst::{
-    find_matching_punctuation, find_top_level_punctuation, split_top_level_punctuation,
-    split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
+    find_matching_punctuation, find_top_level_punctuation, parse_flat_fence,
+    split_top_level_punctuation, split_top_level_punctuation_once,
+    split_top_level_punctuation_sequence_once,
 };
 use crate::expr::{Expr, parse_expr};
 use crate::pattern::parse_pattern;
@@ -85,7 +88,8 @@ pub(super) fn parse_defer_outcome(head: &str) -> Option<DeferOutcome> {
 }
 
 pub(super) fn parse_line_plan_body(style: BlockStyle, body: &str, range: TextRange) -> LinePlan {
-    let lines = collect_logical_block_items(body);
+    let normalized_body = normalize_line_plan_flat_blocks(body);
+    let lines = collect_logical_block_items(&normalized_body);
     let mut items = Vec::new();
     let mut index = 0;
     while index < lines.len() {
@@ -157,6 +161,66 @@ pub(super) fn parse_line_plan_body(style: BlockStyle, body: &str, range: TextRan
         index += 1;
     }
     LinePlan::new(style, items, range)
+}
+
+fn normalize_line_plan_flat_blocks(source: &str) -> Cow<'_, str> {
+    if !source
+        .lines()
+        .any(|line| parse_flat_fence(line.trim()).is_some())
+    {
+        return Cow::Borrowed(source);
+    }
+    if !line_plan_flat_fences_are_balanced(source) {
+        return Cow::Borrowed(source);
+    }
+    let lines = source.lines().collect::<Vec<_>>();
+    let mut index = 0;
+    Cow::Owned(flat_fence_lines_to_brace_blocks(&lines, &mut index).join("\n"))
+}
+
+fn line_plan_flat_fences_are_balanced(source: &str) -> bool {
+    let mut stack = Vec::new();
+    for line in source.lines() {
+        let Some(fence) = parse_flat_fence(line.trim()) else {
+            continue;
+        };
+        if fence.kind.is_empty() {
+            return false;
+        }
+        if fence.close {
+            if stack.pop().as_deref() != Some(fence.kind) {
+                return false;
+            }
+        } else {
+            stack.push(fence.kind.to_owned());
+        }
+    }
+    stack.is_empty()
+}
+
+fn flat_fence_lines_to_brace_blocks(lines: &[&str], index: &mut usize) -> Vec<String> {
+    let mut output = Vec::new();
+    while *index < lines.len() {
+        let line = lines[*index];
+        let Some(fence) = parse_flat_fence(line.trim()) else {
+            output.push(line.to_owned());
+            *index += 1;
+            continue;
+        };
+        *index += 1;
+        if fence.close {
+            return output;
+        }
+        let head = if fence.head.is_empty() {
+            fence.kind.to_owned()
+        } else {
+            format!("{} {}", fence.kind, fence.head)
+        };
+        output.push(format!("{head} {{"));
+        output.extend(flat_fence_lines_to_brace_blocks(lines, index));
+        output.push("}".to_owned());
+    }
+    output
 }
 
 fn is_multiline_timed_cue_header(line: &str) -> bool {
