@@ -188,9 +188,20 @@ pub struct VerificationReport {
     pub policy: VerificationPolicy,
     pub diagnostics: Vec<VerificationDiagnostic>,
     pub obligations: Vec<ProofObligation>,
+    pub solver_checks: Vec<SolverCheck>,
     pub proofs: Vec<ProofSummary>,
     pub trusted_axioms: Vec<TrustedAxiomSummary>,
     pub unsafe_audits: Vec<UnsafeAuditSummary>,
+}
+
+/// Result of checking one proof obligation with a solver backend.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SolverCheck {
+    pub obligation: String,
+    pub backend: BackendKind,
+    pub outcome: Option<SmtOutcome>,
+    pub error: Option<String>,
+    pub required: bool,
 }
 
 /// Minimal proof expression IR for SMT emission and adapters.
@@ -303,8 +314,89 @@ impl VerificationReport {
             .any(|diagnostic| diagnostic.severity == Severity::Error)
     }
 
+    pub fn has_solver_failures(&self) -> bool {
+        self.solver_checks.iter().any(SolverCheck::is_failure)
+    }
+
     pub fn unsafe_audit_count(&self) -> usize {
         self.unsafe_audits.len()
+    }
+
+    pub fn record_solver_check(
+        &mut self,
+        obligation: &str,
+        backend: BackendKind,
+        outcome: Result<SmtOutcome, SmtError>,
+    ) {
+        let required = self.solver_check_required(obligation);
+        let (outcome, error) = match outcome {
+            Ok(outcome) => (Some(outcome), None),
+            Err(error) => (None, Some(error.message().to_owned())),
+        };
+        let check = SolverCheck {
+            obligation: obligation.to_owned(),
+            backend,
+            outcome,
+            error,
+            required,
+        };
+        if check.is_failure() {
+            self.diagnostics.push(VerificationDiagnostic {
+                id: format!("diagnostic.solver.{}", self.solver_checks.len() + 1),
+                severity: Severity::Error,
+                message: check.failure_message(),
+                source: None,
+                obligation: Some(obligation.to_owned()),
+                related_ids: vec![obligation.to_owned()],
+                actions: vec![ToolAction {
+                    id: "action.show_obligation".to_owned(),
+                    label: "Show proof obligation".to_owned(),
+                    kind: ToolActionKind::ShowObligation,
+                }],
+            });
+        }
+        self.solver_checks.push(check);
+    }
+
+    fn solver_check_required(&self, obligation: &str) -> bool {
+        matches!(
+            self.policy.mode,
+            VerificationMode::Test | VerificationMode::Release
+        ) && self
+            .obligations
+            .iter()
+            .find(|item| item.id == obligation)
+            .is_some_and(|item| matches!(item.discharge, ProofDischarge::Missing))
+    }
+}
+
+impl SolverCheck {
+    pub fn is_failure(&self) -> bool {
+        self.required && !matches!(self.outcome, Some(SmtOutcome::Unsat))
+    }
+
+    fn failure_message(&self) -> String {
+        if let Some(error) = &self.error {
+            return format!(
+                "required solver check `{}` failed on {}: {error}",
+                self.obligation,
+                backend_label(self.backend)
+            );
+        }
+        format!(
+            "required solver check `{}` on {} returned {:?}",
+            self.obligation,
+            backend_label(self.backend),
+            self.outcome.unwrap_or(SmtOutcome::Unknown)
+        )
+    }
+}
+
+fn backend_label(backend: BackendKind) -> &'static str {
+    match backend {
+        BackendKind::Emit => "emit",
+        BackendKind::Oxiz => "oxiz",
+        BackendKind::Z3 => "z3",
     }
 }
 

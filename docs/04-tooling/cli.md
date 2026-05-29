@@ -114,6 +114,11 @@ stable diagnostic id, obligation id, severity, source span when available,
 related ids, and code-action descriptors. The report includes conservative
 semantic obligations such as MustDrop discharge, upper-lifetime writes, unsafe
 audits, thread capture, thread join typing, and simple sibling write conflicts.
+When `--backend oxiz` or `--backend z3` is selected, solver outcomes are also
+recorded in `solver_checks`. In `test` and `release` mode, a required missing
+obligation whose solver outcome is `sat`, `unknown`, or an adapter error is
+reported as a verification error; `unsat` is the passing solver outcome for a
+required check.
 
 ## Runtime Plan Inspection
 

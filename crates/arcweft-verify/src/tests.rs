@@ -256,3 +256,76 @@ fn smt_lib_is_stable() {
     assert!(emit_smt_lib(&problem).contains("(check-sat)"));
     assert!(emit_smt_lib(&problem).contains("must_drop_discharged"));
 }
+
+#[test]
+fn required_solver_checks_are_report_diagnostics() {
+    let mut report = VerificationReport {
+        policy: VerificationPolicy {
+            mode: VerificationMode::Test,
+            backend: BackendKind::Oxiz,
+        },
+        obligations: vec![ProofObligation {
+            id: "obligation.0001".to_owned(),
+            kind: ProofObligationKind::ProofBody,
+            message: "proof body requires solver".to_owned(),
+            subject: Some("proof.example".to_owned()),
+            source: None,
+            discharge: ProofDischarge::Missing,
+            smt: Some(SmtProblem {
+                name: "obligation.0001".to_owned(),
+                assertions: vec![ProofExpr::App {
+                    name: "proof_body_valid".to_owned(),
+                    args: Vec::new(),
+                }],
+            }),
+        }],
+        ..VerificationReport::default()
+    };
+
+    report.record_solver_check(
+        "obligation.0001",
+        BackendKind::Oxiz,
+        Ok(SmtOutcome::Unknown),
+    );
+
+    assert!(report.has_solver_failures());
+    assert!(report.has_errors());
+    assert_eq!(report.solver_checks.len(), 1);
+    assert!(report.solver_checks[0].required);
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic
+            .message
+            .contains("required solver check `obligation.0001`")
+    }));
+}
+
+#[test]
+fn non_required_solver_checks_are_recorded_without_errors() {
+    let mut report = VerificationReport {
+        policy: VerificationPolicy {
+            mode: VerificationMode::Dev,
+            backend: BackendKind::Oxiz,
+        },
+        obligations: vec![ProofObligation {
+            id: "obligation.0001".to_owned(),
+            kind: ProofObligationKind::ProofBody,
+            message: "proof body can be advisory in dev".to_owned(),
+            subject: None,
+            source: None,
+            discharge: ProofDischarge::Missing,
+            smt: None,
+        }],
+        ..VerificationReport::default()
+    };
+
+    report.record_solver_check(
+        "obligation.0001",
+        BackendKind::Oxiz,
+        Ok(SmtOutcome::Unknown),
+    );
+
+    assert!(!report.has_solver_failures());
+    assert!(!report.has_errors());
+    assert_eq!(report.solver_checks.len(), 1);
+    assert!(!report.solver_checks[0].required);
+}

@@ -417,6 +417,11 @@ Current high-confidence state:
   this pass between runtime-plan lowering and bytecode lowering and reports
   deterministic counters for runtime ops, expressions, conditions, guards,
   targets, returns, and type-judgment evidence.
+- `VerificationReport` now records solver outcomes as typed `solver_checks`.
+  CLI solver I/O remains outside the Sans I/O verifier core, but `arcw verify
+  --backend oxiz|z3 --json` writes each outcome back to the report. Required
+  missing obligations in `test`/`release` mode fail unless the solver returns
+  `unsat`.
 - Declaration ID positions whose family is known now accept current-scope and
   family-relative IDs. `flow @.opening`, `flow @flow:.opening`, and bare
   `flow opening` normalize to `flow.opening`; declarations such as

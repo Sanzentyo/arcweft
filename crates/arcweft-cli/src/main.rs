@@ -1980,7 +1980,7 @@ fn check_command(options: &CheckOptions) -> Result<(), ExitCode> {
 fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let checked = load_and_check_selection(&selection, None)?;
-    let report = verify_module_with_env(
+    let mut report = verify_module_with_env(
         &checked.hir,
         &checked.env,
         VerificationPolicy {
@@ -1996,7 +1996,7 @@ fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
         emit_smt(path, &report)?;
     }
     if matches!(options.backend, BackendKind::Oxiz | BackendKind::Z3) {
-        solve_report(&report, options.backend, options.z3_command.as_deref());
+        solve_report(&mut report, options.backend, options.z3_command.as_deref());
     }
     if options.json {
         print_json(&report)?;
@@ -2009,7 +2009,7 @@ fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
             report.unsafe_audit_count()
         );
     }
-    if report.has_errors() {
+    if report.has_errors() || report.has_solver_failures() {
         Err(ExitCode::FAILURE)
     } else {
         Ok(())
@@ -2972,23 +2972,31 @@ fn emit_smt(path: &Path, report: &VerificationReport) -> Result<(), ExitCode> {
     Ok(())
 }
 
-fn solve_report(report: &VerificationReport, backend: BackendKind, z3_command: Option<&str>) {
-    for obligation in &report.obligations {
-        let Some(problem) = &obligation.smt else {
-            continue;
-        };
+fn solve_report(report: &mut VerificationReport, backend: BackendKind, z3_command: Option<&str>) {
+    let checks = report
+        .obligations
+        .iter()
+        .filter_map(|obligation| {
+            obligation
+                .smt
+                .clone()
+                .map(|problem| (obligation.id.clone(), problem))
+        })
+        .collect::<Vec<_>>();
+    for (obligation, problem) in checks {
         let outcome = match backend {
             BackendKind::Emit => continue,
-            BackendKind::Oxiz => OxizBackend.check(problem),
+            BackendKind::Oxiz => OxizBackend.check(&problem),
             BackendKind::Z3 => {
                 let backend =
                     z3_command.map_or_else(ExternalZ3Backend::default, ExternalZ3Backend::new);
-                backend.check(problem)
+                backend.check(&problem)
             }
         };
-        match outcome {
-            Ok(outcome) => eprintln!("solver[{backend:?}] {}: {outcome:?}", obligation.id),
-            Err(error) => eprintln!("solver[{backend:?}] {}: {error}", obligation.id),
+        match &outcome {
+            Ok(outcome) => eprintln!("solver[{backend:?}] {obligation}: {outcome:?}"),
+            Err(error) => eprintln!("solver[{backend:?}] {obligation}: {error}"),
         }
+        report.record_solver_check(&obligation, backend, outcome);
     }
 }

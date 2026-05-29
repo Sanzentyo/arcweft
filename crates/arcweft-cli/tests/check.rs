@@ -283,6 +283,42 @@ flow @flow.verify verify {
 }
 
 #[test]
+fn verify_json_records_required_solver_checks() {
+    let path = temp_arcw(
+        "verify-solver-check",
+        r"
+flow @flow.verify verify {
+    let summary = promote('flow)
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("verify")
+        .arg(&path)
+        .arg("--mode")
+        .arg("test")
+        .arg("--backend")
+        .arg("oxiz")
+        .arg("--json")
+        .output()
+        .expect("arcw verify with oxiz runs");
+
+    assert!(
+        !output.status.success(),
+        "required unknown solver check should fail test-mode verification"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"solver_checks\"")
+            && stdout.contains("\"backend\": \"oxiz\"")
+            && stdout.contains("\"outcome\": \"unknown\"")
+            && stdout.contains("\"required\": true"),
+        "JSON report should include the required solver check: {stdout}"
+    );
+}
+
+#[test]
 fn verify_json_reports_semantic_thread_join_conflict() {
     let path = temp_arcw(
         "verify-thread-join",
