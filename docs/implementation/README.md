@@ -467,7 +467,9 @@ Current high-confidence state:
   parser branches. Detached flow threads remain rejected until the detach
   contract is checked explicitly. Child-fiber activity checks use the queue
   length directly because completed/failed children are removed when stepped,
-  avoiding repeated scans during return and stop-reason decisions.
+  avoiding repeated scans during return and stop-reason decisions. Task policy
+  is represented as a copied enum in the scheduler hot path, so join and
+  always-start submission no longer clone policy values.
 - The scheduler tracks whether pending tasks are already in deterministic
   priority/submission order and skips dispatch sorting for already ordered
   batches. Scheduler stats expose `dispatch_sorts` and `dispatch_sort_items` so

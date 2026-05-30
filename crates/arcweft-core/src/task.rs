@@ -94,7 +94,7 @@ pub enum TaskClass {
     Background,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TaskPolicy {
     JoinSameKey,
     AlwaysStart,
