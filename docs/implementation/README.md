@@ -490,7 +490,9 @@ Current high-confidence state:
 - `tests/fixtures/arcw/spec_should_pass/bench/001_thread_scheduling.arcw`
   provides a checked-in path-free bench fixture for direct CLI measurement of
   source-level `thread` fanout, child-fiber activity, and scheduler sort
-  counters.
+  counters. The checked fixture regression also runs with a wide VM op budget
+  so the native bridge must report a three-task scheduler batch with parallel
+  marker completion and `max_in_flight = 3`.
 - Runtime if-let/match guards, source handlers, stream pattern bodies, and
   await-many request templates now evaluate temporary bindings in environment
   scopes instead of cloning the full VM environment, reducing branch and
