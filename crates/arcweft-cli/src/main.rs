@@ -1760,8 +1760,11 @@ fn run_runtime_steps(
             },
             step_options(config.mode, config.max_ops),
         );
-        let task_requests = result.output.requests.tasks.clone();
-        let summary = RuntimeStepRunSummary::from_result(step_index, result, executor.fiber());
+        let (summary, task_requests) = RuntimeStepRunSummary::from_result_and_task_requests(
+            step_index,
+            result,
+            executor.fiber(),
+        );
         let done = matches!(
             executor.fiber().status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)

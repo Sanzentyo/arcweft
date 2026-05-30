@@ -1056,14 +1056,19 @@ pub(crate) struct RuntimeQueueStateSummary {
 }
 
 impl RuntimeStepRunSummary {
-    pub(crate) fn from_result(index: usize, result: RuntimeStepResult, fiber: &FlowFiber) -> Self {
+    pub(crate) fn from_result_and_task_requests(
+        index: usize,
+        result: RuntimeStepResult,
+        fiber: &FlowFiber,
+    ) -> (Self, Vec<TaskSpec>) {
         let RuntimeStepResult {
-            output,
+            mut output,
             fiber_status,
             stop_reason,
             stats,
         } = result;
-        Self {
+        let task_requests = std::mem::take(&mut output.requests.tasks);
+        let summary = Self {
             index,
             stop_reason: format!("{stop_reason:?}"),
             fiber_status: flow_status_label(&fiber_status),
@@ -1075,12 +1080,7 @@ impl RuntimeStepRunSummary {
                 .collect(),
             flow_events: output.flow_events.iter().map(flow_event_label).collect(),
             line_effects: output.effects.line.iter().map(effect_label).collect(),
-            task_requests: output
-                .requests
-                .tasks
-                .iter()
-                .map(task_request_label)
-                .collect(),
+            task_requests: task_requests.iter().map(task_request_label).collect(),
             observations: RuntimeObservationSummary {
                 signals: fiber
                     .observations
@@ -1156,7 +1156,8 @@ impl RuntimeStepRunSummary {
                     overflow_count: 0,
                 })
                 .collect(),
-        }
+        };
+        (summary, task_requests)
     }
 }
 

@@ -618,6 +618,10 @@ Current high-confidence state:
 - The scalar JIT measurement loop in `arcw jit check` now calls compiled
   helpers through the same fixed `RuntimeI64Args` boundary used by runtime flow
   pure calls, avoiding per-iteration slice dispatch in the CLI harness.
+- Runtime step JSON summarization now moves `TaskSpec` requests out of each
+  step result after deriving display labels, rather than cloning the full task
+  request list before native completion. Thread and native I/O benches therefore
+  measure one fewer host-side copy at the VM/native scheduling boundary.
 - The CLI regression harness now rejects generated `.arcweft` directories under
   checked-in fixtures and scans non-review source/docs/tests for removed
   whitespace-command DSL or compatibility-shim text. Run fixtures execute from
