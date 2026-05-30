@@ -1824,7 +1824,7 @@ fn run_runtime_bench_steps_with_pure(
     values: &[RuntimeBinding],
     pure: &mut RuntimePureAccelerator,
 ) -> RuntimeBenchTrace {
-    let mut host = source_path.map(NativeTaskBridge::new);
+    let mut host = None;
     let mut task_events = Vec::new();
     let mut totals = RuntimeBenchStepTotals::default();
     for _ in 0..config.steps {
@@ -1852,7 +1852,10 @@ fn run_runtime_bench_steps_with_pure(
         if done {
             break;
         }
-        if let Some(host) = host.as_mut() {
+        if let Some(source_path) = source_path
+            && !task_requests.is_empty()
+        {
+            let host = host.get_or_insert_with(|| NativeTaskBridge::new(source_path));
             task_events = host.complete_tasks(task_requests);
         }
     }

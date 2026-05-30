@@ -45,7 +45,7 @@ Checked-in thread scheduling bench:
 
 | fixture | executor | iterations | steps | median elapsed ns | median executed ops | per executed op ns | median line effects | median task requests |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 001_thread_scheduling.arcw | bytecode_vm | 10 | 64 | 18900 | 19 | 994 | 3 | 3 |
+| 001_thread_scheduling.arcw | bytecode_vm | 10 | 64 | 17600 | 19 | 926 | 3 | 3 |
 
 Checked-in system-info threaded native scheduling bench:
 
@@ -63,7 +63,7 @@ Checked-in inferred pure JIT bench:
 
 | fixture | executor | pure backend | inferred helpers | jit helpers | iterations | median elapsed ns | pure calls | batch calls | borrowed arg bytes | result bytes copied |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 005_inferred_pure_jit.arcw | bytecode_vm | jit | 1 | 1 | 4 | 29200 | 4 | 1 | 64 | 32 |
+| 005_inferred_pure_jit.arcw | bytecode_vm | jit | 1 | 1 | 4 | 13500 | 4 | 1 | 64 | 32 |
 
 The map pure JIT bench reports helper compile time separately from measured
 elapsed time. In this run the helper compile counter was 4621600 ns, while the
@@ -83,6 +83,9 @@ allocation.
 Runtime bench elapsed time now starts after bytecode/AOT executor artifacts are
 prepared for the selected flow, keeping compiler and executor-preparation cost
 in the phase counters instead of the measured runtime loop.
+The native task bridge is lazy in measured sections, so pure and short
+runtime-only benches do not construct adapter state unless emitted host tasks
+must be completed.
 After scalar result-copy accounting was tightened, the same fixture reports
 `pure_result_bytes_copied_median = 0`; only batch output buffers count result
 bytes.

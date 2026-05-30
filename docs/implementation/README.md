@@ -103,6 +103,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   Bytecode and AOT executor artifacts for a measured flow are prepared once
   before warmup and measured iterations; per-iteration elapsed time starts after
   fresh executor state has been instantiated from that template.
+  The native task bridge is created lazily only when a measured runtime section
+  actually needs to complete emitted host tasks, so pure/runtime-only benches do
+  not pay adapter setup cost.
   They also include median pure argument/result byte-copy counters, so scalar
   pure-call boundary costs are visible in the same bench report as elapsed time
   and VM op counts.
