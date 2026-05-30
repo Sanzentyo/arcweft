@@ -550,7 +550,9 @@ Current high-confidence state:
   2i64))`. The VM evaluates ordinary maps sequentially, but maps whose body is a
   statically integer-shaped pure helper call use the same flat batch boundary as
   bracket-sequence batches, so natural iterator-style source can use JIT/AOT
-  pure batching without explicit batching syntax.
+  pure batching without explicit batching syntax. The VM reuses scratch buffers
+  for both flat `i64` batch inputs and batch `i64` outputs before constructing
+  the returned runtime sequence.
 - Runtime executable expressions also lower `.sum()` over strict runtime
   sequences to a typed sum node. When the source is a pure-call `map`, the VM
   fuses map plus sum into one flat batch accelerator call and sums the `i64`

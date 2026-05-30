@@ -215,14 +215,19 @@ impl Engine {
                 return Err(error);
             }
             let helper = &self.plan.pure_helpers[helper_id.0];
-            let mut out = vec![0; items.len()];
+            let mut out = std::mem::take(&mut self.pure_i64_batch_outputs);
+            out.resize(items.len(), 0);
             let batch_result =
                 pure_backend.call_i64_flat_batch(helper, &flat_inputs, arity, &mut out);
             self.pure_i64_batch_inputs = flat_inputs;
-            batch_result?;
-            return Ok(RuntimeValue::BracketSeq(
-                out.into_iter().map(RuntimeValue::Int).collect(),
-            ));
+            if let Err(error) = batch_result {
+                self.pure_i64_batch_outputs = out;
+                return Err(error);
+            }
+            let values = out.iter().copied().map(RuntimeValue::Int).collect();
+            out.clear();
+            self.pure_i64_batch_outputs = out;
+            return Ok(RuntimeValue::BracketSeq(values));
         }
         items
             .iter()
