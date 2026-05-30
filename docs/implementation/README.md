@@ -519,6 +519,9 @@ Current high-confidence state:
   adds a checked-in path-free native scheduling bench that runs three
   `system.*` host requests inside source-level threads and records system info
   task counts, worker fanout, and scheduler in-flight counters.
+- `tests/fixtures/arcw/spec_should_pass/bench/005_inferred_pure_jit.arcw`
+  covers a natural unannotated deterministic helper being inferred as pure,
+  batched, and JIT-compiled without argument vector allocation.
 - Runtime if-let/match guards, source handlers, stream pattern bodies, and
   await-many request templates now evaluate temporary bindings in environment
   scopes instead of cloning the full VM environment, reducing branch and

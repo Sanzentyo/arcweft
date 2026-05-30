@@ -1,0 +1,15 @@
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+bench @bench.inferred_pure {
+    measure iterations = 4 { start(@flow.inferred_pure) }
+}
+
+flow @flow.inferred_pure inferred_pure {
+    let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
+    let scores: Vec<i64> = values.map(|item| score(item, 2i64))
+    let total: i64 = scores.sum()
+    log.info(total)
+    return "done"
+}

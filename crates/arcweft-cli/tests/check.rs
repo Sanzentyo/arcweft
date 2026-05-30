@@ -3198,6 +3198,61 @@ fn bench_json_measures_checked_in_system_info_thread_fixture() {
 }
 
 #[test]
+fn bench_json_measures_checked_in_inferred_pure_jit_fixture() {
+    let path = workspace_root()
+        .join("tests/fixtures/arcw/spec_should_pass/bench/005_inferred_pure_jit.arcw");
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("4")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--steps")
+        .arg("64")
+        .arg("--max-ops")
+        .arg("64")
+        .arg("--pure-backend")
+        .arg("jit")
+        .arg("--json")
+        .output()
+        .expect("arcw bench measures checked-in inferred pure fixture");
+
+    assert!(
+        output.status.success(),
+        "checked-in inferred pure bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&workspace_root().display().to_string()),
+        "inferred pure bench JSON must not record the workspace path: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_eq!(
+        measurement["executor_stats"]["pure_acceleration"]["annotated"],
+        0
+    );
+    assert_eq!(
+        measurement["executor_stats"]["pure_acceleration"]["inferred"],
+        1
+    );
+    assert_eq!(measurement["executor_stats"]["pure_acceleration"]["jit"], 1);
+    assert_eq!(measurement["deterministic"]["pure_batch_calls_median"], 1);
+    assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 4);
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_vec_allocations_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
+        64
+    );
+}
+
+#[test]
 fn bench_json_measures_pure_helper_with_vm_aot_and_jit() {
     let path = temp_arcw(
         "script-bench-pure-helper",
