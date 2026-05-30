@@ -636,6 +636,9 @@ Current high-confidence state:
   selected only for helpers whose inputs are all i64 and whose expression shape
   returns i64; value-shaped helpers stay on the VM value backend without a
   misleading integer probe.
+- Engine construction precomputes that i64 call-shape bit per pure helper, so
+  scalar calls and map/bracket batch detection do not rescan helper input kinds
+  while stepping hot runtime paths.
 - Fast-path scalar pure calls read local integer arguments by borrow when
   packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
   VM/AOT/JIT pure backends.

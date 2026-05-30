@@ -45,7 +45,7 @@ pub struct Engine {
     run_child_next: bool,
     pure_i64_batch_inputs: Vec<i64>,
     pure_i64_batch_outputs: Vec<i64>,
-    pure_helper_i64_results: Vec<bool>,
+    pure_helper_i64_call_shapes: Vec<bool>,
 }
 
 /// Current flow execution cursor.
@@ -201,10 +201,10 @@ impl Engine {
             .iter()
             .map(|plan| (plan.id.clone(), StreamRuntimeState::new(plan.id.clone())))
             .collect();
-        let pure_helper_i64_results = plan
+        let pure_helper_i64_call_shapes = plan
             .pure_helpers
             .iter()
-            .map(eval::pure_helper_returns_i64)
+            .map(eval::pure_helper_has_i64_call_shape)
             .collect();
         Self {
             plan,
@@ -224,7 +224,7 @@ impl Engine {
             run_child_next: false,
             pure_i64_batch_inputs: Vec::new(),
             pure_i64_batch_outputs: Vec::new(),
-            pure_helper_i64_results,
+            pure_helper_i64_call_shapes,
         }
     }
 

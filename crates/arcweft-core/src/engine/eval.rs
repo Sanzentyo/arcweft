@@ -246,7 +246,7 @@ impl Engine {
             return None;
         }
         if !self
-            .pure_helper_i64_results
+            .pure_helper_i64_call_shapes
             .get(first_helper.0)
             .copied()
             .unwrap_or(false)
@@ -371,14 +371,11 @@ impl Engine {
         if helper_id.0 >= self.plan.pure_helpers.len() {
             return Err(RuntimeEvalError::UnknownPureHelper(helper_id.0));
         }
-        let has_only_i64_inputs =
-            pure_helper_has_only_i64_inputs(&self.plan.pure_helpers[helper_id.0]);
-        if has_only_i64_inputs
-            && self
-                .pure_helper_i64_results
-                .get(helper_id.0)
-                .copied()
-                .unwrap_or(false)
+        if self
+            .pure_helper_i64_call_shapes
+            .get(helper_id.0)
+            .copied()
+            .unwrap_or(false)
             && args.len() <= RuntimeI64Args::MAX
             && !args
                 .iter()
@@ -602,7 +599,7 @@ impl Engine {
                 .iter()
                 .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
             || !self
-                .pure_helper_i64_results
+                .pure_helper_i64_call_shapes
                 .get(helper.0)
                 .copied()
                 .unwrap_or(false)
@@ -872,7 +869,10 @@ impl Engine {
     }
 }
 
-pub(super) fn pure_helper_returns_i64(helper: &crate::plan::RuntimePureHelper) -> bool {
+pub(super) fn pure_helper_has_i64_call_shape(helper: &crate::plan::RuntimePureHelper) -> bool {
+    if !pure_helper_has_only_i64_inputs(helper) {
+        return false;
+    }
     let mut int_names = helper
         .input_names
         .iter()
