@@ -213,6 +213,51 @@ flow @flow.bad bad {
 }
 
 #[test]
+fn numeric_sequence_literals_use_expected_item_fast_path() {
+    let values = (0..64)
+        .map(|value| format!("{value}i64"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let tree = parse_ok(format!(
+        r#"
+flow @flow.numeric_seq numeric_seq {{
+    let values: Vec<i64> = [{values}]
+    return "done"
+}}
+"#
+    ));
+    let hir = lower_to_hir(&tree).expect("numeric sequence fixture lowers");
+    validate_typecheck_ready(&hir).expect("numeric sequence fixture is typecheck-ready");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.stats.expressions < 16,
+        "numeric sequence should not recursively typecheck each literal: {:?}",
+        report.stats
+    );
+
+    let bad = parse_ok(
+        r"
+flow @flow.bad bad {
+    let values: Vec<i64> = [1i64, 2u64]
+}
+",
+    );
+    let hir = lower_to_hir(&bad).expect("mismatched sequence fixture lowers");
+    let errors =
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("mismatched item is rejected");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("sequence literal items must have the same type")
+    }));
+}
+
+#[test]
 fn typechecks_explicit_route_parameter_bindings() {
     let tree = parse_ok(
         r#"

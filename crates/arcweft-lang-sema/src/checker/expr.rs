@@ -13,7 +13,9 @@ use super::{
     types_compatible,
 };
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
-use arcweft_lang_syntax::expr::{BinaryOp, CallArg, ComputationBlockKind, MatchExprArm, UnaryOp};
+use arcweft_lang_syntax::expr::{
+    BinaryOp, CallArg, ComputationBlockKind, Literal, MatchExprArm, UnaryOp,
+};
 
 impl TypeChecker<'_> {
     pub(super) fn expect_expr_type(&mut self, expr: &Expr, expected: &TypeKind, context: &str) {
@@ -353,11 +355,24 @@ impl TypeChecker<'_> {
         items: &[Expr],
         expected: Option<&TypeKind>,
     ) -> TypeKind {
-        let mut item_type = None;
         let expected_item = match expected {
             Some(TypeKind::Array { item, .. } | TypeKind::Vec(item)) => Some(item.as_ref()),
             _ => None,
         };
+        let item_type = expected_item
+            .and_then(|expected_item| {
+                self.check_numeric_bracket_seq_fast_path(items, expected_item)
+            })
+            .unwrap_or_else(|| self.check_bracket_seq_item_type(items, expected_item));
+        self.finish_bracket_seq_type(items.len(), item_type, expected)
+    }
+
+    fn check_bracket_seq_item_type(
+        &mut self,
+        items: &[Expr],
+        expected_item: Option<&TypeKind>,
+    ) -> TypeKind {
+        let mut item_type = None;
         for item in items {
             let next_type = self
                 .check_expr_with_expected(item, expected_item)
@@ -376,12 +391,115 @@ impl TypeChecker<'_> {
                 None => item_type = Some(next_item_type),
             }
         }
-        let item_type = item_type.unwrap_or(TypeKind::Unit);
+        item_type.unwrap_or(TypeKind::Unit)
+    }
+
+    fn check_numeric_bracket_seq_fast_path(
+        &mut self,
+        items: &[Expr],
+        expected_item: &TypeKind,
+    ) -> Option<TypeKind> {
+        if items.is_empty() || !(expected_item.is_integer() || expected_item.is_float()) {
+            return None;
+        }
+        if !items.iter().all(|item| {
+            matches!(
+                (item, expected_item.is_integer(), expected_item.is_float()),
+                (Expr::Literal(Literal::Int { .. }), true, _)
+                    | (Expr::Literal(Literal::Float { .. }), _, true)
+            )
+        }) {
+            return None;
+        }
+
+        let mut item_type = None;
+        for item in items {
+            let Expr::Literal(literal) = item else {
+                return None;
+            };
+            let next_type = self.check_expected_numeric_literal(literal, expected_item);
+            let next_item_type = if types_compatible(expected_item, &next_type) {
+                expected_item.clone()
+            } else {
+                next_type
+            };
+            match &item_type {
+                Some(existing) if existing != &next_item_type => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "sequence literal items must have the same type, found {existing:?} and {next_item_type:?}"
+                    )));
+                }
+                Some(_) => {}
+                None => item_type = Some(next_item_type),
+            }
+        }
+        item_type
+    }
+
+    fn check_expected_numeric_literal(
+        &mut self,
+        literal: &Literal,
+        expected_item: &TypeKind,
+    ) -> TypeKind {
+        match literal {
+            Literal::Int { suffix: None, .. } if expected_item.is_integer() => {
+                expected_item.clone()
+            }
+            Literal::Float { suffix: None, .. } if expected_item.is_float() => {
+                expected_item.clone()
+            }
+            Literal::Int {
+                suffix: Some(suffix),
+                ..
+            } => {
+                let Some(ty) = numeric_literal_suffix_type(Some(suffix)) else {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "unknown integer literal suffix `{suffix}`"
+                    )));
+                    return TypeKind::Named("_".to_owned());
+                };
+                if ty.is_integer() || is_unit_number_type(&ty) {
+                    ty
+                } else {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "integer literal suffix must be an integer type, found {ty:?}"
+                    )));
+                    TypeKind::Named("_".to_owned())
+                }
+            }
+            Literal::Float {
+                suffix: Some(suffix),
+                ..
+            } => {
+                let Some(ty) = numeric_literal_suffix_type(Some(suffix)) else {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "unknown float literal suffix `{suffix}`"
+                    )));
+                    return TypeKind::Named("_".to_owned());
+                };
+                if ty.is_float() || is_unit_number_type(&ty) {
+                    ty
+                } else {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "float literal suffix must be a float type, found {ty:?}"
+                    )));
+                    TypeKind::Named("_".to_owned())
+                }
+            }
+            _ => TypeKind::Named("_".to_owned()),
+        }
+    }
+
+    fn finish_bracket_seq_type(
+        &mut self,
+        items_len: usize,
+        item_type: TypeKind,
+        expected: Option<&TypeKind>,
+    ) -> TypeKind {
         if let Some(TypeKind::Array { item, len }) = expected {
-            if !array_len_matches(len, items.len()) {
+            if !array_len_matches(len, items_len) {
                 self.errors.push(TypeCheckError::new(format!(
-                    "array literal length mismatch: expected {len}, found {}",
-                    items.len()
+                    "array literal length mismatch: expected {len}, found {items_len}"
                 )));
             }
             if item.as_ref() != &item_type {
