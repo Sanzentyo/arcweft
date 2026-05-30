@@ -469,6 +469,10 @@ Current high-confidence state:
 - Fast-path scalar pure calls read local integer arguments by borrow when
   packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
   VM/AOT/JIT pure backends.
+- Runtime statement `match` now moves the selected arm body out of the owned
+  `FlowOp::Match` being executed instead of cloning that body again. CLI bench
+  coverage includes a runtime match that jumps into a JIT-backed pure helper
+  flow and records VM op count, pure call count, and zero arg-vector allocation.
 - The CLI/player pure accelerator stores compiled helper entries in dense
   helper-ID slots instead of a map, reducing scalar pure-call dispatch overhead
   while preserving deterministic cache statistics.
