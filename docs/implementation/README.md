@@ -588,6 +588,10 @@ Current high-confidence state:
 - `tests/fixtures/arcw/spec_should_pass/bench/005_inferred_pure_jit.arcw`
   covers a natural unannotated deterministic helper being inferred as pure,
   batched, and JIT-compiled without argument vector allocation.
+- `tests/fixtures/arcw/spec_should_pass/bench/007_branching_iter_pure_jit.arcw`
+  covers a branchy i64 pure helper through both `map(...).sum()` and a
+  `for`/`if` loop, giving the runtime bench harness a mixed iter workload for
+  JIT, VM-op, line-effect, and local-sequence sum counters.
 - Runtime if-let/match guards, source handlers, stream pattern bodies, and
   await-many request templates now evaluate temporary bindings in environment
   scopes instead of cloning the full VM environment, reducing branch and
