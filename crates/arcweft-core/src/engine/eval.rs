@@ -250,13 +250,13 @@ impl Engine {
 
     fn evaluate_pure_call_expr(
         &mut self,
-        helper: crate::plan::RuntimePureHelperId,
+        helper_id: crate::plan::RuntimePureHelperId,
         args: &[RuntimeExpr],
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let Some(helper) = self.plan.pure_helpers.get(helper.0).cloned() else {
-            return Err(RuntimeEvalError::UnknownPureHelper(helper.0));
-        };
+        if helper_id.0 >= self.plan.pure_helpers.len() {
+            return Err(RuntimeEvalError::UnknownPureHelper(helper_id.0));
+        }
         if args.len() <= RuntimeI64Args::MAX
             && !args
                 .iter()
@@ -271,14 +271,16 @@ impl Engine {
                     }
                 }
             }
+            let helper = &self.plan.pure_helpers[helper_id.0];
             if let Some(value) =
-                pure_backend.call_i64(&helper, RuntimeI64Args::new(values, args.len()))?
+                pure_backend.call_i64(helper, RuntimeI64Args::new(values, args.len()))?
             {
                 return Ok(RuntimeValue::Int(value));
             }
         }
         let args = self.evaluate_call_args(args, pure_backend)?;
-        pure_backend.call_values(&helper, &args)
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        pure_backend.call_values(helper, &args)
     }
 
     fn evaluate_method_call_expr(

@@ -444,6 +444,8 @@ Current high-confidence state:
 - The VM builds a deterministic flow-ID index when `Engine` is created, so VM
   and AOT-linear stepping fetch the current flow without scanning the runtime
   plan's flow list for every operation.
+- Runtime pure-call evaluation keeps pure helper metadata borrowed from the
+  runtime plan instead of cloning the helper on each scalar JIT/AOT/VM call.
 - Awaited `system.core_count()`, `system.thread_count()`, and
   `system.available_parallelism()` calls now lower to typed system-info task
   requests. The CLI adapter resolves physical cores, logical CPUs, and
