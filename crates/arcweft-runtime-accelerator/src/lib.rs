@@ -7,7 +7,7 @@ use arcweft_core::{
     plan::{RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin},
     pure::{
         AotPureFunctionBackend, AotPureI64Plan, PureFunctionBackend, PureFunctionRequest,
-        RuntimeI64Args, RuntimePureCallBackend, VmPureFunctionBackend,
+        RuntimeI64Args, RuntimePureCallBackend, VmPureFunctionBackend, VmPureFunctionScratch,
     },
     step::RuntimePureCallStats,
     value::{RuntimeBinding, RuntimeEvalError, RuntimeValue},
@@ -67,6 +67,7 @@ pub struct RuntimePureAccelerator {
     resolved_workers: usize,
     flat_i64_inputs: Vec<i64>,
     aot_i64_slots: Vec<i64>,
+    vm_scratch: VmPureFunctionScratch,
 }
 
 enum RuntimePureCacheEntry {
@@ -123,6 +124,7 @@ impl RuntimePureAccelerator {
             resolved_workers,
             flat_i64_inputs: Vec::new(),
             aot_i64_slots: Vec::new(),
+            vm_scratch: VmPureFunctionScratch::default(),
         }
     }
 
@@ -206,14 +208,14 @@ impl RuntimePureAccelerator {
                     self.stats.thread_pool_jobs += self.parallel_jobs(rows.len());
                     call_vm_batch_parallel(self.pool.as_ref(), helper, rows, out)
                 } else {
-                    call_vm_batch(helper, rows, out)
+                    call_vm_batch(helper, rows, out, &mut self.vm_scratch)
                 }
             }
             None => {
                 self.compile_stats.cache_misses += 1;
                 self.stats.vm_calls += rows.len();
                 self.stats.fallbacks += rows.len();
-                call_vm_batch(helper, rows, out)
+                call_vm_batch(helper, rows, out, &mut self.vm_scratch)
             }
         }
     }
@@ -293,14 +295,14 @@ impl RuntimePureAccelerator {
                     self.stats.thread_pool_jobs += self.parallel_jobs(out.len());
                     call_vm_flat_batch_parallel(self.pool.as_ref(), helper, flat_inputs, arity, out)
                 } else {
-                    call_vm_flat_batch(helper, flat_inputs, arity, out)
+                    call_vm_flat_batch(helper, flat_inputs, arity, out, &mut self.vm_scratch)
                 }
             }
             None => {
                 self.compile_stats.cache_misses += 1;
                 self.stats.vm_calls += out.len();
                 self.stats.fallbacks += out.len();
-                call_vm_flat_batch(helper, flat_inputs, arity, out)
+                call_vm_flat_batch(helper, flat_inputs, arity, out, &mut self.vm_scratch)
             }
         }
     }
@@ -351,13 +353,13 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                 self.compile_stats.cache_hits += 1;
                 self.stats.vm_calls += 1;
                 self.stats.fallbacks += 1;
-                Self::call_vm_i64(helper, args).map(Some)
+                Self::call_vm_i64(helper, args, &mut self.vm_scratch).map(Some)
             }
             None => {
                 self.compile_stats.cache_misses += 1;
                 self.stats.vm_calls += 1;
                 self.stats.fallbacks += 1;
-                Self::call_vm_i64(helper, args).map(Some)
+                Self::call_vm_i64(helper, args, &mut self.vm_scratch).map(Some)
             }
         };
         if matches!(result, Ok(Some(_))) {
@@ -410,8 +412,9 @@ impl RuntimePureAccelerator {
     fn call_vm_i64(
         helper: &RuntimePureHelper,
         args: RuntimeI64Args,
+        scratch: &mut VmPureFunctionScratch,
     ) -> Result<i64, RuntimeEvalError> {
-        match VmPureFunctionBackend.evaluate_i64_args(helper, args)? {
+        match scratch.evaluate_i64_args(helper, args)? {
             RuntimeValue::Int(value) => Ok(value),
             value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
         }
@@ -646,9 +649,10 @@ fn call_vm_batch(
     helper: &RuntimePureHelper,
     rows: &[RuntimeI64Args],
     out: &mut [i64],
+    scratch: &mut VmPureFunctionScratch,
 ) -> Result<(), RuntimeEvalError> {
     rows.iter().zip(out.iter_mut()).try_for_each(|(row, slot)| {
-        match VmPureFunctionBackend.evaluate_i64_args(helper, *row)? {
+        match scratch.evaluate_i64_args(helper, *row)? {
             RuntimeValue::Int(value) => {
                 *slot = value;
                 Ok(())
@@ -665,17 +669,16 @@ fn call_vm_batch_parallel(
     out: &mut [i64],
 ) -> Result<(), RuntimeEvalError> {
     let mut run = || {
-        rows.par_iter()
-            .zip(out.par_iter_mut())
-            .try_for_each(|(row, slot)| {
-                match VmPureFunctionBackend.evaluate_i64_args(helper, *row)? {
-                    RuntimeValue::Int(value) => {
-                        *slot = value;
-                        Ok(())
-                    }
-                    value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+        rows.par_iter().zip(out.par_iter_mut()).try_for_each_init(
+            VmPureFunctionScratch::default,
+            |scratch, (row, slot)| match scratch.evaluate_i64_args(helper, *row)? {
+                RuntimeValue::Int(value) => {
+                    *slot = value;
+                    Ok(())
                 }
-            })
+                value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+            },
+        )
     };
     match pool {
         Some(pool) => pool.install(run),
@@ -688,10 +691,11 @@ fn call_vm_flat_batch(
     flat_inputs: &[i64],
     arity: usize,
     out: &mut [i64],
+    scratch: &mut VmPureFunctionScratch,
 ) -> Result<(), RuntimeEvalError> {
     if arity == 0 {
         return out.iter_mut().try_for_each(|slot| {
-            match VmPureFunctionBackend.evaluate_i64_slice(helper, &[])? {
+            match scratch.evaluate_i64_slice(helper, &[])? {
                 RuntimeValue::Int(value) => {
                     *slot = value;
                     Ok(())
@@ -703,15 +707,15 @@ fn call_vm_flat_batch(
     flat_inputs
         .chunks_exact(arity)
         .zip(out.iter_mut())
-        .try_for_each(|(row, slot)| {
-            match VmPureFunctionBackend.evaluate_i64_slice(helper, row)? {
+        .try_for_each(
+            |(row, slot)| match scratch.evaluate_i64_slice(helper, row)? {
                 RuntimeValue::Int(value) => {
                     *slot = value;
                     Ok(())
                 }
                 value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
-            }
-        })
+            },
+        )
 }
 
 fn call_vm_flat_batch_parallel(
@@ -723,28 +727,30 @@ fn call_vm_flat_batch_parallel(
 ) -> Result<(), RuntimeEvalError> {
     let mut run = || {
         if arity == 0 {
-            return out.par_iter_mut().try_for_each(|slot| {
-                match VmPureFunctionBackend.evaluate_i64_slice(helper, &[])? {
+            return out.par_iter_mut().try_for_each_init(
+                VmPureFunctionScratch::default,
+                |scratch, slot| match scratch.evaluate_i64_slice(helper, &[])? {
                     RuntimeValue::Int(value) => {
                         *slot = value;
                         Ok(())
                     }
                     value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
-                }
-            });
+                },
+            );
         }
         flat_inputs
             .par_chunks_exact(arity)
             .zip(out.par_iter_mut())
-            .try_for_each(|(row, slot)| {
-                match VmPureFunctionBackend.evaluate_i64_slice(helper, row)? {
+            .try_for_each_init(
+                VmPureFunctionScratch::default,
+                |scratch, (row, slot)| match scratch.evaluate_i64_slice(helper, row)? {
                     RuntimeValue::Int(value) => {
                         *slot = value;
                         Ok(())
                     }
                     value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
-                }
-            })
+                },
+            )
     };
     match pool {
         Some(pool) => pool.install(run),

@@ -92,6 +92,12 @@ pub trait PureFunctionBackend {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct VmPureFunctionBackend;
 
+/// Reusable VM fallback storage for repeated `i64` pure-helper evaluation.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct VmPureFunctionScratch {
+    env: RuntimeEnv,
+}
+
 /// AOT backend for deterministic pure helpers.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct AotPureFunctionBackend;
@@ -100,6 +106,7 @@ pub struct AotPureFunctionBackend;
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct VmRuntimePureCallBackend {
     stats: RuntimePureCallStats,
+    scratch: VmPureFunctionScratch,
 }
 
 /// Compiled AOT plan for the current deterministic `i64` pure-helper subset.
@@ -212,6 +219,25 @@ impl VmPureFunctionBackend {
         helper: &RuntimePureHelper,
         args: &[i64],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let mut scratch = VmPureFunctionScratch::default();
+        scratch.evaluate_i64_slice(helper, args)
+    }
+}
+
+impl VmPureFunctionScratch {
+    pub fn evaluate_i64_args(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: RuntimeI64Args,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        self.evaluate_i64_slice(helper, args.as_slice())
+    }
+
+    pub fn evaluate_i64_slice(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[i64],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
         if args.len() != helper.input_names.len() {
             return Err(RuntimeEvalError::TooManyPureArgs {
                 helper: helper.name.clone(),
@@ -219,8 +245,12 @@ impl VmPureFunctionBackend {
                 found: args.len(),
             });
         }
-        let mut evaluator = PureEvaluator::new_i64_slice(&helper.input_names, args);
-        evaluator.evaluate_expr(&helper.expr)
+        self.env
+            .replace_root_i64_bindings(&helper.input_names, args);
+        let mut evaluator = PureEvaluator::with_env(std::mem::take(&mut self.env));
+        let result = evaluator.evaluate_expr(&helper.expr);
+        self.env = evaluator.into_env();
+        result
     }
 }
 
@@ -299,7 +329,7 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         self.stats.vm_calls += 1;
         self.stats.arg_stack_packs += 1;
         self.stats.arg_bytes_copied += args.len() * std::mem::size_of::<i64>();
-        let value = VmPureFunctionBackend.evaluate_i64_args(helper, args)?;
+        let value = self.scratch.evaluate_i64_args(helper, args)?;
         match value {
             RuntimeValue::Int(value) => {
                 self.stats.result_bytes_copied += std::mem::size_of::<i64>();
@@ -336,7 +366,7 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
             .sum::<usize>();
         self.stats.result_bytes_copied += std::mem::size_of_val(out);
         rows.iter().zip(out.iter_mut()).try_for_each(|(row, slot)| {
-            let value = VmPureFunctionBackend.evaluate_i64_args(helper, *row)?;
+            let value = self.scratch.evaluate_i64_args(helper, *row)?;
             match value {
                 RuntimeValue::Int(value) => {
                     *slot = value;
@@ -379,7 +409,7 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         self.stats.result_bytes_copied += std::mem::size_of_val(out);
         if arity == 0 {
             return out.iter_mut().try_for_each(|slot| {
-                let value = VmPureFunctionBackend.evaluate_i64_slice(helper, &[])?;
+                let value = self.scratch.evaluate_i64_slice(helper, &[])?;
                 match value {
                     RuntimeValue::Int(value) => {
                         *slot = value;
@@ -393,7 +423,7 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
             .chunks_exact(arity)
             .zip(out.iter_mut())
             .try_for_each(|(row, slot)| {
-                let value = VmPureFunctionBackend.evaluate_i64_slice(helper, row)?;
+                let value = self.scratch.evaluate_i64_slice(helper, row)?;
                 match value {
                     RuntimeValue::Int(value) => {
                         *slot = value;
@@ -850,11 +880,15 @@ impl PureEvaluator {
         }
     }
 
-    fn new_i64_slice(input_names: &[String], args: &[i64]) -> Self {
+    fn with_env(env: RuntimeEnv) -> Self {
         Self {
-            env: RuntimeEnv::from_i64_bindings(input_names, args),
+            env,
             stats: PureFunctionStats::default(),
         }
+    }
+
+    fn into_env(self) -> RuntimeEnv {
+        self.env
     }
 
     fn evaluate_expr(&mut self, expr: &RuntimeExpr) -> Result<RuntimeValue, RuntimeEvalError> {

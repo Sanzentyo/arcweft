@@ -1,7 +1,7 @@
 use crate::plan::{RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin};
 use crate::pure::{
     AotPureFunctionBackend, PureFunctionBackend, PureFunctionBackendKind, PureFunctionRequest,
-    RuntimePureCallBackend, VmPureFunctionBackend, VmRuntimePureCallBackend,
+    RuntimePureCallBackend, VmPureFunctionBackend, VmPureFunctionScratch, VmRuntimePureCallBackend,
     compare_pure_function_backend,
 };
 use crate::value::{RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeValue};
@@ -124,6 +124,47 @@ fn vm_runtime_i64_fast_path_records_copy_bytes() {
         backend.stats().result_bytes_copied,
         std::mem::size_of::<i64>()
     );
+}
+
+#[test]
+fn vm_pure_scratch_reuses_and_rebuilds_i64_root_bindings() {
+    let add = RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "add".to_owned(),
+        input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+            op: RuntimeBinaryOp::Add,
+            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+        },
+        origin: RuntimePureHelperOrigin::Annotated,
+    };
+    let double = RuntimePureHelper {
+        id: RuntimePureHelperId(1),
+        name: "double".to_owned(),
+        input_names: vec!["value".to_owned()],
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("value".to_owned())),
+            op: RuntimeBinaryOp::Mul,
+            rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+        },
+        origin: RuntimePureHelperOrigin::Annotated,
+    };
+    let mut scratch = VmPureFunctionScratch::default();
+
+    let first = scratch
+        .evaluate_i64_slice(&add, &[3, 4])
+        .expect("scratch evaluates first helper");
+    let second = scratch
+        .evaluate_i64_slice(&add, &[5, 6])
+        .expect("scratch reuses matching root bindings");
+    let third = scratch
+        .evaluate_i64_slice(&double, &[7])
+        .expect("scratch rebuilds when helper inputs change");
+
+    assert_eq!(first, RuntimeValue::Int(7));
+    assert_eq!(second, RuntimeValue::Int(11));
+    assert_eq!(third, RuntimeValue::Int(14));
 }
 
 #[test]

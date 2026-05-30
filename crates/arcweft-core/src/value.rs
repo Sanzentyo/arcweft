@@ -269,18 +269,13 @@ impl RuntimeEnv {
         }
     }
 
-    pub(crate) fn from_i64_bindings(input_names: &[String], args: &[i64]) -> Self {
-        Self {
-            scopes: vec![RuntimeScope {
-                bindings: input_names
-                    .iter()
-                    .zip(args.iter().copied())
-                    .map(|(name, value)| RuntimeBinding {
-                        name: name.clone(),
-                        value: RuntimeValue::Int(value),
-                    })
-                    .collect(),
-            }],
+    pub(crate) fn replace_root_i64_bindings(&mut self, input_names: &[String], args: &[i64]) {
+        if self.scopes.is_empty() {
+            self.scopes.push(RuntimeScope::default());
+        }
+        self.scopes.truncate(1);
+        if let Some(scope) = self.scopes.first_mut() {
+            scope.replace_i64_bindings(input_names, args);
         }
     }
 }
@@ -308,6 +303,32 @@ impl RuntimeScope {
 
     fn clear(&mut self) {
         self.bindings.clear();
+    }
+
+    fn replace_i64_bindings(&mut self, input_names: &[String], args: &[i64]) {
+        if self.bindings.len() == input_names.len()
+            && self
+                .bindings
+                .iter()
+                .zip(input_names)
+                .all(|(binding, name)| binding.name == *name)
+        {
+            self.bindings
+                .iter_mut()
+                .zip(args.iter().copied())
+                .for_each(|(binding, value)| binding.value = RuntimeValue::Int(value));
+            return;
+        }
+        self.bindings.clear();
+        self.bindings.extend(
+            input_names
+                .iter()
+                .zip(args.iter().copied())
+                .map(|(name, value)| RuntimeBinding {
+                    name: name.clone(),
+                    value: RuntimeValue::Int(value),
+                }),
+        );
     }
 }
 
