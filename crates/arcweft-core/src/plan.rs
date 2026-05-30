@@ -6,6 +6,7 @@ use crate::source::SourcePlan;
 use crate::stream::StreamPlan;
 use crate::task::{AwaitManyTarget, AwaitTarget, NeedId, TaskId};
 use crate::value::{RuntimeBinding, RuntimeExpr, RuntimeValue};
+use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -193,7 +194,7 @@ pub enum FlowOp {
     },
     ForNext {
         pattern: RuntimePattern,
-        items: Vec<RuntimeValue>,
+        items: Arc<[RuntimeValue]>,
         index: usize,
         body: Vec<FlowOp>,
     },

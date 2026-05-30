@@ -434,6 +434,9 @@ Current high-confidence state:
   await-many request templates now evaluate temporary bindings in environment
   scopes instead of cloning the full VM environment, reducing branch and
   scheduling overhead without changing binding visibility.
+- Runtime `for` state shares evaluated item sequences with `Arc<[RuntimeValue]>`
+  across `ForNext` steps, so natural loops no longer clone the full source
+  vector on every iteration.
 - Awaited `system.core_count()`, `system.thread_count()`, and
   `system.available_parallelism()` calls now lower to typed system-info task
   requests. The CLI adapter resolves physical cores, logical CPUs, and

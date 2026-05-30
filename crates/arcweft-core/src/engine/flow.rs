@@ -8,6 +8,7 @@ use crate::pure::RuntimePureCallBackend;
 use crate::task::{
     CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
 };
+use std::sync::Arc;
 
 impl Engine {
     // Keep the opcode dispatcher contiguous while the Phase 1 runtime surface is
@@ -287,7 +288,7 @@ impl Engine {
                 self.advance_if_needed(next);
                 match self.evaluate_expr_with_backend(&source, pure_backend) {
                     Ok(RuntimeValue::BracketSeq(items)) => {
-                        self.push_for_next(pattern, items, 0, body);
+                        self.push_for_next(pattern, items.into(), 0, body);
                     }
                     Ok(value) => {
                         self.fail_eval(
@@ -502,7 +503,7 @@ impl Engine {
     pub(super) fn push_for_next(
         &mut self,
         pattern: RuntimePattern,
-        items: Vec<RuntimeValue>,
+        items: Arc<[RuntimeValue]>,
         index: usize,
         body: Vec<FlowOp>,
     ) {
