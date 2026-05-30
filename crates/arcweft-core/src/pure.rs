@@ -84,6 +84,13 @@ pub trait RuntimePureCallBackend {
         rows: usize,
     ) -> Result<i64, RuntimeEvalError>;
 
+    fn call_i64_repeated_flat_batch_sum(
+        &mut self,
+        helper: &RuntimePureHelper,
+        row: &[i64],
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError>;
+
     fn call_values(
         &mut self,
         helper: &RuntimePureHelper,
@@ -548,6 +555,43 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
             }
         }
         Ok(sum)
+    }
+
+    fn call_i64_repeated_flat_batch_sum(
+        &mut self,
+        helper: &RuntimePureHelper,
+        row: &[i64],
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError> {
+        if row.len() > RuntimeI64Args::MAX {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: RuntimeI64Args::MAX,
+                found: row.len(),
+            });
+        }
+        self.stats.batch_calls += usize::from(rows > 0);
+        self.stats.batch_items += rows;
+        self.stats.pure_calls += rows;
+        self.stats.vm_calls += rows;
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(row);
+        if rows == 0 {
+            return Ok(0);
+        }
+        let value = match self.scratch.evaluate_i64_slice(helper, row)? {
+            RuntimeValue::Int(value) => value,
+            value => return Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
+        };
+        let rows = i64::try_from(rows).map_err(|_| RuntimeEvalError::UnsupportedPure {
+            name: helper.name.clone(),
+            reason: "pure repeated batch row count must fit i64".to_owned(),
+        })?;
+        value
+            .checked_mul(rows)
+            .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: "pure repeated batch sum overflowed i64".to_owned(),
+            })
     }
 
     fn call_values(

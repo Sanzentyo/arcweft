@@ -411,6 +411,74 @@ impl RuntimePureAccelerator {
         }
     }
 
+    pub fn call_i64_repeated_flat_batch_sum(
+        &mut self,
+        helper: &RuntimePureHelper,
+        row: &[i64],
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError> {
+        if row.len() > RuntimeI64Args::MAX {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: RuntimeI64Args::MAX,
+                found: row.len(),
+            });
+        }
+        self.stats.batch_calls += usize::from(rows > 0);
+        self.stats.batch_items += rows;
+        self.stats.pure_calls += rows;
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(row);
+        if rows == 0 {
+            return Ok(0);
+        }
+        let rows_i64 = i64::try_from(rows).map_err(|_| RuntimeEvalError::UnsupportedPure {
+            name: helper.name.clone(),
+            reason: "pure repeated batch row count must fit i64".to_owned(),
+        })?;
+        let value = match cache_entry(&self.cache, helper.id) {
+            Some(RuntimePureCacheEntry::Jit(compiled)) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.jit_calls += rows;
+                compiled
+                    .call(row)
+                    .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                        name: helper.name.clone(),
+                        reason: error.to_string(),
+                    })?
+            }
+            Some(RuntimePureCacheEntry::Aot(compiled)) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.aot_calls += rows;
+                let (value, _) = compiled.call_with_inputs_scratch(row, &mut self.aot_i64_slots)?;
+                value
+            }
+            Some(RuntimePureCacheEntry::Vm) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.vm_calls += rows;
+                self.stats.fallbacks += rows;
+                match self.vm_scratch.evaluate_i64_slice(helper, row)? {
+                    RuntimeValue::Int(value) => value,
+                    value => return Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+                }
+            }
+            None => {
+                self.compile_stats.cache_misses += 1;
+                self.stats.vm_calls += rows;
+                self.stats.fallbacks += rows;
+                match self.vm_scratch.evaluate_i64_slice(helper, row)? {
+                    RuntimeValue::Int(value) => value,
+                    value => return Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+                }
+            }
+        };
+        value
+            .checked_mul(rows_i64)
+            .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: "pure repeated batch sum overflowed i64".to_owned(),
+            })
+    }
+
     fn can_parallelize(&self, len: usize) -> bool {
         len >= self.config.batch_min_len && self.resolved_workers > 1
     }
@@ -543,6 +611,15 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         rows: usize,
     ) -> Result<i64, RuntimeEvalError> {
         Self::call_i64_flat_batch_sum(self, helper, flat_inputs, arity, rows)
+    }
+
+    fn call_i64_repeated_flat_batch_sum(
+        &mut self,
+        helper: &RuntimePureHelper,
+        row: &[i64],
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError> {
+        Self::call_i64_repeated_flat_batch_sum(self, helper, row, rows)
     }
 
     fn call_values(

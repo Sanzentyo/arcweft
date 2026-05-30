@@ -324,6 +324,17 @@ impl Engine {
         pure_backend.call_i64_flat_batch_sum(helper, flat_inputs, arity, row_count)
     }
 
+    fn call_i64_repeated_flat_batch_sum(
+        &mut self,
+        helper_id: crate::plan::RuntimePureHelperId,
+        row: &[i64],
+        row_count: usize,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<i64, RuntimeEvalError> {
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        pure_backend.call_i64_repeated_flat_batch_sum(helper, row, row_count)
+    }
+
     fn evaluate_record_expr(
         &mut self,
         fields: &[RuntimeFieldExpr],
@@ -590,6 +601,25 @@ impl Engine {
             return Ok(None);
         };
         let mut flat_inputs = std::mem::take(&mut self.pure_i64_batch_inputs);
+        if let Some(row_count) = self.i64_map_borrowed_source_len(source)
+            && self.collect_i64_repeated_map_batch_row_from_borrowed_source(
+                source,
+                param,
+                body,
+                arity,
+                &mut flat_inputs,
+            )?
+        {
+            let batch_result = self.call_i64_repeated_flat_batch_sum(
+                helper_id,
+                &flat_inputs,
+                row_count,
+                pure_backend,
+            );
+            self.pure_i64_batch_inputs = flat_inputs;
+            let sum = batch_result?;
+            return Ok(Some(sum));
+        }
         match self.collect_i64_map_batch_inputs_from_borrowed_source(
             source,
             param,
@@ -628,6 +658,26 @@ impl Engine {
                 return Err(error);
             }
         };
+        let RuntimeExpr::PureCall { args, .. } = body else {
+            unreachable!("i64 map batch shape checked before repeated row collection");
+        };
+        if self.collect_i64_repeated_map_batch_row_without_scope(
+            &items,
+            param,
+            args,
+            arity,
+            &mut flat_inputs,
+        )? {
+            let batch_result = self.call_i64_repeated_flat_batch_sum(
+                helper_id,
+                &flat_inputs,
+                items.len(),
+                pure_backend,
+            );
+            self.pure_i64_batch_inputs = flat_inputs;
+            let sum = batch_result?;
+            return Ok(Some(sum));
+        }
         let collect_result = self.collect_i64_map_batch_inputs(
             &items,
             param,
@@ -681,6 +731,53 @@ impl Engine {
         } else {
             Ok(None)
         }
+    }
+
+    fn i64_map_borrowed_source_len(&self, source: &RuntimeExpr) -> Option<usize> {
+        match source {
+            RuntimeExpr::Value(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => {
+                Some(items.len())
+            }
+            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
+                Some(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => {
+                    Some(items.len())
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn collect_i64_repeated_map_batch_row_from_borrowed_source(
+        &self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        arity: usize,
+        flat_inputs: &mut Vec<i64>,
+    ) -> Result<bool, RuntimeEvalError> {
+        let RuntimeExpr::PureCall { args, .. } = body else {
+            unreachable!("i64 map batch shape checked before repeated row collection");
+        };
+        let items = match source {
+            RuntimeExpr::Value(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => {
+                items.as_slice()
+            }
+            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
+                Some(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => {
+                    items.as_slice()
+                }
+                _ => return Ok(false),
+            },
+            _ => return Ok(false),
+        };
+        self.collect_i64_repeated_map_batch_row_without_scope(
+            items,
+            param,
+            args,
+            arity,
+            flat_inputs,
+        )
     }
 
     fn evaluate_i64_bracket_seq_sum(
@@ -788,6 +885,41 @@ impl Engine {
                     return Ok(false);
                 };
                 flat_inputs.push(value);
+            }
+        }
+        Ok(true)
+    }
+
+    fn collect_i64_repeated_map_batch_row_without_scope(
+        &self,
+        items: &[RuntimeValue],
+        param: &str,
+        args: &[RuntimeExpr],
+        arity: usize,
+        flat_inputs: &mut Vec<i64>,
+    ) -> Result<bool, RuntimeEvalError> {
+        flat_inputs.clear();
+        let Some(first) = items.first() else {
+            return Ok(true);
+        };
+        flat_inputs.reserve(arity);
+        for arg in args.iter().take(arity) {
+            let Some(value) = self.evaluate_i64_map_arg_without_scope(arg, param, first)? else {
+                flat_inputs.clear();
+                return Ok(false);
+            };
+            flat_inputs.push(value);
+        }
+        for item in &items[1..] {
+            for (index, arg) in args.iter().take(arity).enumerate() {
+                let Some(value) = self.evaluate_i64_map_arg_without_scope(arg, param, item)? else {
+                    flat_inputs.clear();
+                    return Ok(false);
+                };
+                if flat_inputs.get(index).copied() != Some(value) {
+                    flat_inputs.clear();
+                    return Ok(false);
+                }
             }
         }
         Ok(true)

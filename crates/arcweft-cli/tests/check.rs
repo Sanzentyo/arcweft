@@ -3369,11 +3369,15 @@ fn bench_json_measures_checked_in_large_map_pure_batch_fixture() {
     assert_eq!(measurement["deterministic"]["pure_aot_calls_median"], 4096);
     assert_eq!(
         measurement["deterministic"]["pure_thread_pool_jobs_median"],
-        4
+        0
     );
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
         0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
+        16
     );
     assert_eq!(
         measurement["deterministic"]["pure_result_bytes_copied_median"],

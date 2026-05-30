@@ -665,6 +665,10 @@ Current high-confidence state:
   VM/AOT/JIT backends can accumulate row results without materializing or
   copying an intermediate output vector. JIT emits a dedicated Cranelift
   rows-batch-sum function for the same automatic flow-level acceleration path.
+- When a fused `sum(map(...))` sees repeated identical `i64` input rows, the
+  runtime calls the pure helper once and multiplies the result by the logical
+  row count. The bench counters still report the logical batch size while
+  `arg_bytes_borrowed` drops to the single repeated row.
 - Fast-path scalar pure calls read local integer arguments by borrow when
   packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
   VM/AOT/JIT pure backends.
