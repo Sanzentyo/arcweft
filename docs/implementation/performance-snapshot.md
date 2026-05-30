@@ -4,6 +4,57 @@ This file records path-free local measurements for optimization comparisons.
 Values are machine- and build-cache-dependent; use them as trend samples, not
 portable guarantees.
 
+## 2026-05-31 JST
+
+Host summary reported by Arcweft:
+
+```text
+physical_cores = 12
+logical_threads = 20
+available_parallelism = 20
+```
+
+Commands:
+
+```bash
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/001_thread_scheduling.arcw --json --iterations 10 --warmup 2 --samples 5 --steps 64 --max-ops 64
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/003_for_pure_jit.arcw --json --iterations 25 --warmup 5 --samples 11 --steps 64 --max-ops 64 --pure-backend jit
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/004_system_info_threads.arcw --json --iterations 1 --warmup 0 --samples 3 --steps 24 --max-ops 24 --mode drain
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/007_branching_iter_pure_jit.arcw --json --iterations 25 --warmup 5 --samples 11 --steps 128 --max-ops 128 --pure-backend jit
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/009_nonuniform_map_pure_batch.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --pure-backend jit --pure-workers 4 --pure-batch-min-len 64
+```
+
+Checked-in thread scheduling bench:
+
+| fixture | executor | iterations | steps | median elapsed ns | median executed ops | per executed op ns | median line effects | median task requests |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 001_thread_scheduling.arcw | bytecode_vm | 10 | 64 | 16900 | 19 | 889 | 3 | 3 |
+
+Checked-in system-info threaded native scheduling bench:
+
+| fixture | executor | iterations | median elapsed ns | task requests | task events in | system info ops | scheduler submitted | scheduler max in-flight | parallel system tasks | parallel marker tasks | parallel workers |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 004_system_info_threads.arcw | bytecode_vm | 1 | 1227700 | 6 | 6 | 3 | 6 | 6 | 3 | 3 | 6 |
+
+Scalar for-loop and mixed iterator pure JIT benches:
+
+| fixture | executor | pure backend | median elapsed ns | pure calls | stack packs | arg vec allocs | copied arg bytes | borrowed arg bytes | JIT calls | batch items |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 003_for_pure_jit.arcw | bytecode_vm | jit | 47900 | 16 | 0 | 0 | 0 | 256 | 16 | 0 |
+| 007_branching_iter_pure_jit.arcw | bytecode_vm | jit | 106200 | 32 | 0 | 0 | 0 | 512 | 32 | 16 |
+
+Nonuniform map pure batch after numeric sequence typecheck fast path:
+
+| fixture | executor | pure backend | median elapsed ns | parse ns | typecheck ns | runtime plan ns | typecheck exprs | type judgments | pure calls | batch calls | batch items | arg vec allocs | borrowed arg bytes |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 009_nonuniform_map_pure_batch.arcw | bytecode_vm | jit | 16400 | 4578300 | 267400 | 320700 | 16 | 21 | 128 | 1 | 128 | 0 | 2048 |
+
+The scalar pure fixtures remain on borrowed slice calls: `stack_packs = 0`,
+`arg_vec_allocs = 0`, and `copied_arg_bytes = 0`. The nonuniform map fixture
+now checks the large typed numeric sequence through the expected-item fast path,
+so the typechecker records 16 expressions instead of recursively visiting every
+literal in the sequence.
+
 ## 2026-05-30 JST
 
 Host summary reported by Arcweft:
