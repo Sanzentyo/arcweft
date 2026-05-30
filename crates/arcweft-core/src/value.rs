@@ -268,6 +268,21 @@ impl RuntimeEnv {
             self.set_root(binding.name, binding.value);
         }
     }
+
+    pub(crate) fn from_i64_bindings(input_names: &[String], args: &[i64]) -> Self {
+        Self {
+            scopes: vec![RuntimeScope {
+                bindings: input_names
+                    .iter()
+                    .zip(args.iter().copied())
+                    .map(|(name, value)| RuntimeBinding {
+                        name: name.clone(),
+                        value: RuntimeValue::Int(value),
+                    })
+                    .collect(),
+            }],
+        }
+    }
 }
 
 impl RuntimeScope {

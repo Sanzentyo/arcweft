@@ -591,6 +591,10 @@ Current high-confidence state:
 - CLI runtime pure-helper batch measurements now reuse row-major input and
   output scratch buffers across samples, keeping large JIT/AOT comparison runs
   from adding per-sample benchmark-harness allocations.
+- VM pure-helper `i64` fallback calls now build the root runtime environment
+  directly from the input slice instead of inserting each argument through
+  repeated binding lookup, reducing fallback overhead while keeping JIT/AOT as
+  the automatic fast path.
 - Awaited `system.core_count()`, `system.thread_count()`, and
   `system.available_parallelism()` calls now lower to typed system-info task
   requests. The CLI adapter resolves physical cores, logical CPUs, and

@@ -851,13 +851,8 @@ impl PureEvaluator {
     }
 
     fn new_i64_slice(input_names: &[String], args: &[i64]) -> Self {
-        let mut env = RuntimeEnv::default();
-        input_names
-            .iter()
-            .zip(args.iter().copied())
-            .for_each(|(name, value)| env.set(name.clone(), RuntimeValue::Int(value)));
         Self {
-            env,
+            env: RuntimeEnv::from_i64_bindings(input_names, args),
             stats: PureFunctionStats::default(),
         }
     }
