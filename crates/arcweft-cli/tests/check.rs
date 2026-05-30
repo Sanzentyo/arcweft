@@ -2324,6 +2324,75 @@ flow @flow.fallback fallback {
 }
 
 #[test]
+fn bench_json_measures_thread_scheduling_characteristics() {
+    let path = temp_arcw(
+        "script-bench-thread-scheduling",
+        r#"
+bench @bench.threads {
+    measure iterations = 1 { start(@flow.threads) }
+}
+
+flow @flow.threads threads {
+    thread first {
+        log.info("first")
+    }
+    thread second {
+        log.info("second")
+    }
+    thread third {
+        log.info("third")
+    }
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("1")
+        .arg("--warmup")
+        .arg("0")
+        .arg("--steps")
+        .arg("16")
+        .arg("--max-ops")
+        .arg("1")
+        .arg("--mode")
+        .arg("one-op")
+        .arg("--json")
+        .output()
+        .expect("arcw bench measures flow thread scheduling");
+
+    assert!(
+        output.status.success(),
+        "thread scheduling bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&std::env::temp_dir().display().to_string()),
+        "thread scheduling bench JSON must not record absolute temp paths: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_eq!(measurement["deterministic"]["task_requests_median"], 3);
+    assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 3);
+    assert_eq!(measurement["native_io"]["completed_tasks"], 3);
+    assert!(
+        measurement["deterministic"]["child_fiber_ticks_median"]
+            .as_u64()
+            .is_some_and(|ticks| ticks >= 3),
+        "bench JSON should expose child-fiber activity ticks: {measurement}"
+    );
+    assert_eq!(
+        measurement["deterministic"]["max_child_fibers_median"], 3,
+        "bench JSON should expose peak flow child-fiber fanout: {measurement}"
+    );
+}
+
+#[test]
 fn bench_json_measures_pure_helper_with_vm_aot_and_jit() {
     let path = temp_arcw(
         "script-bench-pure-helper",

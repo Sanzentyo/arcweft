@@ -765,6 +765,8 @@ pub(crate) struct ScriptBenchElapsedSummary {
 #[derive(serde::Serialize)]
 pub(crate) struct ScriptBenchDeterministicSummary {
     pub(crate) executed_ops_median: usize,
+    pub(crate) child_fiber_ticks_median: usize,
+    pub(crate) max_child_fibers_median: usize,
     pub(crate) line_effects_median: usize,
     pub(crate) task_requests_median: usize,
     pub(crate) task_events_in_median: usize,

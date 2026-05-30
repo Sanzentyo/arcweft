@@ -3131,6 +3131,8 @@ fn run_bench_flow_section(
 struct RuntimeBenchSamples {
     elapsed: Vec<u128>,
     executed_ops: Vec<usize>,
+    child_fiber_ticks: Vec<usize>,
+    max_child_fibers: Vec<usize>,
     line_effects: Vec<usize>,
     task_requests: Vec<usize>,
     task_events_in: Vec<usize>,
@@ -3149,6 +3151,16 @@ impl RuntimeBenchSamples {
         self.elapsed.push(elapsed_ns);
         self.executed_ops
             .push(trace.steps.iter().map(|step| step.stats.executed_ops).sum());
+        self.child_fiber_ticks
+            .push(trace.steps.iter().map(|step| step.stats.child_fibers).sum());
+        self.max_child_fibers.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.stats.child_fibers)
+                .max()
+                .unwrap_or_default(),
+        );
         self.line_effects
             .push(trace.steps.iter().map(|step| step.stats.line_effects).sum());
         self.task_requests.push(
@@ -3235,6 +3247,8 @@ impl RuntimeBenchSamples {
     fn deterministic_summary(&mut self) -> ScriptBenchDeterministicSummary {
         ScriptBenchDeterministicSummary {
             executed_ops_median: median_usize(&mut self.executed_ops),
+            child_fiber_ticks_median: median_usize(&mut self.child_fiber_ticks),
+            max_child_fibers_median: median_usize(&mut self.max_child_fibers),
             line_effects_median: median_usize(&mut self.line_effects),
             task_requests_median: median_usize(&mut self.task_requests),
             task_events_in_median: median_usize(&mut self.task_events_in),

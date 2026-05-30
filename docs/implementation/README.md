@@ -92,6 +92,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   parser/checker/lowering cost. Bench assertions can check real file output with
   `expect.file(path.save("output.txt"), equals="...")` while keeping the host
   filesystem path out of JSON.
+  Runtime bench deterministic summaries include child-fiber activity ticks and
+  peak child-fiber fanout, so source-level `thread` scheduling can be compared
+  across VM/scheduler changes without recording host paths.
   `measure { pure(helper_name) }` sections additionally run the selected
   checked `#[pure] fn` helper through the VM reference, typed AOT plan, native
   Cranelift JIT, and JIT batch loop, reporting conformance, deterministic
