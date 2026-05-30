@@ -24,6 +24,7 @@ arcweft-verify-oxiz = { path = "../arcweft-verify-oxiz" }
 arcweft-verify-z3 = { path = "../arcweft-verify-z3" }
 clap = { workspace = true, features = ["derive"] }
 num_cpus.workspace = true
+rayon.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

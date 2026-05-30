@@ -1387,6 +1387,8 @@ flow @flow.main main effects { fs.read(save) } {
             && stdout.contains("\"dispatched\": 3")
             && stdout.contains("\"max_in_flight\": 2")
             && stdout.contains("\"read_ops\": 3")
+            && stdout.contains("\"parallel_batches\": 1")
+            && stdout.contains("\"parallel_tasks\": 2")
             && stdout.contains("return done"),
         "run JSON should show bounded traverse fanout and native reads: {stdout}"
     );
@@ -2518,6 +2520,8 @@ flow @flow.parallel_io parallel_io effects { fs.read(save), fs.write(save) } {
             && stdout.contains("\"dispatched\": 4")
             && stdout.contains("\"max_in_flight\": 2")
             && stdout.contains("\"read_ops\": 3")
+            && stdout.contains("\"parallel_batches\": 1")
+            && stdout.contains("\"parallel_tasks\": 2")
             && stdout.contains("\"write_ops\": 1"),
         "bench JSON should expose bounded traverse fanout counters: {stdout}"
     );

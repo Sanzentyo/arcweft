@@ -365,7 +365,9 @@ Native file task execution, line-plan child task markers, and source-level flow
 adapter performs completion work. `native_io.scheduler` reports submitted,
 joined, joined-completed, dispatched, completed, failed, cancelled, requested
 cancel, current in-flight, and maximum in-flight task counts without recording
-host paths.
+host paths. Read-only dispatched batches are completed on the native worker
+pool, while writes stay ordered; `native_io.parallel_batches`,
+`parallel_tasks`, and `parallel_workers` expose that adapter-side fanout.
 Awaited `system.core_count()`, `system.thread_count()`, and
 `system.available_parallelism()` calls are completed by the CLI adapter as
 path-free system-info tasks. The native adapter reports physical cores for

@@ -3225,6 +3225,9 @@ struct NativeTaskStatsSamples {
     system_info_ops: Vec<usize>,
     bytes_read: Vec<usize>,
     bytes_written: Vec<usize>,
+    parallel_batches: Vec<usize>,
+    parallel_tasks: Vec<usize>,
+    parallel_workers: Vec<usize>,
     scheduler: NativeSchedulerStatsSamples,
 }
 
@@ -3237,6 +3240,9 @@ impl NativeTaskStatsSamples {
         self.system_info_ops.push(stats.system_info_ops);
         self.bytes_read.push(stats.bytes_read);
         self.bytes_written.push(stats.bytes_written);
+        self.parallel_batches.push(stats.parallel_batches);
+        self.parallel_tasks.push(stats.parallel_tasks);
+        self.parallel_workers.push(stats.parallel_workers);
         self.scheduler.push(stats.scheduler);
     }
 
@@ -3249,6 +3255,9 @@ impl NativeTaskStatsSamples {
             system_info_ops: median_usize(&mut self.system_info_ops),
             bytes_read: median_usize(&mut self.bytes_read),
             bytes_written: median_usize(&mut self.bytes_written),
+            parallel_batches: median_usize(&mut self.parallel_batches),
+            parallel_tasks: median_usize(&mut self.parallel_tasks),
+            parallel_workers: median_usize(&mut self.parallel_workers),
             scheduler: self.scheduler.median(),
         }
     }

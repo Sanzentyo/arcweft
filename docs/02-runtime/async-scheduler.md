@@ -216,6 +216,9 @@ TaskEventKind::Cancelled       -> mark the fiber failed
 Actual asset loading, worker execution, clocks, renderer progress UI, and audio
 work remain outside `arcweft-core`. Core only produces deterministic task
 requests and consumes deterministic task events.
+The native CLI adapter completes read-only dispatch batches on a worker pool and
+reports path-free `native_io.parallel_*` counters; write tasks stay ordered so
+benchmarks can distinguish scheduler fanout from host-side mutation ordering.
 
 Recognized capability calls such as `fs.read_text(...)`, `http.fetch(...)`,
 `asset.image(...)`, `shader.compile(...)`, `audio.decode(...)`,

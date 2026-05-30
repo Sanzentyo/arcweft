@@ -420,6 +420,9 @@ Current high-confidence state:
   `thread` blocks lower to a deterministic scheduler marker plus a scoped VM
   child fiber; detached flow threads remain rejected until the detach contract
   is checked explicitly.
+- The CLI native task bridge now completes read-only dispatched task batches on
+  a worker pool and reports path-free `parallel_batches`, `parallel_tasks`, and
+  `parallel_workers` counters in `native_io`; write tasks stay ordered.
 - Awaited `system.core_count()`, `system.thread_count()`, and
   `system.available_parallelism()` calls now lower to typed system-info task
   requests. The CLI adapter resolves physical cores, logical CPUs, and
