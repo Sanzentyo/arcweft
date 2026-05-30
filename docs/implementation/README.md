@@ -680,6 +680,11 @@ Current high-confidence state:
   when every element is already a runtime value, so non-repeated literal input
   benches keep runtime type validation proportional to the flow shape instead
   of the literal element count.
+- Literal array repeats now lower to a structured runtime repeat expression
+  instead of materializing a large sequence in the runtime plan. Fused
+  `map(...).sum()` paths over repeated sources call the repeated-row pure batch
+  boundary directly, so `[value; N]` keeps logical batch counters without
+  cloning or scanning `N` runtime values.
 - Fast-path scalar pure calls read local integer arguments by borrow when
   packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
   VM/AOT/JIT pure backends.
