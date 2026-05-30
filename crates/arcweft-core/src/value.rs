@@ -269,13 +269,22 @@ impl RuntimeEnv {
         }
     }
 
-    pub fn bind_all_root_ref<'a>(
-        &mut self,
-        bindings: impl IntoIterator<Item = &'a RuntimeBinding>,
-    ) {
+    pub fn bind_all_root_ref(&mut self, bindings: &[RuntimeBinding]) {
+        if self.replace_root_bindings_ref(bindings) {
+            return;
+        }
         for binding in bindings {
             self.set_root_ref(&binding.name, &binding.value);
         }
+    }
+
+    fn replace_root_bindings_ref(&mut self, bindings: &[RuntimeBinding]) -> bool {
+        if self.scopes.is_empty() {
+            return bindings.is_empty();
+        }
+        self.scopes
+            .first_mut()
+            .is_some_and(|scope| scope.replace_binding_values_ref(bindings))
     }
 
     fn set_root_ref(&mut self, name: &str, value: &RuntimeValue) {
@@ -362,6 +371,25 @@ impl RuntimeScope {
                     value: RuntimeValue::Int(value),
                 }),
         );
+    }
+
+    fn replace_binding_values_ref(&mut self, bindings: &[RuntimeBinding]) -> bool {
+        if self.bindings.len() != bindings.len() {
+            return false;
+        }
+        if !self
+            .bindings
+            .iter()
+            .zip(bindings)
+            .all(|(current, next)| current.name == next.name)
+        {
+            return false;
+        }
+        self.bindings
+            .iter_mut()
+            .zip(bindings)
+            .for_each(|(current, next)| current.value = next.value.clone());
+        true
     }
 }
 

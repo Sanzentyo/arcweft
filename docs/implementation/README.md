@@ -635,6 +635,9 @@ Current high-confidence state:
 - Borrowed root binding updates now reuse existing environment slots without
   recloning binding names, so repeated runtime steps only clone the value when
   an adapter-provided root binding is already present.
+- Borrowed root binding updates also fast-path the common same-order binding
+  set, updating root values in one pass instead of performing one linear name
+  lookup per binding on every measured runtime step.
 - Source event normalization now sorts by borrowed source id and sequence
   comparisons instead of constructing cloned sort keys, reducing per-step work
   for source-heavy and stream-heavy runtime benches.
