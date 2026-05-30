@@ -109,16 +109,14 @@ impl TypeChecker<'_> {
         let mut arm_states = Vec::new();
         for arm in block.arms() {
             self.restore_borrow_state(base_borrow_snapshot.clone());
-            let outer_locals = self.locals.clone();
-            for (name, ty) in let_else_bindings(arm.pattern(), expr_type.as_ref()) {
-                self.locals.insert(name, ty);
-            }
+            let local_snapshot =
+                self.insert_scoped_locals(let_else_bindings(arm.pattern(), expr_type.as_ref()));
             if let Some(guard) = arm.guard() {
                 self.expect_expr_type(guard, &TypeKind::Bool, "match arm guard");
             }
             self.check_flow_items(arm.body());
             arm_states.push(self.snapshot_borrow_state());
-            self.locals = outer_locals;
+            self.restore_scoped_locals(local_snapshot);
         }
         self.check_choice_match_exhaustive(
             expr_type.as_ref(),

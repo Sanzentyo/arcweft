@@ -1289,15 +1289,13 @@ impl TypeChecker<'_> {
         let mut inferred = None;
         for arm in arms {
             self.restore_borrow_state(base_borrow_snapshot.clone());
-            let outer_locals = self.locals.clone();
-            for (name, ty) in let_else_bindings(arm.pattern(), scrutinee_type.as_ref()) {
-                self.locals.insert(name, ty);
-            }
+            let local_snapshot = self
+                .insert_scoped_locals(let_else_bindings(arm.pattern(), scrutinee_type.as_ref()));
             if let Some(guard) = arm.guard() {
                 self.expect_expr_type(guard, &TypeKind::Bool, "match arm guard");
             }
             let arm_type = self.check_expr_with_expected(arm.value(), inferred.as_ref());
-            self.locals = outer_locals;
+            self.restore_scoped_locals(local_snapshot);
             match (&inferred, arm_type) {
                 (None, Some(ty)) => inferred = Some(ty),
                 (Some(existing), Some(ty)) if existing == &ty => {}
@@ -1338,14 +1336,12 @@ impl TypeChecker<'_> {
         }
 
         let base_borrow_snapshot = self.snapshot_borrow_state();
-        let outer_locals = self.locals.clone();
-        for (name, ty) in let_else_bindings(pattern, expr_type.as_ref()) {
-            self.locals.insert(name, ty);
-        }
+        let local_snapshot =
+            self.insert_scoped_locals(let_else_bindings(pattern, expr_type.as_ref()));
         let then_type = self.check_expr(then_branch);
         let then_borrow_state = self.snapshot_borrow_state();
         self.restore_borrow_state(base_borrow_snapshot.clone());
-        self.locals = outer_locals;
+        self.restore_scoped_locals(local_snapshot);
 
         let else_type = else_branch.and_then(|branch| self.check_expr(branch));
         let else_borrow_state = self.snapshot_borrow_state();
