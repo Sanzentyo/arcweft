@@ -676,6 +676,51 @@ mod tests {
     }
 
     #[test]
+    fn jit_batch_matches_scalar_results_without_value_vec_allocation() {
+        let helper = RuntimePureHelper {
+            id: RuntimePureHelperId(0),
+            name: "score".to_owned(),
+            input_names: vec!["base".to_owned(), "bonus".to_owned()],
+            expr: RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+                }),
+            },
+            origin: RuntimePureHelperOrigin::Annotated,
+        };
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                backend: RuntimePureBackendMode::Jit,
+                workers: RuntimePureWorkerCount::Fixed(1),
+                batch_min_len: 2,
+            },
+            std::slice::from_ref(&helper),
+        );
+        let rows = [
+            RuntimeI64Args::new([3, 4, 0, 0], 2),
+            RuntimeI64Args::new([5, 1, 0, 0], 2),
+            RuntimeI64Args::new([2, 8, 0, 0], 2),
+        ];
+        let mut out = [0; 3];
+
+        accelerator
+            .call_i64_batch(&helper, &rows, &mut out)
+            .expect("JIT batch succeeds");
+
+        assert_eq!(out, [18, 15, 20]);
+        assert_eq!(accelerator.stats().batch_calls, 1);
+        assert_eq!(accelerator.stats().batch_items, 3);
+        assert_eq!(accelerator.stats().jit_calls, 3);
+        assert_eq!(accelerator.stats().arg_stack_packs, 3);
+        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+        assert_eq!(accelerator.summary().jit, 1);
+    }
+
+    #[test]
     fn vm_batch_uses_i64_args_without_value_vec_allocation() {
         let helper = RuntimePureHelper {
             id: RuntimePureHelperId(0),
