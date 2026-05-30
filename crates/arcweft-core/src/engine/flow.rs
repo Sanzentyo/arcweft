@@ -170,7 +170,7 @@ impl Engine {
                 Err(error) => self.fail_eval(error, output),
             },
             FlowOp::Match { scrutinee, arms } => {
-                match self.evaluate_match_with_backend(&scrutinee, &arms, pure_backend) {
+                match self.evaluate_match_with_backend(&scrutinee, arms, pure_backend) {
                     Ok(Some((bindings, ops))) => {
                         self.advance_if_needed(next);
                         self.push_scoped_ops_with_bindings(bindings, ops);

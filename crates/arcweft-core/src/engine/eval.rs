@@ -57,7 +57,7 @@ impl Engine {
     pub(super) fn evaluate_match_with_backend(
         &mut self,
         scrutinee: &RuntimeExpr,
-        arms: &[RuntimeMatchArm],
+        arms: Vec<RuntimeMatchArm>,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeMatchSelection, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(scrutinee, pure_backend)?;
@@ -72,7 +72,7 @@ impl Engine {
             {
                 continue;
             }
-            return Ok(Some((bindings, arm.ops.clone())));
+            return Ok(Some((bindings, arm.ops)));
         }
         Ok(None)
     }
