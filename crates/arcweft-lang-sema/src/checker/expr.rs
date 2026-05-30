@@ -1240,7 +1240,7 @@ impl TypeChecker<'_> {
         let base_borrow_snapshot = self.snapshot_borrow_state();
         let then_type = self.check_expr(then_branch);
         let then_borrow_state = self.snapshot_borrow_state();
-        self.restore_borrow_state(base_borrow_snapshot.clone());
+        self.restore_borrow_state_ref(&base_borrow_snapshot);
         let else_type = else_branch.and_then(|branch| self.check_expr(branch));
         let else_borrow_state = self.snapshot_borrow_state();
         if else_branch.is_some() {
@@ -1275,7 +1275,7 @@ impl TypeChecker<'_> {
         let mut arm_states = Vec::new();
         let mut inferred = None;
         for arm in arms {
-            self.restore_borrow_state(base_borrow_snapshot.clone());
+            self.restore_borrow_state_ref(&base_borrow_snapshot);
             let local_snapshot = self
                 .insert_scoped_locals(let_else_bindings(arm.pattern(), scrutinee_type.as_ref()));
             if let Some(guard) = arm.guard() {
@@ -1327,7 +1327,7 @@ impl TypeChecker<'_> {
             self.insert_scoped_locals(let_else_bindings(pattern, expr_type.as_ref()));
         let then_type = self.check_expr(then_branch);
         let then_borrow_state = self.snapshot_borrow_state();
-        self.restore_borrow_state(base_borrow_snapshot.clone());
+        self.restore_borrow_state_ref(&base_borrow_snapshot);
         self.restore_scoped_locals(local_snapshot);
 
         let else_type = else_branch.and_then(|branch| self.check_expr(branch));

@@ -138,7 +138,7 @@ impl TypeChecker<'_> {
         }
         self.check_flow_items(block.body());
         let then_state = self.snapshot_borrow_state();
-        self.restore_borrow_state(borrow_snapshot.clone());
+        self.restore_borrow_state_ref(&borrow_snapshot);
         self.restore_scoped_locals(local_snapshot);
         self.check_flow_items(block.else_body());
         let else_state = self.snapshot_borrow_state();

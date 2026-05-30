@@ -94,7 +94,7 @@ impl TypeChecker<'_> {
         let borrow_snapshot = self.snapshot_borrow_state();
         self.check_flow_items(block.body());
         let then_state = self.snapshot_borrow_state();
-        self.restore_borrow_state(borrow_snapshot.clone());
+        self.restore_borrow_state_ref(&borrow_snapshot);
         self.check_flow_items(block.else_body());
         let else_state = self.snapshot_borrow_state();
         self.merge_borrow_state_from_paths(
@@ -108,7 +108,7 @@ impl TypeChecker<'_> {
         let base_borrow_snapshot = self.snapshot_borrow_state();
         let mut arm_states = Vec::new();
         for arm in block.arms() {
-            self.restore_borrow_state(base_borrow_snapshot.clone());
+            self.restore_borrow_state_ref(&base_borrow_snapshot);
             let local_snapshot =
                 self.insert_scoped_locals(let_else_bindings(arm.pattern(), expr_type.as_ref()));
             if let Some(guard) = arm.guard() {

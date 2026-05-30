@@ -883,6 +883,9 @@ Current high-confidence state:
   dropping a borrowed local moves the tracked state out of the map before
   updating it, and merge call sites pass snapshot references instead of cloning
   base snapshots just to describe branch paths.
+  Branch borrow-state restores now use a reference-based restore path with
+  `clone_from`, so repeated if/match branch checks reuse the checker's borrow
+  map allocation instead of cloning a whole snapshot value before restoration.
 - `arcweft-verify` exposes `validate_runtime_plan_types(plan, report)` for the
   post-lowering runtime plan consumed by the VM. `arcw profile --json` now runs
   this pass between runtime-plan lowering and bytecode lowering and reports

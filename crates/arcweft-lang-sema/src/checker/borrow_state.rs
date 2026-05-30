@@ -96,6 +96,13 @@ impl TypeChecker<'_> {
         self.rebuild_active_borrows();
     }
 
+    pub(super) fn restore_borrow_state_ref(&mut self, snapshot: &BorrowStateSnapshot) {
+        self.stats.borrow_state_restores += 1;
+        self.borrow_local_lifetimes
+            .clone_from(&snapshot.borrow_local_lifetimes);
+        self.rebuild_active_borrows();
+    }
+
     pub(super) fn merge_borrow_state_from_paths(
         &mut self,
         base: &BorrowStateSnapshot,

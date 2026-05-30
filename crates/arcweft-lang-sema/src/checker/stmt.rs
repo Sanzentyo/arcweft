@@ -400,7 +400,7 @@ impl TypeChecker<'_> {
         let base_borrow_snapshot = self.snapshot_borrow_state();
         let mut arm_states = Vec::new();
         for arm in arms {
-            self.restore_borrow_state(base_borrow_snapshot.clone());
+            self.restore_borrow_state_ref(&base_borrow_snapshot);
             let local_snapshot =
                 self.insert_scoped_locals(let_else_bindings(arm.pattern(), expr_type.as_ref()));
             if let Some(guard) = arm.guard() {
