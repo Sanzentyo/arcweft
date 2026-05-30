@@ -129,6 +129,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   argument slices instead of reconstructing a `PureFunctionRequest` and binding
   vector for each fallback call. `arg_vec_allocations` remains zero for that
   backend boundary while `arg_bytes_borrowed` records the borrowed slice size.
+- Runtime pure accelerator cache construction now builds each helper's compile
+  request once and shares it across JIT/AOT attempts, reducing Auto-mode setup
+  work for helpers that fall through from JIT to AOT or VM.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

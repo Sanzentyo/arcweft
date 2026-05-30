@@ -444,30 +444,32 @@ fn compile_helper(
     helper: &RuntimePureHelper,
     stats: &mut RuntimePureCompileStats,
 ) -> RuntimePureCacheEntry {
+    if mode == RuntimePureBackendMode::Vm {
+        return RuntimePureCacheEntry::Vm;
+    }
+    let request = compile_request(helper);
     match mode {
         RuntimePureBackendMode::Vm => RuntimePureCacheEntry::Vm,
         RuntimePureBackendMode::Aot => {
-            compile_aot(helper, stats).unwrap_or(RuntimePureCacheEntry::Vm)
+            compile_aot(&request, helper, stats).unwrap_or(RuntimePureCacheEntry::Vm)
         }
         RuntimePureBackendMode::Jit => {
-            compile_jit(helper, stats).unwrap_or(RuntimePureCacheEntry::Vm)
+            compile_jit(&request, helper, stats).unwrap_or(RuntimePureCacheEntry::Vm)
         }
-        RuntimePureBackendMode::Auto => compile_jit(helper, stats)
-            .or_else(|| compile_aot(helper, stats))
+        RuntimePureBackendMode::Auto => compile_jit(&request, helper, stats)
+            .or_else(|| compile_aot(&request, helper, stats))
             .unwrap_or(RuntimePureCacheEntry::Vm),
     }
 }
 
 fn compile_jit(
+    request: &PureFunctionRequest,
     helper: &RuntimePureHelper,
     stats: &mut RuntimePureCompileStats,
 ) -> Option<RuntimePureCacheEntry> {
     stats.jit_attempts += 1;
     let compiled = CraneliftPureFunctionBackend
-        .compile_i64_with_inputs(
-            &compile_request(helper),
-            helper.input_names.iter().map(String::as_str),
-        )
+        .compile_i64_with_inputs(request, helper.input_names.iter().map(String::as_str))
         .ok();
     if compiled.is_some() {
         stats.jit_successes += 1;
@@ -478,15 +480,13 @@ fn compile_jit(
 }
 
 fn compile_aot(
+    request: &PureFunctionRequest,
     helper: &RuntimePureHelper,
     stats: &mut RuntimePureCompileStats,
 ) -> Option<RuntimePureCacheEntry> {
     stats.aot_attempts += 1;
     let compiled = AotPureFunctionBackend::new()
-        .compile_i64_with_inputs(
-            &compile_request(helper),
-            helper.input_names.iter().map(String::as_str),
-        )
+        .compile_i64_with_inputs(request, helper.input_names.iter().map(String::as_str))
         .ok();
     if compiled.is_some() {
         stats.aot_successes += 1;
