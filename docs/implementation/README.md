@@ -170,6 +170,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - The native task scheduler dispatch path takes the full pending queue directly
   when the budget covers every ready task, avoiding front-drain movement in the
   common unbounded host-dispatch case.
+- Borrow release uses unordered removal from the active-borrow list because
+  active borrow order is not semantically meaningful, reducing element movement
+  during drop-heavy borrow checking.
 - `arcweft-cli` keeps user-facing JSON report schemas in `output.rs`,
   including check, profile, verify-types, bench, runtime step, and compiler
   counter summaries. `main.rs` remains the command orchestration layer instead

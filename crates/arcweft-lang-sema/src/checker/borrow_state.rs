@@ -78,7 +78,7 @@ impl TypeChecker<'_> {
             .iter()
             .position(|active| active == lifetime)
         {
-            self.active_borrows.remove(index);
+            self.active_borrows.swap_remove(index);
         }
     }
 
