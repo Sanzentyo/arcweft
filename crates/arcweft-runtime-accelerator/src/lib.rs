@@ -195,7 +195,7 @@ impl RuntimePureAccelerator {
                     self.stats.thread_pool_jobs += self.parallel_jobs(rows.len());
                     call_aot_batch_parallel(self.pool.as_ref(), compiled, rows, out)
                 } else {
-                    call_aot_batch(compiled, rows, out)
+                    call_aot_batch(compiled, rows, out, &mut self.aot_i64_slots)
                 }
             }
             Some(RuntimePureCacheEntry::Vm) => {
@@ -282,7 +282,7 @@ impl RuntimePureAccelerator {
                         out,
                     )
                 } else {
-                    call_aot_flat_batch(compiled, flat_inputs, arity, out)
+                    call_aot_flat_batch(compiled, flat_inputs, arity, out, &mut self.aot_i64_slots)
                 }
             }
             Some(RuntimePureCacheEntry::Vm) => {
@@ -556,11 +556,11 @@ fn call_aot_batch(
     compiled: &AotPureI64Plan,
     rows: &[RuntimeI64Args],
     out: &mut [i64],
+    slots: &mut Vec<i64>,
 ) -> Result<(), RuntimeEvalError> {
-    let mut slots = Vec::new();
     rows.iter().zip(out.iter_mut()).try_for_each(|(row, slot)| {
         compiled
-            .call_with_inputs_scratch(row.as_slice(), &mut slots)
+            .call_with_inputs_scratch(row.as_slice(), slots)
             .map(|(value, _)| *slot = value)
     })
 }
@@ -591,12 +591,12 @@ fn call_aot_flat_batch(
     flat_inputs: &[i64],
     arity: usize,
     out: &mut [i64],
+    slots: &mut Vec<i64>,
 ) -> Result<(), RuntimeEvalError> {
-    let mut slots = Vec::new();
     if arity == 0 {
         return out.iter_mut().try_for_each(|slot| {
             compiled
-                .call_with_inputs_scratch(&[], &mut slots)
+                .call_with_inputs_scratch(&[], slots)
                 .map(|(value, _)| *slot = value)
         });
     }
@@ -605,7 +605,7 @@ fn call_aot_flat_batch(
         .zip(out.iter_mut())
         .try_for_each(|(row, slot)| {
             compiled
-                .call_with_inputs_scratch(row, &mut slots)
+                .call_with_inputs_scratch(row, slots)
                 .map(|(value, _)| *slot = value)
         })
 }
@@ -983,6 +983,15 @@ mod tests {
             .expect("small AOT batch succeeds without pool");
 
         assert_eq!(small_out, [18, 15]);
+        assert!(!accelerator.has_worker_pool());
+        assert_eq!(accelerator.stats().thread_pool_jobs, 0);
+
+        let mut small_flat_out = [0; 2];
+        accelerator
+            .call_i64_flat_batch(&helper, &[3, 4, 5, 1], 2, &mut small_flat_out)
+            .expect("small flat AOT batch reuses sequential scratch without pool");
+
+        assert_eq!(small_flat_out, [18, 15]);
         assert!(!accelerator.has_worker_pool());
         assert_eq!(accelerator.stats().thread_pool_jobs, 0);
 
