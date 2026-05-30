@@ -44,6 +44,7 @@ fn normalizes_source_events_by_source_and_sequence() {
     ];
 
     let normalized = normalize_source_events(events);
+    assert!(source_events_are_normalized(&normalized));
     let keys = normalized
         .iter()
         .map(|event| (event.source.0.as_str(), event.sequence))

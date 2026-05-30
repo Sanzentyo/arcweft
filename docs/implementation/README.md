@@ -638,6 +638,8 @@ Current high-confidence state:
 - Source event normalization now sorts by borrowed source id and sequence
   comparisons instead of constructing cloned sort keys, reducing per-step work
   for source-heavy and stream-heavy runtime benches.
+- Source event normalization also skips sorting when adapter events are already
+  in replay-stable source/sequence order, matching the task-event fast path.
 - Native task completion now consumes moved `TaskSpec` request vectors and
   submits supported tasks directly into the scheduler, removing the remaining
   task clone between runtime JSON summarization and host scheduling.

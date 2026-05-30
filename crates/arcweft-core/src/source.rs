@@ -69,8 +69,16 @@ pub struct SourceRuntimeState {
 pub struct SourceId(pub String);
 
 pub fn normalize_source_events<T, E>(mut events: Vec<SourceEvent<T, E>>) -> Vec<SourceEvent<T, E>> {
-    events.sort_by(compare_source_events);
+    if events.len() > 1 && !source_events_are_normalized(&events) {
+        events.sort_by(compare_source_events);
+    }
     events
+}
+
+pub fn source_events_are_normalized<T, E>(events: &[SourceEvent<T, E>]) -> bool {
+    events
+        .windows(2)
+        .all(|pair| compare_source_events(&pair[0], &pair[1]).is_le())
 }
 
 fn compare_source_events<T, E>(
