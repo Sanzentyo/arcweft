@@ -3673,13 +3673,19 @@ fn bench_start_flow(section: &BenchSection) -> Option<String> {
 }
 
 fn median_u128(values: &mut [u128]) -> u128 {
-    values.sort_unstable();
-    values.get(values.len() / 2).copied().unwrap_or_default()
+    if values.is_empty() {
+        return 0;
+    }
+    let mid = values.len() / 2;
+    *values.select_nth_unstable(mid).1
 }
 
 fn median_usize(values: &mut [usize]) -> usize {
-    values.sort_unstable();
-    values.get(values.len() / 2).copied().unwrap_or_default()
+    if values.is_empty() {
+        return 0;
+    }
+    let mid = values.len() / 2;
+    *values.select_nth_unstable(mid).1
 }
 
 fn validate_bench_section(section: &BenchSection) -> ScriptBenchSectionRunSummary {

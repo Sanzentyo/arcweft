@@ -192,6 +192,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
   common unbounded host-dispatch case.
 - Scheduler completion now allocates joined-completion storage only when a
   completed task actually has join waiters.
+- CLI bench sample aggregation computes medians with nth-element selection
+  instead of fully sorting every timing/counter sample vector.
 - Borrow release uses unordered removal from the active-borrow list because
   active borrow order is not semantically meaningful, reducing element movement
   during drop-heavy borrow checking.
