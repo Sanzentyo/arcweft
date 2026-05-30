@@ -241,7 +241,6 @@ impl RuntimePureAccelerator {
         self.stats.batch_calls += 1;
         self.stats.batch_items += out.len();
         self.stats.pure_calls += out.len();
-        self.stats.arg_stack_packs += out.len();
         self.stats.arg_bytes_copied += std::mem::size_of_val(flat_inputs);
         self.stats.result_bytes_copied += std::mem::size_of_val(out);
         if out.is_empty() {

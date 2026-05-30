@@ -2609,6 +2609,7 @@ fn assert_runtime_pure_batch_json(pure_helper: &serde_json::Value) {
     assert_eq!(runtime_batch["stats"]["batch_items"], 8);
     assert_eq!(runtime_batch["stats"]["pure_calls"], 8);
     assert_eq!(runtime_batch["stats"]["aot_calls"], 8);
+    assert_eq!(runtime_batch["stats"]["arg_stack_packs"], 0);
     assert_eq!(runtime_batch["stats"]["arg_vec_allocations"], 0);
     assert!(
         runtime_batch["stats"]["thread_pool_jobs"]
