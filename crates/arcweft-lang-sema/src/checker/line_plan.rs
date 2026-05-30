@@ -71,7 +71,7 @@ impl TypeChecker<'_> {
             LinePlanItem::Let { pattern, expr } => {
                 let ty = self.check_expr(expr);
                 for (name, ty) in let_else_bindings(pattern, ty.as_ref()) {
-                    self.locals.insert(name, ty);
+                    self.bind_local(name, ty);
                 }
                 None
             }

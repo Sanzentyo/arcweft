@@ -686,6 +686,9 @@ Current high-confidence state:
 - Type checking now uses scoped local binding snapshots for flow/statement/value
   match arms plus flow-level await, if-let, while-let, and for bindings instead
   of cloning the full locals table for every branch or loop binding scope.
+- Type-checker local bindings now flow through a single `bind_local` path with
+  mutation-log scopes, so nested statement, choice, and block-expression bodies
+  can restore locals without cloning the whole locals table.
 - Source event normalization now sorts by borrowed source id and sequence
   comparisons instead of constructing cloned sort keys, reducing per-step work
   for source-heavy and stream-heavy runtime benches.

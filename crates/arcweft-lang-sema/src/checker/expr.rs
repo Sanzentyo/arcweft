@@ -148,23 +148,10 @@ impl TypeChecker<'_> {
     }
 
     fn check_closure_expr(&mut self, params: &[String], body: &Expr) -> Option<TypeKind> {
-        let previous = params
-            .iter()
-            .map(|param| {
-                (
-                    param.clone(),
-                    self.locals.insert(param.clone(), TypeKind::I64),
-                )
-            })
-            .collect::<Vec<_>>();
+        let local_snapshot =
+            self.insert_scoped_locals(params.iter().map(|param| (param.clone(), TypeKind::I64)));
         self.check_expr(body);
-        for (param, old) in previous {
-            if let Some(old) = old {
-                self.locals.insert(param, old);
-            } else {
-                self.locals.remove(&param);
-            }
-        }
+        self.restore_scoped_locals(local_snapshot);
         None
     }
 
@@ -1193,15 +1180,15 @@ impl TypeChecker<'_> {
         value: Option<&Expr>,
         expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
-        let outer_locals = self.locals.clone();
-        for stmt in statements {
-            self.check_stmt(stmt);
-        }
-        let ty = value.map_or(Some(TypeKind::Unit), |value| {
-            self.check_expr_with_expected(value, expected)
+        let ty = self.with_local_mutation_scope(|this| {
+            for stmt in statements {
+                this.check_stmt(stmt);
+            }
+            value.map_or(Some(TypeKind::Unit), |value| {
+                this.check_expr_with_expected(value, expected)
+            })
         });
         self.reject_borrow_escape(ty.as_ref(), "block final value");
-        self.locals = outer_locals;
         ty
     }
 

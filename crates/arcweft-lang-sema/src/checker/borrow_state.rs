@@ -10,7 +10,7 @@ use std::collections::HashMap;
 impl TypeChecker<'_> {
     pub(super) fn bind_function_param(&mut self, pattern: &Pattern, ty: &TypeKind) {
         for (name, binding_ty) in pattern_bindings_with_fallback(pattern, ty) {
-            self.locals.insert(name, binding_ty);
+            self.bind_local(name, binding_ty);
         }
     }
 

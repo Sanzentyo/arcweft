@@ -134,10 +134,8 @@ impl TypeChecker<'_> {
     }
 
     fn check_scoped_flow_items(&mut self, items: &[HirFlowItem]) {
-        let outer_locals = self.locals.clone();
         let outer_presentation_defaults = self.active_presentation_defaults.clone();
-        self.check_flow_items(items);
-        self.locals = outer_locals;
+        self.with_local_mutation_scope(|this| this.check_flow_items(items));
         self.active_presentation_defaults = outer_presentation_defaults;
     }
 
@@ -146,14 +144,14 @@ impl TypeChecker<'_> {
         pattern: &Pattern,
         scope: &arcweft_lang_hir::model::HirScopeExpr,
     ) {
-        let outer_locals = self.locals.clone();
-        for stmt in scope.statements() {
-            self.check_stmt(stmt);
-        }
-        let value_type = scope.value().and_then(|value| self.check_expr(value));
-        self.locals = outer_locals;
+        let value_type = self.with_local_mutation_scope(|this| {
+            for stmt in scope.statements() {
+                this.check_stmt(stmt);
+            }
+            scope.value().and_then(|value| this.check_expr(value))
+        });
         if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), value_type) {
-            self.locals.insert(name.to_owned(), ty);
+            self.bind_local(name.to_owned(), ty);
         }
     }
 
@@ -174,17 +172,17 @@ impl TypeChecker<'_> {
     fn check_borrow_block(&mut self, block: &arcweft_lang_hir::model::HirBorrow) {
         self.check_expr(block.source());
         let borrow_snapshot = self.snapshot_borrow_state();
-        let locals_start = self.locals.clone();
-        if let Some((name, ty)) = typed_pattern_binding(block.binding()) {
-            let ty = type_ref_kind(ty);
-            self.locals.insert(name.to_owned(), ty.clone());
-            self.register_borrow_bindings(block.binding(), &ty);
-        }
-        for item in block.body() {
-            self.check_flow_item(item);
-        }
+        self.with_local_mutation_scope(|this| {
+            if let Some((name, ty)) = typed_pattern_binding(block.binding()) {
+                let ty = type_ref_kind(ty);
+                this.bind_local(name.to_owned(), ty.clone());
+                this.register_borrow_bindings(block.binding(), &ty);
+            }
+            for item in block.body() {
+                this.check_flow_item(item);
+            }
+        });
         self.restore_borrow_state(borrow_snapshot);
-        self.locals = locals_start;
     }
 
     fn check_select_head(&mut self, head: &SelectBranchHead) {

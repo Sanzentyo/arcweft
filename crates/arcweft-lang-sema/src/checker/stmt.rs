@@ -16,12 +16,13 @@ impl TypeChecker<'_> {
         expr: &Expr,
         expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
-        let outer_locals = self.locals.clone();
-        for stmt in statements {
-            self.check_stmt(stmt);
-        }
-        self.stats.statements += 1;
-        let ty = self.check_expr_with_expected(expr, expected);
+        let ty = self.with_local_mutation_scope(|this| {
+            for stmt in statements {
+                this.check_stmt(stmt);
+            }
+            this.stats.statements += 1;
+            this.check_expr_with_expected(expr, expected)
+        });
         if let Some(ty) = ty.as_ref() {
             self.record_type_judgment(
                 TypeJudgmentSubject::Return {
@@ -33,7 +34,6 @@ impl TypeChecker<'_> {
             );
         }
         self.reject_borrow_escape(ty.as_ref(), "function return");
-        self.locals = outer_locals;
         ty
     }
 
@@ -177,12 +177,12 @@ impl TypeChecker<'_> {
     }
 
     fn check_on_stmt(&mut self, stmt: &Stmt, body: &[Stmt]) {
-        let outer_locals = self.locals.clone();
-        self.bind_on_head_locals(stmt);
-        for stmt in body {
-            self.check_stmt(stmt);
-        }
-        self.locals = outer_locals;
+        self.with_local_mutation_scope(|this| {
+            this.bind_on_head_locals(stmt);
+            for stmt in body {
+                this.check_stmt(stmt);
+            }
+        });
     }
 
     fn check_unsafe_lifetime_stmt(
@@ -268,7 +268,7 @@ impl TypeChecker<'_> {
                 )));
             }
             for (name, binding_ty) in pattern_bindings_with_fallback(pattern, ty) {
-                self.locals.insert(name, binding_ty);
+                self.bind_local(name, binding_ty);
             }
         }
         if let Some(borrow_ty) = annotated_ty.as_ref().or(ty.as_ref()) {
@@ -292,12 +292,13 @@ impl TypeChecker<'_> {
         };
         if let Some(pattern) = pattern {
             for (name, ty) in let_else_bindings(pattern, None) {
-                self.locals.insert(name, ty);
+                self.bind_local(name, ty);
             }
             if let Pattern::Ident(name) = pattern
                 && is_local_ident(name)
+                && !self.locals.contains_key(name)
             {
-                self.locals.entry(name.to_owned()).or_insert(TypeKind::Unit);
+                self.bind_local(name.to_owned(), TypeKind::Unit);
             }
         }
     }
@@ -321,7 +322,7 @@ impl TypeChecker<'_> {
             ));
         }
         for (name, ty) in let_else_bindings(pattern, expr_type.as_ref()) {
-            self.locals.insert(name, ty);
+            self.bind_local(name, ty);
         }
         let annotated_ty = annotation.map(type_ref_kind);
         if let Some(borrow_ty) = annotated_ty.as_ref().or(expr_type.as_ref()) {
@@ -332,13 +333,13 @@ impl TypeChecker<'_> {
     fn check_if_stmt(&mut self, condition: &Expr, body: &[Stmt]) {
         self.expect_expr_type(condition, &TypeKind::Bool, "if condition");
         let borrow_snapshot = self.snapshot_borrow_state();
-        let outer_locals = self.locals.clone();
-        for stmt in body {
-            self.check_stmt(stmt);
-        }
+        self.with_local_mutation_scope(|this| {
+            for stmt in body {
+                this.check_stmt(stmt);
+            }
+        });
         let then_state = self.snapshot_borrow_state();
         self.merge_borrow_state_from_paths(&borrow_snapshot, &[&borrow_snapshot, &then_state]);
-        self.locals = outer_locals;
     }
 
     fn check_stmt_loop(&mut self, body: &[Stmt]) {

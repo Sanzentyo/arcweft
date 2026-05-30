@@ -198,6 +198,7 @@ struct TypeChecker<'a> {
     global_type_aliases: HashMap<String, TypeKind>,
     flow_params: HashMap<String, HashSet<String>>,
     locals: HashMap<String, TypeKind>,
+    local_scope_stack: Vec<LocalBindingSnapshot>,
     loop_stack: Vec<LoopContext>,
     line_label_stack: Vec<Option<String>>,
     line_cancel_depth: usize,
@@ -286,6 +287,7 @@ impl TypeChecker<'_> {
             global_type_aliases: HashMap::new(),
             flow_params: HashMap::new(),
             locals: HashMap::new(),
+            local_scope_stack: Vec::new(),
             loop_stack: Vec::new(),
             line_label_stack: Vec::new(),
             line_cancel_depth: 0,
@@ -311,11 +313,19 @@ impl TypeChecker<'_> {
             bindings
                 .into_iter()
                 .map(|(name, ty)| {
-                    let previous = self.locals.insert(name.clone(), ty);
+                    let previous = self.bind_local(name.clone(), ty);
                     (name, previous)
                 })
                 .collect(),
         )
+    }
+
+    fn bind_local(&mut self, name: String, ty: TypeKind) -> Option<TypeKind> {
+        let previous = self.locals.insert(name.clone(), ty);
+        if let Some(scope) = self.local_scope_stack.last_mut() {
+            scope.0.push((name, previous.clone()));
+        }
+        previous
     }
 
     fn restore_scoped_locals(&mut self, snapshot: LocalBindingSnapshot) {
@@ -326,6 +336,17 @@ impl TypeChecker<'_> {
                 self.locals.remove(&name);
             }
         }
+    }
+
+    fn with_local_mutation_scope<R>(&mut self, check: impl FnOnce(&mut Self) -> R) -> R {
+        self.local_scope_stack.push(LocalBindingSnapshot::default());
+        let result = check(self);
+        let snapshot = self
+            .local_scope_stack
+            .pop()
+            .expect("local mutation scope stack must stay balanced");
+        self.restore_scoped_locals(snapshot);
+        result
     }
 
     fn record_type_judgment(

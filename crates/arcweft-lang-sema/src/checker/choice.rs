@@ -38,7 +38,7 @@ impl TypeChecker<'_> {
             ChoiceItem::Let { pattern, expr } => {
                 let value_type = self.check_expr(expr);
                 if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), value_type) {
-                    self.locals.insert(name.to_owned(), ty);
+                    self.bind_local(name.to_owned(), ty);
                 }
                 if let Pattern::Raw(raw) = pattern {
                     self.errors.push(TypeCheckError::new(format!(
@@ -48,9 +48,7 @@ impl TypeChecker<'_> {
             }
             ChoiceItem::If { condition, items } => {
                 self.expect_expr_type(condition, &TypeKind::Bool, "choice if condition");
-                let outer_locals = self.locals.clone();
-                self.check_choice_items(items);
-                self.locals = outer_locals;
+                self.with_local_mutation_scope(|this| this.check_choice_items(items));
             }
             ChoiceItem::For {
                 pattern,
@@ -58,32 +56,31 @@ impl TypeChecker<'_> {
                 items,
             } => {
                 let source_type = self.check_expr(source);
-                let outer_locals = self.locals.clone();
-                if let Some(name) = ident_pattern_name(pattern) {
-                    self.locals
-                        .insert(name.to_owned(), iter_item_type(source_type.as_ref()));
-                } else if let Pattern::Raw(raw) = pattern {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "raw choice for pattern is not type-checkable: {raw}"
-                    )));
-                }
-                self.check_choice_items(items);
-                self.locals = outer_locals;
+                self.with_local_mutation_scope(|this| {
+                    if let Some(name) = ident_pattern_name(pattern) {
+                        this.bind_local(name.to_owned(), iter_item_type(source_type.as_ref()));
+                    } else if let Pattern::Raw(raw) = pattern {
+                        this.errors.push(TypeCheckError::new(format!(
+                            "raw choice for pattern is not type-checkable: {raw}"
+                        )));
+                    }
+                    this.check_choice_items(items);
+                });
             }
             ChoiceItem::Match { expr, arms } => {
                 self.check_expr(expr);
                 for arm in arms {
-                    let outer_locals = self.locals.clone();
-                    if let Pattern::Raw(raw) = arm.pattern() {
-                        self.errors.push(TypeCheckError::new(format!(
-                            "raw choice match pattern is not type-checkable: {raw}"
-                        )));
-                    }
-                    if let Some(guard) = arm.guard() {
-                        self.expect_expr_type(guard, &TypeKind::Bool, "choice match guard");
-                    }
-                    self.check_choice_items(arm.items());
-                    self.locals = outer_locals;
+                    self.with_local_mutation_scope(|this| {
+                        if let Pattern::Raw(raw) = arm.pattern() {
+                            this.errors.push(TypeCheckError::new(format!(
+                                "raw choice match pattern is not type-checkable: {raw}"
+                            )));
+                        }
+                        if let Some(guard) = arm.guard() {
+                            this.expect_expr_type(guard, &TypeKind::Bool, "choice match guard");
+                        }
+                        this.check_choice_items(arm.items());
+                    });
                 }
             }
             ChoiceItem::Option(option) => self.check_choice_option(option),
@@ -130,13 +127,13 @@ impl TypeChecker<'_> {
                 self.check_expr(expr);
             }
             ChoiceAction::SelectBlock(statements) => {
-                let outer_locals = self.locals.clone();
                 self.line_out_depth += 1;
-                for stmt in statements {
-                    self.check_stmt(stmt);
-                }
+                self.with_local_mutation_scope(|this| {
+                    for stmt in statements {
+                        this.check_stmt(stmt);
+                    }
+                });
                 self.line_out_depth -= 1;
-                self.locals = outer_locals;
             }
             ChoiceAction::Goto(target) => {
                 if let EntityRefSyntax::Absolute(target) = target {
@@ -164,15 +161,14 @@ impl TypeChecker<'_> {
                 }
             }
             ChoicePlanItem::OnSelect { pattern, body } => {
-                let outer_locals = self.locals.clone();
-                if let Some(name) = ident_pattern_name(pattern) {
-                    self.locals
-                        .insert(name.to_owned(), TypeKind::Ref(EntityKind::ChoiceOption));
-                }
-                for stmt in body {
-                    self.check_stmt(stmt);
-                }
-                self.locals = outer_locals;
+                self.with_local_mutation_scope(|this| {
+                    if let Some(name) = ident_pattern_name(pattern) {
+                        this.bind_local(name.to_owned(), TypeKind::Ref(EntityKind::ChoiceOption));
+                    }
+                    for stmt in body {
+                        this.check_stmt(stmt);
+                    }
+                });
             }
             ChoicePlanItem::Raw(raw) => self.errors.push(TypeCheckError::new(format!(
                 "raw choice-plan item is not type-checkable: {raw}"

@@ -373,13 +373,12 @@ impl TypeChecker<'_> {
             );
         }
         self.check_type_ref_shape(item.target());
-        let outer_locals = self.locals.clone();
-        self.locals
-            .insert("self".to_owned(), type_ref_kind(item.target()));
-        for clause in item.where_clauses() {
-            self.check_expr(clause);
-        }
-        self.locals = outer_locals;
+        self.with_local_mutation_scope(|this| {
+            this.bind_local("self".to_owned(), type_ref_kind(item.target()));
+            for clause in item.where_clauses() {
+                this.check_expr(clause);
+            }
+        });
     }
 
     fn check_entry_item(&mut self, item: &EntryItem) {
@@ -500,7 +499,7 @@ impl TypeChecker<'_> {
         if let Some(name) = ident_pattern_name(pattern)
             && let Some(ty) = choice_output_type(choice)
         {
-            self.locals.insert(name.to_owned(), ty);
+            self.bind_local(name.to_owned(), ty);
         }
     }
 
@@ -511,7 +510,7 @@ impl TypeChecker<'_> {
     ) {
         let ty = self.check_loop_block(block, true);
         if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), ty) {
-            self.locals.insert(name.to_owned(), ty);
+            self.bind_local(name.to_owned(), ty);
         }
     }
 
@@ -522,7 +521,7 @@ impl TypeChecker<'_> {
     ) {
         let ty = self.check_await_item(await_with);
         if let (Some(name), Some(ty)) = (ident_pattern_name(pattern), ty) {
-            self.locals.insert(name.to_owned(), ty);
+            self.bind_local(name.to_owned(), ty);
         }
     }
 
