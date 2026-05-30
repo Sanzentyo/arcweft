@@ -495,6 +495,11 @@ impl Engine {
         if let Some(sum) = self.evaluate_i64_bracket_seq_sum(source, pure_backend)? {
             return Ok(RuntimeValue::Int(sum));
         }
+        if let RuntimeExpr::Local(name) = source
+            && let Some(sum) = self.evaluate_i64_local_sequence_sum(name)?
+        {
+            return Ok(RuntimeValue::Int(sum));
+        }
         let value = self.evaluate_expr_with_backend(source, pure_backend)?;
         let items = match value {
             RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items,
@@ -509,6 +514,26 @@ impl Engine {
             .try_fold(RuntimeValue::Int(0), |acc, item| {
                 evaluate_binary(acc, RuntimeBinaryOp::Add, item)
             })
+    }
+
+    fn evaluate_i64_local_sequence_sum(&self, name: &str) -> Result<Option<i64>, RuntimeEvalError> {
+        let Some(value) = self.fiber.env.get(name) else {
+            return Ok(None);
+        };
+        match value {
+            RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items
+                .iter()
+                .try_fold(0_i64, |acc, item| match item {
+                    RuntimeValue::Int(value) => Ok(acc + value),
+                    value => Err(RuntimeEvalError::UnsupportedBinary {
+                        op: "+",
+                        lhs: "int".to_owned(),
+                        rhs: runtime_value_label(value),
+                    }),
+                })
+                .map(Some),
+            _ => Ok(None),
+        }
     }
 
     fn evaluate_i64_map_sum(

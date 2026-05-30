@@ -639,6 +639,9 @@ Current high-confidence state:
 - Engine construction precomputes that i64 call-shape bit per pure helper, so
   scalar calls and map/bracket batch detection do not rescan helper input kinds
   while stepping hot runtime paths.
+- Runtime `sum()` over a local tuple/bracket sequence now borrows the stored
+  sequence and folds i64 items directly, avoiding a clone of already
+  materialized map results before summing.
 - Fast-path scalar pure calls read local integer arguments by borrow when
   packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
   VM/AOT/JIT pure backends.

@@ -402,6 +402,46 @@ fn engine_fuses_map_closure_pure_batch_sum() {
 }
 
 #[test]
+fn engine_sums_local_i64_sequence_by_borrow() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![
+                FlowOp::Let {
+                    pattern: RuntimePattern::Ident("scores".to_owned()),
+                    expr: RuntimeExpr::BracketSeq(vec![
+                        RuntimeExpr::Value(RuntimeValue::Int(18)),
+                        RuntimeExpr::Value(RuntimeValue::Int(15)),
+                        RuntimeExpr::Value(RuntimeValue::Int(20)),
+                    ]),
+                },
+                FlowOp::ReturnExpr(RuntimeExpr::Sum {
+                    source: Box::new(RuntimeExpr::Local("scores".to_owned())),
+                }),
+            ],
+        }],
+        Vec::new(),
+    )
+    .expect("flow plan is valid");
+    let mut engine = Engine::new(plan);
+
+    let result = engine.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget { max_ops: 8 },
+        },
+    );
+
+    assert!(matches!(
+        result.fiber_status,
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "53"
+    ));
+    assert_eq!(result.stats.pure.pure_calls, 0);
+}
+
+#[test]
 fn engine_runs_flow_thread_body_as_child_fiber() {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.main".to_owned())),
