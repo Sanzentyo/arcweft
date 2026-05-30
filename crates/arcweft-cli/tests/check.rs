@@ -1449,6 +1449,8 @@ flow @flow.main main effects { fs.read(save) } {
             && stdout.contains("\"read_ops\": 3")
             && stdout.contains("\"parallel_batches\": 1")
             && stdout.contains("\"parallel_tasks\": 2")
+            && stdout.contains("\"parallel_io_tasks\": 2")
+            && stdout.contains("\"parallel_marker_tasks\": 0")
             && stdout.contains("return done"),
         "run JSON should show bounded traverse fanout and native reads: {stdout}"
     );
@@ -2820,6 +2822,8 @@ flow @flow.parallel_io parallel_io effects { fs.read(save), fs.write(save) } {
             && stdout.contains("\"read_ops\": 3")
             && stdout.contains("\"parallel_batches\": 1")
             && stdout.contains("\"parallel_tasks\": 2")
+            && stdout.contains("\"parallel_io_tasks\": 2")
+            && stdout.contains("\"parallel_marker_tasks\": 0")
             && stdout.contains("\"write_ops\": 1"),
         "bench JSON should expose bounded traverse fanout counters: {stdout}"
     );
@@ -2903,6 +2907,8 @@ flow @flow.threaded_reads threaded_reads effects { fs.read(save) } {
     assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 4);
     assert_eq!(measurement["native_io"]["scheduler"]["dispatched"], 4);
     assert_eq!(measurement["native_io"]["scheduler"]["max_in_flight"], 4);
+    assert_eq!(measurement["native_io"]["parallel_io_tasks"], 2);
+    assert_eq!(measurement["native_io"]["parallel_marker_tasks"], 2);
     assert!(
         measurement["native_io"]["parallel_batches"]
             .as_u64()

@@ -27,6 +27,8 @@ pub(crate) struct NativeTaskStats {
     pub(crate) bytes_written: usize,
     pub(crate) parallel_batches: usize,
     pub(crate) parallel_tasks: usize,
+    pub(crate) parallel_io_tasks: usize,
+    pub(crate) parallel_marker_tasks: usize,
     pub(crate) parallel_workers: usize,
     pub(crate) scheduler: NativeSchedulerStats,
 }
@@ -78,6 +80,16 @@ impl NativeTaskBridge {
         if completions.parallel {
             self.stats.parallel_batches += 1;
             self.stats.parallel_tasks += completions.items.len();
+            self.stats.parallel_io_tasks += dispatch
+                .tasks
+                .iter()
+                .filter(|task| is_io_task(task))
+                .count();
+            self.stats.parallel_marker_tasks += dispatch
+                .tasks
+                .iter()
+                .filter(|task| is_scheduler_marker_task(task))
+                .count();
             self.stats.parallel_workers = self.stats.parallel_workers.max(
                 rayon::current_num_threads()
                     .min(completions.items.len())
@@ -302,6 +314,24 @@ fn can_complete_in_parallel(task: &TaskSpec) -> bool {
         HostTaskRequest::FileReadText(_)
         | HostTaskRequest::FileReadBytes(_)
         | HostTaskRequest::SystemInfo(_) => true,
+        HostTaskRequest::Custom {
+            capability,
+            operation,
+            ..
+        } => is_scheduler_marker(capability.0.as_str(), operation),
+        _ => false,
+    }
+}
+
+fn is_io_task(task: &TaskSpec) -> bool {
+    matches!(
+        &task.request,
+        HostTaskRequest::FileReadText(_) | HostTaskRequest::FileReadBytes(_)
+    )
+}
+
+fn is_scheduler_marker_task(task: &TaskSpec) -> bool {
+    match &task.request {
         HostTaskRequest::Custom {
             capability,
             operation,

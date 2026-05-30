@@ -458,8 +458,10 @@ Current high-confidence state:
   length directly because completed/failed children are removed when stepped,
   avoiding repeated scans during return and stop-reason decisions.
 - The CLI native task bridge now completes read-only dispatched task batches on
-  a worker pool and reports path-free `parallel_batches`, `parallel_tasks`, and
-  `parallel_workers` counters in `native_io`; write tasks stay ordered.
+  a worker pool and reports path-free `parallel_batches`, `parallel_tasks`,
+  `parallel_io_tasks`, `parallel_marker_tasks`, and `parallel_workers` counters
+  in `native_io`; write tasks stay ordered. The split counters keep actual
+  adapter I/O separate from scheduler marker completions in thread-heavy flows.
 - Runtime if-let/match guards, source handlers, stream pattern bodies, and
   await-many request templates now evaluate temporary bindings in environment
   scopes instead of cloning the full VM environment, reducing branch and
