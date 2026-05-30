@@ -122,6 +122,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   deterministic helper expressions. The VM remains the reference backend, but
   repeated dynamic pure calls avoid constructing intermediate `RuntimeValue`
   payloads until the final result.
+- The VM pure reference backend also builds evaluator root bindings from a
+  borrowed binding slice, avoiding an extra request-binding vector clone during
+  JIT/AOT conformance checks and standalone helper evaluation.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

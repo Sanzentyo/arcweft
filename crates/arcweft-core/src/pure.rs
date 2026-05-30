@@ -196,7 +196,7 @@ impl PureFunctionBackend for VmPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
     ) -> Result<PureFunctionResult, RuntimeEvalError> {
-        let mut evaluator = PureEvaluator::new(request.bindings.clone());
+        let mut evaluator = PureEvaluator::new_ref(&request.bindings);
         let value = evaluator.evaluate_expr(&request.expr)?;
         Ok(PureFunctionResult {
             backend: self.kind(),
@@ -994,9 +994,9 @@ fn unsupported_scalar_binary(
 }
 
 impl PureEvaluator {
-    fn new(bindings: Vec<RuntimeBinding>) -> Self {
+    fn new_ref(bindings: &[RuntimeBinding]) -> Self {
         let mut env = RuntimeEnv::default();
-        env.bind_all(bindings);
+        env.bind_all_ref(bindings);
         Self {
             env,
             stats: PureFunctionStats::default(),
