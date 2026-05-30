@@ -29,6 +29,48 @@ fn jit_check_json_compares_cranelift_and_vm() {
 }
 
 #[test]
+fn toolchain_profile_json_plans_path_free_workspace_commands() {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("toolchain-profile")
+        .arg("--command")
+        .arg("check")
+        .arg("--command")
+        .arg("clippy")
+        .arg("--command")
+        .arg("test")
+        .arg("--dry-run")
+        .arg("--json")
+        .output()
+        .expect("arcw toolchain-profile dry-run runs");
+
+    assert!(
+        output.status.success(),
+        "toolchain profile dry-run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&std::env::current_dir().unwrap().display().to_string()),
+        "toolchain profile JSON must not record absolute workspace paths: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("toolchain profile output is structured JSON");
+    assert_eq!(json["status"], "ok");
+    assert_eq!(json["commands"].as_array().unwrap().len(), 3);
+    assert_eq!(json["commands"][0]["status"], "planned");
+    assert_eq!(
+        json["commands"][1]["argv"],
+        serde_json::json!([
+            "cargo",
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--all-features"
+        ])
+    );
+}
+
+#[test]
 fn jit_check_json_can_compare_julia_baseline_without_absolute_source() {
     if !julia_is_available() {
         return;

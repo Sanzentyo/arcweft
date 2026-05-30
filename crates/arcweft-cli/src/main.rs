@@ -53,6 +53,7 @@ mod native_system;
 mod native_task;
 mod output;
 mod server_adapter;
+mod toolchain_profile;
 use native_task::{NativeSchedulerStats, NativeTaskBridge, NativeTaskStats};
 use output::{
     AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, CheckReport,
@@ -76,6 +77,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::Instant;
+use toolchain_profile::ToolchainProfileOptions;
 
 const KNOWN_ADAPTERS: &[&str] = &["sans-io", "native-http"];
 
@@ -99,6 +101,7 @@ enum CliCommand {
     Serve(ServeOptions),
     Test(ScriptTestOptions),
     Bench(ScriptBenchOptions),
+    ToolchainProfile(ToolchainProfileOptions),
     Jit {
         #[command(subcommand)]
         command: JitCommand,
@@ -140,6 +143,7 @@ fn run(cli: Cli) -> Result<(), ExitCode> {
         CliCommand::Serve(options) => runtime_serve_command(&options),
         CliCommand::Test(options) => script_test_command(&options),
         CliCommand::Bench(options) => script_bench_command(&options),
+        CliCommand::ToolchainProfile(options) => toolchain_profile::run(&options),
         CliCommand::Jit { command } => jit_command(command),
         CliCommand::Fmt(options) => format_command(&options),
         CliCommand::Ids { command } => ids_command(command),
