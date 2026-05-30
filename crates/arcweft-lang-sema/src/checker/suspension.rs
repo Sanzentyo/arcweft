@@ -91,14 +91,12 @@ impl TypeChecker<'_> {
         }
         for branch in await_with.branches() {
             let borrow_snapshot = self.snapshot_borrow_state();
-            let outer_locals = self.locals.clone();
             let branch_type = await_branch_pattern_type(branch.kind(), &ready, &error);
-            for (name, ty) in let_else_bindings(branch.pattern(), Some(&branch_type)) {
-                self.locals.insert(name, ty);
-            }
+            let local_snapshot =
+                self.insert_scoped_locals(let_else_bindings(branch.pattern(), Some(&branch_type)));
             self.check_flow_items(branch.body());
             self.restore_borrow_state(borrow_snapshot);
-            self.locals = outer_locals;
+            self.restore_scoped_locals(local_snapshot);
         }
 
         if await_with.applies_try() {
@@ -133,53 +131,46 @@ impl TypeChecker<'_> {
     pub(super) fn check_if_let_block(&mut self, block: &arcweft_lang_hir::model::HirIfLet) {
         let expr_type = self.check_expr(block.expr());
         let borrow_snapshot = self.snapshot_borrow_state();
-        let outer_locals = self.locals.clone();
-        for (name, ty) in let_else_bindings(block.pattern(), expr_type.as_ref()) {
-            self.locals.insert(name, ty);
-        }
+        let local_snapshot =
+            self.insert_scoped_locals(let_else_bindings(block.pattern(), expr_type.as_ref()));
         if let Some(guard) = block.guard() {
             self.expect_expr_type(guard, &TypeKind::Bool, "if-let guard");
         }
         self.check_flow_items(block.body());
         let then_state = self.snapshot_borrow_state();
         self.restore_borrow_state(borrow_snapshot.clone());
-        self.locals = outer_locals.clone();
+        self.restore_scoped_locals(local_snapshot);
         self.check_flow_items(block.else_body());
         let else_state = self.snapshot_borrow_state();
         self.merge_borrow_state_from_paths(
             &borrow_snapshot,
             &[&borrow_snapshot, &then_state, &else_state],
         );
-        self.locals = outer_locals;
     }
 
     pub(super) fn check_while_let_block(&mut self, block: &arcweft_lang_hir::model::HirWhileLet) {
         let expr_type = self.check_expr(block.expr());
         let borrow_snapshot = self.snapshot_borrow_state();
-        let outer_locals = self.locals.clone();
-        for (name, ty) in let_else_bindings(block.pattern(), expr_type.as_ref()) {
-            self.locals.insert(name, ty);
-        }
+        let local_snapshot =
+            self.insert_scoped_locals(let_else_bindings(block.pattern(), expr_type.as_ref()));
         if let Some(guard) = block.guard() {
             self.expect_expr_type(guard, &TypeKind::Bool, "while-let guard");
         }
         self.with_statement_loop(|this| this.check_flow_items(block.body()));
         self.restore_borrow_state(borrow_snapshot);
-        self.locals = outer_locals;
+        self.restore_scoped_locals(local_snapshot);
     }
 
     pub(super) fn check_for_block(&mut self, block: &arcweft_lang_hir::model::HirFor) {
         let source_ty = self.check_expr(block.source());
         let borrow_snapshot = self.snapshot_borrow_state();
-        let outer_locals = self.locals.clone();
         let item_ty = iter_item_type(source_ty.as_ref());
-        for (name, ty) in pattern_bindings_with_fallback(block.pattern(), &item_ty) {
-            self.locals.insert(name, ty);
-        }
+        let local_snapshot =
+            self.insert_scoped_locals(pattern_bindings_with_fallback(block.pattern(), &item_ty));
         self.register_borrow_bindings(block.pattern(), &item_ty);
         self.with_statement_loop(|this| this.check_flow_items(block.body()));
         self.restore_borrow_state(borrow_snapshot);
-        self.locals = outer_locals;
+        self.restore_scoped_locals(local_snapshot);
     }
 
     pub(super) fn with_statement_loop(&mut self, check_body: impl FnOnce(&mut Self)) {

@@ -684,8 +684,8 @@ Current high-confidence state:
   validating a call. The checker now borrows the declared effect slice and
   materializes only missing capability names needed for diagnostics.
 - Type checking now uses scoped local binding snapshots for flow/statement/value
-  match arms and if-let expression bindings instead of cloning the full locals
-  table for every branch arm.
+  match arms plus flow-level await, if-let, while-let, and for bindings instead
+  of cloning the full locals table for every branch or loop binding scope.
 - Source event normalization now sorts by borrowed source id and sequence
   comparisons instead of constructing cloned sort keys, reducing per-step work
   for source-heavy and stream-heavy runtime benches.
