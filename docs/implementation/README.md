@@ -95,6 +95,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   Runtime bench deterministic summaries include child-fiber activity ticks and
   peak child-fiber fanout, so source-level `thread` scheduling can be compared
   across VM/scheduler changes without recording host paths.
+  The measured bench loop folds per-step counters directly into compact sample
+  totals instead of allocating per-step bench trace entries, keeping benchmark
+  harness allocation out of the runtime hot path.
   They also include median pure argument/result byte-copy counters, so scalar
   pure-call boundary costs are visible in the same bench report as elapsed time
   and VM op counts.

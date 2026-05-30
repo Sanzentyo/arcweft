@@ -8,8 +8,8 @@ use arcweft_core::plan::{
     RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimeRouteSpec,
 };
 use arcweft_core::step::{
-    RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepResult,
-    RuntimeStepStats,
+    RuntimePureCallStats, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
+    RuntimeStepResult, RuntimeStepStats,
 };
 use arcweft_core::{
     pure::{
@@ -1827,7 +1827,7 @@ fn run_runtime_bench_steps_with_pure(
     let mut executor = RuntimeExecutorCore::new(plan, config.executor);
     let mut host = source_path.map(NativeTaskBridge::new);
     let mut task_events = Vec::new();
-    let mut steps = Vec::new();
+    let mut totals = RuntimeBenchStepTotals::default();
     for _ in 0..config.steps {
         let result = executor.step_with_root_bindings(
             RuntimeStepInput {
@@ -1845,11 +1845,7 @@ fn run_runtime_bench_steps_with_pure(
             ..
         } = result;
         let task_requests = std::mem::take(&mut output.requests.tasks);
-        steps.push(RuntimeBenchStepSummary {
-            stats,
-            task_requests: task_requests.len(),
-            diagnostics: output.diagnostics.len(),
-        });
+        totals.push(&stats, task_requests.len(), output.diagnostics.len());
         let done = matches!(
             fiber_status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
@@ -1862,7 +1858,7 @@ fn run_runtime_bench_steps_with_pure(
         }
     }
     RuntimeBenchTrace {
-        steps,
+        totals,
         executor_stats: runtime_executor_stats(executor.fast_path_ops(), pure),
         native_io: host
             .as_ref()
@@ -1871,15 +1867,50 @@ fn run_runtime_bench_steps_with_pure(
 }
 
 struct RuntimeBenchTrace {
-    steps: Vec<RuntimeBenchStepSummary>,
+    totals: RuntimeBenchStepTotals,
     executor_stats: RuntimeExecutorStats,
     native_io: NativeTaskStats,
 }
 
-struct RuntimeBenchStepSummary {
-    stats: RuntimeStepStats,
+#[derive(Default)]
+struct RuntimeBenchStepTotals {
+    executed_ops: usize,
+    child_fiber_ticks: usize,
+    max_child_fibers: usize,
+    line_effects: usize,
     task_requests: usize,
+    task_events_in: usize,
     diagnostics: usize,
+    pure: RuntimePureCallStats,
+}
+
+impl RuntimeBenchStepTotals {
+    fn push(&mut self, stats: &RuntimeStepStats, task_requests: usize, diagnostics: usize) {
+        self.executed_ops += stats.executed_ops;
+        self.child_fiber_ticks += stats.child_fibers;
+        self.max_child_fibers = self.max_child_fibers.max(stats.child_fibers);
+        self.line_effects += stats.line_effects;
+        self.task_requests += task_requests;
+        self.task_events_in += stats.task_events_in;
+        self.diagnostics += diagnostics;
+        add_pure_stats(&mut self.pure, stats.pure);
+    }
+}
+
+fn add_pure_stats(total: &mut RuntimePureCallStats, stats: RuntimePureCallStats) {
+    total.pure_calls += stats.pure_calls;
+    total.batch_calls += stats.batch_calls;
+    total.batch_items += stats.batch_items;
+    total.jit_calls += stats.jit_calls;
+    total.aot_calls += stats.aot_calls;
+    total.vm_calls += stats.vm_calls;
+    total.arg_stack_packs += stats.arg_stack_packs;
+    total.arg_vec_allocations += stats.arg_vec_allocations;
+    total.arg_bytes_copied += stats.arg_bytes_copied;
+    total.arg_bytes_borrowed += stats.arg_bytes_borrowed;
+    total.result_bytes_copied += stats.result_bytes_copied;
+    total.thread_pool_jobs += stats.thread_pool_jobs;
+    total.fallbacks += stats.fallbacks;
 }
 
 enum RuntimeExecutorInstance {
@@ -3342,128 +3373,35 @@ impl RuntimeBenchSamples {
     }
 
     fn push_step_stats(&mut self, trace: &RuntimeBenchTrace) {
-        self.executed_ops
-            .push(trace.steps.iter().map(|step| step.stats.executed_ops).sum());
-        self.child_fiber_ticks
-            .push(trace.steps.iter().map(|step| step.stats.child_fibers).sum());
-        self.max_child_fibers.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.stats.child_fibers)
-                .max()
-                .unwrap_or_default(),
-        );
-        self.line_effects
-            .push(trace.steps.iter().map(|step| step.stats.line_effects).sum());
-        self.task_requests
-            .push(trace.steps.iter().map(|step| step.task_requests).sum());
-        self.task_events_in.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.stats.task_events_in)
-                .sum(),
-        );
-        self.diagnostics += trace
-            .steps
-            .iter()
-            .map(|step| step.diagnostics)
-            .sum::<usize>();
+        self.executed_ops.push(trace.totals.executed_ops);
+        self.child_fiber_ticks.push(trace.totals.child_fiber_ticks);
+        self.max_child_fibers.push(trace.totals.max_child_fibers);
+        self.line_effects.push(trace.totals.line_effects);
+        self.task_requests.push(trace.totals.task_requests);
+        self.task_events_in.push(trace.totals.task_events_in);
+        self.diagnostics += trace.totals.diagnostics;
     }
 
     fn push_pure_stats(&mut self, trace: &RuntimeBenchTrace) {
-        self.pure_calls.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.stats.pure.pure_calls)
-                .sum(),
-        );
-        self.pure_batch_items.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.stats.pure.batch_items)
-                .sum(),
-        );
-        self.pure_batch_calls.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.stats.pure.batch_calls)
-                .sum(),
-        );
-        self.pure_jit_calls.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.stats.pure.jit_calls)
-                .sum(),
-        );
-        self.pure_aot_calls.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.stats.pure.aot_calls)
-                .sum(),
-        );
-        self.pure_vm_calls.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.stats.pure.vm_calls)
-                .sum(),
-        );
-        self.pure_thread_pool_jobs.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.stats.pure.thread_pool_jobs)
-                .sum(),
-        );
-        self.pure_arg_stack_packs.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.stats.pure.arg_stack_packs)
-                .sum(),
-        );
-        self.pure_arg_vec_allocations.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.stats.pure.arg_vec_allocations)
-                .sum(),
-        );
-        self.pure_arg_bytes_copied.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.stats.pure.arg_bytes_copied)
-                .sum(),
-        );
-        self.pure_arg_bytes_borrowed.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.stats.pure.arg_bytes_borrowed)
-                .sum(),
-        );
-        self.pure_result_bytes_copied.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.stats.pure.result_bytes_copied)
-                .sum(),
-        );
-        self.pure_fallbacks.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.stats.pure.fallbacks)
-                .sum(),
-        );
+        self.pure_calls.push(trace.totals.pure.pure_calls);
+        self.pure_batch_items.push(trace.totals.pure.batch_items);
+        self.pure_batch_calls.push(trace.totals.pure.batch_calls);
+        self.pure_jit_calls.push(trace.totals.pure.jit_calls);
+        self.pure_aot_calls.push(trace.totals.pure.aot_calls);
+        self.pure_vm_calls.push(trace.totals.pure.vm_calls);
+        self.pure_thread_pool_jobs
+            .push(trace.totals.pure.thread_pool_jobs);
+        self.pure_arg_stack_packs
+            .push(trace.totals.pure.arg_stack_packs);
+        self.pure_arg_vec_allocations
+            .push(trace.totals.pure.arg_vec_allocations);
+        self.pure_arg_bytes_copied
+            .push(trace.totals.pure.arg_bytes_copied);
+        self.pure_arg_bytes_borrowed
+            .push(trace.totals.pure.arg_bytes_borrowed);
+        self.pure_result_bytes_copied
+            .push(trace.totals.pure.result_bytes_copied);
+        self.pure_fallbacks.push(trace.totals.pure.fallbacks);
     }
 
     fn executor_stats(&mut self) -> RuntimeExecutorStats {
