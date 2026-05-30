@@ -286,7 +286,7 @@ impl Engine {
                 match self.evaluate_expr_with_backend(&source, pure_backend) {
                     Ok(RuntimeValue::BracketSeq(items)) => {
                         let body = Arc::from(body);
-                        self.push_for_next(pattern, items.into(), 0, &body);
+                        self.push_for_next(pattern, items.into(), 0, &body, output);
                     }
                     Ok(value) => {
                         self.fail_eval(
@@ -303,7 +303,7 @@ impl Engine {
                 index,
                 body,
             } => {
-                self.push_for_next(pattern, items, index, &body);
+                self.push_for_next(pattern, items, index, &body, output);
             }
             FlowOp::Thread { name, body } => {
                 self.advance_if_needed(next);
@@ -506,21 +506,36 @@ impl Engine {
         items: Arc<[RuntimeValue]>,
         index: usize,
         body: &Arc<[FlowOp]>,
+        output: &mut RuntimeStepOutput,
     ) {
         let Some(item) = items.get(index).cloned() else {
             return;
         };
-        let prefix = FlowOp::Let {
-            pattern: pattern.clone(),
-            expr: RuntimeExpr::Value(item),
-        };
+        self.fiber.env.push_scope();
+        self.fiber.control_stack.push(FlowControlStackEntry {
+            kind: FlowControlStackEntryKind::Scope,
+        });
+        match self.try_bind_pattern(&pattern, &item) {
+            Ok(true) => {}
+            Ok(false) => {
+                self.fail_eval(
+                    RuntimeEvalError::PatternMismatch(runtime_value_label(&item)),
+                    output,
+                );
+                return;
+            }
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        }
         let tail = FlowOp::ForNext {
             pattern,
             items,
             index: index + 1,
             body: Arc::clone(body),
         };
-        self.push_borrowed_scoped_ops(body.as_ref(), Some(prefix), Some(tail));
+        self.push_borrowed_ops_with_exit(body.as_ref(), Some(tail));
     }
 
     fn push_owned_scoped_ops(&mut self, ops: Vec<FlowOp>, prefix: Option<FlowOp>) {
@@ -563,6 +578,19 @@ impl Engine {
             self.fiber.pending_ops.push_front(prefix);
         }
         self.fiber.pending_ops.push_front(FlowOp::EnterScope);
+    }
+
+    fn push_borrowed_ops_with_exit(&mut self, ops: &[FlowOp], tail: Option<FlowOp>) {
+        self.fiber
+            .pending_ops
+            .reserve(ops.len() + usize::from(tail.is_some()) + 1);
+        if let Some(tail) = tail {
+            self.fiber.pending_ops.push_front(tail);
+        }
+        self.fiber.pending_ops.push_front(FlowOp::ExitScope);
+        for op in ops.iter().rev().cloned() {
+            self.fiber.pending_ops.push_front(op);
+        }
     }
 
     pub(super) fn pop_scope_frame(&mut self) {

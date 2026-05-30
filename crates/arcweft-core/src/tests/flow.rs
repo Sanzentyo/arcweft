@@ -644,7 +644,7 @@ fn for_loop_expands_one_iteration_at_a_time() {
     let first = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
     assert_eq!(first.stats.executed_ops, 1);
-    assert_eq!(first.stats.pending_ops_after, 5);
+    assert_eq!(first.stats.pending_ops_after, 3);
 }
 
 #[test]
