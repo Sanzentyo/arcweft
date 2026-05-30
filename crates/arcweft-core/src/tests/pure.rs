@@ -344,6 +344,7 @@ fn aot_compiled_i64_plan_accepts_runtime_inputs() {
         30
     );
     let slot_capacity = slots.capacity();
+    let slot_len = slots.len();
     assert_eq!(
         plan.call_with_inputs_scratch(&[1, 9], &mut slots)
             .expect("scratch call succeeds")
@@ -351,6 +352,7 @@ fn aot_compiled_i64_plan_accepts_runtime_inputs() {
         0
     );
     assert_eq!(slots.capacity(), slot_capacity);
+    assert_eq!(slots.len(), slot_len);
 }
 
 #[test]

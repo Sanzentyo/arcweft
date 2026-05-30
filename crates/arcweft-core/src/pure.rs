@@ -540,15 +540,23 @@ impl AotPureI64Plan {
                 ),
             ));
         }
-        slots.clear();
-        slots.extend_from_slice(&self.initial_slots);
-        if slots.len() < self.slot_count {
-            slots.resize(self.slot_count, 0);
-        }
+        self.reset_scratch_slots(slots);
         for (slot, value) in self.input_slots.iter().zip(inputs.iter().copied()) {
             slots[*slot] = value;
         }
         Ok(self.evaluate_with_slot_slice(slots))
+    }
+
+    fn reset_scratch_slots(&self, slots: &mut Vec<i64>) {
+        if slots.len() == self.slot_count {
+            slots.copy_from_slice(&self.initial_slots);
+        } else {
+            slots.clear();
+            slots.extend_from_slice(&self.initial_slots);
+            if slots.len() < self.slot_count {
+                slots.resize(self.slot_count, 0);
+            }
+        }
     }
 
     fn evaluate_with_slots(&self, mut slots: Vec<i64>) -> (i64, PureFunctionStats) {
