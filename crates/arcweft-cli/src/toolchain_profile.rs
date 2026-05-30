@@ -7,6 +7,8 @@ use std::time::Instant;
 pub(crate) struct ToolchainProfileOptions {
     #[arg(long = "command", value_enum)]
     pub(crate) commands: Vec<ToolchainProfileCommand>,
+    #[arg(long, default_value_t = 1, value_parser = parse_positive_usize)]
+    pub(crate) repeat: usize,
     #[arg(long)]
     pub(crate) dry_run: bool,
     #[arg(long)]
@@ -31,6 +33,26 @@ struct ToolchainProfileReport {
 struct ToolchainCommandReport {
     label: &'static str,
     argv: Vec<&'static str>,
+    status: &'static str,
+    exit_code: Option<i32>,
+    repeat: usize,
+    elapsed_ns: u128,
+    timing: ToolchainTimingReport,
+    stdout_lines: usize,
+    stderr_lines: usize,
+    samples: Vec<ToolchainCommandSample>,
+}
+
+#[derive(Serialize)]
+struct ToolchainTimingReport {
+    min: u128,
+    median: u128,
+    max: u128,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ToolchainCommandSample {
+    index: usize,
     status: &'static str,
     exit_code: Option<i32>,
     elapsed_ns: u128,
@@ -67,7 +89,7 @@ const TEST: ToolchainCommandSpec = ToolchainCommandSpec {
 pub(crate) fn run(options: &ToolchainProfileOptions) -> Result<(), ExitCode> {
     let reports = selected_commands(options)
         .into_iter()
-        .map(|spec| profile_command(spec, options.dry_run))
+        .map(|spec| profile_command(spec, options.dry_run, options.repeat))
         .collect::<Vec<_>>();
     let failed = reports
         .iter()
@@ -113,24 +135,36 @@ impl From<ToolchainProfileCommand> for ToolchainCommandSpec {
     }
 }
 
-fn profile_command(spec: ToolchainCommandSpec, dry_run: bool) -> ToolchainCommandReport {
+fn profile_command(
+    spec: ToolchainCommandSpec,
+    dry_run: bool,
+    repeat: usize,
+) -> ToolchainCommandReport {
     if dry_run {
-        return ToolchainCommandReport {
-            label: spec.label,
-            argv: argv_for(spec),
-            status: "planned",
-            exit_code: None,
-            elapsed_ns: 0,
-            stdout_lines: 0,
-            stderr_lines: 0,
-        };
+        let samples = (0..repeat)
+            .map(|index| ToolchainCommandSample {
+                index,
+                status: "planned",
+                exit_code: None,
+                elapsed_ns: 0,
+                stdout_lines: 0,
+                stderr_lines: 0,
+            })
+            .collect::<Vec<_>>();
+        return command_report_from_samples(spec, samples);
     }
 
+    let samples = (0..repeat)
+        .map(|index| profile_command_sample(spec, index))
+        .collect::<Vec<_>>();
+    command_report_from_samples(spec, samples)
+}
+
+fn profile_command_sample(spec: ToolchainCommandSpec, index: usize) -> ToolchainCommandSample {
     let start = Instant::now();
     match Command::new("cargo").args(spec.args).output() {
-        Ok(output) => ToolchainCommandReport {
-            label: spec.label,
-            argv: argv_for(spec),
+        Ok(output) => ToolchainCommandSample {
+            index,
             status: if output.status.success() {
                 "ok"
             } else {
@@ -141,15 +175,68 @@ fn profile_command(spec: ToolchainCommandSpec, dry_run: bool) -> ToolchainComman
             stdout_lines: count_lines(&output.stdout),
             stderr_lines: count_lines(&output.stderr),
         },
-        Err(_) => ToolchainCommandReport {
-            label: spec.label,
-            argv: argv_for(spec),
+        Err(_) => ToolchainCommandSample {
+            index,
             status: "spawn_failed",
             exit_code: None,
             elapsed_ns: start.elapsed().as_nanos(),
             stdout_lines: 0,
             stderr_lines: 0,
         },
+    }
+}
+
+fn command_report_from_samples(
+    spec: ToolchainCommandSpec,
+    samples: Vec<ToolchainCommandSample>,
+) -> ToolchainCommandReport {
+    let status = aggregate_status(&samples);
+    let exit_code = samples
+        .iter()
+        .find(|sample| sample.exit_code.is_some_and(|code| code != 0))
+        .and_then(|sample| sample.exit_code)
+        .or_else(|| samples.iter().find_map(|sample| sample.exit_code));
+    let stdout_lines = samples.iter().map(|sample| sample.stdout_lines).sum();
+    let stderr_lines = samples.iter().map(|sample| sample.stderr_lines).sum();
+    let mut elapsed = samples
+        .iter()
+        .map(|sample| sample.elapsed_ns)
+        .collect::<Vec<_>>();
+    let timing = timing_report(&mut elapsed);
+
+    ToolchainCommandReport {
+        label: spec.label,
+        argv: argv_for(spec),
+        status,
+        exit_code,
+        repeat: samples.len(),
+        elapsed_ns: timing.median,
+        timing,
+        stdout_lines,
+        stderr_lines,
+        samples,
+    }
+}
+
+fn aggregate_status(samples: &[ToolchainCommandSample]) -> &'static str {
+    if samples.iter().any(|sample| sample.status == "spawn_failed") {
+        return "spawn_failed";
+    }
+    if samples.iter().any(|sample| sample.status == "failed") {
+        return "failed";
+    }
+    if samples.iter().all(|sample| sample.status == "planned") {
+        return "planned";
+    }
+    "ok"
+}
+
+fn timing_report(elapsed: &mut [u128]) -> ToolchainTimingReport {
+    elapsed.sort_unstable();
+    ToolchainTimingReport {
+        min: elapsed.first().copied().unwrap_or_default(),
+        median: elapsed.get(elapsed.len() / 2).copied().unwrap_or_default(),
+        max: elapsed.last().copied().unwrap_or_default(),
     }
 }
 
@@ -163,13 +250,24 @@ fn count_lines(bytes: &[u8]) -> usize {
     String::from_utf8_lossy(bytes).lines().count()
 }
 
+fn parse_positive_usize(value: &str) -> Result<usize, String> {
+    match value.parse::<usize>() {
+        Ok(parsed) if parsed > 0 => Ok(parsed),
+        Ok(_) => Err("value must be greater than zero".to_owned()),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 fn print_human_report(report: &ToolchainProfileReport) {
     for command in &report.commands {
         println!(
-            "{}: {} ({} ns, stdout lines {}, stderr lines {})",
+            "{}: {} (median {} ns, min {} ns, max {} ns, repeat {}, stdout lines {}, stderr lines {})",
             command.label,
             command.status,
             command.elapsed_ns,
+            command.timing.min,
+            command.timing.max,
+            command.repeat,
             command.stdout_lines,
             command.stderr_lines
         );

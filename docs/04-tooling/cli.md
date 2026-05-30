@@ -337,6 +337,12 @@ zero-argument-Vec scalar-call counters as `arcw run --pure-backend ...`.
 Renderer/audio driving, offline rendering/audio, and allocation counters remain
 adapter work; adapter-only sections are reported as skipped.
 
+`arcw toolchain-profile` measures cargo-based workspace toolchain commands
+without recording host paths. `--command fmt`, `--command check`,
+`--command clippy`, and `--command test` can be repeated with `--repeat N`; JSON
+reports per-sample timings plus median/min/max summaries for compile,
+typecheck, borrow-check, lint, and test regression tracking.
+
 `arcw profile` reports compiler phase timings plus deterministic compiler and VM counters.
 The JSON includes read, parse, lint, HIR lowering, reference resolution,
 readiness, typecheck, line-task lowering, runtime-plan lowering, and VM run
@@ -367,7 +373,9 @@ joined, joined-completed, dispatched, completed, failed, cancelled, requested
 cancel, current in-flight, and maximum in-flight task counts without recording
 host paths. Read-only dispatched batches are completed on the native worker
 pool, while writes stay ordered; `native_io.parallel_batches`,
-`parallel_tasks`, and `parallel_workers` expose that adapter-side fanout.
+`parallel_tasks`, `parallel_io_tasks`, `parallel_marker_tasks`, and
+`parallel_workers` expose that adapter-side fanout without mixing real I/O and
+scheduler marker volume.
 Awaited `system.core_count()`, `system.thread_count()`, and
 `system.available_parallelism()` calls are completed by the CLI adapter as
 path-free system-info tasks. The native adapter reports physical cores for
