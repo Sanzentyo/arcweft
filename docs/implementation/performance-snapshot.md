@@ -173,3 +173,10 @@ Profile phase split for the checked-in map pure JIT fixture:
 The JSON outputs above reported no source file paths and included only command
 argv tokens, host core/thread counts, timing counters, and deterministic
 accumulators.
+
+Runtime numeric sequence lowering now preserves integer-only bracket literals as
+`RuntimeValue::I64Seq` instead of eagerly materializing `Vec<RuntimeValue::Int>`.
+Pure map/sum fast paths consume that dense representation directly; dynamic
+sequence operations such as `for`, `await many`, spread arguments, bracket
+patterns, and byte payload lowering materialize only at those dynamic
+boundaries.

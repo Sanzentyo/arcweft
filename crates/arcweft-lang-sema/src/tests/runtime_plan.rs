@@ -719,7 +719,7 @@ flow @flow.main main {
             if matches!(
                 expr,
                 RuntimeExpr::RepeatSeq { len: 4, .. }
-                    | RuntimeExpr::Value(RuntimeValue::BracketSeq(_))
+                    | RuntimeExpr::Value(RuntimeValue::I64Seq(_) | RuntimeValue::BracketSeq(_))
             )
     ));
 }

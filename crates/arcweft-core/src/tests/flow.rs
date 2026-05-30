@@ -208,7 +208,7 @@ fn engine_batches_bracket_sequence_pure_calls() {
 
     assert!(matches!(
         result.fiber_status,
-        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "bracket_seq/3"
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "i64_seq/3"
     ));
     assert_eq!(result.stats.pure.batch_calls, 1);
     assert_eq!(result.stats.pure.batch_items, 3);
@@ -323,7 +323,7 @@ fn engine_batches_map_closure_pure_calls() {
 
     assert!(matches!(
         result.fiber_status,
-        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "bracket_seq/3"
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "i64_seq/3"
     ));
     assert_eq!(result.stats.pure.batch_calls, 1);
     assert_eq!(result.stats.pure.batch_items, 3);

@@ -2,7 +2,7 @@ use super::{
     Engine, FlowFiberStatus, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
     RuntimeExprMatchArm, RuntimeFieldValue, RuntimeMatchArm, RuntimeMatchSelection, RuntimePattern,
     RuntimeStepOutput, RuntimeValue, evaluate_binary, evaluate_unary, match_runtime_pattern,
-    runtime_value_label, sum_i64_sequence_ref,
+    materialize_i64_sequence, runtime_value_label, sum_i64_sequence_ref,
 };
 use crate::pure::{RuntimeI64Args, RuntimePureCallBackend, VmRuntimePureCallBackend};
 use crate::value::RuntimeBinaryOp;
@@ -224,11 +224,11 @@ impl Engine {
                 arity,
                 items.len(),
                 pure_backend,
-                |out| out.iter().copied().map(RuntimeValue::Int).collect(),
+                <[i64]>::to_vec,
             );
             self.pure_i64_batch_inputs = flat_inputs;
             let values = batch_result?;
-            return Ok(RuntimeValue::BracketSeq(values));
+            return Ok(RuntimeValue::I64Seq(values));
         }
         items
             .iter()
@@ -491,11 +491,11 @@ impl Engine {
                         arity,
                         row_count,
                         pure_backend,
-                        |out| out.iter().copied().map(RuntimeValue::Int).collect(),
+                        <[i64]>::to_vec,
                     );
                     self.pure_i64_batch_inputs = flat_inputs;
                     let values = batch_result?;
-                    return Ok(RuntimeValue::BracketSeq(values));
+                    return Ok(RuntimeValue::I64Seq(values));
                 }
                 Ok(None) => {}
                 Err(error) => {
@@ -505,6 +505,7 @@ impl Engine {
             }
             let items = match self.evaluate_expr_with_backend(source, pure_backend) {
                 Ok(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => items,
+                Ok(RuntimeValue::I64Seq(items)) => materialize_i64_sequence(items),
                 Ok(value) => {
                     self.pure_i64_batch_inputs = flat_inputs;
                     return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
@@ -534,14 +535,15 @@ impl Engine {
                 arity,
                 items.len(),
                 pure_backend,
-                |out| out.iter().copied().map(RuntimeValue::Int).collect(),
+                <[i64]>::to_vec,
             );
             self.pure_i64_batch_inputs = flat_inputs;
             let values = batch_result?;
-            return Ok(RuntimeValue::BracketSeq(values));
+            return Ok(RuntimeValue::I64Seq(values));
         }
         let items = match self.evaluate_expr_with_backend(source, pure_backend)? {
             RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items,
+            RuntimeValue::I64Seq(items) => materialize_i64_sequence(items),
             value => {
                 return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
                     &value,
@@ -584,6 +586,7 @@ impl Engine {
         let value = self.evaluate_expr_with_backend(source, pure_backend)?;
         let items = match value {
             RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items,
+            RuntimeValue::I64Seq(items) => return Ok(RuntimeValue::Int(items.iter().sum())),
             value => {
                 return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
                     &value,
@@ -605,6 +608,7 @@ impl Engine {
             RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => {
                 sum_i64_sequence_ref(items).map(Some)
             }
+            RuntimeValue::I64Seq(items) => Ok(Some(items.iter().sum())),
             _ => Ok(None),
         }
     }
@@ -731,9 +735,27 @@ impl Engine {
             RuntimeExpr::Value(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => {
                 items.as_slice()
             }
+            RuntimeExpr::Value(RuntimeValue::I64Seq(items)) => {
+                return self.collect_i64_map_batch_inputs_from_i64_source(
+                    items,
+                    param,
+                    args,
+                    arity,
+                    flat_inputs,
+                );
+            }
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
                 Some(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => {
                     items.as_slice()
+                }
+                Some(RuntimeValue::I64Seq(items)) => {
+                    return self.collect_i64_map_batch_inputs_from_i64_source(
+                        items,
+                        param,
+                        args,
+                        arity,
+                        flat_inputs,
+                    );
                 }
                 _ => return Ok(None),
             },
@@ -757,11 +779,13 @@ impl Engine {
             RuntimeExpr::Value(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => {
                 Some(items.len())
             }
+            RuntimeExpr::Value(RuntimeValue::I64Seq(items)) => Some(items.len()),
             RuntimeExpr::RepeatSeq { len, .. } => Some(*len),
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
                 Some(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => {
                     Some(items.len())
                 }
+                Some(RuntimeValue::I64Seq(items)) => Some(items.len()),
                 _ => None,
             },
             _ => None,
@@ -793,9 +817,27 @@ impl Engine {
             RuntimeExpr::Value(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => {
                 items.as_slice()
             }
+            RuntimeExpr::Value(RuntimeValue::I64Seq(items)) => {
+                return self.collect_i64_repeated_map_batch_row_from_i64_source(
+                    items,
+                    param,
+                    args,
+                    arity,
+                    flat_inputs,
+                );
+            }
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
                 Some(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => {
                     items.as_slice()
+                }
+                Some(RuntimeValue::I64Seq(items)) => {
+                    return self.collect_i64_repeated_map_batch_row_from_i64_source(
+                        items,
+                        param,
+                        args,
+                        arity,
+                        flat_inputs,
+                    );
                 }
                 _ => return Ok(false),
             },
@@ -989,6 +1031,29 @@ impl Engine {
         Ok(true)
     }
 
+    fn collect_i64_map_batch_inputs_from_i64_source(
+        &self,
+        items: &[i64],
+        param: &str,
+        args: &[RuntimeExpr],
+        arity: usize,
+        flat_inputs: &mut Vec<i64>,
+    ) -> Result<Option<usize>, RuntimeEvalError> {
+        flat_inputs.clear();
+        flat_inputs.reserve(items.len().saturating_mul(arity));
+        for item in items {
+            for arg in args.iter().take(arity) {
+                let Some(value) = self.evaluate_i64_map_arg_from_i64_source(arg, param, *item)?
+                else {
+                    flat_inputs.clear();
+                    return Ok(None);
+                };
+                flat_inputs.push(value);
+            }
+        }
+        Ok(Some(items.len()))
+    }
+
     fn collect_i64_repeated_map_batch_row_without_scope(
         &self,
         items: &[RuntimeValue],
@@ -1024,6 +1089,42 @@ impl Engine {
         Ok(true)
     }
 
+    fn collect_i64_repeated_map_batch_row_from_i64_source(
+        &self,
+        items: &[i64],
+        param: &str,
+        args: &[RuntimeExpr],
+        arity: usize,
+        flat_inputs: &mut Vec<i64>,
+    ) -> Result<bool, RuntimeEvalError> {
+        flat_inputs.clear();
+        let Some(first) = items.first().copied() else {
+            return Ok(true);
+        };
+        flat_inputs.reserve(arity);
+        for arg in args.iter().take(arity) {
+            let Some(value) = self.evaluate_i64_map_arg_from_i64_source(arg, param, first)? else {
+                flat_inputs.clear();
+                return Ok(false);
+            };
+            flat_inputs.push(value);
+        }
+        for item in &items[1..] {
+            for (index, arg) in args.iter().take(arity).enumerate() {
+                let Some(value) = self.evaluate_i64_map_arg_from_i64_source(arg, param, *item)?
+                else {
+                    flat_inputs.clear();
+                    return Ok(false);
+                };
+                if flat_inputs.get(index).copied() != Some(value) {
+                    flat_inputs.clear();
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+
     fn evaluate_i64_map_arg_without_scope(
         &self,
         expr: &RuntimeExpr,
@@ -1036,6 +1137,24 @@ impl Engine {
                 RuntimeValue::Int(value) => Ok(Some(*value)),
                 value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
             },
+            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
+                Some(RuntimeValue::Int(value)) => Ok(Some(*value)),
+                Some(value) => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
+                None => Err(RuntimeEvalError::UnknownBinding(name.clone())),
+            },
+            _ => Ok(None),
+        }
+    }
+
+    fn evaluate_i64_map_arg_from_i64_source(
+        &self,
+        expr: &RuntimeExpr,
+        param: &str,
+        item: i64,
+    ) -> Result<Option<i64>, RuntimeEvalError> {
+        match expr {
+            RuntimeExpr::Value(RuntimeValue::Int(value)) => Ok(Some(*value)),
+            RuntimeExpr::Local(name) if name == param => Ok(Some(item)),
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
                 Some(RuntimeValue::Int(value)) => Ok(Some(*value)),
                 Some(value) => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
@@ -1318,6 +1437,7 @@ fn expr_returns_bool<'a>(expr: &'a RuntimeExpr, int_names: &mut Vec<&'a str>) ->
 fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {
     match value {
         RuntimeValue::Tuple(items) | RuntimeValue::BracketSeq(items) => Ok(items),
+        RuntimeValue::I64Seq(items) => Ok(materialize_i64_sequence(items)),
         value => Err(RuntimeEvalError::InvalidSpread(runtime_value_label(&value))),
     }
 }

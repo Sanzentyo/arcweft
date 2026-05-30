@@ -33,6 +33,11 @@ pub enum RuntimeValue {
     Duration(LogicalDuration),
     EntityRef(String),
     Tuple(Vec<RuntimeValue>),
+    /// Dense integer sequence produced by numeric bracket literals.
+    ///
+    /// This keeps pure numeric data out of `Vec<RuntimeValue>` until code
+    /// actually needs element-level dynamic values.
+    I64Seq(Vec<i64>),
     BracketSeq(Vec<RuntimeValue>),
     Record(Vec<RuntimeFieldValue>),
     Variant {
@@ -663,6 +668,10 @@ pub(crate) fn sum_i64_sequence_ref(items: &[RuntimeValue]) -> Result<i64, Runtim
     })
 }
 
+pub(crate) fn materialize_i64_sequence(items: Vec<i64>) -> Vec<RuntimeValue> {
+    items.into_iter().map(RuntimeValue::Int).collect()
+}
+
 fn unsupported_binary(
     op: RuntimeBinaryOp,
     lhs: &RuntimeValue,
@@ -736,6 +745,7 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
+        RuntimeValue::I64Seq(values) => format!("i64_seq/{}", values.len()),
         RuntimeValue::BracketSeq(values) => format!("bracket_seq/{}", values.len()),
         RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
         RuntimeValue::Variant { name, payload, .. } => {

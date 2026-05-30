@@ -4839,6 +4839,7 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::EntityRef(value) => format!("@{value}"),
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
+        RuntimeValue::I64Seq(values) => format!("i64_seq/{}", values.len()),
         RuntimeValue::BracketSeq(values) => format!("bracket_seq/{}", values.len()),
         RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
         RuntimeValue::Variant { name, payload, .. } => {

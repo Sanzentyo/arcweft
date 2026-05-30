@@ -604,7 +604,7 @@ fn runtime_value_shape(value: &RuntimeValue) -> RuntimeShape {
             RuntimeShape::String
         }
         RuntimeValue::Tuple(_) => RuntimeShape::Tuple,
-        RuntimeValue::BracketSeq(_) => RuntimeShape::BracketSeq,
+        RuntimeValue::I64Seq(_) | RuntimeValue::BracketSeq(_) => RuntimeShape::BracketSeq,
         RuntimeValue::Record(_) => RuntimeShape::Record,
         RuntimeValue::Variant { .. } => RuntimeShape::Variant,
     }

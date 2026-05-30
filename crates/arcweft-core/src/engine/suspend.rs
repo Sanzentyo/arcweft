@@ -3,6 +3,7 @@ use super::{
     ChoiceState, Engine, FlowEvent, FlowFiberStatus, LineEffectRequest, RuntimeDiagnostic,
     RuntimeEvalError, RuntimeFieldValue, RuntimePayload, RuntimeStepInput, RuntimeStepOutput,
     RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
+    materialize_i64_sequence,
 };
 use crate::pure::RuntimePureCallBackend;
 use crate::task::{
@@ -172,6 +173,7 @@ impl Engine {
     ) {
         let items = match self.evaluate_expr_with_backend(&target.source, pure_backend) {
             Ok(RuntimeValue::BracketSeq(items)) => items,
+            Ok(RuntimeValue::I64Seq(items)) => materialize_i64_sequence(items),
             Ok(value) => {
                 self.fail_eval(
                     RuntimeEvalError::ExpectedBracketSeq(super::runtime_value_label(&value)),
@@ -413,6 +415,7 @@ struct EvaluatedHostCall<'a> {
 fn spread_host_arg_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, String> {
     match value {
         RuntimeValue::Tuple(items) | RuntimeValue::BracketSeq(items) => Ok(items),
+        RuntimeValue::I64Seq(items) => Ok(materialize_i64_sequence(items)),
         value => Err(format!(
             "spread host argument requires a tuple or bracket sequence, found {}",
             super::runtime_value_label(&value)
@@ -526,10 +529,12 @@ fn lower_file_write_request(args: &[EvaluatedHostArg]) -> Result<HostTaskRequest
             path,
             text: text.clone(),
         })),
-        RuntimeValue::BracketSeq(_) => Ok(HostTaskRequest::FileWriteBytes(FileWriteBytesRequest {
-            path,
-            bytes: runtime_value_to_bytes(body)?,
-        })),
+        RuntimeValue::I64Seq(_) | RuntimeValue::BracketSeq(_) => {
+            Ok(HostTaskRequest::FileWriteBytes(FileWriteBytesRequest {
+                path,
+                bytes: runtime_value_to_bytes(body)?,
+            }))
+        }
         value => Err(format!(
             "fs.write body must be String or byte sequence, found {}",
             super::runtime_value_label(value)
@@ -591,6 +596,7 @@ fn named_string_seq(args: &[EvaluatedHostArg], name: &str) -> Option<Vec<String>
         RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => {
             items.iter().map(runtime_value_to_string).collect()
         }
+        RuntimeValue::I64Seq(items) => items.iter().map(i64::to_string).collect(),
         value => vec![runtime_value_to_string(value)],
     })
 }
@@ -637,20 +643,27 @@ fn record_field<'a>(fields: &'a [RuntimeFieldValue], name: &str) -> Option<&'a R
 }
 
 fn runtime_value_to_bytes(value: &RuntimeValue) -> Result<Vec<u8>, String> {
-    let RuntimeValue::BracketSeq(items) = value else {
-        return Err("byte payload must be a bracket sequence".to_owned());
-    };
-    items
-        .iter()
-        .map(|item| match item {
-            RuntimeValue::Int(value) => u8::try_from(*value)
-                .map_err(|_| format!("byte value `{value}` is outside u8 range")),
-            value => Err(format!(
-                "byte payload item must be Int, found {}",
-                super::runtime_value_label(value)
-            )),
-        })
-        .collect()
+    match value {
+        RuntimeValue::BracketSeq(items) => items
+            .iter()
+            .map(|item| match item {
+                RuntimeValue::Int(value) => u8::try_from(*value)
+                    .map_err(|_| format!("byte value `{value}` is outside u8 range")),
+                value => Err(format!(
+                    "byte payload item must be Int, found {}",
+                    super::runtime_value_label(value)
+                )),
+            })
+            .collect(),
+        RuntimeValue::I64Seq(items) => items
+            .iter()
+            .map(|value| {
+                u8::try_from(*value)
+                    .map_err(|_| format!("byte value `{value}` is outside u8 range"))
+            })
+            .collect(),
+        _ => Err("byte payload must be a bracket sequence".to_owned()),
+    }
 }
 
 fn runtime_value_to_string(value: &RuntimeValue) -> String {
@@ -664,6 +677,7 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::Unit
         | RuntimeValue::Tuple(_)
+        | RuntimeValue::I64Seq(_)
         | RuntimeValue::BracketSeq(_)
         | RuntimeValue::Record(_)
         | RuntimeValue::Variant { .. } => super::runtime_value_label(value),

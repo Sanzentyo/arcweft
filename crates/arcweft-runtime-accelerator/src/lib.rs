@@ -684,6 +684,7 @@ fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::Duration(_) => "duration",
         RuntimeValue::EntityRef(_) => "entity_ref",
         RuntimeValue::Tuple(_) => "tuple",
+        RuntimeValue::I64Seq(_) => "i64_seq",
         RuntimeValue::BracketSeq(_) => "bracket_seq",
         RuntimeValue::Record(_) => "record",
         RuntimeValue::Variant { .. } => "variant",

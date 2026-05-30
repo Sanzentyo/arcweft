@@ -210,13 +210,7 @@ fn lower_runtime_bracket_seq(items: &[Expr]) -> RuntimeExpr {
 fn lower_runtime_numeric_bracket_seq(
     seq: &arcweft_lang_hir::syntax::expr::NumericBracketSeq,
 ) -> RuntimeExpr {
-    RuntimeExpr::Value(RuntimeValue::BracketSeq(
-        seq.values()
-            .iter()
-            .copied()
-            .map(RuntimeValue::Int)
-            .collect(),
-    ))
+    RuntimeExpr::Value(RuntimeValue::I64Seq(seq.values().to_vec()))
 }
 
 fn lower_runtime_bracket_seq_strict(items: &[Expr]) -> Result<RuntimeExpr, String> {
@@ -779,6 +773,21 @@ mod tests {
             lowered,
             RuntimeExpr::Value(RuntimeValue::BracketSeq(items))
                 if items == vec![RuntimeValue::Int(1), RuntimeValue::Int(2)]
+        ));
+    }
+
+    #[test]
+    fn numeric_bracket_seq_lowers_to_dense_i64_sequence() {
+        let expr = Expr::NumericBracketSeq(arcweft_lang_hir::syntax::expr::NumericBracketSeq::new(
+            vec![1, 2, 3],
+            None,
+        ));
+
+        let lowered = lower_runtime_expr_strict(&expr).expect("numeric seq lowers");
+
+        assert!(matches!(
+            lowered,
+            RuntimeExpr::Value(RuntimeValue::I64Seq(items)) if items == vec![1, 2, 3]
         ));
     }
 }

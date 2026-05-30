@@ -2,8 +2,8 @@ use crate::plan::RuntimePureHelper;
 use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeFieldValue,
-    RuntimeUnaryOp, RuntimeValue, evaluate_binary, evaluate_unary, runtime_binary_op_label,
-    runtime_unary_op_label, runtime_value_label, sum_i64_sequence_ref,
+    RuntimeUnaryOp, RuntimeValue, evaluate_binary, evaluate_unary, materialize_i64_sequence,
+    runtime_binary_op_label, runtime_unary_op_label, runtime_value_label, sum_i64_sequence_ref,
 };
 use std::collections::BTreeMap;
 
@@ -1326,6 +1326,7 @@ impl PureEvaluator {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let items = match self.evaluate_expr(source)? {
             RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items,
+            RuntimeValue::I64Seq(items) => materialize_i64_sequence(items),
             value => {
                 return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
                     &value,
@@ -1357,6 +1358,7 @@ impl PureEvaluator {
         let value = self.evaluate_expr(source)?;
         let items = match value {
             RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items,
+            RuntimeValue::I64Seq(items) => return Ok(RuntimeValue::Int(items.iter().sum())),
             value => {
                 return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
                     &value,
@@ -1378,6 +1380,7 @@ impl PureEvaluator {
             RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => {
                 sum_i64_sequence_ref(items).map(Some)
             }
+            RuntimeValue::I64Seq(items) => Ok(Some(items.iter().sum())),
             _ => Ok(None),
         }
     }
@@ -1474,6 +1477,7 @@ impl PureEvaluator {
 fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {
     match value {
         RuntimeValue::Tuple(items) | RuntimeValue::BracketSeq(items) => Ok(items),
+        RuntimeValue::I64Seq(items) => Ok(materialize_i64_sequence(items)),
         value => Err(RuntimeEvalError::InvalidSpread(runtime_value_label(&value))),
     }
 }

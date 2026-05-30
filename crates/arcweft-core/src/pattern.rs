@@ -184,25 +184,51 @@ fn collect_bracket_seq_pattern_bindings(
     value: &RuntimeValue,
     bindings: &mut Vec<RuntimeBinding>,
 ) -> Result<bool, RuntimeEvalError> {
-    let RuntimeValue::BracketSeq(values) = value else {
-        return Ok(false);
-    };
-    if rest.is_none() && items.len() != values.len() {
-        return Ok(false);
+    match value {
+        RuntimeValue::BracketSeq(values) => {
+            if !bracket_pattern_len_matches(items.len(), rest, values.len()) {
+                return Ok(false);
+            }
+            if !collect_pattern_list(items, &values[..items.len()], bindings)? {
+                return Ok(false);
+            }
+            if let Some(name) = rest {
+                bindings.push(RuntimeBinding {
+                    name: name.to_owned(),
+                    value: RuntimeValue::BracketSeq(values[items.len()..].to_vec()),
+                });
+            }
+            Ok(true)
+        }
+        RuntimeValue::I64Seq(values) => {
+            if !bracket_pattern_len_matches(items.len(), rest, values.len()) {
+                return Ok(false);
+            }
+            for (pattern, value) in items.iter().zip(values.iter().copied()) {
+                if !collect_pattern_bindings(pattern, &RuntimeValue::Int(value), bindings)? {
+                    return Ok(false);
+                }
+            }
+            if let Some(name) = rest {
+                bindings.push(RuntimeBinding {
+                    name: name.to_owned(),
+                    value: RuntimeValue::I64Seq(values[items.len()..].to_vec()),
+                });
+            }
+            Ok(true)
+        }
+        _ => Ok(false),
     }
-    if rest.is_some() && items.len() > values.len() {
-        return Ok(false);
+}
+
+fn bracket_pattern_len_matches(pattern_len: usize, rest: Option<&str>, value_len: usize) -> bool {
+    if rest.is_none() && pattern_len != value_len {
+        return false;
     }
-    if !collect_pattern_list(items, &values[..items.len()], bindings)? {
-        return Ok(false);
+    if rest.is_some() && pattern_len > value_len {
+        return false;
     }
-    if let Some(name) = rest {
-        bindings.push(RuntimeBinding {
-            name: name.to_owned(),
-            value: RuntimeValue::BracketSeq(values[items.len()..].to_vec()),
-        });
-    }
-    Ok(true)
+    true
 }
 
 fn collect_variant_pattern_bindings(
