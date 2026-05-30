@@ -118,6 +118,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - AOT pure scratch calls reset caller-owned slot buffers in place when the
   compiled slot count is unchanged, so repeated scalar and batch helper calls do
   not rebuild the slot vector before writing dynamic inputs.
+- VM pure scratch calls now use a scalar i64/bool evaluator for supported
+  deterministic helper expressions. The VM remains the reference backend, but
+  repeated dynamic pure calls avoid constructing intermediate `RuntimeValue`
+  payloads until the final result.
 - `arcweft-cli` keeps user-facing JSON report schemas in `output.rs`,
   including check, profile, verify-types, bench, runtime step, and compiler
   counter summaries. `main.rs` remains the command orchestration layer instead

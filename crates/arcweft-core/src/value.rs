@@ -505,14 +505,14 @@ fn unsupported_binary(
     })
 }
 
-fn runtime_unary_op_label(op: RuntimeUnaryOp) -> &'static str {
+pub(crate) fn runtime_unary_op_label(op: RuntimeUnaryOp) -> &'static str {
     match op {
         RuntimeUnaryOp::Not => "!",
         RuntimeUnaryOp::Neg => "-",
     }
 }
 
-fn runtime_binary_op_label(op: RuntimeBinaryOp) -> &'static str {
+pub(crate) fn runtime_binary_op_label(op: RuntimeBinaryOp) -> &'static str {
     match op {
         RuntimeBinaryOp::Eq => "==",
         RuntimeBinaryOp::Ne => "!=",

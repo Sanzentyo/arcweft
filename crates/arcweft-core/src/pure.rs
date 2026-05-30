@@ -2,7 +2,8 @@ use crate::plan::RuntimePureHelper;
 use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeFieldValue,
-    RuntimeUnaryOp, RuntimeValue, evaluate_binary, evaluate_unary, runtime_value_label,
+    RuntimeUnaryOp, RuntimeValue, evaluate_binary, evaluate_unary, runtime_binary_op_label,
+    runtime_unary_op_label, runtime_value_label,
 };
 use std::collections::BTreeMap;
 
@@ -248,7 +249,13 @@ impl VmPureFunctionScratch {
         self.env
             .replace_root_i64_bindings(&helper.input_names, args);
         let mut evaluator = PureEvaluator::with_env(std::mem::take(&mut self.env));
-        let result = evaluator.evaluate_expr(&helper.expr);
+        let result = if pure_scalar_eval_supported(&helper.expr) {
+            evaluator
+                .evaluate_scalar_expr(&helper.expr)
+                .map(PureScalar::into_runtime_value)
+        } else {
+            evaluator.evaluate_expr(&helper.expr)
+        };
         self.env = evaluator.into_env();
         result
     }
@@ -878,6 +885,152 @@ struct PureEvaluator {
     stats: PureFunctionStats,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PureScalar {
+    Bool(bool),
+    Int(i64),
+}
+
+impl PureScalar {
+    const fn into_runtime_value(self) -> RuntimeValue {
+        match self {
+            Self::Bool(value) => RuntimeValue::Bool(value),
+            Self::Int(value) => RuntimeValue::Int(value),
+        }
+    }
+
+    fn label(self) -> String {
+        match self {
+            Self::Bool(value) => runtime_value_label(&RuntimeValue::Bool(value)),
+            Self::Int(value) => runtime_value_label(&RuntimeValue::Int(value)),
+        }
+    }
+}
+
+fn pure_scalar_eval_supported(expr: &RuntimeExpr) -> bool {
+    match expr {
+        RuntimeExpr::Value(RuntimeValue::Bool(_) | RuntimeValue::Int(_))
+        | RuntimeExpr::Local(_) => true,
+        RuntimeExpr::Let { expr, body, .. } => {
+            pure_scalar_eval_supported(expr) && pure_scalar_eval_supported(body)
+        }
+        RuntimeExpr::Unary { expr, .. } => pure_scalar_eval_supported(expr),
+        RuntimeExpr::Binary { lhs, rhs, .. } => {
+            pure_scalar_eval_supported(lhs) && pure_scalar_eval_supported(rhs)
+        }
+        RuntimeExpr::If {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            pure_scalar_eval_supported(condition)
+                && pure_scalar_eval_supported(then_expr)
+                && pure_scalar_eval_supported(else_expr)
+        }
+        RuntimeExpr::Value(_)
+        | RuntimeExpr::EntityRef(_)
+        | RuntimeExpr::Tuple(_)
+        | RuntimeExpr::BracketSeq(_)
+        | RuntimeExpr::Record(_)
+        | RuntimeExpr::Variant { .. }
+        | RuntimeExpr::Field { .. }
+        | RuntimeExpr::Call { .. }
+        | RuntimeExpr::PureCall { .. }
+        | RuntimeExpr::SpreadArg(_)
+        | RuntimeExpr::MethodCall { .. }
+        | RuntimeExpr::Map { .. }
+        | RuntimeExpr::Sum { .. }
+        | RuntimeExpr::IfLet { .. }
+        | RuntimeExpr::Match { .. } => false,
+    }
+}
+
+fn runtime_value_as_scalar(value: &RuntimeValue) -> Option<PureScalar> {
+    match value {
+        RuntimeValue::Bool(value) => Some(PureScalar::Bool(*value)),
+        RuntimeValue::Int(value) => Some(PureScalar::Int(*value)),
+        _ => None,
+    }
+}
+
+fn runtime_value_into_scalar(value: RuntimeValue) -> Result<PureScalar, RuntimeEvalError> {
+    match value {
+        RuntimeValue::Bool(value) => Ok(PureScalar::Bool(value)),
+        RuntimeValue::Int(value) => Ok(PureScalar::Int(value)),
+        value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
+    }
+}
+
+fn evaluate_scalar_unary(
+    op: RuntimeUnaryOp,
+    value: PureScalar,
+) -> Result<PureScalar, RuntimeEvalError> {
+    match (op, value) {
+        (RuntimeUnaryOp::Not, PureScalar::Bool(value)) => Ok(PureScalar::Bool(!value)),
+        (RuntimeUnaryOp::Neg, PureScalar::Int(value)) => Ok(PureScalar::Int(-value)),
+        (op, value) => Err(RuntimeEvalError::UnsupportedUnary {
+            op: runtime_unary_op_label(op),
+            value: value.label(),
+        }),
+    }
+}
+
+fn evaluate_scalar_binary(
+    lhs: PureScalar,
+    op: RuntimeBinaryOp,
+    rhs: PureScalar,
+) -> Result<PureScalar, RuntimeEvalError> {
+    match op {
+        RuntimeBinaryOp::Eq => Ok(PureScalar::Bool(lhs == rhs)),
+        RuntimeBinaryOp::Ne => Ok(PureScalar::Bool(lhs != rhs)),
+        RuntimeBinaryOp::And => match (lhs, rhs) {
+            (PureScalar::Bool(lhs), PureScalar::Bool(rhs)) => Ok(PureScalar::Bool(lhs && rhs)),
+            (lhs, rhs) => unsupported_scalar_binary(op, lhs, rhs),
+        },
+        RuntimeBinaryOp::Or => match (lhs, rhs) {
+            (PureScalar::Bool(lhs), PureScalar::Bool(rhs)) => Ok(PureScalar::Bool(lhs || rhs)),
+            (lhs, rhs) => unsupported_scalar_binary(op, lhs, rhs),
+        },
+        RuntimeBinaryOp::Lt | RuntimeBinaryOp::Le | RuntimeBinaryOp::Gt | RuntimeBinaryOp::Ge => {
+            match (lhs, rhs) {
+                (PureScalar::Int(lhs), PureScalar::Int(rhs)) => Ok(PureScalar::Bool(match op {
+                    RuntimeBinaryOp::Lt => lhs < rhs,
+                    RuntimeBinaryOp::Le => lhs <= rhs,
+                    RuntimeBinaryOp::Gt => lhs > rhs,
+                    RuntimeBinaryOp::Ge => lhs >= rhs,
+                    _ => unreachable!(),
+                })),
+                (lhs, rhs) => unsupported_scalar_binary(op, lhs, rhs),
+            }
+        }
+        RuntimeBinaryOp::Add
+        | RuntimeBinaryOp::Sub
+        | RuntimeBinaryOp::Mul
+        | RuntimeBinaryOp::Div => match (lhs, rhs) {
+            (PureScalar::Int(lhs), PureScalar::Int(rhs)) => Ok(PureScalar::Int(match op {
+                RuntimeBinaryOp::Add => lhs + rhs,
+                RuntimeBinaryOp::Sub => lhs - rhs,
+                RuntimeBinaryOp::Mul => lhs * rhs,
+                RuntimeBinaryOp::Div => lhs / rhs,
+                _ => unreachable!(),
+            })),
+            (lhs, rhs) => unsupported_scalar_binary(op, lhs, rhs),
+        },
+    }
+}
+
+fn unsupported_scalar_binary(
+    op: RuntimeBinaryOp,
+    lhs: PureScalar,
+    rhs: PureScalar,
+) -> Result<PureScalar, RuntimeEvalError> {
+    Err(RuntimeEvalError::UnsupportedBinary {
+        op: runtime_binary_op_label(op),
+        lhs: lhs.label(),
+        rhs: rhs.label(),
+    })
+}
+
 impl PureEvaluator {
     fn new(bindings: Vec<RuntimeBinding>) -> Self {
         let mut env = RuntimeEnv::default();
@@ -994,6 +1147,56 @@ impl PureEvaluator {
                     reason: "pattern control is not in the pure helper subset".to_owned(),
                 })
             }
+        }
+    }
+
+    fn evaluate_scalar_expr(&mut self, expr: &RuntimeExpr) -> Result<PureScalar, RuntimeEvalError> {
+        self.stats.evaluated_exprs += 1;
+        match expr {
+            RuntimeExpr::Value(RuntimeValue::Bool(value)) => Ok(PureScalar::Bool(*value)),
+            RuntimeExpr::Value(RuntimeValue::Int(value)) => Ok(PureScalar::Int(*value)),
+            RuntimeExpr::Local(name) => match self.env.get(name) {
+                Some(value) => runtime_value_as_scalar(value)
+                    .ok_or_else(|| RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
+                None => Err(RuntimeEvalError::UnknownBinding(name.clone())),
+            },
+            RuntimeExpr::Let { name, expr, body } => {
+                let value = self.evaluate_scalar_expr(expr)?.into_runtime_value();
+                self.env.push_scope();
+                self.env.set(name.clone(), value);
+                let result = self.evaluate_scalar_expr(body);
+                self.env.pop_scope();
+                result
+            }
+            RuntimeExpr::Unary { op, expr } => {
+                let value = self.evaluate_scalar_expr(expr)?;
+                evaluate_scalar_unary(*op, value)
+            }
+            RuntimeExpr::Binary { lhs, op, rhs } => {
+                self.stats.evaluated_binary_ops += 1;
+                let lhs = self.evaluate_scalar_expr(lhs)?;
+                let rhs = self.evaluate_scalar_expr(rhs)?;
+                evaluate_scalar_binary(lhs, *op, rhs)
+            }
+            RuntimeExpr::If {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                if self.evaluate_scalar_bool(condition)? {
+                    self.evaluate_scalar_expr(then_expr)
+                } else {
+                    self.evaluate_scalar_expr(else_expr)
+                }
+            }
+            _ => self.evaluate_expr(expr).and_then(runtime_value_into_scalar),
+        }
+    }
+
+    fn evaluate_scalar_bool(&mut self, expr: &RuntimeExpr) -> Result<bool, RuntimeEvalError> {
+        match self.evaluate_scalar_expr(expr)? {
+            PureScalar::Bool(value) => Ok(value),
+            value @ PureScalar::Int(_) => Err(RuntimeEvalError::ExpectedBool(value.label())),
         }
     }
 
