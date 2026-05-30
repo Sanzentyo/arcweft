@@ -666,6 +666,9 @@ Current high-confidence state:
 - Borrowed root binding updates also fast-path the common same-order binding
   set, updating root values in one pass instead of performing one linear name
   lookup per binding on every measured runtime step.
+- Type checking no longer clones a function's full effect-capability list before
+  validating a call. The checker now borrows the declared effect slice and
+  materializes only missing capability names needed for diagnostics.
 - Source event normalization now sorts by borrowed source id and sequence
   comparisons instead of constructing cloned sort keys, reducing per-step work
   for source-heavy and stream-heavy runtime benches.

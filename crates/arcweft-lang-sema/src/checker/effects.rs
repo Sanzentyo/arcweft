@@ -7,17 +7,21 @@ use std::collections::HashSet;
 
 impl TypeChecker<'_> {
     pub(super) fn check_function_effects(&mut self, name: &str) {
-        let Some(effects) = self.global_function_effects.get(name).cloned() else {
+        let Some(effects) = self.global_function_effects.get(name) else {
             return;
         };
-        for capability in effects {
-            if !self.effect_capabilities.contains(&capability)
-                && !self.env.has_capability(&capability)
-            {
-                self.errors.push(TypeCheckError::new(format!(
-                    "calling `{name}` requires effect capability `{capability}`"
-                )));
-            }
+        let missing = effects
+            .iter()
+            .filter(|capability| {
+                !self.effect_capabilities.contains(capability.as_str())
+                    && !self.env.has_capability(capability)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        for capability in missing {
+            self.errors.push(TypeCheckError::new(format!(
+                "calling `{name}` requires effect capability `{capability}`"
+            )));
         }
     }
 
