@@ -378,9 +378,13 @@ impl Engine {
     }
 
     pub(super) fn spawn_child_fiber(&mut self, body: Vec<FlowOp>) {
-        let mut pending_ops = VecDeque::new();
-        for op in Self::scoped_ops(body).into_iter().rev() {
-            pending_ops.push_front(op);
+        let mut pending_ops = VecDeque::with_capacity(body.len().saturating_add(2));
+        if !body.is_empty() {
+            pending_ops.push_front(FlowOp::ExitScope);
+            for op in body.into_iter().rev() {
+                pending_ops.push_front(op);
+            }
+            pending_ops.push_front(FlowOp::EnterScope);
         }
         self.child_fibers.push_back(FlowFiber {
             line_cursor: 0,

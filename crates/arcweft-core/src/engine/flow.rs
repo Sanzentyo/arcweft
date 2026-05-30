@@ -447,15 +447,6 @@ impl Engine {
         }
     }
 
-    pub(super) fn scoped_ops(mut ops: Vec<FlowOp>) -> Vec<FlowOp> {
-        if ops.is_empty() {
-            return Vec::new();
-        }
-        ops.insert(0, FlowOp::EnterScope);
-        ops.push(FlowOp::ExitScope);
-        ops
-    }
-
     pub(super) fn push_scoped_ops(&mut self, ops: Vec<FlowOp>) {
         self.push_owned_scoped_ops(ops, None);
     }

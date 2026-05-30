@@ -44,7 +44,7 @@ Checked-in thread scheduling bench:
 
 | fixture | executor | iterations | steps | median elapsed ns | median executed ops | per executed op ns | median line effects | median task requests |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 001_thread_scheduling.arcw | bytecode_vm | 10 | 64 | 26600 | 19 | 1400 | 3 | 3 |
+| 001_thread_scheduling.arcw | bytecode_vm | 10 | 64 | 26900 | 19 | 1415 | 3 | 3 |
 
 Checked-in system-info threaded native scheduling bench:
 

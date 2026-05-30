@@ -128,6 +128,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `RuntimeEnv` also reuses popped temporary scopes within the same runtime
   environment; cloned child-fiber environments do not clone the spare-scope
   cache, and runtime equality ignores that cache.
+- Source-level thread child fibers build their scoped pending-op queue directly
+  instead of first inserting scope markers into a temporary `Vec`, keeping child
+  startup allocation and movement local to the final `VecDeque`.
 - The VM pure reference backend also builds evaluator root bindings from a
   borrowed binding slice, avoiding an extra request-binding vector clone during
   JIT/AOT conformance checks and standalone helper evaluation.
