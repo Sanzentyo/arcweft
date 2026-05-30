@@ -100,6 +100,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   harness allocation out of the runtime hot path. Sample vectors are
   preallocated from the requested iteration count, so measured sections do not
   grow counter buffers as they run.
+  Bytecode and AOT executor artifacts for a measured flow are prepared once
+  before warmup and measured iterations; per-iteration elapsed time starts after
+  fresh executor state has been instantiated from that template.
   They also include median pure argument/result byte-copy counters, so scalar
   pure-call boundary costs are visible in the same bench report as elapsed time
   and VM op counts.

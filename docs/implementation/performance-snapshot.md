@@ -45,7 +45,7 @@ Checked-in thread scheduling bench:
 
 | fixture | executor | iterations | steps | median elapsed ns | median executed ops | per executed op ns | median line effects | median task requests |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 001_thread_scheduling.arcw | bytecode_vm | 10 | 64 | 26900 | 19 | 1415 | 3 | 3 |
+| 001_thread_scheduling.arcw | bytecode_vm | 10 | 64 | 18900 | 19 | 994 | 3 | 3 |
 
 Checked-in system-info threaded native scheduling bench:
 
@@ -73,13 +73,16 @@ Checked-in for-loop pure JIT bench:
 
 | fixture | executor | pure backend | iterations | median elapsed ns | executed ops | pure calls | stack packs | copied arg bytes | borrowed arg bytes | line effects |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 003_for_pure_jit.arcw | bytecode_vm | jit | 8 | 61300 | 68 | 16 | 0 | 0 | 256 | 16 |
+| 003_for_pure_jit.arcw | bytecode_vm | jit | 8 | 54600 | 68 | 16 | 0 | 0 | 256 | 16 |
 
 This for-loop sample uses scope and pattern binding capacity derived from the
 structured runtime pattern enum, and `RuntimeEnv` reuses popped temporary
 scopes. The short local sample remains noisy, but the path-free counters show
 the same executed-op and pure-call shape without reintroducing argument vector
 allocation.
+Runtime bench elapsed time now starts after bytecode/AOT executor artifacts are
+prepared for the selected flow, keeping compiler and executor-preparation cost
+in the phase counters instead of the measured runtime loop.
 After scalar result-copy accounting was tightened, the same fixture reports
 `pure_result_bytes_copied_median = 0`; only batch output buffers count result
 bytes.

@@ -1818,13 +1818,12 @@ struct RuntimeRunTrace {
 }
 
 fn run_runtime_bench_steps_with_pure(
-    plan: RuntimePlan,
+    mut executor: RuntimeExecutorCore,
     source_path: Option<&Path>,
     config: RuntimeStepRunConfig,
     values: &[RuntimeBinding],
     pure: &mut RuntimePureAccelerator,
 ) -> RuntimeBenchTrace {
-    let mut executor = RuntimeExecutorCore::new(plan, config.executor);
     let mut host = source_path.map(NativeTaskBridge::new);
     let mut task_events = Vec::new();
     let mut totals = RuntimeBenchStepTotals::default();
@@ -1929,16 +1928,35 @@ enum RuntimeExecutorCore {
     Aot(AotExecutor),
 }
 
-impl RuntimeExecutorCore {
-    fn new(plan: RuntimePlan, tier: CliRuntimeExecutorTier) -> Self {
+enum RuntimeExecutorTemplate {
+    BytecodeVm(BytecodeProgram),
+    Aot(AotProgram),
+}
+
+impl RuntimeExecutorTemplate {
+    fn new(plan: &RuntimePlan, tier: CliRuntimeExecutorTier) -> Self {
         match tier {
             CliRuntimeExecutorTier::BytecodeVm => {
-                Self::BytecodeVm(BytecodeVmExecutor::from_runtime_plan(plan))
+                Self::BytecodeVm(BytecodeProgram::from_runtime_plan(plan.clone()))
             }
-            CliRuntimeExecutorTier::Aot => Self::Aot(AotExecutor::new(plan)),
+            CliRuntimeExecutorTier::Aot => Self::Aot(AotProgram::from_runtime_plan(plan.clone())),
         }
     }
 
+    fn instantiate(&self) -> RuntimeExecutorCore {
+        match self {
+            Self::BytecodeVm(program) => RuntimeExecutorCore::BytecodeVm(
+                BytecodeVmExecutor::new(program.clone())
+                    .expect("bench bytecode program should roundtrip to a runtime plan"),
+            ),
+            Self::Aot(program) => {
+                RuntimeExecutorCore::Aot(AotExecutor::from_program(program.clone()))
+            }
+        }
+    }
+}
+
+impl RuntimeExecutorCore {
     fn step_with_root_bindings(
         &mut self,
         input: RuntimeStepInput,
@@ -3292,12 +3310,14 @@ fn run_bench_flow_section(
     let mut samples = RuntimeBenchSamples::with_capacity(options.iterations);
     let mut selected_plan = plan.clone();
     selected_plan.entry_flow = Some(FlowRuntimeId(flow.to_owned()));
+    let executor_template = RuntimeExecutorTemplate::new(&selected_plan, options.executor);
     let mut pure = RuntimePureAccelerator::with_config(pure_config, &selected_plan.pure_helpers);
     for iteration in 0..options.warmup + options.iterations {
         pure.reset_runtime_counters();
+        let executor = executor_template.instantiate();
         let started = Instant::now();
         let trace = run_runtime_bench_steps_with_pure(
-            selected_plan.clone(),
+            executor,
             Some(source_path),
             RuntimeStepRunConfig {
                 steps: options.steps,
