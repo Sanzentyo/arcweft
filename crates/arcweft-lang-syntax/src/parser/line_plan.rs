@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::ast::common::TextRange;
-use crate::ast::flow::{Stmt, ThreadBlock, ThreadModifier};
+use crate::ast::flow::{FlowItem, Stmt, ThreadBlock, ThreadModifier};
 use crate::ast::items::RawSyntax;
 use crate::ast::line_plan::{
     BlockStyle, CancelRuleSyntax, DeferOutcome, LinePlan, LinePlanItem, TriggerPattern,
@@ -514,6 +514,16 @@ fn parse_assert_call(expr: &Expr) -> Option<LinePlanItem> {
 }
 
 pub(super) fn parse_thread_block(head: &str, body: &str) -> ThreadBlock {
+    parse_thread_block_items(
+        head,
+        parse_stmt_lines(body)
+            .into_iter()
+            .map(FlowItem::Stmt)
+            .collect(),
+    )
+}
+
+pub(super) fn parse_thread_block_items(head: &str, body: Vec<FlowItem>) -> ThreadBlock {
     let rest = head.trim().strip_prefix("thread").unwrap_or(head).trim();
     let mut modifiers = Vec::new();
     let mut parts = rest.split_whitespace().collect::<Vec<_>>();
@@ -522,7 +532,7 @@ pub(super) fn parse_thread_block(head: &str, body: &str) -> ThreadBlock {
         parts.remove(0);
     }
     let name = nonempty_string(&parts.join(" "));
-    ThreadBlock::new(modifiers, name, parse_stmt_lines(body))
+    ThreadBlock::new(modifiers, name, body)
 }
 
 pub(super) fn nonempty_string(source: &str) -> Option<String> {

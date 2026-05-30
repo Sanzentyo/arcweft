@@ -85,10 +85,7 @@ impl TypeChecker<'_> {
                 self.expect_expr_type(expr, &TypeKind::Ref(EntityKind::Flow), "goto destination");
             }
             Stmt::Thread(thread) => {
-                self.reject_active_borrows("thread suspension boundary");
-                for stmt in thread.body() {
-                    self.check_stmt(stmt);
-                }
+                self.check_thread_body(thread.body());
             }
             Stmt::DeferBlock { statements, .. } => {
                 self.reject_active_borrows("defer cleanup boundary");

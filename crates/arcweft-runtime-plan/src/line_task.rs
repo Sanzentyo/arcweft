@@ -17,7 +17,7 @@ use arcweft_core::task::{TaskId, TaskKey, TaskPriority};
 use arcweft_lang_hir::model::{HirDialogue, HirFlowItem, HirModule};
 use arcweft_lang_hir::syntax::{
     ast::{
-        flow::{Stmt, WaitTarget},
+        flow::{FlowItem, Stmt, WaitTarget},
         ids::EntityRef,
         line_plan::{DeferOutcome, LinePlan, LinePlanItem, TriggerPattern},
         pattern::Pattern,
@@ -183,10 +183,11 @@ impl LinePlanGraphLowerer {
                 effect_nodes(scope.body)
             }
             LinePlanItem::Thread(thread) => {
+                let body = self.thread_stmt_body(thread.body());
                 vec![LineTaskNode::Child(self.lower_child_task(
                     thread.name(),
                     LineTaskTrigger::Immediate,
-                    thread.body(),
+                    &body,
                 ))]
             }
             LinePlanItem::On { trigger, body } => {
@@ -298,6 +299,21 @@ impl LinePlanGraphLowerer {
         };
         merge_scope_cleanup(&mut scope, &lowered);
         self.child_task(name, trigger, scope)
+    }
+
+    fn thread_stmt_body(&mut self, items: &[FlowItem]) -> Vec<Stmt> {
+        items
+            .iter()
+            .filter_map(|item| match item {
+                FlowItem::Stmt(stmt) => Some(stmt.clone()),
+                other => {
+                    self.errors.push(LinePlanLowerError::new(format!(
+                        "line-plan thread body item cannot be lowered as a line task: {other:?}"
+                    )));
+                    None
+                }
+            })
+            .collect()
     }
 
     fn child_task(

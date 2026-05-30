@@ -6,7 +6,10 @@ use super::{
     Pattern, Stmt, TriggerPattern, TypeCheckError, TypeChecker, TypeKind, lifetime_key,
     merge_line_output,
 };
-use arcweft_lang_syntax::ast::{flow::WaitTarget, line_plan::LinePlan};
+use arcweft_lang_syntax::ast::{
+    flow::{FlowItem, WaitTarget},
+    line_plan::LinePlan,
+};
 use std::collections::HashSet;
 
 impl TypeChecker<'_> {
@@ -149,10 +152,18 @@ impl TypeChecker<'_> {
         None
     }
 
-    pub(super) fn check_thread_body(&mut self, statements: &[Stmt]) -> Option<TypeKind> {
+    pub(super) fn check_thread_body(&mut self, statements: &[FlowItem]) -> Option<TypeKind> {
         self.reject_active_borrows("thread boundary");
         self.with_child_task_scope(true, |checker| {
-            checker.check_line_plan_statements(statements)
+            for item in statements {
+                match item {
+                    FlowItem::Stmt(stmt) => checker.check_stmt(stmt),
+                    other => checker.errors.push(TypeCheckError::new(format!(
+                        "thread body item is not valid in this statement context: {other:?}"
+                    ))),
+                }
+            }
+            None
         })
     }
 

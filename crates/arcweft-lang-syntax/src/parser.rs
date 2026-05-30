@@ -52,7 +52,9 @@ use helpers::{
     parse_with_indent_label, source_take, split_brace_item, split_call_head, split_comma_args,
     split_optional_block_label, split_speaker_line, split_top_level_binding,
 };
-use line_plan::{parse_defer_outcome, parse_thread_block, parse_trigger_pattern};
+use line_plan::{
+    parse_defer_outcome, parse_thread_block, parse_thread_block_items, parse_trigger_pattern,
+};
 use recovery::{ParseError, RecoverySuggestion};
 use statements::{parse_scope_head, parse_stmt, parse_unsafe_lifetime_block, raw_stmt};
 

@@ -7,11 +7,12 @@ use crate::lower_ids::{
 use crate::model::{
     HirAwait, HirAwaitBranch, HirBorrow, HirFlow, HirFlowItem, HirFor, HirIf, HirIfLet, HirLoop,
     HirLowerError, HirMatch, HirMatchArm, HirScope, HirScopeExpr, HirSelect, HirSelectBranch,
-    HirSourceLocale, HirWhile, HirWhileLet,
+    HirSourceLocale, HirThread, HirWhile, HirWhileLet,
 };
 use arcweft_lang_syntax::ast::flow::{
     AwaitWith, BorrowBlock, Flow, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchBlock,
-    ScopeBlock, ScopeExprBlock, SelectBlock, SourceLocaleBlock, Stmt, WhileBlock, WhileLetBlock,
+    ScopeBlock, ScopeExprBlock, SelectBlock, SourceLocaleBlock, Stmt, ThreadBlock, WhileBlock,
+    WhileLetBlock,
 };
 
 pub(crate) fn lower_flow(flow: &Flow) -> Result<HirFlow, HirLowerError> {
@@ -60,6 +61,9 @@ pub(crate) fn lower_flow_item_with_context(
             pattern: pattern.clone(),
             await_with: lower_await_with(await_with, context)?,
         }),
+        FlowItem::Stmt(Stmt::Thread(thread)) => {
+            lower_thread(thread, context).map(HirFlowItem::Thread)
+        }
         FlowItem::Stmt(stmt) => Ok(HirFlowItem::Stmt(stmt.clone())),
         FlowItem::SpeakerLine(line) => Ok(HirFlowItem::Dialogue(Box::new(lower_speaker_line(
             line, context,
@@ -96,6 +100,22 @@ pub(crate) fn lower_flow_item_with_context(
             raw.range(),
         )),
     }
+}
+
+fn lower_thread(
+    thread: &ThreadBlock,
+    context: &mut LowerContext,
+) -> Result<HirThread, HirLowerError> {
+    let body = thread
+        .body()
+        .iter()
+        .map(|item| lower_flow_item_with_context(item, context))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(HirThread {
+        name: thread.name().map(str::to_owned),
+        detached: thread.is_detached(),
+        body,
+    })
 }
 
 fn lower_await_with(

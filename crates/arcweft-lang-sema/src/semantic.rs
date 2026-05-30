@@ -7,7 +7,8 @@ use crate::fact_layer::{
 };
 use arcweft_lang_hir::model::{
     HirAwait, HirBorrow, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet, HirLoop,
-    HirMatch, HirModule, HirScope, HirScopeExpr, HirSelect, HirTopLevelDecl, HirWhile, HirWhileLet,
+    HirMatch, HirModule, HirScope, HirScopeExpr, HirSelect, HirThread, HirTopLevelDecl, HirWhile,
+    HirWhileLet,
 };
 use arcweft_lang_hir::syntax::{
     ast::{
@@ -28,10 +29,191 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use traversal::{
     drop_keys_in_expr, drop_keys_in_stmts, is_drop_expr, is_line_plan_child_item, is_must_drop_key,
     line_plan_child_name, stmts_contain_unchecked_promotion, thread_result_type_labels,
-    write_accesses_in_line_plan_item, write_accesses_in_stmts,
+    write_accesses_in_flow_items, write_accesses_in_line_plan_item, write_accesses_in_stmts,
 };
 
 type FlowState = FlowFacts;
+
+fn thread_stmt_body(items: &[FlowItem]) -> Vec<Stmt> {
+    items
+        .iter()
+        .filter_map(|item| match item {
+            FlowItem::Stmt(stmt) => Some(stmt.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn hir_thread_result_type_labels(items: &[HirFlowItem], can_fallthrough: bool) -> BTreeSet<String> {
+    let mut labels = BTreeSet::new();
+    for item in items {
+        collect_hir_thread_result_type_labels(item, &mut labels);
+    }
+    if can_fallthrough {
+        labels.insert("Unit".to_owned());
+    }
+    if labels.len() > 1 {
+        labels.remove("Unknown");
+    }
+    labels
+}
+
+fn collect_hir_thread_result_type_labels(item: &HirFlowItem, labels: &mut BTreeSet<String>) {
+    match item {
+        HirFlowItem::Stmt(Stmt::Out { expr, .. }) => {
+            labels.insert(expr_static_type_label(expr));
+        }
+        HirFlowItem::Stmt(_)
+        | HirFlowItem::Dialogue(_)
+        | HirFlowItem::Choice(_)
+        | HirFlowItem::LetChoice { .. }
+        | HirFlowItem::LetScope { .. }
+        | HirFlowItem::LetAwait { .. }
+        | HirFlowItem::Await(_)
+        | HirFlowItem::Include(_) => {}
+        HirFlowItem::If(block) => {
+            for item in block.body().iter().chain(block.else_body()) {
+                collect_hir_thread_result_type_labels(item, labels);
+            }
+        }
+        HirFlowItem::IfLet(block) => {
+            for item in block.body().iter().chain(block.else_body()) {
+                collect_hir_thread_result_type_labels(item, labels);
+            }
+        }
+        HirFlowItem::Match(block) => {
+            for arm in block.arms() {
+                for item in arm.body() {
+                    collect_hir_thread_result_type_labels(item, labels);
+                }
+            }
+        }
+        HirFlowItem::Loop(block) | HirFlowItem::LetLoop { block, .. } => {
+            for item in block.body() {
+                collect_hir_thread_result_type_labels(item, labels);
+            }
+        }
+        HirFlowItem::While(block) => {
+            for item in block.body() {
+                collect_hir_thread_result_type_labels(item, labels);
+            }
+        }
+        HirFlowItem::WhileLet(block) => {
+            for item in block.body() {
+                collect_hir_thread_result_type_labels(item, labels);
+            }
+        }
+        HirFlowItem::For(block) => {
+            for item in block.body() {
+                collect_hir_thread_result_type_labels(item, labels);
+            }
+        }
+        HirFlowItem::Select(block) => {
+            for branch in block.branches() {
+                for item in branch.body() {
+                    collect_hir_thread_result_type_labels(item, labels);
+                }
+            }
+        }
+        HirFlowItem::Borrow(block) => {
+            for item in block.body() {
+                collect_hir_thread_result_type_labels(item, labels);
+            }
+        }
+        HirFlowItem::SourceLocale(block) => {
+            for item in block.body() {
+                collect_hir_thread_result_type_labels(item, labels);
+            }
+        }
+        HirFlowItem::Scope(block) => {
+            for item in block.body() {
+                collect_hir_thread_result_type_labels(item, labels);
+            }
+        }
+        HirFlowItem::Thread(thread) => {
+            for item in thread.body() {
+                collect_hir_thread_result_type_labels(item, labels);
+            }
+        }
+    }
+}
+
+fn expr_static_type_label(expr: &Expr) -> String {
+    match expr {
+        Expr::Literal(Literal::String(_)) => "String".to_owned(),
+        Expr::Literal(Literal::Char { .. }) => "Char".to_owned(),
+        Expr::Literal(Literal::Int { suffix, .. }) => {
+            suffix.as_deref().unwrap_or("unsuffixed-int").to_owned()
+        }
+        Expr::Literal(Literal::Float { suffix, .. }) => {
+            suffix.as_deref().unwrap_or("unsuffixed-float").to_owned()
+        }
+        Expr::Literal(Literal::Bool(_)) => "Bool".to_owned(),
+        Expr::Literal(Literal::Duration { .. }) => "Duration".to_owned(),
+        _ => "Unknown".to_owned(),
+    }
+}
+
+fn write_accesses_in_hir_flow_items(items: &[HirFlowItem]) -> BTreeSet<ResourceAccess> {
+    let mut accesses = BTreeSet::new();
+    for item in items {
+        match item {
+            HirFlowItem::Stmt(stmt) => {
+                accesses.extend(write_accesses_in_stmts(std::slice::from_ref(stmt)));
+            }
+            HirFlowItem::If(block) => {
+                accesses.extend(write_accesses_in_hir_flow_items(block.body()));
+                accesses.extend(write_accesses_in_hir_flow_items(block.else_body()));
+            }
+            HirFlowItem::IfLet(block) => {
+                accesses.extend(write_accesses_in_hir_flow_items(block.body()));
+                accesses.extend(write_accesses_in_hir_flow_items(block.else_body()));
+            }
+            HirFlowItem::Match(block) => {
+                for arm in block.arms() {
+                    accesses.extend(write_accesses_in_hir_flow_items(arm.body()));
+                }
+            }
+            HirFlowItem::Loop(block) | HirFlowItem::LetLoop { block, .. } => {
+                accesses.extend(write_accesses_in_hir_flow_items(block.body()));
+            }
+            HirFlowItem::While(block) => {
+                accesses.extend(write_accesses_in_hir_flow_items(block.body()));
+            }
+            HirFlowItem::WhileLet(block) => {
+                accesses.extend(write_accesses_in_hir_flow_items(block.body()));
+            }
+            HirFlowItem::For(block) => {
+                accesses.extend(write_accesses_in_hir_flow_items(block.body()));
+            }
+            HirFlowItem::Select(block) => {
+                for branch in block.branches() {
+                    accesses.extend(write_accesses_in_hir_flow_items(branch.body()));
+                }
+            }
+            HirFlowItem::Borrow(block) => {
+                accesses.extend(write_accesses_in_hir_flow_items(block.body()));
+            }
+            HirFlowItem::SourceLocale(block) => {
+                accesses.extend(write_accesses_in_hir_flow_items(block.body()));
+            }
+            HirFlowItem::Scope(block) => {
+                accesses.extend(write_accesses_in_hir_flow_items(block.body()));
+            }
+            HirFlowItem::Thread(thread) => {
+                accesses.extend(write_accesses_in_hir_flow_items(thread.body()));
+            }
+            HirFlowItem::Dialogue(_)
+            | HirFlowItem::Choice(_)
+            | HirFlowItem::LetChoice { .. }
+            | HirFlowItem::LetScope { .. }
+            | HirFlowItem::LetAwait { .. }
+            | HirFlowItem::Await(_)
+            | HirFlowItem::Include(_) => {}
+        }
+    }
+    accesses
+}
 
 const LOOP_FIXPOINT_LIMIT: usize = 16;
 
@@ -285,8 +467,8 @@ impl<'a> SemanticAnalyzer<'a> {
             if fallthrough.is_empty() {
                 break;
             }
-            if let HirFlowItem::Stmt(Stmt::Thread(thread)) = item {
-                self.check_sibling_thread_conflicts(thread, &mut sibling_writes);
+            if let HirFlowItem::Thread(thread) = item {
+                self.check_sibling_hir_thread_conflicts(thread, &mut sibling_writes);
             }
 
             let mut next = Vec::new();
@@ -377,6 +559,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 BlockFlow::from_fallthrough(facts)
             }
+            HirFlowItem::Thread(thread) => {
+                self.collect_hir_thread(thread);
+                BlockFlow::from_fallthrough(facts)
+            }
             _ => {
                 self.collect_flow_item(item, &mut facts);
                 BlockFlow::from_fallthrough(facts)
@@ -426,8 +612,8 @@ impl<'a> SemanticAnalyzer<'a> {
     fn collect_flow_items(&mut self, items: &[HirFlowItem], state: &mut FlowState) {
         let mut sibling_writes = BTreeMap::<ResourceAccess, String>::new();
         for item in items {
-            if let HirFlowItem::Stmt(Stmt::Thread(thread)) = item {
-                self.check_sibling_thread_conflicts(thread, &mut sibling_writes);
+            if let HirFlowItem::Thread(thread) = item {
+                self.check_sibling_hir_thread_conflicts(thread, &mut sibling_writes);
             }
             self.collect_flow_item(item, state);
         }
@@ -454,6 +640,7 @@ impl<'a> SemanticAnalyzer<'a> {
             HirFlowItem::LetAwait { await_with, .. } | HirFlowItem::Await(await_with) => {
                 self.collect_await(await_with);
             }
+            HirFlowItem::Thread(thread) => self.collect_hir_thread(thread),
             HirFlowItem::If(block) => self.collect_if(block, state),
             HirFlowItem::IfLet(block) => self.collect_if_let(block, state),
             HirFlowItem::Match(block) => self.collect_match(block, state),
@@ -1188,8 +1375,9 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn collect_thread(&mut self, thread: &ThreadBlock) {
+        let body_stmts = thread_stmt_body(thread.body());
         let body_flow = self.analyze_stmts(
-            thread.body(),
+            &body_stmts,
             vec![FlowFacts::default()],
             ExitReason::Completed,
         );
@@ -1222,12 +1410,67 @@ impl<'a> SemanticAnalyzer<'a> {
         self.finish_block_flow(body_flow, ExitReason::Completed);
     }
 
+    fn collect_hir_thread(&mut self, thread: &HirThread) {
+        let body_flow = self.analyze_flow_items(thread.body(), vec![FlowFacts::default()]);
+        let output_types =
+            hir_thread_result_type_labels(thread.body(), !body_flow.fallthrough.is_empty());
+        if output_types.len() > 1 {
+            self.add_obligation(
+                SemanticObligationKind::ThreadJoinTyping,
+                "thread join result branches must produce one compatible type".to_owned(),
+                thread.name().map(str::to_owned),
+                SemanticDischarge::Missing,
+            );
+        }
+        if thread.is_detached() || body_flow.has_touched_must_drop() {
+            self.add_obligation(
+                SemanticObligationKind::ThreadCapture,
+                "thread capture must not move borrowed or MustDrop state across its scope"
+                    .to_owned(),
+                thread.name().map(str::to_owned),
+                SemanticDischarge::Missing,
+            );
+        } else {
+            self.add_obligation(
+                SemanticObligationKind::ThreadCapture,
+                "thread capture is scoped and joinable".to_owned(),
+                thread.name().map(str::to_owned),
+                SemanticDischarge::Automatic,
+            );
+        }
+        self.finish_block_flow(body_flow, ExitReason::Completed);
+    }
+
     fn check_sibling_thread_conflicts(
         &mut self,
         thread: &ThreadBlock,
         sibling_writes: &mut BTreeMap<ResourceAccess, String>,
     ) {
-        for access in write_accesses_in_stmts(thread.body()) {
+        for access in write_accesses_in_flow_items(thread.body()) {
+            if let Some(previous) = sibling_writes.insert(
+                access.clone(),
+                thread.name().unwrap_or("<anonymous>").to_owned(),
+            ) {
+                let current = thread.name().unwrap_or("<anonymous>");
+                let key = access.key();
+                self.add_obligation(
+                    SemanticObligationKind::RuntimeConflict,
+                    format!(
+                        "concurrent write conflict on `{key}` between child tasks `{previous}` and `{current}`"
+                    ),
+                    Some(key),
+                    SemanticDischarge::Missing,
+                );
+            }
+        }
+    }
+
+    fn check_sibling_hir_thread_conflicts(
+        &mut self,
+        thread: &HirThread,
+        sibling_writes: &mut BTreeMap<ResourceAccess, String>,
+    ) {
+        for access in write_accesses_in_hir_flow_items(thread.body()) {
             if let Some(previous) = sibling_writes.insert(
                 access.clone(),
                 thread.name().unwrap_or("<anonymous>").to_owned(),

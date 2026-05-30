@@ -3,7 +3,9 @@ use arcweft_lang_syntax::{
     ast::{
         choice::{ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceOption, ChoicePlanItem},
         dialogue::DialogueToken,
-        flow::{AwaitWith, ContractClause, SelectBranchHead, Stmt, StmtMatchArm, WaitTarget},
+        flow::{
+            AwaitWith, ContractClause, FlowItem, SelectBranchHead, Stmt, StmtMatchArm, WaitTarget,
+        },
         ids::{EntityRef, EntityRefSyntax, IdRef},
         items::{ImplMember, RawSyntax, TraitMember},
         line_plan::{LinePlan, LinePlanItem, TriggerPattern},
@@ -272,6 +274,11 @@ fn collect_flow_item(item: &HirFlowItem, uses: &mut Vec<SymbolUse>) {
                 }
             }
         }
+        HirFlowItem::Thread(thread) => {
+            for item in thread.body() {
+                collect_flow_item(item, uses);
+            }
+        }
     }
 }
 
@@ -437,6 +444,76 @@ fn collect_stmt_block(statements: &[Stmt], uses: &mut Vec<SymbolUse>) {
     }
 }
 
+fn collect_syntax_flow_block(items: &[FlowItem], uses: &mut Vec<SymbolUse>) {
+    for item in items {
+        match item {
+            FlowItem::Stmt(stmt) => collect_stmt(stmt, uses),
+            FlowItem::AwaitWith(await_with) => collect_unlowered_await_binding(await_with, uses),
+            FlowItem::Choice(choice) => collect_choice_stmt(choice, uses),
+            FlowItem::If(block) => {
+                collect_expr(block.condition(), uses);
+                collect_syntax_flow_block(block.body(), uses);
+                collect_syntax_flow_block(block.else_body(), uses);
+            }
+            FlowItem::IfLet(block) => {
+                collect_pattern(block.pattern(), uses);
+                collect_expr(block.expr(), uses);
+                if let Some(guard) = block.guard() {
+                    collect_expr(guard, uses);
+                }
+                collect_syntax_flow_block(block.body(), uses);
+                collect_syntax_flow_block(block.else_body(), uses);
+            }
+            FlowItem::Match(block) => {
+                collect_expr(block.expr(), uses);
+                for arm in block.arms() {
+                    collect_pattern(arm.pattern(), uses);
+                    if let Some(guard) = arm.guard() {
+                        collect_expr(guard, uses);
+                    }
+                    collect_syntax_flow_block(arm.body(), uses);
+                }
+            }
+            FlowItem::Loop(block) => collect_syntax_flow_block(block.body(), uses),
+            FlowItem::While(block) => {
+                collect_expr(block.condition(), uses);
+                collect_syntax_flow_block(block.body(), uses);
+            }
+            FlowItem::WhileLet(block) => {
+                collect_pattern(block.pattern(), uses);
+                collect_expr(block.expr(), uses);
+                if let Some(guard) = block.guard() {
+                    collect_expr(guard, uses);
+                }
+                collect_syntax_flow_block(block.body(), uses);
+            }
+            FlowItem::For(block) => {
+                collect_pattern(block.pattern(), uses);
+                collect_expr(block.source(), uses);
+                collect_syntax_flow_block(block.body(), uses);
+            }
+            FlowItem::Select(block) => {
+                for branch in block.branches() {
+                    collect_select_head(branch.head(), uses);
+                    collect_syntax_flow_block(branch.body(), uses);
+                }
+            }
+            FlowItem::BorrowBlock(block) => {
+                collect_expr(block.source(), uses);
+                collect_pattern(block.binding(), uses);
+                collect_syntax_flow_block(block.body(), uses);
+            }
+            FlowItem::SourceLocale(block) => collect_syntax_flow_block(block.body(), uses),
+            FlowItem::Scope(block) => collect_syntax_flow_block(block.body(), uses),
+            FlowItem::Include(entity) => uses.push(SymbolUse::new(
+                SymbolUseKind::EntityRef,
+                entity.body().to_owned(),
+            )),
+            FlowItem::SpeakerLine(_) | FlowItem::ContentCall(_) | FlowItem::Raw(_) => {}
+        }
+    }
+}
+
 fn collect_match_block(block: &arcweft_lang_hir::model::HirMatch, uses: &mut Vec<SymbolUse>) {
     collect_expr(block.expr(), uses);
     for arm in block.arms() {
@@ -564,7 +641,7 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
             ));
         }
         Stmt::LetAwait { await_with, .. } => collect_unlowered_await_binding(await_with, uses),
-        Stmt::Thread(thread) => collect_stmt_block(thread.body(), uses),
+        Stmt::Thread(thread) => collect_syntax_flow_block(thread.body(), uses),
         Stmt::DeferBlock { statements, .. } => collect_stmt_block(statements, uses),
         Stmt::Break {
             expr: Some(expr), ..
@@ -676,7 +753,7 @@ fn collect_line_plan_item(item: &LinePlanItem, uses: &mut Vec<SymbolUse>) {
         LinePlanItem::Init(statements) => {
             collect_stmt_block(statements, uses);
         }
-        LinePlanItem::Thread(thread) => collect_stmt_block(thread.body(), uses),
+        LinePlanItem::Thread(thread) => collect_syntax_flow_block(thread.body(), uses),
         LinePlanItem::On { trigger, body } => {
             collect_trigger_pattern(trigger, uses);
             collect_stmt_block(body, uses);
@@ -793,7 +870,7 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
         Expr::Unary { expr, .. } | Expr::Try { expr } | Expr::Await { expr, .. } => {
             collect_expr(expr, uses);
         }
-        Expr::Thread { block } => collect_stmt_block(block.body(), uses),
+        Expr::Thread { block } => collect_syntax_flow_block(block.body(), uses),
         Expr::Range { start, end, .. } => {
             if let Some(start) = start {
                 collect_expr(start, uses);

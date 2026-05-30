@@ -349,7 +349,7 @@ pub enum Stmt {
 pub struct ThreadBlock {
     modifiers: Vec<ThreadModifier>,
     name: Option<String>,
-    body: Vec<Stmt>,
+    body: Vec<FlowItem>,
 }
 
 /// Modifier attached to a `thread` block.
@@ -369,7 +369,7 @@ impl ThreadBlock {
     pub(crate) fn new(
         modifiers: Vec<ThreadModifier>,
         name: Option<String>,
-        body: Vec<Stmt>,
+        body: Vec<FlowItem>,
     ) -> Self {
         Self {
             modifiers,
@@ -386,7 +386,7 @@ impl ThreadBlock {
         self.name.as_deref()
     }
 
-    pub fn body(&self) -> &[Stmt] {
+    pub fn body(&self) -> &[FlowItem] {
         &self.body
     }
 

@@ -920,7 +920,7 @@ fn collect_speaker_presets_from_line_plan_item(
             collect_speaker_presets_from_stmts(rule.action(), character_aliases, presets);
         }
         LinePlanItem::Thread(block) => {
-            collect_speaker_presets_from_stmts(block.body(), character_aliases, presets);
+            collect_speaker_presets_from_flow_items(block.body(), character_aliases, presets);
         }
         LinePlanItem::Option { value, .. }
         | LinePlanItem::Let { expr: value, .. }
@@ -999,7 +999,7 @@ fn collect_speaker_presets_from_stmt(
             collect_speaker_presets_from_expr(expr, character_aliases, presets);
         }
         Stmt::Thread(block) => {
-            collect_speaker_presets_from_stmts(block.body(), character_aliases, presets);
+            collect_speaker_presets_from_flow_items(block.body(), character_aliases, presets);
         }
         Stmt::DeferBlock { statements, .. } => {
             collect_speaker_presets_from_stmts(statements, character_aliases, presets);
@@ -1178,7 +1178,7 @@ fn collect_speaker_presets_from_expr(
             collect_speaker_presets_from_control_expr(expr, character_aliases, presets);
         }
         Expr::Thread { block } => {
-            collect_speaker_presets_from_stmts(block.body(), character_aliases, presets);
+            collect_speaker_presets_from_flow_items(block.body(), character_aliases, presets);
         }
         Expr::Literal(_)
         | Expr::EntityRef(_)

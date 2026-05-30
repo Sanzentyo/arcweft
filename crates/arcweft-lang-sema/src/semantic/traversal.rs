@@ -4,7 +4,7 @@ use crate::fact_layer::{
 };
 use arcweft_lang_hir::syntax::{
     ast::{
-        flow::{Stmt, WaitTarget},
+        flow::{FlowItem, Stmt, WaitTarget},
         line_plan::LinePlanItem,
     },
     expr::{Expr, LifetimeKey, LifetimeScopeKind, Literal},
@@ -13,6 +13,64 @@ use std::collections::{BTreeSet, HashSet};
 
 pub(super) fn stmts_contain_unchecked_promotion(stmts: &[Stmt]) -> bool {
     stmts.iter().any(stmt_contains_unchecked_promotion)
+}
+
+pub(super) fn flow_items_contain_unchecked_promotion(items: &[FlowItem]) -> bool {
+    items.iter().any(flow_item_contains_unchecked_promotion)
+}
+
+fn flow_item_contains_unchecked_promotion(item: &FlowItem) -> bool {
+    match item {
+        FlowItem::Stmt(stmt) => stmt_contains_unchecked_promotion(stmt),
+        FlowItem::AwaitWith(await_with) => expr_contains_unchecked_promotion(await_with.expr()),
+        FlowItem::If(block) => {
+            expr_contains_unchecked_promotion(block.condition())
+                || flow_items_contain_unchecked_promotion(block.body())
+                || flow_items_contain_unchecked_promotion(block.else_body())
+        }
+        FlowItem::IfLet(block) => {
+            expr_contains_unchecked_promotion(block.expr())
+                || block.guard().is_some_and(expr_contains_unchecked_promotion)
+                || flow_items_contain_unchecked_promotion(block.body())
+                || flow_items_contain_unchecked_promotion(block.else_body())
+        }
+        FlowItem::Match(block) => {
+            expr_contains_unchecked_promotion(block.expr())
+                || block.arms().iter().any(|arm| {
+                    arm.guard().is_some_and(expr_contains_unchecked_promotion)
+                        || flow_items_contain_unchecked_promotion(arm.body())
+                })
+        }
+        FlowItem::Loop(block) => flow_items_contain_unchecked_promotion(block.body()),
+        FlowItem::While(block) => {
+            expr_contains_unchecked_promotion(block.condition())
+                || flow_items_contain_unchecked_promotion(block.body())
+        }
+        FlowItem::WhileLet(block) => {
+            expr_contains_unchecked_promotion(block.expr())
+                || block.guard().is_some_and(expr_contains_unchecked_promotion)
+                || flow_items_contain_unchecked_promotion(block.body())
+        }
+        FlowItem::For(block) => {
+            expr_contains_unchecked_promotion(block.source())
+                || flow_items_contain_unchecked_promotion(block.body())
+        }
+        FlowItem::Select(block) => block
+            .branches()
+            .iter()
+            .any(|branch| flow_items_contain_unchecked_promotion(branch.body())),
+        FlowItem::BorrowBlock(block) => {
+            expr_contains_unchecked_promotion(block.source())
+                || flow_items_contain_unchecked_promotion(block.body())
+        }
+        FlowItem::SourceLocale(block) => flow_items_contain_unchecked_promotion(block.body()),
+        FlowItem::Scope(block) => flow_items_contain_unchecked_promotion(block.body()),
+        FlowItem::Choice(_)
+        | FlowItem::SpeakerLine(_)
+        | FlowItem::ContentCall(_)
+        | FlowItem::Include(_)
+        | FlowItem::Raw(_) => false,
+    }
 }
 
 fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
@@ -45,7 +103,7 @@ fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
         | Stmt::Break { expr: None, .. }
         | Stmt::Continue { .. }
         | Stmt::Raw(_) => false,
-        Stmt::Thread(thread) => stmts_contain_unchecked_promotion(thread.body()),
+        Stmt::Thread(thread) => flow_items_contain_unchecked_promotion(thread.body()),
         Stmt::DeferBlock { statements, .. }
         | Stmt::On {
             body: statements, ..
@@ -165,7 +223,7 @@ fn expr_contains_unchecked_promotion(expr: &Expr) -> bool {
                         || expr_contains_unchecked_promotion(arm.value())
                 })
         }
-        Expr::Thread { block } => stmts_contain_unchecked_promotion(block.body()),
+        Expr::Thread { block } => flow_items_contain_unchecked_promotion(block.body()),
         Expr::Range { start, end, .. } => {
             start
                 .as_ref()
@@ -194,7 +252,7 @@ fn expr_contains_unchecked_promotion(expr: &Expr) -> bool {
 fn line_plan_item_contains_unchecked_promotion(item: &LinePlanItem) -> bool {
     match item {
         LinePlanItem::Init(stmts) => stmts_contain_unchecked_promotion(stmts),
-        LinePlanItem::Thread(thread) => stmts_contain_unchecked_promotion(thread.body()),
+        LinePlanItem::Thread(thread) => flow_items_contain_unchecked_promotion(thread.body()),
         LinePlanItem::On { body, .. } => stmts_contain_unchecked_promotion(body),
         LinePlanItem::Let { expr, .. }
         | LinePlanItem::Option { value: expr, .. }
@@ -237,6 +295,101 @@ pub(super) fn write_accesses_in_stmts(stmts: &[Stmt]) -> BTreeSet<ResourceAccess
     accesses
 }
 
+pub(super) fn write_accesses_in_flow_items(items: &[FlowItem]) -> BTreeSet<ResourceAccess> {
+    let mut accesses = BTreeSet::new();
+    for item in items {
+        collect_flow_item_write_accesses(item, &mut accesses);
+    }
+    accesses
+}
+
+fn collect_flow_item_write_accesses(item: &FlowItem, accesses: &mut BTreeSet<ResourceAccess>) {
+    match item {
+        FlowItem::Stmt(stmt) => collect_stmt_write_accesses(stmt, accesses),
+        FlowItem::AwaitWith(await_with) => collect_expr_write_accesses(await_with.expr(), accesses),
+        FlowItem::If(block) => {
+            collect_expr_write_accesses(block.condition(), accesses);
+            for item in block.body().iter().chain(block.else_body()) {
+                collect_flow_item_write_accesses(item, accesses);
+            }
+        }
+        FlowItem::IfLet(block) => {
+            collect_expr_write_accesses(block.expr(), accesses);
+            if let Some(guard) = block.guard() {
+                collect_expr_write_accesses(guard, accesses);
+            }
+            for item in block.body().iter().chain(block.else_body()) {
+                collect_flow_item_write_accesses(item, accesses);
+            }
+        }
+        FlowItem::Match(block) => {
+            collect_expr_write_accesses(block.expr(), accesses);
+            for arm in block.arms() {
+                if let Some(guard) = arm.guard() {
+                    collect_expr_write_accesses(guard, accesses);
+                }
+                for item in arm.body() {
+                    collect_flow_item_write_accesses(item, accesses);
+                }
+            }
+        }
+        FlowItem::Loop(block) => {
+            for item in block.body() {
+                collect_flow_item_write_accesses(item, accesses);
+            }
+        }
+        FlowItem::While(block) => {
+            collect_expr_write_accesses(block.condition(), accesses);
+            for item in block.body() {
+                collect_flow_item_write_accesses(item, accesses);
+            }
+        }
+        FlowItem::WhileLet(block) => {
+            collect_expr_write_accesses(block.expr(), accesses);
+            if let Some(guard) = block.guard() {
+                collect_expr_write_accesses(guard, accesses);
+            }
+            for item in block.body() {
+                collect_flow_item_write_accesses(item, accesses);
+            }
+        }
+        FlowItem::For(block) => {
+            collect_expr_write_accesses(block.source(), accesses);
+            for item in block.body() {
+                collect_flow_item_write_accesses(item, accesses);
+            }
+        }
+        FlowItem::Select(block) => {
+            for branch in block.branches() {
+                for item in branch.body() {
+                    collect_flow_item_write_accesses(item, accesses);
+                }
+            }
+        }
+        FlowItem::BorrowBlock(block) => {
+            collect_expr_write_accesses(block.source(), accesses);
+            for item in block.body() {
+                collect_flow_item_write_accesses(item, accesses);
+            }
+        }
+        FlowItem::SourceLocale(block) => {
+            for item in block.body() {
+                collect_flow_item_write_accesses(item, accesses);
+            }
+        }
+        FlowItem::Scope(block) => {
+            for item in block.body() {
+                collect_flow_item_write_accesses(item, accesses);
+            }
+        }
+        FlowItem::Choice(_)
+        | FlowItem::SpeakerLine(_)
+        | FlowItem::ContentCall(_)
+        | FlowItem::Include(_)
+        | FlowItem::Raw(_) => {}
+    }
+}
+
 pub(super) fn write_accesses_in_line_plan_item(item: &LinePlanItem) -> BTreeSet<ResourceAccess> {
     let mut accesses = BTreeSet::new();
     collect_line_plan_item_write_accesses(item, &mut accesses);
@@ -254,8 +407,8 @@ fn collect_line_plan_item_write_accesses(
             }
         }
         LinePlanItem::Thread(thread) => {
-            for stmt in thread.body() {
-                collect_stmt_write_accesses(stmt, accesses);
+            for item in thread.body() {
+                collect_flow_item_write_accesses(item, accesses);
             }
         }
         LinePlanItem::On { body, .. } => {
@@ -432,14 +585,14 @@ fn collect_stmt_write_accesses(stmt: &Stmt, accesses: &mut BTreeSet<ResourceAcce
                 collect_stmt_write_accesses(stmt, accesses);
             }
         }
-        Stmt::On { .. } | Stmt::Thread(_) => {
-            let body = match stmt {
-                Stmt::On { body, .. } => body.as_slice(),
-                Stmt::Thread(thread) => thread.body(),
-                _ => &[],
-            };
+        Stmt::On { body, .. } => {
             for stmt in body {
                 collect_stmt_write_accesses(stmt, accesses);
+            }
+        }
+        Stmt::Thread(thread) => {
+            for item in thread.body() {
+                collect_flow_item_write_accesses(item, accesses);
             }
         }
         _ => {}
@@ -486,10 +639,13 @@ fn collect_expr_write_accesses(expr: &Expr, accesses: &mut BTreeSet<ResourceAcce
     }
 }
 
-pub(super) fn thread_result_type_labels(stmts: &[Stmt], can_fallthrough: bool) -> BTreeSet<String> {
+pub(super) fn thread_result_type_labels(
+    items: &[FlowItem],
+    can_fallthrough: bool,
+) -> BTreeSet<String> {
     let mut labels = BTreeSet::new();
-    for stmt in stmts {
-        collect_thread_result_type_labels(stmt, &mut labels);
+    for item in items {
+        collect_flow_item_thread_result_type_labels(item, &mut labels);
     }
     if can_fallthrough {
         labels.insert("Unit".to_owned());
@@ -498,6 +654,77 @@ pub(super) fn thread_result_type_labels(stmts: &[Stmt], can_fallthrough: bool) -
         labels.remove("Unknown");
     }
     labels
+}
+
+fn collect_flow_item_thread_result_type_labels(item: &FlowItem, labels: &mut BTreeSet<String>) {
+    match item {
+        FlowItem::Stmt(stmt) => collect_thread_result_type_labels(stmt, labels),
+        FlowItem::If(block) => {
+            for item in block.body().iter().chain(block.else_body()) {
+                collect_flow_item_thread_result_type_labels(item, labels);
+            }
+        }
+        FlowItem::IfLet(block) => {
+            for item in block.body().iter().chain(block.else_body()) {
+                collect_flow_item_thread_result_type_labels(item, labels);
+            }
+        }
+        FlowItem::Match(block) => {
+            for arm in block.arms() {
+                for item in arm.body() {
+                    collect_flow_item_thread_result_type_labels(item, labels);
+                }
+            }
+        }
+        FlowItem::Loop(block) => {
+            for item in block.body() {
+                collect_flow_item_thread_result_type_labels(item, labels);
+            }
+        }
+        FlowItem::While(block) => {
+            for item in block.body() {
+                collect_flow_item_thread_result_type_labels(item, labels);
+            }
+        }
+        FlowItem::WhileLet(block) => {
+            for item in block.body() {
+                collect_flow_item_thread_result_type_labels(item, labels);
+            }
+        }
+        FlowItem::For(block) => {
+            for item in block.body() {
+                collect_flow_item_thread_result_type_labels(item, labels);
+            }
+        }
+        FlowItem::Select(block) => {
+            for branch in block.branches() {
+                for item in branch.body() {
+                    collect_flow_item_thread_result_type_labels(item, labels);
+                }
+            }
+        }
+        FlowItem::BorrowBlock(block) => {
+            for item in block.body() {
+                collect_flow_item_thread_result_type_labels(item, labels);
+            }
+        }
+        FlowItem::SourceLocale(block) => {
+            for item in block.body() {
+                collect_flow_item_thread_result_type_labels(item, labels);
+            }
+        }
+        FlowItem::Scope(block) => {
+            for item in block.body() {
+                collect_flow_item_thread_result_type_labels(item, labels);
+            }
+        }
+        FlowItem::Choice(_)
+        | FlowItem::SpeakerLine(_)
+        | FlowItem::ContentCall(_)
+        | FlowItem::Include(_)
+        | FlowItem::AwaitWith(_)
+        | FlowItem::Raw(_) => {}
+    }
 }
 
 fn collect_thread_result_type_labels(stmt: &Stmt, labels: &mut BTreeSet<String>) {

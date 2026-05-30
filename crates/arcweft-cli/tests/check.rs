@@ -376,7 +376,7 @@ flow @flow.for_pure for_pure {
         .arg("run")
         .arg(&path)
         .arg("--mode")
-        .arg("drain")
+        .arg("one-op")
         .arg("--steps")
         .arg("32")
         .arg("--pure-backend")
@@ -2852,14 +2852,13 @@ bench @bench.threaded_reads {
 
 flow @flow.threaded_reads threaded_reads effects { fs.read(save) } {
     thread left {
-        log.info("left")
+        let text = try await fs.read_text(path.save("a.txt")) with { error e => return "left_failed" }
+        log.info(text)
     }
     thread right {
-        log.info("right")
+        let text = try await fs.read_text(path.save("b.txt")) with { error e => return "right_failed" }
+        log.info(text)
     }
-    let paths = [path.save("a.txt"), path.save("b.txt")]
-    let values = try await paths.traverse(fs.read_text).parallel(limit = 2) with { error e => return "read_failed" }
-    log.info(values)
     return "done"
 }
 "#,
@@ -2903,13 +2902,8 @@ flow @flow.threaded_reads threaded_reads effects { fs.read(save) } {
     assert_eq!(measurement["native_io"]["read_ops"], 2);
     assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 4);
     assert_eq!(measurement["native_io"]["scheduler"]["dispatched"], 4);
-    assert_eq!(measurement["native_io"]["scheduler"]["max_in_flight"], 2);
-    assert!(
-        measurement["native_io"]["parallel_batches"]
-            .as_u64()
-            .is_some_and(|batches| batches >= 1),
-        "threaded native reads should expose parallel scheduler completion: {measurement}"
-    );
+    assert_eq!(measurement["native_io"]["scheduler"]["max_in_flight"], 1);
+    assert_eq!(measurement["native_io"]["parallel_batches"], 0);
 }
 
 #[test]

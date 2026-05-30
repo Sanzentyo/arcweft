@@ -26,7 +26,7 @@ use arcweft_core::task::{
 use arcweft_core::value::{RuntimeExpr, RuntimeValue};
 use arcweft_lang_hir::model::{
     HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirLoop, HirMatch,
-    HirModule, HirScopeExpr, HirTopLevelDecl,
+    HirModule, HirScopeExpr, HirThread, HirTopLevelDecl,
 };
 use arcweft_lang_hir::syntax::ast::{
     choice::ChoiceAction,
@@ -295,6 +295,9 @@ impl FlowRuntimeLowerer {
                 }
                 HirFlowItem::Stmt(stmt) => {
                     ops.extend(self.lower_flow_stmt(stmt));
+                }
+                HirFlowItem::Thread(thread) => {
+                    ops.extend(self.lower_hir_thread(thread, flow_id, flow_index));
                 }
                 HirFlowItem::Scope(scope) => {
                     ops.push(FlowOp::Scope(self.lower_flow_items(
@@ -689,7 +692,27 @@ impl FlowRuntimeLowerer {
         } else {
             vec![FlowOp::Thread {
                 name: thread.name().map(str::to_owned),
-                body: self.lower_flow_stmt_list(thread.body()),
+                body: self.lower_syntax_flow_items(thread.body()),
+            }]
+        }
+    }
+
+    fn lower_hir_thread(
+        &mut self,
+        thread: &HirThread,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+    ) -> Vec<FlowOp> {
+        if thread.is_detached() {
+            self.errors.push(RuntimePlanLowerError::new(
+                "detached flow thread runtime lowering requires a checked detach contract"
+                    .to_owned(),
+            ));
+            Vec::new()
+        } else {
+            vec![FlowOp::Thread {
+                name: thread.name().map(str::to_owned),
+                body: self.lower_flow_items(flow_id, thread.body(), flow_index),
             }]
         }
     }

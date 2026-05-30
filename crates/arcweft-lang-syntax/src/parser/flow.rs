@@ -300,7 +300,8 @@ impl Parser {
             self.index += 1;
             let body = self.take_indented_await_body(indentation(&start_line.text) + 1);
             let head = trimmed.trim_end_matches(':').trim();
-            let thread = parse_thread_block(head, &body);
+            let body = self.parse_flow_body(&body, start_line.start + head.len());
+            let thread = super::parse_thread_block_items(head, body);
             return Some(FlowItem::Stmt(Stmt::Thread(thread)));
         }
         let (head, body, _, ok) = self.take_brace_block();
@@ -314,10 +315,10 @@ impl Parser {
             );
             return None;
         }
-        Some(FlowItem::Stmt(Stmt::Thread(parse_thread_block(
-            head.trim(),
-            &body,
-        ))))
+        let body = self.parse_flow_body(&body, start_line.start + head.len());
+        Some(FlowItem::Stmt(Stmt::Thread(
+            super::parse_thread_block_items(head.trim(), body),
+        )))
     }
 
     fn parse_defer_flow_stmt(&mut self) -> Option<FlowItem> {

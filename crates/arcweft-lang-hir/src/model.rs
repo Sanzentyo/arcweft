@@ -104,6 +104,7 @@ pub enum HirFlowItem {
         pattern: Pattern,
         await_with: HirAwait,
     },
+    Thread(HirThread),
     If(HirIf),
     IfLet(HirIfLet),
     Match(HirMatch),
@@ -273,6 +274,13 @@ pub struct HirAwait {
     pub(crate) expr: Expr,
     pub(crate) applies_try: bool,
     pub(crate) branches: Vec<HirAwaitBranch>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirThread {
+    pub(crate) name: Option<String>,
+    pub(crate) detached: bool,
+    pub(crate) body: Vec<HirFlowItem>,
 }
 
 /// HIR-facing wait-view branch.
@@ -679,6 +687,20 @@ impl HirAwait {
 
     pub fn branches(&self) -> &[HirAwaitBranch] {
         &self.branches
+    }
+}
+
+impl HirThread {
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub const fn is_detached(&self) -> bool {
+        self.detached
+    }
+
+    pub fn body(&self) -> &[HirFlowItem] {
+        &self.body
     }
 }
 

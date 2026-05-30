@@ -1,5 +1,5 @@
 use crate::ast::common::TextRange;
-use crate::ast::flow::{Stmt, ThreadBlock, ThreadModifier};
+use crate::ast::flow::{FlowItem, Stmt, ThreadBlock, ThreadModifier};
 use crate::ast::ids::{
     EntityRef, EntityRefSyntax, FamilyRelativeEntityRef, RelativeId, RelativeIdSpelling,
 };
@@ -1029,7 +1029,7 @@ impl ExprParser {
         let body = if body_source.trim().is_empty() {
             Vec::new()
         } else {
-            vec![Stmt::Expr(parse_expr(body_source.trim())?)]
+            vec![FlowItem::Stmt(Stmt::Expr(parse_expr(body_source.trim())?))]
         };
         Ok(Expr::Thread {
             block: Box::new(ThreadBlock::new(

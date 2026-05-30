@@ -737,6 +737,7 @@ impl ObligationCollector {
             HirFlowItem::Borrow(block) => self.collect_borrow(block),
             HirFlowItem::SourceLocale(block) => self.collect_flow_items(block.body()),
             HirFlowItem::Scope(block) => self.collect_scope(block),
+            HirFlowItem::Thread(thread) => self.collect_flow_items(thread.body()),
             HirFlowItem::Include(_) => {}
         }
     }
@@ -906,6 +907,69 @@ impl ObligationCollector {
     fn collect_stmts(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
             self.collect_stmt(stmt);
+        }
+    }
+
+    fn collect_syntax_flow_items(&mut self, items: &[FlowItem]) {
+        for item in items {
+            match item {
+                FlowItem::Stmt(stmt) => self.collect_stmt(stmt),
+                FlowItem::Choice(choice) => self.collect_choice_syntax(choice),
+                FlowItem::If(block) => {
+                    self.collect_expr(block.condition());
+                    self.collect_syntax_flow_items(block.body());
+                    self.collect_syntax_flow_items(block.else_body());
+                }
+                FlowItem::IfLet(block) => {
+                    self.collect_expr(block.expr());
+                    if let Some(guard) = block.guard() {
+                        self.collect_expr(guard);
+                    }
+                    self.collect_syntax_flow_items(block.body());
+                    self.collect_syntax_flow_items(block.else_body());
+                }
+                FlowItem::Match(block) => {
+                    self.collect_expr(block.expr());
+                    for arm in block.arms() {
+                        if let Some(guard) = arm.guard() {
+                            self.collect_expr(guard);
+                        }
+                        self.collect_syntax_flow_items(arm.body());
+                    }
+                }
+                FlowItem::Loop(block) => self.collect_syntax_flow_items(block.body()),
+                FlowItem::While(block) => {
+                    self.collect_expr(block.condition());
+                    self.collect_syntax_flow_items(block.body());
+                }
+                FlowItem::WhileLet(block) => {
+                    self.collect_expr(block.expr());
+                    if let Some(guard) = block.guard() {
+                        self.collect_expr(guard);
+                    }
+                    self.collect_syntax_flow_items(block.body());
+                }
+                FlowItem::For(block) => {
+                    self.collect_expr(block.source());
+                    self.collect_syntax_flow_items(block.body());
+                }
+                FlowItem::Select(block) => {
+                    for branch in block.branches() {
+                        self.collect_syntax_flow_items(branch.body());
+                    }
+                }
+                FlowItem::BorrowBlock(block) => {
+                    self.collect_expr(block.source());
+                    self.collect_syntax_flow_items(block.body());
+                }
+                FlowItem::SourceLocale(block) => self.collect_syntax_flow_items(block.body()),
+                FlowItem::Scope(block) => self.collect_syntax_flow_items(block.body()),
+                FlowItem::AwaitWith(await_with) => self.collect_await_syntax(await_with),
+                FlowItem::SpeakerLine(_)
+                | FlowItem::ContentCall(_)
+                | FlowItem::Include(_)
+                | FlowItem::Raw(_) => {}
+            }
         }
     }
 
@@ -1129,7 +1193,7 @@ impl ObligationCollector {
             thread.name().map(str::to_owned),
             &discharge,
         );
-        self.collect_stmts(thread.body());
+        self.collect_syntax_flow_items(thread.body());
     }
 
     fn collect_unsafe_lifetime(
