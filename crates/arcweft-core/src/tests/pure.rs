@@ -1,6 +1,8 @@
+use crate::plan::{RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin};
 use crate::pure::{
     AotPureFunctionBackend, PureFunctionBackend, PureFunctionBackendKind, PureFunctionRequest,
-    VmPureFunctionBackend, compare_pure_function_backend,
+    RuntimePureCallBackend, VmPureFunctionBackend, VmRuntimePureCallBackend,
+    compare_pure_function_backend,
 };
 use crate::value::{RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeValue};
 
@@ -69,6 +71,28 @@ fn vm_pure_backend_evaluates_lexical_let_expr() {
     assert_eq!(result.value, RuntimeValue::Int(18));
     assert_eq!(result.stats.evaluated_calls, 1);
     assert_eq!(result.stats.evaluated_binary_ops, 1);
+}
+
+#[test]
+fn vm_runtime_value_fallback_records_pure_call_stats() {
+    let helper = RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "echo_label".to_owned(),
+        input_names: vec!["label".to_owned()],
+        expr: RuntimeExpr::Local("label".to_owned()),
+        origin: RuntimePureHelperOrigin::Annotated,
+    };
+    let mut backend = VmRuntimePureCallBackend::default();
+
+    let value = backend
+        .call_values(&helper, &[RuntimeValue::String("ready".to_owned())])
+        .expect("VM value fallback evaluates");
+
+    assert_eq!(value, RuntimeValue::String("ready".to_owned()));
+    assert_eq!(backend.stats().pure_calls, 1);
+    assert_eq!(backend.stats().vm_calls, 1);
+    assert_eq!(backend.stats().fallbacks, 1);
+    assert_eq!(backend.stats().arg_vec_allocations, 1);
 }
 
 #[test]

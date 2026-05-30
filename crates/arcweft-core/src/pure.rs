@@ -298,6 +298,9 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
                 found: args.len(),
             });
         }
+        self.stats.pure_calls += 1;
+        self.stats.vm_calls += 1;
+        self.stats.fallbacks += 1;
         self.stats.arg_vec_allocations += 1;
         let request = PureFunctionRequest::new(
             helper.name.clone(),
