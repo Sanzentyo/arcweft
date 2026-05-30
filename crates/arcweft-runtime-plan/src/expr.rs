@@ -691,9 +691,9 @@ fn lower_runtime_array_repeat_strict(value: &Expr, len: &Expr) -> Result<Runtime
 }
 
 fn repeated_runtime_expr(value: RuntimeExpr, len: usize) -> RuntimeExpr {
-    match value {
-        RuntimeExpr::Value(value) => RuntimeExpr::Value(RuntimeValue::BracketSeq(vec![value; len])),
-        value => RuntimeExpr::BracketSeq(vec![value; len]),
+    RuntimeExpr::RepeatSeq {
+        value: Box::new(value),
+        len,
     }
 }
 
@@ -739,13 +739,8 @@ mod tests {
 
         assert!(matches!(
             lowered,
-            RuntimeExpr::Value(RuntimeValue::BracketSeq(items))
-                if items == vec![
-                    RuntimeValue::Int(2),
-                    RuntimeValue::Int(2),
-                    RuntimeValue::Int(2),
-                    RuntimeValue::Int(2)
-                ]
+            RuntimeExpr::RepeatSeq { value, len: 4 }
+                if matches!(value.as_ref(), RuntimeExpr::Value(RuntimeValue::Int(2)))
         ));
     }
 

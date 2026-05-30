@@ -247,6 +247,7 @@ fn is_runtime_sequence_expr(expr: &RuntimeExpr) -> bool {
     matches!(
         expr,
         RuntimeExpr::Value(RuntimeValue::BracketSeq(_) | RuntimeValue::Tuple(_))
+            | RuntimeExpr::RepeatSeq { .. }
             | RuntimeExpr::BracketSeq(_)
             | RuntimeExpr::Tuple(_)
     )
@@ -410,6 +411,7 @@ fn runtime_expr_uses_local(expr: &RuntimeExpr, name: &str) -> bool {
         RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
             items.iter().any(|item| runtime_expr_uses_local(item, name))
         }
+        RuntimeExpr::RepeatSeq { value, .. } => runtime_expr_uses_local(value, name),
         RuntimeExpr::Record(fields) => fields
             .iter()
             .any(|field| runtime_expr_uses_local(&field.value, name)),
@@ -1370,6 +1372,7 @@ fn rewrite_expr_pure_calls(
                 rewrite_expr_pure_calls(arg, helpers);
             }
         }
+        RuntimeExpr::RepeatSeq { value, .. } => rewrite_expr_pure_calls(value, helpers),
         RuntimeExpr::Let {
             expr: value, body, ..
         } => {

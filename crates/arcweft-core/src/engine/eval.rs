@@ -105,6 +105,7 @@ impl Engine {
             }
             RuntimeExpr::Tuple(_)
             | RuntimeExpr::BracketSeq(_)
+            | RuntimeExpr::RepeatSeq { .. }
             | RuntimeExpr::Record(_)
             | RuntimeExpr::Variant { .. }
             | RuntimeExpr::Field { .. } => self.evaluate_data_expr(expr, pure_backend),
@@ -178,6 +179,9 @@ impl Engine {
                 .collect::<Result<Vec<_>, _>>()
                 .map(RuntimeValue::Tuple),
             RuntimeExpr::BracketSeq(items) => self.evaluate_bracket_seq_expr(items, pure_backend),
+            RuntimeExpr::RepeatSeq { value, len } => {
+                self.evaluate_repeat_seq_expr(value, *len, pure_backend)
+            }
             RuntimeExpr::Record(fields) => self.evaluate_record_expr(fields, pure_backend),
             RuntimeExpr::Variant {
                 path,
@@ -229,6 +233,21 @@ impl Engine {
         items
             .iter()
             .map(|item| self.evaluate_expr_with_backend(item, pure_backend))
+            .collect::<Result<Vec<_>, _>>()
+            .map(RuntimeValue::BracketSeq)
+    }
+
+    fn evaluate_repeat_seq_expr(
+        &mut self,
+        value: &RuntimeExpr,
+        len: usize,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if let RuntimeExpr::Value(value) = value {
+            return Ok(RuntimeValue::BracketSeq(vec![value.clone(); len]));
+        }
+        (0..len)
+            .map(|_| self.evaluate_expr_with_backend(value, pure_backend))
             .collect::<Result<Vec<_>, _>>()
             .map(RuntimeValue::BracketSeq)
     }
@@ -738,6 +757,7 @@ impl Engine {
             RuntimeExpr::Value(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => {
                 Some(items.len())
             }
+            RuntimeExpr::RepeatSeq { len, .. } => Some(*len),
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
                 Some(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => {
                     Some(items.len())
@@ -759,6 +779,16 @@ impl Engine {
         let RuntimeExpr::PureCall { args, .. } = body else {
             unreachable!("i64 map batch shape checked before repeated row collection");
         };
+        if let RuntimeExpr::RepeatSeq { value, len } = source {
+            return self.collect_i64_repeated_map_batch_row_from_repeat_expr(
+                value,
+                *len,
+                param,
+                args,
+                arity,
+                flat_inputs,
+            );
+        }
         let items = match source {
             RuntimeExpr::Value(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => {
                 items.as_slice()
@@ -780,29 +810,98 @@ impl Engine {
         )
     }
 
+    fn collect_i64_repeated_map_batch_row_from_repeat_expr(
+        &self,
+        value: &RuntimeExpr,
+        len: usize,
+        param: &str,
+        args: &[RuntimeExpr],
+        arity: usize,
+        flat_inputs: &mut Vec<i64>,
+    ) -> Result<bool, RuntimeEvalError> {
+        flat_inputs.clear();
+        if len == 0 {
+            return Ok(true);
+        }
+        let RuntimeExpr::Value(item) = value else {
+            return Ok(false);
+        };
+        flat_inputs.reserve(arity);
+        for arg in args.iter().take(arity) {
+            let Some(value) = self.evaluate_i64_map_arg_without_scope(arg, param, item)? else {
+                flat_inputs.clear();
+                return Ok(false);
+            };
+            flat_inputs.push(value);
+        }
+        Ok(true)
+    }
+
     fn evaluate_i64_bracket_seq_sum(
         &mut self,
         source: &RuntimeExpr,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
-        let RuntimeExpr::BracketSeq(items) = source else {
-            return Ok(None);
-        };
-        let Some((helper_id, arity)) = self.bracket_seq_i64_batch_shape(items) else {
-            return Ok(None);
-        };
-        let mut flat_inputs = std::mem::take(&mut self.pure_i64_batch_inputs);
-        let collect_result =
-            self.collect_i64_pure_batch_inputs(items, arity, pure_backend, &mut flat_inputs);
-        if let Err(error) = collect_result {
-            self.pure_i64_batch_inputs = flat_inputs;
-            return Err(error);
+        match source {
+            RuntimeExpr::BracketSeq(items) => {
+                let Some((helper_id, arity)) = self.bracket_seq_i64_batch_shape(items) else {
+                    return Ok(None);
+                };
+                let mut flat_inputs = std::mem::take(&mut self.pure_i64_batch_inputs);
+                let collect_result = self.collect_i64_pure_batch_inputs(
+                    items,
+                    arity,
+                    pure_backend,
+                    &mut flat_inputs,
+                );
+                if let Err(error) = collect_result {
+                    self.pure_i64_batch_inputs = flat_inputs;
+                    return Err(error);
+                }
+                let batch_result = self.call_i64_flat_batch_sum(
+                    helper_id,
+                    &flat_inputs,
+                    arity,
+                    items.len(),
+                    pure_backend,
+                );
+                self.pure_i64_batch_inputs = flat_inputs;
+                batch_result.map(Some)
+            }
+            RuntimeExpr::RepeatSeq { value, len } => {
+                let RuntimeExpr::PureCall { helper, args } = value.as_ref() else {
+                    return Ok(None);
+                };
+                if helper.0 >= self.plan.pure_helpers.len()
+                    || args.len() > RuntimeI64Args::MAX
+                    || args
+                        .iter()
+                        .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
+                    || !self
+                        .pure_helper_i64_call_shapes
+                        .get(helper.0)
+                        .copied()
+                        .unwrap_or(false)
+                {
+                    return Ok(None);
+                }
+                let mut flat_inputs = std::mem::take(&mut self.pure_i64_batch_inputs);
+                flat_inputs.clear();
+                flat_inputs.reserve(args.len());
+                for arg in args {
+                    flat_inputs.push(self.evaluate_i64_arg_with_backend(arg, pure_backend)?);
+                }
+                let batch_result = self.call_i64_repeated_flat_batch_sum(
+                    *helper,
+                    &flat_inputs,
+                    *len,
+                    pure_backend,
+                );
+                self.pure_i64_batch_inputs = flat_inputs;
+                batch_result.map(Some)
+            }
+            _ => Ok(None),
         }
-        let batch_result =
-            self.call_i64_flat_batch_sum(helper_id, &flat_inputs, arity, items.len(), pure_backend);
-        self.pure_i64_batch_inputs = flat_inputs;
-        let sum = batch_result?;
-        Ok(Some(sum))
     }
 
     fn map_i64_batch_shape(

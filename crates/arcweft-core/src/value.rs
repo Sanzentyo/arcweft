@@ -62,6 +62,10 @@ pub enum RuntimeExpr {
     },
     Tuple(Vec<RuntimeExpr>),
     BracketSeq(Vec<RuntimeExpr>),
+    RepeatSeq {
+        value: Box<RuntimeExpr>,
+        len: usize,
+    },
     Record(Vec<RuntimeFieldExpr>),
     Variant {
         path: Option<String>,
@@ -146,6 +150,7 @@ impl RuntimeExpr {
             | Self::EntityRef(_)
             | Self::Tuple(_)
             | Self::BracketSeq(_)
+            | Self::RepeatSeq { .. }
             | Self::Record(_)
             | Self::Variant { .. }
             | Self::Field { .. }
@@ -702,6 +707,7 @@ pub(crate) fn expr_runtime_label(expr: &RuntimeExpr) -> String {
         RuntimeExpr::Let { name, .. } => format!("let {name}"),
         RuntimeExpr::Tuple(items) => format!("tuple/{}", items.len()),
         RuntimeExpr::BracketSeq(items) => format!("bracket_seq/{}", items.len()),
+        RuntimeExpr::RepeatSeq { len, .. } => format!("repeat_seq/{len}"),
         RuntimeExpr::Record(fields) => format!("record/{}", fields.len()),
         RuntimeExpr::Variant { name, .. } => format!(".{name}"),
         RuntimeExpr::Field { field, .. } => format!(".{field}"),

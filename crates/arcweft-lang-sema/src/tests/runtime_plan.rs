@@ -661,7 +661,7 @@ fn score(base: i64, bonus: i64) -> i64 {
 }
 
 flow @flow.main main {
-    let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
+    let values: Array<i64, 4> = [1i64; 4]
     let scores: Vec<i64> = values.map(|item| score(item, 2i64))
     let total: i64 = scores.sum()
     return total
@@ -686,7 +686,7 @@ flow @flow.main main {
         expr,
         RuntimeExpr::Sum { source }
             if matches!(source.as_ref(), RuntimeExpr::Map { source, .. }
-                if matches!(source.as_ref(), RuntimeExpr::Value(RuntimeValue::BracketSeq(items)) if items.len() == 4))
+                if matches!(source.as_ref(), RuntimeExpr::RepeatSeq { len: 4, .. }))
     ));
 }
 
@@ -715,10 +715,12 @@ flow @flow.main main {
     assert_eq!(plan.flows[0].ops.len(), 4);
     assert!(matches!(
         &plan.flows[0].ops[0],
-        FlowOp::Let {
-            expr: RuntimeExpr::Value(RuntimeValue::BracketSeq(items)),
-            ..
-        } if items.len() == 4
+        FlowOp::Let { expr, .. }
+            if matches!(
+                expr,
+                RuntimeExpr::RepeatSeq { len: 4, .. }
+                    | RuntimeExpr::Value(RuntimeValue::BracketSeq(_))
+            )
     ));
 }
 

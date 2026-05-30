@@ -405,6 +405,10 @@ impl<'a> RuntimeTypeValidator<'a> {
                 }
                 RuntimeShape::BracketSeq
             }
+            RuntimeExpr::RepeatSeq { value, .. } => {
+                self.validate_expr(&format!("{path}.repeat"), value);
+                RuntimeShape::BracketSeq
+            }
             RuntimeExpr::Record(fields) => {
                 for field in fields {
                     self.validate_expr(&format!("{path}.field.{}", field.name), &field.value);

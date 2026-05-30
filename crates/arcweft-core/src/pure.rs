@@ -1183,6 +1183,7 @@ impl PureEvaluator {
                 .map(|item| self.evaluate_expr(item))
                 .collect::<Result<Vec<_>, _>>()
                 .map(RuntimeValue::BracketSeq),
+            RuntimeExpr::RepeatSeq { value, len } => self.evaluate_repeat_seq_expr(value, *len),
             RuntimeExpr::Record(fields) => fields
                 .iter()
                 .map(|field| {
@@ -1251,6 +1252,20 @@ impl PureEvaluator {
                 })
             }
         }
+    }
+
+    fn evaluate_repeat_seq_expr(
+        &mut self,
+        value: &RuntimeExpr,
+        len: usize,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if let RuntimeExpr::Value(value) = value {
+            return Ok(RuntimeValue::BracketSeq(vec![value.clone(); len]));
+        }
+        (0..len)
+            .map(|_| self.evaluate_expr(value))
+            .collect::<Result<Vec<_>, _>>()
+            .map(RuntimeValue::BracketSeq)
     }
 
     fn evaluate_scalar_expr(&mut self, expr: &RuntimeExpr) -> Result<PureScalar, RuntimeEvalError> {
