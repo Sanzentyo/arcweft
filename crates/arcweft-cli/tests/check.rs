@@ -432,6 +432,61 @@ flow @flow.for_pure for_pure {
 }
 
 #[test]
+fn run_json_uses_jit_for_map_closure_pure_batch() {
+    let path = temp_arcw(
+        "runtime-map-pure-jit",
+        r#"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+flow @flow.map_pure map_pure {
+    let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
+    let scores: Vec<i64> = values.map(|item| score(item, 2i64))
+    for item in scores {
+        log.info(item)
+    }
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--mode")
+        .arg("one-op")
+        .arg("--steps")
+        .arg("32")
+        .arg("--pure-backend")
+        .arg("jit")
+        .arg("--json")
+        .output()
+        .expect("arcw run executes map-closure pure batch");
+
+    assert!(
+        output.status.success(),
+        "runtime map pure JIT run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("run output is structured JSON");
+    assert_eq!(json["final_status"], "done Return(\"done\")");
+    assert_eq!(sum_step_pure_counter(&json, "pure_calls"), 4);
+    assert_eq!(sum_step_pure_counter(&json, "batch_calls"), 1);
+    assert_eq!(sum_step_pure_counter(&json, "batch_items"), 4);
+    assert_eq!(sum_step_pure_counter(&json, "jit_calls"), 4);
+    assert_eq!(sum_step_pure_counter(&json, "arg_stack_packs"), 0);
+    assert_eq!(sum_step_pure_counter(&json, "arg_vec_allocations"), 0);
+    assert_eq!(sum_step_pure_counter(&json, "arg_bytes_copied"), 0);
+    assert_eq!(sum_step_pure_counter(&json, "arg_bytes_borrowed"), 64);
+    assert_eq!(sum_step_pure_counter(&json, "result_bytes_copied"), 32);
+    assert_eq!(json["executor_stats"]["pure_config"]["backend"], "jit");
+    assert_eq!(json["executor_stats"]["pure_compile"]["jit_successes"], 1);
+}
+
+#[test]
 fn check_accepts_valid_arcw_file() {
     let path = temp_arcw(
         "valid",
