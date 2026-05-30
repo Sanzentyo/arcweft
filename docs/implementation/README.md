@@ -632,6 +632,8 @@ Current high-confidence state:
   stats therefore keep `arg_stack_packs` and `arg_bytes_copied` at zero while
   reporting the shared input slice through `arg_bytes_borrowed` and the output
   write volume through `result_bytes_copied`.
+  Scalar `i64` pure calls return through the typed call result instead of an
+  output buffer, so they no longer report result-byte copies.
 - Sequential AOT pure batches now reuse the accelerator-owned `i64` scratch
   slots instead of allocating a local scratch vector per batch. Parallel AOT
   batches keep thread-local scratch slots for worker isolation.

@@ -73,6 +73,9 @@ structured runtime pattern enum, and `RuntimeEnv` reuses popped temporary
 scopes. The short local sample remains noisy, but the path-free counters show
 the same executed-op and pure-call shape without reintroducing argument vector
 allocation.
+After scalar result-copy accounting was tightened, the same fixture reports
+`pure_result_bytes_copied_median = 0`; only batch output buffers count result
+bytes.
 
 Profile phase split for the checked-in map pure JIT fixture:
 

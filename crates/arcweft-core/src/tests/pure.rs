@@ -126,10 +126,7 @@ fn vm_runtime_i64_fast_path_records_copy_bytes() {
         backend.stats().arg_bytes_copied,
         2 * std::mem::size_of::<i64>()
     );
-    assert_eq!(
-        backend.stats().result_bytes_copied,
-        std::mem::size_of::<i64>()
-    );
+    assert_eq!(backend.stats().result_bytes_copied, 0);
 }
 
 #[test]
@@ -160,10 +157,7 @@ fn vm_runtime_i64_slice_fast_path_records_borrowed_bytes() {
         backend.stats().arg_bytes_borrowed,
         2 * std::mem::size_of::<i64>()
     );
-    assert_eq!(
-        backend.stats().result_bytes_copied,
-        std::mem::size_of::<i64>()
-    );
+    assert_eq!(backend.stats().result_bytes_copied, 0);
 }
 
 #[test]

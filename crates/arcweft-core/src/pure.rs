@@ -370,10 +370,7 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         self.stats.arg_bytes_copied += args.len() * std::mem::size_of::<i64>();
         let value = self.scratch.evaluate_i64_args(helper, args)?;
         match value {
-            RuntimeValue::Int(value) => {
-                self.stats.result_bytes_copied += std::mem::size_of::<i64>();
-                Ok(Some(value))
-            }
+            RuntimeValue::Int(value) => Ok(Some(value)),
             value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
         }
     }
@@ -395,10 +392,7 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
         let value = self.scratch.evaluate_i64_slice(helper, args)?;
         match value {
-            RuntimeValue::Int(value) => {
-                self.stats.result_bytes_copied += std::mem::size_of::<i64>();
-                Ok(Some(value))
-            }
+            RuntimeValue::Int(value) => Ok(Some(value)),
             value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
         }
     }
