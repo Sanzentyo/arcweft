@@ -66,11 +66,13 @@ Checked-in for-loop pure JIT bench:
 
 | fixture | executor | pure backend | iterations | median elapsed ns | executed ops | pure calls | stack packs | copied arg bytes | borrowed arg bytes | line effects |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 003_for_pure_jit.arcw | bytecode_vm | jit | 8 | 59500 | 68 | 16 | 0 | 0 | 256 | 16 |
+| 003_for_pure_jit.arcw | bytecode_vm | jit | 8 | 61300 | 68 | 16 | 0 | 0 | 256 | 16 |
 
 This for-loop sample uses scope and pattern binding capacity derived from the
-structured runtime pattern enum, so each iteration avoids growing an initially
-empty temporary binding vector.
+structured runtime pattern enum, and `RuntimeEnv` reuses popped temporary
+scopes. The short local sample remains noisy, but the path-free counters show
+the same executed-op and pure-call shape without reintroducing argument vector
+allocation.
 
 Profile phase split for the checked-in map pure JIT fixture:
 

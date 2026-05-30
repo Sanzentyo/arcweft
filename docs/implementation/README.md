@@ -125,6 +125,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - Runtime pattern matching now derives binding capacity from the structured
   pattern enum and uses it for temporary scopes, map-row scopes, and `for`
   iteration scopes, reducing allocation churn in natural iterator-heavy flows.
+  `RuntimeEnv` also reuses popped temporary scopes within the same runtime
+  environment; cloned child-fiber environments do not clone the spare-scope
+  cache, and runtime equality ignores that cache.
 - The VM pure reference backend also builds evaluator root bindings from a
   borrowed binding slice, avoiding an extra request-binding vector clone during
   JIT/AOT conformance checks and standalone helper evaluation.

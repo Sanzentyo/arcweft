@@ -200,9 +200,10 @@ pub enum RuntimeBinaryOp {
     Or,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq)]
 pub struct RuntimeEnv {
     scopes: Vec<RuntimeScope>,
+    spare_scopes: Vec<RuntimeScope>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -264,23 +265,47 @@ impl Default for RuntimeEnv {
     fn default() -> Self {
         Self {
             scopes: vec![RuntimeScope::default()],
+            spare_scopes: Vec::new(),
         }
+    }
+}
+
+impl Clone for RuntimeEnv {
+    fn clone(&self) -> Self {
+        Self {
+            scopes: self.scopes.clone(),
+            spare_scopes: Vec::new(),
+        }
+    }
+}
+
+impl PartialEq for RuntimeEnv {
+    fn eq(&self, other: &Self) -> bool {
+        self.scopes == other.scopes
     }
 }
 
 impl RuntimeEnv {
     pub fn push_scope(&mut self) {
-        self.scopes.push(RuntimeScope::default());
+        self.push_scope_with_capacity(0);
     }
 
     pub(crate) fn push_scope_with_capacity(&mut self, binding_capacity: usize) {
-        self.scopes
-            .push(RuntimeScope::with_capacity(binding_capacity));
+        let mut scope = self
+            .spare_scopes
+            .pop()
+            .unwrap_or_else(|| RuntimeScope::with_capacity(binding_capacity));
+        scope.clear();
+        scope.reserve_bindings(binding_capacity);
+        self.scopes.push(scope);
     }
 
     pub fn pop_scope(&mut self) {
         if self.scopes.len() > 1 {
-            self.scopes.pop();
+            if let Some(mut scope) = self.scopes.pop() {
+                scope.clear();
+                self.spare_scopes.push(scope);
+            }
         } else if let Some(scope) = self.scopes.last_mut() {
             scope.clear();
         }
@@ -383,6 +408,11 @@ impl RuntimeScope {
         Self {
             bindings: Vec::with_capacity(binding_capacity),
         }
+    }
+
+    fn reserve_bindings(&mut self, binding_capacity: usize) {
+        let additional = binding_capacity.saturating_sub(self.bindings.capacity());
+        self.bindings.reserve(additional);
     }
 
     fn set(&mut self, name: String, value: RuntimeValue) {

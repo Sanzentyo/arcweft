@@ -1071,7 +1071,7 @@ impl PureEvaluator {
             RuntimeExpr::EntityRef(target) => Ok(RuntimeValue::EntityRef(target.clone())),
             RuntimeExpr::Let { name, expr, body } => {
                 let value = self.evaluate_expr(expr)?;
-                self.env.push_scope();
+                self.env.push_scope_with_capacity(1);
                 self.env.set(name.clone(), value);
                 let result = self.evaluate_expr(body);
                 self.env.pop_scope();
@@ -1169,7 +1169,7 @@ impl PureEvaluator {
             },
             RuntimeExpr::Let { name, expr, body } => {
                 let value = self.evaluate_scalar_expr(expr)?.into_runtime_value();
-                self.env.push_scope();
+                self.env.push_scope_with_capacity(1);
                 self.env.set(name.clone(), value);
                 let result = self.evaluate_scalar_expr(body);
                 self.env.pop_scope();
@@ -1224,7 +1224,7 @@ impl PureEvaluator {
         items
             .into_iter()
             .map(|item| {
-                self.env.push_scope();
+                self.env.push_scope_with_capacity(1);
                 self.env.set(param.to_owned(), item);
                 let result = self.evaluate_expr(body);
                 self.env.pop_scope();

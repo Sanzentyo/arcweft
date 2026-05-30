@@ -48,3 +48,18 @@ fn root_binding_ref_reuses_matching_ordered_slots() {
     assert_eq!(env.get("lhs"), Some(&RuntimeValue::Int(3)));
     assert_eq!(env.get("rhs"), Some(&RuntimeValue::Int(4)));
 }
+
+#[test]
+fn spare_scopes_do_not_affect_runtime_env_semantics() {
+    let mut env = RuntimeEnv::default();
+    env.push_scope_with_capacity(2);
+    env.set("scoped", RuntimeValue::Int(1));
+    env.pop_scope();
+
+    let baseline = RuntimeEnv::default();
+    assert_eq!(env, baseline);
+    assert_eq!(env.clone(), baseline);
+
+    env.push_scope_with_capacity(1);
+    assert!(env.get("scoped").is_none());
+}
