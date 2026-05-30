@@ -1,4 +1,4 @@
-use crate::native_system::system_info_value;
+use crate::native_system::{HostSystemInfo, host_system_info, system_info_value};
 use arcweft_core::task::{
     HostTaskRequest, LogicalEpoch, SchedulerBudget, TaskEvent, TaskEventKind, TaskSequence,
     TaskSpec,
@@ -11,6 +11,7 @@ use std::path::{Component, Path, PathBuf};
 #[derive(Clone, Debug)]
 pub(crate) struct NativeTaskBridge {
     io_root: PathBuf,
+    host_system: HostSystemInfo,
     sequence: u64,
     scheduler: RuntimeScheduler,
     stats: NativeTaskStats,
@@ -52,6 +53,7 @@ impl NativeTaskBridge {
         let source_dir = source_path.parent().unwrap_or_else(|| Path::new("."));
         Self {
             io_root: source_dir.join(".arcweft"),
+            host_system: host_system_info(),
             sequence: 0,
             scheduler: RuntimeScheduler::default(),
             stats: NativeTaskStats::default(),
@@ -76,7 +78,8 @@ impl NativeTaskBridge {
         let dispatch = self.scheduler.dispatch(SchedulerBudget {
             max_events: usize::MAX,
         });
-        let completions = complete_dispatched_tasks(&self.io_root, &dispatch.tasks);
+        let completions =
+            complete_dispatched_tasks(&self.io_root, self.host_system, &dispatch.tasks);
         if completions.parallel {
             self.stats.parallel_batches += 1;
             self.stats.parallel_tasks += completions.items.len();
@@ -153,23 +156,31 @@ struct TaskCompletionStats {
     bytes_written: usize,
 }
 
-fn complete_dispatched_tasks(io_root: &Path, tasks: &[TaskSpec]) -> TaskCompletions {
+fn complete_dispatched_tasks(
+    io_root: &Path,
+    host_system: HostSystemInfo,
+    tasks: &[TaskSpec],
+) -> TaskCompletions {
     let parallel = tasks.len() > 1 && tasks.iter().all(can_complete_in_parallel);
     let items = if parallel {
         tasks
             .par_iter()
-            .filter_map(|task| complete_task(io_root, task))
+            .filter_map(|task| complete_task(io_root, host_system, task))
             .collect()
     } else {
         tasks
             .iter()
-            .filter_map(|task| complete_task(io_root, task))
+            .filter_map(|task| complete_task(io_root, host_system, task))
             .collect()
     };
     TaskCompletions { parallel, items }
 }
 
-fn complete_task(io_root: &Path, task: &TaskSpec) -> Option<TaskCompletion> {
+fn complete_task(
+    io_root: &Path,
+    host_system: HostSystemInfo,
+    task: &TaskSpec,
+) -> Option<TaskCompletion> {
     let (result, stats) = match &task.request {
         HostTaskRequest::FileReadText(request) => complete_read_text(io_root, &request.path),
         HostTaskRequest::FileWriteText(request) => {
@@ -187,7 +198,7 @@ fn complete_task(io_root: &Path, task: &TaskSpec) -> Option<TaskCompletion> {
             (Ok(String::new()), TaskCompletionStats::default())
         }
         HostTaskRequest::SystemInfo(request) => (
-            Ok(system_info_value(request.kind).to_string()),
+            Ok(system_info_value(host_system, request.kind).to_string()),
             TaskCompletionStats {
                 system_info_ops: 1,
                 ..TaskCompletionStats::default()

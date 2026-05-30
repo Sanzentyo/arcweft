@@ -16,8 +16,7 @@ pub(crate) fn host_system_info() -> HostSystemInfo {
     }
 }
 
-pub(crate) fn system_info_value(kind: SystemInfoKind) -> usize {
-    let info = host_system_info();
+pub(crate) fn system_info_value(info: HostSystemInfo, kind: SystemInfoKind) -> usize {
     match kind {
         SystemInfoKind::CoreCount => info.physical_cores,
         SystemInfoKind::ThreadCount => info.logical_threads,
