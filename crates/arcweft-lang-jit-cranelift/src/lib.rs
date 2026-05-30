@@ -13,7 +13,7 @@ use arcweft_core::pure::{
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeUnaryOp, RuntimeValue,
 };
-use cranelift::codegen::ir::UserFuncName;
+use cranelift::codegen::ir::{BlockArg, UserFuncName};
 use cranelift::jit::{JITBuilder, JITModule};
 use cranelift::module::{Linkage, Module, ModuleError, default_libcall_names};
 use cranelift::prelude::{
@@ -273,13 +273,22 @@ impl CraneliftPureFunctionBackend {
             let done_block = builder.create_block();
             builder.append_block_param(loop_block, types::I64);
             builder.append_block_param(loop_block, types::I64);
+            for _ in &param_names {
+                builder.append_block_param(loop_block, types::I64);
+            }
 
             let zero = builder.ins().iconst(types::I64, 0);
-            builder.ins().jump(loop_block, &[zero.into(), zero.into()]);
+            let initial_inputs = (0..param_names.len())
+                .map(|param_index| lower_input_value(&mut builder, seed, sample, zero, param_index))
+                .collect::<Vec<_>>();
+            let mut initial_args = vec![BlockArg::from(zero), BlockArg::from(zero)];
+            initial_args.extend(initial_inputs.iter().copied().map(BlockArg::from));
+            builder.ins().jump(loop_block, &initial_args);
 
             builder.switch_to_block(loop_block);
             let index = builder.block_params(loop_block)[0];
             let accumulator = builder.block_params(loop_block)[1];
+            let input_values = builder.block_params(loop_block)[2..].to_vec();
             let keep_going = builder
                 .ins()
                 .icmp(IntCC::UnsignedLessThan, index, iterations);
@@ -289,17 +298,24 @@ impl CraneliftPureFunctionBackend {
 
             builder.switch_to_block(body_block);
             let mut bindings = captured_bindings.clone();
-            for (param_index, name) in param_names.iter().enumerate() {
-                let value = lower_input_value(&mut builder, seed, sample, index, param_index);
+            for (name, value) in param_names.iter().zip(input_values.iter().copied()) {
                 bindings.insert(name.clone(), LoweredI64Binding::Value(value));
             }
             let value = lower_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
             let next_accumulator = builder.ins().iadd(accumulator, value);
             let one = builder.ins().iconst(types::I64, 1);
             let next_index = builder.ins().iadd(index, one);
-            builder
-                .ins()
-                .jump(loop_block, &[next_index.into(), next_accumulator.into()]);
+            let next_inputs = input_values
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(param_index, value)| {
+                    lower_next_input_value(&mut builder, value, param_index)
+                })
+                .collect::<Vec<_>>();
+            let mut next_args = vec![BlockArg::from(next_index), BlockArg::from(next_accumulator)];
+            next_args.extend(next_inputs.iter().copied().map(BlockArg::from));
+            builder.ins().jump(loop_block, &next_args);
 
             builder.switch_to_block(done_block);
             builder.ins().return_(&[accumulator]);
@@ -419,6 +435,21 @@ fn lower_input_value(
     let value = builder.ins().urem(sum, modulus);
     let one = builder.ins().iconst(types::I64, 1);
     builder.ins().iadd(value, one)
+}
+
+fn lower_next_input_value(
+    builder: &mut FunctionBuilder<'_>,
+    current: Value,
+    param_index: usize,
+) -> Value {
+    let modulus = builder.ins().iconst(
+        types::I64,
+        5 + i64::try_from(param_index % 5).unwrap_or_default(),
+    );
+    let one = builder.ins().iconst(types::I64, 1);
+    let incremented = builder.ins().iadd(current, one);
+    let wrapped = builder.ins().icmp(IntCC::Equal, current, modulus);
+    builder.ins().select(wrapped, one, incremented)
 }
 
 fn validate_param_names(param_names: &[String]) -> Result<(), CraneliftJitError> {

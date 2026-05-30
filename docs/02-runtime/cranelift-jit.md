@@ -112,6 +112,11 @@ compiled JIT function, JIT batch loop, and VM reference. Builtin cases exercise 
 score helper, branch-heavy arithmetic, lexical `let` chains, a four-input
 arithmetic/branch mix, and a denser accumulation-style arithmetic mix so the
 native-call boundary and the compiled loop can be compared independently.
+The JIT batch loop carries deterministic input values through loop parameters
+and advances them with bounded wraparound instead of recomputing modulo for each
+input on every iteration.
+When `--julia` is present, the report compares the same accumulator with Julia
+and includes both scalar JIT/Julia and JIT-batch/Julia speed ratios.
 `--input-seed` makes the input series reproducible while allowing local A/B
 comparisons. It does not read source paths or persist host absolute paths.
 

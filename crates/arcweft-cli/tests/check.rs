@@ -3566,6 +3566,14 @@ fn assert_julia_baseline_json(stdout: &str) {
             && julia["julia_vs_jit_x"]
                 .as_str()
                 .and_then(|value| value.parse::<f64>().ok())
+                .is_some()
+            && julia["jit_batch_vs_julia_x"]
+                .as_str()
+                .and_then(|value| value.parse::<f64>().ok())
+                .is_some()
+            && julia["julia_vs_jit_batch_x"]
+                .as_str()
+                .and_then(|value| value.parse::<f64>().ok())
                 .is_some(),
         "Julia baseline should report version, timings, and speed ratios: {julia}"
     );

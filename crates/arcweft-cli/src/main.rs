@@ -257,17 +257,10 @@ fn jit_check_report(
             jit_samples: measurement.jit.elapsed,
             vm_samples: measurement.vm.elapsed,
         },
-        julia: measurement.julia.as_ref().map(|julia| JitCheckJuliaReport {
-            backend: "julia".to_owned(),
-            version: julia.version.clone(),
-            matches_vm: julia.accumulator == measurement.vm.accumulator,
-            elapsed: julia.elapsed.median,
-            per_iteration: per_iteration_ns(julia.elapsed.median, options.iterations),
-            samples: julia.elapsed,
-            accumulator: julia.accumulator,
-            jit_vs_julia_x: speedup_x(julia.elapsed.median, measurement.jit.elapsed.median),
-            julia_vs_jit_x: speedup_x(measurement.jit.elapsed.median, julia.elapsed.median),
-        }),
+        julia: measurement
+            .julia
+            .as_ref()
+            .map(|julia| jit_check_julia_report(options, measurement, julia)),
         deterministic: JitCheckDeterministicReport {
             aot: measurement.aot.accumulator,
             jit: measurement.jit.accumulator,
@@ -296,6 +289,26 @@ fn jit_check_report(
         vm_stats: PureFunctionStatsReport::from_stats(&conformance.vm.stats),
         aot_stats: PureFunctionStatsReport::from_stats(&conformance.aot.stats),
         jit_stats: PureFunctionStatsReport::from_stats(compiled.jit.stats()),
+    }
+}
+
+fn jit_check_julia_report(
+    options: &JitCheckOptions,
+    measurement: &JitCheckMeasurements,
+    julia: &JitJuliaMeasurement,
+) -> JitCheckJuliaReport {
+    JitCheckJuliaReport {
+        backend: "julia".to_owned(),
+        version: julia.version.clone(),
+        matches_vm: julia.accumulator == measurement.vm.accumulator,
+        elapsed: julia.elapsed.median,
+        per_iteration: per_iteration_ns(julia.elapsed.median, options.iterations),
+        samples: julia.elapsed,
+        accumulator: julia.accumulator,
+        jit_vs_julia_x: speedup_x(julia.elapsed.median, measurement.jit.elapsed.median),
+        julia_vs_jit_x: speedup_x(measurement.jit.elapsed.median, julia.elapsed.median),
+        jit_batch_vs_julia_x: speedup_x(julia.elapsed.median, measurement.jit_batch.elapsed.median),
+        julia_vs_jit_batch_x: speedup_x(measurement.jit_batch.elapsed.median, julia.elapsed.median),
     }
 }
 
@@ -4304,6 +4317,8 @@ struct JitCheckJuliaReport {
     accumulator: i64,
     jit_vs_julia_x: String,
     julia_vs_jit_x: String,
+    jit_batch_vs_julia_x: String,
+    julia_vs_jit_batch_x: String,
 }
 
 #[derive(serde::Serialize)]

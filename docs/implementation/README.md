@@ -77,7 +77,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   compilation cost. Builtin JIT checks now expose `--case score`,
   `--case branch-mix`, `--case let-chain`, and `--case four-input-mix`, and JSON
   includes workload metadata plus a JIT-compiled batch loop over the same
-  deterministic input series.
+  deterministic input series. The batch loop carries generated input values as
+  loop parameters and advances them with bounded wraparound, avoiding per-input
+  modulo work inside the hot loop. Julia baseline reports include scalar
+  JIT/Julia and JIT-batch/Julia speed ratios.
 - `arcw bench` runs measurable `measure { start(@flow.id) }` sections through
   the selected headless runtime executor, includes deterministic runtime
   counters in JSON, completes native file task requests through the CLI adapter,
