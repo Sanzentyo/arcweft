@@ -158,22 +158,24 @@ fn profile_command(
     repeat: usize,
 ) -> ToolchainCommandReport {
     if dry_run {
-        let samples = (0..repeat)
-            .map(|index| ToolchainCommandSample {
+        let mut samples = Vec::with_capacity(repeat);
+        for index in 0..repeat {
+            samples.push(ToolchainCommandSample {
                 index,
                 status: "planned",
                 exit_code: None,
                 elapsed_ns: 0,
                 stdout_lines: 0,
                 stderr_lines: 0,
-            })
-            .collect::<Vec<_>>();
+            });
+        }
         return command_report_from_samples(spec, samples);
     }
 
-    let samples = (0..repeat)
-        .map(|index| profile_command_sample(spec, index))
-        .collect::<Vec<_>>();
+    let mut samples = Vec::with_capacity(repeat);
+    for index in 0..repeat {
+        samples.push(profile_command_sample(spec, index));
+    }
     command_report_from_samples(spec, samples)
 }
 
@@ -264,7 +266,15 @@ fn argv_for(spec: ToolchainCommandSpec) -> Vec<&'static str> {
 }
 
 fn count_lines(bytes: &[u8]) -> usize {
-    String::from_utf8_lossy(bytes).lines().count()
+    if bytes.is_empty() {
+        return 0;
+    }
+    let segments = bytes.split(|byte| *byte == b'\n').count();
+    if bytes.ends_with(b"\n") {
+        segments.saturating_sub(1)
+    } else {
+        segments
+    }
 }
 
 fn parse_positive_usize(value: &str) -> Result<usize, String> {
@@ -288,5 +298,19 @@ fn print_human_report(report: &ToolchainProfileReport) {
             command.stdout_lines,
             command.stderr_lines
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::count_lines;
+
+    #[test]
+    fn count_lines_does_not_allocate_utf8_strings() {
+        assert_eq!(count_lines(b""), 0);
+        assert_eq!(count_lines(b"one"), 1);
+        assert_eq!(count_lines(b"one\n"), 1);
+        assert_eq!(count_lines(b"one\ntwo"), 2);
+        assert_eq!(count_lines(b"one\r\ntwo\r\n"), 2);
     }
 }
