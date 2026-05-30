@@ -171,6 +171,13 @@ impl BytecodeVmExecutor {
         Ok(Self { program, vm })
     }
 
+    pub fn from_parts(program: BytecodeProgram, plan: RuntimePlan) -> Self {
+        Self {
+            program,
+            vm: VmExecutor::new(plan),
+        }
+    }
+
     pub fn from_runtime_plan(plan: RuntimePlan) -> Self {
         Self {
             program: BytecodeProgram::from_runtime_plan(plan.clone()),

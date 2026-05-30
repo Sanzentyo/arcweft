@@ -1932,7 +1932,10 @@ enum RuntimeExecutorCore {
 }
 
 enum RuntimeExecutorTemplate {
-    BytecodeVm(BytecodeProgram),
+    BytecodeVm {
+        plan: RuntimePlan,
+        program: BytecodeProgram,
+    },
     Aot {
         plan: RuntimePlan,
         program: AotProgram,
@@ -1942,9 +1945,10 @@ enum RuntimeExecutorTemplate {
 impl RuntimeExecutorTemplate {
     fn new(plan: &RuntimePlan, tier: CliRuntimeExecutorTier) -> Self {
         match tier {
-            CliRuntimeExecutorTier::BytecodeVm => {
-                Self::BytecodeVm(BytecodeProgram::from_runtime_plan(plan.clone()))
-            }
+            CliRuntimeExecutorTier::BytecodeVm => Self::BytecodeVm {
+                plan: plan.clone(),
+                program: BytecodeProgram::from_runtime_plan(plan.clone()),
+            },
             CliRuntimeExecutorTier::Aot => Self::Aot {
                 plan: plan.clone(),
                 program: AotProgram::from_runtime_plan(plan),
@@ -1954,9 +1958,8 @@ impl RuntimeExecutorTemplate {
 
     fn instantiate(&self) -> RuntimeExecutorCore {
         match self {
-            Self::BytecodeVm(program) => RuntimeExecutorCore::BytecodeVm(
-                BytecodeVmExecutor::new(program.clone())
-                    .expect("bench bytecode program should roundtrip to a runtime plan"),
+            Self::BytecodeVm { plan, program } => RuntimeExecutorCore::BytecodeVm(
+                BytecodeVmExecutor::from_parts(program.clone(), plan.clone()),
             ),
             Self::Aot { plan, program } => {
                 RuntimeExecutorCore::Aot(AotExecutor::from_parts(program.clone(), plan.clone()))

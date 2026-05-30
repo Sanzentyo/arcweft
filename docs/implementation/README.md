@@ -168,6 +168,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - AOT programs store dispatch-shape metadata only; executor construction keeps
   the runtime plan in the VM engine instead of retaining a second copy inside
   the AOT artifact.
+- Runtime bench executor templates keep bytecode/AOT artifacts beside the
+  selected runtime plan so per-iteration setup does not need to decode bytecode
+  back into a plan before creating a fresh executor.
 - AOT dispatch-shape planning and the prechecked linear executor share the same
   supported-op predicate, so control-changing effects and branch/jump ops fall
   back to the VM path instead of entering a fast path that would reject them.
