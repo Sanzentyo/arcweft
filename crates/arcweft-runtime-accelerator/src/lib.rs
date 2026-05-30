@@ -66,6 +66,7 @@ pub struct RuntimePureAccelerator {
     pool: Option<ThreadPool>,
     resolved_workers: usize,
     flat_i64_inputs: Vec<i64>,
+    aot_i64_slots: Vec<i64>,
 }
 
 enum RuntimePureCacheEntry {
@@ -127,6 +128,7 @@ impl RuntimePureAccelerator {
             pool: build_thread_pool(resolved_workers, needs_worker_pool),
             resolved_workers,
             flat_i64_inputs: Vec::new(),
+            aot_i64_slots: Vec::new(),
         }
     }
 
@@ -326,7 +328,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                 self.compile_stats.cache_hits += 1;
                 self.stats.aot_calls += 1;
                 compiled
-                    .call_with_inputs(args.as_slice())
+                    .call_with_inputs_scratch(args.as_slice(), &mut self.aot_i64_slots)
                     .map(|(value, _)| Some(value))
             }
             Some(RuntimePureCacheEntry::Vm) => {
