@@ -13,8 +13,8 @@ use arcweft_core::step::{
 use arcweft_core::{
     pure::{
         AotPureFunctionBackend, AotPureI64Plan, PureFunctionBackend, PureFunctionBackendKind,
-        PureFunctionRequest, PureFunctionResult, PureFunctionStats, RuntimeI64Args,
-        RuntimePureCallBackend, VmPureFunctionBackend, compare_pure_function_backend,
+        PureFunctionRequest, PureFunctionResult, PureFunctionStats, RuntimePureCallBackend,
+        VmPureFunctionBackend, compare_pure_function_backend,
     },
     value::{RuntimeBinaryOp, RuntimeBinding, RuntimeExpr, RuntimeUnaryOp, RuntimeValue},
 };
@@ -2954,10 +2954,10 @@ fn measure_script_bench_runtime_pure_batch(
     if options.warmup > 0 {
         let mut warmup_accelerator =
             RuntimePureAccelerator::with_config(pure_config, std::slice::from_ref(&helper));
-        let rows = runtime_batch_rows(target, options.input_seed, 0, options.warmup);
-        let mut out = vec![0_i64; rows.len()];
+        let rows = runtime_flat_batch_inputs(target, options.input_seed, 0, options.warmup);
+        let mut out = vec![0_i64; options.warmup];
         warmup_accelerator
-            .call_i64_batch(&helper, &rows, &mut out)
+            .call_i64_flat_batch(&helper, &rows, target.input_names.len(), &mut out)
             .map_err(|error| {
                 eprintln!("error: runtime pure batch warmup failed: {error}");
                 ExitCode::FAILURE
@@ -2969,11 +2969,12 @@ fn measure_script_bench_runtime_pure_batch(
     let mut elapsed = Vec::with_capacity(options.samples);
     let mut accumulator = 0_i64;
     for sample in 0..options.samples {
-        let rows = runtime_batch_rows(target, options.input_seed, sample, options.iterations);
-        let mut out = vec![0_i64; rows.len()];
+        let rows =
+            runtime_flat_batch_inputs(target, options.input_seed, sample, options.iterations);
+        let mut out = vec![0_i64; options.iterations];
         let started = Instant::now();
         accelerator
-            .call_i64_batch(&helper, &rows, &mut out)
+            .call_i64_flat_batch(&helper, &rows, target.input_names.len(), &mut out)
             .map_err(|error| {
                 eprintln!("error: runtime pure batch measurement failed: {error}");
                 ExitCode::FAILURE
@@ -2996,21 +2997,20 @@ fn measure_script_bench_runtime_pure_batch(
     })
 }
 
-fn runtime_batch_rows(
+fn runtime_flat_batch_inputs(
     target: &JitCheckTarget,
     input_seed: u64,
     sample: usize,
     iterations: usize,
-) -> Vec<RuntimeI64Args> {
+) -> Vec<i64> {
     let arity = target.input_names.len();
-    (0..iterations)
-        .map(|iteration| {
-            RuntimeI64Args::new(
-                jit_check_input_array(input_seed, sample, iteration, arity),
-                arity,
-            )
-        })
-        .collect()
+    let mut inputs = Vec::with_capacity(iterations.saturating_mul(arity));
+    for iteration in 0..iterations {
+        inputs.extend_from_slice(
+            &jit_check_input_array(input_seed, sample, iteration, arity)[..arity],
+        );
+    }
+    inputs
 }
 
 fn bench_pure_helper_name(section: &BenchSection) -> Option<String> {

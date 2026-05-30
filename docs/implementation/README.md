@@ -453,7 +453,9 @@ Current high-confidence state:
   input and output slices through the native adapter boundary. Runtime pure
   batch execution can call JIT once per batch instead of crossing the
   Rust/native boundary once per row, and the accelerator reuses its flat
-  integer input scratch buffer across batches.
+  integer input scratch buffer across batches. CLI pure-helper bench now feeds
+  the runtime accelerator with flat row-major inputs directly, avoiding an
+  intermediate `RuntimeI64Args` row vector for measured batches.
 - Awaited `system.core_count()`, `system.thread_count()`, and
   `system.available_parallelism()` calls now lower to typed system-info task
   requests. The CLI adapter resolves physical cores, logical CPUs, and

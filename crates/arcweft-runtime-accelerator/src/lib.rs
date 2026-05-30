@@ -204,6 +204,86 @@ impl RuntimePureAccelerator {
         }
     }
 
+    pub fn call_i64_flat_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[i64],
+        arity: usize,
+        out: &mut [i64],
+    ) -> Result<(), RuntimeEvalError> {
+        if arity > RuntimeI64Args::MAX {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: RuntimeI64Args::MAX,
+                found: arity,
+            });
+        }
+        if flat_inputs.len() != out.len().saturating_mul(arity) {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: format!(
+                    "pure flat batch expected {} input value(s), got {}",
+                    out.len().saturating_mul(arity),
+                    flat_inputs.len()
+                ),
+            });
+        }
+        self.stats.batch_calls += 1;
+        self.stats.batch_items += out.len();
+        self.stats.pure_calls += out.len();
+        self.stats.arg_stack_packs += out.len();
+        self.stats.arg_bytes_copied += std::mem::size_of_val(flat_inputs);
+        self.stats.result_bytes_copied += std::mem::size_of_val(out);
+        if out.is_empty() {
+            return Ok(());
+        }
+        match cache_entry(&self.cache, helper.id) {
+            Some(RuntimePureCacheEntry::Jit(compiled)) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.jit_calls += out.len();
+                compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
+                    RuntimeEvalError::UnsupportedPure {
+                        name: helper.name.clone(),
+                        reason: error.to_string(),
+                    }
+                })
+            }
+            Some(RuntimePureCacheEntry::Aot(compiled)) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.aot_calls += out.len();
+                if self.should_parallelize(out.len()) {
+                    self.stats.thread_pool_jobs += self.parallel_jobs(out.len());
+                    call_aot_flat_batch_parallel(
+                        self.pool.as_ref(),
+                        compiled,
+                        flat_inputs,
+                        arity,
+                        out,
+                    )
+                } else {
+                    call_aot_flat_batch(compiled, flat_inputs, arity, out)
+                }
+            }
+            Some(RuntimePureCacheEntry::Vm) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.vm_calls += out.len();
+                self.stats.fallbacks += out.len();
+                if self.should_parallelize(out.len()) {
+                    self.stats.thread_pool_jobs += self.parallel_jobs(out.len());
+                    call_vm_flat_batch_parallel(self.pool.as_ref(), helper, flat_inputs, arity, out)
+                } else {
+                    call_vm_flat_batch(helper, flat_inputs, arity, out)
+                }
+            }
+            None => {
+                self.compile_stats.cache_misses += 1;
+                self.stats.vm_calls += out.len();
+                self.stats.fallbacks += out.len();
+                call_vm_flat_batch(helper, flat_inputs, arity, out)
+            }
+        }
+    }
+
     fn should_parallelize(&self, len: usize) -> bool {
         self.pool.is_some() && len >= self.config.batch_min_len && self.resolved_workers > 1
     }
@@ -453,6 +533,62 @@ fn call_aot_batch_parallel(
     }
 }
 
+fn call_aot_flat_batch(
+    compiled: &AotPureI64Plan,
+    flat_inputs: &[i64],
+    arity: usize,
+    out: &mut [i64],
+) -> Result<(), RuntimeEvalError> {
+    let mut slots = Vec::new();
+    if arity == 0 {
+        return out.iter_mut().try_for_each(|slot| {
+            compiled
+                .call_with_inputs_scratch(&[], &mut slots)
+                .map(|(value, _)| *slot = value)
+        });
+    }
+    flat_inputs
+        .chunks_exact(arity)
+        .zip(out.iter_mut())
+        .try_for_each(|(row, slot)| {
+            compiled
+                .call_with_inputs_scratch(row, &mut slots)
+                .map(|(value, _)| *slot = value)
+        })
+}
+
+fn call_aot_flat_batch_parallel(
+    pool: Option<&ThreadPool>,
+    compiled: &AotPureI64Plan,
+    flat_inputs: &[i64],
+    arity: usize,
+    out: &mut [i64],
+) -> Result<(), RuntimeEvalError> {
+    let mut run = || {
+        if arity == 0 {
+            return out
+                .par_iter_mut()
+                .try_for_each_init(Vec::new, |slots, slot| {
+                    compiled
+                        .call_with_inputs_scratch(&[], slots)
+                        .map(|(value, _)| *slot = value)
+                });
+        }
+        flat_inputs
+            .par_chunks_exact(arity)
+            .zip(out.par_iter_mut())
+            .try_for_each_init(Vec::new, |slots, (row, slot)| {
+                compiled
+                    .call_with_inputs_scratch(row, slots)
+                    .map(|(value, _)| *slot = value)
+            })
+    };
+    match pool {
+        Some(pool) => pool.install(run),
+        None => run(),
+    }
+}
+
 fn call_vm_batch(
     helper: &RuntimePureHelper,
     rows: &[RuntimeI64Args],
@@ -480,6 +616,75 @@ fn call_vm_batch_parallel(
             .zip(out.par_iter_mut())
             .try_for_each(|(row, slot)| {
                 match VmPureFunctionBackend.evaluate_i64_args(helper, *row)? {
+                    RuntimeValue::Int(value) => {
+                        *slot = value;
+                        Ok(())
+                    }
+                    value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+                }
+            })
+    };
+    match pool {
+        Some(pool) => pool.install(run),
+        None => run(),
+    }
+}
+
+fn call_vm_flat_batch(
+    helper: &RuntimePureHelper,
+    flat_inputs: &[i64],
+    arity: usize,
+    out: &mut [i64],
+) -> Result<(), RuntimeEvalError> {
+    if arity == 0 {
+        return out.iter_mut().try_for_each(|slot| {
+            match VmPureFunctionBackend.evaluate_i64_slice(helper, &[])? {
+                RuntimeValue::Int(value) => {
+                    *slot = value;
+                    Ok(())
+                }
+                value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+            }
+        });
+    }
+    flat_inputs
+        .chunks_exact(arity)
+        .zip(out.iter_mut())
+        .try_for_each(|(row, slot)| {
+            match VmPureFunctionBackend.evaluate_i64_slice(helper, row)? {
+                RuntimeValue::Int(value) => {
+                    *slot = value;
+                    Ok(())
+                }
+                value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+            }
+        })
+}
+
+fn call_vm_flat_batch_parallel(
+    pool: Option<&ThreadPool>,
+    helper: &RuntimePureHelper,
+    flat_inputs: &[i64],
+    arity: usize,
+    out: &mut [i64],
+) -> Result<(), RuntimeEvalError> {
+    let mut run = || {
+        if arity == 0 {
+            return out.par_iter_mut().try_for_each(|slot| {
+                match VmPureFunctionBackend.evaluate_i64_slice(helper, &[])? {
+                    RuntimeValue::Int(value) => {
+                        *slot = value;
+                        Ok(())
+                    }
+                    value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+                }
+            });
+        }
+        flat_inputs
+            .par_chunks_exact(arity)
+            .zip(out.par_iter_mut())
+            .try_for_each(|(row, slot)| {
+                match VmPureFunctionBackend.evaluate_i64_slice(helper, row)? {
                     RuntimeValue::Int(value) => {
                         *slot = value;
                         Ok(())

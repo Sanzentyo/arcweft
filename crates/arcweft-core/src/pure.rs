@@ -189,6 +189,14 @@ impl VmPureFunctionBackend {
         helper: &RuntimePureHelper,
         args: RuntimeI64Args,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
+        self.evaluate_i64_slice(helper, args.as_slice())
+    }
+
+    pub fn evaluate_i64_slice(
+        &self,
+        helper: &RuntimePureHelper,
+        args: &[i64],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
         if args.len() != helper.input_names.len() {
             return Err(RuntimeEvalError::TooManyPureArgs {
                 helper: helper.name.clone(),
@@ -196,7 +204,7 @@ impl VmPureFunctionBackend {
                 found: args.len(),
             });
         }
-        let mut evaluator = PureEvaluator::new_i64_args(&helper.input_names, args);
+        let mut evaluator = PureEvaluator::new_i64_slice(&helper.input_names, args);
         evaluator.evaluate_expr(&helper.expr)
     }
 }
@@ -721,11 +729,11 @@ impl PureEvaluator {
         }
     }
 
-    fn new_i64_args(input_names: &[String], args: RuntimeI64Args) -> Self {
+    fn new_i64_slice(input_names: &[String], args: &[i64]) -> Self {
         let mut env = RuntimeEnv::default();
         input_names
             .iter()
-            .zip(args.as_slice().iter().copied())
+            .zip(args.iter().copied())
             .for_each(|(name, value)| env.set(name.clone(), RuntimeValue::Int(value)));
         Self {
             env,
