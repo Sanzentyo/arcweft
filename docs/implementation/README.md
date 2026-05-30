@@ -123,7 +123,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
   accumulators, timing samples, compile time, and speedup ratios in the same
   bench JSON.
 - Runtime pure acceleration lazily constructs the native worker pool only when
-  an AOT/VM batch reaches the configured parallel threshold. JSON
+  an AOT/VM batch has more rows than the configured per-worker parallel
+  threshold multiplied by the resolved worker count. JSON
   `pure_config.worker_pool_active` makes this boundary visible: scalar calls,
   JIT-only helpers, and sub-threshold AOT/VM batches avoid worker-pool setup
   overhead, while parallel batches still create and report the pool.
@@ -517,10 +518,12 @@ Current high-confidence state:
   counters.
 - `arcweft-runtime-accelerator` now owns the pure-helper execution policy used
   by ordinary flow execution. The CLI and launch profiles can select
-  `auto`/`vm`/`aot`/`jit`, `auto` or fixed worker counts, and a batch threshold.
+  `auto`/`vm`/`aot`/`jit`, `auto` or fixed worker counts, and a per-worker batch
+  threshold.
   Scalar pure helper calls use the fixed `i64` argument pack in both the default
   VM backend and adapter accelerators; batch AOT calls can use an
-  accelerator-owned Rayon pool when the batch length reaches the threshold.
+  accelerator-owned Rayon pool when the batch length exceeds the threshold
+  multiplied by the resolved worker count.
   Batch AOT evaluation reuses scratch slot storage instead of cloning the
   compiled local-slot vector for each item.
   Runtime JSON reports scalar/batch call counts, copied
@@ -713,8 +716,8 @@ Current high-confidence state:
   row-major slice and calls the flat batch backend boundary. Natural source
   batches therefore avoid per-row `RuntimeI64Args` stack-pack accounting at the
   accelerator boundary, expose borrowed-input/result-copy bytes in runtime bench
-  JSON, and can use the configured AOT worker pool when the batch threshold is
-  met. The VM engine keeps a reusable row-major input scratch buffer so repeated
+  JSON, and can use the configured AOT worker pool when the per-worker batch
+  threshold is met. The VM engine keeps a reusable row-major input scratch buffer so repeated
   collection batches do not allocate a fresh input vector on every evaluation.
   Engine construction also caches each pure helper's conservative integer-result
   shape, so repeated collection-batch eligibility checks no longer rescan helper

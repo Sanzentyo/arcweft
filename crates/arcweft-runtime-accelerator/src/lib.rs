@@ -39,6 +39,7 @@ pub enum RuntimePureWorkerCount {
 pub struct RuntimePureAcceleratorConfig {
     pub backend: RuntimePureBackendMode,
     pub workers: RuntimePureWorkerCount,
+    /// Minimum rows per resolved worker before an AOT/VM batch uses the pool.
     pub batch_min_len: usize,
 }
 
@@ -480,7 +481,12 @@ impl RuntimePureAccelerator {
     }
 
     fn can_parallelize(&self, len: usize) -> bool {
-        len >= self.config.batch_min_len && self.resolved_workers > 1
+        self.resolved_workers > 1
+            && len
+                > self
+                    .config
+                    .batch_min_len
+                    .saturating_mul(self.resolved_workers)
     }
 
     fn ensure_thread_pool(&mut self) {
@@ -1329,7 +1335,7 @@ mod tests {
             RuntimePureAcceleratorConfig {
                 backend: RuntimePureBackendMode::Aot,
                 workers: RuntimePureWorkerCount::Fixed(2),
-                batch_min_len: 2,
+                batch_min_len: 1,
             },
             std::slice::from_ref(&helper),
         );
@@ -1378,7 +1384,7 @@ mod tests {
             RuntimePureAcceleratorConfig {
                 backend: RuntimePureBackendMode::Aot,
                 workers: RuntimePureWorkerCount::Fixed(2),
-                batch_min_len: 4,
+                batch_min_len: 2,
             },
             std::slice::from_ref(&helper),
         );
@@ -1410,14 +1416,15 @@ mod tests {
             RuntimeI64Args::new([5, 1, 0, 0], 2),
             RuntimeI64Args::new([2, 8, 0, 0], 2),
             RuntimeI64Args::new([7, 0, 0, 0], 2),
+            RuntimeI64Args::new([9, 1, 0, 0], 2),
         ];
-        let mut large_out = [0; 4];
+        let mut large_out = [0; 5];
 
         accelerator
             .call_i64_batch(&helper, &large_rows, &mut large_out)
             .expect("large AOT batch creates pool");
 
-        assert_eq!(large_out, [18, 15, 20, 14]);
+        assert_eq!(large_out, [18, 15, 20, 14, 27]);
         assert!(accelerator.has_worker_pool());
         assert_eq!(accelerator.stats().thread_pool_jobs, 2);
     }
@@ -1532,26 +1539,27 @@ mod tests {
             RuntimePureAcceleratorConfig {
                 backend: RuntimePureBackendMode::Vm,
                 workers: RuntimePureWorkerCount::Fixed(2),
-                batch_min_len: 2,
+                batch_min_len: 1,
             },
             std::slice::from_ref(&helper),
         );
         let rows = [
             RuntimeI64Args::new([3, 4, 0, 0], 2),
             RuntimeI64Args::new([5, 1, 0, 0], 2),
+            RuntimeI64Args::new([2, 8, 0, 0], 2),
         ];
-        let mut out = [0; 2];
+        let mut out = [0; 3];
 
         accelerator
             .call_i64_batch(&helper, &rows, &mut out)
             .expect("VM batch succeeds");
 
-        assert_eq!(out, [18, 15]);
+        assert_eq!(out, [18, 15, 20]);
         assert_eq!(accelerator.stats().batch_calls, 1);
-        assert_eq!(accelerator.stats().batch_items, 2);
-        assert_eq!(accelerator.stats().vm_calls, 2);
-        assert_eq!(accelerator.stats().fallbacks, 2);
-        assert_eq!(accelerator.stats().arg_stack_packs, 2);
+        assert_eq!(accelerator.stats().batch_items, 3);
+        assert_eq!(accelerator.stats().vm_calls, 3);
+        assert_eq!(accelerator.stats().fallbacks, 3);
+        assert_eq!(accelerator.stats().arg_stack_packs, 3);
         assert_eq!(accelerator.stats().arg_vec_allocations, 0);
         assert_eq!(accelerator.stats().thread_pool_jobs, 2);
     }

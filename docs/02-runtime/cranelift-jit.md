@@ -73,8 +73,10 @@ a fixed-size `i64` argument pack. Auto mode tries JIT, then typed AOT, then VM.
 Pinned `--pure-backend jit|aot|vm` runs only that selected native/helper tier
 before falling back to the VM for unsupported helpers. `--pure-workers auto|N`
 and `--pure-batch-min-len N` configure the accelerator-owned thread pool used
-for batchable typed AOT helper calls. Scalar flow calls stay on the direct
-fixed-argument path so pure helper use does not introduce a Vec allocation.
+for batchable typed AOT helper calls; the batch threshold is interpreted per
+resolved worker so small batches avoid pool setup. Scalar flow calls stay on
+the direct fixed-argument path so pure helper use does not introduce a Vec
+allocation.
 The VM fallback path uses the same `RuntimeI64Args` pack for deterministic
 integer helpers, including batch calls, so fallback correctness checks do not
 add argument Vec allocation noise.
@@ -126,7 +128,7 @@ counts, stack-packed argument calls, copied argument bytes, borrowed argument
 bytes, copied result bytes, thread-pool jobs, Vec argument allocations, and VM
 fallback counts. Executor
 stats include the selected pure backend, worker policy, resolved worker count,
-batch threshold, helper acceleration summary, compile attempts, cache
+per-worker batch threshold, helper acceleration summary, compile attempts, cache
 hits/misses, and compile elapsed time. These counters are meant to show whether
 natural flow code is staying on the zero-allocation scalar path or crossing into
 batch/thread-pool execution.

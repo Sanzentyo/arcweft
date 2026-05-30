@@ -2569,7 +2569,7 @@ flow @flow.bracket_pure bracket_pure {
         .arg("--pure-workers")
         .arg("2")
         .arg("--pure-batch-min-len")
-        .arg("2")
+        .arg("1")
         .arg("--json")
         .output()
         .expect("arcw bench measures bracket-sequence pure AOT batch");
@@ -2829,7 +2829,7 @@ flow @flow.map_pure map_pure {
         .arg("--pure-workers")
         .arg("2")
         .arg("--pure-batch-min-len")
-        .arg("2")
+        .arg("1")
         .arg("--json")
         .output()
         .expect("arcw bench measures map-closure pure AOT batch");
@@ -3520,7 +3520,7 @@ bench @bench.pure_score {
         .arg("--pure-workers")
         .arg("2")
         .arg("--pure-batch-min-len")
-        .arg("2")
+        .arg("1")
         .arg("--json")
         .output()
         .expect("arcw bench runs pure helper measurement");
@@ -3663,7 +3663,7 @@ fn assert_runtime_pure_batch_json(pure_helper: &serde_json::Value) {
     assert_eq!(runtime_batch["config"]["workers"]["fixed"], 2);
     assert_eq!(runtime_batch["config"]["resolved_workers"], 2);
     assert_eq!(runtime_batch["config"]["worker_pool_active"], true);
-    assert_eq!(runtime_batch["config"]["batch_min_len"], 2);
+    assert_eq!(runtime_batch["config"]["batch_min_len"], 1);
     assert_eq!(runtime_batch["compile"]["aot_successes"], 1);
     assert_eq!(runtime_batch["stats"]["batch_calls"], 2);
     assert_eq!(runtime_batch["stats"]["batch_items"], 8);
