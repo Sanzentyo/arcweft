@@ -445,6 +445,9 @@ fn jit_module() -> Result<JITModule, CraneliftJitError> {
     flag_builder
         .set("is_pic", "false")
         .map_err(|error| CraneliftJitError::Backend(error.to_string()))?;
+    flag_builder
+        .set("opt_level", "speed")
+        .map_err(|error| CraneliftJitError::Backend(error.to_string()))?;
     let isa_builder = cranelift::native::builder()
         .map_err(|message| CraneliftJitError::UnsupportedHost(message.to_owned()))?;
     let isa = isa_builder

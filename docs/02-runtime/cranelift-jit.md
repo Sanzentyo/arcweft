@@ -1,6 +1,8 @@
 # Cranelift JIT
 
 Cranelift JIT は `arcweft-lang-jit-cranelift` に置く native-only の最適化 backend として導入する。VM が正規実行系であり、JIT は pure / deterministic な関数に限定する。
+The native Cranelift adapter builds functions with Cranelift's `speed`
+optimization level; VM conformance remains mandatory for every compiled helper.
 
 `arcweft-core` は Cranelift に依存せず、`jit-cranelift` feature も持たない。product feature 名は `native-jit` とし、native player が `arcweft-lang-jit-cranelift` adapter を選択する。
 
