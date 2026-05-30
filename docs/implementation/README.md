@@ -440,10 +440,18 @@ Current high-confidence state:
 - Runtime `ForNext` continuations also share their lowered loop body as
   `Arc<[FlowOp]>`, so each iteration keeps a cheap continuation handle instead
   of cloning the whole body into the next continuation.
+- `ForNext` now opens the iteration scope and binds the loop item directly when
+  the continuation runs, then queues only the body, `ExitScope`, and next
+  continuation. A branching for-loop pure-call bench dropped from 31 to 23 VM
+  ops per run while keeping JIT calls and arg-vector allocations unchanged.
 - Flow scoped-operation scheduling pushes `EnterScope`, body ops, `ExitScope`,
   and loop continuations directly into the VM pending queue. Loop, while,
   while-let, and for iterations avoid building temporary scoped `Vec<FlowOp>`
   buffers before execution.
+- Runtime environment scopes now use compact ordered binding vectors instead of
+  per-scope maps. Typical flow/function scopes are small, so local lookup and
+  `let` binding avoid tree-map fixed costs while preserving deterministic
+  visibility.
 - Stream stepping temporarily takes the immutable stream-plan list while running
   stream ops, then restores it after the step, avoiding a full stream-plan clone
   on every runtime step.
@@ -455,6 +463,9 @@ Current high-confidence state:
   plan's flow list for every operation.
 - Runtime pure-call evaluation keeps pure helper metadata borrowed from the
   runtime plan instead of cloning the helper on each scalar JIT/AOT/VM call.
+- Fast-path scalar pure calls read local integer arguments by borrow when
+  packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
+  VM/AOT/JIT pure backends.
 - The CLI/player pure accelerator stores compiled helper entries in dense
   helper-ID slots instead of a map, reducing scalar pure-call dispatch overhead
   while preserving deterministic cache statistics.
