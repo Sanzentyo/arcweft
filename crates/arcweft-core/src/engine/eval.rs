@@ -466,6 +466,9 @@ impl Engine {
         {
             return Ok(RuntimeValue::Int(sum));
         }
+        if let Some(sum) = self.evaluate_i64_bracket_seq_sum(source, pure_backend)? {
+            return Ok(RuntimeValue::Int(sum));
+        }
         let value = self.evaluate_expr_with_backend(source, pure_backend)?;
         let items = match value {
             RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items,
@@ -509,6 +512,39 @@ impl Engine {
             pure_backend,
             &mut flat_inputs,
         );
+        if let Err(error) = collect_result {
+            self.pure_i64_batch_inputs = flat_inputs;
+            return Err(error);
+        }
+        let mut out = std::mem::take(&mut self.pure_i64_batch_outputs);
+        out.resize(items.len(), 0);
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        let batch_result = pure_backend.call_i64_flat_batch(helper, &flat_inputs, arity, &mut out);
+        self.pure_i64_batch_inputs = flat_inputs;
+        if let Err(error) = batch_result {
+            self.pure_i64_batch_outputs = out;
+            return Err(error);
+        }
+        let sum = out.iter().copied().sum();
+        out.clear();
+        self.pure_i64_batch_outputs = out;
+        Ok(Some(sum))
+    }
+
+    fn evaluate_i64_bracket_seq_sum(
+        &mut self,
+        source: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<i64>, RuntimeEvalError> {
+        let RuntimeExpr::BracketSeq(items) = source else {
+            return Ok(None);
+        };
+        let Some((helper_id, arity)) = self.bracket_seq_i64_batch_shape(items) else {
+            return Ok(None);
+        };
+        let mut flat_inputs = std::mem::take(&mut self.pure_i64_batch_inputs);
+        let collect_result =
+            self.collect_i64_pure_batch_inputs(items, arity, pure_backend, &mut flat_inputs);
         if let Err(error) = collect_result {
             self.pure_i64_batch_inputs = flat_inputs;
             return Err(error);

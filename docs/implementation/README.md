@@ -555,7 +555,8 @@ Current high-confidence state:
   sequences to a typed sum node. When the source is a pure-call `map`, the VM
   fuses map plus sum into one flat batch accelerator call and sums the `i64`
   result scratch directly instead of materializing an intermediate runtime
-  sequence.
+  sequence. The same direct-sum path covers bracket sequences made of same
+  helper `i64` pure calls.
 - Cranelift input helpers now include a row-major batch entry point that accepts
   input and output slices through the native adapter boundary. Runtime pure
   batch execution can call JIT once per batch instead of crossing the
