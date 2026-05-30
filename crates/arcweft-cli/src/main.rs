@@ -3882,17 +3882,20 @@ fn verify_types_runtime_self_check(
         options.pure_workers,
         options.pure_batch_min_len,
     )?;
-    let trace = run_profile_phase(&mut checked.phases, "run", || {
-        Ok(run_runtime_steps(
+    let mut executor = run_profile_phase(&mut checked.phases, "executor_prepare", || {
+        Ok::<RuntimeExecutorInstance, ExitCode>(RuntimeExecutorInstance::new(
             runtime_plan,
+            options.executor,
+            pure_config,
+        ))
+    })?;
+    let trace = run_profile_phase(&mut checked.phases, "run", || {
+        Ok(run_runtime_steps_with_executor(
+            &mut executor,
             Some(selection.path()),
-            RuntimeStepRunConfig {
-                steps: options.steps,
-                mode: options.runtime_mode,
-                max_ops: options.max_ops,
-                executor: options.executor,
-                pure_config,
-            },
+            options.steps,
+            options.runtime_mode,
+            options.max_ops,
             &options.values,
         ))
     })?;

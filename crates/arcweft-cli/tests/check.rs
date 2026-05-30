@@ -1297,6 +1297,10 @@ flow @flow.verify_types verify_types {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_verify_types_json_summary(&stdout);
     assert!(
+        stdout.contains("\"name\": \"executor_prepare\""),
+        "verify-types JSON should split executor construction from run timing: {stdout}"
+    );
+    assert!(
         !stdout.contains(&std::env::temp_dir().display().to_string()),
         "verify-types JSON must not record absolute temp paths: {stdout}"
     );
