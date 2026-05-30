@@ -82,6 +82,11 @@ Bytecode VM programs preserve the runtime plan's pure-helper table, so executor
 artifact lowering does not change whether ordinary flow calls can use the
 adapter-provided pure backend.
 
+The pure-call boundary includes both scalar fixed-argument calls and row-major
+integer batch calls. `arcweft-core` provides a Sans I/O VM batch implementation
+with deterministic counters; adapter crates can override the same trait method
+with AOT, JIT, and worker-pool execution without changing VM semantics.
+
 ## Interpreter / compiled modes
 
 ```text

@@ -525,6 +525,10 @@ Current high-confidence state:
   dynamic slice.
 - Scalar AOT helper calls reuse accelerator-owned slot scratch storage instead
   of cloning the plan's initial slot vector on every flow invocation.
+- `RuntimePureCallBackend` now exposes row-major `i64` batch calls in the
+  Sans I/O core trait. The default VM backend records deterministic batch
+  counters, while the runtime accelerator overrides the same boundary with
+  AOT/JIT and worker-pool execution.
 - Cranelift input helpers now include a row-major batch entry point that accepts
   input and output slices through the native adapter boundary. Runtime pure
   batch execution can call JIT once per batch instead of crossing the

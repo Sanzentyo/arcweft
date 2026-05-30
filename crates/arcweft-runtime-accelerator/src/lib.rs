@@ -350,6 +350,15 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         result
     }
 
+    fn call_i64_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        rows: &[RuntimeI64Args],
+        out: &mut [i64],
+    ) -> Result<(), RuntimeEvalError> {
+        Self::call_i64_batch(self, helper, rows, out)
+    }
+
     fn call_values(
         &mut self,
         helper: &RuntimePureHelper,
@@ -944,8 +953,7 @@ mod tests {
         ];
         let mut out = [0; 3];
 
-        accelerator
-            .call_i64_batch(&helper, &rows, &mut out)
+        RuntimePureCallBackend::call_i64_batch(&mut accelerator, &helper, &rows, &mut out)
             .expect("JIT batch succeeds");
 
         assert_eq!(out, [18, 15, 20]);

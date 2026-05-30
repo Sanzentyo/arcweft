@@ -54,6 +54,13 @@ pub trait RuntimePureCallBackend {
         args: RuntimeI64Args,
     ) -> Result<Option<i64>, RuntimeEvalError>;
 
+    fn call_i64_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        rows: &[RuntimeI64Args],
+        out: &mut [i64],
+    ) -> Result<(), RuntimeEvalError>;
+
     fn call_values(
         &mut self,
         helper: &RuntimePureHelper,
@@ -292,6 +299,44 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
             }
             value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
         }
+    }
+
+    fn call_i64_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        rows: &[RuntimeI64Args],
+        out: &mut [i64],
+    ) -> Result<(), RuntimeEvalError> {
+        if rows.len() != out.len() {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: format!(
+                    "pure batch expected {} output slot(s), got {}",
+                    rows.len(),
+                    out.len()
+                ),
+            });
+        }
+        self.stats.batch_calls += 1;
+        self.stats.batch_items += rows.len();
+        self.stats.pure_calls += rows.len();
+        self.stats.vm_calls += rows.len();
+        self.stats.arg_stack_packs += rows.len();
+        self.stats.arg_bytes_copied += rows
+            .iter()
+            .map(|row| row.len() * std::mem::size_of::<i64>())
+            .sum::<usize>();
+        self.stats.result_bytes_copied += std::mem::size_of_val(out);
+        rows.iter().zip(out.iter_mut()).try_for_each(|(row, slot)| {
+            let value = VmPureFunctionBackend.evaluate_i64_args(helper, *row)?;
+            match value {
+                RuntimeValue::Int(value) => {
+                    *slot = value;
+                    Ok(())
+                }
+                value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
+            }
+        })
     }
 
     fn call_values(
