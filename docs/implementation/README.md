@@ -424,6 +424,9 @@ Current high-confidence state:
 - The CLI native task bridge now completes read-only dispatched task batches on
   a worker pool and reports path-free `parallel_batches`, `parallel_tasks`, and
   `parallel_workers` counters in `native_io`; write tasks stay ordered.
+- Runtime if-let and match guards now evaluate pattern bindings in temporary
+  environment scopes instead of cloning the full VM environment, reducing
+  branch-heavy flow overhead without changing binding visibility.
 - Awaited `system.core_count()`, `system.thread_count()`, and
   `system.available_parallelism()` calls now lower to typed system-info task
   requests. The CLI adapter resolves physical cores, logical CPUs, and

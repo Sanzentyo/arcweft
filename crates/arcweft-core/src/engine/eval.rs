@@ -44,11 +44,9 @@ impl Engine {
             return Ok(None);
         };
         if let Some(guard) = guard {
-            let previous = self.fiber.env.clone();
-            self.fiber.env.bind_all(bindings.clone());
-            let matched = self.evaluate_bool_with_backend(guard, pure_backend);
-            self.fiber.env = previous;
-            let matched = matched?;
+            let matched = self.with_temp_bindings(bindings.clone(), |this| {
+                this.evaluate_bool_with_backend(guard, pure_backend)
+            })?;
             if !matched {
                 return Ok(None);
             }
@@ -67,21 +65,13 @@ impl Engine {
             let Some(bindings) = match_runtime_pattern(&arm.pattern, &value)? else {
                 continue;
             };
-            let previous = self.fiber.env.clone();
-            self.fiber.env.bind_all(bindings.clone());
             if let Some(guard) = arm.guard.as_ref()
-                && !match self.evaluate_bool_with_backend(guard, pure_backend) {
-                    Ok(matched) => matched,
-                    Err(error) => {
-                        self.fiber.env = previous;
-                        return Err(error);
-                    }
-                }
+                && !self.with_temp_bindings(bindings.clone(), |this| {
+                    this.evaluate_bool_with_backend(guard, pure_backend)
+                })?
             {
-                self.fiber.env = previous;
                 continue;
             }
-            self.fiber.env = previous;
             return Ok(Some((bindings, arm.ops.clone())));
         }
         Ok(None)
@@ -349,24 +339,19 @@ impl Engine {
         let Some(bindings) = match_runtime_pattern(pattern, &value)? else {
             return self.evaluate_expr_with_backend(else_expr, pure_backend);
         };
-        let previous = self.fiber.env.clone();
-        self.fiber.env.bind_all(bindings);
-        match guard.map_or(Ok(true), |guard| {
-            self.evaluate_bool_with_backend(guard, pure_backend)
-        }) {
-            Ok(true) => {
-                let result = self.evaluate_expr_with_backend(then_expr, pure_backend);
-                self.fiber.env = previous;
-                result
-            }
-            Ok(false) => {
-                self.fiber.env = previous;
-                self.evaluate_expr_with_backend(else_expr, pure_backend)
-            }
-            Err(error) => {
-                self.fiber.env = previous;
-                Err(error)
-            }
+        let guard_matched = if let Some(guard) = guard {
+            self.with_temp_bindings(bindings.clone(), |this| {
+                this.evaluate_bool_with_backend(guard, pure_backend)
+            })?
+        } else {
+            true
+        };
+        if guard_matched {
+            self.with_temp_bindings(bindings, |this| {
+                this.evaluate_expr_with_backend(then_expr, pure_backend)
+            })
+        } else {
+            self.evaluate_expr_with_backend(else_expr, pure_backend)
         }
     }
 
@@ -381,23 +366,16 @@ impl Engine {
             let Some(bindings) = match_runtime_pattern(&arm.pattern, &value)? else {
                 continue;
             };
-            let previous = self.fiber.env.clone();
-            self.fiber.env.bind_all(bindings);
             if let Some(guard) = arm.guard.as_ref()
-                && !match self.evaluate_bool_with_backend(guard, pure_backend) {
-                    Ok(matched) => matched,
-                    Err(error) => {
-                        self.fiber.env = previous;
-                        return Err(error);
-                    }
-                }
+                && !self.with_temp_bindings(bindings.clone(), |this| {
+                    this.evaluate_bool_with_backend(guard, pure_backend)
+                })?
             {
-                self.fiber.env = previous;
                 continue;
             }
-            let result = self.evaluate_expr_with_backend(&arm.value, pure_backend);
-            self.fiber.env = previous;
-            return result;
+            return self.with_temp_bindings(bindings, |this| {
+                this.evaluate_expr_with_backend(&arm.value, pure_backend)
+            });
         }
         Err(RuntimeEvalError::PatternMismatch(runtime_value_label(
             &value,
@@ -413,6 +391,18 @@ impl Engine {
             RuntimeValue::Bool(value) => Ok(value),
             value => Err(RuntimeEvalError::ExpectedBool(runtime_value_label(&value))),
         }
+    }
+
+    fn with_temp_bindings<T>(
+        &mut self,
+        bindings: impl IntoIterator<Item = RuntimeBinding>,
+        f: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        self.fiber.env.push_scope();
+        self.fiber.env.bind_all(bindings);
+        let result = f(self);
+        self.fiber.env.pop_scope();
+        result
     }
 
     pub(super) fn evaluate_entity_target(
