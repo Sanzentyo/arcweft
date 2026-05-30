@@ -1752,12 +1752,12 @@ fn run_runtime_steps(
     let mut task_events = Vec::new();
     let mut summaries = Vec::new();
     for step_index in 0..config.steps {
-        let result = executor.step(
+        let result = executor.step_with_root_bindings(
             RuntimeStepInput {
-                bindings: values.to_vec(),
                 task_events: std::mem::take(&mut task_events),
                 ..RuntimeStepInput::default()
             },
+            values,
             step_options(config.mode, config.max_ops),
         );
         let (summary, task_requests) = RuntimeStepRunSummary::from_result_and_task_requests(
@@ -1824,12 +1824,21 @@ impl RuntimeExecutorInstance {
         }
     }
 
-    fn step(&mut self, input: RuntimeStepInput, options: RuntimeStepOptions) -> RuntimeStepResult {
+    fn step_with_root_bindings(
+        &mut self,
+        input: RuntimeStepInput,
+        root_bindings: &[RuntimeBinding],
+        options: RuntimeStepOptions,
+    ) -> RuntimeStepResult {
         match self {
-            Self::BytecodeVm { executor, pure } => {
-                executor.step_with_pure_backend(input, options, pure)
-            }
-            Self::Aot { executor, pure } => executor.step_with_pure_backend(input, options, pure),
+            Self::BytecodeVm { executor, pure } => executor
+                .step_with_root_bindings_and_pure_backend(input, root_bindings, options, pure),
+            Self::Aot { executor, pure } => executor.step_with_root_bindings_and_pure_backend(
+                input,
+                root_bindings,
+                options,
+                pure,
+            ),
         }
     }
 

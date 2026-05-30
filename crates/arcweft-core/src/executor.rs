@@ -4,6 +4,7 @@ use crate::engine::{Engine, FlowFiber};
 use crate::plan::{RuntimePlan, RuntimePlanError};
 use crate::pure::RuntimePureCallBackend;
 use crate::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult};
+use crate::value::RuntimeBinding;
 
 /// Sans I/O execution boundary used by CLI, LSP, tests, and future adapters.
 ///
@@ -69,6 +70,21 @@ impl VmExecutor {
         self.engine
             .step_with_pure_backend(input, options, pure_backend)
     }
+
+    pub fn step_with_root_bindings_and_pure_backend(
+        &mut self,
+        input: RuntimeStepInput,
+        root_bindings: &[RuntimeBinding],
+        options: RuntimeStepOptions,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> RuntimeStepResult {
+        self.engine.step_with_root_bindings_and_pure_backend(
+            input,
+            root_bindings,
+            options,
+            pure_backend,
+        )
+    }
 }
 
 impl AotExecutor {
@@ -113,6 +129,16 @@ impl AotExecutor {
         options: RuntimeStepOptions,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> RuntimeStepResult {
+        self.step_with_root_bindings_and_pure_backend(input, &[], options, pure_backend)
+    }
+
+    pub fn step_with_root_bindings_and_pure_backend(
+        &mut self,
+        input: RuntimeStepInput,
+        root_bindings: &[RuntimeBinding],
+        options: RuntimeStepOptions,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> RuntimeStepResult {
         if self
             .vm
             .engine()
@@ -121,11 +147,21 @@ impl AotExecutor {
             let result = self
                 .vm
                 .engine_mut()
-                .step_prechecked_aot_linear_with_pure_backend(input, options, pure_backend);
+                .step_prechecked_aot_linear_with_pure_backend(
+                    input,
+                    root_bindings,
+                    options,
+                    pure_backend,
+                );
             self.fast_path_ops += result.stats.executed_ops;
             return result;
         }
-        self.vm.step_with_pure_backend(input, options, pure_backend)
+        self.vm.step_with_root_bindings_and_pure_backend(
+            input,
+            root_bindings,
+            options,
+            pure_backend,
+        )
     }
 }
 
@@ -162,6 +198,21 @@ impl BytecodeVmExecutor {
     ) -> RuntimeStepResult {
         self.vm.step_with_pure_backend(input, options, pure_backend)
     }
+
+    pub fn step_with_root_bindings_and_pure_backend(
+        &mut self,
+        input: RuntimeStepInput,
+        root_bindings: &[RuntimeBinding],
+        options: RuntimeStepOptions,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> RuntimeStepResult {
+        self.vm.step_with_root_bindings_and_pure_backend(
+            input,
+            root_bindings,
+            options,
+            pure_backend,
+        )
+    }
 }
 
 impl RuntimeExecutor for VmExecutor {
@@ -185,7 +236,12 @@ impl RuntimeExecutor for AotExecutor {
             let result = self
                 .vm
                 .engine_mut()
-                .step_prechecked_aot_linear_with_pure_backend(input, options, &mut pure_backend);
+                .step_prechecked_aot_linear_with_pure_backend(
+                    input,
+                    &[],
+                    options,
+                    &mut pure_backend,
+                );
             self.fast_path_ops += result.stats.executed_ops;
             return result;
         }

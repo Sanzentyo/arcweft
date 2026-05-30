@@ -263,7 +263,17 @@ impl Engine {
 
     pub fn step_with_pure_backend(
         &mut self,
+        input: RuntimeStepInput,
+        options: RuntimeStepOptions,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> RuntimeStepResult {
+        self.step_with_root_bindings_and_pure_backend(input, &[], options, pure_backend)
+    }
+
+    pub fn step_with_root_bindings_and_pure_backend(
+        &mut self,
         mut input: RuntimeStepInput,
+        root_bindings: &[RuntimeBinding],
         options: RuntimeStepOptions,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> RuntimeStepResult {
@@ -271,6 +281,7 @@ impl Engine {
         let mut executed_ops = 0;
         let pure_stats_before = pure_backend.stats();
         let pending_ops_before = self.pending_ops_len();
+        self.fiber.env.bind_all_root_ref(root_bindings);
         self.fiber
             .env
             .bind_all_root(std::mem::take(&mut input.bindings));

@@ -269,6 +269,15 @@ impl RuntimeEnv {
         }
     }
 
+    pub fn bind_all_root_ref<'a>(
+        &mut self,
+        bindings: impl IntoIterator<Item = &'a RuntimeBinding>,
+    ) {
+        for binding in bindings {
+            self.set_root(binding.name.clone(), binding.value.clone());
+        }
+    }
+
     pub(crate) fn replace_root_i64_bindings(&mut self, input_names: &[String], args: &[i64]) {
         if self.scopes.is_empty() {
             self.scopes.push(RuntimeScope::default());

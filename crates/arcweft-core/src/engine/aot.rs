@@ -10,6 +10,7 @@ impl Engine {
     pub(crate) fn step_prechecked_aot_linear_with_pure_backend(
         &mut self,
         input: RuntimeStepInput,
+        root_bindings: &[crate::value::RuntimeBinding],
         options: RuntimeStepOptions,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> RuntimeStepResult {
@@ -17,6 +18,7 @@ impl Engine {
         let mut executed_ops = 0;
         let pure_stats_before = pure_backend.stats();
         let pending_ops_before = self.fiber.pending_ops.len();
+        self.fiber.env.bind_all_root_ref(root_bindings);
         self.fiber.env.bind_all_root(input.bindings);
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {

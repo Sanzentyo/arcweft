@@ -628,6 +628,10 @@ Current high-confidence state:
 - The AOT executor now checks the linear-dispatch precondition by borrowing the
   step input before dispatch, so AOT success and fallback paths no longer clone
   the full `RuntimeStepInput` just to probe the fast path.
+- CLI runtime stepping now passes route/argument root bindings to VM and AOT
+  executors as a borrowed slice, avoiding `values.to_vec()` allocation before
+  each measured step while preserving the owned step-input path for adapters
+  that need to transfer events.
 - The CLI regression harness now rejects generated `.arcweft` directories under
   checked-in fixtures and scans non-review source/docs/tests for removed
   whitespace-command DSL or compatibility-shim text. Run fixtures execute from
