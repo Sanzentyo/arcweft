@@ -97,7 +97,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   across VM/scheduler changes without recording host paths.
   The measured bench loop folds per-step counters directly into compact sample
   totals instead of allocating per-step bench trace entries, keeping benchmark
-  harness allocation out of the runtime hot path.
+  harness allocation out of the runtime hot path. Sample vectors are
+  preallocated from the requested iteration count, so measured sections do not
+  grow counter buffers as they run.
   They also include median pure argument/result byte-copy counters, so scalar
   pure-call boundary costs are visible in the same bench report as elapsed time
   and VM op counts.

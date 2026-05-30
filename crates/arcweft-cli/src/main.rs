@@ -3289,7 +3289,7 @@ fn run_bench_flow_section(
     pure_config: RuntimePureAcceleratorConfig,
     validated: ScriptBenchSectionRunSummary,
 ) -> ScriptBenchSectionRunSummary {
-    let mut samples = RuntimeBenchSamples::default();
+    let mut samples = RuntimeBenchSamples::with_capacity(options.iterations);
     let mut selected_plan = plan.clone();
     selected_plan.entry_flow = Some(FlowRuntimeId(flow.to_owned()));
     let mut pure = RuntimePureAccelerator::with_config(pure_config, &selected_plan.pure_helpers);
@@ -3362,6 +3362,35 @@ struct RuntimeBenchSamples {
 }
 
 impl RuntimeBenchSamples {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            elapsed: Vec::with_capacity(capacity),
+            executed_ops: Vec::with_capacity(capacity),
+            child_fiber_ticks: Vec::with_capacity(capacity),
+            max_child_fibers: Vec::with_capacity(capacity),
+            line_effects: Vec::with_capacity(capacity),
+            task_requests: Vec::with_capacity(capacity),
+            task_events_in: Vec::with_capacity(capacity),
+            pure_calls: Vec::with_capacity(capacity),
+            pure_batch_calls: Vec::with_capacity(capacity),
+            pure_batch_items: Vec::with_capacity(capacity),
+            pure_jit_calls: Vec::with_capacity(capacity),
+            pure_aot_calls: Vec::with_capacity(capacity),
+            pure_vm_calls: Vec::with_capacity(capacity),
+            pure_thread_pool_jobs: Vec::with_capacity(capacity),
+            pure_arg_stack_packs: Vec::with_capacity(capacity),
+            pure_arg_vec_allocations: Vec::with_capacity(capacity),
+            pure_arg_bytes_copied: Vec::with_capacity(capacity),
+            pure_arg_bytes_borrowed: Vec::with_capacity(capacity),
+            pure_result_bytes_copied: Vec::with_capacity(capacity),
+            pure_fallbacks: Vec::with_capacity(capacity),
+            aot_fast_path_ops: Vec::with_capacity(capacity),
+            executor_stats_samples: Vec::with_capacity(capacity),
+            native_io: NativeTaskStatsSamples::with_capacity(capacity),
+            diagnostics: 0,
+        }
+    }
+
     fn push(&mut self, elapsed_ns: u128, trace: &RuntimeBenchTrace) {
         self.elapsed.push(elapsed_ns);
         self.push_step_stats(trace);
@@ -3476,6 +3505,24 @@ struct NativeTaskStatsSamples {
 }
 
 impl NativeTaskStatsSamples {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            completed_tasks: Vec::with_capacity(capacity),
+            failed_tasks: Vec::with_capacity(capacity),
+            read_ops: Vec::with_capacity(capacity),
+            write_ops: Vec::with_capacity(capacity),
+            system_info_ops: Vec::with_capacity(capacity),
+            bytes_read: Vec::with_capacity(capacity),
+            bytes_written: Vec::with_capacity(capacity),
+            parallel_batches: Vec::with_capacity(capacity),
+            parallel_tasks: Vec::with_capacity(capacity),
+            parallel_io_tasks: Vec::with_capacity(capacity),
+            parallel_marker_tasks: Vec::with_capacity(capacity),
+            parallel_workers: Vec::with_capacity(capacity),
+            scheduler: NativeSchedulerStatsSamples::with_capacity(capacity),
+        }
+    }
+
     fn push(&mut self, stats: NativeTaskStats) {
         self.completed_tasks.push(stats.completed_tasks);
         self.failed_tasks.push(stats.failed_tasks);
@@ -3530,6 +3577,25 @@ struct NativeSchedulerStatsSamples {
 }
 
 impl NativeSchedulerStatsSamples {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            submitted: Vec::with_capacity(capacity),
+            joined: Vec::with_capacity(capacity),
+            dispatched: Vec::with_capacity(capacity),
+            completed: Vec::with_capacity(capacity),
+            failed: Vec::with_capacity(capacity),
+            cancelled: Vec::with_capacity(capacity),
+            cancel_requested: Vec::with_capacity(capacity),
+            joined_completed: Vec::with_capacity(capacity),
+            in_flight: Vec::with_capacity(capacity),
+            max_in_flight: Vec::with_capacity(capacity),
+            dispatch_sorts: Vec::with_capacity(capacity),
+            dispatch_sort_items: Vec::with_capacity(capacity),
+            completion_sorts: Vec::with_capacity(capacity),
+            completion_sort_items: Vec::with_capacity(capacity),
+        }
+    }
+
     fn push(&mut self, stats: NativeSchedulerStats) {
         self.submitted.push(stats.submitted);
         self.joined.push(stats.joined);
