@@ -1,9 +1,8 @@
 use super::{
     AwaitManyInFlight, AwaitManyState, AwaitState, AwaitTarget, CancelScopeId, ChoiceRuntimeOption,
-    ChoiceState, Engine, FlowEvent, FlowFiberStatus, LineEffectRequest, RuntimeBinding,
-    RuntimeDiagnostic, RuntimeEvalError, RuntimeFieldValue, RuntimePayload, RuntimeStepInput,
-    RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
-    TaskSpec,
+    ChoiceState, Engine, FlowEvent, FlowFiberStatus, LineEffectRequest, RuntimeDiagnostic,
+    RuntimeEvalError, RuntimeFieldValue, RuntimePayload, RuntimeStepInput, RuntimeStepOutput,
+    RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
 };
 use crate::pure::RuntimePureCallBackend;
 use crate::task::{
@@ -333,13 +332,9 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Option<TaskSpec> {
-        let request = match self.with_temp_bindings(
-            [RuntimeBinding {
-                name: target.item_binding.clone(),
-                value: item.clone(),
-            }],
-            |this| this.evaluate_host_task_request_template(&target.request, pure_backend),
-        ) {
+        let request = match self.with_temp_binding_ref(&target.item_binding, item, |this| {
+            this.evaluate_host_task_request_template(&target.request, pure_backend)
+        }) {
             Ok(request) => request,
             Err(error) => {
                 self.fail_eval(format!("await many item {index}: {error}"), output);

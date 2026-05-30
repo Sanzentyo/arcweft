@@ -287,6 +287,12 @@ impl RuntimeEnv {
         }
     }
 
+    pub(crate) fn set_ref(&mut self, name: &str, value: &RuntimeValue) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.set_ref(name, value);
+        }
+    }
+
     pub fn set_root(&mut self, name: impl Into<String>, value: RuntimeValue) {
         if let Some(scope) = self.scopes.first_mut() {
             scope.set(name.into(), value);
@@ -300,6 +306,12 @@ impl RuntimeEnv {
     pub fn bind_all(&mut self, bindings: impl IntoIterator<Item = RuntimeBinding>) {
         for binding in bindings {
             self.set(binding.name, binding.value);
+        }
+    }
+
+    pub(crate) fn bind_all_ref(&mut self, bindings: &[RuntimeBinding]) {
+        for binding in bindings {
+            self.set_ref(&binding.name, &binding.value);
         }
     }
 

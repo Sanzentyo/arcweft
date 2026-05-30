@@ -45,7 +45,7 @@ impl Engine {
             return Ok(None);
         };
         if let Some(guard) = guard {
-            let matched = self.with_temp_bindings(bindings.clone(), |this| {
+            let matched = self.with_temp_bindings_ref(&bindings, |this| {
                 this.evaluate_bool_with_backend(guard, pure_backend)
             })?;
             if !matched {
@@ -67,7 +67,7 @@ impl Engine {
                 continue;
             };
             if let Some(guard) = arm.guard.as_ref()
-                && !self.with_temp_bindings(bindings.clone(), |this| {
+                && !self.with_temp_bindings_ref(&bindings, |this| {
                     this.evaluate_bool_with_backend(guard, pure_backend)
                 })?
             {
@@ -467,13 +467,9 @@ impl Engine {
         items
             .iter()
             .map(|item| {
-                self.with_temp_bindings(
-                    [RuntimeBinding {
-                        name: param.to_owned(),
-                        value: item.clone(),
-                    }],
-                    |this| this.evaluate_expr_with_backend(body, pure_backend),
-                )
+                self.with_temp_binding_ref(param, item, |this| {
+                    this.evaluate_expr_with_backend(body, pure_backend)
+                })
             })
             .collect::<Result<Vec<_>, _>>()
             .map(RuntimeValue::BracketSeq)
@@ -626,7 +622,7 @@ impl Engine {
         flat_inputs.reserve(items.len().saturating_mul(arity));
         for item in items {
             self.fiber.env.push_scope();
-            self.fiber.env.set(param.to_owned(), item.clone());
+            self.fiber.env.set_ref(param, item);
             for arg in args.iter().take(arity) {
                 match self.evaluate_i64_arg_with_backend(arg, pure_backend) {
                     Ok(value) => flat_inputs.push(value),
@@ -688,7 +684,7 @@ impl Engine {
             return self.evaluate_expr_with_backend(else_expr, pure_backend);
         };
         let guard_matched = if let Some(guard) = guard {
-            self.with_temp_bindings(bindings.clone(), |this| {
+            self.with_temp_bindings_ref(&bindings, |this| {
                 this.evaluate_bool_with_backend(guard, pure_backend)
             })?
         } else {
@@ -715,7 +711,7 @@ impl Engine {
                 continue;
             };
             if let Some(guard) = arm.guard.as_ref()
-                && !self.with_temp_bindings(bindings.clone(), |this| {
+                && !self.with_temp_bindings_ref(&bindings, |this| {
                     this.evaluate_bool_with_backend(guard, pure_backend)
                 })?
             {
@@ -748,6 +744,31 @@ impl Engine {
     ) -> T {
         self.fiber.env.push_scope();
         self.fiber.env.bind_all(bindings);
+        let result = f(self);
+        self.fiber.env.pop_scope();
+        result
+    }
+
+    pub(super) fn with_temp_bindings_ref<T>(
+        &mut self,
+        bindings: &[RuntimeBinding],
+        f: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        self.fiber.env.push_scope();
+        self.fiber.env.bind_all_ref(bindings);
+        let result = f(self);
+        self.fiber.env.pop_scope();
+        result
+    }
+
+    pub(super) fn with_temp_binding_ref<T>(
+        &mut self,
+        name: &str,
+        value: &RuntimeValue,
+        f: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        self.fiber.env.push_scope();
+        self.fiber.env.set_ref(name, value);
         let result = f(self);
         self.fiber.env.pop_scope();
         result

@@ -226,7 +226,7 @@ impl Engine {
                 continue;
             };
             let guard_matches = if let Some(guard) = arm.guard.as_ref() {
-                self.with_temp_bindings(bindings.clone(), |this| {
+                self.with_temp_bindings_ref(&bindings, |this| {
                     this.evaluate_bool_with_backend(guard, pure_backend)
                 })
             } else {

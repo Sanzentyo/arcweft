@@ -494,7 +494,10 @@ Current high-confidence state:
 - Runtime if-let/match guards, source handlers, stream pattern bodies, and
   await-many request templates now evaluate temporary bindings in environment
   scopes instead of cloning the full VM environment, reducing branch and
-  scheduling overhead without changing binding visibility. Runtime call
+  scheduling overhead without changing binding visibility. Guards, map fallback
+  evaluation, and await-many request templates use borrowed temporary binding
+  insertion, avoiding extra `RuntimeBinding` vector/value clones before the
+  scoped environment owns the actual temporary values. Runtime call
   argument evaluation preallocates the visible argument count before handling
   spread expansion, avoiding repeated Vec growth for ordinary calls.
 - Runtime `for` state shares evaluated item sequences with `Arc<[RuntimeValue]>`
