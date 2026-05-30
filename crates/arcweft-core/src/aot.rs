@@ -3,12 +3,11 @@ use crate::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
 
 /// Typed AOT compilation artifact for a runtime plan.
 ///
-/// The artifact is pure data: it preserves the validated runtime plan and
-/// records dispatch-shape analysis that hosts can profile before generated
-/// dispatch replaces the VM-compatible executor backend.
+/// The artifact is pure data: it records dispatch-shape analysis that hosts can
+/// profile before generated dispatch replaces the VM-compatible executor
+/// backend.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AotProgram {
-    plan: RuntimePlan,
     flows: Vec<AotFlowBlock>,
     stats: AotProgramStats,
 }
@@ -58,7 +57,7 @@ pub struct AotProgramStats {
 }
 
 impl AotProgram {
-    pub fn from_runtime_plan(plan: RuntimePlan) -> Self {
+    pub fn from_runtime_plan(plan: &RuntimePlan) -> Self {
         let flows: Vec<_> = plan
             .flows
             .iter()
@@ -77,11 +76,7 @@ impl AotProgram {
         for flow in &plan.flows {
             stats.record_ops(&flow.ops);
         }
-        Self { plan, flows, stats }
-    }
-
-    pub const fn plan(&self) -> &RuntimePlan {
-        &self.plan
+        Self { flows, stats }
     }
 
     pub fn flows(&self) -> &[AotFlowBlock] {
@@ -94,16 +89,6 @@ impl AotProgram {
 
     pub const fn stats(&self) -> &AotProgramStats {
         &self.stats
-    }
-
-    pub fn into_runtime_plan(self) -> RuntimePlan {
-        self.plan
-    }
-}
-
-impl From<RuntimePlan> for AotProgram {
-    fn from(plan: RuntimePlan) -> Self {
-        Self::from_runtime_plan(plan)
     }
 }
 

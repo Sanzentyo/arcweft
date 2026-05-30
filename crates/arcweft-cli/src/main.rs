@@ -1674,7 +1674,7 @@ fn compile_profile_runtime_plan(
         }
     })?;
     let aot = run_profile_phase(phases, "aot_lower", || {
-        Ok::<AotProgram, ExitCode>(AotProgram::from_runtime_plan(plan.clone()))
+        Ok::<AotProgram, ExitCode>(AotProgram::from_runtime_plan(&plan))
     })?;
     let aot_stats = aot.stats().clone();
     let bytecode = run_profile_phase(phases, "bytecode_lower", || {
@@ -1933,7 +1933,10 @@ enum RuntimeExecutorCore {
 
 enum RuntimeExecutorTemplate {
     BytecodeVm(BytecodeProgram),
-    Aot(AotProgram),
+    Aot {
+        plan: RuntimePlan,
+        program: AotProgram,
+    },
 }
 
 impl RuntimeExecutorTemplate {
@@ -1942,7 +1945,10 @@ impl RuntimeExecutorTemplate {
             CliRuntimeExecutorTier::BytecodeVm => {
                 Self::BytecodeVm(BytecodeProgram::from_runtime_plan(plan.clone()))
             }
-            CliRuntimeExecutorTier::Aot => Self::Aot(AotProgram::from_runtime_plan(plan.clone())),
+            CliRuntimeExecutorTier::Aot => Self::Aot {
+                plan: plan.clone(),
+                program: AotProgram::from_runtime_plan(plan),
+            },
         }
     }
 
@@ -1952,8 +1958,8 @@ impl RuntimeExecutorTemplate {
                 BytecodeVmExecutor::new(program.clone())
                     .expect("bench bytecode program should roundtrip to a runtime plan"),
             ),
-            Self::Aot(program) => {
-                RuntimeExecutorCore::Aot(AotExecutor::from_program(program.clone()))
+            Self::Aot { plan, program } => {
+                RuntimeExecutorCore::Aot(AotExecutor::from_parts(program.clone(), plan.clone()))
             }
         }
     }

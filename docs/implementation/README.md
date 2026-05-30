@@ -46,13 +46,14 @@ Phase 0 / Phase 1 minimal Rust workspace:
   Sans I/O environment.
 - `arcweft-core::aot` provides a pure `AotProgram` artifact with typed flow
   dispatch-shape analysis and deterministic operation-class counters. Generated
-  flow dispatch remains future work, but `AotExecutor` owns this artifact before
-  executing through the VM-compatible state machine. `arcw run`, `arcw cli`,
-  `arcw test`, `arcw profile`, and runtime `arcw bench` sections can select the
-  AOT boundary with `--executor aot` and report that tier in JSON without
-  introducing different semantics. Pure helper AOT is implemented separately:
-  `AotPureFunctionBackend` compiles the deterministic `i64` subset to a typed
-  plan and rejects unsupported helpers instead of delegating to the VM.
+  flow dispatch remains future work, but `AotExecutor` owns this artifact
+  separately from the VM runtime plan instead of retaining the plan twice. `arcw
+  run`, `arcw cli`, `arcw test`, `arcw profile`, and runtime `arcw bench`
+  sections can select the AOT boundary with `--executor aot` and report that
+  tier in JSON without introducing different semantics. Pure helper AOT is
+  implemented separately: `AotPureFunctionBackend` compiles the deterministic
+  `i64` subset to a typed plan and rejects unsupported helpers instead of
+  delegating to the VM.
 - `arcweft-core::pure` exposes the pure-helper backend contract used by future
   AOT/JIT adapters. `VmPureFunctionBackend` is the semantic reference,
   candidate backends report deterministic evaluation stats, and conformance
@@ -164,6 +165,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - AOT linear dispatch checks use that cursor index to read the corresponding
   AOT flow block directly, keeping the hot eligibility check aligned with the
   runtime-plan flow vector.
+- AOT programs store dispatch-shape metadata only; executor construction keeps
+  the runtime plan in the VM engine instead of retaining a second copy inside
+  the AOT artifact.
 - AOT dispatch-shape planning and the prechecked linear executor share the same
   supported-op predicate, so control-changing effects and branch/jump ops fall
   back to the VM path instead of entering a fast path that would reject them.
@@ -478,12 +482,13 @@ Current high-confidence state:
   boundary.
 - `arcweft-core::bytecode` provides a pure `BytecodeProgram` bundle and
   deterministic bytecode stats. `arcweft-core::aot` provides a pure `AotProgram`
-  bundle with flow dispatch-shape and operation-class stats. `BytecodeVmExecutor`
-  executes bytecode through the semantic VM, and `AotExecutor` owns the AOT
-  artifact before using a core-local linear fast path for supported straight-line
-  flow ops. Unsupported or stateful cases fall back to the same VM-compatible
-  state machine so VM, bytecode, AOT, and future JIT tiers have a shared
-  conformance boundary while generated dispatch is expanded.
+  bundle with flow dispatch-shape and operation-class stats without retaining
+  the full runtime plan. `BytecodeVmExecutor` executes bytecode through the
+  semantic VM, and `AotExecutor` owns the AOT artifact before using a core-local
+  linear fast path for supported straight-line flow ops. Unsupported or stateful
+  cases fall back to the same VM-compatible state machine so VM, bytecode, AOT,
+  and future JIT tiers have a shared conformance boundary while generated
+  dispatch is expanded.
 - CLI runtime stepping now routes `arcw run`, `arcw cli`, `arcw test`, and
   `arcw profile` through the selected runtime executor. Run/CLI JSON reports the
   typed `executor = "bytecode_vm"` or `executor = "aot"` tier as an explicit

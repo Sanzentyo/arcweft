@@ -89,8 +89,8 @@ impl VmExecutor {
 
 impl AotExecutor {
     pub fn new(plan: RuntimePlan) -> Self {
-        let program = AotProgram::from_runtime_plan(plan);
-        let vm = VmExecutor::new(program.plan().clone());
+        let program = AotProgram::from_runtime_plan(&plan);
+        let vm = VmExecutor::new(plan);
         Self {
             program,
             vm,
@@ -98,8 +98,8 @@ impl AotExecutor {
         }
     }
 
-    pub fn from_program(program: AotProgram) -> Self {
-        let vm = VmExecutor::new(program.plan().clone());
+    pub fn from_parts(program: AotProgram, plan: RuntimePlan) -> Self {
+        let vm = VmExecutor::new(plan);
         Self {
             program,
             vm,

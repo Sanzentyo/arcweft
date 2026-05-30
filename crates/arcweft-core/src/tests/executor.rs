@@ -78,7 +78,7 @@ fn aot_program_records_nested_dispatch_shape() {
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
 
-    let program = AotProgram::from_runtime_plan(plan);
+    let program = AotProgram::from_runtime_plan(&plan);
     assert_eq!(program.flows().len(), 1);
     assert_eq!(program.flows()[0].dispatch, AotDispatchShape::Mixed);
     assert_eq!(program.flows()[0].linear_prefix_ops, 1);
