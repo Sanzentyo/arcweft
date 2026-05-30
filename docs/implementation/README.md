@@ -638,6 +638,9 @@ Current high-confidence state:
 - `arcw toolchain-profile --json` reports the same `host_system` summary for
   cargo fmt/check/clippy/test timing samples, keeping compiler and borrow/type
   checking measurements comparable across machines without host path leakage.
+- Path-free local trend samples are recorded in
+  `docs/implementation/performance-snapshot.md`; they contain host core/thread
+  counts and timing counters, but no workspace or source absolute paths.
 - `arcw jit check --json` now includes the same path-free `host_system`
   summary, so pure JIT/AOT/VM and optional Julia comparisons carry core/thread
   context without recording host filesystem paths.
