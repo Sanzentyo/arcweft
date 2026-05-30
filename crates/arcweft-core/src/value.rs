@@ -1,7 +1,6 @@
 use crate::pattern::RuntimePattern;
 use crate::plan::RuntimePureHelperId;
 use crate::time::LogicalDuration;
-use std::collections::BTreeMap;
 use thiserror::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -155,7 +154,12 @@ pub enum RuntimeBinaryOp {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeEnv {
-    scopes: Vec<BTreeMap<String, RuntimeValue>>,
+    scopes: Vec<RuntimeScope>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct RuntimeScope {
+    bindings: Vec<RuntimeBinding>,
 }
 
 /// Pure runtime program consumed by the minimal Sans I/O engine.
@@ -211,14 +215,14 @@ pub enum RuntimeEvalError {
 impl Default for RuntimeEnv {
     fn default() -> Self {
         Self {
-            scopes: vec![BTreeMap::new()],
+            scopes: vec![RuntimeScope::default()],
         }
     }
 }
 
 impl RuntimeEnv {
     pub fn push_scope(&mut self) {
-        self.scopes.push(BTreeMap::new());
+        self.scopes.push(RuntimeScope::default());
     }
 
     pub fn pop_scope(&mut self) {
@@ -231,13 +235,13 @@ impl RuntimeEnv {
 
     pub fn set(&mut self, name: impl Into<String>, value: RuntimeValue) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(name.into(), value);
+            scope.set(name.into(), value);
         }
     }
 
     pub fn set_root(&mut self, name: impl Into<String>, value: RuntimeValue) {
         if let Some(scope) = self.scopes.first_mut() {
-            scope.insert(name.into(), value);
+            scope.set(name.into(), value);
         }
     }
 
@@ -255,6 +259,32 @@ impl RuntimeEnv {
         for binding in bindings {
             self.set_root(binding.name, binding.value);
         }
+    }
+}
+
+impl RuntimeScope {
+    fn set(&mut self, name: String, value: RuntimeValue) {
+        if let Some(binding) = self
+            .bindings
+            .iter_mut()
+            .find(|binding| binding.name == name)
+        {
+            binding.value = value;
+        } else {
+            self.bindings.push(RuntimeBinding { name, value });
+        }
+    }
+
+    fn get(&self, name: &str) -> Option<&RuntimeValue> {
+        self.bindings
+            .iter()
+            .rev()
+            .find(|binding| binding.name == name)
+            .map(|binding| &binding.value)
+    }
+
+    fn clear(&mut self) {
+        self.bindings.clear();
     }
 }
 
