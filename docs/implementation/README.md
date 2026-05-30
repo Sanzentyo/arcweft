@@ -610,6 +610,11 @@ Current high-confidence state:
 - `arcw jit check --json` now includes the same path-free `host_system`
   summary, so pure JIT/AOT/VM and optional Julia comparisons carry core/thread
   context without recording host filesystem paths.
+- The `arcw jit check` VM baseline measurement loop now uses the reusable
+  `VmPureFunctionScratch` i64 path and stack input arrays instead of allocating
+  a fresh pure-function request and binding vector per iteration. The
+  conformance check still uses the full VM backend, while timings better
+  isolate VM expression evaluation from benchmark harness allocation.
 - The CLI regression harness now rejects generated `.arcweft` directories under
   checked-in fixtures and scans non-review source/docs/tests for removed
   whitespace-command DSL or compatibility-shim text. Run fixtures execute from

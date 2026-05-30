@@ -12,9 +12,9 @@ use arcweft_core::step::{
 };
 use arcweft_core::{
     pure::{
-        AotPureFunctionBackend, AotPureI64Plan, PureFunctionBackend, PureFunctionBackendKind,
-        PureFunctionRequest, PureFunctionResult, PureFunctionStats, RuntimePureCallBackend,
-        VmPureFunctionBackend, compare_pure_function_backend,
+        AotPureFunctionBackend, AotPureI64Plan, PureFunctionBackendKind, PureFunctionRequest,
+        PureFunctionResult, PureFunctionStats, RuntimePureCallBackend, VmPureFunctionBackend,
+        VmPureFunctionScratch, compare_pure_function_backend,
     },
     value::{RuntimeBinaryOp, RuntimeBinding, RuntimeExpr, RuntimeUnaryOp, RuntimeValue},
 };
@@ -480,12 +480,7 @@ fn measure_jit_check_helpers(
         options.warmup,
         options.input_seed,
     )?;
-    warmup_jit_check_vm(
-        target,
-        VmPureFunctionBackend,
-        options.warmup,
-        options.input_seed,
-    )?;
+    warmup_jit_check_vm(target, options.warmup, options.input_seed)?;
 
     Ok(JitCheckMeasurements {
         aot: measure_jit_check_aot(
@@ -509,7 +504,6 @@ fn measure_jit_check_helpers(
         )?,
         vm: measure_jit_check_vm(
             target,
-            VmPureFunctionBackend,
             options.samples,
             options.iterations,
             options.input_seed,
@@ -764,6 +758,16 @@ impl JitCheckTarget {
                 }),
         )
     }
+
+    fn runtime_helper(&self) -> RuntimePureHelper {
+        RuntimePureHelper {
+            id: RuntimePureHelperId(0),
+            name: self.name.clone(),
+            input_names: self.input_names.clone(),
+            expr: self.expr.clone(),
+            origin: RuntimePureHelperOrigin::Annotated,
+        }
+    }
 }
 
 impl JitCheckHelperSource {
@@ -939,36 +943,40 @@ fn measure_jit_check_aot(
 
 fn warmup_jit_check_vm(
     target: &JitCheckTarget,
-    vm_backend: VmPureFunctionBackend,
     warmup: usize,
     input_seed: u64,
 ) -> Result<(), ExitCode> {
+    let helper = target.runtime_helper();
+    let mut scratch = VmPureFunctionScratch::default();
     for index in 0..warmup {
-        let inputs = jit_check_inputs(input_seed, 0, index, target.input_names.len());
-        let request = target.request_with_inputs(&inputs);
-        let _ = vm_backend.evaluate(&request).map_err(|error| {
-            eprintln!("error: VM warmup failed: {error}");
-            ExitCode::FAILURE
-        })?;
+        let inputs = jit_check_input_array(input_seed, 0, index, target.input_names.len());
+        let _ = scratch
+            .evaluate_i64_slice(&helper, &inputs[..target.input_names.len()])
+            .map_err(|error| {
+                eprintln!("error: VM warmup failed: {error}");
+                ExitCode::FAILURE
+            })?;
     }
     Ok(())
 }
 
 fn measure_jit_check_vm(
     target: &JitCheckTarget,
-    vm_backend: VmPureFunctionBackend,
     samples: usize,
     iterations: usize,
     input_seed: u64,
 ) -> Result<JitRepeatedMeasurement, ExitCode> {
+    let helper = target.runtime_helper();
+    let mut scratch = VmPureFunctionScratch::default();
     measure_repeated(samples, iterations, |sample, index| {
-        let inputs = jit_check_inputs(input_seed, sample, index, target.input_names.len());
-        let request = target.request_with_inputs(&inputs);
-        let value = vm_backend.evaluate(&request).map_err(|error| {
-            eprintln!("error: VM evaluation failed: {error}");
-            ExitCode::FAILURE
-        })?;
-        if let RuntimeValue::Int(value) = value.value {
+        let inputs = jit_check_input_array(input_seed, sample, index, target.input_names.len());
+        let value = scratch
+            .evaluate_i64_slice(&helper, &inputs[..target.input_names.len()])
+            .map_err(|error| {
+                eprintln!("error: VM evaluation failed: {error}");
+                ExitCode::FAILURE
+            })?;
+        if let RuntimeValue::Int(value) = value {
             Ok(value)
         } else {
             Ok(0)
