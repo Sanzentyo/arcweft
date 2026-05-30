@@ -76,6 +76,14 @@ pub trait RuntimePureCallBackend {
         out: &mut [i64],
     ) -> Result<(), RuntimeEvalError>;
 
+    fn call_i64_flat_batch_sum(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[i64],
+        arity: usize,
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError>;
+
     fn call_values(
         &mut self,
         helper: &RuntimePureHelper,
@@ -490,6 +498,56 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
                     value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
                 }
             })
+    }
+
+    fn call_i64_flat_batch_sum(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[i64],
+        arity: usize,
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError> {
+        if arity > RuntimeI64Args::MAX {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: RuntimeI64Args::MAX,
+                found: arity,
+            });
+        }
+        if flat_inputs.len() != rows.saturating_mul(arity) {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: format!(
+                    "pure flat batch expected {} input value(s), got {}",
+                    rows.saturating_mul(arity),
+                    flat_inputs.len()
+                ),
+            });
+        }
+        self.stats.batch_calls += 1;
+        self.stats.batch_items += rows;
+        self.stats.pure_calls += rows;
+        self.stats.vm_calls += rows;
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        let mut sum = 0i64;
+        if arity == 0 {
+            for _ in 0..rows {
+                match self.scratch.evaluate_i64_slice(helper, &[])? {
+                    RuntimeValue::Int(value) => sum += value,
+                    value => {
+                        return Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value)));
+                    }
+                }
+            }
+            return Ok(sum);
+        }
+        for row in flat_inputs.chunks_exact(arity) {
+            match self.scratch.evaluate_i64_slice(helper, row)? {
+                RuntimeValue::Int(value) => sum += value,
+                value => return Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
+            }
+        }
+        Ok(sum)
     }
 
     fn call_values(

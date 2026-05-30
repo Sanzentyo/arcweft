@@ -661,6 +661,10 @@ Current high-confidence state:
   of expanding thousands of runtime expression nodes, keeping large batch
   runtime type validation proportional to program shape rather than repeat
   length.
+- Fused `sum(map(...))` runtime paths now call a flat pure batch sum API, so
+  VM/AOT/JIT backends can accumulate row results without materializing or
+  copying an intermediate output vector. JIT emits a dedicated Cranelift
+  rows-batch-sum function for the same automatic flow-level acceleration path.
 - Fast-path scalar pure calls read local integer arguments by borrow when
   packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
   VM/AOT/JIT pure backends.

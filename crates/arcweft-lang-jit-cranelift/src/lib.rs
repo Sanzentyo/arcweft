@@ -53,6 +53,7 @@ pub struct CompiledPureI64Inputs {
     _module: JITModule,
     caller: native_call::I64InputCaller,
     batch_code: *const u8,
+    batch_sum_code: *const u8,
     param_names: Vec<String>,
     stats: PureFunctionStats,
 }
@@ -219,9 +220,16 @@ impl CraneliftPureFunctionBackend {
             &captured_bindings,
             &param_names,
         )?;
+        let batch_sum_code = compile_i64_rows_batch_sum_function(
+            &mut module,
+            &request.expr,
+            &captured_bindings,
+            &param_names,
+        )?;
         module.finalize_definitions().map_err(jit_error)?;
         let code = module.get_finalized_function(func_id);
         let batch_code = module.get_finalized_function(batch_code);
+        let batch_sum_code = module.get_finalized_function(batch_sum_code);
         let caller =
             native_call::I64InputCaller::from_code(code, param_names.len()).ok_or_else(|| {
                 CraneliftJitError::UnsupportedExpr(format!(
@@ -234,6 +242,7 @@ impl CraneliftPureFunctionBackend {
             _module: module,
             caller,
             batch_code,
+            batch_sum_code,
             param_names,
             stats,
         })
@@ -440,6 +449,99 @@ fn compile_i64_rows_batch_function(
     Ok(func_id)
 }
 
+fn compile_i64_rows_batch_sum_function(
+    module: &mut JITModule,
+    expr: &RuntimeExpr,
+    captured_bindings: &BTreeMap<String, LoweredI64Binding>,
+    param_names: &[String],
+) -> Result<FuncId, CraneliftJitError> {
+    let pointer_type = module.target_config().pointer_type();
+    if pointer_type != types::I64 {
+        return Err(CraneliftJitError::UnsupportedHost(
+            "JIT rows batch sum currently requires a 64-bit host pointer type".to_owned(),
+        ));
+    }
+
+    let mut ctx = module.make_context();
+    let mut func_ctx = FunctionBuilderContext::new();
+    let mut signature = module.make_signature();
+    signature
+        .params
+        .extend([AbiParam::new(pointer_type), AbiParam::new(types::I64)]);
+    signature.returns.push(AbiParam::new(types::I64));
+
+    let func_id = module
+        .declare_function(
+            "arcweft_pure_helper_rows_batch_sum",
+            Linkage::Local,
+            &signature,
+        )
+        .map_err(jit_error)?;
+    ctx.func.signature = signature;
+    ctx.func.name = UserFuncName::user(0, func_id.as_u32());
+
+    let mut stats = arcweft_core::pure::PureFunctionStats::default();
+    {
+        let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
+        let entry = builder.create_block();
+        builder.append_block_params_for_function_params(entry);
+        builder.switch_to_block(entry);
+        let inputs_ptr = builder.block_params(entry)[0];
+        let rows = builder.block_params(entry)[1];
+
+        let loop_block = builder.create_block();
+        let body_block = builder.create_block();
+        let done_block = builder.create_block();
+        builder.append_block_param(loop_block, types::I64);
+        builder.append_block_param(loop_block, types::I64);
+
+        let zero = builder.ins().iconst(types::I64, 0);
+        builder
+            .ins()
+            .jump(loop_block, &[BlockArg::from(zero), BlockArg::from(zero)]);
+
+        builder.switch_to_block(loop_block);
+        let row = builder.block_params(loop_block)[0];
+        let accumulator = builder.block_params(loop_block)[1];
+        let keep_going = builder.ins().icmp(IntCC::SignedLessThan, row, rows);
+        builder
+            .ins()
+            .brif(keep_going, body_block, &[], done_block, &[]);
+
+        builder.switch_to_block(body_block);
+        let mut bindings = captured_bindings.clone();
+        for (param_index, name) in param_names.iter().enumerate() {
+            let value = load_batch_input(
+                &mut builder,
+                inputs_ptr,
+                row,
+                param_names.len(),
+                param_index,
+            );
+            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+        }
+        let value = lower_expr(&mut builder, &bindings, expr, &mut stats)?;
+        let next_accumulator = builder.ins().iadd(accumulator, value);
+        let one = builder.ins().iconst(types::I64, 1);
+        let next_row = builder.ins().iadd(row, one);
+        builder.ins().jump(
+            loop_block,
+            &[BlockArg::from(next_row), BlockArg::from(next_accumulator)],
+        );
+
+        builder.switch_to_block(done_block);
+        builder.ins().return_(&[accumulator]);
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    module
+        .define_function(func_id, &mut ctx)
+        .map_err(jit_error)?;
+    module.clear_context(&mut ctx);
+    Ok(func_id)
+}
+
 fn load_batch_input(
     builder: &mut FunctionBuilder<'_>,
     inputs_ptr: Value,
@@ -535,6 +637,29 @@ impl CompiledPureI64Inputs {
             )));
         }
         Ok(())
+    }
+
+    /// Calls the compiled helper for flat row-major `i64` inputs and returns
+    /// the sum of all row results without writing an output slice.
+    pub fn call_flat_batch_sum(
+        &self,
+        inputs: &[i64],
+        rows: usize,
+    ) -> Result<i64, CraneliftJitError> {
+        native_call::call_i64_rows_batch_sum(
+            self.batch_sum_code,
+            inputs,
+            self.param_names.len(),
+            rows,
+        )
+        .ok_or_else(|| {
+            CraneliftJitError::UnsupportedExpr(format!(
+                "JIT rows batch sum expected {} input value(s), got {} for {} row(s)",
+                self.param_names.len().saturating_mul(rows),
+                inputs.len(),
+                rows
+            ))
+        })
     }
 
     /// Returns the local binding names used as runtime parameters.
@@ -937,6 +1062,12 @@ mod tests {
             .call_flat_batch(&[3, 4, 2, 99, 7, 1], &mut out)
             .expect("flat rows batch succeeds");
         assert_eq!(out, [18, 0, 21]);
+        assert_eq!(
+            compiled
+                .call_flat_batch_sum(&[3, 4, 2, 99, 7, 1], 3)
+                .expect("flat rows batch sum succeeds"),
+            39
+        );
     }
 
     #[test]

@@ -335,6 +335,10 @@ fn engine_batches_map_closure_pure_calls() {
         result.stats.pure.arg_bytes_borrowed,
         6 * std::mem::size_of::<i64>()
     );
+    assert_eq!(
+        result.stats.pure.result_bytes_copied,
+        3 * std::mem::size_of::<i64>()
+    );
 }
 
 #[test]
@@ -395,10 +399,7 @@ fn engine_fuses_map_closure_pure_batch_sum() {
         result.stats.pure.arg_bytes_borrowed,
         6 * std::mem::size_of::<i64>()
     );
-    assert_eq!(
-        result.stats.pure.result_bytes_copied,
-        3 * std::mem::size_of::<i64>()
-    );
+    assert_eq!(result.stats.pure.result_bytes_copied, 0);
 }
 
 #[test]

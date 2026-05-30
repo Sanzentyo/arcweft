@@ -7,6 +7,7 @@ type JitI64TernaryFn = extern "C" fn(i64, i64, i64) -> i64;
 type JitI64QuaternaryFn = extern "C" fn(i64, i64, i64, i64) -> i64;
 type JitI64BatchFn = extern "C" fn(i64, i64, i64) -> i64;
 type JitI64RowsBatchFn = extern "C" fn(*const i64, i64, *mut i64);
+type JitI64RowsBatchSumFn = extern "C" fn(*const i64, i64) -> i64;
 
 #[derive(Clone, Copy)]
 pub(crate) enum I64InputCaller {
@@ -129,4 +130,25 @@ pub(crate) fn call_i64_rows_batch(
     let function = unsafe { mem::transmute::<*const u8, JitI64RowsBatchFn>(code) };
     function(inputs.as_ptr(), rows, out.as_mut_ptr());
     true
+}
+
+pub(crate) fn call_i64_rows_batch_sum(
+    code: *const u8,
+    inputs: &[i64],
+    arity: usize,
+    rows: usize,
+) -> Option<i64> {
+    if inputs.len() != arity.saturating_mul(rows) {
+        return None;
+    }
+    let Ok(rows) = i64::try_from(rows) else {
+        return None;
+    };
+    // SAFETY: `code` is returned by `JITModule::get_finalized_function` for a
+    // function emitted in this crate with signature
+    // `extern "C" fn(*const i64, i64) -> i64`. The owning `JITModule` is kept
+    // alive by the caller until after the call, and the input slice is checked
+    // to cover the row/arity shape before its pointer is passed.
+    let function = unsafe { mem::transmute::<*const u8, JitI64RowsBatchSumFn>(code) };
+    Some(function(inputs.as_ptr(), rows))
 }

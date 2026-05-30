@@ -313,6 +313,104 @@ impl RuntimePureAccelerator {
         }
     }
 
+    pub fn call_i64_flat_batch_sum(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[i64],
+        arity: usize,
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError> {
+        if arity > RuntimeI64Args::MAX {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: RuntimeI64Args::MAX,
+                found: arity,
+            });
+        }
+        if flat_inputs.len() != rows.saturating_mul(arity) {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: format!(
+                    "pure flat batch expected {} input value(s), got {}",
+                    rows.saturating_mul(arity),
+                    flat_inputs.len()
+                ),
+            });
+        }
+        self.stats.batch_calls += 1;
+        self.stats.batch_items += rows;
+        self.stats.pure_calls += rows;
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        if rows == 0 {
+            return Ok(0);
+        }
+        let wants_parallel = self.can_parallelize(rows)
+            && matches!(
+                cache_entry(&self.cache, helper.id),
+                Some(RuntimePureCacheEntry::Aot(_) | RuntimePureCacheEntry::Vm)
+            );
+        if wants_parallel {
+            self.ensure_thread_pool();
+        }
+        match cache_entry(&self.cache, helper.id) {
+            Some(RuntimePureCacheEntry::Jit(compiled)) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.jit_calls += rows;
+                compiled
+                    .call_flat_batch_sum(flat_inputs, rows)
+                    .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                        name: helper.name.clone(),
+                        reason: error.to_string(),
+                    })
+            }
+            Some(RuntimePureCacheEntry::Aot(compiled)) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.aot_calls += rows;
+                if wants_parallel {
+                    self.stats.thread_pool_jobs += self.parallel_jobs(rows);
+                    call_aot_flat_batch_sum_parallel(
+                        self.pool.as_ref(),
+                        compiled,
+                        flat_inputs,
+                        arity,
+                        rows,
+                    )
+                } else {
+                    call_aot_flat_batch_sum(
+                        compiled,
+                        flat_inputs,
+                        arity,
+                        rows,
+                        &mut self.aot_i64_slots,
+                    )
+                }
+            }
+            Some(RuntimePureCacheEntry::Vm) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.vm_calls += rows;
+                self.stats.fallbacks += rows;
+                if wants_parallel {
+                    self.stats.thread_pool_jobs += self.parallel_jobs(rows);
+                    call_vm_flat_batch_sum_parallel(
+                        self.pool.as_ref(),
+                        helper,
+                        flat_inputs,
+                        arity,
+                        rows,
+                    )
+                } else {
+                    call_vm_flat_batch_sum(helper, flat_inputs, arity, rows, &mut self.vm_scratch)
+                }
+            }
+            None => {
+                self.compile_stats.cache_misses += 1;
+                self.stats.vm_calls += rows;
+                self.stats.fallbacks += rows;
+                call_vm_flat_batch_sum(helper, flat_inputs, arity, rows, &mut self.vm_scratch)
+            }
+        }
+    }
+
     fn can_parallelize(&self, len: usize) -> bool {
         len >= self.config.batch_min_len && self.resolved_workers > 1
     }
@@ -435,6 +533,16 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         out: &mut [i64],
     ) -> Result<(), RuntimeEvalError> {
         Self::call_i64_flat_batch(self, helper, flat_inputs, arity, out)
+    }
+
+    fn call_i64_flat_batch_sum(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[i64],
+        arity: usize,
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError> {
+        Self::call_i64_flat_batch_sum(self, helper, flat_inputs, arity, rows)
     }
 
     fn call_values(
@@ -714,6 +822,67 @@ fn call_aot_flat_batch_parallel(
     }
 }
 
+fn call_aot_flat_batch_sum(
+    compiled: &AotPureI64Plan,
+    flat_inputs: &[i64],
+    arity: usize,
+    rows: usize,
+    slots: &mut Vec<i64>,
+) -> Result<i64, RuntimeEvalError> {
+    let mut sum = 0i64;
+    if arity == 0 {
+        for _ in 0..rows {
+            let (value, _) = compiled.call_with_inputs_scratch(&[], slots)?;
+            sum += value;
+        }
+        return Ok(sum);
+    }
+    for row in flat_inputs.chunks_exact(arity) {
+        let (value, _) = compiled.call_with_inputs_scratch(row, slots)?;
+        sum += value;
+    }
+    Ok(sum)
+}
+
+fn call_aot_flat_batch_sum_parallel(
+    pool: Option<&ThreadPool>,
+    compiled: &AotPureI64Plan,
+    flat_inputs: &[i64],
+    arity: usize,
+    rows: usize,
+) -> Result<i64, RuntimeEvalError> {
+    let run = || {
+        if arity == 0 {
+            return (0..rows)
+                .into_par_iter()
+                .try_fold(
+                    || (Vec::new(), 0i64),
+                    |(mut slots, sum), _| {
+                        let (value, _) = compiled.call_with_inputs_scratch(&[], &mut slots)?;
+                        Ok::<(Vec<i64>, i64), RuntimeEvalError>((slots, sum + value))
+                    },
+                )
+                .map(|result| result.map(|(_, sum)| sum))
+                .try_reduce(|| 0, |lhs, rhs| Ok(lhs + rhs));
+        }
+        flat_inputs
+            .par_chunks_exact(arity)
+            .try_fold(
+                || (Vec::new(), 0i64),
+                |(mut slots, sum), row| {
+                    let (value, _) = compiled.call_with_inputs_scratch(row, &mut slots)?;
+                    Ok::<(Vec<i64>, i64), RuntimeEvalError>((slots, sum + value))
+                },
+            )
+            .map(|result| result.map(|(_, sum)| sum))
+            .try_reduce(|| 0, |lhs, rhs| Ok(lhs + rhs))
+    };
+    match pool {
+        Some(pool) => pool.install(run),
+        None => run(),
+    }
+}
+
 fn call_vm_batch(
     helper: &RuntimePureHelper,
     rows: &[RuntimeI64Args],
@@ -820,6 +989,83 @@ fn call_vm_flat_batch_parallel(
                     value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
                 },
             )
+    };
+    match pool {
+        Some(pool) => pool.install(run),
+        None => run(),
+    }
+}
+
+fn call_vm_flat_batch_sum(
+    helper: &RuntimePureHelper,
+    flat_inputs: &[i64],
+    arity: usize,
+    rows: usize,
+    scratch: &mut VmPureFunctionScratch,
+) -> Result<i64, RuntimeEvalError> {
+    let mut sum = 0i64;
+    if arity == 0 {
+        for _ in 0..rows {
+            match scratch.evaluate_i64_slice(helper, &[])? {
+                RuntimeValue::Int(value) => sum += value,
+                value => return Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+            }
+        }
+        return Ok(sum);
+    }
+    for row in flat_inputs.chunks_exact(arity) {
+        match scratch.evaluate_i64_slice(helper, row)? {
+            RuntimeValue::Int(value) => sum += value,
+            value => return Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+        }
+    }
+    Ok(sum)
+}
+
+fn call_vm_flat_batch_sum_parallel(
+    pool: Option<&ThreadPool>,
+    helper: &RuntimePureHelper,
+    flat_inputs: &[i64],
+    arity: usize,
+    rows: usize,
+) -> Result<i64, RuntimeEvalError> {
+    let run = || {
+        if arity == 0 {
+            return (0..rows)
+                .into_par_iter()
+                .try_fold(
+                    || (VmPureFunctionScratch::default(), 0i64),
+                    |(mut scratch, sum), _| {
+                        let value = match scratch.evaluate_i64_slice(helper, &[])? {
+                            RuntimeValue::Int(value) => value,
+                            value => {
+                                return Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(
+                                    &value,
+                                )));
+                            }
+                        };
+                        Ok::<(VmPureFunctionScratch, i64), RuntimeEvalError>((scratch, sum + value))
+                    },
+                )
+                .map(|result| result.map(|(_, sum)| sum))
+                .try_reduce(|| 0, |lhs, rhs| Ok(lhs + rhs));
+        }
+        flat_inputs
+            .par_chunks_exact(arity)
+            .try_fold(
+                || (VmPureFunctionScratch::default(), 0i64),
+                |(mut scratch, sum), row| {
+                    let value = match scratch.evaluate_i64_slice(helper, row)? {
+                        RuntimeValue::Int(value) => value,
+                        value => {
+                            return Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value)));
+                        }
+                    };
+                    Ok::<(VmPureFunctionScratch, i64), RuntimeEvalError>((scratch, sum + value))
+                },
+            )
+            .map(|result| result.map(|(_, sum)| sum))
+            .try_reduce(|| 0, |lhs, rhs| Ok(lhs + rhs))
     };
     match pool {
         Some(pool) => pool.install(run),
@@ -1143,6 +1389,47 @@ mod tests {
         assert_eq!(accelerator.stats().arg_stack_packs, 3);
         assert_eq!(accelerator.stats().arg_vec_allocations, 0);
         assert_eq!(accelerator.summary().jit, 1);
+    }
+
+    #[test]
+    fn jit_flat_batch_sum_avoids_output_copy() {
+        let helper = RuntimePureHelper {
+            id: RuntimePureHelperId(0),
+            name: "score".to_owned(),
+            input_names: vec!["base".to_owned(), "bonus".to_owned()],
+            input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+            expr: RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+                }),
+            },
+            scalar_eval_supported: true,
+            origin: RuntimePureHelperOrigin::Annotated,
+        };
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                backend: RuntimePureBackendMode::Jit,
+                workers: RuntimePureWorkerCount::Fixed(1),
+                batch_min_len: 2,
+            },
+            std::slice::from_ref(&helper),
+        );
+
+        let sum = accelerator
+            .call_i64_flat_batch_sum(&helper, &[3, 4, 5, 1, 2, 8], 2, 3)
+            .expect("JIT flat batch sum succeeds");
+
+        assert_eq!(sum, 53);
+        assert_eq!(accelerator.stats().batch_calls, 1);
+        assert_eq!(accelerator.stats().batch_items, 3);
+        assert_eq!(accelerator.stats().jit_calls, 3);
+        assert_eq!(accelerator.stats().arg_stack_packs, 0);
+        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+        assert_eq!(accelerator.stats().result_bytes_copied, 0);
     }
 
     #[test]

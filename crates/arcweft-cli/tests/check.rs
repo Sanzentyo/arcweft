@@ -555,7 +555,7 @@ flow @flow.map_pure_sum map_pure_sum {
     assert_eq!(sum_step_pure_counter(&json, "arg_vec_allocations"), 0);
     assert_eq!(sum_step_pure_counter(&json, "arg_bytes_copied"), 0);
     assert_eq!(sum_step_pure_counter(&json, "arg_bytes_borrowed"), 64);
-    assert_eq!(sum_step_pure_counter(&json, "result_bytes_copied"), 32);
+    assert_eq!(sum_step_pure_counter(&json, "result_bytes_copied"), 0);
     assert_eq!(json["executor_stats"]["pure_config"]["backend"], "jit");
     assert_eq!(json["executor_stats"]["pure_compile"]["jit_successes"], 1);
 }
@@ -3373,6 +3373,10 @@ fn bench_json_measures_checked_in_large_map_pure_batch_fixture() {
     );
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_result_bytes_copied_median"],
         0
     );
 }

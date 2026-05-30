@@ -312,6 +312,18 @@ impl Engine {
         Ok(result)
     }
 
+    fn call_i64_flat_batch_sum(
+        &mut self,
+        helper_id: crate::plan::RuntimePureHelperId,
+        flat_inputs: &[i64],
+        arity: usize,
+        row_count: usize,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<i64, RuntimeEvalError> {
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        pure_backend.call_i64_flat_batch_sum(helper, flat_inputs, arity, row_count)
+    }
+
     fn evaluate_record_expr(
         &mut self,
         fields: &[RuntimeFieldExpr],
@@ -586,13 +598,12 @@ impl Engine {
             &mut flat_inputs,
         ) {
             Ok(Some(row_count)) => {
-                let batch_result = self.call_i64_flat_batch_with_outputs(
+                let batch_result = self.call_i64_flat_batch_sum(
                     helper_id,
                     &flat_inputs,
                     arity,
                     row_count,
                     pure_backend,
-                    |out| out.iter().copied().sum(),
                 );
                 self.pure_i64_batch_inputs = flat_inputs;
                 let sum = batch_result?;
@@ -629,14 +640,8 @@ impl Engine {
             self.pure_i64_batch_inputs = flat_inputs;
             return Err(error);
         }
-        let batch_result = self.call_i64_flat_batch_with_outputs(
-            helper_id,
-            &flat_inputs,
-            arity,
-            items.len(),
-            pure_backend,
-            |out| out.iter().copied().sum(),
-        );
+        let batch_result =
+            self.call_i64_flat_batch_sum(helper_id, &flat_inputs, arity, items.len(), pure_backend);
         self.pure_i64_batch_inputs = flat_inputs;
         let sum = batch_result?;
         Ok(Some(sum))
@@ -696,14 +701,8 @@ impl Engine {
             self.pure_i64_batch_inputs = flat_inputs;
             return Err(error);
         }
-        let batch_result = self.call_i64_flat_batch_with_outputs(
-            helper_id,
-            &flat_inputs,
-            arity,
-            items.len(),
-            pure_backend,
-            |out| out.iter().copied().sum(),
-        );
+        let batch_result =
+            self.call_i64_flat_batch_sum(helper_id, &flat_inputs, arity, items.len(), pure_backend);
         self.pure_i64_batch_inputs = flat_inputs;
         let sum = batch_result?;
         Ok(Some(sum))
