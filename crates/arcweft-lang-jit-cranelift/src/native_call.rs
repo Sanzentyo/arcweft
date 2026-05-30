@@ -77,6 +77,19 @@ impl I64InputCaller {
             _ => None,
         }
     }
+
+    pub(crate) fn call_packed(self, values: [i64; 4], len: usize) -> Option<i64> {
+        match (self, len) {
+            (Self::Nullary(function), 0) => Some(function()),
+            (Self::Unary(function), 1) => Some(function(values[0])),
+            (Self::Binary(function), 2) => Some(function(values[0], values[1])),
+            (Self::Ternary(function), 3) => Some(function(values[0], values[1], values[2])),
+            (Self::Quaternary(function), 4) => {
+                Some(function(values[0], values[1], values[2], values[3]))
+            }
+            _ => None,
+        }
+    }
 }
 
 pub(crate) fn call_i64(code: *const u8) -> i64 {

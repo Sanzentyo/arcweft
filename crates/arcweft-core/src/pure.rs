@@ -268,6 +268,10 @@ impl RuntimeI64Args {
     pub fn as_slice(&self) -> &[i64] {
         &self.values[..self.len]
     }
+
+    pub const fn into_parts(self) -> ([i64; Self::MAX], usize) {
+        (self.values, self.len)
+    }
 }
 
 impl RuntimePureCallBackend for VmRuntimePureCallBackend {

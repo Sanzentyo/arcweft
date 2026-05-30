@@ -520,6 +520,9 @@ Current high-confidence state:
 - Scalar Cranelift helpers store an arity-typed native caller when compilation
   finishes, so repeated flow calls no longer reinterpret the finalized code
   pointer on every JIT invocation.
+- Runtime JIT scalar calls now pass the fixed `RuntimeI64Args` pack directly
+  into the compiled helper instead of first re-expressing the arguments as a
+  dynamic slice.
 - Scalar AOT helper calls reuse accelerator-owned slot scratch storage instead
   of cloning the plan's initial slot vector on every flow invocation.
 - Cranelift input helpers now include a row-major batch entry point that accepts

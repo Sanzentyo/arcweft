@@ -317,7 +317,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += 1;
-                compiled.call(args.as_slice()).map(Some).map_err(|error| {
+                compiled.call_i64_args(args).map(Some).map_err(|error| {
                     RuntimeEvalError::UnsupportedPure {
                         name: helper.name.clone(),
                         reason: error.to_string(),

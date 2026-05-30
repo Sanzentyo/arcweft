@@ -8,7 +8,7 @@ mod native_call;
 
 use arcweft_core::pure::{
     PureFunctionBackend, PureFunctionBackendKind, PureFunctionRequest, PureFunctionResult,
-    PureFunctionStats,
+    PureFunctionStats, RuntimeI64Args,
 };
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeUnaryOp, RuntimeValue,
@@ -503,6 +503,23 @@ impl CompiledPureI64Inputs {
         })
     }
 
+    /// Calls the compiled helper with the runtime fixed-size integer pack.
+    pub fn call_i64_args(&self, args: RuntimeI64Args) -> Result<i64, CraneliftJitError> {
+        if args.len() != self.param_names.len() {
+            return Err(CraneliftJitError::UnsupportedExpr(format!(
+                "JIT helper expected {} input(s), got {}",
+                self.param_names.len(),
+                args.len()
+            )));
+        }
+        let (values, len) = args.into_parts();
+        self.caller.call_packed(values, len).ok_or_else(|| {
+            CraneliftJitError::UnsupportedExpr(format!(
+                "JIT helper arity {len} is outside the native call boundary"
+            ))
+        })
+    }
+
     /// Calls the compiled helper for flat row-major `i64` inputs.
     pub fn call_flat_batch(
         &self,
@@ -907,6 +924,12 @@ mod tests {
 
         assert_eq!(compiled.param_names(), ["base", "bonus"]);
         assert_eq!(compiled.call(&[3, 4]).expect("call succeeds"), 18);
+        assert_eq!(
+            compiled
+                .call_i64_args(RuntimeI64Args::new([3, 4, 0, 0], 2))
+                .expect("packed call succeeds"),
+            18
+        );
         assert_eq!(compiled.call(&[2, 99]).expect("call succeeds"), 0);
         assert_eq!(compiled.call(&[7, 1]).expect("call succeeds"), 21);
         let mut out = [0; 3];
