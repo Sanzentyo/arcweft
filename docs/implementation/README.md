@@ -607,6 +607,9 @@ Current high-confidence state:
 - `arcw toolchain-profile --json` reports the same `host_system` summary for
   cargo fmt/check/clippy/test timing samples, keeping compiler and borrow/type
   checking measurements comparable across machines without host path leakage.
+- `arcw jit check --json` now includes the same path-free `host_system`
+  summary, so pure JIT/AOT/VM and optional Julia comparisons carry core/thread
+  context without recording host filesystem paths.
 - The CLI regression harness now rejects generated `.arcweft` directories under
   checked-in fixtures and scans non-review source/docs/tests for removed
   whitespace-command DSL or compatibility-shim text. Run fixtures execute from

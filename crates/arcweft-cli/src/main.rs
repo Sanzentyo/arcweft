@@ -54,7 +54,7 @@ mod native_task;
 mod output;
 mod server_adapter;
 mod toolchain_profile;
-use native_system::host_system_info;
+use native_system::{HostSystemInfo, host_system_info};
 use native_task::{NativeSchedulerStats, NativeTaskBridge, NativeTaskStats};
 use output::{
     AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, CheckReport,
@@ -231,6 +231,7 @@ fn jit_check_report(
         input_bindings: target.input_names.clone(),
         dynamic_inputs: !target.input_names.is_empty(),
         input_seed: options.input_seed,
+        host_system: host_system_info(),
         vm_backend: backend_label(conformance.vm.backend).to_owned(),
         aot_backend: backend_label(conformance.aot.backend).to_owned(),
         jit_backend: backend_label(conformance.jit.backend).to_owned(),
@@ -4402,6 +4403,7 @@ struct JitCheckReport {
     input_bindings: Vec<String>,
     dynamic_inputs: bool,
     input_seed: u64,
+    host_system: HostSystemInfo,
     vm_backend: String,
     aot_backend: String,
     jit_backend: String,

@@ -4503,6 +4503,14 @@ fn assert_jit_check_json(
     assert_eq!(json["matches_vm"], true);
     assert_eq!(json["dynamic_inputs"], true);
     assert_eq!(json["input_seed"], expected_seed);
+    assert!(json["host_system"]["physical_cores"].as_u64().unwrap_or(0) > 0);
+    assert!(json["host_system"]["logical_threads"].as_u64().unwrap_or(0) > 0);
+    assert!(
+        json["host_system"]["available_parallelism"]
+            .as_u64()
+            .unwrap_or(0)
+            > 0
+    );
     assert_eq!(json["warmup"], 1);
     assert_eq!(json["iterations"], 4);
     assert_eq!(json["samples"], 2);
