@@ -671,6 +671,9 @@ Current high-confidence state:
   without constructing display labels or observation summaries inside the
   measured loop. `arcw run` and `arcw profile` still build the full JSON step
   summaries.
+- Flow bench sections now build the selected-entry runtime plan once before
+  sampling and clone that ready-to-run plan for each isolated run, avoiding
+  repeated entry-flow string construction inside the measurement loop.
 - Borrowed root binding updates now reuse existing environment slots without
   recloning binding names, so repeated runtime steps only clone the value when
   an adapter-provided root binding is already present.

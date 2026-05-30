@@ -3190,12 +3190,12 @@ fn run_bench_flow_section(
     validated: ScriptBenchSectionRunSummary,
 ) -> ScriptBenchSectionRunSummary {
     let mut samples = RuntimeBenchSamples::default();
+    let mut selected_plan = plan.clone();
+    selected_plan.entry_flow = Some(FlowRuntimeId(flow.to_owned()));
     for iteration in 0..options.warmup + options.iterations {
-        let mut iteration_plan = plan.clone();
-        iteration_plan.entry_flow = Some(FlowRuntimeId(flow.to_owned()));
         let started = Instant::now();
         let trace = run_runtime_bench_steps(
-            iteration_plan,
+            selected_plan.clone(),
             Some(source_path),
             RuntimeStepRunConfig {
                 steps: options.steps,
