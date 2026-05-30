@@ -285,6 +285,7 @@ impl Engine {
                 self.advance_if_needed(next);
                 match self.evaluate_expr_with_backend(&source, pure_backend) {
                     Ok(RuntimeValue::BracketSeq(items)) => {
+                        let body = Arc::from(body);
                         self.push_for_next(pattern, items.into(), 0, &body);
                     }
                     Ok(value) => {
@@ -504,7 +505,7 @@ impl Engine {
         pattern: RuntimePattern,
         items: Arc<[RuntimeValue]>,
         index: usize,
-        body: &[FlowOp],
+        body: &Arc<[FlowOp]>,
     ) {
         let Some(item) = items.get(index).cloned() else {
             return;
@@ -517,9 +518,9 @@ impl Engine {
             pattern,
             items,
             index: index + 1,
-            body: body.to_owned(),
+            body: Arc::clone(body),
         };
-        self.push_borrowed_scoped_ops(body, Some(prefix), Some(tail));
+        self.push_borrowed_scoped_ops(body.as_ref(), Some(prefix), Some(tail));
     }
 
     fn push_owned_scoped_ops(&mut self, ops: Vec<FlowOp>, prefix: Option<FlowOp>) {

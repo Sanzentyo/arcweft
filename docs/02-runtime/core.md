@@ -40,6 +40,7 @@ pub enum FlowOp {
     WhileLet { pattern: RuntimePattern, expr: RuntimeExpr, guard: Option<RuntimeExpr>, body: Vec<FlowOp> },
     WhileLetNext { pattern: RuntimePattern, expr: RuntimeExpr, guard: Option<RuntimeExpr>, body: Vec<FlowOp> },
     For { pattern: RuntimePattern, source: RuntimeExpr, body: Vec<FlowOp> },
+    ForNext { pattern: RuntimePattern, items: Arc<[RuntimeValue]>, index: usize, body: Arc<[FlowOp]> },
     Scope(Vec<FlowOp>),
     LetScope { pattern: RuntimePattern, ops: Vec<FlowOp>, value: RuntimeExpr },
     Break(Option<RuntimeExpr>),

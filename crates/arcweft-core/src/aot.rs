@@ -228,8 +228,8 @@ impl AotProgramStats {
                 | FlowOp::WhileLet { body, .. }
                 | FlowOp::WhileLetNext { body, .. }
                 | FlowOp::For { body, .. }
-                | FlowOp::ForNext { body, .. }
                 | FlowOp::Thread { body, .. } => self.record_ops(body),
+                FlowOp::ForNext { body, .. } => self.record_ops(body),
                 FlowOp::Scope(ops) | FlowOp::LetScope { ops, .. } => self.record_ops(ops),
                 FlowOp::Bind(_)
                 | FlowOp::Let { .. }

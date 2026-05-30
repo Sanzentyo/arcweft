@@ -228,7 +228,10 @@ impl<'a> RuntimeTypeValidator<'a> {
                 expr, guard, body, ..
             } => self.validate_while_let_ops(path, expr, guard.as_ref(), body),
             FlowOp::For { source, body, .. } => self.validate_for_ops(path, source, body),
-            FlowOp::ForNext { body, .. } | FlowOp::Thread { body, .. } => {
+            FlowOp::ForNext { body, .. } => {
+                self.validate_ops(&format!("{path}.body"), body);
+            }
+            FlowOp::Thread { body, .. } => {
                 self.validate_ops(&format!("{path}.body"), body);
             }
             FlowOp::LetScope { ops, value, .. } => {

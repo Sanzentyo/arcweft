@@ -196,7 +196,7 @@ pub enum FlowOp {
         pattern: RuntimePattern,
         items: Arc<[RuntimeValue]>,
         index: usize,
-        body: Vec<FlowOp>,
+        body: Arc<[FlowOp]>,
     },
     Thread {
         name: Option<String>,
