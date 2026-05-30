@@ -430,6 +430,12 @@ impl Engine {
         executed_ops: usize,
     ) -> bool {
         if self.hard_stop_reason(output).is_some() {
+            if matches!(mode, RuntimeStepMode::Drain | RuntimeStepMode::Server)
+                && has_host_requests(output)
+                && (self.main_fiber_can_attempt_runtime_op() || self.has_runnable_child_fibers())
+            {
+                return false;
+            }
             return true;
         }
         match mode {
@@ -524,6 +530,13 @@ impl Engine {
             return RuntimeStepStopReason::BudgetExhausted;
         }
         RuntimeStepStopReason::OneOp
+    }
+
+    fn has_runnable_child_fibers(&self) -> bool {
+        self.child_fibers.iter().any(|child| {
+            matches!(child.status, FlowFiberStatus::Running)
+                && (child.cursor.is_some() || !child.pending_ops.is_empty())
+        })
     }
 }
 

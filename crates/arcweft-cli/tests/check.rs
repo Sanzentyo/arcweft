@@ -2367,7 +2367,7 @@ flow @flow.threads threads {
         .arg("--max-ops")
         .arg("1")
         .arg("--mode")
-        .arg("one-op")
+        .arg("drain")
         .arg("--json")
         .output()
         .expect("arcw bench measures flow thread scheduling");
@@ -2875,9 +2875,9 @@ flow @flow.threaded_reads threaded_reads effects { fs.read(save) } {
         .arg("--steps")
         .arg("16")
         .arg("--max-ops")
-        .arg("1")
+        .arg("16")
         .arg("--mode")
-        .arg("one-op")
+        .arg("drain")
         .arg("--json")
         .output()
         .expect("arcw bench runs threaded native reads");
@@ -2902,8 +2902,13 @@ flow @flow.threaded_reads threaded_reads effects { fs.read(save) } {
     assert_eq!(measurement["native_io"]["read_ops"], 2);
     assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 4);
     assert_eq!(measurement["native_io"]["scheduler"]["dispatched"], 4);
-    assert_eq!(measurement["native_io"]["scheduler"]["max_in_flight"], 1);
-    assert_eq!(measurement["native_io"]["parallel_batches"], 0);
+    assert_eq!(measurement["native_io"]["scheduler"]["max_in_flight"], 4);
+    assert!(
+        measurement["native_io"]["parallel_batches"]
+            .as_u64()
+            .is_some_and(|batches| batches >= 1),
+        "threaded native reads should expose parallel scheduler completion: {measurement}"
+    );
 }
 
 #[test]

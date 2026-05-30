@@ -101,7 +101,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   Bench regression coverage now includes a mixed flow with source-level
   `thread` child fibers and thread-local native file reads, so scheduler
   counters show both cooperative child-fiber markers and adapter-owned I/O
-  tasks in one path-free report.
+  tasks in one path-free report. Drain/server stepping can continue across
+  already-emitted host requests while runnable child fibers or the main fiber
+  can still produce more work, allowing sibling thread reads to reach the
+  native scheduler in the same host batch.
   `measure { pure(helper_name) }` sections additionally run the selected
   checked `#[pure] fn` helper through the VM reference, typed AOT plan, native
   Cranelift JIT, and JIT batch loop, reporting conformance, deterministic
