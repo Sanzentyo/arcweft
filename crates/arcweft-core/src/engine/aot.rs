@@ -51,8 +51,8 @@ impl Engine {
                 );
                 break;
             }
-            let next = cursor.advanced();
-            self.step_aot_linear_op(op, next, &mut output, pure_backend);
+            let next_op_index = cursor.op_index + 1;
+            self.step_aot_linear_op(op, next_op_index, &mut output, pure_backend);
             executed_ops += 1;
             if self.should_return_to_host(options.mode, &output, executed_ops) {
                 break;
@@ -110,18 +110,18 @@ impl Engine {
     fn step_aot_linear_op(
         &mut self,
         op: FlowOp,
-        next: super::FlowCursor,
+        next_op_index: usize,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) {
         match op {
             FlowOp::Bind(bindings) => {
                 self.fiber.env.bind_all(bindings);
-                self.fiber.cursor = Some(next);
+                self.advance_aot_linear_cursor(next_op_index);
             }
             FlowOp::Let { pattern, expr } => {
                 self.evaluate_let_with_backend(&pattern, &expr, output, pure_backend);
-                self.fiber.cursor = Some(next);
+                self.advance_aot_linear_cursor(next_op_index);
             }
             FlowOp::Return(value) => self.return_value(value, output),
             FlowOp::ReturnExpr(expr) => {
@@ -132,30 +132,30 @@ impl Engine {
             }
             FlowOp::Effect(effect) => {
                 output.effects.line.push(effect);
-                self.fiber.cursor = Some(next);
+                self.advance_aot_linear_cursor(next_op_index);
             }
             FlowOp::EnterScope => {
                 self.fiber.env.push_scope();
                 self.fiber.control_stack.push(super::FlowControlStackEntry {
                     kind: super::FlowControlStackEntryKind::Scope,
                 });
-                self.fiber.cursor = Some(next);
+                self.advance_aot_linear_cursor(next_op_index);
             }
             FlowOp::ExitScope => {
                 self.pop_scope_frame();
-                self.fiber.cursor = Some(next);
+                self.advance_aot_linear_cursor(next_op_index);
             }
             FlowOp::ExitScopeBind { pattern, expr } => {
                 match self.evaluate_expr_with_backend(&expr, pure_backend) {
                     Ok(value) => {
                         self.pop_scope_frame();
                         self.bind_value(&pattern, &value, output);
-                        self.fiber.cursor = Some(next);
+                        self.advance_aot_linear_cursor(next_op_index);
                     }
                     Err(error) => self.fail_eval(error, output),
                 }
             }
-            FlowOp::Noop => self.fiber.cursor = Some(next),
+            FlowOp::Noop => self.advance_aot_linear_cursor(next_op_index),
             FlowOp::LetElse { .. }
             | FlowOp::Dialogue { .. }
             | FlowOp::Choice { .. }
@@ -187,6 +187,12 @@ impl Engine {
                     message: "unsupported AOT linear operation reached executor".to_owned(),
                 });
             }
+        }
+    }
+
+    fn advance_aot_linear_cursor(&mut self, next_op_index: usize) {
+        if let Some(cursor) = self.fiber.cursor.as_mut() {
+            cursor.op_index = next_op_index;
         }
     }
 }

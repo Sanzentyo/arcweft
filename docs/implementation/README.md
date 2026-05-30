@@ -162,6 +162,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - VM and prechecked AOT stepping borrow the current cursor while fetching the
   next op and only clone the flow id when constructing the advanced cursor,
   avoiding an extra per-op cursor clone in the hot path.
+- Prechecked AOT linear stepping now advances the current flow cursor in place,
+  avoiding a per-op flow-id clone for straight-line VM-compatible operations.
 - AOT linear dispatch checks use that cursor index to read the corresponding
   AOT flow block directly, keeping the hot eligibility check aligned with the
   runtime-plan flow vector.
