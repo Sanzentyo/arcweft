@@ -1,3 +1,4 @@
+use crate::effect::LineEffectRequest;
 use crate::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
 
 /// Typed AOT compilation artifact for a runtime plan.
@@ -111,7 +112,7 @@ impl AotFlowBlock {
         let linear_prefix_ops = flow
             .ops
             .iter()
-            .take_while(|op| Self::op_is_linear_dispatch(op))
+            .take_while(|op| aot_linear_supported_op(op))
             .count();
         let dispatch = if linear_prefix_ops == flow.ops.len() {
             AotDispatchShape::Linear
@@ -125,45 +126,57 @@ impl AotFlowBlock {
             dispatch,
         }
     }
+}
 
-    fn op_is_linear_dispatch(op: &FlowOp) -> bool {
-        match op {
-            FlowOp::Bind(_)
-            | FlowOp::Let { .. }
-            | FlowOp::Dialogue { .. }
-            | FlowOp::Break(_)
-            | FlowOp::Continue
-            | FlowOp::Goto(_)
-            | FlowOp::GotoExpr(_)
-            | FlowOp::Return(_)
-            | FlowOp::ReturnExpr(_)
-            | FlowOp::Effect(_)
-            | FlowOp::EnterScope
-            | FlowOp::ExitScope
-            | FlowOp::ExitScopeBind { .. }
-            | FlowOp::Noop => true,
-            FlowOp::Scope(ops) | FlowOp::LetScope { ops, .. } => {
-                ops.iter().all(Self::op_is_linear_dispatch)
-            }
-            FlowOp::LetElse { .. }
-            | FlowOp::Choice { .. }
-            | FlowOp::Await { .. }
-            | FlowOp::AwaitMany { .. }
-            | FlowOp::If { .. }
-            | FlowOp::IfLet { .. }
-            | FlowOp::Match { .. }
-            | FlowOp::Loop { .. }
-            | FlowOp::LetLoop { .. }
-            | FlowOp::LoopNext { .. }
-            | FlowOp::While { .. }
-            | FlowOp::WhileNext { .. }
-            | FlowOp::WhileLet { .. }
-            | FlowOp::WhileLetNext { .. }
-            | FlowOp::For { .. }
-            | FlowOp::ForNext { .. }
-            | FlowOp::Thread { .. } => false,
-        }
+pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
+    match op {
+        FlowOp::Bind(_)
+        | FlowOp::Let { .. }
+        | FlowOp::Return(_)
+        | FlowOp::ReturnExpr(_)
+        | FlowOp::EnterScope
+        | FlowOp::ExitScope
+        | FlowOp::ExitScopeBind { .. }
+        | FlowOp::Noop => true,
+        FlowOp::Effect(effect) => !effect_changes_control(effect),
+        FlowOp::LetElse { .. }
+        | FlowOp::Dialogue { .. }
+        | FlowOp::Choice { .. }
+        | FlowOp::Await { .. }
+        | FlowOp::AwaitMany { .. }
+        | FlowOp::If { .. }
+        | FlowOp::IfLet { .. }
+        | FlowOp::Match { .. }
+        | FlowOp::Loop { .. }
+        | FlowOp::LetLoop { .. }
+        | FlowOp::LoopNext { .. }
+        | FlowOp::While { .. }
+        | FlowOp::WhileNext { .. }
+        | FlowOp::WhileLet { .. }
+        | FlowOp::WhileLetNext { .. }
+        | FlowOp::For { .. }
+        | FlowOp::ForNext { .. }
+        | FlowOp::Thread { .. }
+        | FlowOp::Scope(_)
+        | FlowOp::LetScope { .. }
+        | FlowOp::Break(_)
+        | FlowOp::Continue
+        | FlowOp::Goto(_)
+        | FlowOp::GotoExpr(_) => false,
     }
+}
+
+pub(crate) fn effect_changes_control(effect: &LineEffectRequest) -> bool {
+    matches!(
+        effect,
+        LineEffectRequest::Return(_)
+            | LineEffectRequest::Goto(_)
+            | LineEffectRequest::Panic(_)
+            | LineEffectRequest::Fail(_)
+            | LineEffectRequest::Bail(_)
+            | LineEffectRequest::Break { .. }
+            | LineEffectRequest::Continue { .. }
+    )
 }
 
 impl AotOpClass {

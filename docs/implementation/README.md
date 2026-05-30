@@ -164,6 +164,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - AOT linear dispatch checks use that cursor index to read the corresponding
   AOT flow block directly, keeping the hot eligibility check aligned with the
   runtime-plan flow vector.
+- AOT dispatch-shape planning and the prechecked linear executor share the same
+  supported-op predicate, so control-changing effects and branch/jump ops fall
+  back to the VM path instead of entering a fast path that would reject them.
 - `RuntimePlan` no longer constructs engine cursors. Engine initialization owns
   cursor construction from the flow-position map, keeping plan data independent
   of executor state while avoiding a second entry-flow scan.

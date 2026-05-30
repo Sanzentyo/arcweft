@@ -124,6 +124,42 @@ fn aot_executor_uses_fast_path_for_supported_linear_flow() {
 }
 
 #[test]
+fn aot_executor_falls_back_for_control_effect_flow() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![
+            RuntimeFlow {
+                id: FlowRuntimeId("flow.main".to_owned()),
+                ops: vec![
+                    FlowOp::Effect(LineEffectRequest::Goto("flow.next".to_owned())),
+                    FlowOp::Return("unreachable".to_owned()),
+                ],
+            },
+            RuntimeFlow {
+                id: FlowRuntimeId("flow.next".to_owned()),
+                ops: vec![FlowOp::Return("done".to_owned())],
+            },
+        ],
+        Vec::new(),
+    )
+    .expect("plan is valid");
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::Drain,
+        budget: RuntimeStepBudget { max_ops: 8 },
+    };
+    let mut vm = VmExecutor::new(plan.clone());
+    let mut aot = AotExecutor::new(plan);
+
+    assert_eq!(aot.program().flows()[0].dispatch, AotDispatchShape::Mixed);
+
+    let vm_result = vm.step(RuntimeStepInput::default(), options);
+    let aot_result = aot.step(RuntimeStepInput::default(), options);
+
+    assert_eq!(aot_result, vm_result);
+    assert_eq!(aot.fast_path_ops(), 0);
+}
+
+#[test]
 fn aot_executor_falls_back_for_branching_flow() {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.main".to_owned())),

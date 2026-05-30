@@ -2,8 +2,7 @@ use super::{
     Engine, FlowFiberStatus, FlowOp, RuntimeStepInput, RuntimeStepOptions, RuntimeStepOutput,
     RuntimeStepResult, RuntimeStepStats,
 };
-use crate::aot::{AotDispatchShape, AotProgram};
-use crate::effect::LineEffectRequest;
+use crate::aot::{AotDispatchShape, AotProgram, aot_linear_supported_op};
 use crate::pure::RuntimePureCallBackend;
 
 impl Engine {
@@ -190,55 +189,4 @@ impl Engine {
             }
         }
     }
-}
-
-fn aot_linear_supported_op(op: &FlowOp) -> bool {
-    match op {
-        FlowOp::Bind(_)
-        | FlowOp::Let { .. }
-        | FlowOp::Return(_)
-        | FlowOp::ReturnExpr(_)
-        | FlowOp::EnterScope
-        | FlowOp::ExitScope
-        | FlowOp::ExitScopeBind { .. }
-        | FlowOp::Noop => true,
-        FlowOp::Effect(effect) => !effect_changes_control(effect),
-        FlowOp::LetElse { .. }
-        | FlowOp::Dialogue { .. }
-        | FlowOp::Choice { .. }
-        | FlowOp::Await { .. }
-        | FlowOp::AwaitMany { .. }
-        | FlowOp::If { .. }
-        | FlowOp::IfLet { .. }
-        | FlowOp::Match { .. }
-        | FlowOp::Loop { .. }
-        | FlowOp::LetLoop { .. }
-        | FlowOp::LoopNext { .. }
-        | FlowOp::While { .. }
-        | FlowOp::WhileNext { .. }
-        | FlowOp::WhileLet { .. }
-        | FlowOp::WhileLetNext { .. }
-        | FlowOp::For { .. }
-        | FlowOp::ForNext { .. }
-        | FlowOp::Thread { .. }
-        | FlowOp::Scope(_)
-        | FlowOp::LetScope { .. }
-        | FlowOp::Break(_)
-        | FlowOp::Continue
-        | FlowOp::Goto(_)
-        | FlowOp::GotoExpr(_) => false,
-    }
-}
-
-fn effect_changes_control(effect: &LineEffectRequest) -> bool {
-    matches!(
-        effect,
-        LineEffectRequest::Return(_)
-            | LineEffectRequest::Goto(_)
-            | LineEffectRequest::Panic(_)
-            | LineEffectRequest::Fail(_)
-            | LineEffectRequest::Bail(_)
-            | LineEffectRequest::Break { .. }
-            | LineEffectRequest::Continue { .. }
-    )
 }
