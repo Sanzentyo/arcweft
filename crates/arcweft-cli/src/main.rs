@@ -2963,7 +2963,8 @@ fn measure_script_bench_runtime_pure_batch(
     if options.warmup > 0 {
         let mut warmup_accelerator =
             RuntimePureAccelerator::with_config(pure_config, std::slice::from_ref(&helper));
-        let rows = runtime_flat_batch_inputs(target, options.input_seed, 0, options.warmup);
+        let mut rows = Vec::with_capacity(options.warmup.saturating_mul(target.input_names.len()));
+        fill_runtime_flat_batch_inputs(&mut rows, target, options.input_seed, 0, options.warmup);
         let mut out = vec![0_i64; options.warmup];
         warmup_accelerator
             .call_i64_flat_batch(&helper, &rows, target.input_names.len(), &mut out)
@@ -2976,11 +2977,18 @@ fn measure_script_bench_runtime_pure_batch(
     let mut accelerator =
         RuntimePureAccelerator::with_config(pure_config, std::slice::from_ref(&helper));
     let mut elapsed = Vec::with_capacity(options.samples);
+    let mut rows = Vec::with_capacity(options.iterations.saturating_mul(target.input_names.len()));
+    let mut out = vec![0_i64; options.iterations];
     let mut accumulator = 0_i64;
     for sample in 0..options.samples {
-        let rows =
-            runtime_flat_batch_inputs(target, options.input_seed, sample, options.iterations);
-        let mut out = vec![0_i64; options.iterations];
+        fill_runtime_flat_batch_inputs(
+            &mut rows,
+            target,
+            options.input_seed,
+            sample,
+            options.iterations,
+        );
+        out.fill(0);
         let started = Instant::now();
         accelerator
             .call_i64_flat_batch(&helper, &rows, target.input_names.len(), &mut out)
@@ -3006,20 +3014,21 @@ fn measure_script_bench_runtime_pure_batch(
     })
 }
 
-fn runtime_flat_batch_inputs(
+fn fill_runtime_flat_batch_inputs(
+    inputs: &mut Vec<i64>,
     target: &JitCheckTarget,
     input_seed: u64,
     sample: usize,
     iterations: usize,
-) -> Vec<i64> {
+) {
     let arity = target.input_names.len();
-    let mut inputs = Vec::with_capacity(iterations.saturating_mul(arity));
+    inputs.clear();
+    inputs.reserve(iterations.saturating_mul(arity));
     for iteration in 0..iterations {
         inputs.extend_from_slice(
             &jit_check_input_array(input_seed, sample, iteration, arity)[..arity],
         );
     }
-    inputs
 }
 
 fn bench_pure_helper_name(section: &BenchSection) -> Option<String> {

@@ -588,6 +588,9 @@ Current high-confidence state:
 - Sequential AOT pure batches now reuse the accelerator-owned `i64` scratch
   slots instead of allocating a local scratch vector per batch. Parallel AOT
   batches keep thread-local scratch slots for worker isolation.
+- CLI runtime pure-helper batch measurements now reuse row-major input and
+  output scratch buffers across samples, keeping large JIT/AOT comparison runs
+  from adding per-sample benchmark-harness allocations.
 - Awaited `system.core_count()`, `system.thread_count()`, and
   `system.available_parallelism()` calls now lower to typed system-info task
   requests. The CLI adapter resolves physical cores, logical CPUs, and
