@@ -48,6 +48,8 @@ pub(crate) struct NativeSchedulerStats {
     pub(crate) max_in_flight: usize,
     pub(crate) dispatch_sorts: usize,
     pub(crate) dispatch_sort_items: usize,
+    pub(crate) completion_sorts: usize,
+    pub(crate) completion_sort_items: usize,
 }
 
 impl NativeTaskBridge {
@@ -392,6 +394,8 @@ impl From<RuntimeSchedulerStats> for NativeSchedulerStats {
             max_in_flight: stats.max_in_flight,
             dispatch_sorts: stats.dispatch_sorts,
             dispatch_sort_items: stats.dispatch_sort_items,
+            completion_sorts: stats.completion_sorts,
+            completion_sort_items: stats.completion_sort_items,
         }
     }
 }

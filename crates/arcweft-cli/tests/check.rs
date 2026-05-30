@@ -3082,6 +3082,11 @@ flow @flow.threads threads {
         measurement["native_io"]["scheduler"]["dispatch_sort_items"],
         0
     );
+    assert_eq!(measurement["native_io"]["scheduler"]["completion_sorts"], 0);
+    assert_eq!(
+        measurement["native_io"]["scheduler"]["completion_sort_items"],
+        0
+    );
     assert_eq!(measurement["native_io"]["completed_tasks"], 3);
     assert!(
         measurement["deterministic"]["child_fiber_ticks_median"]

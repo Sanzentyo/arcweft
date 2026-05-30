@@ -438,7 +438,8 @@ pub fn task_events_are_normalized(events: &[TaskEvent]) -> bool {
         .all(|pair| compare_task_events(&pair[0], &pair[1]).is_le())
 }
 
-fn compare_task_events(left: &TaskEvent, right: &TaskEvent) -> std::cmp::Ordering {
+/// Compares task events by replay-stable completion order.
+pub fn compare_task_events(left: &TaskEvent, right: &TaskEvent) -> std::cmp::Ordering {
     left.logical_epoch
         .cmp(&right.logical_epoch)
         .then_with(|| left.task_id.cmp(&right.task_id))

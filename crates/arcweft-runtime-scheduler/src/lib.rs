@@ -6,7 +6,7 @@
 
 use arcweft_core::task::{
     CancelScopeId, SchedulerBudget, TaskEvent, TaskEventKind, TaskId, TaskKey, TaskPolicy,
-    TaskSpec, normalize_task_events,
+    TaskSpec, compare_task_events, task_events_are_normalized,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -52,6 +52,8 @@ pub struct RuntimeSchedulerStats {
     pub max_in_flight: usize,
     pub dispatch_sorts: usize,
     pub dispatch_sort_items: usize,
+    pub completion_sorts: usize,
+    pub completion_sort_items: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -91,6 +93,8 @@ impl RuntimeScheduler {
                 max_in_flight: 0,
                 dispatch_sorts: 0,
                 dispatch_sort_items: 0,
+                completion_sorts: 0,
+                completion_sort_items: 0,
             },
         }
     }
@@ -139,14 +143,15 @@ impl RuntimeScheduler {
 
     /// Completes in-flight tasks and returns replay-normalized task events.
     pub fn complete(&mut self, events: impl IntoIterator<Item = TaskEvent>) -> Vec<TaskEvent> {
-        let mut events = normalize_task_events(events.into_iter().collect());
+        let mut events = events.into_iter().collect::<Vec<_>>();
+        self.normalize_completion_events(&mut events);
         let mut joined_events = Vec::new();
         for event in &events {
             joined_events.extend(self.complete_one(event));
         }
         if !joined_events.is_empty() {
             events.extend(joined_events);
-            events = normalize_task_events(events);
+            self.normalize_completion_events(&mut events);
         }
         self.refresh_in_flight_stats();
         events
@@ -239,6 +244,14 @@ impl RuntimeScheduler {
         self.stats.in_flight = self.in_flight.len();
         self.stats.max_in_flight = self.stats.max_in_flight.max(self.in_flight.len());
     }
+
+    fn normalize_completion_events(&mut self, events: &mut [TaskEvent]) {
+        if events.len() > 1 && !task_events_are_normalized(events) {
+            self.stats.completion_sorts += 1;
+            self.stats.completion_sort_items += events.len();
+            events.sort_by(compare_task_events);
+        }
+    }
 }
 
 impl Default for RuntimeScheduler {
@@ -314,6 +327,7 @@ mod tests {
         assert_eq!(scheduler.stats().joined, 2);
         assert_eq!(scheduler.stats().joined_completed, 2);
         assert_eq!(scheduler.stats().in_flight, 0);
+        assert_eq!(scheduler.stats().completion_sorts, 0);
     }
 
     #[test]
@@ -392,6 +406,8 @@ mod tests {
         assert_eq!(scheduler.stats().completed, 1);
         assert_eq!(scheduler.stats().failed, 1);
         assert_eq!(scheduler.stats().in_flight, 0);
+        assert_eq!(scheduler.stats().completion_sorts, 1);
+        assert_eq!(scheduler.stats().completion_sort_items, 2);
     }
 
     #[test]
