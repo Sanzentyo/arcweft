@@ -816,9 +816,10 @@ Current high-confidence state:
   borrow binding groups, type judgment counts, rule-family judgment counts,
   bounded judgment samples, borrow state snapshots/restores/merges, boundary
   checks, escape checks, and maximum active borrows.
-  Loop and source-handler local scopes restore only inserted or shadowed
-  bindings, so typecheck performance counters are not distorted by full local
-  environment clones at common scoped-binding boundaries.
+  Loop, source-handler, dialogue-line runtime, and child-task scopes restore
+  only inserted or shadowed bindings, so typecheck performance counters are not
+  distorted by full local environment clones at common scoped-binding
+  boundaries.
   Borrow-state release and branch merge avoid avoidable snapshot/state clones:
   dropping a borrowed local moves the tracked state out of the map before
   updating it, and merge call sites pass snapshot references instead of cloning

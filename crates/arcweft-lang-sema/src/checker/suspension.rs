@@ -209,7 +209,6 @@ impl TypeChecker<'_> {
         self.stats.borrow_state_cloned_bindings += self.borrow_local_lifetimes.len();
         TypeCheckerScopeSnapshot {
             borrow_local_lifetimes: self.borrow_local_lifetimes.clone(),
-            locals: self.locals.clone(),
             active_presentation_defaults: self.active_presentation_defaults.clone(),
             lifetime_guarantees: self.lifetime_guarantees.clone(),
             dropped_lifetime_keys: self.dropped_lifetime_keys.clone(),
@@ -221,7 +220,6 @@ impl TypeChecker<'_> {
         self.stats.borrow_state_restores += 1;
         self.borrow_local_lifetimes = snapshot.borrow_local_lifetimes;
         self.rebuild_active_borrows();
-        self.locals = snapshot.locals;
         self.active_presentation_defaults = snapshot.active_presentation_defaults;
         self.lifetime_guarantees = snapshot.lifetime_guarantees;
         self.dropped_lifetime_keys = snapshot.dropped_lifetime_keys;
@@ -230,8 +228,10 @@ impl TypeChecker<'_> {
 
     pub(super) fn with_line_runtime_scope<R>(&mut self, check: impl FnOnce(&mut Self) -> R) -> R {
         let snapshot = self.snapshot_runtime_scope();
-        self.available_lifetimes.push(LifetimeScopeKind::Line);
-        let output = check(self);
+        let output = self.with_local_mutation_scope(|checker| {
+            checker.available_lifetimes.push(LifetimeScopeKind::Line);
+            check(checker)
+        });
         self.restore_runtime_scope(snapshot);
         output
     }
@@ -242,11 +242,14 @@ impl TypeChecker<'_> {
         check: impl FnOnce(&mut Self) -> R,
     ) -> R {
         let snapshot = self.snapshot_runtime_scope();
-        if restrict_line_and_cue_lifetimes {
-            self.available_lifetimes
-                .retain(|scope| !matches!(scope, LifetimeScopeKind::Line | LifetimeScopeKind::Cue));
-        }
-        let output = check(self);
+        let output = self.with_local_mutation_scope(|checker| {
+            if restrict_line_and_cue_lifetimes {
+                checker.available_lifetimes.retain(|scope| {
+                    !matches!(scope, LifetimeScopeKind::Line | LifetimeScopeKind::Cue)
+                });
+            }
+            check(checker)
+        });
         self.restore_runtime_scope(snapshot);
         output
     }
