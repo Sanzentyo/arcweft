@@ -3151,6 +3151,52 @@ fn bench_json_measures_checked_in_thread_scheduling_fixture() {
 }
 
 #[test]
+fn bench_json_measures_checked_in_system_info_thread_fixture() {
+    let path = workspace_root()
+        .join("tests/fixtures/arcw/spec_should_pass/bench/004_system_info_threads.arcw");
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("1")
+        .arg("--warmup")
+        .arg("0")
+        .arg("--steps")
+        .arg("24")
+        .arg("--max-ops")
+        .arg("24")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--json")
+        .output()
+        .expect("arcw bench measures checked-in system info thread fixture");
+
+    assert!(
+        output.status.success(),
+        "checked-in system info thread bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&workspace_root().display().to_string()),
+        "system info thread bench JSON must not record the workspace path: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_eq!(measurement["deterministic"]["task_requests_median"], 6);
+    assert_eq!(measurement["deterministic"]["task_events_in_median"], 6);
+    assert_eq!(measurement["deterministic"]["max_child_fibers_median"], 3);
+    assert_eq!(measurement["native_io"]["system_info_ops"], 3);
+    assert_eq!(measurement["native_io"]["completed_tasks"], 6);
+    assert_eq!(measurement["native_io"]["parallel_marker_tasks"], 3);
+    assert_eq!(measurement["native_io"]["parallel_workers"], 6);
+    assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 6);
+    assert_eq!(measurement["native_io"]["scheduler"]["max_in_flight"], 6);
+    assert_eq!(measurement["native_io"]["scheduler"]["dispatch_sorts"], 0);
+}
+
+#[test]
 fn bench_json_measures_pure_helper_with_vm_aot_and_jit() {
     let path = temp_arcw(
         "script-bench-pure-helper",

@@ -503,6 +503,10 @@ Current high-confidence state:
   counters. The checked fixture regression also runs with a wide VM op budget
   so the native bridge must report a three-task scheduler batch with parallel
   marker completion and `max_in_flight = 3`.
+- `tests/fixtures/arcw/spec_should_pass/bench/004_system_info_threads.arcw`
+  adds a checked-in path-free native scheduling bench that runs three
+  `system.*` host requests inside source-level threads and records system info
+  task counts, worker fanout, and scheduler in-flight counters.
 - Runtime if-let/match guards, source handlers, stream pattern bodies, and
   await-many request templates now evaluate temporary bindings in environment
   scopes instead of cloning the full VM environment, reducing branch and

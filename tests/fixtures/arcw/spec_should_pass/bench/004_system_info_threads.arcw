@@ -1,0 +1,26 @@
+extern capability system {
+    type SystemError
+    fn core_count() -> Need<String, SystemError> effects { system.read }
+    fn thread_count() -> Need<String, SystemError> effects { system.read }
+    fn available_parallelism() -> Need<String, SystemError> effects { system.read }
+}
+
+bench @bench.system_threads {
+    measure iterations = 1 { start(@flow.system_threads) }
+}
+
+flow @flow.system_threads system_threads effects { system.read } {
+    thread cores {
+        let value = try await system.core_count() with { error e => return "core_failed" }
+        log.info(value)
+    }
+    thread threads {
+        let value = try await system.thread_count() with { error e => return "thread_failed" }
+        log.info(value)
+    }
+    thread available {
+        let value = try await system.available_parallelism() with { error e => return "available_failed" }
+        log.info(value)
+    }
+    return "done"
+}

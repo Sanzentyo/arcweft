@@ -21,6 +21,7 @@ cargo run -p arcweft-cli --quiet -- jit check --json --case accumulation-mix --i
 cargo run -p arcweft-cli --quiet -- jit check --json --case branch-mix --iterations 5000 --warmup 500 --samples 5 --input-seed 11 --julia
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command check --repeat 3 --json
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/001_thread_scheduling.arcw --json --iterations 10 --warmup 2 --samples 5 --steps 64 --max-ops 64
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/004_system_info_threads.arcw --json --iterations 1 --warmup 0 --steps 24 --max-ops 24 --mode drain
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/002_map_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/003_for_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 128 --max-ops 128 --pure-backend jit
 cargo run -p arcweft-cli --quiet -- profile tests/fixtures/arcw/spec_should_pass/bench/002_map_pure_jit.arcw --flow flow.map_pure --mode drain --steps 64 --max-ops 64 --pure-backend jit --json
@@ -44,6 +45,12 @@ Checked-in thread scheduling bench:
 | fixture | executor | iterations | steps | median elapsed ns | median executed ops | per executed op ns | median line effects | median task requests |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 001_thread_scheduling.arcw | bytecode_vm | 10 | 64 | 26600 | 19 | 1400 | 3 | 3 |
+
+Checked-in system-info threaded native scheduling bench:
+
+| fixture | executor | iterations | median elapsed ns | task requests | task events in | system info ops | scheduler submitted | scheduler max in-flight | parallel marker tasks |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 004_system_info_threads.arcw | bytecode_vm | 1 | 970700 | 6 | 6 | 3 | 6 | 6 | 3 |
 
 Checked-in map pure JIT bench:
 
