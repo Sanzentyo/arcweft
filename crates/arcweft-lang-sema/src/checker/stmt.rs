@@ -340,10 +340,7 @@ impl TypeChecker<'_> {
             self.check_stmt(stmt);
         }
         let then_state = self.snapshot_borrow_state();
-        self.merge_borrow_state_from_paths(
-            &borrow_snapshot,
-            &[borrow_snapshot.clone(), then_state],
-        );
+        self.merge_borrow_state_from_paths(&borrow_snapshot, &[&borrow_snapshot, &then_state]);
         self.locals = outer_locals;
     }
 
@@ -427,7 +424,8 @@ impl TypeChecker<'_> {
         if arm_states.is_empty() {
             self.restore_borrow_state(base_borrow_snapshot);
         } else {
-            self.merge_borrow_state_from_paths(&base_borrow_snapshot, &arm_states);
+            let arm_state_refs = arm_states.iter().collect::<Vec<_>>();
+            self.merge_borrow_state_from_paths(&base_borrow_snapshot, &arm_state_refs);
         }
     }
 

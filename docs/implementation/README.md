@@ -602,6 +602,10 @@ Current high-confidence state:
   Loop and source-handler local scopes restore only inserted or shadowed
   bindings, so typecheck performance counters are not distorted by full local
   environment clones at common scoped-binding boundaries.
+  Borrow-state release and branch merge avoid avoidable snapshot/state clones:
+  dropping a borrowed local moves the tracked state out of the map before
+  updating it, and merge call sites pass snapshot references instead of cloning
+  base snapshots just to describe branch paths.
 - `arcweft-verify` exposes `validate_runtime_plan_types(plan, report)` for the
   post-lowering runtime plan consumed by the VM. `arcw profile --json` now runs
   this pass between runtime-plan lowering and bytecode lowering and reports

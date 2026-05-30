@@ -148,7 +148,7 @@ impl TypeChecker<'_> {
         let else_state = self.snapshot_borrow_state();
         self.merge_borrow_state_from_paths(
             &borrow_snapshot,
-            &[borrow_snapshot.clone(), then_state, else_state],
+            &[&borrow_snapshot, &then_state, &else_state],
         );
         self.locals = outer_locals;
     }

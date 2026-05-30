@@ -32,7 +32,7 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn release_borrow_local(&mut self, name: &str) {
-        let Some(state) = self.borrow_local_lifetimes.get(name).cloned() else {
+        let Some(state) = self.borrow_local_lifetimes.remove(name) else {
             return;
         };
         match state {
@@ -57,6 +57,8 @@ impl TypeChecker<'_> {
                 self.errors.push(TypeCheckError::new(format!(
                     "borrowed local `{name}` was already dropped"
                 )));
+                self.borrow_local_lifetimes
+                    .insert(name.to_owned(), BorrowLocalState::Dropped);
             }
         }
     }
@@ -97,7 +99,7 @@ impl TypeChecker<'_> {
     pub(super) fn merge_borrow_state_from_paths(
         &mut self,
         base: &BorrowStateSnapshot,
-        paths: &[BorrowStateSnapshot],
+        paths: &[&BorrowStateSnapshot],
     ) {
         self.stats.borrow_state_merges += 1;
         let mut merged = HashMap::new();

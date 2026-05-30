@@ -1173,12 +1173,12 @@ impl TypeChecker<'_> {
         if else_branch.is_some() {
             self.merge_borrow_state_from_paths(
                 &base_borrow_snapshot,
-                &[then_borrow_state, else_borrow_state],
+                &[&then_borrow_state, &else_borrow_state],
             );
         } else {
             self.merge_borrow_state_from_paths(
                 &base_borrow_snapshot,
-                &[base_borrow_snapshot.clone(), then_borrow_state],
+                &[&base_borrow_snapshot, &then_borrow_state],
             );
         }
         match (then_type, else_type) {
@@ -1233,7 +1233,8 @@ impl TypeChecker<'_> {
             arms.iter()
                 .map(arcweft_lang_syntax::expr::MatchExprArm::pattern),
         );
-        self.merge_borrow_state_from_paths(&base_borrow_snapshot, &arm_states);
+        let arm_state_refs = arm_states.iter().collect::<Vec<_>>();
+        self.merge_borrow_state_from_paths(&base_borrow_snapshot, &arm_state_refs);
         inferred
     }
 
@@ -1265,12 +1266,12 @@ impl TypeChecker<'_> {
         if else_branch.is_some() {
             self.merge_borrow_state_from_paths(
                 &base_borrow_snapshot,
-                &[then_borrow_state, else_borrow_state],
+                &[&then_borrow_state, &else_borrow_state],
             );
         } else {
             self.merge_borrow_state_from_paths(
                 &base_borrow_snapshot,
-                &[base_borrow_snapshot.clone(), then_borrow_state],
+                &[&base_borrow_snapshot, &then_borrow_state],
             );
         }
         match (then_type, else_type) {
