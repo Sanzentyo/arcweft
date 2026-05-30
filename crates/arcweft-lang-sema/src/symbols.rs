@@ -822,7 +822,10 @@ fn collect_wait_target(target: &WaitTarget, uses: &mut Vec<SymbolUse>) {
 )]
 fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
     match expr {
-        Expr::Literal(_) | Expr::Placeholder(_) | Expr::LifetimePath { .. } => {}
+        Expr::Literal(_)
+        | Expr::Placeholder(_)
+        | Expr::LifetimePath { .. }
+        | Expr::NumericBracketSeq(_) => {}
         Expr::EntityRef(entity) => push_entity_syntax(uses, entity),
         Expr::Path(path) => uses.push(SymbolUse::new(SymbolUseKind::Path, path.clone())),
         Expr::Tuple(items) | Expr::BracketSeq(items) => {

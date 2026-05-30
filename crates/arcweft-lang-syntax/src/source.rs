@@ -1,7 +1,7 @@
 //! Parsed source container and line indexing.
 
 use crate::ast::items::TypedSyntaxTree;
-use crate::cst::SyntaxNode;
+use crate::cst::{SyntaxNode, SyntaxParseStats};
 use crate::parser::recovery::ParseError;
 use std::{fmt, sync::Arc};
 
@@ -16,6 +16,7 @@ pub struct ParsedSource {
     syntax: SyntaxNode,
     typed_tree: TypedSyntaxTree,
     errors: Vec<ParseError>,
+    syntax_stats: SyntaxParseStats,
     line_index: LineIndex,
     source_hash: SourceHash,
 }
@@ -46,6 +47,7 @@ impl ParsedSource {
         syntax: SyntaxNode,
         typed_tree: TypedSyntaxTree,
         errors: Vec<ParseError>,
+        syntax_stats: SyntaxParseStats,
     ) -> Self {
         let source_hash = SourceHash::new(&source);
         let line_index = LineIndex::new(&source);
@@ -54,6 +56,7 @@ impl ParsedSource {
             syntax,
             typed_tree,
             errors,
+            syntax_stats,
             line_index,
             source_hash,
         }
@@ -77,6 +80,11 @@ impl ParsedSource {
     /// Recoverable parse diagnostics.
     pub fn errors(&self) -> &[ParseError] {
         &self.errors
+    }
+
+    /// Path-free counters collected by the syntax parser.
+    pub const fn syntax_stats(&self) -> SyntaxParseStats {
+        self.syntax_stats
     }
 
     /// Line index for byte-offset diagnostics.

@@ -15,6 +15,7 @@ use arcweft_core::value::RuntimePayload;
 use arcweft_lang_sema::check::{
     TypeCheckReport, TypeCheckStats, TypeJudgment, TypeJudgmentRule, TypeJudgmentSubject,
 };
+use arcweft_lang_syntax::cst::SyntaxParseStats;
 use arcweft_runtime_plan::flow::lower_runtime_plan;
 use arcweft_runtime_plan::line_task::LoweredLineTaskGroup;
 use arcweft_test::{ScriptBench, ScriptTest};
@@ -29,6 +30,7 @@ pub(crate) struct CheckReport {
     pub(crate) flows: usize,
     pub(crate) line_task_groups: usize,
     pub(crate) syntax_warnings: usize,
+    pub(crate) syntax: SyntaxProfileStats,
     pub(crate) typecheck: TypeCheckProfileStats,
     pub(crate) borrow_check: BorrowCheckProfileStats,
     pub(crate) phases: Vec<RuntimeProfilePhase>,
@@ -132,6 +134,7 @@ impl CheckReport {
             flows: checked.hir.flows().len(),
             line_task_groups: checked.line_task_groups.len(),
             syntax_warnings: checked.syntax_warnings,
+            syntax: SyntaxProfileStats::from(checked.syntax_stats),
             typecheck: TypeCheckProfileStats::from(&checked.typecheck_report),
             borrow_check: BorrowCheckProfileStats::from(&checked.typecheck_report.stats),
             phases: checked.phases.clone(),
@@ -411,11 +414,43 @@ pub(crate) struct ScriptBenchRunReport {
 
 #[derive(serde::Serialize)]
 pub(crate) struct RuntimeProfileCompiler {
+    pub(crate) syntax: SyntaxProfileStats,
     pub(crate) typecheck: TypeCheckProfileStats,
     pub(crate) borrow_check: BorrowCheckProfileStats,
     pub(crate) runtime_type_validation: RuntimeTypeValidationProfileStats,
     pub(crate) bytecode: BytecodeProfileStats,
     pub(crate) aot: AotProfileStats,
+}
+
+#[derive(Clone, Copy, serde::Serialize)]
+pub(crate) struct SyntaxProfileStats {
+    pub(crate) cst_lex_passes: usize,
+    pub(crate) punctuation_scans: usize,
+    pub(crate) punctuation_scan_bytes: usize,
+    pub(crate) line_owned_bytes: usize,
+    pub(crate) block_owned_bytes: usize,
+    pub(crate) raw_owned_bytes: usize,
+    pub(crate) wiki_scan_performed: usize,
+    pub(crate) dot_normalization_owned: usize,
+    pub(crate) dialogue_rescue_expr_parse_attempts: usize,
+    pub(crate) numeric_seq_summaries: usize,
+}
+
+impl From<SyntaxParseStats> for SyntaxProfileStats {
+    fn from(stats: SyntaxParseStats) -> Self {
+        Self {
+            cst_lex_passes: stats.cst_lex_passes,
+            punctuation_scans: stats.punctuation_scans,
+            punctuation_scan_bytes: stats.punctuation_scan_bytes,
+            line_owned_bytes: stats.line_owned_bytes,
+            block_owned_bytes: stats.block_owned_bytes,
+            raw_owned_bytes: stats.raw_owned_bytes,
+            wiki_scan_performed: stats.wiki_scan_performed,
+            dot_normalization_owned: stats.dot_normalization_owned,
+            dialogue_rescue_expr_parse_attempts: stats.dialogue_rescue_expr_parse_attempts,
+            numeric_seq_summaries: stats.numeric_seq_summaries,
+        }
+    }
 }
 
 #[derive(Clone, serde::Serialize)]

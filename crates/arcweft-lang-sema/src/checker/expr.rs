@@ -50,7 +50,26 @@ impl TypeChecker<'_> {
         expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
         self.stats.expressions += 1;
-        let ty = match expr {
+        let ty = self.check_expr_kind_with_expected(expr, expected);
+        if let Some(ty) = ty.as_ref() {
+            self.record_type_judgment(
+                TypeJudgmentSubject::Expr {
+                    kind: expr_kind_name(expr).to_owned(),
+                },
+                expected.map_or(TypeJudgmentRule::Expr, |_| TypeJudgmentRule::Expected),
+                ty.clone(),
+                expected,
+            );
+        }
+        ty
+    }
+
+    fn check_expr_kind_with_expected(
+        &mut self,
+        expr: &Expr,
+        expected: Option<&TypeKind>,
+    ) -> Option<TypeKind> {
+        match expr {
             Expr::Literal(literal) => Some(self.check_literal_expr(literal, expected)),
             Expr::EntityRef(entity) => self.check_entity_ref_expr(entity),
             Expr::LifetimePath { key, optional } => self.check_lifetime_path_expr(key, *optional),
@@ -58,6 +77,9 @@ impl TypeChecker<'_> {
             Expr::Placeholder(_) => None,
             Expr::Tuple(items) => Some(self.check_tuple_expr(items)),
             Expr::BracketSeq(items) => Some(self.check_bracket_seq_with_expected(items, expected)),
+            Expr::NumericBracketSeq(seq) => {
+                Some(self.check_numeric_bracket_seq_summary(seq, expected))
+            }
             Expr::ArrayRepeat { value, len } => {
                 Some(self.check_array_repeat_expr(value, len, expected))
             }
@@ -135,18 +157,7 @@ impl TypeChecker<'_> {
                 )));
                 None
             }
-        };
-        if let Some(ty) = ty.as_ref() {
-            self.record_type_judgment(
-                TypeJudgmentSubject::Expr {
-                    kind: expr_kind_name(expr).to_owned(),
-                },
-                expected.map_or(TypeJudgmentRule::Expr, |_| TypeJudgmentRule::Expected),
-                ty.clone(),
-                expected,
-            );
         }
-        ty
     }
 
     fn check_closure_expr(&mut self, params: &[String], body: &Expr) -> Option<TypeKind> {
@@ -392,6 +403,47 @@ impl TypeChecker<'_> {
             }
         }
         item_type.unwrap_or(TypeKind::Unit)
+    }
+
+    fn check_numeric_bracket_seq_summary(
+        &mut self,
+        seq: &arcweft_lang_syntax::expr::NumericBracketSeq,
+        expected: Option<&TypeKind>,
+    ) -> TypeKind {
+        let expected_item = match expected {
+            Some(TypeKind::Array { item, .. } | TypeKind::Vec(item)) => Some(item.as_ref()),
+            _ => None,
+        };
+        let item_type = if let Some(suffix) = seq.suffix() {
+            let ty = if let Some(ty) = numeric_literal_suffix_type(Some(suffix)) {
+                ty
+            } else {
+                self.errors.push(TypeCheckError::new(format!(
+                    "unknown integer literal suffix `{suffix}`"
+                )));
+                TypeKind::Named("_".to_owned())
+            };
+            if ty.is_integer() || is_unit_number_type(&ty) {
+                ty
+            } else {
+                self.errors.push(TypeCheckError::new(format!(
+                    "integer literal suffix must be an integer type, found {ty:?}"
+                )));
+                TypeKind::Named("_".to_owned())
+            }
+        } else if let Some(expected_item) = expected_item.filter(|ty| ty.is_integer()) {
+            expected_item.clone()
+        } else if let Some(expected) = expected
+            && let Some(ty) = unique_numeric_choice_alternative(expected, TypeKind::is_integer)
+        {
+            ty
+        } else {
+            self.errors.push(TypeCheckError::new(
+                "unsuffixed integer sequence literal requires an expected integer type".to_owned(),
+            ));
+            TypeKind::Named("_".to_owned())
+        };
+        self.finish_bracket_seq_type(seq.len(), item_type, expected)
     }
 
     fn check_numeric_bracket_seq_fast_path(
@@ -1662,6 +1714,7 @@ fn expr_kind_name(expr: &Expr) -> &'static str {
         Expr::Placeholder(_) => "placeholder",
         Expr::Tuple(_) => "tuple",
         Expr::BracketSeq(_) => "bracket_seq",
+        Expr::NumericBracketSeq(_) => "numeric_bracket_seq",
         Expr::ArrayRepeat { .. } => "array_repeat",
         Expr::Call { .. } => "call",
         Expr::MethodCall { .. } => "method_call",

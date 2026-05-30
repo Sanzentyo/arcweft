@@ -27,6 +27,7 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
         Expr::Path(path) => RuntimeExpr::Local(path.clone()),
         Expr::Tuple(items) => RuntimeExpr::Tuple(items.iter().map(lower_runtime_expr).collect()),
         Expr::BracketSeq(items) => lower_runtime_bracket_seq(items),
+        Expr::NumericBracketSeq(seq) => lower_runtime_numeric_bracket_seq(seq),
         Expr::ArrayRepeat { value, len } => lower_runtime_array_repeat(value, len),
         Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => RuntimeExpr::Record(
             fields
@@ -122,6 +123,7 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
             .collect::<Result<Vec<_>, _>>()
             .map(RuntimeExpr::Tuple),
         Expr::BracketSeq(items) => lower_runtime_bracket_seq_strict(items),
+        Expr::NumericBracketSeq(seq) => Ok(lower_runtime_numeric_bracket_seq(seq)),
         Expr::ArrayRepeat { value, len } => lower_runtime_array_repeat_strict(value, len),
         Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => fields
             .iter()
@@ -203,6 +205,18 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
 fn lower_runtime_bracket_seq(items: &[Expr]) -> RuntimeExpr {
     let lowered = items.iter().map(lower_runtime_expr).collect::<Vec<_>>();
     fold_value_sequence(lowered)
+}
+
+fn lower_runtime_numeric_bracket_seq(
+    seq: &arcweft_lang_hir::syntax::expr::NumericBracketSeq,
+) -> RuntimeExpr {
+    RuntimeExpr::Value(RuntimeValue::BracketSeq(
+        seq.values()
+            .iter()
+            .copied()
+            .map(RuntimeValue::Int)
+            .collect(),
+    ))
 }
 
 fn lower_runtime_bracket_seq_strict(items: &[Expr]) -> Result<RuntimeExpr, String> {

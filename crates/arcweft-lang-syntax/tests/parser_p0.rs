@@ -204,15 +204,13 @@ fn large_flat_literal_sequences_parse_as_bracket_seq() {
         .collect::<Vec<_>>()
         .join(", ");
     let expr = parse_expr(&format!("[{values}]")).expect("large literal sequence parses");
-    let Expr::BracketSeq(items) = expr else {
-        panic!("expected bracket sequence");
+    let Expr::NumericBracketSeq(seq) = expr else {
+        panic!("expected numeric bracket sequence");
     };
-    assert_eq!(items.len(), 128);
-    assert!(
-        items
-            .iter()
-            .all(|item| matches!(item, Expr::Literal(Literal::Int { .. })))
-    );
+    assert_eq!(seq.len(), 128);
+    assert_eq!(seq.suffix(), Some("i64"));
+    assert_eq!(seq.values()[0], 0);
+    assert_eq!(seq.values()[127], 127);
 
     let repeat = parse_expr("[0i64; 4]").expect("array repeat still parses");
     assert!(matches!(repeat, Expr::ArrayRepeat { .. }));
@@ -221,9 +219,12 @@ fn large_flat_literal_sequences_parse_as_bracket_seq() {
     assert!(matches!(
         indexed,
         Expr::Index { target, index }
-            if matches!(target.as_ref(), Expr::BracketSeq(_))
+            if matches!(target.as_ref(), Expr::NumericBracketSeq(_))
                 && matches!(index.as_ref(), Expr::Literal(Literal::Int { .. }))
     ));
+
+    let mixed = parse_expr("[1i64, false]").expect("mixed sequence falls back");
+    assert!(matches!(mixed, Expr::BracketSeq(_)));
 }
 
 #[test]

@@ -1567,6 +1567,7 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
         syntax_warnings: compiled.syntax_warnings,
         line_task_groups: compiled.line_task_groups,
         compiler: RuntimeProfileCompiler {
+            syntax: compiled.syntax_stats.into(),
             typecheck: TypeCheckProfileStats::from(&compiled.typecheck_report),
             borrow_check: BorrowCheckProfileStats::from(&compiled.typecheck_report.stats),
             runtime_type_validation: RuntimeTypeValidationProfileStats::from(
@@ -1606,6 +1607,7 @@ struct ProfileCompiledRuntimePlan {
     hir: arcweft_lang_hir::model::HirModule,
     plan: RuntimePlan,
     syntax_warnings: usize,
+    syntax_stats: arcweft_lang_syntax::cst::SyntaxParseStats,
     line_task_groups: usize,
     typecheck_report: TypeCheckReport,
     runtime_type_validation_stats: RuntimeTypeValidationStats,
@@ -1642,6 +1644,7 @@ fn compile_profile_runtime_plan(
         }
         return Err(ExitCode::FAILURE);
     }
+    let syntax_stats = parsed.syntax_stats();
     let tree = parsed.into_typed_tree();
     let syntax_warnings = run_profile_phase(phases, "lint", || {
         Ok::<usize, ExitCode>(lint_id_policy(&tree).len())
@@ -1691,6 +1694,7 @@ fn compile_profile_runtime_plan(
         hir,
         plan,
         syntax_warnings,
+        syntax_stats,
         line_task_groups: line_task_groups.len(),
         typecheck_report,
         runtime_type_validation_stats,
@@ -2847,6 +2851,7 @@ fn script_bench_selection(
         syntax_warnings: compiled.syntax_warnings,
         line_task_groups: compiled.line_task_groups,
         compiler: RuntimeProfileCompiler {
+            syntax: compiled.syntax_stats.into(),
             typecheck: TypeCheckProfileStats::from(&compiled.typecheck_report),
             borrow_check: BorrowCheckProfileStats::from(&compiled.typecheck_report.stats),
             runtime_type_validation: RuntimeTypeValidationProfileStats::from(
@@ -4175,6 +4180,7 @@ struct CheckedModule {
     hir: arcweft_lang_hir::model::HirModule,
     env: TypeCheckEnv,
     syntax_warnings: usize,
+    syntax_stats: arcweft_lang_syntax::cst::SyntaxParseStats,
     line_task_groups: Vec<LoweredLineTaskGroup>,
     typecheck_report: TypeCheckReport,
     phases: Vec<RuntimeProfilePhase>,
@@ -4206,6 +4212,7 @@ fn load_and_check_with_env(path: &Path, env: &TypeCheckEnv) -> Result<CheckedMod
         return Err(ExitCode::FAILURE);
     }
 
+    let syntax_stats = parsed.syntax_stats();
     let tree = parsed.into_typed_tree();
     let lints = run_profile_phase(&mut phases, "lint", || {
         Ok::<Vec<arcweft_lang_syntax::lint::SyntaxLint>, ExitCode>(lint_id_policy(&tree))
@@ -4231,6 +4238,7 @@ fn load_and_check_with_env(path: &Path, env: &TypeCheckEnv) -> Result<CheckedMod
         hir,
         env: env.clone(),
         syntax_warnings: lints.len(),
+        syntax_stats,
         line_task_groups,
         typecheck_report,
         phases,

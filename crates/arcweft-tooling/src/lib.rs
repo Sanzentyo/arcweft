@@ -1185,6 +1185,7 @@ fn collect_speaker_presets_from_expr(
         | Expr::LifetimePath { .. }
         | Expr::Path(_)
         | Expr::Placeholder(_)
+        | Expr::NumericBracketSeq(_)
         | Expr::Raw(_) => {}
     }
 }

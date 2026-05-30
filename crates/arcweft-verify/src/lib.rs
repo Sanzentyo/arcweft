@@ -979,7 +979,11 @@ impl ObligationCollector {
     )]
     fn collect_expr(&mut self, expr: &Expr) {
         match expr {
-            Expr::Literal(_) | Expr::Path(_) | Expr::Placeholder(_) | Expr::Raw(_) => {
+            Expr::Literal(_)
+            | Expr::Path(_)
+            | Expr::Placeholder(_)
+            | Expr::NumericBracketSeq(_)
+            | Expr::Raw(_) => {
                 if let Expr::Raw(raw) = expr {
                     self.add_raw_obligation(format!("raw expression: {raw}"), None);
                 }

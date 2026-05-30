@@ -17,13 +17,14 @@ use crate::ast::{
     pattern::Pattern,
 };
 use crate::cst::{
-    collect_wiki_link_ranges, split_top_level_keyword_once, split_top_level_punctuation,
-    split_top_level_punctuation_once,
+    collect_wiki_link_ranges, punctuation_deltas, split_top_level_keyword_once,
+    split_top_level_punctuation, split_top_level_punctuation_once,
 };
 use crate::cst::{find_matching_punctuation, find_top_level_punctuation};
 use crate::expr::{ComputationBlockKind, Expr, parse_expr};
 use crate::pattern::parse_pattern;
 use crate::types::parse_type_ref;
+use std::borrow::Cow;
 
 pub(super) enum OptionalLabel {
     None,
@@ -119,6 +120,9 @@ pub(super) fn source_take(parser: &mut Parser) -> String {
 }
 
 pub(super) fn collect_wiki_links(source: &str) -> Vec<WikiLink> {
+    if !source.contains("[[") {
+        return Vec::new();
+    }
     collect_wiki_link_ranges(source)
         .into_iter()
         .map(|(body, start, end)| WikiLink::new(body.to_owned(), TextRange::new(start, end)))
@@ -285,9 +289,8 @@ pub(super) fn collect_logical_block_items(body: &str) -> Vec<String> {
             current.push('\n');
         }
         current.push_str(raw_line);
-        depth += crate::cst::punctuation_delta(raw_line, '{', '}');
-        depth += crate::cst::punctuation_delta(raw_line, '(', ')');
-        depth += crate::cst::punctuation_delta(raw_line, '[', ']');
+        let deltas = punctuation_deltas(raw_line);
+        depth += deltas.brace + deltas.paren + deltas.bracket;
         if depth <= 0 {
             lines.push(core::mem::take(&mut current));
             depth = 0;
@@ -453,10 +456,13 @@ pub(super) fn parse_expr_lossy(source: &str) -> crate::expr::Expr {
     parse_expr(source).unwrap_or_else(|_| crate::expr::Expr::Raw(source.to_owned()))
 }
 
-fn normalize_dot_continuations(source: &str) -> String {
+fn normalize_dot_continuations(source: &str) -> Cow<'_, str> {
+    if !source.contains('\n') && !source.contains('\r') {
+        return Cow::Borrowed(source);
+    }
     let mut lines = source.lines();
     let Some(first) = lines.next() else {
-        return String::new();
+        return Cow::Borrowed("");
     };
     let mut normalized = first.trim().to_owned();
     for line in lines {
@@ -468,7 +474,7 @@ fn normalize_dot_continuations(source: &str) -> String {
             normalized.push_str(trimmed);
         }
     }
-    normalized
+    Cow::Owned(normalized)
 }
 
 fn parse_static_generic_call(source: &str) -> Option<crate::expr::Expr> {

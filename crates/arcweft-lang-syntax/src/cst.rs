@@ -50,7 +50,45 @@ pub struct CstLine {
     pub(crate) text: String,
     pub(crate) start: usize,
     pub(crate) end: usize,
+    punctuation: CstLinePunctuationSummary,
     kind: CstLineKind,
+}
+
+/// Path-free syntax parser counters used by profiling and benchmarks.
+///
+/// These fields are stable and always present. Default parsing updates only
+/// counters that are available as by-products of normal parser work; fields
+/// that would require timing, tracing, or extra scans remain zero until a
+/// detailed instrumentation mode is added.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SyntaxParseStats {
+    pub cst_lex_passes: usize,
+    pub punctuation_scans: usize,
+    pub punctuation_scan_bytes: usize,
+    pub line_owned_bytes: usize,
+    pub block_owned_bytes: usize,
+    pub raw_owned_bytes: usize,
+    pub wiki_scan_performed: usize,
+    pub dot_normalization_owned: usize,
+    pub dialogue_rescue_expr_parse_attempts: usize,
+    pub numeric_seq_summaries: usize,
+}
+
+/// Per-line punctuation depth summary computed once while projecting CST lines.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct CstLinePunctuationSummary {
+    brace_delta: i32,
+    paren_delta: i32,
+    bracket_delta: i32,
+    has_top_level_brace_open: bool,
+}
+
+/// Open-minus-close depth deltas for all bracket families in one scan.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct CstPunctuationDeltas {
+    pub(crate) brace: i32,
+    pub(crate) paren: i32,
+    pub(crate) bracket: i32,
 }
 
 /// Parsed `=== ... ===` fence used by flat dialogue and scope sugar.
@@ -246,7 +284,10 @@ pub(crate) struct CstBlockEvent {
 /// keeps the current line-event bridge explicit while later parser work moves
 /// toward grammar-level rowan events.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct CstLineEvents(Vec<CstLine>);
+pub struct CstLineEvents {
+    lines: Vec<CstLine>,
+    stats: SyntaxParseStats,
+}
 
 /// Arcweft CST node and token kinds.
 #[repr(u16)]
@@ -329,34 +370,50 @@ pub fn cst_lines(root: &SyntaxNode) -> CstLineEvents {
 
 impl From<&SyntaxNode> for CstLineEvents {
     fn from(root: &SyntaxNode) -> Self {
-        Self(
-            root.children()
-                .filter(|node| node.kind() == SyntaxKind::Line)
-                .map(|node| CstLine::from_node(&node))
-                .collect(),
-        )
+        let lines = root
+            .children()
+            .filter(|node| node.kind() == SyntaxKind::Line)
+            .map(|node| CstLine::from_node(&node))
+            .collect::<Vec<_>>();
+        let line_owned_bytes = lines.iter().map(|line| line.text.len()).sum();
+        let punctuation_scan_bytes = line_owned_bytes;
+        Self {
+            stats: SyntaxParseStats {
+                cst_lex_passes: 1,
+                punctuation_scans: lines.len(),
+                punctuation_scan_bytes,
+                line_owned_bytes,
+                ..SyntaxParseStats::default()
+            },
+            lines,
+        }
     }
 }
 
 impl CstLineEvents {
     /// Number of projected line events.
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.lines.len()
     }
 
     /// Returns true when the source has no non-empty CST line events.
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.lines.is_empty()
     }
 
     /// Iterates over projected CST line events.
     pub fn iter(&self) -> impl Iterator<Item = &CstLine> {
-        self.0.iter()
+        self.lines.iter()
     }
 
     /// Returns a line event by index.
     pub fn get(&self, index: usize) -> Option<&CstLine> {
-        self.0.get(index)
+        self.lines.get(index)
+    }
+
+    /// Path-free counters collected while projecting CST lines.
+    pub const fn stats(&self) -> SyntaxParseStats {
+        self.stats
     }
 
     /// Collects a balanced brace block beginning at a line-event index.
@@ -384,16 +441,15 @@ impl CstLineEvents {
             end = line.end;
             if matches!(rule, CstBlockOpenRule::FunctionBody)
                 && (trimmed == "{"
-                    || line_has_unclosed_top_level_open(trimmed)
-                    || (looks_like_function_item(trimmed)
-                        && find_top_level_punctuation(trimmed, '{').is_some()))
+                    || line.has_unclosed_top_level_brace_open()
+                    || (looks_like_function_item(trimmed) && line.has_top_level_brace_open()))
             {
                 seen_body_open = true;
             }
-            if find_top_level_punctuation(&line.text, '{').is_some() {
+            if line.has_top_level_brace_open() {
                 seen_open = true;
             }
-            depth += punctuation_delta(&line.text, '{', '}');
+            depth += line.brace_delta();
             index += 1;
             if block_event_is_complete(rule, seen_open, seen_body_open, depth) {
                 break;
@@ -464,7 +520,7 @@ impl Index<usize> for CstLineEvents {
     type Output = CstLine;
 
     fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
+        &self.lines[index]
     }
 }
 
@@ -481,10 +537,12 @@ impl CstLine {
             end -= 1;
         }
         let kind = classify_line(&text);
+        let punctuation = CstLinePunctuationSummary::from_node(node);
         Self {
             text,
             start,
             end,
+            punctuation,
             kind,
         }
     }
@@ -543,6 +601,70 @@ impl CstLine {
     /// End byte offset before the line terminator.
     pub const fn end(&self) -> usize {
         self.end
+    }
+
+    pub(crate) const fn brace_delta(&self) -> i32 {
+        self.punctuation.brace_delta
+    }
+
+    pub(crate) const fn has_top_level_brace_open(&self) -> bool {
+        self.punctuation.has_top_level_brace_open
+    }
+
+    pub(crate) const fn has_unclosed_top_level_brace_open(&self) -> bool {
+        self.punctuation.has_top_level_brace_open && self.punctuation.brace_delta > 0
+    }
+}
+
+impl CstLinePunctuationSummary {
+    fn from_node(node: &SyntaxNode) -> Self {
+        let mut summary = Self::default();
+        let mut paren = 0usize;
+        let mut square = 0usize;
+        let mut brace = 0usize;
+        let mut angle = 0usize;
+
+        for token in node
+            .children_with_tokens()
+            .filter_map(rowan::NodeOrToken::into_token)
+        {
+            if token.kind() != SyntaxKind::Punctuation {
+                continue;
+            }
+            if token.text() == "{" && paren == 0 && square == 0 && brace == 0 && angle == 0 {
+                summary.has_top_level_brace_open = true;
+            }
+            match token.text() {
+                "{" => {
+                    summary.brace_delta += 1;
+                    brace += 1;
+                }
+                "}" => {
+                    summary.brace_delta -= 1;
+                    brace = brace.saturating_sub(1);
+                }
+                "(" => {
+                    summary.paren_delta += 1;
+                    paren += 1;
+                }
+                ")" => {
+                    summary.paren_delta -= 1;
+                    paren = paren.saturating_sub(1);
+                }
+                "[" => {
+                    summary.bracket_delta += 1;
+                    square += 1;
+                }
+                "]" => {
+                    summary.bracket_delta -= 1;
+                    square = square.saturating_sub(1);
+                }
+                "<" => angle += 1,
+                ">" => angle = angle.saturating_sub(1),
+                _ => {}
+            }
+        }
+        summary
     }
 }
 
@@ -1024,9 +1146,7 @@ fn block_event_is_complete(
 fn flow_line_starts_body(line: &CstLine, is_first_line: bool) -> bool {
     let trimmed = line.trimmed();
     trimmed == "{"
-        || (is_first_line
-            && find_top_level_punctuation(trimmed, '{').is_some()
-            && !trimmed.starts_with("effects"))
+        || (is_first_line && line.has_top_level_brace_open() && !trimmed.starts_with("effects"))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1072,6 +1192,15 @@ impl<'a> CstToken<'a> {
     pub(crate) const fn end(&self) -> usize {
         self.end
     }
+
+    pub(crate) fn text_starts_with(&self, value: char) -> bool {
+        token_text_is(self.text, value)
+    }
+}
+
+fn token_text_is(text: &str, value: char) -> bool {
+    let mut chars = text.chars();
+    chars.next() == Some(value) && chars.next().is_none()
 }
 
 /// Finds the close punctuation matching an opening punctuation token.
@@ -1086,8 +1215,6 @@ pub(crate) fn find_matching_punctuation(
     close: char,
 ) -> Option<usize> {
     let mut depth = 0usize;
-    let open = open.encode_utf8(&mut [0; 4]).to_owned();
-    let close = close.encode_utf8(&mut [0; 4]).to_owned();
     for token in lex_cst(source) {
         if token.kind() != SyntaxKind::Punctuation {
             continue;
@@ -1095,9 +1222,9 @@ pub(crate) fn find_matching_punctuation(
         if token.start() < open_offset {
             continue;
         }
-        if token.text() == open {
+        if token.text_starts_with(open) {
             depth += 1;
-        } else if token.text() == close {
+        } else if token.text_starts_with(close) {
             depth = depth.checked_sub(1)?;
             if depth == 0 {
                 return Some(token.start());
@@ -1114,16 +1241,32 @@ pub(crate) fn find_matching_punctuation(
 /// structure. Callers use this for multiline recovery while the full parser is
 /// still consuming line events.
 pub(crate) fn punctuation_delta(source: &str, open: char, close: char) -> i32 {
-    let open = open.encode_utf8(&mut [0; 4]).to_owned();
-    let close = close.encode_utf8(&mut [0; 4]).to_owned();
-
     lex_cst(source)
         .into_iter()
         .filter(|token| token.kind() == SyntaxKind::Punctuation)
         .fold(0, |depth, token| match token.text() {
-            text if text == open => depth + 1,
-            text if text == close => depth - 1,
+            text if token_text_is(text, open) => depth + 1,
+            text if token_text_is(text, close) => depth - 1,
             _ => depth,
+        })
+}
+
+/// Computes all bracket-family depth deltas in one token scan.
+pub(crate) fn punctuation_deltas(source: &str) -> CstPunctuationDeltas {
+    lex_cst(source)
+        .into_iter()
+        .filter(|token| token.kind() == SyntaxKind::Punctuation)
+        .fold(CstPunctuationDeltas::default(), |mut deltas, token| {
+            match token.text() {
+                "{" => deltas.brace += 1,
+                "}" => deltas.brace -= 1,
+                "(" => deltas.paren += 1,
+                ")" => deltas.paren -= 1,
+                "[" => deltas.bracket += 1,
+                "]" => deltas.bracket -= 1,
+                _ => {}
+            }
+            deltas
         })
 }
 
@@ -1195,7 +1338,6 @@ pub(crate) fn take_doc_comment_prefix(source: &str) -> Option<CstDocPrefix> {
 
 /// Finds a top-level punctuation token while ignoring strings and comments.
 pub(crate) fn find_top_level_punctuation(source: &str, punctuation: char) -> Option<usize> {
-    let punctuation = punctuation.encode_utf8(&mut [0; 4]).to_owned();
     let mut paren = 0usize;
     let mut square = 0usize;
     let mut brace = 0usize;
@@ -1206,7 +1348,12 @@ pub(crate) fn find_top_level_punctuation(source: &str, punctuation: char) -> Opt
             continue;
         }
 
-        if token.text() == punctuation && paren == 0 && square == 0 && brace == 0 && angle == 0 {
+        if token.text_starts_with(punctuation)
+            && paren == 0
+            && square == 0
+            && brace == 0
+            && angle == 0
+        {
             return Some(token.start());
         }
 
@@ -1227,17 +1374,17 @@ pub(crate) fn find_top_level_punctuation(source: &str, punctuation: char) -> Opt
 
 /// Finds the last punctuation token with the requested text.
 pub(crate) fn find_last_punctuation(source: &str, punctuation: char) -> Option<usize> {
-    let punctuation = punctuation.encode_utf8(&mut [0; 4]).to_owned();
     lex_cst(source)
         .into_iter()
-        .filter(|token| token.kind() == SyntaxKind::Punctuation && token.text() == punctuation)
+        .filter(|token| {
+            token.kind() == SyntaxKind::Punctuation && token.text_starts_with(punctuation)
+        })
         .map(|token| token.start())
         .next_back()
 }
 
 /// Finds the last top-level punctuation token while ignoring strings and comments.
 pub(crate) fn find_last_top_level_punctuation(source: &str, punctuation: char) -> Option<usize> {
-    let punctuation = punctuation.encode_utf8(&mut [0; 4]).to_owned();
     let mut paren = 0usize;
     let mut square = 0usize;
     let mut brace = 0usize;
@@ -1249,7 +1396,12 @@ pub(crate) fn find_last_top_level_punctuation(source: &str, punctuation: char) -
             continue;
         }
 
-        if token.text() == punctuation && paren == 0 && square == 0 && brace == 0 && angle == 0 {
+        if token.text_starts_with(punctuation)
+            && paren == 0
+            && square == 0
+            && brace == 0
+            && angle == 0
+        {
             found = Some(token.start());
         }
 
@@ -1274,8 +1426,6 @@ pub(crate) fn find_last_depth_zero_open_punctuation(
     open: char,
     close: char,
 ) -> Option<usize> {
-    let open = open.encode_utf8(&mut [0; 4]).to_owned();
-    let close = close.encode_utf8(&mut [0; 4]).to_owned();
     let mut depth = 0usize;
     let mut found = None;
 
@@ -1285,13 +1435,13 @@ pub(crate) fn find_last_depth_zero_open_punctuation(
         }
 
         match token.text() {
-            text if text == open => {
+            text if token_text_is(text, open) => {
                 if depth == 0 {
                     found = Some(token.start());
                 }
                 depth += 1;
             }
-            text if text == close => depth = depth.saturating_sub(1),
+            text if token_text_is(text, close) => depth = depth.saturating_sub(1),
             _ => {}
         }
     }
@@ -1300,10 +1450,6 @@ pub(crate) fn find_last_depth_zero_open_punctuation(
 
 fn find_body_open(source: &str) -> Option<usize> {
     find_last_depth_zero_open_punctuation(source, '{', '}')
-}
-
-fn line_has_unclosed_top_level_open(source: &str) -> bool {
-    find_top_level_punctuation(source, '{').is_some() && punctuation_delta(source, '{', '}') > 0
 }
 
 /// Splits a leading identifier token from the rest of a source fragment.
@@ -1558,7 +1704,6 @@ pub(crate) fn split_top_level_punctuation_once(
     source: &str,
     delimiter: char,
 ) -> Option<(&str, &str)> {
-    let delimiter = delimiter.encode_utf8(&mut [0; 4]).to_owned();
     let mut paren = 0usize;
     let mut square = 0usize;
     let mut brace = 0usize;
@@ -1578,7 +1723,12 @@ pub(crate) fn split_top_level_punctuation_once(
             "}" => brace = brace.saturating_sub(1),
             "<" => angle += 1,
             ">" => angle = angle.saturating_sub(1),
-            text if text == delimiter && paren == 0 && square == 0 && brace == 0 && angle == 0 => {
+            text if token_text_is(text, delimiter)
+                && paren == 0
+                && square == 0
+                && brace == 0
+                && angle == 0 =>
+            {
                 return Some((source[..token.start()].trim(), source[token.end()..].trim()));
             }
             _ => {}
@@ -1589,7 +1739,6 @@ pub(crate) fn split_top_level_punctuation_once(
 
 /// Splits at every top-level punctuation token.
 pub(crate) fn split_top_level_punctuation(source: &str, delimiter: char) -> Vec<&str> {
-    let delimiter = delimiter.encode_utf8(&mut [0; 4]).to_owned();
     let mut paren = 0usize;
     let mut square = 0usize;
     let mut brace = 0usize;
@@ -1611,7 +1760,12 @@ pub(crate) fn split_top_level_punctuation(source: &str, delimiter: char) -> Vec<
             "}" => brace = brace.saturating_sub(1),
             "<" => angle += 1,
             ">" => angle = angle.saturating_sub(1),
-            text if text == delimiter && paren == 0 && square == 0 && brace == 0 && angle == 0 => {
+            text if token_text_is(text, delimiter)
+                && paren == 0
+                && square == 0
+                && brace == 0
+                && angle == 0 =>
+            {
                 parts.push(source[start..token.start()].trim());
                 start = token.end();
             }

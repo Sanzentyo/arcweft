@@ -11,9 +11,9 @@ use crate::ast::line_plan::{BlockStyle, DeferOutcome, LinePlan};
 use crate::cst::{
     CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineEvents, CstStmtKind,
     CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxNode,
-    classify_stmt, cst_lines, find_matching_punctuation, find_top_level_punctuation,
-    parse_flat_fence, punctuation_delta, source_lines, split_leading_ident,
-    split_top_level_keyword_once, split_top_level_punctuation_once,
+    SyntaxParseStats, classify_stmt, cst_lines, find_matching_punctuation,
+    find_top_level_punctuation, parse_flat_fence, punctuation_delta, source_lines,
+    split_leading_ident, split_top_level_keyword_once, split_top_level_punctuation_once,
     split_top_level_punctuation_sequence_once,
 };
 use crate::expr::Expr;
@@ -64,8 +64,8 @@ pub fn parse_source(source: impl Into<String>) -> ParsedSource {
     let source = source.into();
     let syntax = crate::cst::parse_cst(&source);
     let mut parser = Parser::from_syntax(source.clone(), &syntax);
-    let (tree, errors) = parser.parse();
-    ParsedSource::new(source, syntax, tree, errors)
+    let (tree, errors, syntax_stats) = parser.parse();
+    ParsedSource::new(source, syntax, tree, errors, syntax_stats)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -99,6 +99,7 @@ struct Parser {
     errors: Vec<ParseError>,
     pending_flow_items: Vec<FlowItem>,
     pending_doc: Option<DocBlock>,
+    syntax_stats: SyntaxParseStats,
 }
 
 impl Parser {
@@ -109,6 +110,7 @@ impl Parser {
 
     fn from_syntax(source: String, syntax: &SyntaxNode) -> Self {
         let events = cst_lines(syntax);
+        let syntax_stats = events.stats();
         Self {
             source,
             events,
@@ -116,13 +118,17 @@ impl Parser {
             errors: Vec::new(),
             pending_flow_items: Vec::new(),
             pending_doc: None,
+            syntax_stats,
         }
     }
 
-    fn parse(&mut self) -> (TypedSyntaxTree, Vec<ParseError>) {
+    fn parse(&mut self) -> (TypedSyntaxTree, Vec<ParseError>, SyntaxParseStats) {
         let mut module = None;
         let mut uses = Vec::new();
         let mut items = Vec::new();
+        if self.source.contains("[[") {
+            self.syntax_stats.wiki_scan_performed += 1;
+        }
         let wiki_links = collect_wiki_links(&self.source);
 
         while self.index < self.events.len() {
@@ -160,12 +166,13 @@ impl Parser {
         }
 
         let tree = TypedSyntaxTree::new(source_take(self), module, uses, items, wiki_links);
-        (tree, core::mem::take(&mut self.errors))
+        (tree, core::mem::take(&mut self.errors), self.syntax_stats)
     }
 
     fn take_flow_block(&mut self) -> (String, String, usize, bool) {
         let event = self.events.collect_flow_block(self.index);
         self.index = event.next_index;
+        self.syntax_stats.block_owned_bytes += event.head.len() + event.body.len();
         (event.head, event.body, event.end, event.ok)
     }
 
@@ -214,6 +221,7 @@ impl Parser {
     fn take_block_event(&mut self, rule: CstBlockOpenRule) -> (String, String, usize, bool) {
         let event = self.events.collect_brace_block(self.index, rule);
         self.index = event.next_index;
+        self.syntax_stats.block_owned_bytes += event.head.len() + event.body.len();
         (event.head, event.body, event.end, event.ok)
     }
 

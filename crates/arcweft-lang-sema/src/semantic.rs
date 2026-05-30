@@ -1103,7 +1103,11 @@ impl<'a> SemanticAnalyzer<'a> {
     )]
     fn collect_expr(&mut self, expr: &Expr, state: &mut FlowState) {
         match expr {
-            Expr::Literal(_) | Expr::Path(_) | Expr::Placeholder(_) | Expr::EntityRef(_) => {}
+            Expr::Literal(_)
+            | Expr::Path(_)
+            | Expr::Placeholder(_)
+            | Expr::EntityRef(_)
+            | Expr::NumericBracketSeq(_) => {}
             Expr::Raw(raw) => self.add_raw_obligation(format!("raw expression: {raw}"), None),
             Expr::LifetimePath { key, .. } => {
                 if is_must_drop_key(key) {

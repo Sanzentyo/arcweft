@@ -245,6 +245,7 @@ fn expr_contains_unchecked_promotion(expr: &Expr) -> bool {
         | Expr::Placeholder(_)
         | Expr::EntityRef(_)
         | Expr::LifetimePath { .. }
+        | Expr::NumericBracketSeq(_)
         | Expr::Raw(_) => false,
     }
 }
@@ -785,6 +786,9 @@ fn expr_type_label(expr: &Expr) -> String {
             || "Vec<Unknown>".to_owned(),
             |item| format!("Vec<{}>", expr_type_label(item)),
         ),
+        Expr::NumericBracketSeq(seq) => {
+            format!("Vec<{}>", seq.suffix().unwrap_or("unsuffixed-int"))
+        }
         Expr::ArrayRepeat { value, len } => {
             format!("Array<{}, {}>", expr_type_label(value), expr_label(len))
         }

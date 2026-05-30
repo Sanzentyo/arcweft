@@ -65,6 +65,16 @@ pub(crate) fn expr_label(expr: &Expr) -> String {
         Expr::ArrayRepeat { value, len } => {
             format!("[{}; {}]", expr_label(value), expr_label(len))
         }
+        Expr::NumericBracketSeq(seq) => {
+            let suffix = seq.suffix().unwrap_or_default();
+            let values = seq
+                .values()
+                .iter()
+                .map(|value| format!("{value}{suffix}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("[{values}]")
+        }
         other => format!("{other:?}"),
     }
 }

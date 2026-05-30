@@ -239,6 +239,25 @@ fn cst_punctuation_delta_ignores_strings_and_comments() {
 }
 
 #[test]
+fn cst_line_projection_records_path_free_parse_stats() {
+    let parsed = parse_source(
+        r"
+flow @flow.opening opening {
+    alice.say()[本文です。[p]]
+}
+",
+    );
+    let stats = parsed.syntax_stats();
+
+    assert_eq!(stats.cst_lex_passes, 1);
+    assert!(stats.punctuation_scans >= 3);
+    assert!(stats.punctuation_scan_bytes > 0);
+    assert!(stats.line_owned_bytes > 0);
+    assert!(stats.block_owned_bytes > 0);
+    assert_eq!(stats.wiki_scan_performed, 0);
+}
+
+#[test]
 fn cst_depth_zero_open_finds_function_body_not_nested_scope() {
     let source = "task fn load() -> Result<T, E> { with { nested() } }";
     let open = find_last_depth_zero_open_punctuation(source, '{', '}').expect("function body open");
