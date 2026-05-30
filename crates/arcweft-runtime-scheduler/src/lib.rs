@@ -110,11 +110,13 @@ impl RuntimeScheduler {
         } else {
             budget.max_events
         };
-        self.pending.sort_by(compare_scheduled_tasks);
+        if self.pending.len() > 1 {
+            self.pending.sort_by(compare_scheduled_tasks);
+        }
         let dispatch_count = self.pending.len().min(max_events);
-        let dispatched = self.pending.drain(..dispatch_count).collect::<Vec<_>>();
-        let tasks = dispatched
-            .into_iter()
+        let tasks = self
+            .pending
+            .drain(..dispatch_count)
             .map(|scheduled| scheduled.spec)
             .collect::<Vec<_>>();
         self.stats.dispatched += tasks.len();
