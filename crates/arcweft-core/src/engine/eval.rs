@@ -201,10 +201,19 @@ impl Engine {
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if let Some((helper_id, arity)) = self.bracket_seq_i64_batch_shape(items) {
-            let flat_inputs = self.collect_i64_pure_batch_inputs(items, arity, pure_backend)?;
+            let mut flat_inputs = std::mem::take(&mut self.pure_i64_batch_inputs);
+            let collect_result =
+                self.collect_i64_pure_batch_inputs(items, arity, pure_backend, &mut flat_inputs);
+            if let Err(error) = collect_result {
+                self.pure_i64_batch_inputs = flat_inputs;
+                return Err(error);
+            }
             let helper = &self.plan.pure_helpers[helper_id.0];
             let mut out = vec![0; items.len()];
-            pure_backend.call_i64_flat_batch(helper, &flat_inputs, arity, &mut out)?;
+            let batch_result =
+                pure_backend.call_i64_flat_batch(helper, &flat_inputs, arity, &mut out);
+            self.pure_i64_batch_inputs = flat_inputs;
+            batch_result?;
             return Ok(RuntimeValue::BracketSeq(
                 out.into_iter().map(RuntimeValue::Int).collect(),
             ));
@@ -253,8 +262,10 @@ impl Engine {
         items: &[RuntimeExpr],
         arity: usize,
         pure_backend: &mut impl RuntimePureCallBackend,
-    ) -> Result<Vec<i64>, RuntimeEvalError> {
-        let mut flat_inputs = Vec::with_capacity(items.len().saturating_mul(arity));
+        flat_inputs: &mut Vec<i64>,
+    ) -> Result<(), RuntimeEvalError> {
+        flat_inputs.clear();
+        flat_inputs.reserve(items.len().saturating_mul(arity));
         for item in items {
             let RuntimeExpr::PureCall { args, .. } = item else {
                 unreachable!("i64 pure batch shape checked before row collection");
@@ -263,7 +274,7 @@ impl Engine {
                 flat_inputs.push(self.evaluate_i64_arg_with_backend(arg, pure_backend)?);
             }
         }
-        Ok(flat_inputs)
+        Ok(())
     }
 
     fn evaluate_record_expr(

@@ -537,7 +537,8 @@ Current high-confidence state:
   batches therefore avoid per-row `RuntimeI64Args` stack-pack accounting at the
   accelerator boundary, expose borrowed-input/result-copy bytes in runtime bench
   JSON, and can use the configured AOT worker pool when the batch threshold is
-  met.
+  met. The VM engine keeps a reusable row-major input scratch buffer so repeated
+  collection batches do not allocate a fresh input vector on every evaluation.
 - Cranelift input helpers now include a row-major batch entry point that accepts
   input and output slices through the native adapter boundary. Runtime pure
   batch execution can call JIT once per batch instead of crossing the

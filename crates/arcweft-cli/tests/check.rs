@@ -2225,7 +2225,9 @@ bench @bench.bracket_pure {
 
 flow @flow.bracket_pure bracket_pure {
     let scores: Vec<i64> = [score(1i64, 2i64), score(2i64, 2i64), score(3i64, 2i64), score(4i64, 2i64)]
-    log.info(scores)
+    for item in scores {
+        log.info(item)
+    }
     return "done"
 }
 "#,
@@ -2239,7 +2241,7 @@ flow @flow.bracket_pure bracket_pure {
         .arg("--warmup")
         .arg("1")
         .arg("--steps")
-        .arg("16")
+        .arg("32")
         .arg("--max-ops")
         .arg("8")
         .arg("--pure-backend")
@@ -2306,7 +2308,9 @@ bench @bench.bracket_pure {
 
 flow @flow.bracket_pure bracket_pure {
     let scores: Vec<i64> = [score(1i64, 2i64), score(2i64, 2i64), score(3i64, 2i64), score(4i64, 2i64)]
-    log.info(scores)
+    for item in scores {
+        log.info(item)
+    }
     return "done"
 }
 "#,
@@ -2320,7 +2324,7 @@ flow @flow.bracket_pure bracket_pure {
         .arg("--warmup")
         .arg("1")
         .arg("--steps")
-        .arg("16")
+        .arg("32")
         .arg("--max-ops")
         .arg("8")
         .arg("--pure-backend")
