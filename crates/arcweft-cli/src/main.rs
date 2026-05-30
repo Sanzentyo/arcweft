@@ -1849,6 +1849,7 @@ fn runtime_executor_stats(
                 }
             },
             resolved_workers: pure.resolved_worker_count(),
+            worker_pool_active: pure.has_worker_pool(),
             batch_min_len: config.batch_min_len,
         },
         pure_acceleration: RuntimeExecutorPureAccelerationSummary {

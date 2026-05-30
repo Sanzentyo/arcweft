@@ -111,6 +111,12 @@ impl RuntimePureAccelerator {
         for helper in helpers {
             cache[helper.id.0] = Some(compile_helper(config.backend, helper, &mut compile_stats));
         }
+        let needs_worker_pool = cache.iter().any(|entry| {
+            matches!(
+                entry,
+                Some(RuntimePureCacheEntry::Aot(_) | RuntimePureCacheEntry::Vm)
+            )
+        });
         compile_stats.compile_elapsed_ns = started.elapsed().as_nanos();
         Self {
             config,
@@ -118,7 +124,7 @@ impl RuntimePureAccelerator {
             stats: RuntimePureCallStats::default(),
             compile_stats,
             helper_summary,
-            pool: build_thread_pool(resolved_workers),
+            pool: build_thread_pool(resolved_workers, needs_worker_pool),
             resolved_workers,
             flat_i64_inputs: Vec::new(),
         }
@@ -138,6 +144,10 @@ impl RuntimePureAccelerator {
 
     pub const fn resolved_worker_count(&self) -> usize {
         self.resolved_workers
+    }
+
+    pub const fn has_worker_pool(&self) -> bool {
+        self.pool.is_some()
     }
 
     pub fn call_i64_batch(
@@ -449,8 +459,8 @@ fn resolve_worker_count(workers: RuntimePureWorkerCount) -> usize {
     }
 }
 
-fn build_thread_pool(worker_count: usize) -> Option<ThreadPool> {
-    (worker_count > 1)
+fn build_thread_pool(worker_count: usize, enabled: bool) -> Option<ThreadPool> {
+    (enabled && worker_count > 1)
         .then(|| {
             ThreadPoolBuilder::new()
                 .num_threads(worker_count)
@@ -835,6 +845,7 @@ mod tests {
         assert_eq!(accelerator.stats().arg_stack_packs, 1);
         assert_eq!(accelerator.stats().arg_vec_allocations, 0);
         assert!(accelerator.resolved_worker_count() >= 1);
+        assert!(!accelerator.has_worker_pool());
         assert_eq!(accelerator.summary().jit, 1);
     }
 
@@ -881,6 +892,7 @@ mod tests {
         assert_eq!(accelerator.stats().aot_calls, 4);
         assert_eq!(accelerator.stats().arg_vec_allocations, 0);
         assert_eq!(accelerator.resolved_worker_count(), 2);
+        assert!(accelerator.has_worker_pool());
         assert!(accelerator.stats().thread_pool_jobs > 0);
     }
 

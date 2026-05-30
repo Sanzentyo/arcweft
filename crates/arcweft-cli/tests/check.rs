@@ -335,6 +335,10 @@ flow @flow.main main {
     assert_eq!(json["executor_stats"]["pure_config"]["backend"], "jit");
     assert_eq!(json["executor_stats"]["pure_config"]["workers"]["fixed"], 1);
     assert_eq!(json["executor_stats"]["pure_config"]["resolved_workers"], 1);
+    assert_eq!(
+        json["executor_stats"]["pure_config"]["worker_pool_active"],
+        false
+    );
     assert_eq!(json["executor_stats"]["pure_config"]["batch_min_len"], 2);
     assert_eq!(json["executor_stats"]["pure_compile"]["jit_successes"], 1);
 }
@@ -386,6 +390,10 @@ flow @flow.for_pure for_pure {
     assert_eq!(sum_step_pure_counter(&json, "jit_calls"), 4);
     assert_eq!(sum_step_pure_counter(&json, "arg_vec_allocations"), 0);
     assert_eq!(json["executor_stats"]["pure_config"]["backend"], "jit");
+    assert_eq!(
+        json["executor_stats"]["pure_config"]["worker_pool_active"],
+        false
+    );
     assert_eq!(json["executor_stats"]["pure_compile"]["jit_successes"], 1);
 }
 
@@ -2481,6 +2489,7 @@ fn assert_runtime_pure_batch_json(pure_helper: &serde_json::Value) {
     assert_eq!(runtime_batch["config"]["backend"], "aot");
     assert_eq!(runtime_batch["config"]["workers"]["fixed"], 2);
     assert_eq!(runtime_batch["config"]["resolved_workers"], 2);
+    assert_eq!(runtime_batch["config"]["worker_pool_active"], true);
     assert_eq!(runtime_batch["config"]["batch_min_len"], 2);
     assert_eq!(runtime_batch["compile"]["aot_successes"], 1);
     assert_eq!(runtime_batch["stats"]["batch_calls"], 2);

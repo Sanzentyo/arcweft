@@ -97,6 +97,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   Cranelift JIT, and JIT batch loop, reporting conformance, deterministic
   accumulators, timing samples, compile time, and speedup ratios in the same
   bench JSON.
+- Runtime pure acceleration avoids constructing a native worker pool when the
+  resolved helper cache is JIT-only. JSON `pure_config.worker_pool_active`
+  makes this boundary visible: ordinary scalar JIT flow calls can remain
+  allocation-light, while AOT/VM batch fallback still creates and reports a
+  worker pool when parallel batch execution is actually possible.
 - `arcweft-cli` keeps user-facing JSON report schemas in `output.rs`,
   including check, profile, verify-types, bench, runtime step, and compiler
   counter summaries. `main.rs` remains the command orchestration layer instead
