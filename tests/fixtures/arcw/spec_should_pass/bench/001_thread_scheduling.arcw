@@ -1,0 +1,16 @@
+bench @bench.threads {
+    measure iterations = 1 { start(@flow.threads) }
+}
+
+flow @flow.threads threads {
+    thread first {
+        log.info("first")
+    }
+    thread second {
+        log.info("second")
+    }
+    thread third {
+        log.info("third")
+    }
+    return "done"
+}
