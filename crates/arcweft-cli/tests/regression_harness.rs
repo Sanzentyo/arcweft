@@ -47,6 +47,47 @@ fn source_tree_does_not_reintroduce_removed_whitespace_command_dsl_or_shims() {
     );
 }
 
+#[test]
+fn checked_in_docs_and_samples_do_not_record_host_absolute_paths() {
+    let root = workspace_root();
+    let search_roots = [
+        root.join("docs/00-overview"),
+        root.join("docs/01-language"),
+        root.join("docs/02-runtime"),
+        root.join("docs/03-presentation"),
+        root.join("docs/04-tooling"),
+        root.join("docs/05-build-and-security"),
+        root.join("docs/examples"),
+        root.join("docs/implementation"),
+        root.join("samples"),
+    ];
+    let denied = host_path_markers();
+    let violations = search_roots
+        .iter()
+        .flat_map(|root| text_files(root))
+        .filter(|path| {
+            path.file_name()
+                .is_none_or(|name| name != "regression_harness.rs")
+        })
+        .flat_map(|path| denied_patterns_in_file(&path, &denied))
+        .collect::<Vec<_>>();
+
+    assert!(
+        violations.is_empty(),
+        "checked-in docs and samples must stay path-free: {violations:?}"
+    );
+}
+
+fn host_path_markers() -> Vec<String> {
+    vec![
+        format!("{}{}", "C:", "\\"),
+        format!("{}{}", "D:", "\\"),
+        ["\\", "Users", "\\"].concat(),
+        ["/", "home", "/"].concat(),
+        ["/", "tmp", "/"].concat(),
+    ]
+}
+
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -78,13 +119,14 @@ fn text_files(root: &Path) -> Vec<PathBuf> {
     files
 }
 
-fn denied_patterns_in_file(path: &Path, denied: &[&str]) -> Vec<String> {
+fn denied_patterns_in_file<T: AsRef<str>>(path: &Path, denied: &[T]) -> Vec<String> {
     let Ok(text) = std::fs::read_to_string(path) else {
         return Vec::new();
     };
     denied
         .iter()
-        .filter(|pattern| text.contains(**pattern))
+        .map(AsRef::as_ref)
+        .filter(|pattern| text.contains(*pattern))
         .map(|pattern| {
             format!(
                 "{} contains `{pattern}`",
