@@ -672,8 +672,8 @@ flow @flow.main main {
 
     let plan = lower_runtime_plan(&hir).expect("map sum fusion runtime plan lowers");
 
-    assert_eq!(plan.flows[0].ops.len(), 3);
-    let FlowOp::Let { expr, .. } = &plan.flows[0].ops[1] else {
+    assert_eq!(plan.flows[0].ops.len(), 2);
+    let FlowOp::Let { expr, .. } = &plan.flows[0].ops[0] else {
         panic!("expected fused total let");
     };
     assert!(matches!(
@@ -681,6 +681,44 @@ flow @flow.main main {
         RuntimeExpr::Sum { source }
             if matches!(source.as_ref(), RuntimeExpr::Map { body, .. }
                 if matches!(body.as_ref(), RuntimeExpr::PureCall { helper, .. } if helper.0 == 0))
+    ));
+    assert!(matches!(
+        expr,
+        RuntimeExpr::Sum { source }
+            if matches!(source.as_ref(), RuntimeExpr::Map { source, .. }
+                if matches!(source.as_ref(), RuntimeExpr::Value(RuntimeValue::BracketSeq(items)) if items.len() == 4))
+    ));
+}
+
+#[test]
+fn runtime_plan_keeps_sequence_binding_when_used_after_fused_map_sum() {
+    let tree = parse_ok(
+        r"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+flow @flow.main main {
+    let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
+    let scores: Vec<i64> = values.map(|item| score(item, 2i64))
+    let total: i64 = scores.sum()
+    let again: i64 = values.sum()
+    return total + again
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("map sum sequence reuse fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("map sum sequence reuse runtime plan lowers");
+
+    assert_eq!(plan.flows[0].ops.len(), 4);
+    assert!(matches!(
+        &plan.flows[0].ops[0],
+        FlowOp::Let {
+            expr: RuntimeExpr::Value(RuntimeValue::BracketSeq(items)),
+            ..
+        } if items.len() == 4
     ));
 }
 

@@ -131,6 +131,7 @@ fn optimize_flow_ops(ops: &mut Vec<FlowOp>) {
         optimize_nested_flow_ops(op);
     }
     fuse_adjacent_map_sum_lets(ops);
+    inline_unused_sequence_lets_into_following_map_sums(ops);
 }
 
 fn optimize_flow_op_slice(ops: &mut [FlowOp]) {
@@ -211,6 +212,64 @@ fn fuse_adjacent_map_sum_lets(ops: &mut Vec<FlowOp>) {
         };
         ops.remove(index + 1);
     }
+}
+
+fn inline_unused_sequence_lets_into_following_map_sums(ops: &mut Vec<FlowOp>) {
+    let mut index = 0;
+    while index + 1 < ops.len() {
+        let Some((sequence_name, source_expr)) =
+            sequence_let_binding(&ops[index]).map(|(name, expr)| (name.to_owned(), expr.clone()))
+        else {
+            index += 1;
+            continue;
+        };
+        if flow_ops_use_local(&ops[index + 2..], &sequence_name) {
+            index += 1;
+            continue;
+        }
+        if !replace_map_sum_source(&mut ops[index + 1], &sequence_name, &source_expr) {
+            index += 1;
+            continue;
+        }
+        ops.remove(index);
+    }
+}
+
+fn sequence_let_binding(op: &FlowOp) -> Option<(&str, &RuntimeExpr)> {
+    let FlowOp::Let { pattern, expr } = op else {
+        return None;
+    };
+    is_runtime_sequence_expr(expr)
+        .then(|| runtime_pattern_binding_name(pattern).map(|name| (name, expr)))?
+}
+
+fn is_runtime_sequence_expr(expr: &RuntimeExpr) -> bool {
+    matches!(
+        expr,
+        RuntimeExpr::Value(RuntimeValue::BracketSeq(_) | RuntimeValue::Tuple(_))
+            | RuntimeExpr::BracketSeq(_)
+            | RuntimeExpr::Tuple(_)
+    )
+}
+
+fn replace_map_sum_source(op: &mut FlowOp, sequence_name: &str, source_expr: &RuntimeExpr) -> bool {
+    let FlowOp::Let { expr, .. } = op else {
+        return false;
+    };
+    let RuntimeExpr::Sum { source } = expr else {
+        return false;
+    };
+    let RuntimeExpr::Map { source, .. } = source.as_mut() else {
+        return false;
+    };
+    let RuntimeExpr::Local(name) = source.as_ref() else {
+        return false;
+    };
+    if name != sequence_name {
+        return false;
+    }
+    **source = source_expr.clone();
+    true
 }
 
 fn map_let_binding(op: &FlowOp) -> Option<(&str, &RuntimeExpr)> {
