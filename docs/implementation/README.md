@@ -441,6 +441,9 @@ Current high-confidence state:
   and loop continuations directly into the VM pending queue. Loop, while,
   while-let, and for iterations avoid building temporary scoped `Vec<FlowOp>`
   buffers before execution.
+- The VM builds a deterministic flow-ID index when `Engine` is created, so VM
+  and AOT-linear stepping fetch the current flow without scanning the runtime
+  plan's flow list for every operation.
 - Awaited `system.core_count()`, `system.thread_count()`, and
   `system.available_parallelism()` calls now lower to typed system-info task
   requests. The CLI adapter resolves physical cores, logical CPUs, and

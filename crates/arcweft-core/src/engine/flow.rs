@@ -27,10 +27,7 @@ impl Engine {
                 return;
             };
             let Some(op) = self
-                .plan
-                .flows
-                .iter()
-                .find(|flow| flow.id == cursor.flow)
+                .flow_at_cursor(&cursor)
                 .and_then(|flow| flow.ops.get(cursor.op_index))
                 .cloned()
             else {

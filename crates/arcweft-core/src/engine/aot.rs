@@ -36,7 +36,7 @@ impl Engine {
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
             let cursor = self.fiber.cursor.clone()?;
-            let flow = self.plan.flows.iter().find(|flow| flow.id == cursor.flow)?;
+            let flow = self.flow_at_cursor(&cursor)?;
             let Some(op) = flow.ops.get(cursor.op_index).cloned() else {
                 self.finish(&mut output);
                 executed_ops += 1;

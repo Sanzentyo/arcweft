@@ -3,8 +3,8 @@ use crate::line_task::run_line_task_group_for_input;
 use crate::observation::RuntimeObservationState;
 use crate::pattern::{RuntimePattern, match_runtime_pattern};
 use crate::plan::{
-    ChoiceRuntimeOption, FlowEvent, FlowOp, FlowRuntimeId, RuntimeMatchArm, RuntimeMatchSelection,
-    RuntimePlan,
+    ChoiceRuntimeOption, FlowEvent, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeMatchArm,
+    RuntimeMatchSelection, RuntimePlan,
 };
 use crate::pure::{RuntimePureCallBackend, VmRuntimePureCallBackend};
 use crate::source::{
@@ -39,6 +39,7 @@ pub mod suspend;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Engine {
     plan: RuntimePlan,
+    flow_positions: BTreeMap<FlowRuntimeId, usize>,
     fiber: FlowFiber,
     child_fibers: VecDeque<FlowFiber>,
     run_child_next: bool,
@@ -186,6 +187,12 @@ impl Engine {
         } else {
             FlowFiberStatus::Running
         };
+        let flow_positions = plan
+            .flows
+            .iter()
+            .enumerate()
+            .map(|(index, flow)| (flow.id.clone(), index))
+            .collect();
         let source_states = plan
             .source_plans
             .iter()
@@ -203,6 +210,7 @@ impl Engine {
             .collect();
         Self {
             plan,
+            flow_positions,
             fiber: FlowFiber {
                 line_cursor: 0,
                 cursor,
@@ -221,6 +229,12 @@ impl Engine {
 
     pub const fn fiber(&self) -> &FlowFiber {
         &self.fiber
+    }
+
+    pub(super) fn flow_at_cursor(&self, cursor: &FlowCursor) -> Option<&RuntimeFlow> {
+        self.flow_positions
+            .get(&cursor.flow)
+            .and_then(|index| self.plan.flows.get(*index))
     }
 
     pub fn child_fiber_count(&self) -> usize {
