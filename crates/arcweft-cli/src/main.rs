@@ -3115,6 +3115,7 @@ fn run_bench_flow_section(
             warmup: options.warmup,
             iterations: options.iterations,
             steps: options.steps,
+            per_executed_op_ns: samples.per_executed_op_ns(),
             elapsed_ns: samples.elapsed_summary(),
             deterministic: samples.deterministic_summary(),
         },
@@ -3213,6 +3214,16 @@ impl RuntimeBenchSamples {
             min: *self.elapsed.iter().min().unwrap_or(&0),
             median: median_u128(&mut self.elapsed),
             max: *self.elapsed.iter().max().unwrap_or(&0),
+        }
+    }
+
+    fn per_executed_op_ns(&mut self) -> u128 {
+        let elapsed = median_u128(&mut self.elapsed);
+        let executed_ops = median_usize(&mut self.executed_ops);
+        if executed_ops == 0 {
+            0
+        } else {
+            elapsed / executed_ops as u128
         }
     }
 

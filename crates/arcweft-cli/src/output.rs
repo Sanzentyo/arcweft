@@ -749,6 +749,7 @@ pub(crate) struct ScriptBenchMeasurementSummary {
     pub(crate) warmup: usize,
     pub(crate) iterations: usize,
     pub(crate) steps: usize,
+    pub(crate) per_executed_op_ns: u128,
     pub(crate) elapsed_ns: ScriptBenchElapsedSummary,
     pub(crate) deterministic: ScriptBenchDeterministicSummary,
 }

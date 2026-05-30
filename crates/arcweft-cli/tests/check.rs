@@ -2082,6 +2082,10 @@ flow @flow.for_pure for_pure {
     assert_eq!(measurement["warmup"], 1);
     assert_eq!(measurement["iterations"], 2);
     assert_eq!(measurement["steps"], 32);
+    assert!(
+        measurement["per_executed_op_ns"].as_u64().is_some(),
+        "bench JSON should expose median per-op cost: {measurement}"
+    );
     assert_eq!(measurement["deterministic"]["pure_calls_median"], 4);
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
