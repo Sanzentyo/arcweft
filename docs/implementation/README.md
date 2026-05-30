@@ -545,6 +545,12 @@ Current high-confidence state:
 - Runtime bench deterministic summaries now include median pure batch-call
   counts plus JIT/AOT/VM/fallback pure-call counts, making backend selection and
   batch execution visible without inspecting per-step traces.
+- Runtime executable expressions now have a typed `map` node lowered from
+  one-parameter closure method calls such as `values.map(|item| score(item,
+  2i64))`. The VM evaluates ordinary maps sequentially, but maps whose body is a
+  statically integer-shaped pure helper call use the same flat batch boundary as
+  bracket-sequence batches, so natural iterator-style source can use JIT/AOT
+  pure batching without explicit batching syntax.
 - Cranelift input helpers now include a row-major batch entry point that accepts
   input and output slices through the native adapter boundary. Runtime pure
   batch execution can call JIT once per batch instead of crossing the

@@ -9,7 +9,9 @@ use arcweft_core::plan::{
     ChoiceRuntimeOption, FlowOp, FlowRuntimeId, RuntimeEntryTarget, RuntimeFlow, RuntimeMatchArm,
     RuntimePlan,
 };
-use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeUnaryOp};
+use arcweft_core::value::{
+    RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeUnaryOp, RuntimeValue,
+};
 use arcweft_lang_sema::check::{TypeCheckReport, TypeJudgmentRule, TypeJudgmentSubject};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -379,20 +381,7 @@ impl<'a> RuntimeTypeValidator<'a> {
     fn validate_expr(&mut self, path: &str, expr: &RuntimeExpr) -> RuntimeShape {
         self.report.stats.expressions += 1;
         match expr {
-            RuntimeExpr::Value(value) => match value {
-                arcweft_core::value::RuntimeValue::Unit => RuntimeShape::Unit,
-                arcweft_core::value::RuntimeValue::Bool(_) => RuntimeShape::Bool,
-                arcweft_core::value::RuntimeValue::Int(_)
-                | arcweft_core::value::RuntimeValue::Duration(_) => RuntimeShape::Int,
-                arcweft_core::value::RuntimeValue::EntityRef(_) => RuntimeShape::EntityRef,
-                arcweft_core::value::RuntimeValue::String(_)
-                | arcweft_core::value::RuntimeValue::Float(_)
-                | arcweft_core::value::RuntimeValue::Char(_) => RuntimeShape::String,
-                arcweft_core::value::RuntimeValue::Tuple(_) => RuntimeShape::Tuple,
-                arcweft_core::value::RuntimeValue::BracketSeq(_) => RuntimeShape::BracketSeq,
-                arcweft_core::value::RuntimeValue::Record(_) => RuntimeShape::Record,
-                arcweft_core::value::RuntimeValue::Variant { .. } => RuntimeShape::Variant,
-            },
+            RuntimeExpr::Value(value) => runtime_value_shape(value),
             RuntimeExpr::Local(_)
             | RuntimeExpr::Field { .. }
             | RuntimeExpr::Call { .. }
@@ -434,6 +423,11 @@ impl<'a> RuntimeTypeValidator<'a> {
                     self.validate_expr(&format!("{path}.arg.{index}"), arg);
                 }
                 RuntimeShape::Unknown
+            }
+            RuntimeExpr::Map { source, body, .. } => {
+                self.validate_expr(&format!("{path}.source"), source);
+                self.validate_expr(&format!("{path}.body"), body);
+                RuntimeShape::BracketSeq
             }
             RuntimeExpr::Unary { op, expr } => self.validate_unary_expr(path, *op, expr),
             RuntimeExpr::Binary { lhs, op, rhs } => self.validate_binary_expr(path, lhs, *op, rhs),
@@ -589,6 +583,22 @@ fn merge_shapes(left: RuntimeShape, right: RuntimeShape) -> RuntimeShape {
         (RuntimeShape::Unknown, shape) | (shape, RuntimeShape::Unknown) => shape,
         (left, right) if left == right => left,
         _ => RuntimeShape::Unknown,
+    }
+}
+
+fn runtime_value_shape(value: &RuntimeValue) -> RuntimeShape {
+    match value {
+        RuntimeValue::Unit => RuntimeShape::Unit,
+        RuntimeValue::Bool(_) => RuntimeShape::Bool,
+        RuntimeValue::Int(_) | RuntimeValue::Duration(_) => RuntimeShape::Int,
+        RuntimeValue::EntityRef(_) => RuntimeShape::EntityRef,
+        RuntimeValue::String(_) | RuntimeValue::Float(_) | RuntimeValue::Char(_) => {
+            RuntimeShape::String
+        }
+        RuntimeValue::Tuple(_) => RuntimeShape::Tuple,
+        RuntimeValue::BracketSeq(_) => RuntimeShape::BracketSeq,
+        RuntimeValue::Record(_) => RuntimeShape::Record,
+        RuntimeValue::Variant { .. } => RuntimeShape::Variant,
     }
 }
 

@@ -1047,6 +1047,10 @@ fn rewrite_expr_pure_calls(
                 rewrite_expr_pure_calls(arg, helpers);
             }
         }
+        RuntimeExpr::Map { source, body, .. } => {
+            rewrite_expr_pure_calls(source, helpers);
+            rewrite_expr_pure_calls(body, helpers);
+        }
         RuntimeExpr::Unary { expr, .. } => rewrite_expr_pure_calls(expr, helpers),
         RuntimeExpr::Binary { lhs, rhs, .. } => {
             rewrite_expr_pure_calls(lhs, helpers);

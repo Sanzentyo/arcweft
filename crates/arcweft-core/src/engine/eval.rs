@@ -120,6 +120,11 @@ impl Engine {
                 method,
                 args,
             } => self.evaluate_method_call_expr(receiver, method, args, pure_backend),
+            RuntimeExpr::Map {
+                source,
+                param,
+                body,
+            } => self.evaluate_map_expr(source, param, body, pure_backend),
             RuntimeExpr::Unary { op, expr } => {
                 let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
                 evaluate_unary(*op, value)
@@ -390,6 +395,114 @@ impl Engine {
         let receiver = self.evaluate_expr_with_backend(receiver, pure_backend)?;
         let args = self.evaluate_call_args(args, pure_backend)?;
         Ok(evaluate_runtime_method_call(receiver, method, &args))
+    }
+
+    fn evaluate_map_expr(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let items = match self.evaluate_expr_with_backend(source, pure_backend)? {
+            RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items,
+            value => {
+                return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
+                    &value,
+                )));
+            }
+        };
+        if let Some((helper_id, arity)) = self.map_i64_batch_shape(body) {
+            let mut flat_inputs = std::mem::take(&mut self.pure_i64_batch_inputs);
+            let collect_result = self.collect_i64_map_batch_inputs(
+                &items,
+                param,
+                body,
+                arity,
+                pure_backend,
+                &mut flat_inputs,
+            );
+            if let Err(error) = collect_result {
+                self.pure_i64_batch_inputs = flat_inputs;
+                return Err(error);
+            }
+            let helper = &self.plan.pure_helpers[helper_id.0];
+            let mut out = vec![0; items.len()];
+            let batch_result =
+                pure_backend.call_i64_flat_batch(helper, &flat_inputs, arity, &mut out);
+            self.pure_i64_batch_inputs = flat_inputs;
+            batch_result?;
+            return Ok(RuntimeValue::BracketSeq(
+                out.into_iter().map(RuntimeValue::Int).collect(),
+            ));
+        }
+        items
+            .iter()
+            .map(|item| {
+                self.with_temp_bindings(
+                    [RuntimeBinding {
+                        name: param.to_owned(),
+                        value: item.clone(),
+                    }],
+                    |this| this.evaluate_expr_with_backend(body, pure_backend),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(RuntimeValue::BracketSeq)
+    }
+
+    fn map_i64_batch_shape(
+        &self,
+        body: &RuntimeExpr,
+    ) -> Option<(crate::plan::RuntimePureHelperId, usize)> {
+        let RuntimeExpr::PureCall { helper, args } = body else {
+            return None;
+        };
+        if helper.0 >= self.plan.pure_helpers.len()
+            || args.len() > RuntimeI64Args::MAX
+            || args
+                .iter()
+                .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
+            || !self
+                .pure_helper_i64_results
+                .get(helper.0)
+                .copied()
+                .unwrap_or(false)
+        {
+            return None;
+        }
+        Some((*helper, args.len()))
+    }
+
+    fn collect_i64_map_batch_inputs(
+        &mut self,
+        items: &[RuntimeValue],
+        param: &str,
+        body: &RuntimeExpr,
+        arity: usize,
+        pure_backend: &mut impl RuntimePureCallBackend,
+        flat_inputs: &mut Vec<i64>,
+    ) -> Result<(), RuntimeEvalError> {
+        let RuntimeExpr::PureCall { args, .. } = body else {
+            unreachable!("i64 map batch shape checked before row collection");
+        };
+        flat_inputs.clear();
+        flat_inputs.reserve(items.len().saturating_mul(arity));
+        for item in items {
+            self.fiber.env.push_scope();
+            self.fiber.env.set(param.to_owned(), item.clone());
+            for arg in args.iter().take(arity) {
+                match self.evaluate_i64_arg_with_backend(arg, pure_backend) {
+                    Ok(value) => flat_inputs.push(value),
+                    Err(error) => {
+                        self.fiber.env.pop_scope();
+                        return Err(error);
+                    }
+                }
+            }
+            self.fiber.env.pop_scope();
+        }
+        Ok(())
     }
 
     fn evaluate_call_args(

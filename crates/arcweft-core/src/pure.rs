@@ -924,6 +924,11 @@ impl PureEvaluator {
                 method,
                 args,
             } => self.evaluate_method_call_expr(receiver, method, args),
+            RuntimeExpr::Map {
+                source,
+                param,
+                body,
+            } => self.evaluate_map_expr(source, param, body),
             RuntimeExpr::Unary { op, expr } => {
                 let value = self.evaluate_expr(expr)?;
                 evaluate_unary(*op, value)
@@ -952,6 +957,33 @@ impl PureEvaluator {
                 })
             }
         }
+    }
+
+    fn evaluate_map_expr(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let items = match self.evaluate_expr(source)? {
+            RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items,
+            value => {
+                return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
+                    &value,
+                )));
+            }
+        };
+        items
+            .into_iter()
+            .map(|item| {
+                self.env.push_scope();
+                self.env.set(param.to_owned(), item);
+                let result = self.evaluate_expr(body);
+                self.env.pop_scope();
+                result
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(RuntimeValue::BracketSeq)
     }
 
     fn evaluate_call_expr(

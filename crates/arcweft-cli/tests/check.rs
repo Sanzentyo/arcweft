@@ -2404,6 +2404,168 @@ flow @flow.bracket_pure bracket_pure {
 }
 
 #[test]
+fn bench_json_batches_map_closure_pure_jit_calls() {
+    let path = temp_arcw(
+        "script-bench-map-pure-jit",
+        r#"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+bench @bench.map_pure {
+    measure iterations = 2 { start(@flow.map_pure) }
+}
+
+flow @flow.map_pure map_pure {
+    let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
+    let scores: Vec<i64> = values.map(|item| score(item, 2i64))
+    for item in scores {
+        log.info(item)
+    }
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("2")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--steps")
+        .arg("32")
+        .arg("--max-ops")
+        .arg("8")
+        .arg("--pure-backend")
+        .arg("jit")
+        .arg("--json")
+        .output()
+        .expect("arcw bench measures map-closure pure JIT batch");
+
+    assert!(
+        output.status.success(),
+        "map pure JIT bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&std::env::temp_dir().display().to_string()),
+        "bench JSON must not record absolute temp paths: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_eq!(measurement["executor"], "bytecode_vm");
+    assert_eq!(measurement["deterministic"]["pure_calls_median"], 4);
+    assert_eq!(measurement["deterministic"]["pure_batch_calls_median"], 1);
+    assert_eq!(measurement["deterministic"]["pure_batch_items_median"], 4);
+    assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 4);
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_stack_packs_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_vec_allocations_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
+        64
+    );
+    assert_eq!(
+        measurement["executor_stats"]["pure_compile"]["jit_successes"],
+        1
+    );
+}
+
+#[test]
+fn bench_json_batches_map_closure_pure_aot_on_worker_pool() {
+    let path = temp_arcw(
+        "script-bench-map-pure-aot",
+        r#"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+bench @bench.map_pure {
+    measure iterations = 2 { start(@flow.map_pure) }
+}
+
+flow @flow.map_pure map_pure {
+    let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
+    let scores: Vec<i64> = values.map(|item| score(item, 2i64))
+    for item in scores {
+        log.info(item)
+    }
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("2")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--steps")
+        .arg("32")
+        .arg("--max-ops")
+        .arg("8")
+        .arg("--pure-backend")
+        .arg("aot")
+        .arg("--pure-workers")
+        .arg("2")
+        .arg("--pure-batch-min-len")
+        .arg("2")
+        .arg("--json")
+        .output()
+        .expect("arcw bench measures map-closure pure AOT batch");
+
+    assert!(
+        output.status.success(),
+        "map pure AOT bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&std::env::temp_dir().display().to_string()),
+        "bench JSON must not record absolute temp paths: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_eq!(measurement["executor"], "bytecode_vm");
+    assert_eq!(measurement["deterministic"]["pure_calls_median"], 4);
+    assert_eq!(measurement["deterministic"]["pure_batch_calls_median"], 1);
+    assert_eq!(measurement["deterministic"]["pure_batch_items_median"], 4);
+    assert_eq!(measurement["deterministic"]["pure_aot_calls_median"], 4);
+    assert!(
+        measurement["deterministic"]["pure_thread_pool_jobs_median"]
+            .as_u64()
+            .is_some_and(|jobs| jobs >= 2),
+        "AOT map batch should use the configured worker pool: {measurement}"
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_vec_allocations_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
+        64
+    );
+    assert_eq!(
+        measurement["executor_stats"]["pure_compile"]["aot_successes"],
+        1
+    );
+}
+
+#[test]
 fn bench_json_measures_branching_for_loop_pure_jit_characteristics() {
     let path = temp_arcw(
         "script-bench-branching-for-pure-jit",

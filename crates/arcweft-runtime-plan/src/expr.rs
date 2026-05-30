@@ -280,6 +280,9 @@ fn lower_strict_method_call_expr(
     method: &str,
     args: &[CallArg],
 ) -> Result<RuntimeExpr, String> {
+    if let Some(map) = lower_strict_map_method_call(receiver, method, args) {
+        return map;
+    }
     Ok(RuntimeExpr::MethodCall {
         receiver: Box::new(lower_runtime_expr_strict(receiver)?),
         method: runtime_method_name(method).to_owned(),
@@ -288,6 +291,37 @@ fn lower_strict_method_call_expr(
             .map(lower_strict_call_arg)
             .collect::<Result<Vec<_>, _>>()?,
     })
+}
+
+fn lower_strict_map_method_call(
+    receiver: &Expr,
+    method: &str,
+    args: &[CallArg],
+) -> Option<Result<RuntimeExpr, String>> {
+    if runtime_method_name(method) != "map" {
+        return None;
+    }
+    let [arg] = args else {
+        return None;
+    };
+    if arg.name().is_some() || arg.is_spread() {
+        return None;
+    }
+    let Expr::Closure { params, body } = arg.value() else {
+        return None;
+    };
+    let [param] = params.as_slice() else {
+        return Some(Err(
+            "runtime `map` closures must bind exactly one parameter".to_owned(),
+        ));
+    };
+    Some(lower_runtime_expr_strict(receiver).and_then(|source| {
+        lower_runtime_expr_strict(body).map(|body| RuntimeExpr::Map {
+            source: Box::new(source),
+            param: param.clone(),
+            body: Box::new(body),
+        })
+    }))
 }
 
 fn lower_runtime_call_arg(arg: &CallArg) -> RuntimeExpr {
