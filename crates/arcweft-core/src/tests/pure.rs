@@ -168,6 +168,45 @@ fn vm_runtime_i64_batch_records_batch_stats() {
 }
 
 #[test]
+fn vm_runtime_i64_flat_batch_borrows_input_slice() {
+    let helper = RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "score".to_owned(),
+        input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+            op: RuntimeBinaryOp::Mul,
+            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+        },
+        origin: RuntimePureHelperOrigin::Annotated,
+    };
+    let mut backend = VmRuntimePureCallBackend::default();
+    let inputs = [3, 4, 5, 6];
+    let mut out = [0; 2];
+
+    backend
+        .call_i64_flat_batch(&helper, &inputs, 2, &mut out)
+        .expect("VM flat i64 batch evaluates");
+
+    assert_eq!(out, [12, 30]);
+    assert_eq!(backend.stats().batch_calls, 1);
+    assert_eq!(backend.stats().batch_items, 2);
+    assert_eq!(backend.stats().pure_calls, 2);
+    assert_eq!(backend.stats().vm_calls, 2);
+    assert_eq!(backend.stats().arg_stack_packs, 0);
+    assert_eq!(backend.stats().arg_vec_allocations, 0);
+    assert_eq!(backend.stats().arg_bytes_copied, 0);
+    assert_eq!(
+        backend.stats().arg_bytes_borrowed,
+        std::mem::size_of_val(&inputs)
+    );
+    assert_eq!(
+        backend.stats().result_bytes_copied,
+        std::mem::size_of_val(&out)
+    );
+}
+
+#[test]
 fn aot_pure_backend_candidate_matches_vm_result() {
     let request = PureFunctionRequest::new(
         "score_branch",

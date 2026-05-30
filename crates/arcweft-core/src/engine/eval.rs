@@ -201,10 +201,10 @@ impl Engine {
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if let Some((helper_id, arity)) = self.bracket_seq_i64_batch_shape(items) {
-            let rows = self.collect_i64_pure_batch_rows(items, arity, pure_backend)?;
+            let flat_inputs = self.collect_i64_pure_batch_inputs(items, arity, pure_backend)?;
             let helper = &self.plan.pure_helpers[helper_id.0];
-            let mut out = vec![0; rows.len()];
-            pure_backend.call_i64_batch(helper, &rows, &mut out)?;
+            let mut out = vec![0; items.len()];
+            pure_backend.call_i64_flat_batch(helper, &flat_inputs, arity, &mut out)?;
             return Ok(RuntimeValue::BracketSeq(
                 out.into_iter().map(RuntimeValue::Int).collect(),
             ));
@@ -248,24 +248,22 @@ impl Engine {
             .then_some((first_helper, arity))
     }
 
-    fn collect_i64_pure_batch_rows(
+    fn collect_i64_pure_batch_inputs(
         &mut self,
         items: &[RuntimeExpr],
         arity: usize,
         pure_backend: &mut impl RuntimePureCallBackend,
-    ) -> Result<Vec<RuntimeI64Args>, RuntimeEvalError> {
-        let mut rows = Vec::with_capacity(items.len());
+    ) -> Result<Vec<i64>, RuntimeEvalError> {
+        let mut flat_inputs = Vec::with_capacity(items.len().saturating_mul(arity));
         for item in items {
             let RuntimeExpr::PureCall { args, .. } = item else {
                 unreachable!("i64 pure batch shape checked before row collection");
             };
-            let mut values = [0_i64; RuntimeI64Args::MAX];
-            for (index, arg) in args.iter().take(arity).enumerate() {
-                values[index] = self.evaluate_i64_arg_with_backend(arg, pure_backend)?;
+            for arg in args.iter().take(arity) {
+                flat_inputs.push(self.evaluate_i64_arg_with_backend(arg, pure_backend)?);
             }
-            rows.push(RuntimeI64Args::new(values, arity));
         }
-        Ok(rows)
+        Ok(flat_inputs)
     }
 
     fn evaluate_record_expr(

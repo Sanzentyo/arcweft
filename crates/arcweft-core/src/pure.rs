@@ -61,6 +61,14 @@ pub trait RuntimePureCallBackend {
         out: &mut [i64],
     ) -> Result<(), RuntimeEvalError>;
 
+    fn call_i64_flat_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[i64],
+        arity: usize,
+        out: &mut [i64],
+    ) -> Result<(), RuntimeEvalError>;
+
     fn call_values(
         &mut self,
         helper: &RuntimePureHelper,
@@ -337,6 +345,63 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
                 value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
             }
         })
+    }
+
+    fn call_i64_flat_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[i64],
+        arity: usize,
+        out: &mut [i64],
+    ) -> Result<(), RuntimeEvalError> {
+        if arity > RuntimeI64Args::MAX {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: RuntimeI64Args::MAX,
+                found: arity,
+            });
+        }
+        if flat_inputs.len() != out.len().saturating_mul(arity) {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: format!(
+                    "pure flat batch expected {} input value(s), got {}",
+                    out.len().saturating_mul(arity),
+                    flat_inputs.len()
+                ),
+            });
+        }
+        self.stats.batch_calls += 1;
+        self.stats.batch_items += out.len();
+        self.stats.pure_calls += out.len();
+        self.stats.vm_calls += out.len();
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        self.stats.result_bytes_copied += std::mem::size_of_val(out);
+        if arity == 0 {
+            return out.iter_mut().try_for_each(|slot| {
+                let value = VmPureFunctionBackend.evaluate_i64_slice(helper, &[])?;
+                match value {
+                    RuntimeValue::Int(value) => {
+                        *slot = value;
+                        Ok(())
+                    }
+                    value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
+                }
+            });
+        }
+        flat_inputs
+            .chunks_exact(arity)
+            .zip(out.iter_mut())
+            .try_for_each(|(row, slot)| {
+                let value = VmPureFunctionBackend.evaluate_i64_slice(helper, row)?;
+                match value {
+                    RuntimeValue::Int(value) => {
+                        *slot = value;
+                        Ok(())
+                    }
+                    value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
+                }
+            })
     }
 
     fn call_values(

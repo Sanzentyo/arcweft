@@ -2266,14 +2266,125 @@ flow @flow.bracket_pure bracket_pure {
     assert_eq!(measurement["deterministic"]["pure_batch_items_median"], 4);
     assert_eq!(
         measurement["deterministic"]["pure_arg_stack_packs_median"],
-        4
+        0
     );
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
         0
     );
     assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_copied_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
+        64
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_result_bytes_copied_median"],
+        32
+    );
+    assert_eq!(
         measurement["executor_stats"]["pure_compile"]["jit_successes"],
+        1
+    );
+}
+
+#[test]
+fn bench_json_batches_bracket_sequence_pure_aot_on_worker_pool() {
+    let path = temp_arcw(
+        "script-bench-bracket-pure-aot",
+        r#"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+bench @bench.bracket_pure {
+    measure iterations = 2 { start(@flow.bracket_pure) }
+}
+
+flow @flow.bracket_pure bracket_pure {
+    let scores: Vec<i64> = [score(1i64, 2i64), score(2i64, 2i64), score(3i64, 2i64), score(4i64, 2i64)]
+    log.info(scores)
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("2")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--steps")
+        .arg("16")
+        .arg("--max-ops")
+        .arg("8")
+        .arg("--pure-backend")
+        .arg("aot")
+        .arg("--pure-workers")
+        .arg("2")
+        .arg("--pure-batch-min-len")
+        .arg("2")
+        .arg("--json")
+        .output()
+        .expect("arcw bench measures bracket-sequence pure AOT batch");
+
+    assert!(
+        output.status.success(),
+        "bracket pure AOT bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&std::env::temp_dir().display().to_string()),
+        "bench JSON must not record absolute temp paths: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_eq!(measurement["executor"], "bytecode_vm");
+    assert_eq!(measurement["deterministic"]["pure_calls_median"], 4);
+    assert_eq!(measurement["deterministic"]["pure_batch_items_median"], 4);
+    assert!(
+        measurement["deterministic"]["pure_thread_pool_jobs_median"]
+            .as_u64()
+            .is_some_and(|jobs| jobs >= 2),
+        "AOT bracket batch should use the configured worker pool: {measurement}"
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_stack_packs_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_vec_allocations_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_copied_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
+        64
+    );
+    assert_eq!(
+        measurement["executor_stats"]["pure_config"]["backend"],
+        "aot"
+    );
+    assert_eq!(
+        measurement["executor_stats"]["pure_config"]["workers"]["fixed"],
+        2
+    );
+    assert_eq!(
+        measurement["executor_stats"]["pure_config"]["worker_pool_active"],
+        true
+    );
+    assert_eq!(
+        measurement["executor_stats"]["pure_compile"]["aot_successes"],
         1
     );
 }

@@ -532,6 +532,12 @@ Current high-confidence state:
 - Runtime bracket sequence expressions containing only the same statically
   integer-shaped pure helper call now evaluate through the batch trait boundary,
   giving ordinary collection-style source a path to AOT/JIT batch execution.
+- The same bracket-sequence path now packs evaluated integer inputs into one
+  row-major slice and calls the flat batch backend boundary. Natural source
+  batches therefore avoid per-row `RuntimeI64Args` stack-pack accounting at the
+  accelerator boundary, expose borrowed-input/result-copy bytes in runtime bench
+  JSON, and can use the configured AOT worker pool when the batch threshold is
+  met.
 - Cranelift input helpers now include a row-major batch entry point that accepts
   input and output slices through the native adapter boundary. Runtime pure
   batch execution can call JIT once per batch instead of crossing the

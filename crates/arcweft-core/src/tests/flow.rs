@@ -164,8 +164,16 @@ fn engine_batches_bracket_sequence_pure_calls() {
     assert_eq!(result.stats.pure.batch_items, 3);
     assert_eq!(result.stats.pure.pure_calls, 3);
     assert_eq!(result.stats.pure.vm_calls, 3);
-    assert_eq!(result.stats.pure.arg_stack_packs, 3);
+    assert_eq!(result.stats.pure.arg_stack_packs, 0);
     assert_eq!(result.stats.pure.arg_vec_allocations, 0);
+    assert_eq!(
+        result.stats.pure.arg_bytes_borrowed,
+        6 * std::mem::size_of::<i64>()
+    );
+    assert_eq!(
+        result.stats.pure.result_bytes_copied,
+        3 * std::mem::size_of::<i64>()
+    );
 }
 
 #[test]

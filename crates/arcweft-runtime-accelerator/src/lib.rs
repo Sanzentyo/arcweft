@@ -359,6 +359,16 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         Self::call_i64_batch(self, helper, rows, out)
     }
 
+    fn call_i64_flat_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[i64],
+        arity: usize,
+        out: &mut [i64],
+    ) -> Result<(), RuntimeEvalError> {
+        Self::call_i64_flat_batch(self, helper, flat_inputs, arity, out)
+    }
+
     fn call_values(
         &mut self,
         helper: &RuntimePureHelper,
