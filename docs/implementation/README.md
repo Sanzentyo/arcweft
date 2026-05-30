@@ -542,6 +542,9 @@ Current high-confidence state:
   Engine construction also caches each pure helper's conservative integer-result
   shape, so repeated collection-batch eligibility checks no longer rescan helper
   expression trees.
+- Runtime bench deterministic summaries now include median pure batch-call
+  counts plus JIT/AOT/VM/fallback pure-call counts, making backend selection and
+  batch execution visible without inspecting per-step traces.
 - Cranelift input helpers now include a row-major batch entry point that accepts
   input and output slices through the native adapter boundary. Runtime pure
   batch execution can call JIT once per batch instead of crossing the

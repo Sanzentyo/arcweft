@@ -3137,13 +3137,18 @@ struct RuntimeBenchSamples {
     task_requests: Vec<usize>,
     task_events_in: Vec<usize>,
     pure_calls: Vec<usize>,
+    pure_batch_calls: Vec<usize>,
     pure_batch_items: Vec<usize>,
+    pure_jit_calls: Vec<usize>,
+    pure_aot_calls: Vec<usize>,
+    pure_vm_calls: Vec<usize>,
     pure_thread_pool_jobs: Vec<usize>,
     pure_arg_stack_packs: Vec<usize>,
     pure_arg_vec_allocations: Vec<usize>,
     pure_arg_bytes_copied: Vec<usize>,
     pure_arg_bytes_borrowed: Vec<usize>,
     pure_result_bytes_copied: Vec<usize>,
+    pure_fallbacks: Vec<usize>,
     aot_fast_path_ops: Vec<usize>,
     executor_stats_samples: Vec<RuntimeExecutorStats>,
     native_io: NativeTaskStatsSamples,
@@ -3153,6 +3158,15 @@ struct RuntimeBenchSamples {
 impl RuntimeBenchSamples {
     fn push(&mut self, elapsed_ns: u128, trace: &RuntimeRunTrace) {
         self.elapsed.push(elapsed_ns);
+        self.push_step_stats(trace);
+        self.push_pure_stats(trace);
+        self.aot_fast_path_ops
+            .push(trace.executor_stats.aot_fast_path_ops);
+        self.executor_stats_samples.push(trace.executor_stats);
+        self.native_io.push(trace.native_io);
+    }
+
+    fn push_step_stats(&mut self, trace: &RuntimeRunTrace) {
         self.executed_ops
             .push(trace.steps.iter().map(|step| step.stats.executed_ops).sum());
         self.child_fiber_ticks
@@ -3181,6 +3195,14 @@ impl RuntimeBenchSamples {
                 .map(|step| step.stats.task_events_in)
                 .sum(),
         );
+        self.diagnostics += trace
+            .steps
+            .iter()
+            .map(|step| step.diagnostics.len())
+            .sum::<usize>();
+    }
+
+    fn push_pure_stats(&mut self, trace: &RuntimeRunTrace) {
         self.pure_calls.push(
             trace
                 .steps
@@ -3193,6 +3215,34 @@ impl RuntimeBenchSamples {
                 .steps
                 .iter()
                 .map(|step| step.stats.pure.batch_items)
+                .sum(),
+        );
+        self.pure_batch_calls.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.stats.pure.batch_calls)
+                .sum(),
+        );
+        self.pure_jit_calls.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.stats.pure.jit_calls)
+                .sum(),
+        );
+        self.pure_aot_calls.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.stats.pure.aot_calls)
+                .sum(),
+        );
+        self.pure_vm_calls.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.stats.pure.vm_calls)
                 .sum(),
         );
         self.pure_thread_pool_jobs.push(
@@ -3237,15 +3287,13 @@ impl RuntimeBenchSamples {
                 .map(|step| step.stats.pure.result_bytes_copied)
                 .sum(),
         );
-        self.aot_fast_path_ops
-            .push(trace.executor_stats.aot_fast_path_ops);
-        self.executor_stats_samples.push(trace.executor_stats);
-        self.native_io.push(trace.native_io);
-        self.diagnostics += trace
-            .steps
-            .iter()
-            .map(|step| step.diagnostics.len())
-            .sum::<usize>();
+        self.pure_fallbacks.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.stats.pure.fallbacks)
+                .sum(),
+        );
     }
 
     fn executor_stats(&mut self) -> RuntimeExecutorStats {
@@ -3285,13 +3333,18 @@ impl RuntimeBenchSamples {
             task_requests_median: median_usize(&mut self.task_requests),
             task_events_in_median: median_usize(&mut self.task_events_in),
             pure_calls_median: median_usize(&mut self.pure_calls),
+            pure_batch_calls_median: median_usize(&mut self.pure_batch_calls),
             pure_batch_items_median: median_usize(&mut self.pure_batch_items),
+            pure_jit_calls_median: median_usize(&mut self.pure_jit_calls),
+            pure_aot_calls_median: median_usize(&mut self.pure_aot_calls),
+            pure_vm_calls_median: median_usize(&mut self.pure_vm_calls),
             pure_thread_pool_jobs_median: median_usize(&mut self.pure_thread_pool_jobs),
             pure_arg_stack_packs_median: median_usize(&mut self.pure_arg_stack_packs),
             pure_arg_vec_allocations_median: median_usize(&mut self.pure_arg_vec_allocations),
             pure_arg_bytes_copied_median: median_usize(&mut self.pure_arg_bytes_copied),
             pure_arg_bytes_borrowed_median: median_usize(&mut self.pure_arg_bytes_borrowed),
             pure_result_bytes_copied_median: median_usize(&mut self.pure_result_bytes_copied),
+            pure_fallbacks_median: median_usize(&mut self.pure_fallbacks),
             diagnostics: self.diagnostics,
         }
     }

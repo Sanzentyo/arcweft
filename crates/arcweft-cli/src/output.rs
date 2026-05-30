@@ -771,13 +771,18 @@ pub(crate) struct ScriptBenchDeterministicSummary {
     pub(crate) task_requests_median: usize,
     pub(crate) task_events_in_median: usize,
     pub(crate) pure_calls_median: usize,
+    pub(crate) pure_batch_calls_median: usize,
     pub(crate) pure_batch_items_median: usize,
+    pub(crate) pure_jit_calls_median: usize,
+    pub(crate) pure_aot_calls_median: usize,
+    pub(crate) pure_vm_calls_median: usize,
     pub(crate) pure_thread_pool_jobs_median: usize,
     pub(crate) pure_arg_stack_packs_median: usize,
     pub(crate) pure_arg_vec_allocations_median: usize,
     pub(crate) pure_arg_bytes_copied_median: usize,
     pub(crate) pure_arg_bytes_borrowed_median: usize,
     pub(crate) pure_result_bytes_copied_median: usize,
+    pub(crate) pure_fallbacks_median: usize,
     pub(crate) diagnostics: usize,
 }
 

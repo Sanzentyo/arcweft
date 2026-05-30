@@ -2265,7 +2265,11 @@ flow @flow.bracket_pure bracket_pure {
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["executor"], "bytecode_vm");
     assert_eq!(measurement["deterministic"]["pure_calls_median"], 4);
+    assert_eq!(measurement["deterministic"]["pure_batch_calls_median"], 1);
     assert_eq!(measurement["deterministic"]["pure_batch_items_median"], 4);
+    assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 4);
+    assert_eq!(measurement["deterministic"]["pure_aot_calls_median"], 0);
+    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 0);
     assert_eq!(
         measurement["deterministic"]["pure_arg_stack_packs_median"],
         0
@@ -2286,6 +2290,7 @@ flow @flow.bracket_pure bracket_pure {
         measurement["deterministic"]["pure_result_bytes_copied_median"],
         32
     );
+    assert_eq!(measurement["deterministic"]["pure_fallbacks_median"], 0);
     assert_eq!(
         measurement["executor_stats"]["pure_compile"]["jit_successes"],
         1
@@ -2352,7 +2357,11 @@ flow @flow.bracket_pure bracket_pure {
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["executor"], "bytecode_vm");
     assert_eq!(measurement["deterministic"]["pure_calls_median"], 4);
+    assert_eq!(measurement["deterministic"]["pure_batch_calls_median"], 1);
     assert_eq!(measurement["deterministic"]["pure_batch_items_median"], 4);
+    assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 0);
+    assert_eq!(measurement["deterministic"]["pure_aot_calls_median"], 4);
+    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 0);
     assert!(
         measurement["deterministic"]["pure_thread_pool_jobs_median"]
             .as_u64()
@@ -2375,6 +2384,7 @@ flow @flow.bracket_pure bracket_pure {
         measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
         64
     );
+    assert_eq!(measurement["deterministic"]["pure_fallbacks_median"], 0);
     assert_eq!(
         measurement["executor_stats"]["pure_config"]["backend"],
         "aot"
