@@ -5,6 +5,7 @@ use super::{
     runtime_value_label,
 };
 use crate::pure::{RuntimeI64Args, RuntimePureCallBackend, VmRuntimePureCallBackend};
+use crate::value::RuntimeBinaryOp;
 use crate::value::RuntimeFieldExpr;
 
 impl Engine {
@@ -170,11 +171,7 @@ impl Engine {
                 .map(|item| self.evaluate_expr_with_backend(item, pure_backend))
                 .collect::<Result<Vec<_>, _>>()
                 .map(RuntimeValue::Tuple),
-            RuntimeExpr::BracketSeq(items) => items
-                .iter()
-                .map(|item| self.evaluate_expr_with_backend(item, pure_backend))
-                .collect::<Result<Vec<_>, _>>()
-                .map(RuntimeValue::BracketSeq),
+            RuntimeExpr::BracketSeq(items) => self.evaluate_bracket_seq_expr(items, pure_backend),
             RuntimeExpr::Record(fields) => self.evaluate_record_expr(fields, pure_backend),
             RuntimeExpr::Variant {
                 path,
@@ -196,6 +193,79 @@ impl Engine {
             }
             _ => unreachable!("data expression helper received non-data expression"),
         }
+    }
+
+    fn evaluate_bracket_seq_expr(
+        &mut self,
+        items: &[RuntimeExpr],
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if let Some((helper_id, arity)) = self.bracket_seq_i64_batch_shape(items) {
+            let rows = self.collect_i64_pure_batch_rows(items, arity, pure_backend)?;
+            let helper = &self.plan.pure_helpers[helper_id.0];
+            let mut out = vec![0; rows.len()];
+            pure_backend.call_i64_batch(helper, &rows, &mut out)?;
+            return Ok(RuntimeValue::BracketSeq(
+                out.into_iter().map(RuntimeValue::Int).collect(),
+            ));
+        }
+        items
+            .iter()
+            .map(|item| self.evaluate_expr_with_backend(item, pure_backend))
+            .collect::<Result<Vec<_>, _>>()
+            .map(RuntimeValue::BracketSeq)
+    }
+
+    fn bracket_seq_i64_batch_shape(
+        &self,
+        items: &[RuntimeExpr],
+    ) -> Option<(crate::plan::RuntimePureHelperId, usize)> {
+        let (first_helper, first_args) = match items.first()? {
+            RuntimeExpr::PureCall { helper, args } => (*helper, args),
+            _ => return None,
+        };
+        if first_helper.0 >= self.plan.pure_helpers.len() || first_args.len() > RuntimeI64Args::MAX
+        {
+            return None;
+        }
+        let helper = &self.plan.pure_helpers[first_helper.0];
+        if !pure_helper_returns_i64(helper) {
+            return None;
+        }
+        let arity = first_args.len();
+        items
+            .iter()
+            .all(|item| match item {
+                RuntimeExpr::PureCall { helper, args } => {
+                    *helper == first_helper
+                        && args.len() == arity
+                        && args
+                            .iter()
+                            .all(|arg| !matches!(arg, RuntimeExpr::SpreadArg(_)))
+                }
+                _ => false,
+            })
+            .then_some((first_helper, arity))
+    }
+
+    fn collect_i64_pure_batch_rows(
+        &mut self,
+        items: &[RuntimeExpr],
+        arity: usize,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Vec<RuntimeI64Args>, RuntimeEvalError> {
+        let mut rows = Vec::with_capacity(items.len());
+        for item in items {
+            let RuntimeExpr::PureCall { args, .. } = item else {
+                unreachable!("i64 pure batch shape checked before row collection");
+            };
+            let mut values = [0_i64; RuntimeI64Args::MAX];
+            for (index, arg) in args.iter().take(arity).enumerate() {
+                values[index] = self.evaluate_i64_arg_with_backend(arg, pure_backend)?;
+            }
+            rows.push(RuntimeI64Args::new(values, arity));
+        }
+        Ok(rows)
     }
 
     fn evaluate_record_expr(
@@ -453,6 +523,85 @@ impl Engine {
         let message = error.to_string();
         self.fiber.status = FlowFiberStatus::Failed(message.clone());
         output.diagnostics.push(RuntimeDiagnostic { message });
+    }
+}
+
+fn pure_helper_returns_i64(helper: &crate::plan::RuntimePureHelper) -> bool {
+    let mut int_names = helper
+        .input_names
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    expr_returns_i64(&helper.expr, &mut int_names)
+}
+
+fn expr_returns_i64<'a>(expr: &'a RuntimeExpr, int_names: &mut Vec<&'a str>) -> bool {
+    match expr {
+        RuntimeExpr::Value(RuntimeValue::Int(_)) => true,
+        RuntimeExpr::Local(name) => int_names.contains(&name.as_str()),
+        RuntimeExpr::Let { name, expr, body } => {
+            if !expr_returns_i64(expr, int_names) {
+                return false;
+            }
+            let original_len = int_names.len();
+            int_names.push(name.as_str());
+            let returns_i64 = expr_returns_i64(body, int_names);
+            int_names.truncate(original_len);
+            returns_i64
+        }
+        RuntimeExpr::Call { callee, args } if callee == "add" => {
+            args.iter().all(|arg| expr_returns_i64(arg, int_names))
+        }
+        RuntimeExpr::Unary {
+            op: crate::value::RuntimeUnaryOp::Neg,
+            expr,
+        } => expr_returns_i64(expr, int_names),
+        RuntimeExpr::Binary {
+            lhs,
+            op:
+                RuntimeBinaryOp::Add
+                | RuntimeBinaryOp::Sub
+                | RuntimeBinaryOp::Mul
+                | RuntimeBinaryOp::Div,
+            rhs,
+        } => expr_returns_i64(lhs, int_names) && expr_returns_i64(rhs, int_names),
+        RuntimeExpr::If {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            expr_returns_bool(condition, int_names)
+                && expr_returns_i64(then_expr, int_names)
+                && expr_returns_i64(else_expr, int_names)
+        }
+        _ => false,
+    }
+}
+
+fn expr_returns_bool<'a>(expr: &'a RuntimeExpr, int_names: &mut Vec<&'a str>) -> bool {
+    match expr {
+        RuntimeExpr::Value(RuntimeValue::Bool(_)) => true,
+        RuntimeExpr::Unary {
+            op: crate::value::RuntimeUnaryOp::Not,
+            expr,
+        } => expr_returns_bool(expr, int_names),
+        RuntimeExpr::Binary {
+            lhs,
+            op:
+                RuntimeBinaryOp::Eq
+                | RuntimeBinaryOp::Ne
+                | RuntimeBinaryOp::Lt
+                | RuntimeBinaryOp::Le
+                | RuntimeBinaryOp::Gt
+                | RuntimeBinaryOp::Ge,
+            rhs,
+        } => expr_returns_i64(lhs, int_names) && expr_returns_i64(rhs, int_names),
+        RuntimeExpr::Binary {
+            lhs,
+            op: RuntimeBinaryOp::And | RuntimeBinaryOp::Or,
+            rhs,
+        } => expr_returns_bool(lhs, int_names) && expr_returns_bool(rhs, int_names),
+        _ => false,
     }
 }
 

@@ -529,6 +529,9 @@ Current high-confidence state:
   Sans I/O core trait. The default VM backend records deterministic batch
   counters, while the runtime accelerator overrides the same boundary with
   AOT/JIT and worker-pool execution.
+- Runtime bracket sequence expressions containing only the same statically
+  integer-shaped pure helper call now evaluate through the batch trait boundary,
+  giving ordinary collection-style source a path to AOT/JIT batch execution.
 - Cranelift input helpers now include a row-major batch entry point that accepts
   input and output slices through the native adapter boundary. Runtime pure
   batch execution can call JIT once per batch instead of crossing the

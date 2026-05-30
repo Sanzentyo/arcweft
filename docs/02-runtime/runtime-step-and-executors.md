@@ -86,6 +86,10 @@ The pure-call boundary includes both scalar fixed-argument calls and row-major
 integer batch calls. `arcweft-core` provides a Sans I/O VM batch implementation
 with deterministic counters; adapter crates can override the same trait method
 with AOT, JIT, and worker-pool execution without changing VM semantics.
+Bracket sequence expressions made only of the same statically integer-shaped
+pure helper call are evaluated through that batch boundary, so ordinary
+collection-style source can cross into AOT/JIT once per row group instead of
+once per element when an adapter backend is installed.
 
 ## Interpreter / compiled modes
 

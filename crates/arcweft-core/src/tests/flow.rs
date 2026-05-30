@@ -120,6 +120,55 @@ fn engine_executes_runtime_pure_call_from_flow() {
 }
 
 #[test]
+fn engine_batches_bracket_sequence_pure_calls() {
+    let pure_call = |base, bonus| RuntimeExpr::PureCall {
+        helper: RuntimePureHelperId(0),
+        args: vec![
+            RuntimeExpr::Value(RuntimeValue::Int(base)),
+            RuntimeExpr::Value(RuntimeValue::Int(bonus)),
+        ],
+    };
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![FlowOp::ReturnExpr(RuntimeExpr::BracketSeq(vec![
+                pure_call(3, 4),
+                pure_call(5, 6),
+                pure_call(7, 8),
+            ]))],
+        }],
+        Vec::new(),
+    )
+    .expect("flow plan is valid")
+    .with_pure_helpers(vec![RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "score".to_owned(),
+        input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+            op: RuntimeBinaryOp::Mul,
+            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+        },
+        origin: RuntimePureHelperOrigin::Annotated,
+    }]);
+    let mut engine = Engine::new(plan);
+
+    let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+
+    assert!(matches!(
+        result.fiber_status,
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "bracket_seq/3"
+    ));
+    assert_eq!(result.stats.pure.batch_calls, 1);
+    assert_eq!(result.stats.pure.batch_items, 3);
+    assert_eq!(result.stats.pure.pure_calls, 3);
+    assert_eq!(result.stats.pure.vm_calls, 3);
+    assert_eq!(result.stats.pure.arg_stack_packs, 3);
+    assert_eq!(result.stats.pure.arg_vec_allocations, 0);
+}
+
+#[test]
 fn engine_runs_flow_thread_body_as_child_fiber() {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.main".to_owned())),
