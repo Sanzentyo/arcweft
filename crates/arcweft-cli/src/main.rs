@@ -9,6 +9,7 @@ use arcweft_core::plan::{
 };
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepResult,
+    RuntimeStepStats,
 };
 use arcweft_core::{
     pure::{
@@ -1795,6 +1796,69 @@ struct RuntimeRunTrace {
     native_io: NativeTaskStats,
 }
 
+fn run_runtime_bench_steps(
+    plan: RuntimePlan,
+    source_path: Option<&Path>,
+    config: RuntimeStepRunConfig,
+    values: &[RuntimeBinding],
+) -> RuntimeBenchTrace {
+    let mut executor = RuntimeExecutorInstance::new(plan, config.executor, config.pure_config);
+    let mut host = source_path.map(NativeTaskBridge::new);
+    let mut task_events = Vec::new();
+    let mut steps = Vec::new();
+    for _ in 0..config.steps {
+        let result = executor.step_with_root_bindings(
+            RuntimeStepInput {
+                task_events: std::mem::take(&mut task_events),
+                ..RuntimeStepInput::default()
+            },
+            values,
+            step_options(config.mode, config.max_ops),
+        );
+        let RuntimeStepResult {
+            mut output,
+            fiber_status,
+            stats,
+            ..
+        } = result;
+        let task_requests = std::mem::take(&mut output.requests.tasks);
+        steps.push(RuntimeBenchStepSummary {
+            stats,
+            task_requests: task_requests.len(),
+            diagnostics: output.diagnostics.len(),
+        });
+        let done = matches!(
+            fiber_status,
+            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+        );
+        if done {
+            break;
+        }
+        if let Some(host) = host.as_mut() {
+            task_events = host.complete_tasks(task_requests);
+        }
+    }
+    RuntimeBenchTrace {
+        steps,
+        executor_stats: executor.executor_stats(),
+        native_io: host
+            .as_ref()
+            .map_or_else(NativeTaskStats::default, NativeTaskBridge::stats),
+    }
+}
+
+struct RuntimeBenchTrace {
+    steps: Vec<RuntimeBenchStepSummary>,
+    executor_stats: RuntimeExecutorStats,
+    native_io: NativeTaskStats,
+}
+
+struct RuntimeBenchStepSummary {
+    stats: RuntimeStepStats,
+    task_requests: usize,
+    diagnostics: usize,
+}
+
 enum RuntimeExecutorInstance {
     BytecodeVm {
         executor: BytecodeVmExecutor,
@@ -3130,7 +3194,7 @@ fn run_bench_flow_section(
         let mut iteration_plan = plan.clone();
         iteration_plan.entry_flow = Some(FlowRuntimeId(flow.to_owned()));
         let started = Instant::now();
-        let trace = run_runtime_steps(
+        let trace = run_runtime_bench_steps(
             iteration_plan,
             Some(source_path),
             RuntimeStepRunConfig {
@@ -3195,7 +3259,7 @@ struct RuntimeBenchSamples {
 }
 
 impl RuntimeBenchSamples {
-    fn push(&mut self, elapsed_ns: u128, trace: &RuntimeRunTrace) {
+    fn push(&mut self, elapsed_ns: u128, trace: &RuntimeBenchTrace) {
         self.elapsed.push(elapsed_ns);
         self.push_step_stats(trace);
         self.push_pure_stats(trace);
@@ -3205,7 +3269,7 @@ impl RuntimeBenchSamples {
         self.native_io.push(trace.native_io);
     }
 
-    fn push_step_stats(&mut self, trace: &RuntimeRunTrace) {
+    fn push_step_stats(&mut self, trace: &RuntimeBenchTrace) {
         self.executed_ops
             .push(trace.steps.iter().map(|step| step.stats.executed_ops).sum());
         self.child_fiber_ticks
@@ -3220,13 +3284,8 @@ impl RuntimeBenchSamples {
         );
         self.line_effects
             .push(trace.steps.iter().map(|step| step.stats.line_effects).sum());
-        self.task_requests.push(
-            trace
-                .steps
-                .iter()
-                .map(|step| step.task_requests.len())
-                .sum(),
-        );
+        self.task_requests
+            .push(trace.steps.iter().map(|step| step.task_requests).sum());
         self.task_events_in.push(
             trace
                 .steps
@@ -3237,11 +3296,11 @@ impl RuntimeBenchSamples {
         self.diagnostics += trace
             .steps
             .iter()
-            .map(|step| step.diagnostics.len())
+            .map(|step| step.diagnostics)
             .sum::<usize>();
     }
 
-    fn push_pure_stats(&mut self, trace: &RuntimeRunTrace) {
+    fn push_pure_stats(&mut self, trace: &RuntimeBenchTrace) {
         self.pure_calls.push(
             trace
                 .steps

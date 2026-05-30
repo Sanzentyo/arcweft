@@ -666,6 +666,11 @@ Current high-confidence state:
   executors as a borrowed slice, avoiding `values.to_vec()` allocation before
   each measured step while preserving the owned step-input path for adapters
   that need to transfer events.
+- `arcw bench` flow measurement now uses a compact runtime trace that stores
+  raw step counters, task request counts, executor stats, and native I/O stats
+  without constructing display labels or observation summaries inside the
+  measured loop. `arcw run` and `arcw profile` still build the full JSON step
+  summaries.
 - Borrowed root binding updates now reuse existing environment slots without
   recloning binding names, so repeated runtime steps only clone the value when
   an adapter-provided root binding is already present.
