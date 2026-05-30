@@ -65,6 +65,7 @@ pub struct RuntimePureAccelerator {
     helper_summary: RuntimePureAccelerationSummary,
     pool: Option<ThreadPool>,
     resolved_workers: usize,
+    flat_i64_inputs: Vec<i64>,
 }
 
 enum RuntimePureCacheEntry {
@@ -119,6 +120,7 @@ impl RuntimePureAccelerator {
             helper_summary,
             pool: build_thread_pool(resolved_workers),
             resolved_workers,
+            flat_i64_inputs: Vec::new(),
         }
     }
 
@@ -170,7 +172,7 @@ impl RuntimePureAccelerator {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += rows.len();
-                call_jit_batch(compiled, rows, out, helper)
+                call_jit_batch(compiled, rows, out, helper, &mut self.flat_i64_inputs)
             }
             Some(RuntimePureCacheEntry::Aot(compiled)) => {
                 self.compile_stats.cache_hits += 1;
@@ -401,14 +403,16 @@ fn call_jit_batch(
     rows: &[RuntimeI64Args],
     out: &mut [i64],
     helper: &RuntimePureHelper,
+    flat_inputs: &mut Vec<i64>,
 ) -> Result<(), RuntimeEvalError> {
     let arity = compiled.param_names().len();
-    let mut flat_inputs = Vec::with_capacity(rows.len().saturating_mul(arity));
+    flat_inputs.clear();
+    flat_inputs.reserve(rows.len().saturating_mul(arity));
     for row in rows {
         flat_inputs.extend_from_slice(row.as_slice());
     }
     compiled
-        .call_flat_batch(&flat_inputs, out)
+        .call_flat_batch(flat_inputs, out)
         .map_err(|error| RuntimeEvalError::UnsupportedPure {
             name: helper.name.clone(),
             reason: error.to_string(),
