@@ -967,6 +967,33 @@ fn duplicate_pattern_bindings_fail_before_env_mutation() {
 }
 
 #[test]
+fn runtime_pattern_binding_capacity_counts_nested_bindings() {
+    let pattern = RuntimePattern::Tuple(vec![
+        RuntimePattern::Ident("head".to_owned()),
+        RuntimePattern::BracketSeq {
+            items: vec![
+                RuntimePattern::Discard,
+                RuntimePattern::MutIdent("item".to_owned()),
+            ],
+            rest: Some("tail".to_owned()),
+        },
+        RuntimePattern::Whole {
+            name: "whole".to_owned(),
+            pattern: Box::new(RuntimePattern::Variant {
+                path: None,
+                name: "Some".to_owned(),
+                payload: Some(Box::new(RuntimePattern::Typed {
+                    name: "payload".to_owned(),
+                    ty: "String".to_owned(),
+                })),
+            }),
+        },
+    ]);
+
+    assert_eq!(pattern_binding_capacity(&pattern), 5);
+}
+
+#[test]
 fn typed_runtime_patterns_match_value_shape() {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.typed".to_owned())),

@@ -4,6 +4,7 @@ use super::{
     RuntimeEvalError, RuntimeExpr, RuntimePattern, RuntimeStepInput, RuntimeStepOutput,
     RuntimeValue, expr_runtime_label, run_line_task_group_for_input, runtime_value_label,
 };
+use crate::pattern::pattern_binding_capacity;
 use crate::pure::RuntimePureCallBackend;
 use crate::task::{
     CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
@@ -515,7 +516,9 @@ impl Engine {
         let Some(item) = items.get(index) else {
             return;
         };
-        self.fiber.env.push_scope();
+        self.fiber
+            .env
+            .push_scope_with_capacity(pattern_binding_capacity(&pattern));
         self.fiber.control_stack.push(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::Scope,
         });

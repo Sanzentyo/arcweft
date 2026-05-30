@@ -273,6 +273,11 @@ impl RuntimeEnv {
         self.scopes.push(RuntimeScope::default());
     }
 
+    pub(crate) fn push_scope_with_capacity(&mut self, binding_capacity: usize) {
+        self.scopes
+            .push(RuntimeScope::with_capacity(binding_capacity));
+    }
+
     pub fn pop_scope(&mut self) {
         if self.scopes.len() > 1 {
             self.scopes.pop();
@@ -374,6 +379,12 @@ impl RuntimeEnv {
 }
 
 impl RuntimeScope {
+    fn with_capacity(binding_capacity: usize) -> Self {
+        Self {
+            bindings: Vec::with_capacity(binding_capacity),
+        }
+    }
+
     fn set(&mut self, name: String, value: RuntimeValue) {
         if let Some(binding) = self
             .bindings

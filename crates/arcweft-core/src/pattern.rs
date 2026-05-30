@@ -45,13 +45,37 @@ pub(crate) fn match_runtime_pattern(
     pattern: &RuntimePattern,
     value: &RuntimeValue,
 ) -> Result<Option<Vec<RuntimeBinding>>, RuntimeEvalError> {
-    let mut bindings = Vec::new();
+    let mut bindings = Vec::with_capacity(pattern_binding_capacity(pattern));
     if collect_pattern_bindings(pattern, value, &mut bindings)? {
         reject_duplicate_bindings(&bindings)?;
         Ok(Some(bindings))
     } else {
         Ok(None)
     }
+}
+
+pub(crate) fn pattern_binding_capacity(pattern: &RuntimePattern) -> usize {
+    let direct = match pattern {
+        RuntimePattern::Ident(_) | RuntimePattern::MutIdent(_) | RuntimePattern::Typed { .. } => 1,
+        RuntimePattern::Discard | RuntimePattern::Literal(_) | RuntimePattern::Entity(_) => 0,
+        RuntimePattern::Tuple(patterns)
+        | RuntimePattern::BracketSeq {
+            items: patterns, ..
+        } => patterns.iter().map(pattern_binding_capacity).sum(),
+        RuntimePattern::Record { fields, .. } => fields
+            .iter()
+            .map(|field| pattern_binding_capacity(&field.pattern))
+            .sum(),
+        RuntimePattern::Variant { payload, .. } => {
+            payload.as_deref().map_or(0, pattern_binding_capacity)
+        }
+        RuntimePattern::Whole { pattern, .. } => pattern_binding_capacity(pattern) + 1,
+    };
+    direct
+        + usize::from(matches!(
+            pattern,
+            RuntimePattern::BracketSeq { rest: Some(_), .. }
+        ))
 }
 
 fn reject_duplicate_bindings(bindings: &[RuntimeBinding]) -> Result<(), RuntimeEvalError> {

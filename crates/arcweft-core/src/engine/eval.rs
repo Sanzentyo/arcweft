@@ -628,7 +628,7 @@ impl Engine {
         flat_inputs.clear();
         flat_inputs.reserve(items.len().saturating_mul(arity));
         for item in items {
-            self.fiber.env.push_scope();
+            self.fiber.env.push_scope_with_capacity(1);
             self.fiber.env.set_ref(param, item);
             for arg in args.iter().take(arity) {
                 match self.evaluate_i64_arg_with_backend(arg, pure_backend) {
@@ -713,7 +713,7 @@ impl Engine {
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
-        self.fiber.env.push_scope();
+        self.fiber.env.push_scope_with_capacity(1);
         self.fiber.env.set(name.to_owned(), value);
         let result = self.evaluate_expr_with_backend(body, pure_backend);
         self.fiber.env.pop_scope();
@@ -787,12 +787,17 @@ impl Engine {
         }
     }
 
-    pub(super) fn with_temp_bindings<T>(
+    pub(super) fn with_temp_bindings<I, T>(
         &mut self,
-        bindings: impl IntoIterator<Item = RuntimeBinding>,
+        bindings: I,
         f: impl FnOnce(&mut Self) -> T,
-    ) -> T {
-        self.fiber.env.push_scope();
+    ) -> T
+    where
+        I: IntoIterator<Item = RuntimeBinding>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        let bindings = bindings.into_iter();
+        self.fiber.env.push_scope_with_capacity(bindings.len());
         self.fiber.env.bind_all(bindings);
         let result = f(self);
         self.fiber.env.pop_scope();
@@ -804,7 +809,7 @@ impl Engine {
         bindings: &[RuntimeBinding],
         f: impl FnOnce(&mut Self) -> T,
     ) -> T {
-        self.fiber.env.push_scope();
+        self.fiber.env.push_scope_with_capacity(bindings.len());
         self.fiber.env.bind_all_ref(bindings);
         let result = f(self);
         self.fiber.env.pop_scope();
@@ -817,7 +822,7 @@ impl Engine {
         value: &RuntimeValue,
         f: impl FnOnce(&mut Self) -> T,
     ) -> T {
-        self.fiber.env.push_scope();
+        self.fiber.env.push_scope_with_capacity(1);
         self.fiber.env.set_ref(name, value);
         let result = f(self);
         self.fiber.env.pop_scope();

@@ -122,6 +122,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   deterministic helper expressions. The VM remains the reference backend, but
   repeated dynamic pure calls avoid constructing intermediate `RuntimeValue`
   payloads until the final result.
+- Runtime pattern matching now derives binding capacity from the structured
+  pattern enum and uses it for temporary scopes, map-row scopes, and `for`
+  iteration scopes, reducing allocation churn in natural iterator-heavy flows.
 - The VM pure reference backend also builds evaluator root bindings from a
   borrowed binding slice, avoiding an extra request-binding vector clone during
   JIT/AOT conformance checks and standalone helper evaluation.
