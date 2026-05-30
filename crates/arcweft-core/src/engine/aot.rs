@@ -99,11 +99,7 @@ impl Engine {
                 .fiber
                 .cursor
                 .as_ref()
-                .and_then(|cursor| {
-                    program
-                        .flow_block(cursor.flow_index)
-                        .filter(|flow| flow.id == cursor.flow)
-                })
+                .and_then(|cursor| program.flow_block(cursor.flow_index))
                 .is_some_and(|flow| flow.dispatch == AotDispatchShape::Linear)
     }
 

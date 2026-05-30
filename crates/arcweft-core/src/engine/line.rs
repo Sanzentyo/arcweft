@@ -25,21 +25,20 @@ impl Engine {
             return false;
         };
         match control {
-            FlowControl::Goto(target) => self.goto(FlowRuntimeId(target), output),
+            FlowControl::Goto(target) => self.goto(&FlowRuntimeId(target), output),
             FlowControl::Return(value) => self.return_value(value, output),
             FlowControl::Failed(message) => self.fiber.status = FlowFiberStatus::Failed(message),
         }
         true
     }
 
-    pub(super) fn goto(&mut self, target: FlowRuntimeId, output: &mut RuntimeStepOutput) {
+    pub(super) fn goto(&mut self, target: &FlowRuntimeId, output: &mut RuntimeStepOutput) {
         self.fiber.pending_ops.clear();
         output.flow_events.push(FlowEvent::Goto {
             target: target.clone(),
         });
-        if let Some(flow_index) = self.flow_index(&target) {
+        if let Some(flow_index) = self.flow_index(target) {
             self.fiber.cursor = Some(FlowCursor {
-                flow: target,
                 flow_index,
                 op_index: 0,
             });

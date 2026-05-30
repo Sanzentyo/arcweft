@@ -88,9 +88,8 @@ pub enum FlowControlStackEntryKind {
 }
 
 /// Position in a lowered flow program.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct FlowCursor {
-    pub flow: FlowRuntimeId,
     pub flow_index: usize,
     pub op_index: usize,
 }
@@ -111,7 +110,7 @@ pub enum FlowFiberStatus {
 pub struct AwaitState {
     pub binding: Option<RuntimePattern>,
     pub target: AwaitTarget,
-    pub resume: FlowCursor,
+    pub resume: Option<FlowCursor>,
 }
 
 /// Suspended bounded fanout await state.
@@ -119,7 +118,7 @@ pub struct AwaitState {
 pub struct AwaitManyState {
     pub binding: Option<RuntimePattern>,
     pub target: AwaitManyTarget,
-    pub resume: FlowCursor,
+    pub resume: Option<FlowCursor>,
     pub items: Vec<RuntimeValue>,
     pub next_index: usize,
     pub in_flight: Vec<AwaitManyInFlight>,
@@ -139,7 +138,7 @@ pub struct AwaitManyInFlight {
 pub struct ChoiceState {
     pub id: Option<String>,
     pub options: Vec<ChoiceRuntimeOption>,
-    pub resume: FlowCursor,
+    pub resume: Option<FlowCursor>,
 }
 
 /// Terminal flow result observed by the minimal runtime.
@@ -165,16 +164,6 @@ impl Default for FlowFiber {
     }
 }
 
-impl Default for FlowCursor {
-    fn default() -> Self {
-        Self {
-            flow: FlowRuntimeId(String::new()),
-            flow_index: 0,
-            op_index: 0,
-        }
-    }
-}
-
 impl Engine {
     pub fn new(plan: RuntimePlan) -> Self {
         let flow_positions: BTreeMap<_, _> = plan
@@ -188,7 +177,6 @@ impl Engine {
                 .get(entry_flow)
                 .copied()
                 .map(|flow_index| FlowCursor {
-                    flow: entry_flow.clone(),
                     flow_index,
                     op_index: 0,
                 })
@@ -245,10 +233,7 @@ impl Engine {
     }
 
     pub(super) fn flow_at_cursor(&self, cursor: &FlowCursor) -> Option<&RuntimeFlow> {
-        self.plan
-            .flows
-            .get(cursor.flow_index)
-            .filter(|flow| flow.id == cursor.flow)
+        self.plan.flows.get(cursor.flow_index)
     }
 
     pub(super) fn flow_index(&self, flow: &FlowRuntimeId) -> Option<usize> {

@@ -353,9 +353,9 @@ impl Engine {
                     self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
                 }
             }
-            FlowOp::Goto(target) => self.goto(target, output),
+            FlowOp::Goto(target) => self.goto(&target, output),
             FlowOp::GotoExpr(expr) => match self.evaluate_entity_target(&expr) {
-                Ok(target) => self.goto(FlowRuntimeId(target), output),
+                Ok(target) => self.goto(&FlowRuntimeId(target), output),
                 Err(error) => self.fail_eval(error, output),
             },
             FlowOp::Return(value) => {
@@ -436,18 +436,14 @@ impl Engine {
         }
     }
 
-    fn resume_cursor(&self, next_op_index: Option<usize>) -> FlowCursor {
-        self.fiber
-            .cursor
-            .as_ref()
-            .map(|cursor| {
-                let mut cursor = cursor.clone();
-                if let Some(next_op_index) = next_op_index {
-                    cursor.op_index = next_op_index;
-                }
-                cursor
-            })
-            .unwrap_or_default()
+    fn resume_cursor(&self, next_op_index: Option<usize>) -> Option<FlowCursor> {
+        self.fiber.cursor.as_ref().map(|cursor| {
+            let mut cursor = cursor.clone();
+            if let Some(next_op_index) = next_op_index {
+                cursor.op_index = next_op_index;
+            }
+            cursor
+        })
     }
 
     pub(super) fn push_ops(&mut self, ops: Vec<FlowOp>) {

@@ -82,7 +82,7 @@ impl Engine {
                     need: state.target.need,
                     value,
                 });
-                self.fiber.cursor = Some(state.resume);
+                self.fiber.cursor = state.resume;
                 self.fiber.status = FlowFiberStatus::Running;
             }
             TaskEventKind::Progress(progress) => {
@@ -131,9 +131,9 @@ impl Engine {
             output.effects.line.push(LineEffectRequest::Out(out));
         }
         if let Some(target) = option.target {
-            self.goto(target, output);
+            self.goto(&target, output);
         } else {
-            self.fiber.cursor = Some(state.resume);
+            self.fiber.cursor = state.resume;
             self.fiber.status = FlowFiberStatus::Running;
         }
     }
@@ -166,7 +166,7 @@ impl Engine {
         &mut self,
         binding: Option<crate::pattern::RuntimePattern>,
         target: AwaitManyTarget,
-        resume: crate::engine::FlowCursor,
+        resume: Option<crate::engine::FlowCursor>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) {
@@ -319,7 +319,7 @@ impl Engine {
             need: state.target.need,
             value: format!("{} item(s)", state.results.len()),
         });
-        self.fiber.cursor = Some(state.resume);
+        self.fiber.cursor = state.resume;
         self.fiber.status = FlowFiberStatus::Running;
     }
 

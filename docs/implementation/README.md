@@ -156,17 +156,19 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.
-- Flow cursors carry the resolved flow index alongside the flow id. Normal VM
-  and AOT stepping now read the current flow from the runtime plan vector
-  directly and reserve the flow-id map lookup for entry/goto resolution.
+- Flow cursors carry only the resolved flow index and op index. Normal VM and
+  AOT stepping read the current flow from the runtime plan vector directly and
+  reserve the flow-id map lookup for entry/goto resolution.
 - VM and prechecked AOT stepping borrow the current cursor while fetching the
-  next op and only clone the flow id when constructing the advanced cursor,
-  avoiding an extra per-op cursor clone in the hot path.
+  next op, avoiding an extra per-op cursor clone in the hot path.
 - Prechecked AOT linear stepping now advances the current flow cursor in place,
-  avoiding a per-op flow-id clone for straight-line VM-compatible operations.
+  avoiding a per-op cursor allocation for straight-line VM-compatible
+  operations.
 - Normal VM flow stepping uses the same in-place cursor advance for
   non-suspending operations; choice and await states still materialize a resume
   cursor only when they suspend.
+- Suspended await/choice state stores `Option<FlowCursor>` for resume points, so
+  pending-op suspensions do not rely on a default cursor sentinel.
 - AOT linear dispatch checks use that cursor index to read the corresponding
   AOT flow block directly, keeping the hot eligibility check aligned with the
   runtime-plan flow vector.
