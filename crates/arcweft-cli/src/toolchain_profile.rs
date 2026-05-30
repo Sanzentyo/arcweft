@@ -1,3 +1,4 @@
+use crate::native_system::{HostSystemInfo, host_system_info};
 use clap::{Args, ValueEnum};
 use serde::Serialize;
 use std::process::{Command, ExitCode};
@@ -28,6 +29,7 @@ pub(crate) enum ToolchainProfileCommand {
 #[derive(Serialize)]
 struct ToolchainProfileReport {
     status: String,
+    host_system: HostSystemInfo,
     commands: Vec<ToolchainCommandReport>,
 }
 
@@ -108,6 +110,7 @@ pub(crate) fn run(options: &ToolchainProfileOptions) -> Result<(), ExitCode> {
         .any(|report| matches!(report.status, "failed" | "spawn_failed"));
     let report = ToolchainProfileReport {
         status: if failed { "failed" } else { "ok" }.to_owned(),
+        host_system: host_system_info(),
         commands: reports,
     };
 

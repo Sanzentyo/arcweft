@@ -64,6 +64,14 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("toolchain profile output is structured JSON");
     assert_eq!(json["status"], "ok");
+    assert!(json["host_system"]["physical_cores"].as_u64().unwrap_or(0) > 0);
+    assert!(json["host_system"]["logical_threads"].as_u64().unwrap_or(0) > 0);
+    assert!(
+        json["host_system"]["available_parallelism"]
+            .as_u64()
+            .unwrap_or(0)
+            > 0
+    );
     assert_eq!(json["commands"].as_array().unwrap().len(), 6);
     assert_eq!(json["commands"][0]["status"], "planned");
     assert_eq!(json["commands"][0]["repeat"], 2);

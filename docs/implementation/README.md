@@ -582,6 +582,9 @@ Current high-confidence state:
   sections now include a path-free `host_system` summary with physical core,
   logical thread, and process-available parallelism counts so performance
   samples can be interpreted without embedding host paths.
+- `arcw toolchain-profile --json` reports the same `host_system` summary for
+  cargo fmt/check/clippy/test timing samples, keeping compiler and borrow/type
+  checking measurements comparable across machines without host path leakage.
 - The CLI regression harness now rejects generated `.arcweft` directories under
   checked-in fixtures and scans non-review source/docs/tests for removed
   whitespace-command DSL or compatibility-shim text. Run fixtures execute from
