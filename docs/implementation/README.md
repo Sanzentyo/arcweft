@@ -190,6 +190,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - The native task scheduler dispatch path takes the full pending queue directly
   when the budget covers every ready task, avoiding front-drain movement in the
   common unbounded host-dispatch case.
+- Scheduler completion now allocates joined-completion storage only when a
+  completed task actually has join waiters.
 - Borrow release uses unordered removal from the active-borrow list because
   active borrow order is not semantically meaningful, reducing element movement
   during drop-heavy borrow checking.

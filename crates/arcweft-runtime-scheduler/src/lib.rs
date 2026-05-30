@@ -149,11 +149,14 @@ impl RuntimeScheduler {
     pub fn complete(&mut self, events: impl IntoIterator<Item = TaskEvent>) -> Vec<TaskEvent> {
         let mut events = events.into_iter().collect::<Vec<_>>();
         self.normalize_completion_events(&mut events);
-        let mut joined_events = Vec::new();
+        let mut joined_events = None;
         for event in &events {
-            joined_events.extend(self.complete_one(event));
+            let completed = self.complete_one(event);
+            if !completed.is_empty() {
+                joined_events.get_or_insert_with(Vec::new).extend(completed);
+            }
         }
-        if !joined_events.is_empty() {
+        if let Some(joined_events) = joined_events {
             events.extend(joined_events);
             self.normalize_completion_events(&mut events);
         }
