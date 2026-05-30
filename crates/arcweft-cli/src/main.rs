@@ -54,6 +54,7 @@ mod native_task;
 mod output;
 mod server_adapter;
 mod toolchain_profile;
+use native_system::host_system_info;
 use native_task::{NativeSchedulerStats, NativeTaskBridge, NativeTaskStats};
 use output::{
     AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, CheckReport,
@@ -1445,6 +1446,7 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
         &options.values,
     );
     let report = RuntimeRunReport {
+        host_system: host_system_info(),
         executor: RuntimeExecutorTier::from(options.executor),
         executor_stats: trace.executor_stats,
         native_io: trace.native_io,
@@ -1557,6 +1559,7 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
         },
         phases,
         runtime: RuntimeProfileRuntime {
+            host_system: host_system_info(),
             executor: RuntimeExecutorTier::from(options.executor),
             executor_stats: trace.executor_stats,
             native_io: trace.native_io,
@@ -1937,6 +1940,7 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
         &bindings,
     );
     let report = RuntimeRunReport {
+        host_system: host_system_info(),
         executor: RuntimeExecutorTier::from(options.executor),
         executor_stats: trace.executor_stats,
         native_io: trace.native_io,
@@ -3114,6 +3118,7 @@ fn run_bench_flow_section(
         &section.name,
         validated.diagnostics,
         ScriptBenchMeasurementSummary {
+            host_system: host_system_info(),
             executor: RuntimeExecutorTier::from(options.executor),
             executor_stats: samples.executor_stats(),
             native_io: samples.native_io.median(),
@@ -4489,6 +4494,7 @@ struct JitCheckDeterministicReport {
 impl From<&JitCheckReport> for ScriptBenchPureHelperMeasurementSummary {
     fn from(report: &JitCheckReport) -> Self {
         Self {
+            host_system: host_system_info(),
             helper: report.helper.clone(),
             input_bindings: report.input_bindings.clone(),
             matches_vm: report.matches_vm,

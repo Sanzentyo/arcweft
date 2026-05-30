@@ -578,6 +578,10 @@ Current high-confidence state:
   requests. The CLI adapter resolves physical cores, logical CPUs, and
   process-available parallelism separately, reports `system_info_ops`, and
   keeps the JSON output path-free.
+- `arcw run --json`, `arcw profile --json`, and measured `arcw bench --json`
+  sections now include a path-free `host_system` summary with physical core,
+  logical thread, and process-available parallelism counts so performance
+  samples can be interpreted without embedding host paths.
 - The CLI regression harness now rejects generated `.arcweft` directories under
   checked-in fixtures and scans non-review source/docs/tests for removed
   whitespace-command DSL or compatibility-shim text. Run fixtures execute from

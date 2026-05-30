@@ -1,4 +1,5 @@
 use crate::CheckedModule;
+use crate::native_system::HostSystemInfo;
 use crate::native_task::NativeTaskStats;
 use arcweft_core::aot::AotProgramStats;
 use arcweft_core::bytecode::BytecodeStats;
@@ -340,6 +341,7 @@ fn wait_target_label(target: &arcweft_core::effect::RuntimeWaitTarget) -> String
 
 #[derive(serde::Serialize)]
 pub(crate) struct RuntimeRunReport {
+    pub(crate) host_system: HostSystemInfo,
     pub(crate) executor: RuntimeExecutorTier,
     pub(crate) executor_stats: RuntimeExecutorStats,
     pub(crate) native_io: NativeTaskStats,
@@ -648,6 +650,7 @@ pub(crate) struct RuntimeProfilePhase {
 
 #[derive(serde::Serialize)]
 pub(crate) struct RuntimeProfileRuntime {
+    pub(crate) host_system: HostSystemInfo,
     pub(crate) executor: RuntimeExecutorTier,
     pub(crate) executor_stats: RuntimeExecutorStats,
     pub(crate) native_io: NativeTaskStats,
@@ -744,6 +747,7 @@ pub(crate) struct ScriptBenchSectionRunSummary {
 
 #[derive(serde::Serialize)]
 pub(crate) struct ScriptBenchMeasurementSummary {
+    pub(crate) host_system: HostSystemInfo,
     pub(crate) executor: RuntimeExecutorTier,
     pub(crate) executor_stats: RuntimeExecutorStats,
     pub(crate) native_io: NativeTaskStats,
@@ -788,6 +792,7 @@ pub(crate) struct ScriptBenchDeterministicSummary {
 
 #[derive(serde::Serialize)]
 pub(crate) struct ScriptBenchPureHelperMeasurementSummary {
+    pub(crate) host_system: HostSystemInfo,
     pub(crate) helper: String,
     pub(crate) input_bindings: Vec<String>,
     pub(crate) matches_vm: bool,

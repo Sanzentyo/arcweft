@@ -1632,12 +1632,23 @@ flow @flow.main main effects { system.read } {
         stdout.contains("system.core_count")
             && stdout.contains("system.thread_count")
             && stdout.contains("system.available_parallelism")
+            && stdout.contains("\"host_system\"")
             && stdout.contains("\"completed_tasks\": 3")
             && stdout.contains("\"system_info_ops\": 3")
             && stdout.contains("\"scheduler\"")
             && stdout.contains("\"submitted\": 3")
             && stdout.contains("\"in_flight\": 0"),
         "run JSON should show runtime system info task completion: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("system info run output is structured JSON");
+    assert!(json["host_system"]["physical_cores"].as_u64().unwrap_or(0) > 0);
+    assert!(json["host_system"]["logical_threads"].as_u64().unwrap_or(0) > 0);
+    assert!(
+        json["host_system"]["available_parallelism"]
+            .as_u64()
+            .unwrap_or(0)
+            > 0
     );
 }
 
@@ -2158,6 +2169,7 @@ flow @flow.bench bench {
         stdout.contains("\"status\": \"measured\"")
             && stdout.contains("\"iterations\": 2")
             && stdout.contains("\"warmup\": 1")
+            && stdout.contains("\"host_system\"")
             && stdout.contains("\"executed_ops_median\": 2")
             && stdout.contains("\"compiler\"")
             && stdout.contains("\"phases\"")
@@ -2166,6 +2178,12 @@ flow @flow.bench bench {
             && stdout.contains("\"boundary_checks\""),
         "bench JSON should include headless measurement and compiler profiling: {stdout}"
     );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let host = &json["benches"][0]["sections"][0]["measurement"]["host_system"];
+    assert!(host["physical_cores"].as_u64().unwrap_or(0) > 0);
+    assert!(host["logical_threads"].as_u64().unwrap_or(0) > 0);
+    assert!(host["available_parallelism"].as_u64().unwrap_or(0) > 0);
 }
 
 #[test]
