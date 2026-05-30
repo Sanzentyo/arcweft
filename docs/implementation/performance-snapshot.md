@@ -70,7 +70,7 @@ Checked-in linear AOT executor bench:
 
 | fixture | executor | iterations | median elapsed ns | executed ops | AOT fast-path ops | line effects | pure calls |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 006_linear_aot.arcw | aot | 4 | 4700 | 3 | 3 | 1 | 0 |
+| 006_linear_aot.arcw | aot | 4 | 4800 | 3 | 3 | 1 | 0 |
 
 The map pure JIT bench reports helper compile time separately from measured
 elapsed time. In this run the helper compile counter was 4621600 ns, while the

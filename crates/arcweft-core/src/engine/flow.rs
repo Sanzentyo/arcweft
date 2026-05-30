@@ -21,7 +21,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) {
-        let (op, next) = if let Some(op) = self.fiber.pending_ops.pop_front() {
+        let (op, next_op_index) = if let Some(op) = self.fiber.pending_ops.pop_front() {
             (op, None)
         } else {
             let Some(cursor) = self.fiber.cursor.as_ref() else {
@@ -35,17 +35,16 @@ impl Engine {
                 self.finish(output);
                 return;
             };
-            let next = cursor.advanced();
-            (op, Some(next))
+            (op, Some(cursor.op_index + 1))
         };
         match op {
             FlowOp::Bind(bindings) => {
                 self.fiber.env.bind_all(bindings);
-                self.advance_if_needed(next);
+                self.advance_if_needed(next_op_index);
             }
             FlowOp::Let { pattern, expr } => {
                 self.evaluate_let_with_backend(&pattern, &expr, output, pure_backend);
-                self.advance_if_needed(next);
+                self.advance_if_needed(next_op_index);
             }
             FlowOp::LetElse {
                 pattern,
@@ -58,9 +57,9 @@ impl Engine {
                         self.try_bind_pattern(&pattern, &value)
                             .map(|matched| (matched, value))
                     }) {
-                    Ok((true, _)) => self.advance_if_needed(next),
+                    Ok((true, _)) => self.advance_if_needed(next_op_index),
                     Ok((false, value)) => {
-                        self.advance_if_needed(next);
+                        self.advance_if_needed(next_op_index);
                         self.push_ops(else_ops);
                         output.diagnostics.push(RuntimeDiagnostic {
                             message: format!(
@@ -81,7 +80,7 @@ impl Engine {
                 };
                 output.merge(run_line_task_group_for_input(group, input));
                 if !self.apply_control_effects(output) {
-                    self.advance_if_needed(next);
+                    self.advance_if_needed(next_op_index);
                 }
             }
             FlowOp::Choice { id, options } => {
@@ -91,9 +90,7 @@ impl Engine {
                 self.fiber.status = FlowFiberStatus::Choice(ChoiceState {
                     id,
                     options,
-                    resume: next
-                        .or_else(|| self.fiber.cursor.clone())
-                        .unwrap_or_default(),
+                    resume: self.resume_cursor(next_op_index),
                 });
             }
             FlowOp::Await {
@@ -113,9 +110,7 @@ impl Engine {
                 self.fiber.status = FlowFiberStatus::Waiting(AwaitState {
                     binding,
                     target,
-                    resume: next
-                        .or_else(|| self.fiber.cursor.clone())
-                        .unwrap_or_default(),
+                    resume: self.resume_cursor(next_op_index),
                 });
             }
             FlowOp::AwaitMany {
@@ -127,8 +122,7 @@ impl Engine {
                 self.start_await_many_state(
                     binding,
                     target,
-                    next.or_else(|| self.fiber.cursor.clone())
-                        .unwrap_or_default(),
+                    self.resume_cursor(next_op_index),
                     output,
                     pure_backend,
                 );
@@ -139,11 +133,11 @@ impl Engine {
                 else_ops,
             } => match self.evaluate_bool_with_backend(&condition, pure_backend) {
                 Ok(true) => {
-                    self.advance_if_needed(next);
+                    self.advance_if_needed(next_op_index);
                     self.push_scoped_ops(then_ops);
                 }
                 Ok(false) => {
-                    self.advance_if_needed(next);
+                    self.advance_if_needed(next_op_index);
                     self.push_scoped_ops(else_ops);
                 }
                 Err(error) => self.fail_eval(error, output),
@@ -161,11 +155,11 @@ impl Engine {
                 pure_backend,
             ) {
                 Ok(Some(bindings)) => {
-                    self.advance_if_needed(next);
+                    self.advance_if_needed(next_op_index);
                     self.push_scoped_ops_with_bindings(bindings, then_ops);
                 }
                 Ok(None) => {
-                    self.advance_if_needed(next);
+                    self.advance_if_needed(next_op_index);
                     self.push_scoped_ops(else_ops);
                 }
                 Err(error) => self.fail_eval(error, output),
@@ -173,7 +167,7 @@ impl Engine {
             FlowOp::Match { scrutinee, arms } => {
                 match self.evaluate_match_with_backend(&scrutinee, arms, pure_backend) {
                     Ok(Some((bindings, ops))) => {
-                        self.advance_if_needed(next);
+                        self.advance_if_needed(next_op_index);
                         self.push_scoped_ops_with_bindings(bindings, ops);
                     }
                     Ok(None) => self.fail_eval(
@@ -184,7 +178,7 @@ impl Engine {
                 }
             }
             FlowOp::Loop { body } => {
-                self.advance_if_needed(next);
+                self.advance_if_needed(next_op_index);
                 let body = Arc::from(body);
                 self.fiber.control_stack.push(FlowControlStackEntry {
                     kind: FlowControlStackEntryKind::Loop {
@@ -195,7 +189,7 @@ impl Engine {
                 self.push_loop_iteration(&body);
             }
             FlowOp::LetLoop { pattern, body } => {
-                self.advance_if_needed(next);
+                self.advance_if_needed(next_op_index);
                 let body = Arc::from(body);
                 self.fiber.control_stack.push(FlowControlStackEntry {
                     kind: FlowControlStackEntryKind::Loop {
@@ -211,7 +205,7 @@ impl Engine {
             FlowOp::While { condition, body } => {
                 match self.evaluate_bool_with_backend(&condition, pure_backend) {
                     Ok(true) => {
-                        self.advance_if_needed(next);
+                        self.advance_if_needed(next_op_index);
                         let body = Arc::from(body);
                         self.fiber.control_stack.push(FlowControlStackEntry {
                             kind: FlowControlStackEntryKind::While {
@@ -221,7 +215,7 @@ impl Engine {
                         });
                         self.push_while_iteration(condition, &body);
                     }
-                    Ok(false) => self.advance_if_needed(next),
+                    Ok(false) => self.advance_if_needed(next_op_index),
                     Err(error) => self.fail_eval(error, output),
                 }
             }
@@ -248,7 +242,7 @@ impl Engine {
                 pure_backend,
             ) {
                 Ok(Some(bindings)) => {
-                    self.advance_if_needed(next);
+                    self.advance_if_needed(next_op_index);
                     let body = Arc::from(body);
                     self.fiber.control_stack.push(FlowControlStackEntry {
                         kind: FlowControlStackEntryKind::WhileLet {
@@ -260,7 +254,7 @@ impl Engine {
                     });
                     self.push_while_let_iteration(pattern, expr, guard, &body, bindings);
                 }
-                Ok(None) => self.advance_if_needed(next),
+                Ok(None) => self.advance_if_needed(next_op_index),
                 Err(error) => self.fail_eval(error, output),
             },
             FlowOp::WhileLetNext {
@@ -287,7 +281,7 @@ impl Engine {
                 source,
                 body,
             } => {
-                self.advance_if_needed(next);
+                self.advance_if_needed(next_op_index);
                 match self.evaluate_expr_with_backend(&source, pure_backend) {
                     Ok(RuntimeValue::BracketSeq(items)) => {
                         let body = Arc::from(body);
@@ -311,7 +305,7 @@ impl Engine {
                 self.push_for_next(pattern, items, index, &body, output);
             }
             FlowOp::Thread { name, body } => {
-                self.advance_if_needed(next);
+                self.advance_if_needed(next_op_index);
                 output
                     .requests
                     .tasks
@@ -319,7 +313,7 @@ impl Engine {
                 self.spawn_child_fiber(body);
             }
             FlowOp::Scope(ops) => {
-                self.advance_if_needed(next);
+                self.advance_if_needed(next_op_index);
                 self.push_scoped_ops(ops);
             }
             FlowOp::LetScope {
@@ -327,7 +321,7 @@ impl Engine {
                 mut ops,
                 value,
             } => {
-                self.advance_if_needed(next);
+                self.advance_if_needed(next_op_index);
                 ops.insert(0, FlowOp::EnterScope);
                 ops.push(FlowOp::ExitScopeBind {
                     pattern,
@@ -347,14 +341,14 @@ impl Engine {
                     None => RuntimeValue::Unit,
                 };
                 if self.break_nearest_loop(&value, output) {
-                    self.advance_if_needed(next);
+                    self.advance_if_needed(next_op_index);
                 } else {
                     self.fail_eval(RuntimeEvalError::MisplacedLoopControl("break"), output);
                 }
             }
             FlowOp::Continue => {
                 if self.continue_nearest_loop(output) {
-                    self.advance_if_needed(next);
+                    self.advance_if_needed(next_op_index);
                 } else {
                     self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
                 }
@@ -386,7 +380,7 @@ impl Engine {
             FlowOp::Effect(effect) => {
                 output.effects.line.push(effect);
                 if !self.apply_control_effects(output) {
-                    self.advance_if_needed(next);
+                    self.advance_if_needed(next_op_index);
                 }
             }
             FlowOp::EnterScope => {
@@ -394,11 +388,11 @@ impl Engine {
                 self.fiber.control_stack.push(FlowControlStackEntry {
                     kind: FlowControlStackEntryKind::Scope,
                 });
-                self.advance_if_needed(next);
+                self.advance_if_needed(next_op_index);
             }
             FlowOp::ExitScope => {
                 self.pop_scope_frame();
-                self.advance_if_needed(next);
+                self.advance_if_needed(next_op_index);
             }
             FlowOp::ExitScopeBind { pattern, expr } => {
                 let value = match self.evaluate_expr_with_backend(&expr, pure_backend) {
@@ -410,10 +404,10 @@ impl Engine {
                 };
                 self.pop_scope_frame();
                 self.bind_value(&pattern, &value, output);
-                self.advance_if_needed(next);
+                self.advance_if_needed(next_op_index);
             }
             FlowOp::Noop => {
-                self.advance_if_needed(next);
+                self.advance_if_needed(next_op_index);
             }
         }
     }
@@ -434,10 +428,26 @@ impl Engine {
         }
     }
 
-    pub(super) fn advance_if_needed(&mut self, next: Option<FlowCursor>) {
-        if let Some(next) = next {
-            self.fiber.cursor = Some(next);
+    pub(super) fn advance_if_needed(&mut self, next_op_index: Option<usize>) {
+        if let Some(next_op_index) = next_op_index
+            && let Some(cursor) = self.fiber.cursor.as_mut()
+        {
+            cursor.op_index = next_op_index;
         }
+    }
+
+    fn resume_cursor(&self, next_op_index: Option<usize>) -> FlowCursor {
+        self.fiber
+            .cursor
+            .as_ref()
+            .map(|cursor| {
+                let mut cursor = cursor.clone();
+                if let Some(next_op_index) = next_op_index {
+                    cursor.op_index = next_op_index;
+                }
+                cursor
+            })
+            .unwrap_or_default()
     }
 
     pub(super) fn push_ops(&mut self, ops: Vec<FlowOp>) {

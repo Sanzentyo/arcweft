@@ -164,6 +164,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   avoiding an extra per-op cursor clone in the hot path.
 - Prechecked AOT linear stepping now advances the current flow cursor in place,
   avoiding a per-op flow-id clone for straight-line VM-compatible operations.
+- Normal VM flow stepping uses the same in-place cursor advance for
+  non-suspending operations; choice and await states still materialize a resume
+  cursor only when they suspend.
 - AOT linear dispatch checks use that cursor index to read the corresponding
   AOT flow block directly, keeping the hot eligibility check aligned with the
   runtime-plan flow vector.

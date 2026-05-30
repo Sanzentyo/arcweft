@@ -165,16 +165,6 @@ impl Default for FlowFiber {
     }
 }
 
-impl FlowCursor {
-    fn advanced(&self) -> Self {
-        Self {
-            flow: self.flow.clone(),
-            flow_index: self.flow_index,
-            op_index: self.op_index + 1,
-        }
-    }
-}
-
 impl Default for FlowCursor {
     fn default() -> Self {
         Self {
