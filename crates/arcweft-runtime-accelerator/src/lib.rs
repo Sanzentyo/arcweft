@@ -14,7 +14,7 @@ use arcweft_core::{
 };
 use arcweft_lang_jit_cranelift::{CompiledPureI64Inputs, CraneliftPureFunctionBackend};
 use rayon::{ThreadPool, ThreadPoolBuilder, prelude::*};
-use std::{collections::BTreeMap, fmt};
+use std::fmt;
 
 /// Runtime pure backend selection used by CLI/player adapters.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -59,7 +59,7 @@ pub struct RuntimePureCompileStats {
 /// Compile-cache backed runtime pure helper accelerator.
 pub struct RuntimePureAccelerator {
     config: RuntimePureAcceleratorConfig,
-    cache: BTreeMap<RuntimePureHelperId, RuntimePureCacheEntry>,
+    cache: Vec<Option<RuntimePureCacheEntry>>,
     stats: RuntimePureCallStats,
     compile_stats: RuntimePureCompileStats,
     helper_summary: RuntimePureAccelerationSummary,
@@ -77,13 +77,13 @@ impl fmt::Debug for RuntimePureAccelerator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RuntimePureAccelerator")
             .field("config", &self.config)
-            .field("cache_entries", &self.cache.len())
+            .field("cache_entries", &self.cache_entries())
             .field("stats", &self.stats)
             .field("compile_stats", &self.compile_stats)
             .field("helper_summary", &self.helper_summary)
             .field("has_pool", &self.pool.is_some())
             .field("resolved_workers", &self.resolved_workers)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -106,15 +106,10 @@ impl RuntimePureAccelerator {
         let mut compile_stats = RuntimePureCompileStats::default();
         let helper_summary = helper_summary_from_helpers(helpers);
         let resolved_workers = resolve_worker_count(config.workers);
-        let cache = helpers
-            .iter()
-            .map(|helper| {
-                (
-                    helper.id,
-                    compile_helper(config.backend, helper, &mut compile_stats),
-                )
-            })
-            .collect();
+        let mut cache = helper_cache_slots(helpers);
+        for helper in helpers {
+            cache[helper.id.0] = Some(compile_helper(config.backend, helper, &mut compile_stats));
+        }
         compile_stats.compile_elapsed_ns = started.elapsed().as_nanos();
         Self {
             config,
@@ -171,7 +166,7 @@ impl RuntimePureAccelerator {
         if rows.is_empty() {
             return Ok(());
         }
-        match self.cache.get(&helper.id) {
+        match cache_entry(&self.cache, helper.id) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += rows.len();
@@ -224,7 +219,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
     ) -> Result<Option<i64>, RuntimeEvalError> {
         self.stats.pure_calls += 1;
         self.stats.arg_stack_packs += 1;
-        match self.cache.get(&helper.id) {
+        match cache_entry(&self.cache, helper.id) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += 1;
@@ -243,7 +238,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                     .map(|(value, _)| Some(value))
             }
             Some(RuntimePureCacheEntry::Vm) | None => {
-                if self.cache.contains_key(&helper.id) {
+                if cache_entry(&self.cache, helper.id).is_some() {
                     self.compile_stats.cache_hits += 1;
                 } else {
                     self.compile_stats.cache_misses += 1;
@@ -273,6 +268,10 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 }
 
 impl RuntimePureAccelerator {
+    fn cache_entries(&self) -> usize {
+        self.cache.iter().filter(|entry| entry.is_some()).count()
+    }
+
     fn call_vm_i64(
         helper: &RuntimePureHelper,
         args: RuntimeI64Args,
@@ -377,6 +376,24 @@ fn build_thread_pool(worker_count: usize) -> Option<ThreadPool> {
                 .ok()
         })
         .flatten()
+}
+
+fn helper_cache_slots(helpers: &[RuntimePureHelper]) -> Vec<Option<RuntimePureCacheEntry>> {
+    let slots = helpers
+        .iter()
+        .map(|helper| helper.id.0)
+        .max()
+        .map_or(0, |max_id| max_id + 1);
+    let mut cache = Vec::with_capacity(slots);
+    cache.resize_with(slots, || None);
+    cache
+}
+
+fn cache_entry(
+    cache: &[Option<RuntimePureCacheEntry>],
+    id: RuntimePureHelperId,
+) -> Option<&RuntimePureCacheEntry> {
+    cache.get(id.0).and_then(Option::as_ref)
 }
 
 fn call_jit_batch(
@@ -527,7 +544,7 @@ impl RuntimePureAccelerator {
         let mut jit = 0;
         let mut aot = 0;
         let mut vm = 0;
-        for entry in self.cache.values() {
+        for entry in self.cache.iter().filter_map(Option::as_ref) {
             match entry {
                 RuntimePureCacheEntry::Jit(_) => jit += 1,
                 RuntimePureCacheEntry::Aot(_) => aot += 1,

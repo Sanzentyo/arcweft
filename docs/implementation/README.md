@@ -446,6 +446,9 @@ Current high-confidence state:
   plan's flow list for every operation.
 - Runtime pure-call evaluation keeps pure helper metadata borrowed from the
   runtime plan instead of cloning the helper on each scalar JIT/AOT/VM call.
+- The CLI/player pure accelerator stores compiled helper entries in dense
+  helper-ID slots instead of a map, reducing scalar pure-call dispatch overhead
+  while preserving deterministic cache statistics.
 - Awaited `system.core_count()`, `system.thread_count()`, and
   `system.available_parallelism()` calls now lower to typed system-info task
   requests. The CLI adapter resolves physical cores, logical CPUs, and
