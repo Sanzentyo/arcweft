@@ -1401,12 +1401,15 @@ extern capability system {
     type SystemError
     fn core_count() -> Need<String, SystemError> effects { system.read }
     fn thread_count() -> Need<String, SystemError> effects { system.read }
+    fn available_parallelism() -> Need<String, SystemError> effects { system.read }
 }
 entry cli @entry.main { run(@flow.main) }
 flow @flow.main main effects { system.read } {
     let cores = try await system.core_count() with { error e => return "core_failed" }
     let threads = try await system.thread_count() with { error e => return "thread_failed" }
+    let available = try await system.available_parallelism() with { error e => return "available_failed" }
     log.info(threads)
+    log.info(available)
     return cores
 }
 "#,
@@ -1432,10 +1435,11 @@ flow @flow.main main effects { system.read } {
     assert!(
         stdout.contains("system.core_count")
             && stdout.contains("system.thread_count")
-            && stdout.contains("\"completed_tasks\": 2")
-            && stdout.contains("\"system_info_ops\": 2")
+            && stdout.contains("system.available_parallelism")
+            && stdout.contains("\"completed_tasks\": 3")
+            && stdout.contains("\"system_info_ops\": 3")
             && stdout.contains("\"scheduler\"")
-            && stdout.contains("\"submitted\": 2")
+            && stdout.contains("\"submitted\": 3")
             && stdout.contains("\"in_flight\": 0"),
         "run JSON should show runtime system info task completion: {stdout}"
     );

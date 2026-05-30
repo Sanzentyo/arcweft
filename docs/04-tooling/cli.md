@@ -368,7 +368,9 @@ cancel, current in-flight, and maximum in-flight task counts without recording
 host paths.
 Awaited `system.core_count()`, `system.thread_count()`, and
 `system.available_parallelism()` calls are completed by the CLI adapter as
-path-free system-info tasks.
+path-free system-info tasks. The native adapter reports physical cores for
+`core_count`, logical CPUs for `thread_count`, and the current process
+parallelism limit for `available_parallelism`.
 
 ## JIT
 

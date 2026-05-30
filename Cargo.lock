@@ -139,6 +139,7 @@ dependencies = [
  "arcweft-verify-oxiz",
  "arcweft-verify-z3",
  "clap",
+ "num_cpus",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

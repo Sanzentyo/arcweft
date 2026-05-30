@@ -49,6 +49,7 @@ use arcweft_verify::{
 use arcweft_verify_oxiz::OxizBackend;
 use arcweft_verify_z3::ExternalZ3Backend;
 use clap::{Args, Parser, Subcommand, ValueEnum};
+mod native_system;
 mod native_task;
 mod output;
 mod server_adapter;

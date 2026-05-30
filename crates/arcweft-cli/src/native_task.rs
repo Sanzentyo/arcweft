@@ -1,6 +1,7 @@
+use crate::native_system::system_info_value;
 use arcweft_core::task::{
-    HostTaskRequest, LogicalEpoch, SchedulerBudget, SystemInfoKind, TaskEvent, TaskEventKind,
-    TaskSequence, TaskSpec,
+    HostTaskRequest, LogicalEpoch, SchedulerBudget, TaskEvent, TaskEventKind, TaskSequence,
+    TaskSpec,
 };
 use arcweft_runtime_scheduler::{RuntimeScheduler, RuntimeSchedulerStats};
 use std::fs;
@@ -196,16 +197,6 @@ fn can_complete_task(task: &TaskSpec) -> bool {
 
 fn is_scheduler_marker(capability: &str, operation: &str) -> bool {
     matches!(capability, "line_task" | "flow_thread") && operation == "run_child"
-}
-
-fn system_info_value(kind: SystemInfoKind) -> usize {
-    match kind {
-        SystemInfoKind::CoreCount
-        | SystemInfoKind::ThreadCount
-        | SystemInfoKind::AvailableParallelism => {
-            std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
-        }
-    }
 }
 
 impl From<RuntimeSchedulerStats> for NativeSchedulerStats {

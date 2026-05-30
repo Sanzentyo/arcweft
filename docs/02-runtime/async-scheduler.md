@@ -74,7 +74,10 @@ pub enum HostTaskRequest {
 `system.core_count()`, `system.thread_count()`, and
 `system.available_parallelism()` lower to `HostTaskRequest::SystemInfo`. The
 request is still Sans I/O data in core; native adapters resolve it from the
-host runtime and report the numeric result as the awaited ready value.
+host runtime and report the numeric result as the awaited ready value. On the
+native CLI adapter, `core_count` is the host physical core count,
+`thread_count` is the host logical CPU count, and `available_parallelism` is
+Rust's runtime parallelism limit for the current process.
 
 ## Task class
 

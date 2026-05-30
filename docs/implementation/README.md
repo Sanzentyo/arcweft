@@ -422,8 +422,9 @@ Current high-confidence state:
   is checked explicitly.
 - Awaited `system.core_count()`, `system.thread_count()`, and
   `system.available_parallelism()` calls now lower to typed system-info task
-  requests. The CLI adapter resolves them from the host runtime, reports
-  `system_info_ops`, and keeps the JSON output path-free.
+  requests. The CLI adapter resolves physical cores, logical CPUs, and
+  process-available parallelism separately, reports `system_info_ops`, and
+  keeps the JSON output path-free.
 - The CLI regression harness now rejects generated `.arcweft` directories under
   checked-in fixtures and scans non-review source/docs/tests for removed
   whitespace-command DSL or compatibility-shim text. Run fixtures execute from
