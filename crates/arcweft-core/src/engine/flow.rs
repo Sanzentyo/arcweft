@@ -437,8 +437,8 @@ impl Engine {
     }
 
     fn resume_cursor(&self, next_op_index: Option<usize>) -> Option<FlowCursor> {
-        self.fiber.cursor.as_ref().map(|cursor| {
-            let mut cursor = cursor.clone();
+        self.fiber.cursor.map(|cursor| {
+            let mut cursor = cursor;
             if let Some(next_op_index) = next_op_index {
                 cursor.op_index = next_op_index;
             }

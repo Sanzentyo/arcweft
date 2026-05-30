@@ -88,7 +88,7 @@ pub enum FlowControlStackEntryKind {
 }
 
 /// Position in a lowered flow program.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct FlowCursor {
     pub flow_index: usize,
     pub op_index: usize,

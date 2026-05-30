@@ -169,6 +169,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   cursor only when they suspend.
 - Suspended await/choice state stores `Option<FlowCursor>` for resume points, so
   pending-op suspensions do not rely on a default cursor sentinel.
+- Flow cursors are `Copy` index pairs, so suspend/resume bookkeeping does not
+  clone heap-owned flow identifiers.
+- Prechecked AOT linear stepping converts borrowed plan ops into a small
+  executor-local step enum, avoiding full `FlowOp` clones for unsupported and
+  payload-free ops.
 - AOT linear dispatch checks use that cursor index to read the corresponding
   AOT flow block directly, keeping the hot eligibility check aligned with the
   runtime-plan flow vector.
