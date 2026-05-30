@@ -1542,17 +1542,20 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
     let mut plan = compiled.plan;
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
-    let trace = run_profile_phase(&mut phases, "run", || {
-        Ok::<RuntimeRunTrace, ExitCode>(run_runtime_steps(
+    let mut executor = run_profile_phase(&mut phases, "executor_prepare", || {
+        Ok::<RuntimeExecutorInstance, ExitCode>(RuntimeExecutorInstance::new(
             plan,
+            options.executor,
+            pure_config,
+        ))
+    })?;
+    let trace = run_profile_phase(&mut phases, "run", || {
+        Ok::<RuntimeRunTrace, ExitCode>(run_runtime_steps_with_executor(
+            &mut executor,
             Some(selection.path()),
-            RuntimeStepRunConfig {
-                steps: options.steps,
-                mode: options.mode,
-                max_ops: options.max_ops,
-                executor: options.executor,
-                pure_config,
-            },
+            options.steps,
+            options.mode,
+            options.max_ops,
             &options.values,
         ))
     })?;
@@ -1750,17 +1753,35 @@ fn run_runtime_steps(
     values: &[RuntimeBinding],
 ) -> RuntimeRunTrace {
     let mut executor = RuntimeExecutorInstance::new(plan, config.executor, config.pure_config);
+    run_runtime_steps_with_executor(
+        &mut executor,
+        source_path,
+        config.steps,
+        config.mode,
+        config.max_ops,
+        values,
+    )
+}
+
+fn run_runtime_steps_with_executor(
+    executor: &mut RuntimeExecutorInstance,
+    source_path: Option<&Path>,
+    steps: usize,
+    mode: CliRuntimeStepMode,
+    max_ops: usize,
+    values: &[RuntimeBinding],
+) -> RuntimeRunTrace {
     let mut host = source_path.map(NativeTaskBridge::new);
     let mut task_events = Vec::new();
     let mut summaries = Vec::new();
-    for step_index in 0..config.steps {
+    for step_index in 0..steps {
         let result = executor.step_with_root_bindings(
             RuntimeStepInput {
                 task_events: std::mem::take(&mut task_events),
                 ..RuntimeStepInput::default()
             },
             values,
-            step_options(config.mode, config.max_ops),
+            step_options(mode, max_ops),
         );
         let (summary, task_requests) = RuntimeStepRunSummary::from_result_and_task_requests(
             step_index,

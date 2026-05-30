@@ -1337,6 +1337,7 @@ flow @flow.profile profile {
             && stdout.contains("\"name\": \"runtime_type_validate\"")
             && stdout.contains("\"name\": \"aot_lower\"")
             && stdout.contains("\"name\": \"bytecode_lower\"")
+            && stdout.contains("\"name\": \"executor_prepare\"")
             && stdout.contains("\"name\": \"run\"")
             && stdout.contains("\"compiler\"")
             && stdout.contains("\"typecheck\"")

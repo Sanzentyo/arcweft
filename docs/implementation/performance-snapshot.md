@@ -23,6 +23,7 @@ cargo run -p arcweft-cli --quiet -- toolchain-profile --command check --repeat 3
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/001_thread_scheduling.arcw --json --iterations 10 --warmup 2 --samples 5 --steps 64 --max-ops 64
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/002_map_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/003_for_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 128 --max-ops 128 --pure-backend jit
+cargo run -p arcweft-cli --quiet -- profile tests/fixtures/arcw/spec_should_pass/bench/002_map_pure_jit.arcw --flow flow.map_pure --mode drain --steps 64 --max-ops 64 --pure-backend jit --json
 ```
 
 JIT check summaries:
@@ -59,6 +60,12 @@ Checked-in for-loop pure JIT bench:
 | fixture | executor | pure backend | iterations | median elapsed ns | executed ops | pure calls | stack packs | copied arg bytes | line effects |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 003_for_pure_jit.arcw | bytecode_vm | jit | 8 | 69900 | 68 | 16 | 16 | 256 | 16 |
+
+Profile phase split for the checked-in map pure JIT fixture:
+
+| fixture | executor prepare ns | run ns | pure compile ns | run executed ops | run pure batch calls |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 002_map_pure_jit.arcw | 3216000 | 329800 | 3158600 | 5 | 1 |
 
 The JSON outputs above reported no source file paths and included only command
 argv tokens, host core/thread counts, timing counters, and deterministic

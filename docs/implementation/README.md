@@ -677,6 +677,9 @@ Current high-confidence state:
 - Bench flow sections now compile the pure accelerator once per section and
   reset runtime counters per sample, so steady-state runtime measurements do
   not include repeated JIT/AOT helper compilation.
+- `arcw profile --json` now reports executor and pure accelerator construction
+  in an `executor_prepare` phase before `run`, so runtime execution timing is
+  not blurred with JIT/AOT helper preparation.
 - Flow `for` loops now bind simple identifier and discard patterns directly
   instead of allocating an intermediate pattern-binding vector for each
   iteration; structured patterns still use the full matcher.
