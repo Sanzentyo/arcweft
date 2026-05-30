@@ -800,6 +800,44 @@ flow @flow.collections collections {
 }
 
 #[test]
+fn typechecks_vec_map_closure_result_and_sum() {
+    let tree = parse_ok(
+        r"
+flow @flow.map_types map_types {
+    let nums: Vec<i64> = [1i64, 2i64, 3i64]
+    let shifted: Vec<i64> = nums.map(|item| item + 1i64)
+    let flags: Vec<Bool> = nums.map(|item| item > 1i64)
+    let total: i64 = shifted.sum()
+    log.info(total)
+    log.info(flags)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("map type fixture lowers");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("map closure result typechecks");
+}
+
+#[test]
+fn typecheck_rejects_sum_on_non_integer_vec() {
+    let tree = parse_ok(
+        r"
+flow @flow.bad_sum bad_sum {
+    let nums: Vec<i64> = [1i64, 2i64, 3i64]
+    let flags: Vec<Bool> = nums.map(|item| item > 1i64)
+    let total: i64 = flags.sum()
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("bad sum fixture lowers");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("bool sum is rejected");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("sum receiver items must be integers")
+    }));
+}
+
+#[test]
 fn typecheck_rejects_array_literal_length_mismatch() {
     let tree = parse_ok(
         r"

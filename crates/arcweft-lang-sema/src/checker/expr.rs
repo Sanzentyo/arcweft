@@ -840,6 +840,12 @@ impl TypeChecker<'_> {
             if method_name == "parallel" {
                 return self.check_parallel_method_call(&receiver_type, args);
             }
+            if method_name == "map" {
+                return self.check_vec_map_method_call(&receiver_type, args);
+            }
+            if method_name == "sum" {
+                return self.check_vec_sum_method_call(&receiver_type, args);
+            }
             if matches!(method_name, "context" | "with_context") {
                 for arg in args {
                     self.check_expr(arg.value());
@@ -899,6 +905,86 @@ impl TypeChecker<'_> {
                     None
                 })
         })
+    }
+
+    fn check_vec_map_method_call(
+        &mut self,
+        receiver_type: &TypeKind,
+        args: &[CallArg],
+    ) -> Option<TypeKind> {
+        let TypeKind::Vec(item) = receiver_type else {
+            self.errors.push(TypeCheckError::new(format!(
+                "map receiver must be Vec<T>, found {receiver_type:?}"
+            )));
+            for arg in args {
+                self.check_expr(arg.value());
+            }
+            return None;
+        };
+        let [arg] = args else {
+            self.errors.push(TypeCheckError::new(
+                "map requires exactly one closure".to_owned(),
+            ));
+            for arg in args {
+                self.check_expr(arg.value());
+            }
+            return None;
+        };
+        if arg.name().is_some() || arg.is_spread() {
+            self.errors.push(TypeCheckError::new(
+                "map requires one positional closure argument".to_owned(),
+            ));
+            self.check_expr(arg.value());
+            return None;
+        }
+        let Expr::Closure { params, body } = arg.value() else {
+            self.errors.push(TypeCheckError::new(
+                "map requires a closure argument".to_owned(),
+            ));
+            self.check_expr(arg.value());
+            return None;
+        };
+        let [param] = params.as_slice() else {
+            self.errors.push(TypeCheckError::new(
+                "map closures must bind exactly one parameter".to_owned(),
+            ));
+            return None;
+        };
+        let snapshot = self.insert_scoped_locals([(param.clone(), item.as_ref().clone())]);
+        let body_type = self.check_expr(body);
+        self.restore_scoped_locals(snapshot);
+        body_type.map(|ty| TypeKind::Vec(Box::new(ty)))
+    }
+
+    fn check_vec_sum_method_call(
+        &mut self,
+        receiver_type: &TypeKind,
+        args: &[CallArg],
+    ) -> Option<TypeKind> {
+        if !args.is_empty() {
+            self.errors.push(TypeCheckError::new(
+                "sum does not accept arguments".to_owned(),
+            ));
+            for arg in args {
+                self.check_expr(arg.value());
+            }
+            return None;
+        }
+        match receiver_type {
+            TypeKind::Vec(item) if item.is_integer() => Some(TypeKind::I64),
+            TypeKind::Vec(item) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "sum receiver items must be integers, found {item:?}"
+                )));
+                None
+            }
+            other => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "sum receiver must be Vec<T>, found {other:?}"
+                )));
+                None
+            }
+        }
     }
 
     fn check_traverse_method_call(
