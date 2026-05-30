@@ -21,7 +21,8 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> bool {
-        match self.fiber.status.clone() {
+        let status = std::mem::replace(&mut self.fiber.status, FlowFiberStatus::Running);
+        match status {
             FlowFiberStatus::Waiting(state) => {
                 self.resume_await_state(state, events, output);
                 true
@@ -34,7 +35,10 @@ impl Engine {
                 self.resume_choice_state(state, input, output);
                 true
             }
-            FlowFiberStatus::Running | FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_) => {
+            status @ (FlowFiberStatus::Running
+            | FlowFiberStatus::Done(_)
+            | FlowFiberStatus::Failed(_)) => {
+                self.fiber.status = status;
                 false
             }
         }
@@ -105,25 +109,25 @@ impl Engine {
 
     pub(super) fn resume_choice_state(
         &mut self,
-        state: ChoiceState,
+        mut state: ChoiceState,
         input: &RuntimeStepInput,
         output: &mut RuntimeStepOutput,
     ) {
-        let Some(option) = state
+        let Some(position) = state
             .options
             .iter()
-            .find(|option| input_selects_choice(input, option))
-            .cloned()
+            .position(|option| input_selects_choice(input, option))
         else {
             self.fiber.status = FlowFiberStatus::Choice(state);
             return;
         };
+        let option = state.options.swap_remove(position);
         let selected = option.id.clone().unwrap_or_else(|| option.label.clone());
         output.flow_events.push(FlowEvent::ChoiceSelected {
-            id: state.id.clone(),
+            id: state.id,
             option: selected,
         });
-        output.effects.line.extend(option.effects.clone());
+        output.effects.line.extend(option.effects);
         if let Some(out) = option.out {
             output.effects.line.push(LineEffectRequest::Out(out));
         }
@@ -210,23 +214,24 @@ impl Engine {
             else {
                 continue;
             };
-            let in_flight = state.in_flight[position].clone();
             match &event.kind {
                 TaskEventKind::Ready(value) => {
+                    let in_flight = state.in_flight.remove(position);
                     state.results[in_flight.index] = Some(value.clone());
-                    state.in_flight.remove(position);
                     output.flow_events.push(FlowEvent::AwaitReady {
                         need: in_flight.need,
                         value: value.clone(),
                     });
                 }
                 TaskEventKind::Progress(progress) => {
+                    let in_flight = &state.in_flight[position];
                     output.flow_events.push(FlowEvent::AwaitProgress {
-                        need: in_flight.need,
+                        need: in_flight.need.clone(),
                         progress: progress.clone(),
                     });
                 }
                 TaskEventKind::Err(error) => {
+                    let in_flight = &state.in_flight[position];
                     self.fiber.status = FlowFiberStatus::Failed(error.clone());
                     output.diagnostics.push(RuntimeDiagnostic {
                         message: format!(
@@ -237,6 +242,7 @@ impl Engine {
                     return;
                 }
                 TaskEventKind::Cancelled => {
+                    let in_flight = &state.in_flight[position];
                     let message = format!(
                         "await task {} at index {} was cancelled",
                         in_flight.task.0, in_flight.index

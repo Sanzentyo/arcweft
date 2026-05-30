@@ -444,6 +444,9 @@ Current high-confidence state:
 - Stream stepping temporarily takes the immutable stream-plan list while running
   stream ops, then restores it after the step, avoiding a full stream-plan clone
   on every runtime step.
+- Suspended await/choice/await-many resume now moves the current fiber status
+  out for dispatch instead of cloning the whole suspended state, and selected
+  choice/await-many entries are moved where possible.
 - The VM builds a deterministic flow-ID index when `Engine` is created, so VM
   and AOT-linear stepping fetch the current flow without scanning the runtime
   plan's flow list for every operation.
