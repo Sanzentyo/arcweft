@@ -647,6 +647,9 @@ Current high-confidence state:
   `FlowOp::Match` being executed instead of cloning that body again. CLI bench
   coverage includes a runtime match that jumps into a JIT-backed pure helper
   flow and records VM op count, pure call count, and zero arg-vector allocation.
+- Simple `for item in [i64, ...]` iteration binds the item through an integer
+  setter, so scalar pure-call loops no longer clone a `RuntimeValue` just to
+  make the current integer item visible in the loop scope.
 - The CLI/player pure accelerator stores compiled helper entries in dense
   helper-ID slots instead of a map, reducing scalar pure-call dispatch overhead
   while preserving deterministic cache statistics.

@@ -50,6 +50,17 @@ fn root_binding_ref_reuses_matching_ordered_slots() {
 }
 
 #[test]
+fn scoped_i64_binding_updates_without_value_input() {
+    let mut env = RuntimeEnv::default();
+
+    env.push_scope_with_capacity(1);
+    env.set_i64("item", 3);
+    env.set_i64("item", 5);
+
+    assert_eq!(env.get("item"), Some(&RuntimeValue::Int(5)));
+}
+
+#[test]
 fn spare_scopes_do_not_affect_runtime_env_semantics() {
     let mut env = RuntimeEnv::default();
     env.push_scope_with_capacity(2);

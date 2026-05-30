@@ -722,7 +722,11 @@ fn bind_simple_for_pattern(
 ) -> Option<Result<(), RuntimeEvalError>> {
     match pattern {
         RuntimePattern::Ident(name) | RuntimePattern::MutIdent(name) => {
-            env.set_ref(name, item);
+            if let RuntimeValue::Int(value) = item {
+                env.set_i64(name, *value);
+            } else {
+                env.set_ref(name, item);
+            }
             Some(Ok(()))
         }
         RuntimePattern::Discard => Some(Ok(())),

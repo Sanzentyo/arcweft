@@ -323,6 +323,12 @@ impl RuntimeEnv {
         }
     }
 
+    pub(crate) fn set_i64(&mut self, name: &str, value: i64) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.set_i64(name, value);
+        }
+    }
+
     pub fn set_root(&mut self, name: impl Into<String>, value: RuntimeValue) {
         if let Some(scope) = self.scopes.first_mut() {
             scope.set(name.into(), value);
@@ -438,6 +444,21 @@ impl RuntimeScope {
             self.bindings.push(RuntimeBinding {
                 name: name.to_owned(),
                 value: value.clone(),
+            });
+        }
+    }
+
+    fn set_i64(&mut self, name: &str, value: i64) {
+        if let Some(binding) = self
+            .bindings
+            .iter_mut()
+            .find(|binding| binding.name == name)
+        {
+            binding.value = RuntimeValue::Int(value);
+        } else {
+            self.bindings.push(RuntimeBinding {
+                name: name.to_owned(),
+                value: RuntimeValue::Int(value),
             });
         }
     }
