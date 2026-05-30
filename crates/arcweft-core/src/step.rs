@@ -96,6 +96,7 @@ pub struct RuntimePureCallStats {
     pub arg_stack_packs: usize,
     pub arg_vec_allocations: usize,
     pub arg_bytes_copied: usize,
+    pub arg_bytes_borrowed: usize,
     pub result_bytes_copied: usize,
     pub thread_pool_jobs: usize,
     pub fallbacks: usize,
@@ -118,6 +119,9 @@ impl RuntimePureCallStats {
             arg_bytes_copied: self
                 .arg_bytes_copied
                 .saturating_sub(before.arg_bytes_copied),
+            arg_bytes_borrowed: self
+                .arg_bytes_borrowed
+                .saturating_sub(before.arg_bytes_borrowed),
             result_bytes_copied: self
                 .result_bytes_copied
                 .saturating_sub(before.result_bytes_copied),

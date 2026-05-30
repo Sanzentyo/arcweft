@@ -775,6 +775,7 @@ pub(crate) struct ScriptBenchDeterministicSummary {
     pub(crate) pure_thread_pool_jobs_median: usize,
     pub(crate) pure_arg_vec_allocations_median: usize,
     pub(crate) pure_arg_bytes_copied_median: usize,
+    pub(crate) pure_arg_bytes_borrowed_median: usize,
     pub(crate) pure_result_bytes_copied_median: usize,
     pub(crate) diagnostics: usize,
 }
@@ -1004,6 +1005,7 @@ pub(crate) struct RuntimePureCallStatsSummary {
     pub(crate) arg_stack_packs: usize,
     pub(crate) arg_vec_allocations: usize,
     pub(crate) arg_bytes_copied: usize,
+    pub(crate) arg_bytes_borrowed: usize,
     pub(crate) result_bytes_copied: usize,
     pub(crate) thread_pool_jobs: usize,
     pub(crate) fallbacks: usize,
@@ -1177,6 +1179,7 @@ impl From<RuntimePureCallStats> for RuntimePureCallStatsSummary {
             arg_stack_packs: stats.arg_stack_packs,
             arg_vec_allocations: stats.arg_vec_allocations,
             arg_bytes_copied: stats.arg_bytes_copied,
+            arg_bytes_borrowed: stats.arg_bytes_borrowed,
             result_bytes_copied: stats.result_bytes_copied,
             thread_pool_jobs: stats.thread_pool_jobs,
             fallbacks: stats.fallbacks,

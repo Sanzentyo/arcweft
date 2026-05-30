@@ -3141,6 +3141,7 @@ struct RuntimeBenchSamples {
     pure_thread_pool_jobs: Vec<usize>,
     pure_arg_vec_allocations: Vec<usize>,
     pure_arg_bytes_copied: Vec<usize>,
+    pure_arg_bytes_borrowed: Vec<usize>,
     pure_result_bytes_copied: Vec<usize>,
     aot_fast_path_ops: Vec<usize>,
     executor_stats_samples: Vec<RuntimeExecutorStats>,
@@ -3214,6 +3215,13 @@ impl RuntimeBenchSamples {
                 .map(|step| step.stats.pure.arg_bytes_copied)
                 .sum(),
         );
+        self.pure_arg_bytes_borrowed.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.stats.pure.arg_bytes_borrowed)
+                .sum(),
+        );
         self.pure_result_bytes_copied.push(
             trace
                 .steps
@@ -3273,6 +3281,7 @@ impl RuntimeBenchSamples {
             pure_thread_pool_jobs_median: median_usize(&mut self.pure_thread_pool_jobs),
             pure_arg_vec_allocations_median: median_usize(&mut self.pure_arg_vec_allocations),
             pure_arg_bytes_copied_median: median_usize(&mut self.pure_arg_bytes_copied),
+            pure_arg_bytes_borrowed_median: median_usize(&mut self.pure_arg_bytes_borrowed),
             pure_result_bytes_copied_median: median_usize(&mut self.pure_result_bytes_copied),
             diagnostics: self.diagnostics,
         }

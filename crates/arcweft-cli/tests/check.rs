@@ -2611,6 +2611,13 @@ fn assert_runtime_pure_batch_json(pure_helper: &serde_json::Value) {
     assert_eq!(runtime_batch["stats"]["aot_calls"], 8);
     assert_eq!(runtime_batch["stats"]["arg_stack_packs"], 0);
     assert_eq!(runtime_batch["stats"]["arg_vec_allocations"], 0);
+    assert_eq!(runtime_batch["stats"]["arg_bytes_copied"], 0);
+    assert!(
+        runtime_batch["stats"]["arg_bytes_borrowed"]
+            .as_u64()
+            .is_some_and(|bytes| bytes > 0),
+        "runtime pure batch should report borrowed flat input bytes: {runtime_batch}"
+    );
     assert!(
         runtime_batch["stats"]["thread_pool_jobs"]
             .as_u64()
