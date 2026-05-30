@@ -47,7 +47,7 @@ Nonuniform map pure batch after numeric sequence typecheck fast path:
 
 | fixture | executor | pure backend | median elapsed ns | parse ns | typecheck ns | runtime plan ns | typecheck exprs | type judgments | pure calls | batch calls | batch items | arg vec allocs | borrowed arg bytes |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 009_nonuniform_map_pure_batch.arcw | bytecode_vm | jit | 15700 | 4255400 | 344000 | 477700 | 16 | 21 | 128 | 1 | 128 | 0 | 2048 |
+| 009_nonuniform_map_pure_batch.arcw | bytecode_vm | jit | 16300 | 3937100 | 247700 | 303600 | 16 | 21 | 128 | 1 | 128 | 0 | 2048 |
 
 The scalar pure fixtures remain on borrowed slice calls: `stack_packs = 0`,
 `arg_vec_allocs = 0`, and `copied_arg_bytes = 0`. The nonuniform map fixture
@@ -55,7 +55,9 @@ now checks the large typed numeric sequence through the expected-item fast path,
 so the typechecker records 16 expressions instead of recursively visiting every
 literal in the sequence. The expression lexer reserves token capacity from the
 source length, and flat literal bracket sequences bypass per-item Pratt parsing
-while preserving ordinary array repeat and mixed-expression parsing.
+while preserving ordinary array repeat and mixed-expression parsing. Bracket
+postfix parsing now stays in the Pratt parser, avoiding a pre-parse CST scan of
+large bracket literals.
 
 ## 2026-05-30 JST
 

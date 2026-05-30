@@ -330,7 +330,9 @@ pub fn parse_expr(source: &str) -> Result<Expr, ExprParseError> {
             body: Box::new(parse_expr(body)?),
         });
     }
-    if let Some((target, index)) = split_bracket_postfix(trimmed) {
+    if !trimmed.starts_with('[')
+        && let Some((target, index)) = split_bracket_postfix(trimmed)
+    {
         return Ok(Expr::Index {
             target: Box::new(parse_expr(target)?),
             index: Box::new(parse_expr(index).unwrap_or_else(|_| Expr::Raw(index.to_owned()))),
@@ -1361,16 +1363,6 @@ fn parse_entity_expr(source: &str) -> Option<EntityRefSyntax> {
     )))
 }
 
-fn split_bracket_postfix(source: &str) -> Option<(&str, &str)> {
-    let close = source.strip_suffix(']')?;
-    let open = find_last_top_level_open_bracket(close)?;
-    let target = close[..open].trim();
-    if target.is_empty() {
-        return None;
-    }
-    Some((target, &close[open + 1..]))
-}
-
 fn split_closure(source: &str) -> Option<(Vec<String>, &str)> {
     let rest = source.strip_prefix('|')?;
     let close = find_top_level_punctuation(rest, '|')?;
@@ -1382,6 +1374,16 @@ fn split_closure(source: &str) -> Option<(Vec<String>, &str)> {
         .collect();
     let body = rest[close + 1..].trim();
     (!body.is_empty()).then_some((params, body))
+}
+
+fn split_bracket_postfix(source: &str) -> Option<(&str, &str)> {
+    let close = source.strip_suffix(']')?;
+    let open = find_last_top_level_open_bracket(close)?;
+    let target = close[..open].trim();
+    if target.is_empty() {
+        return None;
+    }
+    Some((target, &close[open + 1..]))
 }
 
 fn find_last_top_level_open_bracket(source: &str) -> Option<usize> {

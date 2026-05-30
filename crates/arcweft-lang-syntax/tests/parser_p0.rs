@@ -216,6 +216,14 @@ fn large_flat_literal_sequences_parse_as_bracket_seq() {
 
     let repeat = parse_expr("[0i64; 4]").expect("array repeat still parses");
     assert!(matches!(repeat, Expr::ArrayRepeat { .. }));
+
+    let indexed = parse_expr("[1i64, 2i64][0i64]").expect("literal sequence index parses");
+    assert!(matches!(
+        indexed,
+        Expr::Index { target, index }
+            if matches!(target.as_ref(), Expr::BracketSeq(_))
+                && matches!(index.as_ref(), Expr::Literal(Literal::Int { .. }))
+    ));
 }
 
 #[test]
