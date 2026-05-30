@@ -270,15 +270,7 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         self.stats.pure_calls += 1;
         self.stats.vm_calls += 1;
         self.stats.arg_stack_packs += 1;
-        let value = self.call_values(
-            helper,
-            &args
-                .as_slice()
-                .iter()
-                .copied()
-                .map(RuntimeValue::Int)
-                .collect::<Vec<_>>(),
-        )?;
+        let value = VmPureFunctionBackend.evaluate_i64_args(helper, args)?;
         match value {
             RuntimeValue::Int(value) => Ok(Some(value)),
             value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),

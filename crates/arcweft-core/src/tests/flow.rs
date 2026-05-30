@@ -116,6 +116,7 @@ fn engine_executes_runtime_pure_call_from_flow() {
     assert_eq!(result.stats.pure.pure_calls, 1);
     assert_eq!(result.stats.pure.vm_calls, 1);
     assert_eq!(result.stats.pure.arg_stack_packs, 1);
+    assert_eq!(result.stats.pure.arg_vec_allocations, 0);
 }
 
 #[test]
