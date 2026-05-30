@@ -439,7 +439,9 @@ Current high-confidence state:
   this scheduler before performing adapter-owned completion work. Joinable flow
   `thread` blocks lower to a deterministic scheduler marker plus a scoped VM
   child fiber; detached flow threads remain rejected until the detach contract
-  is checked explicitly.
+  is checked explicitly. Child-fiber activity checks use the queue length
+  directly because completed/failed children are removed when stepped, avoiding
+  repeated scans during return and stop-reason decisions.
 - The CLI native task bridge now completes read-only dispatched task batches on
   a worker pool and reports path-free `parallel_batches`, `parallel_tasks`, and
   `parallel_workers` counters in `native_io`; write tasks stay ordered.

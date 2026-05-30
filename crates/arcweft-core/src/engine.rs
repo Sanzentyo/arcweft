@@ -341,9 +341,7 @@ impl Engine {
     }
 
     pub(super) fn has_active_child_fibers(&self) -> bool {
-        self.child_fibers
-            .iter()
-            .any(|fiber| !matches!(fiber.status, FlowFiberStatus::Done(_)))
+        !self.child_fibers.is_empty()
     }
 
     fn pending_ops_len(&self) -> usize {
