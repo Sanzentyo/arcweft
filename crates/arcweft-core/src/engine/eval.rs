@@ -237,8 +237,12 @@ impl Engine {
         {
             return None;
         }
-        let helper = &self.plan.pure_helpers[first_helper.0];
-        if !pure_helper_returns_i64(helper) {
+        if !self
+            .pure_helper_i64_results
+            .get(first_helper.0)
+            .copied()
+            .unwrap_or(false)
+        {
             return None;
         }
         let arity = first_args.len();
@@ -535,7 +539,7 @@ impl Engine {
     }
 }
 
-fn pure_helper_returns_i64(helper: &crate::plan::RuntimePureHelper) -> bool {
+pub(super) fn pure_helper_returns_i64(helper: &crate::plan::RuntimePureHelper) -> bool {
     let mut int_names = helper
         .input_names
         .iter()

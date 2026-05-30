@@ -44,6 +44,7 @@ pub struct Engine {
     child_fibers: VecDeque<FlowFiber>,
     run_child_next: bool,
     pure_i64_batch_inputs: Vec<i64>,
+    pure_helper_i64_results: Vec<bool>,
 }
 
 /// Current flow execution cursor.
@@ -209,6 +210,11 @@ impl Engine {
             .iter()
             .map(|plan| (plan.id.clone(), StreamRuntimeState::new(plan.id.clone())))
             .collect();
+        let pure_helper_i64_results = plan
+            .pure_helpers
+            .iter()
+            .map(eval::pure_helper_returns_i64)
+            .collect();
         Self {
             plan,
             flow_positions,
@@ -226,6 +232,7 @@ impl Engine {
             child_fibers: VecDeque::new(),
             run_child_next: false,
             pure_i64_batch_inputs: Vec::new(),
+            pure_helper_i64_results,
         }
     }
 

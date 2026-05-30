@@ -539,6 +539,9 @@ Current high-confidence state:
   JSON, and can use the configured AOT worker pool when the batch threshold is
   met. The VM engine keeps a reusable row-major input scratch buffer so repeated
   collection batches do not allocate a fresh input vector on every evaluation.
+  Engine construction also caches each pure helper's conservative integer-result
+  shape, so repeated collection-batch eligibility checks no longer rescan helper
+  expression trees.
 - Cranelift input helpers now include a row-major batch entry point that accepts
   input and output slices through the native adapter boundary. Runtime pure
   batch execution can call JIT once per batch instead of crossing the
