@@ -3140,6 +3140,8 @@ struct RuntimeBenchSamples {
     pure_batch_items: Vec<usize>,
     pure_thread_pool_jobs: Vec<usize>,
     pure_arg_vec_allocations: Vec<usize>,
+    pure_arg_bytes_copied: Vec<usize>,
+    pure_result_bytes_copied: Vec<usize>,
     aot_fast_path_ops: Vec<usize>,
     executor_stats_samples: Vec<RuntimeExecutorStats>,
     native_io: NativeTaskStatsSamples,
@@ -3205,6 +3207,20 @@ impl RuntimeBenchSamples {
                 .map(|step| step.stats.pure.arg_vec_allocations)
                 .sum(),
         );
+        self.pure_arg_bytes_copied.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.stats.pure.arg_bytes_copied)
+                .sum(),
+        );
+        self.pure_result_bytes_copied.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.stats.pure.result_bytes_copied)
+                .sum(),
+        );
         self.aot_fast_path_ops
             .push(trace.executor_stats.aot_fast_path_ops);
         self.executor_stats_samples.push(trace.executor_stats);
@@ -3256,6 +3272,8 @@ impl RuntimeBenchSamples {
             pure_batch_items_median: median_usize(&mut self.pure_batch_items),
             pure_thread_pool_jobs_median: median_usize(&mut self.pure_thread_pool_jobs),
             pure_arg_vec_allocations_median: median_usize(&mut self.pure_arg_vec_allocations),
+            pure_arg_bytes_copied_median: median_usize(&mut self.pure_arg_bytes_copied),
+            pure_result_bytes_copied_median: median_usize(&mut self.pure_result_bytes_copied),
             diagnostics: self.diagnostics,
         }
     }

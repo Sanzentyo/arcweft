@@ -2152,6 +2152,14 @@ flow @flow.for_pure for_pure {
         0
     );
     assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_copied_median"],
+        64
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_result_bytes_copied_median"],
+        32
+    );
+    assert_eq!(
         measurement["executor_stats"]["pure_config"]["backend"],
         "jit"
     );
