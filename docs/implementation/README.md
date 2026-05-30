@@ -674,6 +674,9 @@ Current high-confidence state:
 - Flow bench sections now build the selected-entry runtime plan once before
   sampling and clone that ready-to-run plan for each isolated run, avoiding
   repeated entry-flow string construction inside the measurement loop.
+- Bench flow sections now compile the pure accelerator once per section and
+  reset runtime counters per sample, so steady-state runtime measurements do
+  not include repeated JIT/AOT helper compilation.
 - Borrowed root binding updates now reuse existing environment slots without
   recloning binding names, so repeated runtime steps only clone the value when
   an adapter-provided root binding is already present.

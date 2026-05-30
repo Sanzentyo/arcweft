@@ -21,6 +21,7 @@ cargo run -p arcweft-cli --quiet -- jit check --json --case accumulation-mix --i
 cargo run -p arcweft-cli --quiet -- jit check --json --case branch-mix --iterations 5000 --warmup 500 --samples 5 --input-seed 11 --julia
 cargo run -p arcweft-cli --quiet -- toolchain-profile --command check --repeat 3 --json
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/001_thread_scheduling.arcw --json --iterations 10 --warmup 2 --samples 5 --steps 64 --max-ops 64
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/002_map_pure_jit.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 ```
 
 JIT check summaries:
@@ -41,6 +42,16 @@ Checked-in thread scheduling bench:
 | fixture | executor | iterations | steps | median elapsed ns | median executed ops | per executed op ns | median line effects | median task requests |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 001_thread_scheduling.arcw | bytecode_vm | 10 | 64 | 26600 | 19 | 1400 | 3 | 3 |
+
+Checked-in map pure JIT bench:
+
+| fixture | executor | pure backend | iterations | median elapsed ns | pure calls | batch calls | batch items | arg vec allocs | borrowed arg bytes |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 002_map_pure_jit.arcw | bytecode_vm | jit | 8 | 29000 | 16 | 1 | 16 | 0 | 256 |
+
+The map pure JIT bench reports helper compile time separately from measured
+elapsed time. In this run the helper compile counter was 4621600 ns, while the
+steady-state sample median above stayed at 29000 ns.
 
 The JSON outputs above reported no source file paths and included only command
 argv tokens, host core/thread counts, timing counters, and deterministic

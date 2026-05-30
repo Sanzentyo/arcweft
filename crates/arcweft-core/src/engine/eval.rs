@@ -618,6 +618,15 @@ impl Engine {
         let RuntimeExpr::PureCall { args, .. } = body else {
             unreachable!("i64 map batch shape checked before row collection");
         };
+        if self.collect_i64_map_batch_inputs_without_scope(
+            items,
+            param,
+            args,
+            arity,
+            flat_inputs,
+        )? {
+            return Ok(());
+        }
         flat_inputs.clear();
         flat_inputs.reserve(items.len().saturating_mul(arity));
         for item in items {
@@ -635,6 +644,49 @@ impl Engine {
             self.fiber.env.pop_scope();
         }
         Ok(())
+    }
+
+    fn collect_i64_map_batch_inputs_without_scope(
+        &mut self,
+        items: &[RuntimeValue],
+        param: &str,
+        args: &[RuntimeExpr],
+        arity: usize,
+        flat_inputs: &mut Vec<i64>,
+    ) -> Result<bool, RuntimeEvalError> {
+        flat_inputs.clear();
+        flat_inputs.reserve(items.len().saturating_mul(arity));
+        for item in items {
+            for arg in args.iter().take(arity) {
+                let Some(value) = self.evaluate_i64_map_arg_without_scope(arg, param, item)? else {
+                    flat_inputs.clear();
+                    return Ok(false);
+                };
+                flat_inputs.push(value);
+            }
+        }
+        Ok(true)
+    }
+
+    fn evaluate_i64_map_arg_without_scope(
+        &self,
+        expr: &RuntimeExpr,
+        param: &str,
+        item: &RuntimeValue,
+    ) -> Result<Option<i64>, RuntimeEvalError> {
+        match expr {
+            RuntimeExpr::Value(RuntimeValue::Int(value)) => Ok(Some(*value)),
+            RuntimeExpr::Local(name) if name == param => match item {
+                RuntimeValue::Int(value) => Ok(Some(*value)),
+                value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
+            },
+            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
+                Some(RuntimeValue::Int(value)) => Ok(Some(*value)),
+                Some(value) => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
+                None => Err(RuntimeEvalError::UnknownBinding(name.clone())),
+            },
+            _ => Ok(None),
+        }
     }
 
     fn evaluate_call_args(

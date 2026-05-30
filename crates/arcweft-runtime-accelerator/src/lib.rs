@@ -148,6 +148,12 @@ impl RuntimePureAccelerator {
         self.pool.is_some()
     }
 
+    pub fn reset_runtime_counters(&mut self) {
+        self.stats = RuntimePureCallStats::default();
+        self.compile_stats.cache_hits = 0;
+        self.compile_stats.cache_misses = 0;
+    }
+
     pub fn call_i64_batch(
         &mut self,
         helper: &RuntimePureHelper,

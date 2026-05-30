@@ -1796,13 +1796,14 @@ struct RuntimeRunTrace {
     native_io: NativeTaskStats,
 }
 
-fn run_runtime_bench_steps(
+fn run_runtime_bench_steps_with_pure(
     plan: RuntimePlan,
     source_path: Option<&Path>,
     config: RuntimeStepRunConfig,
     values: &[RuntimeBinding],
+    pure: &mut RuntimePureAccelerator,
 ) -> RuntimeBenchTrace {
-    let mut executor = RuntimeExecutorInstance::new(plan, config.executor, config.pure_config);
+    let mut executor = RuntimeExecutorCore::new(plan, config.executor);
     let mut host = source_path.map(NativeTaskBridge::new);
     let mut task_events = Vec::new();
     let mut steps = Vec::new();
@@ -1814,6 +1815,7 @@ fn run_runtime_bench_steps(
             },
             values,
             step_options(config.mode, config.max_ops),
+            pure,
         );
         let RuntimeStepResult {
             mut output,
@@ -1840,7 +1842,7 @@ fn run_runtime_bench_steps(
     }
     RuntimeBenchTrace {
         steps,
-        executor_stats: executor.executor_stats(),
+        executor_stats: runtime_executor_stats(executor.fast_path_ops(), pure),
         native_io: host
             .as_ref()
             .map_or_else(NativeTaskStats::default, NativeTaskBridge::stats),
@@ -1868,6 +1870,52 @@ enum RuntimeExecutorInstance {
         executor: AotExecutor,
         pure: RuntimePureAccelerator,
     },
+}
+
+enum RuntimeExecutorCore {
+    BytecodeVm(BytecodeVmExecutor),
+    Aot(AotExecutor),
+}
+
+impl RuntimeExecutorCore {
+    fn new(plan: RuntimePlan, tier: CliRuntimeExecutorTier) -> Self {
+        match tier {
+            CliRuntimeExecutorTier::BytecodeVm => {
+                Self::BytecodeVm(BytecodeVmExecutor::from_runtime_plan(plan))
+            }
+            CliRuntimeExecutorTier::Aot => Self::Aot(AotExecutor::new(plan)),
+        }
+    }
+
+    fn step_with_root_bindings(
+        &mut self,
+        input: RuntimeStepInput,
+        root_bindings: &[RuntimeBinding],
+        options: RuntimeStepOptions,
+        pure: &mut RuntimePureAccelerator,
+    ) -> RuntimeStepResult {
+        match self {
+            Self::BytecodeVm(executor) => executor.step_with_root_bindings_and_pure_backend(
+                input,
+                root_bindings,
+                options,
+                pure,
+            ),
+            Self::Aot(executor) => executor.step_with_root_bindings_and_pure_backend(
+                input,
+                root_bindings,
+                options,
+                pure,
+            ),
+        }
+    }
+
+    fn fast_path_ops(&self) -> usize {
+        match self {
+            Self::BytecodeVm(_) => 0,
+            Self::Aot(executor) => executor.fast_path_ops(),
+        }
+    }
 }
 
 impl RuntimeExecutorInstance {
@@ -3192,9 +3240,11 @@ fn run_bench_flow_section(
     let mut samples = RuntimeBenchSamples::default();
     let mut selected_plan = plan.clone();
     selected_plan.entry_flow = Some(FlowRuntimeId(flow.to_owned()));
+    let mut pure = RuntimePureAccelerator::with_config(pure_config, &selected_plan.pure_helpers);
     for iteration in 0..options.warmup + options.iterations {
+        pure.reset_runtime_counters();
         let started = Instant::now();
-        let trace = run_runtime_bench_steps(
+        let trace = run_runtime_bench_steps_with_pure(
             selected_plan.clone(),
             Some(source_path),
             RuntimeStepRunConfig {
@@ -3205,6 +3255,7 @@ fn run_bench_flow_section(
                 pure_config,
             },
             &options.values,
+            &mut pure,
         );
         let elapsed_ns = started.elapsed().as_nanos();
         if iteration < options.warmup {

@@ -1,0 +1,16 @@
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+bench @bench.map_pure {
+    measure iterations = 8 { start(@flow.map_pure) }
+}
+
+flow @flow.map_pure map_pure {
+    let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64, 5i64, 6i64, 7i64, 8i64, 9i64, 10i64, 11i64, 12i64, 13i64, 14i64, 15i64, 16i64]
+    let scores: Vec<i64> = values.map(|item| score(item, 2i64))
+    let total: i64 = scores.sum()
+    log.info(total)
+    return "done"
+}
