@@ -331,9 +331,15 @@ impl RuntimePlan {
     }
 
     pub fn entry_cursor(&self) -> Option<FlowCursor> {
-        self.entry_flow.as_ref().map(|flow| FlowCursor {
-            flow: flow.clone(),
-            op_index: 0,
+        self.entry_flow.as_ref().and_then(|entry_flow| {
+            self.flows
+                .iter()
+                .position(|flow| &flow.id == entry_flow)
+                .map(|flow_index| FlowCursor {
+                    flow: entry_flow.clone(),
+                    flow_index,
+                    op_index: 0,
+                })
         })
     }
 }

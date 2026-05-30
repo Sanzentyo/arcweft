@@ -155,6 +155,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.
+- Flow cursors carry the resolved flow index alongside the flow id. Normal VM
+  and AOT stepping now read the current flow from the runtime plan vector
+  directly and reserve the flow-id map lookup for entry/goto resolution.
 - `arcweft-cli` keeps user-facing JSON report schemas in `output.rs`,
   including check, profile, verify-types, bench, runtime step, and compiler
   counter summaries. `main.rs` remains the command orchestration layer instead

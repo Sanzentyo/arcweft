@@ -37,11 +37,18 @@ impl Engine {
         output.flow_events.push(FlowEvent::Goto {
             target: target.clone(),
         });
-        self.fiber.cursor = Some(FlowCursor {
-            flow: target,
-            op_index: 0,
-        });
-        self.fiber.status = FlowFiberStatus::Running;
+        if let Some(flow_index) = self.flow_index(&target) {
+            self.fiber.cursor = Some(FlowCursor {
+                flow: target,
+                flow_index,
+                op_index: 0,
+            });
+            self.fiber.status = FlowFiberStatus::Running;
+        } else {
+            self.fiber.cursor = None;
+            self.fiber.status =
+                FlowFiberStatus::Failed(format!("missing goto target {}", target.0));
+        }
     }
 
     pub(super) fn return_value(&mut self, value: String, output: &mut RuntimeStepOutput) {

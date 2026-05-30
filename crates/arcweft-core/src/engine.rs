@@ -91,6 +91,7 @@ pub enum FlowControlStackEntryKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FlowCursor {
     pub flow: FlowRuntimeId,
+    pub flow_index: usize,
     pub op_index: usize,
 }
 
@@ -168,6 +169,7 @@ impl FlowCursor {
     fn advanced(&self) -> Self {
         Self {
             flow: self.flow.clone(),
+            flow_index: self.flow_index,
             op_index: self.op_index + 1,
         }
     }
@@ -177,6 +179,7 @@ impl Default for FlowCursor {
     fn default() -> Self {
         Self {
             flow: FlowRuntimeId(String::new()),
+            flow_index: 0,
             op_index: 0,
         }
     }
@@ -243,9 +246,14 @@ impl Engine {
     }
 
     pub(super) fn flow_at_cursor(&self, cursor: &FlowCursor) -> Option<&RuntimeFlow> {
-        self.flow_positions
-            .get(&cursor.flow)
-            .and_then(|index| self.plan.flows.get(*index))
+        self.plan
+            .flows
+            .get(cursor.flow_index)
+            .filter(|flow| flow.id == cursor.flow)
+    }
+
+    pub(super) fn flow_index(&self, flow: &FlowRuntimeId) -> Option<usize> {
+        self.flow_positions.get(flow).copied()
     }
 
     pub fn child_fiber_count(&self) -> usize {

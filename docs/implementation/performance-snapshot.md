@@ -73,7 +73,7 @@ Checked-in for-loop pure JIT bench:
 
 | fixture | executor | pure backend | iterations | median elapsed ns | executed ops | pure calls | stack packs | copied arg bytes | borrowed arg bytes | line effects |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 003_for_pure_jit.arcw | bytecode_vm | jit | 8 | 54600 | 68 | 16 | 0 | 0 | 256 | 16 |
+| 003_for_pure_jit.arcw | bytecode_vm | jit | 8 | 50200 | 68 | 16 | 0 | 0 | 256 | 16 |
 
 This for-loop sample uses scope and pattern binding capacity derived from the
 structured runtime pattern enum, and `RuntimeEnv` reuses popped temporary
@@ -86,6 +86,8 @@ in the phase counters instead of the measured runtime loop.
 The native task bridge is lazy in measured sections, so pure and short
 runtime-only benches do not construct adapter state unless emitted host tasks
 must be completed.
+Flow cursors carry a resolved flow vector index, avoiding per-op flow-id map
+lookups during normal VM/AOT stepping.
 After scalar result-copy accounting was tightened, the same fixture reports
 `pure_result_bytes_copied_median = 0`; only batch output buffers count result
 bytes.
