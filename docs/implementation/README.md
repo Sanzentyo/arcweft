@@ -669,6 +669,10 @@ Current high-confidence state:
   runtime calls the pure helper once and multiplies the result by the logical
   row count. The bench counters still report the logical batch size while
   `arg_bytes_borrowed` drops to the single repeated row.
+- `tests/fixtures/arcw/spec_should_pass/bench/009_nonuniform_map_pure_batch.arcw`
+  covers the complementary non-repeated map/sum path so JIT/AOT/VM batch
+  input packing, result-copy elimination, and runtime type validation work can
+  be compared without triggering the repeated-row shortcut.
 - Fast-path scalar pure calls read local integer arguments by borrow when
   packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
   VM/AOT/JIT pure backends.
