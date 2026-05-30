@@ -885,10 +885,11 @@ fn warmup_jit_check_aot(
     warmup: usize,
     input_seed: u64,
 ) -> Result<(), ExitCode> {
+    let mut slots = Vec::new();
     for index in 0..warmup {
         let inputs = jit_check_input_array(input_seed, 0, index, arity);
         let _ = compiled
-            .call_with_inputs(&inputs[..arity])
+            .call_with_inputs_scratch(&inputs[..arity], &mut slots)
             .map_err(|error| {
                 eprintln!("error: AOT warmup failed: {error}");
                 ExitCode::FAILURE
@@ -904,10 +905,11 @@ fn measure_jit_check_aot(
     iterations: usize,
     input_seed: u64,
 ) -> Result<JitRepeatedMeasurement, ExitCode> {
+    let mut slots = Vec::new();
     measure_repeated(samples, iterations, |sample, index| {
         let inputs = jit_check_input_array(input_seed, sample, index, arity);
         compiled
-            .call_with_inputs(&inputs[..arity])
+            .call_with_inputs_scratch(&inputs[..arity], &mut slots)
             .map(|(value, _stats)| value)
             .map_err(|error| {
                 eprintln!("error: AOT evaluation failed: {error}");
