@@ -11,6 +11,7 @@ mod source;
 mod step;
 mod stream;
 mod task;
+mod value;
 
 fn call(name: &str) -> LineEffectRequest {
     LineEffectRequest::Call(RuntimeCall {

@@ -632,6 +632,9 @@ Current high-confidence state:
   executors as a borrowed slice, avoiding `values.to_vec()` allocation before
   each measured step while preserving the owned step-input path for adapters
   that need to transfer events.
+- Borrowed root binding updates now reuse existing environment slots without
+  recloning binding names, so repeated runtime steps only clone the value when
+  an adapter-provided root binding is already present.
 - The CLI regression harness now rejects generated `.arcweft` directories under
   checked-in fixtures and scans non-review source/docs/tests for removed
   whitespace-command DSL or compatibility-shim text. Run fixtures execute from

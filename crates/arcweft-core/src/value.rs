@@ -274,7 +274,16 @@ impl RuntimeEnv {
         bindings: impl IntoIterator<Item = &'a RuntimeBinding>,
     ) {
         for binding in bindings {
-            self.set_root(binding.name.clone(), binding.value.clone());
+            self.set_root_ref(&binding.name, &binding.value);
+        }
+    }
+
+    fn set_root_ref(&mut self, name: &str, value: &RuntimeValue) {
+        if self.scopes.is_empty() {
+            self.scopes.push(RuntimeScope::default());
+        }
+        if let Some(scope) = self.scopes.first_mut() {
+            scope.set_ref(name, value);
         }
     }
 
@@ -299,6 +308,21 @@ impl RuntimeScope {
             binding.value = value;
         } else {
             self.bindings.push(RuntimeBinding { name, value });
+        }
+    }
+
+    fn set_ref(&mut self, name: &str, value: &RuntimeValue) {
+        if let Some(binding) = self
+            .bindings
+            .iter_mut()
+            .find(|binding| binding.name == name)
+        {
+            binding.value = value.clone();
+        } else {
+            self.bindings.push(RuntimeBinding {
+                name: name.to_owned(),
+                value: value.clone(),
+            });
         }
     }
 
