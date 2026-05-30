@@ -95,6 +95,7 @@ fn runtime_pure_helpers(candidates: &[PureHelperCandidate]) -> Vec<RuntimePureHe
             name: candidate.name().to_owned(),
             input_names: candidate.input_names().to_vec(),
             expr: candidate.expr().clone(),
+            scalar_eval_supported: candidate.expr().supports_scalar_pure_eval(),
             origin: candidate.origin(),
         })
         .collect()

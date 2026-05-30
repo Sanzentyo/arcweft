@@ -122,6 +122,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   deterministic helper expressions. The VM remains the reference backend, but
   repeated dynamic pure calls avoid constructing intermediate `RuntimeValue`
   payloads until the final result.
+- Runtime pure helper plans record whether the scalar evaluator is supported at
+  lowering/construction time, avoiding a recursive expression-shape scan on
+  every VM scratch call.
 - `arcweft-cli` keeps user-facing JSON report schemas in `output.rs`,
   including check, profile, verify-types, bench, runtime step, and compiler
   counter summaries. `main.rs` remains the command orchestration layer instead

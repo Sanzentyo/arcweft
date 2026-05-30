@@ -121,6 +121,46 @@ pub enum RuntimeExpr {
     },
 }
 
+impl RuntimeExpr {
+    /// Returns whether this expression can use the allocation-light scalar pure evaluator.
+    pub fn supports_scalar_pure_eval(&self) -> bool {
+        match self {
+            Self::Value(RuntimeValue::Bool(_) | RuntimeValue::Int(_)) | Self::Local(_) => true,
+            Self::Let { expr, body, .. } => {
+                expr.supports_scalar_pure_eval() && body.supports_scalar_pure_eval()
+            }
+            Self::Unary { expr, .. } => expr.supports_scalar_pure_eval(),
+            Self::Binary { lhs, rhs, .. } => {
+                lhs.supports_scalar_pure_eval() && rhs.supports_scalar_pure_eval()
+            }
+            Self::If {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                condition.supports_scalar_pure_eval()
+                    && then_expr.supports_scalar_pure_eval()
+                    && else_expr.supports_scalar_pure_eval()
+            }
+            Self::Value(_)
+            | Self::EntityRef(_)
+            | Self::Tuple(_)
+            | Self::BracketSeq(_)
+            | Self::Record(_)
+            | Self::Variant { .. }
+            | Self::Field { .. }
+            | Self::Call { .. }
+            | Self::PureCall { .. }
+            | Self::SpreadArg(_)
+            | Self::MethodCall { .. }
+            | Self::Map { .. }
+            | Self::Sum { .. }
+            | Self::IfLet { .. }
+            | Self::Match { .. } => false,
+        }
+    }
+}
+
 /// One value-producing `match` arm in a runtime expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeExprMatchArm {

@@ -80,6 +80,7 @@ fn vm_runtime_value_fallback_records_pure_call_stats() {
         name: "echo_label".to_owned(),
         input_names: vec!["label".to_owned()],
         expr: RuntimeExpr::Local("label".to_owned()),
+        scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     };
     let mut backend = VmRuntimePureCallBackend::default();
@@ -106,6 +107,7 @@ fn vm_runtime_i64_fast_path_records_copy_bytes() {
             op: RuntimeBinaryOp::Add,
             rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
         },
+        scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     };
     let mut backend = VmRuntimePureCallBackend::default();
@@ -137,6 +139,7 @@ fn vm_pure_scratch_reuses_and_rebuilds_i64_root_bindings() {
             op: RuntimeBinaryOp::Add,
             rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
         },
+        scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     };
     let double = RuntimePureHelper {
@@ -148,6 +151,7 @@ fn vm_pure_scratch_reuses_and_rebuilds_i64_root_bindings() {
             op: RuntimeBinaryOp::Mul,
             rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
         },
+        scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     };
     let mut scratch = VmPureFunctionScratch::default();
@@ -178,6 +182,7 @@ fn vm_runtime_i64_batch_records_batch_stats() {
             op: RuntimeBinaryOp::Mul,
             rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
         },
+        scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     };
     let mut backend = VmRuntimePureCallBackend::default();
@@ -219,6 +224,7 @@ fn vm_runtime_i64_flat_batch_borrows_input_slice() {
             op: RuntimeBinaryOp::Mul,
             rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
         },
+        scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     };
     let mut backend = VmRuntimePureCallBackend::default();

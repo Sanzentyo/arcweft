@@ -765,6 +765,7 @@ impl JitCheckTarget {
             name: self.name.clone(),
             input_names: self.input_names.clone(),
             expr: self.expr.clone(),
+            scalar_eval_supported: self.expr.supports_scalar_pure_eval(),
             origin: RuntimePureHelperOrigin::Annotated,
         }
     }
@@ -2981,6 +2982,7 @@ fn measure_script_bench_runtime_pure_batch(
         name: target.name.clone(),
         input_names: target.input_names.clone(),
         expr: target.expr.clone(),
+        scalar_eval_supported: target.expr.supports_scalar_pure_eval(),
         origin: RuntimePureHelperOrigin::Annotated,
     };
     if options.warmup > 0 {

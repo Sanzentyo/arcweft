@@ -103,6 +103,7 @@ fn engine_executes_runtime_pure_call_from_flow() {
             }),
             else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::Int(0))),
         },
+        scalar_eval_supported: false,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
     let mut engine = Engine::new(plan);
@@ -150,6 +151,7 @@ fn engine_batches_bracket_sequence_pure_calls() {
             op: RuntimeBinaryOp::Mul,
             rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
         },
+        scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
     let mut engine = Engine::new(plan);
@@ -209,6 +211,7 @@ fn engine_fuses_bracket_sequence_pure_batch_sum() {
             op: RuntimeBinaryOp::Mul,
             rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
         },
+        scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
     let mut engine = Engine::new(plan);
@@ -261,6 +264,7 @@ fn engine_batches_map_closure_pure_calls() {
             op: RuntimeBinaryOp::Mul,
             rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
         },
+        scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
     let mut engine = Engine::new(plan);
@@ -319,6 +323,7 @@ fn engine_fuses_map_closure_pure_batch_sum() {
             op: RuntimeBinaryOp::Mul,
             rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
         },
+        scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
     let mut engine = Engine::new(plan);

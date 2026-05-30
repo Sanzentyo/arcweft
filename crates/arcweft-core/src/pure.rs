@@ -249,7 +249,7 @@ impl VmPureFunctionScratch {
         self.env
             .replace_root_i64_bindings(&helper.input_names, args);
         let mut evaluator = PureEvaluator::with_env(std::mem::take(&mut self.env));
-        let result = if pure_scalar_eval_supported(&helper.expr) {
+        let result = if helper.scalar_eval_supported {
             evaluator
                 .evaluate_scalar_expr(&helper.expr)
                 .map(PureScalar::into_runtime_value)
@@ -904,44 +904,6 @@ impl PureScalar {
             Self::Bool(value) => runtime_value_label(&RuntimeValue::Bool(value)),
             Self::Int(value) => runtime_value_label(&RuntimeValue::Int(value)),
         }
-    }
-}
-
-fn pure_scalar_eval_supported(expr: &RuntimeExpr) -> bool {
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::Bool(_) | RuntimeValue::Int(_))
-        | RuntimeExpr::Local(_) => true,
-        RuntimeExpr::Let { expr, body, .. } => {
-            pure_scalar_eval_supported(expr) && pure_scalar_eval_supported(body)
-        }
-        RuntimeExpr::Unary { expr, .. } => pure_scalar_eval_supported(expr),
-        RuntimeExpr::Binary { lhs, rhs, .. } => {
-            pure_scalar_eval_supported(lhs) && pure_scalar_eval_supported(rhs)
-        }
-        RuntimeExpr::If {
-            condition,
-            then_expr,
-            else_expr,
-        } => {
-            pure_scalar_eval_supported(condition)
-                && pure_scalar_eval_supported(then_expr)
-                && pure_scalar_eval_supported(else_expr)
-        }
-        RuntimeExpr::Value(_)
-        | RuntimeExpr::EntityRef(_)
-        | RuntimeExpr::Tuple(_)
-        | RuntimeExpr::BracketSeq(_)
-        | RuntimeExpr::Record(_)
-        | RuntimeExpr::Variant { .. }
-        | RuntimeExpr::Field { .. }
-        | RuntimeExpr::Call { .. }
-        | RuntimeExpr::PureCall { .. }
-        | RuntimeExpr::SpreadArg(_)
-        | RuntimeExpr::MethodCall { .. }
-        | RuntimeExpr::Map { .. }
-        | RuntimeExpr::Sum { .. }
-        | RuntimeExpr::IfLet { .. }
-        | RuntimeExpr::Match { .. } => false,
     }
 }
 

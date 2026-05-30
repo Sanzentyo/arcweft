@@ -878,6 +878,7 @@ mod tests {
                     rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
                 }),
             },
+            scalar_eval_supported: true,
             origin: RuntimePureHelperOrigin::Annotated,
         };
         let mut accelerator = RuntimePureAccelerator::new(
@@ -921,6 +922,7 @@ mod tests {
                     rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
                 }),
             },
+            scalar_eval_supported: true,
             origin: RuntimePureHelperOrigin::Inferred,
         };
         let mut accelerator = RuntimePureAccelerator::with_config(
@@ -968,6 +970,7 @@ mod tests {
                     rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
                 }),
             },
+            scalar_eval_supported: true,
             origin: RuntimePureHelperOrigin::Annotated,
         };
         let mut accelerator = RuntimePureAccelerator::with_config(
@@ -1033,6 +1036,7 @@ mod tests {
                     rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
                 }),
             },
+            scalar_eval_supported: true,
             origin: RuntimePureHelperOrigin::Annotated,
         };
         let mut accelerator = RuntimePureAccelerator::with_config(
@@ -1077,6 +1081,7 @@ mod tests {
                     rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
                 }),
             },
+            scalar_eval_supported: true,
             origin: RuntimePureHelperOrigin::Annotated,
         };
         let mut accelerator = RuntimePureAccelerator::with_config(

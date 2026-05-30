@@ -99,6 +99,7 @@ pub struct RuntimePureHelper {
     pub name: String,
     pub input_names: Vec<String>,
     pub expr: RuntimeExpr,
+    pub scalar_eval_supported: bool,
     pub origin: RuntimePureHelperOrigin,
 }
 
