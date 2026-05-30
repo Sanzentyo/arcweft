@@ -677,6 +677,9 @@ Current high-confidence state:
 - Bench flow sections now compile the pure accelerator once per section and
   reset runtime counters per sample, so steady-state runtime measurements do
   not include repeated JIT/AOT helper compilation.
+- Flow `for` loops now bind simple identifier and discard patterns directly
+  instead of allocating an intermediate pattern-binding vector for each
+  iteration; structured patterns still use the full matcher.
 - Borrowed root binding updates now reuse existing environment slots without
   recloning binding names, so repeated runtime steps only clone the value when
   an adapter-provided root binding is already present.

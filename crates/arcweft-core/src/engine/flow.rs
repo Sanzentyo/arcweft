@@ -519,19 +519,26 @@ impl Engine {
         self.fiber.control_stack.push(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::Scope,
         });
-        match self.try_bind_pattern(&pattern, item) {
-            Ok(true) => {}
-            Ok(false) => {
-                self.fail_eval(
-                    RuntimeEvalError::PatternMismatch(runtime_value_label(item)),
-                    output,
-                );
-                return;
-            }
-            Err(error) => {
+        match bind_simple_for_pattern(&mut self.fiber.env, &pattern, item) {
+            Some(Ok(())) => {}
+            Some(Err(error)) => {
                 self.fail_eval(error, output);
                 return;
             }
+            None => match self.try_bind_pattern(&pattern, item) {
+                Ok(true) => {}
+                Ok(false) => {
+                    self.fail_eval(
+                        RuntimeEvalError::PatternMismatch(runtime_value_label(item)),
+                        output,
+                    );
+                    return;
+                }
+                Err(error) => {
+                    self.fail_eval(error, output);
+                    return;
+                }
+            },
         }
         let tail = FlowOp::ForNext {
             pattern,
@@ -705,6 +712,21 @@ impl Engine {
             }
         }
         true
+    }
+}
+
+fn bind_simple_for_pattern(
+    env: &mut crate::value::RuntimeEnv,
+    pattern: &RuntimePattern,
+    item: &RuntimeValue,
+) -> Option<Result<(), RuntimeEvalError>> {
+    match pattern {
+        RuntimePattern::Ident(name) | RuntimePattern::MutIdent(name) => {
+            env.set_ref(name, item);
+            Some(Ok(()))
+        }
+        RuntimePattern::Discard => Some(Ok(())),
+        _ => None,
     }
 }
 
