@@ -649,6 +649,9 @@ Current high-confidence state:
 - The pure VM fallback uses the same shared borrowed i64 sequence fold, so
   helper-local `sum()` expressions do not clone local tuple/bracket sequence
   values before reducing them.
+- Runtime-plan lowering folds `let tmp = values.map(...); let total = tmp.sum()`
+  into `let total = values.map(...).sum()` when `tmp` is not used later, so
+  naturally written map-then-sum code can use the existing fused batch path.
 - Fast-path scalar pure calls read local integer arguments by borrow when
   packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
   VM/AOT/JIT pure backends.

@@ -652,6 +652,71 @@ flow @flow.main main {
 }
 
 #[test]
+fn runtime_plan_fuses_unused_map_binding_into_following_sum() {
+    let tree = parse_ok(
+        r"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+flow @flow.main main {
+    let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
+    let scores: Vec<i64> = values.map(|item| score(item, 2i64))
+    let total: i64 = scores.sum()
+    return total
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("map sum fusion fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("map sum fusion runtime plan lowers");
+
+    assert_eq!(plan.flows[0].ops.len(), 3);
+    let FlowOp::Let { expr, .. } = &plan.flows[0].ops[1] else {
+        panic!("expected fused total let");
+    };
+    assert!(matches!(
+        expr,
+        RuntimeExpr::Sum { source }
+            if matches!(source.as_ref(), RuntimeExpr::Map { body, .. }
+                if matches!(body.as_ref(), RuntimeExpr::PureCall { helper, .. } if helper.0 == 0))
+    ));
+}
+
+#[test]
+fn runtime_plan_keeps_map_binding_when_used_after_sum() {
+    let tree = parse_ok(
+        r"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+flow @flow.main main {
+    let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
+    let scores: Vec<i64> = values.map(|item| score(item, 2i64))
+    let total: i64 = scores.sum()
+    let again: i64 = scores.sum()
+    return total + again
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("map sum non-fusion fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("map sum non-fusion runtime plan lowers");
+
+    assert_eq!(plan.flows[0].ops.len(), 5);
+    assert!(matches!(
+        &plan.flows[0].ops[1],
+        FlowOp::Let {
+            expr: RuntimeExpr::Map { .. },
+            ..
+        }
+    ));
+}
+
+#[test]
 fn runtime_plan_lowering_preserves_structured_if_and_match() {
     let tree = parse_ok(
         r#"

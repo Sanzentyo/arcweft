@@ -115,6 +115,7 @@ fn rewrite_runtime_plan_pure_calls(
 ) -> RuntimePlan {
     for flow in &mut plan.flows {
         rewrite_flow_ops_pure_calls(&mut flow.ops, helpers);
+        optimize_flow_ops(&mut flow.ops);
     }
     for source in &mut plan.source_plans {
         rewrite_source_plan_pure_calls(source, helpers);
@@ -123,6 +124,292 @@ fn rewrite_runtime_plan_pure_calls(
         rewrite_stream_plan_pure_calls(stream, helpers);
     }
     plan
+}
+
+fn optimize_flow_ops(ops: &mut Vec<FlowOp>) {
+    for op in ops.iter_mut() {
+        optimize_nested_flow_ops(op);
+    }
+    fuse_adjacent_map_sum_lets(ops);
+}
+
+fn optimize_flow_op_slice(ops: &mut [FlowOp]) {
+    for op in ops {
+        optimize_nested_flow_ops(op);
+    }
+}
+
+fn optimize_nested_flow_ops(op: &mut FlowOp) {
+    match op {
+        FlowOp::LetElse { else_ops, .. } => optimize_flow_ops(else_ops),
+        FlowOp::If {
+            then_ops, else_ops, ..
+        }
+        | FlowOp::IfLet {
+            then_ops, else_ops, ..
+        } => {
+            optimize_flow_ops(then_ops);
+            optimize_flow_ops(else_ops);
+        }
+        FlowOp::Match { arms, .. } => {
+            for arm in arms {
+                optimize_flow_ops(&mut arm.ops);
+            }
+        }
+        FlowOp::Loop { body }
+        | FlowOp::LetLoop { body, .. }
+        | FlowOp::While { body, .. }
+        | FlowOp::WhileLet { body, .. }
+        | FlowOp::Thread { body, .. }
+        | FlowOp::Scope(body)
+        | FlowOp::LetScope { ops: body, .. }
+        | FlowOp::For { body, .. } => optimize_flow_ops(body),
+        FlowOp::LoopNext { body }
+        | FlowOp::WhileNext { body, .. }
+        | FlowOp::WhileLetNext { body, .. }
+        | FlowOp::ForNext { body, .. } => optimize_flow_op_slice(Arc::make_mut(body)),
+        FlowOp::Bind(_)
+        | FlowOp::Let { .. }
+        | FlowOp::Dialogue { .. }
+        | FlowOp::Choice { .. }
+        | FlowOp::Await { .. }
+        | FlowOp::AwaitMany { .. }
+        | FlowOp::Break(_)
+        | FlowOp::Continue
+        | FlowOp::Goto(_)
+        | FlowOp::GotoExpr(_)
+        | FlowOp::Return(_)
+        | FlowOp::ReturnExpr(_)
+        | FlowOp::Effect(_)
+        | FlowOp::EnterScope
+        | FlowOp::ExitScope
+        | FlowOp::ExitScopeBind { .. }
+        | FlowOp::Noop => {}
+    }
+}
+
+fn fuse_adjacent_map_sum_lets(ops: &mut Vec<FlowOp>) {
+    let mut index = 0;
+    while index + 1 < ops.len() {
+        let Some((sequence_name, map_expr)) = map_let_binding(&ops[index]) else {
+            index += 1;
+            continue;
+        };
+        let Some((sum_pattern, sum_source)) = local_sum_let_binding(&ops[index + 1]) else {
+            index += 1;
+            continue;
+        };
+        if sequence_name != sum_source || flow_ops_use_local(&ops[index + 2..], sequence_name) {
+            index += 1;
+            continue;
+        }
+        ops[index] = FlowOp::Let {
+            pattern: sum_pattern.clone(),
+            expr: RuntimeExpr::Sum {
+                source: Box::new(map_expr.clone()),
+            },
+        };
+        ops.remove(index + 1);
+    }
+}
+
+fn map_let_binding(op: &FlowOp) -> Option<(&str, &RuntimeExpr)> {
+    let FlowOp::Let { pattern, expr } = op else {
+        return None;
+    };
+    let RuntimeExpr::Map { .. } = expr else {
+        return None;
+    };
+    runtime_pattern_binding_name(pattern).map(|name| (name, expr))
+}
+
+fn local_sum_let_binding(op: &FlowOp) -> Option<(&arcweft_core::pattern::RuntimePattern, &str)> {
+    let FlowOp::Let { pattern, expr } = op else {
+        return None;
+    };
+    let RuntimeExpr::Sum { source } = expr else {
+        return None;
+    };
+    match source.as_ref() {
+        RuntimeExpr::Local(name) => Some((pattern, name.as_str())),
+        _ => None,
+    }
+}
+
+fn runtime_pattern_binding_name(pattern: &arcweft_core::pattern::RuntimePattern) -> Option<&str> {
+    match pattern {
+        arcweft_core::pattern::RuntimePattern::Ident(name)
+        | arcweft_core::pattern::RuntimePattern::MutIdent(name)
+        | arcweft_core::pattern::RuntimePattern::Typed { name, .. } => Some(name.as_str()),
+        _ => None,
+    }
+}
+
+fn flow_ops_use_local(ops: &[FlowOp], name: &str) -> bool {
+    ops.iter().any(|op| flow_op_uses_local(op, name))
+}
+
+fn flow_op_uses_local(op: &FlowOp, name: &str) -> bool {
+    match op {
+        FlowOp::LetElse { expr, else_ops, .. } => {
+            runtime_expr_uses_local(expr, name) || flow_ops_use_local(else_ops, name)
+        }
+        FlowOp::If {
+            condition,
+            then_ops,
+            else_ops,
+        } => {
+            runtime_expr_uses_local(condition, name)
+                || flow_ops_use_local(then_ops, name)
+                || flow_ops_use_local(else_ops, name)
+        }
+        FlowOp::IfLet {
+            expr,
+            guard,
+            then_ops,
+            else_ops,
+            ..
+        } => {
+            runtime_expr_uses_local(expr, name)
+                || guard
+                    .as_ref()
+                    .is_some_and(|guard| runtime_expr_uses_local(guard, name))
+                || flow_ops_use_local(then_ops, name)
+                || flow_ops_use_local(else_ops, name)
+        }
+        FlowOp::Match { scrutinee, arms } => {
+            runtime_expr_uses_local(scrutinee, name)
+                || arms.iter().any(|arm| {
+                    arm.guard
+                        .as_ref()
+                        .is_some_and(|guard| runtime_expr_uses_local(guard, name))
+                        || flow_ops_use_local(&arm.ops, name)
+                })
+        }
+        FlowOp::Loop { body }
+        | FlowOp::LetLoop { body, .. }
+        | FlowOp::Thread { body, .. }
+        | FlowOp::Scope(body) => flow_ops_use_local(body, name),
+        FlowOp::LoopNext { body } | FlowOp::ForNext { body, .. } => flow_ops_use_local(body, name),
+        FlowOp::While { condition, body } => {
+            runtime_expr_uses_local(condition, name) || flow_ops_use_local(body, name)
+        }
+        FlowOp::WhileNext { condition, body } => {
+            runtime_expr_uses_local(condition, name) || flow_ops_use_local(body, name)
+        }
+        FlowOp::WhileLet {
+            expr, guard, body, ..
+        } => {
+            runtime_expr_uses_local(expr, name)
+                || guard
+                    .as_ref()
+                    .is_some_and(|guard| runtime_expr_uses_local(guard, name))
+                || flow_ops_use_local(body, name)
+        }
+        FlowOp::WhileLetNext {
+            expr, guard, body, ..
+        } => {
+            runtime_expr_uses_local(expr, name)
+                || guard
+                    .as_ref()
+                    .is_some_and(|guard| runtime_expr_uses_local(guard, name))
+                || flow_ops_use_local(body, name)
+        }
+        FlowOp::For { source, body, .. } => {
+            runtime_expr_uses_local(source, name) || flow_ops_use_local(body, name)
+        }
+        FlowOp::AwaitMany { target, .. } => runtime_expr_uses_local(&target.source, name),
+        FlowOp::LetScope { ops, value, .. } => {
+            flow_ops_use_local(ops, name) || runtime_expr_uses_local(value, name)
+        }
+        FlowOp::Let { expr, .. }
+        | FlowOp::Break(Some(expr))
+        | FlowOp::GotoExpr(expr)
+        | FlowOp::ReturnExpr(expr)
+        | FlowOp::ExitScopeBind { expr, .. } => runtime_expr_uses_local(expr, name),
+        FlowOp::Bind(_)
+        | FlowOp::Dialogue { .. }
+        | FlowOp::Choice { .. }
+        | FlowOp::Await { .. }
+        | FlowOp::Effect(_)
+        | FlowOp::EnterScope
+        | FlowOp::ExitScope
+        | FlowOp::Break(None)
+        | FlowOp::Continue
+        | FlowOp::Goto(_)
+        | FlowOp::Return(_)
+        | FlowOp::Noop => false,
+    }
+}
+
+fn runtime_expr_uses_local(expr: &RuntimeExpr, name: &str) -> bool {
+    match expr {
+        RuntimeExpr::Local(local) => local == name,
+        RuntimeExpr::Let { expr, body, .. } => {
+            runtime_expr_uses_local(expr, name) || runtime_expr_uses_local(body, name)
+        }
+        RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
+            items.iter().any(|item| runtime_expr_uses_local(item, name))
+        }
+        RuntimeExpr::Record(fields) => fields
+            .iter()
+            .any(|field| runtime_expr_uses_local(&field.value, name)),
+        RuntimeExpr::Variant { payload, .. } => payload
+            .as_deref()
+            .is_some_and(|payload| runtime_expr_uses_local(payload, name)),
+        RuntimeExpr::Field { target, .. } | RuntimeExpr::SpreadArg(target) => {
+            runtime_expr_uses_local(target, name)
+        }
+        RuntimeExpr::Call { args, .. } | RuntimeExpr::PureCall { args, .. } => {
+            args.iter().any(|arg| runtime_expr_uses_local(arg, name))
+        }
+        RuntimeExpr::MethodCall { receiver, args, .. } => {
+            runtime_expr_uses_local(receiver, name)
+                || args.iter().any(|arg| runtime_expr_uses_local(arg, name))
+        }
+        RuntimeExpr::Map { source, body, .. } => {
+            runtime_expr_uses_local(source, name) || runtime_expr_uses_local(body, name)
+        }
+        RuntimeExpr::Sum { source } | RuntimeExpr::Unary { expr: source, .. } => {
+            runtime_expr_uses_local(source, name)
+        }
+        RuntimeExpr::Binary { lhs, rhs, .. } => {
+            runtime_expr_uses_local(lhs, name) || runtime_expr_uses_local(rhs, name)
+        }
+        RuntimeExpr::If {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            runtime_expr_uses_local(condition, name)
+                || runtime_expr_uses_local(then_expr, name)
+                || runtime_expr_uses_local(else_expr, name)
+        }
+        RuntimeExpr::IfLet {
+            expr,
+            guard,
+            then_expr,
+            else_expr,
+            ..
+        } => {
+            runtime_expr_uses_local(expr, name)
+                || guard
+                    .as_ref()
+                    .is_some_and(|guard| runtime_expr_uses_local(guard, name))
+                || runtime_expr_uses_local(then_expr, name)
+                || runtime_expr_uses_local(else_expr, name)
+        }
+        RuntimeExpr::Match { scrutinee, arms } => {
+            runtime_expr_uses_local(scrutinee, name)
+                || arms.iter().any(|arm| {
+                    arm.guard
+                        .as_ref()
+                        .is_some_and(|guard| runtime_expr_uses_local(guard, name))
+                        || runtime_expr_uses_local(&arm.value, name)
+                })
+        }
+        RuntimeExpr::Value(_) | RuntimeExpr::EntityRef(_) => false,
+    }
 }
 
 fn lower_runtime_entries(module: &HirModule) -> Vec<RuntimeEntrySpec> {
