@@ -51,7 +51,7 @@ pub struct CompiledPureI64 {
 /// are captured from the request bindings as compile-time constants.
 pub struct CompiledPureI64Inputs {
     _module: JITModule,
-    code: *const u8,
+    caller: native_call::I64InputCaller,
     batch_code: *const u8,
     param_names: Vec<String>,
     stats: PureFunctionStats,
@@ -222,10 +222,17 @@ impl CraneliftPureFunctionBackend {
         module.finalize_definitions().map_err(jit_error)?;
         let code = module.get_finalized_function(func_id);
         let batch_code = module.get_finalized_function(batch_code);
+        let caller =
+            native_call::I64InputCaller::from_code(code, param_names.len()).ok_or_else(|| {
+                CraneliftJitError::UnsupportedExpr(format!(
+                    "JIT helper arity {} is outside the native call boundary",
+                    param_names.len()
+                ))
+            })?;
 
         Ok(CompiledPureI64Inputs {
             _module: module,
-            code,
+            caller,
             batch_code,
             param_names,
             stats,
@@ -488,7 +495,7 @@ impl CompiledPureI64Inputs {
                 inputs.len()
             )));
         }
-        native_call::call_i64_inputs(self.code, inputs).ok_or_else(|| {
+        self.caller.call(inputs).ok_or_else(|| {
             CraneliftJitError::UnsupportedExpr(format!(
                 "JIT helper arity {} is outside the native call boundary",
                 inputs.len()
