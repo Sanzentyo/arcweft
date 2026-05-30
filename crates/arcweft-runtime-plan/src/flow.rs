@@ -1051,6 +1051,7 @@ fn rewrite_expr_pure_calls(
             rewrite_expr_pure_calls(source, helpers);
             rewrite_expr_pure_calls(body, helpers);
         }
+        RuntimeExpr::Sum { source } => rewrite_expr_pure_calls(source, helpers),
         RuntimeExpr::Unary { expr, .. } => rewrite_expr_pure_calls(expr, helpers),
         RuntimeExpr::Binary { lhs, rhs, .. } => {
             rewrite_expr_pure_calls(lhs, helpers);

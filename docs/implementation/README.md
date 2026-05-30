@@ -551,6 +551,11 @@ Current high-confidence state:
   statically integer-shaped pure helper call use the same flat batch boundary as
   bracket-sequence batches, so natural iterator-style source can use JIT/AOT
   pure batching without explicit batching syntax.
+- Runtime executable expressions also lower `.sum()` over strict runtime
+  sequences to a typed sum node. When the source is a pure-call `map`, the VM
+  fuses map plus sum into one flat batch accelerator call and sums the `i64`
+  result scratch directly instead of materializing an intermediate runtime
+  sequence.
 - Cranelift input helpers now include a row-major batch entry point that accepts
   input and output slices through the native adapter boundary. Runtime pure
   batch execution can call JIT once per batch instead of crossing the

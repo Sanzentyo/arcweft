@@ -44,6 +44,7 @@ pub struct Engine {
     child_fibers: VecDeque<FlowFiber>,
     run_child_next: bool,
     pure_i64_batch_inputs: Vec<i64>,
+    pure_i64_batch_outputs: Vec<i64>,
     pure_helper_i64_results: Vec<bool>,
 }
 
@@ -232,6 +233,7 @@ impl Engine {
             child_fibers: VecDeque::new(),
             run_child_next: false,
             pure_i64_batch_inputs: Vec::new(),
+            pure_i64_batch_outputs: Vec::new(),
             pure_helper_i64_results,
         }
     }

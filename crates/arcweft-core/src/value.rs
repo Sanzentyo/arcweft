@@ -91,6 +91,9 @@ pub enum RuntimeExpr {
         param: String,
         body: Box<RuntimeExpr>,
     },
+    Sum {
+        source: Box<RuntimeExpr>,
+    },
     Unary {
         op: RuntimeUnaryOp,
         expr: Box<RuntimeExpr>,
@@ -445,6 +448,7 @@ pub(crate) fn expr_runtime_label(expr: &RuntimeExpr) -> String {
         RuntimeExpr::SpreadArg(expr) => format!("{}...", expr_runtime_label(expr)),
         RuntimeExpr::MethodCall { method, .. } => format!(".{method}()"),
         RuntimeExpr::Map { .. } => "map".to_owned(),
+        RuntimeExpr::Sum { .. } => "sum".to_owned(),
         RuntimeExpr::Unary { op, .. } => runtime_unary_op_label(*op).to_owned(),
         RuntimeExpr::Binary { op, .. } => runtime_binary_op_label(*op).to_owned(),
         RuntimeExpr::If { .. } => "if".to_owned(),

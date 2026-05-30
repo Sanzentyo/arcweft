@@ -429,6 +429,10 @@ impl<'a> RuntimeTypeValidator<'a> {
                 self.validate_expr(&format!("{path}.body"), body);
                 RuntimeShape::BracketSeq
             }
+            RuntimeExpr::Sum { source } => {
+                self.validate_expr(&format!("{path}.source"), source);
+                RuntimeShape::Int
+            }
             RuntimeExpr::Unary { op, expr } => self.validate_unary_expr(path, *op, expr),
             RuntimeExpr::Binary { lhs, op, rhs } => self.validate_binary_expr(path, lhs, *op, rhs),
             RuntimeExpr::If {

@@ -283,6 +283,11 @@ fn lower_strict_method_call_expr(
     if let Some(map) = lower_strict_map_method_call(receiver, method, args) {
         return map;
     }
+    if runtime_method_name(method) == "sum" && args.is_empty() {
+        return lower_runtime_expr_strict(receiver).map(|source| RuntimeExpr::Sum {
+            source: Box::new(source),
+        });
+    }
     Ok(RuntimeExpr::MethodCall {
         receiver: Box::new(lower_runtime_expr_strict(receiver)?),
         method: runtime_method_name(method).to_owned(),

@@ -481,6 +481,7 @@ pub(super) fn well_known_capacity_method_type(
         match method {
             "map" if arg_count == 1 => return Some(TypeKind::Vec(item.clone())),
             "collect" if arg_count == 0 => return Some(TypeKind::Vec(item.clone())),
+            "sum" if arg_count == 0 && item.is_integer() => return Some(TypeKind::I64),
             _ => {}
         }
     }

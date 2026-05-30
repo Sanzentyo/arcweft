@@ -487,6 +487,59 @@ flow @flow.map_pure map_pure {
 }
 
 #[test]
+fn run_json_fuses_jit_map_closure_pure_sum() {
+    let path = temp_arcw(
+        "runtime-map-pure-jit-sum",
+        r#"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+flow @flow.map_pure_sum map_pure_sum {
+    let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
+    let total: i64 = values.map(|item| score(item, 2i64)).sum()
+    log.info(total)
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--mode")
+        .arg("one-op")
+        .arg("--steps")
+        .arg("32")
+        .arg("--pure-backend")
+        .arg("jit")
+        .arg("--json")
+        .output()
+        .expect("arcw run executes fused map-closure pure sum");
+
+    assert!(
+        output.status.success(),
+        "runtime map pure JIT sum run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("run output is structured JSON");
+    assert_eq!(json["final_status"], "done Return(\"done\")");
+    assert_eq!(sum_step_pure_counter(&json, "pure_calls"), 4);
+    assert_eq!(sum_step_pure_counter(&json, "batch_calls"), 1);
+    assert_eq!(sum_step_pure_counter(&json, "batch_items"), 4);
+    assert_eq!(sum_step_pure_counter(&json, "jit_calls"), 4);
+    assert_eq!(sum_step_pure_counter(&json, "arg_stack_packs"), 0);
+    assert_eq!(sum_step_pure_counter(&json, "arg_vec_allocations"), 0);
+    assert_eq!(sum_step_pure_counter(&json, "arg_bytes_copied"), 0);
+    assert_eq!(sum_step_pure_counter(&json, "arg_bytes_borrowed"), 64);
+    assert_eq!(sum_step_pure_counter(&json, "result_bytes_copied"), 32);
+    assert_eq!(json["executor_stats"]["pure_config"]["backend"], "jit");
+    assert_eq!(json["executor_stats"]["pure_compile"]["jit_successes"], 1);
+}
+
+#[test]
 fn check_accepts_valid_arcw_file() {
     let path = temp_arcw(
         "valid",
@@ -2524,6 +2577,81 @@ flow @flow.map_pure map_pure {
     );
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
+        64
+    );
+    assert_eq!(
+        measurement["executor_stats"]["pure_compile"]["jit_successes"],
+        1
+    );
+}
+
+#[test]
+fn bench_json_fuses_map_closure_pure_sum_jit_calls() {
+    let path = temp_arcw(
+        "script-bench-map-pure-sum-jit",
+        r#"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+bench @bench.map_pure_sum {
+    measure iterations = 2 { start(@flow.map_pure_sum) }
+}
+
+flow @flow.map_pure_sum map_pure_sum {
+    let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
+    let total: i64 = values.map(|item| score(item, 2i64)).sum()
+    log.info(total)
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--json")
+        .arg("--samples")
+        .arg("2")
+        .arg("--steps")
+        .arg("32")
+        .arg("--pure-backend")
+        .arg("jit")
+        .output()
+        .expect("arcw bench measures fused map-closure pure sum JIT batch");
+
+    assert!(
+        output.status.success(),
+        "map pure sum JIT bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("bench output is utf8");
+    assert!(
+        !stdout.contains(path.to_string_lossy().as_ref()),
+        "map pure sum bench JSON must not record absolute temp paths: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_eq!(measurement["executor"], "bytecode_vm");
+    assert_eq!(measurement["deterministic"]["pure_batch_calls_median"], 1);
+    assert_eq!(measurement["deterministic"]["pure_batch_items_median"], 4);
+    assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 4);
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_stack_packs_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_vec_allocations_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_copied_median"],
         0
     );
     assert_eq!(

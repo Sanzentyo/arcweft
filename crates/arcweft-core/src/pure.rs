@@ -929,6 +929,7 @@ impl PureEvaluator {
                 param,
                 body,
             } => self.evaluate_map_expr(source, param, body),
+            RuntimeExpr::Sum { source } => self.evaluate_sum_expr(source),
             RuntimeExpr::Unary { op, expr } => {
                 let value = self.evaluate_expr(expr)?;
                 evaluate_unary(*op, value)
@@ -984,6 +985,26 @@ impl PureEvaluator {
             })
             .collect::<Result<Vec<_>, _>>()
             .map(RuntimeValue::BracketSeq)
+    }
+
+    fn evaluate_sum_expr(
+        &mut self,
+        source: &RuntimeExpr,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let value = self.evaluate_expr(source)?;
+        let items = match value {
+            RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items,
+            value => {
+                return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
+                    &value,
+                )));
+            }
+        };
+        items
+            .into_iter()
+            .try_fold(RuntimeValue::Int(0), |acc, item| {
+                evaluate_binary(acc, RuntimeBinaryOp::Add, item)
+            })
     }
 
     fn evaluate_call_expr(
