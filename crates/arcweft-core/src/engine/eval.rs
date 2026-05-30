@@ -371,7 +371,15 @@ impl Engine {
         if helper_id.0 >= self.plan.pure_helpers.len() {
             return Err(RuntimeEvalError::UnknownPureHelper(helper_id.0));
         }
-        if args.len() <= RuntimeI64Args::MAX
+        let has_only_i64_inputs =
+            pure_helper_has_only_i64_inputs(&self.plan.pure_helpers[helper_id.0]);
+        if has_only_i64_inputs
+            && self
+                .pure_helper_i64_results
+                .get(helper_id.0)
+                .copied()
+                .unwrap_or(false)
+            && args.len() <= RuntimeI64Args::MAX
             && !args
                 .iter()
                 .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
@@ -868,9 +876,20 @@ pub(super) fn pure_helper_returns_i64(helper: &crate::plan::RuntimePureHelper) -
     let mut int_names = helper
         .input_names
         .iter()
-        .map(String::as_str)
+        .zip(helper.input_types.iter())
+        .filter_map(|(name, ty)| {
+            matches!(ty, crate::plan::RuntimePureInputType::I64).then_some(name.as_str())
+        })
         .collect::<Vec<_>>();
     expr_returns_i64(&helper.expr, &mut int_names)
+}
+
+fn pure_helper_has_only_i64_inputs(helper: &crate::plan::RuntimePureHelper) -> bool {
+    helper.input_names.len() == helper.input_types.len()
+        && helper
+            .input_types
+            .iter()
+            .all(|ty| matches!(ty, crate::plan::RuntimePureInputType::I64))
 }
 
 fn expr_returns_i64<'a>(expr: &'a RuntimeExpr, int_names: &mut Vec<&'a str>) -> bool {

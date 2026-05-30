@@ -73,6 +73,7 @@ fn aot_program_records_nested_dispatch_shape() {
         id: RuntimePureHelperId(0),
         name: "one".to_owned(),
         input_names: Vec::new(),
+        input_types: Vec::new(),
         expr: RuntimeExpr::Value(RuntimeValue::Int(1)),
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,

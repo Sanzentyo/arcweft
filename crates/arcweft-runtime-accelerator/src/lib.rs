@@ -4,7 +4,7 @@
 //! and dependency-light.
 
 use arcweft_core::{
-    plan::{RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin},
+    plan::{RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType},
     pure::{
         AotPureFunctionBackend, AotPureI64Plan, PureFunctionRequest, RuntimeI64Args,
         RuntimePureCallBackend, VmPureFunctionScratch,
@@ -505,7 +505,7 @@ fn compile_helper(
     helper: &RuntimePureHelper,
     stats: &mut RuntimePureCompileStats,
 ) -> RuntimePureCacheEntry {
-    if mode == RuntimePureBackendMode::Vm {
+    if mode == RuntimePureBackendMode::Vm || !helper_has_only_i64_inputs(helper) {
         return RuntimePureCacheEntry::Vm;
     }
     let request = compile_request(helper);
@@ -521,6 +521,14 @@ fn compile_helper(
             .or_else(|| compile_aot(&request, helper, stats))
             .unwrap_or(RuntimePureCacheEntry::Vm),
     }
+}
+
+fn helper_has_only_i64_inputs(helper: &RuntimePureHelper) -> bool {
+    helper.input_names.len() == helper.input_types.len()
+        && helper
+            .input_types
+            .iter()
+            .all(|ty| matches!(ty, RuntimePureInputType::I64))
 }
 
 fn compile_jit(
@@ -904,6 +912,7 @@ mod tests {
             id: RuntimePureHelperId(0),
             name: "score".to_owned(),
             input_names: vec!["base".to_owned(), "bonus".to_owned()],
+            input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
             expr: RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Mul,
@@ -945,6 +954,7 @@ mod tests {
             id: RuntimePureHelperId(0),
             name: "echo".to_owned(),
             input_names: vec!["label".to_owned()],
+            input_types: vec![RuntimePureInputType::Value],
             expr: RuntimeExpr::Local("label".to_owned()),
             scalar_eval_supported: false,
             origin: RuntimePureHelperOrigin::Annotated,
@@ -979,6 +989,7 @@ mod tests {
             id: RuntimePureHelperId(0),
             name: "score".to_owned(),
             input_names: vec!["base".to_owned(), "bonus".to_owned()],
+            input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
             expr: RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Mul,
@@ -1027,6 +1038,7 @@ mod tests {
             id: RuntimePureHelperId(0),
             name: "score".to_owned(),
             input_names: vec!["base".to_owned(), "bonus".to_owned()],
+            input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
             expr: RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Mul,
@@ -1093,6 +1105,7 @@ mod tests {
             id: RuntimePureHelperId(0),
             name: "score".to_owned(),
             input_names: vec!["base".to_owned(), "bonus".to_owned()],
+            input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
             expr: RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Mul,
@@ -1138,6 +1151,7 @@ mod tests {
             id: RuntimePureHelperId(0),
             name: "score".to_owned(),
             input_names: vec!["base".to_owned(), "bonus".to_owned()],
+            input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
             expr: RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Mul,

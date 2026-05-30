@@ -1,4 +1,6 @@
-use crate::plan::{RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin};
+use crate::plan::{
+    RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
+};
 use crate::pure::{
     AotPureFunctionBackend, PureFunctionBackend, PureFunctionBackendKind, PureFunctionRequest,
     RuntimePureCallBackend, VmPureFunctionBackend, VmPureFunctionScratch, VmRuntimePureCallBackend,
@@ -79,6 +81,7 @@ fn vm_runtime_value_fallback_records_pure_call_stats() {
         id: RuntimePureHelperId(0),
         name: "echo_label".to_owned(),
         input_names: vec!["label".to_owned()],
+        input_types: vec![RuntimePureInputType::Value],
         expr: RuntimeExpr::Local("label".to_owned()),
         scalar_eval_supported: false,
         origin: RuntimePureHelperOrigin::Annotated,
@@ -106,6 +109,7 @@ fn vm_runtime_i64_fast_path_records_copy_bytes() {
         id: RuntimePureHelperId(0),
         name: "score".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
             op: RuntimeBinaryOp::Add,
@@ -135,6 +139,7 @@ fn vm_runtime_i64_slice_fast_path_records_borrowed_bytes() {
         id: RuntimePureHelperId(0),
         name: "score".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
             op: RuntimeBinaryOp::Add,
@@ -166,6 +171,7 @@ fn vm_pure_scratch_reuses_and_rebuilds_i64_root_bindings() {
         id: RuntimePureHelperId(0),
         name: "add".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
             op: RuntimeBinaryOp::Add,
@@ -178,6 +184,7 @@ fn vm_pure_scratch_reuses_and_rebuilds_i64_root_bindings() {
         id: RuntimePureHelperId(1),
         name: "double".to_owned(),
         input_names: vec!["value".to_owned()],
+        input_types: vec![RuntimePureInputType::I64],
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("value".to_owned())),
             op: RuntimeBinaryOp::Mul,
@@ -209,6 +216,7 @@ fn vm_pure_scratch_reuses_value_root_bindings_without_request_allocation() {
         id: RuntimePureHelperId(0),
         name: "echo".to_owned(),
         input_names: vec!["label".to_owned()],
+        input_types: vec![RuntimePureInputType::Value],
         expr: RuntimeExpr::Local("label".to_owned()),
         scalar_eval_supported: false,
         origin: RuntimePureHelperOrigin::Annotated,
@@ -232,6 +240,7 @@ fn vm_runtime_i64_batch_records_batch_stats() {
         id: RuntimePureHelperId(0),
         name: "score".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
             op: RuntimeBinaryOp::Mul,
@@ -274,6 +283,7 @@ fn vm_runtime_i64_flat_batch_borrows_input_slice() {
         id: RuntimePureHelperId(0),
         name: "score".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
             op: RuntimeBinaryOp::Mul,

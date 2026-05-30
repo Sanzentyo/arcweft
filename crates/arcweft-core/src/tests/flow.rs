@@ -84,6 +84,7 @@ fn engine_executes_runtime_pure_call_from_flow() {
         id: RuntimePureHelperId(0),
         name: "score".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
         expr: RuntimeExpr::If {
             condition: Box::new(RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
@@ -125,6 +126,48 @@ fn engine_executes_runtime_pure_call_from_flow() {
 }
 
 #[test]
+fn engine_routes_non_i64_pure_call_to_value_backend() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![FlowOp::ReturnExpr(RuntimeExpr::PureCall {
+                helper: RuntimePureHelperId(0),
+                args: vec![RuntimeExpr::Value(RuntimeValue::String("ready".to_owned()))],
+            })],
+        }],
+        Vec::new(),
+    )
+    .expect("flow plan is valid")
+    .with_pure_helpers(vec![RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "echo".to_owned(),
+        input_names: vec!["label".to_owned()],
+        input_types: vec![RuntimePureInputType::Value],
+        expr: RuntimeExpr::Local("label".to_owned()),
+        scalar_eval_supported: false,
+        origin: RuntimePureHelperOrigin::Annotated,
+    }]);
+    let mut engine = Engine::new(plan);
+
+    let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+
+    assert!(matches!(
+        result.fiber_status,
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "ready"
+    ));
+    assert_eq!(result.stats.pure.pure_calls, 1);
+    assert_eq!(result.stats.pure.vm_calls, 1);
+    assert_eq!(result.stats.pure.arg_stack_packs, 0);
+    assert_eq!(result.stats.pure.arg_vec_allocations, 0);
+    assert_eq!(result.stats.pure.arg_bytes_copied, 0);
+    assert_eq!(
+        result.stats.pure.arg_bytes_borrowed,
+        std::mem::size_of::<RuntimeValue>()
+    );
+}
+
+#[test]
 fn engine_batches_bracket_sequence_pure_calls() {
     let pure_call = |base, bonus| RuntimeExpr::PureCall {
         helper: RuntimePureHelperId(0),
@@ -150,6 +193,7 @@ fn engine_batches_bracket_sequence_pure_calls() {
         id: RuntimePureHelperId(0),
         name: "score".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
             op: RuntimeBinaryOp::Mul,
@@ -210,6 +254,7 @@ fn engine_fuses_bracket_sequence_pure_batch_sum() {
         id: RuntimePureHelperId(0),
         name: "score".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
             op: RuntimeBinaryOp::Mul,
@@ -263,6 +308,7 @@ fn engine_batches_map_closure_pure_calls() {
         id: RuntimePureHelperId(0),
         name: "score".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
             op: RuntimeBinaryOp::Mul,
@@ -322,6 +368,7 @@ fn engine_fuses_map_closure_pure_batch_sum() {
         id: RuntimePureHelperId(0),
         name: "score".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
             op: RuntimeBinaryOp::Mul,

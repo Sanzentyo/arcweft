@@ -58,7 +58,7 @@ Checked-in map pure JIT bench:
 
 | fixture | executor | pure backend | iterations | median elapsed ns | pure calls | batch calls | batch items | arg vec allocs | borrowed arg bytes |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 002_map_pure_jit.arcw | bytecode_vm | jit | 8 | 29000 | 16 | 1 | 16 | 0 | 256 |
+| 002_map_pure_jit.arcw | bytecode_vm | jit | 8 | 17800 | 16 | 1 | 16 | 0 | 256 |
 
 Checked-in inferred pure JIT bench:
 

@@ -631,6 +631,11 @@ Current high-confidence state:
   plan's flow list for every operation.
 - Runtime pure-call evaluation keeps pure helper metadata borrowed from the
   runtime plan instead of cloning the helper on each scalar JIT/AOT/VM call.
+- Runtime pure helper metadata records typed input kinds instead of treating
+  every input name as an implicit integer. The VM/JIT/AOT i64 fast path is
+  selected only for helpers whose inputs are all i64 and whose expression shape
+  returns i64; value-shaped helpers stay on the VM value backend without a
+  misleading integer probe.
 - Fast-path scalar pure calls read local integer arguments by borrow when
   packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
   VM/AOT/JIT pure backends.

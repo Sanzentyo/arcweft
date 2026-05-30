@@ -14,8 +14,8 @@ use arcweft_core::line_task::{LineOutRequest, LineTaskGroup};
 use arcweft_core::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
     RuntimeEntryTarget, RuntimeFlow, RuntimeLineId, RuntimeMatchArm, RuntimePlan,
-    RuntimePureHelper, RuntimePureHelperId, RuntimeRouteBinding, RuntimeRouteBindingSource,
-    RuntimeRouteSpec,
+    RuntimePureHelper, RuntimePureHelperId, RuntimePureInputType, RuntimeRouteBinding,
+    RuntimeRouteBindingSource, RuntimeRouteSpec,
 };
 use arcweft_core::source::{SourceHandlerPlan, SourceOp, SourcePlan};
 use arcweft_core::stream::{StreamMatchArm, StreamOp, StreamPlan};
@@ -94,6 +94,7 @@ fn runtime_pure_helpers(candidates: &[PureHelperCandidate]) -> Vec<RuntimePureHe
             id: RuntimePureHelperId(index),
             name: candidate.name().to_owned(),
             input_names: candidate.input_names().to_vec(),
+            input_types: vec![RuntimePureInputType::I64; candidate.input_names().len()],
             expr: candidate.expr().clone(),
             scalar_eval_supported: candidate.expr().supports_scalar_pure_eval(),
             origin: candidate.origin(),

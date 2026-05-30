@@ -97,9 +97,17 @@ pub struct RuntimePureHelper {
     pub id: RuntimePureHelperId,
     pub name: String,
     pub input_names: Vec<String>,
+    pub input_types: Vec<RuntimePureInputType>,
     pub expr: RuntimeExpr,
     pub scalar_eval_supported: bool,
     pub origin: RuntimePureHelperOrigin,
+}
+
+/// Runtime pure helper input representation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimePureInputType {
+    I64,
+    Value,
 }
 
 /// Source of a runtime pure helper candidate.
