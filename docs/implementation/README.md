@@ -397,6 +397,8 @@ Current high-confidence state:
   Scalar pure helper calls use the fixed `i64` argument pack in both the default
   VM backend and adapter accelerators; batch AOT calls can use an
   accelerator-owned Rayon pool when the batch length reaches the threshold.
+  Batch AOT evaluation reuses scratch slot storage instead of cloning the
+  compiled local-slot vector for each item.
   Runtime JSON reports scalar/batch call counts, copied
   argument/result bytes, thread-pool jobs, Vec argument allocations, fallback
   counts, compile attempts, cache hits/misses, and compile elapsed time without

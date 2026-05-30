@@ -109,7 +109,9 @@ Generated AOT dispatch remains future work; until then, `AotExecutor` is a
 VM-equivalent conformance boundary.
 Pure helper AOT is narrower and already executable: `AotPureFunctionBackend`
 rejects unsupported helpers instead of falling back, then compares its typed
-integer plan against `VmPureFunctionBackend` in tests.
+integer plan against `VmPureFunctionBackend` in tests. Batch AOT calls reuse
+caller-owned slot storage, so repeated runtime helper evaluation does not clone
+the compiled plan's local slot vector for every item.
 
 ## Step options
 

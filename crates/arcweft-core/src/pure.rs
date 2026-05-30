@@ -94,6 +94,7 @@ pub struct AotPureI64Plan {
     expr: AotI64Expr,
     initial_slots: Vec<i64>,
     input_slots: Vec<usize>,
+    slot_count: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -321,15 +322,19 @@ impl AotPureI64Plan {
     ) -> Result<Self, RuntimeEvalError> {
         let mut ctx = AotCompileContext::from_request(request)?;
         let expr = compile_aot_i64_expr(&request.name, &request.expr, &mut ctx)?;
+        let slot_count = ctx.next_slot;
         let input_slots = input_names
             .into_iter()
             .map(|name| ctx.input_slot(&request.name, name.as_ref()))
             .collect::<Result<Vec<_>, _>>()?;
+        let mut initial_slots = AotCompileContext::initial_slots(request)?;
+        initial_slots.resize(slot_count, 0);
         Ok(Self {
             name: request.name.clone(),
             expr,
-            initial_slots: AotCompileContext::initial_slots(request)?,
+            initial_slots,
             input_slots,
+            slot_count,
         })
     }
 
@@ -360,7 +365,38 @@ impl AotPureI64Plan {
         Ok(self.evaluate_with_slots(slots))
     }
 
-    fn evaluate_with_slots(&self, slots: Vec<i64>) -> (i64, PureFunctionStats) {
+    /// Calls the compiled helper with caller-owned slot storage.
+    pub fn call_with_inputs_scratch(
+        &self,
+        inputs: &[i64],
+        slots: &mut Vec<i64>,
+    ) -> Result<(i64, PureFunctionStats), RuntimeEvalError> {
+        if inputs.len() != self.input_slots.len() {
+            return Err(unsupported_aot(
+                &self.name,
+                format!(
+                    "AOT helper expected {} input(s), got {}",
+                    self.input_slots.len(),
+                    inputs.len()
+                ),
+            ));
+        }
+        slots.clear();
+        slots.extend_from_slice(&self.initial_slots);
+        if slots.len() < self.slot_count {
+            slots.resize(self.slot_count, 0);
+        }
+        for (slot, value) in self.input_slots.iter().zip(inputs.iter().copied()) {
+            slots[*slot] = value;
+        }
+        Ok(self.evaluate_with_slot_slice(slots))
+    }
+
+    fn evaluate_with_slots(&self, mut slots: Vec<i64>) -> (i64, PureFunctionStats) {
+        self.evaluate_with_slot_slice(&mut slots)
+    }
+
+    fn evaluate_with_slot_slice(&self, slots: &mut [i64]) -> (i64, PureFunctionStats) {
         let mut evaluator = AotI64Evaluator {
             slots,
             stats: PureFunctionStats::default(),
@@ -447,12 +483,12 @@ impl AotCompileContext {
     }
 }
 
-struct AotI64Evaluator {
-    slots: Vec<i64>,
+struct AotI64Evaluator<'a> {
+    slots: &'a mut [i64],
     stats: PureFunctionStats,
 }
 
-impl AotI64Evaluator {
+impl AotI64Evaluator<'_> {
     fn eval_i64(&mut self, expr: &AotI64Expr) -> i64 {
         self.stats.evaluated_exprs += 1;
         match expr {
@@ -460,9 +496,6 @@ impl AotI64Evaluator {
             AotI64Expr::Local(slot) => self.slots[*slot],
             AotI64Expr::Let { slot, expr, body } => {
                 let value = self.eval_i64(expr);
-                if self.slots.len() <= *slot {
-                    self.slots.resize(*slot + 1, 0);
-                }
                 let previous = self.slots[*slot];
                 self.slots[*slot] = value;
                 let result = self.eval_i64(body);

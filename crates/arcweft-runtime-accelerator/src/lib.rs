@@ -401,9 +401,10 @@ fn call_aot_batch(
     rows: &[RuntimeI64Args],
     out: &mut [i64],
 ) -> Result<(), RuntimeEvalError> {
+    let mut slots = Vec::new();
     rows.iter().zip(out.iter_mut()).try_for_each(|(row, slot)| {
         compiled
-            .call_with_inputs(row.as_slice())
+            .call_with_inputs_scratch(row.as_slice(), &mut slots)
             .map(|(value, _)| *slot = value)
     })
 }
@@ -417,9 +418,9 @@ fn call_aot_batch_parallel(
     let mut run = || {
         rows.par_iter()
             .zip(out.par_iter_mut())
-            .try_for_each(|(row, slot)| {
+            .try_for_each_init(Vec::new, |slots, (row, slot)| {
                 compiled
-                    .call_with_inputs(row.as_slice())
+                    .call_with_inputs_scratch(row.as_slice(), slots)
                     .map(|(value, _)| *slot = value)
             })
     };

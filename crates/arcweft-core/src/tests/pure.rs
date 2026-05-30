@@ -160,6 +160,21 @@ fn aot_compiled_i64_plan_accepts_runtime_inputs() {
 
     assert_eq!(plan.call_with_inputs(&[3, 4]).expect("call succeeds").0, 12);
     assert_eq!(plan.call_with_inputs(&[2, 99]).expect("call succeeds").0, 0);
+    let mut slots = Vec::new();
+    assert_eq!(
+        plan.call_with_inputs_scratch(&[5, 6], &mut slots)
+            .expect("scratch call succeeds")
+            .0,
+        30
+    );
+    let slot_capacity = slots.capacity();
+    assert_eq!(
+        plan.call_with_inputs_scratch(&[1, 9], &mut slots)
+            .expect("scratch call succeeds")
+            .0,
+        0
+    );
+    assert_eq!(slots.capacity(), slot_capacity);
 }
 
 #[test]
