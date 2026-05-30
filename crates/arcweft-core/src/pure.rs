@@ -3,7 +3,7 @@ use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeFieldValue,
     RuntimeUnaryOp, RuntimeValue, evaluate_binary, evaluate_unary, runtime_binary_op_label,
-    runtime_unary_op_label, runtime_value_label,
+    runtime_unary_op_label, runtime_value_label, sum_i64_sequence_ref,
 };
 use std::collections::BTreeMap;
 
@@ -1232,6 +1232,11 @@ impl PureEvaluator {
         &mut self,
         source: &RuntimeExpr,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if let RuntimeExpr::Local(name) = source
+            && let Some(sum) = self.evaluate_i64_local_sequence_sum(name)?
+        {
+            return Ok(RuntimeValue::Int(sum));
+        }
         let value = self.evaluate_expr(source)?;
         let items = match value {
             RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items,
@@ -1246,6 +1251,18 @@ impl PureEvaluator {
             .try_fold(RuntimeValue::Int(0), |acc, item| {
                 evaluate_binary(acc, RuntimeBinaryOp::Add, item)
             })
+    }
+
+    fn evaluate_i64_local_sequence_sum(&self, name: &str) -> Result<Option<i64>, RuntimeEvalError> {
+        let Some(value) = self.env.get(name) else {
+            return Ok(None);
+        };
+        match value {
+            RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => {
+                sum_i64_sequence_ref(items).map(Some)
+            }
+            _ => Ok(None),
+        }
     }
 
     fn evaluate_call_expr(

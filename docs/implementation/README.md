@@ -646,6 +646,9 @@ Current high-confidence state:
 - Runtime `sum()` over a local tuple/bracket sequence now borrows the stored
   sequence and folds i64 items directly, avoiding a clone of already
   materialized map results before summing.
+- The pure VM fallback uses the same shared borrowed i64 sequence fold, so
+  helper-local `sum()` expressions do not clone local tuple/bracket sequence
+  values before reducing them.
 - Fast-path scalar pure calls read local integer arguments by borrow when
   packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
   VM/AOT/JIT pure backends.

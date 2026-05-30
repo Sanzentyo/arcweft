@@ -647,6 +647,17 @@ pub(crate) fn evaluate_binary(
     }
 }
 
+pub(crate) fn sum_i64_sequence_ref(items: &[RuntimeValue]) -> Result<i64, RuntimeEvalError> {
+    items.iter().try_fold(0_i64, |acc, item| match item {
+        RuntimeValue::Int(value) => Ok(acc + value),
+        value => Err(RuntimeEvalError::UnsupportedBinary {
+            op: "+",
+            lhs: "int".to_owned(),
+            rhs: runtime_value_label(value),
+        }),
+    })
+}
+
 fn unsupported_binary(
     op: RuntimeBinaryOp,
     lhs: &RuntimeValue,

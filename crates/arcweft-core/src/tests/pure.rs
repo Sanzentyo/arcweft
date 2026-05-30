@@ -76,6 +76,30 @@ fn vm_pure_backend_evaluates_lexical_let_expr() {
 }
 
 #[test]
+fn vm_pure_backend_sums_local_i64_sequence_by_borrow() {
+    let request = PureFunctionRequest::new(
+        "sum_scores",
+        RuntimeExpr::Sum {
+            source: Box::new(RuntimeExpr::Local("scores".to_owned())),
+        },
+        [RuntimeBinding {
+            name: "scores".to_owned(),
+            value: RuntimeValue::BracketSeq(vec![
+                RuntimeValue::Int(18),
+                RuntimeValue::Int(15),
+                RuntimeValue::Int(20),
+            ]),
+        }],
+    );
+
+    let result = VmPureFunctionBackend
+        .evaluate(&request)
+        .expect("pure helper sums local sequence");
+
+    assert_eq!(result.value, RuntimeValue::Int(53));
+}
+
+#[test]
 fn vm_runtime_value_fallback_records_pure_call_stats() {
     let helper = RuntimePureHelper {
         id: RuntimePureHelperId(0),

@@ -2,7 +2,7 @@ use super::{
     Engine, FlowFiberStatus, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
     RuntimeExprMatchArm, RuntimeFieldValue, RuntimeMatchArm, RuntimeMatchSelection, RuntimePattern,
     RuntimeStepOutput, RuntimeValue, evaluate_binary, evaluate_unary, match_runtime_pattern,
-    runtime_value_label,
+    runtime_value_label, sum_i64_sequence_ref,
 };
 use crate::pure::{RuntimeI64Args, RuntimePureCallBackend, VmRuntimePureCallBackend};
 use crate::value::RuntimeBinaryOp;
@@ -521,17 +521,9 @@ impl Engine {
             return Ok(None);
         };
         match value {
-            RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items
-                .iter()
-                .try_fold(0_i64, |acc, item| match item {
-                    RuntimeValue::Int(value) => Ok(acc + value),
-                    value => Err(RuntimeEvalError::UnsupportedBinary {
-                        op: "+",
-                        lhs: "int".to_owned(),
-                        rhs: runtime_value_label(value),
-                    }),
-                })
-                .map(Some),
+            RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => {
+                sum_i64_sequence_ref(items).map(Some)
+            }
             _ => Ok(None),
         }
     }

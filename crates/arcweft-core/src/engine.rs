@@ -25,7 +25,7 @@ use crate::task::{
 use crate::value::{
     RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm,
     RuntimeFieldValue, RuntimePayload, RuntimeValue, evaluate_binary, evaluate_unary,
-    expr_runtime_label, runtime_value_label,
+    expr_runtime_label, runtime_value_label, sum_i64_sequence_ref,
 };
 use std::collections::{BTreeMap, VecDeque};
 pub mod aot;
