@@ -2181,6 +2181,89 @@ flow @flow.branch_for_pure branch_for_pure {
 }
 
 #[test]
+fn bench_json_measures_runtime_match_to_pure_jit_characteristics() {
+    let path = temp_arcw(
+        "script-bench-match-pure-jit",
+        r#"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+bench @bench.match_pure {
+    measure iterations = 2 { start(@flow.match_pure) }
+}
+
+flow @flow.match_pure match_pure {
+    let next = @flow.scored
+    match next {
+        @flow.scored => goto @flow.scored
+        _ => goto @flow.fallback
+    }
+}
+
+flow @flow.scored scored {
+    let scored = score(3i64, 2i64)
+    log.info(scored)
+    return "done"
+}
+
+flow @flow.fallback fallback {
+    let scored = score(1i64, 1i64)
+    log.info(scored)
+    return "fallback"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("2")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--steps")
+        .arg("24")
+        .arg("--max-ops")
+        .arg("8")
+        .arg("--pure-backend")
+        .arg("jit")
+        .arg("--json")
+        .output()
+        .expect("arcw bench measures runtime match to pure JIT calls");
+
+    assert!(
+        output.status.success(),
+        "runtime match pure JIT bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&std::env::temp_dir().display().to_string()),
+        "bench JSON must not record absolute temp paths: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_eq!(measurement["executor"], "bytecode_vm");
+    assert!(
+        measurement["per_executed_op_ns"].as_u64().is_some(),
+        "bench JSON should expose median per-op cost: {measurement}"
+    );
+    assert_eq!(measurement["deterministic"]["executed_ops_median"], 7);
+    assert_eq!(measurement["deterministic"]["pure_calls_median"], 1);
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_vec_allocations_median"],
+        0
+    );
+    assert_eq!(
+        measurement["executor_stats"]["pure_compile"]["jit_successes"],
+        1
+    );
+}
+
+#[test]
 fn bench_json_measures_pure_helper_with_vm_aot_and_jit() {
     let path = temp_arcw(
         "script-bench-pure-helper",
