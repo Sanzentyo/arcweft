@@ -2830,6 +2830,89 @@ flow @flow.parallel_io parallel_io effects { fs.read(save), fs.write(save) } {
 }
 
 #[test]
+fn bench_json_measures_threaded_native_read_scheduling() {
+    let dir = temp_dir("bench-threaded-native-read");
+    let source_path = dir.join("bench.arcw");
+    let save_dir = dir.join(".arcweft").join("save");
+    fs::create_dir_all(&save_dir).expect("create virtual save root");
+    fs::write(save_dir.join("a.txt"), "alpha").expect("seed input a");
+    fs::write(save_dir.join("b.txt"), "beta").expect("seed input b");
+    fs::write(
+        &source_path,
+        r#"
+extern capability fs {
+    type FsError
+    fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
+}
+extern capability path { fn save(path: String) -> VirtualPath }
+
+bench @bench.threaded_reads {
+    measure iterations = 1 { start(@flow.threaded_reads) }
+}
+
+flow @flow.threaded_reads threaded_reads effects { fs.read(save) } {
+    thread left {
+        log.info("left")
+    }
+    thread right {
+        log.info("right")
+    }
+    let paths = [path.save("a.txt"), path.save("b.txt")]
+    let values = try await paths.traverse(fs.read_text).parallel(limit = 2) with { error e => return "read_failed" }
+    log.info(values)
+    return "done"
+}
+"#,
+    )
+    .expect("write threaded native read bench fixture");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&source_path)
+        .arg("--iterations")
+        .arg("1")
+        .arg("--warmup")
+        .arg("0")
+        .arg("--steps")
+        .arg("16")
+        .arg("--max-ops")
+        .arg("1")
+        .arg("--mode")
+        .arg("one-op")
+        .arg("--json")
+        .output()
+        .expect("arcw bench runs threaded native reads");
+
+    assert!(
+        output.status.success(),
+        "threaded native read bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&std::env::temp_dir().display().to_string()),
+        "threaded native read bench JSON must not record absolute temp paths: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_eq!(measurement["deterministic"]["task_requests_median"], 4);
+    assert_eq!(measurement["deterministic"]["task_events_in_median"], 4);
+    assert_eq!(measurement["deterministic"]["max_child_fibers_median"], 2);
+    assert_eq!(measurement["native_io"]["completed_tasks"], 4);
+    assert_eq!(measurement["native_io"]["read_ops"], 2);
+    assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 4);
+    assert_eq!(measurement["native_io"]["scheduler"]["dispatched"], 4);
+    assert_eq!(measurement["native_io"]["scheduler"]["max_in_flight"], 2);
+    assert!(
+        measurement["native_io"]["parallel_batches"]
+            .as_u64()
+            .is_some_and(|batches| batches >= 1),
+        "threaded native reads should expose parallel scheduler completion: {measurement}"
+    );
+}
+
+#[test]
 fn bench_json_fails_native_file_assertions() {
     let dir = temp_dir("bench-native-file-assert-fail");
     let source_path = dir.join("bench.arcw");

@@ -98,6 +98,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   They also include median pure argument/result byte-copy counters, so scalar
   pure-call boundary costs are visible in the same bench report as elapsed time
   and VM op counts.
+  Bench regression coverage now includes a mixed flow with source-level
+  `thread` child fibers and parallel native file reads, so scheduler counters
+  show both cooperative child-fiber markers and adapter-owned I/O tasks in one
+  path-free report.
   `measure { pure(helper_name) }` sections additionally run the selected
   checked `#[pure] fn` helper through the VM reference, typed AOT plan, native
   Cranelift JIT, and JIT batch loop, reporting conformance, deterministic
@@ -445,9 +449,12 @@ Current high-confidence state:
   this scheduler before performing adapter-owned completion work. Joinable flow
   `thread` blocks lower to a deterministic scheduler marker plus a scoped VM
   child fiber; detached flow threads remain rejected until the detach contract
-  is checked explicitly. Child-fiber activity checks use the queue length
-  directly because completed/failed children are removed when stepped, avoiding
-  repeated scans during return and stop-reason decisions.
+  is checked explicitly. Thread bodies currently use the statement-body AST
+  surface, so await-rich flow items inside `thread { ... }` remain a structural
+  refactor target rather than a compatibility branch. Child-fiber activity
+  checks use the queue length directly because completed/failed children are
+  removed when stepped, avoiding repeated scans during return and stop-reason
+  decisions.
 - The CLI native task bridge now completes read-only dispatched task batches on
   a worker pool and reports path-free `parallel_batches`, `parallel_tasks`, and
   `parallel_workers` counters in `native_io`; write tasks stay ordered.
