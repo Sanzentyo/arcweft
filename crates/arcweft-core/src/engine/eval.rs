@@ -314,7 +314,7 @@ impl Engine {
         args: &[RuntimeExpr],
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {
-        let mut values = Vec::new();
+        let mut values = Vec::with_capacity(args.len());
         for arg in args {
             match arg {
                 RuntimeExpr::SpreadArg(expr) => {

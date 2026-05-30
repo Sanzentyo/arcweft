@@ -466,7 +466,9 @@ Current high-confidence state:
 - Runtime if-let/match guards, source handlers, stream pattern bodies, and
   await-many request templates now evaluate temporary bindings in environment
   scopes instead of cloning the full VM environment, reducing branch and
-  scheduling overhead without changing binding visibility.
+  scheduling overhead without changing binding visibility. Runtime call
+  argument evaluation preallocates the visible argument count before handling
+  spread expansion, avoiding repeated Vec growth for ordinary calls.
 - Runtime `for` state shares evaluated item sequences with `Arc<[RuntimeValue]>`
   across `ForNext` steps, so natural loops no longer clone the full source
   vector on every iteration. Each iteration now borrows the current item during
