@@ -222,14 +222,14 @@ impl AotProgramStats {
                 }
                 FlowOp::Loop { body }
                 | FlowOp::LetLoop { body, .. }
-                | FlowOp::LoopNext { body }
                 | FlowOp::While { body, .. }
-                | FlowOp::WhileNext { body, .. }
                 | FlowOp::WhileLet { body, .. }
-                | FlowOp::WhileLetNext { body, .. }
                 | FlowOp::For { body, .. }
                 | FlowOp::Thread { body, .. } => self.record_ops(body),
-                FlowOp::ForNext { body, .. } => self.record_ops(body),
+                FlowOp::LoopNext { body }
+                | FlowOp::WhileNext { body, .. }
+                | FlowOp::WhileLetNext { body, .. }
+                | FlowOp::ForNext { body, .. } => self.record_ops(body),
                 FlowOp::Scope(ops) | FlowOp::LetScope { ops, .. } => self.record_ops(ops),
                 FlowOp::Bind(_)
                 | FlowOp::Let { .. }

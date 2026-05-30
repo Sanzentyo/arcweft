@@ -213,18 +213,22 @@ impl<'a> RuntimeTypeValidator<'a> {
                 ..
             } => self.validate_if_let_ops(path, expr, guard.as_ref(), then_ops, else_ops),
             FlowOp::Match { scrutinee, arms } => self.validate_match_ops(path, scrutinee, arms),
-            FlowOp::Loop { body }
-            | FlowOp::LetLoop { body, .. }
-            | FlowOp::LoopNext { body }
-            | FlowOp::Scope(body) => self.validate_ops(path, body),
-            FlowOp::While { condition, body } | FlowOp::WhileNext { condition, body } => {
+            FlowOp::Loop { body } | FlowOp::LetLoop { body, .. } | FlowOp::Scope(body) => {
+                self.validate_ops(path, body);
+            }
+            FlowOp::LoopNext { body } => self.validate_ops(path, body),
+            FlowOp::While { condition, body } => {
+                self.validate_condition(path, condition);
+                self.validate_ops(&format!("{path}.body"), body);
+            }
+            FlowOp::WhileNext { condition, body } => {
                 self.validate_condition(path, condition);
                 self.validate_ops(&format!("{path}.body"), body);
             }
             FlowOp::WhileLet {
                 expr, guard, body, ..
-            }
-            | FlowOp::WhileLetNext {
+            } => self.validate_while_let_ops(path, expr, guard.as_ref(), body),
+            FlowOp::WhileLetNext {
                 expr, guard, body, ..
             } => self.validate_while_let_ops(path, expr, guard.as_ref(), body),
             FlowOp::For { source, body, .. } => self.validate_for_ops(path, source, body),

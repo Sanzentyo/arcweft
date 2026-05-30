@@ -165,7 +165,7 @@ pub enum FlowOp {
         body: Vec<FlowOp>,
     },
     LoopNext {
-        body: Vec<FlowOp>,
+        body: Arc<[FlowOp]>,
     },
     While {
         condition: RuntimeExpr,
@@ -173,7 +173,7 @@ pub enum FlowOp {
     },
     WhileNext {
         condition: RuntimeExpr,
-        body: Vec<FlowOp>,
+        body: Arc<[FlowOp]>,
     },
     WhileLet {
         pattern: RuntimePattern,
@@ -185,7 +185,7 @@ pub enum FlowOp {
         pattern: RuntimePattern,
         expr: RuntimeExpr,
         guard: Option<RuntimeExpr>,
-        body: Vec<FlowOp>,
+        body: Arc<[FlowOp]>,
     },
     For {
         pattern: RuntimePattern,

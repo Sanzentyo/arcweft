@@ -833,28 +833,25 @@ fn rewrite_flow_ops_pure_calls(
             }
             FlowOp::Loop { body }
             | FlowOp::LetLoop { body, .. }
-            | FlowOp::LoopNext { body }
             | FlowOp::Scope(body)
             | FlowOp::Thread { body, .. } => rewrite_flow_ops_pure_calls(body, helpers),
-            FlowOp::ForNext { body, .. } => {
+            FlowOp::LoopNext { body } | FlowOp::ForNext { body, .. } => {
                 rewrite_flow_ops_pure_calls(Arc::make_mut(body), helpers);
             }
-            FlowOp::While { condition, body } | FlowOp::WhileNext { condition, body } => {
+            FlowOp::While { condition, body } => {
                 rewrite_expr_pure_calls(condition, helpers);
                 rewrite_flow_ops_pure_calls(body, helpers);
             }
+            FlowOp::WhileNext { condition, body } => {
+                rewrite_expr_pure_calls(condition, helpers);
+                rewrite_flow_ops_pure_calls(Arc::make_mut(body), helpers);
+            }
             FlowOp::WhileLet {
                 expr, guard, body, ..
-            }
-            | FlowOp::WhileLetNext {
+            } => rewrite_while_let_pure_calls(expr, guard, body, helpers),
+            FlowOp::WhileLetNext {
                 expr, guard, body, ..
-            } => {
-                rewrite_expr_pure_calls(expr, helpers);
-                if let Some(guard) = guard {
-                    rewrite_expr_pure_calls(guard, helpers);
-                }
-                rewrite_flow_ops_pure_calls(body, helpers);
-            }
+            } => rewrite_while_let_pure_calls(expr, guard, Arc::make_mut(body), helpers),
             FlowOp::For { source, body, .. } => {
                 rewrite_expr_pure_calls(source, helpers);
                 rewrite_flow_ops_pure_calls(body, helpers);
@@ -903,6 +900,19 @@ fn rewrite_source_plan_pure_calls(
         };
         rewrite_source_ops_pure_calls(ops, helpers);
     }
+}
+
+fn rewrite_while_let_pure_calls(
+    expr: &mut RuntimeExpr,
+    guard: &mut Option<RuntimeExpr>,
+    body: &mut [FlowOp],
+    helpers: &BTreeMap<String, RuntimePureHelperId>,
+) {
+    rewrite_expr_pure_calls(expr, helpers);
+    if let Some(guard) = guard {
+        rewrite_expr_pure_calls(guard, helpers);
+    }
+    rewrite_flow_ops_pure_calls(body, helpers);
 }
 
 fn rewrite_source_ops_pure_calls(

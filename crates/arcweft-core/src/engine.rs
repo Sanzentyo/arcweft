@@ -69,18 +69,18 @@ pub struct FlowControlStackEntry {
 pub enum FlowControlStackEntryKind {
     Scope,
     Loop {
-        body: Vec<FlowOp>,
+        body: std::sync::Arc<[FlowOp]>,
         result: Option<RuntimePattern>,
     },
     While {
         condition: RuntimeExpr,
-        body: Vec<FlowOp>,
+        body: std::sync::Arc<[FlowOp]>,
     },
     WhileLet {
         pattern: RuntimePattern,
         expr: RuntimeExpr,
         guard: Option<RuntimeExpr>,
-        body: Vec<FlowOp>,
+        body: std::sync::Arc<[FlowOp]>,
     },
 }
 

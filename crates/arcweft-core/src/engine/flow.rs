@@ -184,9 +184,10 @@ impl Engine {
             }
             FlowOp::Loop { body } => {
                 self.advance_if_needed(next);
+                let body = Arc::from(body);
                 self.fiber.control_stack.push(FlowControlStackEntry {
                     kind: FlowControlStackEntryKind::Loop {
-                        body: body.clone(),
+                        body: Arc::clone(&body),
                         result: None,
                     },
                 });
@@ -194,9 +195,10 @@ impl Engine {
             }
             FlowOp::LetLoop { pattern, body } => {
                 self.advance_if_needed(next);
+                let body = Arc::from(body);
                 self.fiber.control_stack.push(FlowControlStackEntry {
                     kind: FlowControlStackEntryKind::Loop {
-                        body: body.clone(),
+                        body: Arc::clone(&body),
                         result: Some(pattern),
                     },
                 });
@@ -209,10 +211,11 @@ impl Engine {
                 match self.evaluate_bool_with_backend(&condition, pure_backend) {
                     Ok(true) => {
                         self.advance_if_needed(next);
+                        let body = Arc::from(body);
                         self.fiber.control_stack.push(FlowControlStackEntry {
                             kind: FlowControlStackEntryKind::While {
                                 condition: condition.clone(),
-                                body: body.clone(),
+                                body: Arc::clone(&body),
                             },
                         });
                         self.push_while_iteration(condition, &body);
@@ -245,12 +248,13 @@ impl Engine {
             ) {
                 Ok(Some(bindings)) => {
                     self.advance_if_needed(next);
+                    let body = Arc::from(body);
                     self.fiber.control_stack.push(FlowControlStackEntry {
                         kind: FlowControlStackEntryKind::WhileLet {
                             pattern: pattern.clone(),
                             expr: expr.clone(),
                             guard: guard.clone(),
-                            body: body.clone(),
+                            body: Arc::clone(&body),
                         },
                     });
                     self.push_while_let_iteration(pattern, expr, guard, &body, bindings);
@@ -467,19 +471,19 @@ impl Engine {
         self.push_owned_scoped_ops(ops, prefix);
     }
 
-    pub(super) fn push_loop_iteration(&mut self, body: &[FlowOp]) {
+    pub(super) fn push_loop_iteration(&mut self, body: &Arc<[FlowOp]>) {
         let tail = FlowOp::LoopNext {
-            body: body.to_owned(),
+            body: Arc::clone(body),
         };
-        self.push_borrowed_scoped_ops(body, None, Some(tail));
+        self.push_borrowed_scoped_ops(body.as_ref(), None, Some(tail));
     }
 
-    pub(super) fn push_while_iteration(&mut self, condition: RuntimeExpr, body: &[FlowOp]) {
+    pub(super) fn push_while_iteration(&mut self, condition: RuntimeExpr, body: &Arc<[FlowOp]>) {
         let tail = FlowOp::WhileNext {
             condition,
-            body: body.to_owned(),
+            body: Arc::clone(body),
         };
-        self.push_borrowed_scoped_ops(body, None, Some(tail));
+        self.push_borrowed_scoped_ops(body.as_ref(), None, Some(tail));
     }
 
     pub(super) fn push_while_let_iteration(
@@ -487,7 +491,7 @@ impl Engine {
         pattern: RuntimePattern,
         expr: RuntimeExpr,
         guard: Option<RuntimeExpr>,
-        body: &[FlowOp],
+        body: &Arc<[FlowOp]>,
         bindings: Vec<RuntimeBinding>,
     ) {
         let prefix = (!bindings.is_empty()).then_some(FlowOp::Bind(bindings));
@@ -495,9 +499,9 @@ impl Engine {
             pattern,
             expr,
             guard,
-            body: body.to_owned(),
+            body: Arc::clone(body),
         };
-        self.push_borrowed_scoped_ops(body, prefix, Some(tail));
+        self.push_borrowed_scoped_ops(body.as_ref(), prefix, Some(tail));
     }
 
     pub(super) fn push_for_next(

@@ -444,6 +444,9 @@ Current high-confidence state:
   the continuation runs, then queues only the body, `ExitScope`, and next
   continuation. A branching for-loop pure-call bench dropped from 31 to 23 VM
   ops per run while keeping JIT calls and arg-vector allocations unchanged.
+- `LoopNext`, `WhileNext`, and `WhileLetNext` continuations now also share their
+  lowered loop bodies as `Arc<[FlowOp]>`, avoiding body clones on repeated
+  loop iterations and `continue` paths.
 - Flow scoped-operation scheduling pushes `EnterScope`, body ops, `ExitScope`,
   and loop continuations directly into the VM pending queue. Loop, while,
   while-let, and for iterations avoid building temporary scoped `Vec<FlowOp>`
