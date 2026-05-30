@@ -22,7 +22,7 @@ impl Engine {
         self.fiber.env.bind_all_root(input.bindings);
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
-            let Some(cursor) = self.fiber.cursor.clone() else {
+            let Some(cursor) = self.fiber.cursor.as_ref() else {
                 self.finish(&mut output);
                 executed_ops += 1;
                 if self.should_return_to_host(options.mode, &output, executed_ops) {
@@ -30,7 +30,7 @@ impl Engine {
                 }
                 continue;
             };
-            let Some(flow) = self.flow_at_cursor(&cursor) else {
+            let Some(flow) = self.flow_at_cursor(cursor) else {
                 self.fail_aot_linear_precondition(
                     "AOT linear cursor no longer references a flow",
                     &mut output,

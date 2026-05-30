@@ -24,11 +24,11 @@ impl Engine {
         let (op, next) = if let Some(op) = self.fiber.pending_ops.pop_front() {
             (op, None)
         } else {
-            let Some(cursor) = self.fiber.cursor.clone() else {
+            let Some(cursor) = self.fiber.cursor.as_ref() else {
                 return;
             };
             let Some(op) = self
-                .flow_at_cursor(&cursor)
+                .flow_at_cursor(cursor)
                 .and_then(|flow| flow.ops.get(cursor.op_index))
                 .cloned()
             else {

@@ -158,6 +158,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - Flow cursors carry the resolved flow index alongside the flow id. Normal VM
   and AOT stepping now read the current flow from the runtime plan vector
   directly and reserve the flow-id map lookup for entry/goto resolution.
+- VM and prechecked AOT stepping borrow the current cursor while fetching the
+  next op and only clone the flow id when constructing the advanced cursor,
+  avoiding an extra per-op cursor clone in the hot path.
 - AOT linear dispatch checks use that cursor index to read the corresponding
   AOT flow block directly, keeping the hot eligibility check aligned with the
   runtime-plan flow vector.
