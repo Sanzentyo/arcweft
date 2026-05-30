@@ -22,6 +22,7 @@ pub struct RuntimeScheduler {
     config: RuntimeSchedulerConfig,
     next_order: u64,
     pending: Vec<ScheduledTask>,
+    pending_sorted: bool,
     in_flight: BTreeMap<TaskId, InFlightTask>,
     in_flight_by_key: BTreeMap<TaskKey, TaskId>,
     joined_waiters: BTreeMap<TaskId, Vec<TaskId>>,
@@ -49,6 +50,8 @@ pub struct RuntimeSchedulerStats {
     pub joined_completed: usize,
     pub in_flight: usize,
     pub max_in_flight: usize,
+    pub dispatch_sorts: usize,
+    pub dispatch_sort_items: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -70,6 +73,7 @@ impl RuntimeScheduler {
             config,
             next_order: 0,
             pending: Vec::new(),
+            pending_sorted: true,
             in_flight: BTreeMap::new(),
             in_flight_by_key: BTreeMap::new(),
             joined_waiters: BTreeMap::new(),
@@ -85,6 +89,8 @@ impl RuntimeScheduler {
                 joined_completed: 0,
                 in_flight: 0,
                 max_in_flight: 0,
+                dispatch_sorts: 0,
+                dispatch_sort_items: 0,
             },
         }
     }
@@ -110,9 +116,12 @@ impl RuntimeScheduler {
         } else {
             budget.max_events
         };
-        if self.pending.len() > 1 {
+        if self.pending.len() > 1 && !self.pending_sorted {
+            self.stats.dispatch_sorts += 1;
+            self.stats.dispatch_sort_items += self.pending.len();
             self.pending.sort_by(compare_scheduled_tasks);
         }
+        self.pending_sorted = true;
         let dispatch_count = self.pending.len().min(max_events);
         let tasks = self
             .pending
@@ -164,7 +173,13 @@ impl RuntimeScheduler {
         let order = self.next_order;
         self.next_order = self.next_order.saturating_add(1);
         self.track_in_flight(&spec);
-        self.pending.push(ScheduledTask { spec, order });
+        let scheduled = ScheduledTask { spec, order };
+        self.pending_sorted = self.pending_sorted
+            && self
+                .pending
+                .last()
+                .is_none_or(|last| compare_scheduled_tasks(last, &scheduled).is_le());
+        self.pending.push(scheduled);
         self.stats.submitted += 1;
         self.refresh_in_flight_stats();
     }
@@ -271,6 +286,7 @@ mod tests {
         assert_eq!(scheduler.stats().submitted, 1);
         assert_eq!(scheduler.stats().joined, 1);
         assert_eq!(scheduler.stats().in_flight, 1);
+        assert_eq!(scheduler.stats().dispatch_sorts, 0);
     }
 
     #[test]
@@ -333,6 +349,29 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(ids, ["high-a", "high-b"]);
         assert_eq!(scheduler.stats().dispatched, 2);
+        assert_eq!(scheduler.stats().dispatch_sorts, 1);
+        assert_eq!(scheduler.stats().dispatch_sort_items, 3);
+    }
+
+    #[test]
+    fn dispatch_avoids_sort_when_submissions_are_already_ordered() {
+        let mut scheduler = RuntimeScheduler::default();
+        scheduler.submit([
+            task("high-a", "high-a", TaskPolicy::AlwaysStart, 9),
+            task("high-b", "high-b", TaskPolicy::AlwaysStart, 9),
+            task("low", "low", TaskPolicy::AlwaysStart, 1),
+        ]);
+
+        let batch = scheduler.dispatch(SchedulerBudget { max_events: 8 });
+
+        let ids = batch
+            .tasks
+            .iter()
+            .map(|task| task.id.0.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, ["high-a", "high-b", "low"]);
+        assert_eq!(scheduler.stats().dispatch_sorts, 0);
+        assert_eq!(scheduler.stats().dispatch_sort_items, 0);
     }
 
     #[test]

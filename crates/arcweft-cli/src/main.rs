@@ -3420,6 +3420,8 @@ struct NativeSchedulerStatsSamples {
     joined_completed: Vec<usize>,
     in_flight: Vec<usize>,
     max_in_flight: Vec<usize>,
+    dispatch_sorts: Vec<usize>,
+    dispatch_sort_items: Vec<usize>,
 }
 
 impl NativeSchedulerStatsSamples {
@@ -3434,6 +3436,8 @@ impl NativeSchedulerStatsSamples {
         self.joined_completed.push(stats.joined_completed);
         self.in_flight.push(stats.in_flight);
         self.max_in_flight.push(stats.max_in_flight);
+        self.dispatch_sorts.push(stats.dispatch_sorts);
+        self.dispatch_sort_items.push(stats.dispatch_sort_items);
     }
 
     fn median(&mut self) -> NativeSchedulerStats {
@@ -3448,6 +3452,8 @@ impl NativeSchedulerStatsSamples {
             joined_completed: median_usize(&mut self.joined_completed),
             in_flight: median_usize(&mut self.in_flight),
             max_in_flight: median_usize(&mut self.max_in_flight),
+            dispatch_sorts: median_usize(&mut self.dispatch_sorts),
+            dispatch_sort_items: median_usize(&mut self.dispatch_sort_items),
         }
     }
 }

@@ -3077,6 +3077,11 @@ flow @flow.threads threads {
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["deterministic"]["task_requests_median"], 3);
     assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 3);
+    assert_eq!(measurement["native_io"]["scheduler"]["dispatch_sorts"], 0);
+    assert_eq!(
+        measurement["native_io"]["scheduler"]["dispatch_sort_items"],
+        0
+    );
     assert_eq!(measurement["native_io"]["completed_tasks"], 3);
     assert!(
         measurement["deterministic"]["child_fiber_ticks_median"]

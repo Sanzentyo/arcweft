@@ -458,6 +458,11 @@ Current high-confidence state:
   contract is checked explicitly. Child-fiber activity checks use the queue
   length directly because completed/failed children are removed when stepped,
   avoiding repeated scans during return and stop-reason decisions.
+- The scheduler tracks whether pending tasks are already in deterministic
+  priority/submission order and skips dispatch sorting for already ordered
+  batches. Scheduler stats expose `dispatch_sorts` and `dispatch_sort_items` so
+  thread-heavy benches can distinguish actual scheduling sort work from task
+  completion work.
 - The CLI native task bridge now completes read-only dispatched task batches on
   a worker pool and reports path-free `parallel_batches`, `parallel_tasks`,
   `parallel_io_tasks`, `parallel_marker_tasks`, and `parallel_workers` counters
