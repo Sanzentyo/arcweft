@@ -565,14 +565,16 @@ Current high-confidence state:
 - Scheduler stats expose `completion_sorts` and `completion_sort_items`, making
   completion normalization work visible in CLI `native_io.scheduler` bench and
   profile output.
-- The CLI native task bridge now completes read-only dispatched task batches on
-  a worker pool and reports path-free `parallel_batches`, `parallel_tasks`,
-  `parallel_io_tasks`, `parallel_marker_tasks`, and `parallel_workers` counters
-  in `native_io`; write tasks stay ordered. The split counters keep actual
-  adapter I/O separate from scheduler marker completions in thread-heavy flows.
-- The native bridge now keeps marker-only and system-info-only batches on the
-  serial path, avoiding Rayon worker-pool startup for cheap runtime bookkeeping
-  while preserving parallel completion for read-only file I/O batches.
+- The CLI native task bridge now completes read-only dispatched task batches
+  and host system-info reads on a worker pool and reports path-free
+  `parallel_batches`, `parallel_tasks`, `parallel_io_tasks`,
+  `parallel_system_info_tasks`, `parallel_marker_tasks`, and
+  `parallel_workers` counters in `native_io`; write tasks stay ordered. The
+  split counters keep actual adapter I/O and host system reads separate from
+  scheduler marker completions in thread-heavy flows.
+- The native bridge keeps marker-only batches on the serial path, avoiding
+  Rayon worker-pool startup for cheap runtime bookkeeping while preserving
+  parallel completion for read-only file I/O and host system-info batches.
 - `tests/fixtures/arcw/spec_should_pass/bench/001_thread_scheduling.arcw`
   provides a checked-in path-free bench fixture for direct CLI measurement of
   source-level `thread` fanout, child-fiber activity, and scheduler sort

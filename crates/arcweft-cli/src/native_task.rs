@@ -29,6 +29,7 @@ pub(crate) struct NativeTaskStats {
     pub(crate) parallel_batches: usize,
     pub(crate) parallel_tasks: usize,
     pub(crate) parallel_io_tasks: usize,
+    pub(crate) parallel_system_info_tasks: usize,
     pub(crate) parallel_marker_tasks: usize,
     pub(crate) parallel_workers: usize,
     pub(crate) scheduler: NativeSchedulerStats,
@@ -91,6 +92,11 @@ impl NativeTaskBridge {
                 .tasks
                 .iter()
                 .filter(|task| is_io_task(task))
+                .count();
+            self.stats.parallel_system_info_tasks += dispatch
+                .tasks
+                .iter()
+                .filter(|task| is_system_info_task(task))
                 .count();
             self.stats.parallel_marker_tasks += dispatch
                 .tasks
@@ -181,7 +187,9 @@ fn complete_dispatched_tasks(
 }
 
 fn should_complete_in_parallel(tasks: &[TaskSpec]) -> bool {
-    tasks.len() > 1 && tasks.iter().all(can_complete_in_parallel) && tasks.iter().any(is_io_task)
+    tasks.len() > 1
+        && tasks.iter().all(can_complete_in_parallel)
+        && tasks.iter().any(is_parallel_host_work)
 }
 
 fn complete_task(
@@ -347,6 +355,14 @@ fn is_io_task(task: &TaskSpec) -> bool {
         &task.request,
         HostTaskRequest::FileReadText(_) | HostTaskRequest::FileReadBytes(_)
     )
+}
+
+fn is_system_info_task(task: &TaskSpec) -> bool {
+    matches!(&task.request, HostTaskRequest::SystemInfo(_))
+}
+
+fn is_parallel_host_work(task: &TaskSpec) -> bool {
+    is_io_task(task) || is_system_info_task(task)
 }
 
 fn is_scheduler_marker_task(task: &TaskSpec) -> bool {

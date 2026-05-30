@@ -50,9 +50,9 @@ Checked-in thread scheduling bench:
 
 Checked-in system-info threaded native scheduling bench:
 
-| fixture | executor | iterations | median elapsed ns | task requests | task events in | system info ops | scheduler submitted | scheduler max in-flight | parallel marker tasks |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 004_system_info_threads.arcw | bytecode_vm | 1 | 460900 | 6 | 6 | 3 | 6 | 6 | 0 |
+| fixture | executor | iterations | median elapsed ns | task requests | task events in | system info ops | scheduler submitted | scheduler max in-flight | parallel system tasks | parallel marker tasks | parallel workers |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 004_system_info_threads.arcw | bytecode_vm | 1 | 946000 | 6 | 6 | 3 | 6 | 6 | 3 | 3 | 6 |
 
 Checked-in map pure JIT bench:
 

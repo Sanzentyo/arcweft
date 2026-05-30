@@ -3531,6 +3531,7 @@ struct NativeTaskStatsSamples {
     parallel_batches: Vec<usize>,
     parallel_tasks: Vec<usize>,
     parallel_io_tasks: Vec<usize>,
+    parallel_system_info_tasks: Vec<usize>,
     parallel_marker_tasks: Vec<usize>,
     parallel_workers: Vec<usize>,
     scheduler: NativeSchedulerStatsSamples,
@@ -3549,6 +3550,7 @@ impl NativeTaskStatsSamples {
             parallel_batches: Vec::with_capacity(capacity),
             parallel_tasks: Vec::with_capacity(capacity),
             parallel_io_tasks: Vec::with_capacity(capacity),
+            parallel_system_info_tasks: Vec::with_capacity(capacity),
             parallel_marker_tasks: Vec::with_capacity(capacity),
             parallel_workers: Vec::with_capacity(capacity),
             scheduler: NativeSchedulerStatsSamples::with_capacity(capacity),
@@ -3566,6 +3568,8 @@ impl NativeTaskStatsSamples {
         self.parallel_batches.push(stats.parallel_batches);
         self.parallel_tasks.push(stats.parallel_tasks);
         self.parallel_io_tasks.push(stats.parallel_io_tasks);
+        self.parallel_system_info_tasks
+            .push(stats.parallel_system_info_tasks);
         self.parallel_marker_tasks.push(stats.parallel_marker_tasks);
         self.parallel_workers.push(stats.parallel_workers);
         self.scheduler.push(stats.scheduler);
@@ -3583,6 +3587,7 @@ impl NativeTaskStatsSamples {
             parallel_batches: median_usize(&mut self.parallel_batches),
             parallel_tasks: median_usize(&mut self.parallel_tasks),
             parallel_io_tasks: median_usize(&mut self.parallel_io_tasks),
+            parallel_system_info_tasks: median_usize(&mut self.parallel_system_info_tasks),
             parallel_marker_tasks: median_usize(&mut self.parallel_marker_tasks),
             parallel_workers: median_usize(&mut self.parallel_workers),
             scheduler: self.scheduler.median(),

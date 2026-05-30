@@ -1608,6 +1608,7 @@ flow @flow.main main effects { fs.read(save) } {
             && stdout.contains("\"parallel_batches\": 1")
             && stdout.contains("\"parallel_tasks\": 2")
             && stdout.contains("\"parallel_io_tasks\": 2")
+            && stdout.contains("\"parallel_system_info_tasks\": 0")
             && stdout.contains("\"parallel_marker_tasks\": 0")
             && stdout.contains("return done"),
         "run JSON should show bounded traverse fanout and native reads: {stdout}"
@@ -3199,9 +3200,14 @@ fn bench_json_measures_checked_in_system_info_thread_fixture() {
     assert_eq!(measurement["deterministic"]["max_child_fibers_median"], 3);
     assert_eq!(measurement["native_io"]["system_info_ops"], 3);
     assert_eq!(measurement["native_io"]["completed_tasks"], 6);
-    assert_eq!(measurement["native_io"]["parallel_batches"], 0);
-    assert_eq!(measurement["native_io"]["parallel_marker_tasks"], 0);
-    assert_eq!(measurement["native_io"]["parallel_workers"], 0);
+    assert_eq!(measurement["native_io"]["parallel_batches"], 1);
+    assert_eq!(measurement["native_io"]["parallel_system_info_tasks"], 3);
+    assert_eq!(measurement["native_io"]["parallel_marker_tasks"], 3);
+    assert!(
+        measurement["native_io"]["parallel_workers"]
+            .as_u64()
+            .is_some_and(|workers| workers >= 1)
+    );
     assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 6);
     assert_eq!(measurement["native_io"]["scheduler"]["max_in_flight"], 6);
     assert_eq!(measurement["native_io"]["scheduler"]["dispatch_sorts"], 0);
@@ -3816,6 +3822,7 @@ flow @flow.threaded_reads threaded_reads effects { fs.read(save) } {
     assert_eq!(measurement["native_io"]["scheduler"]["dispatched"], 4);
     assert_eq!(measurement["native_io"]["scheduler"]["max_in_flight"], 4);
     assert_eq!(measurement["native_io"]["parallel_io_tasks"], 2);
+    assert_eq!(measurement["native_io"]["parallel_system_info_tasks"], 0);
     assert_eq!(measurement["native_io"]["parallel_marker_tasks"], 2);
     assert!(
         measurement["native_io"]["parallel_batches"]
