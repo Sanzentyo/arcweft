@@ -512,18 +512,18 @@ impl Engine {
         body: &Arc<[FlowOp]>,
         output: &mut RuntimeStepOutput,
     ) {
-        let Some(item) = items.get(index).cloned() else {
+        let Some(item) = items.get(index) else {
             return;
         };
         self.fiber.env.push_scope();
         self.fiber.control_stack.push(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::Scope,
         });
-        match self.try_bind_pattern(&pattern, &item) {
+        match self.try_bind_pattern(&pattern, item) {
             Ok(true) => {}
             Ok(false) => {
                 self.fail_eval(
-                    RuntimeEvalError::PatternMismatch(runtime_value_label(&item)),
+                    RuntimeEvalError::PatternMismatch(runtime_value_label(item)),
                     output,
                 );
                 return;

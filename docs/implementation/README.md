@@ -469,7 +469,9 @@ Current high-confidence state:
   scheduling overhead without changing binding visibility.
 - Runtime `for` state shares evaluated item sequences with `Arc<[RuntimeValue]>`
   across `ForNext` steps, so natural loops no longer clone the full source
-  vector on every iteration.
+  vector on every iteration. Each iteration now borrows the current item during
+  pattern matching, avoiding an unconditional per-item `RuntimeValue` clone
+  before binding.
 - Runtime `ForNext` continuations also share their lowered loop body as
   `Arc<[FlowOp]>`, so each iteration keeps a cheap continuation handle instead
   of cloning the whole body into the next continuation.
