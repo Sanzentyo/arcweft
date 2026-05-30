@@ -127,9 +127,13 @@ impl RuntimeScheduler {
         }
         self.pending_sorted = true;
         let dispatch_count = self.pending.len().min(max_events);
-        let tasks = self
-            .pending
-            .drain(..dispatch_count)
+        let scheduled = if dispatch_count == self.pending.len() {
+            std::mem::take(&mut self.pending)
+        } else {
+            self.pending.drain(..dispatch_count).collect()
+        };
+        let tasks = scheduled
+            .into_iter()
             .map(|scheduled| scheduled.spec)
             .collect::<Vec<_>>();
         self.stats.dispatched += tasks.len();

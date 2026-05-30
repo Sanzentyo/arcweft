@@ -167,6 +167,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - Type-check stats now record judgment rule counters as judgments are emitted.
   CLI profile/check JSON reuses those counters instead of rescanning every
   judgment when building report summaries.
+- The native task scheduler dispatch path takes the full pending queue directly
+  when the budget covers every ready task, avoiding front-drain movement in the
+  common unbounded host-dispatch case.
 - `arcweft-cli` keeps user-facing JSON report schemas in `output.rs`,
   including check, profile, verify-types, bench, runtime step, and compiler
   counter summaries. `main.rs` remains the command orchestration layer instead
