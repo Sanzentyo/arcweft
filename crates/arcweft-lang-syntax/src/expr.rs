@@ -376,7 +376,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn tokenize(mut self) -> Vec<Token> {
-        let mut tokens = Vec::new();
+        let mut tokens = Vec::with_capacity(self.source.len().saturating_div(3).saturating_add(1));
         while let Some(ch) = self.peek_char() {
             if ch.is_whitespace() {
                 self.bump_char();
@@ -925,6 +925,9 @@ impl ExprParser {
             self.bump();
             return Ok(Expr::BracketSeq(items));
         }
+        if let Some(items) = self.parse_flat_literal_bracket_seq() {
+            return Ok(Expr::BracketSeq(items));
+        }
         loop {
             items.push(self.parse_expr_bp(0)?);
             match self.peek() {
@@ -958,6 +961,36 @@ impl ExprParser {
                     return Err(ExprParseError::new(
                         "expected `]` or `,` in bracket sequence literal",
                     ));
+                }
+            }
+        }
+    }
+
+    fn parse_flat_literal_bracket_seq(&mut self) -> Option<Vec<Expr>> {
+        let start = self.cursor;
+        let mut items = Vec::new();
+        loop {
+            let Token::Literal(literal) = self.peek() else {
+                self.cursor = start;
+                return None;
+            };
+            items.push(Expr::Literal(literal.clone()));
+            self.bump();
+            match self.peek() {
+                Token::Comma => {
+                    self.bump();
+                    if self.peek() == &Token::RBracket {
+                        self.bump();
+                        return Some(items);
+                    }
+                }
+                Token::RBracket => {
+                    self.bump();
+                    return Some(items);
+                }
+                _ => {
+                    self.cursor = start;
+                    return None;
                 }
             }
         }

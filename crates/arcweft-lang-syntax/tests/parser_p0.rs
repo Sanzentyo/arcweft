@@ -13,7 +13,7 @@ use arcweft_lang_syntax::{
         flow::{FlowItem, Stmt},
         items::{Item, RawSyntaxFamily},
     },
-    expr::{BinaryOp, CallArg, Expr, UnaryOp, parse_expr},
+    expr::{BinaryOp, CallArg, Expr, Literal, UnaryOp, parse_expr},
     types::{TypeRef, parse_type_ref},
 };
 
@@ -195,6 +195,27 @@ fn array_types_and_repeat_literals_are_structured() {
             if matches!(value.as_ref(), Expr::Literal(_))
                 && matches!(len.as_ref(), Expr::Literal(_))
     ));
+}
+
+#[test]
+fn large_flat_literal_sequences_parse_as_bracket_seq() {
+    let values = (0..128)
+        .map(|value| format!("{value}i64"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let expr = parse_expr(&format!("[{values}]")).expect("large literal sequence parses");
+    let Expr::BracketSeq(items) = expr else {
+        panic!("expected bracket sequence");
+    };
+    assert_eq!(items.len(), 128);
+    assert!(
+        items
+            .iter()
+            .all(|item| matches!(item, Expr::Literal(Literal::Int { .. })))
+    );
+
+    let repeat = parse_expr("[0i64; 4]").expect("array repeat still parses");
+    assert!(matches!(repeat, Expr::ArrayRepeat { .. }));
 }
 
 #[test]
