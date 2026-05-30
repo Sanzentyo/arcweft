@@ -214,19 +214,16 @@ impl Engine {
                 self.pure_i64_batch_inputs = flat_inputs;
                 return Err(error);
             }
-            let helper = &self.plan.pure_helpers[helper_id.0];
-            let mut out = std::mem::take(&mut self.pure_i64_batch_outputs);
-            out.resize(items.len(), 0);
-            let batch_result =
-                pure_backend.call_i64_flat_batch(helper, &flat_inputs, arity, &mut out);
+            let batch_result = self.call_i64_flat_batch_with_outputs(
+                helper_id,
+                &flat_inputs,
+                arity,
+                items.len(),
+                pure_backend,
+                |out| out.iter().copied().map(RuntimeValue::Int).collect(),
+            );
             self.pure_i64_batch_inputs = flat_inputs;
-            if let Err(error) = batch_result {
-                self.pure_i64_batch_outputs = out;
-                return Err(error);
-            }
-            let values = out.iter().copied().map(RuntimeValue::Int).collect();
-            out.clear();
-            self.pure_i64_batch_outputs = out;
+            let values = batch_result?;
             return Ok(RuntimeValue::BracketSeq(values));
         }
         items
@@ -290,6 +287,29 @@ impl Engine {
             }
         }
         Ok(())
+    }
+
+    fn call_i64_flat_batch_with_outputs<T>(
+        &mut self,
+        helper_id: crate::plan::RuntimePureHelperId,
+        flat_inputs: &[i64],
+        arity: usize,
+        row_count: usize,
+        pure_backend: &mut impl RuntimePureCallBackend,
+        map_outputs: impl FnOnce(&[i64]) -> T,
+    ) -> Result<T, RuntimeEvalError> {
+        let mut out = std::mem::take(&mut self.pure_i64_batch_outputs);
+        out.resize(row_count, 0);
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        let batch_result = pure_backend.call_i64_flat_batch(helper, flat_inputs, arity, &mut out);
+        if let Err(error) = batch_result {
+            self.pure_i64_batch_outputs = out;
+            return Err(error);
+        }
+        let result = map_outputs(&out);
+        out.clear();
+        self.pure_i64_batch_outputs = out;
+        Ok(result)
     }
 
     fn evaluate_record_expr(
@@ -432,15 +452,17 @@ impl Engine {
                 self.pure_i64_batch_inputs = flat_inputs;
                 return Err(error);
             }
-            let helper = &self.plan.pure_helpers[helper_id.0];
-            let mut out = vec![0; items.len()];
-            let batch_result =
-                pure_backend.call_i64_flat_batch(helper, &flat_inputs, arity, &mut out);
+            let batch_result = self.call_i64_flat_batch_with_outputs(
+                helper_id,
+                &flat_inputs,
+                arity,
+                items.len(),
+                pure_backend,
+                |out| out.iter().copied().map(RuntimeValue::Int).collect(),
+            );
             self.pure_i64_batch_inputs = flat_inputs;
-            batch_result?;
-            return Ok(RuntimeValue::BracketSeq(
-                out.into_iter().map(RuntimeValue::Int).collect(),
-            ));
+            let values = batch_result?;
+            return Ok(RuntimeValue::BracketSeq(values));
         }
         items
             .iter()
@@ -521,18 +543,16 @@ impl Engine {
             self.pure_i64_batch_inputs = flat_inputs;
             return Err(error);
         }
-        let mut out = std::mem::take(&mut self.pure_i64_batch_outputs);
-        out.resize(items.len(), 0);
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        let batch_result = pure_backend.call_i64_flat_batch(helper, &flat_inputs, arity, &mut out);
+        let batch_result = self.call_i64_flat_batch_with_outputs(
+            helper_id,
+            &flat_inputs,
+            arity,
+            items.len(),
+            pure_backend,
+            |out| out.iter().copied().sum(),
+        );
         self.pure_i64_batch_inputs = flat_inputs;
-        if let Err(error) = batch_result {
-            self.pure_i64_batch_outputs = out;
-            return Err(error);
-        }
-        let sum = out.iter().copied().sum();
-        out.clear();
-        self.pure_i64_batch_outputs = out;
+        let sum = batch_result?;
         Ok(Some(sum))
     }
 
@@ -554,18 +574,16 @@ impl Engine {
             self.pure_i64_batch_inputs = flat_inputs;
             return Err(error);
         }
-        let mut out = std::mem::take(&mut self.pure_i64_batch_outputs);
-        out.resize(items.len(), 0);
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        let batch_result = pure_backend.call_i64_flat_batch(helper, &flat_inputs, arity, &mut out);
+        let batch_result = self.call_i64_flat_batch_with_outputs(
+            helper_id,
+            &flat_inputs,
+            arity,
+            items.len(),
+            pure_backend,
+            |out| out.iter().copied().sum(),
+        );
         self.pure_i64_batch_inputs = flat_inputs;
-        if let Err(error) = batch_result {
-            self.pure_i64_batch_outputs = out;
-            return Err(error);
-        }
-        let sum = out.iter().copied().sum();
-        out.clear();
-        self.pure_i64_batch_outputs = out;
+        let sum = batch_result?;
         Ok(Some(sum))
     }
 
