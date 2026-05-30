@@ -13,9 +13,9 @@ use arcweft_core::pure::{
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeUnaryOp, RuntimeValue,
 };
-use cranelift::codegen::ir::{BlockArg, UserFuncName};
+use cranelift::codegen::ir::{BlockArg, MemFlags, UserFuncName};
 use cranelift::jit::{JITBuilder, JITModule};
-use cranelift::module::{Linkage, Module, ModuleError, default_libcall_names};
+use cranelift::module::{FuncId, Linkage, Module, ModuleError, default_libcall_names};
 use cranelift::prelude::{
     AbiParam, Configurable, FunctionBuilder, FunctionBuilderContext, InstBuilder, IntCC, Value,
     settings, types,
@@ -52,6 +52,7 @@ pub struct CompiledPureI64 {
 pub struct CompiledPureI64Inputs {
     _module: JITModule,
     code: *const u8,
+    batch_code: *const u8,
     param_names: Vec<String>,
     stats: PureFunctionStats,
 }
@@ -190,7 +191,8 @@ impl CraneliftPureFunctionBackend {
         ctx.func.signature = signature;
         ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
-        let mut bindings = int_bindings(&request.bindings)?;
+        let captured_bindings = int_bindings(&request.bindings)?;
+        let mut bindings = captured_bindings.clone();
         let mut stats = arcweft_core::pure::PureFunctionStats::default();
         {
             let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
@@ -211,12 +213,20 @@ impl CraneliftPureFunctionBackend {
             .define_function(func_id, &mut ctx)
             .map_err(jit_error)?;
         module.clear_context(&mut ctx);
+        let batch_code = compile_i64_rows_batch_function(
+            &mut module,
+            &request.expr,
+            &captured_bindings,
+            &param_names,
+        )?;
         module.finalize_definitions().map_err(jit_error)?;
         let code = module.get_finalized_function(func_id);
+        let batch_code = module.get_finalized_function(batch_code);
 
         Ok(CompiledPureI64Inputs {
             _module: module,
             code,
+            batch_code,
             param_names,
             stats,
         })
@@ -339,6 +349,123 @@ impl CraneliftPureFunctionBackend {
     }
 }
 
+fn compile_i64_rows_batch_function(
+    module: &mut JITModule,
+    expr: &RuntimeExpr,
+    captured_bindings: &BTreeMap<String, LoweredI64Binding>,
+    param_names: &[String],
+) -> Result<FuncId, CraneliftJitError> {
+    let pointer_type = module.target_config().pointer_type();
+    if pointer_type != types::I64 {
+        return Err(CraneliftJitError::UnsupportedHost(
+            "JIT rows batch currently requires a 64-bit host pointer type".to_owned(),
+        ));
+    }
+
+    let mut ctx = module.make_context();
+    let mut func_ctx = FunctionBuilderContext::new();
+    let mut signature = module.make_signature();
+    signature.params.extend([
+        AbiParam::new(pointer_type),
+        AbiParam::new(types::I64),
+        AbiParam::new(pointer_type),
+    ]);
+
+    let func_id = module
+        .declare_function("arcweft_pure_helper_rows_batch", Linkage::Local, &signature)
+        .map_err(jit_error)?;
+    ctx.func.signature = signature;
+    ctx.func.name = UserFuncName::user(0, func_id.as_u32());
+
+    let mut stats = arcweft_core::pure::PureFunctionStats::default();
+    {
+        let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
+        let entry = builder.create_block();
+        builder.append_block_params_for_function_params(entry);
+        builder.switch_to_block(entry);
+        let inputs_ptr = builder.block_params(entry)[0];
+        let rows = builder.block_params(entry)[1];
+        let out_ptr = builder.block_params(entry)[2];
+
+        let loop_block = builder.create_block();
+        let body_block = builder.create_block();
+        let done_block = builder.create_block();
+        builder.append_block_param(loop_block, types::I64);
+
+        let zero = builder.ins().iconst(types::I64, 0);
+        builder.ins().jump(loop_block, &[BlockArg::from(zero)]);
+
+        builder.switch_to_block(loop_block);
+        let row = builder.block_params(loop_block)[0];
+        let keep_going = builder.ins().icmp(IntCC::SignedLessThan, row, rows);
+        builder
+            .ins()
+            .brif(keep_going, body_block, &[], done_block, &[]);
+
+        builder.switch_to_block(body_block);
+        let mut bindings = captured_bindings.clone();
+        for (param_index, name) in param_names.iter().enumerate() {
+            let value = load_batch_input(
+                &mut builder,
+                inputs_ptr,
+                row,
+                param_names.len(),
+                param_index,
+            );
+            bindings.insert(name.clone(), LoweredI64Binding::Value(value));
+        }
+        let value = lower_expr(&mut builder, &bindings, expr, &mut stats)?;
+        store_batch_output(&mut builder, out_ptr, row, value);
+        let one = builder.ins().iconst(types::I64, 1);
+        let next_row = builder.ins().iadd(row, one);
+        builder.ins().jump(loop_block, &[BlockArg::from(next_row)]);
+
+        builder.switch_to_block(done_block);
+        builder.ins().return_(&[]);
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    module
+        .define_function(func_id, &mut ctx)
+        .map_err(jit_error)?;
+    module.clear_context(&mut ctx);
+    Ok(func_id)
+}
+
+fn load_batch_input(
+    builder: &mut FunctionBuilder<'_>,
+    inputs_ptr: Value,
+    row: Value,
+    arity: usize,
+    param_index: usize,
+) -> Value {
+    let stride_bytes =
+        i64::try_from(arity.saturating_mul(std::mem::size_of::<i64>())).unwrap_or(i64::MAX);
+    let row_stride = builder.ins().iconst(types::I64, stride_bytes);
+    let row_offset = builder.ins().imul(row, row_stride);
+    let param_offset =
+        i64::try_from(param_index.saturating_mul(std::mem::size_of::<i64>())).unwrap_or(i64::MAX);
+    let byte_offset = if param_offset == 0 {
+        row_offset
+    } else {
+        let param_offset = builder.ins().iconst(types::I64, param_offset);
+        builder.ins().iadd(row_offset, param_offset)
+    };
+    let address = builder.ins().iadd(inputs_ptr, byte_offset);
+    builder
+        .ins()
+        .load(types::I64, MemFlags::trusted(), address, 0)
+}
+
+fn store_batch_output(builder: &mut FunctionBuilder<'_>, out_ptr: Value, row: Value, value: Value) {
+    let value_bytes = i64::try_from(std::mem::size_of::<i64>()).unwrap_or(i64::MAX);
+    let stride = builder.ins().iconst(types::I64, value_bytes);
+    let byte_offset = builder.ins().imul(row, stride);
+    let address = builder.ins().iadd(out_ptr, byte_offset);
+    builder.ins().store(MemFlags::trusted(), value, address, 0);
+}
+
 impl CompiledPureI64 {
     /// Calls the compiled helper.
     pub fn call(&self) -> i64 {
@@ -367,6 +494,23 @@ impl CompiledPureI64Inputs {
                 inputs.len()
             ))
         })
+    }
+
+    /// Calls the compiled helper for flat row-major `i64` inputs.
+    pub fn call_flat_batch(
+        &self,
+        inputs: &[i64],
+        out: &mut [i64],
+    ) -> Result<(), CraneliftJitError> {
+        if !native_call::call_i64_rows_batch(self.batch_code, inputs, self.param_names.len(), out) {
+            return Err(CraneliftJitError::UnsupportedExpr(format!(
+                "JIT rows batch expected {} input value(s), got {} for {} row(s)",
+                self.param_names.len().saturating_mul(out.len()),
+                inputs.len(),
+                out.len()
+            )));
+        }
+        Ok(())
     }
 
     /// Returns the local binding names used as runtime parameters.
@@ -758,6 +902,11 @@ mod tests {
         assert_eq!(compiled.call(&[3, 4]).expect("call succeeds"), 18);
         assert_eq!(compiled.call(&[2, 99]).expect("call succeeds"), 0);
         assert_eq!(compiled.call(&[7, 1]).expect("call succeeds"), 21);
+        let mut out = [0; 3];
+        compiled
+            .call_flat_batch(&[3, 4, 2, 99, 7, 1], &mut out)
+            .expect("flat rows batch succeeds");
+        assert_eq!(out, [18, 0, 21]);
     }
 
     #[test]

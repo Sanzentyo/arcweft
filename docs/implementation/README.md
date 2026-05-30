@@ -449,6 +449,10 @@ Current high-confidence state:
 - The CLI/player pure accelerator stores compiled helper entries in dense
   helper-ID slots instead of a map, reducing scalar pure-call dispatch overhead
   while preserving deterministic cache statistics.
+- Cranelift input helpers now include a row-major batch entry point that accepts
+  input and output slices through the native adapter boundary. Runtime pure
+  batch execution can call JIT once per batch instead of crossing the
+  Rust/native boundary once per row.
 - Awaited `system.core_count()`, `system.thread_count()`, and
   `system.available_parallelism()` calls now lower to typed system-info task
   requests. The CLI adapter resolves physical cores, logical CPUs, and

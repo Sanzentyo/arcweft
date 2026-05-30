@@ -402,15 +402,17 @@ fn call_jit_batch(
     out: &mut [i64],
     helper: &RuntimePureHelper,
 ) -> Result<(), RuntimeEvalError> {
-    rows.iter().zip(out.iter_mut()).try_for_each(|(row, slot)| {
-        compiled
-            .call(row.as_slice())
-            .map(|value| *slot = value)
-            .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                name: helper.name.clone(),
-                reason: error.to_string(),
-            })
-    })
+    let arity = compiled.param_names().len();
+    let mut flat_inputs = Vec::with_capacity(rows.len().saturating_mul(arity));
+    for row in rows {
+        flat_inputs.extend_from_slice(row.as_slice());
+    }
+    compiled
+        .call_flat_batch(&flat_inputs, out)
+        .map_err(|error| RuntimeEvalError::UnsupportedPure {
+            name: helper.name.clone(),
+            reason: error.to_string(),
+        })
 }
 
 fn call_aot_batch(
