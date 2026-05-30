@@ -76,9 +76,9 @@ impl NativeTaskBridge {
             .and_then(|path| fs::read_to_string(path).map_err(|error| error.to_string()))
     }
 
-    pub(crate) fn complete_tasks(&mut self, tasks: &[TaskSpec]) -> Vec<TaskEvent> {
+    pub(crate) fn complete_tasks(&mut self, tasks: Vec<TaskSpec>) -> Vec<TaskEvent> {
         self.scheduler
-            .submit(tasks.iter().filter(|task| can_complete_task(task)).cloned());
+            .submit(tasks.into_iter().filter(can_complete_task));
         let dispatch = self.scheduler.dispatch(SchedulerBudget {
             max_events: usize::MAX,
         });

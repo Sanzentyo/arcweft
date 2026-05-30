@@ -638,6 +638,9 @@ Current high-confidence state:
 - Source event normalization now sorts by borrowed source id and sequence
   comparisons instead of constructing cloned sort keys, reducing per-step work
   for source-heavy and stream-heavy runtime benches.
+- Native task completion now consumes moved `TaskSpec` request vectors and
+  submits supported tasks directly into the scheduler, removing the remaining
+  task clone between runtime JSON summarization and host scheduling.
 - The CLI regression harness now rejects generated `.arcweft` directories under
   checked-in fixtures and scans non-review source/docs/tests for removed
   whitespace-command DSL or compatibility-shim text. Run fixtures execute from

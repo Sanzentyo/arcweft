@@ -1774,7 +1774,7 @@ fn run_runtime_steps(
             break;
         }
         if let Some(host) = host.as_mut() {
-            task_events = host.complete_tasks(&task_requests);
+            task_events = host.complete_tasks(task_requests);
         }
     }
     RuntimeRunTrace {
