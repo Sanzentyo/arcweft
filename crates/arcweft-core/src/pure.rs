@@ -2,8 +2,9 @@ use crate::plan::RuntimePureHelper;
 use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeFieldValue,
-    RuntimeUnaryOp, RuntimeValue, evaluate_binary, evaluate_unary, materialize_i64_sequence,
-    runtime_binary_op_label, runtime_unary_op_label, runtime_value_label, sum_i64_sequence_ref,
+    RuntimeSeq, RuntimeUnaryOp, RuntimeValue, evaluate_binary, evaluate_unary,
+    runtime_binary_op_label, runtime_sequence_values, runtime_unary_op_label,
+    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
 use std::collections::BTreeMap;
 
@@ -1182,7 +1183,7 @@ impl PureEvaluator {
                 .iter()
                 .map(|item| self.evaluate_expr(item))
                 .collect::<Result<Vec<_>, _>>()
-                .map(RuntimeValue::BracketSeq),
+                .map(runtime_sequence_values),
             RuntimeExpr::RepeatSeq { value, len } => self.evaluate_repeat_seq_expr(value, *len),
             RuntimeExpr::Record(fields) => fields
                 .iter()
@@ -1260,12 +1261,12 @@ impl PureEvaluator {
         len: usize,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if let RuntimeExpr::Value(value) = value {
-            return Ok(RuntimeValue::BracketSeq(vec![value.clone(); len]));
+            return Ok(runtime_sequence_values(vec![value.clone(); len]));
         }
         (0..len)
             .map(|_| self.evaluate_expr(value))
             .collect::<Result<Vec<_>, _>>()
-            .map(RuntimeValue::BracketSeq)
+            .map(runtime_sequence_values)
     }
 
     fn evaluate_scalar_expr(&mut self, expr: &RuntimeExpr) -> Result<PureScalar, RuntimeEvalError> {
@@ -1324,10 +1325,9 @@ impl PureEvaluator {
         param: &str,
         body: &RuntimeExpr,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let items = match self.evaluate_expr(source)? {
-            RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items,
-            RuntimeValue::I64Seq(items) => materialize_i64_sequence(items),
-            value => {
+        let items = match runtime_value_into_sequence_values(self.evaluate_expr(source)?) {
+            Ok(items) => items,
+            Err(value) => {
                 return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
                     &value,
                 )));
@@ -1343,7 +1343,7 @@ impl PureEvaluator {
                 result
             })
             .collect::<Result<Vec<_>, _>>()
-            .map(RuntimeValue::BracketSeq)
+            .map(runtime_sequence_values)
     }
 
     fn evaluate_sum_expr(
@@ -1356,10 +1356,12 @@ impl PureEvaluator {
             return Ok(RuntimeValue::Int(sum));
         }
         let value = self.evaluate_expr(source)?;
-        let items = match value {
-            RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items,
-            RuntimeValue::I64Seq(items) => return Ok(RuntimeValue::Int(items.iter().sum())),
-            value => {
+        if let RuntimeValue::Seq(RuntimeSeq::DenseI64(items)) = value {
+            return Ok(RuntimeValue::Int(items.as_slice().iter().sum()));
+        }
+        let items = match runtime_value_into_sequence_values(value) {
+            Ok(items) => items,
+            Err(value) => {
                 return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
                     &value,
                 )));
@@ -1377,10 +1379,11 @@ impl PureEvaluator {
             return Ok(None);
         };
         match value {
-            RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => {
-                sum_i64_sequence_ref(items).map(Some)
-            }
-            RuntimeValue::I64Seq(items) => Ok(Some(items.iter().sum())),
+            RuntimeValue::Seq(seq) => match seq {
+                RuntimeSeq::Values(items) => sum_i64_sequence_ref(items).map(Some),
+                RuntimeSeq::DenseI64(items) => Ok(Some(items.as_slice().iter().sum())),
+            },
+            RuntimeValue::Tuple(items) => sum_i64_sequence_ref(items).map(Some),
             _ => Ok(None),
         }
     }
@@ -1475,9 +1478,8 @@ impl PureEvaluator {
 }
 
 fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {
-    match value {
-        RuntimeValue::Tuple(items) | RuntimeValue::BracketSeq(items) => Ok(items),
-        RuntimeValue::I64Seq(items) => Ok(materialize_i64_sequence(items)),
-        value => Err(RuntimeEvalError::InvalidSpread(runtime_value_label(&value))),
+    match runtime_value_into_sequence_values(value) {
+        Ok(items) => Ok(items),
+        Err(value) => Err(RuntimeEvalError::InvalidSpread(runtime_value_label(&value))),
     }
 }

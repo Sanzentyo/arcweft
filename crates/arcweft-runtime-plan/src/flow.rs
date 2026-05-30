@@ -246,7 +246,7 @@ fn sequence_let_binding(op: &FlowOp) -> Option<(&str, &RuntimeExpr)> {
 fn is_runtime_sequence_expr(expr: &RuntimeExpr) -> bool {
     matches!(
         expr,
-        RuntimeExpr::Value(RuntimeValue::BracketSeq(_) | RuntimeValue::Tuple(_))
+        RuntimeExpr::Value(RuntimeValue::Seq(_) | RuntimeValue::Tuple(_))
             | RuntimeExpr::RepeatSeq { .. }
             | RuntimeExpr::BracketSeq(_)
             | RuntimeExpr::Tuple(_)

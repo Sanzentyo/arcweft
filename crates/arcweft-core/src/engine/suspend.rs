@@ -1,9 +1,9 @@
 use super::{
     AwaitManyInFlight, AwaitManyState, AwaitState, AwaitTarget, CancelScopeId, ChoiceRuntimeOption,
     ChoiceState, Engine, FlowEvent, FlowFiberStatus, LineEffectRequest, RuntimeDiagnostic,
-    RuntimeEvalError, RuntimeFieldValue, RuntimePayload, RuntimeStepInput, RuntimeStepOutput,
-    RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
-    materialize_i64_sequence,
+    RuntimeEvalError, RuntimeFieldValue, RuntimePayload, RuntimeSeq, RuntimeStepInput,
+    RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+    TaskSpec, runtime_sequence_values, runtime_value_into_sequence_values,
 };
 use crate::pure::RuntimePureCallBackend;
 use crate::task::{
@@ -172,15 +172,16 @@ impl Engine {
         pure_backend: &mut impl RuntimePureCallBackend,
     ) {
         let items = match self.evaluate_expr_with_backend(&target.source, pure_backend) {
-            Ok(RuntimeValue::BracketSeq(items)) => items,
-            Ok(RuntimeValue::I64Seq(items)) => materialize_i64_sequence(items),
-            Ok(value) => {
-                self.fail_eval(
-                    RuntimeEvalError::ExpectedBracketSeq(super::runtime_value_label(&value)),
-                    output,
-                );
-                return;
-            }
+            Ok(value) => match runtime_value_into_sequence_values(value) {
+                Ok(items) => items,
+                Err(value) => {
+                    self.fail_eval(
+                        RuntimeEvalError::ExpectedBracketSeq(super::runtime_value_label(&value)),
+                        output,
+                    );
+                    return;
+                }
+            },
             Err(error) => {
                 self.fail_eval(error, output);
                 return;
@@ -299,7 +300,7 @@ impl Engine {
             .map(|value| RuntimeValue::String(value.clone().unwrap_or_default()))
             .collect::<Vec<_>>();
         if let Some(binding) = &state.binding {
-            let ready_value = RuntimeValue::BracketSeq(values);
+            let ready_value = runtime_sequence_values(values);
             match self.try_bind_pattern(binding, &ready_value) {
                 Ok(true) => {}
                 Ok(false) => {
@@ -413,10 +414,9 @@ struct EvaluatedHostCall<'a> {
 }
 
 fn spread_host_arg_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, String> {
-    match value {
-        RuntimeValue::Tuple(items) | RuntimeValue::BracketSeq(items) => Ok(items),
-        RuntimeValue::I64Seq(items) => Ok(materialize_i64_sequence(items)),
-        value => Err(format!(
+    match runtime_value_into_sequence_values(value) {
+        Ok(items) => Ok(items),
+        Err(value) => Err(format!(
             "spread host argument requires a tuple or bracket sequence, found {}",
             super::runtime_value_label(&value)
         )),
@@ -529,12 +529,10 @@ fn lower_file_write_request(args: &[EvaluatedHostArg]) -> Result<HostTaskRequest
             path,
             text: text.clone(),
         })),
-        RuntimeValue::I64Seq(_) | RuntimeValue::BracketSeq(_) => {
-            Ok(HostTaskRequest::FileWriteBytes(FileWriteBytesRequest {
-                path,
-                bytes: runtime_value_to_bytes(body)?,
-            }))
-        }
+        RuntimeValue::Seq(_) => Ok(HostTaskRequest::FileWriteBytes(FileWriteBytesRequest {
+            path,
+            bytes: runtime_value_to_bytes(body)?,
+        })),
         value => Err(format!(
             "fs.write body must be String or byte sequence, found {}",
             super::runtime_value_label(value)
@@ -593,10 +591,12 @@ fn named_u16(args: &[EvaluatedHostArg], name: &str) -> Option<u16> {
 
 fn named_string_seq(args: &[EvaluatedHostArg], name: &str) -> Option<Vec<String>> {
     named_arg(args, name).map(|value| match value {
-        RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => {
+        RuntimeValue::Seq(RuntimeSeq::Values(items)) | RuntimeValue::Tuple(items) => {
             items.iter().map(runtime_value_to_string).collect()
         }
-        RuntimeValue::I64Seq(items) => items.iter().map(i64::to_string).collect(),
+        RuntimeValue::Seq(RuntimeSeq::DenseI64(items)) => {
+            items.as_slice().iter().map(i64::to_string).collect()
+        }
         value => vec![runtime_value_to_string(value)],
     })
 }
@@ -611,7 +611,7 @@ fn runtime_value_to_headers(value: &RuntimeValue) -> Option<Vec<(String, String)
             .iter()
             .map(|field| Some((field.name.clone(), runtime_value_to_string(&field.value))))
             .collect(),
-        RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => {
+        RuntimeValue::Seq(RuntimeSeq::Values(items)) | RuntimeValue::Tuple(items) => {
             items.iter().map(runtime_value_to_header_pair).collect()
         }
         _ => None,
@@ -644,7 +644,7 @@ fn record_field<'a>(fields: &'a [RuntimeFieldValue], name: &str) -> Option<&'a R
 
 fn runtime_value_to_bytes(value: &RuntimeValue) -> Result<Vec<u8>, String> {
     match value {
-        RuntimeValue::BracketSeq(items) => items
+        RuntimeValue::Seq(RuntimeSeq::Values(items)) => items
             .iter()
             .map(|item| match item {
                 RuntimeValue::Int(value) => u8::try_from(*value)
@@ -655,7 +655,8 @@ fn runtime_value_to_bytes(value: &RuntimeValue) -> Result<Vec<u8>, String> {
                 )),
             })
             .collect(),
-        RuntimeValue::I64Seq(items) => items
+        RuntimeValue::Seq(RuntimeSeq::DenseI64(items)) => items
+            .as_slice()
             .iter()
             .map(|value| {
                 u8::try_from(*value)
@@ -677,8 +678,7 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::Unit
         | RuntimeValue::Tuple(_)
-        | RuntimeValue::I64Seq(_)
-        | RuntimeValue::BracketSeq(_)
+        | RuntimeValue::Seq(_)
         | RuntimeValue::Record(_)
         | RuntimeValue::Variant { .. } => super::runtime_value_label(value),
     }

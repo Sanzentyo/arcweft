@@ -12,7 +12,7 @@ use crate::cst::{
     CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineEvents, CstStmtKind,
     CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxNode,
     SyntaxParseStats, classify_stmt, cst_lines, find_matching_punctuation,
-    find_top_level_punctuation, parse_flat_fence, punctuation_delta, source_lines,
+    find_top_level_punctuation, parse_flat_fence, punctuation_delta, source_line_iter,
     split_leading_ident, split_top_level_keyword_once, split_top_level_punctuation_once,
     split_top_level_punctuation_sequence_once,
 };

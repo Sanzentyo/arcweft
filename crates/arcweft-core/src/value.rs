@@ -33,18 +33,97 @@ pub enum RuntimeValue {
     Duration(LogicalDuration),
     EntityRef(String),
     Tuple(Vec<RuntimeValue>),
-    /// Dense integer sequence produced by numeric bracket literals.
-    ///
-    /// This keeps pure numeric data out of `Vec<RuntimeValue>` until code
-    /// actually needs element-level dynamic values.
-    I64Seq(Vec<i64>),
-    BracketSeq(Vec<RuntimeValue>),
+    Seq(RuntimeSeq),
     Record(Vec<RuntimeFieldValue>),
     Variant {
         path: Option<String>,
         name: String,
         payload: Option<Box<RuntimeValue>>,
     },
+}
+
+/// Storage strategy for runtime sequence values.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeSeq {
+    Values(Vec<RuntimeValue>),
+    DenseI64(DenseSeq<i64>),
+}
+
+impl RuntimeSeq {
+    pub fn values(values: Vec<RuntimeValue>) -> Self {
+        Self::Values(values)
+    }
+
+    pub fn dense_i64(values: Vec<i64>) -> Self {
+        Self::DenseI64(DenseSeq::new(values))
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Values(values) => values.len(),
+            Self::DenseI64(values) => values.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn as_values(&self) -> Option<&[RuntimeValue]> {
+        match self {
+            Self::Values(values) => Some(values),
+            Self::DenseI64(_) => None,
+        }
+    }
+
+    pub fn as_i64_slice(&self) -> Option<&[i64]> {
+        match self {
+            Self::DenseI64(values) => Some(values.as_slice()),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub fn into_values(self) -> Vec<RuntimeValue> {
+        match self {
+            Self::Values(values) => values,
+            Self::DenseI64(values) => materialize_i64_sequence(values.into_vec()),
+        }
+    }
+
+    pub fn into_i64_vec(self) -> Option<Vec<i64>> {
+        match self {
+            Self::DenseI64(values) => Some(values.into_vec()),
+            Self::Values(_) => None,
+        }
+    }
+}
+
+/// Dense sequence storage for homogeneous scalar data.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DenseSeq<T> {
+    values: Vec<T>,
+}
+
+impl<T> DenseSeq<T> {
+    pub fn new(values: Vec<T>) -> Self {
+        Self { values }
+    }
+
+    pub fn as_slice(&self) -> &[T] {
+        &self.values
+    }
+
+    pub fn into_vec(self) -> Vec<T> {
+        self.values
+    }
+
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
 }
 
 /// One field inside a runtime record value.
@@ -672,6 +751,24 @@ pub(crate) fn materialize_i64_sequence(items: Vec<i64>) -> Vec<RuntimeValue> {
     items.into_iter().map(RuntimeValue::Int).collect()
 }
 
+pub fn runtime_sequence_values(values: Vec<RuntimeValue>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::values(values))
+}
+
+pub fn runtime_sequence_dense_i64(values: Vec<i64>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_i64(values))
+}
+
+pub(crate) fn runtime_value_into_sequence_values(
+    value: RuntimeValue,
+) -> Result<Vec<RuntimeValue>, RuntimeValue> {
+    match value {
+        RuntimeValue::Seq(seq) => Ok(seq.into_values()),
+        RuntimeValue::Tuple(values) => Ok(values),
+        value => Err(value),
+    }
+}
+
 fn unsupported_binary(
     op: RuntimeBinaryOp,
     lhs: &RuntimeValue,
@@ -745,8 +842,10 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
-        RuntimeValue::I64Seq(values) => format!("i64_seq/{}", values.len()),
-        RuntimeValue::BracketSeq(values) => format!("bracket_seq/{}", values.len()),
+        RuntimeValue::Seq(seq) => match seq {
+            RuntimeSeq::Values(values) => format!("seq/values/{}", values.len()),
+            RuntimeSeq::DenseI64(values) => format!("seq/i64/{}", values.len()),
+        },
         RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {

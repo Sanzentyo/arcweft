@@ -6,7 +6,10 @@ use crate::pure::{
     RuntimePureCallBackend, VmPureFunctionBackend, VmPureFunctionScratch, VmRuntimePureCallBackend,
     compare_pure_function_backend,
 };
-use crate::value::{RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeValue};
+use crate::value::{
+    RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeValue,
+    runtime_sequence_dense_i64, runtime_sequence_values,
+};
 
 fn int_binding(name: &str, value: i64) -> RuntimeBinding {
     RuntimeBinding {
@@ -84,7 +87,7 @@ fn vm_pure_backend_sums_local_i64_sequence_by_borrow() {
         },
         [RuntimeBinding {
             name: "scores".to_owned(),
-            value: RuntimeValue::BracketSeq(vec![
+            value: runtime_sequence_values(vec![
                 RuntimeValue::Int(18),
                 RuntimeValue::Int(15),
                 RuntimeValue::Int(20),
@@ -108,7 +111,7 @@ fn vm_pure_backend_sums_dense_i64_sequence_without_materializing_values() {
         },
         [RuntimeBinding {
             name: "scores".to_owned(),
-            value: RuntimeValue::I64Seq(vec![18, 15, 20]),
+            value: runtime_sequence_dense_i64(vec![18, 15, 20]),
         }],
     );
 

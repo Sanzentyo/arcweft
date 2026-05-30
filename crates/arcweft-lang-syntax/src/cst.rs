@@ -1270,31 +1270,29 @@ pub(crate) fn punctuation_deltas(source: &str) -> CstPunctuationDeltas {
         })
 }
 
-/// Returns source lines without treating line splitting as parser grammar.
+/// Iterates source lines without treating line splitting as parser grammar.
 ///
 /// This helper is intentionally small and text-level. Parser modules use it
 /// while they are still being migrated to rowan events so line handling is
 /// centralized in the CST/text utility layer instead of open-coded at each
 /// grammar site.
-pub(crate) fn source_lines(source: &str) -> Vec<&str> {
+pub(crate) fn source_line_iter(source: &str) -> impl Iterator<Item = &str> {
     source
         .split('\n')
         .map(|line| line.strip_suffix('\r').unwrap_or(line))
-        .collect()
 }
 
 /// Returns non-empty trimmed source lines for interim line-oriented parsing.
 pub(crate) fn nonempty_trimmed_source_lines(source: &str) -> Vec<&str> {
-    source_lines(source)
-        .into_iter()
+    source_line_iter(source)
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .collect()
 }
 
-/// Counts source lines using the same text policy as [`source_lines`].
+/// Counts source lines using the same text policy as [`source_line_iter`].
 pub(crate) fn source_line_count(source: &str) -> usize {
-    source_lines(source).len()
+    source_line_iter(source).count()
 }
 
 /// Documentation prefix extracted from a text fragment.

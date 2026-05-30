@@ -1,7 +1,7 @@
 use super::{
     CstLine, FlowItem, ParseError, Parser, RecoverySuggestion, SourceAnchor, SourceName, Stmt,
     TextRange, find_matching_punctuation, indentation, parse_expr_lossy, parse_pattern, parse_stmt,
-    source_lines, split_top_level_binding, split_top_level_keyword_once,
+    source_line_iter, split_top_level_binding, split_top_level_keyword_once,
     split_top_level_punctuation_sequence_once,
 };
 use crate::ast::flow::{AwaitBranch, AwaitBranchKind, AwaitWith};
@@ -260,10 +260,7 @@ fn parse_await_branches(source: &str) -> Vec<AwaitBranch> {
         .and_then(|value| value.strip_suffix('}'))
         .unwrap_or(source)
         .trim();
-    if source_lines(body)
-        .into_iter()
-        .any(|line| is_colon_await_branch_head(line.trim()))
-    {
+    if source_line_iter(body).any(|line| is_colon_await_branch_head(line.trim())) {
         return parse_colon_await_branches(body);
     }
     split_await_branch_lines(body)
@@ -277,7 +274,7 @@ fn parse_colon_await_branches(source: &str) -> Vec<AwaitBranch> {
     let mut current_head = None::<String>;
     let mut current_body = String::new();
 
-    for line in source_lines(source) {
+    for line in source_line_iter(source) {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;

@@ -208,7 +208,7 @@ fn engine_batches_bracket_sequence_pure_calls() {
 
     assert!(matches!(
         result.fiber_status,
-        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "i64_seq/3"
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "seq/i64/3"
     ));
     assert_eq!(result.stats.pure.batch_calls, 1);
     assert_eq!(result.stats.pure.batch_items, 3);
@@ -323,7 +323,7 @@ fn engine_batches_map_closure_pure_calls() {
 
     assert!(matches!(
         result.fiber_status,
-        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "i64_seq/3"
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "seq/i64/3"
     ));
     assert_eq!(result.stats.pure.batch_calls, 1);
     assert_eq!(result.stats.pure.batch_items, 3);
@@ -411,7 +411,7 @@ fn engine_fuses_local_map_closure_pure_batch_sum() {
             ops: vec![
                 FlowOp::Let {
                     pattern: RuntimePattern::Ident("values".to_owned()),
-                    expr: RuntimeExpr::Value(RuntimeValue::BracketSeq(vec![
+                    expr: RuntimeExpr::Value(runtime_sequence_values(vec![
                         RuntimeValue::Int(3),
                         RuntimeValue::Int(5),
                         RuntimeValue::Int(7),
@@ -737,7 +737,7 @@ fn engine_runs_bounded_await_many_tasks_in_source_order() {
     assert_eq!(
         returned.flow_events,
         vec![FlowEvent::Return {
-            value: "bracket_seq/3".to_owned()
+            value: "seq/values/3".to_owned()
         }]
     );
 }
@@ -1251,7 +1251,7 @@ fn fs_write_dispatches_string_and_bytes_payloads() {
                             "write",
                             [HostTaskArgTemplate::spread(RuntimeExpr::BracketSeq(vec![
                                 RuntimeExpr::Value(RuntimeValue::String("save/out.bin".to_owned())),
-                                RuntimeExpr::Value(RuntimeValue::BracketSeq(vec![
+                                RuntimeExpr::Value(runtime_sequence_values(vec![
                                     RuntimeValue::Int(1),
                                     RuntimeValue::Int(2),
                                 ])),

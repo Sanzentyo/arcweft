@@ -18,7 +18,10 @@ use arcweft_core::{
         PureFunctionResult, PureFunctionStats, RuntimeI64Args, RuntimePureCallBackend,
         VmPureFunctionBackend, VmPureFunctionScratch, compare_pure_function_backend,
     },
-    value::{RuntimeBinaryOp, RuntimeBinding, RuntimeExpr, RuntimeUnaryOp, RuntimeValue},
+    value::{
+        RuntimeBinaryOp, RuntimeBinding, RuntimeExpr, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
+        runtime_sequence_values,
+    },
 };
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_jit_cranelift::{
@@ -2137,7 +2140,7 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
     let mut bindings = options.values.clone();
     bindings.push(RuntimeBinding {
         name: "args".to_owned(),
-        value: RuntimeValue::BracketSeq(
+        value: runtime_sequence_values(
             options
                 .args
                 .iter()
@@ -4839,8 +4842,10 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::EntityRef(value) => format!("@{value}"),
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
-        RuntimeValue::I64Seq(values) => format!("i64_seq/{}", values.len()),
-        RuntimeValue::BracketSeq(values) => format!("bracket_seq/{}", values.len()),
+        RuntimeValue::Seq(RuntimeSeq::Values(values)) => format!("seq/values/{}", values.len()),
+        RuntimeValue::Seq(RuntimeSeq::DenseI64(values)) => {
+            format!("seq/i64/{}", values.len())
+        }
         RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {

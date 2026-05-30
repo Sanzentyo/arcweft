@@ -1,4 +1,7 @@
-use crate::value::{RuntimeBinding, RuntimeEvalError, RuntimeValue};
+use crate::value::{
+    RuntimeBinding, RuntimeEvalError, RuntimeSeq, RuntimeValue, runtime_sequence_dense_i64,
+    runtime_sequence_values,
+};
 use std::collections::BTreeSet;
 
 /// Pattern subset executable by the Sans I/O flow runtime.
@@ -185,7 +188,7 @@ fn collect_bracket_seq_pattern_bindings(
     bindings: &mut Vec<RuntimeBinding>,
 ) -> Result<bool, RuntimeEvalError> {
     match value {
-        RuntimeValue::BracketSeq(values) => {
+        RuntimeValue::Seq(RuntimeSeq::Values(values)) => {
             if !bracket_pattern_len_matches(items.len(), rest, values.len()) {
                 return Ok(false);
             }
@@ -195,16 +198,16 @@ fn collect_bracket_seq_pattern_bindings(
             if let Some(name) = rest {
                 bindings.push(RuntimeBinding {
                     name: name.to_owned(),
-                    value: RuntimeValue::BracketSeq(values[items.len()..].to_vec()),
+                    value: runtime_sequence_values(values[items.len()..].to_vec()),
                 });
             }
             Ok(true)
         }
-        RuntimeValue::I64Seq(values) => {
+        RuntimeValue::Seq(RuntimeSeq::DenseI64(values)) => {
             if !bracket_pattern_len_matches(items.len(), rest, values.len()) {
                 return Ok(false);
             }
-            for (pattern, value) in items.iter().zip(values.iter().copied()) {
+            for (pattern, value) in items.iter().zip(values.as_slice().iter().copied()) {
                 if !collect_pattern_bindings(pattern, &RuntimeValue::Int(value), bindings)? {
                     return Ok(false);
                 }
@@ -212,7 +215,7 @@ fn collect_bracket_seq_pattern_bindings(
             if let Some(name) = rest {
                 bindings.push(RuntimeBinding {
                     name: name.to_owned(),
-                    value: RuntimeValue::I64Seq(values[items.len()..].to_vec()),
+                    value: runtime_sequence_dense_i64(values.as_slice()[items.len()..].to_vec()),
                 });
             }
             Ok(true)
@@ -293,7 +296,7 @@ fn runtime_value_matches_type_label(value: &RuntimeValue, ty: &str) -> bool {
     match value {
         RuntimeValue::EntityRef(_) if ty.starts_with("Ref<") => true,
         RuntimeValue::Tuple(_) if ty.starts_with('(') => true,
-        RuntimeValue::BracketSeq(_)
+        RuntimeValue::Seq(_)
             if ty.starts_with("Vec<")
                 || ty.starts_with("Seq<")
                 || ty.starts_with("Array<")

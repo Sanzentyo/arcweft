@@ -2,8 +2,8 @@ use super::{
     AwaitState, ChoiceState, Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowCursor,
     FlowEvent, FlowFiberStatus, FlowOp, FlowRuntimeId, RuntimeBinding, RuntimeDiagnostic,
     RuntimeEvalError, RuntimeExpr, RuntimePattern, RuntimeStepInput, RuntimeStepOutput,
-    RuntimeValue, expr_runtime_label, materialize_i64_sequence, run_line_task_group_for_input,
-    runtime_value_label,
+    RuntimeValue, expr_runtime_label, run_line_task_group_for_input,
+    runtime_value_into_sequence_values, runtime_value_label,
 };
 use crate::pattern::pattern_binding_capacity;
 use crate::pure::RuntimePureCallBackend;
@@ -284,26 +284,18 @@ impl Engine {
             } => {
                 self.advance_if_needed(next_op_index);
                 match self.evaluate_expr_with_backend(&source, pure_backend) {
-                    Ok(RuntimeValue::BracketSeq(items)) => {
-                        let body = Arc::from(body);
-                        self.push_for_next(pattern, items.into(), 0, &body, output);
-                    }
-                    Ok(RuntimeValue::I64Seq(items)) => {
-                        let body = Arc::from(body);
-                        self.push_for_next(
-                            pattern,
-                            materialize_i64_sequence(items).into(),
-                            0,
-                            &body,
-                            output,
-                        );
-                    }
-                    Ok(value) => {
-                        self.fail_eval(
-                            RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)),
-                            output,
-                        );
-                    }
+                    Ok(value) => match runtime_value_into_sequence_values(value) {
+                        Ok(items) => {
+                            let body = Arc::from(body);
+                            self.push_for_next(pattern, items.into(), 0, &body, output);
+                        }
+                        Err(value) => {
+                            self.fail_eval(
+                                RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)),
+                                output,
+                            );
+                        }
+                    },
                     Err(error) => self.fail_eval(error, output),
                 }
             }

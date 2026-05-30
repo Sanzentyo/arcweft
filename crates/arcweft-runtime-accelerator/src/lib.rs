@@ -10,7 +10,7 @@ use arcweft_core::{
         RuntimePureCallBackend, VmPureFunctionScratch,
     },
     step::RuntimePureCallStats,
-    value::{RuntimeBinding, RuntimeEvalError, RuntimeValue},
+    value::{RuntimeBinding, RuntimeEvalError, RuntimeSeq, RuntimeValue},
 };
 use arcweft_lang_jit_cranelift::{CompiledPureI64Inputs, CraneliftPureFunctionBackend};
 use rayon::{ThreadPool, ThreadPoolBuilder, prelude::*};
@@ -684,8 +684,8 @@ fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::Duration(_) => "duration",
         RuntimeValue::EntityRef(_) => "entity_ref",
         RuntimeValue::Tuple(_) => "tuple",
-        RuntimeValue::I64Seq(_) => "i64_seq",
-        RuntimeValue::BracketSeq(_) => "bracket_seq",
+        RuntimeValue::Seq(RuntimeSeq::Values(_)) => "seq_values",
+        RuntimeValue::Seq(RuntimeSeq::DenseI64(_)) => "seq_i64",
         RuntimeValue::Record(_) => "record",
         RuntimeValue::Variant { .. } => "variant",
     }

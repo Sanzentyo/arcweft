@@ -3,7 +3,7 @@ use crate::cst::{
     CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxKind,
     classify_stmt, cst_lines, find_last_depth_zero_open_punctuation,
     find_last_top_level_punctuation, find_matching_punctuation, punctuation_delta,
-    source_line_count, source_lines, split_first_string_literal,
+    source_line_count, source_line_iter, split_first_string_literal,
     split_last_top_level_punctuation_sequence_once, split_leading_entity_ref_parts,
     split_leading_lifetime, split_leading_relative_id, split_top_level_keyword_once,
     split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
@@ -59,7 +59,10 @@ fn cst_line_events_classify_trivia_docs_and_code() {
 
 #[test]
 fn cst_text_helpers_split_lines_and_doc_prefixes() {
-    assert_eq!(source_lines("a\r\nb\n"), vec!["a", "b", ""]);
+    assert_eq!(
+        source_line_iter("a\r\nb\n").collect::<Vec<_>>(),
+        vec!["a", "b", ""]
+    );
     assert_eq!(source_line_count("a\nb"), 2);
 
     let doc = take_doc_comment_prefix("/// First\n/// Second\nvalue: Type")

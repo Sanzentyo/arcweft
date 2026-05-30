@@ -10,7 +10,7 @@ use arcweft_core::effect::{
 };
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeUnaryOp,
-    RuntimeValue,
+    RuntimeValue, runtime_sequence_dense_i64, runtime_sequence_values,
 };
 use arcweft_lang_hir::syntax::{
     ast::line_plan::LinePlanItem,
@@ -210,7 +210,7 @@ fn lower_runtime_bracket_seq(items: &[Expr]) -> RuntimeExpr {
 fn lower_runtime_numeric_bracket_seq(
     seq: &arcweft_lang_hir::syntax::expr::NumericBracketSeq,
 ) -> RuntimeExpr {
-    RuntimeExpr::Value(RuntimeValue::I64Seq(seq.values().to_vec()))
+    RuntimeExpr::Value(runtime_sequence_dense_i64(seq.values().to_vec()))
 }
 
 fn lower_runtime_bracket_seq_strict(items: &[Expr]) -> Result<RuntimeExpr, String> {
@@ -228,7 +228,7 @@ fn fold_value_sequence(items: Vec<RuntimeExpr>) -> RuntimeExpr {
     {
         return RuntimeExpr::BracketSeq(items);
     }
-    RuntimeExpr::Value(RuntimeValue::BracketSeq(
+    RuntimeExpr::Value(runtime_sequence_values(
         items
             .into_iter()
             .filter_map(|item| match item {
@@ -771,7 +771,7 @@ mod tests {
 
         assert!(matches!(
             lowered,
-            RuntimeExpr::Value(RuntimeValue::BracketSeq(items))
+            RuntimeExpr::Value(RuntimeValue::Seq(arcweft_core::value::RuntimeSeq::Values(items)))
                 if items == vec![RuntimeValue::Int(1), RuntimeValue::Int(2)]
         ));
     }
@@ -787,7 +787,8 @@ mod tests {
 
         assert!(matches!(
             lowered,
-            RuntimeExpr::Value(RuntimeValue::I64Seq(items)) if items == vec![1, 2, 3]
+            RuntimeExpr::Value(RuntimeValue::Seq(arcweft_core::value::RuntimeSeq::DenseI64(items)))
+                if items.as_slice() == [1, 2, 3]
         ));
     }
 }

@@ -175,8 +175,16 @@ argv tokens, host core/thread counts, timing counters, and deterministic
 accumulators.
 
 Runtime numeric sequence lowering now preserves integer-only bracket literals as
-`RuntimeValue::I64Seq` instead of eagerly materializing `Vec<RuntimeValue::Int>`.
-Pure map/sum fast paths consume that dense representation directly; dynamic
-sequence operations such as `for`, `await many`, spread arguments, bracket
-patterns, and byte payload lowering materialize only at those dynamic
-boundaries.
+`RuntimeValue::Seq(RuntimeSeq::DenseI64(_))` instead of eagerly materializing
+`Vec<RuntimeValue::Int>`. Pure map/sum fast paths consume that dense sequence
+storage directly; dynamic sequence operations such as `for`, `await many`,
+spread arguments, bracket patterns, and byte payload lowering materialize only
+at those dynamic boundaries.
+
+The checked-in nonuniform map pure JIT fixture was remeasured after the
+`RuntimeSeq::DenseI64(DenseSeq<i64>)` migration. With the same short local
+settings used before the migration (`iterations = 3`, `warmup = 1`, `samples =
+3`), median elapsed time was 12200 ns versus the prior direct `I64Seq` sample at
+14300 ns. Deterministic counters stayed on the borrowed fast path:
+`pure_arg_vec_allocations_median = 0`, `pure_arg_bytes_borrowed_median = 2048`,
+and `pure_result_bytes_copied_median = 0`.
