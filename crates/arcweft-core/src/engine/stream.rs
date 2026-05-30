@@ -19,8 +19,8 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) {
-        let stream_plans = self.plan.stream_plans.clone();
-        for plan in stream_plans {
+        let stream_plans = std::mem::take(&mut self.plan.stream_plans);
+        for plan in &stream_plans {
             let mut budget = 64usize;
             if !self.execute_stream_ops(&plan.id, &plan.ops, &mut budget, output, pure_backend) {
                 continue;
@@ -31,6 +31,7 @@ impl Engine {
                 });
             }
         }
+        self.plan.stream_plans = stream_plans;
     }
 
     pub(super) fn execute_stream_ops(

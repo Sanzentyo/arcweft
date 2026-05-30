@@ -441,6 +441,9 @@ Current high-confidence state:
   and loop continuations directly into the VM pending queue. Loop, while,
   while-let, and for iterations avoid building temporary scoped `Vec<FlowOp>`
   buffers before execution.
+- Stream stepping temporarily takes the immutable stream-plan list while running
+  stream ops, then restores it after the step, avoiding a full stream-plan clone
+  on every runtime step.
 - The VM builds a deterministic flow-ID index when `Engine` is created, so VM
   and AOT-linear stepping fetch the current flow without scanning the runtime
   plan's flow list for every operation.
