@@ -49,6 +49,13 @@ flow @flow.borrow_stats borrow_stats {
     assert!(report.stats.borrow_bindings >= 1);
     assert!(report.stats.max_active_borrows >= 1);
     assert_eq!(report.stats.judgments, report.judgments.len());
+    assert_eq!(
+        report.stats.judgments,
+        report.stats.expr_judgments
+            + report.stats.expected_judgments
+            + report.stats.let_binding_judgments
+            + report.stats.return_judgments
+    );
     assert!(
         report
             .judgments

@@ -82,6 +82,10 @@ pub struct TypeCheckStats {
     pub statements: usize,
     pub expressions: usize,
     pub judgments: usize,
+    pub expr_judgments: usize,
+    pub expected_judgments: usize,
+    pub let_binding_judgments: usize,
+    pub return_judgments: usize,
     pub borrow_binding_groups: usize,
     pub borrow_bindings: usize,
     pub borrow_state_snapshots: usize,
@@ -363,7 +367,13 @@ impl TypeChecker<'_> {
             rule,
             expected: expected.cloned(),
         });
-        self.stats.judgments = self.judgments.len();
+        self.stats.judgments += 1;
+        match rule {
+            TypeJudgmentRule::Expr => self.stats.expr_judgments += 1,
+            TypeJudgmentRule::Expected => self.stats.expected_judgments += 1,
+            TypeJudgmentRule::LetBinding => self.stats.let_binding_judgments += 1,
+            TypeJudgmentRule::Return => self.stats.return_judgments += 1,
+        }
         id
     }
 

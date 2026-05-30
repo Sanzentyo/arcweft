@@ -164,6 +164,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - `RuntimePlan` no longer constructs engine cursors. Engine initialization owns
   cursor construction from the flow-position map, keeping plan data independent
   of executor state while avoiding a second entry-flow scan.
+- Type-check stats now record judgment rule counters as judgments are emitted.
+  CLI profile/check JSON reuses those counters instead of rescanning every
+  judgment when building report summaries.
 - `arcweft-cli` keeps user-facing JSON report schemas in `output.rs`,
   including check, profile, verify-types, bench, runtime step, and compiler
   counter summaries. `main.rs` remains the command orchestration layer instead

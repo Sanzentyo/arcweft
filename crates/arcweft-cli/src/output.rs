@@ -451,7 +451,7 @@ impl From<&TypeCheckReport> for TypeCheckProfileStats {
                 .map(|warning| warning.message().to_owned())
                 .collect(),
             judgments: stats.judgments,
-            judgment_rules: TypeCheckJudgmentRuleStats::from_judgments(&report.judgments),
+            judgment_rules: TypeCheckJudgmentRuleStats::from_stats(stats),
             judgment_samples: report
                 .judgments
                 .iter()
@@ -472,17 +472,13 @@ struct TypeCheckJudgmentRuleStats {
 }
 
 impl TypeCheckJudgmentRuleStats {
-    fn from_judgments(judgments: &[TypeJudgment]) -> Self {
-        let mut stats = Self::default();
-        for judgment in judgments {
-            match judgment.rule {
-                TypeJudgmentRule::Expr => stats.expr += 1,
-                TypeJudgmentRule::Expected => stats.expected += 1,
-                TypeJudgmentRule::LetBinding => stats.let_binding += 1,
-                TypeJudgmentRule::Return => stats.return_ += 1,
-            }
+    const fn from_stats(stats: &TypeCheckStats) -> Self {
+        Self {
+            expr: stats.expr_judgments,
+            expected: stats.expected_judgments,
+            let_binding: stats.let_binding_judgments,
+            return_: stats.return_judgments,
         }
-        stats
     }
 }
 
