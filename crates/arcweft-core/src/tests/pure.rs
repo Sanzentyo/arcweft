@@ -96,6 +96,37 @@ fn vm_runtime_value_fallback_records_pure_call_stats() {
 }
 
 #[test]
+fn vm_runtime_i64_fast_path_records_copy_bytes() {
+    let helper = RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "score".to_owned(),
+        input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+            op: RuntimeBinaryOp::Add,
+            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+        },
+        origin: RuntimePureHelperOrigin::Annotated,
+    };
+    let mut backend = VmRuntimePureCallBackend::default();
+
+    let value = backend
+        .call_i64(&helper, crate::pure::RuntimeI64Args::new([3, 4, 0, 0], 2))
+        .expect("VM i64 fast path evaluates");
+
+    assert_eq!(value, Some(7));
+    assert_eq!(backend.stats().arg_stack_packs, 1);
+    assert_eq!(
+        backend.stats().arg_bytes_copied,
+        2 * std::mem::size_of::<i64>()
+    );
+    assert_eq!(
+        backend.stats().result_bytes_copied,
+        std::mem::size_of::<i64>()
+    );
+}
+
+#[test]
 fn aot_pure_backend_candidate_matches_vm_result() {
     let request = PureFunctionRequest::new(
         "score_branch",

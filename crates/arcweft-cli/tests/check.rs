@@ -338,6 +338,8 @@ flow @flow.main main {
     assert_eq!(pure["jit_calls"], 1);
     assert_eq!(pure["arg_stack_packs"], 1);
     assert_eq!(pure["arg_vec_allocations"], 0);
+    assert_eq!(pure["arg_bytes_copied"], 16);
+    assert_eq!(pure["result_bytes_copied"], 8);
     assert_eq!(json["executor_stats"]["pure_config"]["backend"], "jit");
     assert_eq!(json["executor_stats"]["pure_config"]["workers"]["fixed"], 1);
     assert_eq!(json["executor_stats"]["pure_config"]["resolved_workers"], 1);
@@ -395,6 +397,8 @@ flow @flow.for_pure for_pure {
     assert_eq!(pure_calls, 4);
     assert_eq!(sum_step_pure_counter(&json, "jit_calls"), 4);
     assert_eq!(sum_step_pure_counter(&json, "arg_vec_allocations"), 0);
+    assert_eq!(sum_step_pure_counter(&json, "arg_bytes_copied"), 64);
+    assert_eq!(sum_step_pure_counter(&json, "result_bytes_copied"), 32);
     assert_eq!(json["executor_stats"]["pure_config"]["backend"], "jit");
     assert_eq!(
         json["executor_stats"]["pure_config"]["worker_pool_active"],

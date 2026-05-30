@@ -311,7 +311,8 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
     ) -> Result<Option<i64>, RuntimeEvalError> {
         self.stats.pure_calls += 1;
         self.stats.arg_stack_packs += 1;
-        match cache_entry(&self.cache, helper.id) {
+        self.stats.arg_bytes_copied += args.len() * std::mem::size_of::<i64>();
+        let result = match cache_entry(&self.cache, helper.id) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += 1;
@@ -329,17 +330,23 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                     .call_with_inputs(args.as_slice())
                     .map(|(value, _)| Some(value))
             }
-            Some(RuntimePureCacheEntry::Vm) | None => {
-                if cache_entry(&self.cache, helper.id).is_some() {
-                    self.compile_stats.cache_hits += 1;
-                } else {
-                    self.compile_stats.cache_misses += 1;
-                }
+            Some(RuntimePureCacheEntry::Vm) => {
+                self.compile_stats.cache_hits += 1;
                 self.stats.vm_calls += 1;
                 self.stats.fallbacks += 1;
                 Self::call_vm_i64(helper, args).map(Some)
             }
+            None => {
+                self.compile_stats.cache_misses += 1;
+                self.stats.vm_calls += 1;
+                self.stats.fallbacks += 1;
+                Self::call_vm_i64(helper, args).map(Some)
+            }
+        };
+        if matches!(result, Ok(Some(_))) {
+            self.stats.result_bytes_copied += std::mem::size_of::<i64>();
         }
+        result
     }
 
     fn call_values(
@@ -844,6 +851,14 @@ mod tests {
         assert_eq!(accelerator.stats().pure_calls, 1);
         assert_eq!(accelerator.stats().arg_stack_packs, 1);
         assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+        assert_eq!(
+            accelerator.stats().arg_bytes_copied,
+            2 * std::mem::size_of::<i64>()
+        );
+        assert_eq!(
+            accelerator.stats().result_bytes_copied,
+            std::mem::size_of::<i64>()
+        );
         assert!(accelerator.resolved_worker_count() >= 1);
         assert!(!accelerator.has_worker_pool());
         assert_eq!(accelerator.summary().jit, 1);

@@ -279,9 +279,13 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         self.stats.pure_calls += 1;
         self.stats.vm_calls += 1;
         self.stats.arg_stack_packs += 1;
+        self.stats.arg_bytes_copied += args.len() * std::mem::size_of::<i64>();
         let value = VmPureFunctionBackend.evaluate_i64_args(helper, args)?;
         match value {
-            RuntimeValue::Int(value) => Ok(Some(value)),
+            RuntimeValue::Int(value) => {
+                self.stats.result_bytes_copied += std::mem::size_of::<i64>();
+                Ok(Some(value))
+            }
             value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
         }
     }
