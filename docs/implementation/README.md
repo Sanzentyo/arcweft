@@ -622,6 +622,9 @@ Current high-confidence state:
   step result after deriving display labels, rather than cloning the full task
   request list before native completion. Thread and native I/O benches therefore
   measure one fewer host-side copy at the VM/native scheduling boundary.
+- The VM runtime step now moves owned root input bindings into the fiber
+  environment instead of cloning them again inside `Engine::step`, matching the
+  AOT fast path ownership model and reducing per-step adapter binding copy work.
 - The CLI regression harness now rejects generated `.arcweft` directories under
   checked-in fixtures and scans non-review source/docs/tests for removed
   whitespace-command DSL or compatibility-shim text. Run fixtures execute from

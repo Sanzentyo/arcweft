@@ -271,7 +271,9 @@ impl Engine {
         let mut executed_ops = 0;
         let pure_stats_before = pure_backend.stats();
         let pending_ops_before = self.pending_ops_len();
-        self.fiber.env.bind_all_root(input.bindings.iter().cloned());
+        self.fiber
+            .env
+            .bind_all_root(std::mem::take(&mut input.bindings));
         let events = normalize_task_events(std::mem::take(&mut input.task_events));
         let source_events = normalize_source_events(std::mem::take(&mut input.source_events));
         let task_events_in = events.len();
