@@ -69,8 +69,17 @@ pub struct SourceRuntimeState {
 pub struct SourceId(pub String);
 
 pub fn normalize_source_events<T, E>(mut events: Vec<SourceEvent<T, E>>) -> Vec<SourceEvent<T, E>> {
-    events.sort_by_key(|event| (event.source.clone(), event.sequence));
+    events.sort_by(compare_source_events);
     events
+}
+
+fn compare_source_events<T, E>(
+    left: &SourceEvent<T, E>,
+    right: &SourceEvent<T, E>,
+) -> std::cmp::Ordering {
+    left.source
+        .cmp(&right.source)
+        .then_with(|| left.sequence.cmp(&right.sequence))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

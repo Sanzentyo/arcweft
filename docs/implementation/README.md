@@ -635,6 +635,9 @@ Current high-confidence state:
 - Borrowed root binding updates now reuse existing environment slots without
   recloning binding names, so repeated runtime steps only clone the value when
   an adapter-provided root binding is already present.
+- Source event normalization now sorts by borrowed source id and sequence
+  comparisons instead of constructing cloned sort keys, reducing per-step work
+  for source-heavy and stream-heavy runtime benches.
 - The CLI regression harness now rejects generated `.arcweft` directories under
   checked-in fixtures and scans non-review source/docs/tests for removed
   whitespace-command DSL or compatibility-shim text. Run fixtures execute from
