@@ -4,30 +4,15 @@ use super::{
 };
 use crate::aot::{AotDispatchShape, AotProgram};
 use crate::effect::LineEffectRequest;
-use crate::pure::{RuntimePureCallBackend, VmRuntimePureCallBackend};
+use crate::pure::RuntimePureCallBackend;
 
 impl Engine {
-    pub(crate) fn step_aot_linear(
+    pub(crate) fn step_prechecked_aot_linear_with_pure_backend(
         &mut self,
-        program: &AotProgram,
-        input: RuntimeStepInput,
-        options: RuntimeStepOptions,
-    ) -> Option<RuntimeStepResult> {
-        let mut pure_backend = VmRuntimePureCallBackend::default();
-        self.step_aot_linear_with_pure_backend(program, input, options, &mut pure_backend)
-    }
-
-    pub(crate) fn step_aot_linear_with_pure_backend(
-        &mut self,
-        program: &AotProgram,
         input: RuntimeStepInput,
         options: RuntimeStepOptions,
         pure_backend: &mut impl RuntimePureCallBackend,
-    ) -> Option<RuntimeStepResult> {
-        if !self.can_start_aot_linear_step(program, &input) {
-            return None;
-        }
-
+    ) -> RuntimeStepResult {
         let mut output = RuntimeStepOutput::default();
         let mut executed_ops = 0;
         let pure_stats_before = pure_backend.stats();
@@ -35,8 +20,21 @@ impl Engine {
         self.fiber.env.bind_all_root(input.bindings);
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
-            let cursor = self.fiber.cursor.clone()?;
-            let flow = self.flow_at_cursor(&cursor)?;
+            let Some(cursor) = self.fiber.cursor.clone() else {
+                self.finish(&mut output);
+                executed_ops += 1;
+                if self.should_return_to_host(options.mode, &output, executed_ops) {
+                    break;
+                }
+                continue;
+            };
+            let Some(flow) = self.flow_at_cursor(&cursor) else {
+                self.fail_aot_linear_precondition(
+                    "AOT linear cursor no longer references a flow",
+                    &mut output,
+                );
+                break;
+            };
             let Some(op) = flow.ops.get(cursor.op_index).cloned() else {
                 self.finish(&mut output);
                 executed_ops += 1;
@@ -46,7 +44,11 @@ impl Engine {
                 continue;
             };
             if !aot_linear_supported_op(&op) {
-                return None;
+                self.fail_aot_linear_precondition(
+                    "AOT linear program contains an unsupported op",
+                    &mut output,
+                );
+                break;
             }
             let next = cursor.advanced();
             self.step_aot_linear_op(op, next, &mut output, pure_backend);
@@ -70,10 +72,21 @@ impl Engine {
             line_effects: output.effects.line.len(),
             diagnostics: output.diagnostics.len(),
         };
-        Some(self.step_result(output, options, stats))
+        self.step_result(output, options, stats)
     }
 
-    fn can_start_aot_linear_step(&self, program: &AotProgram, input: &RuntimeStepInput) -> bool {
+    fn fail_aot_linear_precondition(&mut self, message: &str, output: &mut RuntimeStepOutput) {
+        output.diagnostics.push(super::RuntimeDiagnostic {
+            message: message.to_owned(),
+        });
+        self.fiber.status = FlowFiberStatus::Failed(message.to_owned());
+    }
+
+    pub(crate) fn can_start_aot_linear_step(
+        &self,
+        program: &AotProgram,
+        input: &RuntimeStepInput,
+    ) -> bool {
         input.task_events.is_empty()
             && input.source_events.is_empty()
             && self.plan.source_plans.is_empty()

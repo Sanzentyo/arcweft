@@ -625,6 +625,9 @@ Current high-confidence state:
 - The VM runtime step now moves owned root input bindings into the fiber
   environment instead of cloning them again inside `Engine::step`, matching the
   AOT fast path ownership model and reducing per-step adapter binding copy work.
+- The AOT executor now checks the linear-dispatch precondition by borrowing the
+  step input before dispatch, so AOT success and fallback paths no longer clone
+  the full `RuntimeStepInput` just to probe the fast path.
 - The CLI regression harness now rejects generated `.arcweft` directories under
   checked-in fixtures and scans non-review source/docs/tests for removed
   whitespace-command DSL or compatibility-shim text. Run fixtures execute from
