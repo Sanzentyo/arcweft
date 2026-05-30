@@ -655,6 +655,12 @@ Current high-confidence state:
 - The fused runtime map batch path now borrows local or literal tuple/bracket
   sequence sources while packing flat `i64` inputs, avoiding a `RuntimeValue`
   sequence clone before crossing into VM/AOT/JIT pure helper backends.
+- Fixed-size `Array<T, N>` receivers now participate in the same read-only
+  iterable `map`/`sum` typing path as `Vec<T>`/slices. Literal array-repeat
+  runtime lowering stores repeated literal values as one sequence value instead
+  of expanding thousands of runtime expression nodes, keeping large batch
+  runtime type validation proportional to program shape rather than repeat
+  length.
 - Fast-path scalar pure calls read local integer arguments by borrow when
   packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
   VM/AOT/JIT pure backends.

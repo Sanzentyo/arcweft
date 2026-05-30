@@ -651,7 +651,8 @@ fn lower_runtime_array_repeat(value: &Expr, len: &Expr) -> RuntimeExpr {
             len: Box::new(len.clone()),
         })));
     };
-    RuntimeExpr::BracketSeq((0..len).map(|_| lower_runtime_expr(value)).collect())
+    let value = lower_runtime_expr(value);
+    repeated_runtime_expr(value, len)
 }
 
 fn lower_runtime_array_repeat_strict(value: &Expr, len: &Expr) -> Result<RuntimeExpr, String> {
@@ -661,10 +662,14 @@ fn lower_runtime_array_repeat_strict(value: &Expr, len: &Expr) -> Result<Runtime
             expr_label(len)
         ));
     };
-    (0..len)
-        .map(|_| lower_runtime_expr_strict(value))
-        .collect::<Result<Vec<_>, _>>()
-        .map(RuntimeExpr::BracketSeq)
+    lower_runtime_expr_strict(value).map(|value| repeated_runtime_expr(value, len))
+}
+
+fn repeated_runtime_expr(value: RuntimeExpr, len: usize) -> RuntimeExpr {
+    match value {
+        RuntimeExpr::Value(value) => RuntimeExpr::Value(RuntimeValue::BracketSeq(vec![value; len])),
+        value => RuntimeExpr::BracketSeq(vec![value; len]),
+    }
 }
 
 fn array_repeat_len(expr: &Expr) -> Option<usize> {
@@ -688,5 +693,34 @@ mod tests {
         let lowered = lower_runtime_expr_strict(&expr).expect("calls are runtime values");
 
         assert!(matches!(lowered, RuntimeExpr::Call { callee, .. } if callee == "compute"));
+    }
+
+    #[test]
+    fn strict_runtime_array_repeat_folds_literal_value_sequence() {
+        let expr = Expr::ArrayRepeat {
+            value: Box::new(Expr::Literal(Literal::Int {
+                raw: "2i64".to_owned(),
+                value: 2,
+                suffix: Some("i64".to_owned()),
+            })),
+            len: Box::new(Expr::Literal(Literal::Int {
+                raw: "4".to_owned(),
+                value: 4,
+                suffix: None,
+            })),
+        };
+
+        let lowered = lower_runtime_expr_strict(&expr).expect("array repeat lowers");
+
+        assert!(matches!(
+            lowered,
+            RuntimeExpr::Value(RuntimeValue::BracketSeq(items))
+                if items == vec![
+                    RuntimeValue::Int(2),
+                    RuntimeValue::Int(2),
+                    RuntimeValue::Int(2),
+                    RuntimeValue::Int(2)
+                ]
+        ));
     }
 }

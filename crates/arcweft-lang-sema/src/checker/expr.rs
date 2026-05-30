@@ -899,9 +899,9 @@ impl TypeChecker<'_> {
         receiver_type: &TypeKind,
         args: &[CallArg],
     ) -> Option<TypeKind> {
-        let TypeKind::Vec(item) = receiver_type else {
+        let Some(item) = spread_item_type(receiver_type) else {
             self.errors.push(TypeCheckError::new(format!(
-                "map receiver must be Vec<T>, found {receiver_type:?}"
+                "map receiver must be an iterable sequence, found {receiver_type:?}"
             )));
             for arg in args {
                 self.check_expr(arg.value());
@@ -937,7 +937,7 @@ impl TypeChecker<'_> {
             ));
             return None;
         };
-        let snapshot = self.insert_scoped_locals([(param.clone(), item.as_ref().clone())]);
+        let snapshot = self.insert_scoped_locals([(param.clone(), item.clone())]);
         let body_type = self.check_expr(body);
         self.restore_scoped_locals(snapshot);
         body_type.map(|ty| TypeKind::Vec(Box::new(ty)))
@@ -958,8 +958,18 @@ impl TypeChecker<'_> {
             return None;
         }
         match receiver_type {
-            TypeKind::Vec(item) if item.is_integer() => Some(TypeKind::I64),
-            TypeKind::Vec(item) => {
+            TypeKind::Vec(item)
+            | TypeKind::Seq(item)
+            | TypeKind::Slice(item)
+            | TypeKind::Array { item, .. }
+                if item.is_integer() =>
+            {
+                Some(TypeKind::I64)
+            }
+            TypeKind::Vec(item)
+            | TypeKind::Seq(item)
+            | TypeKind::Slice(item)
+            | TypeKind::Array { item, .. } => {
                 self.errors.push(TypeCheckError::new(format!(
                     "sum receiver items must be integers, found {item:?}"
                 )));
@@ -967,7 +977,7 @@ impl TypeChecker<'_> {
             }
             other => {
                 self.errors.push(TypeCheckError::new(format!(
-                    "sum receiver must be Vec<T>, found {other:?}"
+                    "sum receiver must be an iterable sequence, found {other:?}"
                 )));
                 None
             }

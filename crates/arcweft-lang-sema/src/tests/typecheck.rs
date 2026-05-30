@@ -825,6 +825,29 @@ flow @flow.map_types map_types {
 }
 
 #[test]
+fn typechecks_array_map_closure_result_and_sum() {
+    let tree = parse_ok(
+        r"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+flow @flow.arrays arrays {
+    let values: Array<i64, 4> = [2i64; 4]
+    let shifted: Vec<i64> = values.map(|item| score(item, 2i64))
+    let total: i64 = shifted.sum()
+    return total
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("array map fixture lowers");
+    validate_typecheck_ready(&hir).expect("array map fixture is typecheck-ready");
+
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("array map closure result typechecks");
+}
+
+#[test]
 fn typecheck_rejects_sum_on_non_integer_vec() {
     let tree = parse_ok(
         r"

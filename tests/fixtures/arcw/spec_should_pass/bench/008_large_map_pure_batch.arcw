@@ -1,0 +1,16 @@
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+bench @bench.large_map_pure_batch {
+    measure iterations = 3 { start(@flow.large_map_pure_batch) }
+}
+
+flow @flow.large_map_pure_batch large_map_pure_batch {
+    let values: Array<i64, 4096> = [2i64; 4096]
+    let scores: Vec<i64> = values.map(|item| score(item, 2i64))
+    let total: i64 = scores.sum()
+    log.info(total)
+    return "done"
+}
