@@ -437,6 +437,10 @@ Current high-confidence state:
 - Runtime `for` state shares evaluated item sequences with `Arc<[RuntimeValue]>`
   across `ForNext` steps, so natural loops no longer clone the full source
   vector on every iteration.
+- Flow scoped-operation scheduling pushes `EnterScope`, body ops, `ExitScope`,
+  and loop continuations directly into the VM pending queue. Loop, while,
+  while-let, and for iterations avoid building temporary scoped `Vec<FlowOp>`
+  buffers before execution.
 - Awaited `system.core_count()`, `system.thread_count()`, and
   `system.available_parallelism()` calls now lower to typed system-info task
   requests. The CLI adapter resolves physical cores, logical CPUs, and
