@@ -112,12 +112,6 @@ impl RuntimePureAccelerator {
         for helper in helpers {
             cache[helper.id.0] = Some(compile_helper(config.backend, helper, &mut compile_stats));
         }
-        let needs_worker_pool = cache.iter().any(|entry| {
-            matches!(
-                entry,
-                Some(RuntimePureCacheEntry::Aot(_) | RuntimePureCacheEntry::Vm)
-            )
-        });
         compile_stats.compile_elapsed_ns = started.elapsed().as_nanos();
         Self {
             config,
@@ -125,7 +119,7 @@ impl RuntimePureAccelerator {
             stats: RuntimePureCallStats::default(),
             compile_stats,
             helper_summary,
-            pool: build_thread_pool(resolved_workers, needs_worker_pool),
+            pool: None,
             resolved_workers,
             flat_i64_inputs: Vec::new(),
             aot_i64_slots: Vec::new(),
@@ -180,6 +174,14 @@ impl RuntimePureAccelerator {
         if rows.is_empty() {
             return Ok(());
         }
+        let wants_parallel = self.can_parallelize(rows.len())
+            && matches!(
+                cache_entry(&self.cache, helper.id),
+                Some(RuntimePureCacheEntry::Aot(_) | RuntimePureCacheEntry::Vm)
+            );
+        if wants_parallel {
+            self.ensure_thread_pool();
+        }
         match cache_entry(&self.cache, helper.id) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
@@ -189,7 +191,7 @@ impl RuntimePureAccelerator {
             Some(RuntimePureCacheEntry::Aot(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.aot_calls += rows.len();
-                if self.should_parallelize(rows.len()) {
+                if wants_parallel {
                     self.stats.thread_pool_jobs += self.parallel_jobs(rows.len());
                     call_aot_batch_parallel(self.pool.as_ref(), compiled, rows, out)
                 } else {
@@ -200,7 +202,7 @@ impl RuntimePureAccelerator {
                 self.compile_stats.cache_hits += 1;
                 self.stats.vm_calls += rows.len();
                 self.stats.fallbacks += rows.len();
-                if self.should_parallelize(rows.len()) {
+                if wants_parallel {
                     self.stats.thread_pool_jobs += self.parallel_jobs(rows.len());
                     call_vm_batch_parallel(self.pool.as_ref(), helper, rows, out)
                 } else {
@@ -248,6 +250,14 @@ impl RuntimePureAccelerator {
         if out.is_empty() {
             return Ok(());
         }
+        let wants_parallel = self.can_parallelize(out.len())
+            && matches!(
+                cache_entry(&self.cache, helper.id),
+                Some(RuntimePureCacheEntry::Aot(_) | RuntimePureCacheEntry::Vm)
+            );
+        if wants_parallel {
+            self.ensure_thread_pool();
+        }
         match cache_entry(&self.cache, helper.id) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
@@ -262,7 +272,7 @@ impl RuntimePureAccelerator {
             Some(RuntimePureCacheEntry::Aot(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.aot_calls += out.len();
-                if self.should_parallelize(out.len()) {
+                if wants_parallel {
                     self.stats.thread_pool_jobs += self.parallel_jobs(out.len());
                     call_aot_flat_batch_parallel(
                         self.pool.as_ref(),
@@ -279,7 +289,7 @@ impl RuntimePureAccelerator {
                 self.compile_stats.cache_hits += 1;
                 self.stats.vm_calls += out.len();
                 self.stats.fallbacks += out.len();
-                if self.should_parallelize(out.len()) {
+                if wants_parallel {
                     self.stats.thread_pool_jobs += self.parallel_jobs(out.len());
                     call_vm_flat_batch_parallel(self.pool.as_ref(), helper, flat_inputs, arity, out)
                 } else {
@@ -295,8 +305,14 @@ impl RuntimePureAccelerator {
         }
     }
 
-    fn should_parallelize(&self, len: usize) -> bool {
-        self.pool.is_some() && len >= self.config.batch_min_len && self.resolved_workers > 1
+    fn can_parallelize(&self, len: usize) -> bool {
+        len >= self.config.batch_min_len && self.resolved_workers > 1
+    }
+
+    fn ensure_thread_pool(&mut self) {
+        if self.pool.is_none() {
+            self.pool = build_thread_pool(self.resolved_workers);
+        }
     }
 
     fn parallel_jobs(&self, len: usize) -> usize {
@@ -486,8 +502,8 @@ fn resolve_worker_count(workers: RuntimePureWorkerCount) -> usize {
     }
 }
 
-fn build_thread_pool(worker_count: usize, enabled: bool) -> Option<ThreadPool> {
-    (enabled && worker_count > 1)
+fn build_thread_pool(worker_count: usize) -> Option<ThreadPool> {
+    (worker_count > 1)
         .then(|| {
             ThreadPoolBuilder::new()
                 .num_threads(worker_count)
@@ -929,6 +945,62 @@ mod tests {
         assert_eq!(accelerator.resolved_worker_count(), 2);
         assert!(accelerator.has_worker_pool());
         assert!(accelerator.stats().thread_pool_jobs > 0);
+    }
+
+    #[test]
+    fn aot_worker_pool_is_created_only_for_parallel_batches() {
+        let helper = RuntimePureHelper {
+            id: RuntimePureHelperId(0),
+            name: "score".to_owned(),
+            input_names: vec!["base".to_owned(), "bonus".to_owned()],
+            expr: RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+                }),
+            },
+            origin: RuntimePureHelperOrigin::Annotated,
+        };
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                backend: RuntimePureBackendMode::Aot,
+                workers: RuntimePureWorkerCount::Fixed(2),
+                batch_min_len: 4,
+            },
+            std::slice::from_ref(&helper),
+        );
+        let small_rows = [
+            RuntimeI64Args::new([3, 4, 0, 0], 2),
+            RuntimeI64Args::new([5, 1, 0, 0], 2),
+        ];
+        let mut small_out = [0; 2];
+
+        accelerator
+            .call_i64_batch(&helper, &small_rows, &mut small_out)
+            .expect("small AOT batch succeeds without pool");
+
+        assert_eq!(small_out, [18, 15]);
+        assert!(!accelerator.has_worker_pool());
+        assert_eq!(accelerator.stats().thread_pool_jobs, 0);
+
+        let large_rows = [
+            RuntimeI64Args::new([3, 4, 0, 0], 2),
+            RuntimeI64Args::new([5, 1, 0, 0], 2),
+            RuntimeI64Args::new([2, 8, 0, 0], 2),
+            RuntimeI64Args::new([7, 0, 0, 0], 2),
+        ];
+        let mut large_out = [0; 4];
+
+        accelerator
+            .call_i64_batch(&helper, &large_rows, &mut large_out)
+            .expect("large AOT batch creates pool");
+
+        assert_eq!(large_out, [18, 15, 20, 14]);
+        assert!(accelerator.has_worker_pool());
+        assert_eq!(accelerator.stats().thread_pool_jobs, 2);
     }
 
     #[test]
