@@ -116,8 +116,12 @@ fn engine_executes_runtime_pure_call_from_flow() {
     ));
     assert_eq!(result.stats.pure.pure_calls, 1);
     assert_eq!(result.stats.pure.vm_calls, 1);
-    assert_eq!(result.stats.pure.arg_stack_packs, 1);
+    assert_eq!(result.stats.pure.arg_stack_packs, 0);
     assert_eq!(result.stats.pure.arg_vec_allocations, 0);
+    assert_eq!(
+        result.stats.pure.arg_bytes_borrowed,
+        2 * std::mem::size_of::<i64>()
+    );
 }
 
 #[test]

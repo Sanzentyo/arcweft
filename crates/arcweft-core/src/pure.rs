@@ -55,6 +55,12 @@ pub trait RuntimePureCallBackend {
         args: RuntimeI64Args,
     ) -> Result<Option<i64>, RuntimeEvalError>;
 
+    fn call_i64_slice(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[i64],
+    ) -> Result<Option<i64>, RuntimeEvalError>;
+
     fn call_i64_batch(
         &mut self,
         helper: &RuntimePureHelper,
@@ -363,6 +369,31 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         self.stats.arg_stack_packs += 1;
         self.stats.arg_bytes_copied += args.len() * std::mem::size_of::<i64>();
         let value = self.scratch.evaluate_i64_args(helper, args)?;
+        match value {
+            RuntimeValue::Int(value) => {
+                self.stats.result_bytes_copied += std::mem::size_of::<i64>();
+                Ok(Some(value))
+            }
+            value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
+        }
+    }
+
+    fn call_i64_slice(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[i64],
+    ) -> Result<Option<i64>, RuntimeEvalError> {
+        if args.len() > RuntimeI64Args::MAX {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: RuntimeI64Args::MAX,
+                found: args.len(),
+            });
+        }
+        self.stats.pure_calls += 1;
+        self.stats.vm_calls += 1;
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        let value = self.scratch.evaluate_i64_slice(helper, args)?;
         match value {
             RuntimeValue::Int(value) => {
                 self.stats.result_bytes_copied += std::mem::size_of::<i64>();

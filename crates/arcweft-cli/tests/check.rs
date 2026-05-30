@@ -368,9 +368,10 @@ flow @flow.main main {
     let pure = &json["steps"][0]["stats"]["pure"];
     assert_eq!(pure["pure_calls"], 1);
     assert_eq!(pure["jit_calls"], 1);
-    assert_eq!(pure["arg_stack_packs"], 1);
+    assert_eq!(pure["arg_stack_packs"], 0);
     assert_eq!(pure["arg_vec_allocations"], 0);
-    assert_eq!(pure["arg_bytes_copied"], 16);
+    assert_eq!(pure["arg_bytes_copied"], 0);
+    assert_eq!(pure["arg_bytes_borrowed"], 16);
     assert_eq!(pure["result_bytes_copied"], 8);
     assert_eq!(json["executor_stats"]["pure_config"]["backend"], "jit");
     assert_eq!(json["executor_stats"]["pure_config"]["workers"]["fixed"], 1);
@@ -428,8 +429,10 @@ flow @flow.for_pure for_pure {
     let pure_calls = sum_step_pure_counter(&json, "pure_calls");
     assert_eq!(pure_calls, 4);
     assert_eq!(sum_step_pure_counter(&json, "jit_calls"), 4);
+    assert_eq!(sum_step_pure_counter(&json, "arg_stack_packs"), 0);
     assert_eq!(sum_step_pure_counter(&json, "arg_vec_allocations"), 0);
-    assert_eq!(sum_step_pure_counter(&json, "arg_bytes_copied"), 64);
+    assert_eq!(sum_step_pure_counter(&json, "arg_bytes_copied"), 0);
+    assert_eq!(sum_step_pure_counter(&json, "arg_bytes_borrowed"), 64);
     assert_eq!(sum_step_pure_counter(&json, "result_bytes_copied"), 32);
     assert_eq!(json["executor_stats"]["pure_config"]["backend"], "jit");
     assert_eq!(
@@ -2314,7 +2317,7 @@ flow @flow.for_pure for_pure {
     assert_eq!(measurement["deterministic"]["pure_calls_median"], 4);
     assert_eq!(
         measurement["deterministic"]["pure_arg_stack_packs_median"],
-        4
+        0
     );
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
@@ -2322,11 +2325,11 @@ flow @flow.for_pure for_pure {
     );
     assert_eq!(
         measurement["deterministic"]["pure_arg_bytes_copied_median"],
-        64
+        0
     );
     assert_eq!(
         measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
-        0
+        64
     );
     assert_eq!(
         measurement["deterministic"]["pure_result_bytes_copied_median"],
@@ -2923,7 +2926,7 @@ flow @flow.branch_for_pure branch_for_pure {
     assert_eq!(measurement["deterministic"]["pure_calls_median"], 8);
     assert_eq!(
         measurement["deterministic"]["pure_arg_stack_packs_median"],
-        8
+        0
     );
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
@@ -2931,7 +2934,7 @@ flow @flow.branch_for_pure branch_for_pure {
     );
     assert_eq!(
         measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
-        0
+        192
     );
     assert_eq!(
         measurement["executor_stats"]["pure_compile"]["jit_successes"],
@@ -3014,7 +3017,7 @@ flow @flow.fallback fallback {
     assert_eq!(measurement["deterministic"]["pure_calls_median"], 1);
     assert_eq!(
         measurement["deterministic"]["pure_arg_stack_packs_median"],
-        1
+        0
     );
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],

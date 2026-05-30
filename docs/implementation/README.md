@@ -684,6 +684,9 @@ Current high-confidence state:
 - Flow `for` loops now bind simple identifier and discard patterns directly
   instead of allocating an intermediate pattern-binding vector for each
   iteration; structured patterns still use the full matcher.
+- Scalar pure helper calls from normal flow execution now pass evaluated `i64`
+  arguments to VM/JIT/AOT backends as borrowed slices, eliminating the
+  fixed-pack value copy from the common non-batched call path.
 - Borrowed root binding updates now reuse existing environment slots without
   recloning binding names, so repeated runtime steps only clone the value when
   an adapter-provided root binding is already present.

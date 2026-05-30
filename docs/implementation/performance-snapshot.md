@@ -57,9 +57,9 @@ steady-state sample median above stayed at 29000 ns.
 
 Checked-in for-loop pure JIT bench:
 
-| fixture | executor | pure backend | iterations | median elapsed ns | executed ops | pure calls | stack packs | copied arg bytes | line effects |
-| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 003_for_pure_jit.arcw | bytecode_vm | jit | 8 | 69900 | 68 | 16 | 16 | 256 | 16 |
+| fixture | executor | pure backend | iterations | median elapsed ns | executed ops | pure calls | stack packs | copied arg bytes | borrowed arg bytes | line effects |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 003_for_pure_jit.arcw | bytecode_vm | jit | 8 | 75000 | 68 | 16 | 0 | 0 | 256 | 16 |
 
 Profile phase split for the checked-in map pure JIT fixture:
 

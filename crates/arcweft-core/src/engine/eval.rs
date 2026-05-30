@@ -381,9 +381,7 @@ impl Engine {
                 values[index] = self.evaluate_i64_arg_with_backend(arg, pure_backend)?;
             }
             let helper = &self.plan.pure_helpers[helper_id.0];
-            if let Some(value) =
-                pure_backend.call_i64(helper, RuntimeI64Args::new(values, args.len()))?
-            {
+            if let Some(value) = pure_backend.call_i64_slice(helper, &values[..args.len()])? {
                 return Ok(RuntimeValue::Int(value));
             }
         }

@@ -374,6 +374,58 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         result
     }
 
+    fn call_i64_slice(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[i64],
+    ) -> Result<Option<i64>, RuntimeEvalError> {
+        if args.len() > RuntimeI64Args::MAX {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: RuntimeI64Args::MAX,
+                found: args.len(),
+            });
+        }
+        self.stats.pure_calls += 1;
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        let result = match cache_entry(&self.cache, helper.id) {
+            Some(RuntimePureCacheEntry::Jit(compiled)) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.jit_calls += 1;
+                compiled
+                    .call(args)
+                    .map(Some)
+                    .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                        name: helper.name.clone(),
+                        reason: error.to_string(),
+                    })
+            }
+            Some(RuntimePureCacheEntry::Aot(compiled)) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.aot_calls += 1;
+                compiled
+                    .call_with_inputs_scratch(args, &mut self.aot_i64_slots)
+                    .map(|(value, _)| Some(value))
+            }
+            Some(RuntimePureCacheEntry::Vm) => {
+                self.compile_stats.cache_hits += 1;
+                self.stats.vm_calls += 1;
+                self.stats.fallbacks += 1;
+                Self::call_vm_i64_slice(helper, args, &mut self.vm_scratch).map(Some)
+            }
+            None => {
+                self.compile_stats.cache_misses += 1;
+                self.stats.vm_calls += 1;
+                self.stats.fallbacks += 1;
+                Self::call_vm_i64_slice(helper, args, &mut self.vm_scratch).map(Some)
+            }
+        };
+        if matches!(result, Ok(Some(_))) {
+            self.stats.result_bytes_copied += std::mem::size_of::<i64>();
+        }
+        result
+    }
+
     fn call_i64_batch(
         &mut self,
         helper: &RuntimePureHelper,
@@ -421,6 +473,17 @@ impl RuntimePureAccelerator {
         scratch: &mut VmPureFunctionScratch,
     ) -> Result<i64, RuntimeEvalError> {
         match scratch.evaluate_i64_args(helper, args)? {
+            RuntimeValue::Int(value) => Ok(value),
+            value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+        }
+    }
+
+    fn call_vm_i64_slice(
+        helper: &RuntimePureHelper,
+        args: &[i64],
+        scratch: &mut VmPureFunctionScratch,
+    ) -> Result<i64, RuntimeEvalError> {
+        match scratch.evaluate_i64_slice(helper, args)? {
             RuntimeValue::Int(value) => Ok(value),
             value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
         }

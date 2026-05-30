@@ -133,6 +133,40 @@ fn vm_runtime_i64_fast_path_records_copy_bytes() {
 }
 
 #[test]
+fn vm_runtime_i64_slice_fast_path_records_borrowed_bytes() {
+    let helper = RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "score".to_owned(),
+        input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+            op: RuntimeBinaryOp::Add,
+            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+        },
+        scalar_eval_supported: true,
+        origin: RuntimePureHelperOrigin::Annotated,
+    };
+    let mut backend = VmRuntimePureCallBackend::default();
+    let args = [3, 4];
+
+    let value = backend
+        .call_i64_slice(&helper, &args)
+        .expect("VM i64 slice fast path evaluates");
+
+    assert_eq!(value, Some(7));
+    assert_eq!(backend.stats().arg_stack_packs, 0);
+    assert_eq!(backend.stats().arg_bytes_copied, 0);
+    assert_eq!(
+        backend.stats().arg_bytes_borrowed,
+        2 * std::mem::size_of::<i64>()
+    );
+    assert_eq!(
+        backend.stats().result_bytes_copied,
+        std::mem::size_of::<i64>()
+    );
+}
+
+#[test]
 fn vm_pure_scratch_reuses_and_rebuilds_i64_root_bindings() {
     let add = RuntimePureHelper {
         id: RuntimePureHelperId(0),
