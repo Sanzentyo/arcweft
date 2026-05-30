@@ -77,7 +77,9 @@ selected pure backend, worker policy, batch threshold, helper acceleration
 summary, compile attempts, cache hits/misses, and compile elapsed time.
 For deterministic integer helpers, VM fallback evaluation also consumes the
 fixed-stack argument pack directly; `arg_vec_allocations` therefore identifies
-value-slice fallback calls rather than normal scalar or batch integer calls.
+runtime call-site argument materialization rather than backend fallback
+wrapping. Value-slice VM fallback receives the caller's argument slice by
+borrow and reuses VM scratch root bindings between calls.
 Bytecode VM programs preserve the runtime plan's pure-helper table, so executor
 artifact lowering does not change whether ordinary flow calls can use the
 adapter-provided pure backend.

@@ -80,7 +80,7 @@ fn vm_runtime_value_fallback_records_pure_call_stats() {
         name: "echo_label".to_owned(),
         input_names: vec!["label".to_owned()],
         expr: RuntimeExpr::Local("label".to_owned()),
-        scalar_eval_supported: true,
+        scalar_eval_supported: false,
         origin: RuntimePureHelperOrigin::Annotated,
     };
     let mut backend = VmRuntimePureCallBackend::default();
@@ -93,7 +93,11 @@ fn vm_runtime_value_fallback_records_pure_call_stats() {
     assert_eq!(backend.stats().pure_calls, 1);
     assert_eq!(backend.stats().vm_calls, 1);
     assert_eq!(backend.stats().fallbacks, 1);
-    assert_eq!(backend.stats().arg_vec_allocations, 1);
+    assert_eq!(backend.stats().arg_vec_allocations, 0);
+    assert_eq!(
+        backend.stats().arg_bytes_borrowed,
+        std::mem::size_of_val(&[RuntimeValue::String("ready".to_owned())])
+    );
 }
 
 #[test]
@@ -169,6 +173,29 @@ fn vm_pure_scratch_reuses_and_rebuilds_i64_root_bindings() {
     assert_eq!(first, RuntimeValue::Int(7));
     assert_eq!(second, RuntimeValue::Int(11));
     assert_eq!(third, RuntimeValue::Int(14));
+}
+
+#[test]
+fn vm_pure_scratch_reuses_value_root_bindings_without_request_allocation() {
+    let echo = RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "echo".to_owned(),
+        input_names: vec!["label".to_owned()],
+        expr: RuntimeExpr::Local("label".to_owned()),
+        scalar_eval_supported: false,
+        origin: RuntimePureHelperOrigin::Annotated,
+    };
+    let mut scratch = VmPureFunctionScratch::default();
+
+    let first = scratch
+        .evaluate_values(&echo, &[RuntimeValue::String("ready".to_owned())])
+        .expect("scratch evaluates first value helper");
+    let second = scratch
+        .evaluate_values(&echo, &[RuntimeValue::String("done".to_owned())])
+        .expect("scratch reuses matching value root binding");
+
+    assert_eq!(first, RuntimeValue::String("ready".to_owned()));
+    assert_eq!(second, RuntimeValue::String("done".to_owned()));
 }
 
 #[test]

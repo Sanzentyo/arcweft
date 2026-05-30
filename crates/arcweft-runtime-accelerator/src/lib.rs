@@ -6,8 +6,8 @@
 use arcweft_core::{
     plan::{RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin},
     pure::{
-        AotPureFunctionBackend, AotPureI64Plan, PureFunctionBackend, PureFunctionRequest,
-        RuntimeI64Args, RuntimePureCallBackend, VmPureFunctionBackend, VmPureFunctionScratch,
+        AotPureFunctionBackend, AotPureI64Plan, PureFunctionRequest, RuntimeI64Args,
+        RuntimePureCallBackend, VmPureFunctionScratch,
     },
     step::RuntimePureCallStats,
     value::{RuntimeBinding, RuntimeEvalError, RuntimeValue},
@@ -395,8 +395,8 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         self.stats.pure_calls += 1;
         self.stats.vm_calls += 1;
         self.stats.fallbacks += 1;
-        self.stats.arg_vec_allocations += 1;
-        evaluate_vm(helper, args)
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        self.vm_scratch.evaluate_values(helper, args)
     }
 
     fn stats(&self) -> RuntimePureCallStats {
@@ -773,32 +773,6 @@ fn compile_request(helper: &RuntimePureHelper) -> PureFunctionRequest {
     )
 }
 
-fn evaluate_vm(
-    helper: &RuntimePureHelper,
-    args: &[RuntimeValue],
-) -> Result<RuntimeValue, RuntimeEvalError> {
-    if args.len() != helper.input_names.len() {
-        return Err(RuntimeEvalError::TooManyPureArgs {
-            helper: helper.name.clone(),
-            max: helper.input_names.len(),
-            found: args.len(),
-        });
-    }
-    let request = PureFunctionRequest::new(
-        helper.name.clone(),
-        helper.expr.clone(),
-        helper
-            .input_names
-            .iter()
-            .cloned()
-            .zip(args.iter().cloned())
-            .map(|(name, value)| RuntimeBinding { name, value }),
-    );
-    VmPureFunctionBackend
-        .evaluate(&request)
-        .map(|result| result.value)
-}
-
 /// Summary of helpers selected for acceleration.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RuntimePureAccelerationSummary {
@@ -905,6 +879,40 @@ mod tests {
         assert!(accelerator.resolved_worker_count() >= 1);
         assert!(!accelerator.has_worker_pool());
         assert_eq!(accelerator.summary().jit, 1);
+    }
+
+    #[test]
+    fn value_fallback_reuses_vm_scratch_without_value_vec_allocation() {
+        let helper = RuntimePureHelper {
+            id: RuntimePureHelperId(0),
+            name: "echo".to_owned(),
+            input_names: vec!["label".to_owned()],
+            expr: RuntimeExpr::Local("label".to_owned()),
+            scalar_eval_supported: false,
+            origin: RuntimePureHelperOrigin::Annotated,
+        };
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                backend: RuntimePureBackendMode::Vm,
+                workers: RuntimePureWorkerCount::Fixed(1),
+                batch_min_len: 2,
+            },
+            std::slice::from_ref(&helper),
+        );
+
+        let value = accelerator
+            .call_values(&helper, &[RuntimeValue::String("ready".to_owned())])
+            .expect("VM value fallback succeeds");
+
+        assert_eq!(value, RuntimeValue::String("ready".to_owned()));
+        assert_eq!(accelerator.stats().pure_calls, 1);
+        assert_eq!(accelerator.stats().vm_calls, 1);
+        assert_eq!(accelerator.stats().fallbacks, 1);
+        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+        assert_eq!(
+            accelerator.stats().arg_bytes_borrowed,
+            std::mem::size_of_val(&[RuntimeValue::String("ready".to_owned())])
+        );
     }
 
     #[test]

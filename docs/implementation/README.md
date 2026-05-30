@@ -125,6 +125,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - The VM pure reference backend also builds evaluator root bindings from a
   borrowed binding slice, avoiding an extra request-binding vector clone during
   JIT/AOT conformance checks and standalone helper evaluation.
+- Value-slice pure VM fallback now reuses `VmPureFunctionScratch` and borrowed
+  argument slices instead of reconstructing a `PureFunctionRequest` and binding
+  vector for each fallback call. `arg_vec_allocations` remains zero for that
+  backend boundary while `arg_bytes_borrowed` records the borrowed slice size.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

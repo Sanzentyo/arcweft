@@ -259,6 +259,32 @@ impl VmPureFunctionScratch {
         self.env = evaluator.into_env();
         result
     }
+
+    pub fn evaluate_values(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[RuntimeValue],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if args.len() != helper.input_names.len() {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: helper.input_names.len(),
+                found: args.len(),
+            });
+        }
+        self.env
+            .replace_root_value_bindings_ref(&helper.input_names, args);
+        let mut evaluator = PureEvaluator::with_env(std::mem::take(&mut self.env));
+        let result = if helper.scalar_eval_supported {
+            evaluator
+                .evaluate_scalar_expr(&helper.expr)
+                .map(PureScalar::into_runtime_value)
+        } else {
+            evaluator.evaluate_expr(&helper.expr)
+        };
+        self.env = evaluator.into_env();
+        result
+    }
 }
 
 impl AotPureFunctionBackend {
@@ -456,20 +482,8 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         self.stats.pure_calls += 1;
         self.stats.vm_calls += 1;
         self.stats.fallbacks += 1;
-        self.stats.arg_vec_allocations += 1;
-        let request = PureFunctionRequest::new(
-            helper.name.clone(),
-            helper.expr.clone(),
-            helper
-                .input_names
-                .iter()
-                .cloned()
-                .zip(args.iter().cloned())
-                .map(|(name, value)| RuntimeBinding { name, value }),
-        );
-        VmPureFunctionBackend
-            .evaluate(&request)
-            .map(|result| result.value)
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        self.scratch.evaluate_values(helper, args)
     }
 
     fn stats(&self) -> RuntimePureCallStats {

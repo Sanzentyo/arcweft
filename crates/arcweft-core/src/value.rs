@@ -357,6 +357,20 @@ impl RuntimeEnv {
             scope.replace_i64_bindings(input_names, args);
         }
     }
+
+    pub(crate) fn replace_root_value_bindings_ref(
+        &mut self,
+        input_names: &[String],
+        args: &[RuntimeValue],
+    ) {
+        if self.scopes.is_empty() {
+            self.scopes.push(RuntimeScope::default());
+        }
+        self.scopes.truncate(1);
+        if let Some(scope) = self.scopes.first_mut() {
+            scope.replace_value_bindings_ref(input_names, args);
+        }
+    }
 }
 
 impl RuntimeScope {
@@ -421,6 +435,32 @@ impl RuntimeScope {
                 .map(|(name, value)| RuntimeBinding {
                     name: name.clone(),
                     value: RuntimeValue::Int(value),
+                }),
+        );
+    }
+
+    fn replace_value_bindings_ref(&mut self, input_names: &[String], args: &[RuntimeValue]) {
+        if self.bindings.len() == input_names.len()
+            && self
+                .bindings
+                .iter()
+                .zip(input_names)
+                .all(|(binding, name)| binding.name == *name)
+        {
+            self.bindings
+                .iter_mut()
+                .zip(args)
+                .for_each(|(binding, value)| binding.value = value.clone());
+            return;
+        }
+        self.bindings.clear();
+        self.bindings.extend(
+            input_names
+                .iter()
+                .zip(args)
+                .map(|(name, value)| RuntimeBinding {
+                    name: name.clone(),
+                    value: value.clone(),
                 }),
         );
     }
