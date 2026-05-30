@@ -87,6 +87,10 @@ impl AotProgram {
         &self.flows
     }
 
+    pub fn flow_block(&self, index: usize) -> Option<&AotFlowBlock> {
+        self.flows.get(index)
+    }
+
     pub const fn stats(&self) -> &AotProgramStats {
         &self.stats
     }

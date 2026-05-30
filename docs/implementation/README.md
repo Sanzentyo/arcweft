@@ -158,6 +158,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - Flow cursors carry the resolved flow index alongside the flow id. Normal VM
   and AOT stepping now read the current flow from the runtime plan vector
   directly and reserve the flow-id map lookup for entry/goto resolution.
+- AOT linear dispatch checks use that cursor index to read the corresponding
+  AOT flow block directly, keeping the hot eligibility check aligned with the
+  runtime-plan flow vector.
 - `arcweft-cli` keeps user-facing JSON report schemas in `output.rs`,
   including check, profile, verify-types, bench, runtime step, and compiler
   counter summaries. `main.rs` remains the command orchestration layer instead
