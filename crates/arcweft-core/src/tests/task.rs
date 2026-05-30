@@ -45,6 +45,27 @@ fn normalizes_task_events_by_replay_stable_keys() {
 }
 
 #[test]
+fn detects_already_normalized_task_events_without_reordering() {
+    let events = vec![
+        TaskEvent {
+            logical_epoch: LogicalEpoch(0),
+            task_id: TaskId("a".to_owned()),
+            sequence: TaskSequence(0),
+            kind: TaskEventKind::Ready("a".to_owned()),
+        },
+        TaskEvent {
+            logical_epoch: LogicalEpoch(0),
+            task_id: TaskId("b".to_owned()),
+            sequence: TaskSequence(1),
+            kind: TaskEventKind::Ready("b".to_owned()),
+        },
+    ];
+
+    assert!(task_events_are_normalized(&events));
+    assert_eq!(normalize_task_events(events.clone()), events);
+}
+
+#[test]
 fn task_spec_uses_typed_request_and_debug_label() {
     let spec = TaskSpec::new(
         TaskId("task.asset.bg".to_owned()),

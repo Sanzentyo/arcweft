@@ -425,6 +425,22 @@ impl From<String> for HostCapabilityId {
 
 /// Returns task events in replay-stable completion order.
 pub fn normalize_task_events(mut events: Vec<TaskEvent>) -> Vec<TaskEvent> {
-    events.sort_by_key(|event| (event.logical_epoch, event.task_id.clone(), event.sequence));
+    if events.len() > 1 && !task_events_are_normalized(&events) {
+        events.sort_by(compare_task_events);
+    }
     events
+}
+
+/// Returns true when task events are already in replay-stable completion order.
+pub fn task_events_are_normalized(events: &[TaskEvent]) -> bool {
+    events
+        .windows(2)
+        .all(|pair| compare_task_events(&pair[0], &pair[1]).is_le())
+}
+
+fn compare_task_events(left: &TaskEvent, right: &TaskEvent) -> std::cmp::Ordering {
+    left.logical_epoch
+        .cmp(&right.logical_epoch)
+        .then_with(|| left.task_id.cmp(&right.task_id))
+        .then_with(|| left.sequence.cmp(&right.sequence))
 }

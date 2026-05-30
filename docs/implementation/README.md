@@ -463,6 +463,10 @@ Current high-confidence state:
   batches. Scheduler stats expose `dispatch_sorts` and `dispatch_sort_items` so
   thread-heavy benches can distinguish actual scheduling sort work from task
   completion work.
+- Task event normalization now checks whether completion events are already in
+  replay-stable order before sorting, and uses reference comparison when a sort
+  is necessary. This keeps deterministic replay ordering while avoiding
+  per-event task-id cloning on the common ordered native completion path.
 - The CLI native task bridge now completes read-only dispatched task batches on
   a worker pool and reports path-free `parallel_batches`, `parallel_tasks`,
   `parallel_io_tasks`, `parallel_marker_tasks`, and `parallel_workers` counters
