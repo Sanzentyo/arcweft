@@ -122,8 +122,9 @@ comparisons. It does not read source paths or persist host absolute paths.
 
 Flow execution and bench JSON expose the same accelerator boundary. Per-step
 pure stats include scalar calls, batch calls, batch item counts, backend call
-counts, stack-packed argument calls, copied argument/result byte counts,
-thread-pool jobs, Vec argument allocations, and VM fallback counts. Executor
+counts, stack-packed argument calls, copied argument bytes, borrowed argument
+bytes, copied result bytes, thread-pool jobs, Vec argument allocations, and VM
+fallback counts. Executor
 stats include the selected pure backend, worker policy, resolved worker count,
 batch threshold, helper acceleration summary, compile attempts, cache
 hits/misses, and compile elapsed time. These counters are meant to show whether

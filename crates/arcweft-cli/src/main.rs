@@ -3139,6 +3139,7 @@ struct RuntimeBenchSamples {
     pure_calls: Vec<usize>,
     pure_batch_items: Vec<usize>,
     pure_thread_pool_jobs: Vec<usize>,
+    pure_arg_stack_packs: Vec<usize>,
     pure_arg_vec_allocations: Vec<usize>,
     pure_arg_bytes_copied: Vec<usize>,
     pure_arg_bytes_borrowed: Vec<usize>,
@@ -3199,6 +3200,13 @@ impl RuntimeBenchSamples {
                 .steps
                 .iter()
                 .map(|step| step.stats.pure.thread_pool_jobs)
+                .sum(),
+        );
+        self.pure_arg_stack_packs.push(
+            trace
+                .steps
+                .iter()
+                .map(|step| step.stats.pure.arg_stack_packs)
                 .sum(),
         );
         self.pure_arg_vec_allocations.push(
@@ -3279,6 +3287,7 @@ impl RuntimeBenchSamples {
             pure_calls_median: median_usize(&mut self.pure_calls),
             pure_batch_items_median: median_usize(&mut self.pure_batch_items),
             pure_thread_pool_jobs_median: median_usize(&mut self.pure_thread_pool_jobs),
+            pure_arg_stack_packs_median: median_usize(&mut self.pure_arg_stack_packs),
             pure_arg_vec_allocations_median: median_usize(&mut self.pure_arg_vec_allocations),
             pure_arg_bytes_copied_median: median_usize(&mut self.pure_arg_bytes_copied),
             pure_arg_bytes_borrowed_median: median_usize(&mut self.pure_arg_bytes_borrowed),

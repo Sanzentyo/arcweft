@@ -506,10 +506,10 @@ Current high-confidence state:
 - Fast-path scalar pure calls read local integer arguments by borrow when
   packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
   VM/AOT/JIT pure backends.
-  Scalar `i64` pure-call stats also record argument and result byte-copy
-  counters, matching batch pure-call reports and making the ordinary flow call
-  boundary visible in `arcw run --json`, `arcw profile --json`, and
-  `arcw bench --json`.
+  Scalar `i64` pure-call stats also record stack-pack, argument byte-copy, and
+  result byte-copy counters, matching batch pure-call reports and making the
+  ordinary flow call boundary visible in `arcw run --json`,
+  `arcw profile --json`, and `arcw bench --json`.
 - Runtime statement `match` now moves the selected arm body out of the owned
   `FlowOp::Match` being executed instead of cloning that body again. CLI bench
   coverage includes a runtime match that jumps into a JIT-backed pure helper

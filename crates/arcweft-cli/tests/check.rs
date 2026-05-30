@@ -2174,12 +2174,20 @@ flow @flow.for_pure for_pure {
     );
     assert_eq!(measurement["deterministic"]["pure_calls_median"], 4);
     assert_eq!(
+        measurement["deterministic"]["pure_arg_stack_packs_median"],
+        4
+    );
+    assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
         0
     );
     assert_eq!(
         measurement["deterministic"]["pure_arg_bytes_copied_median"],
         64
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
+        0
     );
     assert_eq!(
         measurement["deterministic"]["pure_result_bytes_copied_median"],
@@ -2265,7 +2273,15 @@ flow @flow.branch_for_pure branch_for_pure {
     );
     assert_eq!(measurement["deterministic"]["pure_calls_median"], 8);
     assert_eq!(
+        measurement["deterministic"]["pure_arg_stack_packs_median"],
+        8
+    );
+    assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
         0
     );
     assert_eq!(
@@ -2347,6 +2363,10 @@ flow @flow.fallback fallback {
     );
     assert_eq!(measurement["deterministic"]["executed_ops_median"], 7);
     assert_eq!(measurement["deterministic"]["pure_calls_median"], 1);
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_stack_packs_median"],
+        1
+    );
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
         0

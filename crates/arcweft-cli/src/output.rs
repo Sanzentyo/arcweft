@@ -773,6 +773,7 @@ pub(crate) struct ScriptBenchDeterministicSummary {
     pub(crate) pure_calls_median: usize,
     pub(crate) pure_batch_items_median: usize,
     pub(crate) pure_thread_pool_jobs_median: usize,
+    pub(crate) pure_arg_stack_packs_median: usize,
     pub(crate) pure_arg_vec_allocations_median: usize,
     pub(crate) pure_arg_bytes_copied_median: usize,
     pub(crate) pure_arg_bytes_borrowed_median: usize,
