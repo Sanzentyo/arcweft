@@ -433,16 +433,47 @@ impl Engine {
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let items = match self.evaluate_expr_with_backend(source, pure_backend)? {
-            RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items,
-            value => {
-                return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
-                    &value,
-                )));
-            }
-        };
         if let Some((helper_id, arity)) = self.map_i64_batch_shape(body) {
             let mut flat_inputs = std::mem::take(&mut self.pure_i64_batch_inputs);
+            match self.collect_i64_map_batch_inputs_from_borrowed_source(
+                source,
+                param,
+                body,
+                arity,
+                &mut flat_inputs,
+            ) {
+                Ok(Some(row_count)) => {
+                    let batch_result = self.call_i64_flat_batch_with_outputs(
+                        helper_id,
+                        &flat_inputs,
+                        arity,
+                        row_count,
+                        pure_backend,
+                        |out| out.iter().copied().map(RuntimeValue::Int).collect(),
+                    );
+                    self.pure_i64_batch_inputs = flat_inputs;
+                    let values = batch_result?;
+                    return Ok(RuntimeValue::BracketSeq(values));
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    self.pure_i64_batch_inputs = flat_inputs;
+                    return Err(error);
+                }
+            }
+            let items = match self.evaluate_expr_with_backend(source, pure_backend) {
+                Ok(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => items,
+                Ok(value) => {
+                    self.pure_i64_batch_inputs = flat_inputs;
+                    return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
+                        &value,
+                    )));
+                }
+                Err(error) => {
+                    self.pure_i64_batch_inputs = flat_inputs;
+                    return Err(error);
+                }
+            };
             let collect_result = self.collect_i64_map_batch_inputs(
                 &items,
                 param,
@@ -467,6 +498,14 @@ impl Engine {
             let values = batch_result?;
             return Ok(RuntimeValue::BracketSeq(values));
         }
+        let items = match self.evaluate_expr_with_backend(source, pure_backend)? {
+            RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items,
+            value => {
+                return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
+                    &value,
+                )));
+            }
+        };
         items
             .iter()
             .map(|item| {
@@ -538,15 +577,46 @@ impl Engine {
         let Some((helper_id, arity)) = self.map_i64_batch_shape(body) else {
             return Ok(None);
         };
-        let items = match self.evaluate_expr_with_backend(source, pure_backend)? {
-            RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items) => items,
-            value => {
+        let mut flat_inputs = std::mem::take(&mut self.pure_i64_batch_inputs);
+        match self.collect_i64_map_batch_inputs_from_borrowed_source(
+            source,
+            param,
+            body,
+            arity,
+            &mut flat_inputs,
+        ) {
+            Ok(Some(row_count)) => {
+                let batch_result = self.call_i64_flat_batch_with_outputs(
+                    helper_id,
+                    &flat_inputs,
+                    arity,
+                    row_count,
+                    pure_backend,
+                    |out| out.iter().copied().sum(),
+                );
+                self.pure_i64_batch_inputs = flat_inputs;
+                let sum = batch_result?;
+                return Ok(Some(sum));
+            }
+            Ok(None) => {}
+            Err(error) => {
+                self.pure_i64_batch_inputs = flat_inputs;
+                return Err(error);
+            }
+        }
+        let items = match self.evaluate_expr_with_backend(source, pure_backend) {
+            Ok(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => items,
+            Ok(value) => {
+                self.pure_i64_batch_inputs = flat_inputs;
                 return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
                     &value,
                 )));
             }
+            Err(error) => {
+                self.pure_i64_batch_inputs = flat_inputs;
+                return Err(error);
+            }
         };
-        let mut flat_inputs = std::mem::take(&mut self.pure_i64_batch_inputs);
         let collect_result = self.collect_i64_map_batch_inputs(
             &items,
             param,
@@ -570,6 +640,42 @@ impl Engine {
         self.pure_i64_batch_inputs = flat_inputs;
         let sum = batch_result?;
         Ok(Some(sum))
+    }
+
+    fn collect_i64_map_batch_inputs_from_borrowed_source(
+        &self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        arity: usize,
+        flat_inputs: &mut Vec<i64>,
+    ) -> Result<Option<usize>, RuntimeEvalError> {
+        let RuntimeExpr::PureCall { args, .. } = body else {
+            unreachable!("i64 map batch shape checked before borrowed source collection");
+        };
+        let items = match source {
+            RuntimeExpr::Value(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => {
+                items.as_slice()
+            }
+            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
+                Some(RuntimeValue::BracketSeq(items) | RuntimeValue::Tuple(items)) => {
+                    items.as_slice()
+                }
+                _ => return Ok(None),
+            },
+            _ => return Ok(None),
+        };
+        if self.collect_i64_map_batch_inputs_without_scope(
+            items,
+            param,
+            args,
+            arity,
+            flat_inputs,
+        )? {
+            Ok(Some(items.len()))
+        } else {
+            Ok(None)
+        }
     }
 
     fn evaluate_i64_bracket_seq_sum(
@@ -667,7 +773,7 @@ impl Engine {
     }
 
     fn collect_i64_map_batch_inputs_without_scope(
-        &mut self,
+        &self,
         items: &[RuntimeValue],
         param: &str,
         args: &[RuntimeExpr],

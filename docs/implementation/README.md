@@ -652,6 +652,9 @@ Current high-confidence state:
 - Runtime-plan lowering folds `let tmp = values.map(...); let total = tmp.sum()`
   into `let total = values.map(...).sum()` when `tmp` is not used later, so
   naturally written map-then-sum code can use the existing fused batch path.
+- The fused runtime map batch path now borrows local or literal tuple/bracket
+  sequence sources while packing flat `i64` inputs, avoiding a `RuntimeValue`
+  sequence clone before crossing into VM/AOT/JIT pure helper backends.
 - Fast-path scalar pure calls read local integer arguments by borrow when
   packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
   VM/AOT/JIT pure backends.
