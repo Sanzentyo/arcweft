@@ -104,21 +104,21 @@ impl TypeChecker<'_> {
         for (name, base_state) in &base.borrow_local_lifetimes {
             let states = paths
                 .iter()
-                .map(|path| path.borrow_local_lifetimes.get(name).unwrap_or(base_state))
-                .collect::<Vec<_>>();
-            merged.insert(name.clone(), merge_borrow_local_states(&states));
+                .map(|path| path.borrow_local_lifetimes.get(name).unwrap_or(base_state));
+            merged.insert(name.clone(), merge_borrow_local_states(states));
         }
         self.borrow_local_lifetimes = merged;
         self.rebuild_active_borrows();
     }
 
     pub(super) fn rebuild_active_borrows(&mut self) {
-        self.active_borrows = self
-            .borrow_local_lifetimes
-            .values()
-            .flat_map(BorrowLocalState::lifetimes)
-            .cloned()
-            .collect();
+        self.active_borrows.clear();
+        self.active_borrows.extend(
+            self.borrow_local_lifetimes
+                .values()
+                .flat_map(BorrowLocalState::lifetimes)
+                .cloned(),
+        );
         self.record_active_borrow_depth();
     }
 }

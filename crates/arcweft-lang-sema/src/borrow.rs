@@ -23,23 +23,22 @@ impl BorrowLocalState {
     }
 }
 
-pub(crate) fn merge_borrow_local_states(states: &[&BorrowLocalState]) -> BorrowLocalState {
-    let has_live = states
-        .iter()
-        .any(|state| matches!(state, BorrowLocalState::Live(_)));
-    let has_dropped = states
-        .iter()
-        .any(|state| matches!(state, BorrowLocalState::Dropped));
-    let has_maybe = states
-        .iter()
-        .any(|state| matches!(state, BorrowLocalState::MaybeDropped(_)));
-    let lifetimes = states
-        .iter()
-        .flat_map(|state| state.lifetimes())
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
+pub(crate) fn merge_borrow_local_states<'a>(
+    states: impl IntoIterator<Item = &'a BorrowLocalState>,
+) -> BorrowLocalState {
+    let mut has_live = false;
+    let mut has_dropped = false;
+    let mut has_maybe = false;
+    let mut lifetimes = BTreeSet::new();
+    for state in states {
+        match state {
+            BorrowLocalState::Live(_) => has_live = true,
+            BorrowLocalState::Dropped => has_dropped = true,
+            BorrowLocalState::MaybeDropped(_) => has_maybe = true,
+        }
+        lifetimes.extend(state.lifetimes().iter().cloned());
+    }
+    let lifetimes = lifetimes.into_iter().collect::<Vec<_>>();
 
     match (has_live, has_dropped, has_maybe) {
         (false, true, false) => BorrowLocalState::Dropped,
