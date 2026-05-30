@@ -135,8 +135,10 @@ impl RuntimeScheduler {
         for event in &events {
             joined_events.extend(self.complete_one(event));
         }
-        events.extend(joined_events);
-        let events = normalize_task_events(events);
+        if !joined_events.is_empty() {
+            events.extend(joined_events);
+            events = normalize_task_events(events);
+        }
         self.refresh_in_flight_stats();
         events
     }
