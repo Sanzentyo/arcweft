@@ -3144,8 +3144,8 @@ fn bench_json_measures_checked_in_thread_scheduling_fixture() {
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 3);
     assert_eq!(measurement["native_io"]["scheduler"]["max_in_flight"], 3);
-    assert_eq!(measurement["native_io"]["parallel_batches"], 1);
-    assert_eq!(measurement["native_io"]["parallel_marker_tasks"], 3);
+    assert_eq!(measurement["native_io"]["parallel_batches"], 0);
+    assert_eq!(measurement["native_io"]["parallel_marker_tasks"], 0);
     assert_eq!(measurement["native_io"]["scheduler"]["dispatch_sorts"], 0);
     assert_eq!(measurement["native_io"]["scheduler"]["completion_sorts"], 0);
 }
@@ -3189,8 +3189,9 @@ fn bench_json_measures_checked_in_system_info_thread_fixture() {
     assert_eq!(measurement["deterministic"]["max_child_fibers_median"], 3);
     assert_eq!(measurement["native_io"]["system_info_ops"], 3);
     assert_eq!(measurement["native_io"]["completed_tasks"], 6);
-    assert_eq!(measurement["native_io"]["parallel_marker_tasks"], 3);
-    assert_eq!(measurement["native_io"]["parallel_workers"], 6);
+    assert_eq!(measurement["native_io"]["parallel_batches"], 0);
+    assert_eq!(measurement["native_io"]["parallel_marker_tasks"], 0);
+    assert_eq!(measurement["native_io"]["parallel_workers"], 0);
     assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 6);
     assert_eq!(measurement["native_io"]["scheduler"]["max_in_flight"], 6);
     assert_eq!(measurement["native_io"]["scheduler"]["dispatch_sorts"], 0);

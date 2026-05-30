@@ -165,7 +165,7 @@ fn complete_dispatched_tasks(
     host_system: HostSystemInfo,
     tasks: &[TaskSpec],
 ) -> TaskCompletions {
-    let parallel = tasks.len() > 1 && tasks.iter().all(can_complete_in_parallel);
+    let parallel = should_complete_in_parallel(tasks);
     let items = if parallel {
         tasks
             .par_iter()
@@ -178,6 +178,10 @@ fn complete_dispatched_tasks(
             .collect()
     };
     TaskCompletions { parallel, items }
+}
+
+fn should_complete_in_parallel(tasks: &[TaskSpec]) -> bool {
+    tasks.len() > 1 && tasks.iter().all(can_complete_in_parallel) && tasks.iter().any(is_io_task)
 }
 
 fn complete_task(

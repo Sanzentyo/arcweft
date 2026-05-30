@@ -497,6 +497,9 @@ Current high-confidence state:
   `parallel_io_tasks`, `parallel_marker_tasks`, and `parallel_workers` counters
   in `native_io`; write tasks stay ordered. The split counters keep actual
   adapter I/O separate from scheduler marker completions in thread-heavy flows.
+- The native bridge now keeps marker-only and system-info-only batches on the
+  serial path, avoiding Rayon worker-pool startup for cheap runtime bookkeeping
+  while preserving parallel completion for read-only file I/O batches.
 - `tests/fixtures/arcw/spec_should_pass/bench/001_thread_scheduling.arcw`
   provides a checked-in path-free bench fixture for direct CLI measurement of
   source-level `thread` fanout, child-fiber activity, and scheduler sort
