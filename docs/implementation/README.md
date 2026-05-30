@@ -173,6 +173,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - Borrow release uses unordered removal from the active-borrow list because
   active borrow order is not semantically meaningful, reducing element movement
   during drop-heavy borrow checking.
+- `arcw toolchain-profile` accepts warmup runs and reports warmup samples
+  separately from measured samples, so build-cache priming does not pollute
+  median timing while failures remain visible in JSON.
 - `arcweft-cli` keeps user-facing JSON report schemas in `output.rs`,
   including check, profile, verify-types, bench, runtime step, and compiler
   counter summaries. `main.rs` remains the command orchestration layer instead

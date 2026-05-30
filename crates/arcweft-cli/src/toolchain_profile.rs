@@ -10,6 +10,8 @@ pub(crate) struct ToolchainProfileOptions {
     pub(crate) commands: Vec<ToolchainProfileCommand>,
     #[arg(long, default_value_t = 1, value_parser = parse_positive_usize)]
     pub(crate) repeat: usize,
+    #[arg(long, default_value_t = 0)]
+    pub(crate) warmup: usize,
     #[arg(long)]
     pub(crate) dry_run: bool,
     #[arg(long)]
@@ -40,10 +42,12 @@ struct ToolchainCommandReport {
     status: &'static str,
     exit_code: Option<i32>,
     repeat: usize,
+    warmup: usize,
     elapsed_ns: u128,
     timing: ToolchainTimingReport,
     stdout_lines: usize,
     stderr_lines: usize,
+    warmup_samples: Vec<ToolchainCommandSample>,
     samples: Vec<ToolchainCommandSample>,
 }
 
@@ -103,7 +107,7 @@ const TEST_BUILD: ToolchainCommandSpec = ToolchainCommandSpec {
 pub(crate) fn run(options: &ToolchainProfileOptions) -> Result<(), ExitCode> {
     let reports = selected_commands(options)
         .into_iter()
-        .map(|spec| profile_command(spec, options.dry_run, options.repeat))
+        .map(|spec| profile_command(spec, options.dry_run, options.repeat, options.warmup))
         .collect::<Vec<_>>();
     let failed = reports
         .iter()
@@ -156,27 +160,40 @@ fn profile_command(
     spec: ToolchainCommandSpec,
     dry_run: bool,
     repeat: usize,
+    warmup: usize,
 ) -> ToolchainCommandReport {
     if dry_run {
+        let mut warmup_samples = Vec::with_capacity(warmup);
+        for index in 0..warmup {
+            warmup_samples.push(planned_command_sample(index));
+        }
         let mut samples = Vec::with_capacity(repeat);
         for index in 0..repeat {
-            samples.push(ToolchainCommandSample {
-                index,
-                status: "planned",
-                exit_code: None,
-                elapsed_ns: 0,
-                stdout_lines: 0,
-                stderr_lines: 0,
-            });
+            samples.push(planned_command_sample(index));
         }
-        return command_report_from_samples(spec, samples);
+        return command_report_from_samples(spec, warmup_samples, samples);
     }
 
+    let mut warmup_samples = Vec::with_capacity(warmup);
+    for index in 0..warmup {
+        warmup_samples.push(profile_command_sample(spec, index));
+    }
     let mut samples = Vec::with_capacity(repeat);
     for index in 0..repeat {
         samples.push(profile_command_sample(spec, index));
     }
-    command_report_from_samples(spec, samples)
+    command_report_from_samples(spec, warmup_samples, samples)
+}
+
+const fn planned_command_sample(index: usize) -> ToolchainCommandSample {
+    ToolchainCommandSample {
+        index,
+        status: "planned",
+        exit_code: None,
+        elapsed_ns: 0,
+        stdout_lines: 0,
+        stderr_lines: 0,
+    }
 }
 
 fn profile_command_sample(spec: ToolchainCommandSpec, index: usize) -> ToolchainCommandSample {
@@ -207,16 +224,31 @@ fn profile_command_sample(spec: ToolchainCommandSpec, index: usize) -> Toolchain
 
 fn command_report_from_samples(
     spec: ToolchainCommandSpec,
+    warmup_samples: Vec<ToolchainCommandSample>,
     samples: Vec<ToolchainCommandSample>,
 ) -> ToolchainCommandReport {
-    let status = aggregate_status(&samples);
-    let exit_code = samples
+    let status = aggregate_status(&warmup_samples, &samples);
+    let exit_code = warmup_samples
         .iter()
+        .chain(samples.iter())
         .find(|sample| sample.exit_code.is_some_and(|code| code != 0))
         .and_then(|sample| sample.exit_code)
-        .or_else(|| samples.iter().find_map(|sample| sample.exit_code));
-    let stdout_lines = samples.iter().map(|sample| sample.stdout_lines).sum();
-    let stderr_lines = samples.iter().map(|sample| sample.stderr_lines).sum();
+        .or_else(|| {
+            warmup_samples
+                .iter()
+                .chain(samples.iter())
+                .find_map(|sample| sample.exit_code)
+        });
+    let stdout_lines = warmup_samples
+        .iter()
+        .chain(samples.iter())
+        .map(|sample| sample.stdout_lines)
+        .sum();
+    let stderr_lines = warmup_samples
+        .iter()
+        .chain(samples.iter())
+        .map(|sample| sample.stderr_lines)
+        .sum();
     let mut elapsed = samples
         .iter()
         .map(|sample| sample.elapsed_ns)
@@ -229,22 +261,30 @@ fn command_report_from_samples(
         status,
         exit_code,
         repeat: samples.len(),
+        warmup: warmup_samples.len(),
         elapsed_ns: timing.median,
         timing,
         stdout_lines,
         stderr_lines,
+        warmup_samples,
         samples,
     }
 }
 
-fn aggregate_status(samples: &[ToolchainCommandSample]) -> &'static str {
-    if samples.iter().any(|sample| sample.status == "spawn_failed") {
+fn aggregate_status(
+    warmup_samples: &[ToolchainCommandSample],
+    samples: &[ToolchainCommandSample],
+) -> &'static str {
+    let mut all_samples = warmup_samples.iter().chain(samples.iter());
+    if all_samples.any(|sample| sample.status == "spawn_failed") {
         return "spawn_failed";
     }
-    if samples.iter().any(|sample| sample.status == "failed") {
+    let mut all_samples = warmup_samples.iter().chain(samples.iter());
+    if all_samples.any(|sample| sample.status == "failed") {
         return "failed";
     }
-    if samples.iter().all(|sample| sample.status == "planned") {
+    let mut all_samples = warmup_samples.iter().chain(samples.iter());
+    if all_samples.all(|sample| sample.status == "planned") {
         return "planned";
     }
     "ok"
@@ -288,12 +328,13 @@ fn parse_positive_usize(value: &str) -> Result<usize, String> {
 fn print_human_report(report: &ToolchainProfileReport) {
     for command in &report.commands {
         println!(
-            "{}: {} (median {} ns, min {} ns, max {} ns, repeat {}, stdout lines {}, stderr lines {})",
+            "{}: {} (median {} ns, min {} ns, max {} ns, warmup {}, repeat {}, stdout lines {}, stderr lines {})",
             command.label,
             command.status,
             command.elapsed_ns,
             command.timing.min,
             command.timing.max,
+            command.warmup,
             command.repeat,
             command.stdout_lines,
             command.stderr_lines

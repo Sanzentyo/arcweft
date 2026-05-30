@@ -46,6 +46,8 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
         .arg("test")
         .arg("--repeat")
         .arg("2")
+        .arg("--warmup")
+        .arg("1")
         .arg("--dry-run")
         .arg("--json")
         .output()
@@ -75,8 +77,16 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
     assert_eq!(json["commands"].as_array().unwrap().len(), 6);
     assert_eq!(json["commands"][0]["status"], "planned");
     assert_eq!(json["commands"][0]["repeat"], 2);
+    assert_eq!(json["commands"][0]["warmup"], 1);
     assert_eq!(json["commands"][0]["elapsed_ns"], 0);
     assert_eq!(json["commands"][0]["timing"]["median"], 0);
+    assert_eq!(
+        json["commands"][0]["warmup_samples"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
     assert_eq!(json["commands"][0]["samples"].as_array().unwrap().len(), 2);
     assert_eq!(
         json["commands"][0]["argv"],
