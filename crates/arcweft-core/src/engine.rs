@@ -187,18 +187,27 @@ impl Default for FlowCursor {
 
 impl Engine {
     pub fn new(plan: RuntimePlan) -> Self {
-        let cursor = plan.entry_cursor();
-        let status = if plan.is_empty() {
-            FlowFiberStatus::Done(FlowExit::Done)
-        } else {
-            FlowFiberStatus::Running
-        };
-        let flow_positions = plan
+        let flow_positions: BTreeMap<_, _> = plan
             .flows
             .iter()
             .enumerate()
             .map(|(index, flow)| (flow.id.clone(), index))
             .collect();
+        let cursor = plan.entry_flow.as_ref().and_then(|entry_flow| {
+            flow_positions
+                .get(entry_flow)
+                .copied()
+                .map(|flow_index| FlowCursor {
+                    flow: entry_flow.clone(),
+                    flow_index,
+                    op_index: 0,
+                })
+        });
+        let status = if plan.is_empty() {
+            FlowFiberStatus::Done(FlowExit::Done)
+        } else {
+            FlowFiberStatus::Running
+        };
         let source_states = plan
             .source_plans
             .iter()

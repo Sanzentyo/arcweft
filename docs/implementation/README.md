@@ -161,6 +161,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - AOT linear dispatch checks use that cursor index to read the corresponding
   AOT flow block directly, keeping the hot eligibility check aligned with the
   runtime-plan flow vector.
+- `RuntimePlan` no longer constructs engine cursors. Engine initialization owns
+  cursor construction from the flow-position map, keeping plan data independent
+  of executor state while avoiding a second entry-flow scan.
 - `arcweft-cli` keeps user-facing JSON report schemas in `output.rs`,
   including check, profile, verify-types, bench, runtime step, and compiler
   counter summaries. `main.rs` remains the command orchestration layer instead
