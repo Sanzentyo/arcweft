@@ -15,6 +15,7 @@ pub(crate) struct ToolchainProfileOptions {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub(crate) enum ToolchainProfileCommand {
+    Fmt,
     Check,
     Clippy,
     Test,
@@ -46,6 +47,11 @@ struct ToolchainCommandSpec {
 const CHECK: ToolchainCommandSpec = ToolchainCommandSpec {
     label: "cargo_check_workspace",
     args: &["check", "--workspace"],
+};
+
+const FMT: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "cargo_fmt_all_check",
+    args: &["fmt", "--all", "--check"],
 };
 
 const CLIPPY: ToolchainCommandSpec = ToolchainCommandSpec {
@@ -99,6 +105,7 @@ fn selected_commands(options: &ToolchainProfileOptions) -> Vec<ToolchainCommandS
 impl From<ToolchainProfileCommand> for ToolchainCommandSpec {
     fn from(command: ToolchainProfileCommand) -> Self {
         match command {
+            ToolchainProfileCommand::Fmt => FMT,
             ToolchainProfileCommand::Check => CHECK,
             ToolchainProfileCommand::Clippy => CLIPPY,
             ToolchainProfileCommand::Test => TEST,

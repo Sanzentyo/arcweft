@@ -108,9 +108,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   of also owning these report data models.
 - `arcw toolchain-profile` measures workspace toolchain commands through the
   CLI layer without recording host absolute paths in JSON. It currently supports
-  `--command check`, `--command clippy`, and `--command test`, with dry-run
-  planning for regression tests and real elapsed-time reports for local
-  performance tracking.
+  `--command fmt`, `--command check`, `--command clippy`, and `--command test`,
+  with dry-run planning for regression tests and real elapsed-time reports for
+  local performance tracking.
 - No renderer, Servo, audio, camera, USB, or MCP implementation.
 
 ## Files
@@ -126,6 +126,7 @@ Last verified for the active workspace after enabling the spec fixture gates:
 - `cargo fmt --all`
 - `cargo test --workspace`
 - `cargo clippy --workspace --all-targets --all-features`
+- `arcw toolchain-profile --command fmt --json`
 - `arcw toolchain-profile --command check --json`
 - `arcw toolchain-profile --command clippy --json`
 - `arcw jit check --json`

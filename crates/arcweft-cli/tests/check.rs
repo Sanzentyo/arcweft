@@ -33,6 +33,8 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("toolchain-profile")
         .arg("--command")
+        .arg("fmt")
+        .arg("--command")
         .arg("check")
         .arg("--command")
         .arg("clippy")
@@ -56,10 +58,14 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("toolchain profile output is structured JSON");
     assert_eq!(json["status"], "ok");
-    assert_eq!(json["commands"].as_array().unwrap().len(), 3);
+    assert_eq!(json["commands"].as_array().unwrap().len(), 4);
     assert_eq!(json["commands"][0]["status"], "planned");
     assert_eq!(
-        json["commands"][1]["argv"],
+        json["commands"][0]["argv"],
+        serde_json::json!(["cargo", "fmt", "--all", "--check"])
+    );
+    assert_eq!(
+        json["commands"][2]["argv"],
         serde_json::json!([
             "cargo",
             "clippy",
