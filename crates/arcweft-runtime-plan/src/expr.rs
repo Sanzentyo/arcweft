@@ -26,9 +26,7 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
         Expr::EntityRef(entity) => RuntimeExpr::EntityRef(entity.body().to_owned()),
         Expr::Path(path) => RuntimeExpr::Local(path.clone()),
         Expr::Tuple(items) => RuntimeExpr::Tuple(items.iter().map(lower_runtime_expr).collect()),
-        Expr::BracketSeq(items) => {
-            RuntimeExpr::BracketSeq(items.iter().map(lower_runtime_expr).collect())
-        }
+        Expr::BracketSeq(items) => lower_runtime_bracket_seq(items),
         Expr::ArrayRepeat { value, len } => lower_runtime_array_repeat(value, len),
         Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => RuntimeExpr::Record(
             fields
@@ -123,11 +121,7 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
             .map(lower_runtime_expr_strict)
             .collect::<Result<Vec<_>, _>>()
             .map(RuntimeExpr::Tuple),
-        Expr::BracketSeq(items) => items
-            .iter()
-            .map(lower_runtime_expr_strict)
-            .collect::<Result<Vec<_>, _>>()
-            .map(RuntimeExpr::BracketSeq),
+        Expr::BracketSeq(items) => lower_runtime_bracket_seq_strict(items),
         Expr::ArrayRepeat { value, len } => lower_runtime_array_repeat_strict(value, len),
         Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => fields
             .iter()
@@ -204,6 +198,37 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
         | Expr::Placeholder(_)
         | Expr::Raw(_) => unsupported_strict_runtime_expr(expr),
     }
+}
+
+fn lower_runtime_bracket_seq(items: &[Expr]) -> RuntimeExpr {
+    let lowered = items.iter().map(lower_runtime_expr).collect::<Vec<_>>();
+    fold_value_sequence(lowered)
+}
+
+fn lower_runtime_bracket_seq_strict(items: &[Expr]) -> Result<RuntimeExpr, String> {
+    let lowered = items
+        .iter()
+        .map(lower_runtime_expr_strict)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(fold_value_sequence(lowered))
+}
+
+fn fold_value_sequence(items: Vec<RuntimeExpr>) -> RuntimeExpr {
+    if !items
+        .iter()
+        .all(|item| matches!(item, RuntimeExpr::Value(_)))
+    {
+        return RuntimeExpr::BracketSeq(items);
+    }
+    RuntimeExpr::Value(RuntimeValue::BracketSeq(
+        items
+            .into_iter()
+            .filter_map(|item| match item {
+                RuntimeExpr::Value(value) => Some(value),
+                _ => None,
+            })
+            .collect(),
+    ))
 }
 
 fn runtime_method_name(method: &str) -> &str {
@@ -721,6 +746,30 @@ mod tests {
                     RuntimeValue::Int(2),
                     RuntimeValue::Int(2)
                 ]
+        ));
+    }
+
+    #[test]
+    fn strict_runtime_bracket_seq_folds_literal_values() {
+        let expr = Expr::BracketSeq(vec![
+            Expr::Literal(Literal::Int {
+                raw: "1i64".to_owned(),
+                value: 1,
+                suffix: Some("i64".to_owned()),
+            }),
+            Expr::Literal(Literal::Int {
+                raw: "2i64".to_owned(),
+                value: 2,
+                suffix: Some("i64".to_owned()),
+            }),
+        ]);
+
+        let lowered = lower_runtime_expr_strict(&expr).expect("bracket seq lowers");
+
+        assert!(matches!(
+            lowered,
+            RuntimeExpr::Value(RuntimeValue::BracketSeq(items))
+                if items == vec![RuntimeValue::Int(1), RuntimeValue::Int(2)]
         ));
     }
 }

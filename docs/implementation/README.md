@@ -673,6 +673,10 @@ Current high-confidence state:
   covers the complementary non-repeated map/sum path so JIT/AOT/VM batch
   input packing, result-copy elimination, and runtime type validation work can
   be compared without triggering the repeated-row shortcut.
+- Literal bracket sequences now lower to a single `RuntimeValue::BracketSeq`
+  when every element is already a runtime value, so non-repeated literal input
+  benches keep runtime type validation proportional to the flow shape instead
+  of the literal element count.
 - Fast-path scalar pure calls read local integer arguments by borrow when
   packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
   VM/AOT/JIT pure backends.

@@ -3426,7 +3426,7 @@ fn bench_json_measures_checked_in_nonuniform_map_pure_batch_fixture() {
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
     assert_eq!(
         json["compiler"]["runtime_type_validation"]["expressions"],
-        134
+        6
     );
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["deterministic"]["pure_batch_calls_median"], 1);
