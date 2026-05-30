@@ -3263,6 +3263,46 @@ fn bench_json_measures_checked_in_inferred_pure_jit_fixture() {
 }
 
 #[test]
+fn bench_json_measures_checked_in_linear_aot_fixture() {
+    let path =
+        workspace_root().join("tests/fixtures/arcw/spec_should_pass/bench/006_linear_aot.arcw");
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--executor")
+        .arg("aot")
+        .arg("--iterations")
+        .arg("4")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--steps")
+        .arg("8")
+        .arg("--max-ops")
+        .arg("8")
+        .arg("--json")
+        .output()
+        .expect("arcw bench measures checked-in linear AOT fixture");
+
+    assert!(
+        output.status.success(),
+        "checked-in linear AOT bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&workspace_root().display().to_string()),
+        "linear AOT bench JSON must not record the workspace path: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_eq!(measurement["executor"], "aot");
+    assert_eq!(measurement["executor_stats"]["aot_fast_path_ops"], 3);
+    assert_eq!(measurement["deterministic"]["executed_ops_median"], 3);
+    assert_eq!(measurement["deterministic"]["line_effects_median"], 1);
+}
+
+#[test]
 fn bench_json_measures_pure_helper_with_vm_aot_and_jit() {
     let path = temp_arcw(
         "script-bench-pure-helper",
