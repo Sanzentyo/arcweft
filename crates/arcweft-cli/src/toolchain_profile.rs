@@ -19,6 +19,8 @@ pub(crate) struct ToolchainProfileOptions {
 pub(crate) enum ToolchainProfileCommand {
     Fmt,
     Check,
+    CheckFull,
+    TestBuild,
     Clippy,
     Test,
 }
@@ -71,6 +73,11 @@ const CHECK: ToolchainCommandSpec = ToolchainCommandSpec {
     args: &["check", "--workspace"],
 };
 
+const CHECK_FULL: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "cargo_check_workspace_all_targets_all_features",
+    args: &["check", "--workspace", "--all-targets", "--all-features"],
+};
+
 const FMT: ToolchainCommandSpec = ToolchainCommandSpec {
     label: "cargo_fmt_all_check",
     args: &["fmt", "--all", "--check"],
@@ -84,6 +91,11 @@ const CLIPPY: ToolchainCommandSpec = ToolchainCommandSpec {
 const TEST: ToolchainCommandSpec = ToolchainCommandSpec {
     label: "cargo_test_workspace",
     args: &["test", "--workspace"],
+};
+
+const TEST_BUILD: ToolchainCommandSpec = ToolchainCommandSpec {
+    label: "cargo_test_workspace_no_run",
+    args: &["test", "--workspace", "--no-run"],
 };
 
 pub(crate) fn run(options: &ToolchainProfileOptions) -> Result<(), ExitCode> {
@@ -129,6 +141,8 @@ impl From<ToolchainProfileCommand> for ToolchainCommandSpec {
         match command {
             ToolchainProfileCommand::Fmt => FMT,
             ToolchainProfileCommand::Check => CHECK,
+            ToolchainProfileCommand::CheckFull => CHECK_FULL,
+            ToolchainProfileCommand::TestBuild => TEST_BUILD,
             ToolchainProfileCommand::Clippy => CLIPPY,
             ToolchainProfileCommand::Test => TEST,
         }

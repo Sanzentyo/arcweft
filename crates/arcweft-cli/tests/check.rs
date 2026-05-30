@@ -37,7 +37,11 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
         .arg("--command")
         .arg("check")
         .arg("--command")
+        .arg("check-full")
+        .arg("--command")
         .arg("clippy")
+        .arg("--command")
+        .arg("test-build")
         .arg("--command")
         .arg("test")
         .arg("--repeat")
@@ -60,7 +64,7 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("toolchain profile output is structured JSON");
     assert_eq!(json["status"], "ok");
-    assert_eq!(json["commands"].as_array().unwrap().len(), 4);
+    assert_eq!(json["commands"].as_array().unwrap().len(), 6);
     assert_eq!(json["commands"][0]["status"], "planned");
     assert_eq!(json["commands"][0]["repeat"], 2);
     assert_eq!(json["commands"][0]["elapsed_ns"], 0);
@@ -74,11 +78,25 @@ fn toolchain_profile_json_plans_path_free_workspace_commands() {
         json["commands"][2]["argv"],
         serde_json::json!([
             "cargo",
+            "check",
+            "--workspace",
+            "--all-targets",
+            "--all-features"
+        ])
+    );
+    assert_eq!(
+        json["commands"][3]["argv"],
+        serde_json::json!([
+            "cargo",
             "clippy",
             "--workspace",
             "--all-targets",
             "--all-features"
         ])
+    );
+    assert_eq!(
+        json["commands"][4]["argv"],
+        serde_json::json!(["cargo", "test", "--workspace", "--no-run"])
     );
 }
 

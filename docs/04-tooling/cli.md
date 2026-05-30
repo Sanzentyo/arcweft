@@ -339,9 +339,10 @@ adapter work; adapter-only sections are reported as skipped.
 
 `arcw toolchain-profile` measures cargo-based workspace toolchain commands
 without recording host paths. `--command fmt`, `--command check`,
-`--command clippy`, and `--command test` can be repeated with `--repeat N`; JSON
-reports per-sample timings plus median/min/max summaries for compile,
-typecheck, borrow-check, lint, and test regression tracking.
+`--command check-full`, `--command clippy`, `--command test-build`, and
+`--command test` can be repeated with `--repeat N`; JSON reports per-sample
+timings plus median/min/max summaries for compile, typecheck, borrow-check,
+lint, test build, and test regression tracking.
 
 `arcw profile` reports compiler phase timings plus deterministic compiler and VM counters.
 The JSON includes read, parse, lint, HIR lowering, reference resolution,
