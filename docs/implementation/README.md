@@ -615,6 +615,9 @@ Current high-confidence state:
   a fresh pure-function request and binding vector per iteration. The
   conformance check still uses the full VM backend, while timings better
   isolate VM expression evaluation from benchmark harness allocation.
+- The scalar JIT measurement loop in `arcw jit check` now calls compiled
+  helpers through the same fixed `RuntimeI64Args` boundary used by runtime flow
+  pure calls, avoiding per-iteration slice dispatch in the CLI harness.
 - The CLI regression harness now rejects generated `.arcweft` directories under
   checked-in fixtures and scans non-review source/docs/tests for removed
   whitespace-command DSL or compatibility-shim text. Run fixtures execute from

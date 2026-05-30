@@ -13,8 +13,8 @@ use arcweft_core::step::{
 use arcweft_core::{
     pure::{
         AotPureFunctionBackend, AotPureI64Plan, PureFunctionBackendKind, PureFunctionRequest,
-        PureFunctionResult, PureFunctionStats, RuntimePureCallBackend, VmPureFunctionBackend,
-        VmPureFunctionScratch, compare_pure_function_backend,
+        PureFunctionResult, PureFunctionStats, RuntimeI64Args, RuntimePureCallBackend,
+        VmPureFunctionBackend, VmPureFunctionScratch, compare_pure_function_backend,
     },
     value::{RuntimeBinaryOp, RuntimeBinding, RuntimeExpr, RuntimeUnaryOp, RuntimeValue},
 };
@@ -866,7 +866,7 @@ fn warmup_jit_check_jit(compiled: &CompiledPureI64Inputs, warmup: usize, input_s
     let arity = compiled.param_names().len();
     for index in 0..warmup {
         let inputs = jit_check_input_array(input_seed, 0, index, arity);
-        let _ = compiled.call(&inputs[..arity]);
+        let _ = compiled.call_i64_args(RuntimeI64Args::new(inputs, arity));
     }
 }
 
@@ -879,10 +879,12 @@ fn measure_jit_check_jit(
     let arity = compiled.param_names().len();
     measure_repeated(samples, iterations, |sample, index| {
         let inputs = jit_check_input_array(input_seed, sample, index, arity);
-        compiled.call(&inputs[..arity]).map_err(|error| {
-            eprintln!("error: JIT evaluation failed: {error}");
-            ExitCode::FAILURE
-        })
+        compiled
+            .call_i64_args(RuntimeI64Args::new(inputs, arity))
+            .map_err(|error| {
+                eprintln!("error: JIT evaluation failed: {error}");
+                ExitCode::FAILURE
+            })
     })
 }
 
