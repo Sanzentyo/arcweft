@@ -264,12 +264,7 @@ impl Engine {
         {
             let mut values = [0_i64; RuntimeI64Args::MAX];
             for (index, arg) in args.iter().enumerate() {
-                match self.evaluate_expr_with_backend(arg, pure_backend)? {
-                    RuntimeValue::Int(value) => values[index] = value,
-                    value => {
-                        return Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value)));
-                    }
-                }
+                values[index] = self.evaluate_i64_arg_with_backend(arg, pure_backend)?;
             }
             let helper = &self.plan.pure_helpers[helper_id.0];
             if let Some(value) =
@@ -281,6 +276,25 @@ impl Engine {
         let args = self.evaluate_call_args(args, pure_backend)?;
         let helper = &self.plan.pure_helpers[helper_id.0];
         pure_backend.call_values(helper, &args)
+    }
+
+    fn evaluate_i64_arg_with_backend(
+        &mut self,
+        expr: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<i64, RuntimeEvalError> {
+        match expr {
+            RuntimeExpr::Value(RuntimeValue::Int(value)) => Ok(*value),
+            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
+                Some(RuntimeValue::Int(value)) => Ok(*value),
+                Some(value) => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
+                None => Err(RuntimeEvalError::UnknownBinding(name.clone())),
+            },
+            _ => match self.evaluate_expr_with_backend(expr, pure_backend)? {
+                RuntimeValue::Int(value) => Ok(value),
+                value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
+            },
+        }
     }
 
     fn evaluate_method_call_expr(
