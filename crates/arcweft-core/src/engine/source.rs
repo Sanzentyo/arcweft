@@ -100,13 +100,11 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) {
-        let previous = self.fiber.env.clone();
-        self.fiber.env.push_scope();
-        self.fiber.env.bind_all(bindings);
-        for op in ops {
-            self.execute_source_op(source, op, output, pure_backend);
-        }
-        self.fiber.env = previous;
+        self.with_temp_bindings(bindings, |this| {
+            for op in ops {
+                this.execute_source_op(source, op, output, pure_backend);
+            }
+        });
     }
 
     pub(super) fn execute_source_op(

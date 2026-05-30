@@ -393,7 +393,7 @@ impl Engine {
         }
     }
 
-    fn with_temp_bindings<T>(
+    pub(super) fn with_temp_bindings<T>(
         &mut self,
         bindings: impl IntoIterator<Item = RuntimeBinding>,
         f: impl FnOnce(&mut Self) -> T,

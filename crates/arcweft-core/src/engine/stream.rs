@@ -150,19 +150,18 @@ impl Engine {
             return true;
         };
         while let Some(item) = self.pop_queue_item(&source_key) {
-            let previous = self.fiber.env.clone();
-            self.fiber.env.push_scope();
             match match_runtime_pattern(args.pattern, item.value()) {
                 Ok(Some(bindings)) => {
-                    self.fiber.env.bind_all(bindings);
-                    if !self.execute_stream_ops(
-                        args.stream,
-                        args.body,
-                        budget,
-                        output,
-                        pure_backend,
-                    ) {
-                        self.fiber.env = previous;
+                    let should_continue = self.with_temp_bindings(bindings, |this| {
+                        this.execute_stream_ops(
+                            args.stream,
+                            args.body,
+                            budget,
+                            output,
+                            pure_backend,
+                        )
+                    });
+                    if !should_continue {
                         return false;
                     }
                 }
@@ -171,7 +170,6 @@ impl Engine {
                 }),
                 Err(error) => Self::diagnose_runtime_error(error, output),
             }
-            self.fiber.env = previous;
             if *budget == 0 {
                 break;
             }
@@ -226,21 +224,21 @@ impl Engine {
             let Ok(Some(bindings)) = match_runtime_pattern(&arm.pattern, &value) else {
                 continue;
             };
-            let previous = self.fiber.env.clone();
-            self.fiber.env.bind_all(bindings);
-            let guard_matches = arm.guard.as_ref().map_or(Ok(true), |guard| {
-                self.evaluate_bool_with_backend(guard, pure_backend)
-            });
+            let guard_matches = if let Some(guard) = arm.guard.as_ref() {
+                self.with_temp_bindings(bindings.clone(), |this| {
+                    this.evaluate_bool_with_backend(guard, pure_backend)
+                })
+            } else {
+                Ok(true)
+            };
             if matches!(guard_matches, Ok(true)) {
-                let should_continue =
-                    self.execute_stream_ops(stream, &arm.ops, budget, output, pure_backend);
-                self.fiber.env = previous;
-                return should_continue;
+                return self.with_temp_bindings(bindings, |this| {
+                    this.execute_stream_ops(stream, &arm.ops, budget, output, pure_backend)
+                });
             }
             if let Err(error) = guard_matches {
                 Self::diagnose_runtime_error(error, output);
             }
-            self.fiber.env = previous;
         }
         true
     }

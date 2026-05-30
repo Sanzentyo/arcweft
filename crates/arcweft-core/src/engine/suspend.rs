@@ -1,8 +1,9 @@
 use super::{
     AwaitManyInFlight, AwaitManyState, AwaitState, AwaitTarget, CancelScopeId, ChoiceRuntimeOption,
-    ChoiceState, Engine, FlowEvent, FlowFiberStatus, LineEffectRequest, RuntimeDiagnostic,
-    RuntimeEvalError, RuntimeFieldValue, RuntimePayload, RuntimeStepInput, RuntimeStepOutput,
-    RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
+    ChoiceState, Engine, FlowEvent, FlowFiberStatus, LineEffectRequest, RuntimeBinding,
+    RuntimeDiagnostic, RuntimeEvalError, RuntimeFieldValue, RuntimePayload, RuntimeStepInput,
+    RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+    TaskSpec,
 };
 use crate::pure::RuntimePureCallBackend;
 use crate::task::{
@@ -326,21 +327,19 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Option<TaskSpec> {
-        let previous = self.fiber.env.clone();
-        self.fiber.env.push_scope();
-        self.fiber
-            .env
-            .set(target.item_binding.clone(), item.clone());
-        let request = match self.evaluate_host_task_request_template(&target.request, pure_backend)
-        {
+        let request = match self.with_temp_bindings(
+            [RuntimeBinding {
+                name: target.item_binding.clone(),
+                value: item.clone(),
+            }],
+            |this| this.evaluate_host_task_request_template(&target.request, pure_backend),
+        ) {
             Ok(request) => request,
             Err(error) => {
-                self.fiber.env = previous;
                 self.fail_eval(format!("await many item {index}: {error}"), output);
                 return None;
             }
         };
-        self.fiber.env = previous;
         Some(TaskSpec::new(
             task.clone(),
             TaskKey(request.debug_label()),
