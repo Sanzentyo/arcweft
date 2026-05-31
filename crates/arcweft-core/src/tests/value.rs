@@ -2,9 +2,9 @@ use crate::{
     plan::RuntimePureHelperId,
     time::LogicalDuration,
     value::{
-        DenseSeqKind, RuntimeBinding, RuntimeEnv, RuntimeExpr, RuntimeF32, RuntimeF64,
-        RuntimeFieldValue, RuntimeSeq, RuntimeValue, runtime_sequence_dense_bool,
-        runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
+        DenseSeqKind, RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeExpr, RuntimeF32,
+        RuntimeF64, RuntimeFieldValue, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
+        runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
         runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
         runtime_sequence_dense_f32, runtime_sequence_dense_f64,
         runtime_sequence_dense_float_literals, runtime_sequence_dense_i8,
@@ -107,6 +107,14 @@ fn runtime_expr_display_is_stable_diagnostic_label() {
         .to_string(),
         "pure#7()"
     );
+}
+
+#[test]
+fn runtime_operator_display_uses_surface_labels() {
+    assert_eq!(RuntimeUnaryOp::Neg.to_string(), "-");
+    assert_eq!(RuntimeUnaryOp::Not.to_string(), "!");
+    assert_eq!(RuntimeBinaryOp::Add.to_string(), "+");
+    assert_eq!(RuntimeBinaryOp::And.to_string(), "&&");
 }
 
 #[test]

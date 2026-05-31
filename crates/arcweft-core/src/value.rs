@@ -1540,6 +1540,18 @@ impl fmt::Display for RuntimeExpr {
     }
 }
 
+impl fmt::Display for RuntimeUnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(runtime_unary_op_label(*self))
+    }
+}
+
+impl fmt::Display for RuntimeBinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(runtime_binary_op_label(*self))
+    }
+}
+
 /// One value-producing `match` arm in a runtime expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeExprMatchArm {

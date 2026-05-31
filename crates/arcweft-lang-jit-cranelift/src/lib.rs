@@ -848,7 +848,7 @@ fn lower_expr(
                 RuntimeBinaryOp::Mul => Ok(builder.ins().imul(lhs, rhs)),
                 RuntimeBinaryOp::Div => Ok(builder.ins().sdiv(lhs, rhs)),
                 _ => Err(CraneliftJitError::UnsupportedExpr(format!(
-                    "binary operator `{op:?}` is outside the JIT subset"
+                    "binary operator `{op}` is outside the JIT subset"
                 ))),
             }
         }
@@ -867,7 +867,7 @@ fn lower_expr(
             "call `{callee}` is outside the JIT subset"
         ))),
         other => Err(CraneliftJitError::UnsupportedExpr(format!(
-            "expression `{other:?}` is outside the JIT subset"
+            "expression `{other}` is outside the JIT subset"
         ))),
     }
 }
@@ -916,7 +916,7 @@ fn lower_condition(
             stats.evaluated_binary_ops += 1;
             let Some(condition) = int_condition(*op) else {
                 return Err(CraneliftJitError::UnsupportedExpr(format!(
-                    "condition operator `{op:?}` is outside the JIT subset"
+                    "condition operator `{op}` is outside the JIT subset"
                 )));
             };
             let lhs = lower_expr(builder, bindings, lhs, stats)?;
@@ -924,7 +924,7 @@ fn lower_condition(
             Ok(builder.ins().icmp(condition, lhs, rhs))
         }
         other => Err(CraneliftJitError::UnsupportedExpr(format!(
-            "condition `{other:?}` is outside the JIT subset"
+            "condition `{other}` is outside the JIT subset"
         ))),
     }
 }
@@ -1254,5 +1254,38 @@ mod tests {
             .expect_err("string-heavy helpers are outside the JIT subset");
 
         assert!(matches!(error, CraneliftJitError::UnsupportedExpr(_)));
+    }
+
+    #[test]
+    fn cranelift_jit_unsupported_expr_uses_display_label() {
+        let request = PureFunctionRequest::new("tuple_value", RuntimeExpr::Tuple(vec![]), []);
+
+        let error = CraneliftPureFunctionBackend
+            .evaluate_jit(&request)
+            .expect_err("tuple helpers are outside the current JIT subset")
+            .to_string();
+
+        assert!(error.contains("expression `tuple/0` is outside the JIT subset"));
+        assert!(!error.contains("RuntimeExpr"));
+    }
+
+    #[test]
+    fn cranelift_jit_unsupported_operator_uses_display_label() {
+        let request = PureFunctionRequest::new(
+            "bool_and",
+            RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(1))),
+                op: RuntimeBinaryOp::And,
+                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(1))),
+            },
+            [],
+        );
+
+        let error = CraneliftPureFunctionBackend
+            .evaluate_jit(&request)
+            .expect_err("boolean operators are outside the i64 JIT subset")
+            .to_string();
+
+        assert!(error.contains("binary operator `&&` is outside the JIT subset"));
     }
 }
