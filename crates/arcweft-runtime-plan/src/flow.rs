@@ -55,7 +55,7 @@ pub struct RuntimePlanLowerStats {
     pub pure_rewrite_expr_visits: usize,
     pub optimized_flows: usize,
     pub optimized_op_slices: usize,
-    pub local_use_suffix_tables: usize,
+    pub local_use_tail_scans: usize,
     pub local_use_scan_ops: usize,
     pub sequence_map_sum_fusions: usize,
     pub map_sum_fusions: usize,
@@ -221,24 +221,21 @@ fn optimize_nested_flow_ops(op: &mut FlowOp, stats: &mut RuntimePlanLowerStats) 
 
 fn optimize_local_map_sum_lets(ops: &mut Vec<FlowOp>, stats: &mut RuntimePlanLowerStats) {
     let original = std::mem::take(ops);
-    let suffix_uses = flow_op_suffix_local_uses(&original, stats);
     let mut index = 0;
     while index < original.len() {
-        if let Some(op) = fuse_sequence_map_sum_window(&original, &suffix_uses, index, stats) {
+        if let Some(op) = fuse_sequence_map_sum_window(&original, index, stats) {
             stats.sequence_map_sum_fusions += 1;
             ops.push(op);
             index += 3;
             continue;
         }
-        if let Some(op) = fuse_map_sum_window(&original, &suffix_uses, index, stats) {
+        if let Some(op) = fuse_map_sum_window(&original, index, stats) {
             stats.map_sum_fusions += 1;
             ops.push(op);
             index += 2;
             continue;
         }
-        if let Some(op) =
-            inline_sequence_map_sum_source_window(&original, &suffix_uses, index, stats)
-        {
+        if let Some(op) = inline_sequence_map_sum_source_window(&original, index, stats) {
             stats.sequence_source_inlines += 1;
             ops.push(op);
             index += 2;
@@ -251,7 +248,6 @@ fn optimize_local_map_sum_lets(ops: &mut Vec<FlowOp>, stats: &mut RuntimePlanLow
 
 fn fuse_sequence_map_sum_window(
     ops: &[FlowOp],
-    suffix_uses: &[BTreeMap<&str, usize>],
     index: usize,
     stats: &mut RuntimePlanLowerStats,
 ) -> Option<FlowOp> {
@@ -270,10 +266,10 @@ fn fuse_sequence_map_sum_window(
     if local_uses_in_op(ops.get(index + 2)?, sum_source, stats) != 1 {
         return None;
     }
-    if local_uses_after(suffix_uses, index + 1, sequence_name) != 0 {
+    if !local_is_unused_after_op(ops, index + 1, sequence_name, stats) {
         return None;
     }
-    if local_uses_after(suffix_uses, index + 2, sum_source) != 0 {
+    if !local_is_unused_after_op(ops, index + 2, sum_source, stats) {
         return None;
     }
     let mut fused_map = map_expr.clone();
@@ -288,13 +284,14 @@ fn fuse_sequence_map_sum_window(
 
 fn fuse_map_sum_window(
     ops: &[FlowOp],
-    suffix_uses: &[BTreeMap<&str, usize>],
     index: usize,
     stats: &mut RuntimePlanLowerStats,
 ) -> Option<FlowOp> {
     let (sequence_name, map_expr) = map_let_binding(ops.get(index)?)?;
     let (sum_pattern, sum_source) = local_sum_let_binding(ops.get(index + 1)?)?;
-    if sequence_name != sum_source || local_uses_after(suffix_uses, index + 1, sequence_name) != 0 {
+    if sequence_name != sum_source
+        || !local_is_unused_after_op(ops, index + 1, sequence_name, stats)
+    {
         return None;
     }
     if local_uses_in_op(ops.get(index + 1)?, sequence_name, stats) != 1 {
@@ -310,12 +307,11 @@ fn fuse_map_sum_window(
 
 fn inline_sequence_map_sum_source_window(
     ops: &[FlowOp],
-    suffix_uses: &[BTreeMap<&str, usize>],
     index: usize,
     stats: &mut RuntimePlanLowerStats,
 ) -> Option<FlowOp> {
     let (sequence_name, source_expr) = sequence_let_binding(ops.get(index)?)?;
-    if local_uses_after(suffix_uses, index + 1, sequence_name) != 0 {
+    if !local_is_unused_after_op(ops, index + 1, sequence_name, stats) {
         return None;
     }
     if local_uses_in_op(ops.get(index + 1)?, sequence_name, stats) != 1 {
@@ -428,33 +424,22 @@ fn runtime_pattern_binding_name_from_op(op: &FlowOp) -> Option<&str> {
     runtime_pattern_binding_name(pattern)
 }
 
-fn flow_op_suffix_local_uses<'a>(
-    ops: &'a [FlowOp],
+fn local_is_unused_after_op(
+    ops: &[FlowOp],
+    op_index: usize,
+    name: &str,
     stats: &mut RuntimePlanLowerStats,
-) -> Vec<BTreeMap<&'a str, usize>> {
-    stats.local_use_suffix_tables += 1;
-    let mut suffix = vec![BTreeMap::new(); ops.len() + 1];
-    for index in (0..ops.len()).rev() {
-        suffix[index] = suffix[index + 1].clone();
+) -> bool {
+    stats.local_use_tail_scans += 1;
+    ops.iter().skip(op_index + 1).all(|op| {
         stats.local_use_scan_ops += 1;
-        count_flow_op_local_uses(&ops[index], &mut suffix[index]);
-    }
-    suffix
-}
-
-fn local_uses_after(suffix_uses: &[BTreeMap<&str, usize>], op_index: usize, name: &str) -> usize {
-    suffix_uses
-        .get(op_index + 1)
-        .and_then(|uses| uses.get(name))
-        .copied()
-        .unwrap_or_default()
+        count_flow_op_local_uses_by_name(op, name) == 0
+    })
 }
 
 fn local_uses_in_op(op: &FlowOp, name: &str, stats: &mut RuntimePlanLowerStats) -> usize {
-    let mut uses = BTreeMap::new();
     stats.local_use_scan_ops += 1;
-    count_flow_op_local_uses(op, &mut uses);
-    uses.get(name).copied().unwrap_or_default()
+    count_flow_op_local_uses_by_name(op, name)
 }
 
 fn count_flow_ops_pure_calls(ops: &[FlowOp]) -> usize {
@@ -626,26 +611,26 @@ fn count_runtime_expr_pure_calls(expr: &RuntimeExpr) -> usize {
     }
 }
 
-fn count_flow_ops_local_uses<'a>(ops: &'a [FlowOp], uses: &mut BTreeMap<&'a str, usize>) {
-    for op in ops {
-        count_flow_op_local_uses(op, uses);
-    }
+fn count_flow_ops_local_uses_by_name(ops: &[FlowOp], name: &str) -> usize {
+    ops.iter()
+        .map(|op| count_flow_op_local_uses_by_name(op, name))
+        .sum()
 }
 
-fn count_flow_op_local_uses<'a>(op: &'a FlowOp, uses: &mut BTreeMap<&'a str, usize>) {
+fn count_flow_op_local_uses_by_name(op: &FlowOp, name: &str) -> usize {
     match op {
         FlowOp::LetElse { expr, else_ops, .. } => {
-            count_runtime_expr_local_uses(expr, uses);
-            count_flow_ops_local_uses(else_ops, uses);
+            count_runtime_expr_local_uses_by_name(expr, name)
+                + count_flow_ops_local_uses_by_name(else_ops, name)
         }
         FlowOp::If {
             condition,
             then_ops,
             else_ops,
         } => {
-            count_runtime_expr_local_uses(condition, uses);
-            count_flow_ops_local_uses(then_ops, uses);
-            count_flow_ops_local_uses(else_ops, uses);
+            count_runtime_expr_local_uses_by_name(condition, name)
+                + count_flow_ops_local_uses_by_name(then_ops, name)
+                + count_flow_ops_local_uses_by_name(else_ops, name)
         }
         FlowOp::IfLet {
             expr,
@@ -654,69 +639,66 @@ fn count_flow_op_local_uses<'a>(op: &'a FlowOp, uses: &mut BTreeMap<&'a str, usi
             else_ops,
             ..
         } => {
-            count_runtime_expr_local_uses(expr, uses);
-            if let Some(guard) = guard {
-                count_runtime_expr_local_uses(guard, uses);
-            }
-            count_flow_ops_local_uses(then_ops, uses);
-            count_flow_ops_local_uses(else_ops, uses);
+            count_runtime_expr_local_uses_by_name(expr, name)
+                + count_optional_runtime_expr_local_uses_by_name(guard.as_ref(), name)
+                + count_flow_ops_local_uses_by_name(then_ops, name)
+                + count_flow_ops_local_uses_by_name(else_ops, name)
         }
         FlowOp::Match { scrutinee, arms } => {
-            count_runtime_expr_local_uses(scrutinee, uses);
-            for arm in arms {
-                if let Some(guard) = &arm.guard {
-                    count_runtime_expr_local_uses(guard, uses);
-                }
-                count_flow_ops_local_uses(&arm.ops, uses);
-            }
+            count_runtime_expr_local_uses_by_name(scrutinee, name)
+                + arms
+                    .iter()
+                    .map(|arm| {
+                        count_optional_runtime_expr_local_uses_by_name(arm.guard.as_ref(), name)
+                            + count_flow_ops_local_uses_by_name(&arm.ops, name)
+                    })
+                    .sum::<usize>()
         }
         FlowOp::Loop { body }
         | FlowOp::LetLoop { body, .. }
         | FlowOp::Thread { body, .. }
-        | FlowOp::Scope(body) => count_flow_ops_local_uses(body, uses),
+        | FlowOp::Scope(body) => count_flow_ops_local_uses_by_name(body, name),
         FlowOp::LoopNext { body } | FlowOp::ForNext { body, .. } => {
-            count_flow_ops_local_uses(body, uses);
+            count_flow_ops_local_uses_by_name(body, name)
         }
         FlowOp::While { condition, body } => {
-            count_runtime_expr_local_uses(condition, uses);
-            count_flow_ops_local_uses(body, uses);
+            count_runtime_expr_local_uses_by_name(condition, name)
+                + count_flow_ops_local_uses_by_name(body, name)
         }
         FlowOp::WhileNext { condition, body } => {
-            count_runtime_expr_local_uses(condition, uses);
-            count_flow_ops_local_uses(body, uses);
+            count_runtime_expr_local_uses_by_name(condition, name)
+                + count_flow_ops_local_uses_by_name(body, name)
         }
         FlowOp::WhileLet {
             expr, guard, body, ..
         } => {
-            count_runtime_expr_local_uses(expr, uses);
-            if let Some(guard) = guard {
-                count_runtime_expr_local_uses(guard, uses);
-            }
-            count_flow_ops_local_uses(body, uses);
+            count_runtime_expr_local_uses_by_name(expr, name)
+                + count_optional_runtime_expr_local_uses_by_name(guard.as_ref(), name)
+                + count_flow_ops_local_uses_by_name(body, name)
         }
         FlowOp::WhileLetNext {
             expr, guard, body, ..
         } => {
-            count_runtime_expr_local_uses(expr, uses);
-            if let Some(guard) = guard {
-                count_runtime_expr_local_uses(guard, uses);
-            }
-            count_flow_ops_local_uses(body, uses);
+            count_runtime_expr_local_uses_by_name(expr, name)
+                + count_optional_runtime_expr_local_uses_by_name(guard.as_ref(), name)
+                + count_flow_ops_local_uses_by_name(body, name)
         }
         FlowOp::For { source, body, .. } => {
-            count_runtime_expr_local_uses(source, uses);
-            count_flow_ops_local_uses(body, uses);
+            count_runtime_expr_local_uses_by_name(source, name)
+                + count_flow_ops_local_uses_by_name(body, name)
         }
-        FlowOp::AwaitMany { target, .. } => count_runtime_expr_local_uses(&target.source, uses),
+        FlowOp::AwaitMany { target, .. } => {
+            count_runtime_expr_local_uses_by_name(&target.source, name)
+        }
         FlowOp::LetScope { ops, value, .. } => {
-            count_flow_ops_local_uses(ops, uses);
-            count_runtime_expr_local_uses(value, uses);
+            count_flow_ops_local_uses_by_name(ops, name)
+                + count_runtime_expr_local_uses_by_name(value, name)
         }
         FlowOp::Let { expr, .. }
         | FlowOp::Break(Some(expr))
         | FlowOp::GotoExpr(expr)
         | FlowOp::ReturnExpr(expr)
-        | FlowOp::ExitScopeBind { expr, .. } => count_runtime_expr_local_uses(expr, uses),
+        | FlowOp::ExitScopeBind { expr, .. } => count_runtime_expr_local_uses_by_name(expr, name),
         FlowOp::Bind(_)
         | FlowOp::Dialogue { .. }
         | FlowOp::Choice { .. }
@@ -728,68 +710,62 @@ fn count_flow_op_local_uses<'a>(op: &'a FlowOp, uses: &mut BTreeMap<&'a str, usi
         | FlowOp::Continue
         | FlowOp::Goto(_)
         | FlowOp::Return(_)
-        | FlowOp::Noop => {}
+        | FlowOp::Noop => 0,
     }
 }
 
-fn count_runtime_expr_local_uses<'a>(expr: &'a RuntimeExpr, uses: &mut BTreeMap<&'a str, usize>) {
+fn count_runtime_expr_local_uses_by_name(expr: &RuntimeExpr, name: &str) -> usize {
     match expr {
-        RuntimeExpr::Local(local) => {
-            *uses.entry(local.as_str()).or_default() += 1;
-        }
+        RuntimeExpr::Local(local) => usize::from(local == name),
         RuntimeExpr::Let { expr, body, .. } => {
-            count_runtime_expr_local_uses(expr, uses);
-            count_runtime_expr_local_uses(body, uses);
+            count_runtime_expr_local_uses_by_name(expr, name)
+                + count_runtime_expr_local_uses_by_name(body, name)
         }
-        RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
-            for item in items {
-                count_runtime_expr_local_uses(item, uses);
-            }
-        }
-        RuntimeExpr::RepeatSeq { value, .. } => count_runtime_expr_local_uses(value, uses),
-        RuntimeExpr::Record(fields) => {
-            for field in fields {
-                count_runtime_expr_local_uses(&field.value, uses);
-            }
-        }
-        RuntimeExpr::Variant { payload, .. } => {
-            if let Some(payload) = payload {
-                count_runtime_expr_local_uses(payload, uses);
-            }
-        }
+        RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => items
+            .iter()
+            .map(|item| count_runtime_expr_local_uses_by_name(item, name))
+            .sum(),
+        RuntimeExpr::RepeatSeq { value, .. } => count_runtime_expr_local_uses_by_name(value, name),
+        RuntimeExpr::Record(fields) => fields
+            .iter()
+            .map(|field| count_runtime_expr_local_uses_by_name(&field.value, name))
+            .sum(),
+        RuntimeExpr::Variant { payload, .. } => payload.as_deref().map_or(0, |payload| {
+            count_runtime_expr_local_uses_by_name(payload, name)
+        }),
         RuntimeExpr::Field { target, .. } | RuntimeExpr::SpreadArg(target) => {
-            count_runtime_expr_local_uses(target, uses);
+            count_runtime_expr_local_uses_by_name(target, name)
         }
-        RuntimeExpr::Call { args, .. } | RuntimeExpr::PureCall { args, .. } => {
-            for arg in args {
-                count_runtime_expr_local_uses(arg, uses);
-            }
-        }
+        RuntimeExpr::Call { args, .. } | RuntimeExpr::PureCall { args, .. } => args
+            .iter()
+            .map(|arg| count_runtime_expr_local_uses_by_name(arg, name))
+            .sum(),
         RuntimeExpr::MethodCall { receiver, args, .. } => {
-            count_runtime_expr_local_uses(receiver, uses);
-            for arg in args {
-                count_runtime_expr_local_uses(arg, uses);
-            }
+            count_runtime_expr_local_uses_by_name(receiver, name)
+                + args
+                    .iter()
+                    .map(|arg| count_runtime_expr_local_uses_by_name(arg, name))
+                    .sum::<usize>()
         }
         RuntimeExpr::Map { source, body, .. } => {
-            count_runtime_expr_local_uses(source, uses);
-            count_runtime_expr_local_uses(body, uses);
+            count_runtime_expr_local_uses_by_name(source, name)
+                + count_runtime_expr_local_uses_by_name(body, name)
         }
         RuntimeExpr::Sum { source } | RuntimeExpr::Unary { expr: source, .. } => {
-            count_runtime_expr_local_uses(source, uses);
+            count_runtime_expr_local_uses_by_name(source, name)
         }
         RuntimeExpr::Binary { lhs, rhs, .. } => {
-            count_runtime_expr_local_uses(lhs, uses);
-            count_runtime_expr_local_uses(rhs, uses);
+            count_runtime_expr_local_uses_by_name(lhs, name)
+                + count_runtime_expr_local_uses_by_name(rhs, name)
         }
         RuntimeExpr::If {
             condition,
             then_expr,
             else_expr,
         } => {
-            count_runtime_expr_local_uses(condition, uses);
-            count_runtime_expr_local_uses(then_expr, uses);
-            count_runtime_expr_local_uses(else_expr, uses);
+            count_runtime_expr_local_uses_by_name(condition, name)
+                + count_runtime_expr_local_uses_by_name(then_expr, name)
+                + count_runtime_expr_local_uses_by_name(else_expr, name)
         }
         RuntimeExpr::IfLet {
             expr,
@@ -798,24 +774,27 @@ fn count_runtime_expr_local_uses<'a>(expr: &'a RuntimeExpr, uses: &mut BTreeMap<
             else_expr,
             ..
         } => {
-            count_runtime_expr_local_uses(expr, uses);
-            if let Some(guard) = guard {
-                count_runtime_expr_local_uses(guard, uses);
-            }
-            count_runtime_expr_local_uses(then_expr, uses);
-            count_runtime_expr_local_uses(else_expr, uses);
+            count_runtime_expr_local_uses_by_name(expr, name)
+                + count_optional_runtime_expr_local_uses_by_name(guard.as_deref(), name)
+                + count_runtime_expr_local_uses_by_name(then_expr, name)
+                + count_runtime_expr_local_uses_by_name(else_expr, name)
         }
         RuntimeExpr::Match { scrutinee, arms } => {
-            count_runtime_expr_local_uses(scrutinee, uses);
-            for arm in arms {
-                if let Some(guard) = &arm.guard {
-                    count_runtime_expr_local_uses(guard, uses);
-                }
-                count_runtime_expr_local_uses(&arm.value, uses);
-            }
+            count_runtime_expr_local_uses_by_name(scrutinee, name)
+                + arms
+                    .iter()
+                    .map(|arm| {
+                        count_optional_runtime_expr_local_uses_by_name(arm.guard.as_ref(), name)
+                            + count_runtime_expr_local_uses_by_name(&arm.value, name)
+                    })
+                    .sum::<usize>()
         }
-        RuntimeExpr::Value(_) | RuntimeExpr::EntityRef(_) => {}
+        RuntimeExpr::Value(_) | RuntimeExpr::EntityRef(_) => 0,
     }
+}
+
+fn count_optional_runtime_expr_local_uses_by_name(expr: Option<&RuntimeExpr>, name: &str) -> usize {
+    expr.map_or(0, |expr| count_runtime_expr_local_uses_by_name(expr, name))
 }
 
 fn lower_runtime_entries(module: &HirModule) -> Vec<RuntimeEntrySpec> {

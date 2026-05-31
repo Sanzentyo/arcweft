@@ -724,7 +724,7 @@ flow @flow.main main {
     assert_eq!(report.stats.pure_rewrite_expr_visits, 0);
     assert_eq!(report.stats.optimized_flows, 1);
     assert!(report.stats.optimized_op_slices >= 1);
-    assert!(report.stats.local_use_suffix_tables >= 1);
+    assert!(report.stats.local_use_tail_scans >= 1);
     assert!(report.stats.local_use_scan_ops >= 1);
     assert_eq!(report.stats.sequence_map_sum_fusions, 1);
     assert_eq!(report.stats.map_sum_fusions, 0);

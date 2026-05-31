@@ -5879,7 +5879,7 @@ fn assert_profile_json_summary(stdout: &str) {
             && compiler["runtime_plan"]["optimized_op_slices"]
                 .as_u64()
                 .is_some_and(|value| value > 0)
-            && compiler["runtime_plan"]["local_use_suffix_tables"]
+            && compiler["runtime_plan"]["local_use_tail_scans"]
                 .as_u64()
                 .is_some()
             && compiler["runtime_plan"]["pure_rewrite_expr_visits"]
