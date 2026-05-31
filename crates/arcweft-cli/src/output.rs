@@ -496,6 +496,7 @@ pub(crate) struct TypeCheckProfileStats {
     pub(crate) warnings: usize,
     pub(crate) warning_samples: Vec<String>,
     pub(crate) judgments: usize,
+    pub(crate) type_compatibility_checks: usize,
     judgment_rules: TypeCheckJudgmentRuleStats,
     judgment_samples: Vec<TypeCheckJudgmentSample>,
 }
@@ -518,6 +519,7 @@ impl From<&TypeCheckReport> for TypeCheckProfileStats {
                 .map(|warning| warning.message().to_owned())
                 .collect(),
             judgments: stats.judgments,
+            type_compatibility_checks: stats.type_compatibility_checks,
             judgment_rules: TypeCheckJudgmentRuleStats::from_stats(stats),
             judgment_samples: report
                 .judgments

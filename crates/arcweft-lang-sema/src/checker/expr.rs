@@ -10,7 +10,7 @@ use super::{
     BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr, FunctionParamType,
     FunctionSignatureType, LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker,
     TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext, entity_kind,
-    normalize_choice_type, types_compatible,
+    normalize_choice_type,
 };
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{
@@ -22,7 +22,7 @@ impl TypeChecker<'_> {
         let actual = self.check_expr_with_expected(expr, Some(expected));
         if !actual
             .as_ref()
-            .is_some_and(|actual| types_compatible(expected, actual))
+            .is_some_and(|actual| self.types_compatible(expected, actual))
         {
             self.errors.push(TypeCheckError::new(format!(
                 "{context} must have type {expected:?}, found {actual:?}"
@@ -378,10 +378,10 @@ impl TypeChecker<'_> {
             let next_type = self
                 .check_expr_with_expected(item, expected_item)
                 .unwrap_or(TypeKind::Unit);
-            let next_item_type = expected_item
-                .filter(|expected| types_compatible(expected, &next_type))
-                .cloned()
-                .unwrap_or(next_type);
+            let next_item_type = match expected_item {
+                Some(expected) if self.types_compatible(expected, &next_type) => expected.clone(),
+                _ => next_type,
+            };
             match &item_type {
                 Some(existing) if existing != &next_item_type => {
                     self.errors.push(TypeCheckError::new(format!(
@@ -460,7 +460,7 @@ impl TypeChecker<'_> {
                 return None;
             };
             let next_type = self.check_expected_numeric_literal(literal, expected_item);
-            let next_item_type = if types_compatible(expected_item, &next_type) {
+            let next_item_type = if self.types_compatible(expected_item, &next_type) {
                 expected_item.clone()
             } else {
                 next_type
@@ -853,7 +853,7 @@ impl TypeChecker<'_> {
             )));
             return;
         };
-        if !types_compatible(&rest.ty, item) {
+        if !self.types_compatible(&rest.ty, item) {
             self.errors.push(TypeCheckError::new(format!(
                 "function `{function_name}` spread items must have type {:?}, found {:?}",
                 rest.ty, item
@@ -899,7 +899,7 @@ impl TypeChecker<'_> {
     fn expect_signature_arg_type(&mut self, function_name: &str, arg: &Expr, expected: &TypeKind) {
         let actual = self.check_expr_with_expected(arg, Some(expected));
         if let Some(actual) = actual.as_ref()
-            && !types_compatible(expected, actual)
+            && !self.types_compatible(expected, actual)
         {
             self.errors.push(TypeCheckError::new(format!(
                 "function `{function_name}` argument must have type {expected:?}, found {actual:?}"
@@ -1211,7 +1211,7 @@ impl TypeChecker<'_> {
         };
         if let Some(signature) = self.function_signature(&function_name).cloned()
             && let Some(first) = signature.params.first()
-            && !types_compatible(&first.ty, item)
+            && !self.types_compatible(&first.ty, item)
         {
             self.errors.push(TypeCheckError::new(format!(
                 "traverse item type must match `{function_name}` first parameter {:?}, found {:?}",
@@ -1357,10 +1357,10 @@ impl TypeChecker<'_> {
         let Some(TypeKind::Result { error, .. }) = self.expected_returns.last() else {
             return;
         };
-        if !types_compatible(error, actual_error) {
+        let expected_error = error.as_ref().clone();
+        if !self.types_compatible(&expected_error, actual_error) {
             self.errors.push(TypeCheckError::new(format!(
-                "`?` error type {actual_error:?} cannot be injected into return error type {:?}",
-                error.as_ref()
+                "`?` error type {actual_error:?} cannot be injected into return error type {expected_error:?}"
             )));
         }
     }
@@ -1627,7 +1627,11 @@ impl TypeChecker<'_> {
             .collect::<Vec<_>>();
         let missing = alternatives
             .iter()
-            .filter(|alternative| !coverage.iter().any(|coverage| coverage.covers(alternative)))
+            .filter(|alternative| {
+                !coverage
+                    .iter()
+                    .any(|coverage| self.coverage_covers(coverage, alternative))
+            })
             .map(type_kind_label)
             .collect::<Vec<_>>();
         if !missing.is_empty() {
@@ -1637,20 +1641,22 @@ impl TypeChecker<'_> {
             )));
         }
     }
+
+    fn coverage_covers(
+        &mut self,
+        coverage: &ChoicePatternCoverage,
+        alternative: &TypeKind,
+    ) -> bool {
+        match coverage {
+            ChoicePatternCoverage::All => true,
+            ChoicePatternCoverage::Type(ty) => self.types_compatible(ty, alternative),
+        }
+    }
 }
 
 enum ChoicePatternCoverage {
     All,
     Type(TypeKind),
-}
-
-impl ChoicePatternCoverage {
-    fn covers(&self, alternative: &TypeKind) -> bool {
-        match self {
-            Self::All => true,
-            Self::Type(ty) => types_compatible(ty, alternative),
-        }
-    }
 }
 
 fn choice_pattern_coverage(pattern: &Pattern) -> ChoicePatternCoverage {

@@ -5,7 +5,7 @@ use super::{
     LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker, TypeKind, YieldContext,
     choice_output_type, entity_kind_for_decl, function_param_local_type, function_signature_type,
     ident_pattern_name, normalize_choice_type, stream_return_types, type_ref_kind,
-    types_compatible, validate_typecheck_ready,
+    validate_typecheck_ready,
 };
 use crate::checker::helpers::{type_kind_label, type_ref_label};
 use crate::diagnostics::TypeCheckWarning;
@@ -125,7 +125,7 @@ impl TypeChecker<'_> {
             });
             self.effect_capabilities = effect_snapshot;
             if let (Some(expected), Some(actual)) = (expected_return, actual)
-                && !types_compatible(&expected, &actual)
+                && !self.types_compatible(&expected, &actual)
             {
                 self.errors.push(TypeCheckError::new(format!(
                     "function `{}` returns {expected:?}, but body has {actual:?}",

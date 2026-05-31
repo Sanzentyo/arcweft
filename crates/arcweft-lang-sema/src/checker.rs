@@ -89,6 +89,7 @@ pub struct TypeCheckStats {
     pub expected_judgments: usize,
     pub let_binding_judgments: usize,
     pub return_judgments: usize,
+    pub type_compatibility_checks: usize,
     pub borrow_binding_groups: usize,
     pub borrow_bindings: usize,
     pub borrow_state_snapshots: usize,
@@ -415,6 +416,11 @@ impl TypeChecker<'_> {
 
     fn record_active_borrow_depth(&mut self) {
         self.stats.max_active_borrows = self.stats.max_active_borrows.max(self.active_borrow_total);
+    }
+
+    fn types_compatible(&mut self, expected: &TypeKind, actual: &TypeKind) -> bool {
+        self.stats.type_compatibility_checks += 1;
+        types_compatible(expected, actual)
     }
 
     fn clear_active_borrows(&mut self) {

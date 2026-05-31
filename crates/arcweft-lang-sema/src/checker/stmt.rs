@@ -226,7 +226,7 @@ impl TypeChecker<'_> {
             let expected = annotated_ty
                 .clone()
                 .unwrap_or_else(|| type_ref_kind(annotation));
-            if !super::types_compatible(&expected, actual) {
+            if !self.types_compatible(&expected, actual) {
                 self.errors.push(TypeCheckError::new(format!(
                     "let annotation expects {expected:?}, but expression has {actual:?}"
                 )));
@@ -236,7 +236,7 @@ impl TypeChecker<'_> {
             .as_ref()
             .filter(|expected| {
                 ty.as_ref()
-                    .is_some_and(|actual| super::types_compatible(expected, actual))
+                    .is_some_and(|actual| self.types_compatible(expected, actual))
             })
             .cloned()
             .or_else(|| ty.clone());

@@ -234,6 +234,10 @@ flow @flow.good good(input: i32) -> i32 {
             ) if *kind == "literal"
         )
     }));
+    assert!(
+        report.stats.type_compatibility_checks > 0,
+        "expected type compatibility checks to be counted"
+    );
 }
 
 #[test]
