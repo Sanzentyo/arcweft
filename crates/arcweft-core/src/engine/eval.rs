@@ -746,7 +746,7 @@ impl Engine {
             RuntimeExpr::Value(RuntimeValue::Seq(seq)) => match seq {
                 RuntimeSeq::Values(items) => items.as_slice(),
                 RuntimeSeq::Dense(_) => {
-                    return self.collect_i64_map_batch_inputs_from_int_compatible_source(
+                    return self.collect_i64_map_batch_inputs_from_i64_source(
                         seq,
                         param,
                         args,
@@ -760,7 +760,7 @@ impl Engine {
                 Some(RuntimeValue::Seq(seq)) => match seq {
                     RuntimeSeq::Values(items) => items.as_slice(),
                     RuntimeSeq::Dense(_) => {
-                        return self.collect_i64_map_batch_inputs_from_int_compatible_source(
+                        return self.collect_i64_map_batch_inputs_from_i64_source(
                             seq,
                             param,
                             args,
@@ -826,7 +826,7 @@ impl Engine {
             RuntimeExpr::Value(RuntimeValue::Seq(seq)) => match seq {
                 RuntimeSeq::Values(items) => items.as_slice(),
                 RuntimeSeq::Dense(_) => {
-                    return self.collect_i64_repeated_map_batch_row_from_int_compatible_source(
+                    return self.collect_i64_repeated_map_batch_row_from_i64_source(
                         seq,
                         param,
                         args,
@@ -840,7 +840,7 @@ impl Engine {
                 Some(RuntimeValue::Seq(seq)) => match seq {
                     RuntimeSeq::Values(items) => items.as_slice(),
                     RuntimeSeq::Dense(_) => {
-                        return self.collect_i64_repeated_map_batch_row_from_int_compatible_source(
+                        return self.collect_i64_repeated_map_batch_row_from_i64_source(
                             seq,
                             param,
                             args,
@@ -1042,7 +1042,7 @@ impl Engine {
         Ok(true)
     }
 
-    fn collect_i64_map_batch_inputs_from_int_compatible_source(
+    fn collect_i64_map_batch_inputs_from_i64_source(
         &self,
         seq: &RuntimeSeq,
         param: &str,
@@ -1053,7 +1053,7 @@ impl Engine {
         flat_inputs.clear();
         flat_inputs.reserve(seq.len().saturating_mul(arity));
         let mut accepted = true;
-        let compatible = seq.try_for_each_int_compatible_i64(|item| {
+        let compatible = seq.try_for_each_i64(|item| {
             if !accepted {
                 return Ok(());
             }
@@ -1110,7 +1110,7 @@ impl Engine {
         Ok(true)
     }
 
-    fn collect_i64_repeated_map_batch_row_from_int_compatible_source(
+    fn collect_i64_repeated_map_batch_row_from_i64_source(
         &self,
         seq: &RuntimeSeq,
         param: &str,
@@ -1119,7 +1119,7 @@ impl Engine {
         flat_inputs: &mut Vec<i64>,
     ) -> Result<bool, RuntimeEvalError> {
         flat_inputs.clear();
-        let Some(first) = seq.first_int_compatible_i64() else {
+        let Some(first) = seq.first_i64() else {
             return Ok(false);
         };
         let Some(first) = first else {
@@ -1135,7 +1135,7 @@ impl Engine {
         }
         let mut index = 0_usize;
         let mut same_row = true;
-        let compatible = seq.try_for_each_int_compatible_i64(|item| {
+        let compatible = seq.try_for_each_i64(|item| {
             if !same_row {
                 return Ok(());
             }

@@ -106,7 +106,11 @@ pub struct RuntimePureHelper {
 /// Runtime pure helper input representation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuntimePureInputType {
+    I8,
+    I16,
+    I32,
     I64,
+    ISize,
     Value,
 }
 

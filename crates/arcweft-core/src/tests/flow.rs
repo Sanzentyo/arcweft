@@ -472,7 +472,7 @@ fn engine_fuses_local_map_closure_pure_batch_sum() {
     );
 }
 
-fn assert_dense_int_compatible_map_sum_uses_flat_batch(source: RuntimeValue, expected: &str) {
+fn assert_dense_i64_map_sum_uses_flat_batch(source: RuntimeValue, expected: &str) {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.main".to_owned())),
         vec![RuntimeFlow {
@@ -526,26 +526,8 @@ fn assert_dense_int_compatible_map_sum_uses_flat_batch(source: RuntimeValue, exp
 }
 
 #[test]
-fn engine_batches_dense_int_compatible_map_without_value_materialization() {
-    let cases = [
-        (runtime_sequence_dense_i8(vec![3, 5, 7]), "60"),
-        (runtime_sequence_dense_i16(vec![3, 5, 7]), "60"),
-        (runtime_sequence_dense_i32(vec![3, 5, 7]), "60"),
-        (runtime_sequence_dense_i64(vec![3, 5, 7]), "60"),
-        (runtime_sequence_dense_i128(vec![3, 5, 7]), "60"),
-        (runtime_sequence_dense_isize(vec![3, 5, 7]), "60"),
-        (runtime_sequence_dense_u8(vec![3, 5, 7]), "60"),
-        (runtime_sequence_dense_u16(vec![3, 5, 7]), "60"),
-        (runtime_sequence_dense_u32(vec![3, 5, 7]), "60"),
-        (runtime_sequence_dense_u64(vec![3, 5, 7]), "60"),
-        (runtime_sequence_dense_u128(vec![3, 5, 7]), "60"),
-        (runtime_sequence_dense_usize(vec![3, 5, 7]), "60"),
-        (runtime_sequence_dense_bytes(vec![3, 5, 7]), "60"),
-    ];
-
-    for (source, expected) in cases {
-        assert_dense_int_compatible_map_sum_uses_flat_batch(source, expected);
-    }
+fn engine_batches_dense_i64_map_without_value_materialization() {
+    assert_dense_i64_map_sum_uses_flat_batch(runtime_sequence_dense_i64(vec![3, 5, 7]), "60");
 }
 
 #[test]

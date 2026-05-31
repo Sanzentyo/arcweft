@@ -174,19 +174,12 @@ fn dense_integer_sequences_expose_width_specific_views() {
 #[test]
 fn dense_sequences_expose_typed_views_and_materialize_values() {
     let unit_seq = runtime_sequence_dense_units(3);
-    let i32_seq = runtime_sequence_dense_i32(vec![1, 2, 3]);
-    let i64_seq = runtime_sequence_dense_i64(vec![1, 2, 3]);
-    let u64_seq = runtime_sequence_dense_u64(vec![1, 2]);
     let bool_seq = runtime_sequence_dense_bool(vec![true, false]);
-    let bytes_seq = runtime_sequence_dense_bytes(vec![65, 66]);
     let chars_seq = runtime_sequence_dense_chars(vec!['a', 'b']);
     let duration_seq = runtime_sequence_dense_durations(vec![LogicalDuration::from_nanos(3)]);
 
     assert_eq!(runtime_value_label(&unit_seq), "seq/units/3");
-    assert_eq!(runtime_value_label(&i32_seq), "seq/i32/3");
-    assert_eq!(runtime_value_label(&u64_seq), "seq/u64/2");
     assert_eq!(runtime_value_label(&bool_seq), "seq/bool/2");
-    assert_eq!(runtime_value_label(&bytes_seq), "seq/bytes/2");
     assert_eq!(runtime_value_label(&chars_seq), "seq/chars/2");
     assert_eq!(runtime_value_label(&duration_seq), "seq/durations/1");
 
@@ -200,11 +193,6 @@ fn dense_sequences_expose_typed_views_and_materialize_values() {
         vec![RuntimeValue::Unit, RuntimeValue::Unit, RuntimeValue::Unit]
     );
 
-    let RuntimeValue::Seq(i64_seq) = &i64_seq else {
-        panic!("dense i64 helper returns a sequence");
-    };
-    assert_eq!(i64_seq.as_i64_slice(), Some([1, 2, 3].as_slice()));
-
     let RuntimeValue::Seq(bool_seq) = bool_seq else {
         panic!("dense bool helper returns a sequence");
     };
@@ -212,51 +200,6 @@ fn dense_sequences_expose_typed_views_and_materialize_values() {
     assert_eq!(
         bool_seq.into_values(),
         vec![RuntimeValue::Bool(true), RuntimeValue::Bool(false)]
-    );
-
-    let RuntimeValue::Seq(i32_seq) = i32_seq else {
-        panic!("dense i32 helper returns a sequence");
-    };
-    assert_eq!(i32_seq.as_i32_slice(), Some([1, 2, 3].as_slice()));
-    assert_eq!(i32_seq.sum_as_i64(), Some(6));
-    let mut flat = Vec::new();
-    assert!(i32_seq.copy_int_compatible_i64_values_to(&mut flat));
-    assert_eq!(flat, vec![1, 2, 3]);
-    assert_eq!(i32_seq.first_int_compatible_i64(), Some(Some(1)));
-    assert_eq!(
-        i32_seq.into_values(),
-        vec![
-            RuntimeValue::Int(1),
-            RuntimeValue::Int(2),
-            RuntimeValue::Int(3)
-        ]
-    );
-
-    let RuntimeValue::Seq(u64_seq) = u64_seq else {
-        panic!("dense u64 helper returns a sequence");
-    };
-    assert_eq!(u64_seq.as_u64_slice(), Some([1, 2].as_slice()));
-    assert_eq!(u64_seq.sum_as_i64(), Some(3));
-    let mut flat = Vec::new();
-    assert!(u64_seq.copy_int_compatible_i64_values_to(&mut flat));
-    assert_eq!(flat, vec![1, 2]);
-    assert_eq!(u64_seq.first_int_compatible_i64(), Some(Some(1)));
-    assert_eq!(
-        u64_seq.into_values(),
-        vec![RuntimeValue::UInt(1), RuntimeValue::UInt(2)]
-    );
-
-    let RuntimeValue::Seq(bytes_seq) = bytes_seq else {
-        panic!("dense bytes helper returns a sequence");
-    };
-    assert_eq!(bytes_seq.as_bytes(), Some([65, 66].as_slice()));
-    let mut flat = Vec::new();
-    assert!(bytes_seq.copy_int_compatible_i64_values_to(&mut flat));
-    assert_eq!(flat, vec![65, 66]);
-    assert_eq!(bytes_seq.first_int_compatible_i64(), Some(Some(65)));
-    assert_eq!(
-        bytes_seq.into_values(),
-        vec![RuntimeValue::Int(65), RuntimeValue::Int(66)]
     );
 
     let RuntimeValue::Seq(chars_seq) = chars_seq else {
@@ -282,6 +225,72 @@ fn dense_sequences_expose_typed_views_and_materialize_values() {
 }
 
 #[test]
+fn dense_integer_sequences_keep_exact_i64_projection_separate_from_other_widths() {
+    let i32_seq = runtime_sequence_dense_i32(vec![1, 2, 3]);
+    let i64_seq = runtime_sequence_dense_i64(vec![1, 2, 3]);
+    let u64_seq = runtime_sequence_dense_u64(vec![1, 2]);
+    let bytes_seq = runtime_sequence_dense_bytes(vec![65, 66]);
+
+    assert_eq!(runtime_value_label(&i32_seq), "seq/i32/3");
+    assert_eq!(runtime_value_label(&u64_seq), "seq/u64/2");
+    assert_eq!(runtime_value_label(&bytes_seq), "seq/bytes/2");
+
+    let RuntimeValue::Seq(i64_seq) = &i64_seq else {
+        panic!("dense i64 helper returns a sequence");
+    };
+    assert_eq!(i64_seq.as_i64_slice(), Some([1, 2, 3].as_slice()));
+    let mut flat = Vec::new();
+    assert!(i64_seq.copy_i64_values_to(&mut flat));
+    assert_eq!(flat, vec![1, 2, 3]);
+    assert_eq!(i64_seq.first_i64(), Some(Some(1)));
+
+    let RuntimeValue::Seq(i32_seq) = i32_seq else {
+        panic!("dense i32 helper returns a sequence");
+    };
+    assert_eq!(i32_seq.as_i32_slice(), Some([1, 2, 3].as_slice()));
+    assert_eq!(i32_seq.sum_as_i64(), Some(6));
+    let mut flat = Vec::new();
+    assert!(!i32_seq.copy_i64_values_to(&mut flat));
+    assert!(flat.is_empty());
+    assert_eq!(i32_seq.first_i64(), None);
+    assert_eq!(
+        i32_seq.into_values(),
+        vec![
+            RuntimeValue::Int(1),
+            RuntimeValue::Int(2),
+            RuntimeValue::Int(3)
+        ]
+    );
+
+    let RuntimeValue::Seq(u64_seq) = u64_seq else {
+        panic!("dense u64 helper returns a sequence");
+    };
+    assert_eq!(u64_seq.as_u64_slice(), Some([1, 2].as_slice()));
+    assert_eq!(u64_seq.sum_as_i64(), Some(3));
+    let mut flat = Vec::new();
+    assert!(!u64_seq.copy_i64_values_to(&mut flat));
+    assert!(flat.is_empty());
+    assert_eq!(u64_seq.first_i64(), None);
+    assert_eq!(
+        u64_seq.into_values(),
+        vec![RuntimeValue::UInt(1), RuntimeValue::UInt(2)]
+    );
+
+    let RuntimeValue::Seq(bytes_seq) = bytes_seq else {
+        panic!("dense bytes helper returns a sequence");
+    };
+    assert_eq!(bytes_seq.as_bytes(), Some([65, 66].as_slice()));
+    let mut flat = Vec::new();
+    assert!(!bytes_seq.copy_i64_values_to(&mut flat));
+    assert!(flat.is_empty());
+    assert_eq!(bytes_seq.first_i64(), None);
+    assert_eq!(
+        bytes_seq.into_values(),
+        vec![RuntimeValue::Int(65), RuntimeValue::Int(66)]
+    );
+}
+
+#[test]
 fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
     let i128_seq = runtime_sequence_dense_i128(vec![1, 2, 3]);
     let isize_seq = runtime_sequence_dense_isize(vec![1, 2, 3]);
@@ -299,9 +308,9 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
     assert_eq!(i128_seq.as_i128_slice(), Some([1, 2, 3].as_slice()));
     assert_eq!(i128_seq.sum_as_i64(), Some(6));
     let mut flat = Vec::new();
-    assert!(i128_seq.copy_int_compatible_i64_values_to(&mut flat));
-    assert_eq!(flat, vec![1, 2, 3]);
-    assert_eq!(i128_seq.first_int_compatible_i64(), Some(Some(1)));
+    assert!(!i128_seq.copy_i64_values_to(&mut flat));
+    assert!(flat.is_empty());
+    assert_eq!(i128_seq.first_i64(), None);
     assert_eq!(
         i128_seq.into_values(),
         vec![
@@ -317,9 +326,9 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
     assert_eq!(isize_seq.as_isize_values(), Some([1, 2, 3].as_slice()));
     assert_eq!(isize_seq.sum_as_i64(), Some(6));
     let mut flat = Vec::new();
-    assert!(isize_seq.copy_int_compatible_i64_values_to(&mut flat));
-    assert_eq!(flat, vec![1, 2, 3]);
-    assert_eq!(isize_seq.first_int_compatible_i64(), Some(Some(1)));
+    assert!(!isize_seq.copy_i64_values_to(&mut flat));
+    assert!(flat.is_empty());
+    assert_eq!(isize_seq.first_i64(), None);
     assert_eq!(
         isize_seq.into_values(),
         vec![
@@ -335,9 +344,9 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
     assert_eq!(u128_seq.as_u128_slice(), Some([1, 2].as_slice()));
     assert_eq!(u128_seq.sum_as_i64(), Some(3));
     let mut flat = Vec::new();
-    assert!(u128_seq.copy_int_compatible_i64_values_to(&mut flat));
-    assert_eq!(flat, vec![1, 2]);
-    assert_eq!(u128_seq.first_int_compatible_i64(), Some(Some(1)));
+    assert!(!u128_seq.copy_i64_values_to(&mut flat));
+    assert!(flat.is_empty());
+    assert_eq!(u128_seq.first_i64(), None);
     assert_eq!(
         u128_seq.into_values(),
         vec![RuntimeValue::U128(1), RuntimeValue::U128(2)]
@@ -349,9 +358,9 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
     assert_eq!(usize_seq.as_usize_values(), Some([1, 2].as_slice()));
     assert_eq!(usize_seq.sum_as_i64(), Some(3));
     let mut flat = Vec::new();
-    assert!(usize_seq.copy_int_compatible_i64_values_to(&mut flat));
-    assert_eq!(flat, vec![1, 2]);
-    assert_eq!(usize_seq.first_int_compatible_i64(), Some(Some(1)));
+    assert!(!usize_seq.copy_i64_values_to(&mut flat));
+    assert!(flat.is_empty());
+    assert_eq!(usize_seq.first_i64(), None);
     assert_eq!(
         usize_seq.into_values(),
         vec![RuntimeValue::USize(1), RuntimeValue::USize(2)]
@@ -359,32 +368,40 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
 }
 
 #[test]
-fn dense_wide_integer_i64_compatible_copy_rejects_overflow_without_partial_output() {
-    let overflow_cases = [
-        runtime_sequence_dense_i128(vec![1, i128::from(i64::MAX) + 1]),
-        runtime_sequence_dense_u64(vec![1, u64::try_from(i64::MAX).expect("i64 max fits") + 1]),
-        runtime_sequence_dense_u128(vec![1, u128::try_from(i64::MAX).expect("i64 max fits") + 1]),
-        runtime_sequence_dense_usize(vec![1, u64::try_from(i64::MAX).expect("i64 max fits") + 1]),
+fn dense_non_i64_integer_storage_does_not_widen_into_i64_projection() {
+    let cases = [
+        runtime_sequence_dense_i8(vec![1, 2]),
+        runtime_sequence_dense_i16(vec![1, 2]),
+        runtime_sequence_dense_i32(vec![1, 2]),
+        runtime_sequence_dense_i128(vec![1, 2]),
+        runtime_sequence_dense_isize(vec![1, 2]),
+        runtime_sequence_dense_u8(vec![1, 2]),
+        runtime_sequence_dense_u16(vec![1, 2]),
+        runtime_sequence_dense_u32(vec![1, 2]),
+        runtime_sequence_dense_u64(vec![1, 2]),
+        runtime_sequence_dense_u128(vec![1, 2]),
+        runtime_sequence_dense_usize(vec![1, 2]),
+        runtime_sequence_dense_bytes(vec![1, 2]),
     ];
 
-    for value in overflow_cases {
+    for value in cases {
         let RuntimeValue::Seq(seq) = value else {
             panic!("dense helper returns a sequence");
         };
         let mut flat = vec![99];
-        assert!(!seq.copy_int_compatible_i64_values_to(&mut flat));
+        assert!(!seq.copy_i64_values_to(&mut flat));
         assert_eq!(flat, vec![99]);
-        assert_eq!(seq.first_int_compatible_i64(), Some(Some(1)));
+        assert_eq!(seq.first_i64(), None);
 
         let mut visited = Vec::new();
         let compatible = seq
-            .try_for_each_int_compatible_i64::<()>(|value| {
+            .try_for_each_i64::<()>(|value| {
                 visited.push(value);
                 Ok(())
             })
             .expect("visitor does not fail");
         assert!(!compatible);
-        assert_eq!(visited, vec![1]);
+        assert!(visited.is_empty());
     }
 }
 

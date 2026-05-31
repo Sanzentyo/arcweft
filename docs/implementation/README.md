@@ -757,15 +757,16 @@ Current high-confidence state:
   records this scalar coverage explicitly so adding a new dense class requires
   extending the typed kind, borrowed view, materialization fallback, and tests
   together.
-- Dense storage also exposes an explicit i64-compatible projection for every
-  dense integer class that can be converted without loss: `i8`, `i16`, `i32`,
-  `i64`, `i128`, `isize`, `u8`, `u16`, `u32`, `u64`, `u128`, `usize`, and
-  `Bytes`. Wide signed/unsigned storage uses checked conversion and rejects
-  out-of-range values without leaving partial flat input buffers behind. The
-  flow VM uses this projection when building pure-helper flat inputs, so these
-  sources do not have to round-trip through `Vec<RuntimeValue>` before entering
-  the i64 batch ABI. The corresponding core regressions cover all projected
-  storage classes and overflow rejection.
+- Dense storage exposes exact borrowed views for each scalar storage class and
+  only exposes an i64 pure-batch projection for `DenseSeq::I64`. Narrower or
+  unsigned integer storage is not widened with `.map(i64::from)` on the hot
+  path, because that would erase the bandwidth/cache advantage of `i32`, `u16`,
+  `u8`, and similar dense storage. Runtime pure helper metadata now preserves
+  source integer input widths (`i8`, `i16`, `i32`, `i64`, `isize`) so dedicated
+  typed ABIs can be added per width instead of silently routing everything
+  through the i64 accelerator. The current i64 accelerator therefore handles
+  exact i64 helpers only; other widths keep their dense storage for `sum()` and
+  `len()` and fall back until a matching typed backend exists.
 - `Vec<T>.len()` / `Seq<T>.len()` / fixed array length calls typecheck as
   `usize` and read `RuntimeSeq::len()` directly in the VM and pure VM. The
   checked-in dense scalar length bench exercises unit, bool, char, duration,

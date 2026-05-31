@@ -2,7 +2,7 @@
 
 use crate::expr::lower_runtime_expr_strict;
 use arcweft_core::{
-    plan::RuntimePureHelperOrigin,
+    plan::{RuntimePureHelperOrigin, RuntimePureInputType},
     pure::PureFunctionRequest,
     value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
@@ -21,6 +21,7 @@ use thiserror::Error;
 pub struct PureHelperCandidate {
     name: String,
     input_names: Vec<String>,
+    input_types: Vec<RuntimePureInputType>,
     expr: RuntimeExpr,
     origin: RuntimePureHelperOrigin,
 }
@@ -53,6 +54,11 @@ impl PureHelperCandidate {
         &self.input_names
     }
 
+    /// Runtime ABI input types preserved from the source signature.
+    pub fn input_types(&self) -> &[RuntimePureInputType] {
+        &self.input_types
+    }
+
     /// Runtime expression body used by pure helper backends.
     pub const fn expr(&self) -> &RuntimeExpr {
         &self.expr
@@ -77,6 +83,16 @@ impl PureHelperCandidate {
                     self.input_names.len(),
                     values.len()
                 ),
+            });
+        }
+        if !self
+            .input_types
+            .iter()
+            .all(|ty| matches!(ty, RuntimePureInputType::I64))
+        {
+            return Err(PureHelperLowerError::UnsupportedParameterType {
+                name: self.name.clone(),
+                parameter: "request_with_i64_inputs requires i64 helper inputs".to_owned(),
             });
         }
         Ok(PureFunctionRequest::new(
@@ -132,11 +148,13 @@ fn lower_pure_helper_candidate(
             kind: function.kind(),
         });
     }
-    let input_names = pure_helper_input_names(function)?;
+    let inputs = pure_helper_inputs(function)?;
+    let (input_names, input_types): (Vec<_>, Vec<_>) = inputs.into_iter().unzip();
     let expr = lower_pure_helper_body(function)?;
     Ok(PureHelperCandidate {
         name: function.name().to_owned(),
         input_names,
+        input_types,
         expr,
         origin,
     })
@@ -204,33 +222,34 @@ fn lower_pure_helper_let_stmt(
     Ok((name, expr))
 }
 
-fn pure_helper_input_names(function: &HirFunction) -> Result<Vec<String>, PureHelperLowerError> {
+fn pure_helper_inputs(
+    function: &HirFunction,
+) -> Result<Vec<(String, RuntimePureInputType)>, PureHelperLowerError> {
     function
         .signature()
         .param_groups()
         .iter()
         .flat_map(arcweft_lang_hir::syntax::types::FnParamGroup::params)
-        .map(|param| pure_helper_param_name(function.name(), param))
+        .map(|param| pure_helper_param(function.name(), param))
         .collect()
 }
 
-fn pure_helper_param_name(
+fn pure_helper_param(
     function_name: &str,
     param: &FnParam,
-) -> Result<String, PureHelperLowerError> {
+) -> Result<(String, RuntimePureInputType), PureHelperLowerError> {
     let name = binding_pattern_name(function_name, param.pattern()).map_err(|parameter| {
         PureHelperLowerError::UnsupportedParameter {
             name: function_name.to_owned(),
             parameter,
         }
     })?;
-    if !is_jit_integer_type(param.ty()) {
-        return Err(PureHelperLowerError::UnsupportedParameterType {
+    pure_helper_input_type(param.ty())
+        .map(|ty| (name.clone(), ty))
+        .ok_or_else(|| PureHelperLowerError::UnsupportedParameterType {
             name: function_name.to_owned(),
             parameter: name,
-        });
-    }
-    Ok(name)
+        })
 }
 
 fn binding_pattern_name(function_name: &str, pattern: &Pattern) -> Result<String, String> {
@@ -242,12 +261,18 @@ fn binding_pattern_name(function_name: &str, pattern: &Pattern) -> Result<String
     }
 }
 
-fn is_jit_integer_type(ty: &TypeRef) -> bool {
-    matches!(
-        ty,
-        TypeRef::Path(name)
-            if matches!(name.as_str(), "i8" | "i16" | "i32" | "i64" | "isize")
-    )
+fn pure_helper_input_type(ty: &TypeRef) -> Option<RuntimePureInputType> {
+    match ty {
+        TypeRef::Path(name) => match name.as_str() {
+            "i8" => Some(RuntimePureInputType::I8),
+            "i16" => Some(RuntimePureInputType::I16),
+            "i32" => Some(RuntimePureInputType::I32),
+            "i64" => Some(RuntimePureInputType::I64),
+            "isize" => Some(RuntimePureInputType::ISize),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -277,11 +302,44 @@ fn score(base: i64, bonus: i64) -> i64 {
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].name(), "score");
         assert_eq!(candidates[0].input_names(), ["base", "bonus"]);
+        assert_eq!(
+            candidates[0].input_types(),
+            [RuntimePureInputType::I64, RuntimePureInputType::I64]
+        );
         let request = candidates[0]
             .request_with_i64_inputs([3, 4])
             .expect("request builds with matching inputs");
         assert_eq!(request.name, "score");
         assert_eq!(request.bindings.len(), 2);
+    }
+
+    #[test]
+    fn pure_function_candidate_preserves_non_i64_integer_input_types() {
+        let parsed = parse_source(
+            r"
+#[pure]
+fn score(base: i32, bonus: i16) -> i32 {
+    base + bonus
+}
+",
+        );
+        assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+        let tree = parsed.into_typed_tree();
+        let hir = lower_to_hir(&tree).expect("pure function lowers to HIR");
+
+        let candidates =
+            lower_pure_helper_candidates(&hir).expect("pure function lowers to helper candidate");
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].input_names(), ["base", "bonus"]);
+        assert_eq!(
+            candidates[0].input_types(),
+            [RuntimePureInputType::I32, RuntimePureInputType::I16]
+        );
+        assert!(matches!(
+            candidates[0].request_with_i64_inputs([3, 4]),
+            Err(PureHelperLowerError::UnsupportedParameterType { .. })
+        ));
     }
 
     #[test]
