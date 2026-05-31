@@ -78,6 +78,25 @@ fn checked_in_docs_and_samples_do_not_record_host_absolute_paths() {
     );
 }
 
+#[test]
+fn rust_unsafe_sites_stay_inside_jit_native_call_boundary() {
+    let root = workspace_root();
+    let violations = text_files(&root.join("crates"))
+        .into_iter()
+        .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("rs"))
+        .filter(|path| {
+            path.file_name()
+                .is_none_or(|name| name != "regression_harness.rs")
+        })
+        .flat_map(|path| rust_unsafe_violations_in_file(&path))
+        .collect::<Vec<_>>();
+
+    assert!(
+        violations.is_empty(),
+        "Rust unsafe must stay isolated in the audited JIT native-call boundary: {violations:?}"
+    );
+}
+
 fn host_path_markers() -> Vec<String> {
     vec![
         format!("{}{}", "C:", "\\"),
@@ -86,6 +105,54 @@ fn host_path_markers() -> Vec<String> {
         ["/", "home", "/"].concat(),
         ["/", "tmp", "/"].concat(),
     ]
+}
+
+fn rust_unsafe_violations_in_file(path: &Path) -> Vec<String> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let lines = text.lines().collect::<Vec<_>>();
+    lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| contains_rust_unsafe_site(line))
+        .filter(|(index, _)| {
+            !is_jit_native_call_boundary(path) || !has_nearby_safety_comment(&lines, *index)
+        })
+        .map(|(index, line)| {
+            format!(
+                "{}:{} contains `{}`",
+                relative_to_workspace(path).display(),
+                index + 1,
+                line.trim()
+            )
+        })
+        .collect()
+}
+
+fn contains_rust_unsafe_site(line: &str) -> bool {
+    line.contains("unsafe {")
+        || line.contains("unsafe{")
+        || line.contains("unsafe fn")
+        || line.contains("unsafe impl")
+        || line.contains("unsafe trait")
+}
+
+fn has_nearby_safety_comment(lines: &[&str], index: usize) -> bool {
+    let search_start = index.saturating_sub(6);
+    (search_start..index).any(|comment_index| lines[comment_index].contains("SAFETY:"))
+}
+
+fn is_jit_native_call_boundary(path: &Path) -> bool {
+    relative_to_workspace(path)
+        .components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .eq([
+            "crates",
+            "arcweft-lang-jit-cranelift",
+            "src",
+            "native_call.rs",
+        ])
 }
 
 fn workspace_root() -> PathBuf {
