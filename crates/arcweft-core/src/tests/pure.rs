@@ -1,4 +1,4 @@
-use crate::math::{DenseMatrixF32, DenseTensorF32};
+use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use crate::plan::{
     RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
     RuntimePureOutputType,
@@ -166,6 +166,58 @@ fn vm_pure_backend_evaluates_builtin_matrix_and_tensor_calls() {
         result.value,
         RuntimeValue::TensorF32(tensor)
             if tensor.shape().dims() == [2, 2] && tensor.values() == [6.0, 8.0, 10.0, 12.0]
+    ));
+}
+
+#[test]
+fn vm_pure_backend_evaluates_builtin_f64_matrix_and_tensor_calls() {
+    let lhs = DenseMatrixF64::new(2, 2, vec![1.5, 2.0, 3.25, 4.5]).unwrap();
+    let rhs = DenseMatrixF64::new(2, 2, vec![5.0, 6.5, 7.0, 8.25]).unwrap();
+    let request = PureFunctionRequest::new(
+        "matrix_f64",
+        RuntimeExpr::Call {
+            callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::MathMatmulF64),
+            args: vec![
+                RuntimeExpr::Value(RuntimeValue::matrix_f64(lhs)),
+                RuntimeExpr::Value(RuntimeValue::matrix_f64(rhs)),
+            ],
+        },
+        [],
+    );
+
+    let result = VmPureFunctionBackend
+        .evaluate(&request)
+        .expect("f64 matrix call evaluates");
+
+    assert!(matches!(
+        result.value,
+        RuntimeValue::MatrixF64(matrix)
+            if matrix.shape() == crate::math::MatrixShape::new(2, 2)
+                && matrix.values() == [21.5, 26.25, 47.75, 58.25]
+    ));
+
+    let lhs = DenseTensorF64::new(vec![2, 2], vec![1.5, 2.25, 3.75, 4.5]).unwrap();
+    let rhs = DenseTensorF64::new(vec![2, 2], vec![5.0, 6.25, 7.5, 8.75]).unwrap();
+    let request = PureFunctionRequest::new(
+        "tensor_f64",
+        RuntimeExpr::Call {
+            callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::MathTensorAddF64),
+            args: vec![
+                RuntimeExpr::Value(RuntimeValue::tensor_f64(lhs)),
+                RuntimeExpr::Value(RuntimeValue::tensor_f64(rhs)),
+            ],
+        },
+        [],
+    );
+
+    let result = VmPureFunctionBackend
+        .evaluate(&request)
+        .expect("f64 tensor call evaluates");
+
+    assert!(matches!(
+        result.value,
+        RuntimeValue::TensorF64(tensor)
+            if tensor.shape().dims() == [2, 2] && tensor.values() == [6.5, 8.5, 11.25, 13.25]
     ));
 }
 

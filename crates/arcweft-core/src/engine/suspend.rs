@@ -755,7 +755,9 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::Unit
         | RuntimeValue::MatrixF32(_)
+        | RuntimeValue::MatrixF64(_)
         | RuntimeValue::TensorF32(_)
+        | RuntimeValue::TensorF64(_)
         | RuntimeValue::Tuple(_)
         | RuntimeValue::Seq(_)
         | RuntimeValue::Record(_)

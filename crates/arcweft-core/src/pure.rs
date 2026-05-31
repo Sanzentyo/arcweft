@@ -1,4 +1,4 @@
-use crate::math::{DenseMatrixF32, DenseTensorF32};
+use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use crate::plan::{RuntimePureHelper, RuntimePureInputType, RuntimePureOutputType};
 use crate::step::RuntimePureCallStats;
 use crate::value::{
@@ -132,6 +132,24 @@ pub trait RuntimeMathCallBackend {
         lhs: &DenseTensorF32,
         rhs: &DenseTensorF32,
     ) -> Result<DenseTensorF32, RuntimeEvalError>;
+
+    fn call_math_matmul_f64(
+        &mut self,
+        lhs: &DenseMatrixF64,
+        rhs: &DenseMatrixF64,
+    ) -> Result<DenseMatrixF64, RuntimeEvalError>;
+
+    fn call_math_matrix_add_f64(
+        &mut self,
+        lhs: &DenseMatrixF64,
+        rhs: &DenseMatrixF64,
+    ) -> Result<DenseMatrixF64, RuntimeEvalError>;
+
+    fn call_math_tensor_add_f64(
+        &mut self,
+        lhs: &DenseTensorF64,
+        rhs: &DenseTensorF64,
+    ) -> Result<DenseTensorF64, RuntimeEvalError>;
 }
 
 /// Runtime-facing backend for deterministic pure helper calls.
@@ -1476,6 +1494,45 @@ impl RuntimeMathCallBackend for VmRuntimePureCallBackend {
         lhs.add_scalar(rhs)
             .map_err(|error| RuntimeEvalError::UnsupportedPure {
                 name: RuntimeIntrinsic::MathTensorAddF32.as_label().to_owned(),
+                reason: error.to_string(),
+            })
+    }
+
+    fn call_math_matmul_f64(
+        &mut self,
+        lhs: &DenseMatrixF64,
+        rhs: &DenseMatrixF64,
+    ) -> Result<DenseMatrixF64, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        lhs.matmul_scalar(rhs)
+            .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                name: RuntimeIntrinsic::MathMatmulF64.as_label().to_owned(),
+                reason: error.to_string(),
+            })
+    }
+
+    fn call_math_matrix_add_f64(
+        &mut self,
+        lhs: &DenseMatrixF64,
+        rhs: &DenseMatrixF64,
+    ) -> Result<DenseMatrixF64, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        lhs.add_scalar(rhs)
+            .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                name: RuntimeIntrinsic::MathMatrixAddF64.as_label().to_owned(),
+                reason: error.to_string(),
+            })
+    }
+
+    fn call_math_tensor_add_f64(
+        &mut self,
+        lhs: &DenseTensorF64,
+        rhs: &DenseTensorF64,
+    ) -> Result<DenseTensorF64, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        lhs.add_scalar(rhs)
+            .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                name: RuntimeIntrinsic::MathTensorAddF64.as_label().to_owned(),
                 reason: error.to_string(),
             })
     }
@@ -3113,6 +3170,36 @@ impl PureEvaluator {
             ) => lhs
                 .add_scalar(rhs)
                 .map(RuntimeValue::tensor_f32)
+                .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                    name: callee.as_label().to_owned(),
+                    reason: error.to_string(),
+                }),
+            (
+                Some(RuntimeIntrinsic::MathMatmulF64),
+                [RuntimeValue::MatrixF64(lhs), RuntimeValue::MatrixF64(rhs)],
+            ) => lhs
+                .matmul_scalar(rhs)
+                .map(RuntimeValue::matrix_f64)
+                .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                    name: callee.as_label().to_owned(),
+                    reason: error.to_string(),
+                }),
+            (
+                Some(RuntimeIntrinsic::MathMatrixAddF64),
+                [RuntimeValue::MatrixF64(lhs), RuntimeValue::MatrixF64(rhs)],
+            ) => lhs
+                .add_scalar(rhs)
+                .map(RuntimeValue::matrix_f64)
+                .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                    name: callee.as_label().to_owned(),
+                    reason: error.to_string(),
+                }),
+            (
+                Some(RuntimeIntrinsic::MathTensorAddF64),
+                [RuntimeValue::TensorF64(lhs), RuntimeValue::TensorF64(rhs)],
+            ) => lhs
+                .add_scalar(rhs)
+                .map(RuntimeValue::tensor_f64)
                 .map_err(|error| RuntimeEvalError::UnsupportedPure {
                     name: callee.as_label().to_owned(),
                     reason: error.to_string(),

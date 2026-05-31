@@ -505,18 +505,23 @@ and its borrowed view/materialization tests together.
 
 ## Runtime Matrix And Tensor Math
 
-Arcweft now has built-in dense `f32` matrix and tensor runtime values:
-`RuntimeValue::MatrixF32(DenseMatrixF32)` and
-`RuntimeValue::TensorF32(DenseTensorF32)`. `arcweft-core` owns only the
-deterministic row-major data model and scalar baseline kernels. Native
+Arcweft now has built-in dense `f32` and `f64` matrix and tensor runtime
+values: `RuntimeValue::MatrixF32(DenseMatrixF32)`,
+`RuntimeValue::TensorF32(DenseTensorF32)`,
+`RuntimeValue::MatrixF64(DenseMatrixF64)`, and
+`RuntimeValue::TensorF64(DenseTensorF64)`. `arcweft-core` owns only the
+deterministic row-major data model and scalar baseline kernels, implemented as
+generic dense storage with width-specific runtime value variants. Native
 acceleration stays in `arcweft-runtime-accelerator`, where
 `RuntimeMathAccelerator` can select `scalar`, `glam`, `ndarray`, `wgpu`, or
 `auto`.
 
 Flow execution now routes `math.matmul_f32`, `math.matrix_add_f32`, and
-`math.tensor_add_f32` through the same Sans I/O `RuntimePureCallBackend`
-adapter boundary used by pure helper acceleration. The VM backend keeps the
-scalar deterministic baseline. `RuntimePureAccelerator` owns a
+`math.tensor_add_f32`, plus the matching `math.matmul_f64`,
+`math.matrix_add_f64`, and `math.tensor_add_f64` calls, through the same Sans
+I/O `RuntimePureCallBackend` adapter boundary used by pure helper
+acceleration. The VM backend keeps the scalar deterministic baseline.
+`RuntimePureAccelerator` owns a
 `RuntimeMathAccelerator`, so programs using built-in `math.*` calls naturally
 receive the configured math backend without adding GPU or ndarray dependencies
 to `arcweft-core`. Runtime stats record `math_calls` and
@@ -535,6 +540,9 @@ alongside Vulkan, Metal, and GLES. The workspace Rust floor is raised to 1.96
 so the latest wgpu stack can be used without pinning older graphics crates.
 If a GPU adapter is unavailable, explicit `wgpu` measurement reports a
 structured skip/error rather than silently changing the requested backend.
+Portable wgpu compute shaders in this workspace are `f32` kernels; `f64`
+matrix/tensor calls stay on scalar, glam 4x4, or ndarray CPU backends and
+preserve `f64` storage across the runtime boundary.
 
 Local path-free measurements:
 
@@ -564,6 +572,7 @@ Representative release results on the local machine:
 | flow 8x8 matmul_f32 | auto wgpu | measured | 473400 | `--features math-wgpu`, `--math-wgpu-min-elements 1`, prepared cache hit after warmup, `bytes_uploaded = 0`, `gpu_buffer_reuse_hits = 4`, `last_auto_reason = matmul_wgpu_work_threshold` |
 | flow 4x4 matrix_add_f32 | ndarray | measured | 9900 | `--value` matrix input, one ndarray view add, `bytes_borrowed = 128`, `bytes_copied = 0` |
 | flow 2x2x2 tensor_add_f32 | ndarray | measured | 13400 | `--value` tensor input, one ndarray dynamic-view add, `bytes_borrowed = 64`, `bytes_copied = 0` |
+| flow 2x2 matmul_f64 | ndarray | functional | checked by test | `--value` matrix input, `math_calls = 1`, `math_accelerated_calls = 1`, `bytes_borrowed = 64`, `result_bytes_copied = 32` |
 | 64x64 matmul_f32 | scalar | measured | 21300 | row-major baseline |
 | 64x64 matmul_f32 | ndarray | measured | 26700 | general CPU matrix backend |
 | 64x64 matmul_f32 | auto | measured | 24200 | selected ndarray without wgpu feature |

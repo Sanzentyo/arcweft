@@ -758,6 +758,14 @@ impl TypeChecker<'_> {
                 self.check_math_binary_args(args, "TensorF32");
                 Some(TypeKind::Named("TensorF32".to_owned()))
             }
+            "math.matmul_f64" | "math.matrix_add_f64" => {
+                self.check_math_binary_args(args, "MatrixF64");
+                Some(TypeKind::Named("MatrixF64".to_owned()))
+            }
+            "math.tensor_add_f64" => {
+                self.check_math_binary_args(args, "TensorF64");
+                Some(TypeKind::Named("TensorF64".to_owned()))
+            }
             _ => None,
         }
     }

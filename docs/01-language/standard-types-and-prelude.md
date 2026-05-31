@@ -58,6 +58,34 @@ std.f64.to_f32(x)
 The VM reference backend defines these functions. JIT/AOT backends may lower a
 subset directly and otherwise use the VM semantics as the correctness baseline.
 
+## Dense Matrix And Tensor Types
+
+Dense numeric matrix and tensor values are explicit about scalar width:
+
+```arcw
+MatrixF32
+TensorF32
+MatrixF64
+TensorF64
+```
+
+`math.matmul_f32`, `math.matrix_add_f32`, and `math.tensor_add_f32` operate on
+the `f32` types. `math.matmul_f64`, `math.matrix_add_f64`, and
+`math.tensor_add_f64` operate on the `f64` types. The `f64` forms keep `f64`
+storage through VM and CPU accelerator paths instead of widening or narrowing
+through `f32`.
+
+Runtime CLI values use path-free typed payload strings:
+
+```bash
+--value lhs=matrix/f32/4x4:1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1
+--value rhs=matrix/f64/2x2:1.5,2,3.25,4.5
+--value t=tensor/f64/2x2:1.5,2.25,3.75,4.5
+```
+
+The portable `wgpu` math backend is currently `f32`-only. `f64` matrix/tensor
+kernels use scalar, glam 4x4, or ndarray CPU backends.
+
 ## References and Handles
 
 ```arcw

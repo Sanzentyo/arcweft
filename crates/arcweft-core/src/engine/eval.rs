@@ -3231,6 +3231,27 @@ fn evaluate_runtime_call(
             RuntimeValue::tensor_f32,
         ),
         (
+            Some(RuntimeIntrinsic::MathMatmulF64),
+            [RuntimeValue::MatrixF64(lhs), RuntimeValue::MatrixF64(rhs)],
+        ) => pure_backend.call_math_matmul_f64(lhs, rhs).map_or_else(
+            |error| RuntimeValue::String(format!("math.matmul_f64({error})")),
+            RuntimeValue::matrix_f64,
+        ),
+        (
+            Some(RuntimeIntrinsic::MathMatrixAddF64),
+            [RuntimeValue::MatrixF64(lhs), RuntimeValue::MatrixF64(rhs)],
+        ) => pure_backend.call_math_matrix_add_f64(lhs, rhs).map_or_else(
+            |error| RuntimeValue::String(format!("math.matrix_add_f64({error})")),
+            RuntimeValue::matrix_f64,
+        ),
+        (
+            Some(RuntimeIntrinsic::MathTensorAddF64),
+            [RuntimeValue::TensorF64(lhs), RuntimeValue::TensorF64(rhs)],
+        ) => pure_backend.call_math_tensor_add_f64(lhs, rhs).map_or_else(
+            |error| RuntimeValue::String(format!("math.tensor_add_f64({error})")),
+            RuntimeValue::tensor_f64,
+        ),
+        (
             Some(
                 intrinsic @ (RuntimeIntrinsic::PathSave
                 | RuntimeIntrinsic::PathAsset

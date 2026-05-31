@@ -416,7 +416,17 @@ fn lower_runtime_math_method_call(
         return None;
     };
     let method = runtime_method_name(method);
-    if receiver != "math" || !matches!(method, "matmul_f32" | "matrix_add_f32" | "tensor_add_f32") {
+    if receiver != "math"
+        || !matches!(
+            method,
+            "matmul_f32"
+                | "matrix_add_f32"
+                | "tensor_add_f32"
+                | "matmul_f64"
+                | "matrix_add_f64"
+                | "tensor_add_f64"
+        )
+    {
         return None;
     }
     Some(RuntimeExpr::Call {
@@ -482,7 +492,17 @@ fn lower_strict_math_method_call(
         return None;
     };
     let method = runtime_method_name(method);
-    if receiver != "math" || !matches!(method, "matmul_f32" | "matrix_add_f32" | "tensor_add_f32") {
+    if receiver != "math"
+        || !matches!(
+            method,
+            "matmul_f32"
+                | "matrix_add_f32"
+                | "tensor_add_f32"
+                | "matmul_f64"
+                | "matrix_add_f64"
+                | "tensor_add_f64"
+        )
+    {
         return None;
     }
     Some(
@@ -1122,6 +1142,7 @@ fn array_repeat_len(expr: &Expr) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_core::value::RuntimeIntrinsic;
 
     #[test]
     fn strict_runtime_value_lowering_preserves_calls() {
@@ -1157,6 +1178,27 @@ mod tests {
             RuntimeExpr::PureCall { helper, args }
                 if helper == RuntimePureHelperId(2)
                     && matches!(args.as_slice(), [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(3))
+        ));
+    }
+
+    #[test]
+    fn strict_runtime_lowers_f64_math_method_calls_to_intrinsics() {
+        let expr = Expr::MethodCall {
+            receiver: Box::new(Expr::Path("math".to_owned())),
+            method: "matmul_f64".to_owned(),
+            args: vec![
+                CallArg::Positional(Expr::Path("lhs".to_owned())),
+                CallArg::Positional(Expr::Path("rhs".to_owned())),
+            ],
+        };
+
+        let lowered = lower_runtime_expr_strict(&expr).expect("math intrinsic lowers");
+
+        assert!(matches!(
+            lowered,
+            RuntimeExpr::Call { callee, args }
+                if callee.as_intrinsic() == Some(RuntimeIntrinsic::MathMatmulF64)
+                    && args.len() == 2
         ));
     }
 

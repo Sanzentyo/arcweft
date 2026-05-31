@@ -1,4 +1,4 @@
-use crate::math::{DenseMatrixF32, DenseTensorF32};
+use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use crate::pattern::RuntimePattern;
 use crate::plan::{RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType};
 use crate::time::LogicalDuration;
@@ -32,7 +32,9 @@ pub enum RuntimeValue {
     F32(f32),
     F64(f64),
     MatrixF32(DenseMatrixF32),
+    MatrixF64(DenseMatrixF64),
     TensorF32(DenseTensorF32),
+    TensorF64(DenseTensorF64),
     String(String),
     Char(char),
     Duration(LogicalDuration),
@@ -340,6 +342,9 @@ pub enum RuntimeIntrinsic {
     MathMatmulF32,
     MathMatrixAddF32,
     MathTensorAddF32,
+    MathMatmulF64,
+    MathMatrixAddF64,
+    MathTensorAddF64,
     PathSave,
     PathAsset,
     PathTemp,
@@ -405,6 +410,9 @@ impl RuntimeIntrinsic {
             "math.matmul_f32" => Some(Self::MathMatmulF32),
             "math.matrix_add_f32" => Some(Self::MathMatrixAddF32),
             "math.tensor_add_f32" => Some(Self::MathTensorAddF32),
+            "math.matmul_f64" => Some(Self::MathMatmulF64),
+            "math.matrix_add_f64" => Some(Self::MathMatrixAddF64),
+            "math.tensor_add_f64" => Some(Self::MathTensorAddF64),
             "path.save" => Some(Self::PathSave),
             "path.asset" => Some(Self::PathAsset),
             "path.temp" => Some(Self::PathTemp),
@@ -471,6 +479,9 @@ impl RuntimeIntrinsic {
             Self::MathMatmulF32 => "math.matmul_f32",
             Self::MathMatrixAddF32 => "math.matrix_add_f32",
             Self::MathTensorAddF32 => "math.tensor_add_f32",
+            Self::MathMatmulF64 => "math.matmul_f64",
+            Self::MathMatrixAddF64 => "math.matrix_add_f64",
+            Self::MathTensorAddF64 => "math.tensor_add_f64",
             Self::PathSave => "path.save",
             Self::PathAsset => "path.asset",
             Self::PathTemp => "path.temp",
@@ -539,7 +550,10 @@ impl RuntimeIntrinsic {
             | Self::StdF64ToF32
             | Self::MathMatmulF32
             | Self::MathMatrixAddF32
-            | Self::MathTensorAddF32 => None,
+            | Self::MathTensorAddF32
+            | Self::MathMatmulF64
+            | Self::MathMatrixAddF64
+            | Self::MathTensorAddF64 => None,
         }
     }
 }
@@ -605,8 +619,16 @@ impl RuntimeValue {
         Self::MatrixF32(value)
     }
 
+    pub fn matrix_f64(value: DenseMatrixF64) -> Self {
+        Self::MatrixF64(value)
+    }
+
     pub fn tensor_f32(value: DenseTensorF32) -> Self {
         Self::TensorF32(value)
+    }
+
+    pub fn tensor_f64(value: DenseTensorF64) -> Self {
+        Self::TensorF64(value)
     }
 }
 
@@ -4239,8 +4261,14 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
         RuntimeValue::MatrixF32(value) => {
             format!("matrix/f32/{}x{}", value.rows(), value.cols())
         }
+        RuntimeValue::MatrixF64(value) => {
+            format!("matrix/f64/{}x{}", value.rows(), value.cols())
+        }
         RuntimeValue::TensorF32(value) => {
             format!("tensor/f32/{:?}", value.shape().dims())
+        }
+        RuntimeValue::TensorF64(value) => {
+            format!("tensor/f64/{:?}", value.shape().dims())
         }
         RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),

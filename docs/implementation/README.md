@@ -164,8 +164,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - Runtime pure accelerator cache construction now builds each helper's compile
   request once and shares it across JIT/AOT attempts, reducing Auto-mode setup
   work for helpers that fall through from JIT to AOT or VM.
-- Runtime dense math now has `MatrixF32` and `TensorF32` value variants in
-  `arcweft-core`, with scalar row-major correctness kernels kept Sans I/O.
+- Runtime dense math now has `MatrixF32`, `TensorF32`, `MatrixF64`, and
+  `TensorF64` value variants in `arcweft-core`, with scalar row-major
+  correctness kernels kept Sans I/O and generic storage underneath the
+  width-specific runtime variants.
   Native math acceleration is isolated in `arcweft-runtime-accelerator` behind
   selectable `scalar`, `glam`, `ndarray`, `wgpu`, and `auto` backends. The wgpu
   backend is feature-gated, keeps DX12 enabled for Windows alongside Vulkan,
@@ -174,8 +176,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   route `math_backend` and `math_wgpu_min_elements` into
   `RuntimePureAcceleratorConfig`, so built-in math calls use the same adapter
   config path as pure helper VM/AOT/JIT selection. CLI runtime bindings can
-  supply `matrix/f32/<rows>x<cols>:<csv>` and `tensor/f32/<dims>:<csv>` values,
+  supply `matrix/f32/<rows>x<cols>:<csv>`, `tensor/f32/<dims>:<csv>`,
+  `matrix/f64/<rows>x<cols>:<csv>`, and `tensor/f64/<dims>:<csv>` values,
   making source-level `math.*` flows measurable through the normal bench JSON.
+  The portable wgpu kernels remain `f32`; `f64` math uses scalar, glam 4x4, or
+  ndarray CPU backends without narrowing.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

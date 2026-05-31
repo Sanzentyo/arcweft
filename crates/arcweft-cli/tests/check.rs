@@ -1391,6 +1391,68 @@ flow @flow.math math(lhs: MatrixF32, rhs: MatrixF32) -> MatrixF32 {
 }
 
 #[test]
+fn run_json_executes_f64_math_intrinsic_with_cli_matrix_bindings() {
+    let path = temp_arcw(
+        "runtime-math-f64-bindings",
+        r"
+flow @flow.math_f64 math_f64(lhs: MatrixF64, rhs: MatrixF64) -> MatrixF64 {
+    let out = math.matmul_f64(lhs, rhs)
+    return out
+}
+",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--flow")
+        .arg("flow.math_f64")
+        .arg("--math-backend")
+        .arg("ndarray")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("1")
+        .arg("--max-ops")
+        .arg("8")
+        .arg("--value")
+        .arg("lhs=matrix/f64/2x2:1.5,2,3.25,4.5")
+        .arg("--value")
+        .arg("rhs=matrix/f64/2x2:5,6.5,7,8.25")
+        .arg("--json")
+        .output()
+        .expect("arcw run executes f64 math intrinsic with CLI matrix bindings");
+
+    assert!(
+        output.status.success(),
+        "runtime f64 math run should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("run output is structured JSON");
+    assert_eq!(
+        json["executor_stats"]["pure_config"]["math_backend"],
+        "ndarray"
+    );
+    let math = &json["executor_stats"]["math"];
+    assert_eq!(math["ndarray_calls"], 1);
+    assert_eq!(math["bytes_borrowed"], 64);
+    assert_eq!(math["bytes_copied"], 0);
+    assert_eq!(math["last_backend"], "ndarray");
+    let pure = &json["steps"][0]["stats"]["pure"];
+    assert_eq!(pure["math_calls"], 1);
+    assert_eq!(pure["math_accelerated_calls"], 1);
+    assert_eq!(pure["arg_bytes_borrowed"], 64);
+    assert_eq!(pure["result_bytes_copied"], 32);
+    assert_eq!(json["final_status"], "done Return(\"matrix/f64/2x2\")");
+    assert!(
+        !String::from_utf8_lossy(&output.stdout)
+            .contains(&std::env::temp_dir().display().to_string()),
+        "runtime f64 math JSON must not record absolute temp paths: {json}"
+    );
+}
+
+#[test]
 fn verify_types_json_reports_type_and_runtime_validation_without_absolute_source() {
     let path = temp_arcw(
         "verify-types",

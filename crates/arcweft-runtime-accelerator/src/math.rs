@@ -1,4 +1,8 @@
-use arcweft_core::math::{DenseMatrixF32, DenseTensorF32, RuntimeMathError};
+use arcweft_core::math::{
+    DenseMatrix, DenseMatrixF32, DenseMatrixF64, DenseTensor, DenseTensorF32, DenseTensorF64,
+    RuntimeMathError,
+};
+use std::ops::{Add, AddAssign, Mul};
 use thiserror::Error;
 
 /// Runtime math backend selection for built-in matrix and tensor operations.
@@ -225,6 +229,64 @@ impl RuntimeMathAccelerator {
             RuntimeMathBackend::Glam => self.tensor_add_glam(lhs, rhs),
             RuntimeMathBackend::Ndarray => self.tensor_add_ndarray(lhs, rhs),
             RuntimeMathBackend::Wgpu => self.tensor_add_wgpu(lhs, rhs),
+            RuntimeMathBackend::Auto => unreachable!("auto is resolved before dispatch"),
+        }
+    }
+
+    pub fn matmul_f64(
+        &mut self,
+        lhs: &DenseMatrixF64,
+        rhs: &DenseMatrixF64,
+    ) -> Result<DenseMatrixF64, RuntimeMathAcceleratorError> {
+        self.record_matrix_inputs(lhs, rhs);
+        let selection = self.select_matmul_backend(lhs, rhs);
+        self.stats.last_auto_reason = selection.auto_reason;
+        match selection.backend {
+            RuntimeMathBackend::Scalar => self.matmul_scalar(lhs, rhs),
+            RuntimeMathBackend::Glam => self.matmul_glam_f64(lhs, rhs),
+            RuntimeMathBackend::Ndarray => self.matmul_ndarray_f64(lhs, rhs),
+            RuntimeMathBackend::Wgpu => Err(RuntimeMathAcceleratorError::Backend(
+                "wgpu backend does not support portable f64 matrix kernels".to_owned(),
+            )),
+            RuntimeMathBackend::Auto => unreachable!("auto is resolved before dispatch"),
+        }
+    }
+
+    pub fn matrix_add_f64(
+        &mut self,
+        lhs: &DenseMatrixF64,
+        rhs: &DenseMatrixF64,
+    ) -> Result<DenseMatrixF64, RuntimeMathAcceleratorError> {
+        self.record_matrix_inputs(lhs, rhs);
+        let selection = self.select_elementwise_backend(lhs.values().len());
+        self.stats.last_auto_reason = selection.auto_reason;
+        match selection.backend {
+            RuntimeMathBackend::Scalar => self.matrix_add_scalar(lhs, rhs),
+            RuntimeMathBackend::Glam => self.matrix_add_glam_f64(lhs, rhs),
+            RuntimeMathBackend::Ndarray => self.matrix_add_ndarray_f64(lhs, rhs),
+            RuntimeMathBackend::Wgpu => Err(RuntimeMathAcceleratorError::Backend(
+                "wgpu backend does not support portable f64 matrix kernels".to_owned(),
+            )),
+            RuntimeMathBackend::Auto => unreachable!("auto is resolved before dispatch"),
+        }
+    }
+
+    pub fn tensor_add_f64(
+        &mut self,
+        lhs: &DenseTensorF64,
+        rhs: &DenseTensorF64,
+    ) -> Result<DenseTensorF64, RuntimeMathAcceleratorError> {
+        self.record_tensor_inputs(lhs, rhs);
+        let selection = self.select_elementwise_backend(lhs.values().len());
+        self.stats.last_auto_reason = selection.auto_reason;
+        match selection.backend {
+            RuntimeMathBackend::Scalar | RuntimeMathBackend::Glam => {
+                self.tensor_add_scalar(lhs, rhs)
+            }
+            RuntimeMathBackend::Ndarray => self.tensor_add_ndarray_f64(lhs, rhs),
+            RuntimeMathBackend::Wgpu => Err(RuntimeMathAcceleratorError::Backend(
+                "wgpu backend does not support portable f64 tensor kernels".to_owned(),
+            )),
             RuntimeMathBackend::Auto => unreachable!("auto is resolved before dispatch"),
         }
     }
@@ -469,10 +531,10 @@ impl RuntimeMathAccelerator {
         }
     }
 
-    fn select_matmul_backend(
+    fn select_matmul_backend<T>(
         &self,
-        lhs: &DenseMatrixF32,
-        rhs: &DenseMatrixF32,
+        lhs: &DenseMatrix<T>,
+        rhs: &DenseMatrix<T>,
     ) -> RuntimeMathBackendSelection {
         match self.config.backend {
             RuntimeMathBackend::Auto if lhs.rows() == 4 && lhs.cols() == 4 && rhs.cols() == 4 => {
@@ -522,31 +584,40 @@ impl RuntimeMathAccelerator {
         }
     }
 
-    fn matmul_scalar(
+    fn matmul_scalar<T>(
         &mut self,
-        lhs: &DenseMatrixF32,
-        rhs: &DenseMatrixF32,
-    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        lhs: &DenseMatrix<T>,
+        rhs: &DenseMatrix<T>,
+    ) -> Result<DenseMatrix<T>, RuntimeMathAcceleratorError>
+    where
+        T: Copy + Default + AddAssign + Mul<Output = T>,
+    {
         self.stats.scalar_calls += 1;
         self.stats.last_backend = Some(RuntimeMathBackend::Scalar);
         lhs.matmul_scalar(rhs).map_err(Into::into)
     }
 
-    fn matrix_add_scalar(
+    fn matrix_add_scalar<T>(
         &mut self,
-        lhs: &DenseMatrixF32,
-        rhs: &DenseMatrixF32,
-    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        lhs: &DenseMatrix<T>,
+        rhs: &DenseMatrix<T>,
+    ) -> Result<DenseMatrix<T>, RuntimeMathAcceleratorError>
+    where
+        T: Copy + Add<Output = T>,
+    {
         self.stats.scalar_calls += 1;
         self.stats.last_backend = Some(RuntimeMathBackend::Scalar);
         lhs.add_scalar(rhs).map_err(Into::into)
     }
 
-    fn tensor_add_scalar(
+    fn tensor_add_scalar<T>(
         &mut self,
-        lhs: &DenseTensorF32,
-        rhs: &DenseTensorF32,
-    ) -> Result<DenseTensorF32, RuntimeMathAcceleratorError> {
+        lhs: &DenseTensor<T>,
+        rhs: &DenseTensor<T>,
+    ) -> Result<DenseTensor<T>, RuntimeMathAcceleratorError>
+    where
+        T: Copy + Add<Output = T>,
+    {
         self.stats.scalar_calls += 1;
         self.stats.last_backend = Some(RuntimeMathBackend::Scalar);
         lhs.add_scalar(rhs).map_err(Into::into)
@@ -586,6 +657,46 @@ impl RuntimeMathAccelerator {
                 let rhs_matrix = glam::Mat4::from_cols_array(&row_major_4x4_to_cols(rhs.values()));
                 let out = cols_4x4_to_row_major((lhs_matrix + rhs_matrix).to_cols_array());
                 return DenseMatrixF32::new(4, 4, out).map_err(Into::into);
+            }
+        }
+        self.stats.fallback_calls += 1;
+        self.matrix_add_scalar(lhs, rhs)
+    }
+
+    fn matmul_glam_f64(
+        &mut self,
+        lhs: &DenseMatrixF64,
+        rhs: &DenseMatrixF64,
+    ) -> Result<DenseMatrixF64, RuntimeMathAcceleratorError> {
+        #[cfg(feature = "math-glam")]
+        {
+            if lhs.rows() == 4 && lhs.cols() == 4 && rhs.rows() == 4 && rhs.cols() == 4 {
+                self.stats.glam_calls += 1;
+                self.stats.last_backend = Some(RuntimeMathBackend::Glam);
+                let lhs_matrix = glam::DMat4::from_cols_array(&row_major_4x4_to_cols(lhs.values()));
+                let rhs_matrix = glam::DMat4::from_cols_array(&row_major_4x4_to_cols(rhs.values()));
+                let out = cols_4x4_to_row_major((lhs_matrix * rhs_matrix).to_cols_array());
+                return DenseMatrixF64::new(4, 4, out).map_err(Into::into);
+            }
+        }
+        self.stats.fallback_calls += 1;
+        self.matmul_scalar(lhs, rhs)
+    }
+
+    fn matrix_add_glam_f64(
+        &mut self,
+        lhs: &DenseMatrixF64,
+        rhs: &DenseMatrixF64,
+    ) -> Result<DenseMatrixF64, RuntimeMathAcceleratorError> {
+        #[cfg(feature = "math-glam")]
+        {
+            if lhs.rows() == 4 && lhs.cols() == 4 && rhs.rows() == 4 && rhs.cols() == 4 {
+                self.stats.glam_calls += 1;
+                self.stats.last_backend = Some(RuntimeMathBackend::Glam);
+                let lhs_matrix = glam::DMat4::from_cols_array(&row_major_4x4_to_cols(lhs.values()));
+                let rhs_matrix = glam::DMat4::from_cols_array(&row_major_4x4_to_cols(rhs.values()));
+                let out = cols_4x4_to_row_major((lhs_matrix + rhs_matrix).to_cols_array());
+                return DenseMatrixF64::new(4, 4, out).map_err(Into::into);
             }
         }
         self.stats.fallback_calls += 1;
@@ -683,6 +794,100 @@ impl RuntimeMathAccelerator {
                 .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
                 let out = &lhs_view + &rhs_view;
                 DenseTensorF32::new(lhs.shape().dims().to_vec(), out.into_raw_vec_and_offset().0)
+                    .map_err(Into::into)
+            } else {
+                lhs.add_scalar(rhs).map_err(Into::into)
+            }
+        }
+        #[cfg(not(feature = "math-ndarray"))]
+        {
+            self.stats.fallback_calls += 1;
+            self.tensor_add_scalar(lhs, rhs)
+        }
+    }
+
+    fn matmul_ndarray_f64(
+        &mut self,
+        lhs: &DenseMatrixF64,
+        rhs: &DenseMatrixF64,
+    ) -> Result<DenseMatrixF64, RuntimeMathAcceleratorError> {
+        #[cfg(feature = "math-ndarray")]
+        {
+            if lhs.cols() == rhs.rows() {
+                self.stats.ndarray_calls += 1;
+                self.stats.last_backend = Some(RuntimeMathBackend::Ndarray);
+                let lhs_view =
+                    ndarray::ArrayView2::from_shape((lhs.rows(), lhs.cols()), lhs.values())
+                        .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+                let rhs_view =
+                    ndarray::ArrayView2::from_shape((rhs.rows(), rhs.cols()), rhs.values())
+                        .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+                let out = lhs_view.dot(&rhs_view);
+                DenseMatrixF64::new(lhs.rows(), rhs.cols(), out.into_raw_vec_and_offset().0)
+                    .map_err(Into::into)
+            } else {
+                lhs.matmul_scalar(rhs).map_err(Into::into)
+            }
+        }
+        #[cfg(not(feature = "math-ndarray"))]
+        {
+            self.stats.fallback_calls += 1;
+            self.matmul_scalar(lhs, rhs)
+        }
+    }
+
+    fn matrix_add_ndarray_f64(
+        &mut self,
+        lhs: &DenseMatrixF64,
+        rhs: &DenseMatrixF64,
+    ) -> Result<DenseMatrixF64, RuntimeMathAcceleratorError> {
+        #[cfg(feature = "math-ndarray")]
+        {
+            if lhs.shape() == rhs.shape() {
+                self.stats.ndarray_calls += 1;
+                self.stats.last_backend = Some(RuntimeMathBackend::Ndarray);
+                let lhs_view =
+                    ndarray::ArrayView2::from_shape((lhs.rows(), lhs.cols()), lhs.values())
+                        .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+                let rhs_view =
+                    ndarray::ArrayView2::from_shape((rhs.rows(), rhs.cols()), rhs.values())
+                        .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+                let out = &lhs_view + &rhs_view;
+                DenseMatrixF64::new(lhs.rows(), lhs.cols(), out.into_raw_vec_and_offset().0)
+                    .map_err(Into::into)
+            } else {
+                lhs.add_scalar(rhs).map_err(Into::into)
+            }
+        }
+        #[cfg(not(feature = "math-ndarray"))]
+        {
+            self.stats.fallback_calls += 1;
+            self.matrix_add_scalar(lhs, rhs)
+        }
+    }
+
+    fn tensor_add_ndarray_f64(
+        &mut self,
+        lhs: &DenseTensorF64,
+        rhs: &DenseTensorF64,
+    ) -> Result<DenseTensorF64, RuntimeMathAcceleratorError> {
+        #[cfg(feature = "math-ndarray")]
+        {
+            if lhs.shape() == rhs.shape() {
+                self.stats.ndarray_calls += 1;
+                self.stats.last_backend = Some(RuntimeMathBackend::Ndarray);
+                let lhs_view = ndarray::ArrayViewD::from_shape(
+                    ndarray::IxDyn(lhs.shape().dims()),
+                    lhs.values(),
+                )
+                .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+                let rhs_view = ndarray::ArrayViewD::from_shape(
+                    ndarray::IxDyn(rhs.shape().dims()),
+                    rhs.values(),
+                )
+                .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+                let out = &lhs_view + &rhs_view;
+                DenseTensorF64::new(lhs.shape().dims().to_vec(), out.into_raw_vec_and_offset().0)
                     .map_err(Into::into)
             } else {
                 lhs.add_scalar(rhs).map_err(Into::into)
@@ -818,14 +1023,14 @@ impl RuntimeMathAccelerator {
         self.tensor_add_ndarray(lhs, rhs)
     }
 
-    fn record_matrix_inputs(&mut self, lhs: &DenseMatrixF32, rhs: &DenseMatrixF32) {
+    fn record_matrix_inputs<T>(&mut self, lhs: &DenseMatrix<T>, rhs: &DenseMatrix<T>) {
         self.stats.bytes_borrowed +=
-            (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
+            (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<T>();
     }
 
-    fn record_tensor_inputs(&mut self, lhs: &DenseTensorF32, rhs: &DenseTensorF32) {
+    fn record_tensor_inputs<T>(&mut self, lhs: &DenseTensor<T>, rhs: &DenseTensor<T>) {
         self.stats.bytes_borrowed +=
-            (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
+            (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<T>();
     }
 
     #[cfg(feature = "math-wgpu")]
@@ -877,21 +1082,21 @@ impl RuntimeMathAccelerator {
     }
 }
 
-fn row_major_4x4_to_cols(values: &[f32]) -> [f32; 16] {
+fn row_major_4x4_to_cols<T: Copy>(values: &[T]) -> [T; 16] {
     [
         values[0], values[4], values[8], values[12], values[1], values[5], values[9], values[13],
         values[2], values[6], values[10], values[14], values[3], values[7], values[11], values[15],
     ]
 }
 
-fn cols_4x4_to_row_major(values: [f32; 16]) -> Vec<f32> {
+fn cols_4x4_to_row_major<T: Copy>(values: [T; 16]) -> Vec<T> {
     vec![
         values[0], values[4], values[8], values[12], values[1], values[5], values[9], values[13],
         values[2], values[6], values[10], values[14], values[3], values[7], values[11], values[15],
     ]
 }
 
-fn matmul_work_items(lhs: &DenseMatrixF32, rhs: &DenseMatrixF32) -> usize {
+fn matmul_work_items<T>(lhs: &DenseMatrix<T>, rhs: &DenseMatrix<T>) -> usize {
     lhs.rows()
         .saturating_mul(lhs.cols())
         .saturating_mul(rhs.cols())
@@ -1627,6 +1832,37 @@ mod tests {
     }
 
     #[test]
+    fn scalar_ndarray_and_glam_f64_matmul_match_without_widening() {
+        let lhs = DenseMatrixF64::new(4, 4, (0_u8..16).map(f64::from).collect()).unwrap();
+        let rhs = DenseMatrixF64::new(
+            4,
+            4,
+            (0_u8..16).map(|value| f64::from(value) * 0.5).collect(),
+        )
+        .unwrap();
+        let expected = lhs.matmul_scalar(&rhs).unwrap();
+
+        let mut scalar = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Scalar,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+        let mut glam = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Glam,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+        let mut ndarray = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Ndarray,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+
+        assert_eq!(scalar.matmul_f64(&lhs, &rhs).unwrap(), expected);
+        assert_eq!(glam.matmul_f64(&lhs, &rhs).unwrap(), expected);
+        assert_eq!(ndarray.matmul_f64(&lhs, &rhs).unwrap(), expected);
+        assert_eq!(glam.stats().glam_calls, 1);
+        assert_eq!(ndarray.stats().ndarray_calls, 1);
+    }
+
+    #[test]
     fn tensor_add_keeps_shape_and_backend_stats() {
         let lhs = DenseTensorF32::new(vec![2, 2, 2], vec![1.0; 8]).unwrap();
         let rhs = DenseTensorF32::new(vec![2, 2, 2], vec![2.0; 8]).unwrap();
@@ -1643,6 +1879,30 @@ mod tests {
         assert_eq!(
             accelerator.stats().last_backend,
             Some(RuntimeMathBackend::Ndarray)
+        );
+    }
+
+    #[test]
+    fn f64_tensor_add_keeps_shape_and_backend_stats_without_widening() {
+        let lhs = DenseTensorF64::new(vec![2, 2, 2], vec![1.5; 8]).unwrap();
+        let rhs = DenseTensorF64::new(vec![2, 2, 2], vec![2.25; 8]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Ndarray,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+
+        let out = accelerator.tensor_add_f64(&lhs, &rhs).unwrap();
+
+        assert_eq!(out.shape().dims(), &[2, 2, 2]);
+        assert_eq!(out.values(), &[3.75; 8]);
+        assert_eq!(accelerator.stats().ndarray_calls, 1);
+        assert_eq!(
+            accelerator.stats().last_backend,
+            Some(RuntimeMathBackend::Ndarray)
+        );
+        assert_eq!(
+            accelerator.stats().bytes_borrowed,
+            16 * std::mem::size_of::<f64>()
         );
     }
 

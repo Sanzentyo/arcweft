@@ -6,7 +6,7 @@
 pub mod math;
 
 use arcweft_core::{
-    math::{DenseMatrixF32, DenseTensorF32},
+    math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64},
     plan::{
         RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
         RuntimePureOutputType,
@@ -1941,14 +1941,14 @@ impl RuntimeMathCallBackend for RuntimePureAccelerator {
         rhs: &DenseMatrixF32,
     ) -> Result<DenseMatrixF32, RuntimeEvalError> {
         self.stats.math_calls += 1;
-        self.record_math_inputs(lhs.values().len(), rhs.values().len());
+        self.record_math_inputs::<f32>(lhs.values().len(), rhs.values().len());
         let result = self
             .call_runtime_math_matmul_f32(lhs, rhs)
             .map_err(|error| RuntimeEvalError::UnsupportedPure {
                 name: RuntimeIntrinsic::MathMatmulF32.as_label().to_owned(),
                 reason: error.to_string(),
             })?;
-        self.record_math_result(result.values().len());
+        self.record_math_result::<f32>(result.values().len());
         Ok(result)
     }
 
@@ -1958,14 +1958,14 @@ impl RuntimeMathCallBackend for RuntimePureAccelerator {
         rhs: &DenseMatrixF32,
     ) -> Result<DenseMatrixF32, RuntimeEvalError> {
         self.stats.math_calls += 1;
-        self.record_math_inputs(lhs.values().len(), rhs.values().len());
+        self.record_math_inputs::<f32>(lhs.values().len(), rhs.values().len());
         let result = self
             .call_runtime_math_matrix_add_f32(lhs, rhs)
             .map_err(|error| RuntimeEvalError::UnsupportedPure {
                 name: RuntimeIntrinsic::MathMatrixAddF32.as_label().to_owned(),
                 reason: error.to_string(),
             })?;
-        self.record_math_result(result.values().len());
+        self.record_math_result::<f32>(result.values().len());
         Ok(result)
     }
 
@@ -1975,14 +1975,66 @@ impl RuntimeMathCallBackend for RuntimePureAccelerator {
         rhs: &DenseTensorF32,
     ) -> Result<DenseTensorF32, RuntimeEvalError> {
         self.stats.math_calls += 1;
-        self.record_math_inputs(lhs.values().len(), rhs.values().len());
+        self.record_math_inputs::<f32>(lhs.values().len(), rhs.values().len());
         let result = self
             .call_runtime_math_tensor_add_f32(lhs, rhs)
             .map_err(|error| RuntimeEvalError::UnsupportedPure {
                 name: RuntimeIntrinsic::MathTensorAddF32.as_label().to_owned(),
                 reason: error.to_string(),
             })?;
-        self.record_math_result(result.values().len());
+        self.record_math_result::<f32>(result.values().len());
+        Ok(result)
+    }
+
+    fn call_math_matmul_f64(
+        &mut self,
+        lhs: &DenseMatrixF64,
+        rhs: &DenseMatrixF64,
+    ) -> Result<DenseMatrixF64, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        self.record_math_inputs::<f64>(lhs.values().len(), rhs.values().len());
+        let result =
+            self.math
+                .matmul_f64(lhs, rhs)
+                .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                    name: RuntimeIntrinsic::MathMatmulF64.as_label().to_owned(),
+                    reason: error.to_string(),
+                })?;
+        self.record_math_result::<f64>(result.values().len());
+        Ok(result)
+    }
+
+    fn call_math_matrix_add_f64(
+        &mut self,
+        lhs: &DenseMatrixF64,
+        rhs: &DenseMatrixF64,
+    ) -> Result<DenseMatrixF64, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        self.record_math_inputs::<f64>(lhs.values().len(), rhs.values().len());
+        let result = self.math.matrix_add_f64(lhs, rhs).map_err(|error| {
+            RuntimeEvalError::UnsupportedPure {
+                name: RuntimeIntrinsic::MathMatrixAddF64.as_label().to_owned(),
+                reason: error.to_string(),
+            }
+        })?;
+        self.record_math_result::<f64>(result.values().len());
+        Ok(result)
+    }
+
+    fn call_math_tensor_add_f64(
+        &mut self,
+        lhs: &DenseTensorF64,
+        rhs: &DenseTensorF64,
+    ) -> Result<DenseTensorF64, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        self.record_math_inputs::<f64>(lhs.values().len(), rhs.values().len());
+        let result = self.math.tensor_add_f64(lhs, rhs).map_err(|error| {
+            RuntimeEvalError::UnsupportedPure {
+                name: RuntimeIntrinsic::MathTensorAddF64.as_label().to_owned(),
+                reason: error.to_string(),
+            }
+        })?;
+        self.record_math_result::<f64>(result.values().len());
         Ok(result)
     }
 }
@@ -2073,13 +2125,13 @@ impl RuntimePureAccelerator {
         result
     }
 
-    fn record_math_inputs(&mut self, lhs_elements: usize, rhs_elements: usize) {
+    fn record_math_inputs<T>(&mut self, lhs_elements: usize, rhs_elements: usize) {
         self.stats.arg_bytes_borrowed +=
-            lhs_elements.saturating_add(rhs_elements) * std::mem::size_of::<f32>();
+            lhs_elements.saturating_add(rhs_elements) * std::mem::size_of::<T>();
     }
 
-    fn record_math_result(&mut self, result_elements: usize) {
-        self.stats.result_bytes_copied += result_elements * std::mem::size_of::<f32>();
+    fn record_math_result<T>(&mut self, result_elements: usize) {
+        self.stats.result_bytes_copied += result_elements * std::mem::size_of::<T>();
         if !matches!(
             self.math.stats().last_backend,
             Some(math::RuntimeMathBackend::Scalar) | None
@@ -2172,7 +2224,9 @@ fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::F32(_) => "f32",
         RuntimeValue::F64(_) => "f64",
         RuntimeValue::MatrixF32(_) => "matrix_f32",
+        RuntimeValue::MatrixF64(_) => "matrix_f64",
         RuntimeValue::TensorF32(_) => "tensor_f32",
+        RuntimeValue::TensorF64(_) => "tensor_f64",
         RuntimeValue::String(_) => "string",
         RuntimeValue::Char(_) => "char",
         RuntimeValue::Duration(_) => "duration",
@@ -3723,6 +3777,61 @@ mod tests {
         assert!(matches!(
             result.fiber_status,
             FlowFiberStatus::Done(FlowExit::Return(_))
+        ));
+    }
+
+    #[test]
+    fn runtime_flow_f64_math_intrinsic_uses_width_preserving_adapter_backend() {
+        let lhs =
+            DenseMatrixF64::new(2, 2, vec![1.5, 2.0, 3.25, 4.5]).expect("matrix shape is valid");
+        let rhs =
+            DenseMatrixF64::new(2, 2, vec![5.0, 6.5, 7.0, 8.25]).expect("matrix shape is valid");
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.math_f64".to_owned())),
+            vec![RuntimeFlow {
+                id: FlowRuntimeId("flow.math_f64".to_owned()),
+                ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Call {
+                    callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::MathMatmulF64),
+                    args: vec![
+                        RuntimeExpr::Value(RuntimeValue::matrix_f64(lhs)),
+                        RuntimeExpr::Value(RuntimeValue::matrix_f64(rhs)),
+                    ],
+                })],
+            }],
+            Vec::new(),
+        )
+        .expect("runtime plan is valid");
+        let mut engine = Engine::new(plan);
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                math: math::RuntimeMathAcceleratorConfig {
+                    backend: math::RuntimeMathBackend::Ndarray,
+                    ..math::RuntimeMathAcceleratorConfig::default()
+                },
+                ..RuntimePureAcceleratorConfig::default()
+            },
+            &[],
+        );
+
+        let result = engine.step_with_pure_backend(
+            RuntimeStepInput::default(),
+            RuntimeStepOptions::default(),
+            &mut accelerator,
+        );
+
+        assert_eq!(result.stats.pure.math_calls, 1);
+        assert_eq!(result.stats.pure.math_accelerated_calls, 1);
+        assert_eq!(
+            result.stats.pure.arg_bytes_borrowed,
+            8 * std::mem::size_of::<f64>()
+        );
+        assert_eq!(
+            accelerator.math_stats().last_backend,
+            Some(math::RuntimeMathBackend::Ndarray)
+        );
+        assert!(matches!(
+            result.fiber_status,
+            FlowFiberStatus::Done(FlowExit::Return(summary)) if summary == "matrix/f64/2x2"
         ));
     }
 

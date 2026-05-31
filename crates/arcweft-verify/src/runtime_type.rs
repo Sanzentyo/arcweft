@@ -614,8 +614,8 @@ fn runtime_value_shape(value: &RuntimeValue) -> RuntimeShape {
             RuntimeShape::Int
         }
         RuntimeValue::F32(_) | RuntimeValue::F64(_) => RuntimeShape::Float,
-        RuntimeValue::MatrixF32(_) => RuntimeShape::Matrix,
-        RuntimeValue::TensorF32(_) => RuntimeShape::Tensor,
+        RuntimeValue::MatrixF32(_) | RuntimeValue::MatrixF64(_) => RuntimeShape::Matrix,
+        RuntimeValue::TensorF32(_) | RuntimeValue::TensorF64(_) => RuntimeShape::Tensor,
         RuntimeValue::EntityRef(_) => RuntimeShape::EntityRef,
         RuntimeValue::String(_) | RuntimeValue::Char(_) => RuntimeShape::String,
         RuntimeValue::Tuple(_) => RuntimeShape::Tuple,
