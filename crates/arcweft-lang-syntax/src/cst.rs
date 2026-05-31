@@ -1586,11 +1586,49 @@ impl<'a> CstPunctuationScan<'a> {
             })
     }
 
+    pub(crate) fn line_deltas(&self, source: &str) -> Vec<CstPunctuationDeltas> {
+        let mut deltas = source
+            .lines()
+            .map(|_| CstPunctuationDeltas::default())
+            .collect::<Vec<_>>();
+        let mut line_index = 0usize;
+        let mut next_line_start = next_line_start_after(source, 0);
+
+        for token in self.punctuation_tokens() {
+            while let Some(start) = next_line_start {
+                if token.start() < start {
+                    break;
+                }
+                line_index += 1;
+                next_line_start = next_line_start_after(source, start);
+            }
+            let Some(line_delta) = deltas.get_mut(line_index) else {
+                break;
+            };
+            match token.text() {
+                "{" => line_delta.brace += 1,
+                "}" => line_delta.brace -= 1,
+                "(" => line_delta.paren += 1,
+                ")" => line_delta.paren -= 1,
+                "[" => line_delta.bracket += 1,
+                "]" => line_delta.bracket -= 1,
+                _ => {}
+            }
+        }
+        deltas
+    }
+
     fn punctuation_tokens(&self) -> impl Iterator<Item = &CstToken<'a>> {
         self.tokens
             .iter()
             .filter(|token| token.kind() == SyntaxKind::Punctuation)
     }
+}
+
+fn next_line_start_after(source: &str, start: usize) -> Option<usize> {
+    source[start..]
+        .find('\n')
+        .map(|relative| start + relative + '\n'.len_utf8())
 }
 
 fn update_depths(

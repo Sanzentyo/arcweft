@@ -264,6 +264,19 @@ fn cst_punctuation_scan_reuses_fragment_tokens() {
 }
 
 #[test]
+fn cst_punctuation_scan_reports_line_deltas_from_one_fragment_scan() {
+    let source = "call(\n    text = \"ignored )\"\n)\nnext()";
+    let scan = CstPunctuationScan::new(source);
+    let deltas = scan.line_deltas(source);
+
+    assert_eq!(deltas.len(), 4);
+    assert_eq!(deltas[0].paren, 1);
+    assert_eq!(deltas[1].paren, 0);
+    assert_eq!(deltas[2].paren, -1);
+    assert_eq!(deltas[3].paren, 0);
+}
+
+#[test]
 fn cst_top_level_matching_punctuation_uses_one_fragment_scan() {
     let source = r#"outer(call("[not]"), nested(value))"#;
     let (open, close) =

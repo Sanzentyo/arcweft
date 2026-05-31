@@ -271,8 +271,12 @@ pub(super) fn collect_logical_block_items(body: &str) -> Vec<Cow<'_, str>> {
     let mut lines: Vec<Cow<'_, str>> = Vec::new();
     let mut current: Option<String> = None;
     let mut depth = 0_i32;
+    let line_deltas = CstPunctuationScan::new(body).line_deltas(body);
 
-    for raw_line in body.lines().filter(|line| !line.trim().is_empty()) {
+    for (line_index, raw_line) in body.lines().enumerate() {
+        if raw_line.trim().is_empty() {
+            continue;
+        }
         let trimmed = raw_line.trim_start();
         // Method-chain continuation lines belong to the preceding logical item.
         // Without this, multi-line `Option.context(...)?` or `Need.context(...)`
@@ -289,7 +293,7 @@ pub(super) fn collect_logical_block_items(body: &str) -> Vec<Cow<'_, str>> {
             }
             current.push_str(raw_line);
         }
-        let deltas = CstPunctuationScan::new(raw_line).deltas();
+        let deltas = line_deltas.get(line_index).copied().unwrap_or_default();
         depth += deltas.brace + deltas.paren + deltas.bracket;
         if depth <= 0 {
             let line = current.take().map_or(Cow::Borrowed(raw_line), Cow::Owned);

@@ -380,7 +380,9 @@ Current high-confidence state:
   punctuation summary before the final split.
   Logical block item splitting now yields borrowed slices for ordinary
   single-line body items and allocates only when an item spans multiple lines or
-  consumes a method-chain continuation.
+  consumes a method-chain continuation. The same splitter scans the whole body
+  fragment once and reuses per-line punctuation deltas instead of lexing each
+  raw body line separately.
 - Flow-like block collection also lives on `CstLineEvents`. It keeps contract
   and `effects { ... }` prelude lines in the header while collecting the
   following brace body as the block event, so flow/callable/entity/source
