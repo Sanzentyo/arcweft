@@ -3491,6 +3491,57 @@ fn bench_json_measures_checked_in_nonuniform_map_pure_batch_fixture() {
 }
 
 #[test]
+fn bench_json_measures_checked_in_dense_integer_widths_fixture() {
+    let path = workspace_root()
+        .join("tests/fixtures/arcw/spec_should_pass/bench/012_dense_integer_widths_sum.arcw");
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("3")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--samples")
+        .arg("3")
+        .arg("--steps")
+        .arg("64")
+        .arg("--max-ops")
+        .arg("64")
+        .arg("--json")
+        .output()
+        .expect("arcw bench measures checked-in dense integer widths fixture");
+
+    assert!(
+        output.status.success(),
+        "checked-in dense integer widths bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&workspace_root().display().to_string()),
+        "dense integer widths bench JSON must not record the workspace path: {stdout}"
+    );
+    for expected in ["Vec(I8)", "Vec(I16)", "Vec(U8)", "Vec(U16)"] {
+        assert!(
+            stdout.contains(expected),
+            "dense integer widths bench should validate {expected}: {stdout}"
+        );
+    }
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_eq!(measurement["deterministic"]["executed_ops_median"], 8);
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_vec_allocations_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_result_bytes_copied_median"],
+        0
+    );
+}
+
+#[test]
 fn bench_json_measures_checked_in_linear_aot_fixture() {
     let path =
         workspace_root().join("tests/fixtures/arcw/spec_should_pass/bench/006_linear_aot.arcw");

@@ -13,7 +13,7 @@ use arcweft_core::value::{
     RuntimeValue, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
     runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_dense_u8,
     runtime_sequence_dense_u16, runtime_sequence_dense_u32, runtime_sequence_dense_u64,
-    runtime_sequence_values,
+    runtime_sequence_from_literal_values,
 };
 use arcweft_lang_hir::syntax::{
     ast::line_plan::LinePlanItem,
@@ -253,7 +253,7 @@ fn fold_value_sequence(items: Vec<RuntimeExpr>) -> RuntimeExpr {
     {
         return RuntimeExpr::BracketSeq(items);
     }
-    RuntimeExpr::Value(runtime_sequence_values(
+    RuntimeExpr::Value(runtime_sequence_from_literal_values(
         items
             .into_iter()
             .filter_map(|item| match item {
@@ -785,7 +785,7 @@ mod tests {
     }
 
     #[test]
-    fn strict_runtime_bracket_seq_folds_literal_values() {
+    fn strict_runtime_bracket_seq_folds_literal_values_to_dense_storage() {
         let expr = Expr::BracketSeq(vec![
             Expr::Literal(Literal::Int {
                 raw: "1i64".to_owned(),
@@ -803,8 +803,8 @@ mod tests {
 
         assert!(matches!(
             lowered,
-            RuntimeExpr::Value(RuntimeValue::Seq(arcweft_core::value::RuntimeSeq::Values(items)))
-                if items == vec![RuntimeValue::Int(1), RuntimeValue::Int(2)]
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_i64_slice() == Some([1, 2].as_slice())
         ));
     }
 
@@ -826,29 +826,56 @@ mod tests {
 
     #[test]
     fn suffixed_numeric_bracket_seq_lowers_to_width_specific_dense_sequence() {
-        let i32_expr =
-            Expr::NumericBracketSeq(arcweft_lang_hir::syntax::expr::NumericBracketSeq::new(
-                vec![1, 2, 3],
-                Some("i32".to_owned()),
-            ));
-        let u64_expr =
-            Expr::NumericBracketSeq(arcweft_lang_hir::syntax::expr::NumericBracketSeq::new(
-                vec![1, 2, 3],
-                Some("u64".to_owned()),
-            ));
+        let i8_lowered = lower_suffixed_numeric_seq("i8");
+        let i16_lowered = lower_suffixed_numeric_seq("i16");
+        let i32_lowered = lower_suffixed_numeric_seq("i32");
+        let u8_lowered = lower_suffixed_numeric_seq("u8");
+        let u16_lowered = lower_suffixed_numeric_seq("u16");
+        let u32_lowered = lower_suffixed_numeric_seq("u32");
+        let u64_lowered = lower_suffixed_numeric_seq("u64");
 
-        let i32_lowered = lower_runtime_expr_strict(&i32_expr).expect("i32 numeric seq lowers");
-        let u64_lowered = lower_runtime_expr_strict(&u64_expr).expect("u64 numeric seq lowers");
-
+        assert!(matches!(
+            i8_lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_i8_slice() == Some([1, 2, 3].as_slice())
+        ));
+        assert!(matches!(
+            i16_lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_i16_slice() == Some([1, 2, 3].as_slice())
+        ));
         assert!(matches!(
             i32_lowered,
             RuntimeExpr::Value(RuntimeValue::Seq(seq))
                 if seq.as_i32_slice() == Some([1, 2, 3].as_slice())
         ));
         assert!(matches!(
+            u8_lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_u8_slice() == Some([1, 2, 3].as_slice())
+        ));
+        assert!(matches!(
+            u16_lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_u16_slice() == Some([1, 2, 3].as_slice())
+        ));
+        assert!(matches!(
+            u32_lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_u32_slice() == Some([1, 2, 3].as_slice())
+        ));
+        assert!(matches!(
             u64_lowered,
             RuntimeExpr::Value(RuntimeValue::Seq(seq))
                 if seq.as_u64_slice() == Some([1, 2, 3].as_slice())
         ));
+    }
+
+    fn lower_suffixed_numeric_seq(suffix: &str) -> RuntimeExpr {
+        let expr = Expr::NumericBracketSeq(arcweft_lang_hir::syntax::expr::NumericBracketSeq::new(
+            vec![1, 2, 3],
+            Some(suffix.to_owned()),
+        ));
+        lower_runtime_expr_strict(&expr).expect("suffixed numeric seq lowers")
     }
 }

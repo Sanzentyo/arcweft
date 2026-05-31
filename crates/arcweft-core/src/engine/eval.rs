@@ -2,8 +2,9 @@ use super::{
     Engine, FlowFiberStatus, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
     RuntimeExprMatchArm, RuntimeFieldValue, RuntimeMatchArm, RuntimeMatchSelection, RuntimePattern,
     RuntimeSeq, RuntimeStepOutput, RuntimeValue, evaluate_binary, evaluate_unary,
-    match_runtime_pattern, runtime_sequence_dense_i64, runtime_sequence_values,
-    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
+    match_runtime_pattern, runtime_sequence_dense_i64, runtime_sequence_repeat_value,
+    runtime_sequence_values, runtime_value_into_sequence_values, runtime_value_label,
+    sum_i64_sequence_ref,
 };
 use crate::pure::{RuntimeI64Args, RuntimePureCallBackend, VmRuntimePureCallBackend};
 use crate::value::RuntimeBinaryOp;
@@ -245,7 +246,7 @@ impl Engine {
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if let RuntimeExpr::Value(value) = value {
-            return Ok(runtime_sequence_values(vec![value.clone(); len]));
+            return Ok(runtime_sequence_repeat_value(value, len));
         }
         (0..len)
             .map(|_| self.evaluate_expr_with_backend(value, pure_backend))

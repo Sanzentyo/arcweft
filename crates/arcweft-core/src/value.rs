@@ -128,9 +128,44 @@ impl RuntimeSeq {
         }
     }
 
+    pub fn as_i8_slice(&self) -> Option<&[i8]> {
+        match self {
+            Self::Dense(values) => values.as_i8_slice(),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub fn as_i16_slice(&self) -> Option<&[i16]> {
+        match self {
+            Self::Dense(values) => values.as_i16_slice(),
+            Self::Values(_) => None,
+        }
+    }
+
     pub fn as_i32_slice(&self) -> Option<&[i32]> {
         match self {
             Self::Dense(values) => values.as_i32_slice(),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub fn as_u8_slice(&self) -> Option<&[u8]> {
+        match self {
+            Self::Dense(values) => values.as_u8_slice(),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub fn as_u16_slice(&self) -> Option<&[u16]> {
+        match self {
+            Self::Dense(values) => values.as_u16_slice(),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub fn as_u32_slice(&self) -> Option<&[u32]> {
+        match self {
+            Self::Dense(values) => values.as_u32_slice(),
             Self::Values(_) => None,
         }
     }
@@ -303,6 +338,40 @@ impl DenseSeq {
         }
     }
 
+    pub fn as_i8_slice(&self) -> Option<&[i8]> {
+        match self {
+            Self::I8(values) => Some(values.as_slice()),
+            Self::I16(_)
+            | Self::I32(_)
+            | Self::I64(_)
+            | Self::U8(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::Bool(_)
+            | Self::Bytes(_)
+            | Self::Chars(_)
+            | Self::Durations(_) => None,
+        }
+    }
+
+    pub fn as_i16_slice(&self) -> Option<&[i16]> {
+        match self {
+            Self::I16(values) => Some(values.as_slice()),
+            Self::I8(_)
+            | Self::I32(_)
+            | Self::I64(_)
+            | Self::U8(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::Bool(_)
+            | Self::Bytes(_)
+            | Self::Chars(_)
+            | Self::Durations(_) => None,
+        }
+    }
+
     pub fn as_i32_slice(&self) -> Option<&[i32]> {
         match self {
             Self::I32(values) => Some(values.as_slice()),
@@ -312,6 +381,57 @@ impl DenseSeq {
             | Self::U8(_)
             | Self::U16(_)
             | Self::U32(_)
+            | Self::U64(_)
+            | Self::Bool(_)
+            | Self::Bytes(_)
+            | Self::Chars(_)
+            | Self::Durations(_) => None,
+        }
+    }
+
+    pub fn as_u8_slice(&self) -> Option<&[u8]> {
+        match self {
+            Self::U8(values) => Some(values.as_slice()),
+            Self::I8(_)
+            | Self::I16(_)
+            | Self::I32(_)
+            | Self::I64(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::Bool(_)
+            | Self::Bytes(_)
+            | Self::Chars(_)
+            | Self::Durations(_) => None,
+        }
+    }
+
+    pub fn as_u16_slice(&self) -> Option<&[u16]> {
+        match self {
+            Self::U16(values) => Some(values.as_slice()),
+            Self::I8(_)
+            | Self::I16(_)
+            | Self::I32(_)
+            | Self::I64(_)
+            | Self::U8(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::Bool(_)
+            | Self::Bytes(_)
+            | Self::Chars(_)
+            | Self::Durations(_) => None,
+        }
+    }
+
+    pub fn as_u32_slice(&self) -> Option<&[u32]> {
+        match self {
+            Self::U32(values) => Some(values.as_slice()),
+            Self::I8(_)
+            | Self::I16(_)
+            | Self::I32(_)
+            | Self::I64(_)
+            | Self::U8(_)
+            | Self::U16(_)
             | Self::U64(_)
             | Self::Bool(_)
             | Self::Bytes(_)
@@ -356,12 +476,11 @@ impl DenseSeq {
 
     pub fn as_bytes(&self) -> Option<&[u8]> {
         match self {
-            Self::Bytes(values) => Some(values.as_slice()),
+            Self::Bytes(values) | Self::U8(values) => Some(values.as_slice()),
             Self::I8(_)
             | Self::I16(_)
             | Self::I32(_)
             | Self::I64(_)
-            | Self::U8(_)
             | Self::U16(_)
             | Self::U32(_)
             | Self::U64(_)
@@ -1216,6 +1335,98 @@ pub(crate) fn materialize_i64_sequence(items: Vec<i64>) -> Vec<RuntimeValue> {
 
 pub fn runtime_sequence_values(values: Vec<RuntimeValue>) -> RuntimeValue {
     RuntimeValue::Seq(RuntimeSeq::values(values))
+}
+
+pub fn runtime_sequence_from_literal_values(values: Vec<RuntimeValue>) -> RuntimeValue {
+    match values.first() {
+        Some(RuntimeValue::Bool(_))
+            if values
+                .iter()
+                .all(|value| matches!(value, RuntimeValue::Bool(_))) =>
+        {
+            runtime_sequence_dense_bool(
+                values
+                    .into_iter()
+                    .filter_map(|value| match value {
+                        RuntimeValue::Bool(value) => Some(value),
+                        _ => None,
+                    })
+                    .collect(),
+            )
+        }
+        Some(RuntimeValue::Int(_))
+            if values
+                .iter()
+                .all(|value| matches!(value, RuntimeValue::Int(_))) =>
+        {
+            runtime_sequence_dense_i64(
+                values
+                    .into_iter()
+                    .filter_map(|value| match value {
+                        RuntimeValue::Int(value) => Some(value),
+                        _ => None,
+                    })
+                    .collect(),
+            )
+        }
+        Some(RuntimeValue::UInt(_))
+            if values
+                .iter()
+                .all(|value| matches!(value, RuntimeValue::UInt(_))) =>
+        {
+            runtime_sequence_dense_u64(
+                values
+                    .into_iter()
+                    .filter_map(|value| match value {
+                        RuntimeValue::UInt(value) => Some(value),
+                        _ => None,
+                    })
+                    .collect(),
+            )
+        }
+        Some(RuntimeValue::Char(_))
+            if values
+                .iter()
+                .all(|value| matches!(value, RuntimeValue::Char(_))) =>
+        {
+            runtime_sequence_dense_chars(
+                values
+                    .into_iter()
+                    .filter_map(|value| match value {
+                        RuntimeValue::Char(value) => Some(value),
+                        _ => None,
+                    })
+                    .collect(),
+            )
+        }
+        Some(RuntimeValue::Duration(_))
+            if values
+                .iter()
+                .all(|value| matches!(value, RuntimeValue::Duration(_))) =>
+        {
+            runtime_sequence_dense_durations(
+                values
+                    .into_iter()
+                    .filter_map(|value| match value {
+                        RuntimeValue::Duration(value) => Some(value),
+                        _ => None,
+                    })
+                    .collect(),
+            )
+        }
+        _ => runtime_sequence_values(values),
+    }
+}
+
+pub fn runtime_sequence_repeat_value(value: &RuntimeValue, len: usize) -> RuntimeValue {
+    match value {
+        RuntimeValue::Bool(value) => runtime_sequence_dense_bool(vec![*value; len]),
+        RuntimeValue::Int(value) => runtime_sequence_dense_i64(vec![*value; len]),
+        RuntimeValue::UInt(value) => runtime_sequence_dense_u64(vec![*value; len]),
+        RuntimeValue::Char(value) => runtime_sequence_dense_chars(vec![*value; len]),
+        RuntimeValue::Duration(value) => runtime_sequence_dense_durations(vec![*value; len]),
+        value => runtime_sequence_values(vec![value.clone(); len]),
+    }
 }
 
 pub fn runtime_sequence_dense_i64(values: Vec<i64>) -> RuntimeValue {
