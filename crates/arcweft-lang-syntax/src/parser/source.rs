@@ -22,8 +22,8 @@ use super::{
 impl Parser<'_> {
     pub(super) fn parse_source_locale_block(&mut self) -> Option<SourceLocaleBlock> {
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing source locale",
@@ -33,12 +33,13 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
         let locale = head.trim().strip_prefix("source locale")?.trim().to_owned();
-        let body = self.parse_flow_body(&body, start_line.start + head.len());
+        let body = self.parse_flow_body_from_block(&block, start_line.start + head.len());
         Some(SourceLocaleBlock::new(
             locale,
             body,
-            TextRange::new(start_line.start, end),
+            TextRange::new(start_line.start, block.end),
         ))
     }
 

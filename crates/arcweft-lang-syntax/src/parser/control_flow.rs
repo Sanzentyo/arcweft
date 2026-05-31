@@ -10,8 +10,8 @@ use super::{
 impl Parser<'_> {
     pub(super) fn parse_let_loop(&mut self) -> Option<Stmt> {
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing loop expression",
@@ -22,6 +22,7 @@ impl Parser<'_> {
             return None;
         }
 
+        let head = &block.head;
         let rest = head.trim().strip_prefix("let")?.trim();
         let (pattern, loop_head) = split_top_level_binding(rest)?;
         let (label, loop_head) = split_optional_block_label(loop_head.trim());
@@ -33,8 +34,8 @@ impl Parser<'_> {
             pattern: parse_pattern(pattern.trim()),
             block: LoopBlock::new(
                 label,
-                self.parse_flow_body(&body, start_line.start + head.len()),
-                TextRange::new(start_line.start, end),
+                self.parse_flow_body_from_block(&block, start_line.start + head.len()),
+                TextRange::new(start_line.start, block.end),
             ),
         })
     }
@@ -209,8 +210,8 @@ impl Parser<'_> {
 
     pub(super) fn parse_if_block(&mut self) -> Option<IfBlock> {
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing if",
@@ -220,29 +221,36 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
         let condition = head.strip_prefix("if")?.trim();
-        let (body, else_body) = if let Some(parts) = split_embedded_else_body(&body) {
-            parts
-        } else {
-            let else_body = self
-                .take_optional_statement_else_block()
-                .unwrap_or_default();
-            (body.into_owned(), else_body)
-        };
-        let body_items = self.parse_flow_body(&body, start_line.start + head.len());
-        let else_items = self.parse_flow_body(&else_body, start_line.start + head.len());
+        let body_base = start_line.start + head.len();
+        let (body_items, else_items) =
+            if let Some((then_body, else_body)) = split_embedded_else_body(&block.body) {
+                (
+                    self.parse_flow_body(&then_body, body_base),
+                    self.parse_flow_body(&else_body, body_base),
+                )
+            } else {
+                let else_body = self
+                    .take_optional_statement_else_block()
+                    .unwrap_or_default();
+                (
+                    self.parse_flow_body_from_block(&block, body_base),
+                    self.parse_flow_body(&else_body, body_base),
+                )
+            };
         Some(IfBlock::new(
             parse_expr_lossy(condition),
             body_items,
             else_items,
-            TextRange::new(start_line.start, end),
+            TextRange::new(start_line.start, block.end),
         ))
     }
 
     pub(super) fn parse_if_let_block(&mut self) -> Option<IfLetBlock> {
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing if-let",
@@ -252,25 +260,34 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
         let rest = head.trim().strip_prefix("if let")?.trim();
         let (pattern, expr_and_guard) = split_top_level_binding(rest)?;
         let (expr, guard) = split_top_level_keyword_once(expr_and_guard, "when");
         let guard = guard.map(|guard| parse_expr_lossy(guard.trim()));
-        let (body, else_body) = if let Some(parts) = split_embedded_else_body(&body) {
-            parts
-        } else {
-            let else_body = self
-                .take_optional_statement_else_block()
-                .unwrap_or_default();
-            (body.into_owned(), else_body)
-        };
+        let body_base = start_line.start + head.len();
+        let (body_items, else_items) =
+            if let Some((then_body, else_body)) = split_embedded_else_body(&block.body) {
+                (
+                    self.parse_flow_body(&then_body, body_base),
+                    self.parse_flow_body(&else_body, body_base),
+                )
+            } else {
+                let else_body = self
+                    .take_optional_statement_else_block()
+                    .unwrap_or_default();
+                (
+                    self.parse_flow_body_from_block(&block, body_base),
+                    self.parse_flow_body(&else_body, body_base),
+                )
+            };
         Some(IfLetBlock::new(
             parse_pattern(pattern.trim()),
             parse_expr_lossy(expr),
             guard,
-            self.parse_flow_body(&body, start_line.start + head.len()),
-            self.parse_flow_body(&else_body, start_line.start + head.len()),
-            TextRange::new(start_line.start, end),
+            body_items,
+            else_items,
+            TextRange::new(start_line.start, block.end),
         ))
     }
 
@@ -290,8 +307,8 @@ impl Parser<'_> {
 
     pub(super) fn parse_borrow_block(&mut self) -> Option<BorrowBlock> {
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing borrow",
@@ -301,6 +318,7 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
         let rest = head.trim().strip_prefix("borrow")?.trim();
         let (source, Some(binding)) = split_top_level_keyword_once(rest, "as") else {
             self.push_error(
@@ -323,13 +341,13 @@ impl Parser<'_> {
             return None;
         };
         let binding = parse_pattern(&format!("{}: {}", name.trim(), ty.trim()));
-        let body_items = self.parse_flow_body(&body, start_line.start + head.len());
+        let body_items = self.parse_flow_body_from_block(&block, start_line.start + head.len());
 
         Some(BorrowBlock::new(
             parse_expr_lossy(source.trim()),
             binding,
             body_items,
-            TextRange::new(start_line.start, end),
+            TextRange::new(start_line.start, block.end),
         ))
     }
 
@@ -356,8 +374,8 @@ impl Parser<'_> {
 
     pub(super) fn parse_loop_block(&mut self) -> Option<LoopBlock> {
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing loop",
@@ -367,6 +385,7 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
         let body_base = start_line.start + head.len();
         let (label, head) = split_optional_block_label(head.trim());
         if head != "loop" {
@@ -374,15 +393,15 @@ impl Parser<'_> {
         }
         Some(LoopBlock::new(
             label,
-            self.parse_flow_body(&body, body_base),
-            TextRange::new(start_line.start, end),
+            self.parse_flow_body_from_block(&block, body_base),
+            TextRange::new(start_line.start, block.end),
         ))
     }
 
     pub(super) fn parse_for_block(&mut self) -> Option<ForBlock> {
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing for",
@@ -392,23 +411,24 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
         let rest = head.trim().strip_prefix("for")?.trim();
         let (pattern, Some(source)) = split_top_level_keyword_once(rest, "in") else {
             return None;
         };
-        let body_items = self.parse_flow_body(&body, start_line.start + head.len());
+        let body_items = self.parse_flow_body_from_block(&block, start_line.start + head.len());
         Some(ForBlock::new(
             parse_pattern(pattern.trim()),
             parse_expr_lossy(source.trim()),
             body_items,
-            TextRange::new(start_line.start, end),
+            TextRange::new(start_line.start, block.end),
         ))
     }
 
     pub(super) fn parse_while_block(&mut self) -> Option<WhileBlock> {
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing while",
@@ -418,18 +438,19 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
         let condition = head.trim().strip_prefix("while")?.trim();
         Some(WhileBlock::new(
             parse_expr_lossy(condition),
-            self.parse_flow_body(&body, start_line.start + head.len()),
-            TextRange::new(start_line.start, end),
+            self.parse_flow_body_from_block(&block, start_line.start + head.len()),
+            TextRange::new(start_line.start, block.end),
         ))
     }
 
     pub(super) fn parse_while_let_block(&mut self) -> Option<WhileLetBlock> {
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing while-let",
@@ -439,6 +460,7 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
         let rest = head.trim().strip_prefix("while let")?.trim();
         let (pattern, expr_and_guard) = split_top_level_binding(rest)?;
         let (expr, guard) = split_top_level_keyword_once(expr_and_guard, "when");
@@ -447,8 +469,8 @@ impl Parser<'_> {
             parse_pattern(pattern.trim()),
             parse_expr_lossy(expr),
             guard,
-            self.parse_flow_body(&body, start_line.start + head.len()),
-            TextRange::new(start_line.start, end),
+            self.parse_flow_body_from_block(&block, start_line.start + head.len()),
+            TextRange::new(start_line.start, block.end),
         ))
     }
 

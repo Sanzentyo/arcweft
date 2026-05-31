@@ -312,8 +312,8 @@ impl<'a> Parser<'a> {
                 TextRange::new(start_line.start, self.previous_end()),
             ));
         }
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing named scope",
@@ -323,13 +323,14 @@ impl<'a> Parser<'a> {
             );
             return None;
         }
+        let head = &block.head;
         let name = head.trim().strip_prefix("scope")?.trim();
         let name = (!name.is_empty()).then(|| name.to_owned());
-        let body = self.parse_flow_body(&body, start_line.start + head.len());
+        let body = self.parse_flow_body_from_block(&block, start_line.start + head.len());
         Some(ScopeBlock::new(
             name,
             body,
-            TextRange::new(start_line.start, end),
+            TextRange::new(start_line.start, block.end),
         ))
     }
 
@@ -344,8 +345,8 @@ impl<'a> Parser<'a> {
             let thread = super::parse_thread_block_items(head, body);
             return Some(FlowItem::Stmt(Stmt::Thread(thread)));
         }
-        let (head, body, _, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing thread",
@@ -355,7 +356,8 @@ impl<'a> Parser<'a> {
             );
             return None;
         }
-        let body = self.parse_flow_body(&body, start_line.start + head.len());
+        let head = &block.head;
+        let body = self.parse_flow_body_from_block(&block, start_line.start + head.len());
         Some(FlowItem::Stmt(Stmt::Thread(
             super::parse_thread_block_items(head.trim(), body),
         )))
@@ -417,8 +419,8 @@ impl<'a> Parser<'a> {
 
     pub(super) fn parse_bare_scope_block(&mut self) -> Option<ScopeBlock> {
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing unnamed scope",
@@ -428,13 +430,14 @@ impl<'a> Parser<'a> {
             );
             return None;
         }
+        let head = &block.head;
         if !head.trim().is_empty() {
             return None;
         }
         Some(ScopeBlock::new(
             None,
-            self.parse_flow_body(&body, start_line.start),
-            TextRange::new(start_line.start, end),
+            self.parse_flow_body_from_block(&block, start_line.start),
+            TextRange::new(start_line.start, block.end),
         ))
     }
 
