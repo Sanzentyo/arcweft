@@ -378,6 +378,9 @@ Current high-confidence state:
   same-line blocks reuse the fragment scan for both brace depth and brace
   splitting, while multiline continuations add each following line's stored
   punctuation summary before the final split.
+  Logical block item splitting now yields borrowed slices for ordinary
+  single-line body items and allocates only when an item spans multiple lines or
+  consumes a method-chain continuation.
 - Flow-like block collection also lives on `CstLineEvents`. It keeps contract
   and `effects { ... }` prelude lines in the header while collecting the
   following brace body as the block event, so flow/callable/entity/source

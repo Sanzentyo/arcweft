@@ -67,7 +67,7 @@ sequence AST summary:
 
 | fixture | executor | pure backend | median elapsed ns | parse ns | typecheck ns | runtime plan ns | typecheck exprs | type judgments | pure calls | batch calls | batch items | arg vec allocs | borrowed arg bytes |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 009_nonuniform_map_pure_batch.arcw | bytecode_vm | jit | 12000 | 3379900 | 389800 | 448700 | 16 | 21 | 128 | 1 | 128 | 0 | 2048 |
+| 009_nonuniform_map_pure_batch.arcw | bytecode_vm | auto | 13400 | 3044300 | 224300 | 286600 | 16 | 21 | 128 | 1 | 128 | 0 | 2048 |
 
 Syntax counters from the same run:
 
@@ -99,7 +99,11 @@ fragment tokenization pass and serves top-level punctuation, matching
 punctuation, and bracket-delta queries from that token buffer. Dialogue
 same-line `with { ... }` attachments and trailing bare scopes reuse that scan
 for the brace-depth check and the split itself; multiline continuations add the
-stored per-line punctuation summaries before the final fragment split.
+stored per-line punctuation summaries before the final fragment split. Logical
+block item splitting now returns borrowed body slices for single-line items and
+allocates only for multiline or method-chain continuations, so block-body
+parsers avoid creating a `String` for every item before the AST builder needs
+an owned value.
 
 Auto pure backend tiering now separates cold scalar execution from warm flat
 batch execution. With `--pure-backend auto`, the scalar for-loop pure fixture

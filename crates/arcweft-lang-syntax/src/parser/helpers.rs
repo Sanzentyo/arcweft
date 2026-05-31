@@ -267,9 +267,9 @@ pub(super) fn split_comma_args(source: &str) -> Vec<&str> {
     split_top_level_punctuation(source, ',')
 }
 
-pub(super) fn collect_logical_block_items(body: &str) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut current = String::new();
+pub(super) fn collect_logical_block_items(body: &str) -> Vec<Cow<'_, str>> {
+    let mut lines: Vec<Cow<'_, str>> = Vec::new();
+    let mut current: Option<String> = None;
     let mut depth = 0_i32;
 
     for raw_line in body.lines().filter(|line| !line.trim().is_empty()) {
@@ -277,25 +277,32 @@ pub(super) fn collect_logical_block_items(body: &str) -> Vec<String> {
         // Method-chain continuation lines belong to the preceding logical item.
         // Without this, multi-line `Option.context(...)?` or `Need.context(...)`
         // parses the dot line as an unrelated raw flow item.
-        if current.is_empty()
+        if current.is_none()
             && trimmed.starts_with('.')
             && let Some(previous) = lines.pop()
         {
-            current = previous;
+            current = Some(previous.into_owned());
         }
-        if !current.is_empty() {
-            current.push('\n');
+        if let Some(current) = current.as_mut() {
+            if !current.is_empty() {
+                current.push('\n');
+            }
+            current.push_str(raw_line);
         }
-        current.push_str(raw_line);
         let deltas = CstPunctuationScan::new(raw_line).deltas();
         depth += deltas.brace + deltas.paren + deltas.bracket;
         if depth <= 0 {
-            lines.push(core::mem::take(&mut current));
+            let line = current.take().map_or(Cow::Borrowed(raw_line), Cow::Owned);
+            lines.push(line);
             depth = 0;
+        } else if current.is_none() {
+            current = Some(raw_line.to_owned());
         }
     }
-    if !current.trim().is_empty() {
-        lines.push(current);
+    if let Some(current) = current
+        && !current.trim().is_empty()
+    {
+        lines.push(Cow::Owned(current));
     }
     lines
 }
@@ -720,7 +727,9 @@ pub(super) fn indentation(text: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{content_may_be_typed_expr, normalize_dot_continuations};
+    use super::{
+        collect_logical_block_items, content_may_be_typed_expr, normalize_dot_continuations,
+    };
     use std::borrow::Cow;
 
     #[test]
@@ -744,5 +753,24 @@ mod tests {
         assert!(!content_may_be_typed_expr("おはよう。[p]"));
         assert!(content_may_be_typed_expr("0"));
         assert!(content_may_be_typed_expr("name"));
+    }
+
+    #[test]
+    fn logical_block_items_borrow_single_line_items() {
+        let items = collect_logical_block_items("let a = 1\nlet b = 2");
+
+        assert_eq!(
+            items,
+            [Cow::Borrowed("let a = 1"), Cow::Borrowed("let b = 2")]
+        );
+    }
+
+    #[test]
+    fn logical_block_items_own_multiline_items_only() {
+        let items = collect_logical_block_items("let a = call(\n    1\n)\nlet b = 2");
+
+        assert_eq!(items.len(), 2);
+        assert!(matches!(items[0], Cow::Owned(_)));
+        assert!(matches!(items[1], Cow::Borrowed("let b = 2")));
     }
 }

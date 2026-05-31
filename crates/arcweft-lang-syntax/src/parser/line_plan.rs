@@ -110,7 +110,7 @@ pub(super) fn parse_line_plan_body(
             while index < lines.len() {
                 let child = &lines[index];
                 let child_trimmed = child.trim();
-                if !child_trimmed.is_empty() && indentation(child.as_str()) <= cue_indent {
+                if !child_trimmed.is_empty() && indentation(child.as_ref()) <= cue_indent {
                     break;
                 }
                 if !child_trimmed.is_empty() {
@@ -129,11 +129,11 @@ pub(super) fn parse_line_plan_body(
             while index < lines.len() {
                 let child = &lines[index];
                 let child_trimmed = child.trim();
-                if !child_trimmed.is_empty() && indentation(child.as_str()) <= cue_indent {
+                if !child_trimmed.is_empty() && indentation(child.as_ref()) <= cue_indent {
                     break;
                 }
                 if !child_trimmed.is_empty() {
-                    body_lines.push(child.as_str());
+                    body_lines.push(child.as_ref());
                 }
                 index += 1;
             }
@@ -150,11 +150,11 @@ pub(super) fn parse_line_plan_body(
             while index < lines.len() {
                 let child = &lines[index];
                 let child_trimmed = child.trim();
-                if !child_trimmed.is_empty() && indentation(child.as_str()) <= cue_indent {
+                if !child_trimmed.is_empty() && indentation(child.as_ref()) <= cue_indent {
                     break;
                 }
                 if !child_trimmed.is_empty() {
-                    body_lines.push(child.as_str());
+                    body_lines.push(child.as_ref());
                 }
                 index += 1;
             }
