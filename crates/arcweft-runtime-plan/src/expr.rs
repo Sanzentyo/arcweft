@@ -8,6 +8,7 @@ use arcweft_core::effect::{
     LineEffectRequest, RuntimeAssertion, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall,
     RuntimeEvent, RuntimeField, RuntimeLog,
 };
+use arcweft_core::plan::RuntimePureHelperId;
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeUnaryOp,
     RuntimeValue, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
@@ -21,6 +22,7 @@ use arcweft_lang_hir::syntax::{
     ast::pattern::Pattern,
     expr::{BinaryOp, CallArg, Expr, Literal, MatchExprArm, UnaryOp},
 };
+use std::collections::BTreeMap;
 
 /// Lowers an expression into a runtime value expression, preserving a lossy
 /// string label for adapter-facing values that are not executable by the core.
@@ -111,6 +113,20 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
 
 /// Strict expression lowering for executable flow/runtime positions.
 pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, String> {
+    lower_runtime_expr_strict_with_helpers(expr, None)
+}
+
+pub(crate) fn lower_runtime_expr_strict_with_pure(
+    expr: &Expr,
+    helpers: &BTreeMap<String, RuntimePureHelperId>,
+) -> Result<RuntimeExpr, String> {
+    lower_runtime_expr_strict_with_helpers(expr, Some(helpers))
+}
+
+fn lower_runtime_expr_strict_with_helpers(
+    expr: &Expr,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
     match expr {
         Expr::Literal(literal) => Ok(RuntimeExpr::Value(lower_runtime_literal(literal))),
         Expr::EntityRef(entity) => Ok(RuntimeExpr::EntityRef(entity.body().to_owned())),
@@ -125,29 +141,29 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
         Expr::Tuple(items) if items.is_empty() => Ok(RuntimeExpr::Value(RuntimeValue::Unit)),
         Expr::Tuple(items) => items
             .iter()
-            .map(lower_runtime_expr_strict)
+            .map(|item| lower_runtime_expr_strict_with_helpers(item, helpers))
             .collect::<Result<Vec<_>, _>>()
             .map(RuntimeExpr::Tuple),
-        Expr::BracketSeq(items) => lower_runtime_bracket_seq_strict(items),
+        Expr::BracketSeq(items) => lower_runtime_bracket_seq_strict(items, helpers),
         Expr::NumericBracketSeq(seq) => Ok(lower_runtime_numeric_bracket_seq(seq)),
-        Expr::ArrayRepeat { value, len } => lower_runtime_array_repeat_strict(value, len),
+        Expr::ArrayRepeat { value, len } => lower_runtime_array_repeat_strict(value, len, helpers),
         Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => fields
             .iter()
             .map(|(name, value)| {
                 Ok(RuntimeFieldExpr {
                     name: name.clone(),
-                    value: lower_runtime_expr_strict(value)?,
+                    value: lower_runtime_expr_strict_with_helpers(value, helpers)?,
                 })
             })
             .collect::<Result<Vec<_>, String>>()
             .map(RuntimeExpr::Record),
         Expr::Field { target, field } => Ok(RuntimeExpr::Field {
-            target: Box::new(lower_runtime_expr_strict(target)?),
+            target: Box::new(lower_runtime_expr_strict_with_helpers(target, helpers)?),
             field: field.clone(),
         }),
         Expr::Unary { op, expr } => Ok(RuntimeExpr::Unary {
             op: lower_runtime_unary_op(*op),
-            expr: Box::new(lower_runtime_expr_strict(expr)?),
+            expr: Box::new(lower_runtime_expr_strict_with_helpers(expr, helpers)?),
         }),
         Expr::Binary { lhs, op, rhs } => {
             let Some(op) = lower_runtime_binary_op(*op) else {
@@ -157,16 +173,16 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
                 ));
             };
             Ok(RuntimeExpr::Binary {
-                lhs: Box::new(lower_runtime_expr_strict(lhs)?),
+                lhs: Box::new(lower_runtime_expr_strict_with_helpers(lhs, helpers)?),
                 op,
-                rhs: Box::new(lower_runtime_expr_strict(rhs)?),
+                rhs: Box::new(lower_runtime_expr_strict_with_helpers(rhs, helpers)?),
             })
         }
         Expr::If {
             condition,
             then_branch,
             else_branch,
-        } => lower_strict_if_expr(condition, then_branch, else_branch.as_deref()),
+        } => lower_strict_if_expr(condition, then_branch, else_branch.as_deref(), helpers),
         Expr::IfLet {
             pattern,
             expr,
@@ -179,20 +195,21 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
             guard.as_deref(),
             then_branch,
             else_branch.as_deref(),
+            helpers,
         ),
-        Expr::Match { scrutinee, arms } => lower_strict_match_expr(scrutinee, arms),
+        Expr::Match { scrutinee, arms } => lower_strict_match_expr(scrutinee, arms, helpers),
         Expr::Block { value, .. }
         | Expr::ComputationBlock { value, .. }
         | Expr::MemoBlock { value, .. }
-        | Expr::NamedBlock { value, .. } => lower_strict_block_value(value.as_deref()),
-        Expr::Call { callee, args } => lower_strict_call_expr(callee, args),
+        | Expr::NamedBlock { value, .. } => lower_strict_block_value(value.as_deref(), helpers),
+        Expr::Call { callee, args } => lower_strict_call_expr(callee, args, helpers),
         Expr::MethodCall {
             receiver,
             method,
             args,
-        } => match lower_strict_path_method_call(receiver, method, args) {
+        } => match lower_strict_path_method_call(receiver, method, args, helpers) {
             Some(lowered) => lowered,
-            None => lower_strict_method_call_expr(receiver, method, args),
+            None => lower_strict_method_call_expr(receiver, method, args, helpers),
         },
         Expr::DialogueCall { plan, .. } => Ok(lower_dialogue_call_value(plan.as_ref())),
         Expr::Index { .. }
@@ -249,10 +266,13 @@ fn collect_dense<T, E>(
         .map_or_else(|_| runtime_sequence_dense_i64(values.to_vec()), wrap)
 }
 
-fn lower_runtime_bracket_seq_strict(items: &[Expr]) -> Result<RuntimeExpr, String> {
+fn lower_runtime_bracket_seq_strict(
+    items: &[Expr],
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
     let lowered = items
         .iter()
-        .map(lower_runtime_expr_strict)
+        .map(|item| lower_runtime_expr_strict_with_helpers(item, helpers))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(fold_value_sequence(lowered))
 }
@@ -307,6 +327,7 @@ fn lower_strict_path_method_call(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     let Expr::Path(receiver) = receiver else {
         return None;
@@ -322,23 +343,32 @@ fn lower_strict_path_method_call(
         return None;
     }
     Some(
-        lower_runtime_expr_strict(arg.value()).map(|arg| RuntimeExpr::Call {
+        lower_runtime_expr_strict_with_helpers(arg.value(), helpers).map(|arg| RuntimeExpr::Call {
             callee: format!("path.{method}"),
             args: vec![arg],
         }),
     )
 }
 
-fn lower_strict_call_expr(callee: &Expr, args: &[CallArg]) -> Result<RuntimeExpr, String> {
-    lower_constructor_call(callee, args).map_or_else(
+fn lower_strict_call_expr(
+    callee: &Expr,
+    args: &[CallArg],
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
+    lower_constructor_call(callee, args, helpers).map_or_else(
         || {
-            Ok(RuntimeExpr::Call {
-                callee: expr_label(callee),
-                args: args
-                    .iter()
-                    .map(lower_strict_call_arg)
-                    .collect::<Result<Vec<_>, _>>()?,
-            })
+            let callee = expr_label(callee);
+            let args = args
+                .iter()
+                .map(|arg| lower_strict_call_arg(arg, helpers))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(
+                if let Some(helper) = helpers.and_then(|helpers| helpers.get(&callee).copied()) {
+                    RuntimeExpr::PureCall { helper, args }
+                } else {
+                    RuntimeExpr::Call { callee, args }
+                },
+            )
         },
         Ok,
     )
@@ -348,21 +378,24 @@ fn lower_strict_method_call_expr(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
 ) -> Result<RuntimeExpr, String> {
-    if let Some(map) = lower_strict_map_method_call(receiver, method, args) {
+    if let Some(map) = lower_strict_map_method_call(receiver, method, args, helpers) {
         return map;
     }
     if runtime_method_name(method) == "sum" && args.is_empty() {
-        return lower_runtime_expr_strict(receiver).map(|source| RuntimeExpr::Sum {
-            source: Box::new(source),
+        return lower_runtime_expr_strict_with_helpers(receiver, helpers).map(|source| {
+            RuntimeExpr::Sum {
+                source: Box::new(source),
+            }
         });
     }
     Ok(RuntimeExpr::MethodCall {
-        receiver: Box::new(lower_runtime_expr_strict(receiver)?),
+        receiver: Box::new(lower_runtime_expr_strict_with_helpers(receiver, helpers)?),
         method: runtime_method_name(method).to_owned(),
         args: args
             .iter()
-            .map(lower_strict_call_arg)
+            .map(|arg| lower_strict_call_arg(arg, helpers))
             .collect::<Result<Vec<_>, _>>()?,
     })
 }
@@ -371,6 +404,7 @@ fn lower_strict_map_method_call(
     receiver: &Expr,
     method: &str,
     args: &[CallArg],
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
 ) -> Option<Result<RuntimeExpr, String>> {
     if runtime_method_name(method) != "map" {
         return None;
@@ -389,13 +423,15 @@ fn lower_strict_map_method_call(
             "runtime `map` closures must bind exactly one parameter".to_owned(),
         ));
     };
-    Some(lower_runtime_expr_strict(receiver).and_then(|source| {
-        lower_runtime_expr_strict(body).map(|body| RuntimeExpr::Map {
-            source: Box::new(source),
-            param: param.clone(),
-            body: Box::new(body),
-        })
-    }))
+    Some(
+        lower_runtime_expr_strict_with_helpers(receiver, helpers).and_then(|source| {
+            lower_runtime_expr_strict_with_helpers(body, helpers).map(|body| RuntimeExpr::Map {
+                source: Box::new(source),
+                param: param.clone(),
+                body: Box::new(body),
+            })
+        }),
+    )
 }
 
 fn lower_runtime_call_arg(arg: &CallArg) -> RuntimeExpr {
@@ -405,12 +441,15 @@ fn lower_runtime_call_arg(arg: &CallArg) -> RuntimeExpr {
     }
 }
 
-fn lower_strict_call_arg(arg: &CallArg) -> Result<RuntimeExpr, String> {
+fn lower_strict_call_arg(
+    arg: &CallArg,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
     match arg {
         CallArg::Spread { value } => Ok(RuntimeExpr::SpreadArg(Box::new(
-            lower_runtime_expr_strict(value)?,
+            lower_runtime_expr_strict_with_helpers(value, helpers)?,
         ))),
-        value => lower_runtime_expr_strict(value.value()),
+        value => lower_runtime_expr_strict_with_helpers(value.value(), helpers),
     }
 }
 
@@ -444,10 +483,13 @@ fn lower_dialogue_call_value(
     }
 }
 
-fn lower_strict_block_value(value: Option<&Expr>) -> Result<RuntimeExpr, String> {
+fn lower_strict_block_value(
+    value: Option<&Expr>,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
     value.map_or_else(
         || Ok(RuntimeExpr::Value(RuntimeValue::Unit)),
-        lower_runtime_expr_strict,
+        |value| lower_runtime_expr_strict_with_helpers(value, helpers),
     )
 }
 
@@ -455,14 +497,19 @@ fn lower_strict_if_expr(
     condition: &Expr,
     then_branch: &Expr,
     else_branch: Option<&Expr>,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
 ) -> Result<RuntimeExpr, String> {
     Ok(RuntimeExpr::If {
-        condition: Box::new(lower_runtime_expr_strict(condition)?),
-        then_expr: Box::new(lower_runtime_expr_strict(then_branch)?),
-        else_expr: Box::new(else_branch.map_or(
-            Ok(RuntimeExpr::Value(RuntimeValue::Unit)),
-            lower_runtime_expr_strict,
+        condition: Box::new(lower_runtime_expr_strict_with_helpers(condition, helpers)?),
+        then_expr: Box::new(lower_runtime_expr_strict_with_helpers(
+            then_branch,
+            helpers,
         )?),
+        else_expr: Box::new(
+            else_branch.map_or(Ok(RuntimeExpr::Value(RuntimeValue::Unit)), |else_branch| {
+                lower_runtime_expr_strict_with_helpers(else_branch, helpers)
+            })?,
+        ),
     })
 }
 
@@ -472,39 +519,55 @@ fn lower_strict_if_let_expr(
     guard: Option<&Expr>,
     then_branch: &Expr,
     else_branch: Option<&Expr>,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
 ) -> Result<RuntimeExpr, String> {
     Ok(RuntimeExpr::IfLet {
         pattern: lower_runtime_pattern(pattern),
-        expr: Box::new(lower_runtime_expr_strict(expr)?),
+        expr: Box::new(lower_runtime_expr_strict_with_helpers(expr, helpers)?),
         guard: guard
-            .map(lower_runtime_expr_strict)
+            .map(|guard| lower_runtime_expr_strict_with_helpers(guard, helpers))
             .transpose()?
             .map(Box::new),
-        then_expr: Box::new(lower_runtime_expr_strict(then_branch)?),
-        else_expr: Box::new(else_branch.map_or(
-            Ok(RuntimeExpr::Value(RuntimeValue::Unit)),
-            lower_runtime_expr_strict,
+        then_expr: Box::new(lower_runtime_expr_strict_with_helpers(
+            then_branch,
+            helpers,
         )?),
+        else_expr: Box::new(
+            else_branch.map_or(Ok(RuntimeExpr::Value(RuntimeValue::Unit)), |else_branch| {
+                lower_runtime_expr_strict_with_helpers(else_branch, helpers)
+            })?,
+        ),
     })
 }
 
-fn lower_strict_match_expr(scrutinee: &Expr, arms: &[MatchExprArm]) -> Result<RuntimeExpr, String> {
+fn lower_strict_match_expr(
+    scrutinee: &Expr,
+    arms: &[MatchExprArm],
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
     Ok(RuntimeExpr::Match {
-        scrutinee: Box::new(lower_runtime_expr_strict(scrutinee)?),
+        scrutinee: Box::new(lower_runtime_expr_strict_with_helpers(scrutinee, helpers)?),
         arms: arms
             .iter()
             .map(|arm| {
                 Ok(RuntimeExprMatchArm {
                     pattern: lower_runtime_pattern(arm.pattern()),
-                    guard: arm.guard().map(lower_runtime_expr_strict).transpose()?,
-                    value: lower_runtime_expr_strict(arm.value())?,
+                    guard: arm
+                        .guard()
+                        .map(|guard| lower_runtime_expr_strict_with_helpers(guard, helpers))
+                        .transpose()?,
+                    value: lower_runtime_expr_strict_with_helpers(arm.value(), helpers)?,
                 })
             })
             .collect::<Result<Vec<_>, String>>()?,
     })
 }
 
-fn lower_constructor_call(callee: &Expr, args: &[CallArg]) -> Option<RuntimeExpr> {
+fn lower_constructor_call(
+    callee: &Expr,
+    args: &[CallArg],
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Option<RuntimeExpr> {
     let Expr::Path(callee) = callee else {
         return None;
     };
@@ -518,7 +581,7 @@ fn lower_constructor_call(callee: &Expr, args: &[CallArg]) -> Option<RuntimeExpr
             CallArg::Positional(value) => Some(value),
             CallArg::Named { .. } | CallArg::Spread { .. } => None,
         })
-        .map(lower_runtime_expr_strict)
+        .map(|payload| lower_runtime_expr_strict_with_helpers(payload, helpers))
         .transpose()
         .ok()?
         .map(Box::new);
@@ -755,14 +818,19 @@ fn lower_runtime_array_repeat(value: &Expr, len: &Expr) -> RuntimeExpr {
     repeated_runtime_expr(value, len)
 }
 
-fn lower_runtime_array_repeat_strict(value: &Expr, len: &Expr) -> Result<RuntimeExpr, String> {
+fn lower_runtime_array_repeat_strict(
+    value: &Expr,
+    len: &Expr,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
     let Some(len) = array_repeat_len(len) else {
         return Err(format!(
             "array repeat length must be an integer constant in `{}`",
             expr_label(len)
         ));
     };
-    lower_runtime_expr_strict(value).map(|value| repeated_runtime_expr(value, len))
+    lower_runtime_expr_strict_with_helpers(value, helpers)
+        .map(|value| repeated_runtime_expr(value, len))
 }
 
 fn repeated_runtime_expr(value: RuntimeExpr, len: usize) -> RuntimeExpr {
@@ -793,6 +861,29 @@ mod tests {
         let lowered = lower_runtime_expr_strict(&expr).expect("calls are runtime values");
 
         assert!(matches!(lowered, RuntimeExpr::Call { callee, .. } if callee == "compute"));
+    }
+
+    #[test]
+    fn strict_runtime_value_lowering_can_emit_pure_calls() {
+        let expr = Expr::Call {
+            callee: Box::new(Expr::Path("compute".to_owned())),
+            args: vec![CallArg::Positional(Expr::Literal(Literal::Int {
+                raw: "3i64".to_owned(),
+                value: 3,
+                suffix: Some("i64".to_owned()),
+            }))],
+        };
+        let helpers = BTreeMap::from([("compute".to_owned(), RuntimePureHelperId(2))]);
+
+        let lowered =
+            lower_runtime_expr_strict_with_pure(&expr, &helpers).expect("pure calls lower");
+
+        assert!(matches!(
+            lowered,
+            RuntimeExpr::PureCall { helper, args }
+                if helper == RuntimePureHelperId(2)
+                    && matches!(args.as_slice(), [RuntimeExpr::Value(RuntimeValue::Int(3))])
+        ));
     }
 
     #[test]

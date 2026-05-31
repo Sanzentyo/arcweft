@@ -215,8 +215,9 @@ path-free source name, `wiki_scan_performed = 0`,
 `dot_normalization_owned = 0`, `dialogue_rescue_expr_parse_attempts = 0`,
 `line_owned_bytes = 0`, `block_owned_bytes = 0`, and
 `pure_flatten_bytes_copied_median = 0`; the local run after source-backed block
-fragments and map/sum suffix-use optimization reported parse phase 3371000 ns,
-runtime-plan lowering phase 462800 ns, and runtime median 11700 ns.
+fragments, map/sum suffix-use optimization, and pure-aware flow expression
+lowering reported parse phase 3529600 ns, runtime-plan lowering phase
+641500 ns, and runtime median 11500 ns.
 
 Runtime numeric sequence lowering now preserves integer-only bracket literals as
 `RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I64(_)))` instead of eagerly
@@ -255,6 +256,11 @@ table for each flow slice instead of rewalking the remaining suffix for every
 candidate. The same pass handles adjacent map/sum fusion and the
 sequence-map-sum window, while a regression keeps sequence bindings live when
 the map body reads the same local.
+Flow expression lowering receives the pure-helper map before constructing
+runtime expressions, so flow pure calls are emitted as `RuntimeExpr::PureCall`
+without a later flow-op rewrite traversal. Source and stream plans still use
+the shared finalization rewrite until those lowerers can receive the same
+pure-helper context.
 
 Borrow-state branch tracking now records checkpoint/journal deltas rather than
 full branch maps. The borrow-check JSON includes `state_delta_entries`,
@@ -271,7 +277,7 @@ validated as `Vec(U64)`, and ran with median elapsed time 7900 ns. The
 multi-width fixture lowered i8/i16/i32/u8/u16/u32/u64 literal sequences to the
 matching dense storage, validated the first visible JSON samples as `Vec(I8)`,
 `Vec(I16)`, `Vec(I32)`, and `Vec(U8)`, and reduced seven dense sequences in one
-flow with median elapsed time 20400 ns. The runtime-plan unit test covers all
+flow with median elapsed time 21500 ns. The runtime-plan unit test covers all
 seven dense storage variants directly. The pure-call counters remained zero for
 these fixtures because they intentionally measure the VM dense sequence
 reduction path, not the pure helper accelerator.
@@ -296,7 +302,7 @@ The dense wide numeric length fixture covers the remaining integer primitive
 spellings. It lowers `i128`, `u128`, `isize`, and `usize` bracket literals to
 `DenseSeq::I128`, `DenseSeq::U128`, `DenseSeq::ISize`, and `DenseSeq::USize`,
 then reads `RuntimeSeq::len()` without materializing scalar runtime values.
-The local path-free `just bench-015` run reported median elapsed time 13200 ns
+The local path-free bench run reported median elapsed time 14500 ns
 for seven executed ops, with `pure_flatten_materializations_median = 0`,
 `pure_arg_vec_allocations_median = 0`, `pure_result_bytes_copied_median = 0`,
 and no source path in the JSON output.

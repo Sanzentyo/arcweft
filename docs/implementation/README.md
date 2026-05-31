@@ -690,6 +690,11 @@ Current high-confidence state:
   candidate. It also fuses the common `let values = [...]; let tmp =
   values.map(...); let total = tmp.sum()` window in one rewrite while keeping
   the sequence binding when the map body itself reads that local.
+- Runtime-plan flow lowering now receives the pure-helper map before it lowers
+  flow expressions, so ordinary calls to known pure helpers become
+  `RuntimeExpr::PureCall` at expression construction time. The later
+  plan-finalization pass no longer walks flow ops just to rewrite pure calls;
+  it is kept for source/stream plans that are still lowered separately.
 - The fused runtime map batch path now borrows local or literal tuple/bracket
   sequence sources while packing flat `i64` inputs, avoiding a `RuntimeValue`
   sequence clone before crossing into VM/AOT/JIT pure helper backends.

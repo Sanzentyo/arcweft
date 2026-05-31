@@ -1,7 +1,7 @@
 //! Flow-runtime lowering.
 
 use crate::errors::{LinePlanLowerError, RuntimePlanLowerError};
-use crate::expr::{lower_runtime_expr_strict, runtime_call_effect};
+use crate::expr::{lower_runtime_expr, lower_runtime_expr_strict_with_pure, runtime_call_effect};
 use crate::host_request::lower_host_task_request;
 use crate::labels::expr_label;
 use crate::line_task::{lower_line_plan, lower_line_plan_statements};
@@ -49,7 +49,6 @@ pub(crate) struct LoweredRuntimeFlows {
 /// not silently skip flow syntax because the engine would otherwise execute a
 /// different story than the source describes.
 pub fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<RuntimePlanLowerError>> {
-    let lowered_flows = lower_runtime_flows(module)?;
     let pure_candidates = lower_pure_helper_candidates(module).map_err(|errors| {
         errors
             .into_iter()
@@ -58,6 +57,7 @@ pub fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<Runtime
     })?;
     let pure_helpers = runtime_pure_helpers(&pure_candidates);
     let pure_map = pure_helper_map(&pure_helpers);
+    let lowered_flows = lower_runtime_flows(module, &pure_map)?;
     let entries = lower_runtime_entries(module);
     let entry = implicit_entry_flow(&entries, &lowered_flows.flows);
     let stream_plans = module
@@ -114,7 +114,6 @@ fn rewrite_runtime_plan_pure_calls(
     helpers: &BTreeMap<String, RuntimePureHelperId>,
 ) -> RuntimePlan {
     for flow in &mut plan.flows {
-        rewrite_flow_ops_pure_calls(&mut flow.ops, helpers);
         optimize_flow_ops(&mut flow.ops);
     }
     for source in &mut plan.source_plans {
@@ -694,10 +693,12 @@ fn implicit_entry_flow(
 /// Lowers HIR flow bodies into executable Sans I/O flow operations.
 pub(crate) fn lower_runtime_flows(
     module: &HirModule,
+    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
 ) -> Result<LoweredRuntimeFlows, Vec<RuntimePlanLowerError>> {
     let mut lowerer = FlowRuntimeLowerer {
         line_task_groups: Vec::new(),
         errors: Vec::new(),
+        pure_helpers,
     };
     let flows = module
         .flows()
@@ -720,14 +721,15 @@ pub(crate) fn lower_runtime_flows(
     }
 }
 
-struct FlowRuntimeLowerer {
+struct FlowRuntimeLowerer<'a> {
     line_task_groups: Vec<LineTaskGroup>,
     errors: Vec<RuntimePlanLowerError>,
+    pure_helpers: &'a BTreeMap<String, RuntimePureHelperId>,
 }
 
-impl FlowRuntimeLowerer {
+impl FlowRuntimeLowerer<'_> {
     fn lower_runtime_expr(&mut self, expr: &Expr) -> RuntimeExpr {
-        match lower_runtime_expr_strict(expr) {
+        match lower_runtime_expr_strict_with_pure(expr, self.pure_helpers) {
             Ok(expr) => expr,
             Err(message) => {
                 self.errors.push(RuntimePlanLowerError::new(message));
@@ -1091,8 +1093,8 @@ impl FlowRuntimeLowerer {
             }],
             Stmt::Goto(expr) => vec![FlowOp::GotoExpr(self.lower_runtime_expr(expr))],
             Stmt::Return(expr) => vec![FlowOp::ReturnExpr(
-                lower_runtime_expr_strict(expr)
-                    .unwrap_or_else(|_| RuntimeExpr::Value(RuntimeValue::String(expr_label(expr)))),
+                lower_runtime_expr_strict_with_pure(expr, self.pure_helpers)
+                    .unwrap_or_else(|_| lower_runtime_expr(expr)),
             )],
             Stmt::Expr(expr) => vec![FlowOp::Effect(runtime_call_effect(expr))],
             Stmt::Out { label, expr } => {
@@ -1293,101 +1295,6 @@ fn parallel_limit(args: &[arcweft_lang_hir::syntax::expr::CallArg]) -> Result<us
         .ok_or_else(|| "parallel limit must be greater than zero".to_owned())
 }
 
-fn rewrite_flow_ops_pure_calls(
-    ops: &mut [FlowOp],
-    helpers: &BTreeMap<String, RuntimePureHelperId>,
-) {
-    for op in ops {
-        match op {
-            FlowOp::LetElse { expr, else_ops, .. } => {
-                rewrite_expr_pure_calls(expr, helpers);
-                rewrite_flow_ops_pure_calls(else_ops, helpers);
-            }
-            FlowOp::If {
-                condition,
-                then_ops,
-                else_ops,
-            } => {
-                rewrite_expr_pure_calls(condition, helpers);
-                rewrite_flow_ops_pure_calls(then_ops, helpers);
-                rewrite_flow_ops_pure_calls(else_ops, helpers);
-            }
-            FlowOp::IfLet {
-                expr,
-                guard,
-                then_ops,
-                else_ops,
-                ..
-            } => {
-                rewrite_expr_pure_calls(expr, helpers);
-                if let Some(guard) = guard {
-                    rewrite_expr_pure_calls(guard, helpers);
-                }
-                rewrite_flow_ops_pure_calls(then_ops, helpers);
-                rewrite_flow_ops_pure_calls(else_ops, helpers);
-            }
-            FlowOp::Match { scrutinee, arms } => {
-                rewrite_expr_pure_calls(scrutinee, helpers);
-                for arm in arms {
-                    if let Some(guard) = &mut arm.guard {
-                        rewrite_expr_pure_calls(guard, helpers);
-                    }
-                    rewrite_flow_ops_pure_calls(&mut arm.ops, helpers);
-                }
-            }
-            FlowOp::Loop { body }
-            | FlowOp::LetLoop { body, .. }
-            | FlowOp::Scope(body)
-            | FlowOp::Thread { body, .. } => rewrite_flow_ops_pure_calls(body, helpers),
-            FlowOp::LoopNext { body } | FlowOp::ForNext { body, .. } => {
-                rewrite_flow_ops_pure_calls(Arc::make_mut(body), helpers);
-            }
-            FlowOp::While { condition, body } => {
-                rewrite_expr_pure_calls(condition, helpers);
-                rewrite_flow_ops_pure_calls(body, helpers);
-            }
-            FlowOp::WhileNext { condition, body } => {
-                rewrite_expr_pure_calls(condition, helpers);
-                rewrite_flow_ops_pure_calls(Arc::make_mut(body), helpers);
-            }
-            FlowOp::WhileLet {
-                expr, guard, body, ..
-            } => rewrite_while_let_pure_calls(expr, guard, body, helpers),
-            FlowOp::WhileLetNext {
-                expr, guard, body, ..
-            } => rewrite_while_let_pure_calls(expr, guard, Arc::make_mut(body), helpers),
-            FlowOp::For { source, body, .. } => {
-                rewrite_expr_pure_calls(source, helpers);
-                rewrite_flow_ops_pure_calls(body, helpers);
-            }
-            FlowOp::AwaitMany { target, .. } => {
-                rewrite_expr_pure_calls(&mut target.source, helpers);
-            }
-            FlowOp::LetScope { value, ops, .. } => {
-                rewrite_expr_pure_calls(value, helpers);
-                rewrite_flow_ops_pure_calls(ops, helpers);
-            }
-            FlowOp::Let { expr, .. }
-            | FlowOp::Break(Some(expr))
-            | FlowOp::GotoExpr(expr)
-            | FlowOp::ReturnExpr(expr)
-            | FlowOp::ExitScopeBind { expr, .. } => rewrite_expr_pure_calls(expr, helpers),
-            FlowOp::Bind(_)
-            | FlowOp::Dialogue { .. }
-            | FlowOp::Choice { .. }
-            | FlowOp::Await { .. }
-            | FlowOp::Effect(_)
-            | FlowOp::EnterScope
-            | FlowOp::ExitScope
-            | FlowOp::Break(None)
-            | FlowOp::Continue
-            | FlowOp::Goto(_)
-            | FlowOp::Return(_)
-            | FlowOp::Noop => {}
-        }
-    }
-}
-
 fn rewrite_source_plan_pure_calls(
     source: &mut SourcePlan,
     helpers: &BTreeMap<String, RuntimePureHelperId>,
@@ -1404,19 +1311,6 @@ fn rewrite_source_plan_pure_calls(
         };
         rewrite_source_ops_pure_calls(ops, helpers);
     }
-}
-
-fn rewrite_while_let_pure_calls(
-    expr: &mut RuntimeExpr,
-    guard: &mut Option<RuntimeExpr>,
-    body: &mut [FlowOp],
-    helpers: &BTreeMap<String, RuntimePureHelperId>,
-) {
-    rewrite_expr_pure_calls(expr, helpers);
-    if let Some(guard) = guard {
-        rewrite_expr_pure_calls(guard, helpers);
-    }
-    rewrite_flow_ops_pure_calls(body, helpers);
 }
 
 fn rewrite_source_ops_pure_calls(
