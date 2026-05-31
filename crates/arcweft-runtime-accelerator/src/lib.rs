@@ -6,6 +6,7 @@
 pub mod math;
 
 use arcweft_core::{
+    math::{DenseMatrixF32, DenseTensorF32},
     plan::{
         RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
         RuntimePureOutputType,
@@ -17,7 +18,10 @@ use arcweft_core::{
         RuntimePureScalarInteger, VmPureFunctionScratch,
     },
     step::RuntimePureCallStats,
-    value::{DenseSeq, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeSeq, RuntimeValue},
+    value::{
+        DenseSeq, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeIntrinsic, RuntimeSeq,
+        RuntimeValue,
+    },
 };
 use arcweft_lang_jit_cranelift::{
     CompiledPureF32Inputs, CompiledPureF64Inputs, CompiledPureI32Inputs, CompiledPureI64Inputs,
@@ -87,6 +91,7 @@ pub struct RuntimePureAccelerator {
     aot_i64_slots: Vec<i64>,
     aot_scalar_slots: Vec<RuntimePureScalar>,
     vm_scratch: VmPureFunctionScratch,
+    math: math::RuntimeMathAccelerator,
 }
 
 enum RuntimePureCacheEntry {
@@ -216,6 +221,7 @@ impl fmt::Debug for RuntimePureAccelerator {
             .field("helper_summary", &self.helper_summary)
             .field("has_pool", &self.pool.is_some())
             .field("resolved_workers", &self.resolved_workers)
+            .field("math_stats", &self.math.stats())
             .finish_non_exhaustive()
     }
 }
@@ -267,6 +273,7 @@ impl RuntimePureAccelerator {
             aot_i64_slots: Vec::new(),
             aot_scalar_slots: Vec::new(),
             vm_scratch: VmPureFunctionScratch::default(),
+            math: math::RuntimeMathAccelerator::new(math::RuntimeMathAcceleratorConfig::default()),
         }
     }
 
@@ -290,10 +297,15 @@ impl RuntimePureAccelerator {
         self.pool.is_some()
     }
 
+    pub const fn math_stats(&self) -> math::RuntimeMathStats {
+        self.math.stats()
+    }
+
     pub fn reset_runtime_counters(&mut self) {
         self.stats = RuntimePureCallStats::default();
         self.compile_stats.cache_hits = 0;
         self.compile_stats.cache_misses = 0;
+        self.math.reset_stats();
     }
 
     pub fn call_i64_batch(
@@ -1611,6 +1623,58 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         }
     }
 
+    fn call_math_matmul_f32(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        self.record_math_inputs(lhs.values().len(), rhs.values().len());
+        let result =
+            self.math
+                .matmul_f32(lhs, rhs)
+                .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                    name: RuntimeIntrinsic::MathMatmulF32.as_label().to_owned(),
+                    reason: error.to_string(),
+                })?;
+        self.record_math_result(result.values().len());
+        Ok(result)
+    }
+
+    fn call_math_matrix_add_f32(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        self.record_math_inputs(lhs.values().len(), rhs.values().len());
+        let result = self.math.matrix_add_f32(lhs, rhs).map_err(|error| {
+            RuntimeEvalError::UnsupportedPure {
+                name: RuntimeIntrinsic::MathMatrixAddF32.as_label().to_owned(),
+                reason: error.to_string(),
+            }
+        })?;
+        self.record_math_result(result.values().len());
+        Ok(result)
+    }
+
+    fn call_math_tensor_add_f32(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        self.record_math_inputs(lhs.values().len(), rhs.values().len());
+        let result = self.math.tensor_add_f32(lhs, rhs).map_err(|error| {
+            RuntimeEvalError::UnsupportedPure {
+                name: RuntimeIntrinsic::MathTensorAddF32.as_label().to_owned(),
+                reason: error.to_string(),
+            }
+        })?;
+        self.record_math_result(result.values().len());
+        Ok(result)
+    }
+
     fn call_values(
         &mut self,
         helper: &RuntimePureHelper,
@@ -1631,6 +1695,21 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 impl RuntimePureAccelerator {
     fn cache_entries(&self) -> usize {
         self.cache.iter().filter(|entry| entry.is_some()).count()
+    }
+
+    fn record_math_inputs(&mut self, lhs_elements: usize, rhs_elements: usize) {
+        self.stats.arg_bytes_borrowed +=
+            lhs_elements.saturating_add(rhs_elements) * std::mem::size_of::<f32>();
+    }
+
+    fn record_math_result(&mut self, result_elements: usize) {
+        self.stats.result_bytes_copied += result_elements * std::mem::size_of::<f32>();
+        if !matches!(
+            self.math.stats().last_backend,
+            Some(math::RuntimeMathBackend::Scalar) | None
+        ) {
+            self.stats.math_accelerated_calls += 1;
+        }
     }
 
     fn call_vm_i64(
@@ -3172,9 +3251,66 @@ impl Default for RuntimePureAcceleratorConfig {
 mod tests {
     use super::*;
     use arcweft_core::{
-        plan::RuntimePureHelperId,
-        value::{RuntimeBinaryOp, RuntimeExpr},
+        engine::{Engine, FlowExit, FlowFiberStatus},
+        plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan, RuntimePureHelperId},
+        step::{RuntimeStepInput, RuntimeStepOptions},
+        value::{RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr},
     };
+
+    #[test]
+    fn runtime_flow_math_intrinsic_uses_adapter_math_accelerator() {
+        let lhs = DenseMatrixF32::new(
+            4,
+            4,
+            vec![
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ],
+        )
+        .expect("matrix shape is valid");
+        let rhs = DenseMatrixF32::new(
+            4,
+            4,
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0,
+            ],
+        )
+        .expect("matrix shape is valid");
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.math".to_owned())),
+            vec![RuntimeFlow {
+                id: FlowRuntimeId("flow.math".to_owned()),
+                ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Call {
+                    callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::MathMatmulF32),
+                    args: vec![
+                        RuntimeExpr::Value(RuntimeValue::matrix_f32(lhs)),
+                        RuntimeExpr::Value(RuntimeValue::matrix_f32(rhs)),
+                    ],
+                })],
+            }],
+            Vec::new(),
+        )
+        .expect("runtime plan is valid");
+        let mut engine = Engine::new(plan);
+        let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, &[]);
+
+        let result = engine.step_with_pure_backend(
+            RuntimeStepInput::default(),
+            RuntimeStepOptions::default(),
+            &mut accelerator,
+        );
+
+        assert_eq!(result.stats.pure.math_calls, 1);
+        assert_eq!(result.stats.pure.math_accelerated_calls, 1);
+        assert_eq!(
+            accelerator.math_stats().last_backend,
+            Some(math::RuntimeMathBackend::Glam)
+        );
+        assert!(matches!(
+            result.fiber_status,
+            FlowFiberStatus::Done(FlowExit::Return(_))
+        ));
+    }
 
     #[test]
     fn auto_accelerator_uses_aot_for_cold_scalar_calls_without_value_vec_allocation() {

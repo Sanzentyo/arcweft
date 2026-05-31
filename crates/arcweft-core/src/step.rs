@@ -88,6 +88,8 @@ pub struct RuntimeStepStats {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct RuntimePureCallStats {
     pub pure_calls: usize,
+    pub math_calls: usize,
+    pub math_accelerated_calls: usize,
     pub batch_calls: usize,
     pub batch_items: usize,
     pub flat_batch_calls: usize,
@@ -118,6 +120,10 @@ impl RuntimePureCallStats {
     pub fn saturating_delta(self, before: Self) -> Self {
         Self {
             pure_calls: self.pure_calls.saturating_sub(before.pure_calls),
+            math_calls: self.math_calls.saturating_sub(before.math_calls),
+            math_accelerated_calls: self
+                .math_accelerated_calls
+                .saturating_sub(before.math_accelerated_calls),
             batch_calls: self.batch_calls.saturating_sub(before.batch_calls),
             batch_items: self.batch_items.saturating_sub(before.batch_items),
             flat_batch_calls: self

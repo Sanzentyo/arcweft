@@ -1,3 +1,4 @@
+use crate::math::{DenseMatrixF32, DenseTensorF32};
 use crate::plan::{RuntimePureHelper, RuntimePureInputType, RuntimePureOutputType};
 use crate::step::RuntimePureCallStats;
 use crate::value::{
@@ -220,6 +221,24 @@ pub trait RuntimePureCallBackend {
         arity: usize,
         out: &mut [f64],
     ) -> Result<(), RuntimeEvalError>;
+
+    fn call_math_matmul_f32(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeEvalError>;
+
+    fn call_math_matrix_add_f32(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeEvalError>;
+
+    fn call_math_tensor_add_f32(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, RuntimeEvalError>;
 
     fn call_values(
         &mut self,
@@ -1323,6 +1342,45 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
                 let value = self.scratch.evaluate_f64_slice(helper, row)?;
                 *slot = runtime_value_into_f64_result(helper, value)?;
                 Ok(())
+            })
+    }
+
+    fn call_math_matmul_f32(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        lhs.matmul_scalar(rhs)
+            .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                name: RuntimeIntrinsic::MathMatmulF32.as_label().to_owned(),
+                reason: error.to_string(),
+            })
+    }
+
+    fn call_math_matrix_add_f32(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        lhs.add_scalar(rhs)
+            .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                name: RuntimeIntrinsic::MathMatrixAddF32.as_label().to_owned(),
+                reason: error.to_string(),
+            })
+    }
+
+    fn call_math_tensor_add_f32(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        lhs.add_scalar(rhs)
+            .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                name: RuntimeIntrinsic::MathTensorAddF32.as_label().to_owned(),
+                reason: error.to_string(),
             })
     }
 

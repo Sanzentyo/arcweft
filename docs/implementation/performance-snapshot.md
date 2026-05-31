@@ -506,6 +506,15 @@ acceleration stays in `arcweft-runtime-accelerator`, where
 `RuntimeMathAccelerator` can select `scalar`, `glam`, `ndarray`, `wgpu`, or
 `auto`.
 
+Flow execution now routes `math.matmul_f32`, `math.matrix_add_f32`, and
+`math.tensor_add_f32` through the same Sans I/O `RuntimePureCallBackend`
+adapter boundary used by pure helper acceleration. The VM backend keeps the
+scalar deterministic baseline. `RuntimePureAccelerator` owns a
+`RuntimeMathAccelerator`, so programs using built-in `math.*` calls naturally
+receive the configured math backend without adding GPU or ndarray dependencies
+to `arcweft-core`. Runtime stats record `math_calls` and
+`math_accelerated_calls` alongside the existing pure helper counters.
+
 The wgpu path is feature-gated by `math-wgpu` and keeps Windows DX12 enabled
 alongside Vulkan, Metal, and GLES. The workspace Rust floor is raised to 1.96
 so the latest wgpu stack can be used without pinning older graphics crates.
@@ -520,6 +529,7 @@ just bench-math-glam
 just bench-math-wgpu
 just bench-math-matrix-add
 just bench-math-tensor-add
+cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul --size 512 --iterations 3 --warmup 1 --reuse
 just bench-math-matrix-add-reuse
 just bench-math-tensor-add-reuse
 ```
@@ -536,6 +546,7 @@ Representative release results on the local machine:
 | 64x64 matmul_f32 | auto | measured | 24200 | selected ndarray without wgpu feature |
 | 128x128 matmul_f32 | ndarray | measured | 98500 | CPU backend with wgpu feature enabled |
 | 128x128 matmul_f32 | wgpu | measured | 217800 | upload/download dominates |
+| 128x128 matmul_f32 | wgpu prepared | measured | 135800 | 4 buffer creations, 16 buffer reuse hits, 3 staging reuse hits |
 | 128x128 matmul_f32 | auto | measured | 43700 | selected ndarray |
 | 256x256 matmul_f32 | ndarray | measured | 404400 | CPU backend |
 | 256x256 matmul_f32 | wgpu | measured | 444300 | still not consistently faster |
@@ -560,10 +571,13 @@ fixed 4x4 matrices, ndarray/scalar win smaller one-shot CPU workloads, and wgpu
 becomes useful for larger matmul workloads once arithmetic work amortizes
 upload/download cost. Auto therefore keeps one-shot elementwise kernels on the
 CPU backend and only considers wgpu for matmul above the configured work
-threshold. Repeated elementwise matrix/tensor kernels can now use prepared GPU
-buffers, which uploads the fixed inputs once, reuses the storage/bind group
-across warmup and measured samples, and downloads only the result for each
-dispatch.
+threshold. Repeated matrix multiplication and elementwise matrix/tensor
+kernels can now use prepared GPU buffers, which uploads the fixed inputs once,
+reuses the storage/bind group across warmup and measured samples, and downloads
+only the result for each dispatch. The wgpu readback path also keeps a reusable
+MAP_READ staging buffer in the adapter context; one-shot calls and prepared
+dispatches grow it on demand and remap it instead of allocating a fresh
+download buffer for every result.
 
 The math bench JSON is emitted through a typed serde report rather than
 hand-built string output. It reports the requested backend, measured status,
@@ -571,7 +585,8 @@ correctness-checked timing samples, the backend that actually executed last,
 and the `last_auto_reason` policy label when `auto` made the choice. The same
 report includes accelerator copy counters split into borrowed bytes, copied
 bytes, uploaded bytes, downloaded bytes, GPU buffer creations, GPU buffer reuse
-hits, and reused dispatches. Explicit `wgpu` requests remain explicit:
+hits, staging buffer creations, staging buffer reuse hits, and reused
+dispatches. Explicit `wgpu` requests remain explicit:
 unavailable adapters or disabled features produce a structured skip/error,
 while `auto` records the chosen policy and fallback path through the backend
 counters. The example-level serialization test keeps the report parseable and

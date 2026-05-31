@@ -559,7 +559,7 @@ impl Engine {
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let args = self.evaluate_call_args(args, pure_backend)?;
-        Ok(evaluate_runtime_call(callee, &args))
+        Ok(evaluate_runtime_call(callee, &args, pure_backend))
     }
 
     fn evaluate_pure_call_expr(
@@ -2988,7 +2988,11 @@ fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, Runti
     }
 }
 
-fn evaluate_runtime_call(callee: &RuntimeCallTarget, args: &[RuntimeValue]) -> RuntimeValue {
+fn evaluate_runtime_call(
+    callee: &RuntimeCallTarget,
+    args: &[RuntimeValue],
+    pure_backend: &mut impl RuntimePureCallBackend,
+) -> RuntimeValue {
     match (callee.as_intrinsic(), args) {
         (Some(RuntimeIntrinsic::Add), [RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)]) => {
             evaluate_binary(
@@ -3001,21 +3005,21 @@ fn evaluate_runtime_call(callee: &RuntimeCallTarget, args: &[RuntimeValue]) -> R
         (
             Some(RuntimeIntrinsic::MathMatmulF32),
             [RuntimeValue::MatrixF32(lhs), RuntimeValue::MatrixF32(rhs)],
-        ) => lhs.matmul_scalar(rhs).map_or_else(
+        ) => pure_backend.call_math_matmul_f32(lhs, rhs).map_or_else(
             |error| RuntimeValue::String(format!("math.matmul_f32({error})")),
             RuntimeValue::matrix_f32,
         ),
         (
             Some(RuntimeIntrinsic::MathMatrixAddF32),
             [RuntimeValue::MatrixF32(lhs), RuntimeValue::MatrixF32(rhs)],
-        ) => lhs.add_scalar(rhs).map_or_else(
+        ) => pure_backend.call_math_matrix_add_f32(lhs, rhs).map_or_else(
             |error| RuntimeValue::String(format!("math.matrix_add_f32({error})")),
             RuntimeValue::matrix_f32,
         ),
         (
             Some(RuntimeIntrinsic::MathTensorAddF32),
             [RuntimeValue::TensorF32(lhs), RuntimeValue::TensorF32(rhs)],
-        ) => lhs.add_scalar(rhs).map_or_else(
+        ) => pure_backend.call_math_tensor_add_f32(lhs, rhs).map_or_else(
             |error| RuntimeValue::String(format!("math.tensor_add_f32({error})")),
             RuntimeValue::tensor_f32,
         ),

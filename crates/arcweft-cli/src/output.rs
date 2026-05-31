@@ -862,6 +862,8 @@ pub(crate) struct ScriptBenchDeterministicSummary {
     pub(crate) task_requests_median: usize,
     pub(crate) task_events_in_median: usize,
     pub(crate) pure_calls_median: usize,
+    pub(crate) math_calls_median: usize,
+    pub(crate) math_accelerated_calls_median: usize,
     pub(crate) pure_batch_calls_median: usize,
     pub(crate) pure_batch_items_median: usize,
     pub(crate) pure_flat_batch_calls_median: usize,
@@ -1106,6 +1108,8 @@ pub(crate) struct RuntimeStepStatsSummary {
 #[derive(serde::Serialize)]
 pub(crate) struct RuntimePureCallStatsSummary {
     pub(crate) pure_calls: usize,
+    pub(crate) math_calls: usize,
+    pub(crate) math_accelerated_calls: usize,
     pub(crate) batch_calls: usize,
     pub(crate) batch_items: usize,
     pub(crate) flat_batch_calls: usize,
@@ -1292,6 +1296,8 @@ impl From<RuntimePureCallStats> for RuntimePureCallStatsSummary {
     fn from(stats: RuntimePureCallStats) -> Self {
         Self {
             pure_calls: stats.pure_calls,
+            math_calls: stats.math_calls,
+            math_accelerated_calls: stats.math_accelerated_calls,
             batch_calls: stats.batch_calls,
             batch_items: stats.batch_items,
             flat_batch_calls: stats.flat_batch_calls,

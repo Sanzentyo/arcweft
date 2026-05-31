@@ -55,6 +55,10 @@ fn run_matmul(
         Err(error) => return BackendReport::failed(backend, error.to_string()),
     };
 
+    if options.reuse {
+        return run_prepared_matrix_matmul(accelerator, backend, options, &lhs, &rhs, &reference);
+    }
+
     for _ in 0..options.warmup {
         if let Err(error) = accelerator.matmul_f32(&lhs, &rhs) {
             return BackendReport::skipped_or_failed(backend, error.to_string());
@@ -148,6 +152,50 @@ fn run_tensor_add(
         let elapsed = started.elapsed().as_nanos();
         if !approx_eq(output.values(), reference.values(), 1.0e-6) {
             return BackendReport::failed(backend, "tensor add result mismatch".to_owned());
+        }
+        samples.push(elapsed);
+    }
+    BackendReport::measured(backend, samples, accelerator.stats())
+}
+
+fn run_prepared_matrix_matmul(
+    accelerator: &mut RuntimeMathAccelerator,
+    backend: RuntimeMathBackend,
+    options: &BenchOptions,
+    lhs: &DenseMatrixF32,
+    rhs: &DenseMatrixF32,
+    reference: &DenseMatrixF32,
+) -> BackendReport {
+    if backend != RuntimeMathBackend::Wgpu {
+        return BackendReport::skipped_or_failed(
+            backend,
+            "prepared GPU reuse is only available for the wgpu backend".to_owned(),
+        );
+    }
+    let prepared = match accelerator.prepare_matrix_matmul_f32(lhs, rhs) {
+        Ok(value) => value,
+        Err(error) => return BackendReport::skipped_or_failed(backend, error.to_string()),
+    };
+    let mut output = vec![0.0; lhs.rows() * rhs.cols()];
+    for _ in 0..options.warmup {
+        if let Err(error) = accelerator.run_prepared_matrix_matmul_f32_into(&prepared, &mut output)
+        {
+            return BackendReport::skipped_or_failed(backend, error.to_string());
+        }
+    }
+    let mut samples = Vec::with_capacity(options.iterations);
+    for _ in 0..options.iterations {
+        let started = Instant::now();
+        if let Err(error) = accelerator.run_prepared_matrix_matmul_f32_into(&prepared, &mut output)
+        {
+            return BackendReport::skipped_or_failed(backend, error.to_string());
+        }
+        let elapsed = started.elapsed().as_nanos();
+        if !approx_eq(&output, reference.values(), 1.0e-3) {
+            return BackendReport::failed(
+                backend,
+                "prepared matrix matmul result mismatch".to_owned(),
+            );
         }
         samples.push(elapsed);
     }
@@ -434,6 +482,8 @@ struct RuntimeMathStatsJson {
     bytes_downloaded: usize,
     gpu_buffer_creations: usize,
     gpu_buffer_reuse_hits: usize,
+    gpu_staging_buffer_creations: usize,
+    gpu_staging_buffer_reuse_hits: usize,
     gpu_reused_dispatches: usize,
     last_backend: Option<&'static str>,
     last_auto_reason: Option<&'static str>,
@@ -453,6 +503,8 @@ impl From<RuntimeMathStats> for RuntimeMathStatsJson {
             bytes_downloaded: stats.bytes_downloaded,
             gpu_buffer_creations: stats.gpu_buffer_creations,
             gpu_buffer_reuse_hits: stats.gpu_buffer_reuse_hits,
+            gpu_staging_buffer_creations: stats.gpu_staging_buffer_creations,
+            gpu_staging_buffer_reuse_hits: stats.gpu_staging_buffer_reuse_hits,
             gpu_reused_dispatches: stats.gpu_reused_dispatches,
             last_backend: stats.last_backend.map(backend_label),
             last_auto_reason: stats.last_auto_reason.map(auto_reason_label),

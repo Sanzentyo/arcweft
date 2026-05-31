@@ -1922,6 +1922,8 @@ impl RuntimeBenchStepTotals {
 
 fn add_pure_stats(total: &mut RuntimePureCallStats, stats: RuntimePureCallStats) {
     total.pure_calls += stats.pure_calls;
+    total.math_calls += stats.math_calls;
+    total.math_accelerated_calls += stats.math_accelerated_calls;
     total.batch_calls += stats.batch_calls;
     total.batch_items += stats.batch_items;
     total.flat_batch_calls += stats.flat_batch_calls;
@@ -3411,6 +3413,8 @@ struct RuntimeBenchSamples {
     task_requests: Vec<usize>,
     task_events_in: Vec<usize>,
     pure_calls: Vec<usize>,
+    math_calls: Vec<usize>,
+    math_accelerated_calls: Vec<usize>,
     pure_batch_calls: Vec<usize>,
     pure_batch_items: Vec<usize>,
     pure_flat_batch_calls: Vec<usize>,
@@ -3451,6 +3455,8 @@ impl RuntimeBenchSamples {
             task_requests: Vec::with_capacity(capacity),
             task_events_in: Vec::with_capacity(capacity),
             pure_calls: Vec::with_capacity(capacity),
+            math_calls: Vec::with_capacity(capacity),
+            math_accelerated_calls: Vec::with_capacity(capacity),
             pure_batch_calls: Vec::with_capacity(capacity),
             pure_batch_items: Vec::with_capacity(capacity),
             pure_flat_batch_calls: Vec::with_capacity(capacity),
@@ -3503,6 +3509,9 @@ impl RuntimeBenchSamples {
 
     fn push_pure_stats(&mut self, trace: &RuntimeBenchTrace) {
         self.pure_calls.push(trace.totals.pure.pure_calls);
+        self.math_calls.push(trace.totals.pure.math_calls);
+        self.math_accelerated_calls
+            .push(trace.totals.pure.math_accelerated_calls);
         self.pure_batch_items.push(trace.totals.pure.batch_items);
         self.pure_batch_calls.push(trace.totals.pure.batch_calls);
         self.pure_flat_batch_calls
@@ -3582,6 +3591,8 @@ impl RuntimeBenchSamples {
             task_requests_median: median_usize(&mut self.task_requests),
             task_events_in_median: median_usize(&mut self.task_events_in),
             pure_calls_median: median_usize(&mut self.pure_calls),
+            math_calls_median: median_usize(&mut self.math_calls),
+            math_accelerated_calls_median: median_usize(&mut self.math_accelerated_calls),
             pure_batch_calls_median: median_usize(&mut self.pure_batch_calls),
             pure_batch_items_median: median_usize(&mut self.pure_batch_items),
             pure_flat_batch_calls_median: median_usize(&mut self.pure_flat_batch_calls),
