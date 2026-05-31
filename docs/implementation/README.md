@@ -707,7 +707,10 @@ Current high-confidence state:
   map before they lower expressions, so ordinary calls to known pure helpers
   become `RuntimeExpr::PureCall` at expression construction time. The later
   plan-finalization pass optimizes flow map/sum windows without walking flow,
-  source, or stream ops just to rewrite pure calls.
+  source, or stream ops just to rewrite pure calls. Profile and bench JSON now
+  expose runtime-plan lowering counters for pure helpers, zero plan-wide pure
+  rewrite visits, optimized flow slices, local-use suffix table work, map/sum
+  fusions, sequence-source inlines, and remaining `PureCall` expressions.
 - The fused runtime map batch path now borrows local or literal tuple/bracket
   sequence sources while packing flat `i64` inputs, avoiding a `RuntimeValue`
   sequence clone before crossing into VM/AOT/JIT pure helper backends.

@@ -54,7 +54,8 @@ pub(super) use arcweft_lang_syntax::{
     types::{TypeRef, parse_fn_signature, parse_type_ref},
 };
 pub(super) use arcweft_runtime_plan::{
-    flow::lower_runtime_plan, line_task::lower_line_task_groups,
+    flow::{lower_runtime_plan, lower_runtime_plan_with_stats},
+    line_task::lower_line_task_groups,
 };
 
 pub(super) fn parse_ok(

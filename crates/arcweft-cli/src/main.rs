@@ -40,7 +40,9 @@ use arcweft_runtime_accelerator::{
     RuntimePureAccelerator, RuntimePureAcceleratorConfig, RuntimePureBackendMode,
     RuntimePureCompileStats, RuntimePureWorkerCount,
 };
-use arcweft_runtime_plan::flow::lower_runtime_plan;
+use arcweft_runtime_plan::flow::{
+    RuntimePlanLowerStats, lower_runtime_plan, lower_runtime_plan_with_stats,
+};
 use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_groups};
 use arcweft_runtime_plan::pure::{
     PureHelperCandidate, PureHelperLowerError, lower_pure_helper_candidates,
@@ -64,10 +66,10 @@ use native_task::{NativeSchedulerStats, NativeTaskBridge, NativeTaskClassCounts,
 use output::{
     AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, CheckReport,
     RuntimeExecutorPureAccelerationSummary, RuntimeExecutorPureCompileStatsSummary,
-    RuntimeExecutorPureConfigSummary, RuntimeExecutorStats, RuntimeExecutorTier, RuntimePlanReport,
-    RuntimeProfileCompiler, RuntimeProfilePhase, RuntimeProfileReport, RuntimeProfileRuntime,
-    RuntimePureCallStatsSummary, RuntimeRunReport, RuntimeStepRunSummary,
-    RuntimeTypeValidationProfileStats, RuntimeTypeValidationReportSummary,
+    RuntimeExecutorPureConfigSummary, RuntimeExecutorStats, RuntimeExecutorTier,
+    RuntimePlanProfileStats, RuntimePlanReport, RuntimeProfileCompiler, RuntimeProfilePhase,
+    RuntimeProfileReport, RuntimeProfileRuntime, RuntimePureCallStatsSummary, RuntimeRunReport,
+    RuntimeStepRunSummary, RuntimeTypeValidationProfileStats, RuntimeTypeValidationReportSummary,
     ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary,
     ScriptBenchPureHelperBatchSummary, ScriptBenchPureHelperDeterministicSummary,
     ScriptBenchPureHelperMeasurementSummary, ScriptBenchPureHelperRuntimeBatchSummary,
@@ -1573,6 +1575,7 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
             syntax: compiled.syntax_stats.into(),
             typecheck: TypeCheckProfileStats::from(&compiled.typecheck_report),
             borrow_check: BorrowCheckProfileStats::from(&compiled.typecheck_report.stats),
+            runtime_plan: RuntimePlanProfileStats::from(compiled.runtime_plan_stats),
             runtime_type_validation: RuntimeTypeValidationProfileStats::from(
                 &compiled.runtime_type_validation_stats,
             ),
@@ -1613,6 +1616,7 @@ struct ProfileCompiledRuntimePlan {
     syntax_stats: arcweft_lang_syntax::cst::SyntaxParseStats,
     line_task_groups: usize,
     typecheck_report: TypeCheckReport,
+    runtime_plan_stats: RuntimePlanLowerStats,
     runtime_type_validation_stats: RuntimeTypeValidationStats,
     bytecode_stats: BytecodeStats,
     aot_stats: AotProgramStats,
@@ -1662,14 +1666,16 @@ fn compile_profile_runtime_plan(
             ExitCode::FAILURE
         })
     })?;
-    let plan = run_profile_phase(phases, "runtime_plan_lower", || {
-        lower_runtime_plan(&hir).map_err(|errors| {
+    let runtime_plan_report = run_profile_phase(phases, "runtime_plan_lower", || {
+        lower_runtime_plan_with_stats(&hir).map_err(|errors| {
             for error in errors {
                 eprintln!("error: {}", error.message());
             }
             ExitCode::FAILURE
         })
     })?;
+    let plan = runtime_plan_report.plan;
+    let runtime_plan_stats = runtime_plan_report.stats;
     let runtime_type_validation_stats = run_profile_phase(phases, "runtime_type_validate", || {
         let report = validate_runtime_plan_types(&plan, &typecheck_report);
         if report.has_errors() {
@@ -1700,6 +1706,7 @@ fn compile_profile_runtime_plan(
         syntax_stats,
         line_task_groups: line_task_groups.len(),
         typecheck_report,
+        runtime_plan_stats,
         runtime_type_validation_stats,
         bytecode_stats,
         aot_stats,
@@ -2868,6 +2875,7 @@ fn script_bench_selection(
             syntax: compiled.syntax_stats.into(),
             typecheck: TypeCheckProfileStats::from(&compiled.typecheck_report),
             borrow_check: BorrowCheckProfileStats::from(&compiled.typecheck_report.stats),
+            runtime_plan: RuntimePlanProfileStats::from(compiled.runtime_plan_stats),
             runtime_type_validation: RuntimeTypeValidationProfileStats::from(
                 &compiled.runtime_type_validation_stats,
             ),

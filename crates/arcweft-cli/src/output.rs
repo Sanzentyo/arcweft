@@ -16,7 +16,7 @@ use arcweft_lang_sema::check::{
     TypeCheckReport, TypeCheckStats, TypeJudgment, TypeJudgmentRule, TypeJudgmentSubject,
 };
 use arcweft_lang_syntax::cst::SyntaxParseStats;
-use arcweft_runtime_plan::flow::lower_runtime_plan;
+use arcweft_runtime_plan::flow::{RuntimePlanLowerStats, lower_runtime_plan};
 use arcweft_runtime_plan::line_task::LoweredLineTaskGroup;
 use arcweft_test::{ScriptBench, ScriptTest};
 use arcweft_verify::{
@@ -417,9 +417,41 @@ pub(crate) struct RuntimeProfileCompiler {
     pub(crate) syntax: SyntaxProfileStats,
     pub(crate) typecheck: TypeCheckProfileStats,
     pub(crate) borrow_check: BorrowCheckProfileStats,
+    pub(crate) runtime_plan: RuntimePlanProfileStats,
     pub(crate) runtime_type_validation: RuntimeTypeValidationProfileStats,
     pub(crate) bytecode: BytecodeProfileStats,
     pub(crate) aot: AotProfileStats,
+}
+
+#[derive(Clone, Copy, serde::Serialize)]
+pub(crate) struct RuntimePlanProfileStats {
+    pub(crate) pure_helpers: usize,
+    pub(crate) pure_rewrite_expr_visits: usize,
+    pub(crate) optimized_flows: usize,
+    pub(crate) optimized_op_slices: usize,
+    pub(crate) local_use_suffix_tables: usize,
+    pub(crate) local_use_scan_ops: usize,
+    pub(crate) sequence_map_sum_fusions: usize,
+    pub(crate) map_sum_fusions: usize,
+    pub(crate) sequence_source_inlines: usize,
+    pub(crate) pure_call_exprs: usize,
+}
+
+impl From<RuntimePlanLowerStats> for RuntimePlanProfileStats {
+    fn from(stats: RuntimePlanLowerStats) -> Self {
+        Self {
+            pure_helpers: stats.pure_helpers,
+            pure_rewrite_expr_visits: stats.pure_rewrite_expr_visits,
+            optimized_flows: stats.optimized_flows,
+            optimized_op_slices: stats.optimized_op_slices,
+            local_use_suffix_tables: stats.local_use_suffix_tables,
+            local_use_scan_ops: stats.local_use_scan_ops,
+            sequence_map_sum_fusions: stats.sequence_map_sum_fusions,
+            map_sum_fusions: stats.map_sum_fusions,
+            sequence_source_inlines: stats.sequence_source_inlines,
+            pure_call_exprs: stats.pure_call_exprs,
+        }
+    }
 }
 
 #[derive(Clone, Copy, serde::Serialize)]

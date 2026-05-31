@@ -325,7 +325,15 @@ the map body reads the same local.
 Flow, source, and stream expression lowering receive the pure-helper map before
 constructing runtime expressions, so pure calls are emitted as
 `RuntimeExpr::PureCall` without a later plan-wide rewrite traversal. The
-runtime-plan finalization pass now only optimizes flow map/sum windows.
+runtime-plan finalization pass now only optimizes flow map/sum windows. Bench
+and profile JSON expose this as `compiler.runtime_plan`: the checked-in 009
+fixture reports `pure_helpers = 1`, `pure_rewrite_expr_visits = 0`,
+`local_use_suffix_tables = 1`, `local_use_scan_ops = 7`,
+`sequence_map_sum_fusions = 1`, and `pure_call_exprs = 1`. The same path-free
+run reported median elapsed time 13800 ns, `pure_flat_batch_items_median =
+128`, `pure_flat_batch_bytes_borrowed_median = 2048`, and zero flatten
+materializations, argument vector allocations, copied argument bytes, and copied
+result bytes.
 
 Borrow-state branch tracking now records checkpoint/journal deltas rather than
 full branch maps. The borrow-check JSON includes `state_delta_entries`,

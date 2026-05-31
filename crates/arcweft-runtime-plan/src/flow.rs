@@ -41,12 +41,41 @@ pub(crate) struct LoweredRuntimeFlows {
     pub(crate) line_task_groups: Vec<LineTaskGroup>,
 }
 
+/// Runtime-plan lowering result plus compiler-side optimization counters.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimePlanLowerReport {
+    pub plan: RuntimePlan,
+    pub stats: RuntimePlanLowerStats,
+}
+
+/// Compiler-side counters for runtime-plan pure and flow optimization work.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RuntimePlanLowerStats {
+    pub pure_helpers: usize,
+    pub pure_rewrite_expr_visits: usize,
+    pub optimized_flows: usize,
+    pub optimized_op_slices: usize,
+    pub local_use_suffix_tables: usize,
+    pub local_use_scan_ops: usize,
+    pub sequence_map_sum_fusions: usize,
+    pub map_sum_fusions: usize,
+    pub sequence_source_inlines: usize,
+    pub pure_call_exprs: usize,
+}
+
 /// Lowers checked HIR flows to the Sans I/O core runtime program.
 ///
 /// This pass is intentionally stricter than line-task-only lowering: it must
 /// not silently skip flow syntax because the engine would otherwise execute a
 /// different story than the source describes.
 pub fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<RuntimePlanLowerError>> {
+    lower_runtime_plan_with_stats(module).map(|report| report.plan)
+}
+
+/// Lowers checked HIR to a runtime plan and records lowering-time counters.
+pub fn lower_runtime_plan_with_stats(
+    module: &HirModule,
+) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
     let pure_candidates = lower_pure_helper_candidates(module).map_err(|errors| {
         errors
             .into_iter()
@@ -72,13 +101,19 @@ pub fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<Runtime
             _ => None,
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let mut stats = RuntimePlanLowerStats {
+        pure_helpers: pure_helpers.len(),
+        ..RuntimePlanLowerStats::default()
+    };
     RuntimePlan::new(entry, lowered_flows.flows, lowered_flows.line_task_groups)
         .map(|plan| {
-            finalize_runtime_plan(
+            let plan = finalize_runtime_plan(
                 plan.with_entries(entries)
                     .with_generation_plans(stream_plans, source_plans)
                     .with_pure_helpers(pure_helpers),
-            )
+                &mut stats,
+            );
+            RuntimePlanLowerReport { plan, stats }
         })
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
 }
@@ -106,41 +141,49 @@ fn pure_helper_map(helpers: &[RuntimePureHelper]) -> BTreeMap<String, RuntimePur
         .collect()
 }
 
-fn finalize_runtime_plan(mut plan: RuntimePlan) -> RuntimePlan {
+fn finalize_runtime_plan(mut plan: RuntimePlan, stats: &mut RuntimePlanLowerStats) -> RuntimePlan {
     for flow in &mut plan.flows {
-        optimize_flow_ops(&mut flow.ops);
+        stats.optimized_flows += 1;
+        optimize_flow_ops(&mut flow.ops, stats);
     }
+    stats.pure_call_exprs = plan
+        .flows
+        .iter()
+        .map(|flow| count_flow_ops_pure_calls(&flow.ops))
+        .sum();
     plan
 }
 
-fn optimize_flow_ops(ops: &mut Vec<FlowOp>) {
+fn optimize_flow_ops(ops: &mut Vec<FlowOp>, stats: &mut RuntimePlanLowerStats) {
+    stats.optimized_op_slices += 1;
     for op in ops.iter_mut() {
-        optimize_nested_flow_ops(op);
+        optimize_nested_flow_ops(op, stats);
     }
-    optimize_local_map_sum_lets(ops);
+    optimize_local_map_sum_lets(ops, stats);
 }
 
-fn optimize_flow_op_slice(ops: &mut [FlowOp]) {
+fn optimize_flow_op_slice(ops: &mut [FlowOp], stats: &mut RuntimePlanLowerStats) {
+    stats.optimized_op_slices += 1;
     for op in ops {
-        optimize_nested_flow_ops(op);
+        optimize_nested_flow_ops(op, stats);
     }
 }
 
-fn optimize_nested_flow_ops(op: &mut FlowOp) {
+fn optimize_nested_flow_ops(op: &mut FlowOp, stats: &mut RuntimePlanLowerStats) {
     match op {
-        FlowOp::LetElse { else_ops, .. } => optimize_flow_ops(else_ops),
+        FlowOp::LetElse { else_ops, .. } => optimize_flow_ops(else_ops, stats),
         FlowOp::If {
             then_ops, else_ops, ..
         }
         | FlowOp::IfLet {
             then_ops, else_ops, ..
         } => {
-            optimize_flow_ops(then_ops);
-            optimize_flow_ops(else_ops);
+            optimize_flow_ops(then_ops, stats);
+            optimize_flow_ops(else_ops, stats);
         }
         FlowOp::Match { arms, .. } => {
             for arm in arms {
-                optimize_flow_ops(&mut arm.ops);
+                optimize_flow_ops(&mut arm.ops, stats);
             }
         }
         FlowOp::Loop { body }
@@ -150,11 +193,11 @@ fn optimize_nested_flow_ops(op: &mut FlowOp) {
         | FlowOp::Thread { body, .. }
         | FlowOp::Scope(body)
         | FlowOp::LetScope { ops: body, .. }
-        | FlowOp::For { body, .. } => optimize_flow_ops(body),
+        | FlowOp::For { body, .. } => optimize_flow_ops(body, stats),
         FlowOp::LoopNext { body }
         | FlowOp::WhileNext { body, .. }
         | FlowOp::WhileLetNext { body, .. }
-        | FlowOp::ForNext { body, .. } => optimize_flow_op_slice(Arc::make_mut(body)),
+        | FlowOp::ForNext { body, .. } => optimize_flow_op_slice(Arc::make_mut(body), stats),
         FlowOp::Bind(_)
         | FlowOp::Let { .. }
         | FlowOp::Dialogue { .. }
@@ -175,22 +218,27 @@ fn optimize_nested_flow_ops(op: &mut FlowOp) {
     }
 }
 
-fn optimize_local_map_sum_lets(ops: &mut Vec<FlowOp>) {
+fn optimize_local_map_sum_lets(ops: &mut Vec<FlowOp>, stats: &mut RuntimePlanLowerStats) {
     let original = std::mem::take(ops);
-    let suffix_uses = flow_op_suffix_local_uses(&original);
+    let suffix_uses = flow_op_suffix_local_uses(&original, stats);
     let mut index = 0;
     while index < original.len() {
-        if let Some(op) = fuse_sequence_map_sum_window(&original, &suffix_uses, index) {
+        if let Some(op) = fuse_sequence_map_sum_window(&original, &suffix_uses, index, stats) {
+            stats.sequence_map_sum_fusions += 1;
             ops.push(op);
             index += 3;
             continue;
         }
-        if let Some(op) = fuse_map_sum_window(&original, &suffix_uses, index) {
+        if let Some(op) = fuse_map_sum_window(&original, &suffix_uses, index, stats) {
+            stats.map_sum_fusions += 1;
             ops.push(op);
             index += 2;
             continue;
         }
-        if let Some(op) = inline_sequence_map_sum_source_window(&original, &suffix_uses, index) {
+        if let Some(op) =
+            inline_sequence_map_sum_source_window(&original, &suffix_uses, index, stats)
+        {
+            stats.sequence_source_inlines += 1;
             ops.push(op);
             index += 2;
             continue;
@@ -204,6 +252,7 @@ fn fuse_sequence_map_sum_window(
     ops: &[FlowOp],
     suffix_uses: &[BTreeMap<&str, usize>],
     index: usize,
+    stats: &mut RuntimePlanLowerStats,
 ) -> Option<FlowOp> {
     let (sequence_name, source_expr) = sequence_let_binding(ops.get(index)?)?;
     let (_, map_expr) = map_let_binding(ops.get(index + 1)?)?;
@@ -214,10 +263,10 @@ fn fuse_sequence_map_sum_window(
     {
         return None;
     }
-    if local_uses_in_op(ops.get(index + 1)?, sequence_name) != 1 {
+    if local_uses_in_op(ops.get(index + 1)?, sequence_name, stats) != 1 {
         return None;
     }
-    if local_uses_in_op(ops.get(index + 2)?, sum_source) != 1 {
+    if local_uses_in_op(ops.get(index + 2)?, sum_source, stats) != 1 {
         return None;
     }
     if local_uses_after(suffix_uses, index + 1, sequence_name) != 0 {
@@ -240,13 +289,14 @@ fn fuse_map_sum_window(
     ops: &[FlowOp],
     suffix_uses: &[BTreeMap<&str, usize>],
     index: usize,
+    stats: &mut RuntimePlanLowerStats,
 ) -> Option<FlowOp> {
     let (sequence_name, map_expr) = map_let_binding(ops.get(index)?)?;
     let (sum_pattern, sum_source) = local_sum_let_binding(ops.get(index + 1)?)?;
     if sequence_name != sum_source || local_uses_after(suffix_uses, index + 1, sequence_name) != 0 {
         return None;
     }
-    if local_uses_in_op(ops.get(index + 1)?, sequence_name) != 1 {
+    if local_uses_in_op(ops.get(index + 1)?, sequence_name, stats) != 1 {
         return None;
     }
     Some(FlowOp::Let {
@@ -261,12 +311,13 @@ fn inline_sequence_map_sum_source_window(
     ops: &[FlowOp],
     suffix_uses: &[BTreeMap<&str, usize>],
     index: usize,
+    stats: &mut RuntimePlanLowerStats,
 ) -> Option<FlowOp> {
     let (sequence_name, source_expr) = sequence_let_binding(ops.get(index)?)?;
     if local_uses_after(suffix_uses, index + 1, sequence_name) != 0 {
         return None;
     }
-    if local_uses_in_op(ops.get(index + 1)?, sequence_name) != 1 {
+    if local_uses_in_op(ops.get(index + 1)?, sequence_name, stats) != 1 {
         return None;
     }
     let mut next = ops.get(index + 1)?.clone();
@@ -376,10 +427,15 @@ fn runtime_pattern_binding_name_from_op(op: &FlowOp) -> Option<&str> {
     runtime_pattern_binding_name(pattern)
 }
 
-fn flow_op_suffix_local_uses(ops: &[FlowOp]) -> Vec<BTreeMap<&str, usize>> {
+fn flow_op_suffix_local_uses<'a>(
+    ops: &'a [FlowOp],
+    stats: &mut RuntimePlanLowerStats,
+) -> Vec<BTreeMap<&'a str, usize>> {
+    stats.local_use_suffix_tables += 1;
     let mut suffix = vec![BTreeMap::new(); ops.len() + 1];
     for index in (0..ops.len()).rev() {
         suffix[index] = suffix[index + 1].clone();
+        stats.local_use_scan_ops += 1;
         count_flow_op_local_uses(&ops[index], &mut suffix[index]);
     }
     suffix
@@ -393,10 +449,180 @@ fn local_uses_after(suffix_uses: &[BTreeMap<&str, usize>], op_index: usize, name
         .unwrap_or_default()
 }
 
-fn local_uses_in_op(op: &FlowOp, name: &str) -> usize {
+fn local_uses_in_op(op: &FlowOp, name: &str, stats: &mut RuntimePlanLowerStats) -> usize {
     let mut uses = BTreeMap::new();
+    stats.local_use_scan_ops += 1;
     count_flow_op_local_uses(op, &mut uses);
     uses.get(name).copied().unwrap_or_default()
+}
+
+fn count_flow_ops_pure_calls(ops: &[FlowOp]) -> usize {
+    ops.iter().map(count_flow_op_pure_calls).sum()
+}
+
+fn count_flow_op_pure_calls(op: &FlowOp) -> usize {
+    match op {
+        FlowOp::LetElse { expr, else_ops, .. } => {
+            count_runtime_expr_pure_calls(expr) + count_flow_ops_pure_calls(else_ops)
+        }
+        FlowOp::If {
+            condition,
+            then_ops,
+            else_ops,
+        } => {
+            count_runtime_expr_pure_calls(condition)
+                + count_flow_ops_pure_calls(then_ops)
+                + count_flow_ops_pure_calls(else_ops)
+        }
+        FlowOp::IfLet {
+            expr,
+            guard,
+            then_ops,
+            else_ops,
+            ..
+        } => {
+            count_runtime_expr_pure_calls(expr)
+                + guard.as_ref().map_or(0, count_runtime_expr_pure_calls)
+                + count_flow_ops_pure_calls(then_ops)
+                + count_flow_ops_pure_calls(else_ops)
+        }
+        FlowOp::Match { scrutinee, arms } => {
+            count_runtime_expr_pure_calls(scrutinee)
+                + arms
+                    .iter()
+                    .map(|arm| {
+                        arm.guard.as_ref().map_or(0, count_runtime_expr_pure_calls)
+                            + count_flow_ops_pure_calls(&arm.ops)
+                    })
+                    .sum::<usize>()
+        }
+        FlowOp::Loop { body }
+        | FlowOp::LetLoop { body, .. }
+        | FlowOp::Thread { body, .. }
+        | FlowOp::Scope(body) => count_flow_ops_pure_calls(body),
+        FlowOp::LoopNext { body } | FlowOp::ForNext { body, .. } => count_flow_ops_pure_calls(body),
+        FlowOp::While { condition, body } => {
+            count_runtime_expr_pure_calls(condition) + count_flow_ops_pure_calls(body)
+        }
+        FlowOp::WhileNext { condition, body } => {
+            count_runtime_expr_pure_calls(condition) + count_flow_ops_pure_calls(body)
+        }
+        FlowOp::WhileLet {
+            expr, guard, body, ..
+        } => {
+            count_runtime_expr_pure_calls(expr)
+                + guard.as_ref().map_or(0, count_runtime_expr_pure_calls)
+                + count_flow_ops_pure_calls(body)
+        }
+        FlowOp::WhileLetNext {
+            expr, guard, body, ..
+        } => {
+            count_runtime_expr_pure_calls(expr)
+                + guard.as_ref().map_or(0, count_runtime_expr_pure_calls)
+                + count_flow_ops_pure_calls(body)
+        }
+        FlowOp::For { source, body, .. } => {
+            count_runtime_expr_pure_calls(source) + count_flow_ops_pure_calls(body)
+        }
+        FlowOp::AwaitMany { target, .. } => count_runtime_expr_pure_calls(&target.source),
+        FlowOp::LetScope { ops, value, .. } => {
+            count_flow_ops_pure_calls(ops) + count_runtime_expr_pure_calls(value)
+        }
+        FlowOp::Let { expr, .. }
+        | FlowOp::Break(Some(expr))
+        | FlowOp::GotoExpr(expr)
+        | FlowOp::ReturnExpr(expr)
+        | FlowOp::ExitScopeBind { expr, .. } => count_runtime_expr_pure_calls(expr),
+        FlowOp::Bind(_)
+        | FlowOp::Dialogue { .. }
+        | FlowOp::Choice { .. }
+        | FlowOp::Await { .. }
+        | FlowOp::Effect(_)
+        | FlowOp::EnterScope
+        | FlowOp::ExitScope
+        | FlowOp::Break(None)
+        | FlowOp::Continue
+        | FlowOp::Goto(_)
+        | FlowOp::Return(_)
+        | FlowOp::Noop => 0,
+    }
+}
+
+fn count_runtime_expr_pure_calls(expr: &RuntimeExpr) -> usize {
+    match expr {
+        RuntimeExpr::PureCall { args, .. } => {
+            1 + args
+                .iter()
+                .map(count_runtime_expr_pure_calls)
+                .sum::<usize>()
+        }
+        RuntimeExpr::Let { expr, body, .. } => {
+            count_runtime_expr_pure_calls(expr) + count_runtime_expr_pure_calls(body)
+        }
+        RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
+            items.iter().map(count_runtime_expr_pure_calls).sum()
+        }
+        RuntimeExpr::RepeatSeq { value, .. } => count_runtime_expr_pure_calls(value),
+        RuntimeExpr::Record(fields) => fields
+            .iter()
+            .map(|field| count_runtime_expr_pure_calls(&field.value))
+            .sum(),
+        RuntimeExpr::Variant { payload, .. } => {
+            payload.as_deref().map_or(0, count_runtime_expr_pure_calls)
+        }
+        RuntimeExpr::Field { target, .. } | RuntimeExpr::SpreadArg(target) => {
+            count_runtime_expr_pure_calls(target)
+        }
+        RuntimeExpr::Call { args, .. } => args.iter().map(count_runtime_expr_pure_calls).sum(),
+        RuntimeExpr::MethodCall { receiver, args, .. } => {
+            count_runtime_expr_pure_calls(receiver)
+                + args
+                    .iter()
+                    .map(count_runtime_expr_pure_calls)
+                    .sum::<usize>()
+        }
+        RuntimeExpr::Map { source, body, .. } => {
+            count_runtime_expr_pure_calls(source) + count_runtime_expr_pure_calls(body)
+        }
+        RuntimeExpr::Sum { source } | RuntimeExpr::Unary { expr: source, .. } => {
+            count_runtime_expr_pure_calls(source)
+        }
+        RuntimeExpr::Binary { lhs, rhs, .. } => {
+            count_runtime_expr_pure_calls(lhs) + count_runtime_expr_pure_calls(rhs)
+        }
+        RuntimeExpr::If {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            count_runtime_expr_pure_calls(condition)
+                + count_runtime_expr_pure_calls(then_expr)
+                + count_runtime_expr_pure_calls(else_expr)
+        }
+        RuntimeExpr::IfLet {
+            expr,
+            guard,
+            then_expr,
+            else_expr,
+            ..
+        } => {
+            count_runtime_expr_pure_calls(expr)
+                + guard.as_deref().map_or(0, count_runtime_expr_pure_calls)
+                + count_runtime_expr_pure_calls(then_expr)
+                + count_runtime_expr_pure_calls(else_expr)
+        }
+        RuntimeExpr::Match { scrutinee, arms } => {
+            count_runtime_expr_pure_calls(scrutinee)
+                + arms
+                    .iter()
+                    .map(|arm| {
+                        arm.guard.as_ref().map_or(0, count_runtime_expr_pure_calls)
+                            + count_runtime_expr_pure_calls(&arm.value)
+                    })
+                    .sum::<usize>()
+        }
+        RuntimeExpr::Value(_) | RuntimeExpr::Local(_) | RuntimeExpr::EntityRef(_) => 0,
+    }
 }
 
 fn count_flow_ops_local_uses<'a>(ops: &'a [FlowOp], uses: &mut BTreeMap<&'a str, usize>) {

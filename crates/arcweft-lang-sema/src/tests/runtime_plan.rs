@@ -700,6 +700,39 @@ flow @flow.main main {
 }
 
 #[test]
+fn runtime_plan_lowering_reports_pure_and_map_sum_optimization_work() {
+    let tree = parse_ok(
+        r"
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base * (bonus + 2i64)
+}
+
+flow @flow.main main {
+    let values: Array<i64, 4> = [1i64; 4]
+    let scores: Vec<i64> = values.map(|item| score(item, 2i64))
+    let total: i64 = scores.sum()
+    return total
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("map sum stats fixture lowers to HIR");
+
+    let report = lower_runtime_plan_with_stats(&hir).expect("map sum stats runtime plan lowers");
+
+    assert_eq!(report.stats.pure_helpers, 1);
+    assert_eq!(report.stats.pure_rewrite_expr_visits, 0);
+    assert_eq!(report.stats.optimized_flows, 1);
+    assert!(report.stats.optimized_op_slices >= 1);
+    assert!(report.stats.local_use_suffix_tables >= 1);
+    assert!(report.stats.local_use_scan_ops >= 1);
+    assert_eq!(report.stats.sequence_map_sum_fusions, 1);
+    assert_eq!(report.stats.map_sum_fusions, 0);
+    assert_eq!(report.stats.sequence_source_inlines, 0);
+    assert_eq!(report.stats.pure_call_exprs, 1);
+}
+
+#[test]
 fn runtime_plan_keeps_sequence_binding_when_used_after_fused_map_sum() {
     let tree = parse_ok(
         r"

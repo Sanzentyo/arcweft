@@ -3538,6 +3538,16 @@ fn bench_json_measures_checked_in_nonuniform_map_pure_batch_fixture() {
         json["compiler"]["runtime_type_validation"]["expressions"],
         5
     );
+    assert_eq!(json["compiler"]["runtime_plan"]["pure_helpers"], 1);
+    assert_eq!(
+        json["compiler"]["runtime_plan"]["pure_rewrite_expr_visits"],
+        0
+    );
+    assert_eq!(
+        json["compiler"]["runtime_plan"]["sequence_map_sum_fusions"],
+        1
+    );
+    assert_eq!(json["compiler"]["runtime_plan"]["pure_call_exprs"], 1);
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["deterministic"]["pure_batch_calls_median"], 1);
     assert_eq!(measurement["deterministic"]["pure_batch_items_median"], 128);
@@ -5566,6 +5576,21 @@ fn assert_profile_json_summary(stdout: &str) {
     let compiler = &json["compiler"];
     assert_typecheck_metrics(&compiler["typecheck"]);
     assert_borrow_check_metrics(&compiler["borrow_check"]);
+    assert!(
+        compiler["runtime_plan"]["optimized_flows"]
+            .as_u64()
+            .is_some_and(|value| value > 0)
+            && compiler["runtime_plan"]["optimized_op_slices"]
+                .as_u64()
+                .is_some_and(|value| value > 0)
+            && compiler["runtime_plan"]["local_use_suffix_tables"]
+                .as_u64()
+                .is_some()
+            && compiler["runtime_plan"]["pure_rewrite_expr_visits"]
+                .as_u64()
+                .is_some_and(|value| value == 0),
+        "runtime-plan lowering counters should be populated: {compiler}"
+    );
     assert!(
         compiler["runtime_type_validation"]["flows"]
             .as_u64()
