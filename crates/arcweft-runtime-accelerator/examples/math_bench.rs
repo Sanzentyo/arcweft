@@ -1,8 +1,9 @@
 use arcweft_core::math::{DenseMatrixF32, DenseTensorF32};
 use arcweft_runtime_accelerator::math::{
     RuntimeMathAccelerator, RuntimeMathAcceleratorConfig, RuntimeMathAutoSelectionReason,
-    RuntimeMathBackend,
+    RuntimeMathBackend, RuntimeMathStats,
 };
+use serde::Serialize;
 use std::time::Instant;
 
 fn main() {
@@ -23,20 +24,11 @@ fn main() {
         .map(|backend| run_backend(backend, &options))
         .collect::<Vec<_>>();
 
-    println!("{{");
-    println!("  \"bench\": \"runtime_math\",");
-    println!("  \"op\": \"{}\",", options.op.label());
-    println!("  \"size\": {},", options.size);
-    println!("  \"iterations\": {},", options.iterations);
-    println!("  \"warmup\": {},", options.warmup);
-    println!("  \"reuse\": {},", options.reuse);
-    println!("  \"results\": [");
-    for (index, report) in reports.iter().enumerate() {
-        let comma = if index + 1 == reports.len() { "" } else { "," };
-        report.print(comma);
-    }
-    println!("  ]");
-    println!("}}");
+    let report = MathBenchReport::new(&options, reports);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report).expect("math bench report serializes")
+    );
 }
 
 fn run_backend(backend: RuntimeMathBackend, options: &BenchOptions) -> BackendReport {
@@ -393,6 +385,81 @@ struct BackendReport {
     diagnostic: Option<String>,
 }
 
+#[derive(Serialize)]
+struct MathBenchReport {
+    bench: &'static str,
+    op: &'static str,
+    size: usize,
+    iterations: usize,
+    warmup: usize,
+    reuse: bool,
+    results: Vec<BackendReportJson>,
+}
+
+impl MathBenchReport {
+    fn new(options: &BenchOptions, results: Vec<BackendReport>) -> Self {
+        Self {
+            bench: "runtime_math",
+            op: options.op.label(),
+            size: options.size,
+            iterations: options.iterations,
+            warmup: options.warmup,
+            reuse: options.reuse,
+            results: results.into_iter().map(BackendReport::into_json).collect(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct BackendReportJson {
+    backend: &'static str,
+    status: &'static str,
+    median_ns: Option<u128>,
+    min_ns: Option<u128>,
+    max_ns: Option<u128>,
+    stats: Option<RuntimeMathStatsJson>,
+    diagnostic: Option<String>,
+}
+
+#[derive(Serialize)]
+struct RuntimeMathStatsJson {
+    scalar_calls: usize,
+    glam_calls: usize,
+    ndarray_calls: usize,
+    wgpu_calls: usize,
+    fallback_calls: usize,
+    bytes_borrowed: usize,
+    bytes_copied: usize,
+    bytes_uploaded: usize,
+    bytes_downloaded: usize,
+    gpu_buffer_creations: usize,
+    gpu_buffer_reuse_hits: usize,
+    gpu_reused_dispatches: usize,
+    last_backend: Option<&'static str>,
+    last_auto_reason: Option<&'static str>,
+}
+
+impl From<RuntimeMathStats> for RuntimeMathStatsJson {
+    fn from(stats: RuntimeMathStats) -> Self {
+        Self {
+            scalar_calls: stats.scalar_calls,
+            glam_calls: stats.glam_calls,
+            ndarray_calls: stats.ndarray_calls,
+            wgpu_calls: stats.wgpu_calls,
+            fallback_calls: stats.fallback_calls,
+            bytes_borrowed: stats.bytes_borrowed,
+            bytes_copied: stats.bytes_copied,
+            bytes_uploaded: stats.bytes_uploaded,
+            bytes_downloaded: stats.bytes_downloaded,
+            gpu_buffer_creations: stats.gpu_buffer_creations,
+            gpu_buffer_reuse_hits: stats.gpu_buffer_reuse_hits,
+            gpu_reused_dispatches: stats.gpu_reused_dispatches,
+            last_backend: stats.last_backend.map(backend_label),
+            last_auto_reason: stats.last_auto_reason.map(auto_reason_label),
+        }
+    }
+}
+
 impl BackendReport {
     fn measured(
         backend: RuntimeMathBackend,
@@ -440,68 +507,16 @@ impl BackendReport {
         }
     }
 
-    fn print(&self, comma: &str) {
-        println!("    {{");
-        println!("      \"backend\": \"{}\",", backend_label(self.backend));
-        println!("      \"status\": \"{}\",", self.status);
-        print_optional_u128("median_ns", self.median_ns, true);
-        print_optional_u128("min_ns", self.min_ns, true);
-        print_optional_u128("max_ns", self.max_ns, true);
-        if let Some(stats) = self.stats {
-            println!("      \"stats\": {{");
-            println!("        \"scalar_calls\": {},", stats.scalar_calls);
-            println!("        \"glam_calls\": {},", stats.glam_calls);
-            println!("        \"ndarray_calls\": {},", stats.ndarray_calls);
-            println!("        \"wgpu_calls\": {},", stats.wgpu_calls);
-            println!("        \"fallback_calls\": {},", stats.fallback_calls);
-            println!("        \"bytes_borrowed\": {},", stats.bytes_borrowed);
-            println!("        \"bytes_copied\": {},", stats.bytes_copied);
-            println!("        \"bytes_uploaded\": {},", stats.bytes_uploaded);
-            println!("        \"bytes_downloaded\": {},", stats.bytes_downloaded);
-            println!(
-                "        \"gpu_buffer_creations\": {},",
-                stats.gpu_buffer_creations
-            );
-            println!(
-                "        \"gpu_buffer_reuse_hits\": {},",
-                stats.gpu_buffer_reuse_hits
-            );
-            println!(
-                "        \"gpu_reused_dispatches\": {},",
-                stats.gpu_reused_dispatches
-            );
-            match stats.last_backend {
-                Some(backend) => {
-                    println!("        \"last_backend\": \"{}\",", backend_label(backend));
-                }
-                None => println!("        \"last_backend\": null,"),
-            }
-            match stats.last_auto_reason {
-                Some(reason) => {
-                    println!(
-                        "        \"last_auto_reason\": \"{}\"",
-                        auto_reason_label(reason)
-                    );
-                }
-                None => println!("        \"last_auto_reason\": null"),
-            }
-            println!("      }},");
-        } else {
-            println!("      \"stats\": null,");
+    fn into_json(self) -> BackendReportJson {
+        BackendReportJson {
+            backend: backend_label(self.backend),
+            status: self.status,
+            median_ns: self.median_ns,
+            min_ns: self.min_ns,
+            max_ns: self.max_ns,
+            stats: self.stats.map(Into::into),
+            diagnostic: self.diagnostic,
         }
-        match &self.diagnostic {
-            Some(diagnostic) => println!("      \"diagnostic\": \"{}\"", json_escape(diagnostic)),
-            None => println!("      \"diagnostic\": null"),
-        }
-        println!("    }}{comma}");
-    }
-}
-
-fn print_optional_u128(key: &str, value: Option<u128>, comma: bool) {
-    let suffix = if comma { "," } else { "" };
-    match value {
-        Some(value) => println!("      \"{key}\": {value}{suffix}"),
-        None => println!("      \"{key}\": null{suffix}"),
     }
 }
 
@@ -524,10 +539,47 @@ const fn auto_reason_label(value: RuntimeMathAutoSelectionReason) -> &'static st
     }
 }
 
-fn json_escape(value: &str) -> String {
-    value.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
 fn small_f32(value: usize) -> f32 {
     f32::from(u16::try_from(value).expect("fixture residue fits u16"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn report_serializes_auto_reason_without_host_paths() {
+        let options = BenchOptions {
+            backend: BenchBackend::One(RuntimeMathBackend::Auto),
+            op: BenchOp::Matmul,
+            size: 4,
+            iterations: 1,
+            warmup: 0,
+            wgpu_min_elements: RuntimeMathAcceleratorConfig::default().wgpu_min_elements,
+            reuse: false,
+        };
+        let report = MathBenchReport::new(
+            &options,
+            vec![BackendReport::measured(
+                RuntimeMathBackend::Auto,
+                vec![100],
+                RuntimeMathStats {
+                    glam_calls: 1,
+                    last_backend: Some(RuntimeMathBackend::Glam),
+                    last_auto_reason: Some(RuntimeMathAutoSelectionReason::Matmul4x4Glam),
+                    ..RuntimeMathStats::default()
+                },
+            )],
+        );
+
+        let json = serde_json::to_string(&report).expect("report serializes");
+
+        assert!(json.contains("\"last_auto_reason\":\"matmul_4x4_glam\""));
+        let windows_drive_prefixes = ["C:", "D:"].map(|drive| format!("{drive}\\"));
+        for prefix in windows_drive_prefixes {
+            assert!(!json.contains(&prefix));
+        }
+        assert!(!json.contains(&["/", "home", "/"].concat()));
+        assert!(!json.contains("/tmp/"));
+    }
 }

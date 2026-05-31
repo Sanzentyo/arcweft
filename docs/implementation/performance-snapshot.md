@@ -565,7 +565,8 @@ buffers, which uploads the fixed inputs once, reuses the storage/bind group
 across warmup and measured samples, and downloads only the result for each
 dispatch.
 
-The math bench JSON reports the requested backend, measured status,
+The math bench JSON is emitted through a typed serde report rather than
+hand-built string output. It reports the requested backend, measured status,
 correctness-checked timing samples, the backend that actually executed last,
 and the `last_auto_reason` policy label when `auto` made the choice. The same
 report includes accelerator copy counters split into borrowed bytes, copied
@@ -573,4 +574,5 @@ bytes, uploaded bytes, downloaded bytes, GPU buffer creations, GPU buffer reuse
 hits, and reused dispatches. Explicit `wgpu` requests remain explicit:
 unavailable adapters or disabled features produce a structured skip/error,
 while `auto` records the chosen policy and fallback path through the backend
-counters.
+counters. The example-level serialization test keeps the report parseable and
+checks that generated JSON does not embed host absolute paths.
