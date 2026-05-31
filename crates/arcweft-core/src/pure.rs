@@ -2172,6 +2172,7 @@ impl PureEvaluator {
             RuntimeValue::Seq(seq) => match seq {
                 RuntimeSeq::Values(items) => sum_i64_sequence_ref(items).map(Some),
                 RuntimeSeq::Dense(items) => Ok(items.sum_as_i64()),
+                RuntimeSeq::TupleColumns(_) | RuntimeSeq::RecordColumns(_) => Ok(None),
             },
             RuntimeValue::Tuple(items) => sum_i64_sequence_ref(items).map(Some),
             _ => Ok(None),
@@ -2210,6 +2211,14 @@ impl PureEvaluator {
                 .ok_or_else(|| RuntimeEvalError::MissingField {
                     field: field.to_owned(),
                     value: "record".to_owned(),
+                }),
+            RuntimeValue::Seq(RuntimeSeq::RecordColumns(records)) => records
+                .field_by_name(field)
+                .cloned()
+                .map(RuntimeValue::Seq)
+                .ok_or_else(|| RuntimeEvalError::MissingField {
+                    field: field.to_owned(),
+                    value: "record sequence".to_owned(),
                 }),
             value => Err(RuntimeEvalError::MissingField {
                 field: field.to_owned(),

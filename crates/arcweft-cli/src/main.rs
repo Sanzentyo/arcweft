@@ -5108,6 +5108,12 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::EntityRefs(values))) => {
             format!("seq/entity_refs/{}", values.len())
         }
+        RuntimeValue::Seq(RuntimeSeq::TupleColumns(values)) => {
+            format!("seq/tuple_columns/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::RecordColumns(values)) => {
+            format!("seq/record_columns/{}", values.len())
+        }
         RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {

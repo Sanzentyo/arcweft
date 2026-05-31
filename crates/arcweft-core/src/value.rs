@@ -53,6 +53,208 @@ pub enum RuntimeValue {
 pub enum RuntimeSeq {
     Values(Vec<RuntimeValue>),
     Dense(DenseSeq),
+    TupleColumns(TupleSeq),
+    RecordColumns(RecordSeq),
+}
+
+/// Columnar storage for a sequence of homogeneous tuple values.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TupleSeq {
+    len: usize,
+    columns: Vec<RuntimeSeq>,
+}
+
+impl TupleSeq {
+    pub fn new(len: usize, columns: Vec<RuntimeSeq>) -> Result<Self, RuntimeSeqError> {
+        if let Some((ordinal, actual)) = columns
+            .iter()
+            .enumerate()
+            .find_map(|(ordinal, column)| (column.len() != len).then_some((ordinal, column.len())))
+        {
+            return Err(RuntimeSeqError::ColumnLength {
+                ordinal,
+                expected: len,
+                actual,
+            });
+        }
+        Ok(Self { len, columns })
+    }
+
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub fn columns(&self) -> &[RuntimeSeq] {
+        &self.columns
+    }
+
+    pub fn column(&self, ordinal: usize) -> Option<&RuntimeSeq> {
+        self.columns.get(ordinal)
+    }
+
+    fn into_values(self) -> Vec<RuntimeValue> {
+        let row_count = self.len;
+        let columns = self.columns;
+        (0..row_count)
+            .map(|row| {
+                RuntimeValue::Tuple(
+                    columns
+                        .iter()
+                        .map(|column| column.value_at(row))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect()
+    }
+
+    #[must_use]
+    fn tail_from(&self, index: usize) -> Self {
+        Self {
+            len: self.len.saturating_sub(index),
+            columns: self
+                .columns
+                .iter()
+                .map(|column| column.tail_from(index))
+                .collect(),
+        }
+    }
+
+    fn value_at(&self, index: usize) -> RuntimeValue {
+        assert!(
+            index < self.len,
+            "tuple column sequence index out of bounds"
+        );
+        RuntimeValue::Tuple(
+            self.columns
+                .iter()
+                .map(|column| column.value_at(index))
+                .collect(),
+        )
+    }
+}
+
+/// Columnar storage for a sequence of records with a stable field order.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecordSeq {
+    len: usize,
+    fields: Vec<RecordSeqField>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecordSeqField {
+    pub name: String,
+    pub values: RuntimeSeq,
+}
+
+impl RecordSeq {
+    pub fn new(len: usize, fields: Vec<RecordSeqField>) -> Result<Self, RuntimeSeqError> {
+        for (ordinal, field) in fields.iter().enumerate() {
+            if field.values.len() != len {
+                return Err(RuntimeSeqError::ColumnLength {
+                    ordinal,
+                    expected: len,
+                    actual: field.values.len(),
+                });
+            }
+            if fields[..ordinal]
+                .iter()
+                .any(|candidate| candidate.name == field.name)
+            {
+                return Err(RuntimeSeqError::DuplicateRecordField {
+                    field: field.name.clone(),
+                });
+            }
+        }
+        Ok(Self { len, fields })
+    }
+
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub fn fields(&self) -> &[RecordSeqField] {
+        &self.fields
+    }
+
+    pub fn field_by_ordinal(&self, ordinal: usize) -> Option<&RuntimeSeq> {
+        self.fields.get(ordinal).map(|field| &field.values)
+    }
+
+    pub fn field_by_name(&self, name: &str) -> Option<&RuntimeSeq> {
+        self.fields
+            .iter()
+            .find(|field| field.name == name)
+            .map(|field| &field.values)
+    }
+
+    fn into_values(self) -> Vec<RuntimeValue> {
+        let row_count = self.len;
+        let fields = self.fields;
+        (0..row_count)
+            .map(|row| {
+                RuntimeValue::Record(
+                    fields
+                        .iter()
+                        .map(|field| RuntimeFieldValue {
+                            name: field.name.clone(),
+                            value: field.values.value_at(row),
+                        })
+                        .collect(),
+                )
+            })
+            .collect()
+    }
+
+    #[must_use]
+    fn tail_from(&self, index: usize) -> Self {
+        Self {
+            len: self.len.saturating_sub(index),
+            fields: self
+                .fields
+                .iter()
+                .map(|field| RecordSeqField {
+                    name: field.name.clone(),
+                    values: field.values.tail_from(index),
+                })
+                .collect(),
+        }
+    }
+
+    fn value_at(&self, index: usize) -> RuntimeValue {
+        assert!(
+            index < self.len,
+            "record column sequence index out of bounds"
+        );
+        RuntimeValue::Record(
+            self.fields
+                .iter()
+                .map(|field| RuntimeFieldValue {
+                    name: field.name.clone(),
+                    value: field.values.value_at(index),
+                })
+                .collect(),
+        )
+    }
+}
+
+#[derive(Clone, Debug, Error, PartialEq)]
+pub enum RuntimeSeqError {
+    #[error("sequence column {ordinal} length {actual} does not match expected length {expected}")]
+    ColumnLength {
+        ordinal: usize,
+        expected: usize,
+        actual: usize,
+    },
+    #[error("record sequence contains duplicate field `{field}`")]
+    DuplicateRecordField { field: String },
 }
 
 /// Exact integer storage that can cross runtime pure-helper fast paths without widening.
@@ -348,10 +550,23 @@ impl RuntimeSeq {
         Self::Dense(DenseSeq::entity_refs(values))
     }
 
+    pub fn tuple_columns(len: usize, columns: Vec<RuntimeSeq>) -> Result<Self, RuntimeSeqError> {
+        TupleSeq::new(len, columns).map(Self::TupleColumns)
+    }
+
+    pub fn record_columns(
+        len: usize,
+        fields: Vec<RecordSeqField>,
+    ) -> Result<Self, RuntimeSeqError> {
+        RecordSeq::new(len, fields).map(Self::RecordColumns)
+    }
+
     pub fn len(&self) -> usize {
         match self {
             Self::Values(values) => values.len(),
             Self::Dense(values) => values.len(),
+            Self::TupleColumns(values) => values.len(),
+            Self::RecordColumns(values) => values.len(),
         }
     }
 
@@ -362,182 +577,182 @@ impl RuntimeSeq {
     pub fn as_values(&self) -> Option<&[RuntimeValue]> {
         match self {
             Self::Values(values) => Some(values),
-            Self::Dense(_) => None,
+            Self::Dense(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn unit_len(&self) -> Option<usize> {
         match self {
             Self::Dense(values) => values.unit_len(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn dense_kind(&self) -> Option<DenseSeqKind> {
         match self {
             Self::Dense(values) => Some(values.kind()),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_i64_slice(&self) -> Option<&[i64]> {
         match self {
             Self::Dense(values) => values.as_i64_slice(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn copy_i64_values_to(&self, out: &mut Vec<i64>) -> bool {
         match self {
             Self::Dense(values) => values.copy_i64_values_to(out),
-            Self::Values(_) => false,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => false,
         }
     }
 
     pub fn try_for_each_i64<E>(&self, visit: impl FnMut(i64) -> Result<(), E>) -> Result<bool, E> {
         match self {
             Self::Dense(values) => values.try_for_each_i64(visit),
-            Self::Values(_) => Ok(false),
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => Ok(false),
         }
     }
 
     pub fn first_i64(&self) -> Option<Option<i64>> {
         match self {
             Self::Dense(values) => values.first_i64(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_i128_slice(&self) -> Option<&[i128]> {
         match self {
             Self::Dense(values) => values.as_i128_slice(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_isize_values(&self) -> Option<&[i64]> {
         match self {
             Self::Dense(values) => values.as_isize_values(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_i8_slice(&self) -> Option<&[i8]> {
         match self {
             Self::Dense(values) => values.as_i8_slice(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_i16_slice(&self) -> Option<&[i16]> {
         match self {
             Self::Dense(values) => values.as_i16_slice(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_i32_slice(&self) -> Option<&[i32]> {
         match self {
             Self::Dense(values) => values.as_i32_slice(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_u8_slice(&self) -> Option<&[u8]> {
         match self {
             Self::Dense(values) => values.as_u8_slice(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_u16_slice(&self) -> Option<&[u16]> {
         match self {
             Self::Dense(values) => values.as_u16_slice(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_u32_slice(&self) -> Option<&[u32]> {
         match self {
             Self::Dense(values) => values.as_u32_slice(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_u64_slice(&self) -> Option<&[u64]> {
         match self {
             Self::Dense(values) => values.as_u64_slice(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_u128_slice(&self) -> Option<&[u128]> {
         match self {
             Self::Dense(values) => values.as_u128_slice(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_usize_values(&self) -> Option<&[u64]> {
         match self {
             Self::Dense(values) => values.as_usize_values(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_f32_slice(&self) -> Option<&[f32]> {
         match self {
             Self::Dense(values) => values.as_f32_slice(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_f64_slice(&self) -> Option<&[f64]> {
         match self {
             Self::Dense(values) => values.as_f64_slice(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_bool_slice(&self) -> Option<&[bool]> {
         match self {
             Self::Dense(values) => values.as_bool_slice(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_bytes(&self) -> Option<&[u8]> {
         match self {
             Self::Dense(values) => values.as_bytes(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_chars(&self) -> Option<&[char]> {
         match self {
             Self::Dense(values) => values.as_chars(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_durations(&self) -> Option<&[LogicalDuration]> {
         match self {
             Self::Dense(values) => values.as_durations(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_strings(&self) -> Option<&[String]> {
         match self {
             Self::Dense(values) => values.as_strings(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn as_entity_refs(&self) -> Option<&[String]> {
         match self {
             Self::Dense(values) => values.as_entity_refs(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
@@ -545,6 +760,22 @@ impl RuntimeSeq {
         match self {
             Self::Values(values) => values,
             Self::Dense(values) => values.into_values(),
+            Self::TupleColumns(values) => values.into_values(),
+            Self::RecordColumns(values) => values.into_values(),
+        }
+    }
+
+    /// Returns the runtime value at `index`.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `index` is outside this sequence.
+    pub fn value_at(&self, index: usize) -> RuntimeValue {
+        match self {
+            Self::Values(values) => values[index].clone(),
+            Self::Dense(values) => values.value_at(index),
+            Self::TupleColumns(values) => values.value_at(index),
+            Self::RecordColumns(values) => values.value_at(index),
         }
     }
 
@@ -553,20 +784,22 @@ impl RuntimeSeq {
         match self {
             Self::Values(values) => Self::Values(values[index..].to_vec()),
             Self::Dense(values) => Self::Dense(values.tail_from(index)),
+            Self::TupleColumns(values) => Self::TupleColumns(values.tail_from(index)),
+            Self::RecordColumns(values) => Self::RecordColumns(values.tail_from(index)),
         }
     }
 
     pub fn into_i64_vec(self) -> Option<Vec<i64>> {
         match self {
             Self::Dense(values) => values.into_i64_vec(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 
     pub fn sum_as_i64(&self) -> Option<i64> {
         match self {
             Self::Dense(values) => values.sum_as_i64(),
-            Self::Values(_) => None,
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
 }
@@ -2293,6 +2526,8 @@ pub fn runtime_sequence_from_literal_values(values: Vec<RuntimeValue>) -> Runtim
             RuntimeValue::EntityRef,
             runtime_sequence_dense_entity_refs,
         ),
+        Some(RuntimeValue::Tuple(_)) => collect_tuple_columns_or_values(values),
+        Some(RuntimeValue::Record(_)) => collect_record_columns_or_values(values),
         _ => runtime_sequence_values(values),
     }
 }
@@ -2408,6 +2643,121 @@ fn take_entity_ref_value(value: RuntimeValue) -> Result<String, RuntimeValue> {
         RuntimeValue::EntityRef(value) => Ok(value),
         value => Err(value),
     }
+}
+
+fn collect_tuple_columns_or_values(values: Vec<RuntimeValue>) -> RuntimeValue {
+    let mut rows = Vec::with_capacity(values.len());
+    let mut iter = values.into_iter();
+    while let Some(value) = iter.next() {
+        let RuntimeValue::Tuple(items) = value else {
+            let mut fallback = rows
+                .into_iter()
+                .map(RuntimeValue::Tuple)
+                .collect::<Vec<_>>();
+            fallback.push(value);
+            fallback.extend(iter);
+            return runtime_sequence_values(fallback);
+        };
+        rows.push(items);
+    }
+    tuple_rows_to_columnar(rows).map_or_else(runtime_sequence_values, |seq| {
+        RuntimeValue::Seq(RuntimeSeq::TupleColumns(seq))
+    })
+}
+
+fn tuple_rows_to_columnar(mut rows: Vec<Vec<RuntimeValue>>) -> Result<TupleSeq, Vec<RuntimeValue>> {
+    let len = rows.len();
+    let Some(first) = rows.first() else {
+        return TupleSeq::new(0, Vec::new()).map_err(|_| Vec::new());
+    };
+    let width = first.len();
+    if rows.iter().any(|row| row.len() != width) {
+        return Err(rows.into_iter().map(RuntimeValue::Tuple).collect());
+    }
+    let mut columns = (0..width)
+        .map(|_| Vec::with_capacity(len))
+        .collect::<Vec<_>>();
+    for row in &mut rows {
+        for (ordinal, value) in row.drain(..).enumerate() {
+            columns[ordinal].push(value);
+        }
+    }
+    let columns = columns
+        .into_iter()
+        .map(runtime_sequence_from_literal_values)
+        .map(|value| match value {
+            RuntimeValue::Seq(seq) => seq,
+            value => RuntimeSeq::Values(vec![value]),
+        })
+        .collect();
+    TupleSeq::new(len, columns).map_err(|_| rows.into_iter().map(RuntimeValue::Tuple).collect())
+}
+
+fn collect_record_columns_or_values(values: Vec<RuntimeValue>) -> RuntimeValue {
+    let mut rows = Vec::with_capacity(values.len());
+    let mut iter = values.into_iter();
+    while let Some(value) = iter.next() {
+        let RuntimeValue::Record(fields) = value else {
+            let mut fallback = rows
+                .into_iter()
+                .map(RuntimeValue::Record)
+                .collect::<Vec<_>>();
+            fallback.push(value);
+            fallback.extend(iter);
+            return runtime_sequence_values(fallback);
+        };
+        rows.push(fields);
+    }
+    record_rows_to_columnar(rows).map_or_else(runtime_sequence_values, |seq| {
+        RuntimeValue::Seq(RuntimeSeq::RecordColumns(seq))
+    })
+}
+
+fn record_rows_to_columnar(
+    mut rows: Vec<Vec<RuntimeFieldValue>>,
+) -> Result<RecordSeq, Vec<RuntimeValue>> {
+    let len = rows.len();
+    let Some(first) = rows.first() else {
+        return RecordSeq::new(0, Vec::new()).map_err(|_| Vec::new());
+    };
+    let names = first
+        .iter()
+        .map(|field| field.name.clone())
+        .collect::<Vec<_>>();
+    if rows
+        .iter()
+        .any(|row| !record_field_order_matches(row, &names))
+    {
+        return Err(rows.into_iter().map(RuntimeValue::Record).collect());
+    }
+    let mut columns = names
+        .iter()
+        .map(|name| (name.clone(), Vec::with_capacity(len)))
+        .collect::<Vec<_>>();
+    for row in &mut rows {
+        for (ordinal, field) in row.drain(..).enumerate() {
+            columns[ordinal].1.push(field.value);
+        }
+    }
+    let fields = columns
+        .into_iter()
+        .map(|(name, values)| {
+            let value = runtime_sequence_from_literal_values(values);
+            let RuntimeValue::Seq(values) = value else {
+                unreachable!("sequence literal lowering always returns a sequence");
+            };
+            RecordSeqField { name, values }
+        })
+        .collect();
+    RecordSeq::new(len, fields).map_err(|_| rows.into_iter().map(RuntimeValue::Record).collect())
+}
+
+fn record_field_order_matches(row: &[RuntimeFieldValue], names: &[String]) -> bool {
+    row.len() == names.len()
+        && row
+            .iter()
+            .zip(names)
+            .all(|(field, name)| field.name == *name)
 }
 
 pub fn runtime_sequence_repeat_value(value: &RuntimeValue, len: usize) -> RuntimeValue {
@@ -2603,6 +2953,8 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
             RuntimeSeq::Dense(DenseSeq::EntityRefs(values)) => {
                 format!("seq/entity_refs/{}", values.len())
             }
+            RuntimeSeq::TupleColumns(values) => format!("seq/tuple_columns/{}", values.len()),
+            RuntimeSeq::RecordColumns(values) => format!("seq/record_columns/{}", values.len()),
         },
         RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
         RuntimeValue::Variant { name, payload, .. } => {

@@ -416,6 +416,14 @@ impl Engine {
                     field: field.to_owned(),
                     value: "record".to_owned(),
                 }),
+            RuntimeValue::Seq(RuntimeSeq::RecordColumns(records)) => records
+                .field_by_name(field)
+                .cloned()
+                .map(RuntimeValue::Seq)
+                .ok_or_else(|| RuntimeEvalError::MissingField {
+                    field: field.to_owned(),
+                    value: "record sequence".to_owned(),
+                }),
             value => Err(RuntimeEvalError::MissingField {
                 field: field.to_owned(),
                 value: runtime_value_label(&value),
@@ -812,6 +820,7 @@ impl Engine {
             RuntimeValue::Seq(seq) => match seq {
                 RuntimeSeq::Values(items) => sum_i64_sequence_ref(items).map(Some),
                 RuntimeSeq::Dense(items) => Ok(items.sum_as_i64()),
+                RuntimeSeq::TupleColumns(_) | RuntimeSeq::RecordColumns(_) => Ok(None),
             },
             RuntimeValue::Tuple(items) => sum_i64_sequence_ref(items).map(Some),
             _ => Ok(None),
@@ -1171,6 +1180,7 @@ impl Engine {
                         flat_inputs,
                     );
                 }
+                RuntimeSeq::TupleColumns(_) | RuntimeSeq::RecordColumns(_) => return Ok(None),
             },
             RuntimeExpr::Value(RuntimeValue::Tuple(items)) => items.as_slice(),
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
@@ -1184,6 +1194,9 @@ impl Engine {
                             arity,
                             flat_inputs,
                         );
+                    }
+                    RuntimeSeq::TupleColumns(_) | RuntimeSeq::RecordColumns(_) => {
+                        return Ok(None);
                     }
                 },
                 Some(RuntimeValue::Tuple(items)) => items.as_slice(),
@@ -1326,6 +1339,7 @@ impl Engine {
                         flat_inputs,
                     );
                 }
+                RuntimeSeq::TupleColumns(_) | RuntimeSeq::RecordColumns(_) => return Ok(false),
             },
             RuntimeExpr::Value(RuntimeValue::Tuple(items)) => items.as_slice(),
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
@@ -1339,6 +1353,9 @@ impl Engine {
                             arity,
                             flat_inputs,
                         );
+                    }
+                    RuntimeSeq::TupleColumns(_) | RuntimeSeq::RecordColumns(_) => {
+                        return Ok(false);
                     }
                 },
                 Some(RuntimeValue::Tuple(items)) => items.as_slice(),

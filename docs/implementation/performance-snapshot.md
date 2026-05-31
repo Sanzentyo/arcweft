@@ -150,9 +150,13 @@ The dense eligibility rule is scalar-first: deterministic homogeneous scalar
 runtime values use `RuntimeSeq::Dense(DenseSeq::...)`, with generic
 `DenseSeqStorage<T>` behind each typed variant and borrowed views for hot
 numeric/byte/text paths. `Tuple`, `Record`, and `Variant` remain heterogeneous
-runtime values and should not be forced into the scalar dense layer; repeated
-shape records or tuples need a separate columnar/struct-array optimization when
-there is a measured hot path. The checked-in benches above confirm that `i32`,
+runtime values and are not forced into the scalar dense layer. Repeated-shape
+tuple and record literal sequences now use `RuntimeSeq::TupleColumns` and
+`RuntimeSeq::RecordColumns`, with each column lowered back through the same
+scalar dense eligibility rule. Shape changes fall back to `RuntimeSeq::Values`.
+Record field projection over a columnar record sequence returns the existing
+field column without row materialization; ordinal lowering remains the next
+typed-projection step. The checked-in benches above confirm that `i32`,
 `u64`, all supported integer widths, unit/bool/char/duration/bytes, textual
 values, native `f32`/`f64` sequences, entity
 refs, and wide integer length paths run without argument-vector allocation or

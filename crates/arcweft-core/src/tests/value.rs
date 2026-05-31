@@ -591,14 +591,32 @@ fn literal_and_repeat_sequences_choose_dense_scalar_storage() {
 }
 
 #[test]
-fn compound_literal_sequences_remain_value_sequences() {
+fn compound_literal_sequences_use_columnar_storage_when_shape_is_stable() {
     let RuntimeValue::Seq(tuple_seq) = runtime_sequence_from_literal_values(vec![
         RuntimeValue::Tuple(vec![RuntimeValue::Int(1), RuntimeValue::Bool(true)]),
         RuntimeValue::Tuple(vec![RuntimeValue::Int(2), RuntimeValue::Bool(false)]),
     ]) else {
         panic!("tuple literals lower to a sequence");
     };
-    assert_eq!(tuple_seq.dense_kind(), None);
+    let RuntimeSeq::TupleColumns(tuple_seq) = tuple_seq else {
+        panic!("stable tuple rows lower to tuple columns");
+    };
+    assert_eq!(
+        runtime_value_label(&RuntimeValue::Seq(RuntimeSeq::TupleColumns(
+            tuple_seq.clone()
+        ))),
+        "seq/tuple_columns/2"
+    );
+    assert_eq!(tuple_seq.len(), 2);
+    assert_eq!(tuple_seq.columns().len(), 2);
+    assert_eq!(
+        tuple_seq.column(0).and_then(RuntimeSeq::as_i64_slice),
+        Some([1, 2].as_slice())
+    );
+    assert_eq!(
+        tuple_seq.column(1).and_then(RuntimeSeq::as_bool_slice),
+        Some([true, false].as_slice())
+    );
 
     let RuntimeValue::Seq(record_seq) = runtime_sequence_from_literal_values(vec![
         RuntimeValue::Record(vec![RuntimeFieldValue {
@@ -612,7 +630,24 @@ fn compound_literal_sequences_remain_value_sequences() {
     ]) else {
         panic!("record literals lower to a sequence");
     };
-    assert_eq!(record_seq.dense_kind(), None);
+    let RuntimeSeq::RecordColumns(record_seq) = record_seq else {
+        panic!("stable record rows lower to record columns");
+    };
+    assert_eq!(
+        runtime_value_label(&RuntimeValue::Seq(RuntimeSeq::RecordColumns(
+            record_seq.clone()
+        ))),
+        "seq/record_columns/2"
+    );
+    assert_eq!(record_seq.len(), 2);
+    assert_eq!(record_seq.fields().len(), 1);
+    assert_eq!(
+        record_seq
+            .field_by_name("score")
+            .and_then(RuntimeSeq::as_i64_slice),
+        Some([1, 2].as_slice())
+    );
+    assert!(record_seq.field_by_name("missing").is_none());
 
     let RuntimeValue::Seq(variant_seq) = runtime_sequence_from_literal_values(vec![
         RuntimeValue::Variant {
@@ -629,6 +664,31 @@ fn compound_literal_sequences_remain_value_sequences() {
         panic!("variant literals lower to a sequence");
     };
     assert_eq!(variant_seq.dense_kind(), None);
+}
+
+#[test]
+fn compound_literal_sequences_fall_back_when_shape_changes() {
+    let RuntimeValue::Seq(tuple_seq) = runtime_sequence_from_literal_values(vec![
+        RuntimeValue::Tuple(vec![RuntimeValue::Int(1)]),
+        RuntimeValue::Tuple(vec![RuntimeValue::Int(2), RuntimeValue::Bool(false)]),
+    ]) else {
+        panic!("tuple literals lower to a sequence");
+    };
+    assert!(matches!(tuple_seq, RuntimeSeq::Values(_)));
+
+    let RuntimeValue::Seq(record_seq) = runtime_sequence_from_literal_values(vec![
+        RuntimeValue::Record(vec![RuntimeFieldValue {
+            name: "score".to_owned(),
+            value: RuntimeValue::Int(1),
+        }]),
+        RuntimeValue::Record(vec![RuntimeFieldValue {
+            name: "label".to_owned(),
+            value: RuntimeValue::String("two".to_owned()),
+        }]),
+    ]) else {
+        panic!("record literals lower to a sequence");
+    };
+    assert!(matches!(record_seq, RuntimeSeq::Values(_)));
 }
 
 #[test]

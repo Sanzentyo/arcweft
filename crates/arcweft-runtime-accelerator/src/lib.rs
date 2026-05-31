@@ -1091,6 +1091,8 @@ fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Durations(_))) => "seq_durations",
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Strings(_))) => "seq_strings",
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::EntityRefs(_))) => "seq_entity_refs",
+        RuntimeValue::Seq(RuntimeSeq::TupleColumns(_)) => "seq_tuple_columns",
+        RuntimeValue::Seq(RuntimeSeq::RecordColumns(_)) => "seq_record_columns",
         RuntimeValue::Record(_) => "record",
         RuntimeValue::Variant { .. } => "variant",
     }
