@@ -607,6 +607,14 @@ impl CstLine {
         self.punctuation.brace_delta
     }
 
+    pub(crate) const fn punctuation_deltas(&self) -> CstPunctuationDeltas {
+        CstPunctuationDeltas {
+            brace: self.punctuation.brace_delta,
+            paren: self.punctuation.paren_delta,
+            bracket: self.punctuation.bracket_delta,
+        }
+    }
+
     pub(crate) const fn has_top_level_brace_open(&self) -> bool {
         self.punctuation.has_top_level_brace_open
     }

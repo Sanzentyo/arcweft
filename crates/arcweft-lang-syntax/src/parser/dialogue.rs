@@ -86,9 +86,11 @@ impl Parser {
         let start = self.current().clone();
         let mut text = start.text.trim().to_owned();
         let mut cursor = self.index;
+        let mut bracket_delta = start.punctuation_deltas().bracket;
 
-        while punctuation_delta(&text, '[', ']') > 0 && cursor + 1 < self.events.len() {
+        while bracket_delta > 0 && cursor + 1 < self.events.len() {
             cursor += 1;
+            bracket_delta += self.events[cursor].punctuation_deltas().bracket;
             text.push('\n');
             text.push_str(self.events[cursor].text.trim_end());
         }
@@ -172,9 +174,11 @@ impl Parser {
         let mut text = start.text.trim().to_owned();
         let mut end = start.end;
         let mut cursor = self.index;
+        let mut bracket_delta = start.punctuation_deltas().bracket;
 
-        while punctuation_delta(&text, '[', ']') > 0 && cursor + 1 < self.events.len() {
+        while bracket_delta > 0 && cursor + 1 < self.events.len() {
             cursor += 1;
+            bracket_delta += self.events[cursor].punctuation_deltas().bracket;
             text.push('\n');
             text.push_str(self.events[cursor].text.trim_end());
             end = self.events[cursor].end;
@@ -234,8 +238,10 @@ impl Parser {
         }
         if is_with_brace_head(trailing) {
             let mut block_text = trailing.to_owned();
-            while punctuation_delta(&block_text, '{', '}') > 0 && *cursor + 1 < self.events.len() {
+            let mut brace_delta = punctuation_delta(&block_text, '{', '}');
+            while brace_delta > 0 && *cursor + 1 < self.events.len() {
                 *cursor += 1;
+                brace_delta += self.events[*cursor].punctuation_deltas().brace;
                 block_text.push('\n');
                 block_text.push_str(self.events[*cursor].text.trim_end());
             }
@@ -274,8 +280,10 @@ impl Parser {
         if !block_text.starts_with('{') {
             return None;
         }
-        while punctuation_delta(&block_text, '{', '}') > 0 && *cursor + 1 < self.events.len() {
+        let mut brace_delta = punctuation_delta(&block_text, '{', '}');
+        while brace_delta > 0 && *cursor + 1 < self.events.len() {
             *cursor += 1;
+            brace_delta += self.events[*cursor].punctuation_deltas().brace;
             block_text.push('\n');
             block_text.push_str(self.events[*cursor].text.trim_end());
         }
