@@ -25,9 +25,9 @@ use crate::task::{
 use crate::value::{
     RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm,
     RuntimeFieldValue, RuntimePayload, RuntimeSeq, RuntimeValue, evaluate_binary, evaluate_unary,
-    expr_runtime_label, runtime_sequence_dense_i64, runtime_sequence_from_literal_values,
-    runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
-    runtime_value_label, sum_i64_sequence_ref,
+    expr_runtime_label, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
+    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_sequence_values,
+    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
 use std::collections::{BTreeMap, VecDeque};
 pub mod aot;
@@ -45,8 +45,11 @@ pub struct Engine {
     fiber: FlowFiber,
     child_fibers: VecDeque<FlowFiber>,
     run_child_next: bool,
+    pure_i32_batch_inputs: Vec<i32>,
+    pure_i32_batch_outputs: Vec<i32>,
     pure_i64_batch_inputs: Vec<i64>,
     pure_i64_batch_outputs: Vec<i64>,
+    pure_helper_i32_call_shapes: Vec<bool>,
     pure_helper_i64_call_shapes: Vec<bool>,
 }
 
@@ -208,6 +211,11 @@ impl Engine {
             .iter()
             .map(eval::pure_helper_has_i64_call_shape)
             .collect();
+        let pure_helper_i32_call_shapes = plan
+            .pure_helpers
+            .iter()
+            .map(eval::pure_helper_has_i32_call_shape)
+            .collect();
         Self {
             plan,
             flow_positions,
@@ -224,8 +232,11 @@ impl Engine {
             },
             child_fibers: VecDeque::new(),
             run_child_next: false,
+            pure_i32_batch_inputs: Vec::new(),
+            pure_i32_batch_outputs: Vec::new(),
             pure_i64_batch_inputs: Vec::new(),
             pure_i64_batch_outputs: Vec::new(),
+            pure_helper_i32_call_shapes,
             pure_helper_i64_call_shapes,
         }
     }

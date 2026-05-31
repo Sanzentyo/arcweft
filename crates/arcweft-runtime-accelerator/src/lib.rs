@@ -4,10 +4,13 @@
 //! and dependency-light.
 
 use arcweft_core::{
-    plan::{RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType},
+    plan::{
+        RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
+        RuntimePureOutputType,
+    },
     pure::{
-        AotPureFunctionBackend, AotPureI64Plan, PureFunctionRequest, RuntimeI64Args,
-        RuntimePureCallBackend, VmPureFunctionScratch,
+        AotPureFunctionBackend, AotPureI64Plan, PureFunctionRequest, RuntimeI32Args,
+        RuntimeI64Args, RuntimePureCallBackend, VmPureFunctionScratch,
     },
     step::RuntimePureCallStats,
     value::{DenseSeq, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeSeq, RuntimeValue},
@@ -659,7 +662,7 @@ impl RuntimePureAccelerator {
         self.resolved_workers.min(len)
     }
 
-    fn record_flat_batch_stats(&mut self, flat_inputs: &[i64], rows: usize, copies_result: bool) {
+    fn record_flat_batch_stats<T>(&mut self, flat_inputs: &[T], rows: usize, copies_result: bool) {
         self.stats.batch_calls += 1;
         self.stats.batch_items += rows;
         self.stats.flat_batch_calls += 1;
@@ -668,12 +671,72 @@ impl RuntimePureAccelerator {
         self.stats.pure_calls += rows;
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
         if copies_result {
-            self.stats.result_bytes_copied += rows * std::mem::size_of::<i64>();
+            self.stats.result_bytes_copied += rows * std::mem::size_of::<T>();
         }
     }
 }
 
 impl RuntimePureCallBackend for RuntimePureAccelerator {
+    fn call_i32(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: RuntimeI32Args,
+    ) -> Result<Option<i32>, RuntimeEvalError> {
+        self.stats.pure_calls += 1;
+        self.stats.vm_calls += 1;
+        self.stats.fallbacks += 1;
+        self.stats.arg_stack_packs += 1;
+        self.stats.arg_bytes_copied += args.len() * std::mem::size_of::<i32>();
+        Self::call_vm_i32(helper, args, &mut self.vm_scratch).map(Some)
+    }
+
+    fn call_i32_slice(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[i32],
+    ) -> Result<Option<i32>, RuntimeEvalError> {
+        if args.len() > RuntimeI32Args::MAX {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: RuntimeI32Args::MAX,
+                found: args.len(),
+            });
+        }
+        self.stats.pure_calls += 1;
+        self.stats.vm_calls += 1;
+        self.stats.fallbacks += 1;
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        Self::call_vm_i32_slice(helper, args, &mut self.vm_scratch).map(Some)
+    }
+
+    fn call_i32_flat_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[i32],
+        arity: usize,
+        out: &mut [i32],
+    ) -> Result<(), RuntimeEvalError> {
+        validate_flat_batch_shape(helper, flat_inputs.len(), arity, out.len())?;
+        self.record_flat_batch_stats(flat_inputs, out.len(), true);
+        self.stats.vm_calls += out.len();
+        self.stats.fallbacks += usize::from(!out.is_empty());
+        call_vm_i32_flat_batch(helper, flat_inputs, arity, out, &mut self.vm_scratch)
+    }
+
+    fn call_i32_flat_batch_sum(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[i32],
+        arity: usize,
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError> {
+        validate_flat_batch_shape(helper, flat_inputs.len(), arity, rows)?;
+        self.record_flat_batch_stats(flat_inputs, rows, false);
+        self.stats.vm_calls += rows;
+        self.stats.fallbacks += usize::from(rows > 0);
+        call_vm_i32_flat_batch_sum(helper, flat_inputs, arity, rows, &mut self.vm_scratch)
+    }
+
     fn call_i64(
         &mut self,
         helper: &RuntimePureHelper,
@@ -876,6 +939,30 @@ impl RuntimePureAccelerator {
             value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
         }
     }
+
+    fn call_vm_i32(
+        helper: &RuntimePureHelper,
+        args: RuntimeI32Args,
+        scratch: &mut VmPureFunctionScratch,
+    ) -> Result<i32, RuntimeEvalError> {
+        Self::call_vm_i32_slice(helper, args.as_slice(), scratch)
+    }
+
+    fn call_vm_i32_slice(
+        helper: &RuntimePureHelper,
+        args: &[i32],
+        scratch: &mut VmPureFunctionScratch,
+    ) -> Result<i32, RuntimeEvalError> {
+        match scratch.evaluate_i32_slice(helper, args)? {
+            RuntimeValue::Int(value) => {
+                i32::try_from(value).map_err(|_| RuntimeEvalError::UnsupportedPure {
+                    name: helper.name.clone(),
+                    reason: format!("pure i32 result `{value}` is outside i32 range"),
+                })
+            }
+            value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+        }
+    }
 }
 
 fn runtime_value_kind(value: &RuntimeValue) -> String {
@@ -1005,7 +1092,8 @@ fn compile_auto(
 }
 
 fn helper_has_only_i64_inputs(helper: &RuntimePureHelper) -> bool {
-    helper.input_names.len() == helper.input_types.len()
+    helper.output_type == RuntimePureOutputType::I64
+        && helper.input_names.len() == helper.input_types.len()
         && helper
             .input_types
             .iter()
@@ -1447,6 +1535,66 @@ fn call_vm_flat_batch(
         )
 }
 
+fn call_vm_i32_flat_batch(
+    helper: &RuntimePureHelper,
+    flat_inputs: &[i32],
+    arity: usize,
+    out: &mut [i32],
+    scratch: &mut VmPureFunctionScratch,
+) -> Result<(), RuntimeEvalError> {
+    if arity == 0 {
+        return out.iter_mut().try_for_each(|slot| {
+            *slot = vm_i32_result(helper, scratch.evaluate_i32_slice(helper, &[])?)?;
+            Ok(())
+        });
+    }
+    flat_inputs
+        .chunks_exact(arity)
+        .zip(out.iter_mut())
+        .try_for_each(|(row, slot)| {
+            *slot = vm_i32_result(helper, scratch.evaluate_i32_slice(helper, row)?)?;
+            Ok(())
+        })
+}
+
+fn call_vm_i32_flat_batch_sum(
+    helper: &RuntimePureHelper,
+    flat_inputs: &[i32],
+    arity: usize,
+    rows: usize,
+    scratch: &mut VmPureFunctionScratch,
+) -> Result<i64, RuntimeEvalError> {
+    let mut sum = 0_i64;
+    if arity == 0 {
+        for _ in 0..rows {
+            sum += i64::from(vm_i32_result(
+                helper,
+                scratch.evaluate_i32_slice(helper, &[])?,
+            )?);
+        }
+        return Ok(sum);
+    }
+    for row in flat_inputs.chunks_exact(arity) {
+        sum += i64::from(vm_i32_result(
+            helper,
+            scratch.evaluate_i32_slice(helper, row)?,
+        )?);
+    }
+    Ok(sum)
+}
+
+fn vm_i32_result(helper: &RuntimePureHelper, value: RuntimeValue) -> Result<i32, RuntimeEvalError> {
+    match value {
+        RuntimeValue::Int(value) => {
+            i32::try_from(value).map_err(|_| RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: format!("pure i32 result `{value}` is outside i32 range"),
+            })
+        }
+        value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+    }
+}
+
 fn call_vm_flat_batch_parallel(
     pool: Option<&ThreadPool>,
     helper: &RuntimePureHelper,
@@ -1675,6 +1823,7 @@ mod tests {
             name: "score".to_owned(),
             input_names: vec!["base".to_owned(), "bonus".to_owned()],
             input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+            output_type: RuntimePureOutputType::I64,
             expr: RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Mul,
@@ -1720,6 +1869,7 @@ mod tests {
             name: "score".to_owned(),
             input_names: vec!["base".to_owned(), "bonus".to_owned()],
             input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+            output_type: RuntimePureOutputType::I64,
             expr: RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Mul,
@@ -1773,6 +1923,7 @@ mod tests {
             name: "echo".to_owned(),
             input_names: vec!["label".to_owned()],
             input_types: vec![RuntimePureInputType::Value],
+            output_type: RuntimePureOutputType::Value,
             expr: RuntimeExpr::Local("label".to_owned()),
             scalar_eval_supported: false,
             origin: RuntimePureHelperOrigin::Annotated,
@@ -1808,6 +1959,7 @@ mod tests {
             name: "score".to_owned(),
             input_names: vec!["base".to_owned(), "bonus".to_owned()],
             input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+            output_type: RuntimePureOutputType::I64,
             expr: RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Mul,
@@ -1862,6 +2014,7 @@ mod tests {
             name: "score".to_owned(),
             input_names: vec!["base".to_owned(), "bonus".to_owned()],
             input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+            output_type: RuntimePureOutputType::I64,
             expr: RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Mul,
@@ -1937,6 +2090,7 @@ mod tests {
             name: "score".to_owned(),
             input_names: vec!["base".to_owned(), "bonus".to_owned()],
             input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+            output_type: RuntimePureOutputType::I64,
             expr: RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Mul,
@@ -1993,6 +2147,7 @@ mod tests {
             name: "score".to_owned(),
             input_names: vec!["base".to_owned(), "bonus".to_owned()],
             input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+            output_type: RuntimePureOutputType::I64,
             expr: RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Mul,
@@ -2045,6 +2200,7 @@ mod tests {
             name: "score".to_owned(),
             input_names: vec!["base".to_owned(), "bonus".to_owned()],
             input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+            output_type: RuntimePureOutputType::I64,
             expr: RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Mul,

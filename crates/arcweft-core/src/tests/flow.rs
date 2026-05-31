@@ -85,6 +85,7 @@ fn engine_executes_runtime_pure_call_from_flow() {
         name: "score".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
         input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+        output_type: RuntimePureOutputType::I64,
         expr: RuntimeExpr::If {
             condition: Box::new(RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
@@ -144,6 +145,7 @@ fn engine_routes_non_i64_pure_call_to_value_backend() {
         name: "echo".to_owned(),
         input_names: vec!["label".to_owned()],
         input_types: vec![RuntimePureInputType::Value],
+        output_type: RuntimePureOutputType::Value,
         expr: RuntimeExpr::Local("label".to_owned()),
         scalar_eval_supported: false,
         origin: RuntimePureHelperOrigin::Annotated,
@@ -194,6 +196,7 @@ fn engine_batches_bracket_sequence_pure_calls() {
         name: "score".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
         input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+        output_type: RuntimePureOutputType::I64,
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
             op: RuntimeBinaryOp::Mul,
@@ -255,6 +258,7 @@ fn engine_fuses_bracket_sequence_pure_batch_sum() {
         name: "score".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
         input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+        output_type: RuntimePureOutputType::I64,
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
             op: RuntimeBinaryOp::Mul,
@@ -309,6 +313,7 @@ fn engine_batches_map_closure_pure_calls() {
         name: "score".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
         input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+        output_type: RuntimePureOutputType::I64,
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
             op: RuntimeBinaryOp::Mul,
@@ -373,6 +378,7 @@ fn engine_fuses_map_closure_pure_batch_sum() {
         name: "score".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
         input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+        output_type: RuntimePureOutputType::I64,
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
             op: RuntimeBinaryOp::Mul,
@@ -440,6 +446,7 @@ fn engine_fuses_local_map_closure_pure_batch_sum() {
         name: "score".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
         input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+        output_type: RuntimePureOutputType::I64,
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
             op: RuntimeBinaryOp::Mul,
@@ -499,6 +506,7 @@ fn assert_dense_i64_map_sum_uses_flat_batch(source: RuntimeValue, expected: &str
         name: "score".to_owned(),
         input_names: vec!["base".to_owned(), "bonus".to_owned()],
         input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+        output_type: RuntimePureOutputType::I64,
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
             op: RuntimeBinaryOp::Mul,
@@ -528,6 +536,63 @@ fn assert_dense_i64_map_sum_uses_flat_batch(source: RuntimeValue, expected: &str
 #[test]
 fn engine_batches_dense_i64_map_without_value_materialization() {
     assert_dense_i64_map_sum_uses_flat_batch(runtime_sequence_dense_i64(vec![3, 5, 7]), "60");
+}
+
+#[test]
+fn engine_batches_dense_i32_map_without_widening_flat_inputs() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Sum {
+                source: Box::new(RuntimeExpr::Map {
+                    source: Box::new(RuntimeExpr::Value(runtime_sequence_dense_i32(vec![
+                        3, 5, 7,
+                    ]))),
+                    param: "base".to_owned(),
+                    body: Box::new(RuntimeExpr::PureCall {
+                        helper: RuntimePureHelperId(0),
+                        args: vec![
+                            RuntimeExpr::Local("base".to_owned()),
+                            RuntimeExpr::Value(RuntimeValue::Int(4)),
+                        ],
+                    }),
+                }),
+            })],
+        }],
+        Vec::new(),
+    )
+    .expect("flow plan is valid")
+    .with_pure_helpers(vec![RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "score_i32".to_owned(),
+        input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        input_types: vec![RuntimePureInputType::I32, RuntimePureInputType::I32],
+        output_type: RuntimePureOutputType::I32,
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+            op: RuntimeBinaryOp::Mul,
+            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+        },
+        scalar_eval_supported: true,
+        origin: RuntimePureHelperOrigin::Annotated,
+    }]);
+    let mut engine = Engine::new(plan);
+
+    let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+
+    assert!(matches!(
+        result.fiber_status,
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "60"
+    ));
+    assert_eq!(result.stats.pure.batch_calls, 1);
+    assert_eq!(result.stats.pure.batch_items, 3);
+    assert_eq!(result.stats.pure.arg_vec_allocations, 0);
+    assert_eq!(
+        result.stats.pure.arg_bytes_borrowed,
+        6 * std::mem::size_of::<i32>()
+    );
+    assert_eq!(result.stats.pure.result_bytes_copied, 0);
 }
 
 #[test]

@@ -757,16 +757,18 @@ Current high-confidence state:
   records this scalar coverage explicitly so adding a new dense class requires
   extending the typed kind, borrowed view, materialization fallback, and tests
   together.
-- Dense storage exposes exact borrowed views for each scalar storage class and
-  only exposes an i64 pure-batch projection for `DenseSeq::I64`. Narrower or
-  unsigned integer storage is not widened with `.map(i64::from)` on the hot
-  path, because that would erase the bandwidth/cache advantage of `i32`, `u16`,
-  `u8`, and similar dense storage. Runtime pure helper metadata now preserves
-  source integer input widths (`i8`, `i16`, `i32`, `i64`, `isize`) so dedicated
-  typed ABIs can be added per width instead of silently routing everything
-  through the i64 accelerator. The current i64 accelerator therefore handles
-  exact i64 helpers only; other widths keep their dense storage for `sum()` and
-  `len()` and fall back until a matching typed backend exists.
+- Dense storage exposes exact borrowed views for each scalar storage class.
+  Narrower or unsigned integer storage is not widened with `.map(i64::from)` on
+  the hot path, because that would erase the bandwidth/cache advantage of
+  `i32`, `u16`, `u8`, and similar dense storage. Runtime pure helper metadata
+  preserves source integer input and output widths (`i8` through `i128`, `u8`
+  through `u128`, `isize`, `usize`, and `bool` outputs). The exact i64
+  accelerator still owns JIT/AOT execution, while the VM now also has an exact
+  i32 flat-batch ABI over `&[i32]` / `&mut [i32]`; the checked-in dense i32 pure
+  map bench verifies that the pure boundary borrows 1024 bytes for 128 two-arg
+  rows rather than widening to 2048 bytes. Other integer widths keep their dense
+  storage for `sum()` and `len()` and fall back until a matching typed VM/JIT/AOT
+  backend exists.
 - `Vec<T>.len()` / `Seq<T>.len()` / fixed array length calls typecheck as
   `usize` and read `RuntimeSeq::len()` directly in the VM and pure VM. The
   checked-in dense scalar length bench exercises unit, bool, char, duration,

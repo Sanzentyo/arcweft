@@ -6,7 +6,7 @@ use arcweft_core::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor};
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimePlan,
     RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
-    RuntimeRouteSpec,
+    RuntimePureOutputType, RuntimeRouteSpec,
 };
 use arcweft_core::step::{
     RuntimePureCallStats, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
@@ -772,6 +772,7 @@ impl JitCheckTarget {
             name: self.name.clone(),
             input_names: self.input_names.clone(),
             input_types: vec![RuntimePureInputType::I64; self.input_names.len()],
+            output_type: RuntimePureOutputType::I64,
             expr: self.expr.clone(),
             scalar_eval_supported: self.expr.supports_scalar_pure_eval(),
             origin: RuntimePureHelperOrigin::Annotated,
@@ -3205,6 +3206,7 @@ fn measure_script_bench_runtime_pure_batch(
         name: target.name.clone(),
         input_names: target.input_names.clone(),
         input_types: vec![RuntimePureInputType::I64; target.input_names.len()],
+        output_type: RuntimePureOutputType::I64,
         expr: target.expr.clone(),
         scalar_eval_supported: target.expr.supports_scalar_pure_eval(),
         origin: RuntimePureHelperOrigin::Annotated,

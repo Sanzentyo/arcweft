@@ -41,15 +41,46 @@ pub struct PureFunctionStats {
     pub evaluated_binary_ops: usize,
 }
 
-/// Fixed-size integer argument pack for runtime pure helper fast paths.
+/// Fixed-size scalar argument pack for runtime pure helper fast paths.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RuntimeI64Args {
+pub struct RuntimeFixedArgs<T> {
     len: usize,
-    values: [i64; Self::MAX],
+    values: [T; 4],
 }
+
+pub type RuntimeI32Args = RuntimeFixedArgs<i32>;
+pub type RuntimeI64Args = RuntimeFixedArgs<i64>;
 
 /// Runtime-facing backend for deterministic pure helper calls.
 pub trait RuntimePureCallBackend {
+    fn call_i32(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: RuntimeI32Args,
+    ) -> Result<Option<i32>, RuntimeEvalError>;
+
+    fn call_i32_slice(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[i32],
+    ) -> Result<Option<i32>, RuntimeEvalError>;
+
+    fn call_i32_flat_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[i32],
+        arity: usize,
+        out: &mut [i32],
+    ) -> Result<(), RuntimeEvalError>;
+
+    fn call_i32_flat_batch_sum(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[i32],
+        arity: usize,
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError>;
+
     fn call_i64(
         &mut self,
         helper: &RuntimePureHelper,
@@ -229,6 +260,23 @@ impl PureFunctionBackend for VmPureFunctionBackend {
 }
 
 impl VmPureFunctionBackend {
+    pub fn evaluate_i32_args(
+        &self,
+        helper: &RuntimePureHelper,
+        args: RuntimeI32Args,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        self.evaluate_i32_slice(helper, args.as_slice())
+    }
+
+    pub fn evaluate_i32_slice(
+        &self,
+        helper: &RuntimePureHelper,
+        args: &[i32],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let mut scratch = VmPureFunctionScratch::default();
+        scratch.evaluate_i32_slice(helper, args)
+    }
+
     pub fn evaluate_i64_args(
         &self,
         helper: &RuntimePureHelper,
@@ -248,6 +296,40 @@ impl VmPureFunctionBackend {
 }
 
 impl VmPureFunctionScratch {
+    pub fn evaluate_i32_args(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: RuntimeI32Args,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        self.evaluate_i32_slice(helper, args.as_slice())
+    }
+
+    pub fn evaluate_i32_slice(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[i32],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if args.len() != helper.input_names.len() {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: helper.input_names.len(),
+                found: args.len(),
+            });
+        }
+        self.env
+            .replace_root_i32_bindings(&helper.input_names, args);
+        let mut evaluator = PureEvaluator::with_env(std::mem::take(&mut self.env));
+        let result = if helper.scalar_eval_supported {
+            evaluator
+                .evaluate_scalar_expr(&helper.expr)
+                .map(PureScalar::into_runtime_value)
+        } else {
+            evaluator.evaluate_expr(&helper.expr)
+        };
+        self.env = evaluator.into_env();
+        result
+    }
+
     pub fn evaluate_i64_args(
         &mut self,
         helper: &RuntimePureHelper,
@@ -350,31 +432,160 @@ impl PureFunctionBackend for AotPureFunctionBackend {
     }
 }
 
-impl RuntimeI64Args {
+impl<T> RuntimeFixedArgs<T> {
     pub const MAX: usize = 4;
 
-    pub const fn new(values: [i64; Self::MAX], len: usize) -> Self {
+    pub const fn new(values: [T; 4], len: usize) -> Self {
         Self { len, values }
     }
 
-    pub const fn len(self) -> usize {
+    pub const fn len(&self) -> usize {
         self.len
     }
 
-    pub const fn is_empty(self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.len == 0
     }
 
-    pub fn as_slice(&self) -> &[i64] {
+    pub fn as_slice(&self) -> &[T] {
         &self.values[..self.len]
     }
 
-    pub const fn into_parts(self) -> ([i64; Self::MAX], usize) {
+    pub fn into_parts(self) -> ([T; 4], usize) {
         (self.values, self.len)
     }
 }
 
 impl RuntimePureCallBackend for VmRuntimePureCallBackend {
+    fn call_i32(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: RuntimeI32Args,
+    ) -> Result<Option<i32>, RuntimeEvalError> {
+        self.stats.pure_calls += 1;
+        self.stats.vm_calls += 1;
+        self.stats.arg_stack_packs += 1;
+        self.stats.arg_bytes_copied += args.len() * std::mem::size_of::<i32>();
+        let value = self.scratch.evaluate_i32_args(helper, args)?;
+        runtime_value_into_i32_result(helper, value).map(Some)
+    }
+
+    fn call_i32_slice(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[i32],
+    ) -> Result<Option<i32>, RuntimeEvalError> {
+        if args.len() > RuntimeI32Args::MAX {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: RuntimeI32Args::MAX,
+                found: args.len(),
+            });
+        }
+        self.stats.pure_calls += 1;
+        self.stats.vm_calls += 1;
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        let value = self.scratch.evaluate_i32_slice(helper, args)?;
+        runtime_value_into_i32_result(helper, value).map(Some)
+    }
+
+    fn call_i32_flat_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[i32],
+        arity: usize,
+        out: &mut [i32],
+    ) -> Result<(), RuntimeEvalError> {
+        if arity > RuntimeI32Args::MAX {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: RuntimeI32Args::MAX,
+                found: arity,
+            });
+        }
+        if flat_inputs.len() != out.len().saturating_mul(arity) {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: format!(
+                    "pure flat batch expected {} input value(s), got {}",
+                    out.len().saturating_mul(arity),
+                    flat_inputs.len()
+                ),
+            });
+        }
+        self.stats.batch_calls += 1;
+        self.stats.batch_items += out.len();
+        self.stats.flat_batch_calls += 1;
+        self.stats.flat_batch_items += out.len();
+        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        self.stats.pure_calls += out.len();
+        self.stats.vm_calls += out.len();
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        self.stats.result_bytes_copied += std::mem::size_of_val(out);
+        if arity == 0 {
+            return out.iter_mut().try_for_each(|slot| {
+                let value = self.scratch.evaluate_i32_slice(helper, &[])?;
+                *slot = runtime_value_into_i32_result(helper, value)?;
+                Ok(())
+            });
+        }
+        flat_inputs
+            .chunks_exact(arity)
+            .zip(out.iter_mut())
+            .try_for_each(|(row, slot)| {
+                let value = self.scratch.evaluate_i32_slice(helper, row)?;
+                *slot = runtime_value_into_i32_result(helper, value)?;
+                Ok(())
+            })
+    }
+
+    fn call_i32_flat_batch_sum(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[i32],
+        arity: usize,
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError> {
+        if arity > RuntimeI32Args::MAX {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: RuntimeI32Args::MAX,
+                found: arity,
+            });
+        }
+        if flat_inputs.len() != rows.saturating_mul(arity) {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: format!(
+                    "pure flat batch expected {} input value(s), got {}",
+                    rows.saturating_mul(arity),
+                    flat_inputs.len()
+                ),
+            });
+        }
+        self.stats.batch_calls += 1;
+        self.stats.batch_items += rows;
+        self.stats.flat_batch_calls += 1;
+        self.stats.flat_batch_items += rows;
+        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        self.stats.pure_calls += rows;
+        self.stats.vm_calls += rows;
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        let mut sum = 0_i64;
+        if arity == 0 {
+            for _ in 0..rows {
+                let value = self.scratch.evaluate_i32_slice(helper, &[])?;
+                sum += i64::from(runtime_value_into_i32_result(helper, value)?);
+            }
+            return Ok(sum);
+        }
+        for row in flat_inputs.chunks_exact(arity) {
+            let value = self.scratch.evaluate_i32_slice(helper, row)?;
+            sum += i64::from(runtime_value_into_i32_result(helper, value)?);
+        }
+        Ok(sum)
+    }
+
     fn call_i64(
         &mut self,
         helper: &RuntimePureHelper,
@@ -1070,6 +1281,21 @@ fn runtime_value_into_scalar(value: RuntimeValue) -> Result<PureScalar, RuntimeE
     match value {
         RuntimeValue::Bool(value) => Ok(PureScalar::Bool(value)),
         RuntimeValue::Int(value) => Ok(PureScalar::Int(value)),
+        value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
+    }
+}
+
+fn runtime_value_into_i32_result(
+    helper: &RuntimePureHelper,
+    value: RuntimeValue,
+) -> Result<i32, RuntimeEvalError> {
+    match value {
+        RuntimeValue::Int(value) => {
+            i32::try_from(value).map_err(|_| RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: format!("pure i32 result `{value}` is outside i32 range"),
+            })
+        }
         value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
     }
 }

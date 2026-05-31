@@ -4,7 +4,7 @@ use crate::effect::{LineEffectRequest, RuntimeLog};
 use crate::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor, VmExecutor};
 use crate::plan::{
     FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan, RuntimePureHelper, RuntimePureHelperId,
-    RuntimePureHelperOrigin,
+    RuntimePureHelperOrigin, RuntimePureOutputType,
 };
 use crate::step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions};
 use crate::task::{AwaitTarget, HostCapabilityId, HostTaskRequestTemplate, NeedId, TaskId};
@@ -74,6 +74,7 @@ fn aot_program_records_nested_dispatch_shape() {
         name: "one".to_owned(),
         input_names: Vec::new(),
         input_types: Vec::new(),
+        output_type: RuntimePureOutputType::I64,
         expr: RuntimeExpr::Value(RuntimeValue::Int(1)),
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,

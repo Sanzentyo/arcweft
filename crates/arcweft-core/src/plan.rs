@@ -98,6 +98,7 @@ pub struct RuntimePureHelper {
     pub name: String,
     pub input_names: Vec<String>,
     pub input_types: Vec<RuntimePureInputType>,
+    pub output_type: RuntimePureOutputType,
     pub expr: RuntimeExpr,
     pub scalar_eval_supported: bool,
     pub origin: RuntimePureHelperOrigin,
@@ -110,7 +111,33 @@ pub enum RuntimePureInputType {
     I16,
     I32,
     I64,
+    I128,
     ISize,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    USize,
+    Value,
+}
+
+/// Runtime pure helper output representation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimePureOutputType {
+    Bool,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    ISize,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    USize,
     Value,
 }
 

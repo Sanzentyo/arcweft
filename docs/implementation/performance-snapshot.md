@@ -128,6 +128,7 @@ cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/b
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/013_dense_scalar_len.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/014_dense_textual_scalar_len.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64
 cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/015_dense_wide_numeric_len.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/016_dense_i32_map_pure_batch.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit
 ```
 
 | fixture | status | median elapsed ns | executed ops | per op ns | parse ns | typecheck ns | runtime plan ns | typecheck exprs | type judgments | arg vec allocs | flatten materializations |
@@ -138,6 +139,7 @@ cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/b
 | 013_dense_scalar_len.arcw | measured | 16000 | 8 | 2000 | 2002000 | 335600 | 572800 | 54 | 61 | 0 | 0 |
 | 014_dense_textual_scalar_len.arcw | measured | 17200 | 7 | 2457 | 1305500 | 270400 | 420800 | 21 | 27 | 0 | 0 |
 | 015_dense_wide_numeric_len.arcw | measured | 13600 | 7 | 1942 | 1424200 | 164300 | 263000 | 18 | 24 | 0 | 0 |
+| 016_dense_i32_map_pure_batch.arcw | measured | 73300 | 3 | 24433 | 3141200 | 226100 | 315900 | 16 | 21 | 0 | 0 |
 
 The dense eligibility rule is scalar-first: deterministic homogeneous scalar
 runtime values use `RuntimeSeq::Dense(DenseSeq::...)`, with generic
@@ -360,15 +362,17 @@ reduction path, not the pure helper accelerator.
 
 The VM now keeps pure-helper integer width information instead of widening all
 dense integer storage into the i64 accelerator. Runtime pure helper metadata
-preserves `i8`, `i16`, `i32`, `i64`, and `isize` input widths; the current
-i64 flat-batch accelerator only accepts exact `i64` helpers and
-`DenseSeq::I64` sources. Narrower or unsigned dense storage remains useful for
-`sum()` and `len()` but no longer crosses the pure boundary through
-`.map(i64::from)`, because that would erase the bandwidth/cache benefit of the
-original storage width. The core regressions now verify exact i64 projection and
-that non-i64 dense integer storage does not claim the i64 projection; typed
-accelerator ABIs for `i32`, `u32`, `i16`, `u16`, `u8`, and related widths are
-the next step before those storage classes should enter flat pure batches.
+preserves signed and unsigned integer input widths plus the declared output
+width. The exact i64 flat-batch accelerator still owns JIT/AOT execution, but
+the VM also has an exact i32 flat-batch ABI that borrows `&[i32]` and writes
+`&mut [i32]`. The checked-in `016_dense_i32_map_pure_batch.arcw` bench validates
+the new path with `pure_flat_batch_items_median = 128`,
+`pure_flat_batch_bytes_borrowed_median = 1024`,
+`pure_arg_bytes_borrowed_median = 1024`, and no result copy in the fused
+`map(...).sum()` path. This confirms the hot boundary is not doing
+`.map(i64::from)`. The remaining typed accelerator work is to add matching VM,
+JIT, and AOT kernels for `u32`, `i16`, `u16`, `u8`, and related widths before
+those storage classes enter flat pure batches.
 
 The dense scalar length fixture covers the non-integer deterministic scalar
 storage cases. It lowers unit, bool, char, logical-duration, and `u8` sequences

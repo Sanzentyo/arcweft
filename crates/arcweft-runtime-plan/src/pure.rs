@@ -2,7 +2,7 @@
 
 use crate::expr::lower_runtime_expr_strict;
 use arcweft_core::{
-    plan::{RuntimePureHelperOrigin, RuntimePureInputType},
+    plan::{RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType},
     pure::PureFunctionRequest,
     value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
@@ -22,6 +22,7 @@ pub struct PureHelperCandidate {
     name: String,
     input_names: Vec<String>,
     input_types: Vec<RuntimePureInputType>,
+    output_type: RuntimePureOutputType,
     expr: RuntimeExpr,
     origin: RuntimePureHelperOrigin,
 }
@@ -57,6 +58,11 @@ impl PureHelperCandidate {
     /// Runtime ABI input types preserved from the source signature.
     pub fn input_types(&self) -> &[RuntimePureInputType] {
         &self.input_types
+    }
+
+    /// Runtime ABI output type preserved from the source signature.
+    pub const fn output_type(&self) -> RuntimePureOutputType {
+        self.output_type
     }
 
     /// Runtime expression body used by pure helper backends.
@@ -155,6 +161,7 @@ fn lower_pure_helper_candidate(
         name: function.name().to_owned(),
         input_names,
         input_types,
+        output_type: pure_helper_output_type(function.signature().return_type()),
         expr,
         origin,
     })
@@ -268,10 +275,39 @@ fn pure_helper_input_type(ty: &TypeRef) -> Option<RuntimePureInputType> {
             "i16" => Some(RuntimePureInputType::I16),
             "i32" => Some(RuntimePureInputType::I32),
             "i64" => Some(RuntimePureInputType::I64),
+            "i128" => Some(RuntimePureInputType::I128),
             "isize" => Some(RuntimePureInputType::ISize),
+            "u8" => Some(RuntimePureInputType::U8),
+            "u16" => Some(RuntimePureInputType::U16),
+            "u32" => Some(RuntimePureInputType::U32),
+            "u64" => Some(RuntimePureInputType::U64),
+            "u128" => Some(RuntimePureInputType::U128),
+            "usize" => Some(RuntimePureInputType::USize),
             _ => None,
         },
         _ => None,
+    }
+}
+
+fn pure_helper_output_type(ty: Option<&TypeRef>) -> RuntimePureOutputType {
+    match ty {
+        Some(TypeRef::Path(name)) => match name.as_str() {
+            "bool" => RuntimePureOutputType::Bool,
+            "i8" => RuntimePureOutputType::I8,
+            "i16" => RuntimePureOutputType::I16,
+            "i32" => RuntimePureOutputType::I32,
+            "i64" => RuntimePureOutputType::I64,
+            "i128" => RuntimePureOutputType::I128,
+            "isize" => RuntimePureOutputType::ISize,
+            "u8" => RuntimePureOutputType::U8,
+            "u16" => RuntimePureOutputType::U16,
+            "u32" => RuntimePureOutputType::U32,
+            "u64" => RuntimePureOutputType::U64,
+            "u128" => RuntimePureOutputType::U128,
+            "usize" => RuntimePureOutputType::USize,
+            _ => RuntimePureOutputType::Value,
+        },
+        _ => RuntimePureOutputType::Value,
     }
 }
 
@@ -306,6 +342,7 @@ fn score(base: i64, bonus: i64) -> i64 {
             candidates[0].input_types(),
             [RuntimePureInputType::I64, RuntimePureInputType::I64]
         );
+        assert_eq!(candidates[0].output_type(), RuntimePureOutputType::I64);
         let request = candidates[0]
             .request_with_i64_inputs([3, 4])
             .expect("request builds with matching inputs");
@@ -336,10 +373,37 @@ fn score(base: i32, bonus: i16) -> i32 {
             candidates[0].input_types(),
             [RuntimePureInputType::I32, RuntimePureInputType::I16]
         );
+        assert_eq!(candidates[0].output_type(), RuntimePureOutputType::I32);
         assert!(matches!(
             candidates[0].request_with_i64_inputs([3, 4]),
             Err(PureHelperLowerError::UnsupportedParameterType { .. })
         ));
+    }
+
+    #[test]
+    fn pure_function_candidate_preserves_unsigned_integer_input_types() {
+        let parsed = parse_source(
+            r"
+#[pure]
+fn pack(byte: u8, index: u32) -> u64 {
+    index + byte
+}
+",
+        );
+        assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+        let tree = parsed.into_typed_tree();
+        let hir = lower_to_hir(&tree).expect("pure function lowers to HIR");
+
+        let candidates =
+            lower_pure_helper_candidates(&hir).expect("pure function lowers to helper candidate");
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].input_names(), ["byte", "index"]);
+        assert_eq!(
+            candidates[0].input_types(),
+            [RuntimePureInputType::U8, RuntimePureInputType::U32]
+        );
+        assert_eq!(candidates[0].output_type(), RuntimePureOutputType::U64);
     }
 
     #[test]
