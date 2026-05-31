@@ -8,12 +8,13 @@ use crate::pure::{
     compare_pure_function_backend,
 };
 use crate::value::{
-    RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeValue,
-    runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_i8,
-    runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
-    runtime_sequence_dense_i128, runtime_sequence_dense_isize, runtime_sequence_dense_u8,
-    runtime_sequence_dense_u16, runtime_sequence_dense_u32, runtime_sequence_dense_u64,
-    runtime_sequence_dense_u128, runtime_sequence_dense_usize, runtime_sequence_values,
+    RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeFieldValue,
+    RuntimeValue, runtime_sequence_dense_bool, runtime_sequence_dense_bytes,
+    runtime_sequence_dense_i8, runtime_sequence_dense_i16, runtime_sequence_dense_i32,
+    runtime_sequence_dense_i64, runtime_sequence_dense_i128, runtime_sequence_dense_isize,
+    runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
+    runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_sequence_dense_usize,
+    runtime_sequence_from_literal_values, runtime_sequence_values,
 };
 
 fn int_binding(name: &str, value: i64) -> RuntimeBinding {
@@ -21,6 +22,69 @@ fn int_binding(name: &str, value: i64) -> RuntimeBinding {
         name: name.to_owned(),
         value: RuntimeValue::Int(value),
     }
+}
+
+fn value_helper(expr: RuntimeExpr) -> RuntimePureHelper {
+    RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "project".to_owned(),
+        input_names: vec!["row".to_owned()],
+        input_types: vec![RuntimePureInputType::Value],
+        output_type: RuntimePureOutputType::Value,
+        expr,
+        scalar_eval_supported: false,
+        origin: RuntimePureHelperOrigin::Annotated,
+    }
+}
+
+#[test]
+fn vm_pure_backend_projects_record_columns_by_ordinal() {
+    let helper = value_helper(RuntimeExpr::ProjectRecord {
+        target: Box::new(RuntimeExpr::Local("row".to_owned())),
+        ordinal: 0,
+    });
+    let rows = runtime_sequence_from_literal_values(vec![
+        RuntimeValue::Record(vec![RuntimeFieldValue {
+            name: "score".to_owned(),
+            value: RuntimeValue::Int(1),
+        }]),
+        RuntimeValue::Record(vec![RuntimeFieldValue {
+            name: "score".to_owned(),
+            value: RuntimeValue::Int(2),
+        }]),
+    ]);
+    let mut backend = VmRuntimePureCallBackend::default();
+
+    let value = backend
+        .call_values(&helper, &[rows])
+        .expect("projection evaluates");
+
+    assert!(matches!(
+        value,
+        RuntimeValue::Seq(seq) if seq.as_i64_slice() == Some([1, 2].as_slice())
+    ));
+}
+
+#[test]
+fn vm_pure_backend_projects_tuple_columns_by_ordinal() {
+    let helper = value_helper(RuntimeExpr::ProjectTuple {
+        target: Box::new(RuntimeExpr::Local("row".to_owned())),
+        ordinal: 1,
+    });
+    let rows = runtime_sequence_from_literal_values(vec![
+        RuntimeValue::Tuple(vec![RuntimeValue::Int(1), RuntimeValue::Bool(true)]),
+        RuntimeValue::Tuple(vec![RuntimeValue::Int(2), RuntimeValue::Bool(false)]),
+    ]);
+    let mut backend = VmRuntimePureCallBackend::default();
+
+    let value = backend
+        .call_values(&helper, &[rows])
+        .expect("projection evaluates");
+
+    assert!(matches!(
+        value,
+        RuntimeValue::Seq(seq) if seq.as_bool_slice() == Some([true, false].as_slice())
+    ));
 }
 
 #[test]

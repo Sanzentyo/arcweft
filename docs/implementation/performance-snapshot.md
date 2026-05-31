@@ -155,8 +155,11 @@ tuple and record literal sequences now use `RuntimeSeq::TupleColumns` and
 `RuntimeSeq::RecordColumns`, with each column lowered back through the same
 scalar dense eligibility rule. Shape changes fall back to `RuntimeSeq::Values`.
 Record field projection over a columnar record sequence returns the existing
-field column without row materialization; ordinal lowering remains the next
-typed-projection step. The checked-in benches above confirm that `i32`,
+field column without row materialization. Runtime expressions now include
+`ProjectRecord { ordinal }` and `ProjectTuple { ordinal }`; runtime-plan
+lowering emits them when the record field or tuple index ordinal is known from
+literal shape. General field projection still needs sema-owned ordinal evidence.
+The checked-in benches above confirm that `i32`,
 `u64`, all supported integer widths, unit/bool/char/duration/bytes, textual
 values, native `f32`/`f64` sequences, entity
 refs, and wide integer length paths run without argument-vector allocation or

@@ -45,10 +45,7 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
                 })
                 .collect(),
         ),
-        Expr::Field { target, field } => RuntimeExpr::Field {
-            target: Box::new(lower_runtime_expr(target)),
-            field: field.clone(),
-        },
+        Expr::Field { target, field } => lower_runtime_field_expr(target, field),
         Expr::Unary { op, expr } => RuntimeExpr::Unary {
             op: lower_runtime_unary_op(*op),
             expr: Box::new(lower_runtime_expr(expr)),
@@ -103,10 +100,12 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
                 args: args.iter().map(lower_runtime_call_arg).collect(),
             }
         }),
-        Expr::Try { expr }
-        | Expr::Await { expr, .. }
-        | Expr::Index { target: expr, .. }
-        | Expr::Pipe { lhs: expr, .. } => lower_runtime_expr(expr),
+        Expr::Index { target, index } => {
+            lower_runtime_index_expr(target, index).unwrap_or_else(|| lower_runtime_expr(target))
+        }
+        Expr::Try { expr } | Expr::Await { expr, .. } | Expr::Pipe { lhs: expr, .. } => {
+            lower_runtime_expr(expr)
+        }
         _ => RuntimeExpr::Value(RuntimeValue::String(expr_label(expr))),
     }
 }
@@ -157,10 +156,7 @@ fn lower_runtime_expr_strict_with_helpers(
             })
             .collect::<Result<Vec<_>, String>>()
             .map(RuntimeExpr::Record),
-        Expr::Field { target, field } => Ok(RuntimeExpr::Field {
-            target: Box::new(lower_runtime_expr_strict_with_helpers(target, helpers)?),
-            field: field.clone(),
-        }),
+        Expr::Field { target, field } => lower_strict_field_expr(target, field, helpers),
         Expr::Unary { op, expr } => Ok(RuntimeExpr::Unary {
             op: lower_runtime_unary_op(*op),
             expr: Box::new(lower_runtime_expr_strict_with_helpers(expr, helpers)?),
@@ -212,8 +208,8 @@ fn lower_runtime_expr_strict_with_helpers(
             None => lower_strict_method_call_expr(receiver, method, args, helpers),
         },
         Expr::DialogueCall { plan, .. } => Ok(lower_dialogue_call_value(plan.as_ref())),
-        Expr::Index { .. }
-        | Expr::Pipe { .. }
+        Expr::Index { target, index } => lower_strict_index_expr(target, index, helpers),
+        Expr::Pipe { .. }
         | Expr::Try { .. }
         | Expr::Await { .. }
         | Expr::Thread { .. }
@@ -293,6 +289,85 @@ fn fold_value_sequence(items: Vec<RuntimeExpr>) -> RuntimeExpr {
             })
             .collect(),
     ))
+}
+
+fn lower_runtime_field_expr(target: &Expr, field: &str) -> RuntimeExpr {
+    record_field_ordinal(target, field).map_or_else(
+        || RuntimeExpr::Field {
+            target: Box::new(lower_runtime_expr(target)),
+            field: field.to_owned(),
+        },
+        |ordinal| RuntimeExpr::ProjectRecord {
+            target: Box::new(lower_runtime_expr(target)),
+            ordinal,
+        },
+    )
+}
+
+fn lower_strict_field_expr(
+    target: &Expr,
+    field: &str,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
+    let target_expr = lower_runtime_expr_strict_with_helpers(target, helpers)?;
+    Ok(if let Some(ordinal) = record_field_ordinal(target, field) {
+        RuntimeExpr::ProjectRecord {
+            target: Box::new(target_expr),
+            ordinal,
+        }
+    } else {
+        RuntimeExpr::Field {
+            target: Box::new(target_expr),
+            field: field.to_owned(),
+        }
+    })
+}
+
+fn record_field_ordinal(target: &Expr, field: &str) -> Option<usize> {
+    let (Expr::Record { fields, .. } | Expr::RecordLiteral(fields)) = target else {
+        return None;
+    };
+    fields
+        .iter()
+        .position(|(candidate, _)| candidate.as_str() == field)
+}
+
+fn lower_runtime_index_expr(target: &Expr, index: &Expr) -> Option<RuntimeExpr> {
+    tuple_index_ordinal(target, index).map(|ordinal| RuntimeExpr::ProjectTuple {
+        target: Box::new(lower_runtime_expr(target)),
+        ordinal,
+    })
+}
+
+fn lower_strict_index_expr(
+    target: &Expr,
+    index: &Expr,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
+    tuple_index_ordinal(target, index).map_or_else(
+        || {
+            unsupported_strict_runtime_expr(&Expr::Index {
+                target: Box::new(target.clone()),
+                index: Box::new(index.clone()),
+            })
+        },
+        |ordinal| {
+            lower_runtime_expr_strict_with_helpers(target, helpers).map(|target| {
+                RuntimeExpr::ProjectTuple {
+                    target: Box::new(target),
+                    ordinal,
+                }
+            })
+        },
+    )
+}
+
+fn tuple_index_ordinal(target: &Expr, index: &Expr) -> Option<usize> {
+    let Expr::Tuple(items) = target else {
+        return None;
+    };
+    let ordinal = array_repeat_len(index)?;
+    (ordinal < items.len()).then_some(ordinal)
 }
 
 fn runtime_method_name(method: &str) -> &str {
@@ -1065,6 +1140,60 @@ mod tests {
                     (3.25),
                     (-0.0),
                 ].as_slice())
+        ));
+    }
+
+    #[test]
+    fn strict_runtime_field_lowering_uses_record_projection_when_ordinal_is_known() {
+        let expr = Expr::Field {
+            target: Box::new(Expr::RecordLiteral(vec![
+                (
+                    "score".to_owned(),
+                    Expr::Literal(Literal::Int {
+                        raw: "7".to_owned(),
+                        value: 7,
+                        suffix: None,
+                    }),
+                ),
+                (
+                    "label".to_owned(),
+                    Expr::Literal(Literal::String("ok".to_owned())),
+                ),
+            ])),
+            field: "label".to_owned(),
+        };
+
+        let lowered = lower_runtime_expr_strict(&expr).expect("record field lowers");
+
+        assert!(matches!(
+            lowered,
+            RuntimeExpr::ProjectRecord { ordinal: 1, .. }
+        ));
+    }
+
+    #[test]
+    fn strict_runtime_tuple_index_lowering_uses_tuple_projection_when_ordinal_is_known() {
+        let expr = Expr::Index {
+            target: Box::new(Expr::Tuple(vec![
+                Expr::Literal(Literal::Int {
+                    raw: "1".to_owned(),
+                    value: 1,
+                    suffix: None,
+                }),
+                Expr::Literal(Literal::Bool(true)),
+            ])),
+            index: Box::new(Expr::Literal(Literal::Int {
+                raw: "1".to_owned(),
+                value: 1,
+                suffix: None,
+            })),
+        };
+
+        let lowered = lower_runtime_expr_strict(&expr).expect("tuple index lowers");
+
+        assert!(matches!(
+            lowered,
+            RuntimeExpr::ProjectTuple { ordinal: 1, .. }
         ));
     }
 

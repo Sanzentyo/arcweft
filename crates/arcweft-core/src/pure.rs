@@ -1944,14 +1944,7 @@ impl PureEvaluator {
                 .cloned()
                 .ok_or_else(|| RuntimeEvalError::UnknownBinding(name.clone())),
             RuntimeExpr::EntityRef(target) => Ok(RuntimeValue::EntityRef(target.clone())),
-            RuntimeExpr::Let { name, expr, body } => {
-                let value = self.evaluate_expr(expr)?;
-                self.env.push_scope_with_capacity(1);
-                self.env.set(name.clone(), value);
-                let result = self.evaluate_expr(body);
-                self.env.pop_scope();
-                result
-            }
+            RuntimeExpr::Let { name, expr, body } => self.evaluate_let_expr(name, expr, body),
             RuntimeExpr::Tuple(items) => items
                 .iter()
                 .map(|item| self.evaluate_expr(item))
@@ -1986,6 +1979,12 @@ impl PureEvaluator {
                     .transpose()?,
             }),
             RuntimeExpr::Field { target, field } => self.evaluate_field_expr(target, field),
+            RuntimeExpr::ProjectTuple { target, ordinal } => {
+                self.evaluate_project_tuple_expr(target, *ordinal)
+            }
+            RuntimeExpr::ProjectRecord { target, ordinal } => {
+                self.evaluate_project_record_expr(target, *ordinal)
+            }
             RuntimeExpr::Call { callee, args } => self.evaluate_call_expr(callee, args),
             RuntimeExpr::PureCall { .. } => Err(RuntimeEvalError::UnsupportedPure {
                 name: "pure call".to_owned(),
@@ -2045,6 +2044,20 @@ impl PureEvaluator {
             .map(|_| self.evaluate_expr(value))
             .collect::<Result<Vec<_>, _>>()
             .map(runtime_sequence_values)
+    }
+
+    fn evaluate_let_expr(
+        &mut self,
+        name: &str,
+        expr: &RuntimeExpr,
+        body: &RuntimeExpr,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let value = self.evaluate_expr(expr)?;
+        self.env.push_scope_with_capacity(1);
+        self.env.set(name.to_owned(), value);
+        let result = self.evaluate_expr(body);
+        self.env.pop_scope();
+        result
     }
 
     fn evaluate_scalar_expr(
@@ -2222,6 +2235,68 @@ impl PureEvaluator {
                 }),
             value => Err(RuntimeEvalError::MissingField {
                 field: field.to_owned(),
+                value: runtime_value_label(&value),
+            }),
+        }
+    }
+
+    fn evaluate_project_tuple_expr(
+        &mut self,
+        target: &RuntimeExpr,
+        ordinal: usize,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let value = self.evaluate_expr(target)?;
+        match value {
+            RuntimeValue::Tuple(items) => {
+                items
+                    .into_iter()
+                    .nth(ordinal)
+                    .ok_or_else(|| RuntimeEvalError::MissingField {
+                        field: ordinal.to_string(),
+                        value: "tuple".to_owned(),
+                    })
+            }
+            RuntimeValue::Seq(RuntimeSeq::TupleColumns(columns)) => columns
+                .column(ordinal)
+                .cloned()
+                .map(RuntimeValue::Seq)
+                .ok_or_else(|| RuntimeEvalError::MissingField {
+                    field: ordinal.to_string(),
+                    value: "tuple sequence".to_owned(),
+                }),
+            value => Err(RuntimeEvalError::MissingField {
+                field: ordinal.to_string(),
+                value: runtime_value_label(&value),
+            }),
+        }
+    }
+
+    fn evaluate_project_record_expr(
+        &mut self,
+        target: &RuntimeExpr,
+        ordinal: usize,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let value = self.evaluate_expr(target)?;
+        match value {
+            RuntimeValue::Record(fields) => fields.into_iter().nth(ordinal).map_or_else(
+                || {
+                    Err(RuntimeEvalError::MissingField {
+                        field: ordinal.to_string(),
+                        value: "record".to_owned(),
+                    })
+                },
+                |field| Ok(field.value),
+            ),
+            RuntimeValue::Seq(RuntimeSeq::RecordColumns(records)) => records
+                .field_by_ordinal(ordinal)
+                .cloned()
+                .map(RuntimeValue::Seq)
+                .ok_or_else(|| RuntimeEvalError::MissingField {
+                    field: ordinal.to_string(),
+                    value: "record sequence".to_owned(),
+                }),
+            value => Err(RuntimeEvalError::MissingField {
+                field: ordinal.to_string(),
                 value: runtime_value_label(&value),
             }),
         }

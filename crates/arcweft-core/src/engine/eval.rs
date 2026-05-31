@@ -114,7 +114,9 @@ impl Engine {
             | RuntimeExpr::RepeatSeq { .. }
             | RuntimeExpr::Record(_)
             | RuntimeExpr::Variant { .. }
-            | RuntimeExpr::Field { .. } => self.evaluate_data_expr(expr, pure_backend),
+            | RuntimeExpr::Field { .. }
+            | RuntimeExpr::ProjectTuple { .. }
+            | RuntimeExpr::ProjectRecord { .. } => self.evaluate_data_expr(expr, pure_backend),
             RuntimeExpr::SpreadArg(_) => Err(RuntimeEvalError::SpreadOutsideCall),
             RuntimeExpr::Call { callee, args } => {
                 self.evaluate_call_expr(callee, args, pure_backend)
@@ -206,6 +208,12 @@ impl Engine {
             }),
             RuntimeExpr::Field { target, field } => {
                 self.evaluate_field_expr(target, field, pure_backend)
+            }
+            RuntimeExpr::ProjectTuple { target, ordinal } => {
+                self.evaluate_project_tuple_expr(target, *ordinal, pure_backend)
+            }
+            RuntimeExpr::ProjectRecord { target, ordinal } => {
+                self.evaluate_project_record_expr(target, *ordinal, pure_backend)
             }
             _ => unreachable!("data expression helper received non-data expression"),
         }
@@ -426,6 +434,70 @@ impl Engine {
                 }),
             value => Err(RuntimeEvalError::MissingField {
                 field: field.to_owned(),
+                value: runtime_value_label(&value),
+            }),
+        }
+    }
+
+    fn evaluate_project_tuple_expr(
+        &mut self,
+        target: &RuntimeExpr,
+        ordinal: usize,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let value = self.evaluate_expr_with_backend(target, pure_backend)?;
+        match value {
+            RuntimeValue::Tuple(items) => {
+                items
+                    .into_iter()
+                    .nth(ordinal)
+                    .ok_or_else(|| RuntimeEvalError::MissingField {
+                        field: ordinal.to_string(),
+                        value: "tuple".to_owned(),
+                    })
+            }
+            RuntimeValue::Seq(RuntimeSeq::TupleColumns(columns)) => columns
+                .column(ordinal)
+                .cloned()
+                .map(RuntimeValue::Seq)
+                .ok_or_else(|| RuntimeEvalError::MissingField {
+                    field: ordinal.to_string(),
+                    value: "tuple sequence".to_owned(),
+                }),
+            value => Err(RuntimeEvalError::MissingField {
+                field: ordinal.to_string(),
+                value: runtime_value_label(&value),
+            }),
+        }
+    }
+
+    fn evaluate_project_record_expr(
+        &mut self,
+        target: &RuntimeExpr,
+        ordinal: usize,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let value = self.evaluate_expr_with_backend(target, pure_backend)?;
+        match value {
+            RuntimeValue::Record(fields) => fields.into_iter().nth(ordinal).map_or_else(
+                || {
+                    Err(RuntimeEvalError::MissingField {
+                        field: ordinal.to_string(),
+                        value: "record".to_owned(),
+                    })
+                },
+                |field| Ok(field.value),
+            ),
+            RuntimeValue::Seq(RuntimeSeq::RecordColumns(records)) => records
+                .field_by_ordinal(ordinal)
+                .cloned()
+                .map(RuntimeValue::Seq)
+                .ok_or_else(|| RuntimeEvalError::MissingField {
+                    field: ordinal.to_string(),
+                    value: "record sequence".to_owned(),
+                }),
+            value => Err(RuntimeEvalError::MissingField {
+                field: ordinal.to_string(),
                 value: runtime_value_label(&value),
             }),
         }

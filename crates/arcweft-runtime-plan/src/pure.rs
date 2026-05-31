@@ -224,6 +224,8 @@ fn summarize_runtime_expr(expr: &RuntimeExpr) -> PureHelperShape {
         }
         RuntimeExpr::RepeatSeq { value, .. }
         | RuntimeExpr::Field { target: value, .. }
+        | RuntimeExpr::ProjectTuple { target: value, .. }
+        | RuntimeExpr::ProjectRecord { target: value, .. }
         | RuntimeExpr::SpreadArg(value)
         | RuntimeExpr::Sum { source: value }
         | RuntimeExpr::Unary { expr: value, .. } => {

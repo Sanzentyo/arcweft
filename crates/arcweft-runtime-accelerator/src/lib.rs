@@ -1340,7 +1340,9 @@ fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
             1 + payload.as_deref().map_or(0, runtime_expr_work_units)
         }
         RuntimeExpr::SpreadArg(payload) => 1 + runtime_expr_work_units(payload),
-        RuntimeExpr::Field { target, .. } => 1 + runtime_expr_work_units(target),
+        RuntimeExpr::Field { target, .. }
+        | RuntimeExpr::ProjectTuple { target, .. }
+        | RuntimeExpr::ProjectRecord { target, .. } => 1 + runtime_expr_work_units(target),
         RuntimeExpr::Call { args, .. } | RuntimeExpr::PureCall { args, .. } => {
             8 + args.iter().map(runtime_expr_work_units).sum::<usize>()
         }

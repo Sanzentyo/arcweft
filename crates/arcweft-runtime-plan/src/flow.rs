@@ -571,9 +571,10 @@ fn count_runtime_expr_pure_calls(expr: &RuntimeExpr) -> usize {
         RuntimeExpr::Variant { payload, .. } => {
             payload.as_deref().map_or(0, count_runtime_expr_pure_calls)
         }
-        RuntimeExpr::Field { target, .. } | RuntimeExpr::SpreadArg(target) => {
-            count_runtime_expr_pure_calls(target)
-        }
+        RuntimeExpr::Field { target, .. }
+        | RuntimeExpr::ProjectTuple { target, .. }
+        | RuntimeExpr::ProjectRecord { target, .. }
+        | RuntimeExpr::SpreadArg(target) => count_runtime_expr_pure_calls(target),
         RuntimeExpr::Call { args, .. } => args.iter().map(count_runtime_expr_pure_calls).sum(),
         RuntimeExpr::MethodCall { receiver, args, .. } => {
             count_runtime_expr_pure_calls(receiver)
@@ -748,9 +749,10 @@ fn count_runtime_expr_local_uses_by_name(expr: &RuntimeExpr, name: &str) -> usiz
         RuntimeExpr::Variant { payload, .. } => payload.as_deref().map_or(0, |payload| {
             count_runtime_expr_local_uses_by_name(payload, name)
         }),
-        RuntimeExpr::Field { target, .. } | RuntimeExpr::SpreadArg(target) => {
-            count_runtime_expr_local_uses_by_name(target, name)
-        }
+        RuntimeExpr::Field { target, .. }
+        | RuntimeExpr::ProjectTuple { target, .. }
+        | RuntimeExpr::ProjectRecord { target, .. }
+        | RuntimeExpr::SpreadArg(target) => count_runtime_expr_local_uses_by_name(target, name),
         RuntimeExpr::Call { args, .. } | RuntimeExpr::PureCall { args, .. } => args
             .iter()
             .map(|arg| count_runtime_expr_local_uses_by_name(arg, name))

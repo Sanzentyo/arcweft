@@ -385,15 +385,13 @@ impl<'a> RuntimeTypeValidator<'a> {
             RuntimeExpr::Value(value) => runtime_value_shape(value),
             RuntimeExpr::Local(_)
             | RuntimeExpr::Field { .. }
+            | RuntimeExpr::ProjectTuple { .. }
+            | RuntimeExpr::ProjectRecord { .. }
             | RuntimeExpr::Call { .. }
             | RuntimeExpr::PureCall { .. }
             | RuntimeExpr::SpreadArg(_) => RuntimeShape::Unknown,
             RuntimeExpr::EntityRef(_) => RuntimeShape::EntityRef,
-            RuntimeExpr::Let { expr, body, .. } => {
-                self.report.stats.let_bindings += 1;
-                self.validate_expr(&format!("{path}.let"), expr);
-                self.validate_expr(&format!("{path}.body"), body)
-            }
+            RuntimeExpr::Let { expr, body, .. } => self.validate_let_expr(path, expr, body),
             RuntimeExpr::Tuple(items) => {
                 for (index, item) in items.iter().enumerate() {
                     self.validate_expr(&format!("{path}.tuple.{index}"), item);
@@ -479,6 +477,17 @@ impl<'a> RuntimeTypeValidator<'a> {
                 shape
             }
         }
+    }
+
+    fn validate_let_expr(
+        &mut self,
+        path: &str,
+        expr: &RuntimeExpr,
+        body: &RuntimeExpr,
+    ) -> RuntimeShape {
+        self.report.stats.let_bindings += 1;
+        self.validate_expr(&format!("{path}.let"), expr);
+        self.validate_expr(&format!("{path}.body"), body)
     }
 
     fn validate_expr_match_arm(&mut self, path: &str, arm: &RuntimeExprMatchArm) -> RuntimeShape {

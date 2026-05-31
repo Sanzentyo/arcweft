@@ -1558,6 +1558,14 @@ pub enum RuntimeExpr {
         target: Box<RuntimeExpr>,
         field: String,
     },
+    ProjectTuple {
+        target: Box<RuntimeExpr>,
+        ordinal: usize,
+    },
+    ProjectRecord {
+        target: Box<RuntimeExpr>,
+        ordinal: usize,
+    },
     Call {
         callee: String,
         args: Vec<RuntimeExpr>,
@@ -1647,6 +1655,8 @@ impl RuntimeExpr {
             | Self::Record(_)
             | Self::Variant { .. }
             | Self::Field { .. }
+            | Self::ProjectTuple { .. }
+            | Self::ProjectRecord { .. }
             | Self::Call { .. }
             | Self::PureCall { .. }
             | Self::SpreadArg(_)
@@ -1672,6 +1682,8 @@ impl fmt::Display for RuntimeExpr {
             Self::Record(fields) => write!(f, "record/{}", fields.len()),
             Self::Variant { name, .. } => write!(f, ".{name}"),
             Self::Field { field, .. } => write!(f, ".{field}"),
+            Self::ProjectTuple { ordinal, .. } => write!(f, ".{ordinal}"),
+            Self::ProjectRecord { ordinal, .. } => write!(f, ".#{ordinal}"),
             Self::Call { callee, .. } => write!(f, "{callee}()"),
             Self::PureCall { helper, .. } => write!(f, "pure#{}()", helper.0),
             Self::SpreadArg(expr) => write!(f, "{expr}..."),
