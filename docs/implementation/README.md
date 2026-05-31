@@ -572,6 +572,10 @@ Current high-confidence state:
   `joined_completion_events_emitted`. This separates sorting work from
   already-normalized completion checks and joined-event fanout in CLI
   `native_io.scheduler` bench and profile output.
+- Scheduler stats also expose `submitted_by_class`, `dispatched_by_class`, and
+  `completed_by_class` counters for every `TaskClass`, keeping task-class
+  breakdown in the Sans I/O scheduler while host timing and worker-pool work
+  stay in the CLI/native bridge layer.
 - The CLI native task bridge now completes read-only dispatched task batches
   and host system-info reads on a worker pool and reports path-free
   `parallel_batches`, `parallel_tasks`, `parallel_io_tasks`,

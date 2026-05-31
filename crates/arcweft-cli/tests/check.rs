@@ -3242,6 +3242,18 @@ fn bench_json_measures_checked_in_system_info_thread_fixture() {
     );
     assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 6);
     assert_eq!(measurement["native_io"]["scheduler"]["max_in_flight"], 6);
+    assert_eq!(
+        measurement["native_io"]["scheduler"]["submitted_by_class"]["cpu"],
+        6
+    );
+    assert_eq!(
+        measurement["native_io"]["scheduler"]["dispatched_by_class"]["cpu"],
+        6
+    );
+    assert_eq!(
+        measurement["native_io"]["scheduler"]["completed_by_class"]["cpu"],
+        6
+    );
     assert_eq!(measurement["native_io"]["scheduler"]["dispatch_sorts"], 0);
 }
 

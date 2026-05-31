@@ -43,7 +43,10 @@ completion surface reported `completion_events_in = 6`,
 `completion_events_out = 6`, `completion_normalization_passes = 1`,
 `completion_normalization_checks = 1`, `completion_sort_performed_items = 6`,
 `completion_sort_skipped_items = 0`, and
-`joined_completion_events_emitted = 0`.
+`joined_completion_events_emitted = 0`. The same run reported
+`submitted_by_class.cpu = 6`, `dispatched_by_class.cpu = 6`, and
+`completed_by_class.cpu = 6`, giving the scheduler/native bridge a class
+breakdown without recording host paths.
 
 Scalar for-loop and mixed iterator pure JIT benches:
 

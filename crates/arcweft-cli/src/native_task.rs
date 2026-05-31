@@ -3,7 +3,7 @@ use arcweft_core::task::{
     HostTaskRequest, LogicalEpoch, SchedulerBudget, TaskEvent, TaskEventKind, TaskSequence,
     TaskSpec,
 };
-use arcweft_runtime_scheduler::{RuntimeScheduler, RuntimeSchedulerStats};
+use arcweft_runtime_scheduler::{RuntimeScheduler, RuntimeSchedulerStats, TaskClassCounts};
 use rayon::prelude::*;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -59,6 +59,26 @@ pub(crate) struct NativeSchedulerStats {
     pub(crate) completion_sort_skipped_items: usize,
     pub(crate) completion_sort_performed_items: usize,
     pub(crate) joined_completion_events_emitted: usize,
+    pub(crate) submitted_by_class: NativeTaskClassCounts,
+    pub(crate) dispatched_by_class: NativeTaskClassCounts,
+    pub(crate) completed_by_class: NativeTaskClassCounts,
+}
+
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+pub(crate) struct NativeTaskClassCounts {
+    pub(crate) local_ui: usize,
+    pub(crate) io: usize,
+    pub(crate) cpu: usize,
+    pub(crate) gpu_prepare: usize,
+    pub(crate) shader_compile: usize,
+    pub(crate) wasm_call: usize,
+    pub(crate) asset_decode: usize,
+    pub(crate) audio_decode: usize,
+    pub(crate) audio_render: usize,
+    pub(crate) tts_synthesis: usize,
+    pub(crate) bgm_precompose: usize,
+    pub(crate) lsp: usize,
+    pub(crate) background: usize,
 }
 
 impl NativeTaskBridge {
@@ -432,6 +452,29 @@ impl From<RuntimeSchedulerStats> for NativeSchedulerStats {
             completion_sort_skipped_items: stats.completion_sort_skipped_items,
             completion_sort_performed_items: stats.completion_sort_performed_items,
             joined_completion_events_emitted: stats.joined_completion_events_emitted,
+            submitted_by_class: NativeTaskClassCounts::from(stats.submitted_by_class),
+            dispatched_by_class: NativeTaskClassCounts::from(stats.dispatched_by_class),
+            completed_by_class: NativeTaskClassCounts::from(stats.completed_by_class),
+        }
+    }
+}
+
+impl From<TaskClassCounts> for NativeTaskClassCounts {
+    fn from(counts: TaskClassCounts) -> Self {
+        Self {
+            local_ui: counts.local_ui,
+            io: counts.io,
+            cpu: counts.cpu,
+            gpu_prepare: counts.gpu_prepare,
+            shader_compile: counts.shader_compile,
+            wasm_call: counts.wasm_call,
+            asset_decode: counts.asset_decode,
+            audio_decode: counts.audio_decode,
+            audio_render: counts.audio_render,
+            tts_synthesis: counts.tts_synthesis,
+            bgm_precompose: counts.bgm_precompose,
+            lsp: counts.lsp,
+            background: counts.background,
         }
     }
 }

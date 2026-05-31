@@ -5,8 +5,8 @@
 //! actual I/O, worker pools, clocks, and OS integration.
 
 use arcweft_core::task::{
-    CancelScopeId, SchedulerBudget, TaskEvent, TaskEventKind, TaskId, TaskKey, TaskPolicy,
-    TaskSpec, compare_task_events, task_events_are_normalized,
+    CancelScopeId, SchedulerBudget, TaskClass, TaskEvent, TaskEventKind, TaskId, TaskKey,
+    TaskPolicy, TaskSpec, compare_task_events, task_events_are_normalized,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -62,6 +62,65 @@ pub struct RuntimeSchedulerStats {
     pub completion_sort_skipped_items: usize,
     pub completion_sort_performed_items: usize,
     pub joined_completion_events_emitted: usize,
+    pub submitted_by_class: TaskClassCounts,
+    pub dispatched_by_class: TaskClassCounts,
+    pub completed_by_class: TaskClassCounts,
+}
+
+/// Cumulative task counters split by scheduler task class.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TaskClassCounts {
+    pub local_ui: usize,
+    pub io: usize,
+    pub cpu: usize,
+    pub gpu_prepare: usize,
+    pub shader_compile: usize,
+    pub wasm_call: usize,
+    pub asset_decode: usize,
+    pub audio_decode: usize,
+    pub audio_render: usize,
+    pub tts_synthesis: usize,
+    pub bgm_precompose: usize,
+    pub lsp: usize,
+    pub background: usize,
+}
+
+impl TaskClassCounts {
+    const fn empty() -> Self {
+        Self {
+            local_ui: 0,
+            io: 0,
+            cpu: 0,
+            gpu_prepare: 0,
+            shader_compile: 0,
+            wasm_call: 0,
+            asset_decode: 0,
+            audio_decode: 0,
+            audio_render: 0,
+            tts_synthesis: 0,
+            bgm_precompose: 0,
+            lsp: 0,
+            background: 0,
+        }
+    }
+
+    fn record(&mut self, class: &TaskClass) {
+        match class {
+            TaskClass::LocalUi => self.local_ui += 1,
+            TaskClass::Io => self.io += 1,
+            TaskClass::Cpu => self.cpu += 1,
+            TaskClass::GpuPrepare => self.gpu_prepare += 1,
+            TaskClass::ShaderCompile => self.shader_compile += 1,
+            TaskClass::WasmCall => self.wasm_call += 1,
+            TaskClass::AssetDecode => self.asset_decode += 1,
+            TaskClass::AudioDecode => self.audio_decode += 1,
+            TaskClass::AudioRender => self.audio_render += 1,
+            TaskClass::TtsSynthesis => self.tts_synthesis += 1,
+            TaskClass::BgmPrecompose => self.bgm_precompose += 1,
+            TaskClass::Lsp => self.lsp += 1,
+            TaskClass::Background => self.background += 1,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -73,6 +132,7 @@ struct ScheduledTask {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct InFlightTask {
     key: TaskKey,
+    class: TaskClass,
     policy: TaskPolicy,
 }
 
@@ -111,6 +171,9 @@ impl RuntimeScheduler {
                 completion_sort_skipped_items: 0,
                 completion_sort_performed_items: 0,
                 joined_completion_events_emitted: 0,
+                submitted_by_class: TaskClassCounts::empty(),
+                dispatched_by_class: TaskClassCounts::empty(),
+                completed_by_class: TaskClassCounts::empty(),
             },
         }
     }
@@ -153,6 +216,9 @@ impl RuntimeScheduler {
             .map(|scheduled| scheduled.spec)
             .collect::<Vec<_>>();
         self.stats.dispatched += tasks.len();
+        for task in &tasks {
+            self.stats.dispatched_by_class.record(&task.class);
+        }
         SchedulerDispatchBatch {
             tasks,
             cancel_scopes: std::mem::take(&mut self.cancel_scopes)
@@ -204,6 +270,7 @@ impl RuntimeScheduler {
         let order = self.next_order;
         self.next_order = self.next_order.saturating_add(1);
         self.track_in_flight(&spec);
+        self.stats.submitted_by_class.record(&spec.class);
         let scheduled = ScheduledTask { spec, order };
         self.pending_sorted = self.pending_sorted
             && self
@@ -220,6 +287,7 @@ impl RuntimeScheduler {
             spec.id.clone(),
             InFlightTask {
                 key: spec.key.clone(),
+                class: spec.class.clone(),
                 policy: spec.policy,
             },
         );
@@ -236,6 +304,7 @@ impl RuntimeScheduler {
         if task.policy == TaskPolicy::JoinSameKey {
             self.in_flight_by_key.remove(&task.key);
         }
+        self.stats.completed_by_class.record(&task.class);
         match event.kind {
             TaskEventKind::Ready(_) | TaskEventKind::Progress(_) => {
                 self.stats.completed += 1;

@@ -60,7 +60,7 @@ mod output;
 mod server_adapter;
 mod toolchain_profile;
 use native_system::{HostSystemInfo, host_system_info};
-use native_task::{NativeSchedulerStats, NativeTaskBridge, NativeTaskStats};
+use native_task::{NativeSchedulerStats, NativeTaskBridge, NativeTaskClassCounts, NativeTaskStats};
 use output::{
     AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, CheckReport,
     RuntimeExecutorPureAccelerationSummary, RuntimeExecutorPureCompileStatsSummary,
@@ -3630,6 +3630,9 @@ struct NativeSchedulerStatsSamples {
     completion_sort_skipped_items: Vec<usize>,
     completion_sort_performed_items: Vec<usize>,
     joined_completion_events_emitted: Vec<usize>,
+    submitted_by_class: Vec<NativeTaskClassCounts>,
+    dispatched_by_class: Vec<NativeTaskClassCounts>,
+    completed_by_class: Vec<NativeTaskClassCounts>,
 }
 
 impl NativeSchedulerStatsSamples {
@@ -3657,6 +3660,9 @@ impl NativeSchedulerStatsSamples {
             completion_sort_skipped_items: Vec::with_capacity(capacity),
             completion_sort_performed_items: Vec::with_capacity(capacity),
             joined_completion_events_emitted: Vec::with_capacity(capacity),
+            submitted_by_class: Vec::with_capacity(capacity),
+            dispatched_by_class: Vec::with_capacity(capacity),
+            completed_by_class: Vec::with_capacity(capacity),
         }
     }
 
@@ -3689,6 +3695,9 @@ impl NativeSchedulerStatsSamples {
             .push(stats.completion_sort_performed_items);
         self.joined_completion_events_emitted
             .push(stats.joined_completion_events_emitted);
+        self.submitted_by_class.push(stats.submitted_by_class);
+        self.dispatched_by_class.push(stats.dispatched_by_class);
+        self.completed_by_class.push(stats.completed_by_class);
     }
 
     fn median(&mut self) -> NativeSchedulerStats {
@@ -3723,8 +3732,37 @@ impl NativeSchedulerStatsSamples {
             joined_completion_events_emitted: median_usize(
                 &mut self.joined_completion_events_emitted,
             ),
+            submitted_by_class: median_task_class_counts(&mut self.submitted_by_class),
+            dispatched_by_class: median_task_class_counts(&mut self.dispatched_by_class),
+            completed_by_class: median_task_class_counts(&mut self.completed_by_class),
         }
     }
+}
+
+fn median_task_class_counts(values: &mut [NativeTaskClassCounts]) -> NativeTaskClassCounts {
+    NativeTaskClassCounts {
+        local_ui: median_task_class_field(values, |value| value.local_ui),
+        io: median_task_class_field(values, |value| value.io),
+        cpu: median_task_class_field(values, |value| value.cpu),
+        gpu_prepare: median_task_class_field(values, |value| value.gpu_prepare),
+        shader_compile: median_task_class_field(values, |value| value.shader_compile),
+        wasm_call: median_task_class_field(values, |value| value.wasm_call),
+        asset_decode: median_task_class_field(values, |value| value.asset_decode),
+        audio_decode: median_task_class_field(values, |value| value.audio_decode),
+        audio_render: median_task_class_field(values, |value| value.audio_render),
+        tts_synthesis: median_task_class_field(values, |value| value.tts_synthesis),
+        bgm_precompose: median_task_class_field(values, |value| value.bgm_precompose),
+        lsp: median_task_class_field(values, |value| value.lsp),
+        background: median_task_class_field(values, |value| value.background),
+    }
+}
+
+fn median_task_class_field(
+    values: &[NativeTaskClassCounts],
+    field: impl Fn(&NativeTaskClassCounts) -> usize,
+) -> usize {
+    let mut counts = values.iter().map(field).collect::<Vec<_>>();
+    median_usize(&mut counts)
 }
 
 fn bench_start_flow(section: &BenchSection) -> Option<String> {
