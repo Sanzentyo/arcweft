@@ -48,17 +48,19 @@ use helpers::{
     contains_dialogue_expr, find_content_bracket, flat_block_head, indentation,
     is_expression_statement_call, is_typed_stmt, is_with_brace_head, parse_binding_pattern,
     parse_computation_block_kind, parse_dialogue_call_expr_source, parse_expr_lossy,
-    parse_expr_with_inline_line_plan, parse_inline_with_colon_plan, parse_line_options,
-    parse_line_plan_attachment, parse_memo_block_options, parse_with_brace_label,
-    parse_with_indent_label, source_take, split_brace_item, split_brace_item_with_scan,
-    split_call_head, split_comma_args, split_optional_block_label, split_speaker_line,
-    split_top_level_binding,
+    parse_expr_lossy_with_stats, parse_expr_with_inline_line_plan_with_stats,
+    parse_inline_with_colon_plan, parse_line_options, parse_line_plan_attachment,
+    parse_memo_block_options, parse_with_brace_label, parse_with_indent_label, source_take,
+    split_brace_item, split_brace_item_with_scan, split_call_head, split_comma_args,
+    split_optional_block_label, split_speaker_line, split_top_level_binding,
 };
 use line_plan::{
     parse_defer_outcome, parse_thread_block, parse_thread_block_items, parse_trigger_pattern,
 };
 use recovery::{ParseError, RecoverySuggestion};
-use statements::{parse_scope_head, parse_stmt, parse_unsafe_lifetime_block, raw_stmt};
+use statements::{
+    parse_scope_head, parse_stmt, parse_stmt_with_stats, parse_unsafe_lifetime_block, raw_stmt,
+};
 
 /// Parses an Arcweft source string.
 #[must_use]

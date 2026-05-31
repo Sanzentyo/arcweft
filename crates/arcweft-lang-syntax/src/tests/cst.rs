@@ -307,6 +307,19 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn parse_stats_count_numeric_sequence_summaries_from_flow_body() {
+    let parsed = parse_source(
+        r"
+flow @flow.opening opening {
+    let values: Vec<i64> = [1i64, 2i64, 3i64]
+}
+",
+    );
+
+    assert_eq!(parsed.syntax_stats().numeric_seq_summaries, 1);
+}
+
+#[test]
 fn cst_depth_zero_open_finds_function_body_not_nested_scope() {
     let source = "task fn load() -> Result<T, E> { with { nested() } }";
     let open = find_last_depth_zero_open_punctuation(source, '{', '}').expect("function body open");

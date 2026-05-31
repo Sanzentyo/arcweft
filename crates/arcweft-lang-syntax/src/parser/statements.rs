@@ -4,11 +4,13 @@ use super::{
     CstStmtKind, DeferOutcome, Expr, IdRef, ParseError, Parser, RawSyntax, RelativeId,
     RelativeIdSpelling, ScopeExprBlock, Stmt, TextRange, WaitTarget, classify_stmt,
     parse_binding_pattern, parse_braced_while_let_stmt, parse_defer_outcome, parse_expr_lossy,
-    parse_expr_with_inline_line_plan, parse_memo_block_options, parse_named_block_expr,
-    parse_pattern, parse_scope_expr_body, parse_stmt_lines, parse_stmt_match_arms,
-    parse_thread_block, parse_trigger_pattern, split_top_level_binding,
-    split_top_level_keyword_once, split_top_level_punctuation_sequence_once,
+    parse_expr_lossy_with_stats, parse_expr_with_inline_line_plan_with_stats,
+    parse_memo_block_options, parse_named_block_expr, parse_pattern, parse_scope_expr_body,
+    parse_stmt_lines, parse_stmt_match_arms, parse_thread_block, parse_trigger_pattern,
+    split_top_level_binding, split_top_level_keyword_once,
+    split_top_level_punctuation_sequence_once,
 };
+use crate::cst::SyntaxParseStats;
 
 impl Parser<'_> {
     pub(super) fn parse_let_scope(&mut self) -> Option<Stmt> {
@@ -130,6 +132,14 @@ impl Parser<'_> {
 }
 
 pub(super) fn parse_stmt(trimmed: &str) -> Stmt {
+    parse_stmt_inner(trimmed, None)
+}
+
+pub(super) fn parse_stmt_with_stats(trimmed: &str, stats: &mut SyntaxParseStats) -> Stmt {
+    parse_stmt_inner(trimmed, Some(stats))
+}
+
+fn parse_stmt_inner(trimmed: &str, mut stats: Option<&mut SyntaxParseStats>) -> Stmt {
     match classify_stmt(trimmed) {
         CstStmtKind::LifetimeSet => {
             let Some((target, expr)) =
@@ -138,14 +148,14 @@ pub(super) fn parse_stmt(trimmed: &str) -> Stmt {
                 return raw_stmt(trimmed);
             };
             Stmt::LifetimeSet {
-                target: parse_expr_lossy(target.trim()),
-                expr: parse_expr_lossy(expr.trim()),
+                target: parse_expr_lossy_with_stats(target.trim(), stats.as_deref_mut()),
+                expr: parse_expr_lossy_with_stats(expr.trim(), stats.as_deref_mut()),
             }
         }
         CstStmtKind::Wait => {
             wait_stmt_source(trimmed).map_or_else(|| raw_stmt(trimmed), parse_wait_stmt)
         }
-        CstStmtKind::Let => parse_let_stmt(trimmed),
+        CstStmtKind::Let => parse_let_stmt(trimmed, stats),
         CstStmtKind::DeferBlock | CstStmtKind::Braced | CstStmtKind::UnsafeLifetime => {
             parse_braced_stmt(trimmed).unwrap_or_else(|| raw_stmt(trimmed))
         }
@@ -153,7 +163,7 @@ pub(super) fn parse_stmt(trimmed: &str) -> Stmt {
             || raw_stmt(trimmed),
             |rest| Stmt::Defer {
                 outcome: DeferOutcome::Always,
-                expr: parse_expr_lossy(rest.trim()),
+                expr: parse_expr_lossy_with_stats(rest.trim(), stats.as_deref_mut()),
             },
         ),
         CstStmtKind::ControlTransfer => {
@@ -161,7 +171,7 @@ pub(super) fn parse_stmt(trimmed: &str) -> Stmt {
         }
         CstStmtKind::On => parse_on_stmt(trimmed),
         CstStmtKind::AmbiguousBlockHead => raw_stmt(trimmed),
-        CstStmtKind::Expr => Stmt::Expr(parse_expr_lossy(trimmed)),
+        CstStmtKind::Expr => Stmt::Expr(parse_expr_lossy_with_stats(trimmed, stats)),
     }
 }
 
@@ -177,7 +187,7 @@ pub(super) fn raw_stmt(source: &str) -> Stmt {
     ))
 }
 
-fn parse_let_stmt(trimmed: &str) -> Stmt {
+fn parse_let_stmt(trimmed: &str, stats: Option<&mut SyntaxParseStats>) -> Stmt {
     let Some(rest) = trimmed.strip_prefix("let ") else {
         return raw_stmt(trimmed);
     };
@@ -186,7 +196,7 @@ fn parse_let_stmt(trimmed: &str) -> Stmt {
         Stmt::Let {
             pattern,
             ty,
-            expr: parse_expr_with_inline_line_plan(expr.trim()),
+            expr: parse_expr_with_inline_line_plan_with_stats(expr.trim(), stats),
         }
     } else {
         raw_stmt(trimmed)

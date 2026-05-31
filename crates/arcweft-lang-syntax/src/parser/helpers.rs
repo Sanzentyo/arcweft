@@ -16,6 +16,7 @@ use crate::ast::{
     line_plan::{BlockStyle, LinePlan},
     pattern::Pattern,
 };
+use crate::cst::SyntaxParseStats;
 use crate::cst::{
     CstPunctuationScan, collect_wiki_link_ranges, split_top_level_keyword_once,
     split_top_level_punctuation, split_top_level_punctuation_once,
@@ -23,7 +24,7 @@ use crate::cst::{
 use crate::cst::{
     find_matching_punctuation, find_top_level_matching_punctuation, find_top_level_punctuation,
 };
-use crate::expr::{ComputationBlockKind, Expr, parse_expr};
+use crate::expr::{ComputationBlockKind, Expr, parse_expr, parse_expr_with_stats};
 use crate::pattern::parse_pattern;
 use crate::types::parse_type_ref;
 use std::borrow::Cow;
@@ -455,6 +456,13 @@ fn labeled_head_tail(head: &str) -> Option<&str> {
 }
 
 pub(super) fn parse_expr_lossy(source: &str) -> crate::expr::Expr {
+    parse_expr_lossy_with_stats(source, None)
+}
+
+pub(super) fn parse_expr_lossy_with_stats(
+    source: &str,
+    stats: Option<&mut SyntaxParseStats>,
+) -> crate::expr::Expr {
     let normalized = normalize_dot_continuations(source);
     let source = normalized.trim();
     if let Some(value) = parse_raw_string_literal(source) {
@@ -469,7 +477,15 @@ pub(super) fn parse_expr_lossy(source: &str) -> crate::expr::Expr {
             return parse_named_block_expr(name, body);
         }
     }
-    parse_expr(source).unwrap_or_else(|_| crate::expr::Expr::Raw(source.to_owned()))
+    match parse_expr_with_stats(source) {
+        Ok(parsed) => {
+            if let Some(stats) = stats {
+                stats.numeric_seq_summaries += parsed.stats.numeric_seq_summaries();
+            }
+            parsed.expr
+        }
+        Err(_) => crate::expr::Expr::Raw(source.to_owned()),
+    }
 }
 
 fn normalize_dot_continuations(source: &str) -> Cow<'_, str> {
@@ -597,20 +613,23 @@ pub(super) fn split_top_level_binding(source: &str) -> Option<(&str, &str)> {
     split_top_level_punctuation_once(source, '=')
 }
 
-pub(super) fn parse_expr_with_inline_line_plan(source: &str) -> Expr {
+pub(super) fn parse_expr_with_inline_line_plan_with_stats(
+    source: &str,
+    mut stats: Option<&mut SyntaxParseStats>,
+) -> Expr {
     let Some((expr_source, trailing_plan)) = split_inline_dialogue_line_plan(source) else {
         return parse_dialogue_call_expr_surface(source)
-            .unwrap_or_else(|| parse_expr_lossy(source));
+            .unwrap_or_else(|| parse_expr_lossy_with_stats(source, stats));
     };
     let mut expr = parse_dialogue_call_expr_source(expr_source.trim())
-        .unwrap_or_else(|| parse_expr_lossy(expr_source.trim()));
+        .unwrap_or_else(|| parse_expr_lossy_with_stats(expr_source.trim(), stats.as_deref_mut()));
     let Some(plan) = parse_inline_line_plan_source(trailing_plan) else {
-        return parse_expr_lossy(source);
+        return parse_expr_lossy_with_stats(source, stats);
     };
     if attach_plan_to_dialogue_expr(&mut expr, plan) {
         expr
     } else {
-        parse_expr_lossy(source)
+        parse_expr_lossy_with_stats(source, stats)
     }
 }
 

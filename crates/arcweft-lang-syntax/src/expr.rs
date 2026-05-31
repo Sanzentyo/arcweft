@@ -10,6 +10,7 @@ use crate::cst::{
     split_leading_relative_entity_ref,
 };
 use arcweft_source::{SourceAnchor, SourceName};
+use std::ops::Add;
 use thiserror::Error;
 
 /// Expression syntax preserved for type checking and HIR lowering.
@@ -349,27 +350,76 @@ pub struct ExprParseError {
     anchor: SourceAnchor,
 }
 
+/// Path-free counters collected while parsing one expression.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ExprParseStats {
+    numeric_seq_summaries: usize,
+}
+
+impl ExprParseStats {
+    /// Number of integer-only bracket sequences parsed as compact summaries.
+    pub const fn numeric_seq_summaries(self) -> usize {
+        self.numeric_seq_summaries
+    }
+}
+
+impl Add for ExprParseStats {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            numeric_seq_summaries: self
+                .numeric_seq_summaries
+                .saturating_add(rhs.numeric_seq_summaries),
+        }
+    }
+}
+
 /// Parses a single expression.
 pub fn parse_expr(source: &str) -> Result<Expr, ExprParseError> {
+    parse_expr_with_stats(source).map(|parsed| parsed.expr)
+}
+
+/// Parses a single expression and returns path-free parser counters.
+pub fn parse_expr_with_stats(source: &str) -> Result<ParsedExpr, ExprParseError> {
     let trimmed = source.trim();
     if trimmed.is_empty() {
         return Err(ExprParseError::new("expected expression"));
     }
     if let Some((params, body)) = split_closure(trimmed) {
-        return Ok(Expr::Closure {
-            params,
-            body: Box::new(parse_expr(body)?),
+        let parsed_body = parse_expr_with_stats(body)?;
+        return Ok(ParsedExpr {
+            expr: Expr::Closure {
+                params,
+                body: Box::new(parsed_body.expr),
+            },
+            stats: parsed_body.stats,
         });
     }
     if !trimmed.starts_with('[')
         && let Some((target, index)) = split_bracket_postfix(trimmed)
     {
-        return Ok(Expr::Index {
-            target: Box::new(parse_expr(target)?),
-            index: Box::new(parse_expr(index).unwrap_or_else(|_| Expr::Raw(index.to_owned()))),
+        let parsed_target = parse_expr_with_stats(target)?;
+        let parsed_index = parse_expr_with_stats(index).unwrap_or_else(|_| ParsedExpr {
+            expr: Expr::Raw(index.to_owned()),
+            stats: ExprParseStats::default(),
+        });
+        return Ok(ParsedExpr {
+            expr: Expr::Index {
+                target: Box::new(parsed_target.expr),
+                index: Box::new(parsed_index.expr),
+            },
+            stats: parsed_target.stats + parsed_index.stats,
         });
     }
     ExprParser::new(trimmed).parse()
+}
+
+/// Expression parse result bundled with cheap parser counters.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParsedExpr {
+    pub expr: Expr,
+    pub stats: ExprParseStats,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -734,6 +784,7 @@ impl<'a> Lexer<'a> {
 struct ExprParser {
     tokens: Vec<Token>,
     cursor: usize,
+    stats: ExprParseStats,
 }
 
 impl ExprParser {
@@ -741,10 +792,11 @@ impl ExprParser {
         Self {
             tokens: Lexer::new(source).tokenize(),
             cursor: 0,
+            stats: ExprParseStats::default(),
         }
     }
 
-    fn parse(mut self) -> Result<Expr, ExprParseError> {
+    fn parse(mut self) -> Result<ParsedExpr, ExprParseError> {
         let expr = self.parse_expr_bp(0)?;
         if self.peek() != &Token::Eof {
             return Err(ExprParseError::new(&format!(
@@ -752,7 +804,10 @@ impl ExprParser {
                 self.peek()
             )));
         }
-        Ok(expr)
+        Ok(ParsedExpr {
+            expr,
+            stats: self.stats,
+        })
     }
 
     fn parse_expr_bp(&mut self, min_bp: u8) -> Result<Expr, ExprParseError> {
@@ -1036,22 +1091,30 @@ impl ExprParser {
                     self.bump();
                     if self.peek() == &Token::RBracket {
                         self.bump();
-                        return Some(flat_literal_bracket_seq_expr(
+                        let expr = flat_literal_bracket_seq_expr(
                             all_int,
                             int_values,
                             int_suffix,
                             fallback_items,
-                        ));
+                        );
+                        if matches!(expr, Expr::NumericBracketSeq(_)) {
+                            self.stats.numeric_seq_summaries += 1;
+                        }
+                        return Some(expr);
                     }
                 }
                 Token::RBracket => {
                     self.bump();
-                    return Some(flat_literal_bracket_seq_expr(
+                    let expr = flat_literal_bracket_seq_expr(
                         all_int,
                         int_values,
                         int_suffix,
                         fallback_items,
-                    ));
+                    );
+                    if matches!(expr, Expr::NumericBracketSeq(_)) {
+                        self.stats.numeric_seq_summaries += 1;
+                    }
+                    return Some(expr);
                 }
                 _ => {
                     self.cursor = start;
