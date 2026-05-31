@@ -970,6 +970,10 @@ Current high-confidence state:
 - `arcweft-lang-sema` now exposes `TypeCheckReport` / `TypeCheckStats` plus
   typed `TypeJudgment` evidence for successful expression, let-binding, and
   return checks.
+  Expression judgment subjects store static expression-kind labels, and
+  expected-type checks are represented by the judgment rule plus the expression
+  subject instead of an additional context-only judgment, avoiding per-judgment
+  kind allocation and duplicated expected evidence on `expect_expr_type` paths.
   `arcw check --json`, `arcw profile --json`, `arcw bench --json`, and
   `arcw verify-types --json` surface deterministic typecheck counters and
   integrated borrow-check counters, including expression/statement counts,

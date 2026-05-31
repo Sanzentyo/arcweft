@@ -117,13 +117,11 @@ impl TypeJudgmentId {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeJudgmentSubject {
     /// An expression was assigned a type.
-    Expr { kind: String },
+    Expr { kind: &'static str },
     /// A let binding pattern was assigned a type.
     LetBinding { pattern: String },
     /// A function or flow return expression was assigned a type.
     Return { context: String },
-    /// A contextual expected-type check was applied.
-    Expected { context: String },
 }
 
 /// Rule family used to derive a type-check judgment.

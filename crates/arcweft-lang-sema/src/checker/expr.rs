@@ -20,16 +20,6 @@ use arcweft_lang_syntax::expr::{
 impl TypeChecker<'_> {
     pub(super) fn expect_expr_type(&mut self, expr: &Expr, expected: &TypeKind, context: &str) {
         let actual = self.check_expr_with_expected(expr, Some(expected));
-        if let Some(actual) = actual.as_ref() {
-            self.record_type_judgment(
-                TypeJudgmentSubject::Expected {
-                    context: context.to_owned(),
-                },
-                TypeJudgmentRule::Expected,
-                actual.clone(),
-                Some(expected),
-            );
-        }
         if !actual
             .as_ref()
             .is_some_and(|actual| types_compatible(expected, actual))
@@ -54,7 +44,7 @@ impl TypeChecker<'_> {
         if let Some(ty) = ty.as_ref() {
             self.record_type_judgment(
                 TypeJudgmentSubject::Expr {
-                    kind: expr_kind_name(expr).to_owned(),
+                    kind: expr_kind_name(expr),
                 },
                 expected.map_or(TypeJudgmentRule::Expr, |_| TypeJudgmentRule::Expected),
                 ty.clone(),

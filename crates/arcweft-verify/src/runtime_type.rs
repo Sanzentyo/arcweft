@@ -746,18 +746,14 @@ mod tests {
         let judgments = vec![
             TypeJudgment {
                 id: TypeJudgmentId::from_index(0),
-                subject: TypeJudgmentSubject::Expr {
-                    kind: "literal".to_owned(),
-                },
+                subject: TypeJudgmentSubject::Expr { kind: "literal" },
                 ty: TypeKind::Bool,
                 rule: TypeJudgmentRule::Expr,
                 expected: None,
             },
             TypeJudgment {
                 id: TypeJudgmentId::from_index(1),
-                subject: TypeJudgmentSubject::Expected {
-                    context: "if condition".to_owned(),
-                },
+                subject: TypeJudgmentSubject::Expr { kind: "literal" },
                 ty: TypeKind::Bool,
                 rule: TypeJudgmentRule::Expected,
                 expected: Some(TypeKind::Bool),

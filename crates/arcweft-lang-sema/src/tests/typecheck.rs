@@ -177,7 +177,7 @@ flow @flow.good good(input: i32) -> i32 {
                 TypeJudgmentSubject::Expr { kind },
                 TypeJudgmentRule::Expected,
                 Some(TypeKind::I32)
-            ) if kind == "literal"
+            ) if *kind == "literal"
         )
     }));
 }

@@ -546,7 +546,6 @@ fn type_judgment_subject_label(subject: &TypeJudgmentSubject) -> String {
         TypeJudgmentSubject::Expr { kind } => format!("expr:{kind}"),
         TypeJudgmentSubject::LetBinding { pattern } => format!("let:{pattern}"),
         TypeJudgmentSubject::Return { context } => format!("return:{context}"),
-        TypeJudgmentSubject::Expected { context } => format!("expected:{context}"),
     }
 }
 

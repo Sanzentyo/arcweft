@@ -67,7 +67,7 @@ sequence AST summary:
 
 | fixture | executor | pure backend | median elapsed ns | parse ns | typecheck ns | runtime plan ns | typecheck exprs | type judgments | pure calls | batch calls | batch items | arg vec allocs | borrowed arg bytes |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 009_nonuniform_map_pure_batch.arcw | bytecode_vm | jit | 16700 | 4309800 | 333700 | 416800 | 16 | 21 | 128 | 1 | 128 | 0 | 2048 |
+| 009_nonuniform_map_pure_batch.arcw | bytecode_vm | jit | 12300 | 3964500 | 334100 | 314000 | 16 | 21 | 128 | 1 | 128 | 0 | 2048 |
 
 Syntax counters from the same run:
 
@@ -79,7 +79,9 @@ The scalar pure fixtures remain on borrowed slice calls: `stack_packs = 0`,
 `arg_vec_allocs = 0`, and `copied_arg_bytes = 0`. The nonuniform map fixture
 now checks the large typed numeric sequence through the expected-item fast path,
 so the typechecker records 16 expressions instead of recursively visiting every
-literal in the sequence. The parser also records a compact integer-only
+literal in the sequence. Expression judgment subjects now use static
+expression-kind labels, and expected-type evidence is a rule on the expression
+subject instead of a second context-only judgment. The parser also records a compact integer-only
 `numeric_bracket_seq` AST node instead of allocating per-item expression nodes
 for that literal family. Syntax stats are always present in the JSON schema, but
 default parsing updates only counters available as normal parser by-products.
