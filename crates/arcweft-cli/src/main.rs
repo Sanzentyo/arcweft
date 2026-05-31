@@ -5043,6 +5043,10 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         RuntimeValue::UInt(value) => value.to_string(),
         RuntimeValue::F32(value) => value.to_string(),
         RuntimeValue::F64(value) => value.to_string(),
+        RuntimeValue::MatrixF32(value) => {
+            format!("matrix/f32/{}x{}", value.rows(), value.cols())
+        }
+        RuntimeValue::TensorF32(value) => format!("tensor/f32/{:?}", value.shape().dims()),
         RuntimeValue::String(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),

@@ -1234,18 +1234,18 @@ impl ObligationCollector {
     }
 
     fn collect_lifetime_write(&mut self, target: &Expr) {
-        if let Expr::LifetimePath { key, .. } = target {
-            if is_upper_lifetime(key.scope()) {
-                self.add_obligation(
-                    ProofObligationKind::UpperLifetimeWrite,
-                    format!(
-                        "upper lifetime write to `{}` needs effect capability or proof",
-                        key.as_dotted()
-                    ),
-                    Some(key.as_dotted()),
-                    &ProofDischarge::Missing,
-                );
-            }
+        if let Expr::LifetimePath { key, .. } = target
+            && is_upper_lifetime(key.scope())
+        {
+            self.add_obligation(
+                ProofObligationKind::UpperLifetimeWrite,
+                format!(
+                    "upper lifetime write to `{}` needs effect capability or proof",
+                    key.as_dotted()
+                ),
+                Some(key.as_dotted()),
+                &ProofDischarge::Missing,
+            );
         }
         self.collect_expr(target);
     }

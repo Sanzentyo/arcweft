@@ -400,13 +400,15 @@ seven dense storage variants directly. The pure-call counters remained zero for
 these fixtures because they intentionally measure the VM dense sequence
 reduction path, not the pure helper accelerator.
 
-The VM now keeps pure-helper integer width information instead of widening all
-dense integer storage into the i64 accelerator. Runtime pure helper metadata
-preserves signed and unsigned integer input widths plus the declared output
-width. The exact i64 flat-batch accelerator still owns JIT/AOT execution, but
-the VM also has exact integer flat-batch sum ABI coverage for `i8`, `i16`,
-`i32`, `i128`, `u8`, `u16`, `u32`, `u64`, and `u128`. These paths borrow the
-matching `&[T]` storage directly and convert only the scalar result into the `i64` sum accumulator. The
+The VM and scalar AOT paths now keep pure-helper integer width information
+instead of widening all dense integer storage into the i64 accelerator. Runtime
+pure helper metadata preserves signed and unsigned integer input widths plus the
+declared output width. The exact i64 flat-batch accelerator owns native JIT, and
+scalar AOT covers `i8`, `i16`, `i32`, `i128`, `u8`, `u16`, `u32`, `u64`, and
+`u128` without materializing `RuntimeValue` arguments. The VM has matching
+exact integer flat-batch sum ABI coverage for the same widths. These paths
+borrow the matching `&[T]` storage directly and convert only the scalar result
+into the `i64` sum accumulator. The
 checked-in `016_dense_i32_map_pure_batch.arcw` and
 `017_dense_u32_map_pure_batch.arcw` benches validate the width-preserving path
 with `pure_flat_batch_items_median = 128`,
@@ -419,9 +421,11 @@ when accumulating the `u64` pure-helper result into an `i64` sum. The
 fixtures cover wide integer storage with
 `pure_flat_batch_bytes_borrowed_median = 4096` and the same checked sum
 conversion. This confirms the hot boundary is not doing
-`.map(i64::from)`. The remaining typed accelerator work is to add matching JIT
-and AOT kernels for these widths; target-sized dense storage already uses
-stable `i64`/`u64` backing at the runtime boundary.
+`.map(i64::from)`. Native JIT remains the exact i64 tier; scalar AOT is the
+width-preserving native tier for non-i64 helpers while the
+width-preserving VM fast path is the semantic execution tier for the other
+integer widths. Target-sized dense storage already uses stable `i64`/`u64`
+backing at the runtime boundary.
 
 The dense scalar length fixture covers the non-integer deterministic scalar
 storage cases. It lowers unit, bool, char, logical-duration, and `u8` sequences
@@ -451,9 +455,89 @@ and no source path in the JSON output.
 
 `DenseSeq::F32`/`DenseSeq::F64` use `DenseSeqStorage<f32>` and
 `DenseSeqStorage<f64>` directly. Typed f32/f64 pure helper calls now use
-borrowed slice ABI in the VM flow path, so a natural `pure` call in a flow can avoid `Vec<RuntimeValue>`
-argument allocation when the helper signature and expression are float-scalar
-only. Record/tuple storage should be designed separately as columnar storage
-rather than as scalar `DenseSeqStorage<T>`. The scalar dense coverage is
-encoded in `DenseSeqKind`, so adding another dense class requires extending the
-typed kind and its borrowed view/materialization tests together.
+borrowed slice ABI in the VM flow path and scalar AOT path, so a natural
+`pure` call in a flow can avoid `Vec<RuntimeValue>` argument allocation when
+the helper signature and expression are float-scalar only. Exact-width integer
+helpers use the same scalar AOT boundary for non-i64 widths; native Cranelift
+JIT remains i64-only until the JIT ABI grows typed scalar inputs. Record/tuple
+storage should be designed separately as columnar storage rather than as scalar
+`DenseSeqStorage<T>`. The scalar dense coverage is encoded in `DenseSeqKind`,
+so adding another dense class requires extending the typed kind and its borrowed
+view/materialization tests together.
+
+## Runtime Matrix And Tensor Math
+
+Arcweft now has built-in dense `f32` matrix and tensor runtime values:
+`RuntimeValue::MatrixF32(DenseMatrixF32)` and
+`RuntimeValue::TensorF32(DenseTensorF32)`. `arcweft-core` owns only the
+deterministic row-major data model and scalar baseline kernels. Native
+acceleration stays in `arcweft-runtime-accelerator`, where
+`RuntimeMathAccelerator` can select `scalar`, `glam`, `ndarray`, `wgpu`, or
+`auto`.
+
+The wgpu path is feature-gated by `math-wgpu` and keeps Windows DX12 enabled
+alongside Vulkan, Metal, and GLES. The workspace Rust floor is raised to 1.96
+so the latest wgpu stack can be used without pinning older graphics crates.
+If a GPU adapter is unavailable, explicit `wgpu` measurement reports a
+structured skip/error rather than silently changing the requested backend.
+
+Local path-free measurements:
+
+```bash
+just bench-math-cpu
+just bench-math-glam
+just bench-math-wgpu
+just bench-math-matrix-add
+just bench-math-tensor-add
+just bench-math-matrix-add-reuse
+just bench-math-tensor-add-reuse
+```
+
+Representative release results on the local machine:
+
+| fixture | backend | status | median ns | note |
+| --- | --- | --- | ---: | --- |
+| 4x4 matmul_f32 | scalar | measured | 100 | small matrix baseline |
+| 4x4 matmul_f32 | glam | measured | 100 | SIMD-friendly game math backend |
+| 4x4 matmul_f32 | auto | measured | 100 | selected glam |
+| 64x64 matmul_f32 | scalar | measured | 21300 | row-major baseline |
+| 64x64 matmul_f32 | ndarray | measured | 26700 | general CPU matrix backend |
+| 64x64 matmul_f32 | auto | measured | 24200 | selected ndarray without wgpu feature |
+| 128x128 matmul_f32 | ndarray | measured | 98500 | CPU backend with wgpu feature enabled |
+| 128x128 matmul_f32 | wgpu | measured | 217800 | upload/download dominates |
+| 128x128 matmul_f32 | auto | measured | 43700 | selected ndarray |
+| 256x256 matmul_f32 | ndarray | measured | 404400 | CPU backend |
+| 256x256 matmul_f32 | wgpu | measured | 444300 | still not consistently faster |
+| 256x256 matmul_f32 | auto | measured | 536600 | selected ndarray after threshold tuning |
+| 512x512 matmul_f32 | ndarray | measured | 2553400 | CPU backend |
+| 512x512 matmul_f32 | wgpu | measured | 2115100 | DX12-capable wgpu compute |
+| 512x512 matmul_f32 | auto | measured | 2334400 | selected wgpu |
+| 4096x4096 matrix_add_f32 | scalar | measured | 48541500 | row-major baseline |
+| 4096x4096 matrix_add_f32 | ndarray | measured | 57826700 | CPU elementwise backend |
+| 4096x4096 matrix_add_f32 | wgpu | measured | 198692400 | copy dominated one-shot GPU path |
+| 4096x4096 matrix_add_f32 | auto | measured | 49352100 | selected ndarray |
+| 4096x4096 tensor_add_f32 | scalar | measured | 44410400 | row-major tensor baseline |
+| 4096x4096 tensor_add_f32 | ndarray | measured | 41737000 | CPU elementwise backend |
+| 4096x4096 tensor_add_f32 | wgpu | measured | 161161500 | copy dominated one-shot GPU path |
+| 4096x4096 tensor_add_f32 | auto | measured | 46863800 | selected ndarray |
+| 2048x2048 matrix_add_f32 | wgpu one-shot | measured | 53726400 | 16 buffer creations across warmup + samples |
+| 2048x2048 matrix_add_f32 | wgpu prepared | measured | 21763000 | caller-owned output buffer, 4 buffer creations, 16 reuse hits |
+| 2048x2048 tensor_add_f32 | wgpu prepared | measured | 23814100 | caller-owned output buffer, 4 buffer creations, 16 reuse hits |
+
+These numbers show the current backend split: glam is the intended path for
+fixed 4x4 matrices, ndarray/scalar win smaller one-shot CPU workloads, and wgpu
+becomes useful for larger matmul workloads once arithmetic work amortizes
+upload/download cost. Auto therefore keeps one-shot elementwise kernels on the
+CPU backend and only considers wgpu for matmul above the configured work
+threshold. Repeated elementwise matrix/tensor kernels can now use prepared GPU
+buffers, which uploads the fixed inputs once, reuses the storage/bind group
+across warmup and measured samples, and downloads only the result for each
+dispatch.
+
+The math bench JSON reports the requested backend, measured status,
+correctness-checked timing samples, the backend that actually executed last,
+and accelerator copy counters split into borrowed bytes, copied bytes, uploaded
+bytes, downloaded bytes, GPU buffer creations, GPU buffer reuse hits, and reused
+dispatches. Explicit `wgpu` requests remain explicit: unavailable adapters or
+disabled features produce a structured skip/error, while `auto` records the
+fallback path through the backend counters.

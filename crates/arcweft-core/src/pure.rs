@@ -1,11 +1,11 @@
-use crate::plan::RuntimePureHelper;
+use crate::plan::{RuntimePureHelper, RuntimePureInputType, RuntimePureOutputType};
 use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExactInteger,
     RuntimeExpr, RuntimeFieldValue, RuntimeIntrinsic, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
-    evaluate_binary, evaluate_unary, runtime_binary_op_label, runtime_sequence_values,
-    runtime_unary_op_label, runtime_value_into_sequence_values, runtime_value_label,
-    sum_i64_sequence_ref,
+    evaluate_binary, evaluate_numeric_op, evaluate_unary, runtime_binary_op_label,
+    runtime_sequence_values, runtime_unary_op_label, runtime_value_into_sequence_values,
+    runtime_value_label, sum_i64_sequence_ref,
 };
 use std::collections::BTreeMap;
 
@@ -137,6 +137,20 @@ pub trait RuntimePureCallBackend {
         rows: usize,
     ) -> Result<i64, RuntimeEvalError>;
 
+    fn call_exact_int_slice<T: RuntimePureScalarInteger>(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[T],
+    ) -> Result<Option<T>, RuntimeEvalError>;
+
+    fn call_exact_int_flat_batch<T: RuntimePureScalarInteger>(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[T],
+        arity: usize,
+        out: &mut [T],
+    ) -> Result<(), RuntimeEvalError>;
+
     fn call_i64(
         &mut self,
         helper: &RuntimePureHelper,
@@ -185,11 +199,27 @@ pub trait RuntimePureCallBackend {
         args: &[f32],
     ) -> Result<Option<f32>, RuntimeEvalError>;
 
+    fn call_f32_flat_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[f32],
+        arity: usize,
+        out: &mut [f32],
+    ) -> Result<(), RuntimeEvalError>;
+
     fn call_f64_slice(
         &mut self,
         helper: &RuntimePureHelper,
         args: &[f64],
     ) -> Result<Option<f64>, RuntimeEvalError>;
+
+    fn call_f64_flat_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[f64],
+        arity: usize,
+        out: &mut [f64],
+    ) -> Result<(), RuntimeEvalError>;
 
     fn call_values(
         &mut self,
@@ -241,6 +271,18 @@ pub struct AotPureI64Plan {
     slot_count: usize,
 }
 
+/// Compiled AOT plan for exact-width scalar helpers that are not widened to `i64`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AotPureScalarPlan {
+    name: String,
+    expr: AotScalarExpr,
+    initial_slots: Vec<RuntimePureScalar>,
+    input_slots: Vec<usize>,
+    input_type: RuntimePureInputType,
+    output_type: RuntimePureOutputType,
+    slot_count: usize,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 enum AotI64Expr {
     Const(i64),
@@ -277,6 +319,45 @@ enum AotBoolExpr {
         lhs: Box<AotI64Expr>,
         op: RuntimeBinaryOp,
         rhs: Box<AotI64Expr>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum AotScalarExpr {
+    Const(RuntimePureScalar),
+    Local(usize),
+    Let {
+        slot: usize,
+        expr: Box<AotScalarExpr>,
+        body: Box<AotScalarExpr>,
+    },
+    AddCall {
+        lhs: Box<AotScalarExpr>,
+        rhs: Box<AotScalarExpr>,
+    },
+    Unary {
+        op: RuntimeUnaryOp,
+        expr: Box<AotScalarExpr>,
+    },
+    Binary {
+        lhs: Box<AotScalarExpr>,
+        op: RuntimeBinaryOp,
+        rhs: Box<AotScalarExpr>,
+    },
+    If {
+        condition: AotScalarBoolExpr,
+        then_expr: Box<AotScalarExpr>,
+        else_expr: Box<AotScalarExpr>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum AotScalarBoolExpr {
+    Const(bool),
+    Compare {
+        lhs: Box<AotScalarExpr>,
+        op: RuntimeBinaryOp,
+        rhs: Box<AotScalarExpr>,
     },
 }
 
@@ -582,6 +663,17 @@ impl AotPureFunctionBackend {
     ) -> Result<AotPureI64Plan, RuntimeEvalError> {
         AotPureI64Plan::compile_with_inputs(request, input_names)
     }
+
+    /// Compiles a deterministic helper request to an exact-width scalar AOT plan.
+    pub fn compile_scalar_with_inputs(
+        &self,
+        request: &PureFunctionRequest,
+        input_names: impl IntoIterator<Item = impl AsRef<str>>,
+        input_type: RuntimePureInputType,
+        output_type: RuntimePureOutputType,
+    ) -> Result<AotPureScalarPlan, RuntimeEvalError> {
+        AotPureScalarPlan::compile_with_inputs(request, input_names, input_type, output_type)
+    }
 }
 
 impl PureFunctionBackend for AotPureFunctionBackend {
@@ -754,6 +846,71 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
             sum += i64::from(runtime_value_into_i32_result(helper, value)?);
         }
         Ok(sum)
+    }
+
+    fn call_exact_int_slice<T: RuntimePureScalarInteger>(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[T],
+    ) -> Result<Option<T>, RuntimeEvalError> {
+        if args.len() > RuntimeFixedArgs::<T>::MAX {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: RuntimeFixedArgs::<T>::MAX,
+                found: args.len(),
+            });
+        }
+        if helper.output_type != T::OUTPUT_TYPE
+            || helper.input_types.len() != helper.input_names.len()
+            || !helper
+                .input_types
+                .iter()
+                .all(|input| *input == T::INPUT_TYPE)
+        {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: "exact integer call type does not match helper signature".to_owned(),
+            });
+        }
+        self.stats.pure_calls += 1;
+        self.stats.vm_calls += 1;
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        let value = self.scratch.evaluate_exact_int_slice::<T>(helper, args)?;
+        T::try_from_runtime_value(&helper.name, value).map(Some)
+    }
+
+    fn call_exact_int_flat_batch<T: RuntimePureScalarInteger>(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[T],
+        arity: usize,
+        out: &mut [T],
+    ) -> Result<(), RuntimeEvalError> {
+        validate_exact_int_flat_batch_shape::<T>(helper, flat_inputs.len(), arity, out.len())?;
+        self.stats.batch_calls += 1;
+        self.stats.batch_items += out.len();
+        self.stats.flat_batch_calls += 1;
+        self.stats.flat_batch_items += out.len();
+        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        self.stats.pure_calls += out.len();
+        self.stats.vm_calls += out.len();
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        self.stats.result_bytes_copied += std::mem::size_of_val(out);
+        if arity == 0 {
+            return out.iter_mut().try_for_each(|slot| {
+                let value = self.scratch.evaluate_exact_int_slice::<T>(helper, &[])?;
+                *slot = T::try_from_runtime_value(&helper.name, value)?;
+                Ok(())
+            });
+        }
+        flat_inputs
+            .chunks_exact(arity)
+            .zip(out.iter_mut())
+            .try_for_each(|(row, slot)| {
+                let value = self.scratch.evaluate_exact_int_slice::<T>(helper, row)?;
+                *slot = T::try_from_runtime_value(&helper.name, value)?;
+                Ok(())
+            })
     }
 
     fn call_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
@@ -1066,6 +1223,48 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         runtime_value_into_f32_result(helper, value).map(Some)
     }
 
+    fn call_f32_flat_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[f32],
+        arity: usize,
+        out: &mut [f32],
+    ) -> Result<(), RuntimeEvalError> {
+        validate_float_flat_batch_shape(
+            helper,
+            RuntimePureInputType::F32,
+            RuntimePureOutputType::F32,
+            RuntimeFloat32Args::MAX,
+            flat_inputs.len(),
+            arity,
+            out.len(),
+        )?;
+        self.stats.batch_calls += 1;
+        self.stats.batch_items += out.len();
+        self.stats.flat_batch_calls += 1;
+        self.stats.flat_batch_items += out.len();
+        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        self.stats.pure_calls += out.len();
+        self.stats.vm_calls += out.len();
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        self.stats.result_bytes_copied += std::mem::size_of_val(out);
+        if arity == 0 {
+            return out.iter_mut().try_for_each(|slot| {
+                let value = self.scratch.evaluate_f32_slice(helper, &[])?;
+                *slot = runtime_value_into_f32_result(helper, value)?;
+                Ok(())
+            });
+        }
+        flat_inputs
+            .chunks_exact(arity)
+            .zip(out.iter_mut())
+            .try_for_each(|(row, slot)| {
+                let value = self.scratch.evaluate_f32_slice(helper, row)?;
+                *slot = runtime_value_into_f32_result(helper, value)?;
+                Ok(())
+            })
+    }
+
     fn call_f64_slice(
         &mut self,
         helper: &RuntimePureHelper,
@@ -1083,6 +1282,48 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
         let value = self.scratch.evaluate_f64_slice(helper, args)?;
         runtime_value_into_f64_result(helper, value).map(Some)
+    }
+
+    fn call_f64_flat_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[f64],
+        arity: usize,
+        out: &mut [f64],
+    ) -> Result<(), RuntimeEvalError> {
+        validate_float_flat_batch_shape(
+            helper,
+            RuntimePureInputType::F64,
+            RuntimePureOutputType::F64,
+            RuntimeFloat64Args::MAX,
+            flat_inputs.len(),
+            arity,
+            out.len(),
+        )?;
+        self.stats.batch_calls += 1;
+        self.stats.batch_items += out.len();
+        self.stats.flat_batch_calls += 1;
+        self.stats.flat_batch_items += out.len();
+        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        self.stats.pure_calls += out.len();
+        self.stats.vm_calls += out.len();
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        self.stats.result_bytes_copied += std::mem::size_of_val(out);
+        if arity == 0 {
+            return out.iter_mut().try_for_each(|slot| {
+                let value = self.scratch.evaluate_f64_slice(helper, &[])?;
+                *slot = runtime_value_into_f64_result(helper, value)?;
+                Ok(())
+            });
+        }
+        flat_inputs
+            .chunks_exact(arity)
+            .zip(out.iter_mut())
+            .try_for_each(|(row, slot)| {
+                let value = self.scratch.evaluate_f64_slice(helper, row)?;
+                *slot = runtime_value_into_f64_result(helper, value)?;
+                Ok(())
+            })
     }
 
     fn call_values(
@@ -1217,6 +1458,177 @@ impl AotPureI64Plan {
     }
 }
 
+impl AotPureScalarPlan {
+    fn compile_with_inputs(
+        request: &PureFunctionRequest,
+        input_names: impl IntoIterator<Item = impl AsRef<str>>,
+        input_type: RuntimePureInputType,
+        output_type: RuntimePureOutputType,
+    ) -> Result<Self, RuntimeEvalError> {
+        let mut ctx = AotCompileContext::from_scalar_request(request)?;
+        let expr = compile_aot_scalar_expr(&request.name, &request.expr, &mut ctx)?;
+        let slot_count = ctx.next_slot;
+        let input_slots = input_names
+            .into_iter()
+            .map(|name| ctx.input_slot(&request.name, name.as_ref()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut initial_slots = AotCompileContext::initial_scalar_slots(request)?;
+        initial_slots.resize(
+            slot_count,
+            RuntimePureScalar::default_for_output(output_type)?,
+        );
+        Ok(Self {
+            name: request.name.clone(),
+            expr,
+            initial_slots,
+            input_slots,
+            input_type,
+            output_type,
+            slot_count,
+        })
+    }
+
+    /// Calls the compiled helper with exact-width integer inputs.
+    pub fn call_exact_int_with_inputs_scratch<T: RuntimePureScalarInteger>(
+        &self,
+        inputs: &[T],
+        slots: &mut Vec<RuntimePureScalar>,
+    ) -> Result<(T, PureFunctionStats), RuntimeEvalError> {
+        if self.input_type != T::INPUT_TYPE || self.output_type != T::OUTPUT_TYPE {
+            return Err(unsupported_aot(
+                &self.name,
+                "AOT scalar helper type does not match exact integer call",
+            ));
+        }
+        let (value, stats) = self.call_with_scalar_inputs_scratch(
+            inputs
+                .iter()
+                .copied()
+                .map(RuntimePureScalarInteger::into_pure_scalar),
+            inputs.len(),
+            slots,
+        )?;
+        T::try_from_runtime_value(&self.name, value.into_runtime_value())
+            .map(|value| (value, stats))
+    }
+
+    /// Calls the compiled helper with `f32` inputs.
+    pub fn call_f32_with_inputs_scratch(
+        &self,
+        inputs: &[f32],
+        slots: &mut Vec<RuntimePureScalar>,
+    ) -> Result<(f32, PureFunctionStats), RuntimeEvalError> {
+        if self.input_type != RuntimePureInputType::F32
+            || self.output_type != RuntimePureOutputType::F32
+        {
+            return Err(unsupported_aot(
+                &self.name,
+                "AOT scalar helper type does not match f32 call",
+            ));
+        }
+        let (value, stats) = self.call_with_scalar_inputs_scratch(
+            inputs.iter().copied().map(RuntimePureScalar::F32),
+            inputs.len(),
+            slots,
+        )?;
+        match value {
+            RuntimePureScalar::F32(value) => Ok((value, stats)),
+            value => Err(unsupported_aot(
+                &self.name,
+                format!("AOT scalar f32 result expected f32, got {}", value.label()),
+            )),
+        }
+    }
+
+    /// Calls the compiled helper with `f64` inputs.
+    pub fn call_f64_with_inputs_scratch(
+        &self,
+        inputs: &[f64],
+        slots: &mut Vec<RuntimePureScalar>,
+    ) -> Result<(f64, PureFunctionStats), RuntimeEvalError> {
+        if self.input_type != RuntimePureInputType::F64
+            || self.output_type != RuntimePureOutputType::F64
+        {
+            return Err(unsupported_aot(
+                &self.name,
+                "AOT scalar helper type does not match f64 call",
+            ));
+        }
+        let (value, stats) = self.call_with_scalar_inputs_scratch(
+            inputs.iter().copied().map(RuntimePureScalar::F64),
+            inputs.len(),
+            slots,
+        )?;
+        match value {
+            RuntimePureScalar::F64(value) => Ok((value, stats)),
+            value => Err(unsupported_aot(
+                &self.name,
+                format!("AOT scalar f64 result expected f64, got {}", value.label()),
+            )),
+        }
+    }
+
+    fn call_with_scalar_inputs_scratch(
+        &self,
+        inputs: impl IntoIterator<Item = RuntimePureScalar>,
+        input_len: usize,
+        slots: &mut Vec<RuntimePureScalar>,
+    ) -> Result<(RuntimePureScalar, PureFunctionStats), RuntimeEvalError> {
+        if input_len != self.input_slots.len() {
+            return Err(unsupported_aot(
+                &self.name,
+                format!(
+                    "AOT helper expected {} input(s), got {}",
+                    self.input_slots.len(),
+                    input_len
+                ),
+            ));
+        }
+        self.reset_scratch_slots(slots)?;
+        for (slot, value) in self.input_slots.iter().zip(inputs) {
+            slots[*slot] = value;
+        }
+        self.evaluate_with_slot_slice(slots)
+    }
+
+    fn reset_scratch_slots(
+        &self,
+        slots: &mut Vec<RuntimePureScalar>,
+    ) -> Result<(), RuntimeEvalError> {
+        if slots.len() == self.slot_count {
+            slots.copy_from_slice(&self.initial_slots);
+        } else {
+            slots.clear();
+            slots.extend_from_slice(&self.initial_slots);
+            if slots.len() < self.slot_count {
+                slots.resize(
+                    self.slot_count,
+                    RuntimePureScalar::default_for_output(self.output_type)?,
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn evaluate_with_slot_slice(
+        &self,
+        slots: &mut [RuntimePureScalar],
+    ) -> Result<(RuntimePureScalar, PureFunctionStats), RuntimeEvalError> {
+        let mut evaluator = AotScalarEvaluator {
+            name: &self.name,
+            slots,
+            stats: PureFunctionStats::default(),
+        };
+        let value = evaluator.eval_scalar(&self.expr)?;
+        Ok((value, evaluator.stats))
+    }
+
+    /// Helper name captured from the original request.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 impl AotCompileContext {
     fn from_request(request: &PureFunctionRequest) -> Result<Self, RuntimeEvalError> {
         let mut slots = BTreeMap::new();
@@ -1260,6 +1672,43 @@ impl AotCompileContext {
             .collect()
     }
 
+    fn from_scalar_request(request: &PureFunctionRequest) -> Result<Self, RuntimeEvalError> {
+        let mut slots = BTreeMap::new();
+        for binding in &request.bindings {
+            if runtime_value_as_scalar(&binding.value).is_none() {
+                return Err(unsupported_aot(
+                    &request.name,
+                    format!("binding `{}` is not a scalar value", binding.name),
+                ));
+            }
+            if slots.insert(binding.name.clone(), slots.len()).is_some() {
+                return Err(unsupported_aot(
+                    &request.name,
+                    format!("binding `{}` is duplicated", binding.name),
+                ));
+            }
+        }
+        let next_slot = slots.len();
+        Ok(Self { slots, next_slot })
+    }
+
+    fn initial_scalar_slots(
+        request: &PureFunctionRequest,
+    ) -> Result<Vec<RuntimePureScalar>, RuntimeEvalError> {
+        request
+            .bindings
+            .iter()
+            .map(|binding| {
+                runtime_value_as_scalar(&binding.value).ok_or_else(|| {
+                    unsupported_aot(
+                        &request.name,
+                        format!("binding `{}` is not a scalar value", binding.name),
+                    )
+                })
+            })
+            .collect()
+    }
+
     fn local_slot(&self, name: &str) -> Option<usize> {
         self.slots.get(name).copied()
     }
@@ -1279,11 +1728,11 @@ impl AotCompileContext {
         })
     }
 
-    fn with_let_binding(
+    fn with_let_binding<T>(
         &mut self,
         name: &str,
-        compile_body: impl FnOnce(&mut Self, usize) -> Result<AotI64Expr, RuntimeEvalError>,
-    ) -> Result<AotI64Expr, RuntimeEvalError> {
+        compile_body: impl FnOnce(&mut Self, usize) -> Result<T, RuntimeEvalError>,
+    ) -> Result<T, RuntimeEvalError> {
         let slot = self.next_slot;
         self.next_slot += 1;
         let previous = self.slots.insert(name.to_owned(), slot);
@@ -1318,10 +1767,10 @@ impl AotI64Evaluator<'_> {
             }
             AotI64Expr::AddCall { lhs, rhs } => {
                 self.stats.evaluated_calls += 1;
-                self.eval_i64(lhs).saturating_add(self.eval_i64(rhs))
+                self.eval_i64(lhs).wrapping_add(self.eval_i64(rhs))
             }
             AotI64Expr::Unary { op, expr } => match op {
-                RuntimeUnaryOp::Neg => -self.eval_i64(expr),
+                RuntimeUnaryOp::Neg => self.eval_i64(expr).wrapping_neg(),
                 RuntimeUnaryOp::Not => unreachable!("bool unary is not compiled as i64"),
             },
             AotI64Expr::Binary { lhs, op, rhs } => {
@@ -1329,10 +1778,10 @@ impl AotI64Evaluator<'_> {
                 let lhs = self.eval_i64(lhs);
                 let rhs = self.eval_i64(rhs);
                 match op {
-                    RuntimeBinaryOp::Add => lhs + rhs,
-                    RuntimeBinaryOp::Sub => lhs - rhs,
-                    RuntimeBinaryOp::Mul => lhs * rhs,
-                    RuntimeBinaryOp::Div => lhs / rhs,
+                    RuntimeBinaryOp::Add => lhs.wrapping_add(rhs),
+                    RuntimeBinaryOp::Sub => lhs.wrapping_sub(rhs),
+                    RuntimeBinaryOp::Mul => lhs.wrapping_mul(rhs),
+                    RuntimeBinaryOp::Div => lhs.wrapping_div(rhs),
                     RuntimeBinaryOp::Eq
                     | RuntimeBinaryOp::Ne
                     | RuntimeBinaryOp::Lt
@@ -1378,6 +1827,77 @@ impl AotI64Evaluator<'_> {
                     | RuntimeBinaryOp::Div
                     | RuntimeBinaryOp::And
                     | RuntimeBinaryOp::Or => unreachable!("non-comparison op in AOT bool expr"),
+                }
+            }
+        }
+    }
+}
+
+struct AotScalarEvaluator<'a> {
+    name: &'a str,
+    slots: &'a mut [RuntimePureScalar],
+    stats: PureFunctionStats,
+}
+
+impl AotScalarEvaluator<'_> {
+    fn eval_scalar(&mut self, expr: &AotScalarExpr) -> Result<RuntimePureScalar, RuntimeEvalError> {
+        self.stats.evaluated_exprs += 1;
+        match expr {
+            AotScalarExpr::Const(value) => Ok(*value),
+            AotScalarExpr::Local(slot) => Ok(self.slots[*slot]),
+            AotScalarExpr::Let { slot, expr, body } => {
+                let value = self.eval_scalar(expr)?;
+                let previous = self.slots[*slot];
+                self.slots[*slot] = value;
+                let result = self.eval_scalar(body);
+                self.slots[*slot] = previous;
+                result
+            }
+            AotScalarExpr::AddCall { lhs, rhs } => {
+                self.stats.evaluated_calls += 1;
+                evaluate_scalar_binary(
+                    self.eval_scalar(lhs)?,
+                    RuntimeBinaryOp::Add,
+                    self.eval_scalar(rhs)?,
+                )
+            }
+            AotScalarExpr::Unary { op, expr } => {
+                evaluate_scalar_unary(*op, self.eval_scalar(expr)?)
+            }
+            AotScalarExpr::Binary { lhs, op, rhs } => {
+                self.stats.evaluated_binary_ops += 1;
+                evaluate_scalar_binary(self.eval_scalar(lhs)?, *op, self.eval_scalar(rhs)?)
+            }
+            AotScalarExpr::If {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                if self.eval_bool(condition)? {
+                    self.eval_scalar(then_expr)
+                } else {
+                    self.eval_scalar(else_expr)
+                }
+            }
+        }
+        .map_err(|error| match error {
+            RuntimeEvalError::UnsupportedPure { .. } => error,
+            other => unsupported_aot(self.name, other.to_string()),
+        })
+    }
+
+    fn eval_bool(&mut self, expr: &AotScalarBoolExpr) -> Result<bool, RuntimeEvalError> {
+        self.stats.evaluated_exprs += 1;
+        match expr {
+            AotScalarBoolExpr::Const(value) => Ok(*value),
+            AotScalarBoolExpr::Compare { lhs, op, rhs } => {
+                self.stats.evaluated_binary_ops += 1;
+                match evaluate_scalar_binary(self.eval_scalar(lhs)?, *op, self.eval_scalar(rhs)?)? {
+                    RuntimePureScalar::Bool(value) => Ok(value),
+                    value => Err(unsupported_aot(
+                        self.name,
+                        format!("condition expected bool, got {}", value.label()),
+                    )),
                 }
             }
         }
@@ -1488,7 +2008,116 @@ fn compile_aot_bool_expr(
     }
 }
 
+fn compile_aot_scalar_expr(
+    helper_name: &str,
+    expr: &RuntimeExpr,
+    ctx: &mut AotCompileContext,
+) -> Result<AotScalarExpr, RuntimeEvalError> {
+    match expr {
+        RuntimeExpr::Value(value) => runtime_value_as_scalar(value)
+            .map(AotScalarExpr::Const)
+            .ok_or_else(|| {
+                unsupported_aot(
+                    helper_name,
+                    format!("literal {value:?} is not a scalar value"),
+                )
+            }),
+        RuntimeExpr::Local(name) => ctx
+            .local_slot(name)
+            .map(AotScalarExpr::Local)
+            .ok_or_else(|| RuntimeEvalError::UnknownBinding(name.clone())),
+        RuntimeExpr::Let { name, expr, body } => {
+            let expr = compile_aot_scalar_expr(helper_name, expr, ctx)?;
+            ctx.with_let_binding(name, |ctx, slot| {
+                Ok(AotScalarExpr::Let {
+                    slot,
+                    expr: Box::new(expr),
+                    body: Box::new(compile_aot_scalar_expr(helper_name, body, ctx)?),
+                })
+            })
+        }
+        RuntimeExpr::Call { callee, args }
+            if callee.as_intrinsic() == Some(RuntimeIntrinsic::Add) && args.len() == 2 =>
+        {
+            Ok(AotScalarExpr::AddCall {
+                lhs: Box::new(compile_aot_scalar_expr(helper_name, &args[0], ctx)?),
+                rhs: Box::new(compile_aot_scalar_expr(helper_name, &args[1], ctx)?),
+            })
+        }
+        RuntimeExpr::SpreadArg(_) => Err(unsupported_aot(
+            helper_name,
+            "spread arguments are expanded by the VM call boundary",
+        )),
+        RuntimeExpr::Unary { op, expr } => match op {
+            RuntimeUnaryOp::Neg => Ok(AotScalarExpr::Unary {
+                op: *op,
+                expr: Box::new(compile_aot_scalar_expr(helper_name, expr, ctx)?),
+            }),
+            RuntimeUnaryOp::Not => Err(unsupported_aot(
+                helper_name,
+                "boolean negation is not a scalar result",
+            )),
+        },
+        RuntimeExpr::Binary { lhs, op, rhs } if is_aot_scalar_binary(*op) => {
+            Ok(AotScalarExpr::Binary {
+                lhs: Box::new(compile_aot_scalar_expr(helper_name, lhs, ctx)?),
+                op: *op,
+                rhs: Box::new(compile_aot_scalar_expr(helper_name, rhs, ctx)?),
+            })
+        }
+        RuntimeExpr::If {
+            condition,
+            then_expr,
+            else_expr,
+        } => Ok(AotScalarExpr::If {
+            condition: compile_aot_scalar_bool_expr(helper_name, condition, ctx)?,
+            then_expr: Box::new(compile_aot_scalar_expr(helper_name, then_expr, ctx)?),
+            else_expr: Box::new(compile_aot_scalar_expr(helper_name, else_expr, ctx)?),
+        }),
+        RuntimeExpr::Call { callee, .. } => Err(unsupported_aot(
+            helper_name,
+            format!("call `{callee}` is outside the AOT scalar subset"),
+        )),
+        RuntimeExpr::PureCall { .. } => Err(unsupported_aot(
+            helper_name,
+            "nested runtime pure calls are outside the AOT scalar subset",
+        )),
+        other => Err(unsupported_aot(
+            helper_name,
+            format!("expression `{other}` is outside the AOT scalar subset"),
+        )),
+    }
+}
+
+fn compile_aot_scalar_bool_expr(
+    helper_name: &str,
+    expr: &RuntimeExpr,
+    ctx: &mut AotCompileContext,
+) -> Result<AotScalarBoolExpr, RuntimeEvalError> {
+    match expr {
+        RuntimeExpr::Value(RuntimeValue::Bool(value)) => Ok(AotScalarBoolExpr::Const(*value)),
+        RuntimeExpr::Binary { lhs, op, rhs } if is_aot_comparison(*op) => {
+            Ok(AotScalarBoolExpr::Compare {
+                lhs: Box::new(compile_aot_scalar_expr(helper_name, lhs, ctx)?),
+                op: *op,
+                rhs: Box::new(compile_aot_scalar_expr(helper_name, rhs, ctx)?),
+            })
+        }
+        other => Err(unsupported_aot(
+            helper_name,
+            format!("condition `{other}` is outside the AOT scalar subset"),
+        )),
+    }
+}
+
 fn is_aot_i64_binary(op: RuntimeBinaryOp) -> bool {
+    matches!(
+        op,
+        RuntimeBinaryOp::Add | RuntimeBinaryOp::Sub | RuntimeBinaryOp::Mul | RuntimeBinaryOp::Div
+    )
+}
+
+fn is_aot_scalar_binary(op: RuntimeBinaryOp) -> bool {
     matches!(
         op,
         RuntimeBinaryOp::Add | RuntimeBinaryOp::Sub | RuntimeBinaryOp::Mul | RuntimeBinaryOp::Div
@@ -1535,6 +2164,30 @@ struct PureEvaluator {
 }
 
 impl RuntimePureScalar {
+    fn default_for_output(output_type: RuntimePureOutputType) -> Result<Self, RuntimeEvalError> {
+        match output_type {
+            RuntimePureOutputType::Bool => Ok(Self::Bool(false)),
+            RuntimePureOutputType::I8 => Ok(Self::I8(0)),
+            RuntimePureOutputType::I16 => Ok(Self::I16(0)),
+            RuntimePureOutputType::I32 => Ok(Self::I32(0)),
+            RuntimePureOutputType::I64 => Ok(Self::I64(0)),
+            RuntimePureOutputType::I128 => Ok(Self::I128(0)),
+            RuntimePureOutputType::ISize => Ok(Self::ISize(0)),
+            RuntimePureOutputType::U8 => Ok(Self::U8(0)),
+            RuntimePureOutputType::U16 => Ok(Self::U16(0)),
+            RuntimePureOutputType::U32 => Ok(Self::U32(0)),
+            RuntimePureOutputType::U64 => Ok(Self::U64(0)),
+            RuntimePureOutputType::U128 => Ok(Self::U128(0)),
+            RuntimePureOutputType::USize => Ok(Self::USize(0)),
+            RuntimePureOutputType::F32 => Ok(Self::F32(0.0)),
+            RuntimePureOutputType::F64 => Ok(Self::F64(0.0)),
+            RuntimePureOutputType::Value => Err(unsupported_aot(
+                "pure",
+                "AOT scalar slots require a concrete scalar output type",
+            )),
+        }
+    }
+
     const fn into_runtime_value(self) -> RuntimeValue {
         match self {
             Self::Bool(value) => RuntimeValue::Bool(value),
@@ -1681,6 +2334,44 @@ fn validate_exact_int_flat_batch_shape<T: RuntimePureScalarInteger>(
     Ok(())
 }
 
+fn validate_float_flat_batch_shape(
+    helper: &RuntimePureHelper,
+    input_type: RuntimePureInputType,
+    output_type: RuntimePureOutputType,
+    max_arity: usize,
+    flat_input_len: usize,
+    arity: usize,
+    rows: usize,
+) -> Result<(), RuntimeEvalError> {
+    if arity > max_arity {
+        return Err(RuntimeEvalError::TooManyPureArgs {
+            helper: helper.name.clone(),
+            max: max_arity,
+            found: arity,
+        });
+    }
+    if helper.output_type != output_type
+        || helper.input_types.len() != helper.input_names.len()
+        || !helper.input_types.iter().all(|input| *input == input_type)
+    {
+        return Err(RuntimeEvalError::UnsupportedPure {
+            name: helper.name.clone(),
+            reason: "float batch type does not match helper signature".to_owned(),
+        });
+    }
+    if flat_input_len != rows.saturating_mul(arity) {
+        return Err(RuntimeEvalError::UnsupportedPure {
+            name: helper.name.clone(),
+            reason: format!(
+                "pure flat batch expected {} input value(s), got {}",
+                rows.saturating_mul(arity),
+                flat_input_len
+            ),
+        });
+    }
+    Ok(())
+}
+
 fn evaluate_scalar_unary(
     op: RuntimeUnaryOp,
     value: RuntimePureScalar,
@@ -1689,15 +2380,23 @@ fn evaluate_scalar_unary(
         (RuntimeUnaryOp::Not, RuntimePureScalar::Bool(value)) => {
             Ok(RuntimePureScalar::Bool(!value))
         }
-        (RuntimeUnaryOp::Neg, RuntimePureScalar::I8(value)) => Ok(RuntimePureScalar::I8(-value)),
-        (RuntimeUnaryOp::Neg, RuntimePureScalar::I16(value)) => Ok(RuntimePureScalar::I16(-value)),
-        (RuntimeUnaryOp::Neg, RuntimePureScalar::I32(value)) => Ok(RuntimePureScalar::I32(-value)),
-        (RuntimeUnaryOp::Neg, RuntimePureScalar::I64(value)) => Ok(RuntimePureScalar::I64(-value)),
+        (RuntimeUnaryOp::Neg, RuntimePureScalar::I8(value)) => {
+            Ok(RuntimePureScalar::I8(value.wrapping_neg()))
+        }
+        (RuntimeUnaryOp::Neg, RuntimePureScalar::I16(value)) => {
+            Ok(RuntimePureScalar::I16(value.wrapping_neg()))
+        }
+        (RuntimeUnaryOp::Neg, RuntimePureScalar::I32(value)) => {
+            Ok(RuntimePureScalar::I32(value.wrapping_neg()))
+        }
+        (RuntimeUnaryOp::Neg, RuntimePureScalar::I64(value)) => {
+            Ok(RuntimePureScalar::I64(value.wrapping_neg()))
+        }
         (RuntimeUnaryOp::Neg, RuntimePureScalar::I128(value)) => {
-            Ok(RuntimePureScalar::I128(-value))
+            Ok(RuntimePureScalar::I128(value.wrapping_neg()))
         }
         (RuntimeUnaryOp::Neg, RuntimePureScalar::ISize(value)) => {
-            Ok(RuntimePureScalar::ISize(-value))
+            Ok(RuntimePureScalar::ISize(value.wrapping_neg()))
         }
         (RuntimeUnaryOp::Neg, RuntimePureScalar::F32(value)) => Ok(RuntimePureScalar::F32(-value)),
         (RuntimeUnaryOp::Neg, RuntimePureScalar::F64(value)) => Ok(RuntimePureScalar::F64(-value)),
@@ -1870,21 +2569,12 @@ fn compare_scalar_float<T: PartialOrd>(lhs: &T, op: RuntimeBinaryOp, rhs: &T) ->
     }
 }
 
-fn evaluate_scalar_numeric<T>(lhs: T, op: RuntimeBinaryOp, rhs: T) -> T
-where
-    T: Copy
-        + std::ops::Add<Output = T>
-        + std::ops::Sub<Output = T>
-        + std::ops::Mul<Output = T>
-        + std::ops::Div<Output = T>,
-{
-    match op {
-        RuntimeBinaryOp::Add => lhs + rhs,
-        RuntimeBinaryOp::Sub => lhs - rhs,
-        RuntimeBinaryOp::Mul => lhs * rhs,
-        RuntimeBinaryOp::Div => lhs / rhs,
-        _ => unreachable!(),
-    }
+fn evaluate_scalar_numeric<T: crate::value::RuntimeDeterministicNumeric>(
+    lhs: T,
+    op: RuntimeBinaryOp,
+    rhs: T,
+) -> T {
+    evaluate_numeric_op(lhs, op, rhs)
 }
 
 fn unsupported_scalar_binary(
@@ -2261,6 +2951,36 @@ impl PureEvaluator {
                     RuntimeValue::Int(*rhs),
                 )
             }
+            (
+                Some(RuntimeIntrinsic::MathMatmulF32),
+                [RuntimeValue::MatrixF32(lhs), RuntimeValue::MatrixF32(rhs)],
+            ) => lhs
+                .matmul_scalar(rhs)
+                .map(RuntimeValue::matrix_f32)
+                .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                    name: callee.as_label().to_owned(),
+                    reason: error.to_string(),
+                }),
+            (
+                Some(RuntimeIntrinsic::MathMatrixAddF32),
+                [RuntimeValue::MatrixF32(lhs), RuntimeValue::MatrixF32(rhs)],
+            ) => lhs
+                .add_scalar(rhs)
+                .map(RuntimeValue::matrix_f32)
+                .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                    name: callee.as_label().to_owned(),
+                    reason: error.to_string(),
+                }),
+            (
+                Some(RuntimeIntrinsic::MathTensorAddF32),
+                [RuntimeValue::TensorF32(lhs), RuntimeValue::TensorF32(rhs)],
+            ) => lhs
+                .add_scalar(rhs)
+                .map(RuntimeValue::tensor_f32)
+                .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                    name: callee.as_label().to_owned(),
+                    reason: error.to_string(),
+                }),
             _ => Err(RuntimeEvalError::UnsupportedPure {
                 name: callee.as_label().to_owned(),
                 reason: "call is not registered as a pure helper".to_owned(),

@@ -312,15 +312,15 @@ pub(super) fn parse_optional_decl_id_ref<'a>(
     if starts_leading_relative_id(trimmed) || starts_leading_relative_entity_ref(trimmed) {
         return match parse_required_id_ref(trimmed, base, errors) {
             Some((id, rest)) => {
-                if let IdRef::FamilyRelative(relative) = &id {
-                    if !decl_family_matches(family, relative.family()) {
-                        errors.push(simple_error(
-                            relative.range().start(),
-                            relative.range().end() - relative.range().start(),
-                            "family-relative declaration id uses the wrong family",
-                            &format!("@{family}:.suffix"),
-                        ));
-                    }
+                if let IdRef::FamilyRelative(relative) = &id
+                    && !decl_family_matches(family, relative.family())
+                {
+                    errors.push(simple_error(
+                        relative.range().start(),
+                        relative.range().end() - relative.range().start(),
+                        "family-relative declaration id uses the wrong family",
+                        &format!("@{family}:.suffix"),
+                    ));
                 }
                 (Some(id), rest)
             }

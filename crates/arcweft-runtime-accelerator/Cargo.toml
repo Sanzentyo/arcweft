@@ -9,7 +9,19 @@ repository.workspace = true
 [dependencies]
 arcweft-core = { path = "../arcweft-core" }
 arcweft-lang-jit-cranelift = { path = "../arcweft-lang-jit-cranelift" }
+bytemuck = { workspace = true, optional = true }
+glam = { workspace = true, optional = true }
+ndarray = { workspace = true, optional = true }
+pollster = { workspace = true, optional = true }
 rayon.workspace = true
+thiserror.workspace = true
+wgpu = { workspace = true, optional = true }
+
+[features]
+default = ["math-glam", "math-ndarray"]
+math-glam = ["dep:glam"]
+math-ndarray = ["dep:ndarray"]
+math-wgpu = ["dep:bytemuck", "dep:pollster", "dep:wgpu"]
 
 [lib]
 path = "src/lib.rs"

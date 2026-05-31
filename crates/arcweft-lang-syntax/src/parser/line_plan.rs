@@ -330,21 +330,21 @@ fn parse_line_plan_colon_item(head: &str, body: &str) -> LinePlanItem {
 }
 
 fn parse_line_plan_item(line: &str) -> LinePlanItem {
-    if let Some((head, body)) = split_brace_item(line) {
-        if let Some(item) = parse_line_plan_block_item(head, body) {
-            return item;
-        }
+    if let Some((head, body)) = split_brace_item(line)
+        && let Some(item) = parse_line_plan_block_item(head, body)
+    {
+        return item;
     }
     if let Some(rest) = line.strip_prefix("out ") {
         return LinePlanItem::Out(parse_expr_lossy(rest.trim()));
     }
-    if let Some(rest) = line.strip_prefix("let ") {
-        if let Some((pattern, expr)) = split_top_level_binding(rest) {
-            return LinePlanItem::Let {
-                pattern: parse_pattern(pattern.trim()),
-                expr: parse_expr_lossy(expr.trim()),
-            };
-        }
+    if let Some(rest) = line.strip_prefix("let ")
+        && let Some((pattern, expr)) = split_top_level_binding(rest)
+    {
+        return LinePlanItem::Let {
+            pattern: parse_pattern(pattern.trim()),
+            expr: parse_expr_lossy(expr.trim()),
+        };
     }
     if let Some(rest) = line.strip_prefix("defer ") {
         if rest.trim_start().starts_with("on ") {
@@ -359,13 +359,13 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
         });
     }
     if let Some(rest) = line.strip_prefix("cancel on ") {
-        if let Some((head, body)) = split_brace_item(line) {
-            if let Some(trigger) = head.strip_prefix("cancel on ") {
-                return LinePlanItem::CancelRule(CancelRuleSyntax::new(
-                    parse_trigger_pattern(trigger.trim()),
-                    parse_stmt_lines(body.trim()),
-                ));
-            }
+        if let Some((head, body)) = split_brace_item(line)
+            && let Some(trigger) = head.strip_prefix("cancel on ")
+        {
+            return LinePlanItem::CancelRule(CancelRuleSyntax::new(
+                parse_trigger_pattern(trigger.trim()),
+                parse_stmt_lines(body.trim()),
+            ));
         }
         let (trigger, action) =
             split_top_level_punctuation_sequence_once(rest, &["=", ">"]).unwrap_or((rest, ""));

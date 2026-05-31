@@ -4,6 +4,7 @@ pub mod effect;
 pub mod engine;
 pub mod executor;
 pub mod line_task;
+pub mod math;
 pub mod observation;
 pub mod pattern;
 pub mod plan;

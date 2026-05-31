@@ -2,9 +2,10 @@ use super::{
     Engine, FlowFiberStatus, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
     RuntimeExprMatchArm, RuntimeFieldValue, RuntimeMatchArm, RuntimeMatchSelection, RuntimePattern,
     RuntimeSeq, RuntimeStepOutput, RuntimeValue, evaluate_binary, evaluate_unary,
-    match_runtime_pattern, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
-    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_sequence_values,
-    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
+    match_runtime_pattern, runtime_sequence_dense_f32, runtime_sequence_dense_f64,
+    runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_from_literal_values,
+    runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
+    runtime_value_label, sum_i64_sequence_ref,
 };
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::pure::{
@@ -12,6 +13,7 @@ use crate::pure::{
     RuntimePureCallBackend, RuntimePureScalarInteger, VmRuntimePureCallBackend,
 };
 use crate::value::RuntimeBinaryOp;
+use crate::value::RuntimeExactInteger;
 use crate::value::RuntimeFieldExpr;
 use crate::value::{RuntimeCallTarget, RuntimeIntrinsic};
 
@@ -369,6 +371,52 @@ impl Engine {
         Ok(result)
     }
 
+    fn call_f32_flat_batch_with_outputs<T>(
+        &mut self,
+        helper_id: crate::plan::RuntimePureHelperId,
+        flat_inputs: &[f32],
+        arity: usize,
+        row_count: usize,
+        pure_backend: &mut impl RuntimePureCallBackend,
+        map_outputs: impl FnOnce(&[f32]) -> T,
+    ) -> Result<T, RuntimeEvalError> {
+        let mut out = std::mem::take(&mut self.pure_f32_batch_outputs);
+        out.resize(row_count, f32::from_bits(0));
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        let batch_result = pure_backend.call_f32_flat_batch(helper, flat_inputs, arity, &mut out);
+        if let Err(error) = batch_result {
+            self.pure_f32_batch_outputs = out;
+            return Err(error);
+        }
+        let result = map_outputs(&out);
+        out.clear();
+        self.pure_f32_batch_outputs = out;
+        Ok(result)
+    }
+
+    fn call_f64_flat_batch_with_outputs<T>(
+        &mut self,
+        helper_id: crate::plan::RuntimePureHelperId,
+        flat_inputs: &[f64],
+        arity: usize,
+        row_count: usize,
+        pure_backend: &mut impl RuntimePureCallBackend,
+        map_outputs: impl FnOnce(&[f64]) -> T,
+    ) -> Result<T, RuntimeEvalError> {
+        let mut out = std::mem::take(&mut self.pure_f64_batch_outputs);
+        out.resize(row_count, f64::from_bits(0));
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        let batch_result = pure_backend.call_f64_flat_batch(helper, flat_inputs, arity, &mut out);
+        if let Err(error) = batch_result {
+            self.pure_f64_batch_outputs = out;
+            return Err(error);
+        }
+        let result = map_outputs(&out);
+        out.clear();
+        self.pure_f64_batch_outputs = out;
+        Ok(result)
+    }
+
     fn call_i64_flat_batch_sum(
         &mut self,
         helper_id: crate::plan::RuntimePureHelperId,
@@ -542,6 +590,9 @@ impl Engine {
                 return Ok(RuntimeValue::i64(value));
             }
         }
+        if let Some(value) = self.evaluate_exact_int_pure_call_any(helper_id, args, pure_backend)? {
+            return Ok(value);
+        }
         if self
             .pure_helper_f32_call_shapes
             .get(helper_id.0)
@@ -583,6 +634,106 @@ impl Engine {
         let args = self.evaluate_call_args(args, pure_backend)?;
         let helper = &self.plan.pure_helpers[helper_id.0];
         pure_backend.call_values(helper, &args)
+    }
+
+    fn evaluate_exact_int_pure_call_any(
+        &mut self,
+        helper_id: crate::plan::RuntimePureHelperId,
+        args: &[RuntimeExpr],
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        if let Some(value) =
+            self.evaluate_exact_int_pure_call::<i8>(helper_id, args, pure_backend)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) =
+            self.evaluate_exact_int_pure_call::<i16>(helper_id, args, pure_backend)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) =
+            self.evaluate_exact_int_pure_call::<i32>(helper_id, args, pure_backend)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) =
+            self.evaluate_exact_int_pure_call::<i128>(helper_id, args, pure_backend)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) =
+            self.evaluate_exact_int_pure_call::<u8>(helper_id, args, pure_backend)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) =
+            self.evaluate_exact_int_pure_call::<u16>(helper_id, args, pure_backend)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) =
+            self.evaluate_exact_int_pure_call::<u32>(helper_id, args, pure_backend)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) =
+            self.evaluate_exact_int_pure_call::<u64>(helper_id, args, pure_backend)?
+        {
+            return Ok(Some(value));
+        }
+        self.evaluate_exact_int_pure_call::<u128>(helper_id, args, pure_backend)
+    }
+
+    fn evaluate_exact_int_pure_call<T>(
+        &mut self,
+        helper_id: crate::plan::RuntimePureHelperId,
+        args: &[RuntimeExpr],
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError>
+    where
+        T: RuntimePureScalarInteger + Default,
+    {
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        if args.len() > RuntimeFixedArgs::<T>::MAX
+            || args
+                .iter()
+                .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
+            || !pure_helper_has_exact_int_call_shape::<T>(helper)
+        {
+            return Ok(None);
+        }
+        let mut values = [T::default(); RuntimeI64Args::MAX];
+        for (index, arg) in args.iter().enumerate() {
+            values[index] = self.evaluate_exact_int_arg_with_backend::<T>(arg, pure_backend)?;
+        }
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        pure_backend
+            .call_exact_int_slice(helper, &values[..args.len()])
+            .map(|value| value.map(RuntimeExactInteger::into_runtime_value))
+    }
+
+    fn evaluate_exact_int_arg_with_backend<T>(
+        &mut self,
+        expr: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<T, RuntimeEvalError>
+    where
+        T: RuntimePureScalarInteger,
+    {
+        match expr {
+            RuntimeExpr::Value(value) => {
+                T::try_from_runtime_value("exact integer pure call", value.clone())
+            }
+            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
+                Some(value) => T::try_from_runtime_value("exact integer pure call", value.clone()),
+                None => Err(RuntimeEvalError::UnknownBinding(name.clone())),
+            },
+            _ => {
+                let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
+                T::try_from_runtime_value("exact integer pure call", value)
+            }
+        }
     }
 
     fn evaluate_i64_arg_with_backend(
@@ -679,6 +830,36 @@ impl Engine {
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if let Some(value) = self.evaluate_i8_map_expr(source, param, body, pure_backend)? {
+            return Ok(value);
+        }
+        if let Some(value) = self.evaluate_i16_map_expr(source, param, body, pure_backend)? {
+            return Ok(value);
+        }
+        if let Some(value) = self.evaluate_i128_map_expr(source, param, body, pure_backend)? {
+            return Ok(value);
+        }
+        if let Some(value) = self.evaluate_u8_map_expr(source, param, body, pure_backend)? {
+            return Ok(value);
+        }
+        if let Some(value) = self.evaluate_u16_map_expr(source, param, body, pure_backend)? {
+            return Ok(value);
+        }
+        if let Some(value) = self.evaluate_u32_map_expr(source, param, body, pure_backend)? {
+            return Ok(value);
+        }
+        if let Some(value) = self.evaluate_u64_map_expr(source, param, body, pure_backend)? {
+            return Ok(value);
+        }
+        if let Some(value) = self.evaluate_u128_map_expr(source, param, body, pure_backend)? {
+            return Ok(value);
+        }
+        if let Some(value) = self.evaluate_f32_map_expr(source, param, body, pure_backend)? {
+            return Ok(value);
+        }
+        if let Some(value) = self.evaluate_f64_map_expr(source, param, body, pure_backend)? {
+            return Ok(value);
+        }
         if let Some(value) = self.evaluate_i32_map_expr(source, param, body, pure_backend)? {
             return Ok(value);
         }
@@ -704,6 +885,219 @@ impl Engine {
             })
             .collect::<Result<Vec<_>, _>>()
             .map(runtime_sequence_values)
+    }
+
+    fn evaluate_i8_map_expr(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let mut flat_inputs = std::mem::take(&mut self.pure_i8_batch_inputs);
+        let mut out = std::mem::take(&mut self.pure_i8_batch_outputs);
+        let result = self.evaluate_exact_int_map_expr_with_buffers::<i8>(
+            source,
+            param,
+            body,
+            pure_backend,
+            &mut flat_inputs,
+            &mut out,
+        );
+        self.pure_i8_batch_inputs = flat_inputs;
+        self.pure_i8_batch_outputs = out;
+        result
+    }
+
+    fn evaluate_i16_map_expr(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let mut flat_inputs = std::mem::take(&mut self.pure_i16_batch_inputs);
+        let mut out = std::mem::take(&mut self.pure_i16_batch_outputs);
+        let result = self.evaluate_exact_int_map_expr_with_buffers::<i16>(
+            source,
+            param,
+            body,
+            pure_backend,
+            &mut flat_inputs,
+            &mut out,
+        );
+        self.pure_i16_batch_inputs = flat_inputs;
+        self.pure_i16_batch_outputs = out;
+        result
+    }
+
+    fn evaluate_i128_map_expr(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let mut flat_inputs = std::mem::take(&mut self.pure_i128_batch_inputs);
+        let mut out = std::mem::take(&mut self.pure_i128_batch_outputs);
+        let result = self.evaluate_exact_int_map_expr_with_buffers::<i128>(
+            source,
+            param,
+            body,
+            pure_backend,
+            &mut flat_inputs,
+            &mut out,
+        );
+        self.pure_i128_batch_inputs = flat_inputs;
+        self.pure_i128_batch_outputs = out;
+        result
+    }
+
+    fn evaluate_u8_map_expr(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let mut flat_inputs = std::mem::take(&mut self.pure_u8_batch_inputs);
+        let mut out = std::mem::take(&mut self.pure_u8_batch_outputs);
+        let result = self.evaluate_exact_int_map_expr_with_buffers::<u8>(
+            source,
+            param,
+            body,
+            pure_backend,
+            &mut flat_inputs,
+            &mut out,
+        );
+        self.pure_u8_batch_inputs = flat_inputs;
+        self.pure_u8_batch_outputs = out;
+        result
+    }
+
+    fn evaluate_u16_map_expr(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let mut flat_inputs = std::mem::take(&mut self.pure_u16_batch_inputs);
+        let mut out = std::mem::take(&mut self.pure_u16_batch_outputs);
+        let result = self.evaluate_exact_int_map_expr_with_buffers::<u16>(
+            source,
+            param,
+            body,
+            pure_backend,
+            &mut flat_inputs,
+            &mut out,
+        );
+        self.pure_u16_batch_inputs = flat_inputs;
+        self.pure_u16_batch_outputs = out;
+        result
+    }
+
+    fn evaluate_u32_map_expr(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let mut flat_inputs = std::mem::take(&mut self.pure_u32_batch_inputs);
+        let mut out = std::mem::take(&mut self.pure_u32_batch_outputs);
+        let result = self.evaluate_exact_int_map_expr_with_buffers::<u32>(
+            source,
+            param,
+            body,
+            pure_backend,
+            &mut flat_inputs,
+            &mut out,
+        );
+        self.pure_u32_batch_inputs = flat_inputs;
+        self.pure_u32_batch_outputs = out;
+        result
+    }
+
+    fn evaluate_u64_map_expr(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let mut flat_inputs = std::mem::take(&mut self.pure_u64_batch_inputs);
+        let mut out = std::mem::take(&mut self.pure_u64_batch_outputs);
+        let result = self.evaluate_exact_int_map_expr_with_buffers::<u64>(
+            source,
+            param,
+            body,
+            pure_backend,
+            &mut flat_inputs,
+            &mut out,
+        );
+        self.pure_u64_batch_inputs = flat_inputs;
+        self.pure_u64_batch_outputs = out;
+        result
+    }
+
+    fn evaluate_u128_map_expr(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let mut flat_inputs = std::mem::take(&mut self.pure_u128_batch_inputs);
+        let mut out = std::mem::take(&mut self.pure_u128_batch_outputs);
+        let result = self.evaluate_exact_int_map_expr_with_buffers::<u128>(
+            source,
+            param,
+            body,
+            pure_backend,
+            &mut flat_inputs,
+            &mut out,
+        );
+        self.pure_u128_batch_inputs = flat_inputs;
+        self.pure_u128_batch_outputs = out;
+        result
+    }
+
+    fn evaluate_exact_int_map_expr_with_buffers<T>(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+        flat_inputs: &mut Vec<T>,
+        out: &mut Vec<T>,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError>
+    where
+        T: RuntimePureScalarInteger + Default,
+    {
+        let Some((helper_id, arity)) = self.map_exact_int_batch_shape::<T>(body) else {
+            return Ok(None);
+        };
+        let Some(row_count) = self.collect_exact_int_map_batch_inputs_from_borrowed_source(
+            source,
+            param,
+            body,
+            arity,
+            flat_inputs,
+        )?
+        else {
+            return Ok(None);
+        };
+        out.resize(row_count, T::default());
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        if let Err(error) = pure_backend.call_exact_int_flat_batch(helper, flat_inputs, arity, out)
+        {
+            out.clear();
+            return Err(error);
+        }
+        let value = T::dense_sequence(out.clone());
+        out.clear();
+        Ok(Some(value))
     }
 
     fn evaluate_i32_map_expr(
@@ -739,6 +1133,76 @@ impl Engine {
             Err(error) => Err(error),
         };
         self.pure_i32_batch_inputs = flat_inputs;
+        result
+    }
+
+    fn evaluate_f32_map_expr(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let Some((helper_id, arity)) = self.map_f32_batch_shape(body) else {
+            return Ok(None);
+        };
+        let mut flat_inputs = std::mem::take(&mut self.pure_f32_batch_inputs);
+        let result = match self.collect_f32_map_batch_inputs_from_borrowed_source(
+            source,
+            param,
+            body,
+            arity,
+            &mut flat_inputs,
+        ) {
+            Ok(Some(row_count)) => self
+                .call_f32_flat_batch_with_outputs(
+                    helper_id,
+                    &flat_inputs,
+                    arity,
+                    row_count,
+                    pure_backend,
+                    |values| runtime_sequence_dense_f32(values.to_vec()),
+                )
+                .map(Some),
+            Ok(None) => Ok(None),
+            Err(error) => Err(error),
+        };
+        self.pure_f32_batch_inputs = flat_inputs;
+        result
+    }
+
+    fn evaluate_f64_map_expr(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let Some((helper_id, arity)) = self.map_f64_batch_shape(body) else {
+            return Ok(None);
+        };
+        let mut flat_inputs = std::mem::take(&mut self.pure_f64_batch_inputs);
+        let result = match self.collect_f64_map_batch_inputs_from_borrowed_source(
+            source,
+            param,
+            body,
+            arity,
+            &mut flat_inputs,
+        ) {
+            Ok(Some(row_count)) => self
+                .call_f64_flat_batch_with_outputs(
+                    helper_id,
+                    &flat_inputs,
+                    arity,
+                    row_count,
+                    pure_backend,
+                    |values| runtime_sequence_dense_f64(values.to_vec()),
+                )
+                .map(Some),
+            Ok(None) => Ok(None),
+            Err(error) => Err(error),
+        };
+        self.pure_f64_batch_inputs = flat_inputs;
         result
     }
 
@@ -1329,6 +1793,80 @@ impl Engine {
         Ok(Some(items.len()))
     }
 
+    fn collect_f32_map_batch_inputs_from_borrowed_source(
+        &self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        arity: usize,
+        flat_inputs: &mut Vec<f32>,
+    ) -> Result<Option<usize>, RuntimeEvalError> {
+        let RuntimeExpr::PureCall { args, .. } = body else {
+            unreachable!("f32 map batch shape checked before borrowed source collection");
+        };
+        let seq = match source {
+            RuntimeExpr::Value(RuntimeValue::Seq(seq)) => seq,
+            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
+                Some(RuntimeValue::Seq(seq)) => seq,
+                _ => return Ok(None),
+            },
+            _ => return Ok(None),
+        };
+        let Some(items) = seq.as_f32_slice() else {
+            return Ok(None);
+        };
+        flat_inputs.clear();
+        flat_inputs.reserve(items.len().saturating_mul(arity));
+        for item in items.iter().copied() {
+            for arg in args.iter().take(arity) {
+                let Some(value) = self.evaluate_f32_map_arg_from_f32_source(arg, param, item)?
+                else {
+                    flat_inputs.clear();
+                    return Ok(None);
+                };
+                flat_inputs.push(value);
+            }
+        }
+        Ok(Some(items.len()))
+    }
+
+    fn collect_f64_map_batch_inputs_from_borrowed_source(
+        &self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        arity: usize,
+        flat_inputs: &mut Vec<f64>,
+    ) -> Result<Option<usize>, RuntimeEvalError> {
+        let RuntimeExpr::PureCall { args, .. } = body else {
+            unreachable!("f64 map batch shape checked before borrowed source collection");
+        };
+        let seq = match source {
+            RuntimeExpr::Value(RuntimeValue::Seq(seq)) => seq,
+            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
+                Some(RuntimeValue::Seq(seq)) => seq,
+                _ => return Ok(None),
+            },
+            _ => return Ok(None),
+        };
+        let Some(items) = seq.as_f64_slice() else {
+            return Ok(None);
+        };
+        flat_inputs.clear();
+        flat_inputs.reserve(items.len().saturating_mul(arity));
+        for item in items.iter().copied() {
+            for arg in args.iter().take(arity) {
+                let Some(value) = self.evaluate_f64_map_arg_from_f64_source(arg, param, item)?
+                else {
+                    flat_inputs.clear();
+                    return Ok(None);
+                };
+                flat_inputs.push(value);
+            }
+        }
+        Ok(Some(items.len()))
+    }
+
     fn collect_exact_int_map_batch_inputs_from_borrowed_source<T: RuntimePureScalarInteger>(
         &self,
         source: &RuntimeExpr,
@@ -1578,6 +2116,52 @@ impl Engine {
                 .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
             || !self
                 .pure_helper_i32_call_shapes
+                .get(helper.0)
+                .copied()
+                .unwrap_or(false)
+        {
+            return None;
+        }
+        Some((*helper, args.len()))
+    }
+
+    fn map_f32_batch_shape(
+        &self,
+        body: &RuntimeExpr,
+    ) -> Option<(crate::plan::RuntimePureHelperId, usize)> {
+        let RuntimeExpr::PureCall { helper, args } = body else {
+            return None;
+        };
+        if helper.0 >= self.plan.pure_helpers.len()
+            || args.len() > RuntimeFloat32Args::MAX
+            || args
+                .iter()
+                .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
+            || !self
+                .pure_helper_f32_call_shapes
+                .get(helper.0)
+                .copied()
+                .unwrap_or(false)
+        {
+            return None;
+        }
+        Some((*helper, args.len()))
+    }
+
+    fn map_f64_batch_shape(
+        &self,
+        body: &RuntimeExpr,
+    ) -> Option<(crate::plan::RuntimePureHelperId, usize)> {
+        let RuntimeExpr::PureCall { helper, args } = body else {
+            return None;
+        };
+        if helper.0 >= self.plan.pure_helpers.len()
+            || args.len() > RuntimeFloat64Args::MAX
+            || args
+                .iter()
+                .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
+            || !self
+                .pure_helper_f64_call_shapes
                 .get(helper.0)
                 .copied()
                 .unwrap_or(false)
@@ -1857,6 +2441,48 @@ impl Engine {
                         })
                 }
                 Some(value) => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
+                None => Err(RuntimeEvalError::UnknownBinding(name.clone())),
+            },
+            _ => Ok(None),
+        }
+    }
+
+    fn evaluate_f32_map_arg_from_f32_source(
+        &self,
+        expr: &RuntimeExpr,
+        param: &str,
+        item: f32,
+    ) -> Result<Option<f32>, RuntimeEvalError> {
+        match expr {
+            RuntimeExpr::Value(RuntimeValue::F32(value)) => Ok(Some(*value)),
+            RuntimeExpr::Local(name) if name == param => Ok(Some(item)),
+            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
+                Some(RuntimeValue::F32(value)) => Ok(Some(*value)),
+                Some(value) => Err(RuntimeEvalError::UnsupportedPure {
+                    name: "f32 map batch".to_owned(),
+                    reason: format!("expected f32 argument, got {}", runtime_value_label(value)),
+                }),
+                None => Err(RuntimeEvalError::UnknownBinding(name.clone())),
+            },
+            _ => Ok(None),
+        }
+    }
+
+    fn evaluate_f64_map_arg_from_f64_source(
+        &self,
+        expr: &RuntimeExpr,
+        param: &str,
+        item: f64,
+    ) -> Result<Option<f64>, RuntimeEvalError> {
+        match expr {
+            RuntimeExpr::Value(RuntimeValue::F64(value)) => Ok(Some(*value)),
+            RuntimeExpr::Local(name) if name == param => Ok(Some(item)),
+            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
+                Some(RuntimeValue::F64(value)) => Ok(Some(*value)),
+                Some(value) => Err(RuntimeEvalError::UnsupportedPure {
+                    name: "f64 map batch".to_owned(),
+                    reason: format!("expected f64 argument, got {}", runtime_value_label(value)),
+                }),
                 None => Err(RuntimeEvalError::UnknownBinding(name.clone())),
             },
             _ => Ok(None),
@@ -2376,6 +3002,27 @@ fn evaluate_runtime_call(callee: &RuntimeCallTarget, args: &[RuntimeValue]) -> R
             )
             .unwrap_or_else(|_| RuntimeValue::String("add(<unsupported>)".to_owned()))
         }
+        (
+            Some(RuntimeIntrinsic::MathMatmulF32),
+            [RuntimeValue::MatrixF32(lhs), RuntimeValue::MatrixF32(rhs)],
+        ) => lhs.matmul_scalar(rhs).map_or_else(
+            |error| RuntimeValue::String(format!("math.matmul_f32({error})")),
+            RuntimeValue::matrix_f32,
+        ),
+        (
+            Some(RuntimeIntrinsic::MathMatrixAddF32),
+            [RuntimeValue::MatrixF32(lhs), RuntimeValue::MatrixF32(rhs)],
+        ) => lhs.add_scalar(rhs).map_or_else(
+            |error| RuntimeValue::String(format!("math.matrix_add_f32({error})")),
+            RuntimeValue::matrix_f32,
+        ),
+        (
+            Some(RuntimeIntrinsic::MathTensorAddF32),
+            [RuntimeValue::TensorF32(lhs), RuntimeValue::TensorF32(rhs)],
+        ) => lhs.add_scalar(rhs).map_or_else(
+            |error| RuntimeValue::String(format!("math.tensor_add_f32({error})")),
+            RuntimeValue::tensor_f32,
+        ),
         (
             Some(
                 intrinsic @ (RuntimeIntrinsic::PathSave

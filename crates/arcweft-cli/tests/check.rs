@@ -3642,7 +3642,8 @@ fn bench_json_measures_checked_in_dense_i32_map_pure_batch_fixture() {
         1024
     );
     assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 0);
-    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 128);
+    assert_eq!(measurement["deterministic"]["pure_aot_calls_median"], 128);
+    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 0);
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
         0
@@ -3713,7 +3714,8 @@ fn bench_json_measures_checked_in_dense_u32_map_pure_batch_fixture() {
         1024
     );
     assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 0);
-    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 128);
+    assert_eq!(measurement["deterministic"]["pure_aot_calls_median"], 128);
+    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 0);
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
         0
@@ -3784,7 +3786,8 @@ fn bench_json_measures_checked_in_dense_u64_map_pure_batch_fixture() {
         2048
     );
     assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 0);
-    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 128);
+    assert_eq!(measurement["deterministic"]["pure_aot_calls_median"], 128);
+    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 0);
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
         0
@@ -3867,7 +3870,8 @@ fn assert_wide_integer_map_pure_batch_fixture(relative_path: &str) {
         4096
     );
     assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 0);
-    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 128);
+    assert_eq!(measurement["deterministic"]["pure_aot_calls_median"], 128);
+    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 0);
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
         0

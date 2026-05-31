@@ -164,6 +164,13 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - Runtime pure accelerator cache construction now builds each helper's compile
   request once and shares it across JIT/AOT attempts, reducing Auto-mode setup
   work for helpers that fall through from JIT to AOT or VM.
+- Runtime dense math now has `MatrixF32` and `TensorF32` value variants in
+  `arcweft-core`, with scalar row-major correctness kernels kept Sans I/O.
+  Native math acceleration is isolated in `arcweft-runtime-accelerator` behind
+  selectable `scalar`, `glam`, `ndarray`, `wgpu`, and `auto` backends. The wgpu
+  backend is feature-gated, keeps DX12 enabled for Windows alongside Vulkan,
+  Metal, and GLES, and the workspace Rust floor is raised to 1.96 so the latest
+  wgpu stack can be used directly.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

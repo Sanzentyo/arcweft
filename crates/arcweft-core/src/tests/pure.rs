@@ -1,3 +1,4 @@
+use crate::math::{DenseMatrixF32, DenseTensorF32};
 use crate::plan::{
     RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
     RuntimePureOutputType,
@@ -114,6 +115,58 @@ fn vm_pure_backend_evaluates_deterministic_helper_expr() {
     assert_eq!(result.stats.evaluated_calls, 1);
     assert_eq!(result.stats.evaluated_binary_ops, 1);
     assert!(result.stats.evaluated_exprs >= 5);
+}
+
+#[test]
+fn vm_pure_backend_evaluates_builtin_matrix_and_tensor_calls() {
+    let lhs = DenseMatrixF32::new(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+    let rhs = DenseMatrixF32::new(3, 2, vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0]).unwrap();
+    let request = PureFunctionRequest::new(
+        "matrix",
+        RuntimeExpr::Call {
+            callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::MathMatmulF32),
+            args: vec![
+                RuntimeExpr::Value(RuntimeValue::matrix_f32(lhs)),
+                RuntimeExpr::Value(RuntimeValue::matrix_f32(rhs)),
+            ],
+        },
+        [],
+    );
+
+    let result = VmPureFunctionBackend
+        .evaluate(&request)
+        .expect("matrix call evaluates");
+
+    assert!(matches!(
+        result.value,
+        RuntimeValue::MatrixF32(matrix)
+            if matrix.shape() == crate::math::MatrixShape::new(2, 2)
+                && matrix.values() == [58.0, 64.0, 139.0, 154.0]
+    ));
+
+    let lhs = DenseTensorF32::new(vec![2, 2], vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+    let rhs = DenseTensorF32::new(vec![2, 2], vec![5.0, 6.0, 7.0, 8.0]).unwrap();
+    let request = PureFunctionRequest::new(
+        "tensor",
+        RuntimeExpr::Call {
+            callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::MathTensorAddF32),
+            args: vec![
+                RuntimeExpr::Value(RuntimeValue::tensor_f32(lhs)),
+                RuntimeExpr::Value(RuntimeValue::tensor_f32(rhs)),
+            ],
+        },
+        [],
+    );
+
+    let result = VmPureFunctionBackend
+        .evaluate(&request)
+        .expect("tensor call evaluates");
+
+    assert!(matches!(
+        result.value,
+        RuntimeValue::TensorF32(tensor)
+            if tensor.shape().dims() == [2, 2] && tensor.values() == [6.0, 8.0, 10.0, 12.0]
+    ));
 }
 
 #[test]
@@ -674,6 +727,37 @@ fn aot_compiled_i64_plan_can_be_called_repeatedly() {
     assert_eq!(plan.name(), "score");
     assert_eq!(plan.call().0, 42);
     assert_eq!(plan.call().0, 42);
+}
+
+#[test]
+fn scalar_integer_overflow_is_wrapping_in_vm_and_aot() {
+    let request = PureFunctionRequest::new(
+        "wrap_i8",
+        RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Value(RuntimeValue::i8(i8::MAX))),
+            op: RuntimeBinaryOp::Add,
+            rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i8(1))),
+        },
+        [],
+    );
+
+    let vm = VmPureFunctionBackend
+        .evaluate(&request)
+        .expect("VM evaluates wrapping i8 arithmetic");
+    let mut slots = Vec::new();
+    let aot = AotPureFunctionBackend::new()
+        .compile_scalar_with_inputs(
+            &request,
+            std::iter::empty::<&str>(),
+            RuntimePureInputType::I8,
+            RuntimePureOutputType::I8,
+        )
+        .expect("scalar AOT compiles wrapping i8 arithmetic")
+        .call_exact_int_with_inputs_scratch::<i8>(&[], &mut slots)
+        .expect("scalar AOT evaluates wrapping i8 arithmetic");
+
+    assert_eq!(vm.value, RuntimeValue::i8(i8::MIN));
+    assert_eq!(aot.0, i8::MIN);
 }
 
 #[test]

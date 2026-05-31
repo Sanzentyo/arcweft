@@ -155,22 +155,21 @@ fn parse_choice_item(
         });
     }
     if let Some((head, body)) = split_brace_item(trimmed) {
-        if let Some(rest) = head.strip_prefix("option ") {
-            if let (pattern, Some(source)) = split_top_level_keyword_once(rest, "in") {
-                let option_head = format!("option {}", pattern.trim());
-                let Some(option) = parse_choice_option_block(&option_head, body, base, errors)
-                else {
-                    return Some(ChoiceItem::Raw(RawSyntax::choice_item(
-                        trimmed,
-                        Some(TextRange::new(base, base + trimmed.len())),
-                    )));
-                };
-                return Some(ChoiceItem::For {
-                    pattern: parse_pattern(pattern.trim()),
-                    source: parse_expr_lossy(source.trim()),
-                    items: vec![ChoiceItem::Option(Box::new(option))],
-                });
-            }
+        if let Some(rest) = head.strip_prefix("option ")
+            && let (pattern, Some(source)) = split_top_level_keyword_once(rest, "in")
+        {
+            let option_head = format!("option {}", pattern.trim());
+            let Some(option) = parse_choice_option_block(&option_head, body, base, errors) else {
+                return Some(ChoiceItem::Raw(RawSyntax::choice_item(
+                    trimmed,
+                    Some(TextRange::new(base, base + trimmed.len())),
+                )));
+            };
+            return Some(ChoiceItem::For {
+                pattern: parse_pattern(pattern.trim()),
+                source: parse_expr_lossy(source.trim()),
+                items: vec![ChoiceItem::Option(Box::new(option))],
+            });
         }
         if let Some(condition) = head.strip_prefix("if ") {
             return Some(ChoiceItem::If {
@@ -184,14 +183,14 @@ fn parse_choice_item(
                 arms: parse_choice_match_arms(body, base, errors),
             });
         }
-        if let Some(rest) = head.strip_prefix("for ") {
-            if let (pattern, Some(source)) = split_top_level_keyword_once(rest, "in") {
-                return Some(ChoiceItem::For {
-                    pattern: parse_pattern(pattern.trim()),
-                    source: parse_expr_lossy(source.trim()),
-                    items: parse_choice_items(body, base, errors),
-                });
-            }
+        if let Some(rest) = head.strip_prefix("for ")
+            && let (pattern, Some(source)) = split_top_level_keyword_once(rest, "in")
+        {
+            return Some(ChoiceItem::For {
+                pattern: parse_pattern(pattern.trim()),
+                source: parse_expr_lossy(source.trim()),
+                items: parse_choice_items(body, base, errors),
+            });
         }
         if head.starts_with("option ") {
             return parse_choice_option_block(head, body, base, errors)

@@ -454,10 +454,10 @@ pub(super) fn well_known_capacity_method_type(
     method: &str,
     arg_count: usize,
 ) -> Option<TypeKind> {
-    if matches!(receiver, TypeKind::String) {
-        if let ("trim" | "to_string", 0) = (method, arg_count) {
-            return Some(TypeKind::String);
-        }
+    if matches!(receiver, TypeKind::String)
+        && let ("trim" | "to_string", 0) = (method, arg_count)
+    {
+        return Some(TypeKind::String);
     }
     if matches!(receiver, TypeKind::Named(name) if name == "LineContext")
         && matches!((method, arg_count), ("voice_handle", 0))

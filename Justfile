@@ -52,3 +52,24 @@ bench-thread:
 
 bench-system:
     @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/004_system_info_threads.arcw --json --iterations 1 --warmup 0 --samples 3 --steps 24 --max-ops 24 --mode drain
+
+bench-math-cpu:
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --quiet -- --backend all --op matmul --size 64 --iterations 10 --warmup 2
+
+bench-math-glam:
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --quiet -- --backend all --op matmul --size 4 --iterations 50 --warmup 5
+
+bench-math-wgpu:
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend all --op matmul --size 512 --iterations 3 --warmup 1
+
+bench-math-matrix-add:
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend all --op matrix-add --size 4096 --iterations 5 --warmup 1
+
+bench-math-tensor-add:
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend all --op tensor-add --size 4096 --iterations 5 --warmup 1
+
+bench-math-matrix-add-reuse:
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matrix-add --size 4096 --iterations 5 --warmup 1 --reuse
+
+bench-math-tensor-add-reuse:
+    @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op tensor-add --size 4096 --iterations 5 --warmup 1 --reuse

@@ -257,15 +257,15 @@ impl RuntimeScheduler {
     }
 
     fn submit_one(&mut self, spec: TaskSpec) {
-        if spec.policy == TaskPolicy::JoinSameKey {
-            if let Some(owner) = self.in_flight_by_key.get(&spec.key) {
-                self.stats.joined += 1;
-                self.joined_waiters
-                    .entry(owner.clone())
-                    .or_default()
-                    .push(spec.id);
-                return;
-            }
+        if spec.policy == TaskPolicy::JoinSameKey
+            && let Some(owner) = self.in_flight_by_key.get(&spec.key)
+        {
+            self.stats.joined += 1;
+            self.joined_waiters
+                .entry(owner.clone())
+                .or_default()
+                .push(spec.id);
+            return;
         }
         let order = self.next_order;
         self.next_order = self.next_order.saturating_add(1);

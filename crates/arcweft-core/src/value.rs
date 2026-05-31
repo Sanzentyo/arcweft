@@ -1,3 +1,4 @@
+use crate::math::{DenseMatrixF32, DenseTensorF32};
 use crate::pattern::RuntimePattern;
 use crate::plan::{RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType};
 use crate::time::LogicalDuration;
@@ -30,6 +31,8 @@ pub enum RuntimeValue {
     UInt(RuntimeUInt),
     F32(f32),
     F64(f64),
+    MatrixF32(DenseMatrixF32),
+    TensorF32(DenseTensorF32),
     String(String),
     Char(char),
     Duration(LogicalDuration),
@@ -258,6 +261,9 @@ impl fmt::Display for RuntimeCallTarget {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RuntimeIntrinsic {
     Add,
+    MathMatmulF32,
+    MathMatrixAddF32,
+    MathTensorAddF32,
     PathSave,
     PathAsset,
     PathTemp,
@@ -268,6 +274,9 @@ impl RuntimeIntrinsic {
     pub fn from_label(label: &str) -> Option<Self> {
         match label {
             "add" => Some(Self::Add),
+            "math.matmul_f32" => Some(Self::MathMatmulF32),
+            "math.matrix_add_f32" => Some(Self::MathMatrixAddF32),
+            "math.tensor_add_f32" => Some(Self::MathTensorAddF32),
             "path.save" => Some(Self::PathSave),
             "path.asset" => Some(Self::PathAsset),
             "path.temp" => Some(Self::PathTemp),
@@ -279,6 +288,9 @@ impl RuntimeIntrinsic {
     pub const fn as_label(self) -> &'static str {
         match self {
             Self::Add => "add",
+            Self::MathMatmulF32 => "math.matmul_f32",
+            Self::MathMatrixAddF32 => "math.matrix_add_f32",
+            Self::MathTensorAddF32 => "math.tensor_add_f32",
             Self::PathSave => "path.save",
             Self::PathAsset => "path.asset",
             Self::PathTemp => "path.temp",
@@ -292,7 +304,9 @@ impl RuntimeIntrinsic {
             Self::PathAsset => Some("asset"),
             Self::PathTemp => Some("temp"),
             Self::PathExport => Some("export"),
-            Self::Add => None,
+            Self::Add | Self::MathMatmulF32 | Self::MathMatrixAddF32 | Self::MathTensorAddF32 => {
+                None
+            }
         }
     }
 }
@@ -344,6 +358,22 @@ impl RuntimeValue {
 
     pub const fn usize(value: u64) -> Self {
         Self::UInt(RuntimeUInt::usize(value))
+    }
+
+    pub const fn f32(value: f32) -> Self {
+        Self::F32(value)
+    }
+
+    pub const fn f64(value: f64) -> Self {
+        Self::F64(value)
+    }
+
+    pub fn matrix_f32(value: DenseMatrixF32) -> Self {
+        Self::MatrixF32(value)
+    }
+
+    pub fn tensor_f32(value: DenseTensorF32) -> Self {
+        Self::TensorF32(value)
     }
 }
 
@@ -2685,12 +2715,12 @@ fn evaluate_unsigned_integer_compare(
 
 fn evaluate_signed_integer_neg(value: RuntimeInt) -> RuntimeInt {
     match value {
-        RuntimeInt::I8(value) => RuntimeInt::I8(-value),
-        RuntimeInt::I16(value) => RuntimeInt::I16(-value),
-        RuntimeInt::I32(value) => RuntimeInt::I32(-value),
-        RuntimeInt::I64(value) => RuntimeInt::I64(-value),
-        RuntimeInt::I128(value) => RuntimeInt::I128(-value),
-        RuntimeInt::ISize(value) => RuntimeInt::ISize(-value),
+        RuntimeInt::I8(value) => RuntimeInt::I8(value.wrapping_neg()),
+        RuntimeInt::I16(value) => RuntimeInt::I16(value.wrapping_neg()),
+        RuntimeInt::I32(value) => RuntimeInt::I32(value.wrapping_neg()),
+        RuntimeInt::I64(value) => RuntimeInt::I64(value.wrapping_neg()),
+        RuntimeInt::I128(value) => RuntimeInt::I128(value.wrapping_neg()),
+        RuntimeInt::ISize(value) => RuntimeInt::ISize(value.wrapping_neg()),
     }
 }
 
@@ -2766,19 +2796,74 @@ fn evaluate_f64_op(lhs: f64, op: RuntimeBinaryOp, rhs: f64) -> f64 {
     evaluate_numeric_op(lhs, op, rhs)
 }
 
-fn evaluate_numeric_op<T>(lhs: T, op: RuntimeBinaryOp, rhs: T) -> T
-where
-    T: Copy
-        + std::ops::Add<Output = T>
-        + std::ops::Sub<Output = T>
-        + std::ops::Mul<Output = T>
-        + std::ops::Div<Output = T>,
-{
+pub(crate) trait RuntimeDeterministicNumeric: Copy {
+    fn add(lhs: Self, rhs: Self) -> Self;
+    fn sub(lhs: Self, rhs: Self) -> Self;
+    fn mul(lhs: Self, rhs: Self) -> Self;
+    fn div(lhs: Self, rhs: Self) -> Self;
+}
+
+macro_rules! impl_wrapping_numeric {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl RuntimeDeterministicNumeric for $ty {
+                fn add(lhs: Self, rhs: Self) -> Self {
+                    lhs.wrapping_add(rhs)
+                }
+
+                fn sub(lhs: Self, rhs: Self) -> Self {
+                    lhs.wrapping_sub(rhs)
+                }
+
+                fn mul(lhs: Self, rhs: Self) -> Self {
+                    lhs.wrapping_mul(rhs)
+                }
+
+                fn div(lhs: Self, rhs: Self) -> Self {
+                    lhs.wrapping_div(rhs)
+                }
+            }
+        )*
+    };
+}
+
+macro_rules! impl_float_numeric {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl RuntimeDeterministicNumeric for $ty {
+                fn add(lhs: Self, rhs: Self) -> Self {
+                    lhs + rhs
+                }
+
+                fn sub(lhs: Self, rhs: Self) -> Self {
+                    lhs - rhs
+                }
+
+                fn mul(lhs: Self, rhs: Self) -> Self {
+                    lhs * rhs
+                }
+
+                fn div(lhs: Self, rhs: Self) -> Self {
+                    lhs / rhs
+                }
+            }
+        )*
+    };
+}
+
+impl_wrapping_numeric!(i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);
+impl_float_numeric!(f32, f64);
+
+pub(crate) fn evaluate_numeric_op<T: RuntimeDeterministicNumeric>(
+    lhs: T,
+    op: RuntimeBinaryOp,
+    rhs: T,
+) -> T {
     match op {
-        RuntimeBinaryOp::Add => lhs + rhs,
-        RuntimeBinaryOp::Sub => lhs - rhs,
-        RuntimeBinaryOp::Mul => lhs * rhs,
-        RuntimeBinaryOp::Div => lhs / rhs,
+        RuntimeBinaryOp::Add => T::add(lhs, rhs),
+        RuntimeBinaryOp::Sub => T::sub(lhs, rhs),
+        RuntimeBinaryOp::Mul => T::mul(lhs, rhs),
+        RuntimeBinaryOp::Div => T::div(lhs, rhs),
         _ => unreachable!(),
     }
 }
@@ -3424,6 +3509,12 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
         RuntimeValue::UInt(value) => value.label(),
         RuntimeValue::F32(value) => value.to_string(),
         RuntimeValue::F64(value) => value.to_string(),
+        RuntimeValue::MatrixF32(value) => {
+            format!("matrix/f32/{}x{}", value.rows(), value.cols())
+        }
+        RuntimeValue::TensorF32(value) => {
+            format!("tensor/f32/{:?}", value.shape().dims())
+        }
         RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),

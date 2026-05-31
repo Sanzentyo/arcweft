@@ -868,15 +868,15 @@ pub(super) fn parse_impl_members(body: &str) -> Vec<ImplMember> {
 fn parse_impl_member(item: &str) -> ImplMember {
     let item = item.trim_end_matches(';').trim();
     if let Some(rest) = item.strip_prefix("type ") {
-        if let Some((name, value)) = split_top_level_binding(rest) {
-            if let Ok(value) = parse_type_ref(value) {
-                let (name, params) = parse_associated_type_head(name);
-                return ImplMember::AssociatedType {
-                    name,
-                    params,
-                    value,
-                };
-            }
+        if let Some((name, value)) = split_top_level_binding(rest)
+            && let Ok(value) = parse_type_ref(value)
+        {
+            let (name, params) = parse_associated_type_head(name);
+            return ImplMember::AssociatedType {
+                name,
+                params,
+                value,
+            };
         }
         return ImplMember::Raw(item.to_owned());
     }
@@ -884,21 +884,21 @@ fn parse_impl_member(item: &str) -> ImplMember {
     // Impl function bodies are kept as source text for later expression
     // lowering, but their signatures are parsed now so type/HIR passes do not
     // need to rediscover the member boundary.
-    if let Some((head, body)) = split_brace_item(item) {
-        if head.starts_with("fn ") {
-            return parse_fn_signature(head).map_or_else(
-                |_| ImplMember::Raw(item.to_owned()),
-                |signature| {
-                    let (body_statements, body_value) = parse_scope_expr_body(body);
-                    ImplMember::Function {
-                        signature,
-                        body: body.to_owned(),
-                        body_statements,
-                        body_value,
-                    }
-                },
-            );
-        }
+    if let Some((head, body)) = split_brace_item(item)
+        && head.starts_with("fn ")
+    {
+        return parse_fn_signature(head).map_or_else(
+            |_| ImplMember::Raw(item.to_owned()),
+            |signature| {
+                let (body_statements, body_value) = parse_scope_expr_body(body);
+                ImplMember::Function {
+                    signature,
+                    body: body.to_owned(),
+                    body_statements,
+                    body_value,
+                }
+            },
+        );
     }
     if item.starts_with("fn ") {
         return parse_fn_signature(item).map_or_else(

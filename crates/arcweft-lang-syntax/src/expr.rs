@@ -1546,13 +1546,13 @@ fn is_ident_continue(ch: char) -> bool {
 }
 
 fn parse_duration(source: &str) -> Option<Literal> {
-    if let Some(value) = source.strip_suffix("ms") {
-        if is_numeric_duration(value) {
-            return Some(Literal::Duration {
-                amount: value.to_owned(),
-                unit: DurationUnit::Millis,
-            });
-        }
+    if let Some(value) = source.strip_suffix("ms")
+        && is_numeric_duration(value)
+    {
+        return Some(Literal::Duration {
+            amount: value.to_owned(),
+            unit: DurationUnit::Millis,
+        });
     }
     let value = source.strip_suffix('s')?;
     is_numeric_duration(value).then(|| Literal::Duration {

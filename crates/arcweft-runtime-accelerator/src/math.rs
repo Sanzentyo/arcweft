@@ -1,0 +1,1305 @@
+use arcweft_core::math::{DenseMatrixF32, DenseTensorF32, RuntimeMathError};
+use thiserror::Error;
+
+/// Runtime math backend selection for built-in matrix and tensor operations.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RuntimeMathBackend {
+    Scalar,
+    Glam,
+    Ndarray,
+    Wgpu,
+    #[default]
+    Auto,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeMathAcceleratorConfig {
+    pub backend: RuntimeMathBackend,
+    /// Minimum element count before `Auto` considers GPU dispatch.
+    pub wgpu_min_elements: usize,
+}
+
+impl Default for RuntimeMathAcceleratorConfig {
+    fn default() -> Self {
+        Self {
+            backend: RuntimeMathBackend::Auto,
+            wgpu_min_elements: 67_108_864,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RuntimeMathStats {
+    pub scalar_calls: usize,
+    pub glam_calls: usize,
+    pub ndarray_calls: usize,
+    pub wgpu_calls: usize,
+    pub fallback_calls: usize,
+    pub bytes_borrowed: usize,
+    pub bytes_copied: usize,
+    pub bytes_uploaded: usize,
+    pub bytes_downloaded: usize,
+    pub gpu_buffer_creations: usize,
+    pub gpu_buffer_reuse_hits: usize,
+    pub gpu_reused_dispatches: usize,
+    pub last_backend: Option<RuntimeMathBackend>,
+}
+
+/// Adapter-owned accelerator for dense `f32` matrix/tensor kernels.
+pub struct RuntimeMathAccelerator {
+    config: RuntimeMathAcceleratorConfig,
+    stats: RuntimeMathStats,
+    #[cfg(feature = "math-wgpu")]
+    wgpu: Option<wgpu_backend::WgpuMathContext>,
+}
+
+/// Prepared GPU storage for repeatedly adding the same `f32` matrices.
+pub struct RuntimePreparedMatrixAddF32 {
+    rows: usize,
+    cols: usize,
+    #[cfg(feature = "math-wgpu")]
+    gpu: wgpu_backend::PreparedAddBuffers,
+}
+
+/// Prepared GPU storage for repeatedly adding the same `f32` tensors.
+pub struct RuntimePreparedTensorAddF32 {
+    dims: Vec<usize>,
+    #[cfg(feature = "math-wgpu")]
+    gpu: wgpu_backend::PreparedAddBuffers,
+}
+
+impl RuntimePreparedMatrixAddF32 {
+    pub const fn rows(&self) -> usize {
+        self.rows
+    }
+
+    pub const fn cols(&self) -> usize {
+        self.cols
+    }
+}
+
+impl RuntimePreparedTensorAddF32 {
+    pub fn dims(&self) -> &[usize] {
+        &self.dims
+    }
+
+    pub fn element_count(&self) -> usize {
+        self.dims.iter().product()
+    }
+}
+
+impl RuntimeMathAccelerator {
+    pub fn new(config: RuntimeMathAcceleratorConfig) -> Self {
+        Self {
+            config,
+            stats: RuntimeMathStats::default(),
+            #[cfg(feature = "math-wgpu")]
+            wgpu: None,
+        }
+    }
+
+    pub const fn config(&self) -> RuntimeMathAcceleratorConfig {
+        self.config
+    }
+
+    pub const fn stats(&self) -> RuntimeMathStats {
+        self.stats
+    }
+
+    pub fn reset_stats(&mut self) {
+        self.stats = RuntimeMathStats::default();
+    }
+
+    pub fn matmul_f32(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        self.record_matrix_inputs(lhs, rhs);
+        match self.selected_matmul_backend(lhs, rhs) {
+            RuntimeMathBackend::Scalar => self.matmul_scalar(lhs, rhs),
+            RuntimeMathBackend::Glam => self.matmul_glam(lhs, rhs),
+            RuntimeMathBackend::Ndarray => self.matmul_ndarray(lhs, rhs),
+            RuntimeMathBackend::Wgpu => self.matmul_wgpu(lhs, rhs),
+            RuntimeMathBackend::Auto => unreachable!("auto is resolved before dispatch"),
+        }
+    }
+
+    pub fn matrix_add_f32(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        self.record_matrix_inputs(lhs, rhs);
+        match self.selected_elementwise_backend(lhs.values().len()) {
+            RuntimeMathBackend::Scalar => self.matrix_add_scalar(lhs, rhs),
+            RuntimeMathBackend::Glam => self.matrix_add_glam(lhs, rhs),
+            RuntimeMathBackend::Ndarray => self.matrix_add_ndarray(lhs, rhs),
+            RuntimeMathBackend::Wgpu => self.matrix_add_wgpu(lhs, rhs),
+            RuntimeMathBackend::Auto => unreachable!("auto is resolved before dispatch"),
+        }
+    }
+
+    pub fn tensor_add_f32(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, RuntimeMathAcceleratorError> {
+        self.record_tensor_inputs(lhs, rhs);
+        match self.selected_elementwise_backend(lhs.values().len()) {
+            RuntimeMathBackend::Scalar => self.tensor_add_scalar(lhs, rhs),
+            RuntimeMathBackend::Glam => self.tensor_add_glam(lhs, rhs),
+            RuntimeMathBackend::Ndarray => self.tensor_add_ndarray(lhs, rhs),
+            RuntimeMathBackend::Wgpu => self.tensor_add_wgpu(lhs, rhs),
+            RuntimeMathBackend::Auto => unreachable!("auto is resolved before dispatch"),
+        }
+    }
+
+    pub fn prepare_matrix_add_f32(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<RuntimePreparedMatrixAddF32, RuntimeMathAcceleratorError> {
+        if lhs.shape() != rhs.shape() {
+            return Err(RuntimeMathError::MatrixShapeMismatch {
+                lhs: lhs.shape(),
+                rhs: rhs.shape(),
+                op: "add",
+            }
+            .into());
+        }
+        self.record_matrix_inputs(lhs, rhs);
+        #[cfg(feature = "math-wgpu")]
+        {
+            let gpu = self
+                .wgpu_context()
+                .and_then(|context| context.prepare_add(lhs.values(), rhs.values()))?;
+            self.stats.bytes_uploaded +=
+                (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
+            self.stats.bytes_copied +=
+                (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
+            self.stats.gpu_buffer_creations += 4;
+            Ok(RuntimePreparedMatrixAddF32 {
+                rows: lhs.rows(),
+                cols: lhs.cols(),
+                gpu,
+            })
+        }
+        #[cfg(not(feature = "math-wgpu"))]
+        {
+            let _ = (lhs, rhs);
+            Err(RuntimeMathAcceleratorError::Backend(
+                "math-wgpu feature is disabled".to_owned(),
+            ))
+        }
+    }
+
+    pub fn run_prepared_matrix_add_f32(
+        &mut self,
+        prepared: &RuntimePreparedMatrixAddF32,
+    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        let mut out = vec![0.0; prepared.rows * prepared.cols];
+        self.run_prepared_matrix_add_f32_into(prepared, &mut out)?;
+        DenseMatrixF32::new(prepared.rows, prepared.cols, out).map_err(Into::into)
+    }
+
+    pub fn run_prepared_matrix_add_f32_into(
+        &mut self,
+        prepared: &RuntimePreparedMatrixAddF32,
+        out: &mut [f32],
+    ) -> Result<(), RuntimeMathAcceleratorError> {
+        let expected = prepared.rows * prepared.cols;
+        if out.len() != expected {
+            return Err(RuntimeMathError::InvalidElementCount {
+                expected,
+                found: out.len(),
+            }
+            .into());
+        }
+        #[cfg(feature = "math-wgpu")]
+        {
+            self.wgpu_context()
+                .and_then(|context| context.dispatch_prepared_add(&prepared.gpu, out))?;
+            self.record_prepared_gpu_dispatch(prepared.gpu.len());
+            Ok(())
+        }
+        #[cfg(not(feature = "math-wgpu"))]
+        {
+            let _ = prepared;
+            Err(RuntimeMathAcceleratorError::Backend(
+                "math-wgpu feature is disabled".to_owned(),
+            ))
+        }
+    }
+
+    pub fn prepare_tensor_add_f32(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<RuntimePreparedTensorAddF32, RuntimeMathAcceleratorError> {
+        if lhs.shape() != rhs.shape() {
+            return Err(RuntimeMathError::TensorShapeMismatch {
+                lhs: lhs.shape().clone(),
+                rhs: rhs.shape().clone(),
+                op: "add",
+            }
+            .into());
+        }
+        self.record_tensor_inputs(lhs, rhs);
+        #[cfg(feature = "math-wgpu")]
+        {
+            let gpu = self
+                .wgpu_context()
+                .and_then(|context| context.prepare_add(lhs.values(), rhs.values()))?;
+            self.stats.bytes_uploaded +=
+                (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
+            self.stats.bytes_copied +=
+                (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
+            self.stats.gpu_buffer_creations += 4;
+            Ok(RuntimePreparedTensorAddF32 {
+                dims: lhs.shape().dims().to_vec(),
+                gpu,
+            })
+        }
+        #[cfg(not(feature = "math-wgpu"))]
+        {
+            let _ = (lhs, rhs);
+            Err(RuntimeMathAcceleratorError::Backend(
+                "math-wgpu feature is disabled".to_owned(),
+            ))
+        }
+    }
+
+    pub fn run_prepared_tensor_add_f32(
+        &mut self,
+        prepared: &RuntimePreparedTensorAddF32,
+    ) -> Result<DenseTensorF32, RuntimeMathAcceleratorError> {
+        let mut out = vec![0.0; prepared.element_count()];
+        self.run_prepared_tensor_add_f32_into(prepared, &mut out)?;
+        DenseTensorF32::new(prepared.dims.clone(), out).map_err(Into::into)
+    }
+
+    pub fn run_prepared_tensor_add_f32_into(
+        &mut self,
+        prepared: &RuntimePreparedTensorAddF32,
+        out: &mut [f32],
+    ) -> Result<(), RuntimeMathAcceleratorError> {
+        let expected = prepared.element_count();
+        if out.len() != expected {
+            return Err(RuntimeMathError::InvalidElementCount {
+                expected,
+                found: out.len(),
+            }
+            .into());
+        }
+        #[cfg(feature = "math-wgpu")]
+        {
+            self.wgpu_context()
+                .and_then(|context| context.dispatch_prepared_add(&prepared.gpu, out))?;
+            self.record_prepared_gpu_dispatch(prepared.gpu.len());
+            Ok(())
+        }
+        #[cfg(not(feature = "math-wgpu"))]
+        {
+            let _ = prepared;
+            Err(RuntimeMathAcceleratorError::Backend(
+                "math-wgpu feature is disabled".to_owned(),
+            ))
+        }
+    }
+
+    fn selected_matmul_backend(
+        &self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> RuntimeMathBackend {
+        match self.config.backend {
+            RuntimeMathBackend::Auto if lhs.rows() == 4 && lhs.cols() == 4 && rhs.cols() == 4 => {
+                RuntimeMathBackend::Glam
+            }
+            RuntimeMathBackend::Auto
+                if wgpu_backend_enabled()
+                    && matmul_work_items(lhs, rhs) >= self.config.wgpu_min_elements =>
+            {
+                RuntimeMathBackend::Wgpu
+            }
+            RuntimeMathBackend::Auto => RuntimeMathBackend::Ndarray,
+            backend => backend,
+        }
+    }
+
+    fn selected_elementwise_backend(&self, _elements: usize) -> RuntimeMathBackend {
+        match self.config.backend {
+            RuntimeMathBackend::Auto => RuntimeMathBackend::Ndarray,
+            backend => backend,
+        }
+    }
+
+    fn matmul_scalar(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        self.stats.scalar_calls += 1;
+        self.stats.last_backend = Some(RuntimeMathBackend::Scalar);
+        lhs.matmul_scalar(rhs).map_err(Into::into)
+    }
+
+    fn matrix_add_scalar(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        self.stats.scalar_calls += 1;
+        self.stats.last_backend = Some(RuntimeMathBackend::Scalar);
+        lhs.add_scalar(rhs).map_err(Into::into)
+    }
+
+    fn tensor_add_scalar(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, RuntimeMathAcceleratorError> {
+        self.stats.scalar_calls += 1;
+        self.stats.last_backend = Some(RuntimeMathBackend::Scalar);
+        lhs.add_scalar(rhs).map_err(Into::into)
+    }
+
+    fn matmul_glam(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        #[cfg(feature = "math-glam")]
+        {
+            if lhs.rows() == 4 && lhs.cols() == 4 && rhs.rows() == 4 && rhs.cols() == 4 {
+                self.stats.glam_calls += 1;
+                self.stats.last_backend = Some(RuntimeMathBackend::Glam);
+                let lhs_matrix = glam::Mat4::from_cols_array(&row_major_4x4_to_cols(lhs.values()));
+                let rhs_matrix = glam::Mat4::from_cols_array(&row_major_4x4_to_cols(rhs.values()));
+                let out = cols_4x4_to_row_major((lhs_matrix * rhs_matrix).to_cols_array());
+                return DenseMatrixF32::new(4, 4, out).map_err(Into::into);
+            }
+        }
+        self.stats.fallback_calls += 1;
+        self.matmul_scalar(lhs, rhs)
+    }
+
+    fn matrix_add_glam(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        #[cfg(feature = "math-glam")]
+        {
+            if lhs.rows() == 4 && lhs.cols() == 4 && rhs.rows() == 4 && rhs.cols() == 4 {
+                self.stats.glam_calls += 1;
+                self.stats.last_backend = Some(RuntimeMathBackend::Glam);
+                let lhs_matrix = glam::Mat4::from_cols_array(&row_major_4x4_to_cols(lhs.values()));
+                let rhs_matrix = glam::Mat4::from_cols_array(&row_major_4x4_to_cols(rhs.values()));
+                let out = cols_4x4_to_row_major((lhs_matrix + rhs_matrix).to_cols_array());
+                return DenseMatrixF32::new(4, 4, out).map_err(Into::into);
+            }
+        }
+        self.stats.fallback_calls += 1;
+        self.matrix_add_scalar(lhs, rhs)
+    }
+
+    fn tensor_add_glam(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, RuntimeMathAcceleratorError> {
+        self.stats.fallback_calls += 1;
+        self.tensor_add_scalar(lhs, rhs)
+    }
+
+    fn matmul_ndarray(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        #[cfg(feature = "math-ndarray")]
+        {
+            if lhs.cols() == rhs.rows() {
+                self.stats.ndarray_calls += 1;
+                self.stats.last_backend = Some(RuntimeMathBackend::Ndarray);
+                let lhs_view =
+                    ndarray::ArrayView2::from_shape((lhs.rows(), lhs.cols()), lhs.values())
+                        .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+                let rhs_view =
+                    ndarray::ArrayView2::from_shape((rhs.rows(), rhs.cols()), rhs.values())
+                        .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+                let out = lhs_view.dot(&rhs_view);
+                DenseMatrixF32::new(lhs.rows(), rhs.cols(), out.into_raw_vec_and_offset().0)
+                    .map_err(Into::into)
+            } else {
+                lhs.matmul_scalar(rhs).map_err(Into::into)
+            }
+        }
+        #[cfg(not(feature = "math-ndarray"))]
+        {
+            self.stats.fallback_calls += 1;
+            self.matmul_scalar(lhs, rhs)
+        }
+    }
+
+    fn matrix_add_ndarray(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        #[cfg(feature = "math-ndarray")]
+        {
+            if lhs.shape() == rhs.shape() {
+                self.stats.ndarray_calls += 1;
+                self.stats.last_backend = Some(RuntimeMathBackend::Ndarray);
+                let out = lhs
+                    .values()
+                    .iter()
+                    .zip(rhs.values())
+                    .map(|(lhs, rhs)| lhs + rhs)
+                    .collect();
+                DenseMatrixF32::new(lhs.rows(), lhs.cols(), out).map_err(Into::into)
+            } else {
+                lhs.add_scalar(rhs).map_err(Into::into)
+            }
+        }
+        #[cfg(not(feature = "math-ndarray"))]
+        {
+            self.stats.fallback_calls += 1;
+            self.matrix_add_scalar(lhs, rhs)
+        }
+    }
+
+    fn tensor_add_ndarray(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, RuntimeMathAcceleratorError> {
+        #[cfg(feature = "math-ndarray")]
+        {
+            if lhs.shape() == rhs.shape() {
+                self.stats.ndarray_calls += 1;
+                self.stats.last_backend = Some(RuntimeMathBackend::Ndarray);
+                let out = lhs
+                    .values()
+                    .iter()
+                    .zip(rhs.values())
+                    .map(|(lhs, rhs)| lhs + rhs)
+                    .collect();
+                DenseTensorF32::new(lhs.shape().dims().to_vec(), out).map_err(Into::into)
+            } else {
+                lhs.add_scalar(rhs).map_err(Into::into)
+            }
+        }
+        #[cfg(not(feature = "math-ndarray"))]
+        {
+            self.stats.fallback_calls += 1;
+            self.tensor_add_scalar(lhs, rhs)
+        }
+    }
+
+    fn matmul_wgpu(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        #[cfg(feature = "math-wgpu")]
+        {
+            let result = self
+                .wgpu_context()
+                .and_then(|context| context.matmul_f32(lhs, rhs));
+            match result {
+                Ok(value) => {
+                    self.stats.wgpu_calls += 1;
+                    self.stats.last_backend = Some(RuntimeMathBackend::Wgpu);
+                    self.record_gpu_transfer(
+                        lhs.values().len() + rhs.values().len(),
+                        lhs.rows() * rhs.cols(),
+                    );
+                    return Ok(value);
+                }
+                Err(error) => {
+                    self.stats.fallback_calls += 1;
+                    if self.config.backend == RuntimeMathBackend::Wgpu {
+                        return Err(error);
+                    }
+                }
+            }
+        }
+        #[cfg(not(feature = "math-wgpu"))]
+        {
+            if self.config.backend == RuntimeMathBackend::Wgpu {
+                return Err(RuntimeMathAcceleratorError::Backend(
+                    "math-wgpu feature is disabled".to_owned(),
+                ));
+            }
+            self.stats.fallback_calls += 1;
+        }
+        self.matmul_ndarray(lhs, rhs)
+    }
+
+    fn matrix_add_wgpu(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+        #[cfg(feature = "math-wgpu")]
+        {
+            let result = self
+                .wgpu_context()
+                .and_then(|context| context.matrix_add_f32(lhs, rhs));
+            match result {
+                Ok(value) => {
+                    self.stats.wgpu_calls += 1;
+                    self.stats.last_backend = Some(RuntimeMathBackend::Wgpu);
+                    self.record_gpu_transfer(
+                        lhs.values().len() + rhs.values().len(),
+                        lhs.values().len(),
+                    );
+                    return Ok(value);
+                }
+                Err(error) => {
+                    self.stats.fallback_calls += 1;
+                    if self.config.backend == RuntimeMathBackend::Wgpu {
+                        return Err(error);
+                    }
+                }
+            }
+        }
+        #[cfg(not(feature = "math-wgpu"))]
+        {
+            if self.config.backend == RuntimeMathBackend::Wgpu {
+                return Err(RuntimeMathAcceleratorError::Backend(
+                    "math-wgpu feature is disabled".to_owned(),
+                ));
+            }
+            self.stats.fallback_calls += 1;
+        }
+        self.matrix_add_ndarray(lhs, rhs)
+    }
+
+    fn tensor_add_wgpu(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, RuntimeMathAcceleratorError> {
+        #[cfg(feature = "math-wgpu")]
+        {
+            let result = self
+                .wgpu_context()
+                .and_then(|context| context.tensor_add_f32(lhs, rhs));
+            match result {
+                Ok(value) => {
+                    self.stats.wgpu_calls += 1;
+                    self.stats.last_backend = Some(RuntimeMathBackend::Wgpu);
+                    self.record_gpu_transfer(
+                        lhs.values().len() + rhs.values().len(),
+                        lhs.values().len(),
+                    );
+                    return Ok(value);
+                }
+                Err(error) => {
+                    self.stats.fallback_calls += 1;
+                    if self.config.backend == RuntimeMathBackend::Wgpu {
+                        return Err(error);
+                    }
+                }
+            }
+        }
+        #[cfg(not(feature = "math-wgpu"))]
+        {
+            if self.config.backend == RuntimeMathBackend::Wgpu {
+                return Err(RuntimeMathAcceleratorError::Backend(
+                    "math-wgpu feature is disabled".to_owned(),
+                ));
+            }
+            self.stats.fallback_calls += 1;
+        }
+        self.tensor_add_ndarray(lhs, rhs)
+    }
+
+    fn record_matrix_inputs(&mut self, lhs: &DenseMatrixF32, rhs: &DenseMatrixF32) {
+        self.stats.bytes_borrowed +=
+            (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
+    }
+
+    fn record_tensor_inputs(&mut self, lhs: &DenseTensorF32, rhs: &DenseTensorF32) {
+        self.stats.bytes_borrowed +=
+            (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
+    }
+
+    #[cfg(feature = "math-wgpu")]
+    fn record_gpu_transfer(&mut self, uploaded_elements: usize, downloaded_elements: usize) {
+        let uploaded = uploaded_elements * std::mem::size_of::<f32>();
+        let downloaded = downloaded_elements * std::mem::size_of::<f32>();
+        self.stats.bytes_uploaded += uploaded;
+        self.stats.bytes_downloaded += downloaded;
+        self.stats.bytes_copied += uploaded + downloaded;
+        self.stats.gpu_buffer_creations += 4;
+    }
+
+    #[cfg(feature = "math-wgpu")]
+    fn record_prepared_gpu_dispatch(&mut self, downloaded_elements: usize) {
+        let downloaded = downloaded_elements * std::mem::size_of::<f32>();
+        self.stats.wgpu_calls += 1;
+        self.stats.last_backend = Some(RuntimeMathBackend::Wgpu);
+        self.stats.bytes_downloaded += downloaded;
+        self.stats.bytes_copied += downloaded;
+        self.stats.gpu_buffer_reuse_hits += 4;
+        self.stats.gpu_reused_dispatches += 1;
+    }
+
+    #[cfg(feature = "math-wgpu")]
+    fn wgpu_context(
+        &mut self,
+    ) -> Result<&wgpu_backend::WgpuMathContext, RuntimeMathAcceleratorError> {
+        if self.wgpu.is_none() {
+            self.wgpu = Some(wgpu_backend::WgpuMathContext::new()?);
+        }
+        Ok(self.wgpu.as_ref().expect("wgpu context was initialized"))
+    }
+}
+
+fn row_major_4x4_to_cols(values: &[f32]) -> [f32; 16] {
+    [
+        values[0], values[4], values[8], values[12], values[1], values[5], values[9], values[13],
+        values[2], values[6], values[10], values[14], values[3], values[7], values[11], values[15],
+    ]
+}
+
+fn cols_4x4_to_row_major(values: [f32; 16]) -> Vec<f32> {
+    vec![
+        values[0], values[4], values[8], values[12], values[1], values[5], values[9], values[13],
+        values[2], values[6], values[10], values[14], values[3], values[7], values[11], values[15],
+    ]
+}
+
+fn matmul_work_items(lhs: &DenseMatrixF32, rhs: &DenseMatrixF32) -> usize {
+    lhs.rows()
+        .saturating_mul(lhs.cols())
+        .saturating_mul(rhs.cols())
+}
+
+const fn wgpu_backend_enabled() -> bool {
+    cfg!(feature = "math-wgpu")
+}
+
+#[derive(Debug, Error)]
+pub enum RuntimeMathAcceleratorError {
+    #[error(transparent)]
+    Math(#[from] RuntimeMathError),
+    #[error("runtime math accelerator backend error: {0}")]
+    Backend(String),
+}
+
+#[cfg(feature = "math-wgpu")]
+mod wgpu_backend {
+    use super::{DenseMatrixF32, DenseTensorF32, RuntimeMathAcceleratorError};
+    use bytemuck::{Pod, Zeroable};
+    use std::sync::mpsc;
+    use wgpu::util::DeviceExt;
+
+    pub struct WgpuMathContext {
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        matmul_pipeline: wgpu::ComputePipeline,
+        add_pipeline: wgpu::ComputePipeline,
+    }
+
+    pub struct PreparedAddBuffers {
+        len: usize,
+        _lhs: wgpu::Buffer,
+        _rhs: wgpu::Buffer,
+        out: wgpu::Buffer,
+        _params: wgpu::Buffer,
+        bind_group: wgpu::BindGroup,
+    }
+
+    impl PreparedAddBuffers {
+        pub const fn len(&self) -> usize {
+            self.len
+        }
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Pod, Zeroable)]
+    struct MatmulParams {
+        rows: u32,
+        shared: u32,
+        cols: u32,
+        _pad: u32,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Pod, Zeroable)]
+    struct AddParams {
+        len: u32,
+        x_threads: u32,
+        _pad1: u32,
+        _pad2: u32,
+    }
+
+    impl WgpuMathContext {
+        pub fn new() -> Result<Self, RuntimeMathAcceleratorError> {
+            let instance =
+                wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+            let adapter =
+                pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::HighPerformance,
+                    compatible_surface: None,
+                    force_fallback_adapter: false,
+                }))
+                .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+            let (device, queue) =
+                pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+                    label: Some("arcweft-runtime-math"),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::downlevel_defaults(),
+                    experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                    memory_hints: wgpu::MemoryHints::Performance,
+                    trace: wgpu::Trace::Off,
+                }))
+                .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+            let matmul_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("arcweft-matmul-f32"),
+                source: wgpu::ShaderSource::Wgsl(MATMUL_SHADER.into()),
+            });
+            let add_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("arcweft-add-f32"),
+                source: wgpu::ShaderSource::Wgsl(ADD_SHADER.into()),
+            });
+            let matmul_pipeline =
+                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("arcweft-matmul-f32"),
+                    layout: None,
+                    module: &matmul_shader,
+                    entry_point: Some("main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    cache: None,
+                });
+            let add_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("arcweft-add-f32"),
+                layout: None,
+                module: &add_shader,
+                entry_point: Some("main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            });
+            Ok(Self {
+                device,
+                queue,
+                matmul_pipeline,
+                add_pipeline,
+            })
+        }
+
+        pub fn matmul_f32(
+            &self,
+            lhs: &DenseMatrixF32,
+            rhs: &DenseMatrixF32,
+        ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+            if lhs.cols() != rhs.rows() {
+                return lhs.matmul_scalar(rhs).map_err(Into::into);
+            }
+            let out_len = lhs.rows() * rhs.cols();
+            let mut out = vec![0.0; out_len];
+            self.dispatch_matmul(
+                lhs.values(),
+                rhs.values(),
+                &mut out,
+                lhs.rows(),
+                lhs.cols(),
+                rhs.cols(),
+            )?;
+            DenseMatrixF32::new(lhs.rows(), rhs.cols(), out).map_err(Into::into)
+        }
+
+        pub fn matrix_add_f32(
+            &self,
+            lhs: &DenseMatrixF32,
+            rhs: &DenseMatrixF32,
+        ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+            if lhs.shape() != rhs.shape() {
+                return lhs.add_scalar(rhs).map_err(Into::into);
+            }
+            let mut out = vec![0.0; lhs.values().len()];
+            self.dispatch_add(lhs.values(), rhs.values(), &mut out)?;
+            DenseMatrixF32::new(lhs.rows(), lhs.cols(), out).map_err(Into::into)
+        }
+
+        pub fn tensor_add_f32(
+            &self,
+            lhs: &DenseTensorF32,
+            rhs: &DenseTensorF32,
+        ) -> Result<DenseTensorF32, RuntimeMathAcceleratorError> {
+            if lhs.shape() != rhs.shape() {
+                return lhs.add_scalar(rhs).map_err(Into::into);
+            }
+            let mut out = vec![0.0; lhs.values().len()];
+            self.dispatch_add(lhs.values(), rhs.values(), &mut out)?;
+            DenseTensorF32::new(lhs.shape().dims().to_vec(), out).map_err(Into::into)
+        }
+
+        pub fn prepare_add(
+            &self,
+            lhs: &[f32],
+            rhs: &[f32],
+        ) -> Result<PreparedAddBuffers, RuntimeMathAcceleratorError> {
+            if lhs.len() != rhs.len() {
+                return Err(RuntimeMathAcceleratorError::Backend(format!(
+                    "prepared add expected matching input lengths, got {} and {}",
+                    lhs.len(),
+                    rhs.len()
+                )));
+            }
+            let len = lhs.len();
+            let byte_len = std::mem::size_of_val(lhs).max(std::mem::size_of::<f32>());
+            let out = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("arcweft-math-prepared-out"),
+                size: byte_len as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            let params = AddParams {
+                len: checked_u32(len)?,
+                x_threads: checked_u32(add_groups(len).0 * 256)?,
+                _pad1: 0,
+                _pad2: 0,
+            };
+            let lhs = storage_buffer(
+                &self.device,
+                bytemuck::cast_slice(lhs),
+                "arcweft-math-prepared-lhs",
+            );
+            let rhs = storage_buffer(
+                &self.device,
+                bytemuck::cast_slice(rhs),
+                "arcweft-math-prepared-rhs",
+            );
+            let params = storage_buffer(
+                &self.device,
+                bytemuck::bytes_of(&params),
+                "arcweft-math-prepared-params",
+            );
+            let layout = self.add_pipeline.get_bind_group_layout(0);
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("arcweft-math-prepared-bind-group"),
+                layout: &layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: lhs.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: rhs.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: out.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: params.as_entire_binding(),
+                    },
+                ],
+            });
+            Ok(PreparedAddBuffers {
+                len,
+                _lhs: lhs,
+                _rhs: rhs,
+                out,
+                _params: params,
+                bind_group,
+            })
+        }
+
+        pub fn dispatch_prepared_add(
+            &self,
+            prepared: &PreparedAddBuffers,
+            out: &mut [f32],
+        ) -> Result<(), RuntimeMathAcceleratorError> {
+            if out.len() != prepared.len {
+                return Err(RuntimeMathAcceleratorError::Backend(format!(
+                    "prepared add output expected {} value(s), got {}",
+                    prepared.len,
+                    out.len()
+                )));
+            }
+            if out.is_empty() {
+                return Ok(());
+            }
+            let (groups_x, groups_y) = add_groups(prepared.len);
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("arcweft-math-prepared-encoder"),
+                });
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("arcweft-math-prepared-pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.add_pipeline);
+                pass.set_bind_group(0, &prepared.bind_group, &[]);
+                pass.dispatch_workgroups(checked_u32(groups_x)?, checked_u32(groups_y)?, 1);
+            }
+            self.queue.submit(Some(encoder.finish()));
+            self.read_buffer(&prepared.out, out)
+        }
+
+        fn dispatch_matmul(
+            &self,
+            lhs: &[f32],
+            rhs: &[f32],
+            out: &mut [f32],
+            rows: usize,
+            shared: usize,
+            cols: usize,
+        ) -> Result<(), RuntimeMathAcceleratorError> {
+            let params = MatmulParams {
+                rows: checked_u32(rows)?,
+                shared: checked_u32(shared)?,
+                cols: checked_u32(cols)?,
+                _pad: 0,
+            };
+            self.dispatch(
+                &self.matmul_pipeline,
+                &[bytemuck::cast_slice(lhs), bytemuck::cast_slice(rhs)],
+                bytemuck::bytes_of(&params),
+                out,
+                checked_u32(cols.div_ceil(16))?,
+                checked_u32(rows.div_ceil(16))?,
+            )
+        }
+
+        fn dispatch_add(
+            &self,
+            lhs: &[f32],
+            rhs: &[f32],
+            out: &mut [f32],
+        ) -> Result<(), RuntimeMathAcceleratorError> {
+            let (groups_x, groups_y) = add_groups(out.len());
+            let params = AddParams {
+                len: checked_u32(out.len())?,
+                x_threads: checked_u32(groups_x * 256)?,
+                _pad1: 0,
+                _pad2: 0,
+            };
+            self.dispatch(
+                &self.add_pipeline,
+                &[bytemuck::cast_slice(lhs), bytemuck::cast_slice(rhs)],
+                bytemuck::bytes_of(&params),
+                out,
+                checked_u32(groups_x)?,
+                checked_u32(groups_y)?,
+            )
+        }
+
+        fn dispatch(
+            &self,
+            pipeline: &wgpu::ComputePipeline,
+            input_bytes: &[&[u8]],
+            params_bytes: &[u8],
+            out: &mut [f32],
+            workgroups_x: u32,
+            workgroups_y: u32,
+        ) -> Result<(), RuntimeMathAcceleratorError> {
+            let lhs = storage_buffer(&self.device, input_bytes[0], "arcweft-math-lhs");
+            let rhs = storage_buffer(&self.device, input_bytes[1], "arcweft-math-rhs");
+            let out_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("arcweft-math-out"),
+                size: std::mem::size_of_val(out) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            let params = storage_buffer(&self.device, params_bytes, "arcweft-math-params");
+            let layout = pipeline.get_bind_group_layout(0);
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("arcweft-math-bind-group"),
+                layout: &layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: lhs.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: rhs.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: out_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: params.as_entire_binding(),
+                    },
+                ],
+            });
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("arcweft-math-encoder"),
+                });
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("arcweft-math-pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(0, &bind_group, &[]);
+                pass.dispatch_workgroups(workgroups_x.max(1), workgroups_y.max(1), 1);
+            }
+            self.queue.submit(Some(encoder.finish()));
+            self.read_buffer(&out_buffer, out)
+        }
+
+        fn read_buffer(
+            &self,
+            buffer: &wgpu::Buffer,
+            out: &mut [f32],
+        ) -> Result<(), RuntimeMathAcceleratorError> {
+            let (sender, receiver) = mpsc::channel();
+            wgpu::util::DownloadBuffer::read_buffer(
+                &self.device,
+                &self.queue,
+                &buffer.slice(..),
+                move |result| {
+                    let _ = sender.send(result.map(|buffer| buffer.to_vec()));
+                },
+            );
+            self.device
+                .poll(wgpu::PollType::wait_indefinitely())
+                .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+            let bytes = receiver
+                .recv()
+                .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?
+                .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+            let values: &[f32] = bytemuck::cast_slice(&bytes);
+            out.copy_from_slice(values);
+            Ok(())
+        }
+    }
+
+    fn storage_buffer(device: &wgpu::Device, contents: &[u8], label: &'static str) -> wgpu::Buffer {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        })
+    }
+
+    fn checked_u32(value: usize) -> Result<u32, RuntimeMathAcceleratorError> {
+        u32::try_from(value).map_err(|_| {
+            RuntimeMathAcceleratorError::Backend(format!(
+                "GPU dispatch dimension {value} exceeds u32"
+            ))
+        })
+    }
+
+    fn add_groups(len: usize) -> (usize, usize) {
+        let groups = len.div_ceil(256).max(1);
+        let groups_x = groups.min(65_535);
+        let groups_y = groups.div_ceil(groups_x);
+        (groups_x, groups_y.max(1))
+    }
+
+    const MATMUL_SHADER: &str = r"
+struct MatrixParams {
+    rows: u32,
+    k_len: u32,
+    cols: u32,
+    pad: u32,
+}
+
+@group(0) @binding(0) var<storage, read> lhs: array<f32>;
+@group(0) @binding(1) var<storage, read> rhs: array<f32>;
+@group(0) @binding(2) var<storage, read_write> out: array<f32>;
+@group(0) @binding(3) var<storage, read> params: MatrixParams;
+
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let col = id.x;
+    let row = id.y;
+    if (row >= params.rows || col >= params.cols) {
+        return;
+    }
+    var acc = 0.0;
+    for (var k = 0u; k < params.k_len; k = k + 1u) {
+        acc = acc + lhs[row * params.k_len + k] * rhs[k * params.cols + col];
+    }
+    out[row * params.cols + col] = acc;
+}
+";
+
+    const ADD_SHADER: &str = r"
+struct AddParams {
+    len: u32,
+    x_threads: u32,
+    pad1: u32,
+    pad2: u32,
+}
+
+@group(0) @binding(0) var<storage, read> lhs: array<f32>;
+@group(0) @binding(1) var<storage, read> rhs: array<f32>;
+@group(0) @binding(2) var<storage, read_write> out: array<f32>;
+@group(0) @binding(3) var<storage, read> params: AddParams;
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let index = id.y * params.x_threads + id.x;
+    if (index >= params.len) {
+        return;
+    }
+    out[index] = lhs[index] + rhs[index];
+}
+";
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scalar_ndarray_and_glam_matmul_match() {
+        let lhs = DenseMatrixF32::new(4, 4, (0_u8..16).map(f32::from).collect()).unwrap();
+        let rhs = DenseMatrixF32::new(
+            4,
+            4,
+            (0_u8..16).map(|value| f32::from(value) * 0.5).collect(),
+        )
+        .unwrap();
+        let expected = lhs.matmul_scalar(&rhs).unwrap();
+
+        let mut scalar = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Scalar,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+        let mut glam = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Glam,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+        let mut ndarray = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Ndarray,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+
+        assert_eq!(scalar.matmul_f32(&lhs, &rhs).unwrap(), expected);
+        assert_eq!(glam.matmul_f32(&lhs, &rhs).unwrap(), expected);
+        assert_eq!(ndarray.matmul_f32(&lhs, &rhs).unwrap(), expected);
+        assert_eq!(glam.stats().glam_calls, 1);
+        assert_eq!(ndarray.stats().ndarray_calls, 1);
+    }
+
+    #[test]
+    fn tensor_add_keeps_shape_and_backend_stats() {
+        let lhs = DenseTensorF32::new(vec![2, 2, 2], vec![1.0; 8]).unwrap();
+        let rhs = DenseTensorF32::new(vec![2, 2, 2], vec![2.0; 8]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Ndarray,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+
+        let out = accelerator.tensor_add_f32(&lhs, &rhs).unwrap();
+
+        assert_eq!(out.shape().dims(), &[2, 2, 2]);
+        assert_eq!(out.values(), &[3.0; 8]);
+        assert_eq!(accelerator.stats().ndarray_calls, 1);
+        assert_eq!(
+            accelerator.stats().last_backend,
+            Some(RuntimeMathBackend::Ndarray)
+        );
+    }
+
+    #[cfg(feature = "math-ndarray")]
+    #[test]
+    fn auto_small_general_matmul_prefers_cpu_backend() {
+        let lhs = DenseMatrixF32::new(8, 8, (0_u8..64).map(f32::from).collect()).unwrap();
+        let rhs = DenseMatrixF32::new(
+            8,
+            8,
+            (0_u8..64).map(|value| f32::from(value) * 0.5).collect(),
+        )
+        .unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig::default());
+
+        let out = accelerator.matmul_f32(&lhs, &rhs).unwrap();
+
+        assert_eq!(out, lhs.matmul_scalar(&rhs).unwrap());
+        assert_eq!(
+            accelerator.stats().last_backend,
+            Some(RuntimeMathBackend::Ndarray)
+        );
+        assert_eq!(accelerator.stats().wgpu_calls, 0);
+    }
+
+    #[cfg(feature = "math-wgpu")]
+    #[test]
+    fn prepared_tensor_add_reuses_gpu_buffers_when_adapter_is_available() {
+        let lhs = DenseTensorF32::new(vec![1024], vec![1.0; 1024]).unwrap();
+        let rhs = DenseTensorF32::new(vec![1024], vec![2.0; 1024]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Wgpu,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+        let Ok(prepared) = accelerator.prepare_tensor_add_f32(&lhs, &rhs) else {
+            return;
+        };
+
+        let out = accelerator
+            .run_prepared_tensor_add_f32(&prepared)
+            .expect("prepared GPU tensor add dispatches");
+
+        assert_eq!(out.values(), vec![3.0; 1024].as_slice());
+        assert_eq!(accelerator.stats().wgpu_calls, 1);
+        assert_eq!(accelerator.stats().gpu_buffer_creations, 4);
+        assert_eq!(accelerator.stats().gpu_reused_dispatches, 1);
+        assert_eq!(accelerator.stats().gpu_buffer_reuse_hits, 4);
+        assert_eq!(
+            accelerator.stats().bytes_uploaded,
+            2048 * std::mem::size_of::<f32>()
+        );
+        assert_eq!(
+            accelerator.stats().bytes_downloaded,
+            1024 * std::mem::size_of::<f32>()
+        );
+    }
+
+    #[cfg(feature = "math-wgpu")]
+    #[test]
+    fn prepared_matrix_add_can_write_into_reused_output_buffer() {
+        let lhs = DenseMatrixF32::new(16, 16, vec![1.0; 256]).unwrap();
+        let rhs = DenseMatrixF32::new(16, 16, vec![2.0; 256]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Wgpu,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+        let Ok(prepared) = accelerator.prepare_matrix_add_f32(&lhs, &rhs) else {
+            return;
+        };
+
+        let mut out = vec![0.0; lhs.values().len()];
+        accelerator
+            .run_prepared_matrix_add_f32_into(&prepared, &mut out)
+            .expect("prepared GPU matrix add writes into caller buffer");
+
+        assert_eq!(out, vec![3.0; 256]);
+        assert_eq!(accelerator.stats().gpu_reused_dispatches, 1);
+        match accelerator
+            .run_prepared_matrix_add_f32_into(&prepared, &mut out[..255])
+            .unwrap_err()
+        {
+            RuntimeMathAcceleratorError::Math(RuntimeMathError::InvalidElementCount {
+                expected,
+                found,
+            }) => {
+                assert_eq!(expected, 256);
+                assert_eq!(found, 255);
+            }
+            error => panic!("unexpected prepared output error: {error}"),
+        }
+    }
+}

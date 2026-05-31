@@ -253,14 +253,13 @@ impl Engine {
             Ok(target) => {
                 if let Some(source) = target.strip_prefix("source:") {
                     self.close_source(&SourceId(source.to_owned()), output);
-                } else if let Some(stream) = target.strip_prefix("stream:") {
-                    if let Some(state) = self
+                } else if let Some(stream) = target.strip_prefix("stream:")
+                    && let Some(state) = self
                         .fiber
                         .stream_states
                         .get_mut(&StreamRuntimeId(stream.to_owned()))
-                    {
-                        state.close();
-                    }
+                {
+                    state.close();
                 }
             }
             Err(error) => Self::diagnose_runtime_error(error, output),

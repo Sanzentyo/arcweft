@@ -110,13 +110,12 @@ fn lint_choice_item_ids(item: &ChoiceItem, lints: &mut Vec<SyntaxLint>) {
         ChoiceItem::Option(option) => {
             lint_optional_id(option.id(), lints);
             lint_optional_id(option.label_text_key(), lints);
-            if let ChoiceAction::Goto(target) = option.action() {
-                if let Some(relative) = target
+            if let ChoiceAction::Goto(target) = option.action()
+                && let Some(relative) = target
                     .family_relative_ref()
                     .map(FamilyRelativeEntityRef::relative)
-                {
-                    lint_relative_id(relative, lints);
-                }
+            {
+                lint_relative_id(relative, lints);
             }
         }
         ChoiceItem::If { items, .. } | ChoiceItem::For { items, .. } => {

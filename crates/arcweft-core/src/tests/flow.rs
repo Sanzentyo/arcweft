@@ -671,6 +671,77 @@ fn engine_batches_dense_i16_and_u8_map_without_widening_flat_inputs() {
 }
 
 #[test]
+fn engine_batches_dense_exact_int_map_outputs_without_widening() {
+    assert_dense_exact_int_map_output_uses_flat_batch(
+        runtime_sequence_dense_u16(vec![3, 5, 7]),
+        RuntimeValue::u16(4),
+        RuntimePureInputType::U16,
+        RuntimePureOutputType::U16,
+        "seq/u16/3",
+        6 * std::mem::size_of::<u16>(),
+        3 * std::mem::size_of::<u16>(),
+    );
+    assert_dense_exact_int_map_output_uses_flat_batch(
+        runtime_sequence_dense_i8(vec![3, 5, 7]),
+        RuntimeValue::i8(4),
+        RuntimePureInputType::I8,
+        RuntimePureOutputType::I8,
+        "seq/i8/3",
+        6 * std::mem::size_of::<i8>(),
+        3 * std::mem::size_of::<i8>(),
+    );
+}
+
+#[test]
+fn engine_calls_exact_int_pure_helpers_without_value_fallback() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![FlowOp::ReturnExpr(RuntimeExpr::PureCall {
+                helper: RuntimePureHelperId(0),
+                args: vec![
+                    RuntimeExpr::Value(RuntimeValue::u16(7)),
+                    RuntimeExpr::Value(RuntimeValue::u16(5)),
+                ],
+            })],
+        }],
+        Vec::new(),
+    )
+    .expect("flow plan is valid")
+    .with_pure_helpers(vec![RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "score_u16".to_owned(),
+        input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        input_types: vec![RuntimePureInputType::U16, RuntimePureInputType::U16],
+        output_type: RuntimePureOutputType::U16,
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+            op: RuntimeBinaryOp::Add,
+            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+        },
+        scalar_eval_supported: true,
+        origin: RuntimePureHelperOrigin::Annotated,
+    }]);
+    let mut engine = Engine::new(plan);
+
+    let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+
+    assert!(matches!(
+        result.fiber_status,
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "12"
+    ));
+    assert_eq!(result.stats.pure.pure_calls, 1);
+    assert_eq!(result.stats.pure.arg_vec_allocations, 0);
+    assert_eq!(result.stats.pure.arg_bytes_copied, 0);
+    assert_eq!(
+        result.stats.pure.arg_bytes_borrowed,
+        2 * std::mem::size_of::<u16>()
+    );
+    assert_eq!(result.stats.pure.fallbacks, 0);
+}
+
+#[test]
 fn engine_calls_typed_float_pure_helpers_without_arg_vec_allocation() {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.main".to_owned())),
@@ -715,6 +786,28 @@ fn engine_calls_typed_float_pure_helpers_without_arg_vec_allocation() {
     assert_eq!(
         result.stats.pure.arg_bytes_borrowed,
         2 * std::mem::size_of::<f32>()
+    );
+}
+
+#[test]
+fn engine_batches_dense_float_map_outputs_without_value_materialization() {
+    assert_dense_float_map_output_uses_flat_batch(
+        runtime_sequence_dense_f32(vec![1.5, 2.0, 2.5]),
+        RuntimeValue::F32(2.0),
+        RuntimePureInputType::F32,
+        RuntimePureOutputType::F32,
+        "seq/f32/3",
+        6 * std::mem::size_of::<f32>(),
+        3 * std::mem::size_of::<f32>(),
+    );
+    assert_dense_float_map_output_uses_flat_batch(
+        runtime_sequence_dense_f64(vec![1.5, 2.0, 2.5]),
+        RuntimeValue::F64(2.0),
+        RuntimePureInputType::F64,
+        RuntimePureOutputType::F64,
+        "seq/f64/3",
+        6 * std::mem::size_of::<f64>(),
+        3 * std::mem::size_of::<f64>(),
     );
 }
 
@@ -805,6 +898,126 @@ fn assert_dense_exact_int_map_sum_uses_flat_batch(
         expected_borrowed_bytes
     );
     assert_eq!(result.stats.pure.result_bytes_copied, 0);
+}
+
+fn assert_dense_exact_int_map_output_uses_flat_batch(
+    source: RuntimeValue,
+    bonus: RuntimeValue,
+    input_type: RuntimePureInputType,
+    output_type: RuntimePureOutputType,
+    expected_return: &str,
+    expected_borrowed_bytes: usize,
+    expected_result_bytes: usize,
+) {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Map {
+                source: Box::new(RuntimeExpr::Value(source)),
+                param: "base".to_owned(),
+                body: Box::new(RuntimeExpr::PureCall {
+                    helper: RuntimePureHelperId(0),
+                    args: vec![
+                        RuntimeExpr::Local("base".to_owned()),
+                        RuntimeExpr::Value(bonus),
+                    ],
+                }),
+            })],
+        }],
+        Vec::new(),
+    )
+    .expect("flow plan is valid")
+    .with_pure_helpers(vec![RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "score_exact".to_owned(),
+        input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        input_types: vec![input_type, input_type],
+        output_type,
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+            op: RuntimeBinaryOp::Mul,
+            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+        },
+        scalar_eval_supported: true,
+        origin: RuntimePureHelperOrigin::Annotated,
+    }]);
+    let mut engine = Engine::new(plan);
+
+    let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+
+    assert!(matches!(
+        result.fiber_status,
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == expected_return
+    ));
+    assert_eq!(result.stats.pure.batch_calls, 1);
+    assert_eq!(result.stats.pure.batch_items, 3);
+    assert_eq!(result.stats.pure.arg_vec_allocations, 0);
+    assert_eq!(
+        result.stats.pure.arg_bytes_borrowed,
+        expected_borrowed_bytes
+    );
+    assert_eq!(result.stats.pure.result_bytes_copied, expected_result_bytes);
+}
+
+fn assert_dense_float_map_output_uses_flat_batch(
+    source: RuntimeValue,
+    gain: RuntimeValue,
+    input_type: RuntimePureInputType,
+    output_type: RuntimePureOutputType,
+    expected_return: &str,
+    expected_borrowed_bytes: usize,
+    expected_result_bytes: usize,
+) {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Map {
+                source: Box::new(RuntimeExpr::Value(source)),
+                param: "base".to_owned(),
+                body: Box::new(RuntimeExpr::PureCall {
+                    helper: RuntimePureHelperId(0),
+                    args: vec![
+                        RuntimeExpr::Local("base".to_owned()),
+                        RuntimeExpr::Value(gain),
+                    ],
+                }),
+            })],
+        }],
+        Vec::new(),
+    )
+    .expect("flow plan is valid")
+    .with_pure_helpers(vec![RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "score_float".to_owned(),
+        input_names: vec!["base".to_owned(), "gain".to_owned()],
+        input_types: vec![input_type, input_type],
+        output_type,
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+            op: RuntimeBinaryOp::Mul,
+            rhs: Box::new(RuntimeExpr::Local("gain".to_owned())),
+        },
+        scalar_eval_supported: true,
+        origin: RuntimePureHelperOrigin::Annotated,
+    }]);
+    let mut engine = Engine::new(plan);
+
+    let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+
+    assert!(matches!(
+        result.fiber_status,
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == expected_return
+    ));
+    assert_eq!(result.stats.pure.batch_calls, 1);
+    assert_eq!(result.stats.pure.batch_items, 3);
+    assert_eq!(result.stats.pure.arg_vec_allocations, 0);
+    assert_eq!(
+        result.stats.pure.arg_bytes_borrowed,
+        expected_borrowed_bytes
+    );
+    assert_eq!(result.stats.pure.result_bytes_copied, expected_result_bytes);
 }
 
 #[test]
