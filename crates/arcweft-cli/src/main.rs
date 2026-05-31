@@ -42,7 +42,8 @@ use arcweft_launch::{
 };
 use arcweft_runtime_accelerator::{
     RuntimePureAccelerator, RuntimePureAcceleratorConfig, RuntimePureBackendMode,
-    RuntimePureCompileStats, RuntimePureWorkerCount, math::RuntimeMathBackend,
+    RuntimePureCompileStats, RuntimePureWorkerCount,
+    math::{RuntimeMathAutoSelectionReason, RuntimeMathBackend, RuntimeMathStats},
 };
 use arcweft_runtime_plan::flow::{
     RuntimePlanLowerStats, lower_runtime_plan, lower_runtime_plan_with_stats,
@@ -69,18 +70,19 @@ use native_system::{HostSystemInfo, host_system_info};
 use native_task::{NativeSchedulerStats, NativeTaskBridge, NativeTaskClassCounts, NativeTaskStats};
 use output::{
     AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, CheckReport,
-    RuntimeExecutorPureAccelerationSummary, RuntimeExecutorPureCompileStatsSummary,
-    RuntimeExecutorPureConfigSummary, RuntimeExecutorStats, RuntimeExecutorTier,
-    RuntimePlanProfileStats, RuntimePlanReport, RuntimeProfileCompiler, RuntimeProfilePhase,
-    RuntimeProfileReport, RuntimeProfileRuntime, RuntimePureCallStatsSummary, RuntimeRunReport,
-    RuntimeStepRunSummary, RuntimeTypeValidationProfileStats, RuntimeTypeValidationReportSummary,
-    ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary, ScriptBenchMeasurementSummary,
-    ScriptBenchPureHelperBatchSummary, ScriptBenchPureHelperDeterministicSummary,
-    ScriptBenchPureHelperMeasurementSummary, ScriptBenchPureHelperRuntimeBatchSummary,
-    ScriptBenchPureHelperStatsSummary, ScriptBenchPureHelperTimingSamples,
-    ScriptBenchPureHelperTimingSummary, ScriptBenchRunReport, ScriptBenchRunSummary,
-    ScriptBenchSectionRunSummary, ScriptTestRunReport, ScriptTestRunSummary, TypeCheckProfileStats,
-    VerifyTypesReport, VerifyTypesRuntimeSelfCheck, VerifyTypesVerifierSummary, flow_status_label,
+    RuntimeExecutorMathStatsSummary, RuntimeExecutorPureAccelerationSummary,
+    RuntimeExecutorPureCompileStatsSummary, RuntimeExecutorPureConfigSummary, RuntimeExecutorStats,
+    RuntimeExecutorTier, RuntimePlanProfileStats, RuntimePlanReport, RuntimeProfileCompiler,
+    RuntimeProfilePhase, RuntimeProfileReport, RuntimeProfileRuntime, RuntimePureCallStatsSummary,
+    RuntimeRunReport, RuntimeStepRunSummary, RuntimeTypeValidationProfileStats,
+    RuntimeTypeValidationReportSummary, ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary,
+    ScriptBenchMeasurementSummary, ScriptBenchPureHelperBatchSummary,
+    ScriptBenchPureHelperDeterministicSummary, ScriptBenchPureHelperMeasurementSummary,
+    ScriptBenchPureHelperRuntimeBatchSummary, ScriptBenchPureHelperStatsSummary,
+    ScriptBenchPureHelperTimingSamples, ScriptBenchPureHelperTimingSummary, ScriptBenchRunReport,
+    ScriptBenchRunSummary, ScriptBenchSectionRunSummary, ScriptTestRunReport, ScriptTestRunSummary,
+    TypeCheckProfileStats, VerifyTypesReport, VerifyTypesRuntimeSelfCheck,
+    VerifyTypesVerifierSummary, flow_status_label,
 };
 use server_adapter::{NativeHttpServerConfig, serve_native_http};
 use std::fs;
@@ -2127,6 +2129,7 @@ fn runtime_executor_stats(
             vm: summary.vm,
         },
         pure_compile: RuntimeExecutorPureCompileStatsSummary::from(compile),
+        math: RuntimeExecutorMathStatsSummary::from(pure.math_stats()),
     }
 }
 
@@ -3581,6 +3584,7 @@ impl RuntimeBenchSamples {
             .copied()
             .unwrap_or_else(RuntimeExecutorStats::default);
         executor_stats.aot_fast_path_ops = median_usize(&mut self.aot_fast_path_ops);
+        executor_stats.math = median_executor_math_stats(&self.executor_stats_samples);
         executor_stats
     }
 
@@ -3930,6 +3934,72 @@ fn median_usize(values: &mut [usize]) -> usize {
     }
     let mid = values.len() / 2;
     *values.select_nth_unstable(mid).1
+}
+
+fn median_executor_math_stats(samples: &[RuntimeExecutorStats]) -> RuntimeExecutorMathStatsSummary {
+    RuntimeExecutorMathStatsSummary {
+        scalar_calls: median_executor_math_field(samples, |math| math.scalar_calls),
+        glam_calls: median_executor_math_field(samples, |math| math.glam_calls),
+        ndarray_calls: median_executor_math_field(samples, |math| math.ndarray_calls),
+        wgpu_calls: median_executor_math_field(samples, |math| math.wgpu_calls),
+        fallback_calls: median_executor_math_field(samples, |math| math.fallback_calls),
+        bytes_borrowed: median_executor_math_field(samples, |math| math.bytes_borrowed),
+        bytes_copied: median_executor_math_field(samples, |math| math.bytes_copied),
+        bytes_uploaded: median_executor_math_field(samples, |math| math.bytes_uploaded),
+        bytes_downloaded: median_executor_math_field(samples, |math| math.bytes_downloaded),
+        gpu_buffer_creations: median_executor_math_field(samples, |math| math.gpu_buffer_creations),
+        gpu_buffer_reuse_hits: median_executor_math_field(samples, |math| {
+            math.gpu_buffer_reuse_hits
+        }),
+        gpu_staging_buffer_creations: median_executor_math_field(samples, |math| {
+            math.gpu_staging_buffer_creations
+        }),
+        gpu_staging_buffer_reuse_hits: median_executor_math_field(samples, |math| {
+            math.gpu_staging_buffer_reuse_hits
+        }),
+        gpu_reused_dispatches: median_executor_math_field(samples, |math| {
+            math.gpu_reused_dispatches
+        }),
+        last_backend: modal_executor_math_label(samples, |math| math.last_backend),
+        last_auto_reason: modal_executor_math_label(samples, |math| math.last_auto_reason),
+    }
+}
+
+fn median_executor_math_field(
+    samples: &[RuntimeExecutorStats],
+    field: impl Fn(RuntimeExecutorMathStatsSummary) -> usize,
+) -> usize {
+    let mut values = samples
+        .iter()
+        .map(|sample| field(sample.math))
+        .collect::<Vec<_>>();
+    median_usize(&mut values)
+}
+
+fn modal_executor_math_label(
+    samples: &[RuntimeExecutorStats],
+    field: impl Fn(RuntimeExecutorMathStatsSummary) -> Option<&'static str>,
+) -> Option<&'static str> {
+    let mut counts: Vec<(Option<&'static str>, usize, usize)> = Vec::new();
+    for (index, sample) in samples.iter().enumerate() {
+        let label = field(sample.math);
+        if let Some((_, count, _)) = counts
+            .iter_mut()
+            .find(|(candidate, _, _)| *candidate == label)
+        {
+            *count += 1;
+        } else {
+            counts.push((label, 1, index));
+        }
+    }
+    counts
+        .into_iter()
+        .max_by(|(_, lhs_count, lhs_first), (_, rhs_count, rhs_first)| {
+            lhs_count
+                .cmp(rhs_count)
+                .then_with(|| rhs_first.cmp(lhs_first))
+        })
+        .and_then(|(label, _, _)| label)
 }
 
 fn validate_bench_section(section: &BenchSection) -> ScriptBenchSectionRunSummary {
@@ -4340,6 +4410,15 @@ fn runtime_math_backend_label(value: RuntimeMathBackend) -> &'static str {
     }
 }
 
+fn runtime_math_auto_reason_label(value: RuntimeMathAutoSelectionReason) -> &'static str {
+    match value {
+        RuntimeMathAutoSelectionReason::Matmul4x4Glam => "matmul_4x4_glam",
+        RuntimeMathAutoSelectionReason::MatmulWgpuWorkThreshold => "matmul_wgpu_work_threshold",
+        RuntimeMathAutoSelectionReason::MatmulCpuDefault => "matmul_cpu_default",
+        RuntimeMathAutoSelectionReason::ElementwiseCpuDefault => "elementwise_cpu_default",
+    }
+}
+
 impl From<RuntimePureCompileStats> for RuntimeExecutorPureCompileStatsSummary {
     fn from(stats: RuntimePureCompileStats) -> Self {
         Self {
@@ -4358,6 +4437,29 @@ impl From<RuntimePureCompileStats> for RuntimeExecutorPureCompileStatsSummary {
             cache_hits: stats.cache_hits,
             cache_misses: stats.cache_misses,
             compile_elapsed_ns: stats.compile_elapsed_ns,
+        }
+    }
+}
+
+impl From<RuntimeMathStats> for RuntimeExecutorMathStatsSummary {
+    fn from(stats: RuntimeMathStats) -> Self {
+        Self {
+            scalar_calls: stats.scalar_calls,
+            glam_calls: stats.glam_calls,
+            ndarray_calls: stats.ndarray_calls,
+            wgpu_calls: stats.wgpu_calls,
+            fallback_calls: stats.fallback_calls,
+            bytes_borrowed: stats.bytes_borrowed,
+            bytes_copied: stats.bytes_copied,
+            bytes_uploaded: stats.bytes_uploaded,
+            bytes_downloaded: stats.bytes_downloaded,
+            gpu_buffer_creations: stats.gpu_buffer_creations,
+            gpu_buffer_reuse_hits: stats.gpu_buffer_reuse_hits,
+            gpu_staging_buffer_creations: stats.gpu_staging_buffer_creations,
+            gpu_staging_buffer_reuse_hits: stats.gpu_staging_buffer_reuse_hits,
+            gpu_reused_dispatches: stats.gpu_reused_dispatches,
+            last_backend: stats.last_backend.map(runtime_math_backend_label),
+            last_auto_reason: stats.last_auto_reason.map(runtime_math_auto_reason_label),
         }
     }
 }

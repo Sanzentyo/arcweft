@@ -33,5 +33,9 @@ thiserror.workspace = true
 name = "arcw"
 path = "src/main.rs"
 
+[features]
+default = []
+math-wgpu = ["arcweft-runtime-accelerator/math-wgpu"]
+
 [lints]
 workspace = true

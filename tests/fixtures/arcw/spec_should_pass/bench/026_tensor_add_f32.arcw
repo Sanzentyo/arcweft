@@ -1,0 +1,8 @@
+bench @bench.tensor_add_f32 {
+    measure iterations = 4 { start(@flow.tensor_add_f32) }
+}
+
+flow @flow.tensor_add_f32 tensor_add_f32(lhs: TensorF32, rhs: TensorF32) -> TensorF32 {
+    let out = math.tensor_add_f32(lhs, rhs)
+    return out
+}

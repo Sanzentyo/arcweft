@@ -58,9 +58,19 @@ pub struct RuntimeMathStats {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct RuntimeMathBackendSelection {
+pub struct RuntimeMathBackendSelection {
     backend: RuntimeMathBackend,
     auto_reason: Option<RuntimeMathAutoSelectionReason>,
+}
+
+impl RuntimeMathBackendSelection {
+    pub const fn backend(self) -> RuntimeMathBackend {
+        self.backend
+    }
+
+    pub const fn auto_reason(self) -> Option<RuntimeMathAutoSelectionReason> {
+        self.auto_reason
+    }
 }
 
 /// Adapter-owned accelerator for dense `f32` matrix/tensor kernels.
@@ -145,6 +155,18 @@ impl RuntimeMathAccelerator {
 
     pub const fn stats(&self) -> RuntimeMathStats {
         self.stats
+    }
+
+    pub fn matmul_backend_selection(
+        &self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> RuntimeMathBackendSelection {
+        self.select_matmul_backend(lhs, rhs)
+    }
+
+    pub fn record_backend_selection(&mut self, selection: RuntimeMathBackendSelection) {
+        self.stats.last_auto_reason = selection.auto_reason();
     }
 
     pub fn reset_stats(&mut self) {
@@ -606,13 +628,15 @@ impl RuntimeMathAccelerator {
             if lhs.shape() == rhs.shape() {
                 self.stats.ndarray_calls += 1;
                 self.stats.last_backend = Some(RuntimeMathBackend::Ndarray);
-                let out = lhs
-                    .values()
-                    .iter()
-                    .zip(rhs.values())
-                    .map(|(lhs, rhs)| lhs + rhs)
-                    .collect();
-                DenseMatrixF32::new(lhs.rows(), lhs.cols(), out).map_err(Into::into)
+                let lhs_view =
+                    ndarray::ArrayView2::from_shape((lhs.rows(), lhs.cols()), lhs.values())
+                        .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+                let rhs_view =
+                    ndarray::ArrayView2::from_shape((rhs.rows(), rhs.cols()), rhs.values())
+                        .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+                let out = &lhs_view + &rhs_view;
+                DenseMatrixF32::new(lhs.rows(), lhs.cols(), out.into_raw_vec_and_offset().0)
+                    .map_err(Into::into)
             } else {
                 lhs.add_scalar(rhs).map_err(Into::into)
             }
@@ -634,13 +658,19 @@ impl RuntimeMathAccelerator {
             if lhs.shape() == rhs.shape() {
                 self.stats.ndarray_calls += 1;
                 self.stats.last_backend = Some(RuntimeMathBackend::Ndarray);
-                let out = lhs
-                    .values()
-                    .iter()
-                    .zip(rhs.values())
-                    .map(|(lhs, rhs)| lhs + rhs)
-                    .collect();
-                DenseTensorF32::new(lhs.shape().dims().to_vec(), out).map_err(Into::into)
+                let lhs_view = ndarray::ArrayViewD::from_shape(
+                    ndarray::IxDyn(lhs.shape().dims()),
+                    lhs.values(),
+                )
+                .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+                let rhs_view = ndarray::ArrayViewD::from_shape(
+                    ndarray::IxDyn(rhs.shape().dims()),
+                    rhs.values(),
+                )
+                .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+                let out = &lhs_view + &rhs_view;
+                DenseTensorF32::new(lhs.shape().dims().to_vec(), out.into_raw_vec_and_offset().0)
+                    .map_err(Into::into)
             } else {
                 lhs.add_scalar(rhs).map_err(Into::into)
             }

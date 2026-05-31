@@ -1374,6 +1374,11 @@ flow @flow.math math(lhs: MatrixF32, rhs: MatrixF32) -> MatrixF32 {
         json["executor_stats"]["pure_config"]["math_backend"],
         "glam"
     );
+    let math = &json["executor_stats"]["math"];
+    assert_eq!(math["glam_calls"], 1);
+    assert_eq!(math["bytes_borrowed"], 128);
+    assert_eq!(math["bytes_copied"], 0);
+    assert_eq!(math["last_backend"], "glam");
     let pure = &json["steps"][0]["stats"]["pure"];
     assert_eq!(pure["math_calls"], 1);
     assert_eq!(pure["math_accelerated_calls"], 1);

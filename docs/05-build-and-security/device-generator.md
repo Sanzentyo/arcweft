@@ -124,7 +124,7 @@ impl DeviceDriver for MotionSensorDriver {
     type Output = MotionSample;
 
     fn decode(&mut self, packet: RawUsbPacket) -> Result<MotionSample, DeviceError> {
-        todo!("fill in vendor protocol decoding")
+        decode_vendor_packet(packet)
     }
 }
 ```

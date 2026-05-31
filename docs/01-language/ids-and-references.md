@@ -193,9 +193,9 @@ accepted; `..` already has range/rest-pattern meanings.
 Deep dot runs such as `@...suffix` are accepted, but formatter and LSP tooling
 should prefer the explicit spelling `@super.super.suffix` for authored code.
 
-TODO(lint): `@...suffix` remains valid syntax for generated code and compact
-authoring, but lint/formatter tooling should recommend `@super.super.suffix`
-when the parent depth is greater than one.
+Lint policy note: `@...suffix` remains valid syntax for generated code and
+compact authoring, but lint/formatter tooling should recommend
+`@super.super.suffix` when the parent depth is greater than one.
 
 ```arcw
 alice(id=@.greeting):
@@ -312,10 +312,10 @@ of public entity IDs today. This keeps public IDs stable when files move.
 However, projects may choose a policy that requires module paths and entity IDs
 to line up, such as `mod game::routes::opening` containing `@flow.opening`.
 
-TODO(lint): add an ID policy lint pass that can compare module path, flow or
-fragment ID, named scopes, and generated relative IDs. It should report IDs that
-do not follow a configured hierarchy, while keeping the core parser/HIR Sans
-I/O and policy-neutral.
+Planned lint policy: add an ID policy lint pass that can compare module path,
+flow or fragment ID, named scopes, and generated relative IDs. It should report
+IDs that do not follow a configured hierarchy, while keeping the core parser/HIR
+Sans I/O and policy-neutral.
 
 ```arcw
 alice(id=@.greeting):

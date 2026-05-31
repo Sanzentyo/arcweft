@@ -542,6 +542,9 @@ just bench-math-wgpu
 just bench-math-matrix-add
 just bench-math-tensor-add
 just bench-024
+just bench-024-wgpu-auto
+just bench-025
+just bench-026
 cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul --size 512 --iterations 3 --warmup 1 --reuse
 just bench-math-matrix-add-reuse
 just bench-math-tensor-add-reuse
@@ -554,7 +557,10 @@ Representative release results on the local machine:
 | 4x4 matmul_f32 | scalar | measured | 100 | small matrix baseline |
 | 4x4 matmul_f32 | glam | measured | 100 | SIMD-friendly game math backend |
 | 4x4 matmul_f32 | auto | measured | 100 | selected glam |
-| flow 4x4 matmul_f32 | glam | measured | 6700 | `--value` matrix input, `math_calls_median = 1`, `math_accelerated_calls_median = 1` |
+| flow 4x4 matmul_f32 | glam | measured | 6700 | `--value` matrix input, `math_calls_median = 1`, `math_accelerated_calls_median = 1`, `bytes_borrowed = 128`, `bytes_copied = 0` |
+| flow 8x8 matmul_f32 | auto wgpu | measured | 473400 | `--features math-wgpu`, `--math-wgpu-min-elements 1`, prepared cache hit after warmup, `bytes_uploaded = 0`, `gpu_buffer_reuse_hits = 4`, `last_auto_reason = matmul_wgpu_work_threshold` |
+| flow 4x4 matrix_add_f32 | ndarray | measured | 9900 | `--value` matrix input, one ndarray view add, `bytes_borrowed = 128`, `bytes_copied = 0` |
+| flow 2x2x2 tensor_add_f32 | ndarray | measured | 13400 | `--value` tensor input, one ndarray dynamic-view add, `bytes_borrowed = 64`, `bytes_copied = 0` |
 | 64x64 matmul_f32 | scalar | measured | 21300 | row-major baseline |
 | 64x64 matmul_f32 | ndarray | measured | 26700 | general CPU matrix backend |
 | 64x64 matmul_f32 | auto | measured | 24200 | selected ndarray without wgpu feature |
@@ -585,22 +591,29 @@ fixed 4x4 matrices, ndarray/scalar win smaller one-shot CPU workloads, and wgpu
 becomes useful for larger matmul workloads once arithmetic work amortizes
 upload/download cost. Auto therefore keeps one-shot elementwise kernels on the
 CPU backend and only considers wgpu for matmul above the configured work
-threshold. Repeated matrix multiplication and elementwise matrix/tensor
-kernels can now use prepared GPU buffers, which uploads the fixed inputs once,
-reuses the storage/bind group across warmup and measured samples, and downloads
-only the result for each dispatch. The wgpu readback path also keeps a reusable
-MAP_READ staging buffer in the adapter context; one-shot calls and prepared
-dispatches grow it on demand and remap it instead of allocating a fresh
-download buffer for every result.
+threshold. Repeated matrix multiplication and explicit-wgpu elementwise
+matrix/tensor kernels can now use prepared GPU buffers, which uploads the fixed
+inputs once, reuses the storage/bind group across warmup and measured samples,
+and downloads only the result for each dispatch. Auto matmul uses the same
+prepared-buffer path when the configured work threshold selects wgpu; Auto
+elementwise stays on the CPU backend because the current one-shot GPU path is
+copy dominated in local measurements. The prepared cache compares full `f32`
+bit-pattern fingerprints, not a lossy hash, before reusing GPU input buffers.
+The wgpu readback path also keeps a reusable MAP_READ staging buffer in the
+adapter context; one-shot calls and prepared dispatches grow it on demand and
+remap it instead of allocating a fresh download buffer for every result.
 
 The math bench JSON is emitted through a typed serde report rather than
 hand-built string output. It reports the requested backend, measured status,
 correctness-checked timing samples, the backend that actually executed last,
-and the `last_auto_reason` policy label when `auto` made the choice. The same
-report includes accelerator copy counters split into borrowed bytes, copied
-bytes, uploaded bytes, downloaded bytes, GPU buffer creations, GPU buffer reuse
-hits, staging buffer creations, staging buffer reuse hits, and reused
-dispatches. Explicit `wgpu` requests remain explicit:
+and the `last_auto_reason` policy label when `auto` made the choice. Flow bench
+JSON reports median numeric math counters and modal categorical backend/reason
+labels across samples, so occasional fallback samples do not make categorical
+fields depend on first-sample ordering. The same report includes accelerator
+copy counters split into borrowed bytes, copied bytes, uploaded bytes,
+downloaded bytes, GPU buffer creations, GPU buffer reuse hits, staging buffer
+creations, staging buffer reuse hits, and reused dispatches. Explicit `wgpu`
+requests remain explicit:
 unavailable adapters or disabled features produce a structured skip/error,
 while `auto` records the chosen policy and fallback path through the backend
 counters. The example-level serialization test keeps the report parseable and

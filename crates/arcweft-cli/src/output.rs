@@ -752,6 +752,7 @@ pub(crate) struct RuntimeExecutorStats {
     pub(crate) pure_config: RuntimeExecutorPureConfigSummary,
     pub(crate) pure_acceleration: RuntimeExecutorPureAccelerationSummary,
     pub(crate) pure_compile: RuntimeExecutorPureCompileStatsSummary,
+    pub(crate) math: RuntimeExecutorMathStatsSummary,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
@@ -799,6 +800,26 @@ pub(crate) struct RuntimeExecutorPureCompileStatsSummary {
     pub(crate) cache_hits: usize,
     pub(crate) cache_misses: usize,
     pub(crate) compile_elapsed_ns: u128,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
+pub(crate) struct RuntimeExecutorMathStatsSummary {
+    pub(crate) scalar_calls: usize,
+    pub(crate) glam_calls: usize,
+    pub(crate) ndarray_calls: usize,
+    pub(crate) wgpu_calls: usize,
+    pub(crate) fallback_calls: usize,
+    pub(crate) bytes_borrowed: usize,
+    pub(crate) bytes_copied: usize,
+    pub(crate) bytes_uploaded: usize,
+    pub(crate) bytes_downloaded: usize,
+    pub(crate) gpu_buffer_creations: usize,
+    pub(crate) gpu_buffer_reuse_hits: usize,
+    pub(crate) gpu_staging_buffer_creations: usize,
+    pub(crate) gpu_staging_buffer_reuse_hits: usize,
+    pub(crate) gpu_reused_dispatches: usize,
+    pub(crate) last_backend: Option<&'static str>,
+    pub(crate) last_auto_reason: Option<&'static str>,
 }
 
 #[derive(serde::Serialize)]

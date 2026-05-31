@@ -93,6 +93,7 @@ pub struct RuntimePureAccelerator {
     aot_scalar_slots: Vec<RuntimePureScalar>,
     vm_scratch: VmPureFunctionScratch,
     math: math::RuntimeMathAccelerator,
+    math_prepare_cache: RuntimeMathPrepareCache,
 }
 
 enum RuntimePureCacheEntry {
@@ -134,6 +135,94 @@ struct FlatBatchSumPolicy<'a> {
     pool: Option<&'a ThreadPool>,
     wants_parallel: bool,
     parallel_jobs: usize,
+}
+
+#[derive(Default)]
+struct RuntimeMathPrepareCache {
+    matmul: Option<PreparedMatrixMatmulCache>,
+    matrix_add: Option<PreparedMatrixAddCache>,
+    tensor_add: Option<PreparedTensorAddCache>,
+}
+
+struct PreparedMatrixMatmulCache {
+    signature: MatrixBinarySignature,
+    prepared: math::RuntimePreparedMatrixMatmulF32,
+}
+
+struct PreparedMatrixAddCache {
+    signature: MatrixBinarySignature,
+    prepared: math::RuntimePreparedMatrixAddF32,
+}
+
+struct PreparedTensorAddCache {
+    signature: TensorBinarySignature,
+    prepared: math::RuntimePreparedTensorAddF32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MatrixBinarySignature {
+    lhs: MatrixSignature,
+    rhs: MatrixSignature,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MatrixSignature {
+    rows: usize,
+    cols: usize,
+    value_bits: Vec<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct TensorBinarySignature {
+    lhs: TensorSignature,
+    rhs: TensorSignature,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct TensorSignature {
+    dims: Vec<usize>,
+    value_bits: Vec<u32>,
+}
+
+impl MatrixBinarySignature {
+    fn new(lhs: &DenseMatrixF32, rhs: &DenseMatrixF32) -> Self {
+        Self {
+            lhs: MatrixSignature::new(lhs),
+            rhs: MatrixSignature::new(rhs),
+        }
+    }
+}
+
+impl MatrixSignature {
+    fn new(matrix: &DenseMatrixF32) -> Self {
+        Self {
+            rows: matrix.rows(),
+            cols: matrix.cols(),
+            value_bits: f32_value_bits(matrix.values()),
+        }
+    }
+}
+
+impl TensorBinarySignature {
+    fn new(lhs: &DenseTensorF32, rhs: &DenseTensorF32) -> Self {
+        Self {
+            lhs: TensorSignature::new(lhs),
+            rhs: TensorSignature::new(rhs),
+        }
+    }
+}
+
+impl TensorSignature {
+    fn new(tensor: &DenseTensorF32) -> Self {
+        Self {
+            dims: tensor.shape().dims().to_vec(),
+            value_bits: f32_value_bits(tensor.values()),
+        }
+    }
+}
+
+fn f32_value_bits(values: &[f32]) -> Vec<u32> {
+    values.iter().map(|value| value.to_bits()).collect()
 }
 
 const AUTO_EAGER_JIT_WORK_UNITS: usize = 64;
@@ -275,6 +364,7 @@ impl RuntimePureAccelerator {
             aot_scalar_slots: Vec::new(),
             vm_scratch: VmPureFunctionScratch::default(),
             math: math::RuntimeMathAccelerator::new(config.math),
+            math_prepare_cache: RuntimeMathPrepareCache::default(),
         }
     }
 
@@ -1631,13 +1721,12 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
     ) -> Result<DenseMatrixF32, RuntimeEvalError> {
         self.stats.math_calls += 1;
         self.record_math_inputs(lhs.values().len(), rhs.values().len());
-        let result =
-            self.math
-                .matmul_f32(lhs, rhs)
-                .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                    name: RuntimeIntrinsic::MathMatmulF32.as_label().to_owned(),
-                    reason: error.to_string(),
-                })?;
+        let result = self
+            .call_runtime_math_matmul_f32(lhs, rhs)
+            .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                name: RuntimeIntrinsic::MathMatmulF32.as_label().to_owned(),
+                reason: error.to_string(),
+            })?;
         self.record_math_result(result.values().len());
         Ok(result)
     }
@@ -1649,12 +1738,12 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
     ) -> Result<DenseMatrixF32, RuntimeEvalError> {
         self.stats.math_calls += 1;
         self.record_math_inputs(lhs.values().len(), rhs.values().len());
-        let result = self.math.matrix_add_f32(lhs, rhs).map_err(|error| {
-            RuntimeEvalError::UnsupportedPure {
+        let result = self
+            .call_runtime_math_matrix_add_f32(lhs, rhs)
+            .map_err(|error| RuntimeEvalError::UnsupportedPure {
                 name: RuntimeIntrinsic::MathMatrixAddF32.as_label().to_owned(),
                 reason: error.to_string(),
-            }
-        })?;
+            })?;
         self.record_math_result(result.values().len());
         Ok(result)
     }
@@ -1666,12 +1755,12 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
     ) -> Result<DenseTensorF32, RuntimeEvalError> {
         self.stats.math_calls += 1;
         self.record_math_inputs(lhs.values().len(), rhs.values().len());
-        let result = self.math.tensor_add_f32(lhs, rhs).map_err(|error| {
-            RuntimeEvalError::UnsupportedPure {
+        let result = self
+            .call_runtime_math_tensor_add_f32(lhs, rhs)
+            .map_err(|error| RuntimeEvalError::UnsupportedPure {
                 name: RuntimeIntrinsic::MathTensorAddF32.as_label().to_owned(),
                 reason: error.to_string(),
-            }
-        })?;
+            })?;
         self.record_math_result(result.values().len());
         Ok(result)
     }
@@ -1696,6 +1785,83 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 impl RuntimePureAccelerator {
     fn cache_entries(&self) -> usize {
         self.cache.iter().filter(|entry| entry.is_some()).count()
+    }
+
+    fn call_runtime_math_matmul_f32(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, math::RuntimeMathAcceleratorError> {
+        let selection = self.math.matmul_backend_selection(lhs, rhs);
+        if selection.backend() != math::RuntimeMathBackend::Wgpu {
+            return self.math.matmul_f32(lhs, rhs);
+        }
+        self.math.record_backend_selection(selection);
+        let signature = MatrixBinarySignature::new(lhs, rhs);
+        if let Some(cache) = self.math_prepare_cache.matmul.take()
+            && cache.signature == signature
+        {
+            let result = self.math.run_prepared_matrix_matmul_f32(&cache.prepared);
+            self.math_prepare_cache.matmul = Some(cache);
+            return result;
+        }
+        let prepared = self.math.prepare_matrix_matmul_f32(lhs, rhs)?;
+        let result = self.math.run_prepared_matrix_matmul_f32(&prepared);
+        self.math_prepare_cache.matmul = Some(PreparedMatrixMatmulCache {
+            signature,
+            prepared,
+        });
+        result
+    }
+
+    fn call_runtime_math_matrix_add_f32(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, math::RuntimeMathAcceleratorError> {
+        if self.math.config().backend != math::RuntimeMathBackend::Wgpu {
+            return self.math.matrix_add_f32(lhs, rhs);
+        }
+        let signature = MatrixBinarySignature::new(lhs, rhs);
+        if let Some(cache) = self.math_prepare_cache.matrix_add.take()
+            && cache.signature == signature
+        {
+            let result = self.math.run_prepared_matrix_add_f32(&cache.prepared);
+            self.math_prepare_cache.matrix_add = Some(cache);
+            return result;
+        }
+        let prepared = self.math.prepare_matrix_add_f32(lhs, rhs)?;
+        let result = self.math.run_prepared_matrix_add_f32(&prepared);
+        self.math_prepare_cache.matrix_add = Some(PreparedMatrixAddCache {
+            signature,
+            prepared,
+        });
+        result
+    }
+
+    fn call_runtime_math_tensor_add_f32(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, math::RuntimeMathAcceleratorError> {
+        if self.math.config().backend != math::RuntimeMathBackend::Wgpu {
+            return self.math.tensor_add_f32(lhs, rhs);
+        }
+        let signature = TensorBinarySignature::new(lhs, rhs);
+        if let Some(cache) = self.math_prepare_cache.tensor_add.take()
+            && cache.signature == signature
+        {
+            let result = self.math.run_prepared_tensor_add_f32(&cache.prepared);
+            self.math_prepare_cache.tensor_add = Some(cache);
+            return result;
+        }
+        let prepared = self.math.prepare_tensor_add_f32(lhs, rhs)?;
+        let result = self.math.run_prepared_tensor_add_f32(&prepared);
+        self.math_prepare_cache.tensor_add = Some(PreparedTensorAddCache {
+            signature,
+            prepared,
+        });
+        result
     }
 
     fn record_math_inputs(&mut self, lhs_elements: usize, rhs_elements: usize) {
@@ -3312,6 +3478,132 @@ mod tests {
             result.fiber_status,
             FlowFiberStatus::Done(FlowExit::Return(_))
         ));
+    }
+
+    #[cfg(feature = "math-wgpu")]
+    #[test]
+    fn runtime_wgpu_math_cache_reuses_prepared_matmul_buffers_across_counter_reset() {
+        let lhs = DenseMatrixF32::new(16, 16, vec![1.0; 256]).expect("matrix shape is valid");
+        let rhs = DenseMatrixF32::new(16, 16, vec![2.0; 256]).expect("matrix shape is valid");
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                math: math::RuntimeMathAcceleratorConfig {
+                    backend: math::RuntimeMathBackend::Wgpu,
+                    ..math::RuntimeMathAcceleratorConfig::default()
+                },
+                ..RuntimePureAcceleratorConfig::default()
+            },
+            &[],
+        );
+
+        let Ok(first) = RuntimePureCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs)
+        else {
+            return;
+        };
+        assert_eq!(first.rows(), 16);
+        assert_eq!(first.cols(), 16);
+        assert_eq!(accelerator.math_stats().gpu_buffer_creations, 4);
+
+        accelerator.reset_runtime_counters();
+        let second = RuntimePureCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs)
+            .expect("prepared runtime math matmul cache is reusable");
+
+        assert_eq!(second.values(), first.values());
+        assert_eq!(accelerator.math_stats().wgpu_calls, 1);
+        assert_eq!(accelerator.math_stats().gpu_buffer_creations, 0);
+        assert_eq!(accelerator.math_stats().gpu_buffer_reuse_hits, 4);
+        assert_eq!(accelerator.math_stats().gpu_reused_dispatches, 1);
+        assert_eq!(accelerator.math_stats().bytes_uploaded, 0);
+        assert_eq!(
+            accelerator.math_stats().bytes_downloaded,
+            std::mem::size_of_val(first.values())
+        );
+        assert_eq!(
+            accelerator.stats().arg_bytes_borrowed,
+            (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>()
+        );
+        assert_eq!(
+            accelerator.stats().result_bytes_copied,
+            std::mem::size_of_val(second.values())
+        );
+    }
+
+    #[cfg(feature = "math-wgpu")]
+    #[test]
+    fn runtime_auto_wgpu_matmul_uses_prepared_cache_when_threshold_selects_gpu() {
+        let lhs = DenseMatrixF32::new(8, 8, vec![1.0; 64]).expect("matrix shape is valid");
+        let rhs = DenseMatrixF32::new(8, 8, vec![2.0; 64]).expect("matrix shape is valid");
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                math: math::RuntimeMathAcceleratorConfig {
+                    backend: math::RuntimeMathBackend::Auto,
+                    wgpu_min_elements: 1,
+                },
+                ..RuntimePureAcceleratorConfig::default()
+            },
+            &[],
+        );
+
+        let Ok(first) = RuntimePureCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs)
+        else {
+            return;
+        };
+        assert_eq!(
+            accelerator.math_stats().last_auto_reason,
+            Some(math::RuntimeMathAutoSelectionReason::MatmulWgpuWorkThreshold)
+        );
+
+        accelerator.reset_runtime_counters();
+        let second = RuntimePureCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs)
+            .expect("auto-selected wgpu matmul reuses prepared runtime cache");
+
+        assert_eq!(second.values(), first.values());
+        assert_eq!(
+            accelerator.math_stats().last_auto_reason,
+            Some(math::RuntimeMathAutoSelectionReason::MatmulWgpuWorkThreshold)
+        );
+        assert_eq!(accelerator.math_stats().wgpu_calls, 1);
+        assert_eq!(accelerator.math_stats().gpu_buffer_creations, 0);
+        assert_eq!(accelerator.math_stats().gpu_buffer_reuse_hits, 4);
+        assert_eq!(accelerator.math_stats().bytes_uploaded, 0);
+    }
+
+    #[cfg(feature = "math-wgpu")]
+    #[test]
+    fn runtime_wgpu_math_cache_reuses_prepared_tensor_add_buffers() {
+        let lhs = DenseTensorF32::new(vec![32], vec![1.0; 32]).expect("tensor shape is valid");
+        let rhs = DenseTensorF32::new(vec![32], vec![2.0; 32]).expect("tensor shape is valid");
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                math: math::RuntimeMathAcceleratorConfig {
+                    backend: math::RuntimeMathBackend::Wgpu,
+                    ..math::RuntimeMathAcceleratorConfig::default()
+                },
+                ..RuntimePureAcceleratorConfig::default()
+            },
+            &[],
+        );
+
+        let Ok(first) =
+            RuntimePureCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs)
+        else {
+            return;
+        };
+        assert_eq!(first.values(), vec![3.0; 32].as_slice());
+
+        accelerator.reset_runtime_counters();
+        let second = RuntimePureCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs)
+            .expect("prepared runtime tensor add cache is reusable");
+
+        assert_eq!(second.values(), vec![3.0; 32].as_slice());
+        assert_eq!(accelerator.math_stats().wgpu_calls, 1);
+        assert_eq!(accelerator.math_stats().gpu_buffer_creations, 0);
+        assert_eq!(accelerator.math_stats().gpu_buffer_reuse_hits, 4);
+        assert_eq!(accelerator.math_stats().bytes_uploaded, 0);
+        assert_eq!(
+            accelerator.math_stats().bytes_downloaded,
+            std::mem::size_of_val(second.values())
+        );
     }
 
     #[test]

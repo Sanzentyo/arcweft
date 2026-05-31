@@ -7,10 +7,11 @@ use arcweft_lang_syntax::ast::{
     ids::{EntityRef, EntityRefSyntax, IdRef, RelativeId},
 };
 
-// TODO(lint): Module paths and named `scope` blocks should both be available to
-// the ID policy checker. Today lowering derives relative IDs from the current
-// flow ID and named scopes only; a later lint pass should compare generated IDs
-// against the source module path and report IDs that break the project hierarchy.
+// ID policy lint note: module paths and named `scope` blocks should both be
+// available to the checker. Today lowering derives relative IDs from the
+// current flow ID and named scopes only; a later lint pass should compare
+// generated IDs against the source module path and report IDs that break the
+// project hierarchy.
 
 pub(crate) fn normalize_flow_decl_id(flow: &Flow) -> Result<Option<EntityRef>, HirLowerError> {
     let family = flow_decl_family(flow.kind());
@@ -312,9 +313,9 @@ fn relative_scopes(
     context: &LowerContext,
     relative: &RelativeId,
 ) -> Result<Vec<String>, HirLowerError> {
-    // TODO(lint): `@...suffix` is accepted for machine output and compact
-    // authoring, but hand-written source should be nudged toward explicit
-    // `@super.super.suffix` once a lint/formatter layer exists.
+    // ID policy lint note: `@...suffix` is accepted for machine output and
+    // compact authoring, but hand-written source should be nudged toward
+    // explicit `@super.super.suffix` once a lint/formatter layer exists.
     let Some(take_len) = context.scopes.len().checked_sub(relative.parent_depth()) else {
         return Err(HirLowerError::new(
             "relative ID walks past the available ID scopes",

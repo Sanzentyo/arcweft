@@ -50,6 +50,15 @@ bench-015:
 bench-024:
     @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/024_matrix_matmul_f32.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --math-backend glam --value lhs=matrix/f32/4x4:1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1 --value rhs=matrix/f32/4x4:2,0,0,0,0,2,0,0,0,0,2,0,0,0,0,2
 
+bench-024-wgpu-auto:
+    @cargo run -p arcweft-cli --features math-wgpu --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/024_matrix_matmul_f32.arcw --json --iterations 5 --warmup 2 --samples 5 --steps 64 --max-ops 64 --math-backend auto --math-wgpu-min-elements 1 --value lhs=matrix/f32/8x8:1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1 --value rhs=matrix/f32/8x8:2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2
+
+bench-025:
+    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/025_matrix_add_f32.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --math-backend ndarray --value lhs=matrix/f32/4x4:1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16 --value rhs=matrix/f32/4x4:16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1
+
+bench-026:
+    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/026_tensor_add_f32.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64 --math-backend ndarray --value lhs=tensor/f32/2x2x2:1,2,3,4,5,6,7,8 --value rhs=tensor/f32/2x2x2:8,7,6,5,4,3,2,1
+
 bench-thread:
     @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/001_thread_scheduling.arcw --json --iterations 10 --warmup 2 --samples 5 --steps 64 --max-ops 64
 

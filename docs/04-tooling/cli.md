@@ -191,7 +191,9 @@ resolved worker count, per-worker batch threshold, helper acceleration summary,
 compile attempts, Auto tier decisions/promotions, cache hits and misses, and
 compile elapsed time. Built-in dense `math.*` calls use the selected
 `--math-backend`; executor JSON records both that backend and the Auto GPU work
-threshold. `--pure-workers auto|N` controls the runtime
+threshold. The same JSON includes `executor_stats.math` counters for selected
+backend calls, borrowed/copy/upload/download bytes, GPU buffer creation/reuse,
+staging-buffer reuse, and the last Auto policy reason. `--pure-workers auto|N` controls the runtime
 accelerator's Rayon pool for batchable pure helpers. `--pure-batch-min-len N`
 sets the minimum rows per resolved worker before the dedicated pool is used. If `--entry` or
 `--flow` is omitted, the first lowered flow is used as a deterministic fallback
@@ -227,6 +229,12 @@ flow events, line effects, task
 requests, normalized source events, emitted stream events, source close
 requests, source/stream queue state, cumulative log/signal/metric/event
 observations, diagnostics, and the final fiber status.
+
+The CLI crate forwards the optional runtime accelerator `math-wgpu` feature.
+Use `cargo run -p arcweft-cli --features math-wgpu -- ...` when a local CLI
+run must exercise the wgpu backend; without that feature, explicit `wgpu`
+requests report that the GPU backend is unavailable instead of silently
+changing backend.
 
 Current runtime lowering is strict and still intentionally bounded. It supports
 the Phase 2.0 headless flow slice: dialogue lines, line task groups, `choice`, `await
