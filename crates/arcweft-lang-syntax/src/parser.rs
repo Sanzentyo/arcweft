@@ -155,18 +155,11 @@ impl<'a> Parser<'a> {
             }
 
             let line = self.current().clone();
-            let trimmed = line.trimmed().to_owned();
+            let trimmed = line.trimmed();
             let range = TextRange::new(line.start, line.end);
             let dispatch = TopLevelDispatch::from(&line);
 
-            self.parse_top_level_line(
-                dispatch,
-                &trimmed,
-                range,
-                &mut module,
-                &mut uses,
-                &mut items,
-            );
+            self.parse_top_level_line(dispatch, trimmed, range, &mut module, &mut uses, &mut items);
         }
 
         let tree = TypedSyntaxTree::new(source_take(self), module, uses, items, wiki_links);

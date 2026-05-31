@@ -12,8 +12,9 @@ use super::{
     parse_line_plan_attachment, parse_scope_head, parse_stmt, parse_stmt_lines, parse_thread_block,
     parse_unsafe_lifetime_block, parse_with_brace_label, split_call_head, split_leading_ident,
 };
+use std::borrow::Cow;
 
-impl Parser<'_> {
+impl<'a> Parser<'a> {
     pub(super) fn parse_flow(&mut self) -> Option<Flow> {
         let doc = self.take_pending_doc();
         let start_line = self.current().clone();
@@ -162,8 +163,8 @@ impl Parser<'_> {
         None
     }
 
-    fn consume_stmt_text_with_continuations(&mut self, indent: usize) -> String {
-        let mut stmt = self.current().text().to_owned();
+    fn consume_stmt_text_with_continuations(&mut self, indent: usize) -> Cow<'a, str> {
+        let mut stmt = self.current().text;
         self.index += 1;
         while self.index < self.events.len() {
             let next = self.current();
@@ -174,8 +175,9 @@ impl Parser<'_> {
             // Dot-leading lines are expression continuations, not new flow
             // items. Preserve a newline so parser diagnostics can still point
             // back to the authored shape when the expression is malformed.
-            stmt.push('\n');
-            stmt.push_str(&next.text);
+            let text = stmt.to_mut();
+            text.push('\n');
+            text.push_str(&next.text);
             self.index += 1;
         }
         stmt
