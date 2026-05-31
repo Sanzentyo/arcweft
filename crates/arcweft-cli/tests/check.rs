@@ -3540,7 +3540,7 @@ fn bench_json_measures_checked_in_dense_integer_widths_fixture() {
         !stdout.contains(&workspace_root().display().to_string()),
         "dense integer widths bench JSON must not record the workspace path: {stdout}"
     );
-    for expected in ["Vec(I8)", "Vec(I16)", "Vec(U8)", "Vec(U16)"] {
+    for expected in ["Vec(I8)", "Vec(I16)", "Vec(I32)", "Vec(U8)"] {
         assert!(
             stdout.contains(expected),
             "dense integer widths bench should validate {expected}: {stdout}"
@@ -3549,7 +3549,7 @@ fn bench_json_measures_checked_in_dense_integer_widths_fixture() {
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
-    assert_eq!(measurement["deterministic"]["executed_ops_median"], 8);
+    assert_eq!(measurement["deterministic"]["executed_ops_median"], 10);
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
         0

@@ -233,21 +233,22 @@ the whole borrow map. The targeted branch-drop regression keeps
 
 The checked-in dense i32 and u64 sum fixtures measure the non-JIT fixed-width
 integer path. The i32 fixture lowered `[... i32]` to `DenseSeq::I32`, validated
-as `Vec(I32)`, and ran `sum()` with median elapsed time 7400 ns in the latest
+as `Vec(I32)`, and ran `sum()` with median elapsed time 7600 ns in the latest
 local run. The matching u64 fixture lowered `[... u64]` to `DenseSeq::U64`,
 validated as `Vec(U64)`, and ran with median elapsed time 8300 ns. The
-multi-width fixture lowered i8/i16/u8/u16/u32 literal sequences to the matching
-dense storage, validated as `Vec(I8)`, `Vec(I16)`, `Vec(U8)`, `Vec(U16)`, and
-`Vec(U32)`, then reduced five dense sequences in one flow with median elapsed
-time 15200 ns. The pure-call counters remained zero for these fixtures because
-they intentionally measure the VM dense sequence reduction path, not the pure
-helper accelerator.
+multi-width fixture lowered i8/i16/i32/u8/u16/u32/u64 literal sequences to the
+matching dense storage, validated the first visible JSON samples as `Vec(I8)`,
+`Vec(I16)`, `Vec(I32)`, and `Vec(U8)`, and reduced seven dense sequences in one
+flow with median elapsed time 20400 ns. The runtime-plan unit test covers all
+seven dense storage variants directly. The pure-call counters remained zero for
+these fixtures because they intentionally measure the VM dense sequence
+reduction path, not the pure helper accelerator.
 
 The dense scalar length fixture covers the non-integer deterministic scalar
 storage cases. It lowers bool, char, logical-duration, and `u8` sequences into
 dense storage, checks `len()` as `usize`, and evaluates length through
 `RuntimeSeq::len()` rather than materializing `RuntimeValue` elements. The local
-path-free bench run reported median elapsed time 13900 ns for seven executed
+path-free bench run reported median elapsed time 13800 ns for seven executed
 ops, with `pure_arg_vec_allocations_median = 0` and
 `pure_result_bytes_copied_median = 0`.
 
