@@ -685,6 +685,11 @@ Current high-confidence state:
 - Runtime-plan lowering folds `let tmp = values.map(...); let total = tmp.sum()`
   into `let total = values.map(...).sum()` when `tmp` is not used later, so
   naturally written map-then-sum code can use the existing fused batch path.
+  The optimizer now builds one borrowed local-use suffix table for the flow
+  slice instead of recursively scanning the remaining suffix for each map/sum
+  candidate. It also fuses the common `let values = [...]; let tmp =
+  values.map(...); let total = tmp.sum()` window in one rewrite while keeping
+  the sequence binding when the map body itself reads that local.
 - The fused runtime map batch path now borrows local or literal tuple/bracket
   sequence sources while packing flat `i64` inputs, avoiding a `RuntimeValue`
   sequence clone before crossing into VM/AOT/JIT pure helper backends.

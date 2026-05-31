@@ -215,7 +215,8 @@ path-free source name, `wiki_scan_performed = 0`,
 `dot_normalization_owned = 0`, `dialogue_rescue_expr_parse_attempts = 0`,
 `line_owned_bytes = 0`, `block_owned_bytes = 0`, and
 `pure_flatten_bytes_copied_median = 0`; the local run after source-backed block
-fragments reported parse phase 3649400 ns and runtime median 11700 ns.
+fragments and map/sum suffix-use optimization reported parse phase 3371000 ns,
+runtime-plan lowering phase 462800 ns, and runtime median 11700 ns.
 
 Runtime numeric sequence lowering now preserves integer-only bracket literals as
 `RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I64(_)))` instead of eagerly
@@ -248,6 +249,12 @@ Deterministic counters stayed on the borrowed fast path:
 `pure_flatten_bytes_copied_median = 0`, `pure_arg_vec_allocations_median = 0`,
 `pure_arg_bytes_borrowed_median = 2048`, and
 `pure_result_bytes_copied_median = 0`.
+
+Runtime-plan map/sum optimization now uses a single borrowed local-use suffix
+table for each flow slice instead of rewalking the remaining suffix for every
+candidate. The same pass handles adjacent map/sum fusion and the
+sequence-map-sum window, while a regression keeps sequence bindings live when
+the map body reads the same local.
 
 Borrow-state branch tracking now records checkpoint/journal deltas rather than
 full branch maps. The borrow-check JSON includes `state_delta_entries`,

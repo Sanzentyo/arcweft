@@ -725,6 +725,40 @@ flow @flow.main main {
 }
 
 #[test]
+fn runtime_plan_keeps_sequence_binding_when_map_body_uses_it() {
+    let tree = parse_ok(
+        r"
+flow @flow.main main {
+    let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
+    let scores: Vec<i64> = values.map(|item| item + values.sum())
+    let total: i64 = scores.sum()
+    return total
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("map body sequence use fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("map body sequence use runtime plan lowers");
+
+    assert_eq!(plan.flows[0].ops.len(), 3);
+    assert!(matches!(
+        &plan.flows[0].ops[0],
+        FlowOp::Let {
+            expr: RuntimeExpr::Value(RuntimeValue::Seq(_)),
+            ..
+        }
+    ));
+    assert!(matches!(
+        &plan.flows[0].ops[1],
+        FlowOp::Let {
+            expr: RuntimeExpr::Sum { source },
+            ..
+        } if matches!(source.as_ref(), RuntimeExpr::Map { source, .. }
+            if matches!(source.as_ref(), RuntimeExpr::Local(name) if name == "values"))
+    ));
+}
+
+#[test]
 fn runtime_plan_keeps_map_binding_when_used_after_sum() {
     let tree = parse_ok(
         r"

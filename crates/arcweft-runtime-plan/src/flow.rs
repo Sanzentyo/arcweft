@@ -130,8 +130,7 @@ fn optimize_flow_ops(ops: &mut Vec<FlowOp>) {
     for op in ops.iter_mut() {
         optimize_nested_flow_ops(op);
     }
-    fuse_adjacent_map_sum_lets(ops);
-    inline_unused_sequence_lets_into_following_map_sums(ops);
+    optimize_local_map_sum_lets(ops);
 }
 
 fn optimize_flow_op_slice(ops: &mut [FlowOp]) {
@@ -189,50 +188,102 @@ fn optimize_nested_flow_ops(op: &mut FlowOp) {
     }
 }
 
-fn fuse_adjacent_map_sum_lets(ops: &mut Vec<FlowOp>) {
+fn optimize_local_map_sum_lets(ops: &mut Vec<FlowOp>) {
+    let original = std::mem::take(ops);
+    let suffix_uses = flow_op_suffix_local_uses(&original);
     let mut index = 0;
-    while index + 1 < ops.len() {
-        let Some((sequence_name, map_expr)) = map_let_binding(&ops[index]) else {
-            index += 1;
-            continue;
-        };
-        let Some((sum_pattern, sum_source)) = local_sum_let_binding(&ops[index + 1]) else {
-            index += 1;
-            continue;
-        };
-        if sequence_name != sum_source || flow_ops_use_local(&ops[index + 2..], sequence_name) {
-            index += 1;
+    while index < original.len() {
+        if let Some(op) = fuse_sequence_map_sum_window(&original, &suffix_uses, index) {
+            ops.push(op);
+            index += 3;
             continue;
         }
-        ops[index] = FlowOp::Let {
-            pattern: sum_pattern.clone(),
-            expr: RuntimeExpr::Sum {
-                source: Box::new(map_expr.clone()),
-            },
-        };
-        ops.remove(index + 1);
+        if let Some(op) = fuse_map_sum_window(&original, &suffix_uses, index) {
+            ops.push(op);
+            index += 2;
+            continue;
+        }
+        if let Some(op) = inline_sequence_map_sum_source_window(&original, &suffix_uses, index) {
+            ops.push(op);
+            index += 2;
+            continue;
+        }
+        ops.push(original[index].clone());
+        index += 1;
     }
 }
 
-fn inline_unused_sequence_lets_into_following_map_sums(ops: &mut Vec<FlowOp>) {
-    let mut index = 0;
-    while index + 1 < ops.len() {
-        let Some((sequence_name, source_expr)) =
-            sequence_let_binding(&ops[index]).map(|(name, expr)| (name.to_owned(), expr.clone()))
-        else {
-            index += 1;
-            continue;
-        };
-        if flow_ops_use_local(&ops[index + 2..], &sequence_name) {
-            index += 1;
-            continue;
-        }
-        if !replace_map_sum_source(&mut ops[index + 1], &sequence_name, &source_expr) {
-            index += 1;
-            continue;
-        }
-        ops.remove(index);
+fn fuse_sequence_map_sum_window(
+    ops: &[FlowOp],
+    suffix_uses: &[BTreeMap<&str, usize>],
+    index: usize,
+) -> Option<FlowOp> {
+    let (sequence_name, source_expr) = sequence_let_binding(ops.get(index)?)?;
+    let (_, map_expr) = map_let_binding(ops.get(index + 1)?)?;
+    let (sum_pattern, sum_source) = local_sum_let_binding(ops.get(index + 2)?)?;
+    let (map_source, _) = map_expr_source(map_expr)?;
+    if map_source != sequence_name
+        || sum_source != runtime_pattern_binding_name_from_op(ops.get(index + 1)?)?
+    {
+        return None;
     }
+    if local_uses_in_op(ops.get(index + 1)?, sequence_name) != 1 {
+        return None;
+    }
+    if local_uses_in_op(ops.get(index + 2)?, sum_source) != 1 {
+        return None;
+    }
+    if local_uses_after(suffix_uses, index + 1, sequence_name) != 0 {
+        return None;
+    }
+    if local_uses_after(suffix_uses, index + 2, sum_source) != 0 {
+        return None;
+    }
+    let mut fused_map = map_expr.clone();
+    replace_map_source(&mut fused_map, sequence_name, source_expr)?;
+    Some(FlowOp::Let {
+        pattern: sum_pattern.clone(),
+        expr: RuntimeExpr::Sum {
+            source: Box::new(fused_map),
+        },
+    })
+}
+
+fn fuse_map_sum_window(
+    ops: &[FlowOp],
+    suffix_uses: &[BTreeMap<&str, usize>],
+    index: usize,
+) -> Option<FlowOp> {
+    let (sequence_name, map_expr) = map_let_binding(ops.get(index)?)?;
+    let (sum_pattern, sum_source) = local_sum_let_binding(ops.get(index + 1)?)?;
+    if sequence_name != sum_source || local_uses_after(suffix_uses, index + 1, sequence_name) != 0 {
+        return None;
+    }
+    if local_uses_in_op(ops.get(index + 1)?, sequence_name) != 1 {
+        return None;
+    }
+    Some(FlowOp::Let {
+        pattern: sum_pattern.clone(),
+        expr: RuntimeExpr::Sum {
+            source: Box::new(map_expr.clone()),
+        },
+    })
+}
+
+fn inline_sequence_map_sum_source_window(
+    ops: &[FlowOp],
+    suffix_uses: &[BTreeMap<&str, usize>],
+    index: usize,
+) -> Option<FlowOp> {
+    let (sequence_name, source_expr) = sequence_let_binding(ops.get(index)?)?;
+    if local_uses_after(suffix_uses, index + 1, sequence_name) != 0 {
+        return None;
+    }
+    if local_uses_in_op(ops.get(index + 1)?, sequence_name) != 1 {
+        return None;
+    }
+    let mut next = ops.get(index + 1)?.clone();
+    replace_map_sum_source(&mut next, sequence_name, source_expr).then_some(next)
 }
 
 fn sequence_let_binding(op: &FlowOp) -> Option<(&str, &RuntimeExpr)> {
@@ -273,6 +324,32 @@ fn replace_map_sum_source(op: &mut FlowOp, sequence_name: &str, source_expr: &Ru
     true
 }
 
+fn map_expr_source(expr: &RuntimeExpr) -> Option<(&str, &RuntimeExpr)> {
+    let RuntimeExpr::Map { source, .. } = expr else {
+        return None;
+    };
+    let RuntimeExpr::Local(name) = source.as_ref() else {
+        return None;
+    };
+    Some((name.as_str(), source.as_ref()))
+}
+
+fn replace_map_source(
+    expr: &mut RuntimeExpr,
+    sequence_name: &str,
+    source_expr: &RuntimeExpr,
+) -> Option<()> {
+    let RuntimeExpr::Map { source, .. } = expr else {
+        return None;
+    };
+    let RuntimeExpr::Local(name) = source.as_ref() else {
+        return None;
+    };
+    (name == sequence_name).then(|| {
+        **source = source_expr.clone();
+    })
+}
+
 fn map_let_binding(op: &FlowOp) -> Option<(&str, &RuntimeExpr)> {
     let FlowOp::Let { pattern, expr } = op else {
         return None;
@@ -305,23 +382,56 @@ fn runtime_pattern_binding_name(pattern: &arcweft_core::pattern::RuntimePattern)
     }
 }
 
-fn flow_ops_use_local(ops: &[FlowOp], name: &str) -> bool {
-    ops.iter().any(|op| flow_op_uses_local(op, name))
+fn runtime_pattern_binding_name_from_op(op: &FlowOp) -> Option<&str> {
+    let FlowOp::Let { pattern, .. } = op else {
+        return None;
+    };
+    runtime_pattern_binding_name(pattern)
 }
 
-fn flow_op_uses_local(op: &FlowOp, name: &str) -> bool {
+fn flow_op_suffix_local_uses(ops: &[FlowOp]) -> Vec<BTreeMap<&str, usize>> {
+    let mut suffix = vec![BTreeMap::new(); ops.len() + 1];
+    for index in (0..ops.len()).rev() {
+        suffix[index] = suffix[index + 1].clone();
+        count_flow_op_local_uses(&ops[index], &mut suffix[index]);
+    }
+    suffix
+}
+
+fn local_uses_after(suffix_uses: &[BTreeMap<&str, usize>], op_index: usize, name: &str) -> usize {
+    suffix_uses
+        .get(op_index + 1)
+        .and_then(|uses| uses.get(name))
+        .copied()
+        .unwrap_or_default()
+}
+
+fn local_uses_in_op(op: &FlowOp, name: &str) -> usize {
+    let mut uses = BTreeMap::new();
+    count_flow_op_local_uses(op, &mut uses);
+    uses.get(name).copied().unwrap_or_default()
+}
+
+fn count_flow_ops_local_uses<'a>(ops: &'a [FlowOp], uses: &mut BTreeMap<&'a str, usize>) {
+    for op in ops {
+        count_flow_op_local_uses(op, uses);
+    }
+}
+
+fn count_flow_op_local_uses<'a>(op: &'a FlowOp, uses: &mut BTreeMap<&'a str, usize>) {
     match op {
         FlowOp::LetElse { expr, else_ops, .. } => {
-            runtime_expr_uses_local(expr, name) || flow_ops_use_local(else_ops, name)
+            count_runtime_expr_local_uses(expr, uses);
+            count_flow_ops_local_uses(else_ops, uses);
         }
         FlowOp::If {
             condition,
             then_ops,
             else_ops,
         } => {
-            runtime_expr_uses_local(condition, name)
-                || flow_ops_use_local(then_ops, name)
-                || flow_ops_use_local(else_ops, name)
+            count_runtime_expr_local_uses(condition, uses);
+            count_flow_ops_local_uses(then_ops, uses);
+            count_flow_ops_local_uses(else_ops, uses);
         }
         FlowOp::IfLet {
             expr,
@@ -330,63 +440,69 @@ fn flow_op_uses_local(op: &FlowOp, name: &str) -> bool {
             else_ops,
             ..
         } => {
-            runtime_expr_uses_local(expr, name)
-                || guard
-                    .as_ref()
-                    .is_some_and(|guard| runtime_expr_uses_local(guard, name))
-                || flow_ops_use_local(then_ops, name)
-                || flow_ops_use_local(else_ops, name)
+            count_runtime_expr_local_uses(expr, uses);
+            if let Some(guard) = guard {
+                count_runtime_expr_local_uses(guard, uses);
+            }
+            count_flow_ops_local_uses(then_ops, uses);
+            count_flow_ops_local_uses(else_ops, uses);
         }
         FlowOp::Match { scrutinee, arms } => {
-            runtime_expr_uses_local(scrutinee, name)
-                || arms.iter().any(|arm| {
-                    arm.guard
-                        .as_ref()
-                        .is_some_and(|guard| runtime_expr_uses_local(guard, name))
-                        || flow_ops_use_local(&arm.ops, name)
-                })
+            count_runtime_expr_local_uses(scrutinee, uses);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    count_runtime_expr_local_uses(guard, uses);
+                }
+                count_flow_ops_local_uses(&arm.ops, uses);
+            }
         }
         FlowOp::Loop { body }
         | FlowOp::LetLoop { body, .. }
         | FlowOp::Thread { body, .. }
-        | FlowOp::Scope(body) => flow_ops_use_local(body, name),
-        FlowOp::LoopNext { body } | FlowOp::ForNext { body, .. } => flow_ops_use_local(body, name),
+        | FlowOp::Scope(body) => count_flow_ops_local_uses(body, uses),
+        FlowOp::LoopNext { body } | FlowOp::ForNext { body, .. } => {
+            count_flow_ops_local_uses(body, uses);
+        }
         FlowOp::While { condition, body } => {
-            runtime_expr_uses_local(condition, name) || flow_ops_use_local(body, name)
+            count_runtime_expr_local_uses(condition, uses);
+            count_flow_ops_local_uses(body, uses);
         }
         FlowOp::WhileNext { condition, body } => {
-            runtime_expr_uses_local(condition, name) || flow_ops_use_local(body, name)
+            count_runtime_expr_local_uses(condition, uses);
+            count_flow_ops_local_uses(body, uses);
         }
         FlowOp::WhileLet {
             expr, guard, body, ..
         } => {
-            runtime_expr_uses_local(expr, name)
-                || guard
-                    .as_ref()
-                    .is_some_and(|guard| runtime_expr_uses_local(guard, name))
-                || flow_ops_use_local(body, name)
+            count_runtime_expr_local_uses(expr, uses);
+            if let Some(guard) = guard {
+                count_runtime_expr_local_uses(guard, uses);
+            }
+            count_flow_ops_local_uses(body, uses);
         }
         FlowOp::WhileLetNext {
             expr, guard, body, ..
         } => {
-            runtime_expr_uses_local(expr, name)
-                || guard
-                    .as_ref()
-                    .is_some_and(|guard| runtime_expr_uses_local(guard, name))
-                || flow_ops_use_local(body, name)
+            count_runtime_expr_local_uses(expr, uses);
+            if let Some(guard) = guard {
+                count_runtime_expr_local_uses(guard, uses);
+            }
+            count_flow_ops_local_uses(body, uses);
         }
         FlowOp::For { source, body, .. } => {
-            runtime_expr_uses_local(source, name) || flow_ops_use_local(body, name)
+            count_runtime_expr_local_uses(source, uses);
+            count_flow_ops_local_uses(body, uses);
         }
-        FlowOp::AwaitMany { target, .. } => runtime_expr_uses_local(&target.source, name),
+        FlowOp::AwaitMany { target, .. } => count_runtime_expr_local_uses(&target.source, uses),
         FlowOp::LetScope { ops, value, .. } => {
-            flow_ops_use_local(ops, name) || runtime_expr_uses_local(value, name)
+            count_flow_ops_local_uses(ops, uses);
+            count_runtime_expr_local_uses(value, uses);
         }
         FlowOp::Let { expr, .. }
         | FlowOp::Break(Some(expr))
         | FlowOp::GotoExpr(expr)
         | FlowOp::ReturnExpr(expr)
-        | FlowOp::ExitScopeBind { expr, .. } => runtime_expr_uses_local(expr, name),
+        | FlowOp::ExitScopeBind { expr, .. } => count_runtime_expr_local_uses(expr, uses),
         FlowOp::Bind(_)
         | FlowOp::Dialogue { .. }
         | FlowOp::Choice { .. }
@@ -398,53 +514,68 @@ fn flow_op_uses_local(op: &FlowOp, name: &str) -> bool {
         | FlowOp::Continue
         | FlowOp::Goto(_)
         | FlowOp::Return(_)
-        | FlowOp::Noop => false,
+        | FlowOp::Noop => {}
     }
 }
 
-fn runtime_expr_uses_local(expr: &RuntimeExpr, name: &str) -> bool {
+fn count_runtime_expr_local_uses<'a>(expr: &'a RuntimeExpr, uses: &mut BTreeMap<&'a str, usize>) {
     match expr {
-        RuntimeExpr::Local(local) => local == name,
+        RuntimeExpr::Local(local) => {
+            *uses.entry(local.as_str()).or_default() += 1;
+        }
         RuntimeExpr::Let { expr, body, .. } => {
-            runtime_expr_uses_local(expr, name) || runtime_expr_uses_local(body, name)
+            count_runtime_expr_local_uses(expr, uses);
+            count_runtime_expr_local_uses(body, uses);
         }
         RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
-            items.iter().any(|item| runtime_expr_uses_local(item, name))
+            for item in items {
+                count_runtime_expr_local_uses(item, uses);
+            }
         }
-        RuntimeExpr::RepeatSeq { value, .. } => runtime_expr_uses_local(value, name),
-        RuntimeExpr::Record(fields) => fields
-            .iter()
-            .any(|field| runtime_expr_uses_local(&field.value, name)),
-        RuntimeExpr::Variant { payload, .. } => payload
-            .as_deref()
-            .is_some_and(|payload| runtime_expr_uses_local(payload, name)),
+        RuntimeExpr::RepeatSeq { value, .. } => count_runtime_expr_local_uses(value, uses),
+        RuntimeExpr::Record(fields) => {
+            for field in fields {
+                count_runtime_expr_local_uses(&field.value, uses);
+            }
+        }
+        RuntimeExpr::Variant { payload, .. } => {
+            if let Some(payload) = payload {
+                count_runtime_expr_local_uses(payload, uses);
+            }
+        }
         RuntimeExpr::Field { target, .. } | RuntimeExpr::SpreadArg(target) => {
-            runtime_expr_uses_local(target, name)
+            count_runtime_expr_local_uses(target, uses);
         }
         RuntimeExpr::Call { args, .. } | RuntimeExpr::PureCall { args, .. } => {
-            args.iter().any(|arg| runtime_expr_uses_local(arg, name))
+            for arg in args {
+                count_runtime_expr_local_uses(arg, uses);
+            }
         }
         RuntimeExpr::MethodCall { receiver, args, .. } => {
-            runtime_expr_uses_local(receiver, name)
-                || args.iter().any(|arg| runtime_expr_uses_local(arg, name))
+            count_runtime_expr_local_uses(receiver, uses);
+            for arg in args {
+                count_runtime_expr_local_uses(arg, uses);
+            }
         }
         RuntimeExpr::Map { source, body, .. } => {
-            runtime_expr_uses_local(source, name) || runtime_expr_uses_local(body, name)
+            count_runtime_expr_local_uses(source, uses);
+            count_runtime_expr_local_uses(body, uses);
         }
         RuntimeExpr::Sum { source } | RuntimeExpr::Unary { expr: source, .. } => {
-            runtime_expr_uses_local(source, name)
+            count_runtime_expr_local_uses(source, uses);
         }
         RuntimeExpr::Binary { lhs, rhs, .. } => {
-            runtime_expr_uses_local(lhs, name) || runtime_expr_uses_local(rhs, name)
+            count_runtime_expr_local_uses(lhs, uses);
+            count_runtime_expr_local_uses(rhs, uses);
         }
         RuntimeExpr::If {
             condition,
             then_expr,
             else_expr,
         } => {
-            runtime_expr_uses_local(condition, name)
-                || runtime_expr_uses_local(then_expr, name)
-                || runtime_expr_uses_local(else_expr, name)
+            count_runtime_expr_local_uses(condition, uses);
+            count_runtime_expr_local_uses(then_expr, uses);
+            count_runtime_expr_local_uses(else_expr, uses);
         }
         RuntimeExpr::IfLet {
             expr,
@@ -453,23 +584,23 @@ fn runtime_expr_uses_local(expr: &RuntimeExpr, name: &str) -> bool {
             else_expr,
             ..
         } => {
-            runtime_expr_uses_local(expr, name)
-                || guard
-                    .as_ref()
-                    .is_some_and(|guard| runtime_expr_uses_local(guard, name))
-                || runtime_expr_uses_local(then_expr, name)
-                || runtime_expr_uses_local(else_expr, name)
+            count_runtime_expr_local_uses(expr, uses);
+            if let Some(guard) = guard {
+                count_runtime_expr_local_uses(guard, uses);
+            }
+            count_runtime_expr_local_uses(then_expr, uses);
+            count_runtime_expr_local_uses(else_expr, uses);
         }
         RuntimeExpr::Match { scrutinee, arms } => {
-            runtime_expr_uses_local(scrutinee, name)
-                || arms.iter().any(|arm| {
-                    arm.guard
-                        .as_ref()
-                        .is_some_and(|guard| runtime_expr_uses_local(guard, name))
-                        || runtime_expr_uses_local(&arm.value, name)
-                })
+            count_runtime_expr_local_uses(scrutinee, uses);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    count_runtime_expr_local_uses(guard, uses);
+                }
+                count_runtime_expr_local_uses(&arm.value, uses);
+            }
         }
-        RuntimeExpr::Value(_) | RuntimeExpr::EntityRef(_) => false,
+        RuntimeExpr::Value(_) | RuntimeExpr::EntityRef(_) => {}
     }
 }
 
