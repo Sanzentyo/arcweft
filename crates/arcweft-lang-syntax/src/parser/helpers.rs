@@ -17,7 +17,7 @@ use crate::ast::{
     pattern::Pattern,
 };
 use crate::cst::{
-    collect_wiki_link_ranges, punctuation_deltas, split_top_level_keyword_once,
+    CstPunctuationScan, collect_wiki_link_ranges, split_top_level_keyword_once,
     split_top_level_punctuation, split_top_level_punctuation_once,
 };
 use crate::cst::{find_matching_punctuation, find_top_level_punctuation};
@@ -289,7 +289,7 @@ pub(super) fn collect_logical_block_items(body: &str) -> Vec<String> {
             current.push('\n');
         }
         current.push_str(raw_line);
-        let deltas = punctuation_deltas(raw_line);
+        let deltas = CstPunctuationScan::new(raw_line).deltas();
         depth += deltas.brace + deltas.paren + deltas.bracket;
         if depth <= 0 {
             lines.push(core::mem::take(&mut current));
@@ -303,8 +303,9 @@ pub(super) fn collect_logical_block_items(body: &str) -> Vec<String> {
 }
 
 pub(super) fn split_brace_item(source: &str) -> Option<(&str, &str)> {
-    let open = find_top_level_punctuation(source, '{')?;
-    let close = find_matching_punctuation(source, open, '{', '}')?;
+    let punctuation = CstPunctuationScan::new(source);
+    let open = punctuation.find_top_level_punctuation('{')?;
+    let close = punctuation.find_matching_punctuation(open, '{', '}')?;
     (source[close + '}'.len_utf8()..].trim().is_empty())
         .then(|| (source[..open].trim(), source[open + 1..close].trim()))
 }

@@ -355,6 +355,9 @@ Current high-confidence state:
   longer duplicated in parser methods. Block open/close offsets come from the
   per-line punctuation summary built during CST line projection, so collecting a
   complete brace block does not re-lex the assembled block text.
+  Non-line body fragments use `CstPunctuationScan` when a parser needs multiple
+  punctuation queries over the same slice, avoiding repeated fragment lexing in
+  shared helpers such as `split_brace_item`.
 - Flow-like block collection also lives on `CstLineEvents`. It keeps contract
   and `effects { ... }` prelude lines in the header while collecting the
   following brace body as the block event, so flow/callable/entity/source

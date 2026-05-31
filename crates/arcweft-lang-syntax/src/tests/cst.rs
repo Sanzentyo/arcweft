@@ -1,5 +1,5 @@
 use crate::cst::{
-    CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineKind, CstStmtKind,
+    CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineKind, CstPunctuationScan, CstStmtKind,
     CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxKind,
     classify_stmt, cst_lines, find_last_depth_zero_open_punctuation,
     find_last_top_level_punctuation, find_matching_punctuation, punctuation_delta,
@@ -239,6 +239,22 @@ fn cst_punctuation_delta_ignores_strings_and_comments() {
     assert_eq!(punctuation_delta(source, '[', ']'), 0);
     assert_eq!(punctuation_delta(source, '{', '}'), 0);
     assert_eq!(punctuation_delta("with { cue { call() }", '{', '}'), 1);
+}
+
+#[test]
+fn cst_punctuation_scan_reuses_fragment_tokens() {
+    let source = r#"outer { call("[not]") } trailing"#;
+    let scan = CstPunctuationScan::new(source);
+    let open = scan
+        .find_top_level_punctuation('{')
+        .expect("top-level brace");
+    let close = scan
+        .find_matching_punctuation(open, '{', '}')
+        .expect("matching brace");
+
+    assert_eq!(&source[open..=open], "{");
+    assert_eq!(&source[close..=close], "}");
+    assert_eq!(scan.deltas().brace, 0);
 }
 
 #[test]

@@ -90,7 +90,10 @@ remain zero until a detailed instrumentation mode is added. CST line punctuation
 summaries are built from the existing rowan line-token walk, not by re-lexing
 each line for stats. Balanced brace-block extraction now also reuses those line
 summaries for body-open and body-close offsets, so the hot block collector no
-longer re-lexes the assembled block text after already walking its lines.
+longer re-lexes the assembled block text after already walking its lines. For
+body fragments that are not CST lines, `CstPunctuationScan` now owns the one
+fragment tokenization pass and serves top-level punctuation, matching
+punctuation, and bracket-delta queries from that token buffer.
 
 ## 2026-05-30 JST
 

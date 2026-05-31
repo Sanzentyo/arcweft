@@ -1248,6 +1248,116 @@ fn token_text_is(text: &str, value: char) -> bool {
     chars.next() == Some(value) && chars.next().is_none()
 }
 
+/// Reusable punctuation token scan for source fragments that are not CST lines.
+///
+/// `CstLine` already stores punctuation summaries built during rowan line
+/// projection. This type serves the remaining body-fragment paths where several
+/// punctuation queries need to inspect the same string slice.
+#[derive(Clone, Debug)]
+pub(crate) struct CstPunctuationScan<'a> {
+    tokens: Vec<CstToken<'a>>,
+}
+
+impl<'a> CstPunctuationScan<'a> {
+    pub(crate) fn new(source: &'a str) -> Self {
+        Self {
+            tokens: lex_cst(source),
+        }
+    }
+
+    pub(crate) fn find_matching_punctuation(
+        &self,
+        open_offset: usize,
+        open: char,
+        close: char,
+    ) -> Option<usize> {
+        let mut depth = 0usize;
+        for token in self.punctuation_tokens() {
+            if token.start() < open_offset {
+                continue;
+            }
+            if token.text_starts_with(open) {
+                depth += 1;
+            } else if token.text_starts_with(close) {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(token.start());
+                }
+            }
+        }
+        None
+    }
+
+    pub(crate) fn find_top_level_punctuation(&self, punctuation: char) -> Option<usize> {
+        let mut paren = 0usize;
+        let mut square = 0usize;
+        let mut brace = 0usize;
+        let mut angle = 0usize;
+
+        for token in self.punctuation_tokens() {
+            if token.text_starts_with(punctuation)
+                && paren == 0
+                && square == 0
+                && brace == 0
+                && angle == 0
+            {
+                return Some(token.start());
+            }
+
+            update_depths(
+                token.text(),
+                &mut paren,
+                &mut square,
+                &mut brace,
+                &mut angle,
+            );
+        }
+        None
+    }
+
+    pub(crate) fn deltas(&self) -> CstPunctuationDeltas {
+        self.punctuation_tokens()
+            .fold(CstPunctuationDeltas::default(), |mut deltas, token| {
+                match token.text() {
+                    "{" => deltas.brace += 1,
+                    "}" => deltas.brace -= 1,
+                    "(" => deltas.paren += 1,
+                    ")" => deltas.paren -= 1,
+                    "[" => deltas.bracket += 1,
+                    "]" => deltas.bracket -= 1,
+                    _ => {}
+                }
+                deltas
+            })
+    }
+
+    fn punctuation_tokens(&self) -> impl Iterator<Item = &CstToken<'a>> {
+        self.tokens
+            .iter()
+            .filter(|token| token.kind() == SyntaxKind::Punctuation)
+    }
+}
+
+fn update_depths(
+    text: &str,
+    paren: &mut usize,
+    square: &mut usize,
+    brace: &mut usize,
+    angle: &mut usize,
+) {
+    match text {
+        "(" => *paren += 1,
+        ")" => *paren = paren.saturating_sub(1),
+        "[" => *square += 1,
+        "]" => *square = square.saturating_sub(1),
+        "{" => *brace += 1,
+        "}" => *brace = brace.saturating_sub(1),
+        "<" => *angle += 1,
+        ">" => *angle = angle.saturating_sub(1),
+        _ => {}
+    }
+}
+
 /// Finds the close punctuation matching an opening punctuation token.
 ///
 /// The scan is token-based, so quoted strings and comments are never inspected
@@ -1259,24 +1369,7 @@ pub(crate) fn find_matching_punctuation(
     open: char,
     close: char,
 ) -> Option<usize> {
-    let mut depth = 0usize;
-    for token in lex_cst(source) {
-        if token.kind() != SyntaxKind::Punctuation {
-            continue;
-        }
-        if token.start() < open_offset {
-            continue;
-        }
-        if token.text_starts_with(open) {
-            depth += 1;
-        } else if token.text_starts_with(close) {
-            depth = depth.checked_sub(1)?;
-            if depth == 0 {
-                return Some(token.start());
-            }
-        }
-    }
-    None
+    CstPunctuationScan::new(source).find_matching_punctuation(open_offset, open, close)
 }
 
 /// Computes open-minus-close punctuation depth from CST tokens.
@@ -1293,25 +1386,6 @@ pub(crate) fn punctuation_delta(source: &str, open: char, close: char) -> i32 {
             text if token_text_is(text, open) => depth + 1,
             text if token_text_is(text, close) => depth - 1,
             _ => depth,
-        })
-}
-
-/// Computes all bracket-family depth deltas in one token scan.
-pub(crate) fn punctuation_deltas(source: &str) -> CstPunctuationDeltas {
-    lex_cst(source)
-        .into_iter()
-        .filter(|token| token.kind() == SyntaxKind::Punctuation)
-        .fold(CstPunctuationDeltas::default(), |mut deltas, token| {
-            match token.text() {
-                "{" => deltas.brace += 1,
-                "}" => deltas.brace -= 1,
-                "(" => deltas.paren += 1,
-                ")" => deltas.paren -= 1,
-                "[" => deltas.bracket += 1,
-                "]" => deltas.bracket -= 1,
-                _ => {}
-            }
-            deltas
         })
 }
 
