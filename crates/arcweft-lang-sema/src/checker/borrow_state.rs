@@ -24,7 +24,9 @@ impl TypeChecker<'_> {
             self.stats.borrow_binding_groups += 1;
             self.stats.borrow_bindings += lifetimes.len();
             self.clear_borrow_local(&name);
-            self.active_borrows.extend(lifetimes.iter().cloned());
+            for lifetime in &lifetimes {
+                self.add_active_borrow_lifetime(lifetime);
+            }
             self.record_active_borrow_depth();
             self.borrow_local_lifetimes
                 .insert(name, BorrowLocalState::Live(lifetimes));
@@ -73,13 +75,23 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn remove_active_borrow_lifetime(&mut self, lifetime: &str) {
-        if let Some(index) = self
-            .active_borrows
-            .iter()
-            .position(|active| active == lifetime)
-        {
-            self.active_borrows.swap_remove(index);
+        let Some(count) = self.active_borrow_lifetimes.get_mut(lifetime) else {
+            return;
+        };
+        self.stats.active_borrow_removes += 1;
+        self.active_borrow_total = self.active_borrow_total.saturating_sub(1);
+        *count -= 1;
+        if *count == 0 {
+            self.active_borrow_lifetimes.remove(lifetime);
         }
+    }
+
+    pub(super) fn add_active_borrow_lifetime(&mut self, lifetime: &str) {
+        *self
+            .active_borrow_lifetimes
+            .entry(lifetime.to_owned())
+            .or_insert(0) += 1;
+        self.active_borrow_total += 1;
     }
 
     pub(super) fn snapshot_borrow_state(&mut self) -> BorrowStateSnapshot {
@@ -121,13 +133,16 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn rebuild_active_borrows(&mut self) {
-        self.active_borrows.clear();
-        self.active_borrows.extend(
-            self.borrow_local_lifetimes
-                .values()
-                .flat_map(BorrowLocalState::lifetimes)
-                .cloned(),
-        );
+        self.clear_active_borrows();
+        let lifetimes = self
+            .borrow_local_lifetimes
+            .values()
+            .flat_map(BorrowLocalState::lifetimes)
+            .cloned()
+            .collect::<Vec<_>>();
+        for lifetime in &lifetimes {
+            self.add_active_borrow_lifetime(lifetime);
+        }
         self.record_active_borrow_depth();
     }
 }

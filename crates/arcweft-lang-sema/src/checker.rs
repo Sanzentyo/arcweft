@@ -25,7 +25,7 @@ use arcweft_lang_syntax::{
     expr::{CallArg, Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind, Literal},
     types::{FnParam, FnParamKind, FnSignature, TypeRef},
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub mod borrow_state;
 pub mod choice;
@@ -94,6 +94,7 @@ pub struct TypeCheckStats {
     pub borrow_state_cloned_bindings: usize,
     pub borrow_boundary_checks: usize,
     pub borrow_escape_checks: usize,
+    pub active_borrow_removes: usize,
     pub max_active_borrows: usize,
 }
 
@@ -191,7 +192,8 @@ struct TypeChecker<'a> {
     env: &'a TypeCheckEnv,
     errors: Vec<TypeCheckError>,
     warnings: Vec<TypeCheckWarning>,
-    active_borrows: Vec<String>,
+    active_borrow_lifetimes: BTreeMap<String, usize>,
+    active_borrow_total: usize,
     borrow_local_lifetimes: HashMap<String, BorrowLocalState>,
     global_symbols: HashMap<String, TypeKind>,
     global_functions: HashMap<String, TypeKind>,
@@ -279,7 +281,8 @@ impl TypeChecker<'_> {
             env,
             errors: Vec::new(),
             warnings: Vec::new(),
-            active_borrows: Vec::new(),
+            active_borrow_lifetimes: BTreeMap::new(),
+            active_borrow_total: 0,
             borrow_local_lifetimes: HashMap::new(),
             global_symbols: HashMap::new(),
             global_functions: HashMap::new(),
@@ -376,8 +379,19 @@ impl TypeChecker<'_> {
     }
 
     fn record_active_borrow_depth(&mut self) {
-        self.stats.max_active_borrows =
-            self.stats.max_active_borrows.max(self.active_borrows.len());
+        self.stats.max_active_borrows = self.stats.max_active_borrows.max(self.active_borrow_total);
+    }
+
+    fn clear_active_borrows(&mut self) {
+        self.active_borrow_lifetimes.clear();
+        self.active_borrow_total = 0;
+    }
+
+    fn active_borrow_labels(&self) -> Vec<&str> {
+        self.active_borrow_lifetimes
+            .keys()
+            .map(String::as_str)
+            .collect()
     }
 
     fn symbol_type(&self, name: &str) -> Option<&TypeKind> {

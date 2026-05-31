@@ -568,6 +568,7 @@ pub(crate) struct BorrowCheckProfileStats {
     state_cloned_bindings: usize,
     boundary_checks: usize,
     escape_checks: usize,
+    active_borrow_removes: usize,
     max_active_borrows: usize,
 }
 
@@ -582,6 +583,7 @@ impl From<&TypeCheckStats> for BorrowCheckProfileStats {
             state_cloned_bindings: stats.borrow_state_cloned_bindings,
             boundary_checks: stats.borrow_boundary_checks,
             escape_checks: stats.borrow_escape_checks,
+            active_borrow_removes: stats.active_borrow_removes,
             max_active_borrows: stats.max_active_borrows,
         }
     }

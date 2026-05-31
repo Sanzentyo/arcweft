@@ -979,7 +979,7 @@ Current high-confidence state:
   integrated borrow-check counters, including expression/statement counts,
   borrow binding groups, type judgment counts, rule-family judgment counts,
   bounded judgment samples, borrow state snapshots/restores/merges, boundary
-  checks, escape checks, and maximum active borrows.
+  checks, escape checks, active-borrow removals, and maximum active borrows.
   Loop, source-handler, dialogue-line runtime, and child-task scopes restore
   only inserted or shadowed bindings, so typecheck performance counters are not
   distorted by full local environment clones at common scoped-binding
@@ -991,6 +991,9 @@ Current high-confidence state:
   Branch borrow-state restores now use a reference-based restore path with
   `clone_from`, so repeated if/match branch checks reuse the checker's borrow
   map allocation instead of cloning a whole snapshot value before restoration.
+  Active borrow tracking uses a deterministic counted lifetime map instead of a
+  linear `Vec<String>` removal path, so duplicate lifetime labels are collapsed
+  for diagnostics while release/drop updates avoid per-remove scans.
 - `arcweft-verify` exposes `validate_runtime_plan_types(plan, report)` for the
   post-lowering runtime plan consumed by the VM. `arcw profile --json` now runs
   this pass between runtime-plan lowering and bytecode lowering and reports

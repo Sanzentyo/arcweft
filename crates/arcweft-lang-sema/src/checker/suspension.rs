@@ -187,10 +187,10 @@ impl TypeChecker<'_> {
 
     pub(super) fn reject_active_borrows(&mut self, boundary: &str) {
         self.stats.borrow_boundary_checks += 1;
-        if !self.active_borrows.is_empty() {
+        if self.active_borrow_total > 0 {
+            let labels = self.active_borrow_labels();
             self.errors.push(TypeCheckError::new(format!(
-                "borrowed values with lifetimes {:?} cannot cross {boundary}",
-                self.active_borrows
+                "borrowed values with lifetimes {labels:?} cannot cross {boundary}"
             )));
         }
     }
