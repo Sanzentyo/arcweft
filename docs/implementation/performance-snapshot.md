@@ -88,7 +88,9 @@ default parsing updates only counters available as normal parser by-products.
 Detailed fields that would require timing, tracing, or additional attribution
 remain zero until a detailed instrumentation mode is added. CST line punctuation
 summaries are built from the existing rowan line-token walk, not by re-lexing
-each line for stats.
+each line for stats. Balanced brace-block extraction now also reuses those line
+summaries for body-open and body-close offsets, so the hot block collector no
+longer re-lexes the assembled block text after already walking its lines.
 
 ## 2026-05-30 JST
 

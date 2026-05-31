@@ -352,7 +352,9 @@ Current high-confidence state:
 - Balanced brace-block collection for ordinary blocks and function-body blocks
   now lives on `CstLineEvents` and returns a `CstBlockEvent`. The typed parser
   still consumes the result, but brace recovery and body-open detection are no
-  longer duplicated in parser methods.
+  longer duplicated in parser methods. Block open/close offsets come from the
+  per-line punctuation summary built during CST line projection, so collecting a
+  complete brace block does not re-lex the assembled block text.
 - Flow-like block collection also lives on `CstLineEvents`. It keeps contract
   and `effects { ... }` prelude lines in the header while collecting the
   following brace body as the block event, so flow/callable/entity/source

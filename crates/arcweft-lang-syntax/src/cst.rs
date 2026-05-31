@@ -82,6 +82,7 @@ pub(crate) struct CstLinePunctuationSummary {
     bracket_delta: i32,
     first_top_level_brace_open: Option<usize>,
     last_top_level_brace_open: Option<usize>,
+    last_brace_close: Option<usize>,
 }
 
 /// Open-minus-close depth deltas for all bracket families in one scan.
@@ -433,6 +434,7 @@ impl CstLineEvents {
         let mut seen_body_open = false;
         let mut first_top_level_open = None;
         let mut last_top_level_open = None;
+        let mut last_brace_close = None;
         let mut index = start;
 
         while let Some(line) = self.get(index) {
@@ -453,6 +455,9 @@ impl CstLineEvents {
                     last_top_level_open = Some(line_offset + open);
                 }
             }
+            if let Some(close) = line.last_brace_close() {
+                last_brace_close = Some(line_offset + close);
+            }
             if matches!(rule, CstBlockOpenRule::FunctionBody)
                 && (trimmed == "{"
                     || line.has_unclosed_top_level_brace_open()
@@ -472,13 +477,12 @@ impl CstLineEvents {
 
         let open = match rule {
             CstBlockOpenRule::FirstTopLevel => first_top_level_open,
-            CstBlockOpenRule::FlowBody => last_top_level_open,
-            CstBlockOpenRule::FunctionBody => find_body_open(&text),
+            CstBlockOpenRule::FlowBody | CstBlockOpenRule::FunctionBody => last_top_level_open,
         };
         let Some(open) = open else {
             return CstBlockEvent::new(text, String::new(), end, false, start + 1);
         };
-        let Some(close) = find_last_punctuation(&text, '}') else {
+        let Some(close) = last_brace_close else {
             return CstBlockEvent::new(text, String::new(), end, false, index);
         };
         if depth != 0 {
@@ -644,6 +648,10 @@ impl CstLine {
     pub(crate) const fn last_top_level_brace_open(&self) -> Option<usize> {
         self.punctuation.last_top_level_brace_open
     }
+
+    pub(crate) const fn last_brace_close(&self) -> Option<usize> {
+        self.punctuation.last_brace_close
+    }
 }
 
 impl CstLinePunctuationSummary {
@@ -677,6 +685,8 @@ impl CstLinePunctuationSummary {
                 "}" => {
                     summary.brace_delta -= 1;
                     brace = brace.saturating_sub(1);
+                    summary.last_brace_close =
+                        Some(usize::from(token.text_range().start()) - node_start);
                 }
                 "(" => {
                     summary.paren_delta += 1;
@@ -1405,17 +1415,6 @@ pub(crate) fn find_top_level_punctuation(source: &str, punctuation: char) -> Opt
     None
 }
 
-/// Finds the last punctuation token with the requested text.
-pub(crate) fn find_last_punctuation(source: &str, punctuation: char) -> Option<usize> {
-    lex_cst(source)
-        .into_iter()
-        .filter(|token| {
-            token.kind() == SyntaxKind::Punctuation && token.text_starts_with(punctuation)
-        })
-        .map(|token| token.start())
-        .next_back()
-}
-
 /// Finds the last top-level punctuation token while ignoring strings and comments.
 pub(crate) fn find_last_top_level_punctuation(source: &str, punctuation: char) -> Option<usize> {
     let mut paren = 0usize;
@@ -1454,6 +1453,7 @@ pub(crate) fn find_last_top_level_punctuation(source: &str, punctuation: char) -
 }
 
 /// Finds the last opening punctuation that starts while the matching delimiter depth is zero.
+#[cfg(test)]
 pub(crate) fn find_last_depth_zero_open_punctuation(
     source: &str,
     open: char,
@@ -1479,10 +1479,6 @@ pub(crate) fn find_last_depth_zero_open_punctuation(
         }
     }
     found
-}
-
-fn find_body_open(source: &str) -> Option<usize> {
-    find_last_depth_zero_open_punctuation(source, '{', '}')
 }
 
 /// Splits a leading identifier token from the rest of a source fragment.
