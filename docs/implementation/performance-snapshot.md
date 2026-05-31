@@ -174,7 +174,10 @@ values, native `f32`/`f64` sequences, entity
 refs, and wide integer length paths run without argument-vector allocation or
 dense flatten materialization. Typed floats are stored as native Rust `f32`
 and `f64`; exact bit identity is measured through explicit `to_bits` checks
-rather than runtime value equality.
+rather than runtime value equality. The VM reference runtime now dispatches
+`std.f32.*` and `std.f64.*` constants/functions through typed runtime
+intrinsics, including explicit `to_bits`/`from_bits`, predicates, math helpers,
+and explicit `to_f64`/`to_f32` casts.
 After scalar integer materialization was changed to preserve width tags,
 path-free local remeasurement with the `just bench-010` and `just bench-012`
 targets reported median elapsed times of 7900 ns for

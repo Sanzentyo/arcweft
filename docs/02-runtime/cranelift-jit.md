@@ -87,12 +87,13 @@ add argument Vec allocation noise.
 `arcweft-lang-jit-cranelift` is the native codegen adapter crate. Its first
 executable subset compiles deterministic `i64` pure-helper expressions to
 Cranelift, executes the generated code, and compares the result against
-`VmPureFunctionBackend`. The current subset covers integer literals, integer
-bindings, `+`, `-`, `*`, `/`, unary `-`, integer comparisons, value-producing
-`if`, and the registered pure `add(lhs, rhs)` helper. It also supports lexical
-`let` bindings lowered as structured pure runtime expressions. Helpers can be
-compiled either as no-argument native calls with captured integer bindings or
-as native calls with up to four selected local bindings passed as runtime `i64`
+`VmPureFunctionBackend`. The current subset covers integer and native float
+literals, typed integer/float bindings, `+`, `-`, `*`, `/`, unary `-`,
+comparisons, value-producing `if`, and the registered pure `add(lhs, rhs)`
+helper. It also supports lexical `let` bindings lowered as structured pure
+runtime expressions. Helpers can be compiled either as no-argument native calls
+with captured bindings or as native calls with up to four selected local
+bindings passed as width-preserving `i64`, `i32`, `u32`, `f32`, or `f64`
 inputs.
 String-heavy helpers, effectful calls, flow control, and pattern control remain
 outside the JIT subset.

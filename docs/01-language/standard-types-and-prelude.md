@@ -21,6 +21,43 @@ LogicalTime
 `Never` is the canonical bottom type name. The advanced alias `!` is allowed in
 type position.
 
+## Numeric Standard Modules
+
+Numeric primitives are explicit-width types such as `i32`, `u64`, `f32`, and
+`f64`. The float standard modules expose constants, math functions, predicates,
+bit conversion, and explicit casts without implicit widening or narrowing:
+
+```arcw
+std.f32.nan
+std.f32.infinity
+std.f32.epsilon
+std.f32.pi
+std.f32.sqrt(x)
+std.f32.powf(x, y)
+std.f32.atan2(y, x)
+std.f32.mul_add(a, b, c)
+std.f32.is_nan(x)
+std.f32.to_bits(x)
+std.f32.from_bits(bits)
+std.f32.to_f64(x)
+
+std.f64.nan
+std.f64.infinity
+std.f64.epsilon
+std.f64.pi
+std.f64.sqrt(x)
+std.f64.powf(x, y)
+std.f64.atan2(y, x)
+std.f64.mul_add(a, b, c)
+std.f64.is_nan(x)
+std.f64.to_bits(x)
+std.f64.from_bits(bits)
+std.f64.to_f32(x)
+```
+
+The VM reference backend defines these functions. JIT/AOT backends may lower a
+subset directly and otherwise use the VM semantics as the correctness baseline.
+
 ## References and Handles
 
 ```arcw

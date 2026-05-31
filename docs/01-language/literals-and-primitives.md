@@ -74,6 +74,38 @@ Float literals preserve their raw spelling and optional suffix.
 `-1i32` is unary `-` applied to the positive literal `1i32`; negative numbers
 are not separate literal tokens.
 
+Arcweft `f32` and `f64` values use Rust-like native float semantics. Ordinary
+equality is `PartialEq`: `0.0f32 == -0.0f32` is true, and NaN is not equal to
+itself. Exact bit identity is an explicit operation through the standard float
+module.
+
+NaN and infinity are not float literal spellings. Use standard constants:
+
+```arcw
+std.f32.nan
+std.f32.infinity
+std.f32.neg_infinity
+std.f64.nan
+std.f64.infinity
+std.f64.neg_infinity
+```
+
+The standard float module provides Rust-like math, predicate, bit conversion,
+and explicit cast helpers:
+
+```arcw
+let x: f32 = std.f32.sqrt(4.0f32)
+let exact: u32 = std.f32.to_bits(-0.0f32)
+let restored: f32 = std.f32.from_bits(exact)
+let finite: bool = std.f64.is_finite(1.0f64)
+let widened: f64 = std.f32.to_f64(x)
+let narrowed: f32 = std.f64.to_f32(widened)
+```
+
+`a * b + c` is not implicitly rewritten to fused multiply-add. Use
+`std.f32.mul_add(a, b, c)` or `std.f64.mul_add(a, b, c)` when one-rounding FMA
+semantics are intended.
+
 Unsuffixed numeric literals require an expected type.
 
 ```arcw
