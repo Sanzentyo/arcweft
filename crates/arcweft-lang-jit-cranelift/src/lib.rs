@@ -11,8 +11,8 @@ use arcweft_core::pure::{
     PureFunctionStats, RuntimeI64Args,
 };
 use arcweft_core::value::{
-    RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeIntrinsic,
-    RuntimeUnaryOp, RuntimeValue,
+    RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEvalError, RuntimeExpr,
+    RuntimeIntrinsic, RuntimeUnaryOp, RuntimeValue,
 };
 use cranelift::codegen::ir::{BlockArg, MemFlags, UserFuncName};
 use cranelift::jit::{JITBuilder, JITModule};
@@ -2469,14 +2469,18 @@ fn lower_f32_expr(
             let rhs = lower_f32_expr(builder, bindings, &args[1], stats)?;
             Ok(builder.ins().fadd(lhs, rhs))
         }
+        RuntimeExpr::Call { callee, args } => {
+            lower_f32_std_float_call(builder, bindings, callee, args, stats).ok_or_else(|| {
+                CraneliftJitError::UnsupportedExpr(format!(
+                    "call `{callee}` is outside the f32 JIT subset"
+                ))
+            })?
+        }
         RuntimeExpr::If {
             condition,
             then_expr,
             else_expr,
         } => lower_f32_if_expr(builder, bindings, condition, then_expr, else_expr, stats),
-        RuntimeExpr::Call { callee, .. } => Err(CraneliftJitError::UnsupportedExpr(format!(
-            "call `{callee}` is outside the f32 JIT subset"
-        ))),
         other => Err(CraneliftJitError::UnsupportedExpr(format!(
             "expression `{other}` is outside the f32 JIT subset"
         ))),
@@ -2543,18 +2547,104 @@ fn lower_f64_expr(
             let rhs = lower_f64_expr(builder, bindings, &args[1], stats)?;
             Ok(builder.ins().fadd(lhs, rhs))
         }
+        RuntimeExpr::Call { callee, args } => {
+            lower_f64_std_float_call(builder, bindings, callee, args, stats).ok_or_else(|| {
+                CraneliftJitError::UnsupportedExpr(format!(
+                    "call `{callee}` is outside the f64 JIT subset"
+                ))
+            })?
+        }
         RuntimeExpr::If {
             condition,
             then_expr,
             else_expr,
         } => lower_f64_if_expr(builder, bindings, condition, then_expr, else_expr, stats),
-        RuntimeExpr::Call { callee, .. } => Err(CraneliftJitError::UnsupportedExpr(format!(
-            "call `{callee}` is outside the f64 JIT subset"
-        ))),
         other => Err(CraneliftJitError::UnsupportedExpr(format!(
             "expression `{other}` is outside the f64 JIT subset"
         ))),
     }
+}
+
+fn lower_f32_std_float_call(
+    builder: &mut FunctionBuilder<'_>,
+    bindings: &BTreeMap<String, LoweredF32Binding>,
+    callee: &RuntimeCallTarget,
+    args: &[RuntimeExpr],
+    stats: &mut PureFunctionStats,
+) -> Option<Result<Value, CraneliftJitError>> {
+    let intrinsic = callee.as_intrinsic()?;
+    let result = match (intrinsic, args) {
+        (RuntimeIntrinsic::StdF32Abs, [value]) => {
+            lower_f32_expr(builder, bindings, value, stats).map(|value| builder.ins().fabs(value))
+        }
+        (RuntimeIntrinsic::StdF32Floor, [value]) => {
+            lower_f32_expr(builder, bindings, value, stats).map(|value| builder.ins().floor(value))
+        }
+        (RuntimeIntrinsic::StdF32Ceil, [value]) => {
+            lower_f32_expr(builder, bindings, value, stats).map(|value| builder.ins().ceil(value))
+        }
+        (RuntimeIntrinsic::StdF32Trunc, [value]) => {
+            lower_f32_expr(builder, bindings, value, stats).map(|value| builder.ins().trunc(value))
+        }
+        (RuntimeIntrinsic::StdF32Fract, [value]) => lower_f32_expr(builder, bindings, value, stats)
+            .map(|value| {
+                let trunc = builder.ins().trunc(value);
+                builder.ins().fsub(value, trunc)
+            }),
+        (RuntimeIntrinsic::StdF32Sqrt, [value]) => {
+            lower_f32_expr(builder, bindings, value, stats).map(|value| builder.ins().sqrt(value))
+        }
+        (RuntimeIntrinsic::StdF32MulAdd, [a, b, c]) => (|| {
+            let a = lower_f32_expr(builder, bindings, a, stats)?;
+            let b = lower_f32_expr(builder, bindings, b, stats)?;
+            let c = lower_f32_expr(builder, bindings, c, stats)?;
+            Ok(builder.ins().fma(a, b, c))
+        })(),
+        _ => return None,
+    };
+    stats.evaluated_calls += 1;
+    Some(result)
+}
+
+fn lower_f64_std_float_call(
+    builder: &mut FunctionBuilder<'_>,
+    bindings: &BTreeMap<String, LoweredF64Binding>,
+    callee: &RuntimeCallTarget,
+    args: &[RuntimeExpr],
+    stats: &mut PureFunctionStats,
+) -> Option<Result<Value, CraneliftJitError>> {
+    let intrinsic = callee.as_intrinsic()?;
+    let result = match (intrinsic, args) {
+        (RuntimeIntrinsic::StdF64Abs, [value]) => {
+            lower_f64_expr(builder, bindings, value, stats).map(|value| builder.ins().fabs(value))
+        }
+        (RuntimeIntrinsic::StdF64Floor, [value]) => {
+            lower_f64_expr(builder, bindings, value, stats).map(|value| builder.ins().floor(value))
+        }
+        (RuntimeIntrinsic::StdF64Ceil, [value]) => {
+            lower_f64_expr(builder, bindings, value, stats).map(|value| builder.ins().ceil(value))
+        }
+        (RuntimeIntrinsic::StdF64Trunc, [value]) => {
+            lower_f64_expr(builder, bindings, value, stats).map(|value| builder.ins().trunc(value))
+        }
+        (RuntimeIntrinsic::StdF64Fract, [value]) => lower_f64_expr(builder, bindings, value, stats)
+            .map(|value| {
+                let trunc = builder.ins().trunc(value);
+                builder.ins().fsub(value, trunc)
+            }),
+        (RuntimeIntrinsic::StdF64Sqrt, [value]) => {
+            lower_f64_expr(builder, bindings, value, stats).map(|value| builder.ins().sqrt(value))
+        }
+        (RuntimeIntrinsic::StdF64MulAdd, [a, b, c]) => (|| {
+            let a = lower_f64_expr(builder, bindings, a, stats)?;
+            let b = lower_f64_expr(builder, bindings, b, stats)?;
+            let c = lower_f64_expr(builder, bindings, c, stats)?;
+            Ok(builder.ins().fma(a, b, c))
+        })(),
+        _ => return None,
+    };
+    stats.evaluated_calls += 1;
+    Some(result)
 }
 
 fn lower_if_expr(
@@ -3209,6 +3299,98 @@ mod tests {
             .call_flat_batch(&[3.0, 1.5, 2.0, 99.0, 4.0, 0.5], &mut out)
             .expect("f64 flat rows batch succeeds");
         assert_eq!(out.map(f64::to_bits), [6.0f64, 0.0, 4.0].map(f64::to_bits));
+    }
+
+    #[test]
+    fn cranelift_compiled_helper_lowers_supported_std_f32_intrinsics() {
+        let request = PureFunctionRequest::new(
+            "std_f32_intrinsics",
+            RuntimeExpr::Call {
+                callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::StdF32MulAdd),
+                args: vec![
+                    RuntimeExpr::Call {
+                        callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::StdF32Sqrt),
+                        args: vec![RuntimeExpr::Local("base".to_owned())],
+                    },
+                    RuntimeExpr::Call {
+                        callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::StdF32Abs),
+                        args: vec![RuntimeExpr::Local("scale".to_owned())],
+                    },
+                    RuntimeExpr::Call {
+                        callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::StdF32Fract),
+                        args: vec![RuntimeExpr::Local("offset".to_owned())],
+                    },
+                ],
+            },
+            [
+                f32_binding("base", 0.0),
+                f32_binding("scale", 0.0),
+                f32_binding("offset", 0.0),
+            ],
+        );
+
+        let compiled = CraneliftPureFunctionBackend
+            .compile_f32_with_inputs(&request, ["base", "scale", "offset"])
+            .expect("Cranelift compiles supported std.f32 intrinsics");
+
+        assert_eq!(
+            compiled
+                .call(&[9.0, -2.0, 1.25])
+                .expect("f32 call succeeds")
+                .to_bits(),
+            6.25f32.to_bits()
+        );
+        let mut out = [0.0; 2];
+        compiled
+            .call_flat_batch(&[9.0, -2.0, 1.25, 16.0, -0.5, 2.75], &mut out)
+            .expect("f32 flat rows batch succeeds");
+        assert_eq!(out.map(f32::to_bits), [6.25f32, 2.75].map(f32::to_bits));
+    }
+
+    #[test]
+    fn cranelift_compiled_helper_lowers_supported_std_f64_intrinsics() {
+        let request = PureFunctionRequest::new(
+            "std_f64_intrinsics",
+            RuntimeExpr::Call {
+                callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::StdF64MulAdd),
+                args: vec![
+                    RuntimeExpr::Call {
+                        callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::StdF64Sqrt),
+                        args: vec![RuntimeExpr::Local("base".to_owned())],
+                    },
+                    RuntimeExpr::Call {
+                        callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::StdF64Ceil),
+                        args: vec![RuntimeExpr::Local("scale".to_owned())],
+                    },
+                    RuntimeExpr::Call {
+                        callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::StdF64Fract),
+                        args: vec![RuntimeExpr::Local("offset".to_owned())],
+                    },
+                ],
+            },
+            [
+                f64_binding("base", 0.0),
+                f64_binding("scale", 0.0),
+                f64_binding("offset", 0.0),
+            ],
+        );
+
+        let compiled = CraneliftPureFunctionBackend
+            .compile_f64_with_inputs(&request, ["base", "scale", "offset"])
+            .expect("Cranelift compiles supported std.f64 intrinsics");
+
+        assert_eq!(
+            compiled
+                .call(&[25.0, 1.2, 3.5])
+                .expect("f64 call succeeds")
+                .to_bits(),
+            10.5f64.to_bits()
+        );
+        let mut out = [0.0; 2];
+        compiled
+            .call_flat_batch(&[25.0, 1.2, 3.5, 16.0, 2.0, 7.25], &mut out)
+            .expect("f64 flat rows batch succeeds");
+        assert_eq!(out.map(f64::to_bits), [10.5f64, 8.25].map(f64::to_bits));
     }
 
     #[test]
