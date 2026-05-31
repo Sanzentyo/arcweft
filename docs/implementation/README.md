@@ -759,8 +759,9 @@ Current high-confidence state:
   `RuntimeValue::Int`: `i8`, `i16`, `i32`, `i64`, and `Bytes`. The flow VM uses
   this projection when building pure-helper flat inputs, so those sources do
   not have to round-trip through `Vec<RuntimeValue>` before entering the i64
-  batch ABI. Unsigned, `i128`, `isize`, and `usize` dense storage stay out of
-  that projection because their dynamic runtime values are distinct
+  batch ABI. The corresponding core regression covers all five projected
+  storage classes. Unsigned, `i128`, `isize`, and `usize` dense storage stay out
+  of that projection because their dynamic runtime values are distinct
   `UInt`/`I128`/`ISize`/`USize` variants rather than implicit i64 values.
 - `Vec<T>.len()` / `Seq<T>.len()` / fixed array length calls typecheck as
   `usize` and read `RuntimeSeq::len()` directly in the VM and pure VM. The

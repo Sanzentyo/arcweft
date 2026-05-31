@@ -472,17 +472,14 @@ fn engine_fuses_local_map_closure_pure_batch_sum() {
     );
 }
 
-#[test]
-fn engine_batches_dense_i32_map_without_value_materialization() {
+fn assert_dense_int_compatible_map_sum_uses_flat_batch(source: RuntimeValue, expected: &str) {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.main".to_owned())),
         vec![RuntimeFlow {
             id: FlowRuntimeId("flow.main".to_owned()),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Sum {
                 source: Box::new(RuntimeExpr::Map {
-                    source: Box::new(RuntimeExpr::Value(runtime_sequence_dense_i32(vec![
-                        3, 5, 7,
-                    ]))),
+                    source: Box::new(RuntimeExpr::Value(source)),
                     param: "base".to_owned(),
                     body: Box::new(RuntimeExpr::PureCall {
                         helper: RuntimePureHelperId(0),
@@ -516,7 +513,7 @@ fn engine_batches_dense_i32_map_without_value_materialization() {
 
     assert!(matches!(
         result.fiber_status,
-        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "60"
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == expected
     ));
     assert_eq!(result.stats.pure.batch_calls, 1);
     assert_eq!(result.stats.pure.batch_items, 3);
@@ -526,6 +523,21 @@ fn engine_batches_dense_i32_map_without_value_materialization() {
         6 * std::mem::size_of::<i64>()
     );
     assert_eq!(result.stats.pure.result_bytes_copied, 0);
+}
+
+#[test]
+fn engine_batches_dense_int_compatible_map_without_value_materialization() {
+    let cases = [
+        (runtime_sequence_dense_i8(vec![3, 5, 7]), "60"),
+        (runtime_sequence_dense_i16(vec![3, 5, 7]), "60"),
+        (runtime_sequence_dense_i32(vec![3, 5, 7]), "60"),
+        (runtime_sequence_dense_i64(vec![3, 5, 7]), "60"),
+        (runtime_sequence_dense_bytes(vec![3, 5, 7]), "60"),
+    ];
+
+    for (source, expected) in cases {
+        assert_dense_int_compatible_map_sum_uses_flat_batch(source, expected);
+    }
 }
 
 #[test]

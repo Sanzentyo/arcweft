@@ -8,7 +8,11 @@ use crate::pure::{
 };
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeValue,
-    runtime_sequence_dense_bool, runtime_sequence_dense_i64, runtime_sequence_values,
+    runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_i8,
+    runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
+    runtime_sequence_dense_i128, runtime_sequence_dense_isize, runtime_sequence_dense_u8,
+    runtime_sequence_dense_u16, runtime_sequence_dense_u32, runtime_sequence_dense_u64,
+    runtime_sequence_dense_u128, runtime_sequence_dense_usize, runtime_sequence_values,
 };
 
 fn int_binding(name: &str, value: i64) -> RuntimeBinding {
@@ -120,6 +124,44 @@ fn vm_pure_backend_sums_dense_i64_sequence_without_materializing_values() {
         .expect("pure helper sums dense local sequence");
 
     assert_eq!(result.value, RuntimeValue::Int(53));
+}
+
+#[test]
+fn vm_pure_backend_sums_dense_integer_sequences_without_materializing_values() {
+    let cases = [
+        runtime_sequence_dense_i8(vec![18, 15, 20]),
+        runtime_sequence_dense_i16(vec![18, 15, 20]),
+        runtime_sequence_dense_i32(vec![18, 15, 20]),
+        runtime_sequence_dense_i64(vec![18, 15, 20]),
+        runtime_sequence_dense_i128(vec![18, 15, 20]),
+        runtime_sequence_dense_isize(vec![18, 15, 20]),
+        runtime_sequence_dense_u8(vec![18, 15, 20]),
+        runtime_sequence_dense_u16(vec![18, 15, 20]),
+        runtime_sequence_dense_u32(vec![18, 15, 20]),
+        runtime_sequence_dense_u64(vec![18, 15, 20]),
+        runtime_sequence_dense_u128(vec![18, 15, 20]),
+        runtime_sequence_dense_usize(vec![18, 15, 20]),
+        runtime_sequence_dense_bytes(vec![18, 15, 20]),
+    ];
+
+    for value in cases {
+        let request = PureFunctionRequest::new(
+            "sum_scores",
+            RuntimeExpr::Sum {
+                source: Box::new(RuntimeExpr::Local("scores".to_owned())),
+            },
+            [RuntimeBinding {
+                name: "scores".to_owned(),
+                value,
+            }],
+        );
+
+        let result = VmPureFunctionBackend
+            .evaluate(&request)
+            .expect("pure helper sums dense integer-compatible sequence");
+
+        assert_eq!(result.value, RuntimeValue::Int(53));
+    }
 }
 
 #[test]
