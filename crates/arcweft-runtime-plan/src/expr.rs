@@ -10,8 +10,8 @@ use arcweft_core::effect::{
 };
 use arcweft_core::plan::RuntimePureHelperId;
 use arcweft_core::value::{
-    RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeUnaryOp,
-    RuntimeValue, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
+    RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeF32, RuntimeF64, RuntimeFieldExpr,
+    RuntimeUnaryOp, RuntimeValue, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
     runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_dense_i128,
     runtime_sequence_dense_isize, runtime_sequence_dense_u8, runtime_sequence_dense_u16,
     runtime_sequence_dense_u32, runtime_sequence_dense_u64, runtime_sequence_dense_u128,
@@ -638,6 +638,16 @@ fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
             u64::try_from(*value).map_or(RuntimeValue::Int(*value), RuntimeValue::UInt)
         }
         Literal::Int { value, .. } => RuntimeValue::Int(*value),
+        Literal::Float {
+            raw,
+            suffix: Some(suffix),
+        } if suffix == "f32" => typed_f32_literal(raw, suffix)
+            .map_or_else(|| RuntimeValue::Float(raw.clone()), RuntimeValue::F32),
+        Literal::Float {
+            raw,
+            suffix: Some(suffix),
+        } if suffix == "f64" => typed_f64_literal(raw, suffix)
+            .map_or_else(|| RuntimeValue::Float(raw.clone()), RuntimeValue::F64),
         Literal::Float { raw, .. } => RuntimeValue::Float(raw.clone()),
         Literal::Bool(value) => RuntimeValue::Bool(*value),
         Literal::Duration { .. } => duration_expr(&Expr::Literal(literal.clone())).map_or_else(
@@ -649,6 +659,18 @@ fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
 
 fn is_unsigned_suffix(suffix: &str) -> bool {
     matches!(suffix, "u8" | "u16" | "u32" | "u64")
+}
+
+fn typed_f32_literal(raw: &str, suffix: &str) -> Option<RuntimeF32> {
+    raw.strip_suffix(suffix)
+        .and_then(|value| value.parse::<f32>().ok())
+        .map(RuntimeF32::from_f32)
+}
+
+fn typed_f64_literal(raw: &str, suffix: &str) -> Option<RuntimeF64> {
+    raw.strip_suffix(suffix)
+        .and_then(|value| value.parse::<f64>().ok())
+        .map(RuntimeF64::from_f64)
 }
 
 fn lower_runtime_unary_op(op: UnaryOp) -> RuntimeUnaryOp {
@@ -992,6 +1014,50 @@ mod tests {
                 if seq.as_durations() == Some([
                     arcweft_core::time::LogicalDuration::from_nanos(1_000_000),
                     arcweft_core::time::LogicalDuration::from_nanos(2_000_000),
+                ].as_slice())
+        ));
+    }
+
+    #[test]
+    fn strict_runtime_bracket_seq_folds_typed_float_literals_to_dense_storage() {
+        let f32_expr = Expr::BracketSeq(vec![
+            Expr::Literal(Literal::Float {
+                raw: "1.5f32".to_owned(),
+                suffix: Some("f32".to_owned()),
+            }),
+            Expr::Literal(Literal::Float {
+                raw: "2.5f32".to_owned(),
+                suffix: Some("f32".to_owned()),
+            }),
+        ]);
+        let f64_expr = Expr::BracketSeq(vec![
+            Expr::Literal(Literal::Float {
+                raw: "3.25f64".to_owned(),
+                suffix: Some("f64".to_owned()),
+            }),
+            Expr::Literal(Literal::Float {
+                raw: "-0.0f64".to_owned(),
+                suffix: Some("f64".to_owned()),
+            }),
+        ]);
+
+        let f32_lowered = lower_runtime_expr_strict(&f32_expr).expect("f32 bracket seq lowers");
+        let f64_lowered = lower_runtime_expr_strict(&f64_expr).expect("f64 bracket seq lowers");
+
+        assert!(matches!(
+            f32_lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_f32_slice() == Some([
+                    RuntimeF32::from_f32(1.5),
+                    RuntimeF32::from_f32(2.5),
+                ].as_slice())
+        ));
+        assert!(matches!(
+            f64_lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_f64_slice() == Some([
+                    RuntimeF64::from_f64(3.25),
+                    RuntimeF64::from_f64(-0.0),
                 ].as_slice())
         ));
     }

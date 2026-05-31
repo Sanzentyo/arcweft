@@ -137,7 +137,7 @@ cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/b
 | 011_dense_u64_sum.arcw | measured | 8000 | 4 | 2000 | 2726500 | 237500 | 411000 | 6 | 9 | 0 | 0 |
 | 012_dense_integer_widths_sum.arcw | measured | 19700 | 10 | 1970 | 4429300 | 331100 | 452800 | 30 | 39 | 0 | 0 |
 | 013_dense_scalar_len.arcw | measured | 16000 | 8 | 2000 | 2002000 | 335600 | 572800 | 54 | 61 | 0 | 0 |
-| 014_dense_textual_scalar_len.arcw | measured | 17200 | 7 | 2457 | 1305500 | 270400 | 420800 | 21 | 27 | 0 | 0 |
+| 014_dense_textual_scalar_len.arcw | measured | 17200 | 7 | 2457 | 1317400 | 203500 | 381800 | 21 | 27 | 0 | 0 |
 | 015_dense_wide_numeric_len.arcw | measured | 13600 | 7 | 1942 | 1424200 | 164300 | 263000 | 18 | 24 | 0 | 0 |
 | 016_dense_i32_map_pure_batch.arcw | measured | 73300 | 3 | 24433 | 3141200 | 226100 | 315900 | 16 | 21 | 0 | 0 |
 
@@ -149,8 +149,11 @@ runtime values and should not be forced into the scalar dense layer; repeated
 shape records or tuples need a separate columnar/struct-array optimization when
 there is a measured hot path. The checked-in benches above confirm that `i32`,
 `u64`, all supported integer widths, unit/bool/char/duration/bytes, textual
-values, float literals, entity refs, and wide integer length paths run without
-argument-vector allocation or dense flatten materialization.
+values, typed `f32`/`f64` bit-value sequences, untyped float literals, entity
+refs, and wide integer length paths run without argument-vector allocation or
+dense flatten materialization. Typed floats use `RuntimeF32`/`RuntimeF64`
+bit newtypes so the runtime can expose borrowed dense views while keeping
+equality and replay deterministic.
 
 Backend-aware pure batch parallel policy checks:
 

@@ -278,6 +278,8 @@ fn runtime_value_matches_type_label(value: &RuntimeValue, ty: &str) -> bool {
                 RuntimeValue::UInt(_),
                 "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
             )
+            | (RuntimeValue::F32(_), "f32")
+            | (RuntimeValue::F64(_), "f64")
             | (RuntimeValue::Float(_), "f32" | "f64")
             | (RuntimeValue::String(_), "String")
             | (RuntimeValue::Char(_), "Char" | "char")

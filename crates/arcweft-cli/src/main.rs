@@ -5039,6 +5039,8 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         RuntimeValue::I128(value) => value.to_string(),
         RuntimeValue::UInt(value) | RuntimeValue::USize(value) => value.to_string(),
         RuntimeValue::U128(value) => value.to_string(),
+        RuntimeValue::F32(value) => value.to_f32().to_string(),
+        RuntimeValue::F64(value) => value.to_f64().to_string(),
         RuntimeValue::Float(value) | RuntimeValue::String(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
@@ -5081,6 +5083,12 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         }
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::USize(values))) => {
             format!("seq/usize/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::F32(values))) => {
+            format!("seq/f32/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::F64(values))) => {
+            format!("seq/f64/{}", values.len())
         }
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Bool(values))) => {
             format!("seq/bool/{}", values.len())

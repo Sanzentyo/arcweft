@@ -613,6 +613,16 @@ fn named_string_seq(args: &[EvaluatedHostArg], name: &str) -> Option<Vec<String>
                 items.as_slice().iter().map(u64::to_string).collect()
             }
             DenseSeq::U128(items) => items.as_slice().iter().map(u128::to_string).collect(),
+            DenseSeq::F32(items) => items
+                .as_slice()
+                .iter()
+                .map(|value| value.to_f32().to_string())
+                .collect(),
+            DenseSeq::F64(items) => items
+                .as_slice()
+                .iter()
+                .map(|value| value.to_f64().to_string())
+                .collect(),
             DenseSeq::Bool(items) => items.as_slice().iter().map(bool::to_string).collect(),
             DenseSeq::Chars(items) => items.as_slice().iter().map(char::to_string).collect(),
             DenseSeq::Durations(items) => items
@@ -705,6 +715,8 @@ fn runtime_value_to_bytes(value: &RuntimeValue) -> Result<Vec<u8>, String> {
             | DenseSeq::U64(_)
             | DenseSeq::U128(_)
             | DenseSeq::USize(_)
+            | DenseSeq::F32(_)
+            | DenseSeq::F64(_)
             | DenseSeq::Bool(_)
             | DenseSeq::Chars(_)
             | DenseSeq::Durations(_)
@@ -729,6 +741,8 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
         RuntimeValue::I128(value) => value.to_string(),
         RuntimeValue::UInt(value) | RuntimeValue::USize(value) => value.to_string(),
         RuntimeValue::U128(value) => value.to_string(),
+        RuntimeValue::F32(value) => value.to_f32().to_string(),
+        RuntimeValue::F64(value) => value.to_f64().to_string(),
         RuntimeValue::Bool(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::Unit

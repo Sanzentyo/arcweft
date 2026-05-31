@@ -1,9 +1,10 @@
 use crate::{
     time::LogicalDuration,
     value::{
-        DenseSeqKind, RuntimeBinding, RuntimeEnv, RuntimeFieldValue, RuntimeSeq, RuntimeValue,
-        runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
-        runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
+        DenseSeqKind, RuntimeBinding, RuntimeEnv, RuntimeF32, RuntimeF64, RuntimeFieldValue,
+        RuntimeSeq, RuntimeValue, runtime_sequence_dense_bool, runtime_sequence_dense_bytes,
+        runtime_sequence_dense_chars, runtime_sequence_dense_durations,
+        runtime_sequence_dense_entity_refs, runtime_sequence_dense_f32, runtime_sequence_dense_f64,
         runtime_sequence_dense_float_literals, runtime_sequence_dense_i8,
         runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
         runtime_sequence_dense_i128, runtime_sequence_dense_isize, runtime_sequence_dense_strings,
@@ -105,6 +106,14 @@ fn dense_sequence_kind_covers_deterministic_scalar_storage() {
         (runtime_sequence_dense_u64(vec![1]), DenseSeqKind::U64),
         (runtime_sequence_dense_u128(vec![1]), DenseSeqKind::U128),
         (runtime_sequence_dense_usize(vec![1]), DenseSeqKind::USize),
+        (
+            runtime_sequence_dense_f32(vec![RuntimeF32::from_f32(1.0)]),
+            DenseSeqKind::F32,
+        ),
+        (
+            runtime_sequence_dense_f64(vec![RuntimeF64::from_f64(1.0)]),
+            DenseSeqKind::F64,
+        ),
         (runtime_sequence_dense_bool(vec![true]), DenseSeqKind::Bool),
         (runtime_sequence_dense_bytes(vec![1]), DenseSeqKind::Bytes),
         (runtime_sequence_dense_chars(vec!['a']), DenseSeqKind::Chars),
@@ -368,6 +377,47 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
 }
 
 #[test]
+fn dense_float_sequences_expose_bit_exact_views_and_materialize_values() {
+    let f32_values = [
+        RuntimeF32::from_f32(1.5),
+        RuntimeF32::from_bits(f32::NAN.to_bits()),
+    ];
+    let f64_values = [
+        RuntimeF64::from_f64(2.25),
+        RuntimeF64::from_bits((-0.0f64).to_bits()),
+    ];
+    let f32_seq = runtime_sequence_dense_f32(f32_values.to_vec());
+    let f64_seq = runtime_sequence_dense_f64(f64_values.to_vec());
+
+    assert_eq!(runtime_value_label(&f32_seq), "seq/f32/2");
+    assert_eq!(runtime_value_label(&f64_seq), "seq/f64/2");
+
+    let RuntimeValue::Seq(f32_seq) = f32_seq else {
+        panic!("dense f32 helper returns a sequence");
+    };
+    assert_eq!(f32_seq.as_f32_slice(), Some(f32_values.as_slice()));
+    assert_eq!(
+        f32_seq.into_values(),
+        vec![
+            RuntimeValue::F32(f32_values[0]),
+            RuntimeValue::F32(f32_values[1])
+        ]
+    );
+
+    let RuntimeValue::Seq(f64_seq) = f64_seq else {
+        panic!("dense f64 helper returns a sequence");
+    };
+    assert_eq!(f64_seq.as_f64_slice(), Some(f64_values.as_slice()));
+    assert_eq!(
+        f64_seq.into_values(),
+        vec![
+            RuntimeValue::F64(f64_values[0]),
+            RuntimeValue::F64(f64_values[1])
+        ]
+    );
+}
+
+#[test]
 fn dense_non_i64_integer_storage_does_not_widen_into_i64_projection() {
     let cases = [
         runtime_sequence_dense_i8(vec![1, 2]),
@@ -531,13 +581,13 @@ fn literal_and_repeat_sequences_choose_dense_scalar_storage() {
     assert_eq!(unit_repeat_seq.unit_len(), Some(2));
 
     let RuntimeValue::Seq(float_seq) =
-        runtime_sequence_repeat_value(&RuntimeValue::Float("1.5f64".to_owned()), 2)
+        runtime_sequence_repeat_value(&RuntimeValue::F64(RuntimeF64::from_f64(1.5)), 2)
     else {
-        panic!("float literal repeat lowers to a sequence");
+        panic!("typed float repeat lowers to a sequence");
     };
     assert_eq!(
-        float_seq.as_float_literals(),
-        Some(["1.5f64".to_owned(), "1.5f64".to_owned()].as_slice())
+        float_seq.as_f64_slice(),
+        Some([RuntimeF64::from_f64(1.5), RuntimeF64::from_f64(1.5)].as_slice())
     );
 
     let RuntimeValue::Seq(entity_seq) =

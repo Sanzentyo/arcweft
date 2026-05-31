@@ -17,11 +17,55 @@ pub struct RuntimeBinding {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimePayload(pub RuntimeValue);
 
+/// Deterministic `f32` value stored by IEEE-754 bits.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct RuntimeF32(u32);
+
+impl RuntimeF32 {
+    pub const fn from_bits(bits: u32) -> Self {
+        Self(bits)
+    }
+
+    pub const fn to_bits(self) -> u32 {
+        self.0
+    }
+
+    pub fn from_f32(value: f32) -> Self {
+        Self(value.to_bits())
+    }
+
+    pub fn to_f32(self) -> f32 {
+        f32::from_bits(self.0)
+    }
+}
+
+/// Deterministic `f64` value stored by IEEE-754 bits.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct RuntimeF64(u64);
+
+impl RuntimeF64 {
+    pub const fn from_bits(bits: u64) -> Self {
+        Self(bits)
+    }
+
+    pub const fn to_bits(self) -> u64 {
+        self.0
+    }
+
+    pub fn from_f64(value: f64) -> Self {
+        Self(value.to_bits())
+    }
+
+    pub fn to_f64(self) -> f64 {
+        f64::from_bits(self.0)
+    }
+}
+
 /// Deterministic value domain used by the Sans I/O flow runtime.
 ///
-/// Floats are preserved as source strings until a later numeric semantic pass
-/// chooses exact representation and unit rules. That keeps this runtime model
-/// deterministic across native and wasm targets.
+/// Typed floats are stored by bits to keep equality and replay deterministic.
+/// Untyped float literals remain as source strings until a later semantic pass
+/// chooses their concrete representation and unit rules.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeValue {
     Unit,
@@ -32,6 +76,8 @@ pub enum RuntimeValue {
     U128(u128),
     ISize(i64),
     USize(u64),
+    F32(RuntimeF32),
+    F64(RuntimeF64),
     Float(String),
     String(String),
     Char(char),
@@ -315,6 +361,14 @@ impl RuntimeSeq {
         Self::Dense(DenseSeq::usize(values))
     }
 
+    pub fn dense_f32(values: Vec<RuntimeF32>) -> Self {
+        Self::Dense(DenseSeq::f32(values))
+    }
+
+    pub fn dense_f64(values: Vec<RuntimeF64>) -> Self {
+        Self::Dense(DenseSeq::f64(values))
+    }
+
     pub fn dense_bool(values: Vec<bool>) -> Self {
         Self::Dense(DenseSeq::bool(values))
     }
@@ -480,6 +534,20 @@ impl RuntimeSeq {
         }
     }
 
+    pub fn as_f32_slice(&self) -> Option<&[RuntimeF32]> {
+        match self {
+            Self::Dense(values) => values.as_f32_slice(),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub fn as_f64_slice(&self) -> Option<&[RuntimeF64]> {
+        match self {
+            Self::Dense(values) => values.as_f64_slice(),
+            Self::Values(_) => None,
+        }
+    }
+
     pub fn as_bool_slice(&self) -> Option<&[bool]> {
         match self {
             Self::Dense(values) => values.as_bool_slice(),
@@ -599,6 +667,8 @@ pub enum DenseSeqKind {
     U64,
     U128,
     USize,
+    F32,
+    F64,
     Bool,
     Bytes,
     Chars,
@@ -624,6 +694,8 @@ pub enum DenseSeq {
     U64(DenseSeqStorage<u64>),
     U128(DenseSeqStorage<u128>),
     USize(DenseSeqStorage<u64>),
+    F32(DenseSeqStorage<RuntimeF32>),
+    F64(DenseSeqStorage<RuntimeF64>),
     Bool(DenseSeqStorage<bool>),
     Bytes(DenseSeqStorage<u8>),
     Chars(DenseSeqStorage<char>),
@@ -686,6 +758,14 @@ impl DenseSeq {
         Self::USize(DenseSeqStorage::new(values))
     }
 
+    pub fn f32(values: Vec<RuntimeF32>) -> Self {
+        Self::F32(DenseSeqStorage::new(values))
+    }
+
+    pub fn f64(values: Vec<RuntimeF64>) -> Self {
+        Self::F64(DenseSeqStorage::new(values))
+    }
+
     pub fn bool(values: Vec<bool>) -> Self {
         Self::Bool(DenseSeqStorage::new(values))
     }
@@ -727,6 +807,8 @@ impl DenseSeq {
             Self::U32(values) => values.len(),
             Self::U64(values) | Self::USize(values) => values.len(),
             Self::U128(values) => values.len(),
+            Self::F32(values) => values.len(),
+            Self::F64(values) => values.len(),
             Self::Bool(values) => values.len(),
             Self::Chars(values) => values.len(),
             Self::Durations(values) => values.len(),
@@ -755,6 +837,8 @@ impl DenseSeq {
             Self::U64(_) => DenseSeqKind::U64,
             Self::U128(_) => DenseSeqKind::U128,
             Self::USize(_) => DenseSeqKind::USize,
+            Self::F32(_) => DenseSeqKind::F32,
+            Self::F64(_) => DenseSeqKind::F64,
             Self::Bool(_) => DenseSeqKind::Bool,
             Self::Bytes(_) => DenseSeqKind::Bytes,
             Self::Chars(_) => DenseSeqKind::Chars,
@@ -780,6 +864,8 @@ impl DenseSeq {
             | Self::U64(_)
             | Self::U128(_)
             | Self::USize(_)
+            | Self::F32(_)
+            | Self::F64(_)
             | Self::Bool(_)
             | Self::Bytes(_)
             | Self::Chars(_)
@@ -815,6 +901,8 @@ impl DenseSeq {
             | Self::U64(_)
             | Self::U128(_)
             | Self::USize(_)
+            | Self::F32(_)
+            | Self::F64(_)
             | Self::Bytes(_)
             | Self::Bool(_)
             | Self::Chars(_)
@@ -848,6 +936,8 @@ impl DenseSeq {
             | Self::U64(_)
             | Self::U128(_)
             | Self::USize(_)
+            | Self::F32(_)
+            | Self::F64(_)
             | Self::Bool(_)
             | Self::Bytes(_)
             | Self::Chars(_)
@@ -873,6 +963,8 @@ impl DenseSeq {
             | Self::U64(_)
             | Self::U128(_)
             | Self::USize(_)
+            | Self::F32(_)
+            | Self::F64(_)
             | Self::Bytes(_)
             | Self::Bool(_)
             | Self::Chars(_)
@@ -957,6 +1049,20 @@ impl DenseSeq {
     pub fn as_usize_values(&self) -> Option<&[u64]> {
         match self {
             Self::USize(values) => Some(values.as_slice()),
+            _ => None,
+        }
+    }
+
+    pub fn as_f32_slice(&self) -> Option<&[RuntimeF32]> {
+        match self {
+            Self::F32(values) => Some(values.as_slice()),
+            _ => None,
+        }
+    }
+
+    pub fn as_f64_slice(&self) -> Option<&[RuntimeF64]> {
+        match self {
+            Self::F64(values) => Some(values.as_slice()),
             _ => None,
         }
     }
@@ -1063,6 +1169,16 @@ impl DenseSeq {
                 .into_iter()
                 .map(RuntimeValue::USize)
                 .collect(),
+            Self::F32(values) => values
+                .into_vec()
+                .into_iter()
+                .map(RuntimeValue::F32)
+                .collect(),
+            Self::F64(values) => values
+                .into_vec()
+                .into_iter()
+                .map(RuntimeValue::F64)
+                .collect(),
             Self::Bool(values) => values
                 .into_vec()
                 .into_iter()
@@ -1124,6 +1240,8 @@ impl DenseSeq {
             Self::U64(values) => RuntimeValue::UInt(values.as_slice()[index]),
             Self::U128(values) => RuntimeValue::U128(values.as_slice()[index]),
             Self::USize(values) => RuntimeValue::USize(values.as_slice()[index]),
+            Self::F32(values) => RuntimeValue::F32(values.as_slice()[index]),
+            Self::F64(values) => RuntimeValue::F64(values.as_slice()[index]),
             Self::Bool(values) => RuntimeValue::Bool(values.as_slice()[index]),
             Self::Bytes(values) => RuntimeValue::Int(i64::from(values.as_slice()[index])),
             Self::Chars(values) => RuntimeValue::Char(values.as_slice()[index]),
@@ -1150,6 +1268,8 @@ impl DenseSeq {
             Self::U64(values) => Self::U64(values.tail_from(index)),
             Self::U128(values) => Self::U128(values.tail_from(index)),
             Self::USize(values) => Self::USize(values.tail_from(index)),
+            Self::F32(values) => Self::F32(values.tail_from(index)),
+            Self::F64(values) => Self::F64(values.tail_from(index)),
             Self::Bool(values) => Self::Bool(values.tail_from(index)),
             Self::Bytes(values) => Self::Bytes(values.tail_from(index)),
             Self::Chars(values) => Self::Chars(values.tail_from(index)),
@@ -1175,6 +1295,8 @@ impl DenseSeq {
             | Self::U64(_)
             | Self::U128(_)
             | Self::USize(_)
+            | Self::F32(_)
+            | Self::F64(_)
             | Self::Bool(_)
             | Self::Bytes(_)
             | Self::Chars(_)
@@ -1206,6 +1328,8 @@ impl DenseSeq {
                 i64::try_from(*value).ok().map(|value| acc + value)
             }),
             Self::Units(_)
+            | Self::F32(_)
+            | Self::F64(_)
             | Self::Bool(_)
             | Self::Bytes(_)
             | Self::Chars(_)
@@ -1885,6 +2009,12 @@ pub(crate) fn evaluate_unary(
     match (op, value) {
         (RuntimeUnaryOp::Not, RuntimeValue::Bool(value)) => Ok(RuntimeValue::Bool(!value)),
         (RuntimeUnaryOp::Neg, RuntimeValue::Int(value)) => Ok(RuntimeValue::Int(-value)),
+        (RuntimeUnaryOp::Neg, RuntimeValue::F32(value)) => {
+            Ok(RuntimeValue::F32(RuntimeF32::from_f32(-value.to_f32())))
+        }
+        (RuntimeUnaryOp::Neg, RuntimeValue::F64(value)) => {
+            Ok(RuntimeValue::F64(RuntimeF64::from_f64(-value.to_f64())))
+        }
         (op, value) => Err(RuntimeEvalError::UnsupportedUnary {
             op: runtime_unary_op_label(op),
             value: runtime_value_label(&value),
@@ -1928,6 +2058,12 @@ pub(crate) fn evaluate_binary(
                 (RuntimeValue::U128(lhs), RuntimeValue::U128(rhs)) => {
                     Ok(RuntimeValue::Bool(compare_ordered(&lhs, op, &rhs)))
                 }
+                (RuntimeValue::F32(lhs), RuntimeValue::F32(rhs)) => Ok(RuntimeValue::Bool(
+                    compare_float(&lhs.to_f32(), op, &rhs.to_f32()),
+                )),
+                (RuntimeValue::F64(lhs), RuntimeValue::F64(rhs)) => Ok(RuntimeValue::Bool(
+                    compare_float(&lhs.to_f64(), op, &rhs.to_f64()),
+                )),
                 (lhs, rhs) => unsupported_binary(op, &lhs, &rhs),
             }
         }
@@ -1953,6 +2089,12 @@ pub(crate) fn evaluate_binary(
             (RuntimeValue::USize(lhs), RuntimeValue::USize(rhs)) => {
                 Ok(RuntimeValue::USize(evaluate_numeric_op(lhs, op, rhs)))
             }
+            (RuntimeValue::F32(lhs), RuntimeValue::F32(rhs)) => {
+                Ok(RuntimeValue::F32(evaluate_f32_op(lhs, op, rhs)))
+            }
+            (RuntimeValue::F64(lhs), RuntimeValue::F64(rhs)) => {
+                Ok(RuntimeValue::F64(evaluate_f64_op(lhs, op, rhs)))
+            }
             (lhs, rhs) => unsupported_binary(op, &lhs, &rhs),
         },
     }
@@ -1966,6 +2108,24 @@ fn compare_ordered<T: Ord>(lhs: &T, op: RuntimeBinaryOp, rhs: &T) -> bool {
         RuntimeBinaryOp::Ge => lhs >= rhs,
         _ => unreachable!(),
     }
+}
+
+fn compare_float<T: PartialOrd>(lhs: &T, op: RuntimeBinaryOp, rhs: &T) -> bool {
+    match op {
+        RuntimeBinaryOp::Lt => lhs < rhs,
+        RuntimeBinaryOp::Le => lhs <= rhs,
+        RuntimeBinaryOp::Gt => lhs > rhs,
+        RuntimeBinaryOp::Ge => lhs >= rhs,
+        _ => unreachable!(),
+    }
+}
+
+fn evaluate_f32_op(lhs: RuntimeF32, op: RuntimeBinaryOp, rhs: RuntimeF32) -> RuntimeF32 {
+    RuntimeF32::from_f32(evaluate_numeric_op(lhs.to_f32(), op, rhs.to_f32()))
+}
+
+fn evaluate_f64_op(lhs: RuntimeF64, op: RuntimeBinaryOp, rhs: RuntimeF64) -> RuntimeF64 {
+    RuntimeF64::from_f64(evaluate_numeric_op(lhs.to_f64(), op, rhs.to_f64()))
 }
 
 fn evaluate_numeric_op<T>(lhs: T, op: RuntimeBinaryOp, rhs: T) -> T
@@ -2076,6 +2236,18 @@ pub fn runtime_sequence_from_literal_values(values: Vec<RuntimeValue>) -> Runtim
             RuntimeValue::USize,
             runtime_sequence_dense_usize,
         ),
+        Some(RuntimeValue::F32(_)) => collect_dense_or_values(
+            values,
+            take_f32_value,
+            RuntimeValue::F32,
+            runtime_sequence_dense_f32,
+        ),
+        Some(RuntimeValue::F64(_)) => collect_dense_or_values(
+            values,
+            take_f64_value,
+            RuntimeValue::F64,
+            runtime_sequence_dense_f64,
+        ),
         Some(RuntimeValue::Char(_)) => collect_dense_or_values(
             values,
             take_char_value,
@@ -2181,6 +2353,20 @@ fn take_usize_value(value: RuntimeValue) -> Result<u64, RuntimeValue> {
     }
 }
 
+fn take_f32_value(value: RuntimeValue) -> Result<RuntimeF32, RuntimeValue> {
+    match value {
+        RuntimeValue::F32(value) => Ok(value),
+        value => Err(value),
+    }
+}
+
+fn take_f64_value(value: RuntimeValue) -> Result<RuntimeF64, RuntimeValue> {
+    match value {
+        RuntimeValue::F64(value) => Ok(value),
+        value => Err(value),
+    }
+}
+
 fn take_char_value(value: RuntimeValue) -> Result<char, RuntimeValue> {
     match value {
         RuntimeValue::Char(value) => Ok(value),
@@ -2226,6 +2412,8 @@ pub fn runtime_sequence_repeat_value(value: &RuntimeValue, len: usize) -> Runtim
         RuntimeValue::UInt(value) => runtime_sequence_dense_u64(vec![*value; len]),
         RuntimeValue::U128(value) => runtime_sequence_dense_u128(vec![*value; len]),
         RuntimeValue::USize(value) => runtime_sequence_dense_usize(vec![*value; len]),
+        RuntimeValue::F32(value) => runtime_sequence_dense_f32(vec![*value; len]),
+        RuntimeValue::F64(value) => runtime_sequence_dense_f64(vec![*value; len]),
         RuntimeValue::Char(value) => runtime_sequence_dense_chars(vec![*value; len]),
         RuntimeValue::Duration(value) => runtime_sequence_dense_durations(vec![*value; len]),
         RuntimeValue::String(value) => runtime_sequence_dense_strings(vec![value.clone(); len]),
@@ -2289,6 +2477,14 @@ pub fn runtime_sequence_dense_u128(values: Vec<u128>) -> RuntimeValue {
 
 pub fn runtime_sequence_dense_usize(values: Vec<u64>) -> RuntimeValue {
     RuntimeValue::Seq(RuntimeSeq::dense_usize(values))
+}
+
+pub fn runtime_sequence_dense_f32(values: Vec<RuntimeF32>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_f32(values))
+}
+
+pub fn runtime_sequence_dense_f64(values: Vec<RuntimeF64>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_f64(values))
 }
 
 pub fn runtime_sequence_dense_bool(values: Vec<bool>) -> RuntimeValue {
@@ -2399,6 +2595,8 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
         RuntimeValue::I128(value) => value.to_string(),
         RuntimeValue::UInt(value) | RuntimeValue::USize(value) => value.to_string(),
         RuntimeValue::U128(value) => value.to_string(),
+        RuntimeValue::F32(value) => value.to_f32().to_string(),
+        RuntimeValue::F64(value) => value.to_f64().to_string(),
         RuntimeValue::Float(value)
         | RuntimeValue::String(value)
         | RuntimeValue::EntityRef(value) => value.clone(),
@@ -2420,6 +2618,8 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
             RuntimeSeq::Dense(DenseSeq::U64(values)) => format!("seq/u64/{}", values.len()),
             RuntimeSeq::Dense(DenseSeq::U128(values)) => format!("seq/u128/{}", values.len()),
             RuntimeSeq::Dense(DenseSeq::USize(values)) => format!("seq/usize/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::F32(values)) => format!("seq/f32/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::F64(values)) => format!("seq/f64/{}", values.len()),
             RuntimeSeq::Dense(DenseSeq::Bool(values)) => format!("seq/bool/{}", values.len()),
             RuntimeSeq::Dense(DenseSeq::Bytes(values)) => format!("seq/bytes/{}", values.len()),
             RuntimeSeq::Dense(DenseSeq::Chars(values)) => format!("seq/chars/{}", values.len()),

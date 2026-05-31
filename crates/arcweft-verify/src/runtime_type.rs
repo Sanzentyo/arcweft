@@ -69,6 +69,7 @@ enum RuntimeShape {
     Unit,
     Bool,
     Int,
+    Float,
     EntityRef,
     String,
     Tuple,
@@ -605,6 +606,7 @@ fn runtime_value_shape(value: &RuntimeValue) -> RuntimeShape {
         | RuntimeValue::U128(_)
         | RuntimeValue::USize(_)
         | RuntimeValue::Duration(_) => RuntimeShape::Int,
+        RuntimeValue::F32(_) | RuntimeValue::F64(_) => RuntimeShape::Float,
         RuntimeValue::EntityRef(_) => RuntimeShape::EntityRef,
         RuntimeValue::String(_) | RuntimeValue::Float(_) | RuntimeValue::Char(_) => {
             RuntimeShape::String
