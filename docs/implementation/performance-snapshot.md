@@ -175,16 +175,36 @@ argv tokens, host core/thread counts, timing counters, and deterministic
 accumulators.
 
 Runtime numeric sequence lowering now preserves integer-only bracket literals as
-`RuntimeValue::Seq(RuntimeSeq::DenseI64(_))` instead of eagerly materializing
-`Vec<RuntimeValue::Int>`. Pure map/sum fast paths consume that dense sequence
-storage directly; dynamic sequence operations such as `for`, `await many`,
-spread arguments, bracket patterns, and byte payload lowering materialize only
-at those dynamic boundaries.
+`RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I64(_)))` instead of eagerly
+materializing `Vec<RuntimeValue::Int>`. The same `DenseSeqStorage<T>` backing
+store also covers fixed-width integer sequences (`i8`, `i16`, `i32`, `i64`,
+`u8`, `u16`, `u32`, `u64`) plus bool, byte, char, and logical-duration
+sequences. Pure map/sum fast paths consume i64 dense storage directly, dense
+integer `sum()` consumes the storage without materializing `RuntimeValue`
+elements, and byte-oriented host payloads consume dense byte/u8 storage
+directly; dynamic sequence operations such as `for`, `await many`, spread
+arguments, and bracket patterns materialize only at those dynamic boundaries.
 
 The checked-in nonuniform map pure JIT fixture was remeasured after the
-`RuntimeSeq::DenseI64(DenseSeq<i64>)` migration. With the same short local
-settings used before the migration (`iterations = 3`, `warmup = 1`, `samples =
-3`), median elapsed time was 12200 ns versus the prior direct `I64Seq` sample at
-14300 ns. Deterministic counters stayed on the borrowed fast path:
+`RuntimeSeq::Dense(DenseSeq::I64(DenseSeqStorage<i64>))` migration. With the same
+checked-in bench settings, median elapsed time was 11500 ns. That is within
+normal short-run noise of the previous dense i64 runtime sequence sample at
+12200 ns and still faster than the earlier direct i64 sequence value sample at
+14300 ns.
+Deterministic counters stayed on the borrowed fast path:
 `pure_arg_vec_allocations_median = 0`, `pure_arg_bytes_borrowed_median = 2048`,
 and `pure_result_bytes_copied_median = 0`.
+
+The checked-in dense i32 sum fixture measured the non-JIT fixed-width integer
+path. It lowered `[... i32]` to `DenseSeq::I32`, validated as `Vec(I32)`, and
+ran `sum()` with median elapsed time 6800 ns. The pure-call counters remained
+zero because this bench is intentionally measuring the VM dense sequence
+reduction path, not the pure helper accelerator.
+
+`DenseSeq::F64` is intentionally not present yet because `RuntimeValue::Float`
+still preserves raw source text for deterministic numeric semantics. Dense
+`i128`, `u128`, `isize`, and `usize` are also not present yet: the first two need
+runtime scalar materialization and ABI decisions, and the platform-sized types
+are a poor fit for deterministic cross-target bytecode. Dense string/entity/
+record/tuple storage should be designed separately as offset, interned, or
+columnar storage rather than as scalar `DenseSeqStorage<T>`.

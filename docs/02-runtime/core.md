@@ -317,7 +317,7 @@ await ... with             -> FlowOp::Await + pending LineEffectRequest list
 let / let else             -> FlowOp::Let / FlowOp::LetElse
 if / if let / match        -> structured FlowOp nodes with RuntimePattern arms
 loop / while / while let   -> structured FlowOp nodes
-for PAT in EXPR            -> FlowOp::For over RuntimeValue::BracketSeq
+for PAT in EXPR            -> FlowOp::For over RuntimeValue::Seq
 scope / bare block         -> FlowOp::Scope
 goto @flow.x / goto route  -> FlowOp::GotoExpr
 return expr                -> FlowOp::ReturnExpr

@@ -10,7 +10,7 @@ use arcweft_core::{
         RuntimePureCallBackend, VmPureFunctionScratch,
     },
     step::RuntimePureCallStats,
-    value::{RuntimeBinding, RuntimeEvalError, RuntimeSeq, RuntimeValue},
+    value::{DenseSeq, RuntimeBinding, RuntimeEvalError, RuntimeSeq, RuntimeValue},
 };
 use arcweft_lang_jit_cranelift::{CompiledPureI64Inputs, CraneliftPureFunctionBackend};
 use rayon::{ThreadPool, ThreadPoolBuilder, prelude::*};
@@ -678,6 +678,7 @@ fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::Unit => "()",
         RuntimeValue::Bool(_) => "bool",
         RuntimeValue::Int(_) => "int",
+        RuntimeValue::UInt(_) => "uint",
         RuntimeValue::Float(_) => "float",
         RuntimeValue::String(_) => "string",
         RuntimeValue::Char(_) => "char",
@@ -685,7 +686,18 @@ fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::EntityRef(_) => "entity_ref",
         RuntimeValue::Tuple(_) => "tuple",
         RuntimeValue::Seq(RuntimeSeq::Values(_)) => "seq_values",
-        RuntimeValue::Seq(RuntimeSeq::DenseI64(_)) => "seq_i64",
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I8(_))) => "seq_i8",
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I16(_))) => "seq_i16",
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I32(_))) => "seq_i32",
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I64(_))) => "seq_i64",
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::U8(_))) => "seq_u8",
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::U16(_))) => "seq_u16",
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::U32(_))) => "seq_u32",
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::U64(_))) => "seq_u64",
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Bool(_))) => "seq_bool",
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Bytes(_))) => "seq_bytes",
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Chars(_))) => "seq_chars",
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Durations(_))) => "seq_durations",
         RuntimeValue::Record(_) => "record",
         RuntimeValue::Variant { .. } => "variant",
     }

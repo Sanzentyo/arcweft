@@ -12,6 +12,7 @@ use crate::task::{
     HostTaskRequestTemplate, HttpFetchRequest, HttpRespondRequest, NeedId, ProcessRunRequest,
     ShaderRequest, SystemInfoKind, SystemInfoRequest, TaskId, TtsRequest, WasmCallRequest,
 };
+use crate::value::DenseSeq;
 
 impl Engine {
     pub(super) fn resume_suspended(
@@ -594,9 +595,25 @@ fn named_string_seq(args: &[EvaluatedHostArg], name: &str) -> Option<Vec<String>
         RuntimeValue::Seq(RuntimeSeq::Values(items)) | RuntimeValue::Tuple(items) => {
             items.iter().map(runtime_value_to_string).collect()
         }
-        RuntimeValue::Seq(RuntimeSeq::DenseI64(items)) => {
-            items.as_slice().iter().map(i64::to_string).collect()
-        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(items)) => match items {
+            DenseSeq::I8(items) => items.as_slice().iter().map(i8::to_string).collect(),
+            DenseSeq::I16(items) => items.as_slice().iter().map(i16::to_string).collect(),
+            DenseSeq::I32(items) => items.as_slice().iter().map(i32::to_string).collect(),
+            DenseSeq::I64(items) => items.as_slice().iter().map(i64::to_string).collect(),
+            DenseSeq::U8(items) | DenseSeq::Bytes(items) => {
+                items.as_slice().iter().map(u8::to_string).collect()
+            }
+            DenseSeq::U16(items) => items.as_slice().iter().map(u16::to_string).collect(),
+            DenseSeq::U32(items) => items.as_slice().iter().map(u32::to_string).collect(),
+            DenseSeq::U64(items) => items.as_slice().iter().map(u64::to_string).collect(),
+            DenseSeq::Bool(items) => items.as_slice().iter().map(bool::to_string).collect(),
+            DenseSeq::Chars(items) => items.as_slice().iter().map(char::to_string).collect(),
+            DenseSeq::Durations(items) => items
+                .as_slice()
+                .iter()
+                .map(|value| format!("{}ns", value.as_nanos()))
+                .collect(),
+        },
         value => vec![runtime_value_to_string(value)],
     })
 }
@@ -649,20 +666,37 @@ fn runtime_value_to_bytes(value: &RuntimeValue) -> Result<Vec<u8>, String> {
             .map(|item| match item {
                 RuntimeValue::Int(value) => u8::try_from(*value)
                     .map_err(|_| format!("byte value `{value}` is outside u8 range")),
+                RuntimeValue::UInt(value) => u8::try_from(*value)
+                    .map_err(|_| format!("byte value `{value}` is outside u8 range")),
                 value => Err(format!(
                     "byte payload item must be Int, found {}",
                     super::runtime_value_label(value)
                 )),
             })
             .collect(),
-        RuntimeValue::Seq(RuntimeSeq::DenseI64(items)) => items
-            .as_slice()
-            .iter()
-            .map(|value| {
-                u8::try_from(*value)
-                    .map_err(|_| format!("byte value `{value}` is outside u8 range"))
-            })
-            .collect(),
+        RuntimeValue::Seq(RuntimeSeq::Dense(items)) => match items {
+            DenseSeq::Bytes(items) | DenseSeq::U8(items) => Ok(items.as_slice().to_vec()),
+            DenseSeq::I64(items) => items
+                .as_slice()
+                .iter()
+                .map(|value| {
+                    u8::try_from(*value)
+                        .map_err(|_| format!("byte value `{value}` is outside u8 range"))
+                })
+                .collect(),
+            DenseSeq::I8(_)
+            | DenseSeq::I16(_)
+            | DenseSeq::I32(_)
+            | DenseSeq::U16(_)
+            | DenseSeq::U32(_)
+            | DenseSeq::U64(_)
+            | DenseSeq::Bool(_)
+            | DenseSeq::Chars(_)
+            | DenseSeq::Durations(_) => Err(format!(
+                "byte payload item must be Int, found {}",
+                super::runtime_value_label(value)
+            )),
+        },
         _ => Err("byte payload must be a bracket sequence".to_owned()),
     }
 }
@@ -674,6 +708,7 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
         | RuntimeValue::Float(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Int(value) => value.to_string(),
+        RuntimeValue::UInt(value) => value.to_string(),
         RuntimeValue::Bool(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::Unit

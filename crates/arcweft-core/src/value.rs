@@ -27,6 +27,7 @@ pub enum RuntimeValue {
     Unit,
     Bool(bool),
     Int(i64),
+    UInt(u64),
     Float(String),
     String(String),
     Char(char),
@@ -46,7 +47,7 @@ pub enum RuntimeValue {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeSeq {
     Values(Vec<RuntimeValue>),
-    DenseI64(DenseSeq<i64>),
+    Dense(DenseSeq),
 }
 
 impl RuntimeSeq {
@@ -55,13 +56,57 @@ impl RuntimeSeq {
     }
 
     pub fn dense_i64(values: Vec<i64>) -> Self {
-        Self::DenseI64(DenseSeq::new(values))
+        Self::Dense(DenseSeq::i64(values))
+    }
+
+    pub fn dense_i8(values: Vec<i8>) -> Self {
+        Self::Dense(DenseSeq::i8(values))
+    }
+
+    pub fn dense_i16(values: Vec<i16>) -> Self {
+        Self::Dense(DenseSeq::i16(values))
+    }
+
+    pub fn dense_i32(values: Vec<i32>) -> Self {
+        Self::Dense(DenseSeq::i32(values))
+    }
+
+    pub fn dense_u8(values: Vec<u8>) -> Self {
+        Self::Dense(DenseSeq::u8(values))
+    }
+
+    pub fn dense_u16(values: Vec<u16>) -> Self {
+        Self::Dense(DenseSeq::u16(values))
+    }
+
+    pub fn dense_u32(values: Vec<u32>) -> Self {
+        Self::Dense(DenseSeq::u32(values))
+    }
+
+    pub fn dense_u64(values: Vec<u64>) -> Self {
+        Self::Dense(DenseSeq::u64(values))
+    }
+
+    pub fn dense_bool(values: Vec<bool>) -> Self {
+        Self::Dense(DenseSeq::bool(values))
+    }
+
+    pub fn dense_bytes(values: Vec<u8>) -> Self {
+        Self::Dense(DenseSeq::bytes(values))
+    }
+
+    pub fn dense_chars(values: Vec<char>) -> Self {
+        Self::Dense(DenseSeq::chars(values))
+    }
+
+    pub fn dense_durations(values: Vec<LogicalDuration>) -> Self {
+        Self::Dense(DenseSeq::durations(values))
     }
 
     pub fn len(&self) -> usize {
         match self {
             Self::Values(values) => values.len(),
-            Self::DenseI64(values) => values.len(),
+            Self::Dense(values) => values.len(),
         }
     }
 
@@ -72,13 +117,55 @@ impl RuntimeSeq {
     pub fn as_values(&self) -> Option<&[RuntimeValue]> {
         match self {
             Self::Values(values) => Some(values),
-            Self::DenseI64(_) => None,
+            Self::Dense(_) => None,
         }
     }
 
     pub fn as_i64_slice(&self) -> Option<&[i64]> {
         match self {
-            Self::DenseI64(values) => Some(values.as_slice()),
+            Self::Dense(values) => values.as_i64_slice(),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub fn as_i32_slice(&self) -> Option<&[i32]> {
+        match self {
+            Self::Dense(values) => values.as_i32_slice(),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub fn as_u64_slice(&self) -> Option<&[u64]> {
+        match self {
+            Self::Dense(values) => values.as_u64_slice(),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub fn as_bool_slice(&self) -> Option<&[bool]> {
+        match self {
+            Self::Dense(values) => values.as_bool_slice(),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub fn as_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Dense(values) => values.as_bytes(),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub fn as_chars(&self) -> Option<&[char]> {
+        match self {
+            Self::Dense(values) => values.as_chars(),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub fn as_durations(&self) -> Option<&[LogicalDuration]> {
+        match self {
+            Self::Dense(values) => values.as_durations(),
             Self::Values(_) => None,
         }
     }
@@ -86,13 +173,28 @@ impl RuntimeSeq {
     pub fn into_values(self) -> Vec<RuntimeValue> {
         match self {
             Self::Values(values) => values,
-            Self::DenseI64(values) => materialize_i64_sequence(values.into_vec()),
+            Self::Dense(values) => values.into_values(),
+        }
+    }
+
+    #[must_use]
+    pub fn tail_from(&self, index: usize) -> Self {
+        match self {
+            Self::Values(values) => Self::Values(values[index..].to_vec()),
+            Self::Dense(values) => Self::Dense(values.tail_from(index)),
         }
     }
 
     pub fn into_i64_vec(self) -> Option<Vec<i64>> {
         match self {
-            Self::DenseI64(values) => Some(values.into_vec()),
+            Self::Dense(values) => values.into_i64_vec(),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub fn sum_as_i64(&self) -> Option<i64> {
+        match self {
+            Self::Dense(values) => values.sum_as_i64(),
             Self::Values(_) => None,
         }
     }
@@ -100,11 +202,340 @@ impl RuntimeSeq {
 
 /// Dense sequence storage for homogeneous scalar data.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DenseSeq<T> {
+pub enum DenseSeq {
+    I8(DenseSeqStorage<i8>),
+    I16(DenseSeqStorage<i16>),
+    I32(DenseSeqStorage<i32>),
+    I64(DenseSeqStorage<i64>),
+    U8(DenseSeqStorage<u8>),
+    U16(DenseSeqStorage<u16>),
+    U32(DenseSeqStorage<u32>),
+    U64(DenseSeqStorage<u64>),
+    Bool(DenseSeqStorage<bool>),
+    Bytes(DenseSeqStorage<u8>),
+    Chars(DenseSeqStorage<char>),
+    Durations(DenseSeqStorage<LogicalDuration>),
+}
+
+impl DenseSeq {
+    pub fn i8(values: Vec<i8>) -> Self {
+        Self::I8(DenseSeqStorage::new(values))
+    }
+
+    pub fn i16(values: Vec<i16>) -> Self {
+        Self::I16(DenseSeqStorage::new(values))
+    }
+
+    pub fn i32(values: Vec<i32>) -> Self {
+        Self::I32(DenseSeqStorage::new(values))
+    }
+
+    pub fn i64(values: Vec<i64>) -> Self {
+        Self::I64(DenseSeqStorage::new(values))
+    }
+
+    pub fn u8(values: Vec<u8>) -> Self {
+        Self::U8(DenseSeqStorage::new(values))
+    }
+
+    pub fn u16(values: Vec<u16>) -> Self {
+        Self::U16(DenseSeqStorage::new(values))
+    }
+
+    pub fn u32(values: Vec<u32>) -> Self {
+        Self::U32(DenseSeqStorage::new(values))
+    }
+
+    pub fn u64(values: Vec<u64>) -> Self {
+        Self::U64(DenseSeqStorage::new(values))
+    }
+
+    pub fn bool(values: Vec<bool>) -> Self {
+        Self::Bool(DenseSeqStorage::new(values))
+    }
+
+    pub fn bytes(values: Vec<u8>) -> Self {
+        Self::Bytes(DenseSeqStorage::new(values))
+    }
+
+    pub fn chars(values: Vec<char>) -> Self {
+        Self::Chars(DenseSeqStorage::new(values))
+    }
+
+    pub fn durations(values: Vec<LogicalDuration>) -> Self {
+        Self::Durations(DenseSeqStorage::new(values))
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::I8(values) => values.len(),
+            Self::I16(values) => values.len(),
+            Self::I32(values) => values.len(),
+            Self::I64(values) => values.len(),
+            Self::U8(values) | Self::Bytes(values) => values.len(),
+            Self::U16(values) => values.len(),
+            Self::U32(values) => values.len(),
+            Self::U64(values) => values.len(),
+            Self::Bool(values) => values.len(),
+            Self::Chars(values) => values.len(),
+            Self::Durations(values) => values.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn as_i64_slice(&self) -> Option<&[i64]> {
+        match self {
+            Self::I64(values) => Some(values.as_slice()),
+            Self::I8(_)
+            | Self::I16(_)
+            | Self::I32(_)
+            | Self::U8(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::Bool(_)
+            | Self::Bytes(_)
+            | Self::Chars(_)
+            | Self::Durations(_) => None,
+        }
+    }
+
+    pub fn as_i32_slice(&self) -> Option<&[i32]> {
+        match self {
+            Self::I32(values) => Some(values.as_slice()),
+            Self::I8(_)
+            | Self::I16(_)
+            | Self::I64(_)
+            | Self::U8(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::Bool(_)
+            | Self::Bytes(_)
+            | Self::Chars(_)
+            | Self::Durations(_) => None,
+        }
+    }
+
+    pub fn as_u64_slice(&self) -> Option<&[u64]> {
+        match self {
+            Self::U64(values) => Some(values.as_slice()),
+            Self::I8(_)
+            | Self::I16(_)
+            | Self::I32(_)
+            | Self::I64(_)
+            | Self::U8(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::Bool(_)
+            | Self::Bytes(_)
+            | Self::Chars(_)
+            | Self::Durations(_) => None,
+        }
+    }
+
+    pub fn as_bool_slice(&self) -> Option<&[bool]> {
+        match self {
+            Self::Bool(values) => Some(values.as_slice()),
+            Self::I8(_)
+            | Self::I16(_)
+            | Self::I32(_)
+            | Self::I64(_)
+            | Self::U8(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::Bytes(_)
+            | Self::Chars(_)
+            | Self::Durations(_) => None,
+        }
+    }
+
+    pub fn as_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Bytes(values) => Some(values.as_slice()),
+            Self::I8(_)
+            | Self::I16(_)
+            | Self::I32(_)
+            | Self::I64(_)
+            | Self::U8(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::Bool(_)
+            | Self::Chars(_)
+            | Self::Durations(_) => None,
+        }
+    }
+
+    pub fn as_chars(&self) -> Option<&[char]> {
+        match self {
+            Self::Chars(values) => Some(values.as_slice()),
+            Self::I8(_)
+            | Self::I16(_)
+            | Self::I32(_)
+            | Self::I64(_)
+            | Self::U8(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::Bool(_)
+            | Self::Bytes(_)
+            | Self::Durations(_) => None,
+        }
+    }
+
+    pub fn as_durations(&self) -> Option<&[LogicalDuration]> {
+        match self {
+            Self::Durations(values) => Some(values.as_slice()),
+            Self::I8(_)
+            | Self::I16(_)
+            | Self::I32(_)
+            | Self::I64(_)
+            | Self::U8(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::Bool(_)
+            | Self::Bytes(_)
+            | Self::Chars(_) => None,
+        }
+    }
+
+    pub fn into_values(self) -> Vec<RuntimeValue> {
+        match self {
+            Self::I8(values) => {
+                materialize_i64_sequence(values.into_vec().into_iter().map(i64::from).collect())
+            }
+            Self::I16(values) => {
+                materialize_i64_sequence(values.into_vec().into_iter().map(i64::from).collect())
+            }
+            Self::I32(values) => {
+                materialize_i64_sequence(values.into_vec().into_iter().map(i64::from).collect())
+            }
+            Self::I64(values) => materialize_i64_sequence(values.into_vec()),
+            Self::U8(values) => values
+                .into_vec()
+                .into_iter()
+                .map(|value| RuntimeValue::UInt(u64::from(value)))
+                .collect(),
+            Self::U16(values) => values
+                .into_vec()
+                .into_iter()
+                .map(|value| RuntimeValue::UInt(u64::from(value)))
+                .collect(),
+            Self::U32(values) => values
+                .into_vec()
+                .into_iter()
+                .map(|value| RuntimeValue::UInt(u64::from(value)))
+                .collect(),
+            Self::U64(values) => values
+                .into_vec()
+                .into_iter()
+                .map(RuntimeValue::UInt)
+                .collect(),
+            Self::Bool(values) => values
+                .into_vec()
+                .into_iter()
+                .map(RuntimeValue::Bool)
+                .collect(),
+            Self::Bytes(values) => values
+                .into_vec()
+                .into_iter()
+                .map(|value| RuntimeValue::Int(i64::from(value)))
+                .collect(),
+            Self::Chars(values) => values
+                .into_vec()
+                .into_iter()
+                .map(RuntimeValue::Char)
+                .collect(),
+            Self::Durations(values) => values
+                .into_vec()
+                .into_iter()
+                .map(RuntimeValue::Duration)
+                .collect(),
+        }
+    }
+
+    pub fn value_at(&self, index: usize) -> RuntimeValue {
+        match self {
+            Self::I8(values) => RuntimeValue::Int(i64::from(values.as_slice()[index])),
+            Self::I16(values) => RuntimeValue::Int(i64::from(values.as_slice()[index])),
+            Self::I32(values) => RuntimeValue::Int(i64::from(values.as_slice()[index])),
+            Self::I64(values) => RuntimeValue::Int(values.as_slice()[index]),
+            Self::U8(values) => RuntimeValue::UInt(u64::from(values.as_slice()[index])),
+            Self::U16(values) => RuntimeValue::UInt(u64::from(values.as_slice()[index])),
+            Self::U32(values) => RuntimeValue::UInt(u64::from(values.as_slice()[index])),
+            Self::U64(values) => RuntimeValue::UInt(values.as_slice()[index]),
+            Self::Bool(values) => RuntimeValue::Bool(values.as_slice()[index]),
+            Self::Bytes(values) => RuntimeValue::Int(i64::from(values.as_slice()[index])),
+            Self::Chars(values) => RuntimeValue::Char(values.as_slice()[index]),
+            Self::Durations(values) => RuntimeValue::Duration(values.as_slice()[index]),
+        }
+    }
+
+    #[must_use]
+    pub fn tail_from(&self, index: usize) -> Self {
+        match self {
+            Self::I8(values) => Self::I8(values.tail_from(index)),
+            Self::I16(values) => Self::I16(values.tail_from(index)),
+            Self::I32(values) => Self::I32(values.tail_from(index)),
+            Self::I64(values) => Self::I64(values.tail_from(index)),
+            Self::U8(values) => Self::U8(values.tail_from(index)),
+            Self::U16(values) => Self::U16(values.tail_from(index)),
+            Self::U32(values) => Self::U32(values.tail_from(index)),
+            Self::U64(values) => Self::U64(values.tail_from(index)),
+            Self::Bool(values) => Self::Bool(values.tail_from(index)),
+            Self::Bytes(values) => Self::Bytes(values.tail_from(index)),
+            Self::Chars(values) => Self::Chars(values.tail_from(index)),
+            Self::Durations(values) => Self::Durations(values.tail_from(index)),
+        }
+    }
+
+    pub fn into_i64_vec(self) -> Option<Vec<i64>> {
+        match self {
+            Self::I64(values) => Some(values.into_vec()),
+            Self::I8(_)
+            | Self::I16(_)
+            | Self::I32(_)
+            | Self::U8(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::Bool(_)
+            | Self::Bytes(_)
+            | Self::Chars(_)
+            | Self::Durations(_) => None,
+        }
+    }
+
+    pub fn sum_as_i64(&self) -> Option<i64> {
+        match self {
+            Self::I8(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
+            Self::I16(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
+            Self::I32(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
+            Self::I64(values) => Some(values.as_slice().iter().sum()),
+            Self::U8(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
+            Self::U16(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
+            Self::U32(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
+            Self::U64(values) => values.as_slice().iter().try_fold(0_i64, |acc, value| {
+                i64::try_from(*value).ok().map(|value| acc + value)
+            }),
+            Self::Bool(_) | Self::Bytes(_) | Self::Chars(_) | Self::Durations(_) => None,
+        }
+    }
+}
+
+/// Generic backing store for one dense homogeneous sequence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DenseSeqStorage<T> {
     values: Vec<T>,
 }
 
-impl<T> DenseSeq<T> {
+impl<T> DenseSeqStorage<T> {
     pub fn new(values: Vec<T>) -> Self {
         Self { values }
     }
@@ -123,6 +554,13 @@ impl<T> DenseSeq<T> {
 
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
+    }
+}
+
+impl<T: Clone> DenseSeqStorage<T> {
+    #[must_use]
+    pub fn tail_from(&self, index: usize) -> Self {
+        Self::new(self.values[index..].to_vec())
     }
 }
 
@@ -717,6 +1155,15 @@ pub(crate) fn evaluate_binary(
                         _ => unreachable!(),
                     }))
                 }
+                (RuntimeValue::UInt(lhs), RuntimeValue::UInt(rhs)) => {
+                    Ok(RuntimeValue::Bool(match op {
+                        RuntimeBinaryOp::Lt => lhs < rhs,
+                        RuntimeBinaryOp::Le => lhs <= rhs,
+                        RuntimeBinaryOp::Gt => lhs > rhs,
+                        RuntimeBinaryOp::Ge => lhs >= rhs,
+                        _ => unreachable!(),
+                    }))
+                }
                 (lhs, rhs) => unsupported_binary(op, &lhs, &rhs),
             }
         }
@@ -731,6 +1178,15 @@ pub(crate) fn evaluate_binary(
                 RuntimeBinaryOp::Div => lhs / rhs,
                 _ => unreachable!(),
             })),
+            (RuntimeValue::UInt(lhs), RuntimeValue::UInt(rhs)) => {
+                Ok(RuntimeValue::UInt(match op {
+                    RuntimeBinaryOp::Add => lhs + rhs,
+                    RuntimeBinaryOp::Sub => lhs - rhs,
+                    RuntimeBinaryOp::Mul => lhs * rhs,
+                    RuntimeBinaryOp::Div => lhs / rhs,
+                    _ => unreachable!(),
+                }))
+            }
             (lhs, rhs) => unsupported_binary(op, &lhs, &rhs),
         },
     }
@@ -739,6 +1195,13 @@ pub(crate) fn evaluate_binary(
 pub(crate) fn sum_i64_sequence_ref(items: &[RuntimeValue]) -> Result<i64, RuntimeEvalError> {
     items.iter().try_fold(0_i64, |acc, item| match item {
         RuntimeValue::Int(value) => Ok(acc + value),
+        RuntimeValue::UInt(value) => i64::try_from(*value).map(|value| acc + value).map_err(|_| {
+            RuntimeEvalError::UnsupportedBinary {
+                op: "+",
+                lhs: "int".to_owned(),
+                rhs: runtime_value_label(item),
+            }
+        }),
         value => Err(RuntimeEvalError::UnsupportedBinary {
             op: "+",
             lhs: "int".to_owned(),
@@ -757,6 +1220,50 @@ pub fn runtime_sequence_values(values: Vec<RuntimeValue>) -> RuntimeValue {
 
 pub fn runtime_sequence_dense_i64(values: Vec<i64>) -> RuntimeValue {
     RuntimeValue::Seq(RuntimeSeq::dense_i64(values))
+}
+
+pub fn runtime_sequence_dense_i8(values: Vec<i8>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_i8(values))
+}
+
+pub fn runtime_sequence_dense_i16(values: Vec<i16>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_i16(values))
+}
+
+pub fn runtime_sequence_dense_i32(values: Vec<i32>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_i32(values))
+}
+
+pub fn runtime_sequence_dense_u8(values: Vec<u8>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_u8(values))
+}
+
+pub fn runtime_sequence_dense_u16(values: Vec<u16>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_u16(values))
+}
+
+pub fn runtime_sequence_dense_u32(values: Vec<u32>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_u32(values))
+}
+
+pub fn runtime_sequence_dense_u64(values: Vec<u64>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_u64(values))
+}
+
+pub fn runtime_sequence_dense_bool(values: Vec<bool>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_bool(values))
+}
+
+pub fn runtime_sequence_dense_bytes(values: Vec<u8>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_bytes(values))
+}
+
+pub fn runtime_sequence_dense_chars(values: Vec<char>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_chars(values))
+}
+
+pub fn runtime_sequence_dense_durations(values: Vec<LogicalDuration>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_durations(values))
 }
 
 pub(crate) fn runtime_value_into_sequence_values(
@@ -836,6 +1343,7 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
         RuntimeValue::Unit => "()".to_owned(),
         RuntimeValue::Bool(value) => value.to_string(),
         RuntimeValue::Int(value) => value.to_string(),
+        RuntimeValue::UInt(value) => value.to_string(),
         RuntimeValue::Float(value)
         | RuntimeValue::String(value)
         | RuntimeValue::EntityRef(value) => value.clone(),
@@ -844,7 +1352,20 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
         RuntimeValue::Seq(seq) => match seq {
             RuntimeSeq::Values(values) => format!("seq/values/{}", values.len()),
-            RuntimeSeq::DenseI64(values) => format!("seq/i64/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::I8(values)) => format!("seq/i8/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::I16(values)) => format!("seq/i16/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::I32(values)) => format!("seq/i32/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::I64(values)) => format!("seq/i64/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::U8(values)) => format!("seq/u8/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::U16(values)) => format!("seq/u16/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::U32(values)) => format!("seq/u32/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::U64(values)) => format!("seq/u64/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::Bool(values)) => format!("seq/bool/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::Bytes(values)) => format!("seq/bytes/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::Chars(values)) => format!("seq/chars/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::Durations(values)) => {
+                format!("seq/durations/{}", values.len())
+            }
         },
         RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
         RuntimeValue::Variant { name, payload, .. } => {

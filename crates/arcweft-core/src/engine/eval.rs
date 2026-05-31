@@ -587,8 +587,10 @@ impl Engine {
             return Ok(RuntimeValue::Int(sum));
         }
         let value = self.evaluate_expr_with_backend(source, pure_backend)?;
-        if let RuntimeValue::Seq(RuntimeSeq::DenseI64(items)) = value {
-            return Ok(RuntimeValue::Int(items.as_slice().iter().sum()));
+        if let RuntimeValue::Seq(seq) = &value
+            && let Some(sum) = seq.sum_as_i64()
+        {
+            return Ok(RuntimeValue::Int(sum));
         }
         let items = match runtime_value_into_sequence_values(value) {
             Ok(items) => items,
@@ -612,7 +614,7 @@ impl Engine {
         match value {
             RuntimeValue::Seq(seq) => match seq {
                 RuntimeSeq::Values(items) => sum_i64_sequence_ref(items).map(Some),
-                RuntimeSeq::DenseI64(items) => Ok(Some(items.as_slice().iter().sum())),
+                RuntimeSeq::Dense(items) => Ok(items.sum_as_i64()),
             },
             RuntimeValue::Tuple(items) => sum_i64_sequence_ref(items).map(Some),
             _ => Ok(None),
@@ -742,9 +744,12 @@ impl Engine {
         let items = match source {
             RuntimeExpr::Value(RuntimeValue::Seq(seq)) => match seq {
                 RuntimeSeq::Values(items) => items.as_slice(),
-                RuntimeSeq::DenseI64(items) => {
+                RuntimeSeq::Dense(items) => {
+                    let Some(items) = items.as_i64_slice() else {
+                        return Ok(None);
+                    };
                     return self.collect_i64_map_batch_inputs_from_i64_source(
-                        items.as_slice(),
+                        items,
                         param,
                         args,
                         arity,
@@ -756,9 +761,12 @@ impl Engine {
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
                 Some(RuntimeValue::Seq(seq)) => match seq {
                     RuntimeSeq::Values(items) => items.as_slice(),
-                    RuntimeSeq::DenseI64(items) => {
+                    RuntimeSeq::Dense(items) => {
+                        let Some(items) = items.as_i64_slice() else {
+                            return Ok(None);
+                        };
                         return self.collect_i64_map_batch_inputs_from_i64_source(
-                            items.as_slice(),
+                            items,
                             param,
                             args,
                             arity,
@@ -822,9 +830,12 @@ impl Engine {
         let items = match source {
             RuntimeExpr::Value(RuntimeValue::Seq(seq)) => match seq {
                 RuntimeSeq::Values(items) => items.as_slice(),
-                RuntimeSeq::DenseI64(items) => {
+                RuntimeSeq::Dense(items) => {
+                    let Some(items) = items.as_i64_slice() else {
+                        return Ok(false);
+                    };
                     return self.collect_i64_repeated_map_batch_row_from_i64_source(
-                        items.as_slice(),
+                        items,
                         param,
                         args,
                         arity,
@@ -836,9 +847,12 @@ impl Engine {
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
                 Some(RuntimeValue::Seq(seq)) => match seq {
                     RuntimeSeq::Values(items) => items.as_slice(),
-                    RuntimeSeq::DenseI64(items) => {
+                    RuntimeSeq::Dense(items) => {
+                        let Some(items) = items.as_i64_slice() else {
+                            return Ok(false);
+                        };
                         return self.collect_i64_repeated_map_batch_row_from_i64_source(
-                            items.as_slice(),
+                            items,
                             param,
                             args,
                             arity,

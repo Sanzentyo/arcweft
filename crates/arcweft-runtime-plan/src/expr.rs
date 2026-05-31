@@ -10,7 +10,10 @@ use arcweft_core::effect::{
 };
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeUnaryOp,
-    RuntimeValue, runtime_sequence_dense_i64, runtime_sequence_values,
+    RuntimeValue, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
+    runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_dense_u8,
+    runtime_sequence_dense_u16, runtime_sequence_dense_u32, runtime_sequence_dense_u64,
+    runtime_sequence_values,
 };
 use arcweft_lang_hir::syntax::{
     ast::line_plan::LinePlanItem,
@@ -210,7 +213,29 @@ fn lower_runtime_bracket_seq(items: &[Expr]) -> RuntimeExpr {
 fn lower_runtime_numeric_bracket_seq(
     seq: &arcweft_lang_hir::syntax::expr::NumericBracketSeq,
 ) -> RuntimeExpr {
-    RuntimeExpr::Value(runtime_sequence_dense_i64(seq.values().to_vec()))
+    RuntimeExpr::Value(match seq.suffix() {
+        Some("i8") => collect_dense(seq.values(), i8::try_from, runtime_sequence_dense_i8),
+        Some("i16") => collect_dense(seq.values(), i16::try_from, runtime_sequence_dense_i16),
+        Some("i32") => collect_dense(seq.values(), i32::try_from, runtime_sequence_dense_i32),
+        Some("u8") => collect_dense(seq.values(), u8::try_from, runtime_sequence_dense_u8),
+        Some("u16") => collect_dense(seq.values(), u16::try_from, runtime_sequence_dense_u16),
+        Some("u32") => collect_dense(seq.values(), u32::try_from, runtime_sequence_dense_u32),
+        Some("u64") => collect_dense(seq.values(), u64::try_from, runtime_sequence_dense_u64),
+        _ => runtime_sequence_dense_i64(seq.values().to_vec()),
+    })
+}
+
+fn collect_dense<T, E>(
+    values: &[i64],
+    convert: impl Fn(i64) -> Result<T, E>,
+    wrap: impl Fn(Vec<T>) -> RuntimeValue,
+) -> RuntimeValue {
+    values
+        .iter()
+        .copied()
+        .map(convert)
+        .collect::<Result<Vec<_>, _>>()
+        .map_or_else(|_| runtime_sequence_dense_i64(values.to_vec()), wrap)
 }
 
 fn lower_runtime_bracket_seq_strict(items: &[Expr]) -> Result<RuntimeExpr, String> {
@@ -511,6 +536,9 @@ fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
     match literal {
         Literal::String(value) => RuntimeValue::String(value.clone()),
         Literal::Char { value, .. } => RuntimeValue::Char(*value),
+        Literal::Int { value, suffix, .. } if suffix.as_deref().is_some_and(is_unsigned_suffix) => {
+            u64::try_from(*value).map_or(RuntimeValue::Int(*value), RuntimeValue::UInt)
+        }
         Literal::Int { value, .. } => RuntimeValue::Int(*value),
         Literal::Float { raw, .. } => RuntimeValue::Float(raw.clone()),
         Literal::Bool(value) => RuntimeValue::Bool(*value),
@@ -519,6 +547,10 @@ fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
             RuntimeValue::Duration,
         ),
     }
+}
+
+fn is_unsigned_suffix(suffix: &str) -> bool {
+    matches!(suffix, "u8" | "u16" | "u32" | "u64")
 }
 
 fn lower_runtime_unary_op(op: UnaryOp) -> RuntimeUnaryOp {
@@ -787,8 +819,36 @@ mod tests {
 
         assert!(matches!(
             lowered,
-            RuntimeExpr::Value(RuntimeValue::Seq(arcweft_core::value::RuntimeSeq::DenseI64(items)))
-                if items.as_slice() == [1, 2, 3]
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_i64_slice() == Some([1, 2, 3].as_slice())
+        ));
+    }
+
+    #[test]
+    fn suffixed_numeric_bracket_seq_lowers_to_width_specific_dense_sequence() {
+        let i32_expr =
+            Expr::NumericBracketSeq(arcweft_lang_hir::syntax::expr::NumericBracketSeq::new(
+                vec![1, 2, 3],
+                Some("i32".to_owned()),
+            ));
+        let u64_expr =
+            Expr::NumericBracketSeq(arcweft_lang_hir::syntax::expr::NumericBracketSeq::new(
+                vec![1, 2, 3],
+                Some("u64".to_owned()),
+            ));
+
+        let i32_lowered = lower_runtime_expr_strict(&i32_expr).expect("i32 numeric seq lowers");
+        let u64_lowered = lower_runtime_expr_strict(&u64_expr).expect("u64 numeric seq lowers");
+
+        assert!(matches!(
+            i32_lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_i32_slice() == Some([1, 2, 3].as_slice())
+        ));
+        assert!(matches!(
+            u64_lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_u64_slice() == Some([1, 2, 3].as_slice())
         ));
     }
 }

@@ -676,10 +676,11 @@ Current high-confidence state:
   covers the complementary non-repeated map/sum path so JIT/AOT/VM batch
   input packing, result-copy elimination, and runtime type validation work can
   be compared without triggering the repeated-row shortcut.
-- Literal bracket sequences now lower to a single `RuntimeValue::BracketSeq`
-  when every element is already a runtime value, so non-repeated literal input
-  benches keep runtime type validation proportional to the flow shape instead
-  of the literal element count.
+- Literal bracket sequences now lower to a single `RuntimeValue::Seq` when every
+  element is already a runtime value. Integer-only numeric bracket sequences use
+  suffix-aware dense sequence storage for fixed-width integer types, so
+  non-repeated literal input benches keep runtime type validation proportional
+  to the flow shape instead of the literal element count.
 - Literal array repeats now lower to a structured runtime repeat expression
   instead of materializing a large sequence in the runtime plan. Fused
   `map(...).sum()` paths over repeated sources call the repeated-row pure batch

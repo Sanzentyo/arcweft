@@ -1356,8 +1356,10 @@ impl PureEvaluator {
             return Ok(RuntimeValue::Int(sum));
         }
         let value = self.evaluate_expr(source)?;
-        if let RuntimeValue::Seq(RuntimeSeq::DenseI64(items)) = value {
-            return Ok(RuntimeValue::Int(items.as_slice().iter().sum()));
+        if let RuntimeValue::Seq(seq) = &value
+            && let Some(sum) = seq.sum_as_i64()
+        {
+            return Ok(RuntimeValue::Int(sum));
         }
         let items = match runtime_value_into_sequence_values(value) {
             Ok(items) => items,
@@ -1381,7 +1383,7 @@ impl PureEvaluator {
         match value {
             RuntimeValue::Seq(seq) => match seq {
                 RuntimeSeq::Values(items) => sum_i64_sequence_ref(items).map(Some),
-                RuntimeSeq::DenseI64(items) => Ok(Some(items.as_slice().iter().sum())),
+                RuntimeSeq::Dense(items) => Ok(items.sum_as_i64()),
             },
             RuntimeValue::Tuple(items) => sum_i64_sequence_ref(items).map(Some),
             _ => Ok(None),

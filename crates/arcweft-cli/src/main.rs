@@ -19,8 +19,8 @@ use arcweft_core::{
         VmPureFunctionBackend, VmPureFunctionScratch, compare_pure_function_backend,
     },
     value::{
-        RuntimeBinaryOp, RuntimeBinding, RuntimeExpr, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
-        runtime_sequence_values,
+        DenseSeq, RuntimeBinaryOp, RuntimeBinding, RuntimeExpr, RuntimeSeq, RuntimeUnaryOp,
+        RuntimeValue, runtime_sequence_values,
     },
 };
 use arcweft_lang_hir::lower::lower_to_hir;
@@ -4837,14 +4837,48 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         RuntimeValue::Unit => "()".to_owned(),
         RuntimeValue::Bool(value) => value.to_string(),
         RuntimeValue::Int(value) => value.to_string(),
+        RuntimeValue::UInt(value) => value.to_string(),
         RuntimeValue::Float(value) | RuntimeValue::String(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::EntityRef(value) => format!("@{value}"),
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
         RuntimeValue::Seq(RuntimeSeq::Values(values)) => format!("seq/values/{}", values.len()),
-        RuntimeValue::Seq(RuntimeSeq::DenseI64(values)) => {
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I8(values))) => {
+            format!("seq/i8/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I16(values))) => {
+            format!("seq/i16/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I32(values))) => {
+            format!("seq/i32/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I64(values))) => {
             format!("seq/i64/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::U8(values))) => {
+            format!("seq/u8/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::U16(values))) => {
+            format!("seq/u16/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::U32(values))) => {
+            format!("seq/u32/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::U64(values))) => {
+            format!("seq/u64/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Bool(values))) => {
+            format!("seq/bool/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Bytes(values))) => {
+            format!("seq/bytes/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Chars(values))) => {
+            format!("seq/chars/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Durations(values))) => {
+            format!("seq/durations/{}", values.len())
         }
         RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
         RuntimeValue::Variant { name, payload, .. } => {

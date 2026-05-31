@@ -1251,10 +1251,7 @@ fn fs_write_dispatches_string_and_bytes_payloads() {
                             "write",
                             [HostTaskArgTemplate::spread(RuntimeExpr::BracketSeq(vec![
                                 RuntimeExpr::Value(RuntimeValue::String("save/out.bin".to_owned())),
-                                RuntimeExpr::Value(runtime_sequence_values(vec![
-                                    RuntimeValue::Int(1),
-                                    RuntimeValue::Int(2),
-                                ])),
+                                RuntimeExpr::Value(runtime_sequence_dense_bytes(vec![1, 2])),
                             ]))],
                         ),
                     },

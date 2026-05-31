@@ -1,6 +1,5 @@
 use crate::value::{
-    RuntimeBinding, RuntimeEvalError, RuntimeSeq, RuntimeValue, runtime_sequence_dense_i64,
-    runtime_sequence_values,
+    RuntimeBinding, RuntimeEvalError, RuntimeSeq, RuntimeValue, runtime_sequence_values,
 };
 use std::collections::BTreeSet;
 
@@ -203,19 +202,19 @@ fn collect_bracket_seq_pattern_bindings(
             }
             Ok(true)
         }
-        RuntimeValue::Seq(RuntimeSeq::DenseI64(values)) => {
+        RuntimeValue::Seq(RuntimeSeq::Dense(values)) => {
             if !bracket_pattern_len_matches(items.len(), rest, values.len()) {
                 return Ok(false);
             }
-            for (pattern, value) in items.iter().zip(values.as_slice().iter().copied()) {
-                if !collect_pattern_bindings(pattern, &RuntimeValue::Int(value), bindings)? {
+            for (index, pattern) in items.iter().enumerate() {
+                if !collect_pattern_bindings(pattern, &values.value_at(index), bindings)? {
                     return Ok(false);
                 }
             }
             if let Some(name) = rest {
                 bindings.push(RuntimeBinding {
                     name: name.to_owned(),
-                    value: runtime_sequence_dense_i64(values.as_slice()[items.len()..].to_vec()),
+                    value: RuntimeValue::Seq(RuntimeSeq::Dense(values.tail_from(items.len()))),
                 });
             }
             Ok(true)
@@ -273,17 +272,11 @@ fn runtime_value_matches_type_label(value: &RuntimeValue, ty: &str) -> bool {
             | (RuntimeValue::Bool(_), "Bool" | "bool")
             | (
                 RuntimeValue::Int(_),
-                "i8" | "i16"
-                    | "i32"
-                    | "i64"
-                    | "i128"
-                    | "isize"
-                    | "u8"
-                    | "u16"
-                    | "u32"
-                    | "u64"
-                    | "u128"
-                    | "usize"
+                "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
+            )
+            | (
+                RuntimeValue::UInt(_),
+                "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
             )
             | (RuntimeValue::Float(_), "f32" | "f64")
             | (RuntimeValue::String(_), "String")
