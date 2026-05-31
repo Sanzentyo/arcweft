@@ -80,7 +80,8 @@ pub(crate) struct CstLinePunctuationSummary {
     brace_delta: i32,
     paren_delta: i32,
     bracket_delta: i32,
-    has_top_level_brace_open: bool,
+    first_top_level_brace_open: Option<usize>,
+    last_top_level_brace_open: Option<usize>,
 }
 
 /// Open-minus-close depth deltas for all bracket families in one scan.
@@ -430,6 +431,8 @@ impl CstLineEvents {
         let mut depth = 0_i32;
         let mut seen_open = false;
         let mut seen_body_open = false;
+        let mut first_top_level_open = None;
+        let mut last_top_level_open = None;
         let mut index = start;
 
         while let Some(line) = self.get(index) {
@@ -437,8 +440,19 @@ impl CstLineEvents {
             if !text.is_empty() {
                 text.push('\n');
             }
+            let line_offset = text.len();
             text.push_str(&line.text);
             end = line.end;
+            if depth == 0 {
+                if first_top_level_open.is_none()
+                    && let Some(open) = line.first_top_level_brace_open()
+                {
+                    first_top_level_open = Some(line_offset + open);
+                }
+                if let Some(open) = line.last_top_level_brace_open() {
+                    last_top_level_open = Some(line_offset + open);
+                }
+            }
             if matches!(rule, CstBlockOpenRule::FunctionBody)
                 && (trimmed == "{"
                     || line.has_unclosed_top_level_brace_open()
@@ -457,8 +471,8 @@ impl CstLineEvents {
         }
 
         let open = match rule {
-            CstBlockOpenRule::FirstTopLevel => find_top_level_punctuation(&text, '{'),
-            CstBlockOpenRule::FlowBody => find_last_top_level_punctuation(&text, '{'),
+            CstBlockOpenRule::FirstTopLevel => first_top_level_open,
+            CstBlockOpenRule::FlowBody => last_top_level_open,
             CstBlockOpenRule::FunctionBody => find_body_open(&text),
         };
         let Some(open) = open else {
@@ -616,17 +630,26 @@ impl CstLine {
     }
 
     pub(crate) const fn has_top_level_brace_open(&self) -> bool {
-        self.punctuation.has_top_level_brace_open
+        self.punctuation.first_top_level_brace_open.is_some()
     }
 
     pub(crate) const fn has_unclosed_top_level_brace_open(&self) -> bool {
-        self.punctuation.has_top_level_brace_open && self.punctuation.brace_delta > 0
+        self.has_top_level_brace_open() && self.punctuation.brace_delta > 0
+    }
+
+    pub(crate) const fn first_top_level_brace_open(&self) -> Option<usize> {
+        self.punctuation.first_top_level_brace_open
+    }
+
+    pub(crate) const fn last_top_level_brace_open(&self) -> Option<usize> {
+        self.punctuation.last_top_level_brace_open
     }
 }
 
 impl CstLinePunctuationSummary {
     fn from_node(node: &SyntaxNode) -> Self {
         let mut summary = Self::default();
+        let node_start = usize::from(node.text_range().start());
         let mut paren = 0usize;
         let mut square = 0usize;
         let mut brace = 0usize;
@@ -640,7 +663,11 @@ impl CstLinePunctuationSummary {
                 continue;
             }
             if token.text() == "{" && paren == 0 && square == 0 && brace == 0 && angle == 0 {
-                summary.has_top_level_brace_open = true;
+                let offset = usize::from(token.text_range().start()) - node_start;
+                if summary.first_top_level_brace_open.is_none() {
+                    summary.first_top_level_brace_open = Some(offset);
+                }
+                summary.last_top_level_brace_open = Some(offset);
             }
             match token.text() {
                 "{" => {
