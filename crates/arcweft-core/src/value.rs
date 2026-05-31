@@ -1,6 +1,7 @@
 use crate::pattern::RuntimePattern;
 use crate::plan::{RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType};
 use crate::time::LogicalDuration;
+use std::fmt;
 use thiserror::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1511,6 +1512,34 @@ impl RuntimeExpr {
     }
 }
 
+impl fmt::Display for RuntimeExpr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Value(value) => f.write_str(&runtime_value_label(value)),
+            Self::Local(name) => f.write_str(name),
+            Self::EntityRef(target) => write!(f, "@{target}"),
+            Self::Let { name, .. } => write!(f, "let {name}"),
+            Self::Tuple(items) => write!(f, "tuple/{}", items.len()),
+            Self::BracketSeq(items) => write!(f, "bracket_seq/{}", items.len()),
+            Self::RepeatSeq { len, .. } => write!(f, "repeat_seq/{len}"),
+            Self::Record(fields) => write!(f, "record/{}", fields.len()),
+            Self::Variant { name, .. } => write!(f, ".{name}"),
+            Self::Field { field, .. } => write!(f, ".{field}"),
+            Self::Call { callee, .. } => write!(f, "{callee}()"),
+            Self::PureCall { helper, .. } => write!(f, "pure#{}()", helper.0),
+            Self::SpreadArg(expr) => write!(f, "{expr}..."),
+            Self::MethodCall { method, .. } => write!(f, ".{method}()"),
+            Self::Map { .. } => f.write_str("map"),
+            Self::Sum { .. } => f.write_str("sum"),
+            Self::Unary { op, .. } => f.write_str(runtime_unary_op_label(*op)),
+            Self::Binary { op, .. } => f.write_str(runtime_binary_op_label(*op)),
+            Self::If { .. } => f.write_str("if"),
+            Self::IfLet { .. } => f.write_str("if let"),
+            Self::Match { .. } => f.write_str("match"),
+        }
+    }
+}
+
 /// One value-producing `match` arm in a runtime expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeExprMatchArm {
@@ -2636,32 +2665,6 @@ pub(crate) fn runtime_binary_op_label(op: RuntimeBinaryOp) -> &'static str {
         RuntimeBinaryOp::Div => "/",
         RuntimeBinaryOp::And => "&&",
         RuntimeBinaryOp::Or => "||",
-    }
-}
-
-pub(crate) fn expr_runtime_label(expr: &RuntimeExpr) -> String {
-    match expr {
-        RuntimeExpr::Value(value) => runtime_value_label(value),
-        RuntimeExpr::Local(name) => name.clone(),
-        RuntimeExpr::EntityRef(target) => format!("@{target}"),
-        RuntimeExpr::Let { name, .. } => format!("let {name}"),
-        RuntimeExpr::Tuple(items) => format!("tuple/{}", items.len()),
-        RuntimeExpr::BracketSeq(items) => format!("bracket_seq/{}", items.len()),
-        RuntimeExpr::RepeatSeq { len, .. } => format!("repeat_seq/{len}"),
-        RuntimeExpr::Record(fields) => format!("record/{}", fields.len()),
-        RuntimeExpr::Variant { name, .. } => format!(".{name}"),
-        RuntimeExpr::Field { field, .. } => format!(".{field}"),
-        RuntimeExpr::Call { callee, .. } => format!("{callee}()"),
-        RuntimeExpr::PureCall { helper, .. } => format!("pure#{}()", helper.0),
-        RuntimeExpr::SpreadArg(expr) => format!("{}...", expr_runtime_label(expr)),
-        RuntimeExpr::MethodCall { method, .. } => format!(".{method}()"),
-        RuntimeExpr::Map { .. } => "map".to_owned(),
-        RuntimeExpr::Sum { .. } => "sum".to_owned(),
-        RuntimeExpr::Unary { op, .. } => runtime_unary_op_label(*op).to_owned(),
-        RuntimeExpr::Binary { op, .. } => runtime_binary_op_label(*op).to_owned(),
-        RuntimeExpr::If { .. } => "if".to_owned(),
-        RuntimeExpr::IfLet { .. } => "if let".to_owned(),
-        RuntimeExpr::Match { .. } => "match".to_owned(),
     }
 }
 

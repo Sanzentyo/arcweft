@@ -3,7 +3,7 @@ use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExactInteger,
     RuntimeExpr, RuntimeF32, RuntimeF64, RuntimeFieldValue, RuntimeSeq, RuntimeUnaryOp,
-    RuntimeValue, evaluate_binary, evaluate_unary, expr_runtime_label, runtime_binary_op_label,
+    RuntimeValue, evaluate_binary, evaluate_unary, runtime_binary_op_label,
     runtime_sequence_values, runtime_unary_op_label, runtime_value_into_sequence_values,
     runtime_value_label, sum_i64_sequence_ref,
 };
@@ -1890,10 +1890,7 @@ impl<'a, T: RuntimePureScalarInteger> PureScalarEvaluator<'a, T> {
             }
             expr => Err(RuntimeEvalError::UnsupportedPure {
                 name: "scalar pure".to_owned(),
-                reason: format!(
-                    "{} is not in the exact scalar subset",
-                    expr_runtime_label(expr)
-                ),
+                reason: format!("{expr} is not in the exact scalar subset"),
             }),
         }
     }

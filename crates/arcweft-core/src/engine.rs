@@ -25,7 +25,7 @@ use crate::task::{
 use crate::value::{
     RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm, RuntimeF32,
     RuntimeF64, RuntimeFieldValue, RuntimePayload, RuntimeSeq, RuntimeValue, evaluate_binary,
-    evaluate_unary, expr_runtime_label, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
+    evaluate_unary, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
     runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_sequence_values,
     runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };

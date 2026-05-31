@@ -2,8 +2,8 @@ use super::{
     AwaitState, ChoiceState, Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowCursor,
     FlowEvent, FlowFiberStatus, FlowOp, FlowRuntimeId, RuntimeBinding, RuntimeDiagnostic,
     RuntimeEvalError, RuntimeExpr, RuntimePattern, RuntimeStepInput, RuntimeStepOutput,
-    RuntimeValue, expr_runtime_label, run_line_task_group_for_input,
-    runtime_value_into_sequence_values, runtime_value_label,
+    RuntimeValue, run_line_task_group_for_input, runtime_value_into_sequence_values,
+    runtime_value_label,
 };
 use crate::pattern::pattern_binding_capacity;
 use crate::pure::RuntimePureCallBackend;
@@ -172,7 +172,7 @@ impl Engine {
                         self.push_scoped_ops_with_bindings(bindings, ops);
                     }
                     Ok(None) => self.fail_eval(
-                        RuntimeEvalError::PatternMismatch(expr_runtime_label(&scrutinee)),
+                        RuntimeEvalError::PatternMismatch(scrutinee.to_string()),
                         output,
                     ),
                     Err(error) => self.fail_eval(error, output),

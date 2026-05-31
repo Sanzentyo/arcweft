@@ -1,10 +1,12 @@
 use crate::{
+    plan::RuntimePureHelperId,
     time::LogicalDuration,
     value::{
-        DenseSeqKind, RuntimeBinding, RuntimeEnv, RuntimeF32, RuntimeF64, RuntimeFieldValue,
-        RuntimeSeq, RuntimeValue, runtime_sequence_dense_bool, runtime_sequence_dense_bytes,
-        runtime_sequence_dense_chars, runtime_sequence_dense_durations,
-        runtime_sequence_dense_entity_refs, runtime_sequence_dense_f32, runtime_sequence_dense_f64,
+        DenseSeqKind, RuntimeBinding, RuntimeEnv, RuntimeExpr, RuntimeF32, RuntimeF64,
+        RuntimeFieldValue, RuntimeSeq, RuntimeValue, runtime_sequence_dense_bool,
+        runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
+        runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
+        runtime_sequence_dense_f32, runtime_sequence_dense_f64,
         runtime_sequence_dense_float_literals, runtime_sequence_dense_i8,
         runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
         runtime_sequence_dense_i128, runtime_sequence_dense_isize, runtime_sequence_dense_strings,
@@ -88,6 +90,23 @@ fn spare_scopes_do_not_affect_runtime_env_semantics() {
 
     env.push_scope_with_capacity(1);
     assert!(env.get("scoped").is_none());
+}
+
+#[test]
+fn runtime_expr_display_is_stable_diagnostic_label() {
+    assert_eq!(RuntimeExpr::Local("score".to_owned()).to_string(), "score");
+    assert_eq!(
+        RuntimeExpr::SpreadArg(Box::new(RuntimeExpr::Local("items".to_owned()))).to_string(),
+        "items..."
+    );
+    assert_eq!(
+        RuntimeExpr::PureCall {
+            helper: RuntimePureHelperId(7),
+            args: vec![RuntimeExpr::Value(RuntimeValue::Int(1))],
+        }
+        .to_string(),
+        "pure#7()"
+    );
 }
 
 #[test]
