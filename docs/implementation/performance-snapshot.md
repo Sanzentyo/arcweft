@@ -146,7 +146,7 @@ cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/b
 | 014_dense_textual_scalar_len.arcw | measured | 17200 | 7 | 2457 | 1317400 | 203500 | 381800 | 21 | 27 | 0 | 0 |
 | 015_dense_wide_numeric_len.arcw | measured | 13600 | 7 | 1942 | 1424200 | 164300 | 263000 | 18 | 24 | 0 | 0 |
 | 016_dense_i32_map_pure_batch.arcw | measured | 73300 | 3 | 24433 | 3141200 | 226100 | 315900 | 16 | 21 | 0 | 0 |
-| 021_columnar_record_projection.arcw | measured | 20400 | 3 | 6800 | 1043100 | 176400 | 485300 | 30 | 30 | 0 | 0 |
+| 021_columnar_record_projection.arcw | measured | 19500 | 3 | 6500 | 2445400 | 509000 | 673700 | 30 | 30 | 0 | 0 |
 
 The dense eligibility rule is scalar-first: deterministic homogeneous scalar
 runtime values use `RuntimeSeq::Dense(DenseSeq::...)`, with generic
@@ -160,7 +160,10 @@ Record field projection over a columnar record sequence returns the existing
 field column without row materialization. Runtime expressions now include
 `ProjectRecord { ordinal }` and `ProjectTuple { ordinal }`; runtime-plan
 lowering emits them when the record field or tuple index ordinal is known from
-literal shape. General field projection still needs sema-owned ordinal evidence.
+literal shape. Runtime-plan flow optimization also rewrites local projections
+such as `rows.score` to `ProjectRecord { ordinal }` when the local is bound to a
+known columnar record sequence. General non-local field projection still needs
+sema-owned ordinal evidence.
 The checked-in columnar projection fixture projects `rows.score` from a stable
 record sequence and sums the returned column with
 `pure_flatten_materializations_median = 0`, confirming the field column is
