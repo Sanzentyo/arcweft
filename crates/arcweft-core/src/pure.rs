@@ -142,6 +142,28 @@ pub trait RuntimePureCallBackend {
         rows: usize,
     ) -> Result<i64, RuntimeEvalError>;
 
+    fn call_u32_slice(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[u32],
+    ) -> Result<Option<u32>, RuntimeEvalError>;
+
+    fn call_u32_flat_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[u32],
+        arity: usize,
+        out: &mut [u32],
+    ) -> Result<(), RuntimeEvalError>;
+
+    fn call_u32_flat_batch_sum(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[u32],
+        arity: usize,
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError>;
+
     fn call_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
         &mut self,
         helper: &RuntimePureHelper,
@@ -877,6 +899,34 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
             sum += i64::from(runtime_value_into_i32_result(helper, value)?);
         }
         Ok(sum)
+    }
+
+    fn call_u32_slice(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[u32],
+    ) -> Result<Option<u32>, RuntimeEvalError> {
+        self.call_exact_int_slice(helper, args)
+    }
+
+    fn call_u32_flat_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[u32],
+        arity: usize,
+        out: &mut [u32],
+    ) -> Result<(), RuntimeEvalError> {
+        self.call_exact_int_flat_batch(helper, flat_inputs, arity, out)
+    }
+
+    fn call_u32_flat_batch_sum(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[u32],
+        arity: usize,
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError> {
+        self.call_exact_int_flat_batch_sum(helper, flat_inputs, arity, rows)
     }
 
     fn call_exact_int_slice<T: RuntimePureScalarInteger>(

@@ -3,9 +3,9 @@ use super::{
     RuntimeExprMatchArm, RuntimeFieldValue, RuntimeMatchArm, RuntimeMatchSelection, RuntimePattern,
     RuntimeSeq, RuntimeStepOutput, RuntimeValue, evaluate_binary, evaluate_unary,
     match_runtime_pattern, runtime_sequence_dense_f32, runtime_sequence_dense_f64,
-    runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_from_literal_values,
-    runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
-    runtime_value_label, sum_i64_sequence_ref,
+    runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_dense_u32,
+    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_sequence_values,
+    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::pure::{
@@ -372,6 +372,29 @@ impl Engine {
         Ok(result)
     }
 
+    fn call_u32_flat_batch_with_outputs<T>(
+        &mut self,
+        helper_id: crate::plan::RuntimePureHelperId,
+        flat_inputs: &[u32],
+        arity: usize,
+        row_count: usize,
+        pure_backend: &mut impl RuntimePureCallBackend,
+        map_outputs: impl FnOnce(&[u32]) -> T,
+    ) -> Result<T, RuntimeEvalError> {
+        let mut out = std::mem::take(&mut self.pure_u32_batch_outputs);
+        out.resize(row_count, 0);
+        let helper = &self.plan.pure_helpers[helper_id.0];
+        let batch_result = pure_backend.call_u32_flat_batch(helper, flat_inputs, arity, &mut out);
+        if let Err(error) = batch_result {
+            self.pure_u32_batch_outputs = out;
+            return Err(error);
+        }
+        let result = map_outputs(&out);
+        out.clear();
+        self.pure_u32_batch_outputs = out;
+        Ok(result)
+    }
+
     fn call_f32_flat_batch_with_outputs<T>(
         &mut self,
         helper_id: crate::plan::RuntimePureHelperId,
@@ -589,6 +612,26 @@ impl Engine {
             let helper = &self.plan.pure_helpers[helper_id.0];
             if let Some(value) = pure_backend.call_i64_slice(helper, &values[..args.len()])? {
                 return Ok(RuntimeValue::i64(value));
+            }
+        }
+        if self
+            .pure_helper_u32_call_shapes
+            .get(helper_id.0)
+            .copied()
+            .unwrap_or(false)
+            && args.len() <= RuntimeFixedArgs::<u32>::MAX
+            && !args
+                .iter()
+                .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
+        {
+            let mut values = [0_u32; RuntimeFixedArgs::<u32>::MAX];
+            for (index, arg) in args.iter().enumerate() {
+                values[index] =
+                    self.evaluate_exact_int_arg_with_backend::<u32>(arg, pure_backend)?;
+            }
+            let helper = &self.plan.pure_helpers[helper_id.0];
+            if let Some(value) = pure_backend.call_u32_slice(helper, &values[..args.len()])? {
+                return Ok(RuntimeValue::u32(value));
             }
         }
         if let Some(value) = self.evaluate_exact_int_pure_call_any(helper_id, args, pure_backend)? {
@@ -1043,18 +1086,32 @@ impl Engine {
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let Some((helper_id, arity)) = self.map_u32_batch_shape(body) else {
+            return Ok(None);
+        };
         let mut flat_inputs = std::mem::take(&mut self.pure_u32_batch_inputs);
-        let mut out = std::mem::take(&mut self.pure_u32_batch_outputs);
-        let result = self.evaluate_exact_int_map_expr_with_buffers::<u32>(
+        let result = match self.collect_exact_int_map_batch_inputs_from_borrowed_source::<u32>(
             source,
             param,
             body,
-            pure_backend,
+            arity,
             &mut flat_inputs,
-            &mut out,
-        );
+        ) {
+            Ok(Some(row_count)) => {
+                let values = self.call_u32_flat_batch_with_outputs(
+                    helper_id,
+                    &flat_inputs,
+                    arity,
+                    row_count,
+                    pure_backend,
+                    <[u32]>::to_vec,
+                )?;
+                Ok(Some(runtime_sequence_dense_u32(values)))
+            }
+            Ok(None) => Ok(None),
+            Err(error) => Err(error),
+        };
         self.pure_u32_batch_inputs = flat_inputs;
-        self.pure_u32_batch_outputs = out;
         result
     }
 
@@ -1591,14 +1648,26 @@ impl Engine {
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
+        let Some((helper_id, arity)) = self.map_u32_batch_shape(body) else {
+            return Ok(None);
+        };
         let mut flat_inputs = std::mem::take(&mut self.pure_u32_batch_inputs);
-        let result = self.evaluate_exact_int_map_sum_with_inputs::<u32>(
+        let result = match self.collect_exact_int_map_batch_inputs_from_borrowed_source::<u32>(
             source,
             param,
             body,
-            pure_backend,
+            arity,
             &mut flat_inputs,
-        );
+        ) {
+            Ok(Some(row_count)) => {
+                let helper = &self.plan.pure_helpers[helper_id.0];
+                pure_backend
+                    .call_u32_flat_batch_sum(helper, &flat_inputs, arity, row_count)
+                    .map(Some)
+            }
+            Ok(None) => Ok(None),
+            Err(error) => Err(error),
+        };
         self.pure_u32_batch_inputs = flat_inputs;
         result
     }
@@ -2226,6 +2295,29 @@ impl Engine {
         Some((*helper, args.len()))
     }
 
+    fn map_u32_batch_shape(
+        &self,
+        body: &RuntimeExpr,
+    ) -> Option<(crate::plan::RuntimePureHelperId, usize)> {
+        let RuntimeExpr::PureCall { helper, args } = body else {
+            return None;
+        };
+        if helper.0 >= self.plan.pure_helpers.len()
+            || args.len() > RuntimeFixedArgs::<u32>::MAX
+            || args
+                .iter()
+                .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
+            || !self
+                .pure_helper_u32_call_shapes
+                .get(helper.0)
+                .copied()
+                .unwrap_or(false)
+        {
+            return None;
+        }
+        Some((*helper, args.len()))
+    }
+
     fn map_f32_batch_shape(
         &self,
         body: &RuntimeExpr,
@@ -2816,6 +2908,10 @@ pub(super) fn pure_helper_has_i32_call_shape(helper: &crate::plan::RuntimePureHe
         .filter_map(|(name, ty)| matches!(ty, RuntimePureInputType::I32).then_some(name.as_str()))
         .collect::<Vec<_>>();
     expr_returns_integer(&helper.expr, &mut int_names)
+}
+
+pub(super) fn pure_helper_has_u32_call_shape(helper: &crate::plan::RuntimePureHelper) -> bool {
+    pure_helper_has_exact_int_call_shape::<u32>(helper)
 }
 
 pub(super) fn pure_helper_has_f32_call_shape(helper: &crate::plan::RuntimePureHelper) -> bool {

@@ -27,8 +27,9 @@ use crate::value::{
     RuntimeFieldValue, RuntimeISizeValue, RuntimePayload, RuntimeSeq, RuntimeUSizeValue,
     RuntimeValue, evaluate_binary, evaluate_unary, runtime_sequence_dense_f32,
     runtime_sequence_dense_f64, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
-    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_sequence_values,
-    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
+    runtime_sequence_dense_u32, runtime_sequence_from_literal_values,
+    runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
+    runtime_value_label, sum_i64_sequence_ref,
 };
 use std::collections::{BTreeMap, VecDeque};
 pub mod aot;
@@ -75,6 +76,7 @@ pub struct Engine {
     pure_i64_batch_inputs: Vec<i64>,
     pure_i64_batch_outputs: Vec<i64>,
     pure_helper_i32_call_shapes: Vec<bool>,
+    pure_helper_u32_call_shapes: Vec<bool>,
     pure_helper_i64_call_shapes: Vec<bool>,
     pure_helper_f32_call_shapes: Vec<bool>,
     pure_helper_f64_call_shapes: Vec<bool>,
@@ -82,6 +84,7 @@ pub struct Engine {
 
 struct PureHelperCallShapes {
     i32: Vec<bool>,
+    u32: Vec<bool>,
     i64: Vec<bool>,
     f32: Vec<bool>,
     f64: Vec<bool>,
@@ -210,6 +213,11 @@ fn pure_helper_call_shapes(plan: &RuntimePlan) -> PureHelperCallShapes {
             .iter()
             .map(eval::pure_helper_has_i32_call_shape)
             .collect(),
+        u32: plan
+            .pure_helpers
+            .iter()
+            .map(eval::pure_helper_has_u32_call_shape)
+            .collect(),
         i64: plan
             .pure_helpers
             .iter()
@@ -311,6 +319,7 @@ impl Engine {
             pure_i64_batch_inputs: Vec::new(),
             pure_i64_batch_outputs: Vec::new(),
             pure_helper_i32_call_shapes: call_shapes.i32,
+            pure_helper_u32_call_shapes: call_shapes.u32,
             pure_helper_i64_call_shapes: call_shapes.i64,
             pure_helper_f32_call_shapes: call_shapes.f32,
             pure_helper_f64_call_shapes: call_shapes.f64,
