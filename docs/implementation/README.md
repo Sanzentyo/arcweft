@@ -749,6 +749,14 @@ Current high-confidence state:
   records this scalar coverage explicitly so adding a new dense class requires
   extending the typed kind, borrowed view, materialization fallback, and tests
   together.
+- Dense storage also exposes an explicit `Int`-compatible i64 projection for
+  storage classes whose dynamic materialized element would be
+  `RuntimeValue::Int`: `i8`, `i16`, `i32`, `i64`, and `Bytes`. The flow VM uses
+  this projection when building pure-helper flat inputs, so those sources do
+  not have to round-trip through `Vec<RuntimeValue>` before entering the i64
+  batch ABI. Unsigned, `i128`, `isize`, and `usize` dense storage stay out of
+  that projection because their dynamic runtime values are distinct
+  `UInt`/`I128`/`ISize`/`USize` variants rather than implicit i64 values.
 - `Vec<T>.len()` / `Seq<T>.len()` / fixed array length calls typecheck as
   `usize` and read `RuntimeSeq::len()` directly in the VM and pure VM. The
   checked-in dense scalar length bench exercises unit, bool, char, duration,

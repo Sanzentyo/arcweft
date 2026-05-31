@@ -321,22 +321,31 @@ presentation and lifetime scope metadata separately.
 
 The checked-in dense i32 and u64 sum fixtures measure the non-JIT fixed-width
 integer path. The i32 fixture lowered `[... i32]` to `DenseSeq::I32`, validated
-as `Vec(I32)`, and ran `sum()` with median elapsed time 7500 ns in the latest
+as `Vec(I32)`, and ran `sum()` with median elapsed time 8200 ns in the latest
 local run. The matching u64 fixture lowered `[... u64]` to `DenseSeq::U64`,
-validated as `Vec(U64)`, and ran with median elapsed time 7900 ns. The
+validated as `Vec(U64)`, and ran with median elapsed time 8500 ns. The
 multi-width fixture lowered i8/i16/i32/u8/u16/u32/u64 literal sequences to the
 matching dense storage, validated the first visible JSON samples as `Vec(I8)`,
 `Vec(I16)`, `Vec(I32)`, and `Vec(U8)`, and reduced seven dense sequences in one
-flow with median elapsed time 21500 ns. The runtime-plan unit test covers all
+flow with median elapsed time 21400 ns. The runtime-plan unit test covers all
 seven dense storage variants directly. The pure-call counters remained zero for
 these fixtures because they intentionally measure the VM dense sequence
 reduction path, not the pure helper accelerator.
+
+The VM now also exposes an `Int`-compatible projection for dense `i8`, `i16`,
+`i32`, `i64`, and byte storage. That projection is narrower than `sum_as_i64()`:
+it only includes storage classes that would materialize elements as
+`RuntimeValue::Int`, so unsigned and wide integer storage keep their distinct
+runtime value variants instead of silently crossing into the pure i64 ABI. The
+core regression `engine_batches_dense_i32_map_without_value_materialization`
+uses this projection to build pure-helper flat inputs without allocating
+intermediate `RuntimeValue` elements.
 
 The dense scalar length fixture covers the non-integer deterministic scalar
 storage cases. It lowers unit, bool, char, logical-duration, and `u8` sequences
 into dense storage, checks `len()` as `usize`, and evaluates length through
 `RuntimeSeq::len()` rather than materializing `RuntimeValue` elements. The local
-path-free `just bench-013` run reported median elapsed time 14600 ns for eight
+path-free `just bench-013` run reported median elapsed time 16100 ns for eight
 executed ops, with `pure_flatten_materializations_median = 0`,
 `pure_arg_vec_allocations_median = 0`, `pure_result_bytes_copied_median = 0`,
 and no source path in the JSON output.
@@ -352,7 +361,7 @@ The dense wide numeric length fixture covers the remaining integer primitive
 spellings. It lowers `i128`, `u128`, `isize`, and `usize` bracket literals to
 `DenseSeq::I128`, `DenseSeq::U128`, `DenseSeq::ISize`, and `DenseSeq::USize`,
 then reads `RuntimeSeq::len()` without materializing scalar runtime values.
-The local path-free bench run reported median elapsed time 13800 ns
+The local path-free bench run reported median elapsed time 14700 ns
 for seven executed ops, with `pure_flatten_materializations_median = 0`,
 `pure_arg_vec_allocations_median = 0`, `pure_result_bytes_copied_median = 0`,
 and no source path in the JSON output.

@@ -178,6 +178,30 @@ impl RuntimeSeq {
         }
     }
 
+    pub fn copy_int_compatible_i64_values_to(&self, out: &mut Vec<i64>) -> bool {
+        match self {
+            Self::Dense(values) => values.copy_int_compatible_i64_values_to(out),
+            Self::Values(_) => false,
+        }
+    }
+
+    pub fn try_for_each_int_compatible_i64<E>(
+        &self,
+        visit: impl FnMut(i64) -> Result<(), E>,
+    ) -> Result<bool, E> {
+        match self {
+            Self::Dense(values) => values.try_for_each_int_compatible_i64(visit),
+            Self::Values(_) => Ok(false),
+        }
+    }
+
+    pub fn first_int_compatible_i64(&self) -> Option<Option<i64>> {
+        match self {
+            Self::Dense(values) => values.first_int_compatible_i64(),
+            Self::Values(_) => None,
+        }
+    }
+
     pub fn as_i128_slice(&self) -> Option<&[i128]> {
         match self {
             Self::Dense(values) => values.as_i128_slice(),
@@ -546,6 +570,107 @@ impl DenseSeq {
             Self::I64(values) => Some(values.as_slice()),
             _ => None,
         }
+    }
+
+    pub fn copy_int_compatible_i64_values_to(&self, out: &mut Vec<i64>) -> bool {
+        match self {
+            Self::I8(values) => out.extend(values.as_slice().iter().copied().map(i64::from)),
+            Self::I16(values) => out.extend(values.as_slice().iter().copied().map(i64::from)),
+            Self::I32(values) => out.extend(values.as_slice().iter().copied().map(i64::from)),
+            Self::I64(values) => out.extend(values.as_slice().iter().copied()),
+            Self::Bytes(values) => out.extend(values.as_slice().iter().copied().map(i64::from)),
+            Self::Units(_)
+            | Self::I128(_)
+            | Self::ISize(_)
+            | Self::U8(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::U128(_)
+            | Self::USize(_)
+            | Self::Bool(_)
+            | Self::Chars(_)
+            | Self::Durations(_)
+            | Self::Strings(_)
+            | Self::FloatLiterals(_)
+            | Self::EntityRefs(_) => return false,
+        }
+        true
+    }
+
+    pub fn try_for_each_int_compatible_i64<E>(
+        &self,
+        mut visit: impl FnMut(i64) -> Result<(), E>,
+    ) -> Result<bool, E> {
+        match self {
+            Self::I8(values) => {
+                for value in values.as_slice().iter().copied().map(i64::from) {
+                    visit(value)?;
+                }
+            }
+            Self::I16(values) => {
+                for value in values.as_slice().iter().copied().map(i64::from) {
+                    visit(value)?;
+                }
+            }
+            Self::I32(values) => {
+                for value in values.as_slice().iter().copied().map(i64::from) {
+                    visit(value)?;
+                }
+            }
+            Self::I64(values) => {
+                for value in values.as_slice().iter().copied() {
+                    visit(value)?;
+                }
+            }
+            Self::Bytes(values) => {
+                for value in values.as_slice().iter().copied().map(i64::from) {
+                    visit(value)?;
+                }
+            }
+            Self::Units(_)
+            | Self::I128(_)
+            | Self::ISize(_)
+            | Self::U8(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::U128(_)
+            | Self::USize(_)
+            | Self::Bool(_)
+            | Self::Chars(_)
+            | Self::Durations(_)
+            | Self::Strings(_)
+            | Self::FloatLiterals(_)
+            | Self::EntityRefs(_) => return Ok(false),
+        }
+        Ok(true)
+    }
+
+    pub fn first_int_compatible_i64(&self) -> Option<Option<i64>> {
+        let first = match self {
+            Self::I8(values) => values.as_slice().first().copied().map(i64::from),
+            Self::I16(values) => values.as_slice().first().copied().map(i64::from),
+            Self::I32(values) => values.as_slice().first().copied().map(i64::from),
+            Self::I64(values) => values.as_slice().first().copied(),
+            Self::Bytes(values) => values.as_slice().first().copied().map(i64::from),
+            Self::Units(_)
+            | Self::I128(_)
+            | Self::ISize(_)
+            | Self::U8(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::U128(_)
+            | Self::USize(_)
+            | Self::Bool(_)
+            | Self::Chars(_)
+            | Self::Durations(_)
+            | Self::Strings(_)
+            | Self::FloatLiterals(_)
+            | Self::EntityRefs(_) => return None,
+        };
+        Some(first)
     }
 
     pub fn as_i128_slice(&self) -> Option<&[i128]> {

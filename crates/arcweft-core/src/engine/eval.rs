@@ -745,12 +745,9 @@ impl Engine {
         let items = match source {
             RuntimeExpr::Value(RuntimeValue::Seq(seq)) => match seq {
                 RuntimeSeq::Values(items) => items.as_slice(),
-                RuntimeSeq::Dense(items) => {
-                    let Some(items) = items.as_i64_slice() else {
-                        return Ok(None);
-                    };
-                    return self.collect_i64_map_batch_inputs_from_i64_source(
-                        items,
+                RuntimeSeq::Dense(_) => {
+                    return self.collect_i64_map_batch_inputs_from_int_compatible_source(
+                        seq,
                         param,
                         args,
                         arity,
@@ -762,12 +759,9 @@ impl Engine {
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
                 Some(RuntimeValue::Seq(seq)) => match seq {
                     RuntimeSeq::Values(items) => items.as_slice(),
-                    RuntimeSeq::Dense(items) => {
-                        let Some(items) = items.as_i64_slice() else {
-                            return Ok(None);
-                        };
-                        return self.collect_i64_map_batch_inputs_from_i64_source(
-                            items,
+                    RuntimeSeq::Dense(_) => {
+                        return self.collect_i64_map_batch_inputs_from_int_compatible_source(
+                            seq,
                             param,
                             args,
                             arity,
@@ -831,12 +825,9 @@ impl Engine {
         let items = match source {
             RuntimeExpr::Value(RuntimeValue::Seq(seq)) => match seq {
                 RuntimeSeq::Values(items) => items.as_slice(),
-                RuntimeSeq::Dense(items) => {
-                    let Some(items) = items.as_i64_slice() else {
-                        return Ok(false);
-                    };
-                    return self.collect_i64_repeated_map_batch_row_from_i64_source(
-                        items,
+                RuntimeSeq::Dense(_) => {
+                    return self.collect_i64_repeated_map_batch_row_from_int_compatible_source(
+                        seq,
                         param,
                         args,
                         arity,
@@ -848,12 +839,9 @@ impl Engine {
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
                 Some(RuntimeValue::Seq(seq)) => match seq {
                     RuntimeSeq::Values(items) => items.as_slice(),
-                    RuntimeSeq::Dense(items) => {
-                        let Some(items) = items.as_i64_slice() else {
-                            return Ok(false);
-                        };
-                        return self.collect_i64_repeated_map_batch_row_from_i64_source(
-                            items,
+                    RuntimeSeq::Dense(_) => {
+                        return self.collect_i64_repeated_map_batch_row_from_int_compatible_source(
+                            seq,
                             param,
                             args,
                             arity,
@@ -1054,27 +1042,37 @@ impl Engine {
         Ok(true)
     }
 
-    fn collect_i64_map_batch_inputs_from_i64_source(
+    fn collect_i64_map_batch_inputs_from_int_compatible_source(
         &self,
-        items: &[i64],
+        seq: &RuntimeSeq,
         param: &str,
         args: &[RuntimeExpr],
         arity: usize,
         flat_inputs: &mut Vec<i64>,
     ) -> Result<Option<usize>, RuntimeEvalError> {
         flat_inputs.clear();
-        flat_inputs.reserve(items.len().saturating_mul(arity));
-        for item in items {
+        flat_inputs.reserve(seq.len().saturating_mul(arity));
+        let mut accepted = true;
+        let compatible = seq.try_for_each_int_compatible_i64(|item| {
+            if !accepted {
+                return Ok(());
+            }
             for arg in args.iter().take(arity) {
-                let Some(value) = self.evaluate_i64_map_arg_from_i64_source(arg, param, *item)?
+                let Some(value) = self.evaluate_i64_map_arg_from_i64_source(arg, param, item)?
                 else {
                     flat_inputs.clear();
-                    return Ok(None);
+                    accepted = false;
+                    return Ok(());
                 };
                 flat_inputs.push(value);
             }
+            Ok(())
+        })?;
+        if compatible && accepted {
+            Ok(Some(seq.len()))
+        } else {
+            Ok(None)
         }
-        Ok(Some(items.len()))
     }
 
     fn collect_i64_repeated_map_batch_row_without_scope(
@@ -1112,16 +1110,19 @@ impl Engine {
         Ok(true)
     }
 
-    fn collect_i64_repeated_map_batch_row_from_i64_source(
+    fn collect_i64_repeated_map_batch_row_from_int_compatible_source(
         &self,
-        items: &[i64],
+        seq: &RuntimeSeq,
         param: &str,
         args: &[RuntimeExpr],
         arity: usize,
         flat_inputs: &mut Vec<i64>,
     ) -> Result<bool, RuntimeEvalError> {
         flat_inputs.clear();
-        let Some(first) = items.first().copied() else {
+        let Some(first) = seq.first_int_compatible_i64() else {
+            return Ok(false);
+        };
+        let Some(first) = first else {
             return Ok(true);
         };
         flat_inputs.reserve(arity);
@@ -1132,20 +1133,33 @@ impl Engine {
             };
             flat_inputs.push(value);
         }
-        for item in &items[1..] {
+        let mut index = 0_usize;
+        let mut same_row = true;
+        let compatible = seq.try_for_each_int_compatible_i64(|item| {
+            if !same_row {
+                return Ok(());
+            }
+            if index == 0 {
+                index += 1;
+                return Ok(());
+            }
             for (index, arg) in args.iter().take(arity).enumerate() {
-                let Some(value) = self.evaluate_i64_map_arg_from_i64_source(arg, param, *item)?
+                let Some(value) = self.evaluate_i64_map_arg_from_i64_source(arg, param, item)?
                 else {
                     flat_inputs.clear();
-                    return Ok(false);
+                    same_row = false;
+                    return Ok(());
                 };
                 if flat_inputs.get(index).copied() != Some(value) {
                     flat_inputs.clear();
-                    return Ok(false);
+                    same_row = false;
+                    return Ok(());
                 }
             }
-        }
-        Ok(true)
+            index += 1;
+            Ok(())
+        })?;
+        Ok(compatible && same_row)
     }
 
     fn evaluate_i64_map_arg_without_scope(
