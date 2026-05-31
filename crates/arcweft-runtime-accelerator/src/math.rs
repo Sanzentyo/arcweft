@@ -239,7 +239,7 @@ impl RuntimeMathAccelerator {
         rhs: &DenseMatrixF64,
     ) -> Result<DenseMatrixF64, RuntimeMathAcceleratorError> {
         self.record_matrix_inputs(lhs, rhs);
-        let selection = self.select_matmul_backend(lhs, rhs);
+        let selection = self.select_matmul_backend_f64(lhs, rhs);
         self.stats.last_auto_reason = selection.auto_reason;
         match selection.backend {
             RuntimeMathBackend::Scalar => self.matmul_scalar(lhs, rhs),
@@ -258,7 +258,7 @@ impl RuntimeMathAccelerator {
         rhs: &DenseMatrixF64,
     ) -> Result<DenseMatrixF64, RuntimeMathAcceleratorError> {
         self.record_matrix_inputs(lhs, rhs);
-        let selection = self.select_elementwise_backend(lhs.values().len());
+        let selection = self.select_elementwise_backend_f64();
         self.stats.last_auto_reason = selection.auto_reason;
         match selection.backend {
             RuntimeMathBackend::Scalar => self.matrix_add_scalar(lhs, rhs),
@@ -277,7 +277,7 @@ impl RuntimeMathAccelerator {
         rhs: &DenseTensorF64,
     ) -> Result<DenseTensorF64, RuntimeMathAcceleratorError> {
         self.record_tensor_inputs(lhs, rhs);
-        let selection = self.select_elementwise_backend(lhs.values().len());
+        let selection = self.select_elementwise_backend_f64();
         self.stats.last_auto_reason = selection.auto_reason;
         match selection.backend {
             RuntimeMathBackend::Scalar | RuntimeMathBackend::Glam => {
@@ -563,6 +563,29 @@ impl RuntimeMathAccelerator {
         }
     }
 
+    fn select_matmul_backend_f64(
+        &self,
+        lhs: &DenseMatrixF64,
+        rhs: &DenseMatrixF64,
+    ) -> RuntimeMathBackendSelection {
+        match self.config.backend {
+            RuntimeMathBackend::Auto if lhs.rows() == 4 && lhs.cols() == 4 && rhs.cols() == 4 => {
+                RuntimeMathBackendSelection {
+                    backend: RuntimeMathBackend::Glam,
+                    auto_reason: Some(RuntimeMathAutoSelectionReason::Matmul4x4Glam),
+                }
+            }
+            RuntimeMathBackend::Auto => RuntimeMathBackendSelection {
+                backend: RuntimeMathBackend::Ndarray,
+                auto_reason: Some(RuntimeMathAutoSelectionReason::MatmulCpuDefault),
+            },
+            backend => RuntimeMathBackendSelection {
+                backend,
+                auto_reason: None,
+            },
+        }
+    }
+
     fn select_elementwise_backend(&self, elements: usize) -> RuntimeMathBackendSelection {
         match self.config.backend {
             RuntimeMathBackend::Auto
@@ -573,6 +596,19 @@ impl RuntimeMathAccelerator {
                     auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseWgpuWorkThreshold),
                 }
             }
+            RuntimeMathBackend::Auto => RuntimeMathBackendSelection {
+                backend: RuntimeMathBackend::Ndarray,
+                auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseCpuDefault),
+            },
+            backend => RuntimeMathBackendSelection {
+                backend,
+                auto_reason: None,
+            },
+        }
+    }
+
+    fn select_elementwise_backend_f64(&self) -> RuntimeMathBackendSelection {
+        match self.config.backend {
             RuntimeMathBackend::Auto => RuntimeMathBackendSelection {
                 backend: RuntimeMathBackend::Ndarray,
                 auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseCpuDefault),
@@ -1904,6 +1940,46 @@ mod tests {
             accelerator.stats().bytes_borrowed,
             16 * std::mem::size_of::<f64>()
         );
+    }
+
+    #[test]
+    fn auto_f64_math_stays_on_cpu_even_when_wgpu_threshold_matches() {
+        let lhs = DenseMatrixF64::new(8, 8, vec![1.0; 64]).unwrap();
+        let rhs = DenseMatrixF64::new(8, 8, vec![2.0; 64]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            wgpu_min_elements: 1,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+
+        let out = accelerator.matmul_f64(&lhs, &rhs).unwrap();
+
+        assert_eq!(out, lhs.matmul_scalar(&rhs).unwrap());
+        assert_eq!(accelerator.stats().wgpu_calls, 0);
+        assert_eq!(
+            accelerator.stats().last_backend,
+            Some(RuntimeMathBackend::Ndarray)
+        );
+        assert_eq!(
+            accelerator.stats().last_auto_reason,
+            Some(RuntimeMathAutoSelectionReason::MatmulCpuDefault)
+        );
+    }
+
+    #[test]
+    fn explicit_wgpu_f64_math_reports_portability_error() {
+        let lhs = DenseTensorF64::new(vec![2, 2], vec![1.0; 4]).unwrap();
+        let rhs = DenseTensorF64::new(vec![2, 2], vec![2.0; 4]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            backend: RuntimeMathBackend::Wgpu,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+
+        let error = accelerator
+            .tensor_add_f64(&lhs, &rhs)
+            .expect_err("portable f64 wgpu kernels are not available");
+
+        assert!(error.to_string().contains("portable f64 tensor kernels"));
+        assert_eq!(accelerator.stats().wgpu_calls, 0);
     }
 
     #[cfg(feature = "math-ndarray")]

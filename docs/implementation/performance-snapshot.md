@@ -542,7 +542,9 @@ If a GPU adapter is unavailable, explicit `wgpu` measurement reports a
 structured skip/error rather than silently changing the requested backend.
 Portable wgpu compute shaders in this workspace are `f32` kernels; `f64`
 matrix/tensor calls stay on scalar, glam 4x4, or ndarray CPU backends and
-preserve `f64` storage across the runtime boundary.
+preserve `f64` storage across the runtime boundary. `Auto` never selects wgpu
+for `f64`; explicit `wgpu` requests return a structured portability error for
+those kernels.
 
 Local path-free measurements:
 
