@@ -49,8 +49,7 @@ impl TypeChecker<'_> {
 
     fn check_module_flows(&mut self, flows: &[HirFlow]) {
         for flow in flows {
-            self.clear_active_borrows();
-            self.borrow_local_lifetimes.clear();
+            self.clear_borrow_state();
             self.locals.clear();
             self.loop_stack.clear();
             self.active_presentation_defaults.clear();
@@ -94,8 +93,7 @@ impl TypeChecker<'_> {
 
     fn check_module_functions(&mut self, functions: &[HirFunction]) {
         for function in functions {
-            self.clear_active_borrows();
-            self.borrow_local_lifetimes.clear();
+            self.clear_borrow_state();
             self.locals.clear();
             self.loop_stack.clear();
             self.yield_stack.clear();
@@ -308,8 +306,7 @@ impl TypeChecker<'_> {
                 );
             }
             HirTopLevelDecl::Callable(item) => {
-                self.clear_active_borrows();
-                self.borrow_local_lifetimes.clear();
+                self.clear_borrow_state();
                 self.locals.clear();
                 self.loop_stack.clear();
                 for contract in item.contracts() {
@@ -317,8 +314,7 @@ impl TypeChecker<'_> {
                 }
             }
             HirTopLevelDecl::State(item) => {
-                self.clear_active_borrows();
-                self.borrow_local_lifetimes.clear();
+                self.clear_borrow_state();
                 self.locals.clear();
                 self.loop_stack.clear();
                 for field in item.fields() {
@@ -336,24 +332,21 @@ impl TypeChecker<'_> {
                 self.effect_capabilities = effect_snapshot;
             }
             HirTopLevelDecl::MemoFn(item) => {
-                self.clear_active_borrows();
-                self.borrow_local_lifetimes.clear();
+                self.clear_borrow_state();
                 self.locals.clear();
                 self.loop_stack.clear();
                 self.yield_stack.clear();
                 self.check_block_expr(item.body_statements(), item.body_value());
             }
             HirTopLevelDecl::Parser(item) => {
-                self.clear_active_borrows();
-                self.borrow_local_lifetimes.clear();
+                self.clear_borrow_state();
                 self.locals.clear();
                 self.loop_stack.clear();
                 self.yield_stack.clear();
                 self.check_block_expr(item.body_statements(), item.body_value());
             }
             HirTopLevelDecl::Source(item) => {
-                self.clear_active_borrows();
-                self.borrow_local_lifetimes.clear();
+                self.clear_borrow_state();
                 self.locals.clear();
                 self.loop_stack.clear();
                 self.yield_stack.clear();

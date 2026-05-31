@@ -2,8 +2,8 @@
 
 use super::helpers::let_else_bindings;
 use super::{
-    EntityKind, Expr, LoopContext, Pattern, Stmt, TriggerPattern, TypeCheckError, TypeChecker,
-    TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext,
+    BorrowStateDelta, EntityKind, Expr, LoopContext, Pattern, Stmt, TriggerPattern, TypeCheckError,
+    TypeChecker, TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext,
     default_presentation_slot_family, ident_pattern_name, is_local_ident, iter_item_type,
     pattern_bindings_with_fallback, stmts_diverge, type_ref_kind,
 };
@@ -332,18 +332,19 @@ impl TypeChecker<'_> {
 
     fn check_if_stmt(&mut self, condition: &Expr, body: &[Stmt]) {
         self.expect_expr_type(condition, &TypeKind::Bool, "if condition");
-        let borrow_snapshot = self.snapshot_borrow_state();
+        let borrow_checkpoint = self.checkpoint_borrow_state();
         self.with_local_mutation_scope(|this| {
             for stmt in body {
                 this.check_stmt(stmt);
             }
         });
-        let then_state = self.snapshot_borrow_state();
-        self.merge_borrow_state_from_paths(&borrow_snapshot, &[&borrow_snapshot, &then_state]);
+        let then_state = self.capture_borrow_state_delta(borrow_checkpoint);
+        let unchanged_state = BorrowStateDelta::default();
+        self.merge_borrow_state_from_deltas(borrow_checkpoint, &[&unchanged_state, &then_state]);
     }
 
     fn check_stmt_loop(&mut self, body: &[Stmt]) {
-        let borrow_snapshot = self.snapshot_borrow_state();
+        let borrow_checkpoint = self.checkpoint_borrow_state();
         self.loop_stack.push(LoopContext {
             label: None,
             allows_value_break: true,
@@ -353,7 +354,7 @@ impl TypeChecker<'_> {
             self.check_stmt(stmt);
         }
         self.loop_stack.pop();
-        self.restore_borrow_state(borrow_snapshot);
+        self.restore_borrow_state(borrow_checkpoint);
     }
 
     fn check_stmt_while_let(
@@ -364,7 +365,7 @@ impl TypeChecker<'_> {
         body: &[Stmt],
     ) {
         let expr_type = self.check_expr(expr);
-        let borrow_snapshot = self.snapshot_borrow_state();
+        let borrow_checkpoint = self.checkpoint_borrow_state();
         let local_snapshot =
             self.insert_scoped_locals(let_else_bindings(pattern, expr_type.as_ref()));
         if let Some(guard) = guard {
@@ -375,13 +376,13 @@ impl TypeChecker<'_> {
                 this.check_stmt(stmt);
             }
         });
-        self.restore_borrow_state(borrow_snapshot);
+        self.restore_borrow_state(borrow_checkpoint);
         self.restore_scoped_locals(local_snapshot);
     }
 
     fn check_stmt_for(&mut self, pattern: &Pattern, source: &Expr, body: &[Stmt]) {
         let source_ty = self.check_expr(source);
-        let borrow_snapshot = self.snapshot_borrow_state();
+        let borrow_checkpoint = self.checkpoint_borrow_state();
         let item_ty = iter_item_type(source_ty.as_ref());
         let local_snapshot =
             self.insert_scoped_locals(pattern_bindings_with_fallback(pattern, &item_ty));
@@ -391,16 +392,16 @@ impl TypeChecker<'_> {
                 this.check_stmt(stmt);
             }
         });
-        self.restore_borrow_state(borrow_snapshot);
+        self.restore_borrow_state(borrow_checkpoint);
         self.restore_scoped_locals(local_snapshot);
     }
 
     fn check_match_stmt(&mut self, expr: &Expr, arms: &[StmtMatchArm]) {
         let expr_type = self.check_expr(expr);
-        let base_borrow_snapshot = self.snapshot_borrow_state();
+        let base_borrow_checkpoint = self.checkpoint_borrow_state();
         let mut arm_states = Vec::new();
         for arm in arms {
-            self.restore_borrow_state_ref(&base_borrow_snapshot);
+            self.restore_borrow_state(base_borrow_checkpoint);
             let local_snapshot =
                 self.insert_scoped_locals(let_else_bindings(arm.pattern(), expr_type.as_ref()));
             if let Some(guard) = arm.guard() {
@@ -409,7 +410,7 @@ impl TypeChecker<'_> {
             for stmt in arm.body() {
                 self.check_stmt(stmt);
             }
-            arm_states.push(self.snapshot_borrow_state());
+            arm_states.push(self.capture_borrow_state_delta(base_borrow_checkpoint));
             self.restore_scoped_locals(local_snapshot);
         }
         self.check_choice_match_exhaustive(
@@ -418,10 +419,10 @@ impl TypeChecker<'_> {
                 .map(arcweft_lang_syntax::ast::flow::StmtMatchArm::pattern),
         );
         if arm_states.is_empty() {
-            self.restore_borrow_state(base_borrow_snapshot);
+            self.restore_borrow_state(base_borrow_checkpoint);
         } else {
             let arm_state_refs = arm_states.iter().collect::<Vec<_>>();
-            self.merge_borrow_state_from_paths(&base_borrow_snapshot, &arm_state_refs);
+            self.merge_borrow_state_from_deltas(base_borrow_checkpoint, &arm_state_refs);
         }
     }
 

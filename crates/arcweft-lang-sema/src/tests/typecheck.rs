@@ -49,6 +49,8 @@ flow @flow.borrow_stats borrow_stats {
     assert!(report.stats.borrow_bindings >= 1);
     assert!(report.stats.active_borrow_removes >= 1);
     assert!(report.stats.max_active_borrows >= 1);
+    assert_eq!(report.stats.borrow_state_full_clones, 0);
+    assert_eq!(report.stats.borrow_state_cloned_bindings, 0);
     assert_eq!(report.stats.judgments, report.judgments.len());
     assert_eq!(
         report.stats.judgments,
@@ -69,6 +71,47 @@ flow @flow.borrow_stats borrow_stats {
             .iter()
             .any(|judgment| matches!(&judgment.subject, TypeJudgmentSubject::Return { .. }))
     );
+}
+
+#[test]
+fn borrow_branch_merge_records_delta_without_full_clone() {
+    let tree = parse_ok(
+        r#"
+flow @flow.borrow_branch_delta borrow_branch_delta {
+    borrow pixels() as pixels: &'asset [Rgba8] {
+        if ready {
+            drop(pixels)
+        }
+        drop(pixels)
+    }
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("borrow branch fixture lowers");
+    validate_typecheck_ready(&hir).expect("borrow branch fixture is typecheck-ready");
+    let report = analyze_types(
+        &hir,
+        &TypeCheckEnv::new()
+            .with_symbol("ready", TypeKind::Bool)
+            .with_function(
+                "pixels",
+                TypeKind::Shared(Box::new(TypeKind::Named("Rgba8".to_owned()))),
+            ),
+    );
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|error| error.message().contains("may already have been dropped")),
+        "conditional drop should remain a borrow-state error: {:?}",
+        report.diagnostics
+    );
+    assert!(report.stats.borrow_state_snapshots >= 1);
+    assert!(report.stats.borrow_state_delta_entries >= 1);
+    assert!(report.stats.borrow_state_merge_keys >= 1);
+    assert_eq!(report.stats.borrow_state_full_clones, 0);
+    assert_eq!(report.stats.borrow_state_cloned_bindings, 0);
 }
 
 #[test]

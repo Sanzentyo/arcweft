@@ -2,9 +2,9 @@
 
 use super::helpers::{iter_item_type, let_else_bindings, pattern_bindings_with_fallback};
 use super::{
-    Expr, LifetimeScopeKind, LoopContext, TypeCheckError, TypeChecker, TypeCheckerScopeSnapshot,
-    TypeKind, YieldContext, await_branch_pattern_type, type_contains_borrow_ref,
-    unify_loop_break_types,
+    BorrowStateDelta, Expr, LifetimeScopeKind, LoopContext, TypeCheckError, TypeChecker,
+    TypeCheckerScopeSnapshot, TypeKind, YieldContext, await_branch_pattern_type,
+    type_contains_borrow_ref, unify_loop_break_types,
 };
 
 impl TypeChecker<'_> {
@@ -90,12 +90,12 @@ impl TypeChecker<'_> {
             ));
         }
         for branch in await_with.branches() {
-            let borrow_snapshot = self.snapshot_borrow_state();
+            let borrow_checkpoint = self.checkpoint_borrow_state();
             let branch_type = await_branch_pattern_type(branch.kind(), &ready, &error);
             let local_snapshot =
                 self.insert_scoped_locals(let_else_bindings(branch.pattern(), Some(&branch_type)));
             self.check_flow_items(branch.body());
-            self.restore_borrow_state(borrow_snapshot);
+            self.restore_borrow_state(borrow_checkpoint);
             self.restore_scoped_locals(local_snapshot);
         }
 
@@ -111,7 +111,7 @@ impl TypeChecker<'_> {
         block: &arcweft_lang_hir::model::HirLoop,
         allows_value_break: bool,
     ) -> Option<TypeKind> {
-        let borrow_snapshot = self.snapshot_borrow_state();
+        let borrow_checkpoint = self.checkpoint_borrow_state();
         self.loop_stack.push(LoopContext {
             label: block.label().map(str::to_owned),
             allows_value_break,
@@ -119,7 +119,7 @@ impl TypeChecker<'_> {
         });
         self.check_flow_items(block.body());
         let context = self.loop_stack.pop()?;
-        self.restore_borrow_state(borrow_snapshot);
+        self.restore_borrow_state(borrow_checkpoint);
         unify_loop_break_types(&context.break_types)
     }
 
@@ -130,51 +130,52 @@ impl TypeChecker<'_> {
 
     pub(super) fn check_if_let_block(&mut self, block: &arcweft_lang_hir::model::HirIfLet) {
         let expr_type = self.check_expr(block.expr());
-        let borrow_snapshot = self.snapshot_borrow_state();
+        let borrow_checkpoint = self.checkpoint_borrow_state();
         let local_snapshot =
             self.insert_scoped_locals(let_else_bindings(block.pattern(), expr_type.as_ref()));
         if let Some(guard) = block.guard() {
             self.expect_expr_type(guard, &TypeKind::Bool, "if-let guard");
         }
         self.check_flow_items(block.body());
-        let then_state = self.snapshot_borrow_state();
-        self.restore_borrow_state_ref(&borrow_snapshot);
+        let then_state = self.capture_borrow_state_delta(borrow_checkpoint);
+        self.restore_borrow_state(borrow_checkpoint);
         self.restore_scoped_locals(local_snapshot);
         self.check_flow_items(block.else_body());
-        let else_state = self.snapshot_borrow_state();
-        self.merge_borrow_state_from_paths(
-            &borrow_snapshot,
-            &[&borrow_snapshot, &then_state, &else_state],
+        let else_state = self.capture_borrow_state_delta(borrow_checkpoint);
+        let unchanged_state = BorrowStateDelta::default();
+        self.merge_borrow_state_from_deltas(
+            borrow_checkpoint,
+            &[&unchanged_state, &then_state, &else_state],
         );
     }
 
     pub(super) fn check_while_let_block(&mut self, block: &arcweft_lang_hir::model::HirWhileLet) {
         let expr_type = self.check_expr(block.expr());
-        let borrow_snapshot = self.snapshot_borrow_state();
+        let borrow_checkpoint = self.checkpoint_borrow_state();
         let local_snapshot =
             self.insert_scoped_locals(let_else_bindings(block.pattern(), expr_type.as_ref()));
         if let Some(guard) = block.guard() {
             self.expect_expr_type(guard, &TypeKind::Bool, "while-let guard");
         }
         self.with_statement_loop(|this| this.check_flow_items(block.body()));
-        self.restore_borrow_state(borrow_snapshot);
+        self.restore_borrow_state(borrow_checkpoint);
         self.restore_scoped_locals(local_snapshot);
     }
 
     pub(super) fn check_for_block(&mut self, block: &arcweft_lang_hir::model::HirFor) {
         let source_ty = self.check_expr(block.source());
-        let borrow_snapshot = self.snapshot_borrow_state();
+        let borrow_checkpoint = self.checkpoint_borrow_state();
         let item_ty = iter_item_type(source_ty.as_ref());
         let local_snapshot =
             self.insert_scoped_locals(pattern_bindings_with_fallback(block.pattern(), &item_ty));
         self.register_borrow_bindings(block.pattern(), &item_ty);
         self.with_statement_loop(|this| this.check_flow_items(block.body()));
-        self.restore_borrow_state(borrow_snapshot);
+        self.restore_borrow_state(borrow_checkpoint);
         self.restore_scoped_locals(local_snapshot);
     }
 
     pub(super) fn with_statement_loop(&mut self, check_body: impl FnOnce(&mut Self)) {
-        let borrow_snapshot = self.snapshot_borrow_state();
+        let borrow_checkpoint = self.checkpoint_borrow_state();
         self.loop_stack.push(LoopContext {
             label: None,
             allows_value_break: false,
@@ -182,7 +183,7 @@ impl TypeChecker<'_> {
         });
         check_body(self);
         self.loop_stack.pop();
-        self.restore_borrow_state(borrow_snapshot);
+        self.restore_borrow_state(borrow_checkpoint);
     }
 
     pub(super) fn reject_active_borrows(&mut self, boundary: &str) {
@@ -206,6 +207,7 @@ impl TypeChecker<'_> {
 
     fn snapshot_runtime_scope(&mut self) -> TypeCheckerScopeSnapshot {
         self.stats.borrow_state_snapshots += 1;
+        self.stats.borrow_state_full_clones += 1;
         self.stats.borrow_state_cloned_bindings += self.borrow_local_lifetimes.len();
         TypeCheckerScopeSnapshot {
             borrow_local_lifetimes: self.borrow_local_lifetimes.clone(),

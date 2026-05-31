@@ -1,11 +1,12 @@
 //! Borrow binding and branch-merge helpers used by the type checker.
 
 use super::{
-    BorrowLocalState, BorrowStateSnapshot, Pattern, TypeChecker, TypeKind,
-    collect_type_kind_lifetimes, merge_borrow_local_states, pattern_bindings_with_fallback,
+    BorrowLocalState, BorrowStateCheckpoint, BorrowStateDelta, BorrowStateJournalEntry, Pattern,
+    TypeChecker, TypeKind, collect_type_kind_lifetimes, merge_borrow_local_states,
+    pattern_bindings_with_fallback,
 };
 use crate::diagnostics::TypeCheckError;
-use std::collections::HashMap;
+use std::collections::BTreeSet;
 
 impl TypeChecker<'_> {
     pub(super) fn bind_function_param(&mut self, pattern: &Pattern, ty: &TypeKind) {
@@ -28,13 +29,12 @@ impl TypeChecker<'_> {
                 self.add_active_borrow_lifetime(lifetime);
             }
             self.record_active_borrow_depth();
-            self.borrow_local_lifetimes
-                .insert(name, BorrowLocalState::Live(lifetimes));
+            self.set_borrow_local_state(name, BorrowLocalState::Live(lifetimes));
         }
     }
 
     pub(super) fn release_borrow_local(&mut self, name: &str) {
-        let Some(state) = self.borrow_local_lifetimes.remove(name) else {
+        let Some(state) = self.take_borrow_local_state(name) else {
             return;
         };
         match state {
@@ -42,8 +42,7 @@ impl TypeChecker<'_> {
                 for lifetime in &lifetimes {
                     self.remove_active_borrow_lifetime(lifetime);
                 }
-                self.borrow_local_lifetimes
-                    .insert(name.to_owned(), BorrowLocalState::Dropped);
+                self.set_borrow_local_state(name.to_owned(), BorrowLocalState::Dropped);
             }
             BorrowLocalState::MaybeDropped(lifetimes) => {
                 self.errors.push(TypeCheckError::new(format!(
@@ -52,21 +51,19 @@ impl TypeChecker<'_> {
                 for lifetime in &lifetimes {
                     self.remove_active_borrow_lifetime(lifetime);
                 }
-                self.borrow_local_lifetimes
-                    .insert(name.to_owned(), BorrowLocalState::Dropped);
+                self.set_borrow_local_state(name.to_owned(), BorrowLocalState::Dropped);
             }
             BorrowLocalState::Dropped => {
                 self.errors.push(TypeCheckError::new(format!(
                     "borrowed local `{name}` was already dropped"
                 )));
-                self.borrow_local_lifetimes
-                    .insert(name.to_owned(), BorrowLocalState::Dropped);
+                self.set_borrow_local_state(name.to_owned(), BorrowLocalState::Dropped);
             }
         }
     }
 
     pub(super) fn clear_borrow_local(&mut self, name: &str) {
-        let Some(state) = self.borrow_local_lifetimes.remove(name) else {
+        let Some(state) = self.take_borrow_local_state(name) else {
             return;
         };
         for lifetime in state.lifetimes() {
@@ -94,42 +91,84 @@ impl TypeChecker<'_> {
         self.active_borrow_total += 1;
     }
 
-    pub(super) fn snapshot_borrow_state(&mut self) -> BorrowStateSnapshot {
+    pub(super) fn checkpoint_borrow_state(&mut self) -> BorrowStateCheckpoint {
         self.stats.borrow_state_snapshots += 1;
-        self.stats.borrow_state_cloned_bindings += self.borrow_local_lifetimes.len();
-        BorrowStateSnapshot {
-            borrow_local_lifetimes: self.borrow_local_lifetimes.clone(),
+        BorrowStateCheckpoint {
+            journal_start: self.borrow_state_journal.len(),
         }
     }
 
-    pub(super) fn restore_borrow_state(&mut self, snapshot: BorrowStateSnapshot) {
-        self.stats.borrow_state_restores += 1;
-        self.borrow_local_lifetimes = snapshot.borrow_local_lifetimes;
-        self.rebuild_active_borrows();
-    }
-
-    pub(super) fn restore_borrow_state_ref(&mut self, snapshot: &BorrowStateSnapshot) {
-        self.stats.borrow_state_restores += 1;
-        self.borrow_local_lifetimes
-            .clone_from(&snapshot.borrow_local_lifetimes);
-        self.rebuild_active_borrows();
-    }
-
-    pub(super) fn merge_borrow_state_from_paths(
+    pub(super) fn capture_borrow_state_delta(
         &mut self,
-        base: &BorrowStateSnapshot,
-        paths: &[&BorrowStateSnapshot],
+        checkpoint: BorrowStateCheckpoint,
+    ) -> BorrowStateDelta {
+        let touched = self.borrow_state_touched_names(checkpoint);
+        let changes = touched
+            .into_iter()
+            .map(|name| super::BorrowStateDeltaEntry {
+                state: self.borrow_local_lifetimes.get(&name).cloned(),
+                name,
+            })
+            .collect::<Vec<_>>();
+        self.stats.borrow_state_delta_entries += changes.len();
+        BorrowStateDelta { changes }
+    }
+
+    pub(super) fn restore_borrow_state(&mut self, checkpoint: BorrowStateCheckpoint) {
+        self.stats.borrow_state_restores += 1;
+        while self.borrow_state_journal.len() > checkpoint.journal_start {
+            let entry = self
+                .borrow_state_journal
+                .pop()
+                .expect("journal length is checked before pop");
+            match entry.previous {
+                Some(previous) => {
+                    self.borrow_local_lifetimes.insert(entry.name, previous);
+                }
+                None => {
+                    self.borrow_local_lifetimes.remove(&entry.name);
+                }
+            }
+        }
+        self.rebuild_active_borrows();
+    }
+
+    pub(super) fn merge_borrow_state_from_deltas(
+        &mut self,
+        base: BorrowStateCheckpoint,
+        paths: &[&BorrowStateDelta],
     ) {
         self.stats.borrow_state_merges += 1;
-        let mut merged = HashMap::new();
-        for (name, base_state) in &base.borrow_local_lifetimes {
-            let states = paths
+        self.restore_borrow_state(base);
+        let merge_keys = paths
+            .iter()
+            .flat_map(|path| path.changes.iter().map(|entry| entry.name.clone()))
+            .collect::<BTreeSet<_>>();
+        self.stats.borrow_state_merge_keys += merge_keys.len();
+
+        for name in merge_keys {
+            let Some(base_state) = self.borrow_local_lifetimes.get(&name).cloned() else {
+                continue;
+            };
+            let path_states = paths
                 .iter()
-                .map(|path| path.borrow_local_lifetimes.get(name).unwrap_or(base_state));
-            merged.insert(name.clone(), merge_borrow_local_states(states));
+                .map(|path| {
+                    path.changes
+                        .iter()
+                        .find(|entry| entry.name == name)
+                        .and_then(|entry| entry.state.as_ref())
+                        .unwrap_or(&base_state)
+                })
+                .collect::<Vec<_>>();
+            self.set_borrow_local_state(name, merge_borrow_local_states(path_states));
         }
-        self.borrow_local_lifetimes = merged;
         self.rebuild_active_borrows();
+    }
+
+    pub(super) fn clear_borrow_state(&mut self) {
+        self.borrow_local_lifetimes.clear();
+        self.borrow_state_journal.clear();
+        self.clear_active_borrows();
     }
 
     pub(super) fn rebuild_active_borrows(&mut self) {
@@ -144,5 +183,30 @@ impl TypeChecker<'_> {
             self.add_active_borrow_lifetime(lifetime);
         }
         self.record_active_borrow_depth();
+    }
+
+    fn set_borrow_local_state(&mut self, name: String, state: BorrowLocalState) {
+        self.record_borrow_state_previous(&name);
+        self.borrow_local_lifetimes.insert(name, state);
+    }
+
+    fn take_borrow_local_state(&mut self, name: &str) -> Option<BorrowLocalState> {
+        self.record_borrow_state_previous(name);
+        self.borrow_local_lifetimes.remove(name)
+    }
+
+    fn record_borrow_state_previous(&mut self, name: &str) {
+        self.borrow_state_journal.push(BorrowStateJournalEntry {
+            name: name.to_owned(),
+            previous: self.borrow_local_lifetimes.get(name).cloned(),
+        });
+    }
+
+    fn borrow_state_touched_names(&self, checkpoint: BorrowStateCheckpoint) -> BTreeSet<String> {
+        self.borrow_state_journal
+            .iter()
+            .skip(checkpoint.journal_start)
+            .map(|entry| entry.name.clone())
+            .collect()
     }
 }

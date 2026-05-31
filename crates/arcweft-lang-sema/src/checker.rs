@@ -1,4 +1,7 @@
-use crate::borrow::{BorrowLocalState, BorrowStateSnapshot, merge_borrow_local_states};
+use crate::borrow::{
+    BorrowLocalState, BorrowStateCheckpoint, BorrowStateDelta, BorrowStateDeltaEntry,
+    BorrowStateJournalEntry, merge_borrow_local_states,
+};
 use crate::diagnostics::{TypeCheckError, TypeCheckReadinessError, TypeCheckWarning};
 use crate::env::TypeCheckEnv;
 use crate::fact_layer::{EffectScope, capability_from_expr};
@@ -92,6 +95,9 @@ pub struct TypeCheckStats {
     pub borrow_state_restores: usize,
     pub borrow_state_merges: usize,
     pub borrow_state_cloned_bindings: usize,
+    pub borrow_state_delta_entries: usize,
+    pub borrow_state_full_clones: usize,
+    pub borrow_state_merge_keys: usize,
     pub borrow_boundary_checks: usize,
     pub borrow_escape_checks: usize,
     pub active_borrow_removes: usize,
@@ -195,6 +201,7 @@ struct TypeChecker<'a> {
     active_borrow_lifetimes: BTreeMap<String, usize>,
     active_borrow_total: usize,
     borrow_local_lifetimes: HashMap<String, BorrowLocalState>,
+    borrow_state_journal: Vec<BorrowStateJournalEntry>,
     global_symbols: HashMap<String, TypeKind>,
     global_functions: HashMap<String, TypeKind>,
     global_function_signatures: HashMap<String, FunctionSignatureType>,
@@ -284,6 +291,7 @@ impl TypeChecker<'_> {
             active_borrow_lifetimes: BTreeMap::new(),
             active_borrow_total: 0,
             borrow_local_lifetimes: HashMap::new(),
+            borrow_state_journal: Vec::new(),
             global_symbols: HashMap::new(),
             global_functions: HashMap::new(),
             global_function_signatures: HashMap::new(),

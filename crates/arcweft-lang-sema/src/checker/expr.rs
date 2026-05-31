@@ -7,10 +7,10 @@ use super::helpers::{
     well_known_field_type, well_known_runtime_method_type,
 };
 use super::{
-    BorrowLocalState, EntityKind, EntityRefSyntax, Expr, FunctionParamType, FunctionSignatureType,
-    LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker, TypeJudgmentRule,
-    TypeJudgmentSubject, TypeKind, YieldContext, entity_kind, normalize_choice_type,
-    types_compatible,
+    BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr, FunctionParamType,
+    FunctionSignatureType, LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker,
+    TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext, entity_kind,
+    normalize_choice_type, types_compatible,
 };
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{
@@ -1407,21 +1407,22 @@ impl TypeChecker<'_> {
         else_branch: Option<&Expr>,
     ) -> Option<TypeKind> {
         self.expect_expr_type(condition, &TypeKind::Bool, "if expression condition");
-        let base_borrow_snapshot = self.snapshot_borrow_state();
+        let base_borrow_checkpoint = self.checkpoint_borrow_state();
         let then_type = self.check_expr(then_branch);
-        let then_borrow_state = self.snapshot_borrow_state();
-        self.restore_borrow_state_ref(&base_borrow_snapshot);
+        let then_borrow_state = self.capture_borrow_state_delta(base_borrow_checkpoint);
+        self.restore_borrow_state(base_borrow_checkpoint);
         let else_type = else_branch.and_then(|branch| self.check_expr(branch));
-        let else_borrow_state = self.snapshot_borrow_state();
+        let else_borrow_state = self.capture_borrow_state_delta(base_borrow_checkpoint);
         if else_branch.is_some() {
-            self.merge_borrow_state_from_paths(
-                &base_borrow_snapshot,
+            self.merge_borrow_state_from_deltas(
+                base_borrow_checkpoint,
                 &[&then_borrow_state, &else_borrow_state],
             );
         } else {
-            self.merge_borrow_state_from_paths(
-                &base_borrow_snapshot,
-                &[&base_borrow_snapshot, &then_borrow_state],
+            let unchanged_state = BorrowStateDelta::default();
+            self.merge_borrow_state_from_deltas(
+                base_borrow_checkpoint,
+                &[&unchanged_state, &then_borrow_state],
             );
         }
         match (then_type, else_type) {
@@ -1441,11 +1442,11 @@ impl TypeChecker<'_> {
             return None;
         }
 
-        let base_borrow_snapshot = self.snapshot_borrow_state();
+        let base_borrow_checkpoint = self.checkpoint_borrow_state();
         let mut arm_states = Vec::new();
         let mut inferred = None;
         for arm in arms {
-            self.restore_borrow_state_ref(&base_borrow_snapshot);
+            self.restore_borrow_state(base_borrow_checkpoint);
             let local_snapshot = self
                 .insert_scoped_locals(let_else_bindings(arm.pattern(), scrutinee_type.as_ref()));
             if let Some(guard) = arm.guard() {
@@ -1467,7 +1468,7 @@ impl TypeChecker<'_> {
                 }
                 (_, None) => return None,
             }
-            arm_states.push(self.snapshot_borrow_state());
+            arm_states.push(self.capture_borrow_state_delta(base_borrow_checkpoint));
         }
         self.check_choice_match_exhaustive(
             scrutinee_type.as_ref(),
@@ -1475,7 +1476,7 @@ impl TypeChecker<'_> {
                 .map(arcweft_lang_syntax::expr::MatchExprArm::pattern),
         );
         let arm_state_refs = arm_states.iter().collect::<Vec<_>>();
-        self.merge_borrow_state_from_paths(&base_borrow_snapshot, &arm_state_refs);
+        self.merge_borrow_state_from_deltas(base_borrow_checkpoint, &arm_state_refs);
         inferred
     }
 
@@ -1492,25 +1493,26 @@ impl TypeChecker<'_> {
             self.expect_expr_type(guard, &TypeKind::Bool, "if-let expression guard");
         }
 
-        let base_borrow_snapshot = self.snapshot_borrow_state();
+        let base_borrow_checkpoint = self.checkpoint_borrow_state();
         let local_snapshot =
             self.insert_scoped_locals(let_else_bindings(pattern, expr_type.as_ref()));
         let then_type = self.check_expr(then_branch);
-        let then_borrow_state = self.snapshot_borrow_state();
-        self.restore_borrow_state_ref(&base_borrow_snapshot);
+        let then_borrow_state = self.capture_borrow_state_delta(base_borrow_checkpoint);
+        self.restore_borrow_state(base_borrow_checkpoint);
         self.restore_scoped_locals(local_snapshot);
 
         let else_type = else_branch.and_then(|branch| self.check_expr(branch));
-        let else_borrow_state = self.snapshot_borrow_state();
+        let else_borrow_state = self.capture_borrow_state_delta(base_borrow_checkpoint);
         if else_branch.is_some() {
-            self.merge_borrow_state_from_paths(
-                &base_borrow_snapshot,
+            self.merge_borrow_state_from_deltas(
+                base_borrow_checkpoint,
                 &[&then_borrow_state, &else_borrow_state],
             );
         } else {
-            self.merge_borrow_state_from_paths(
-                &base_borrow_snapshot,
-                &[&base_borrow_snapshot, &then_borrow_state],
+            let unchanged_state = BorrowStateDelta::default();
+            self.merge_borrow_state_from_deltas(
+                base_borrow_checkpoint,
+                &[&unchanged_state, &then_borrow_state],
             );
         }
         match (then_type, else_type) {

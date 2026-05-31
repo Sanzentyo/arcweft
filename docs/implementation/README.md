@@ -979,21 +979,23 @@ Current high-confidence state:
   integrated borrow-check counters, including expression/statement counts,
   borrow binding groups, type judgment counts, rule-family judgment counts,
   bounded judgment samples, borrow state snapshots/restores/merges, boundary
-  checks, escape checks, active-borrow removals, and maximum active borrows.
+  checks, escape checks, active-borrow removals, delta entries, full-clone
+  counts, merge-key counts, and maximum active borrows.
   Loop, source-handler, dialogue-line runtime, and child-task scopes restore
   only inserted or shadowed bindings, so typecheck performance counters are not
   distorted by full local environment clones at common scoped-binding
   boundaries.
   Borrow-state release and branch merge avoid avoidable snapshot/state clones:
   dropping a borrowed local moves the tracked state out of the map before
-  updating it, and merge call sites pass snapshot references instead of cloning
-  base snapshots just to describe branch paths.
-  Branch borrow-state restores now use a reference-based restore path with
-  `clone_from`, so repeated if/match branch checks reuse the checker's borrow
-  map allocation instead of cloning a whole snapshot value before restoration.
+  updating it, and branch restore/merge paths no longer clone whole base
+  snapshots just to describe control-flow paths.
   Active borrow tracking uses a deterministic counted lifetime map instead of a
   linear `Vec<String>` removal path, so duplicate lifetime labels are collapsed
   for diagnostics while release/drop updates avoid per-remove scans.
+  Branch borrow-state checking now uses checkpointed journal entries and
+  touched-key deltas. If/match/loop restore paths replay only changes made after
+  the checkpoint, and branch merges inspect the union of changed borrow locals
+  instead of cloning and merging a full `HashMap` snapshot for every path.
 - `arcweft-verify` exposes `validate_runtime_plan_types(plan, report)` for the
   post-lowering runtime plan consumed by the VM. `arcw profile --json` now runs
   this pass between runtime-plan lowering and bytecode lowering and reports

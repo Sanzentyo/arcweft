@@ -2,8 +2,8 @@
 
 use super::helpers::let_else_bindings;
 use super::{
-    EntityKind, HirFlowItem, Pattern, SelectBranchHead, TypeCheckError, TypeChecker, TypeKind,
-    entity_kind, ident_pattern_name, type_ref_kind, typed_pattern_binding,
+    BorrowStateDelta, EntityKind, HirFlowItem, Pattern, SelectBranchHead, TypeCheckError,
+    TypeChecker, TypeKind, entity_kind, ident_pattern_name, type_ref_kind, typed_pattern_binding,
 };
 
 impl TypeChecker<'_> {
@@ -91,31 +91,32 @@ impl TypeChecker<'_> {
 
     fn check_flow_if_block(&mut self, block: &arcweft_lang_hir::model::HirIf) {
         self.expect_expr_type(block.condition(), &TypeKind::Bool, "if condition");
-        let borrow_snapshot = self.snapshot_borrow_state();
+        let borrow_checkpoint = self.checkpoint_borrow_state();
         self.check_flow_items(block.body());
-        let then_state = self.snapshot_borrow_state();
-        self.restore_borrow_state_ref(&borrow_snapshot);
+        let then_state = self.capture_borrow_state_delta(borrow_checkpoint);
+        self.restore_borrow_state(borrow_checkpoint);
         self.check_flow_items(block.else_body());
-        let else_state = self.snapshot_borrow_state();
-        self.merge_borrow_state_from_paths(
-            &borrow_snapshot,
-            &[&borrow_snapshot, &then_state, &else_state],
+        let else_state = self.capture_borrow_state_delta(borrow_checkpoint);
+        let unchanged_state = BorrowStateDelta::default();
+        self.merge_borrow_state_from_deltas(
+            borrow_checkpoint,
+            &[&unchanged_state, &then_state, &else_state],
         );
     }
 
     fn check_flow_match_block(&mut self, block: &arcweft_lang_hir::model::HirMatch) {
         let expr_type = self.check_expr(block.expr());
-        let base_borrow_snapshot = self.snapshot_borrow_state();
+        let base_borrow_checkpoint = self.checkpoint_borrow_state();
         let mut arm_states = Vec::new();
         for arm in block.arms() {
-            self.restore_borrow_state_ref(&base_borrow_snapshot);
+            self.restore_borrow_state(base_borrow_checkpoint);
             let local_snapshot =
                 self.insert_scoped_locals(let_else_bindings(arm.pattern(), expr_type.as_ref()));
             if let Some(guard) = arm.guard() {
                 self.expect_expr_type(guard, &TypeKind::Bool, "match arm guard");
             }
             self.check_flow_items(arm.body());
-            arm_states.push(self.snapshot_borrow_state());
+            arm_states.push(self.capture_borrow_state_delta(base_borrow_checkpoint));
             self.restore_scoped_locals(local_snapshot);
         }
         self.check_choice_match_exhaustive(
@@ -126,10 +127,10 @@ impl TypeChecker<'_> {
                 .map(arcweft_lang_hir::model::HirMatchArm::pattern),
         );
         if arm_states.is_empty() {
-            self.restore_borrow_state(base_borrow_snapshot);
+            self.restore_borrow_state(base_borrow_checkpoint);
         } else {
             let arm_state_refs = arm_states.iter().collect::<Vec<_>>();
-            self.merge_borrow_state_from_paths(&base_borrow_snapshot, &arm_state_refs);
+            self.merge_borrow_state_from_deltas(base_borrow_checkpoint, &arm_state_refs);
         }
     }
 
@@ -171,7 +172,7 @@ impl TypeChecker<'_> {
 
     fn check_borrow_block(&mut self, block: &arcweft_lang_hir::model::HirBorrow) {
         self.check_expr(block.source());
-        let borrow_snapshot = self.snapshot_borrow_state();
+        let borrow_checkpoint = self.checkpoint_borrow_state();
         self.with_local_mutation_scope(|this| {
             if let Some((name, ty)) = typed_pattern_binding(block.binding()) {
                 let ty = type_ref_kind(ty);
@@ -182,7 +183,7 @@ impl TypeChecker<'_> {
                 this.check_flow_item(item);
             }
         });
-        self.restore_borrow_state(borrow_snapshot);
+        self.restore_borrow_state(borrow_checkpoint);
     }
 
     fn check_select_head(&mut self, head: &SelectBranchHead) {

@@ -1,10 +1,27 @@
 //! Borrow-state facts used by the semantic type checker.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
-#[derive(Clone, Debug)]
-pub(crate) struct BorrowStateSnapshot {
-    pub(crate) borrow_local_lifetimes: HashMap<String, BorrowLocalState>,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct BorrowStateCheckpoint {
+    pub(crate) journal_start: usize,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct BorrowStateDelta {
+    pub(crate) changes: Vec<BorrowStateDeltaEntry>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct BorrowStateDeltaEntry {
+    pub(crate) name: String,
+    pub(crate) state: Option<BorrowLocalState>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct BorrowStateJournalEntry {
+    pub(crate) name: String,
+    pub(crate) previous: Option<BorrowLocalState>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

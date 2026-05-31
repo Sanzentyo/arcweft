@@ -216,6 +216,13 @@ Deterministic counters stayed on the borrowed fast path:
 `pure_arg_vec_allocations_median = 0`, `pure_arg_bytes_borrowed_median = 2048`,
 and `pure_result_bytes_copied_median = 0`.
 
+Borrow-state branch tracking now records checkpoint/journal deltas rather than
+full branch maps. The borrow-check JSON includes `state_delta_entries`,
+`state_full_clones`, and `state_merge_keys` so branch-heavy fixtures can show
+whether restore/merge work is proportional to touched borrow locals instead of
+the whole borrow map. The targeted branch-drop regression keeps
+`state_full_clones = 0` while still reporting a conditional-drop diagnostic.
+
 The checked-in dense i32 and u64 sum fixtures measure the non-JIT fixed-width
 integer path. The i32 fixture lowered `[... i32]` to `DenseSeq::I32`, validated
 as `Vec(I32)`, and ran `sum()` with median elapsed time 7400 ns in the latest
