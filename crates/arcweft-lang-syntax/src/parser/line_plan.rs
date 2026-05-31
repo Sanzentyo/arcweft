@@ -7,9 +7,8 @@ use crate::ast::line_plan::{
     BlockStyle, CancelRuleSyntax, DeferOutcome, LinePlan, LinePlanItem, TriggerPattern,
 };
 use crate::cst::{
-    find_matching_punctuation, find_top_level_punctuation, parse_flat_fence,
-    split_top_level_punctuation, split_top_level_punctuation_once,
-    split_top_level_punctuation_sequence_once,
+    find_top_level_matching_punctuation, parse_flat_fence, split_top_level_punctuation,
+    split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
 };
 use crate::expr::{Expr, parse_expr};
 use crate::pattern::parse_pattern;
@@ -29,8 +28,7 @@ pub(super) fn parse_trigger_pattern(source: &str) -> TriggerPattern {
 }
 
 fn parse_trigger_call(source: &str) -> Option<TriggerPattern> {
-    let open = find_top_level_punctuation(source, '(')?;
-    let close = find_matching_punctuation(source, open, '(', ')')?;
+    let (open, close) = find_top_level_matching_punctuation(source, '(', ')')?;
     if !source[close + ')'.len_utf8()..].trim().is_empty() {
         return None;
     }
@@ -385,8 +383,7 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
         };
     }
     if line.starts_with("at(")
-        && let Some(open) = find_top_level_punctuation(line, '(')
-        && let Some(close) = find_matching_punctuation(line, open, '(', ')')
+        && let Some((open, close)) = find_top_level_matching_punctuation(line, '(', ')')
     {
         let anchor = &line[open + '('.len_utf8()..close];
         let body = &line[close + ')'.len_utf8()..];

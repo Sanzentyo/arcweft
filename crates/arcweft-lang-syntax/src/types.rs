@@ -3,9 +3,10 @@ use thiserror::Error;
 use crate::ast::common::{DocBlock, TextRange};
 use crate::ast::pattern::Pattern;
 use crate::cst::{
-    find_matching_angle_group, find_matching_punctuation, find_top_level_punctuation,
-    split_leading_ident, split_leading_lifetime, split_top_level_keyword_once,
-    split_top_level_punctuation, split_top_level_punctuation_once, take_doc_comment_prefix,
+    find_matching_angle_group, find_matching_punctuation, find_top_level_matching_punctuation,
+    find_top_level_punctuation, split_leading_ident, split_leading_lifetime,
+    split_top_level_keyword_once, split_top_level_punctuation, split_top_level_punctuation_once,
+    take_doc_comment_prefix,
 };
 use crate::expr::{Expr, parse_expr};
 use crate::pattern::parse_pattern;
@@ -321,10 +322,7 @@ fn parenthesized_type(source: &str) -> Option<&str> {
 }
 
 fn reject_variant_row_type(source: &str) -> Result<(), TypeParseError> {
-    let Some(open) = find_top_level_punctuation(source, '(') else {
-        return Ok(());
-    };
-    let Some(close) = find_matching_punctuation(source, open, '(', ')') else {
+    let Some((open, close)) = find_top_level_matching_punctuation(source, '(', ')') else {
         return Ok(());
     };
     if close != source.len().saturating_sub(1) {

@@ -20,7 +20,9 @@ use crate::cst::{
     CstPunctuationScan, collect_wiki_link_ranges, split_top_level_keyword_once,
     split_top_level_punctuation, split_top_level_punctuation_once,
 };
-use crate::cst::{find_matching_punctuation, find_top_level_punctuation};
+use crate::cst::{
+    find_matching_punctuation, find_top_level_matching_punctuation, find_top_level_punctuation,
+};
 use crate::expr::{ComputationBlockKind, Expr, parse_expr};
 use crate::pattern::parse_pattern;
 use crate::types::parse_type_ref;
@@ -103,8 +105,7 @@ pub(super) fn parse_attribute(trimmed: &str, range: TextRange) -> Option<Attribu
     if !rest.contains('(') {
         return Some(Attribute::new(rest.to_owned(), None, range));
     }
-    let open = find_top_level_punctuation(rest, '(')?;
-    let close = find_matching_punctuation(rest, open, '(', ')')?;
+    let (open, close) = find_top_level_matching_punctuation(rest, '(', ')')?;
     (rest[close + ')'.len_utf8()..].trim().is_empty()).then_some(())?;
     let name = rest[..open].trim().to_owned();
     let args = rest[open + 1..close].trim();
@@ -349,8 +350,7 @@ fn find_top_level_colon(input: &str) -> Option<usize> {
 
 pub(super) fn split_call_head(head: &str) -> (String, Option<String>) {
     let head = head.trim();
-    if let Some(open) = find_top_level_punctuation(head, '(')
-        && let Some(close) = find_matching_punctuation(head, open, '(', ')')
+    if let Some((open, close)) = find_top_level_matching_punctuation(head, '(', ')')
         && head[close + ')'.len_utf8()..].trim().is_empty()
     {
         return (

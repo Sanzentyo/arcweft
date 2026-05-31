@@ -2,8 +2,9 @@ use crate::cst::{
     CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineKind, CstPunctuationScan, CstStmtKind,
     CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxKind,
     classify_stmt, cst_lines, find_last_depth_zero_open_punctuation,
-    find_last_top_level_punctuation, find_matching_punctuation, source_line_count,
-    source_line_iter, split_first_string_literal, split_last_top_level_punctuation_sequence_once,
+    find_last_top_level_punctuation, find_matching_punctuation,
+    find_top_level_matching_punctuation, source_line_count, source_line_iter,
+    split_first_string_literal, split_last_top_level_punctuation_sequence_once,
     split_leading_entity_ref_parts, split_leading_lifetime, split_leading_relative_id,
     split_top_level_keyword_once, split_top_level_punctuation_once,
     split_top_level_punctuation_sequence_once, take_doc_comment_prefix,
@@ -260,6 +261,17 @@ fn cst_punctuation_scan_reuses_fragment_tokens() {
     assert_eq!(&source[open..=open], "{");
     assert_eq!(&source[close..=close], "}");
     assert_eq!(scan.deltas().brace, 0);
+}
+
+#[test]
+fn cst_top_level_matching_punctuation_uses_one_fragment_scan() {
+    let source = r#"outer(call("[not]"), nested(value))"#;
+    let (open, close) =
+        find_top_level_matching_punctuation(source, '(', ')').expect("top-level call group");
+
+    assert_eq!(&source[open..=open], "(");
+    assert_eq!(&source[close..=close], ")");
+    assert_eq!(&source[open + 1..close], r#"call("[not]"), nested(value)"#);
 }
 
 #[test]

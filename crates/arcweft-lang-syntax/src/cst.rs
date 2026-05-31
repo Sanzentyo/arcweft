@@ -1560,6 +1560,16 @@ impl<'a> CstPunctuationScan<'a> {
         None
     }
 
+    pub(crate) fn find_top_level_matching_punctuation(
+        &self,
+        open: char,
+        close: char,
+    ) -> Option<(usize, usize)> {
+        let open_offset = self.find_top_level_punctuation(open)?;
+        let close_offset = self.find_matching_punctuation(open_offset, open, close)?;
+        Some((open_offset, close_offset))
+    }
+
     pub(crate) fn deltas(&self) -> CstPunctuationDeltas {
         self.punctuation_tokens()
             .fold(CstPunctuationDeltas::default(), |mut deltas, token| {
@@ -1615,6 +1625,15 @@ pub(crate) fn find_matching_punctuation(
     close: char,
 ) -> Option<usize> {
     CstPunctuationScan::new(source).find_matching_punctuation(open_offset, open, close)
+}
+
+/// Finds the first top-level opening punctuation and its matching close with one token scan.
+pub(crate) fn find_top_level_matching_punctuation(
+    source: &str,
+    open: char,
+    close: char,
+) -> Option<(usize, usize)> {
+    CstPunctuationScan::new(source).find_top_level_matching_punctuation(open, close)
 }
 
 /// Iterates source lines without treating line splitting as parser grammar.

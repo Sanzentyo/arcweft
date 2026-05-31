@@ -5,10 +5,7 @@ use crate::ast::source::{
     SourceBackpressurePolicy, SourceEventPattern, SourceHandler, SourceHeader, SourceItem,
     SourceItemParts, SourceOverflowPolicy, SourcePrivacyPolicy, SourceReplayPolicy,
 };
-use crate::cst::{
-    find_matching_punctuation, find_top_level_punctuation,
-    split_top_level_punctuation_sequence_once,
-};
+use crate::cst::{find_top_level_matching_punctuation, split_top_level_punctuation_sequence_once};
 use crate::expr::{CallArg, Expr};
 use crate::pattern::parse_pattern;
 use crate::types::parse_type_ref;
@@ -187,10 +184,7 @@ fn parse_source_backpressure(value: &str) -> SourceBackpressurePolicy {
 }
 
 fn parse_source_call_options(value: &str) -> Vec<(String, Expr)> {
-    let Some(open) = find_top_level_punctuation(value, '(') else {
-        return Vec::new();
-    };
-    let Some(close) = find_matching_punctuation(value, open, '(', ')') else {
+    let Some((open, close)) = find_top_level_matching_punctuation(value, '(', ')') else {
         return Vec::new();
     };
     split_comma_args(&value[open + 1..close])

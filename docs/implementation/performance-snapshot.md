@@ -101,6 +101,37 @@ same-line `with { ... }` attachments and trailing bare scopes reuse that scan
 for the brace-depth check and the split itself; multiline continuations add the
 stored per-line punctuation summaries before the final fragment split.
 
+Dense scalar sequence benches:
+
+```bash
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/010_dense_i32_sum.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/011_dense_u64_sum.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/012_dense_integer_widths_sum.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/013_dense_scalar_len.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/014_dense_textual_scalar_len.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/015_dense_wide_numeric_len.arcw --json --iterations 8 --warmup 2 --samples 5 --steps 64 --max-ops 64
+```
+
+| fixture | status | median elapsed ns | executed ops | per op ns | parse ns | typecheck ns | runtime plan ns | typecheck exprs | type judgments | arg vec allocs | flatten materializations |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 010_dense_i32_sum.arcw | measured | 8100 | 4 | 2025 | 3010400 | 192800 | 288900 | 6 | 9 | 0 | 0 |
+| 011_dense_u64_sum.arcw | measured | 8200 | 4 | 2050 | 2887000 | 185500 | 244700 | 6 | 9 | 0 | 0 |
+| 012_dense_integer_widths_sum.arcw | measured | 19600 | 10 | 1960 | 4346200 | 204600 | 303900 | 30 | 39 | 0 | 0 |
+| 013_dense_scalar_len.arcw | measured | 16700 | 8 | 2087 | 1600800 | 225400 | 367400 | 54 | 61 | 0 | 0 |
+| 014_dense_textual_scalar_len.arcw | measured | 17300 | 7 | 2471 | 1632400 | 255600 | 450400 | 21 | 27 | 0 | 0 |
+| 015_dense_wide_numeric_len.arcw | measured | 14200 | 7 | 2028 | 1469700 | 183500 | 300900 | 18 | 24 | 0 | 0 |
+
+The dense eligibility rule is scalar-first: deterministic homogeneous scalar
+runtime values use `RuntimeSeq::Dense(DenseSeq::...)`, with generic
+`DenseSeqStorage<T>` behind each typed variant and borrowed views for hot
+numeric/byte/text paths. `Tuple`, `Record`, and `Variant` remain heterogeneous
+runtime values and should not be forced into the scalar dense layer; repeated
+shape records or tuples need a separate columnar/struct-array optimization when
+there is a measured hot path. The checked-in benches above confirm that `i32`,
+`u64`, all supported integer widths, unit/bool/char/duration/bytes, textual
+values, float literals, entity refs, and wide integer length paths run without
+argument-vector allocation or dense flatten materialization.
+
 ## 2026-05-30 JST
 
 Host summary reported by Arcweft:

@@ -7,8 +7,8 @@ use crate::ast::flow::Stmt;
 use crate::ast::items::RawSyntax;
 use crate::ast::line_plan::BlockStyle;
 use crate::cst::{
-    find_matching_punctuation, find_top_level_punctuation, split_first_string_literal,
-    split_top_level_keyword_once, split_top_level_punctuation_sequence_once,
+    find_top_level_matching_punctuation, split_first_string_literal, split_top_level_keyword_once,
+    split_top_level_punctuation_sequence_once,
 };
 use crate::expr::parse_expr;
 use crate::pattern::parse_pattern;
@@ -366,9 +366,7 @@ fn parse_choice_option_block(
         } else if let Some(value_expr) = trimmed.strip_prefix("id =") {
             id_expr = Some(parse_expr_lossy(value_expr.trim()));
         } else if trimmed.starts_with("label(") {
-            if let Some(open) = find_top_level_punctuation(trimmed, '(')
-                && let Some(close) = find_matching_punctuation(trimmed, open, '(', ')')
-            {
+            if let Some((open, close)) = find_top_level_matching_punctuation(trimmed, '(', ')') {
                 let key_part = &trimmed[open + '('.len_utf8()..close];
                 if let Some((key, text_key)) = split_top_level_binding(key_part)
                     && key.trim() == "id"

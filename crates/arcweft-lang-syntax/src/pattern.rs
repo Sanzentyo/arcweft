@@ -2,9 +2,8 @@ use crate::ast::common::TextRange;
 use crate::ast::ids::{EntityRef, EntityRefSyntax};
 use crate::ast::pattern::{Pattern, RecordPatternField, VariantPatternPayload};
 use crate::cst::{
-    find_matching_punctuation, find_top_level_punctuation,
-    split_last_top_level_punctuation_sequence_once, split_leading_ident,
-    split_top_level_punctuation, split_top_level_punctuation_once,
+    find_top_level_matching_punctuation, split_last_top_level_punctuation_sequence_once,
+    split_leading_ident, split_top_level_punctuation, split_top_level_punctuation_once,
 };
 use crate::expr::{Expr, parse_expr};
 use crate::types::parse_type_ref;
@@ -151,8 +150,7 @@ fn parse_variant_pattern(source: &str) -> Option<Pattern> {
 }
 
 fn split_variant_payload(source: &str) -> (&str, Option<VariantPatternPayload>) {
-    if let Some(open) = find_top_level_punctuation(source, '(')
-        && let Some(close) = find_matching_punctuation(source, open, '(', ')')
+    if let Some((open, close)) = find_top_level_matching_punctuation(source, '(', ')')
         && source[close + ')'.len_utf8()..].trim().is_empty()
     {
         let inner = &source[open + '('.len_utf8()..close];
@@ -237,8 +235,7 @@ fn split_pattern_field(field: &str) -> (&str, &str) {
 }
 
 fn split_brace_item(source: &str) -> Option<(&str, &str)> {
-    let open = find_top_level_punctuation(source, '{')?;
-    let close = find_matching_punctuation(source, open, '{', '}')?;
+    let (open, close) = find_top_level_matching_punctuation(source, '{', '}')?;
     (source[close + '}'.len_utf8()..].trim().is_empty())
         .then(|| (source[..open].trim(), source[open + 1..close].trim()))
 }
