@@ -6,8 +6,9 @@ use crate::{
         runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
         runtime_sequence_dense_float_literals, runtime_sequence_dense_i8,
         runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
-        runtime_sequence_dense_strings, runtime_sequence_dense_u8, runtime_sequence_dense_u16,
-        runtime_sequence_dense_u32, runtime_sequence_dense_u64,
+        runtime_sequence_dense_i128, runtime_sequence_dense_isize, runtime_sequence_dense_strings,
+        runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
+        runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_sequence_dense_usize,
         runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_value_label,
     },
 };
@@ -211,6 +212,67 @@ fn dense_sequences_expose_typed_views_and_materialize_values() {
 }
 
 #[test]
+fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
+    let i128_seq = runtime_sequence_dense_i128(vec![1, 2, 3]);
+    let isize_seq = runtime_sequence_dense_isize(vec![1, 2, 3]);
+    let u128_seq = runtime_sequence_dense_u128(vec![1, 2]);
+    let usize_seq = runtime_sequence_dense_usize(vec![1, 2]);
+
+    assert_eq!(runtime_value_label(&i128_seq), "seq/i128/3");
+    assert_eq!(runtime_value_label(&isize_seq), "seq/isize/3");
+    assert_eq!(runtime_value_label(&u128_seq), "seq/u128/2");
+    assert_eq!(runtime_value_label(&usize_seq), "seq/usize/2");
+
+    let RuntimeValue::Seq(i128_seq) = i128_seq else {
+        panic!("dense i128 helper returns a sequence");
+    };
+    assert_eq!(i128_seq.as_i128_slice(), Some([1, 2, 3].as_slice()));
+    assert_eq!(i128_seq.sum_as_i64(), Some(6));
+    assert_eq!(
+        i128_seq.into_values(),
+        vec![
+            RuntimeValue::I128(1),
+            RuntimeValue::I128(2),
+            RuntimeValue::I128(3)
+        ]
+    );
+
+    let RuntimeValue::Seq(isize_seq) = isize_seq else {
+        panic!("dense isize helper returns a sequence");
+    };
+    assert_eq!(isize_seq.as_isize_values(), Some([1, 2, 3].as_slice()));
+    assert_eq!(isize_seq.sum_as_i64(), Some(6));
+    assert_eq!(
+        isize_seq.into_values(),
+        vec![
+            RuntimeValue::ISize(1),
+            RuntimeValue::ISize(2),
+            RuntimeValue::ISize(3)
+        ]
+    );
+
+    let RuntimeValue::Seq(u128_seq) = u128_seq else {
+        panic!("dense u128 helper returns a sequence");
+    };
+    assert_eq!(u128_seq.as_u128_slice(), Some([1, 2].as_slice()));
+    assert_eq!(u128_seq.sum_as_i64(), Some(3));
+    assert_eq!(
+        u128_seq.into_values(),
+        vec![RuntimeValue::U128(1), RuntimeValue::U128(2)]
+    );
+
+    let RuntimeValue::Seq(usize_seq) = usize_seq else {
+        panic!("dense usize helper returns a sequence");
+    };
+    assert_eq!(usize_seq.as_usize_values(), Some([1, 2].as_slice()));
+    assert_eq!(usize_seq.sum_as_i64(), Some(3));
+    assert_eq!(
+        usize_seq.into_values(),
+        vec![RuntimeValue::USize(1), RuntimeValue::USize(2)]
+    );
+}
+
+#[test]
 fn dense_textual_sequences_expose_typed_views_and_materialize_values() {
     let strings_seq = runtime_sequence_dense_strings(vec!["a".to_owned(), "b".to_owned()]);
     let floats_seq =
@@ -306,6 +368,19 @@ fn literal_and_repeat_sequences_choose_dense_scalar_storage() {
         panic!("string literals lower to a sequence");
     };
     assert_eq!(string_seq.as_strings(), Some(["ok".to_owned()].as_slice()));
+
+    let RuntimeValue::Seq(i128_seq) =
+        runtime_sequence_from_literal_values(vec![RuntimeValue::I128(1), RuntimeValue::I128(2)])
+    else {
+        panic!("i128 literals lower to a sequence");
+    };
+    assert_eq!(i128_seq.as_i128_slice(), Some([1, 2].as_slice()));
+
+    let RuntimeValue::Seq(usize_seq) = runtime_sequence_repeat_value(&RuntimeValue::USize(4), 2)
+    else {
+        panic!("usize repeat lowers to a sequence");
+    };
+    assert_eq!(usize_seq.as_usize_values(), Some([4, 4].as_slice()));
 
     let RuntimeValue::Seq(float_seq) =
         runtime_sequence_repeat_value(&RuntimeValue::Float("1.5f64".to_owned()), 2)

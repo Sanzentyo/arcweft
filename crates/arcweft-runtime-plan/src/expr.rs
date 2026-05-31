@@ -11,9 +11,10 @@ use arcweft_core::effect::{
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeUnaryOp,
     RuntimeValue, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
-    runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_dense_u8,
-    runtime_sequence_dense_u16, runtime_sequence_dense_u32, runtime_sequence_dense_u64,
-    runtime_sequence_from_literal_values,
+    runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_dense_i128,
+    runtime_sequence_dense_isize, runtime_sequence_dense_u8, runtime_sequence_dense_u16,
+    runtime_sequence_dense_u32, runtime_sequence_dense_u64, runtime_sequence_dense_u128,
+    runtime_sequence_dense_usize, runtime_sequence_from_literal_values,
 };
 use arcweft_lang_hir::syntax::{
     ast::line_plan::LinePlanItem,
@@ -217,10 +218,18 @@ fn lower_runtime_numeric_bracket_seq(
         Some("i8") => collect_dense(seq.values(), i8::try_from, runtime_sequence_dense_i8),
         Some("i16") => collect_dense(seq.values(), i16::try_from, runtime_sequence_dense_i16),
         Some("i32") => collect_dense(seq.values(), i32::try_from, runtime_sequence_dense_i32),
+        Some("i128") => collect_dense(seq.values(), i128::try_from, runtime_sequence_dense_i128),
+        Some("isize") => collect_dense(
+            seq.values(),
+            Ok::<i64, std::convert::Infallible>,
+            runtime_sequence_dense_isize,
+        ),
         Some("u8") => collect_dense(seq.values(), u8::try_from, runtime_sequence_dense_u8),
         Some("u16") => collect_dense(seq.values(), u16::try_from, runtime_sequence_dense_u16),
         Some("u32") => collect_dense(seq.values(), u32::try_from, runtime_sequence_dense_u32),
         Some("u64") => collect_dense(seq.values(), u64::try_from, runtime_sequence_dense_u64),
+        Some("u128") => collect_dense(seq.values(), u128::try_from, runtime_sequence_dense_u128),
+        Some("usize") => collect_dense(seq.values(), u64::try_from, runtime_sequence_dense_usize),
         _ => runtime_sequence_dense_i64(seq.values().to_vec()),
     })
 }
@@ -536,6 +545,30 @@ fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
     match literal {
         Literal::String(value) => RuntimeValue::String(value.clone()),
         Literal::Char { value, .. } => RuntimeValue::Char(*value),
+        Literal::Int {
+            value,
+            suffix: Some(suffix),
+            ..
+        } if suffix == "i128" => RuntimeValue::I128(i128::from(*value)),
+        Literal::Int {
+            value,
+            suffix: Some(suffix),
+            ..
+        } if suffix == "isize" => RuntimeValue::ISize(*value),
+        Literal::Int {
+            value,
+            suffix: Some(suffix),
+            ..
+        } if suffix == "u128" => {
+            u128::try_from(*value).map_or(RuntimeValue::Int(*value), RuntimeValue::U128)
+        }
+        Literal::Int {
+            value,
+            suffix: Some(suffix),
+            ..
+        } if suffix == "usize" => {
+            u64::try_from(*value).map_or(RuntimeValue::Int(*value), RuntimeValue::USize)
+        }
         Literal::Int { value, suffix, .. } if suffix.as_deref().is_some_and(is_unsigned_suffix) => {
             u64::try_from(*value).map_or(RuntimeValue::Int(*value), RuntimeValue::UInt)
         }
@@ -878,10 +911,14 @@ mod tests {
         let i8_lowered = lower_suffixed_numeric_seq("i8");
         let i16_lowered = lower_suffixed_numeric_seq("i16");
         let i32_lowered = lower_suffixed_numeric_seq("i32");
+        let i128_lowered = lower_suffixed_numeric_seq("i128");
+        let isize_lowered = lower_suffixed_numeric_seq("isize");
         let u8_lowered = lower_suffixed_numeric_seq("u8");
         let u16_lowered = lower_suffixed_numeric_seq("u16");
         let u32_lowered = lower_suffixed_numeric_seq("u32");
         let u64_lowered = lower_suffixed_numeric_seq("u64");
+        let u128_lowered = lower_suffixed_numeric_seq("u128");
+        let usize_lowered = lower_suffixed_numeric_seq("usize");
 
         assert!(matches!(
             i8_lowered,
@@ -897,6 +934,16 @@ mod tests {
             i32_lowered,
             RuntimeExpr::Value(RuntimeValue::Seq(seq))
                 if seq.as_i32_slice() == Some([1, 2, 3].as_slice())
+        ));
+        assert!(matches!(
+            i128_lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_i128_slice() == Some([1, 2, 3].as_slice())
+        ));
+        assert!(matches!(
+            isize_lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_isize_values() == Some([1, 2, 3].as_slice())
         ));
         assert!(matches!(
             u8_lowered,
@@ -917,6 +964,16 @@ mod tests {
             u64_lowered,
             RuntimeExpr::Value(RuntimeValue::Seq(seq))
                 if seq.as_u64_slice() == Some([1, 2, 3].as_slice())
+        ));
+        assert!(matches!(
+            u128_lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_u128_slice() == Some([1, 2, 3].as_slice())
+        ));
+        assert!(matches!(
+            usize_lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_usize_values() == Some([1, 2, 3].as_slice())
         ));
     }
 

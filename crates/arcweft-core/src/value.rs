@@ -27,7 +27,11 @@ pub enum RuntimeValue {
     Unit,
     Bool(bool),
     Int(i64),
+    I128(i128),
     UInt(u64),
+    U128(u128),
+    ISize(i64),
+    USize(u64),
     Float(String),
     String(String),
     Char(char),
@@ -59,6 +63,14 @@ impl RuntimeSeq {
         Self::Dense(DenseSeq::i64(values))
     }
 
+    pub fn dense_i128(values: Vec<i128>) -> Self {
+        Self::Dense(DenseSeq::i128(values))
+    }
+
+    pub fn dense_isize(values: Vec<i64>) -> Self {
+        Self::Dense(DenseSeq::isize(values))
+    }
+
     pub fn dense_i8(values: Vec<i8>) -> Self {
         Self::Dense(DenseSeq::i8(values))
     }
@@ -85,6 +97,14 @@ impl RuntimeSeq {
 
     pub fn dense_u64(values: Vec<u64>) -> Self {
         Self::Dense(DenseSeq::u64(values))
+    }
+
+    pub fn dense_u128(values: Vec<u128>) -> Self {
+        Self::Dense(DenseSeq::u128(values))
+    }
+
+    pub fn dense_usize(values: Vec<u64>) -> Self {
+        Self::Dense(DenseSeq::usize(values))
     }
 
     pub fn dense_bool(values: Vec<bool>) -> Self {
@@ -140,6 +160,20 @@ impl RuntimeSeq {
         }
     }
 
+    pub fn as_i128_slice(&self) -> Option<&[i128]> {
+        match self {
+            Self::Dense(values) => values.as_i128_slice(),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub fn as_isize_values(&self) -> Option<&[i64]> {
+        match self {
+            Self::Dense(values) => values.as_isize_values(),
+            Self::Values(_) => None,
+        }
+    }
+
     pub fn as_i8_slice(&self) -> Option<&[i8]> {
         match self {
             Self::Dense(values) => values.as_i8_slice(),
@@ -185,6 +219,20 @@ impl RuntimeSeq {
     pub fn as_u64_slice(&self) -> Option<&[u64]> {
         match self {
             Self::Dense(values) => values.as_u64_slice(),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub fn as_u128_slice(&self) -> Option<&[u128]> {
+        match self {
+            Self::Dense(values) => values.as_u128_slice(),
+            Self::Values(_) => None,
+        }
+    }
+
+    pub fn as_usize_values(&self) -> Option<&[u64]> {
+        match self {
+            Self::Dense(values) => values.as_usize_values(),
             Self::Values(_) => None,
         }
     }
@@ -275,10 +323,14 @@ pub enum DenseSeq {
     I16(DenseSeqStorage<i16>),
     I32(DenseSeqStorage<i32>),
     I64(DenseSeqStorage<i64>),
+    I128(DenseSeqStorage<i128>),
+    ISize(DenseSeqStorage<i64>),
     U8(DenseSeqStorage<u8>),
     U16(DenseSeqStorage<u16>),
     U32(DenseSeqStorage<u32>),
     U64(DenseSeqStorage<u64>),
+    U128(DenseSeqStorage<u128>),
+    USize(DenseSeqStorage<u64>),
     Bool(DenseSeqStorage<bool>),
     Bytes(DenseSeqStorage<u8>),
     Chars(DenseSeqStorage<char>),
@@ -305,6 +357,14 @@ impl DenseSeq {
         Self::I64(DenseSeqStorage::new(values))
     }
 
+    pub fn i128(values: Vec<i128>) -> Self {
+        Self::I128(DenseSeqStorage::new(values))
+    }
+
+    pub fn isize(values: Vec<i64>) -> Self {
+        Self::ISize(DenseSeqStorage::new(values))
+    }
+
     pub fn u8(values: Vec<u8>) -> Self {
         Self::U8(DenseSeqStorage::new(values))
     }
@@ -319,6 +379,14 @@ impl DenseSeq {
 
     pub fn u64(values: Vec<u64>) -> Self {
         Self::U64(DenseSeqStorage::new(values))
+    }
+
+    pub fn u128(values: Vec<u128>) -> Self {
+        Self::U128(DenseSeqStorage::new(values))
+    }
+
+    pub fn usize(values: Vec<u64>) -> Self {
+        Self::USize(DenseSeqStorage::new(values))
     }
 
     pub fn bool(values: Vec<bool>) -> Self {
@@ -354,11 +422,13 @@ impl DenseSeq {
             Self::I8(values) => values.len(),
             Self::I16(values) => values.len(),
             Self::I32(values) => values.len(),
-            Self::I64(values) => values.len(),
+            Self::I64(values) | Self::ISize(values) => values.len(),
+            Self::I128(values) => values.len(),
             Self::U8(values) | Self::Bytes(values) => values.len(),
             Self::U16(values) => values.len(),
             Self::U32(values) => values.len(),
-            Self::U64(values) => values.len(),
+            Self::U64(values) | Self::USize(values) => values.len(),
+            Self::U128(values) => values.len(),
             Self::Bool(values) => values.len(),
             Self::Chars(values) => values.len(),
             Self::Durations(values) => values.len(),
@@ -375,6 +445,20 @@ impl DenseSeq {
     pub fn as_i64_slice(&self) -> Option<&[i64]> {
         match self {
             Self::I64(values) => Some(values.as_slice()),
+            _ => None,
+        }
+    }
+
+    pub fn as_i128_slice(&self) -> Option<&[i128]> {
+        match self {
+            Self::I128(values) => Some(values.as_slice()),
+            _ => None,
+        }
+    }
+
+    pub fn as_isize_values(&self) -> Option<&[i64]> {
+        match self {
+            Self::ISize(values) => Some(values.as_slice()),
             _ => None,
         }
     }
@@ -424,6 +508,20 @@ impl DenseSeq {
     pub fn as_u64_slice(&self) -> Option<&[u64]> {
         match self {
             Self::U64(values) => Some(values.as_slice()),
+            _ => None,
+        }
+    }
+
+    pub fn as_u128_slice(&self) -> Option<&[u128]> {
+        match self {
+            Self::U128(values) => Some(values.as_slice()),
+            _ => None,
+        }
+    }
+
+    pub fn as_usize_values(&self) -> Option<&[u64]> {
+        match self {
+            Self::USize(values) => Some(values.as_slice()),
             _ => None,
         }
     }
@@ -489,6 +587,16 @@ impl DenseSeq {
                 materialize_i64_sequence(values.into_vec().into_iter().map(i64::from).collect())
             }
             Self::I64(values) => materialize_i64_sequence(values.into_vec()),
+            Self::I128(values) => values
+                .into_vec()
+                .into_iter()
+                .map(RuntimeValue::I128)
+                .collect(),
+            Self::ISize(values) => values
+                .into_vec()
+                .into_iter()
+                .map(RuntimeValue::ISize)
+                .collect(),
             Self::U8(values) => values
                 .into_vec()
                 .into_iter()
@@ -508,6 +616,16 @@ impl DenseSeq {
                 .into_vec()
                 .into_iter()
                 .map(RuntimeValue::UInt)
+                .collect(),
+            Self::U128(values) => values
+                .into_vec()
+                .into_iter()
+                .map(RuntimeValue::U128)
+                .collect(),
+            Self::USize(values) => values
+                .into_vec()
+                .into_iter()
+                .map(RuntimeValue::USize)
                 .collect(),
             Self::Bool(values) => values
                 .into_vec()
@@ -553,10 +671,14 @@ impl DenseSeq {
             Self::I16(values) => RuntimeValue::Int(i64::from(values.as_slice()[index])),
             Self::I32(values) => RuntimeValue::Int(i64::from(values.as_slice()[index])),
             Self::I64(values) => RuntimeValue::Int(values.as_slice()[index]),
+            Self::I128(values) => RuntimeValue::I128(values.as_slice()[index]),
+            Self::ISize(values) => RuntimeValue::ISize(values.as_slice()[index]),
             Self::U8(values) => RuntimeValue::UInt(u64::from(values.as_slice()[index])),
             Self::U16(values) => RuntimeValue::UInt(u64::from(values.as_slice()[index])),
             Self::U32(values) => RuntimeValue::UInt(u64::from(values.as_slice()[index])),
             Self::U64(values) => RuntimeValue::UInt(values.as_slice()[index]),
+            Self::U128(values) => RuntimeValue::U128(values.as_slice()[index]),
+            Self::USize(values) => RuntimeValue::USize(values.as_slice()[index]),
             Self::Bool(values) => RuntimeValue::Bool(values.as_slice()[index]),
             Self::Bytes(values) => RuntimeValue::Int(i64::from(values.as_slice()[index])),
             Self::Chars(values) => RuntimeValue::Char(values.as_slice()[index]),
@@ -574,10 +696,14 @@ impl DenseSeq {
             Self::I16(values) => Self::I16(values.tail_from(index)),
             Self::I32(values) => Self::I32(values.tail_from(index)),
             Self::I64(values) => Self::I64(values.tail_from(index)),
+            Self::I128(values) => Self::I128(values.tail_from(index)),
+            Self::ISize(values) => Self::ISize(values.tail_from(index)),
             Self::U8(values) => Self::U8(values.tail_from(index)),
             Self::U16(values) => Self::U16(values.tail_from(index)),
             Self::U32(values) => Self::U32(values.tail_from(index)),
             Self::U64(values) => Self::U64(values.tail_from(index)),
+            Self::U128(values) => Self::U128(values.tail_from(index)),
+            Self::USize(values) => Self::USize(values.tail_from(index)),
             Self::Bool(values) => Self::Bool(values.tail_from(index)),
             Self::Bytes(values) => Self::Bytes(values.tail_from(index)),
             Self::Chars(values) => Self::Chars(values.tail_from(index)),
@@ -594,10 +720,14 @@ impl DenseSeq {
             Self::I8(_)
             | Self::I16(_)
             | Self::I32(_)
+            | Self::I128(_)
+            | Self::ISize(_)
             | Self::U8(_)
             | Self::U16(_)
             | Self::U32(_)
             | Self::U64(_)
+            | Self::U128(_)
+            | Self::USize(_)
             | Self::Bool(_)
             | Self::Bytes(_)
             | Self::Chars(_)
@@ -613,11 +743,19 @@ impl DenseSeq {
             Self::I8(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
             Self::I16(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
             Self::I32(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
-            Self::I64(values) => Some(values.as_slice().iter().sum()),
+            Self::I64(values) | Self::ISize(values) => Some(values.as_slice().iter().sum()),
+            Self::I128(values) => values.as_slice().iter().try_fold(0_i64, |acc, value| {
+                i64::try_from(*value).ok().map(|value| acc + value)
+            }),
             Self::U8(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
             Self::U16(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
             Self::U32(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
-            Self::U64(values) => values.as_slice().iter().try_fold(0_i64, |acc, value| {
+            Self::U64(values) | Self::USize(values) => {
+                values.as_slice().iter().try_fold(0_i64, |acc, value| {
+                    i64::try_from(*value).ok().map(|value| acc + value)
+                })
+            }
+            Self::U128(values) => values.as_slice().iter().try_fold(0_i64, |acc, value| {
                 i64::try_from(*value).ok().map(|value| acc + value)
             }),
             Self::Bool(_)
@@ -1248,23 +1386,19 @@ pub(crate) fn evaluate_binary(
         },
         RuntimeBinaryOp::Lt | RuntimeBinaryOp::Le | RuntimeBinaryOp::Gt | RuntimeBinaryOp::Ge => {
             match (lhs, rhs) {
-                (RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)) => {
-                    Ok(RuntimeValue::Bool(match op {
-                        RuntimeBinaryOp::Lt => lhs < rhs,
-                        RuntimeBinaryOp::Le => lhs <= rhs,
-                        RuntimeBinaryOp::Gt => lhs > rhs,
-                        RuntimeBinaryOp::Ge => lhs >= rhs,
-                        _ => unreachable!(),
-                    }))
+                (RuntimeValue::Int(lhs), RuntimeValue::Int(rhs))
+                | (RuntimeValue::ISize(lhs), RuntimeValue::ISize(rhs)) => {
+                    Ok(RuntimeValue::Bool(compare_ordered(&lhs, op, &rhs)))
                 }
-                (RuntimeValue::UInt(lhs), RuntimeValue::UInt(rhs)) => {
-                    Ok(RuntimeValue::Bool(match op {
-                        RuntimeBinaryOp::Lt => lhs < rhs,
-                        RuntimeBinaryOp::Le => lhs <= rhs,
-                        RuntimeBinaryOp::Gt => lhs > rhs,
-                        RuntimeBinaryOp::Ge => lhs >= rhs,
-                        _ => unreachable!(),
-                    }))
+                (RuntimeValue::I128(lhs), RuntimeValue::I128(rhs)) => {
+                    Ok(RuntimeValue::Bool(compare_ordered(&lhs, op, &rhs)))
+                }
+                (RuntimeValue::UInt(lhs), RuntimeValue::UInt(rhs))
+                | (RuntimeValue::USize(lhs), RuntimeValue::USize(rhs)) => {
+                    Ok(RuntimeValue::Bool(compare_ordered(&lhs, op, &rhs)))
+                }
+                (RuntimeValue::U128(lhs), RuntimeValue::U128(rhs)) => {
+                    Ok(RuntimeValue::Bool(compare_ordered(&lhs, op, &rhs)))
                 }
                 (lhs, rhs) => unsupported_binary(op, &lhs, &rhs),
             }
@@ -1273,31 +1407,74 @@ pub(crate) fn evaluate_binary(
         | RuntimeBinaryOp::Sub
         | RuntimeBinaryOp::Mul
         | RuntimeBinaryOp::Div => match (lhs, rhs) {
-            (RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)) => Ok(RuntimeValue::Int(match op {
-                RuntimeBinaryOp::Add => lhs + rhs,
-                RuntimeBinaryOp::Sub => lhs - rhs,
-                RuntimeBinaryOp::Mul => lhs * rhs,
-                RuntimeBinaryOp::Div => lhs / rhs,
-                _ => unreachable!(),
-            })),
+            (RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)) => {
+                Ok(RuntimeValue::Int(evaluate_numeric_op(lhs, op, rhs)))
+            }
+            (RuntimeValue::I128(lhs), RuntimeValue::I128(rhs)) => {
+                Ok(RuntimeValue::I128(evaluate_numeric_op(lhs, op, rhs)))
+            }
+            (RuntimeValue::ISize(lhs), RuntimeValue::ISize(rhs)) => {
+                Ok(RuntimeValue::ISize(evaluate_numeric_op(lhs, op, rhs)))
+            }
             (RuntimeValue::UInt(lhs), RuntimeValue::UInt(rhs)) => {
-                Ok(RuntimeValue::UInt(match op {
-                    RuntimeBinaryOp::Add => lhs + rhs,
-                    RuntimeBinaryOp::Sub => lhs - rhs,
-                    RuntimeBinaryOp::Mul => lhs * rhs,
-                    RuntimeBinaryOp::Div => lhs / rhs,
-                    _ => unreachable!(),
-                }))
+                Ok(RuntimeValue::UInt(evaluate_numeric_op(lhs, op, rhs)))
+            }
+            (RuntimeValue::U128(lhs), RuntimeValue::U128(rhs)) => {
+                Ok(RuntimeValue::U128(evaluate_numeric_op(lhs, op, rhs)))
+            }
+            (RuntimeValue::USize(lhs), RuntimeValue::USize(rhs)) => {
+                Ok(RuntimeValue::USize(evaluate_numeric_op(lhs, op, rhs)))
             }
             (lhs, rhs) => unsupported_binary(op, &lhs, &rhs),
         },
     }
 }
 
+fn compare_ordered<T: Ord>(lhs: &T, op: RuntimeBinaryOp, rhs: &T) -> bool {
+    match op {
+        RuntimeBinaryOp::Lt => lhs < rhs,
+        RuntimeBinaryOp::Le => lhs <= rhs,
+        RuntimeBinaryOp::Gt => lhs > rhs,
+        RuntimeBinaryOp::Ge => lhs >= rhs,
+        _ => unreachable!(),
+    }
+}
+
+fn evaluate_numeric_op<T>(lhs: T, op: RuntimeBinaryOp, rhs: T) -> T
+where
+    T: Copy
+        + std::ops::Add<Output = T>
+        + std::ops::Sub<Output = T>
+        + std::ops::Mul<Output = T>
+        + std::ops::Div<Output = T>,
+{
+    match op {
+        RuntimeBinaryOp::Add => lhs + rhs,
+        RuntimeBinaryOp::Sub => lhs - rhs,
+        RuntimeBinaryOp::Mul => lhs * rhs,
+        RuntimeBinaryOp::Div => lhs / rhs,
+        _ => unreachable!(),
+    }
+}
+
 pub(crate) fn sum_i64_sequence_ref(items: &[RuntimeValue]) -> Result<i64, RuntimeEvalError> {
     items.iter().try_fold(0_i64, |acc, item| match item {
-        RuntimeValue::Int(value) => Ok(acc + value),
-        RuntimeValue::UInt(value) => i64::try_from(*value).map(|value| acc + value).map_err(|_| {
+        RuntimeValue::Int(value) | RuntimeValue::ISize(value) => Ok(acc + value),
+        RuntimeValue::I128(value) => i64::try_from(*value).map(|value| acc + value).map_err(|_| {
+            RuntimeEvalError::UnsupportedBinary {
+                op: "+",
+                lhs: "int".to_owned(),
+                rhs: runtime_value_label(item),
+            }
+        }),
+        RuntimeValue::UInt(value) | RuntimeValue::USize(value) => i64::try_from(*value)
+            .map(|value| acc + value)
+            .map_err(|_| RuntimeEvalError::UnsupportedBinary {
+                op: "+",
+                lhs: "int".to_owned(),
+                rhs: runtime_value_label(item),
+            }),
+        RuntimeValue::U128(value) => i64::try_from(*value).map(|value| acc + value).map_err(|_| {
             RuntimeEvalError::UnsupportedBinary {
                 op: "+",
                 lhs: "int".to_owned(),
@@ -1334,11 +1511,35 @@ pub fn runtime_sequence_from_literal_values(values: Vec<RuntimeValue>) -> Runtim
             RuntimeValue::Int,
             runtime_sequence_dense_i64,
         ),
+        Some(RuntimeValue::I128(_)) => collect_dense_or_values(
+            values,
+            take_i128_value,
+            RuntimeValue::I128,
+            runtime_sequence_dense_i128,
+        ),
+        Some(RuntimeValue::ISize(_)) => collect_dense_or_values(
+            values,
+            take_isize_value,
+            RuntimeValue::ISize,
+            runtime_sequence_dense_isize,
+        ),
         Some(RuntimeValue::UInt(_)) => collect_dense_or_values(
             values,
             take_uint_value,
             RuntimeValue::UInt,
             runtime_sequence_dense_u64,
+        ),
+        Some(RuntimeValue::U128(_)) => collect_dense_or_values(
+            values,
+            take_u128_value,
+            RuntimeValue::U128,
+            runtime_sequence_dense_u128,
+        ),
+        Some(RuntimeValue::USize(_)) => collect_dense_or_values(
+            values,
+            take_usize_value,
+            RuntimeValue::USize,
+            runtime_sequence_dense_usize,
         ),
         Some(RuntimeValue::Char(_)) => collect_dense_or_values(
             values,
@@ -1410,9 +1611,37 @@ fn take_int_value(value: RuntimeValue) -> Result<i64, RuntimeValue> {
     }
 }
 
+fn take_i128_value(value: RuntimeValue) -> Result<i128, RuntimeValue> {
+    match value {
+        RuntimeValue::I128(value) => Ok(value),
+        value => Err(value),
+    }
+}
+
+fn take_isize_value(value: RuntimeValue) -> Result<i64, RuntimeValue> {
+    match value {
+        RuntimeValue::ISize(value) => Ok(value),
+        value => Err(value),
+    }
+}
+
 fn take_uint_value(value: RuntimeValue) -> Result<u64, RuntimeValue> {
     match value {
         RuntimeValue::UInt(value) => Ok(value),
+        value => Err(value),
+    }
+}
+
+fn take_u128_value(value: RuntimeValue) -> Result<u128, RuntimeValue> {
+    match value {
+        RuntimeValue::U128(value) => Ok(value),
+        value => Err(value),
+    }
+}
+
+fn take_usize_value(value: RuntimeValue) -> Result<u64, RuntimeValue> {
+    match value {
+        RuntimeValue::USize(value) => Ok(value),
         value => Err(value),
     }
 }
@@ -1456,7 +1685,11 @@ pub fn runtime_sequence_repeat_value(value: &RuntimeValue, len: usize) -> Runtim
     match value {
         RuntimeValue::Bool(value) => runtime_sequence_dense_bool(vec![*value; len]),
         RuntimeValue::Int(value) => runtime_sequence_dense_i64(vec![*value; len]),
+        RuntimeValue::I128(value) => runtime_sequence_dense_i128(vec![*value; len]),
+        RuntimeValue::ISize(value) => runtime_sequence_dense_isize(vec![*value; len]),
         RuntimeValue::UInt(value) => runtime_sequence_dense_u64(vec![*value; len]),
+        RuntimeValue::U128(value) => runtime_sequence_dense_u128(vec![*value; len]),
+        RuntimeValue::USize(value) => runtime_sequence_dense_usize(vec![*value; len]),
         RuntimeValue::Char(value) => runtime_sequence_dense_chars(vec![*value; len]),
         RuntimeValue::Duration(value) => runtime_sequence_dense_durations(vec![*value; len]),
         RuntimeValue::String(value) => runtime_sequence_dense_strings(vec![value.clone(); len]),
@@ -1472,6 +1705,14 @@ pub fn runtime_sequence_repeat_value(value: &RuntimeValue, len: usize) -> Runtim
 
 pub fn runtime_sequence_dense_i64(values: Vec<i64>) -> RuntimeValue {
     RuntimeValue::Seq(RuntimeSeq::dense_i64(values))
+}
+
+pub fn runtime_sequence_dense_i128(values: Vec<i128>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_i128(values))
+}
+
+pub fn runtime_sequence_dense_isize(values: Vec<i64>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_isize(values))
 }
 
 pub fn runtime_sequence_dense_i8(values: Vec<i8>) -> RuntimeValue {
@@ -1500,6 +1741,14 @@ pub fn runtime_sequence_dense_u32(values: Vec<u32>) -> RuntimeValue {
 
 pub fn runtime_sequence_dense_u64(values: Vec<u64>) -> RuntimeValue {
     RuntimeValue::Seq(RuntimeSeq::dense_u64(values))
+}
+
+pub fn runtime_sequence_dense_u128(values: Vec<u128>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_u128(values))
+}
+
+pub fn runtime_sequence_dense_usize(values: Vec<u64>) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_usize(values))
 }
 
 pub fn runtime_sequence_dense_bool(values: Vec<bool>) -> RuntimeValue {
@@ -1606,8 +1855,10 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
     match value {
         RuntimeValue::Unit => "()".to_owned(),
         RuntimeValue::Bool(value) => value.to_string(),
-        RuntimeValue::Int(value) => value.to_string(),
-        RuntimeValue::UInt(value) => value.to_string(),
+        RuntimeValue::Int(value) | RuntimeValue::ISize(value) => value.to_string(),
+        RuntimeValue::I128(value) => value.to_string(),
+        RuntimeValue::UInt(value) | RuntimeValue::USize(value) => value.to_string(),
+        RuntimeValue::U128(value) => value.to_string(),
         RuntimeValue::Float(value)
         | RuntimeValue::String(value)
         | RuntimeValue::EntityRef(value) => value.clone(),
@@ -1620,10 +1871,14 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
             RuntimeSeq::Dense(DenseSeq::I16(values)) => format!("seq/i16/{}", values.len()),
             RuntimeSeq::Dense(DenseSeq::I32(values)) => format!("seq/i32/{}", values.len()),
             RuntimeSeq::Dense(DenseSeq::I64(values)) => format!("seq/i64/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::I128(values)) => format!("seq/i128/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::ISize(values)) => format!("seq/isize/{}", values.len()),
             RuntimeSeq::Dense(DenseSeq::U8(values)) => format!("seq/u8/{}", values.len()),
             RuntimeSeq::Dense(DenseSeq::U16(values)) => format!("seq/u16/{}", values.len()),
             RuntimeSeq::Dense(DenseSeq::U32(values)) => format!("seq/u32/{}", values.len()),
             RuntimeSeq::Dense(DenseSeq::U64(values)) => format!("seq/u64/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::U128(values)) => format!("seq/u128/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::USize(values)) => format!("seq/usize/{}", values.len()),
             RuntimeSeq::Dense(DenseSeq::Bool(values)) => format!("seq/bool/{}", values.len()),
             RuntimeSeq::Dense(DenseSeq::Bytes(values)) => format!("seq/bytes/{}", values.len()),
             RuntimeSeq::Dense(DenseSeq::Chars(values)) => format!("seq/chars/{}", values.len()),

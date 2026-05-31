@@ -217,8 +217,11 @@ Runtime numeric sequence lowering now preserves integer-only bracket literals as
 `RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I64(_)))` instead of eagerly
 materializing `Vec<RuntimeValue::Int>`. The same `DenseSeqStorage<T>` backing
 store also covers fixed-width integer sequences (`i8`, `i16`, `i32`, `i64`,
-`u8`, `u16`, `u32`, `u64`) plus bool, byte, char, logical-duration, string,
-raw-float-literal, and entity-reference sequences. Pure map/sum fast paths
+`i128`, `u8`, `u16`, `u32`, `u64`, `u128`) and target-sized spellings
+(`isize`, `usize`) plus bool, byte, char, logical-duration, string,
+raw-float-literal, and entity-reference sequences. Target-sized dense storage
+uses stable `i64`/`u64` runtime buffers rather than host pointer-width buffers
+so path-free bench output remains cross-platform comparable. Pure map/sum fast paths
 consume i64 dense storage directly, dense
 integer `sum()` consumes the storage without materializing `RuntimeValue`
 elements, and byte-oriented host payloads consume dense byte/u8 storage
@@ -277,11 +280,17 @@ evaluation. The local path-free bench run reported median elapsed time 17100 ns
 for seven executed ops, with `pure_arg_vec_allocations_median = 0`,
 `pure_result_bytes_copied_median = 0`, and no source path in the JSON output.
 
+The dense wide numeric length fixture covers the remaining integer primitive
+spellings. It lowers `i128`, `u128`, `isize`, and `usize` bracket literals to
+`DenseSeq::I128`, `DenseSeq::U128`, `DenseSeq::ISize`, and `DenseSeq::USize`,
+then reads `RuntimeSeq::len()` without materializing scalar runtime values.
+The local path-free `just bench-015` run reported median elapsed time 13600 ns
+for seven executed ops, with `pure_flatten_materializations_median = 0`,
+`pure_arg_vec_allocations_median = 0`, `pure_result_bytes_copied_median = 0`,
+and no source path in the JSON output.
+
 `DenseSeq::F32`/`DenseSeq::F64` are intentionally not present yet because
 `RuntimeValue::Float` still preserves raw source text for deterministic numeric
 semantics; raw float literals are dense only as homogeneous textual storage.
-Dense `i128`, `u128`, `isize`, and `usize` are also not present yet: the first
-two need runtime scalar materialization and ABI decisions, and the
-platform-sized types are a poor fit for deterministic cross-target bytecode.
 Record/tuple storage should be designed separately as columnar storage rather
 than as scalar `DenseSeqStorage<T>`.

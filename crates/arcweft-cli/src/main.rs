@@ -4979,8 +4979,10 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
     match value {
         RuntimeValue::Unit => "()".to_owned(),
         RuntimeValue::Bool(value) => value.to_string(),
-        RuntimeValue::Int(value) => value.to_string(),
-        RuntimeValue::UInt(value) => value.to_string(),
+        RuntimeValue::Int(value) | RuntimeValue::ISize(value) => value.to_string(),
+        RuntimeValue::I128(value) => value.to_string(),
+        RuntimeValue::UInt(value) | RuntimeValue::USize(value) => value.to_string(),
+        RuntimeValue::U128(value) => value.to_string(),
         RuntimeValue::Float(value) | RuntimeValue::String(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
@@ -4999,6 +5001,12 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I64(values))) => {
             format!("seq/i64/{}", values.len())
         }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I128(values))) => {
+            format!("seq/i128/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::ISize(values))) => {
+            format!("seq/isize/{}", values.len())
+        }
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::U8(values))) => {
             format!("seq/u8/{}", values.len())
         }
@@ -5010,6 +5018,12 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         }
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::U64(values))) => {
             format!("seq/u64/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::U128(values))) => {
+            format!("seq/u128/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::USize(values))) => {
+            format!("seq/usize/{}", values.len())
         }
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Bool(values))) => {
             format!("seq/bool/{}", values.len())

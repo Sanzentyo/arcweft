@@ -11,7 +11,7 @@ use crate::ast::line_plan::{BlockStyle, DeferOutcome, LinePlan};
 use crate::cst::{
     CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineEvents, CstStmtKind,
     CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxNode,
-    SyntaxParseStats, classify_stmt, cst_lines, find_matching_punctuation,
+    SyntaxParseStats, classify_stmt, cst_lines_for_source, find_matching_punctuation,
     find_top_level_punctuation, parse_flat_fence, source_line_iter, split_leading_ident,
     split_top_level_keyword_once, split_top_level_punctuation_once,
     split_top_level_punctuation_sequence_once,
@@ -110,7 +110,7 @@ impl Parser {
     }
 
     fn from_syntax(source: String, syntax: &SyntaxNode) -> Self {
-        let events = cst_lines(syntax);
+        let events = cst_lines_for_source(syntax, &source);
         let syntax_stats = events.stats();
         Self {
             source,

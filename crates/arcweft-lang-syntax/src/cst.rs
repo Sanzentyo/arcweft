@@ -370,6 +370,12 @@ pub fn cst_lines(root: &SyntaxNode) -> CstLineEvents {
     CstLineEvents::from(root)
 }
 
+/// Projects CST `Line` nodes using the original source as the text backing.
+#[must_use]
+pub fn cst_lines_for_source(root: &SyntaxNode, source: &str) -> CstLineEvents {
+    CstLineEvents::from_root_and_source(root, source)
+}
+
 impl From<&SyntaxNode> for CstLineEvents {
     fn from(root: &SyntaxNode) -> Self {
         let lines = root
@@ -393,6 +399,30 @@ impl From<&SyntaxNode> for CstLineEvents {
 }
 
 impl CstLineEvents {
+    fn from_root_and_source(root: &SyntaxNode, source: &str) -> Self {
+        let lines = root
+            .children()
+            .filter(|node| node.kind() == SyntaxKind::Line)
+            .map(|node| CstLine::from_node_and_source(&node, source))
+            .collect::<Vec<_>>();
+        Self::from_lines(lines)
+    }
+
+    fn from_lines(lines: Vec<CstLine>) -> Self {
+        let line_owned_bytes = lines.iter().map(|line| line.text.len()).sum();
+        let punctuation_scan_bytes = line_owned_bytes;
+        Self {
+            stats: SyntaxParseStats {
+                cst_lex_passes: 1,
+                punctuation_scans: lines.len(),
+                punctuation_scan_bytes,
+                line_owned_bytes,
+                ..SyntaxParseStats::default()
+            },
+            lines,
+        }
+    }
+
     /// Number of projected line events.
     pub fn len(&self) -> usize {
         self.lines.len()
@@ -427,7 +457,6 @@ impl CstLineEvents {
         let Some(first) = self.get(start) else {
             return CstBlockEvent::new(String::new(), String::new(), 0, false, start);
         };
-        let mut text = String::new();
         let mut end = first.end;
         let mut depth = 0_i32;
         let mut seen_open = false;
@@ -436,14 +465,15 @@ impl CstLineEvents {
         let mut last_top_level_open = None;
         let mut last_brace_close = None;
         let mut index = start;
+        let mut virtual_len = 0usize;
 
         while let Some(line) = self.get(index) {
             let trimmed = line.trimmed();
-            if !text.is_empty() {
-                text.push('\n');
+            if index > start {
+                virtual_len += 1;
             }
-            let line_offset = text.len();
-            text.push_str(&line.text);
+            let line_offset = virtual_len;
+            virtual_len += line.text.len();
             end = line.end;
             if depth == 0 {
                 if first_top_level_open.is_none()
@@ -480,21 +510,73 @@ impl CstLineEvents {
             CstBlockOpenRule::FlowBody | CstBlockOpenRule::FunctionBody => last_top_level_open,
         };
         let Some(open) = open else {
-            return CstBlockEvent::new(text, String::new(), end, false, start + 1);
+            return CstBlockEvent::new(
+                self.collect_virtual_fragment(start, index, 0, virtual_len),
+                String::new(),
+                end,
+                false,
+                start + 1,
+            );
         };
         let Some(close) = last_brace_close else {
-            return CstBlockEvent::new(text, String::new(), end, false, index);
+            return CstBlockEvent::new(
+                self.collect_virtual_fragment(start, index, 0, virtual_len),
+                String::new(),
+                end,
+                false,
+                index,
+            );
         };
         if depth != 0 {
-            return CstBlockEvent::new(text, String::new(), end, false, index);
+            return CstBlockEvent::new(
+                self.collect_virtual_fragment(start, index, 0, virtual_len),
+                String::new(),
+                end,
+                false,
+                index,
+            );
         }
-        CstBlockEvent::new(
-            text[..open].trim().to_owned(),
-            text[open + 1..close].to_owned(),
-            end,
-            true,
-            index,
-        )
+        let head = self.collect_virtual_fragment(start, index, 0, open);
+        let body = self.collect_virtual_fragment(start, index, open + 1, close);
+        CstBlockEvent::new(head.trim().to_owned(), body, end, true, index)
+    }
+
+    fn collect_virtual_fragment(
+        &self,
+        start: usize,
+        end: usize,
+        range_start: usize,
+        range_end: usize,
+    ) -> String {
+        let mut fragment = String::new();
+        let mut virtual_offset = 0usize;
+        for index in start..end {
+            if index > start {
+                push_virtual_text_overlap(
+                    "\n",
+                    virtual_offset,
+                    range_start,
+                    range_end,
+                    &mut fragment,
+                );
+                virtual_offset += 1;
+            }
+            let Some(line) = self.get(index) else {
+                break;
+            };
+            push_virtual_text_overlap(
+                &line.text,
+                virtual_offset,
+                range_start,
+                range_end,
+                &mut fragment,
+            );
+            virtual_offset += line.text.len();
+            if virtual_offset >= range_end {
+                break;
+            }
+        }
+        fragment
     }
 
     /// Collects a flow-like header prelude followed by a balanced brace body.
@@ -534,6 +616,21 @@ impl CstLineEvents {
     }
 }
 
+fn push_virtual_text_overlap(
+    text: &str,
+    text_start: usize,
+    range_start: usize,
+    range_end: usize,
+    output: &mut String,
+) {
+    let text_end = text_start + text.len();
+    let start = range_start.max(text_start);
+    let end = range_end.min(text_end);
+    if start < end {
+        output.push_str(&text[start - text_start..end - text_start]);
+    }
+}
+
 impl Index<usize> for CstLineEvents {
     type Output = CstLine;
 
@@ -547,6 +644,28 @@ impl CstLine {
         let start = usize::from(node.text_range().start());
         let mut end = usize::from(node.text_range().end());
         let mut text = node.text().to_string();
+        if text.ends_with("\r\n") {
+            text.truncate(text.len() - 2);
+            end -= 2;
+        } else if text.ends_with('\n') || text.ends_with('\r') {
+            text.truncate(text.len() - 1);
+            end -= 1;
+        }
+        let kind = classify_line(&text);
+        let punctuation = CstLinePunctuationSummary::from_node(node);
+        Self {
+            text,
+            start,
+            end,
+            punctuation,
+            kind,
+        }
+    }
+
+    fn from_node_and_source(node: &SyntaxNode, source: &str) -> Self {
+        let start = usize::from(node.text_range().start());
+        let mut end = usize::from(node.text_range().end());
+        let mut text = source[start..end].to_owned();
         if text.ends_with("\r\n") {
             text.truncate(text.len() - 2);
             end -= 2;

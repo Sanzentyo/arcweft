@@ -598,9 +598,13 @@ fn runtime_value_shape(value: &RuntimeValue) -> RuntimeShape {
     match value {
         RuntimeValue::Unit => RuntimeShape::Unit,
         RuntimeValue::Bool(_) => RuntimeShape::Bool,
-        RuntimeValue::Int(_) | RuntimeValue::UInt(_) | RuntimeValue::Duration(_) => {
-            RuntimeShape::Int
-        }
+        RuntimeValue::Int(_)
+        | RuntimeValue::I128(_)
+        | RuntimeValue::ISize(_)
+        | RuntimeValue::UInt(_)
+        | RuntimeValue::U128(_)
+        | RuntimeValue::USize(_)
+        | RuntimeValue::Duration(_) => RuntimeShape::Int,
         RuntimeValue::EntityRef(_) => RuntimeShape::EntityRef,
         RuntimeValue::String(_) | RuntimeValue::Float(_) | RuntimeValue::Char(_) => {
             RuntimeShape::String

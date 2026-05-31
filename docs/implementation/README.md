@@ -708,11 +708,13 @@ Current high-confidence state:
   the reporting view, but the checker no longer clones another `TypeKind` for
   the common identical expected/actual case.
 - Dense sequence storage is generic at the backing-store layer and exposes
-  borrowed views for all deterministic scalar integer widths currently accepted
-  by the runtime (`i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`) plus
-  bool, byte, char, logical duration, `String`, raw float literal, and entity
-  reference sequences. `u8` dense storage is also available through the byte
-  view so byte-oriented host paths can borrow it without materializing
+  borrowed views for deterministic scalar integer widths accepted by the
+  runtime (`i8`, `i16`, `i32`, `i64`, `i128`, `isize`, `u8`, `u16`, `u32`,
+  `u64`, `u128`, `usize`) plus bool, byte, char, logical duration, `String`,
+  raw float literal, and entity reference sequences. `isize`/`usize` dense
+  storage uses stable `i64`/`u64` backing values at the runtime boundary rather
+  than host pointer-width buffers. `u8` dense storage is also available through
+  the byte view so byte-oriented host paths can borrow it without materializing
   `RuntimeValue` elements. Textual/entity dense storage is intentionally a
   homogeneous backing store, not a numeric ABI path; string interning or
   columnar record storage remains a separate optimization.

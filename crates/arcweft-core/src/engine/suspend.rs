@@ -599,13 +599,19 @@ fn named_string_seq(args: &[EvaluatedHostArg], name: &str) -> Option<Vec<String>
             DenseSeq::I8(items) => items.as_slice().iter().map(i8::to_string).collect(),
             DenseSeq::I16(items) => items.as_slice().iter().map(i16::to_string).collect(),
             DenseSeq::I32(items) => items.as_slice().iter().map(i32::to_string).collect(),
-            DenseSeq::I64(items) => items.as_slice().iter().map(i64::to_string).collect(),
+            DenseSeq::I64(items) | DenseSeq::ISize(items) => {
+                items.as_slice().iter().map(i64::to_string).collect()
+            }
+            DenseSeq::I128(items) => items.as_slice().iter().map(i128::to_string).collect(),
             DenseSeq::U8(items) | DenseSeq::Bytes(items) => {
                 items.as_slice().iter().map(u8::to_string).collect()
             }
             DenseSeq::U16(items) => items.as_slice().iter().map(u16::to_string).collect(),
             DenseSeq::U32(items) => items.as_slice().iter().map(u32::to_string).collect(),
-            DenseSeq::U64(items) => items.as_slice().iter().map(u64::to_string).collect(),
+            DenseSeq::U64(items) | DenseSeq::USize(items) => {
+                items.as_slice().iter().map(u64::to_string).collect()
+            }
+            DenseSeq::U128(items) => items.as_slice().iter().map(u128::to_string).collect(),
             DenseSeq::Bool(items) => items.as_slice().iter().map(bool::to_string).collect(),
             DenseSeq::Chars(items) => items.as_slice().iter().map(char::to_string).collect(),
             DenseSeq::Durations(items) => items
@@ -690,9 +696,13 @@ fn runtime_value_to_bytes(value: &RuntimeValue) -> Result<Vec<u8>, String> {
             DenseSeq::I8(_)
             | DenseSeq::I16(_)
             | DenseSeq::I32(_)
+            | DenseSeq::I128(_)
+            | DenseSeq::ISize(_)
             | DenseSeq::U16(_)
             | DenseSeq::U32(_)
             | DenseSeq::U64(_)
+            | DenseSeq::U128(_)
+            | DenseSeq::USize(_)
             | DenseSeq::Bool(_)
             | DenseSeq::Chars(_)
             | DenseSeq::Durations(_)
@@ -713,8 +723,10 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
         | RuntimeValue::EntityRef(value)
         | RuntimeValue::Float(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),
-        RuntimeValue::Int(value) => value.to_string(),
-        RuntimeValue::UInt(value) => value.to_string(),
+        RuntimeValue::Int(value) | RuntimeValue::ISize(value) => value.to_string(),
+        RuntimeValue::I128(value) => value.to_string(),
+        RuntimeValue::UInt(value) | RuntimeValue::USize(value) => value.to_string(),
+        RuntimeValue::U128(value) => value.to_string(),
         RuntimeValue::Bool(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::Unit
