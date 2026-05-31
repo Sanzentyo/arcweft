@@ -120,9 +120,6 @@ pub(super) fn source_take(parser: &mut Parser) -> String {
 }
 
 pub(super) fn collect_wiki_links(source: &str) -> Vec<WikiLink> {
-    if !source.contains("[[") {
-        return Vec::new();
-    }
     collect_wiki_link_ranges(source)
         .into_iter()
         .map(|(body, start, end)| WikiLink::new(body.to_owned(), TextRange::new(start, end)))
@@ -468,6 +465,13 @@ fn normalize_dot_continuations(source: &str) -> Cow<'_, str> {
     if !source.contains('\n') && !source.contains('\r') {
         return Cow::Borrowed(source);
     }
+    if !source
+        .lines()
+        .skip(1)
+        .any(|line| line.trim_start().starts_with('.'))
+    {
+        return Cow::Borrowed(source);
+    }
     let mut lines = source.lines();
     let Some(first) = lines.next() else {
         return Cow::Borrowed("");
@@ -624,7 +628,15 @@ fn looks_like_dialogue_call_expr_surface(source: &str) -> bool {
     // call-like dialogue surface or the bracket payload is not a valid typed
     // expression. This keeps `nums[0]` out of dialogue parsing while preserving
     // `alice.say()[text]` and `alice[おはよう。[p]]` surfaces.
-    callee.contains('(') || parse_expr(content).is_err()
+    callee.contains('(') || !content_may_be_typed_expr(content) || parse_expr(content).is_err()
+}
+
+fn content_may_be_typed_expr(source: &str) -> bool {
+    let Some(first) = source.trim_start().chars().next() else {
+        return false;
+    };
+    first.is_ascii_alphanumeric()
+        || matches!(first, '"' | '@' | '(' | '[' | '{' | '.' | '_' | '-' | '!')
 }
 
 pub(super) fn parse_dialogue_call_expr_source(source: &str) -> Option<Expr> {
@@ -704,4 +716,33 @@ fn parse_inline_line_plan_source(source: &str) -> Option<LinePlan> {
 
 pub(super) fn indentation(text: &str) -> usize {
     text.chars().take_while(|ch| ch.is_whitespace()).count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{content_may_be_typed_expr, normalize_dot_continuations};
+    use std::borrow::Cow;
+
+    #[test]
+    fn dot_continuation_normalization_borrows_when_no_continuation_exists() {
+        assert!(matches!(
+            normalize_dot_continuations("alpha +\nbeta"),
+            Cow::Borrowed("alpha +\nbeta")
+        ));
+    }
+
+    #[test]
+    fn dot_continuation_normalization_owns_only_for_continuation_lines() {
+        match normalize_dot_continuations("value\n    .map(f)\n    .sum()") {
+            Cow::Owned(normalized) => assert_eq!(normalized, "value.map(f).sum()"),
+            Cow::Borrowed(_) => panic!("dot continuation should allocate normalized source"),
+        }
+    }
+
+    #[test]
+    fn dialogue_rescue_skips_expression_parse_for_obvious_text() {
+        assert!(!content_may_be_typed_expr("おはよう。[p]"));
+        assert!(content_may_be_typed_expr("0"));
+        assert!(content_may_be_typed_expr("name"));
+    }
 }

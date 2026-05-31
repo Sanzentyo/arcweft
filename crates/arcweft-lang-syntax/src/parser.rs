@@ -127,10 +127,12 @@ impl Parser {
         let mut module = None;
         let mut uses = Vec::new();
         let mut items = Vec::new();
-        if self.source.contains("[[") {
+        let wiki_links = if self.source.contains("[[") {
             self.syntax_stats.wiki_scan_performed += 1;
-        }
-        let wiki_links = collect_wiki_links(&self.source);
+            collect_wiki_links(&self.source)
+        } else {
+            Vec::new()
+        };
 
         while self.index < self.events.len() {
             self.skip_blank_and_comments();

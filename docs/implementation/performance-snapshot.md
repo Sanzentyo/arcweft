@@ -203,6 +203,16 @@ The JSON outputs above reported no source file paths and included only command
 argv tokens, host core/thread counts, timing counters, and deterministic
 accumulators.
 
+Parser cold-path work now skips wiki-link collection entirely when the source
+does not contain a `[[` opener, keeps multiline expression sources borrowed
+unless a dot-continuation line is actually present, and avoids rescue
+expression parsing for dialogue bracket payloads that are obvious narrative
+text. The checked-in `009_nonuniform_map_pure_batch.arcw` bench still reports a
+path-free source name, `wiki_scan_performed = 0`,
+`dot_normalization_owned = 0`, `dialogue_rescue_expr_parse_attempts = 0`, and
+`pure_flatten_bytes_copied_median = 0`; the local run after this change reported
+parse phase 3853000 ns and runtime median 12100 ns.
+
 Runtime numeric sequence lowering now preserves integer-only bracket literals as
 `RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I64(_)))` instead of eagerly
 materializing `Vec<RuntimeValue::Int>`. The same `DenseSeqStorage<T>` backing
