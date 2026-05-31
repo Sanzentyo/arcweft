@@ -73,7 +73,7 @@ Syntax counters from the same run:
 
 | cst lex passes | punctuation summaries | punctuation bytes | line owned bytes | block owned bytes | wiki scans | raw owned bytes |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 14 | 1330 | 1330 | 1324 | 0 | 0 |
+| 1 | 14 | 1330 | 0 | 1324 | 0 | 0 |
 
 The scalar pure fixtures remain on borrowed slice calls: `stack_packs = 0`,
 `arg_vec_allocs = 0`, and `copied_arg_bytes = 0`. The nonuniform map fixture
@@ -88,7 +88,10 @@ default parsing updates only counters available as normal parser by-products.
 Detailed fields that would require timing, tracing, or additional attribution
 remain zero until a detailed instrumentation mode is added. CST line punctuation
 summaries are built from the existing rowan line-token walk, not by re-lexing
-each line for stats. Balanced brace-block extraction now also reuses those line
+each line for stats. The parser's line events borrow slices from the original
+source during normal `parse_source`, so line projection no longer owns a second
+copy of every line; `cst_lines(root)` still owns text for standalone CST tooling
+that has no source buffer. Balanced brace-block extraction now also reuses those line
 summaries for body-open and body-close offsets, so the hot block collector no
 longer re-lexes the assembled block text after already walking its lines. For
 body fragments that are not CST lines, `CstPunctuationScan` now owns the one

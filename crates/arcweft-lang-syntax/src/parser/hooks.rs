@@ -6,7 +6,7 @@ use super::headers::{
 };
 use super::{Parser, parse_expr_lossy, parse_stmt_lines, split_comma_args};
 
-impl Parser {
+impl Parser<'_> {
     pub(super) fn parse_hook(&mut self) -> Option<HookItem> {
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();

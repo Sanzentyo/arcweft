@@ -7,7 +7,7 @@ use super::{
 use crate::ast::flow::{AwaitBranch, AwaitBranchKind, AwaitWith};
 use crate::cst::{nonempty_trimmed_source_lines, source_line_count};
 
-impl Parser {
+impl Parser<'_> {
     pub(super) fn parse_let_await_with(&mut self) -> Option<Stmt> {
         let start_line = self.current().clone();
         let trimmed = start_line.text.trim();
@@ -368,7 +368,7 @@ fn parse_await_branch(line: &str) -> Option<AwaitBranch> {
 }
 
 fn parse_await_branch_body(body: &str) -> Vec<FlowItem> {
-    let mut nested = Parser::new(body.to_owned());
+    let mut nested = Parser::new(body);
     let mut items = Vec::new();
     while nested.index < nested.events.len() {
         nested.skip_blank_and_comments();
@@ -393,7 +393,7 @@ fn parse_await_branch_body(body: &str) -> Vec<FlowItem> {
 }
 
 fn parse_inline_await_branch_item(body: &str) -> FlowItem {
-    let mut nested = Parser::new(body.to_owned());
+    let mut nested = Parser::new(body);
     nested
         .parse_flow_item_until_indent(0)
         .unwrap_or_else(|| FlowItem::Stmt(parse_stmt(body)))

@@ -5,7 +5,7 @@ use crate::cst::split_leading_ident;
 use super::headers::{parse_required_id_ref, simple_error};
 use super::{Parser, recovery::ParseError};
 
-impl Parser {
+impl Parser<'_> {
     pub(super) fn parse_proof_item(&mut self) -> Option<ProofItem> {
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();

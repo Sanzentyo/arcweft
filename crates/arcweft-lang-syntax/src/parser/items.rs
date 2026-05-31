@@ -25,7 +25,7 @@ use super::{
     split_brace_item, split_top_level_binding,
 };
 
-impl Parser {
+impl Parser<'_> {
     pub(super) fn parse_memo_fn(&mut self) -> Option<MemoFn> {
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();
@@ -356,7 +356,7 @@ impl Parser {
 
     pub(super) fn parse_type_alias(&mut self) -> Option<TypeAliasItem> {
         let start_line = self.current().clone();
-        let mut raw = start_line.text.clone();
+        let mut raw = start_line.text().to_owned();
         let mut end = start_line.end;
         self.index += 1;
         while self.index < self.events.len() {

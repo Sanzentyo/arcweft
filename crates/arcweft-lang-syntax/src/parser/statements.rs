@@ -10,7 +10,7 @@ use super::{
     split_top_level_keyword_once, split_top_level_punctuation_sequence_once,
 };
 
-impl Parser {
+impl Parser<'_> {
     pub(super) fn parse_let_scope(&mut self) -> Option<Stmt> {
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();

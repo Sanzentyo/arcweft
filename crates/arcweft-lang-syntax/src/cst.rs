@@ -6,6 +6,7 @@
 //! offsets.
 
 use rowan::{GreenNodeBuilder, Language};
+use std::borrow::Cow;
 use std::ops::Index;
 
 /// Rowan language marker for Arcweft syntax nodes.
@@ -46,8 +47,8 @@ pub type TextSize = rowan::TextSize;
 /// separate raw-source line splitter, so source offsets stay tied to the
 /// lossless tree.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CstLine {
-    pub(crate) text: String,
+pub struct CstLine<'a> {
+    pub(crate) text: Cow<'a, str>,
     pub(crate) start: usize,
     pub(crate) end: usize,
     punctuation: CstLinePunctuationSummary,
@@ -286,8 +287,8 @@ pub(crate) struct CstBlockEvent {
 /// keeps the current line-event bridge explicit while later parser work moves
 /// toward grammar-level rowan events.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct CstLineEvents {
-    lines: Vec<CstLine>,
+pub struct CstLineEvents<'a> {
+    lines: Vec<CstLine<'a>>,
     stats: SyntaxParseStats,
 }
 
@@ -366,17 +367,17 @@ pub fn parse_cst(source: &str) -> SyntaxNode {
 
 /// Projects CST `Line` nodes into parser input events.
 #[must_use]
-pub fn cst_lines(root: &SyntaxNode) -> CstLineEvents {
+pub fn cst_lines(root: &SyntaxNode) -> CstLineEvents<'static> {
     CstLineEvents::from(root)
 }
 
 /// Projects CST `Line` nodes using the original source as the text backing.
 #[must_use]
-pub fn cst_lines_for_source(root: &SyntaxNode, source: &str) -> CstLineEvents {
+pub fn cst_lines_for_source<'a>(root: &SyntaxNode, source: &'a str) -> CstLineEvents<'a> {
     CstLineEvents::from_root_and_source(root, source)
 }
 
-impl From<&SyntaxNode> for CstLineEvents {
+impl From<&SyntaxNode> for CstLineEvents<'static> {
     fn from(root: &SyntaxNode) -> Self {
         let lines = root
             .children()
@@ -398,25 +399,24 @@ impl From<&SyntaxNode> for CstLineEvents {
     }
 }
 
-impl CstLineEvents {
-    fn from_root_and_source(root: &SyntaxNode, source: &str) -> Self {
+impl<'a> CstLineEvents<'a> {
+    fn from_root_and_source(root: &SyntaxNode, source: &'a str) -> Self {
         let lines = root
             .children()
             .filter(|node| node.kind() == SyntaxKind::Line)
             .map(|node| CstLine::from_node_and_source(&node, source))
             .collect::<Vec<_>>();
-        Self::from_lines(lines)
+        Self::from_borrowed_lines(lines)
     }
 
-    fn from_lines(lines: Vec<CstLine>) -> Self {
-        let line_owned_bytes = lines.iter().map(|line| line.text.len()).sum();
-        let punctuation_scan_bytes = line_owned_bytes;
+    fn from_borrowed_lines(lines: Vec<CstLine<'a>>) -> Self {
+        let punctuation_scan_bytes = lines.iter().map(|line| line.text.len()).sum();
         Self {
             stats: SyntaxParseStats {
                 cst_lex_passes: 1,
                 punctuation_scans: lines.len(),
                 punctuation_scan_bytes,
-                line_owned_bytes,
+                line_owned_bytes: 0,
                 ..SyntaxParseStats::default()
             },
             lines,
@@ -434,12 +434,12 @@ impl CstLineEvents {
     }
 
     /// Iterates over projected CST line events.
-    pub fn iter(&self) -> impl Iterator<Item = &CstLine> {
+    pub fn iter(&self) -> impl Iterator<Item = &CstLine<'a>> {
         self.lines.iter()
     }
 
     /// Returns a line event by index.
-    pub fn get(&self, index: usize) -> Option<&CstLine> {
+    pub fn get(&self, index: usize) -> Option<&CstLine<'a>> {
         self.lines.get(index)
     }
 
@@ -631,15 +631,15 @@ fn push_virtual_text_overlap(
     }
 }
 
-impl Index<usize> for CstLineEvents {
-    type Output = CstLine;
+impl<'a> Index<usize> for CstLineEvents<'a> {
+    type Output = CstLine<'a>;
 
     fn index(&self, index: usize) -> &Self::Output {
         &self.lines[index]
     }
 }
 
-impl CstLine {
+impl<'a> CstLine<'a> {
     fn from_node(node: &SyntaxNode) -> Self {
         let start = usize::from(node.text_range().start());
         let mut end = usize::from(node.text_range().end());
@@ -654,7 +654,7 @@ impl CstLine {
         let kind = classify_line(&text);
         let punctuation = CstLinePunctuationSummary::from_node(node);
         Self {
-            text,
+            text: Cow::Owned(text),
             start,
             end,
             punctuation,
@@ -662,21 +662,19 @@ impl CstLine {
         }
     }
 
-    fn from_node_and_source(node: &SyntaxNode, source: &str) -> Self {
+    fn from_node_and_source(node: &SyntaxNode, source: &'a str) -> Self {
         let start = usize::from(node.text_range().start());
         let mut end = usize::from(node.text_range().end());
-        let mut text = source[start..end].to_owned();
-        if text.ends_with("\r\n") {
-            text.truncate(text.len() - 2);
+        if source[start..end].ends_with("\r\n") {
             end -= 2;
-        } else if text.ends_with('\n') || text.ends_with('\r') {
-            text.truncate(text.len() - 1);
+        } else if source[start..end].ends_with('\n') || source[start..end].ends_with('\r') {
             end -= 1;
         }
-        let kind = classify_line(&text);
+        let text = &source[start..end];
+        let kind = classify_line(text);
         let punctuation = CstLinePunctuationSummary::from_node(node);
         Self {
-            text,
+            text: Cow::Borrowed(text),
             start,
             end,
             punctuation,

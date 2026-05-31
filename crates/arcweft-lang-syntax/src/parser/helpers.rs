@@ -116,7 +116,7 @@ pub(super) fn parse_attribute(trimmed: &str, range: TextRange) -> Option<Attribu
 }
 
 pub(super) fn source_take(parser: &mut Parser) -> String {
-    core::mem::take(&mut parser.source)
+    parser.source.to_owned()
 }
 
 pub(super) fn collect_wiki_links(source: &str) -> Vec<WikiLink> {

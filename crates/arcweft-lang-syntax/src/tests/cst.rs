@@ -276,7 +276,7 @@ flow @flow.opening opening {
     assert_eq!(stats.cst_lex_passes, 1);
     assert!(stats.punctuation_scans >= 3);
     assert!(stats.punctuation_scan_bytes > 0);
-    assert!(stats.line_owned_bytes > 0);
+    assert_eq!(stats.line_owned_bytes, 0);
     assert!(stats.block_owned_bytes > 0);
     assert_eq!(stats.wiki_scan_performed, 0);
 }

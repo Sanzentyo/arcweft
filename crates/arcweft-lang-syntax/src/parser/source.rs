@@ -22,7 +22,7 @@ use super::{
     split_comma_args, split_top_level_binding,
 };
 
-impl Parser {
+impl Parser<'_> {
     pub(super) fn parse_source_locale_block(&mut self) -> Option<SourceLocaleBlock> {
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();

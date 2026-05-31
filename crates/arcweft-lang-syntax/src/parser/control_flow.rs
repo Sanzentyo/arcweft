@@ -7,7 +7,7 @@ use super::{
     split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
 };
 
-impl Parser {
+impl Parser<'_> {
     pub(super) fn parse_let_loop(&mut self) -> Option<Stmt> {
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();
@@ -482,7 +482,7 @@ fn parse_match_arms(body: &str, base: usize, errors: &mut Vec<ParseError>) -> Ve
         .filter_map(|line| {
             let (head, item) = split_top_level_punctuation_sequence_once(line, &["=", ">"])?;
             let (pattern, guard) = split_pattern_guard(head);
-            let mut nested = Parser::new(item.trim().to_owned());
+            let mut nested = Parser::new(item.trim());
             let parsed = nested.parse_flow_item_until_indent(0).map_or_else(
                 || vec![FlowItem::Stmt(parse_stmt(item.trim()))],
                 |item| vec![item],
@@ -559,7 +559,8 @@ fn parse_select_branches(
             body_lines.push(child);
             index += 1;
         }
-        let mut nested = Parser::new(body_lines.join("\n"));
+        let body_source = body_lines.join("\n");
+        let mut nested = Parser::new(&body_source);
         let parsed = nested.parse_flow_body(&body_lines.join("\n"), base);
         errors.extend(nested.errors.into_iter().map(|err| err.rebased(base)));
         branches.push(SelectBranch::new(

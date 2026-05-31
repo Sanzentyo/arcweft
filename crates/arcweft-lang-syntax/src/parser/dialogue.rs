@@ -14,7 +14,7 @@ use super::{
 };
 use crate::cst::CstPunctuationScan;
 
-impl Parser {
+impl Parser<'_> {
     pub(super) fn parse_dialogue_defaults(&mut self) -> Option<DialogueDefaultsItem> {
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();

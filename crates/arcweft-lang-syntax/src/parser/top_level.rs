@@ -10,7 +10,7 @@ use crate::ast::{
 };
 use crate::cst::{CstTopLevelItemKind, CstTopLevelLineKind};
 
-impl Parser {
+impl Parser<'_> {
     pub(super) fn parse_top_level_line(
         &mut self,
         dispatch: TopLevelDispatch,

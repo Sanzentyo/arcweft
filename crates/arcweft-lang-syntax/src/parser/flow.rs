@@ -13,7 +13,7 @@ use super::{
     parse_unsafe_lifetime_block, parse_with_brace_label, split_call_head, split_leading_ident,
 };
 
-impl Parser {
+impl Parser<'_> {
     pub(super) fn parse_flow(&mut self) -> Option<Flow> {
         let doc = self.take_pending_doc();
         let start_line = self.current().clone();
@@ -72,7 +72,7 @@ impl Parser {
     }
 
     pub(super) fn parse_flow_body(&mut self, body: &str, base_offset: usize) -> Vec<FlowItem> {
-        let mut nested = Parser::new(body.to_owned());
+        let mut nested = Parser::new(body);
         let mut items = Vec::new();
         while !nested.pending_flow_items.is_empty() || nested.index < nested.events.len() {
             if nested.pending_flow_items.is_empty() {
@@ -163,7 +163,7 @@ impl Parser {
     }
 
     fn consume_stmt_text_with_continuations(&mut self, indent: usize) -> String {
-        let mut stmt = self.current().text.clone();
+        let mut stmt = self.current().text().to_owned();
         self.index += 1;
         while self.index < self.events.len() {
             let next = self.current();

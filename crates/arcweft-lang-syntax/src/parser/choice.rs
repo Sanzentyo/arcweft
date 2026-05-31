@@ -22,7 +22,7 @@ use super::{
     split_pattern_guard, split_top_level_binding,
 };
 
-impl Parser {
+impl Parser<'_> {
     pub(super) fn parse_choice(&mut self) -> Option<ChoiceBlock> {
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_brace_block();

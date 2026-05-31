@@ -64,7 +64,7 @@ use statements::{parse_scope_head, parse_stmt, parse_unsafe_lifetime_block, raw_
 pub fn parse_source(source: impl Into<String>) -> ParsedSource {
     let source = source.into();
     let syntax = crate::cst::parse_cst(&source);
-    let mut parser = Parser::from_syntax(source.clone(), &syntax);
+    let mut parser = Parser::from_syntax(&source, &syntax);
     let (tree, errors, syntax_stats) = parser.parse();
     ParsedSource::new(source, syntax, tree, errors, syntax_stats)
 }
@@ -75,8 +75,8 @@ struct TopLevelDispatch {
     item: CstTopLevelItemKind,
 }
 
-impl From<&CstLine> for TopLevelDispatch {
-    fn from(line: &CstLine) -> Self {
+impl From<&CstLine<'_>> for TopLevelDispatch {
+    fn from(line: &CstLine<'_>) -> Self {
         Self {
             line: line.top_level_line_kind(),
             item: line.top_level_item_kind(),
@@ -93,9 +93,9 @@ type ContentCallParse = (
     Option<ScopeBlock>,
 );
 
-struct Parser {
-    source: String,
-    events: CstLineEvents,
+struct Parser<'a> {
+    source: &'a str,
+    events: CstLineEvents<'a>,
     index: usize,
     errors: Vec<ParseError>,
     pending_flow_items: Vec<FlowItem>,
@@ -103,14 +103,14 @@ struct Parser {
     syntax_stats: SyntaxParseStats,
 }
 
-impl Parser {
-    fn new(source: String) -> Self {
-        let syntax = crate::cst::parse_cst(&source);
+impl<'a> Parser<'a> {
+    fn new(source: &'a str) -> Self {
+        let syntax = crate::cst::parse_cst(source);
         Self::from_syntax(source, &syntax)
     }
 
-    fn from_syntax(source: String, syntax: &SyntaxNode) -> Self {
-        let events = cst_lines_for_source(syntax, &source);
+    fn from_syntax(source: &'a str, syntax: &SyntaxNode) -> Self {
+        let events = cst_lines_for_source(syntax, source);
         let syntax_stats = events.stats();
         Self {
             source,
@@ -129,7 +129,7 @@ impl Parser {
         let mut items = Vec::new();
         let wiki_links = if self.source.contains("[[") {
             self.syntax_stats.wiki_scan_performed += 1;
-            collect_wiki_links(&self.source)
+            collect_wiki_links(self.source)
         } else {
             Vec::new()
         };
@@ -228,8 +228,8 @@ impl Parser {
         (event.head, event.body, event.end, event.ok)
     }
 
-    fn current(&self) -> &CstLine {
-        &self.events[self.index]
+    fn current(&self) -> CstLine<'a> {
+        self.events[self.index].clone()
     }
 
     fn previous_end(&self) -> usize {
