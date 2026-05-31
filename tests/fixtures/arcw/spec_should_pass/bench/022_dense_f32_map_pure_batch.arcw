@@ -1,0 +1,15 @@
+#[pure]
+fn score_f32(base: f32, scale: f32) -> f32 {
+    return base * (scale + 2.0f32)
+}
+
+bench @bench.dense_f32_map_pure_batch {
+    measure iterations = 4 { start(@flow.dense_f32_map_pure_batch) }
+}
+
+flow @flow.dense_f32_map_pure_batch dense_f32_map_pure_batch {
+    let values: Array<f32, 128> = [2.0f32; 128]
+    let scores: Vec<f32> = values.map(|item| score_f32(item, 2.0f32))
+    log.info(scores.len())
+    return "done"
+}
