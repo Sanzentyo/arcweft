@@ -186,6 +186,24 @@ for c in choices {
 
 ## Capacity and reservable collections
 
+Sequence length is semantic state and is available without forcing a dynamic
+element materialization boundary.
+
+```arcw
+pub trait Len {
+    fn len(self) -> usize
+}
+```
+
+MVP standard implementors:
+
+```text
+Vec<T>
+Seq<T>
+Slice<T>
+Array<T, N>
+```
+
 Capacity is an allocation hint, not semantic state. Standard containers may
 reserve or shrink storage for performance, but programs must not branch on the
 current capacity and stable data formats must not serialize capacity.

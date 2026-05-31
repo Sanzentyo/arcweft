@@ -937,6 +937,25 @@ flow @flow.arrays arrays {
 }
 
 #[test]
+fn typechecks_sequence_len_as_usize() {
+    let tree = parse_ok(
+        r#"
+flow @flow.sequence_len sequence_len {
+    let flags: Vec<Bool> = [true, false, true]
+    let letters: Vec<Char> = ["a"c, "b"c]
+    let delays: Vec<Duration> = [1ms, 2ms]
+    let total: usize = flags.len() + letters.len() + delays.len()
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("sequence len fixture lowers");
+    validate_typecheck_ready(&hir).expect("sequence len fixture is typecheck-ready");
+
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("sequence len typechecks as usize");
+}
+
+#[test]
 fn typecheck_rejects_sum_on_non_integer_vec() {
     let tree = parse_ok(
         r"

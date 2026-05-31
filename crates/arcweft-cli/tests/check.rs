@@ -3561,6 +3561,68 @@ fn bench_json_measures_checked_in_dense_integer_widths_fixture() {
 }
 
 #[test]
+fn bench_json_measures_checked_in_dense_scalar_len_fixture() {
+    let path = workspace_root()
+        .join("tests/fixtures/arcw/spec_should_pass/bench/013_dense_scalar_len.arcw");
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("3")
+        .arg("--warmup")
+        .arg("1")
+        .arg("--samples")
+        .arg("3")
+        .arg("--steps")
+        .arg("64")
+        .arg("--max-ops")
+        .arg("64")
+        .arg("--json")
+        .output()
+        .expect("arcw bench measures checked-in dense scalar len fixture");
+
+    assert!(
+        output.status.success(),
+        "checked-in dense scalar len bench should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&workspace_root().display().to_string()),
+        "dense scalar len bench JSON must not record the workspace path: {stdout}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    assert!(
+        json["source"]
+            .as_str()
+            .is_some_and(|source| source.ends_with("013_dense_scalar_len.arcw")),
+        "dense scalar len bench should report the fixture source without an absolute path: {stdout}"
+    );
+    assert_eq!(json["compiler"]["typecheck"]["warnings"], 0);
+    assert_eq!(
+        json["compiler"]["typecheck"]["judgment_rules"]["let_binding"],
+        5
+    );
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_eq!(measurement["deterministic"]["executed_ops_median"], 7);
+    assert_eq!(
+        measurement["deterministic"]["pure_arg_vec_allocations_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_result_bytes_copied_median"],
+        0
+    );
+    assert!(
+        measurement["elapsed_ns"]["median"]
+            .as_u64()
+            .is_some_and(|value| value > 0),
+        "dense scalar len bench should record elapsed time: {stdout}"
+    );
+}
+
+#[test]
 fn bench_json_measures_checked_in_linear_aot_fixture() {
     let path =
         workspace_root().join("tests/fixtures/arcw/spec_should_pass/bench/006_linear_aot.arcw");

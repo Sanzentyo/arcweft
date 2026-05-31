@@ -8,7 +8,7 @@ use crate::pure::{
 };
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeValue,
-    runtime_sequence_dense_i64, runtime_sequence_values,
+    runtime_sequence_dense_bool, runtime_sequence_dense_i64, runtime_sequence_values,
 };
 
 fn int_binding(name: &str, value: i64) -> RuntimeBinding {
@@ -120,6 +120,29 @@ fn vm_pure_backend_sums_dense_i64_sequence_without_materializing_values() {
         .expect("pure helper sums dense local sequence");
 
     assert_eq!(result.value, RuntimeValue::Int(53));
+}
+
+#[test]
+fn vm_pure_backend_reads_dense_sequence_len_without_materializing_values() {
+    let request = PureFunctionRequest::new(
+        "flag_count",
+        RuntimeExpr::MethodCall {
+            receiver: Box::new(RuntimeExpr::Local("flags".to_owned())),
+            method: "len".to_owned(),
+            args: Vec::new(),
+        },
+        [RuntimeBinding {
+            name: "flags".to_owned(),
+            value: runtime_sequence_dense_bool(vec![true, false, true, true]),
+        }],
+    );
+
+    let result = VmPureFunctionBackend
+        .evaluate(&request)
+        .expect("pure helper reads dense sequence length");
+
+    assert_eq!(result.value, RuntimeValue::UInt(4));
+    assert_eq!(result.stats.evaluated_method_calls, 1);
 }
 
 #[test]

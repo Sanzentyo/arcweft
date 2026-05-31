@@ -1496,6 +1496,8 @@ fn evaluate_runtime_method_call(
             RuntimeValue::String(value.trim_matches(char::is_whitespace).to_owned())
         }
         (RuntimeValue::String(value), "to_string", []) => RuntimeValue::String(value),
+        (RuntimeValue::Seq(seq), "len", []) => runtime_len_value(seq.len()),
+        (RuntimeValue::Tuple(items), "len", []) => runtime_len_value(items.len()),
         (receiver, method, args) => RuntimeValue::String(format!(
             "{}.{method}({})",
             runtime_value_label(&receiver),
@@ -1505,4 +1507,8 @@ fn evaluate_runtime_method_call(
                 .join(", ")
         )),
     }
+}
+
+fn runtime_len_value(len: usize) -> RuntimeValue {
+    RuntimeValue::UInt(u64::try_from(len).unwrap_or(u64::MAX))
 }

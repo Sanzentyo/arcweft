@@ -1,0 +1,13 @@
+bench @bench.dense_scalar_len {
+    measure iterations = 4 { start(@flow.dense_scalar_len) }
+}
+
+flow @flow.dense_scalar_len dense_scalar_len {
+    let flags: Vec<Bool> = [true, false, true, true, false, true, false, false]
+    let letters: Vec<Char> = ["a"c, "b"c, "c"c, "d"c, "e"c, "f"c, "g"c, "h"c]
+    let delays: Vec<Duration> = [1ms, 2ms, 3ms, 4ms, 5ms, 6ms, 7ms, 8ms]
+    let bytes: Vec<u8> = [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8]
+    let total: usize = flags.len() + letters.len() + delays.len() + bytes.len()
+    log.info(total)
+    return "done"
+}

@@ -240,6 +240,14 @@ time 15200 ns. The pure-call counters remained zero for these fixtures because
 they intentionally measure the VM dense sequence reduction path, not the pure
 helper accelerator.
 
+The dense scalar length fixture covers the non-integer deterministic scalar
+storage cases. It lowers bool, char, logical-duration, and `u8` sequences into
+dense storage, checks `len()` as `usize`, and evaluates length through
+`RuntimeSeq::len()` rather than materializing `RuntimeValue` elements. The local
+path-free bench run reported median elapsed time 13900 ns for seven executed
+ops, with `pure_arg_vec_allocations_median = 0` and
+`pure_result_bytes_copied_median = 0`.
+
 `DenseSeq::F64` is intentionally not present yet because `RuntimeValue::Float`
 still preserves raw source text for deterministic numeric semantics. Dense
 `i128`, `u128`, `isize`, and `usize` are also not present yet: the first two need

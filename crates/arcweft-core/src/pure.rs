@@ -1444,6 +1444,8 @@ impl PureEvaluator {
                 Ok(RuntimeValue::String(value.trim().to_owned()))
             }
             (RuntimeValue::String(value), "to_string", []) => Ok(RuntimeValue::String(value)),
+            (RuntimeValue::Seq(seq), "len", []) => Ok(runtime_len_value(seq.len())),
+            (RuntimeValue::Tuple(items), "len", []) => Ok(runtime_len_value(items.len())),
             (receiver, _, _) => Err(RuntimeEvalError::UnsupportedPure {
                 name: method.to_owned(),
                 reason: format!(
@@ -1477,6 +1479,10 @@ impl PureEvaluator {
         }
         Ok(values)
     }
+}
+
+fn runtime_len_value(len: usize) -> RuntimeValue {
+    RuntimeValue::UInt(u64::try_from(len).unwrap_or(u64::MAX))
 }
 
 fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {

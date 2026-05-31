@@ -786,7 +786,7 @@ mod tests {
 
     #[test]
     fn strict_runtime_bracket_seq_folds_literal_values_to_dense_storage() {
-        let expr = Expr::BracketSeq(vec![
+        let i64_expr = Expr::BracketSeq(vec![
             Expr::Literal(Literal::Int {
                 raw: "1i64".to_owned(),
                 value: 1,
@@ -799,12 +799,61 @@ mod tests {
             }),
         ]);
 
-        let lowered = lower_runtime_expr_strict(&expr).expect("bracket seq lowers");
+        let lowered = lower_runtime_expr_strict(&i64_expr).expect("i64 bracket seq lowers");
 
         assert!(matches!(
             lowered,
             RuntimeExpr::Value(RuntimeValue::Seq(seq))
                 if seq.as_i64_slice() == Some([1, 2].as_slice())
+        ));
+
+        let bool_expr = Expr::BracketSeq(vec![
+            Expr::Literal(Literal::Bool(true)),
+            Expr::Literal(Literal::Bool(false)),
+        ]);
+        let lowered = lower_runtime_expr_strict(&bool_expr).expect("bool bracket seq lowers");
+        assert!(matches!(
+            lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_bool_slice() == Some([true, false].as_slice())
+        ));
+
+        let char_expr = Expr::BracketSeq(vec![
+            Expr::Literal(Literal::Char {
+                raw: "\"a\"c".to_owned(),
+                value: 'a',
+            }),
+            Expr::Literal(Literal::Char {
+                raw: "\"b\"c".to_owned(),
+                value: 'b',
+            }),
+        ]);
+        let lowered = lower_runtime_expr_strict(&char_expr).expect("char bracket seq lowers");
+        assert!(matches!(
+            lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_chars() == Some(['a', 'b'].as_slice())
+        ));
+
+        let duration_expr = Expr::BracketSeq(vec![
+            Expr::Literal(Literal::Duration {
+                amount: "1".to_owned(),
+                unit: arcweft_lang_hir::syntax::expr::DurationUnit::Millis,
+            }),
+            Expr::Literal(Literal::Duration {
+                amount: "2".to_owned(),
+                unit: arcweft_lang_hir::syntax::expr::DurationUnit::Millis,
+            }),
+        ]);
+        let lowered =
+            lower_runtime_expr_strict(&duration_expr).expect("duration bracket seq lowers");
+        assert!(matches!(
+            lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq))
+                if seq.as_durations() == Some([
+                    arcweft_core::time::LogicalDuration::from_nanos(1_000_000),
+                    arcweft_core::time::LogicalDuration::from_nanos(2_000_000),
+                ].as_slice())
         ));
     }
 

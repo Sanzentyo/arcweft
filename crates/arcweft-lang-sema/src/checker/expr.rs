@@ -981,77 +981,79 @@ impl TypeChecker<'_> {
             return Some(TypeKind::Unit);
         }
         receiver_type.and_then(|receiver_type| {
-            if method_name == "traverse" {
-                return self.check_traverse_method_call(&receiver_type, args);
-            }
-            if method_name == "parallel" {
-                return self.check_parallel_method_call(&receiver_type, args);
-            }
-            if method_name == "map" {
-                return self.check_vec_map_method_call(&receiver_type, args);
-            }
-            if method_name == "sum" {
-                return self.check_vec_sum_method_call(&receiver_type, args);
-            }
-            if matches!(method_name, "context" | "with_context") {
-                for arg in args {
-                    self.check_expr(arg.value());
-                }
-                return match receiver_type {
-                    TypeKind::Need { .. } => Some(receiver_type),
-                    TypeKind::Option(inner) => Some(TypeKind::Result {
-                        ok: inner,
-                        error: Box::new(TypeKind::Named("ArcError".to_owned())),
-                    }),
-                    TypeKind::Result { ok, .. } => Some(TypeKind::Result {
-                        ok,
-                        error: Box::new(TypeKind::Named("ArcError".to_owned())),
-                    }),
-                    _ => None,
-                };
-            }
-            if method_name == "face"
-                && matches!(
-                    receiver_type,
-                    TypeKind::Ref(EntityKind::Character)
-                        | TypeKind::Speaker(EntityKind::Character)
-                        | TypeKind::SpeakerPreset(EntityKind::Character)
-                )
-            {
-                for arg in args {
-                    self.check_expr(arg.value());
-                }
-                return Some(TypeKind::CharacterPatch(EntityKind::Character));
-            }
-            if method_name == "say"
-                && matches!(
-                    receiver_type,
-                    TypeKind::Ref(EntityKind::Character)
-                        | TypeKind::Speaker(EntityKind::Character)
-                        | TypeKind::SpeakerPreset(EntityKind::Character)
-                )
-            {
-                for arg in args {
-                    self.check_expr(arg.value());
-                }
-                return Some(TypeKind::SpeakerPreset(EntityKind::Character));
-            }
-            for arg in args {
-                self.check_expr(arg.value());
-            }
-            self.env
-                .method_type(&receiver_type, method_name)
-                .cloned()
-                .or_else(|| {
-                    well_known_capacity_method_type(&receiver_type, method_name, args.len())
-                })
-                .or_else(|| {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "unknown method `{method_name}` on {receiver_type:?}"
-                    )));
-                    None
-                })
+            self.check_typed_method_call(receiver_type, method_name, args)
         })
+    }
+
+    fn check_typed_method_call(
+        &mut self,
+        receiver_type: TypeKind,
+        method_name: &str,
+        args: &[CallArg],
+    ) -> Option<TypeKind> {
+        if method_name == "traverse" {
+            return self.check_traverse_method_call(&receiver_type, args);
+        }
+        if method_name == "parallel" {
+            return self.check_parallel_method_call(&receiver_type, args);
+        }
+        if method_name == "len" {
+            return self.check_sequence_len_method_call(&receiver_type, args);
+        }
+        if method_name == "map" {
+            return self.check_vec_map_method_call(&receiver_type, args);
+        }
+        if method_name == "sum" {
+            return self.check_vec_sum_method_call(&receiver_type, args);
+        }
+        if matches!(method_name, "context" | "with_context") {
+            return self.check_context_method_call(receiver_type, args);
+        }
+        if method_name == "face" && is_character_speaker_type(&receiver_type) {
+            self.check_untyped_method_args(args);
+            return Some(TypeKind::CharacterPatch(EntityKind::Character));
+        }
+        if method_name == "say" && is_character_speaker_type(&receiver_type) {
+            self.check_untyped_method_args(args);
+            return Some(TypeKind::SpeakerPreset(EntityKind::Character));
+        }
+        self.check_untyped_method_args(args);
+        self.env
+            .method_type(&receiver_type, method_name)
+            .cloned()
+            .or_else(|| well_known_capacity_method_type(&receiver_type, method_name, args.len()))
+            .or_else(|| {
+                self.errors.push(TypeCheckError::new(format!(
+                    "unknown method `{method_name}` on {receiver_type:?}"
+                )));
+                None
+            })
+    }
+
+    fn check_context_method_call(
+        &mut self,
+        receiver_type: TypeKind,
+        args: &[CallArg],
+    ) -> Option<TypeKind> {
+        self.check_untyped_method_args(args);
+        match receiver_type {
+            TypeKind::Need { .. } => Some(receiver_type),
+            TypeKind::Option(inner) => Some(TypeKind::Result {
+                ok: inner,
+                error: Box::new(TypeKind::Named("ArcError".to_owned())),
+            }),
+            TypeKind::Result { ok, .. } => Some(TypeKind::Result {
+                ok,
+                error: Box::new(TypeKind::Named("ArcError".to_owned())),
+            }),
+            _ => None,
+        }
+    }
+
+    fn check_untyped_method_args(&mut self, args: &[CallArg]) {
+        for arg in args {
+            self.check_expr(arg.value());
+        }
     }
 
     fn check_vec_map_method_call(
@@ -1101,6 +1103,33 @@ impl TypeChecker<'_> {
         let body_type = self.check_expr(body);
         self.restore_scoped_locals(snapshot);
         body_type.map(|ty| TypeKind::Vec(Box::new(ty)))
+    }
+
+    fn check_sequence_len_method_call(
+        &mut self,
+        receiver_type: &TypeKind,
+        args: &[CallArg],
+    ) -> Option<TypeKind> {
+        if !args.is_empty() {
+            self.errors.push(TypeCheckError::new(
+                "len does not accept arguments".to_owned(),
+            ));
+            for arg in args {
+                self.check_expr(arg.value());
+            }
+            return None;
+        }
+        match receiver_type {
+            TypeKind::Vec(_) | TypeKind::Seq(_) | TypeKind::Slice(_) | TypeKind::Array { .. } => {
+                Some(TypeKind::USize)
+            }
+            other => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "len receiver must be an iterable sequence, found {other:?}"
+                )));
+                None
+            }
+        }
     }
 
     fn check_vec_sum_method_call(
@@ -1753,6 +1782,15 @@ fn map_key_type_from_name(name: &str) -> Option<TypeKind> {
         "Character" | "Ref<Character>" => TypeKind::Ref(EntityKind::Character),
         other => named_type_label(other),
     })
+}
+
+fn is_character_speaker_type(ty: &TypeKind) -> bool {
+    matches!(
+        ty,
+        TypeKind::Ref(EntityKind::Character)
+            | TypeKind::Speaker(EntityKind::Character)
+            | TypeKind::SpeakerPreset(EntityKind::Character)
+    )
 }
 
 fn is_unit_number_type(ty: &TypeKind) -> bool {

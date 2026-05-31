@@ -705,6 +705,10 @@ Current high-confidence state:
   bool, byte, char, and logical duration sequences. `u8` dense storage is also
   available through the byte view so byte-oriented host paths can borrow it
   without materializing `RuntimeValue` elements.
+- `Vec<T>.len()` / `Seq<T>.len()` / fixed array length calls typecheck as
+  `usize` and read `RuntimeSeq::len()` directly in the VM and pure VM. The
+  checked-in dense scalar length bench exercises bool, char, duration, and
+  `u8` dense storage without crossing a dynamic materialization boundary.
 - Literal array repeats now lower to a structured runtime repeat expression
   instead of materializing a large sequence in the runtime plan. Fused
   `map(...).sum()` paths over repeated sources call the repeated-row pure batch
