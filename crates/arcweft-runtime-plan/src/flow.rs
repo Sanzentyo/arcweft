@@ -52,6 +52,11 @@ pub struct RuntimePlanLowerReport {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RuntimePlanLowerStats {
     pub pure_helpers: usize,
+    pub pure_candidate_functions_seen: usize,
+    pub pure_candidate_lower_attempts: usize,
+    pub pure_candidate_lower_failures_inferred: usize,
+    pub pure_expr_lowered_nodes: usize,
+    pub pure_expr_cloned_nodes: usize,
     pub pure_rewrite_expr_visits: usize,
     pub optimized_flows: usize,
     pub optimized_op_slices: usize,
@@ -76,13 +81,20 @@ pub fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<Runtime
 pub fn lower_runtime_plan_with_stats(
     module: &HirModule,
 ) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
-    let pure_candidates = lower_pure_helper_candidates(module).map_err(|errors| {
+    let pure_candidate_report = lower_pure_helper_candidates(module).map_err(|errors| {
         errors
             .into_iter()
             .map(|error| RuntimePlanLowerError::new(error.to_string()))
             .collect::<Vec<_>>()
     })?;
-    let pure_helpers = runtime_pure_helpers(&pure_candidates);
+    let mut stats = RuntimePlanLowerStats {
+        pure_candidate_functions_seen: pure_candidate_report.stats.functions_seen,
+        pure_candidate_lower_attempts: pure_candidate_report.stats.lower_attempts,
+        pure_candidate_lower_failures_inferred: pure_candidate_report.stats.lower_failures_inferred,
+        pure_expr_lowered_nodes: pure_candidate_report.stats.expr_lowered_nodes,
+        ..RuntimePlanLowerStats::default()
+    };
+    let pure_helpers = runtime_pure_helpers(&pure_candidate_report.candidates, &mut stats);
     let pure_map = pure_helper_map(&pure_helpers);
     let lowered_flows = lower_runtime_flows(module, &pure_map)?;
     let entries = lower_runtime_entries(module);
@@ -101,10 +113,7 @@ pub fn lower_runtime_plan_with_stats(
             _ => None,
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let mut stats = RuntimePlanLowerStats {
-        pure_helpers: pure_helpers.len(),
-        ..RuntimePlanLowerStats::default()
-    };
+    stats.pure_helpers = pure_helpers.len();
     RuntimePlan::new(entry, lowered_flows.flows, lowered_flows.line_task_groups)
         .map(|plan| {
             let plan = finalize_runtime_plan(
@@ -118,19 +127,25 @@ pub fn lower_runtime_plan_with_stats(
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
 }
 
-fn runtime_pure_helpers(candidates: &[PureHelperCandidate]) -> Vec<RuntimePureHelper> {
+fn runtime_pure_helpers(
+    candidates: &[PureHelperCandidate],
+    stats: &mut RuntimePlanLowerStats,
+) -> Vec<RuntimePureHelper> {
     candidates
         .iter()
         .enumerate()
-        .map(|(index, candidate)| RuntimePureHelper {
-            id: RuntimePureHelperId(index),
-            name: candidate.name().to_owned(),
-            input_names: candidate.input_names().to_vec(),
-            input_types: candidate.input_types().to_vec(),
-            output_type: candidate.output_type(),
-            expr: candidate.expr().clone(),
-            scalar_eval_supported: candidate.expr().supports_scalar_pure_eval(),
-            origin: candidate.origin(),
+        .map(|(index, candidate)| {
+            stats.pure_expr_cloned_nodes += candidate.shape().expr_weight;
+            RuntimePureHelper {
+                id: RuntimePureHelperId(index),
+                name: candidate.name().to_owned(),
+                input_names: candidate.input_names().to_vec(),
+                input_types: candidate.input_types().to_vec(),
+                output_type: candidate.output_type(),
+                expr: candidate.expr().clone(),
+                scalar_eval_supported: candidate.shape().supports_scalar_eval,
+                origin: candidate.origin(),
+            }
         })
         .collect()
 }

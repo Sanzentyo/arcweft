@@ -337,10 +337,13 @@ constructing runtime expressions, so pure calls are emitted as
 `RuntimeExpr::PureCall` without a later plan-wide rewrite traversal. The
 runtime-plan finalization pass now only optimizes flow map/sum windows. Bench
 and profile JSON expose this as `compiler.runtime_plan`: the checked-in 009
-fixture reports `pure_helpers = 1`, `pure_rewrite_expr_visits = 0`,
-`local_use_tail_scans = 2`, `local_use_scan_ops = 7`,
-`sequence_map_sum_fusions = 1`, and `pure_call_exprs = 1`. The same path-free
-run reported median elapsed time 15600 ns, `pure_flat_batch_items_median =
+fixture reports `pure_helpers = 1`, `pure_candidate_functions_seen = 1`,
+`pure_candidate_lower_attempts = 1`, `pure_expr_lowered_nodes = 5`,
+`pure_expr_cloned_nodes = pure_expr_lowered_nodes`,
+`pure_rewrite_expr_visits = 0`, `local_use_tail_scans = 2`,
+`local_use_scan_ops = 7`, `sequence_map_sum_fusions = 1`, and
+`pure_call_exprs = 1`. The same path-free
+run reported median elapsed time 14600 ns, `pure_flat_batch_items_median =
 128`, `pure_flat_batch_bytes_borrowed_median = 2048`, and zero flatten
 materializations, argument vector allocations, copied argument bytes, and copied
 result bytes.

@@ -721,6 +721,14 @@ flow @flow.main main {
     let report = lower_runtime_plan_with_stats(&hir).expect("map sum stats runtime plan lowers");
 
     assert_eq!(report.stats.pure_helpers, 1);
+    assert_eq!(report.stats.pure_candidate_functions_seen, 1);
+    assert_eq!(report.stats.pure_candidate_lower_attempts, 1);
+    assert_eq!(report.stats.pure_candidate_lower_failures_inferred, 0);
+    assert!(report.stats.pure_expr_lowered_nodes >= 1);
+    assert_eq!(
+        report.stats.pure_expr_cloned_nodes,
+        report.stats.pure_expr_lowered_nodes
+    );
     assert_eq!(report.stats.pure_rewrite_expr_visits, 0);
     assert_eq!(report.stats.optimized_flows, 1);
     assert!(report.stats.optimized_op_slices >= 1);

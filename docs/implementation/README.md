@@ -716,8 +716,12 @@ Current high-confidence state:
   plan-finalization pass optimizes flow map/sum windows without walking flow,
   source, or stream ops just to rewrite pure calls. Profile and bench JSON now
   expose runtime-plan lowering counters for pure helpers, zero plan-wide pure
-  rewrite visits, optimized flow slices, targeted local-use scans, map/sum
-  fusions, sequence-source inlines, and remaining `PureCall` expressions.
+  rewrite visits, pure candidate discovery attempts, inferred discovery
+  failures, lowered/cloned pure expression node counts, optimized flow slices,
+  targeted local-use scans, map/sum fusions, sequence-source inlines, and
+  remaining `PureCall` expressions. Pure candidate extraction caches a
+  `PureHelperShape`, so runtime-plan helper construction reuses the scalar
+  support flag instead of rescanning the lowered helper body.
 - The fused runtime map batch path now borrows local or literal tuple/bracket
   sequence sources while packing flat `i64` inputs, avoiding a `RuntimeValue`
   sequence clone before crossing into VM/AOT/JIT pure helper backends.

@@ -5872,21 +5872,7 @@ fn assert_profile_json_summary(stdout: &str) {
     let compiler = &json["compiler"];
     assert_typecheck_metrics(&compiler["typecheck"]);
     assert_borrow_check_metrics(&compiler["borrow_check"]);
-    assert!(
-        compiler["runtime_plan"]["optimized_flows"]
-            .as_u64()
-            .is_some_and(|value| value > 0)
-            && compiler["runtime_plan"]["optimized_op_slices"]
-                .as_u64()
-                .is_some_and(|value| value > 0)
-            && compiler["runtime_plan"]["local_use_tail_scans"]
-                .as_u64()
-                .is_some()
-            && compiler["runtime_plan"]["pure_rewrite_expr_visits"]
-                .as_u64()
-                .is_some_and(|value| value == 0),
-        "runtime-plan lowering counters should be populated: {compiler}"
-    );
+    assert_runtime_plan_metrics(&compiler["runtime_plan"]);
     assert!(
         compiler["runtime_type_validation"]["flows"]
             .as_u64()
@@ -5943,6 +5929,30 @@ fn assert_profile_json_summary(stdout: &str) {
                 .is_some()
             && runtime["native_io"]["completed_tasks"].as_u64().is_some(),
         "runtime execution counters should be populated: {runtime}"
+    );
+}
+
+fn assert_runtime_plan_metrics(runtime_plan: &serde_json::Value) {
+    assert!(
+        runtime_plan["optimized_flows"]
+            .as_u64()
+            .is_some_and(|value| value > 0)
+            && runtime_plan["optimized_op_slices"]
+                .as_u64()
+                .is_some_and(|value| value > 0)
+            && runtime_plan["local_use_tail_scans"].as_u64().is_some()
+            && runtime_plan["pure_candidate_functions_seen"]
+                .as_u64()
+                .is_some()
+            && runtime_plan["pure_candidate_lower_attempts"]
+                .as_u64()
+                .is_some()
+            && runtime_plan["pure_expr_lowered_nodes"].as_u64().is_some()
+            && runtime_plan["pure_expr_cloned_nodes"].as_u64().is_some()
+            && runtime_plan["pure_rewrite_expr_visits"]
+                .as_u64()
+                .is_some_and(|value| value == 0),
+        "runtime-plan lowering counters should be populated: {runtime_plan}"
     );
 }
 

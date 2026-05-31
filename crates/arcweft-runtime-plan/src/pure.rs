@@ -24,7 +24,34 @@ pub struct PureHelperCandidate {
     input_types: Vec<RuntimePureInputType>,
     output_type: RuntimePureOutputType,
     expr: RuntimeExpr,
+    shape: PureHelperShape,
     origin: RuntimePureHelperOrigin,
+}
+
+/// Lowered pure helper candidates plus discovery counters.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct PureHelperCandidateReport {
+    pub candidates: Vec<PureHelperCandidate>,
+    pub stats: PureHelperCandidateStats,
+}
+
+/// Counters for pure-helper candidate discovery and expression lowering.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PureHelperCandidateStats {
+    pub functions_seen: usize,
+    pub lower_attempts: usize,
+    pub lower_failures_inferred: usize,
+    pub expr_lowered_nodes: usize,
+}
+
+/// Shape summary reused by runtime-plan lowering and backend selection.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PureHelperShape {
+    pub input_arity: usize,
+    pub supports_scalar_eval: bool,
+    pub contains_call: bool,
+    pub contains_branch: bool,
+    pub expr_weight: usize,
 }
 
 /// Error produced while selecting or lowering a pure helper function.
@@ -68,6 +95,11 @@ impl PureHelperCandidate {
     /// Runtime expression body used by pure helper backends.
     pub const fn expr(&self) -> &RuntimeExpr {
         &self.expr
+    }
+
+    /// Cached expression shape used to avoid repeated body scans.
+    pub const fn shape(&self) -> PureHelperShape {
+        self.shape
     }
 
     /// Whether this helper was explicitly annotated or inferred from a pure body.
@@ -119,10 +151,13 @@ impl PureHelperCandidate {
 /// Lowers all `#[pure] fn` declarations that fit the executable helper subset.
 pub fn lower_pure_helper_candidates(
     module: &HirModule,
-) -> Result<Vec<PureHelperCandidate>, Vec<PureHelperLowerError>> {
+) -> Result<PureHelperCandidateReport, Vec<PureHelperLowerError>> {
+    let mut stats = PureHelperCandidateStats::default();
     let mut candidates = Vec::new();
     let mut errors = Vec::new();
     for function in module.functions() {
+        stats.functions_seen += 1;
+        stats.lower_attempts += 1;
         let annotated = function.has_attribute("pure");
         match lower_pure_helper_candidate(
             function,
@@ -132,13 +167,16 @@ pub fn lower_pure_helper_candidates(
                 RuntimePureHelperOrigin::Inferred
             },
         ) {
-            Ok(candidate) => candidates.push(candidate),
+            Ok(candidate) => {
+                stats.expr_lowered_nodes += candidate.shape().expr_weight;
+                candidates.push(candidate);
+            }
             Err(error) if annotated => errors.push(error),
-            Err(_) => {}
+            Err(_) => stats.lower_failures_inferred += 1,
         }
     }
     if errors.is_empty() {
-        Ok(candidates)
+        Ok(PureHelperCandidateReport { candidates, stats })
     } else {
         Err(errors)
     }
@@ -157,14 +195,134 @@ fn lower_pure_helper_candidate(
     let inputs = pure_helper_inputs(function)?;
     let (input_names, input_types): (Vec<_>, Vec<_>) = inputs.into_iter().unzip();
     let expr = lower_pure_helper_body(function)?;
+    let shape = pure_helper_shape(&expr, input_names.len());
     Ok(PureHelperCandidate {
         name: function.name().to_owned(),
         input_names,
         input_types,
         output_type: pure_helper_output_type(function.signature().return_type()),
         expr,
+        shape,
         origin,
     })
+}
+
+fn pure_helper_shape(expr: &RuntimeExpr, input_arity: usize) -> PureHelperShape {
+    let mut shape = summarize_runtime_expr(expr);
+    shape.input_arity = input_arity;
+    shape.supports_scalar_eval = expr.supports_scalar_pure_eval();
+    shape
+}
+
+fn summarize_runtime_expr(expr: &RuntimeExpr) -> PureHelperShape {
+    match expr {
+        RuntimeExpr::Let { expr, body, .. } => {
+            merge_shape_summaries([summarize_runtime_expr(expr), summarize_runtime_expr(body)])
+        }
+        RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
+            merge_shape_summaries(items.iter().map(summarize_runtime_expr))
+        }
+        RuntimeExpr::RepeatSeq { value, .. }
+        | RuntimeExpr::Field { target: value, .. }
+        | RuntimeExpr::SpreadArg(value)
+        | RuntimeExpr::Sum { source: value }
+        | RuntimeExpr::Unary { expr: value, .. } => {
+            merge_shape_summaries([summarize_runtime_expr(value)])
+        }
+        RuntimeExpr::Record(fields) => merge_shape_summaries(
+            fields
+                .iter()
+                .map(|field| summarize_runtime_expr(&field.value)),
+        ),
+        RuntimeExpr::Variant { payload, .. } => {
+            merge_shape_summaries(payload.as_deref().map(summarize_runtime_expr))
+        }
+        RuntimeExpr::Call { args, .. } | RuntimeExpr::PureCall { args, .. } => {
+            let mut shape = merge_shape_summaries(args.iter().map(summarize_runtime_expr));
+            shape.contains_call = true;
+            shape
+        }
+        RuntimeExpr::MethodCall { receiver, args, .. } => {
+            let mut shape = merge_shape_summaries(
+                std::iter::once(receiver.as_ref())
+                    .chain(args.iter())
+                    .map(summarize_runtime_expr),
+            );
+            shape.contains_call = true;
+            shape
+        }
+        RuntimeExpr::Map { source, body, .. }
+        | RuntimeExpr::Binary {
+            lhs: source,
+            rhs: body,
+            ..
+        } => merge_shape_summaries([summarize_runtime_expr(source), summarize_runtime_expr(body)]),
+        RuntimeExpr::If {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            let mut shape = merge_shape_summaries([
+                summarize_runtime_expr(condition),
+                summarize_runtime_expr(then_expr),
+                summarize_runtime_expr(else_expr),
+            ]);
+            shape.contains_branch = true;
+            shape
+        }
+        RuntimeExpr::IfLet {
+            expr,
+            guard,
+            then_expr,
+            else_expr,
+            ..
+        } => {
+            let mut shape = merge_shape_summaries(
+                std::iter::once(expr.as_ref())
+                    .chain(guard.as_deref())
+                    .chain([then_expr.as_ref(), else_expr.as_ref()])
+                    .map(summarize_runtime_expr),
+            );
+            shape.contains_branch = true;
+            shape
+        }
+        RuntimeExpr::Match { scrutinee, arms } => {
+            let mut shape = merge_shape_summaries(
+                std::iter::once(summarize_runtime_expr(scrutinee)).chain(arms.iter().map(|arm| {
+                    merge_shape_summaries(
+                        arm.guard
+                            .as_ref()
+                            .map(summarize_runtime_expr)
+                            .into_iter()
+                            .chain(std::iter::once(summarize_runtime_expr(&arm.value))),
+                    )
+                })),
+            );
+            shape.contains_branch = true;
+            shape
+        }
+        RuntimeExpr::Value(_) | RuntimeExpr::Local(_) | RuntimeExpr::EntityRef(_) => {
+            single_runtime_expr_shape()
+        }
+    }
+}
+
+fn single_runtime_expr_shape() -> PureHelperShape {
+    PureHelperShape {
+        expr_weight: 1,
+        ..PureHelperShape::default()
+    }
+}
+
+fn merge_shape_summaries(summaries: impl IntoIterator<Item = PureHelperShape>) -> PureHelperShape {
+    summaries
+        .into_iter()
+        .fold(single_runtime_expr_shape(), |mut total, shape| {
+            total.contains_call |= shape.contains_call;
+            total.contains_branch |= shape.contains_branch;
+            total.expr_weight += shape.expr_weight;
+            total
+        })
 }
 
 fn lower_pure_helper_body(function: &HirFunction) -> Result<RuntimeExpr, PureHelperLowerError> {
@@ -336,8 +494,13 @@ fn score(base: i64, bonus: i64) -> i64 {
         let hir = lower_to_hir(&tree).expect("pure function lowers to HIR");
 
         assert!(hir.functions()[0].has_attribute("pure"));
-        let candidates =
+        let report =
             lower_pure_helper_candidates(&hir).expect("pure function lowers to helper candidate");
+        assert_eq!(report.stats.functions_seen, 1);
+        assert_eq!(report.stats.lower_attempts, 1);
+        assert_eq!(report.stats.lower_failures_inferred, 0);
+        assert!(report.stats.expr_lowered_nodes > 0);
+        let candidates = report.candidates;
 
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].name(), "score");
@@ -347,6 +510,10 @@ fn score(base: i64, bonus: i64) -> i64 {
             [RuntimePureInputType::I64, RuntimePureInputType::I64]
         );
         assert_eq!(candidates[0].output_type(), RuntimePureOutputType::I64);
+        assert_eq!(candidates[0].shape().input_arity, 2);
+        assert!(!candidates[0].shape().supports_scalar_eval);
+        assert!(candidates[0].shape().contains_branch);
+        assert!(candidates[0].shape().contains_call);
         let request = candidates[0]
             .request_with_i64_inputs([3, 4])
             .expect("request builds with matching inputs");
@@ -368,8 +535,9 @@ fn score(base: i32, bonus: i16) -> i32 {
         let tree = parsed.into_typed_tree();
         let hir = lower_to_hir(&tree).expect("pure function lowers to HIR");
 
-        let candidates =
+        let report =
             lower_pure_helper_candidates(&hir).expect("pure function lowers to helper candidate");
+        let candidates = report.candidates;
 
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].input_names(), ["base", "bonus"]);
@@ -398,8 +566,9 @@ fn pack(byte: u8, index: u32) -> u64 {
         let tree = parsed.into_typed_tree();
         let hir = lower_to_hir(&tree).expect("pure function lowers to HIR");
 
-        let candidates =
+        let report =
             lower_pure_helper_candidates(&hir).expect("pure function lowers to helper candidate");
+        let candidates = report.candidates;
 
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].input_names(), ["byte", "index"]);
@@ -429,8 +598,11 @@ fn score(base: f64, gain: f64) -> f64 {
         let tree = parsed.into_typed_tree();
         let hir = lower_to_hir(&tree).expect("pure functions lower to HIR");
 
-        let candidates =
+        let report =
             lower_pure_helper_candidates(&hir).expect("pure functions lower to helper candidates");
+        assert_eq!(report.stats.functions_seen, 2);
+        assert_eq!(report.stats.lower_attempts, 2);
+        let candidates = report.candidates;
 
         assert_eq!(candidates.len(), 2);
         assert_eq!(
@@ -485,8 +657,9 @@ fn score(base: i64, bonus: i64) -> i64 {
         let tree = parsed.into_typed_tree();
         let hir = lower_to_hir(&tree).expect("pure function lowers to HIR");
 
-        let candidates =
+        let report =
             lower_pure_helper_candidates(&hir).expect("statement body lowers to helper candidate");
+        let candidates = report.candidates;
 
         assert_eq!(candidates.len(), 1);
         assert!(matches!(
@@ -515,8 +688,9 @@ fn score(base: i64, bonus: i64) -> i64 {
         let tree = parsed.into_typed_tree();
         let hir = lower_to_hir(&tree).expect("pure function lowers to HIR");
 
-        let candidates =
+        let report =
             lower_pure_helper_candidates(&hir).expect("tail return lowers to helper candidate");
+        let candidates = report.candidates;
 
         assert_eq!(candidates.len(), 1);
         assert!(matches!(

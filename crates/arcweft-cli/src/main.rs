@@ -833,13 +833,13 @@ fn jit_check_source_target(
     helper_name: Option<&str>,
 ) -> Result<JitCheckTarget, ExitCode> {
     let checked = load_and_check_with_env(path, &TypeCheckEnv::new())?;
-    let candidates = lower_pure_helper_candidates(&checked.hir).map_err(|errors| {
+    let pure_report = lower_pure_helper_candidates(&checked.hir).map_err(|errors| {
         for error in errors {
             eprintln!("error: {error}");
         }
         ExitCode::FAILURE
     })?;
-    let candidate = select_jit_helper_candidate(&candidates, helper_name)?;
+    let candidate = select_jit_helper_candidate(&pure_report.candidates, helper_name)?;
     JitCheckTarget::from_candidate(
         candidate,
         Some(JitCheckSourceCompilerReport::from(&checked)),
@@ -2867,7 +2867,7 @@ fn script_bench_selection(
     let mut phases = Vec::new();
     let compiled = compile_profile_runtime_plan(selection, &env, &mut phases)?;
     let manifest = collect_script_tests(&compiled.hir);
-    let pure_helpers = lower_pure_helper_candidates(&compiled.hir);
+    let pure_helpers = lower_pure_helper_candidates(&compiled.hir).map(|report| report.candidates);
     let output = ScriptBenchRunReport {
         source: report_path(selection.path()),
         syntax_warnings: compiled.syntax_warnings,
