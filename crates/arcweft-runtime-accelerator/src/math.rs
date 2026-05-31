@@ -18,6 +18,7 @@ pub enum RuntimeMathAutoSelectionReason {
     Matmul4x4Glam,
     MatmulWgpuWorkThreshold,
     MatmulCpuDefault,
+    ElementwiseWgpuWorkThreshold,
     ElementwiseCpuDefault,
 }
 
@@ -163,6 +164,10 @@ impl RuntimeMathAccelerator {
         rhs: &DenseMatrixF32,
     ) -> RuntimeMathBackendSelection {
         self.select_matmul_backend(lhs, rhs)
+    }
+
+    pub fn elementwise_backend_selection(&self, elements: usize) -> RuntimeMathBackendSelection {
+        self.select_elementwise_backend(elements)
     }
 
     pub fn record_backend_selection(&mut self, selection: RuntimeMathBackendSelection) {
@@ -496,8 +501,16 @@ impl RuntimeMathAccelerator {
         }
     }
 
-    fn select_elementwise_backend(&self, _elements: usize) -> RuntimeMathBackendSelection {
+    fn select_elementwise_backend(&self, elements: usize) -> RuntimeMathBackendSelection {
         match self.config.backend {
+            RuntimeMathBackend::Auto
+                if wgpu_backend_enabled() && elements >= self.config.wgpu_min_elements =>
+            {
+                RuntimeMathBackendSelection {
+                    backend: RuntimeMathBackend::Wgpu,
+                    auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseWgpuWorkThreshold),
+                }
+            }
             RuntimeMathBackend::Auto => RuntimeMathBackendSelection {
                 backend: RuntimeMathBackend::Ndarray,
                 auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseCpuDefault),
@@ -1699,6 +1712,31 @@ mod tests {
         assert_eq!(
             accelerator.stats().last_auto_reason,
             Some(RuntimeMathAutoSelectionReason::ElementwiseCpuDefault)
+        );
+    }
+
+    #[cfg(feature = "math-wgpu")]
+    #[test]
+    fn auto_large_elementwise_records_wgpu_threshold_policy_reason() {
+        let lhs = DenseMatrixF32::new(4, 4, vec![1.0; 16]).unwrap();
+        let rhs = DenseMatrixF32::new(4, 4, vec![2.0; 16]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            wgpu_min_elements: 1,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+
+        let Ok(out) = accelerator.matrix_add_f32(&lhs, &rhs) else {
+            return;
+        };
+
+        assert_eq!(out.values(), &[3.0; 16]);
+        assert_eq!(
+            accelerator.stats().last_backend,
+            Some(RuntimeMathBackend::Wgpu)
+        );
+        assert_eq!(
+            accelerator.stats().last_auto_reason,
+            Some(RuntimeMathAutoSelectionReason::ElementwiseWgpuWorkThreshold)
         );
     }
 

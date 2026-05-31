@@ -587,6 +587,9 @@ const fn auto_reason_label(value: RuntimeMathAutoSelectionReason) -> &'static st
         RuntimeMathAutoSelectionReason::Matmul4x4Glam => "matmul_4x4_glam",
         RuntimeMathAutoSelectionReason::MatmulWgpuWorkThreshold => "matmul_wgpu_work_threshold",
         RuntimeMathAutoSelectionReason::MatmulCpuDefault => "matmul_cpu_default",
+        RuntimeMathAutoSelectionReason::ElementwiseWgpuWorkThreshold => {
+            "elementwise_wgpu_work_threshold"
+        }
         RuntimeMathAutoSelectionReason::ElementwiseCpuDefault => "elementwise_cpu_default",
     }
 }

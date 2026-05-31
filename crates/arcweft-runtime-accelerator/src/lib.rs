@@ -2022,9 +2022,11 @@ impl RuntimePureAccelerator {
         lhs: &DenseMatrixF32,
         rhs: &DenseMatrixF32,
     ) -> Result<DenseMatrixF32, math::RuntimeMathAcceleratorError> {
-        if self.math.config().backend != math::RuntimeMathBackend::Wgpu {
+        let selection = self.math.elementwise_backend_selection(lhs.values().len());
+        if selection.backend() != math::RuntimeMathBackend::Wgpu {
             return self.math.matrix_add_f32(lhs, rhs);
         }
+        self.math.record_backend_selection(selection);
         let signature = MatrixBinarySignature::new(lhs, rhs);
         if let Some(cache) = self.math_prepare_cache.matrix_add.take()
             && cache.signature == signature
@@ -2047,9 +2049,11 @@ impl RuntimePureAccelerator {
         lhs: &DenseTensorF32,
         rhs: &DenseTensorF32,
     ) -> Result<DenseTensorF32, math::RuntimeMathAcceleratorError> {
-        if self.math.config().backend != math::RuntimeMathBackend::Wgpu {
+        let selection = self.math.elementwise_backend_selection(lhs.values().len());
+        if selection.backend() != math::RuntimeMathBackend::Wgpu {
             return self.math.tensor_add_f32(lhs, rhs);
         }
+        self.math.record_backend_selection(selection);
         let signature = TensorBinarySignature::new(lhs, rhs);
         if let Some(cache) = self.math_prepare_cache.tensor_add.take()
             && cache.signature == signature
@@ -3844,6 +3848,88 @@ mod tests {
             accelerator.math_stats().bytes_downloaded,
             std::mem::size_of_val(second.values())
         );
+    }
+
+    #[cfg(feature = "math-wgpu")]
+    #[test]
+    fn runtime_auto_wgpu_matrix_add_uses_prepared_cache_when_threshold_selects_gpu() {
+        let lhs = DenseMatrixF32::new(8, 8, vec![1.0; 64]).expect("matrix shape is valid");
+        let rhs = DenseMatrixF32::new(8, 8, vec![2.0; 64]).expect("matrix shape is valid");
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                math: math::RuntimeMathAcceleratorConfig {
+                    backend: math::RuntimeMathBackend::Auto,
+                    wgpu_min_elements: 1,
+                },
+                ..RuntimePureAcceleratorConfig::default()
+            },
+            &[],
+        );
+
+        let Ok(first) =
+            RuntimePureCallBackend::call_math_matrix_add_f32(&mut accelerator, &lhs, &rhs)
+        else {
+            return;
+        };
+        assert_eq!(
+            accelerator.math_stats().last_auto_reason,
+            Some(math::RuntimeMathAutoSelectionReason::ElementwiseWgpuWorkThreshold)
+        );
+
+        accelerator.reset_runtime_counters();
+        let second = RuntimePureCallBackend::call_math_matrix_add_f32(&mut accelerator, &lhs, &rhs)
+            .expect("auto-selected wgpu matrix add reuses prepared runtime cache");
+
+        assert_eq!(second.values(), first.values());
+        assert_eq!(
+            accelerator.math_stats().last_auto_reason,
+            Some(math::RuntimeMathAutoSelectionReason::ElementwiseWgpuWorkThreshold)
+        );
+        assert_eq!(accelerator.math_stats().wgpu_calls, 1);
+        assert_eq!(accelerator.math_stats().gpu_buffer_creations, 0);
+        assert_eq!(accelerator.math_stats().gpu_buffer_reuse_hits, 4);
+        assert_eq!(accelerator.math_stats().bytes_uploaded, 0);
+    }
+
+    #[cfg(feature = "math-wgpu")]
+    #[test]
+    fn runtime_auto_wgpu_tensor_add_uses_prepared_cache_when_threshold_selects_gpu() {
+        let lhs = DenseTensorF32::new(vec![64], vec![1.0; 64]).expect("tensor shape is valid");
+        let rhs = DenseTensorF32::new(vec![64], vec![2.0; 64]).expect("tensor shape is valid");
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                math: math::RuntimeMathAcceleratorConfig {
+                    backend: math::RuntimeMathBackend::Auto,
+                    wgpu_min_elements: 1,
+                },
+                ..RuntimePureAcceleratorConfig::default()
+            },
+            &[],
+        );
+
+        let Ok(first) =
+            RuntimePureCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs)
+        else {
+            return;
+        };
+        assert_eq!(
+            accelerator.math_stats().last_auto_reason,
+            Some(math::RuntimeMathAutoSelectionReason::ElementwiseWgpuWorkThreshold)
+        );
+
+        accelerator.reset_runtime_counters();
+        let second = RuntimePureCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs)
+            .expect("auto-selected wgpu tensor add reuses prepared runtime cache");
+
+        assert_eq!(second.values(), first.values());
+        assert_eq!(
+            accelerator.math_stats().last_auto_reason,
+            Some(math::RuntimeMathAutoSelectionReason::ElementwiseWgpuWorkThreshold)
+        );
+        assert_eq!(accelerator.math_stats().wgpu_calls, 1);
+        assert_eq!(accelerator.math_stats().gpu_buffer_creations, 0);
+        assert_eq!(accelerator.math_stats().gpu_buffer_reuse_hits, 4);
+        assert_eq!(accelerator.math_stats().bytes_uploaded, 0);
     }
 
     #[test]
