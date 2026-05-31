@@ -3097,15 +3097,7 @@ flow @flow.threads threads {
     assert_eq!(measurement["deterministic"]["task_requests_median"], 3);
     assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 3);
     assert_eq!(measurement["native_io"]["scheduler"]["dispatch_sorts"], 0);
-    assert_eq!(
-        measurement["native_io"]["scheduler"]["dispatch_sort_items"],
-        0
-    );
-    assert_eq!(measurement["native_io"]["scheduler"]["completion_sorts"], 0);
-    assert_eq!(
-        measurement["native_io"]["scheduler"]["completion_sort_items"],
-        0
-    );
+    assert_scheduler_completion_counts(measurement, 3);
     assert_eq!(measurement["native_io"]["completed_tasks"], 3);
     assert!(
         measurement["deterministic"]["child_fiber_ticks_median"]
@@ -3117,6 +3109,34 @@ flow @flow.threads threads {
         measurement["deterministic"]["max_child_fibers_median"], 3,
         "bench JSON should expose peak flow child-fiber fanout: {measurement}"
     );
+}
+
+fn assert_scheduler_completion_counts(measurement: &serde_json::Value, expected_events: u64) {
+    let scheduler = &measurement["native_io"]["scheduler"];
+    assert_eq!(scheduler["dispatch_sort_items"], 0);
+    assert_eq!(scheduler["completion_sorts"], 0);
+    assert_eq!(scheduler["completion_sort_items"], 0);
+    assert_eq!(scheduler["completion_events_in"], expected_events);
+    assert_eq!(scheduler["completion_events_out"], expected_events);
+    assert!(
+        scheduler["completion_normalization_passes"]
+            .as_u64()
+            .is_some_and(|passes| passes >= 1),
+        "bench JSON should expose completion normalization passes: {measurement}"
+    );
+    assert!(
+        scheduler["completion_normalization_checks"]
+            .as_u64()
+            .is_some(),
+        "bench JSON should expose completion normalization checks: {measurement}"
+    );
+    assert!(
+        scheduler["completion_sort_skipped_items"]
+            .as_u64()
+            .is_some(),
+        "bench JSON should expose skipped completion sort items: {measurement}"
+    );
+    assert_eq!(scheduler["joined_completion_events_emitted"], 0);
 }
 
 #[test]
@@ -3159,6 +3179,18 @@ fn bench_json_measures_checked_in_thread_scheduling_fixture() {
     assert_eq!(measurement["native_io"]["parallel_marker_tasks"], 0);
     assert_eq!(measurement["native_io"]["scheduler"]["dispatch_sorts"], 0);
     assert_eq!(measurement["native_io"]["scheduler"]["completion_sorts"], 0);
+    assert_eq!(
+        measurement["native_io"]["scheduler"]["completion_events_in"],
+        3
+    );
+    assert_eq!(
+        measurement["native_io"]["scheduler"]["completion_events_out"],
+        3
+    );
+    assert_eq!(
+        measurement["native_io"]["scheduler"]["completion_sort_skipped_items"],
+        3
+    );
 }
 
 #[test]
@@ -3999,6 +4031,20 @@ flow @flow.threaded_reads threaded_reads effects { fs.read(save) } {
     assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 4);
     assert_eq!(measurement["native_io"]["scheduler"]["dispatched"], 4);
     assert_eq!(measurement["native_io"]["scheduler"]["max_in_flight"], 4);
+    assert_eq!(
+        measurement["native_io"]["scheduler"]["completion_events_in"],
+        4
+    );
+    assert_eq!(
+        measurement["native_io"]["scheduler"]["completion_events_out"],
+        4
+    );
+    assert!(
+        measurement["native_io"]["scheduler"]["completion_normalization_checks"]
+            .as_u64()
+            .is_some_and(|checks| checks >= 1),
+        "threaded native reads should expose completion normalization checks: {measurement}"
+    );
     assert_eq!(measurement["native_io"]["parallel_io_tasks"], 2);
     assert_eq!(measurement["native_io"]["parallel_system_info_tasks"], 0);
     assert_eq!(measurement["native_io"]["parallel_marker_tasks"], 2);

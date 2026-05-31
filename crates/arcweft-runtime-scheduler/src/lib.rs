@@ -54,6 +54,14 @@ pub struct RuntimeSchedulerStats {
     pub dispatch_sort_items: usize,
     pub completion_sorts: usize,
     pub completion_sort_items: usize,
+    pub completion_normalization_passes: usize,
+    pub completion_normalization_checks: usize,
+    pub completion_events_in: usize,
+    pub completion_events_joined: usize,
+    pub completion_events_out: usize,
+    pub completion_sort_skipped_items: usize,
+    pub completion_sort_performed_items: usize,
+    pub joined_completion_events_emitted: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -95,6 +103,14 @@ impl RuntimeScheduler {
                 dispatch_sort_items: 0,
                 completion_sorts: 0,
                 completion_sort_items: 0,
+                completion_normalization_passes: 0,
+                completion_normalization_checks: 0,
+                completion_events_in: 0,
+                completion_events_joined: 0,
+                completion_events_out: 0,
+                completion_sort_skipped_items: 0,
+                completion_sort_performed_items: 0,
+                joined_completion_events_emitted: 0,
             },
         }
     }
@@ -148,6 +164,7 @@ impl RuntimeScheduler {
     /// Completes in-flight tasks and returns replay-normalized task events.
     pub fn complete(&mut self, events: impl IntoIterator<Item = TaskEvent>) -> Vec<TaskEvent> {
         let mut events = events.into_iter().collect::<Vec<_>>();
+        self.stats.completion_events_in += events.len();
         self.normalize_completion_events(&mut events);
         let mut joined_events = None;
         for event in &events {
@@ -157,9 +174,11 @@ impl RuntimeScheduler {
             }
         }
         if let Some(joined_events) = joined_events {
+            self.stats.completion_events_joined += joined_events.len();
             events.extend(joined_events);
             self.normalize_completion_events(&mut events);
         }
+        self.stats.completion_events_out += events.len();
         self.refresh_in_flight_stats();
         events
     }
@@ -236,6 +255,7 @@ impl RuntimeScheduler {
             return Vec::new();
         };
         self.stats.joined_completed += waiters.len();
+        self.stats.joined_completion_events_emitted += waiters.len();
         waiters
             .into_iter()
             .map(|task_id| TaskEvent {
@@ -253,9 +273,17 @@ impl RuntimeScheduler {
     }
 
     fn normalize_completion_events(&mut self, events: &mut [TaskEvent]) {
-        if events.len() > 1 && !task_events_are_normalized(events) {
+        self.stats.completion_normalization_passes += 1;
+        if events.len() <= 1 {
+            return;
+        }
+        self.stats.completion_normalization_checks += 1;
+        if task_events_are_normalized(events) {
+            self.stats.completion_sort_skipped_items += events.len();
+        } else {
             self.stats.completion_sorts += 1;
             self.stats.completion_sort_items += events.len();
+            self.stats.completion_sort_performed_items += events.len();
             events.sort_by(compare_task_events);
         }
     }
@@ -333,6 +361,13 @@ mod tests {
         assert_eq!(scheduler.stats().completed, 1);
         assert_eq!(scheduler.stats().joined, 2);
         assert_eq!(scheduler.stats().joined_completed, 2);
+        assert_eq!(scheduler.stats().joined_completion_events_emitted, 2);
+        assert_eq!(scheduler.stats().completion_events_in, 1);
+        assert_eq!(scheduler.stats().completion_events_joined, 2);
+        assert_eq!(scheduler.stats().completion_events_out, 3);
+        assert_eq!(scheduler.stats().completion_normalization_passes, 2);
+        assert_eq!(scheduler.stats().completion_normalization_checks, 1);
+        assert_eq!(scheduler.stats().completion_sort_skipped_items, 3);
         assert_eq!(scheduler.stats().in_flight, 0);
         assert_eq!(scheduler.stats().completion_sorts, 0);
     }
@@ -415,6 +450,12 @@ mod tests {
         assert_eq!(scheduler.stats().in_flight, 0);
         assert_eq!(scheduler.stats().completion_sorts, 1);
         assert_eq!(scheduler.stats().completion_sort_items, 2);
+        assert_eq!(scheduler.stats().completion_normalization_passes, 1);
+        assert_eq!(scheduler.stats().completion_normalization_checks, 1);
+        assert_eq!(scheduler.stats().completion_events_in, 2);
+        assert_eq!(scheduler.stats().completion_events_out, 2);
+        assert_eq!(scheduler.stats().completion_sort_performed_items, 2);
+        assert_eq!(scheduler.stats().completion_sort_skipped_items, 0);
     }
 
     #[test]

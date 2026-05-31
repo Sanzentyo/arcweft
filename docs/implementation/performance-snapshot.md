@@ -36,6 +36,15 @@ Checked-in system-info threaded native scheduling bench:
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 004_system_info_threads.arcw | bytecode_vm | 1 | 1227700 | 6 | 6 | 3 | 6 | 6 | 3 | 3 | 6 |
 
+The scheduler completion counters now split native completion work into
+normalization checks, sort work, joined-event fanout, and final event volume.
+In the latest checked-in system-info threaded native scheduling run, the
+completion surface reported `completion_events_in = 6`,
+`completion_events_out = 6`, `completion_normalization_passes = 1`,
+`completion_normalization_checks = 1`, `completion_sort_performed_items = 6`,
+`completion_sort_skipped_items = 0`, and
+`joined_completion_events_emitted = 0`.
+
 Scalar for-loop and mixed iterator pure JIT benches:
 
 | fixture | executor | pure backend | median elapsed ns | pure calls | stack packs | arg vec allocs | copied arg bytes | borrowed arg bytes | JIT calls | batch items |

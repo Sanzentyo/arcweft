@@ -565,9 +565,13 @@ Current high-confidence state:
   replay-stable order before sorting, and uses reference comparison when a sort
   is necessary. This keeps deterministic replay ordering while avoiding
   per-event task-id cloning on the common ordered native completion path.
-- Scheduler stats expose `completion_sorts` and `completion_sort_items`, making
-  completion normalization work visible in CLI `native_io.scheduler` bench and
-  profile output.
+- Scheduler stats expose `completion_sorts`, `completion_sort_items`,
+  `completion_normalization_passes`, `completion_normalization_checks`,
+  `completion_events_in`, `completion_events_joined`, `completion_events_out`,
+  `completion_sort_skipped_items`, `completion_sort_performed_items`, and
+  `joined_completion_events_emitted`. This separates sorting work from
+  already-normalized completion checks and joined-event fanout in CLI
+  `native_io.scheduler` bench and profile output.
 - The CLI native task bridge now completes read-only dispatched task batches
   and host system-info reads on a worker pool and reports path-free
   `parallel_batches`, `parallel_tasks`, `parallel_io_tasks`,

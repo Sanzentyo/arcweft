@@ -3441,7 +3441,7 @@ impl RuntimeBenchSamples {
         self.aot_fast_path_ops
             .push(trace.executor_stats.aot_fast_path_ops);
         self.executor_stats_samples.push(trace.executor_stats);
-        self.native_io.push(trace.native_io);
+        self.native_io.push(&trace.native_io);
     }
 
     fn push_step_stats(&mut self, trace: &RuntimeBenchTrace) {
@@ -3568,7 +3568,7 @@ impl NativeTaskStatsSamples {
         }
     }
 
-    fn push(&mut self, stats: NativeTaskStats) {
+    fn push(&mut self, stats: &NativeTaskStats) {
         self.completed_tasks.push(stats.completed_tasks);
         self.failed_tasks.push(stats.failed_tasks);
         self.read_ops.push(stats.read_ops);
@@ -3583,7 +3583,7 @@ impl NativeTaskStatsSamples {
             .push(stats.parallel_system_info_tasks);
         self.parallel_marker_tasks.push(stats.parallel_marker_tasks);
         self.parallel_workers.push(stats.parallel_workers);
-        self.scheduler.push(stats.scheduler);
+        self.scheduler.push(&stats.scheduler);
     }
 
     fn median(&mut self) -> NativeTaskStats {
@@ -3622,6 +3622,14 @@ struct NativeSchedulerStatsSamples {
     dispatch_sort_items: Vec<usize>,
     completion_sorts: Vec<usize>,
     completion_sort_items: Vec<usize>,
+    completion_normalization_passes: Vec<usize>,
+    completion_normalization_checks: Vec<usize>,
+    completion_events_in: Vec<usize>,
+    completion_events_joined: Vec<usize>,
+    completion_events_out: Vec<usize>,
+    completion_sort_skipped_items: Vec<usize>,
+    completion_sort_performed_items: Vec<usize>,
+    joined_completion_events_emitted: Vec<usize>,
 }
 
 impl NativeSchedulerStatsSamples {
@@ -3641,10 +3649,18 @@ impl NativeSchedulerStatsSamples {
             dispatch_sort_items: Vec::with_capacity(capacity),
             completion_sorts: Vec::with_capacity(capacity),
             completion_sort_items: Vec::with_capacity(capacity),
+            completion_normalization_passes: Vec::with_capacity(capacity),
+            completion_normalization_checks: Vec::with_capacity(capacity),
+            completion_events_in: Vec::with_capacity(capacity),
+            completion_events_joined: Vec::with_capacity(capacity),
+            completion_events_out: Vec::with_capacity(capacity),
+            completion_sort_skipped_items: Vec::with_capacity(capacity),
+            completion_sort_performed_items: Vec::with_capacity(capacity),
+            joined_completion_events_emitted: Vec::with_capacity(capacity),
         }
     }
 
-    fn push(&mut self, stats: NativeSchedulerStats) {
+    fn push(&mut self, stats: &NativeSchedulerStats) {
         self.submitted.push(stats.submitted);
         self.joined.push(stats.joined);
         self.dispatched.push(stats.dispatched);
@@ -3659,6 +3675,20 @@ impl NativeSchedulerStatsSamples {
         self.dispatch_sort_items.push(stats.dispatch_sort_items);
         self.completion_sorts.push(stats.completion_sorts);
         self.completion_sort_items.push(stats.completion_sort_items);
+        self.completion_normalization_passes
+            .push(stats.completion_normalization_passes);
+        self.completion_normalization_checks
+            .push(stats.completion_normalization_checks);
+        self.completion_events_in.push(stats.completion_events_in);
+        self.completion_events_joined
+            .push(stats.completion_events_joined);
+        self.completion_events_out.push(stats.completion_events_out);
+        self.completion_sort_skipped_items
+            .push(stats.completion_sort_skipped_items);
+        self.completion_sort_performed_items
+            .push(stats.completion_sort_performed_items);
+        self.joined_completion_events_emitted
+            .push(stats.joined_completion_events_emitted);
     }
 
     fn median(&mut self) -> NativeSchedulerStats {
@@ -3677,6 +3707,22 @@ impl NativeSchedulerStatsSamples {
             dispatch_sort_items: median_usize(&mut self.dispatch_sort_items),
             completion_sorts: median_usize(&mut self.completion_sorts),
             completion_sort_items: median_usize(&mut self.completion_sort_items),
+            completion_normalization_passes: median_usize(
+                &mut self.completion_normalization_passes,
+            ),
+            completion_normalization_checks: median_usize(
+                &mut self.completion_normalization_checks,
+            ),
+            completion_events_in: median_usize(&mut self.completion_events_in),
+            completion_events_joined: median_usize(&mut self.completion_events_joined),
+            completion_events_out: median_usize(&mut self.completion_events_out),
+            completion_sort_skipped_items: median_usize(&mut self.completion_sort_skipped_items),
+            completion_sort_performed_items: median_usize(
+                &mut self.completion_sort_performed_items,
+            ),
+            joined_completion_events_emitted: median_usize(
+                &mut self.joined_completion_events_emitted,
+            ),
         }
     }
 }

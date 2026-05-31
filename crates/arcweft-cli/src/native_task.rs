@@ -51,6 +51,14 @@ pub(crate) struct NativeSchedulerStats {
     pub(crate) dispatch_sort_items: usize,
     pub(crate) completion_sorts: usize,
     pub(crate) completion_sort_items: usize,
+    pub(crate) completion_normalization_passes: usize,
+    pub(crate) completion_normalization_checks: usize,
+    pub(crate) completion_events_in: usize,
+    pub(crate) completion_events_joined: usize,
+    pub(crate) completion_events_out: usize,
+    pub(crate) completion_sort_skipped_items: usize,
+    pub(crate) completion_sort_performed_items: usize,
+    pub(crate) joined_completion_events_emitted: usize,
 }
 
 impl NativeTaskBridge {
@@ -416,6 +424,14 @@ impl From<RuntimeSchedulerStats> for NativeSchedulerStats {
             dispatch_sort_items: stats.dispatch_sort_items,
             completion_sorts: stats.completion_sorts,
             completion_sort_items: stats.completion_sort_items,
+            completion_normalization_passes: stats.completion_normalization_passes,
+            completion_normalization_checks: stats.completion_normalization_checks,
+            completion_events_in: stats.completion_events_in,
+            completion_events_joined: stats.completion_events_joined,
+            completion_events_out: stats.completion_events_out,
+            completion_sort_skipped_items: stats.completion_sort_skipped_items,
+            completion_sort_performed_items: stats.completion_sort_performed_items,
+            joined_completion_events_emitted: stats.joined_completion_events_emitted,
         }
     }
 }
