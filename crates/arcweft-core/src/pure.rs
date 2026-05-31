@@ -640,13 +640,14 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         if arity == 0 {
             for _ in 0..rows {
                 let value = self.scratch.evaluate_exact_int_slice::<T>(helper, &[])?;
-                sum += T::try_from_runtime_value(&helper.name, value)?.sum_as_i64();
+                sum +=
+                    T::try_from_runtime_value(&helper.name, value)?.try_sum_as_i64(&helper.name)?;
             }
             return Ok(sum);
         }
         for row in flat_inputs.chunks_exact(arity) {
             let value = self.scratch.evaluate_exact_int_slice::<T>(helper, row)?;
-            sum += T::try_from_runtime_value(&helper.name, value)?.sum_as_i64();
+            sum += T::try_from_runtime_value(&helper.name, value)?.try_sum_as_i64(&helper.name)?;
         }
         Ok(sum)
     }

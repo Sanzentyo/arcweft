@@ -701,6 +701,15 @@ impl Engine {
             param,
             body,
         } = source
+            && let Some(sum) = self.evaluate_u64_map_sum(map_source, param, body, pure_backend)?
+        {
+            return Ok(RuntimeValue::Int(sum));
+        }
+        if let RuntimeExpr::Map {
+            source: map_source,
+            param,
+            body,
+        } = source
             && let Some(sum) = self.evaluate_i64_map_sum(map_source, param, body, pure_backend)?
         {
             return Ok(RuntimeValue::Int(sum));
@@ -881,6 +890,25 @@ impl Engine {
             &mut flat_inputs,
         );
         self.pure_u32_batch_inputs = flat_inputs;
+        result
+    }
+
+    fn evaluate_u64_map_sum(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<i64>, RuntimeEvalError> {
+        let mut flat_inputs = std::mem::take(&mut self.pure_u64_batch_inputs);
+        let result = self.evaluate_exact_int_map_sum_with_inputs::<u64>(
+            source,
+            param,
+            body,
+            pure_backend,
+            &mut flat_inputs,
+        );
+        self.pure_u64_batch_inputs = flat_inputs;
         result
     }
 

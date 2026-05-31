@@ -365,17 +365,21 @@ dense integer storage into the i64 accelerator. Runtime pure helper metadata
 preserves signed and unsigned integer input widths plus the declared output
 width. The exact i64 flat-batch accelerator still owns JIT/AOT execution, but
 the VM also has exact integer flat-batch sum ABI coverage for `i8`, `i16`,
-`i32`, `u8`, `u16`, and `u32`. These paths borrow the matching `&[T]` storage
-directly and convert only the scalar result into the `i64` sum accumulator. The
+`i32`, `u8`, `u16`, `u32`, and `u64`. These paths borrow the matching `&[T]`
+storage directly and convert only the scalar result into the `i64` sum accumulator. The
 checked-in `016_dense_i32_map_pure_batch.arcw` and
 `017_dense_u32_map_pure_batch.arcw` benches validate the width-preserving path
 with `pure_flat_batch_items_median = 128`,
 `pure_flat_batch_bytes_borrowed_median = 1024`,
 `pure_arg_bytes_borrowed_median = 1024`, and no result copy in the fused
-`map(...).sum()` path. This confirms the hot boundary is not doing
+`map(...).sum()` path. `018_dense_u64_map_pure_batch.arcw` covers the same path
+with `pure_flat_batch_bytes_borrowed_median = 2048`, and uses checked conversion
+when accumulating the `u64` pure-helper result into an `i64` sum. This confirms
+the hot boundary is not doing
 `.map(i64::from)`. The remaining typed accelerator work is to add matching JIT
-and AOT kernels for these widths, and to add exact VM/JIT/AOT policies for wider
-integer classes once overflow and deterministic sum semantics are fixed.
+and AOT kernels for these widths, and to add exact VM/JIT/AOT policies for
+`i128`, `u128`, and target-sized classes once overflow and deterministic sum
+semantics are fixed.
 
 The dense scalar length fixture covers the non-integer deterministic scalar
 storage cases. It lowers unit, bool, char, logical-duration, and `u8` sequences

@@ -670,6 +670,17 @@ fn engine_batches_dense_i16_and_u8_map_without_widening_flat_inputs() {
     );
 }
 
+#[test]
+fn engine_batches_dense_u64_map_without_widening_flat_inputs() {
+    assert_dense_exact_int_map_sum_uses_flat_batch(
+        runtime_sequence_dense_u64(vec![3, 5, 7]),
+        RuntimeValue::UInt(4),
+        RuntimePureInputType::U64,
+        RuntimePureOutputType::U64,
+        6 * std::mem::size_of::<u64>(),
+    );
+}
+
 fn assert_dense_exact_int_map_sum_uses_flat_batch(
     source: RuntimeValue,
     bonus: RuntimeValue,

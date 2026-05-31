@@ -61,7 +61,7 @@ pub trait RuntimeExactInteger: Copy + 'static {
 
     fn into_runtime_value(self) -> RuntimeValue;
     fn try_from_runtime_value(helper: &str, value: RuntimeValue) -> Result<Self, RuntimeEvalError>;
-    fn sum_as_i64(self) -> i64;
+    fn try_sum_as_i64(self, helper: &str) -> Result<i64, RuntimeEvalError>;
     fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]>;
     fn dense_sequence(values: Vec<Self>) -> RuntimeValue;
 }
@@ -95,8 +95,8 @@ macro_rules! impl_runtime_exact_signed_integer {
                 }
             }
 
-            fn sum_as_i64(self) -> i64 {
-                i64::from(self)
+            fn try_sum_as_i64(self, _helper: &str) -> Result<i64, RuntimeEvalError> {
+                Ok(i64::from(self))
             }
 
             fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
@@ -139,8 +139,14 @@ macro_rules! impl_runtime_exact_unsigned_integer {
                 }
             }
 
-            fn sum_as_i64(self) -> i64 {
-                i64::from(self)
+            fn try_sum_as_i64(self, helper: &str) -> Result<i64, RuntimeEvalError> {
+                i64::try_from(self).map_err(|_| RuntimeEvalError::UnsupportedPure {
+                    name: helper.to_owned(),
+                    reason: format!(
+                        "pure {} result `{self}` cannot be represented as an i64 sum",
+                        stringify!($ty)
+                    ),
+                })
             }
 
             fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
@@ -461,6 +467,7 @@ impl_runtime_exact_signed_integer!(i32, I32, I32, as_i32_slice, runtime_sequence
 impl_runtime_exact_unsigned_integer!(u8, U8, U8, as_u8_slice, runtime_sequence_dense_u8);
 impl_runtime_exact_unsigned_integer!(u16, U16, U16, as_u16_slice, runtime_sequence_dense_u16);
 impl_runtime_exact_unsigned_integer!(u32, U32, U32, as_u32_slice, runtime_sequence_dense_u32);
+impl_runtime_exact_unsigned_integer!(u64, U64, U64, as_u64_slice, runtime_sequence_dense_u64);
 
 /// Homogeneous storage kind used by a dense runtime sequence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
