@@ -391,6 +391,14 @@ flow @flow.main main {
         false
     );
     assert_eq!(json["executor_stats"]["pure_config"]["batch_min_len"], 2);
+    assert_eq!(
+        json["executor_stats"]["pure_config"]["math_backend"],
+        "auto"
+    );
+    assert_eq!(
+        json["executor_stats"]["pure_config"]["math_wgpu_min_elements"],
+        67_108_864
+    );
     assert_eq!(json["executor_stats"]["pure_compile"]["jit_successes"], 1);
 }
 
@@ -1275,6 +1283,50 @@ flow @flow.profile profile {
     assert!(
         !stdout.contains(&std::env::temp_dir().display().to_string()),
         "profile JSON must not record absolute temp paths: {stdout}"
+    );
+}
+
+#[test]
+fn profile_json_reports_runtime_math_backend_selection() {
+    let path = temp_arcw(
+        "profile-math-backend",
+        r#"
+flow @flow.profile profile {
+    log.info("profile math")
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("profile")
+        .arg(&path)
+        .arg("--math-backend")
+        .arg("ndarray")
+        .arg("--math-wgpu-min-elements")
+        .arg("4096")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("1")
+        .arg("--json")
+        .output()
+        .expect("arcw profile runs with explicit math backend");
+
+    assert!(
+        output.status.success(),
+        "math backend profile should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("profile output is structured JSON");
+    let pure_config = &json["runtime"]["executor_stats"]["pure_config"];
+    assert_eq!(pure_config["math_backend"], "ndarray");
+    assert_eq!(pure_config["math_wgpu_min_elements"], 4096);
+    assert!(
+        !String::from_utf8_lossy(&output.stdout)
+            .contains(&std::env::temp_dir().display().to_string()),
+        "profile JSON must not record absolute temp paths: {json}"
     );
 }
 

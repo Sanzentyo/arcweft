@@ -36,6 +36,17 @@ pub enum LaunchPureBackend {
     Jit,
 }
 
+/// Matrix/tensor backend selected by a launch profile.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LaunchMathBackend {
+    Auto,
+    Scalar,
+    Glam,
+    Ndarray,
+    Wgpu,
+}
+
 /// Project-level profile manifest parsed from `arcw.toml`.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct LaunchProfileManifest {
@@ -63,6 +74,10 @@ pub struct LaunchProfileSpec {
 pub struct LaunchPureProfileSpec {
     #[serde(default)]
     backend: Option<LaunchPureBackend>,
+    #[serde(default)]
+    math_backend: Option<LaunchMathBackend>,
+    #[serde(default)]
+    math_wgpu_min_elements: Option<usize>,
     #[serde(default)]
     workers: Option<String>,
     #[serde(default)]
@@ -209,6 +224,16 @@ impl LaunchPureProfileSpec {
         self.backend
     }
 
+    /// Optional math backend selected for built-in matrix/tensor operations.
+    pub const fn math_backend(&self) -> Option<LaunchMathBackend> {
+        self.math_backend
+    }
+
+    /// Optional minimum element count before auto math dispatch considers GPU.
+    pub const fn math_wgpu_min_elements(&self) -> Option<usize> {
+        self.math_wgpu_min_elements
+    }
+
     /// Optional worker-count policy, either `auto` or a positive integer.
     pub fn workers(&self) -> Option<&str> {
         self.workers.as_deref()
@@ -237,6 +262,8 @@ listen = "127.0.0.1:8787"
 
 [profiles."server.dev".pure]
 backend = "jit"
+math_backend = "ndarray"
+math_wgpu_min_elements = 1024
 workers = "auto"
 batch_min_len = 2048
 "#,
@@ -254,6 +281,8 @@ batch_min_len = 2048
         assert_eq!(resolved.listen(), Some("127.0.0.1:8787"));
         let pure = resolved.pure().expect("pure profile resolves");
         assert_eq!(pure.backend(), Some(LaunchPureBackend::Jit));
+        assert_eq!(pure.math_backend(), Some(LaunchMathBackend::Ndarray));
+        assert_eq!(pure.math_wgpu_min_elements(), Some(1024));
         assert_eq!(pure.workers(), Some("auto"));
         assert_eq!(pure.batch_min_len(), Some(2048));
     }

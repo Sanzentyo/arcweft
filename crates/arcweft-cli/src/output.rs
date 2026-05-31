@@ -761,6 +761,8 @@ pub(crate) struct RuntimeExecutorPureConfigSummary {
     pub(crate) resolved_workers: usize,
     pub(crate) worker_pool_active: bool,
     pub(crate) batch_min_len: usize,
+    pub(crate) math_backend: &'static str,
+    pub(crate) math_wgpu_min_elements: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]

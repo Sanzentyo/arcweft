@@ -460,7 +460,7 @@ The dense scalar length fixture covers the non-integer deterministic scalar
 storage cases. It lowers unit, bool, char, logical-duration, and `u8` sequences
 into dense storage, checks `len()` as `usize`, and evaluates length through
 `RuntimeSeq::len()` rather than materializing `RuntimeValue` elements. The local
-path-free bench run reported median elapsed time 15400 ns for eight
+path-free bench run reported median elapsed time 16100 ns for eight
 executed ops, with `pure_flatten_materializations_median = 0`,
 `pure_arg_vec_allocations_median = 0`, `pure_result_bytes_copied_median = 0`,
 and no source path in the JSON output.
@@ -469,7 +469,7 @@ The dense textual scalar length fixture covers homogeneous textual and typed
 float scalar runtime values. It keeps `String`, typed native `f64` values,
 and entity-reference sequences dense, including entity
 references that are only known after runtime evaluation. The local path-free
-bench run reported median elapsed time 17200 ns
+bench run reported median elapsed time 15800 ns
 for seven executed ops, with `pure_arg_vec_allocations_median = 0`,
 `pure_result_bytes_copied_median = 0`, and no source path in the JSON output.
 
@@ -477,7 +477,7 @@ The dense wide numeric length fixture covers the remaining integer primitive
 spellings. It lowers `i128`, `u128`, `isize`, and `usize` bracket literals to
 `DenseSeq::I128`, `DenseSeq::U128`, `DenseSeq::ISize`, and `DenseSeq::USize`,
 then reads `RuntimeSeq::len()` without materializing scalar runtime values.
-The local path-free bench run reported median elapsed time 13500 ns
+The local path-free bench run reported median elapsed time 13900 ns
 for seven executed ops, with `pure_flatten_materializations_median = 0`,
 `pure_arg_vec_allocations_median = 0`, `pure_result_bytes_copied_median = 0`,
 and no source path in the JSON output.
@@ -490,7 +490,11 @@ without materializing `Vec<RuntimeValue>` arguments. f64 helpers use the same
 native JIT promotion shape with double-width borrowed argument/output accounting.
 Exact-width integer helpers use the same scalar AOT boundary for non-i64 widths;
 native Cranelift JIT covers i64, width-preserving i32 scalar/batch ABI, and
-f32/f64 scalar/batch ABI.
+f32/f64 scalar/batch ABI. The latest dense literal length/sum benches reported
+8300 ns for `010_dense_i32_sum.arcw`, 8100 ns for
+`011_dense_u64_sum.arcw`, 21700 ns for
+`012_dense_integer_widths_sum.arcw`, and zero materializations, copied bytes,
+or argument Vec allocations in all dense 010-015 runs.
 Record/tuple storage should be designed separately as columnar storage rather
 than as scalar `DenseSeqStorage<T>`. The scalar dense coverage is encoded in
 `DenseSeqKind`, so adding another dense class requires extending the typed kind
@@ -514,6 +518,14 @@ scalar deterministic baseline. `RuntimePureAccelerator` owns a
 receive the configured math backend without adding GPU or ndarray dependencies
 to `arcweft-core`. Runtime stats record `math_calls` and
 `math_accelerated_calls` alongside the existing pure helper counters.
+`RuntimePureAcceleratorConfig` now carries the math backend policy, so CLI
+commands and launch profiles can select `auto`, `scalar`, `glam`, `ndarray`,
+or `wgpu` with the same runtime config object that already controls pure helper
+VM/AOT/JIT execution. `arcw run`, `profile`, `cli`, `serve`, `test`, `bench`,
+and `verify-types --run` accept `--math-backend` and
+`--math-wgpu-min-elements`; `[profiles.NAME.pure]` supports
+`math_backend` and `math_wgpu_min_elements`, with CLI flags taking precedence.
+Executor JSON reports both selected values under `pure_config`.
 
 The wgpu path is feature-gated by `math-wgpu` and keeps Windows DX12 enabled
 alongside Vulkan, Metal, and GLES. The workspace Rust floor is raised to 1.96

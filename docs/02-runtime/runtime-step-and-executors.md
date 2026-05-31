@@ -73,8 +73,9 @@ item counts, JIT/AOT/VM call counts, fixed-stack argument packs, copied
 argument/result byte counts, thread-pool jobs, Vec argument allocations, and
 fallback counts. These counters are step-local even when an adapter keeps a
 persistent JIT/AOT compile cache across steps. Executor-level stats report the
-selected pure backend, worker policy, batch threshold, helper acceleration
-summary, compile attempts, cache hits/misses, and compile elapsed time.
+selected pure backend, worker policy, batch threshold, selected dense math
+backend, math GPU auto threshold, helper acceleration summary, compile
+attempts, cache hits/misses, and compile elapsed time.
 For deterministic integer helpers, VM fallback evaluation also consumes the
 fixed-stack argument pack directly; `arg_vec_allocations` therefore identifies
 runtime call-site argument materialization rather than backend fallback

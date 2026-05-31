@@ -131,8 +131,9 @@ counts, stack-packed argument calls, copied argument bytes, borrowed argument
 bytes, copied result bytes, thread-pool jobs, Vec argument allocations, and VM
 fallback counts. Executor
 stats include the selected pure backend, worker policy, resolved worker count,
-per-worker batch threshold, helper acceleration summary, compile attempts, Auto
-tier decisions/promotions, cache hits/misses, and compile elapsed time. These
+per-worker batch threshold, selected dense math backend, math GPU auto
+threshold, helper acceleration summary, compile attempts, Auto tier
+decisions/promotions, cache hits/misses, and compile elapsed time. These
 counters are meant to show whether
 natural flow code is staying on the zero-allocation scalar path or crossing into
 batch/thread-pool execution.

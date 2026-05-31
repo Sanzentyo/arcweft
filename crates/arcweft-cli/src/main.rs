@@ -35,10 +35,12 @@ use arcweft_lang_syntax::{
     lint::lint_id_policy,
     parser::parse_source,
 };
-use arcweft_launch::{LaunchKind, LaunchProfileManifest, LaunchPureBackend, ResolvedLaunchProfile};
+use arcweft_launch::{
+    LaunchKind, LaunchMathBackend, LaunchProfileManifest, LaunchPureBackend, ResolvedLaunchProfile,
+};
 use arcweft_runtime_accelerator::{
     RuntimePureAccelerator, RuntimePureAcceleratorConfig, RuntimePureBackendMode,
-    RuntimePureCompileStats, RuntimePureWorkerCount,
+    RuntimePureCompileStats, RuntimePureWorkerCount, math::RuntimeMathBackend,
 };
 use arcweft_runtime_plan::flow::{
     RuntimePlanLowerStats, lower_runtime_plan, lower_runtime_plan_with_stats,
@@ -1413,6 +1415,8 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
         options.pure_backend,
         options.pure_workers,
         options.pure_batch_min_len,
+        options.math_backend,
+        options.math_wgpu_min_elements,
     )?;
     if let Some(profile) = selection.profile() {
         match profile.kind() {
@@ -1525,6 +1529,8 @@ fn runtime_run_bench_selection(
         pure_backend: options.pure_backend,
         pure_workers: options.pure_workers,
         pure_batch_min_len: options.pure_batch_min_len,
+        math_backend: options.math_backend,
+        math_wgpu_min_elements: options.math_wgpu_min_elements,
         values: options.values.clone(),
         json: options.json,
     };
@@ -1538,6 +1544,8 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
         options.pure_backend,
         options.pure_workers,
         options.pure_batch_min_len,
+        options.math_backend,
+        options.math_wgpu_min_elements,
     )?;
     let adapter = options.adapter.as_deref().or(selection.adapter());
     let env = typecheck_env_for_adapter(adapter)?;
@@ -2106,6 +2114,8 @@ fn runtime_executor_stats(
             resolved_workers: pure.resolved_worker_count(),
             worker_pool_active: pure.has_worker_pool(),
             batch_min_len: config.batch_min_len,
+            math_backend: runtime_math_backend_label(config.math.backend),
+            math_wgpu_min_elements: config.math.wgpu_min_elements,
         },
         pure_acceleration: RuntimeExecutorPureAccelerationSummary {
             annotated: summary.annotated,
@@ -2151,6 +2161,8 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
         options.pure_backend,
         options.pure_workers,
         options.pure_batch_min_len,
+        options.math_backend,
+        options.math_wgpu_min_elements,
     )?;
     require_profile_kind(&selection, LaunchKind::Cli, "cli")?;
     let checked = load_and_check_selection(&selection, None)?;
@@ -2221,6 +2233,8 @@ fn runtime_serve_command(options: &ServeOptions) -> Result<(), ExitCode> {
         options.pure_backend,
         options.pure_workers,
         options.pure_batch_min_len,
+        options.math_backend,
+        options.math_wgpu_min_elements,
     )?;
     runtime_serve_selection(
         &selection,
@@ -2466,6 +2480,8 @@ fn script_test_command(options: &ScriptTestOptions) -> Result<(), ExitCode> {
         options.pure_backend,
         options.pure_workers,
         options.pure_batch_min_len,
+        options.math_backend,
+        options.math_wgpu_min_elements,
     )?;
     script_test_selection(
         &selection,
@@ -2868,6 +2884,8 @@ fn script_bench_selection(
         options.pure_backend,
         options.pure_workers,
         options.pure_batch_min_len,
+        options.math_backend,
+        options.math_wgpu_min_elements,
     )?;
     let env = typecheck_env_for_adapter(selection.adapter())?;
     let mut phases = Vec::new();
@@ -4147,6 +4165,8 @@ fn verify_types_runtime_self_check(
         options.pure_backend,
         options.pure_workers,
         options.pure_batch_min_len,
+        options.math_backend,
+        options.math_wgpu_min_elements,
     )?;
     let mut executor = run_profile_phase(&mut checked.phases, "executor_prepare", || {
         Ok::<RuntimeExecutorInstance, ExitCode>(RuntimeExecutorInstance::new(
@@ -4236,11 +4256,19 @@ fn runtime_pure_config_for_selection(
     backend: Option<CliRuntimePureBackend>,
     workers: Option<CliRuntimePureWorkers>,
     batch_min_len: Option<usize>,
+    math_backend: Option<CliRuntimeMathBackend>,
+    math_wgpu_min_elements: Option<usize>,
 ) -> Result<RuntimePureAcceleratorConfig, ExitCode> {
     let mut config = RuntimePureAcceleratorConfig::default();
     if let Some(profile) = selection.profile().and_then(ResolvedLaunchProfile::pure) {
         if let Some(backend) = profile.backend() {
             config.backend = launch_pure_backend_mode(backend);
+        }
+        if let Some(backend) = profile.math_backend() {
+            config.math.backend = launch_math_backend_mode(backend);
+        }
+        if let Some(min_elements) = profile.math_wgpu_min_elements() {
+            config.math.wgpu_min_elements = min_elements;
         }
         if let Some(workers) = profile.workers() {
             config.workers = parse_runtime_pure_workers(workers)
@@ -4263,6 +4291,12 @@ fn runtime_pure_config_for_selection(
     if let Some(batch_min_len) = batch_min_len {
         config.batch_min_len = batch_min_len;
     }
+    if let Some(backend) = math_backend {
+        config.math.backend = backend.into();
+    }
+    if let Some(min_elements) = math_wgpu_min_elements {
+        config.math.wgpu_min_elements = min_elements;
+    }
     Ok(config)
 }
 
@@ -4275,12 +4309,32 @@ fn launch_pure_backend_mode(value: LaunchPureBackend) -> RuntimePureBackendMode 
     }
 }
 
+fn launch_math_backend_mode(value: LaunchMathBackend) -> RuntimeMathBackend {
+    match value {
+        LaunchMathBackend::Auto => RuntimeMathBackend::Auto,
+        LaunchMathBackend::Scalar => RuntimeMathBackend::Scalar,
+        LaunchMathBackend::Glam => RuntimeMathBackend::Glam,
+        LaunchMathBackend::Ndarray => RuntimeMathBackend::Ndarray,
+        LaunchMathBackend::Wgpu => RuntimeMathBackend::Wgpu,
+    }
+}
+
 fn runtime_pure_backend_label(value: RuntimePureBackendMode) -> &'static str {
     match value {
         RuntimePureBackendMode::Auto => "auto",
         RuntimePureBackendMode::Vm => "vm",
         RuntimePureBackendMode::Aot => "aot",
         RuntimePureBackendMode::Jit => "jit",
+    }
+}
+
+fn runtime_math_backend_label(value: RuntimeMathBackend) -> &'static str {
+    match value {
+        RuntimeMathBackend::Auto => "auto",
+        RuntimeMathBackend::Scalar => "scalar",
+        RuntimeMathBackend::Glam => "glam",
+        RuntimeMathBackend::Ndarray => "ndarray",
+        RuntimeMathBackend::Wgpu => "wgpu",
     }
 }
 
@@ -4512,6 +4566,10 @@ struct VerifyTypesOptions {
     pure_workers: Option<CliRuntimePureWorkers>,
     #[arg(long)]
     pure_batch_min_len: Option<usize>,
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
     #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
     values: Vec<RuntimeBinding>,
     #[arg(long)]
@@ -4564,6 +4622,10 @@ struct RuntimeRunOptions {
     pure_workers: Option<CliRuntimePureWorkers>,
     #[arg(long)]
     pure_batch_min_len: Option<usize>,
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
     #[arg(long, default_value_t = 1)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::OneOp)]
@@ -4595,6 +4657,10 @@ struct RuntimeProfileOptions {
     pure_workers: Option<CliRuntimePureWorkers>,
     #[arg(long)]
     pure_batch_min_len: Option<usize>,
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
     #[arg(long, default_value_t = 1)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -4622,6 +4688,10 @@ struct CliRunOptions {
     pure_workers: Option<CliRuntimePureWorkers>,
     #[arg(long)]
     pure_batch_min_len: Option<usize>,
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
     #[arg(long, default_value_t = 1)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -4655,6 +4725,10 @@ struct ServeOptions {
     pure_workers: Option<CliRuntimePureWorkers>,
     #[arg(long)]
     pure_batch_min_len: Option<usize>,
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
     #[arg(long, default_value_t = 128)]
     max_ops: usize,
     #[arg(long)]
@@ -4674,6 +4748,10 @@ struct ScriptTestOptions {
     pure_workers: Option<CliRuntimePureWorkers>,
     #[arg(long)]
     pure_batch_min_len: Option<usize>,
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
     #[arg(long, default_value_t = 32)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -4699,6 +4777,10 @@ struct ScriptBenchOptions {
     pure_workers: Option<CliRuntimePureWorkers>,
     #[arg(long)]
     pure_batch_min_len: Option<usize>,
+    #[arg(long, value_enum)]
+    math_backend: Option<CliRuntimeMathBackend>,
+    #[arg(long)]
+    math_wgpu_min_elements: Option<usize>,
     #[arg(long, default_value_t = 32)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -4790,6 +4872,15 @@ enum CliRuntimePureBackend {
     Jit,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum CliRuntimeMathBackend {
+    Auto,
+    Scalar,
+    Glam,
+    Ndarray,
+    Wgpu,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CliRuntimePureWorkers {
     Auto,
@@ -4812,6 +4903,18 @@ impl From<CliRuntimePureBackend> for RuntimePureBackendMode {
             CliRuntimePureBackend::Vm => Self::Vm,
             CliRuntimePureBackend::Aot => Self::Aot,
             CliRuntimePureBackend::Jit => Self::Jit,
+        }
+    }
+}
+
+impl From<CliRuntimeMathBackend> for RuntimeMathBackend {
+    fn from(value: CliRuntimeMathBackend) -> Self {
+        match value {
+            CliRuntimeMathBackend::Auto => Self::Auto,
+            CliRuntimeMathBackend::Scalar => Self::Scalar,
+            CliRuntimeMathBackend::Glam => Self::Glam,
+            CliRuntimeMathBackend::Ndarray => Self::Ndarray,
+            CliRuntimeMathBackend::Wgpu => Self::Wgpu,
         }
     }
 }

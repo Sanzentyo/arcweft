@@ -61,6 +61,8 @@ listen = "127.0.0.1:8787"
 
 [profiles."server.dev".pure]
 backend = "auto"
+math_backend = "auto"
+math_wgpu_min_elements = 67108864
 workers = "auto"
 batch_min_len = 1024
 ```
@@ -369,7 +371,10 @@ event counters.
 Profile and bench JSON must not persist absolute local source paths. Runtime
 pure configuration from `[profiles.NAME.pure]` is applied to `run`, `cli`,
 `serve`, `test`, `bench`, and `verify-types --run`; explicit CLI flags override
-the profile's `backend`, `workers`, and `batch_min_len` values.
+the profile's `backend`, `workers`, `batch_min_len`, `math_backend`, and
+`math_wgpu_min_elements` values. `math_backend` controls built-in dense
+matrix/tensor calls through the same runtime adapter boundary as pure helpers;
+valid values are `auto`, `scalar`, `glam`, `ndarray`, and `wgpu`.
 Native file task execution, line-plan child task markers, and source-level flow
 `thread` markers go through the deterministic runtime scheduler before the CLI
 adapter performs completion work. `native_io.scheduler` reports submitted,

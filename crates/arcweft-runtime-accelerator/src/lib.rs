@@ -55,6 +55,7 @@ pub struct RuntimePureAcceleratorConfig {
     pub workers: RuntimePureWorkerCount,
     /// Minimum rows per resolved worker before an AOT/VM batch uses the pool.
     pub batch_min_len: usize,
+    pub math: math::RuntimeMathAcceleratorConfig,
 }
 
 /// Compile-cache and runtime cache counters for pure acceleration.
@@ -273,7 +274,7 @@ impl RuntimePureAccelerator {
             aot_i64_slots: Vec::new(),
             aot_scalar_slots: Vec::new(),
             vm_scratch: VmPureFunctionScratch::default(),
-            math: math::RuntimeMathAccelerator::new(math::RuntimeMathAcceleratorConfig::default()),
+            math: math::RuntimeMathAccelerator::new(config.math),
         }
     }
 
@@ -3243,6 +3244,7 @@ impl Default for RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Auto,
             workers: RuntimePureWorkerCount::Auto,
             batch_min_len: 1024,
+            math: math::RuntimeMathAcceleratorConfig::default(),
         }
     }
 }
@@ -3393,6 +3395,7 @@ mod tests {
                 backend: RuntimePureBackendMode::Aot,
                 workers: RuntimePureWorkerCount::Fixed(1),
                 batch_min_len: 1024,
+                ..RuntimePureAcceleratorConfig::default()
             },
             &[i32_helper.clone(), f32_helper.clone()],
         );
@@ -3442,6 +3445,7 @@ mod tests {
                 backend: RuntimePureBackendMode::Jit,
                 workers: RuntimePureWorkerCount::Fixed(1),
                 batch_min_len: 1024,
+                ..RuntimePureAcceleratorConfig::default()
             },
             std::slice::from_ref(&helper),
         );
@@ -3482,6 +3486,7 @@ mod tests {
                 backend: RuntimePureBackendMode::Jit,
                 workers: RuntimePureWorkerCount::Fixed(1),
                 batch_min_len: 1024,
+                ..RuntimePureAcceleratorConfig::default()
             },
             std::slice::from_ref(&helper),
         );
@@ -3531,6 +3536,7 @@ mod tests {
                 backend: RuntimePureBackendMode::Jit,
                 workers: RuntimePureWorkerCount::Fixed(1),
                 batch_min_len: 1024,
+                ..RuntimePureAcceleratorConfig::default()
             },
             std::slice::from_ref(&helper),
         );
@@ -3587,6 +3593,7 @@ mod tests {
                 backend: RuntimePureBackendMode::Jit,
                 workers: RuntimePureWorkerCount::Fixed(1),
                 batch_min_len: 1024,
+                ..RuntimePureAcceleratorConfig::default()
             },
             std::slice::from_ref(&helper),
         );
@@ -3639,6 +3646,7 @@ mod tests {
                 backend: RuntimePureBackendMode::Auto,
                 workers: RuntimePureWorkerCount::Fixed(1),
                 batch_min_len: 1024,
+                ..RuntimePureAcceleratorConfig::default()
             },
             std::slice::from_ref(&helper),
         );
@@ -3682,6 +3690,7 @@ mod tests {
                 backend: RuntimePureBackendMode::Auto,
                 workers: RuntimePureWorkerCount::Fixed(1),
                 batch_min_len: 1024,
+                ..RuntimePureAcceleratorConfig::default()
             },
             std::slice::from_ref(&helper),
         );
@@ -3727,6 +3736,7 @@ mod tests {
                 backend: RuntimePureBackendMode::Auto,
                 workers: RuntimePureWorkerCount::Fixed(1),
                 batch_min_len: 1024,
+                ..RuntimePureAcceleratorConfig::default()
             },
             std::slice::from_ref(&helper),
         );
@@ -3772,6 +3782,7 @@ mod tests {
                 backend: RuntimePureBackendMode::Auto,
                 workers: RuntimePureWorkerCount::Fixed(1),
                 batch_min_len: 1024,
+                ..RuntimePureAcceleratorConfig::default()
             },
             std::slice::from_ref(&helper),
         );
@@ -3893,6 +3904,7 @@ mod tests {
                 backend: RuntimePureBackendMode::Vm,
                 workers: RuntimePureWorkerCount::Fixed(1),
                 batch_min_len: 2,
+                ..RuntimePureAcceleratorConfig::default()
             },
             std::slice::from_ref(&helper),
         );
@@ -3937,6 +3949,7 @@ mod tests {
                 backend: RuntimePureBackendMode::Aot,
                 workers: RuntimePureWorkerCount::Fixed(2),
                 batch_min_len: 1,
+                ..RuntimePureAcceleratorConfig::default()
             },
             std::slice::from_ref(&helper),
         );
@@ -3992,6 +4005,7 @@ mod tests {
                 backend: RuntimePureBackendMode::Aot,
                 workers: RuntimePureWorkerCount::Fixed(2),
                 batch_min_len: 2,
+                ..RuntimePureAcceleratorConfig::default()
             },
             std::slice::from_ref(&helper),
         );
@@ -4068,6 +4082,7 @@ mod tests {
                 backend: RuntimePureBackendMode::Jit,
                 workers: RuntimePureWorkerCount::Fixed(1),
                 batch_min_len: 2,
+                ..RuntimePureAcceleratorConfig::default()
             },
             std::slice::from_ref(&helper),
         );
@@ -4125,6 +4140,7 @@ mod tests {
                 backend: RuntimePureBackendMode::Jit,
                 workers: RuntimePureWorkerCount::Fixed(1),
                 batch_min_len: 2,
+                ..RuntimePureAcceleratorConfig::default()
             },
             std::slice::from_ref(&helper),
         );
@@ -4178,6 +4194,7 @@ mod tests {
                 backend: RuntimePureBackendMode::Vm,
                 workers: RuntimePureWorkerCount::Fixed(2),
                 batch_min_len: 1,
+                ..RuntimePureAcceleratorConfig::default()
             },
             std::slice::from_ref(&helper),
         );
