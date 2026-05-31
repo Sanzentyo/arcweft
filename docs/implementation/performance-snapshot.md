@@ -541,6 +541,7 @@ just bench-math-glam
 just bench-math-wgpu
 just bench-math-matrix-add
 just bench-math-tensor-add
+just bench-024
 cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul --size 512 --iterations 3 --warmup 1 --reuse
 just bench-math-matrix-add-reuse
 just bench-math-tensor-add-reuse
@@ -553,6 +554,7 @@ Representative release results on the local machine:
 | 4x4 matmul_f32 | scalar | measured | 100 | small matrix baseline |
 | 4x4 matmul_f32 | glam | measured | 100 | SIMD-friendly game math backend |
 | 4x4 matmul_f32 | auto | measured | 100 | selected glam |
+| flow 4x4 matmul_f32 | glam | measured | 6700 | `--value` matrix input, `math_calls_median = 1`, `math_accelerated_calls_median = 1` |
 | 64x64 matmul_f32 | scalar | measured | 21300 | row-major baseline |
 | 64x64 matmul_f32 | ndarray | measured | 26700 | general CPU matrix backend |
 | 64x64 matmul_f32 | auto | measured | 24200 | selected ndarray without wgpu feature |

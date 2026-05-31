@@ -93,13 +93,13 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
             receiver,
             method,
             args,
-        } => lower_runtime_path_method_call(receiver, method, args).unwrap_or_else(|| {
-            RuntimeExpr::MethodCall {
+        } => lower_runtime_math_method_call(receiver, method, args)
+            .or_else(|| lower_runtime_path_method_call(receiver, method, args))
+            .unwrap_or_else(|| RuntimeExpr::MethodCall {
                 receiver: Box::new(lower_runtime_expr(receiver)),
                 method: runtime_method_name(method).to_owned(),
                 args: args.iter().map(lower_runtime_call_arg).collect(),
-            }
-        }),
+            }),
         Expr::Index { target, index } => {
             lower_runtime_index_expr(target, index).unwrap_or_else(|| lower_runtime_expr(target))
         }
@@ -203,7 +203,9 @@ fn lower_runtime_expr_strict_with_helpers(
             receiver,
             method,
             args,
-        } => match lower_strict_path_method_call(receiver, method, args, helpers) {
+        } => match lower_strict_math_method_call(receiver, method, args, helpers)
+            .or_else(|| lower_strict_path_method_call(receiver, method, args, helpers))
+        {
             Some(lowered) => lowered,
             None => lower_strict_method_call_expr(receiver, method, args, helpers),
         },
@@ -398,6 +400,24 @@ fn lower_runtime_path_method_call(
     })
 }
 
+fn lower_runtime_math_method_call(
+    receiver: &Expr,
+    method: &str,
+    args: &[CallArg],
+) -> Option<RuntimeExpr> {
+    let Expr::Path(receiver) = receiver else {
+        return None;
+    };
+    let method = runtime_method_name(method);
+    if receiver != "math" || !matches!(method, "matmul_f32" | "matrix_add_f32" | "tensor_add_f32") {
+        return None;
+    }
+    Some(RuntimeExpr::Call {
+        callee: RuntimeCallTarget::from_label(format!("math.{method}")),
+        args: args.iter().map(lower_runtime_call_arg).collect(),
+    })
+}
+
 fn lower_strict_path_method_call(
     receiver: &Expr,
     method: &str,
@@ -422,6 +442,30 @@ fn lower_strict_path_method_call(
             callee: RuntimeCallTarget::from_label(format!("path.{method}")),
             args: vec![arg],
         }),
+    )
+}
+
+fn lower_strict_math_method_call(
+    receiver: &Expr,
+    method: &str,
+    args: &[CallArg],
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Option<Result<RuntimeExpr, String>> {
+    let Expr::Path(receiver) = receiver else {
+        return None;
+    };
+    let method = runtime_method_name(method);
+    if receiver != "math" || !matches!(method, "matmul_f32" | "matrix_add_f32" | "tensor_add_f32") {
+        return None;
+    }
+    Some(
+        args.iter()
+            .map(|arg| lower_strict_call_arg(arg, helpers))
+            .collect::<Result<Vec<_>, _>>()
+            .map(|args| RuntimeExpr::Call {
+                callee: RuntimeCallTarget::from_label(format!("math.{method}")),
+                args,
+            }),
     )
 }
 

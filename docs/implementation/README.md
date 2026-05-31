@@ -173,7 +173,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   wgpu stack can be used directly. CLI runtime commands and launch profiles now
   route `math_backend` and `math_wgpu_min_elements` into
   `RuntimePureAcceleratorConfig`, so built-in math calls use the same adapter
-  config path as pure helper VM/AOT/JIT selection.
+  config path as pure helper VM/AOT/JIT selection. CLI runtime bindings can
+  supply `matrix/f32/<rows>x<cols>:<csv>` and `tensor/f32/<dims>:<csv>` values,
+  making source-level `math.*` flows measurable through the normal bench JSON.
 - Runtime pure helper plans record whether the scalar evaluator is supported at
   lowering/construction time, avoiding a recursive expression-shape scan on
   every VM scratch call.

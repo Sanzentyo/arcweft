@@ -3,6 +3,7 @@ use arcweft_core::aot::{AotProgram, AotProgramStats};
 use arcweft_core::bytecode::{BytecodeProgram, BytecodeStats};
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor};
+use arcweft_core::math::{DenseMatrixF32, DenseTensorF32};
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimePlan,
     RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
@@ -20,7 +21,8 @@ use arcweft_core::{
     },
     value::{
         DenseSeq, RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeExpr,
-        RuntimeIntrinsic, RuntimeSeq, RuntimeUnaryOp, RuntimeValue, runtime_sequence_values,
+        RuntimeIntrinsic, RuntimeSeq, RuntimeUnaryOp, RuntimeValue, runtime_sequence_dense_f32,
+        runtime_sequence_values,
     },
 };
 use arcweft_lang_hir::lower::lower_to_hir;
@@ -5288,21 +5290,87 @@ fn parse_runtime_binding_arg(value: &str) -> Result<RuntimeBinding, String> {
     }
     Ok(RuntimeBinding {
         name: name.to_owned(),
-        value: parse_runtime_value(raw),
+        value: parse_runtime_value(raw)?,
     })
 }
 
-fn parse_runtime_value(raw: &str) -> RuntimeValue {
+fn parse_runtime_value(raw: &str) -> Result<RuntimeValue, String> {
     match raw {
-        "true" => RuntimeValue::Bool(true),
-        "false" => RuntimeValue::Bool(false),
-        "()" => RuntimeValue::Unit,
-        value if value.starts_with('@') => RuntimeValue::EntityRef(value[1..].to_owned()),
-        value => value.parse::<i64>().map_or_else(
-            |_| RuntimeValue::String(value.to_owned()),
-            RuntimeValue::i64,
-        ),
+        "true" => Ok(RuntimeValue::Bool(true)),
+        "false" => Ok(RuntimeValue::Bool(false)),
+        "()" => Ok(RuntimeValue::Unit),
+        value if value.starts_with("matrix/f32/") => parse_runtime_matrix_f32(value),
+        value if value.starts_with("tensor/f32/") => parse_runtime_tensor_f32(value),
+        value if value.starts_with("seq/f32:") => parse_runtime_f32_sequence(value),
+        value if value.starts_with('@') => Ok(RuntimeValue::EntityRef(value[1..].to_owned())),
+        value => value
+            .parse::<i64>()
+            .map(RuntimeValue::i64)
+            .or_else(|_| Ok(RuntimeValue::String(value.to_owned()))),
     }
+}
+
+fn parse_runtime_matrix_f32(raw: &str) -> Result<RuntimeValue, String> {
+    let (shape, values) = raw
+        .trim_start_matches("matrix/f32/")
+        .split_once(':')
+        .ok_or_else(|| "matrix/f32 value must be matrix/f32/<rows>x<cols>:<csv>".to_owned())?;
+    let (rows, cols) = shape
+        .split_once('x')
+        .ok_or_else(|| "matrix/f32 shape must be <rows>x<cols>".to_owned())?;
+    let rows = parse_nonzero_usize(rows, "matrix/f32 rows")?;
+    let cols = parse_nonzero_usize(cols, "matrix/f32 cols")?;
+    let values = parse_f32_csv(values, "matrix/f32")?;
+    DenseMatrixF32::new(rows, cols, values)
+        .map(RuntimeValue::MatrixF32)
+        .map_err(|error| error.to_string())
+}
+
+fn parse_runtime_tensor_f32(raw: &str) -> Result<RuntimeValue, String> {
+    let (shape, values) = raw
+        .trim_start_matches("tensor/f32/")
+        .split_once(':')
+        .ok_or_else(|| "tensor/f32 value must be tensor/f32/<dims>:<csv>".to_owned())?;
+    let dims = shape
+        .split('x')
+        .map(|dim| parse_nonzero_usize(dim, "tensor/f32 dim"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let values = parse_f32_csv(values, "tensor/f32")?;
+    DenseTensorF32::new(dims, values)
+        .map(RuntimeValue::TensorF32)
+        .map_err(|error| error.to_string())
+}
+
+fn parse_runtime_f32_sequence(raw: &str) -> Result<RuntimeValue, String> {
+    let values = raw
+        .strip_prefix("seq/f32:")
+        .ok_or_else(|| "not an f32 sequence".to_owned())
+        .and_then(|values| parse_f32_csv(values, "seq/f32"))?;
+    Ok(runtime_sequence_dense_f32(values))
+}
+
+fn parse_nonzero_usize(raw: &str, label: &str) -> Result<usize, String> {
+    let value = raw
+        .parse::<usize>()
+        .map_err(|_| format!("{label} must be a positive integer, got `{raw}`"))?;
+    if value == 0 {
+        return Err(format!("{label} must be greater than zero"));
+    }
+    Ok(value)
+}
+
+fn parse_f32_csv(raw: &str, label: &str) -> Result<Vec<f32>, String> {
+    if raw.is_empty() {
+        return Ok(Vec::new());
+    }
+    raw.split(',')
+        .map(|value| {
+            value
+                .trim()
+                .parse::<f32>()
+                .map_err(|_| format!("{label} element must be f32, got `{value}`"))
+        })
+        .collect()
 }
 
 fn parse_runtime_pure_workers(raw: &str) -> Result<CliRuntimePureWorkers, String> {

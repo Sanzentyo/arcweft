@@ -728,7 +728,11 @@ impl TypeChecker<'_> {
 
     fn check_builtin_call_expr(&mut self, callee: &Expr, args: &[CallArg]) -> Option<TypeKind> {
         let name = expr_path_label(callee)?;
-        match name.as_str() {
+        self.check_builtin_call_name(&name, args)
+    }
+
+    fn check_builtin_call_name(&mut self, name: &str, args: &[CallArg]) -> Option<TypeKind> {
+        match name {
             "panic" | "fail" | "bail" => {
                 for arg in args {
                     self.check_expr(arg.value());
@@ -740,10 +744,47 @@ impl TypeChecker<'_> {
                 Some(TypeKind::Unit)
             }
             "assert" | "debug_assert" => {
-                self.check_assert_like_args(args, name.as_str());
+                self.check_assert_like_args(args, name);
                 Some(TypeKind::Unit)
             }
+            "math.matmul_f32" | "math.matrix_add_f32" => {
+                self.check_math_binary_args(args, "MatrixF32");
+                Some(TypeKind::Named("MatrixF32".to_owned()))
+            }
+            "math.tensor_add_f32" => {
+                self.check_math_binary_args(args, "TensorF32");
+                Some(TypeKind::Named("TensorF32".to_owned()))
+            }
             _ => None,
+        }
+    }
+
+    fn check_math_binary_args(&mut self, args: &[CallArg], type_name: &str) {
+        if args.len() != 2 {
+            self.errors.push(TypeCheckError::new(format!(
+                "math kernel expected 2 positional arguments, got {}",
+                args.len()
+            )));
+        }
+        let expected = TypeKind::Named(type_name.to_owned());
+        for arg in args {
+            match arg {
+                CallArg::Positional(value) => {
+                    self.check_expr_with_expected(value, Some(&expected));
+                }
+                CallArg::Named { name, value } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "math kernel arguments must be positional, got named `{name}`"
+                    )));
+                    self.check_expr(value);
+                }
+                CallArg::Spread { value } => {
+                    self.errors.push(TypeCheckError::new(
+                        "math kernel arguments cannot be spread".to_owned(),
+                    ));
+                    self.check_expr(value);
+                }
+            }
         }
     }
 
@@ -965,6 +1006,9 @@ impl TypeChecker<'_> {
         let method_name = method.split_once('<').map_or(method, |(name, _)| name);
         if let Expr::Path(receiver_path) = receiver {
             let dotted = format!("{receiver_path}.{method_name}");
+            if receiver_path == "math" {
+                return self.check_builtin_call_name(&dotted, args);
+            }
             if let Some(ty) = self
                 .function_type(&dotted)
                 .cloned()

@@ -1,0 +1,8 @@
+bench @bench.matrix_matmul_f32 {
+    measure iterations = 4 { start(@flow.matrix_matmul_f32) }
+}
+
+flow @flow.matrix_matmul_f32 matrix_matmul_f32(lhs: MatrixF32, rhs: MatrixF32) -> MatrixF32 {
+    let out = math.matmul_f32(lhs, rhs)
+    return out
+}

@@ -168,7 +168,7 @@ CLI adapter and does not start renderer/audio/device backends.
 
 ## Runtime Dry Run
 
-`arcw run <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
+`arcw run <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
 headless execution entry point. It uses the same parse, HIR, reference
 validation, typecheck, and line-plan lowering path as `arcw check`, then lowers
 checked flows to `arcweft-core::RuntimePlan`, materializes bytecode, and steps
@@ -189,7 +189,9 @@ integer arguments, copied argument/result bytes, thread-pool jobs, Vec argument
 allocations, and fallback counts. Executor JSON also reports the selected pure backend, worker policy,
 resolved worker count, per-worker batch threshold, helper acceleration summary,
 compile attempts, Auto tier decisions/promotions, cache hits and misses, and
-compile elapsed time. `--pure-workers auto|N` controls the runtime
+compile elapsed time. Built-in dense `math.*` calls use the selected
+`--math-backend`; executor JSON records both that backend and the Auto GPU work
+threshold. `--pure-workers auto|N` controls the runtime
 accelerator's Rayon pool for batchable pure helpers. `--pure-batch-min-len N`
 sets the minimum rows per resolved worker before the dedicated pool is used. If `--entry` or
 `--flow` is omitted, the first lowered flow is used as a deterministic fallback
@@ -236,7 +238,9 @@ handlers can route normalized `RuntimeStepInput` source events into bounded
 source queues, and stream plans can drain source/stream queues and emit stream
 events under a deterministic per-step budget. `--value` injects pure
 `RuntimeValue` bindings into `RuntimeStepInput`; this is for deterministic
-CLI/LSP inspection, not host I/O. Unsupported flow syntax fails with a
+CLI/LSP inspection, not host I/O. Matrix/tensor test inputs use
+`matrix/f32/<rows>x<cols>:<csv>` and `tensor/f32/<dims>:<csv>`; for example
+`--value lhs=matrix/f32/4x4:1,0,...`. Unsupported flow syntax fails with a
 runtime-lowering error instead of being silently dropped.
 
 ## CLI Entry Dry Run
