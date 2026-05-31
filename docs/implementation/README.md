@@ -358,6 +358,10 @@ Current high-confidence state:
   Non-line body fragments use `CstPunctuationScan` when a parser needs multiple
   punctuation queries over the same slice, avoiding repeated fragment lexing in
   shared helpers such as `split_brace_item`.
+  Dialogue trailing `with { ... }` and bare scope blocks use the same path:
+  same-line blocks reuse the fragment scan for both brace depth and brace
+  splitting, while multiline continuations add each following line's stored
+  punctuation summary before the final split.
 - Flow-like block collection also lives on `CstLineEvents`. It keeps contract
   and `effects { ... }` prelude lines in the header while collecting the
   following brace body as the block event, so flow/callable/entity/source

@@ -8,10 +8,11 @@ use super::{
     find_top_level_punctuation, flat_block_head, indentation, is_with_brace_head,
     parse_binding_pattern, parse_dialogue_call_expr_source, parse_expr_lossy, parse_flat_fence,
     parse_inline_with_colon_plan, parse_line_options, parse_line_plan_attachment,
-    parse_with_brace_label, parse_with_indent_label, punctuation_delta, split_brace_item,
+    parse_with_brace_label, parse_with_indent_label, split_brace_item, split_brace_item_with_scan,
     split_call_head, split_leading_ident, split_speaker_line, split_top_level_binding,
     split_top_level_punctuation_once,
 };
+use crate::cst::CstPunctuationScan;
 
 impl Parser {
     pub(super) fn parse_dialogue_defaults(&mut self) -> Option<DialogueDefaultsItem> {
@@ -238,7 +239,20 @@ impl Parser {
         }
         if is_with_brace_head(trailing) {
             let mut block_text = trailing.to_owned();
-            let mut brace_delta = punctuation_delta(&block_text, '{', '}');
+            let punctuation = CstPunctuationScan::new(&block_text);
+            let mut brace_delta = punctuation.deltas().brace;
+            if brace_delta <= 0 {
+                let (head, body) = split_brace_item_with_scan(&block_text, &punctuation)?;
+                let range = TextRange::new(base + close_bracket + 1, self.events[*cursor].end);
+                return Some(parse_line_plan_attachment(
+                    BlockStyle::Brace,
+                    body,
+                    range,
+                    parse_with_brace_label(head.trim()),
+                    &mut self.errors,
+                ));
+            }
+            drop(punctuation);
             while brace_delta > 0 && *cursor + 1 < self.events.len() {
                 *cursor += 1;
                 brace_delta += self.events[*cursor].punctuation_deltas().brace;
@@ -280,7 +294,20 @@ impl Parser {
         if !block_text.starts_with('{') {
             return None;
         }
-        let mut brace_delta = punctuation_delta(&block_text, '{', '}');
+        let punctuation = CstPunctuationScan::new(&block_text);
+        let mut brace_delta = punctuation.deltas().brace;
+        if brace_delta <= 0 {
+            let (head, body) = split_brace_item_with_scan(&block_text, &punctuation)?;
+            if !head.trim().is_empty() {
+                return None;
+            }
+            return Some(ScopeBlock::new(
+                None,
+                self.parse_flow_body(body, base + close_bracket + 1),
+                TextRange::new(base + close_bracket + 1, self.events[*cursor].end),
+            ));
+        }
+        drop(punctuation);
         while brace_delta > 0 && *cursor + 1 < self.events.len() {
             *cursor += 1;
             brace_delta += self.events[*cursor].punctuation_deltas().brace;

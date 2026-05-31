@@ -2,12 +2,11 @@ use crate::cst::{
     CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineKind, CstPunctuationScan, CstStmtKind,
     CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxKind,
     classify_stmt, cst_lines, find_last_depth_zero_open_punctuation,
-    find_last_top_level_punctuation, find_matching_punctuation, punctuation_delta,
-    source_line_count, source_line_iter, split_first_string_literal,
-    split_last_top_level_punctuation_sequence_once, split_leading_entity_ref_parts,
-    split_leading_lifetime, split_leading_relative_id, split_top_level_keyword_once,
-    split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
-    take_doc_comment_prefix,
+    find_last_top_level_punctuation, find_matching_punctuation, source_line_count,
+    source_line_iter, split_first_string_literal, split_last_top_level_punctuation_sequence_once,
+    split_leading_entity_ref_parts, split_leading_lifetime, split_leading_relative_id,
+    split_top_level_keyword_once, split_top_level_punctuation_once,
+    split_top_level_punctuation_sequence_once, take_doc_comment_prefix,
 };
 use crate::{ast::items::Item, parser::parse_source};
 
@@ -233,12 +232,18 @@ fn cst_matching_punctuation_uses_token_offsets() {
 }
 
 #[test]
-fn cst_punctuation_delta_ignores_strings_and_comments() {
+fn cst_punctuation_scan_deltas_ignore_strings_and_comments() {
     let source = r#"let msg = "[not syntax]" // {not a block}"#;
 
-    assert_eq!(punctuation_delta(source, '[', ']'), 0);
-    assert_eq!(punctuation_delta(source, '{', '}'), 0);
-    assert_eq!(punctuation_delta("with { cue { call() }", '{', '}'), 1);
+    let deltas = CstPunctuationScan::new(source).deltas();
+    assert_eq!(deltas.bracket, 0);
+    assert_eq!(deltas.brace, 0);
+    assert_eq!(
+        CstPunctuationScan::new("with { cue { call() }")
+            .deltas()
+            .brace,
+        1
+    );
 }
 
 #[test]

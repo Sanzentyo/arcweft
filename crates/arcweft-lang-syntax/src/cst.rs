@@ -1372,23 +1372,6 @@ pub(crate) fn find_matching_punctuation(
     CstPunctuationScan::new(source).find_matching_punctuation(open_offset, open, close)
 }
 
-/// Computes open-minus-close punctuation depth from CST tokens.
-///
-/// This is intentionally token-based instead of `chars()` based: brackets in
-/// dialogue text strings, comments, and doc comments are source text, not block
-/// structure. Callers use this for multiline recovery while the full parser is
-/// still consuming line events.
-pub(crate) fn punctuation_delta(source: &str, open: char, close: char) -> i32 {
-    lex_cst(source)
-        .into_iter()
-        .filter(|token| token.kind() == SyntaxKind::Punctuation)
-        .fold(0, |depth, token| match token.text() {
-            text if token_text_is(text, open) => depth + 1,
-            text if token_text_is(text, close) => depth - 1,
-            _ => depth,
-        })
-}
-
 /// Iterates source lines without treating line splitting as parser grammar.
 ///
 /// This helper is intentionally small and text-level. Parser modules use it

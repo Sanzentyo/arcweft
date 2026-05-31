@@ -12,8 +12,8 @@ use crate::cst::{
     CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineEvents, CstStmtKind,
     CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxNode,
     SyntaxParseStats, classify_stmt, cst_lines, find_matching_punctuation,
-    find_top_level_punctuation, parse_flat_fence, punctuation_delta, source_line_iter,
-    split_leading_ident, split_top_level_keyword_once, split_top_level_punctuation_once,
+    find_top_level_punctuation, parse_flat_fence, source_line_iter, split_leading_ident,
+    split_top_level_keyword_once, split_top_level_punctuation_once,
     split_top_level_punctuation_sequence_once,
 };
 use crate::expr::Expr;
@@ -49,8 +49,9 @@ use helpers::{
     parse_computation_block_kind, parse_dialogue_call_expr_source, parse_expr_lossy,
     parse_expr_with_inline_line_plan, parse_inline_with_colon_plan, parse_line_options,
     parse_line_plan_attachment, parse_memo_block_options, parse_with_brace_label,
-    parse_with_indent_label, source_take, split_brace_item, split_call_head, split_comma_args,
-    split_optional_block_label, split_speaker_line, split_top_level_binding,
+    parse_with_indent_label, source_take, split_brace_item, split_brace_item_with_scan,
+    split_call_head, split_comma_args, split_optional_block_label, split_speaker_line,
+    split_top_level_binding,
 };
 use line_plan::{
     parse_defer_outcome, parse_thread_block, parse_thread_block_items, parse_trigger_pattern,

@@ -93,7 +93,10 @@ summaries for body-open and body-close offsets, so the hot block collector no
 longer re-lexes the assembled block text after already walking its lines. For
 body fragments that are not CST lines, `CstPunctuationScan` now owns the one
 fragment tokenization pass and serves top-level punctuation, matching
-punctuation, and bracket-delta queries from that token buffer.
+punctuation, and bracket-delta queries from that token buffer. Dialogue
+same-line `with { ... }` attachments and trailing bare scopes reuse that scan
+for the brace-depth check and the split itself; multiline continuations add the
+stored per-line punctuation summaries before the final fragment split.
 
 ## 2026-05-30 JST
 

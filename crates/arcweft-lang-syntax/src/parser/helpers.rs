@@ -304,6 +304,13 @@ pub(super) fn collect_logical_block_items(body: &str) -> Vec<String> {
 
 pub(super) fn split_brace_item(source: &str) -> Option<(&str, &str)> {
     let punctuation = CstPunctuationScan::new(source);
+    split_brace_item_with_scan(source, &punctuation)
+}
+
+pub(super) fn split_brace_item_with_scan<'a>(
+    source: &'a str,
+    punctuation: &CstPunctuationScan<'a>,
+) -> Option<(&'a str, &'a str)> {
     let open = punctuation.find_top_level_punctuation('{')?;
     let close = punctuation.find_matching_punctuation(open, '{', '}')?;
     (source[close + '}'.len_utf8()..].trim().is_empty())
