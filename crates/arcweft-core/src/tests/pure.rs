@@ -8,19 +8,19 @@ use crate::pure::{
     compare_pure_function_backend,
 };
 use crate::value::{
-    RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeFieldValue,
-    RuntimeValue, runtime_sequence_dense_bool, runtime_sequence_dense_bytes,
-    runtime_sequence_dense_i8, runtime_sequence_dense_i16, runtime_sequence_dense_i32,
-    runtime_sequence_dense_i64, runtime_sequence_dense_i128, runtime_sequence_dense_isize,
-    runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
-    runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_sequence_dense_usize,
-    runtime_sequence_from_literal_values, runtime_sequence_values,
+    RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEvalError, RuntimeExpr,
+    RuntimeFieldValue, RuntimeIntrinsic, RuntimeValue, runtime_sequence_dense_bool,
+    runtime_sequence_dense_bytes, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
+    runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_dense_i128,
+    runtime_sequence_dense_isize, runtime_sequence_dense_u8, runtime_sequence_dense_u16,
+    runtime_sequence_dense_u32, runtime_sequence_dense_u64, runtime_sequence_dense_u128,
+    runtime_sequence_dense_usize, runtime_sequence_from_literal_values, runtime_sequence_values,
 };
 
 fn int_binding(name: &str, value: i64) -> RuntimeBinding {
     RuntimeBinding {
         name: name.to_owned(),
-        value: RuntimeValue::Int(value),
+        value: RuntimeValue::i64(value),
     }
 }
 
@@ -46,11 +46,11 @@ fn vm_pure_backend_projects_record_columns_by_ordinal() {
     let rows = runtime_sequence_from_literal_values(vec![
         RuntimeValue::Record(vec![RuntimeFieldValue {
             name: "score".to_owned(),
-            value: RuntimeValue::Int(1),
+            value: RuntimeValue::i64(1),
         }]),
         RuntimeValue::Record(vec![RuntimeFieldValue {
             name: "score".to_owned(),
-            value: RuntimeValue::Int(2),
+            value: RuntimeValue::i64(2),
         }]),
     ]);
     let mut backend = VmRuntimePureCallBackend::default();
@@ -72,8 +72,8 @@ fn vm_pure_backend_projects_tuple_columns_by_ordinal() {
         ordinal: 1,
     });
     let rows = runtime_sequence_from_literal_values(vec![
-        RuntimeValue::Tuple(vec![RuntimeValue::Int(1), RuntimeValue::Bool(true)]),
-        RuntimeValue::Tuple(vec![RuntimeValue::Int(2), RuntimeValue::Bool(false)]),
+        RuntimeValue::Tuple(vec![RuntimeValue::i64(1), RuntimeValue::Bool(true)]),
+        RuntimeValue::Tuple(vec![RuntimeValue::i64(2), RuntimeValue::Bool(false)]),
     ]);
     let mut backend = VmRuntimePureCallBackend::default();
 
@@ -95,10 +95,10 @@ fn vm_pure_backend_evaluates_deterministic_helper_expr() {
             lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
             op: RuntimeBinaryOp::Add,
             rhs: Box::new(RuntimeExpr::Call {
-                callee: "add".to_owned(),
+                callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::Add),
                 args: vec![
                     RuntimeExpr::Local("bonus".to_owned()),
-                    RuntimeExpr::Value(RuntimeValue::Int(2)),
+                    RuntimeExpr::Value(RuntimeValue::i64(2)),
                 ],
             }),
         },
@@ -110,7 +110,7 @@ fn vm_pure_backend_evaluates_deterministic_helper_expr() {
         .expect("pure helper evaluates");
 
     assert_eq!(result.backend, PureFunctionBackendKind::Vm);
-    assert_eq!(result.value, RuntimeValue::Int(9));
+    assert_eq!(result.value, RuntimeValue::i64(9));
     assert_eq!(result.stats.evaluated_calls, 1);
     assert_eq!(result.stats.evaluated_binary_ops, 1);
     assert!(result.stats.evaluated_exprs >= 5);
@@ -123,10 +123,10 @@ fn vm_pure_backend_evaluates_lexical_let_expr() {
         RuntimeExpr::Let {
             name: "boosted".to_owned(),
             expr: Box::new(RuntimeExpr::Call {
-                callee: "add".to_owned(),
+                callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::Add),
                 args: vec![
                     RuntimeExpr::Local("bonus".to_owned()),
-                    RuntimeExpr::Value(RuntimeValue::Int(2)),
+                    RuntimeExpr::Value(RuntimeValue::i64(2)),
                 ],
             }),
             body: Box::new(RuntimeExpr::Binary {
@@ -142,7 +142,7 @@ fn vm_pure_backend_evaluates_lexical_let_expr() {
         .evaluate(&request)
         .expect("pure helper evaluates lexical let");
 
-    assert_eq!(result.value, RuntimeValue::Int(18));
+    assert_eq!(result.value, RuntimeValue::i64(18));
     assert_eq!(result.stats.evaluated_calls, 1);
     assert_eq!(result.stats.evaluated_binary_ops, 1);
 }
@@ -157,9 +157,9 @@ fn vm_pure_backend_sums_local_i64_sequence_by_borrow() {
         [RuntimeBinding {
             name: "scores".to_owned(),
             value: runtime_sequence_values(vec![
-                RuntimeValue::Int(18),
-                RuntimeValue::Int(15),
-                RuntimeValue::Int(20),
+                RuntimeValue::i64(18),
+                RuntimeValue::i64(15),
+                RuntimeValue::i64(20),
             ]),
         }],
     );
@@ -168,7 +168,7 @@ fn vm_pure_backend_sums_local_i64_sequence_by_borrow() {
         .evaluate(&request)
         .expect("pure helper sums local sequence");
 
-    assert_eq!(result.value, RuntimeValue::Int(53));
+    assert_eq!(result.value, RuntimeValue::i64(53));
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn vm_pure_backend_sums_dense_i64_sequence_without_materializing_values() {
         .evaluate(&request)
         .expect("pure helper sums dense local sequence");
 
-    assert_eq!(result.value, RuntimeValue::Int(53));
+    assert_eq!(result.value, RuntimeValue::i64(53));
 }
 
 #[test]
@@ -225,7 +225,7 @@ fn vm_pure_backend_sums_dense_integer_sequences_without_materializing_values() {
             .evaluate(&request)
             .expect("pure helper sums dense integer-compatible sequence");
 
-        assert_eq!(result.value, RuntimeValue::Int(53));
+        assert_eq!(result.value, RuntimeValue::i64(53));
     }
 }
 
@@ -248,7 +248,7 @@ fn vm_pure_backend_reads_dense_sequence_len_without_materializing_values() {
         .evaluate(&request)
         .expect("pure helper reads dense sequence length");
 
-    assert_eq!(result.value, RuntimeValue::UInt(4));
+    assert_eq!(result.value, RuntimeValue::usize(4));
     assert_eq!(result.stats.evaluated_method_calls, 1);
 }
 
@@ -370,7 +370,7 @@ fn vm_pure_scratch_reuses_and_rebuilds_i64_root_bindings() {
         expr: RuntimeExpr::Binary {
             lhs: Box::new(RuntimeExpr::Local("value".to_owned())),
             op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+            rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
         },
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
@@ -387,9 +387,9 @@ fn vm_pure_scratch_reuses_and_rebuilds_i64_root_bindings() {
         .evaluate_i64_slice(&double, &[7])
         .expect("scratch rebuilds when helper inputs change");
 
-    assert_eq!(first, RuntimeValue::Int(7));
-    assert_eq!(second, RuntimeValue::Int(11));
-    assert_eq!(third, RuntimeValue::Int(14));
+    assert_eq!(first, RuntimeValue::i64(7));
+    assert_eq!(second, RuntimeValue::i64(11));
+    assert_eq!(third, RuntimeValue::i64(14));
 }
 
 #[test]
@@ -622,20 +622,20 @@ fn aot_pure_backend_candidate_matches_vm_result() {
             expr: Box::new(RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
                 op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
             }),
             body: Box::new(RuntimeExpr::If {
                 condition: Box::new(RuntimeExpr::Binary {
                     lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                     op: RuntimeBinaryOp::Ge,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(3))),
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(3))),
                 }),
                 then_expr: Box::new(RuntimeExpr::Binary {
                     lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                     op: RuntimeBinaryOp::Mul,
                     rhs: Box::new(RuntimeExpr::Local("boosted".to_owned())),
                 }),
-                else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::Int(0))),
+                else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::i64(0))),
             }),
         },
         [int_binding("base", 3), int_binding("bonus", 4)],
@@ -651,7 +651,7 @@ fn aot_pure_backend_candidate_matches_vm_result() {
     assert!(conformance.matches_vm);
     assert_eq!(conformance.vm.backend, PureFunctionBackendKind::Vm);
     assert_eq!(conformance.candidate.backend, PureFunctionBackendKind::Aot);
-    assert_eq!(conformance.candidate.value, RuntimeValue::Int(18));
+    assert_eq!(conformance.candidate.value, RuntimeValue::i64(18));
     assert_eq!(conformance.candidate.stats.evaluated_binary_ops, 3);
 }
 
@@ -660,9 +660,9 @@ fn aot_compiled_i64_plan_can_be_called_repeatedly() {
     let request = PureFunctionRequest::new(
         "score",
         RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(20))),
+            lhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(20))),
             op: RuntimeBinaryOp::Add,
-            rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(22))),
+            rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(22))),
         },
         [],
     );
@@ -684,14 +684,14 @@ fn aot_compiled_i64_plan_accepts_runtime_inputs() {
             condition: Box::new(RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Ge,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(3))),
+                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(3))),
             }),
             then_expr: Box::new(RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Mul,
                 rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
             }),
-            else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::Int(0))),
+            else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::i64(0))),
         },
         [int_binding("base", 0), int_binding("bonus", 0)],
     );
@@ -747,7 +747,7 @@ fn pure_backend_rejects_unregistered_effectful_calls() {
     let request = PureFunctionRequest::new(
         "effectful",
         RuntimeExpr::Call {
-            callee: "play_audio".to_owned(),
+            callee: RuntimeCallTarget::from_label("play_audio"),
             args: Vec::new(),
         },
         [],

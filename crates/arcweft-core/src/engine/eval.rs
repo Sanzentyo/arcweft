@@ -13,6 +13,7 @@ use crate::pure::{
 };
 use crate::value::RuntimeBinaryOp;
 use crate::value::RuntimeFieldExpr;
+use crate::value::{RuntimeCallTarget, RuntimeIntrinsic};
 
 impl Engine {
     pub(super) fn evaluate_let_with_backend(
@@ -505,7 +506,7 @@ impl Engine {
 
     fn evaluate_call_expr(
         &mut self,
-        callee: &str,
+        callee: &RuntimeCallTarget,
         args: &[RuntimeExpr],
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
@@ -538,7 +539,7 @@ impl Engine {
             }
             let helper = &self.plan.pure_helpers[helper_id.0];
             if let Some(value) = pure_backend.call_i64_slice(helper, &values[..args.len()])? {
-                return Ok(RuntimeValue::Int(value));
+                return Ok(RuntimeValue::i64(value));
             }
         }
         if self
@@ -590,14 +591,20 @@ impl Engine {
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<i64, RuntimeEvalError> {
         match expr {
-            RuntimeExpr::Value(RuntimeValue::Int(value)) => Ok(*value),
+            RuntimeExpr::Value(RuntimeValue::Int(value)) => value.exact_i64().ok_or_else(|| {
+                RuntimeEvalError::ExpectedInt(runtime_value_label(&RuntimeValue::Int(*value)))
+            }),
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
-                Some(RuntimeValue::Int(value)) => Ok(*value),
+                Some(RuntimeValue::Int(value)) => value.exact_i64().ok_or_else(|| {
+                    RuntimeEvalError::ExpectedInt(runtime_value_label(&RuntimeValue::Int(*value)))
+                }),
                 Some(value) => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
                 None => Err(RuntimeEvalError::UnknownBinding(name.clone())),
             },
             _ => match self.evaluate_expr_with_backend(expr, pure_backend)? {
-                RuntimeValue::Int(value) => Ok(value),
+                RuntimeValue::Int(value) => value.exact_i64().ok_or_else(|| {
+                    RuntimeEvalError::ExpectedInt(runtime_value_label(&RuntimeValue::Int(value)))
+                }),
                 value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
             },
         }
@@ -810,21 +817,21 @@ impl Engine {
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if let Some(sum) = self.evaluate_map_sum_expr(source, pure_backend)? {
-            return Ok(RuntimeValue::Int(sum));
+            return Ok(RuntimeValue::i64(sum));
         }
         if let Some(sum) = self.evaluate_i64_bracket_seq_sum(source, pure_backend)? {
-            return Ok(RuntimeValue::Int(sum));
+            return Ok(RuntimeValue::i64(sum));
         }
         if let RuntimeExpr::Local(name) = source
             && let Some(sum) = self.evaluate_i64_local_sequence_sum(name)?
         {
-            return Ok(RuntimeValue::Int(sum));
+            return Ok(RuntimeValue::i64(sum));
         }
         let value = self.evaluate_expr_with_backend(source, pure_backend)?;
         if let RuntimeValue::Seq(seq) = &value
             && let Some(sum) = seq.sum_as_i64()
         {
-            return Ok(RuntimeValue::Int(sum));
+            return Ok(RuntimeValue::i64(sum));
         }
         let items = match runtime_value_into_sequence_values(value) {
             Ok(items) => items,
@@ -834,11 +841,7 @@ impl Engine {
                 )));
             }
         };
-        items
-            .into_iter()
-            .try_fold(RuntimeValue::Int(0), |acc, item| {
-                evaluate_binary(acc, RuntimeBinaryOp::Add, item)
-            })
+        sum_i64_sequence_ref(&items).map(RuntimeValue::i64)
     }
 
     fn evaluate_map_sum_expr(
@@ -1792,13 +1795,13 @@ impl Engine {
         item: &RuntimeValue,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         match expr {
-            RuntimeExpr::Value(RuntimeValue::Int(value)) => Ok(Some(*value)),
+            RuntimeExpr::Value(RuntimeValue::Int(value)) => Ok(value.exact_i64()),
             RuntimeExpr::Local(name) if name == param => match item {
-                RuntimeValue::Int(value) => Ok(Some(*value)),
+                RuntimeValue::Int(value) => Ok(value.exact_i64()),
                 value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
             },
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
-                Some(RuntimeValue::Int(value)) => Ok(Some(*value)),
+                Some(RuntimeValue::Int(value)) => Ok(value.exact_i64()),
                 Some(value) => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
                 None => Err(RuntimeEvalError::UnknownBinding(name.clone())),
             },
@@ -1813,10 +1816,10 @@ impl Engine {
         item: i64,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         match expr {
-            RuntimeExpr::Value(RuntimeValue::Int(value)) => Ok(Some(*value)),
+            RuntimeExpr::Value(RuntimeValue::Int(value)) => Ok(value.exact_i64()),
             RuntimeExpr::Local(name) if name == param => Ok(Some(item)),
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
-                Some(RuntimeValue::Int(value)) => Ok(Some(*value)),
+                Some(RuntimeValue::Int(value)) => Ok(value.exact_i64()),
                 Some(value) => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
                 None => Err(RuntimeEvalError::UnknownBinding(name.clone())),
             },
@@ -1831,18 +1834,22 @@ impl Engine {
         item: i32,
     ) -> Result<Option<i32>, RuntimeEvalError> {
         match expr {
-            RuntimeExpr::Value(RuntimeValue::Int(value)) => i32::try_from(*value)
-                .map(Some)
-                .map_err(|_| RuntimeEvalError::UnsupportedPure {
-                    name: "i32 map batch".to_owned(),
-                    reason: format!("literal `{value}` is outside i32 range"),
-                }),
+            RuntimeExpr::Value(RuntimeValue::Int(value)) => {
+                value
+                    .exact_i32()
+                    .map(Some)
+                    .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
+                        name: "i32 map batch".to_owned(),
+                        reason: format!("literal `{value}` is outside i32 range"),
+                    })
+            }
             RuntimeExpr::Local(name) if name == param => Ok(Some(item)),
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
                 Some(RuntimeValue::Int(value)) => {
-                    i32::try_from(*value)
+                    value
+                        .exact_i32()
                         .map(Some)
-                        .map_err(|_| RuntimeEvalError::UnsupportedPure {
+                        .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
                             name: "i32 map batch".to_owned(),
                             reason: format!(
                                 "binding `{name}` value `{value}` is outside i32 range"
@@ -2168,12 +2175,7 @@ fn pure_helper_has_only_exact_int_inputs<T: RuntimePureScalarInteger>(
 
 fn expr_returns_i64<'a>(expr: &'a RuntimeExpr, int_names: &mut Vec<&'a str>) -> bool {
     match expr {
-        RuntimeExpr::Value(
-            RuntimeValue::Int(_)
-            | RuntimeValue::I128(_)
-            | RuntimeValue::UInt(_)
-            | RuntimeValue::U128(_),
-        ) => true,
+        RuntimeExpr::Value(RuntimeValue::Int(_) | RuntimeValue::UInt(_)) => true,
         RuntimeExpr::Local(name) => int_names.contains(&name.as_str()),
         RuntimeExpr::Let { name, expr, body } => {
             if !expr_returns_i64(expr, int_names) {
@@ -2185,7 +2187,9 @@ fn expr_returns_i64<'a>(expr: &'a RuntimeExpr, int_names: &mut Vec<&'a str>) -> 
             int_names.truncate(original_len);
             returns_i64
         }
-        RuntimeExpr::Call { callee, args } if callee == "add" => {
+        RuntimeExpr::Call { callee, args }
+            if callee.as_intrinsic() == Some(RuntimeIntrinsic::Add) =>
+        {
             args.iter().all(|arg| expr_returns_i64(arg, int_names))
         }
         RuntimeExpr::Unary {
@@ -2362,20 +2366,31 @@ fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, Runti
     }
 }
 
-fn evaluate_runtime_call(callee: &str, args: &[RuntimeValue]) -> RuntimeValue {
-    match (callee, args) {
-        ("add", [RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)]) => {
-            RuntimeValue::Int(lhs.saturating_add(*rhs))
+fn evaluate_runtime_call(callee: &RuntimeCallTarget, args: &[RuntimeValue]) -> RuntimeValue {
+    match (callee.as_intrinsic(), args) {
+        (Some(RuntimeIntrinsic::Add), [RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)]) => {
+            evaluate_binary(
+                RuntimeValue::Int(*lhs),
+                RuntimeBinaryOp::Add,
+                RuntimeValue::Int(*rhs),
+            )
+            .unwrap_or_else(|_| RuntimeValue::String("add(<unsupported>)".to_owned()))
         }
         (
-            "path.save" | "path.asset" | "path.temp" | "path.export",
+            Some(
+                intrinsic @ (RuntimeIntrinsic::PathSave
+                | RuntimeIntrinsic::PathAsset
+                | RuntimeIntrinsic::PathTemp
+                | RuntimeIntrinsic::PathExport),
+            ),
             [RuntimeValue::String(path)],
         ) => {
-            let space = callee.strip_prefix("path.").unwrap_or(callee);
+            let space = intrinsic.path_space().unwrap_or(intrinsic.as_label());
             RuntimeValue::String(format!("{space}:{path}"))
         }
         _ => RuntimeValue::String(format!(
-            "{callee}({})",
+            "{}({})",
+            callee.as_label(),
             args.iter()
                 .map(runtime_value_label)
                 .collect::<Vec<_>>()
@@ -2408,5 +2423,5 @@ fn evaluate_runtime_method_call(
 }
 
 fn runtime_len_value(len: usize) -> RuntimeValue {
-    RuntimeValue::UInt(u64::try_from(len).unwrap_or(u64::MAX))
+    RuntimeValue::usize(u64::try_from(len).unwrap_or(u64::MAX))
 }

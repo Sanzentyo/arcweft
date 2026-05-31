@@ -542,19 +542,13 @@ impl RuntimePureAccelerator {
                 self.compile_stats.cache_hits += 1;
                 self.stats.vm_calls += rows;
                 self.stats.fallbacks += rows;
-                match self.vm_scratch.evaluate_i64_slice(helper, row)? {
-                    RuntimeValue::Int(value) => value,
-                    value => return Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
-                }
+                exact_i64_result(self.vm_scratch.evaluate_i64_slice(helper, row)?)?
             }
             None => {
                 self.compile_stats.cache_misses += 1;
                 self.stats.vm_calls += rows;
                 self.stats.fallbacks += rows;
-                match self.vm_scratch.evaluate_i64_slice(helper, row)? {
-                    RuntimeValue::Int(value) => value,
-                    value => return Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
-                }
+                exact_i64_result(self.vm_scratch.evaluate_i64_slice(helper, row)?)?
             }
         };
         value
@@ -977,7 +971,7 @@ impl RuntimePureAccelerator {
         scratch: &mut VmPureFunctionScratch,
     ) -> Result<i64, RuntimeEvalError> {
         match scratch.evaluate_i64_args(helper, args)? {
-            RuntimeValue::Int(value) => Ok(value),
+            value @ RuntimeValue::Int(_) => exact_i64_result(value),
             value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
         }
     }
@@ -988,7 +982,7 @@ impl RuntimePureAccelerator {
         scratch: &mut VmPureFunctionScratch,
     ) -> Result<i64, RuntimeEvalError> {
         match scratch.evaluate_i64_slice(helper, args)? {
-            RuntimeValue::Int(value) => Ok(value),
+            value @ RuntimeValue::Int(_) => exact_i64_result(value),
             value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
         }
     }
@@ -1008,10 +1002,12 @@ impl RuntimePureAccelerator {
     ) -> Result<i32, RuntimeEvalError> {
         match scratch.evaluate_i32_slice(helper, args)? {
             RuntimeValue::Int(value) => {
-                i32::try_from(value).map_err(|_| RuntimeEvalError::UnsupportedPure {
-                    name: helper.name.clone(),
-                    reason: format!("pure i32 result `{value}` is outside i32 range"),
-                })
+                value
+                    .exact_i32()
+                    .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
+                        name: helper.name.clone(),
+                        reason: format!("pure i32 result `{value}` is outside i32 range"),
+                    })
             }
             value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
         }
@@ -1057,11 +1053,7 @@ fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::Unit => "()",
         RuntimeValue::Bool(_) => "bool",
         RuntimeValue::Int(_) => "int",
-        RuntimeValue::I128(_) => "i128",
-        RuntimeValue::ISize(_) => "isize",
         RuntimeValue::UInt(_) => "uint",
-        RuntimeValue::U128(_) => "u128",
-        RuntimeValue::USize(_) => "usize",
         RuntimeValue::F32(_) => "f32",
         RuntimeValue::F64(_) => "f64",
         RuntimeValue::String(_) => "string",
@@ -1121,6 +1113,15 @@ fn compile_helper(
             compile_jit(&request, helper, stats).unwrap_or(RuntimePureCacheEntry::Vm)
         }
         RuntimePureBackendMode::Auto => compile_auto(&request, helper, work_units, stats),
+    }
+}
+
+fn exact_i64_result(value: RuntimeValue) -> Result<i64, RuntimeEvalError> {
+    match value {
+        RuntimeValue::Int(value) => value
+            .exact_i64()
+            .ok_or_else(|| RuntimeEvalError::ExpectedInt(value.to_string())),
+        value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
     }
 }
 
@@ -1600,13 +1601,8 @@ fn call_vm_batch(
     scratch: &mut VmPureFunctionScratch,
 ) -> Result<(), RuntimeEvalError> {
     rows.iter().zip(out.iter_mut()).try_for_each(|(row, slot)| {
-        match scratch.evaluate_i64_args(helper, *row)? {
-            RuntimeValue::Int(value) => {
-                *slot = value;
-                Ok(())
-            }
-            value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
-        }
+        *slot = exact_i64_result(scratch.evaluate_i64_args(helper, *row)?)?;
+        Ok(())
     })
 }
 
@@ -1619,12 +1615,9 @@ fn call_vm_batch_parallel(
     let mut run = || {
         rows.par_iter().zip(out.par_iter_mut()).try_for_each_init(
             VmPureFunctionScratch::default,
-            |scratch, (row, slot)| match scratch.evaluate_i64_args(helper, *row)? {
-                RuntimeValue::Int(value) => {
-                    *slot = value;
-                    Ok(())
-                }
-                value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+            |scratch, (row, slot)| {
+                *slot = exact_i64_result(scratch.evaluate_i64_args(helper, *row)?)?;
+                Ok(())
             },
         )
     };
@@ -1643,27 +1636,17 @@ fn call_vm_flat_batch(
 ) -> Result<(), RuntimeEvalError> {
     if arity == 0 {
         return out.iter_mut().try_for_each(|slot| {
-            match scratch.evaluate_i64_slice(helper, &[])? {
-                RuntimeValue::Int(value) => {
-                    *slot = value;
-                    Ok(())
-                }
-                value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
-            }
+            *slot = exact_i64_result(scratch.evaluate_i64_slice(helper, &[])?)?;
+            Ok(())
         });
     }
     flat_inputs
         .chunks_exact(arity)
         .zip(out.iter_mut())
-        .try_for_each(
-            |(row, slot)| match scratch.evaluate_i64_slice(helper, row)? {
-                RuntimeValue::Int(value) => {
-                    *slot = value;
-                    Ok(())
-                }
-                value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
-            },
-        )
+        .try_for_each(|(row, slot)| {
+            *slot = exact_i64_result(scratch.evaluate_i64_slice(helper, row)?)?;
+            Ok(())
+        })
 }
 
 fn call_vm_i32_flat_batch(
@@ -1739,10 +1722,12 @@ fn call_vm_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
 fn vm_i32_result(helper: &RuntimePureHelper, value: RuntimeValue) -> Result<i32, RuntimeEvalError> {
     match value {
         RuntimeValue::Int(value) => {
-            i32::try_from(value).map_err(|_| RuntimeEvalError::UnsupportedPure {
-                name: helper.name.clone(),
-                reason: format!("pure i32 result `{value}` is outside i32 range"),
-            })
+            value
+                .exact_i32()
+                .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
+                    name: helper.name.clone(),
+                    reason: format!("pure i32 result `{value}` is outside i32 range"),
+                })
         }
         value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
     }
@@ -1759,28 +1744,19 @@ fn call_vm_flat_batch_parallel(
         if arity == 0 {
             return out.par_iter_mut().try_for_each_init(
                 VmPureFunctionScratch::default,
-                |scratch, slot| match scratch.evaluate_i64_slice(helper, &[])? {
-                    RuntimeValue::Int(value) => {
-                        *slot = value;
-                        Ok(())
-                    }
-                    value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+                |scratch, slot| {
+                    *slot = exact_i64_result(scratch.evaluate_i64_slice(helper, &[])?)?;
+                    Ok(())
                 },
             );
         }
         flat_inputs
             .par_chunks_exact(arity)
             .zip(out.par_iter_mut())
-            .try_for_each_init(
-                VmPureFunctionScratch::default,
-                |scratch, (row, slot)| match scratch.evaluate_i64_slice(helper, row)? {
-                    RuntimeValue::Int(value) => {
-                        *slot = value;
-                        Ok(())
-                    }
-                    value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
-                },
-            )
+            .try_for_each_init(VmPureFunctionScratch::default, |scratch, (row, slot)| {
+                *slot = exact_i64_result(scratch.evaluate_i64_slice(helper, row)?)?;
+                Ok(())
+            })
     };
     match pool {
         Some(pool) => pool.install(run),
@@ -1798,18 +1774,12 @@ fn call_vm_flat_batch_sum(
     let mut sum = 0i64;
     if arity == 0 {
         for _ in 0..rows {
-            match scratch.evaluate_i64_slice(helper, &[])? {
-                RuntimeValue::Int(value) => sum += value,
-                value => return Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
-            }
+            sum += exact_i64_result(scratch.evaluate_i64_slice(helper, &[])?)?;
         }
         return Ok(sum);
     }
     for row in flat_inputs.chunks_exact(arity) {
-        match scratch.evaluate_i64_slice(helper, row)? {
-            RuntimeValue::Int(value) => sum += value,
-            value => return Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
-        }
+        sum += exact_i64_result(scratch.evaluate_i64_slice(helper, row)?)?;
     }
     Ok(sum)
 }
@@ -1828,14 +1798,7 @@ fn call_vm_flat_batch_sum_parallel(
                 .try_fold(
                     || (VmPureFunctionScratch::default(), 0i64),
                     |(mut scratch, sum), _| {
-                        let value = match scratch.evaluate_i64_slice(helper, &[])? {
-                            RuntimeValue::Int(value) => value,
-                            value => {
-                                return Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(
-                                    &value,
-                                )));
-                            }
-                        };
+                        let value = exact_i64_result(scratch.evaluate_i64_slice(helper, &[])?)?;
                         Ok::<(VmPureFunctionScratch, i64), RuntimeEvalError>((scratch, sum + value))
                     },
                 )
@@ -1847,12 +1810,7 @@ fn call_vm_flat_batch_sum_parallel(
             .try_fold(
                 || (VmPureFunctionScratch::default(), 0i64),
                 |(mut scratch, sum), row| {
-                    let value = match scratch.evaluate_i64_slice(helper, row)? {
-                        RuntimeValue::Int(value) => value,
-                        value => {
-                            return Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value)));
-                        }
-                    };
+                    let value = exact_i64_result(scratch.evaluate_i64_slice(helper, row)?)?;
                     Ok::<(VmPureFunctionScratch, i64), RuntimeEvalError>((scratch, sum + value))
                 },
             )
@@ -1896,7 +1854,7 @@ fn compile_request(helper: &RuntimePureHelper) -> PureFunctionRequest {
             .cloned()
             .map(|name| RuntimeBinding {
                 name,
-                value: RuntimeValue::Int(0),
+                value: RuntimeValue::i64(0),
             }),
     )
 }
@@ -1983,7 +1941,7 @@ mod tests {
                 rhs: Box::new(RuntimeExpr::Binary {
                     lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
                     op: RuntimeBinaryOp::Add,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
                 }),
             },
             scalar_eval_supported: true,
@@ -2029,7 +1987,7 @@ mod tests {
                 rhs: Box::new(RuntimeExpr::Binary {
                     lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
                     op: RuntimeBinaryOp::Add,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
                 }),
             },
             scalar_eval_supported: true,
@@ -2119,7 +2077,7 @@ mod tests {
                 rhs: Box::new(RuntimeExpr::Binary {
                     lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
                     op: RuntimeBinaryOp::Add,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
                 }),
             },
             scalar_eval_supported: true,
@@ -2174,7 +2132,7 @@ mod tests {
                 rhs: Box::new(RuntimeExpr::Binary {
                     lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
                     op: RuntimeBinaryOp::Add,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
                 }),
             },
             scalar_eval_supported: true,
@@ -2250,7 +2208,7 @@ mod tests {
                 rhs: Box::new(RuntimeExpr::Binary {
                     lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
                     op: RuntimeBinaryOp::Add,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
                 }),
             },
             scalar_eval_supported: true,
@@ -2307,7 +2265,7 @@ mod tests {
                 rhs: Box::new(RuntimeExpr::Binary {
                     lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
                     op: RuntimeBinaryOp::Add,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
                 }),
             },
             scalar_eval_supported: true,
@@ -2360,7 +2318,7 @@ mod tests {
                 rhs: Box::new(RuntimeExpr::Binary {
                     lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
                     op: RuntimeBinaryOp::Add,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
                 }),
             },
             scalar_eval_supported: true,

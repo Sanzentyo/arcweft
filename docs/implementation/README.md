@@ -758,7 +758,7 @@ Current high-confidence state:
   borrowed views for deterministic scalar integer widths accepted by the
   runtime (`i8`, `i16`, `i32`, `i64`, `i128`, `isize`, `u8`, `u16`, `u32`,
   `u64`, `u128`, `usize`) plus unit, bool, byte, char, logical duration,
-  `String`, raw float literal, and entity reference sequences. Unit dense
+  `String`, native `f32`/`f64`, and entity reference sequences. Unit dense
   storage is length-only, so `Vec<Unit>` and repeated unit arrays do not
   allocate element storage. `isize`/`usize` dense storage uses stable
   `i64`/`u64` backing values at the runtime boundary rather than host
@@ -770,6 +770,14 @@ Current high-confidence state:
   records this scalar coverage explicitly so adding a new dense class requires
   extending the typed kind, borrowed view, materialization fallback, and tests
   together.
+- Scalar integer values keep the same width evidence after dynamic
+  materialization. Runtime integers are represented as
+  `RuntimeValue::Int(RuntimeInt::...)` or
+  `RuntimeValue::UInt(RuntimeUInt::...)`, so `i32` and `u8` values that leave a
+  dense sequence through spread, pattern fallback, record/tuple column
+  materialization, or dynamic arguments do not silently widen to `i64`/`u64`.
+  The i64 VM/AOT/JIT fast paths now explicitly require `RuntimeInt::I64`, while
+  width-specific pure paths keep their exact ABI type.
 - Dense storage exposes exact borrowed views for each scalar storage class.
   Narrower or unsigned integer storage is not widened with `.map(i64::from)` on
   the hot path, because that would erase the bandwidth/cache advantage of

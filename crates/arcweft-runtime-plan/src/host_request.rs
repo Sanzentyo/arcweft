@@ -7,7 +7,7 @@
 use crate::expr::lower_runtime_expr_strict;
 use crate::labels::expr_label;
 use arcweft_core::task::{HostTaskArgTemplate, HostTaskRequestTemplate};
-use arcweft_core::value::{RuntimeExpr, RuntimeValue};
+use arcweft_core::value::{RuntimeCallTarget, RuntimeExpr, RuntimeValue};
 use arcweft_lang_hir::syntax::expr::{CallArg, Expr};
 
 struct CallParts<'a> {
@@ -91,7 +91,7 @@ fn lower_host_arg_expr(expr: &Expr) -> RuntimeExpr {
             && args.len() == 1 =>
         {
             RuntimeExpr::Call {
-                callee: format!("path.{method}"),
+                callee: RuntimeCallTarget::from_label(format!("path.{method}")),
                 args: vec![lower_host_arg_expr(args[0].value())],
             }
         }

@@ -21,17 +21,17 @@ fn root_binding_ref_updates_existing_slots() {
     let mut env = RuntimeEnv::default();
     let first = [RuntimeBinding {
         name: "seed".to_owned(),
-        value: RuntimeValue::Int(1),
+        value: RuntimeValue::i64(1),
     }];
     let second = [RuntimeBinding {
         name: "seed".to_owned(),
-        value: RuntimeValue::Int(2),
+        value: RuntimeValue::i64(2),
     }];
 
     env.bind_all_root_ref(&first);
     env.bind_all_root_ref(&second);
 
-    assert_eq!(env.get("seed"), Some(&RuntimeValue::Int(2)));
+    assert_eq!(env.get("seed"), Some(&RuntimeValue::i64(2)));
 }
 
 #[test]
@@ -40,29 +40,29 @@ fn root_binding_ref_reuses_matching_ordered_slots() {
     let first = [
         RuntimeBinding {
             name: "lhs".to_owned(),
-            value: RuntimeValue::Int(1),
+            value: RuntimeValue::i64(1),
         },
         RuntimeBinding {
             name: "rhs".to_owned(),
-            value: RuntimeValue::Int(2),
+            value: RuntimeValue::i64(2),
         },
     ];
     let second = [
         RuntimeBinding {
             name: "lhs".to_owned(),
-            value: RuntimeValue::Int(3),
+            value: RuntimeValue::i64(3),
         },
         RuntimeBinding {
             name: "rhs".to_owned(),
-            value: RuntimeValue::Int(4),
+            value: RuntimeValue::i64(4),
         },
     ];
 
     env.bind_all_root_ref(&first);
     env.bind_all_root_ref(&second);
 
-    assert_eq!(env.get("lhs"), Some(&RuntimeValue::Int(3)));
-    assert_eq!(env.get("rhs"), Some(&RuntimeValue::Int(4)));
+    assert_eq!(env.get("lhs"), Some(&RuntimeValue::i64(3)));
+    assert_eq!(env.get("rhs"), Some(&RuntimeValue::i64(4)));
 }
 
 #[test]
@@ -70,17 +70,17 @@ fn scoped_i64_binding_updates_without_value_input() {
     let mut env = RuntimeEnv::default();
 
     env.push_scope_with_capacity(1);
-    env.set_i64("item", 3);
-    env.set_i64("item", 5);
+    env.set("item", RuntimeValue::i64(3));
+    env.set("item", RuntimeValue::i64(5));
 
-    assert_eq!(env.get("item"), Some(&RuntimeValue::Int(5)));
+    assert_eq!(env.get("item"), Some(&RuntimeValue::i64(5)));
 }
 
 #[test]
 fn spare_scopes_do_not_affect_runtime_env_semantics() {
     let mut env = RuntimeEnv::default();
     env.push_scope_with_capacity(2);
-    env.set("scoped", RuntimeValue::Int(1));
+    env.set("scoped", RuntimeValue::i64(1));
     env.pop_scope();
 
     let baseline = RuntimeEnv::default();
@@ -101,7 +101,7 @@ fn runtime_expr_display_is_stable_diagnostic_label() {
     assert_eq!(
         RuntimeExpr::PureCall {
             helper: RuntimePureHelperId(7),
-            args: vec![RuntimeExpr::Value(RuntimeValue::Int(1))],
+            args: vec![RuntimeExpr::Value(RuntimeValue::i64(1))],
         }
         .to_string(),
         "pure#7()"
@@ -281,9 +281,9 @@ fn dense_integer_sequences_keep_exact_i64_projection_separate_from_other_widths(
     assert_eq!(
         i32_seq.into_values(),
         vec![
-            RuntimeValue::Int(1),
-            RuntimeValue::Int(2),
-            RuntimeValue::Int(3)
+            RuntimeValue::i32(1),
+            RuntimeValue::i32(2),
+            RuntimeValue::i32(3)
         ]
     );
 
@@ -298,7 +298,7 @@ fn dense_integer_sequences_keep_exact_i64_projection_separate_from_other_widths(
     assert_eq!(u64_seq.first_i64(), None);
     assert_eq!(
         u64_seq.into_values(),
-        vec![RuntimeValue::UInt(1), RuntimeValue::UInt(2)]
+        vec![RuntimeValue::u64(1), RuntimeValue::u64(2)]
     );
 
     let RuntimeValue::Seq(bytes_seq) = bytes_seq else {
@@ -311,7 +311,7 @@ fn dense_integer_sequences_keep_exact_i64_projection_separate_from_other_widths(
     assert_eq!(bytes_seq.first_i64(), None);
     assert_eq!(
         bytes_seq.into_values(),
-        vec![RuntimeValue::Int(65), RuntimeValue::Int(66)]
+        vec![RuntimeValue::u8(65), RuntimeValue::u8(66)]
     );
 }
 
@@ -339,9 +339,9 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
     assert_eq!(
         i128_seq.into_values(),
         vec![
-            RuntimeValue::I128(1),
-            RuntimeValue::I128(2),
-            RuntimeValue::I128(3)
+            RuntimeValue::i128(1),
+            RuntimeValue::i128(2),
+            RuntimeValue::i128(3)
         ]
     );
 
@@ -357,9 +357,9 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
     assert_eq!(
         isize_seq.into_values(),
         vec![
-            RuntimeValue::ISize(1),
-            RuntimeValue::ISize(2),
-            RuntimeValue::ISize(3)
+            RuntimeValue::isize(1),
+            RuntimeValue::isize(2),
+            RuntimeValue::isize(3)
         ]
     );
 
@@ -374,7 +374,7 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
     assert_eq!(u128_seq.first_i64(), None);
     assert_eq!(
         u128_seq.into_values(),
-        vec![RuntimeValue::U128(1), RuntimeValue::U128(2)]
+        vec![RuntimeValue::u128(1), RuntimeValue::u128(2)]
     );
 
     let RuntimeValue::Seq(usize_seq) = usize_seq else {
@@ -388,7 +388,7 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
     assert_eq!(usize_seq.first_i64(), None);
     assert_eq!(
         usize_seq.into_values(),
-        vec![RuntimeValue::USize(1), RuntimeValue::USize(2)]
+        vec![RuntimeValue::usize(1), RuntimeValue::usize(2)]
     );
 }
 
@@ -555,13 +555,37 @@ fn literal_and_repeat_sequences_choose_dense_scalar_storage() {
     assert_eq!(string_seq.as_strings(), Some(["ok".to_owned()].as_slice()));
 
     let RuntimeValue::Seq(i128_seq) =
-        runtime_sequence_from_literal_values(vec![RuntimeValue::I128(1), RuntimeValue::I128(2)])
+        runtime_sequence_from_literal_values(vec![RuntimeValue::i128(1), RuntimeValue::i128(2)])
     else {
         panic!("i128 literals lower to a sequence");
     };
     assert_eq!(i128_seq.as_i128_slice(), Some([1, 2].as_slice()));
 
-    let RuntimeValue::Seq(usize_seq) = runtime_sequence_repeat_value(&RuntimeValue::USize(4), 2)
+    let RuntimeValue::Seq(i32_seq) =
+        runtime_sequence_from_literal_values(vec![RuntimeValue::i32(1), RuntimeValue::i32(2)])
+    else {
+        panic!("i32 literals lower to a sequence");
+    };
+    assert_eq!(i32_seq.dense_kind(), Some(DenseSeqKind::I32));
+    assert_eq!(i32_seq.value_at(0), RuntimeValue::i32(1));
+    assert_eq!(
+        i32_seq.clone().into_values(),
+        vec![RuntimeValue::i32(1), RuntimeValue::i32(2)]
+    );
+
+    let RuntimeValue::Seq(u8_seq) =
+        runtime_sequence_from_literal_values(vec![RuntimeValue::u8(3), RuntimeValue::u8(4)])
+    else {
+        panic!("u8 literals lower to a sequence");
+    };
+    assert_eq!(u8_seq.dense_kind(), Some(DenseSeqKind::U8));
+    assert_eq!(u8_seq.value_at(1), RuntimeValue::u8(4));
+    assert_eq!(
+        u8_seq.clone().into_values(),
+        vec![RuntimeValue::u8(3), RuntimeValue::u8(4)]
+    );
+
+    let RuntimeValue::Seq(usize_seq) = runtime_sequence_repeat_value(&RuntimeValue::usize(4), 2)
     else {
         panic!("usize repeat lowers to a sequence");
     };
@@ -593,8 +617,8 @@ fn literal_and_repeat_sequences_choose_dense_scalar_storage() {
 #[test]
 fn compound_literal_sequences_use_columnar_storage_when_shape_is_stable() {
     let RuntimeValue::Seq(tuple_seq) = runtime_sequence_from_literal_values(vec![
-        RuntimeValue::Tuple(vec![RuntimeValue::Int(1), RuntimeValue::Bool(true)]),
-        RuntimeValue::Tuple(vec![RuntimeValue::Int(2), RuntimeValue::Bool(false)]),
+        RuntimeValue::Tuple(vec![RuntimeValue::i64(1), RuntimeValue::Bool(true)]),
+        RuntimeValue::Tuple(vec![RuntimeValue::i64(2), RuntimeValue::Bool(false)]),
     ]) else {
         panic!("tuple literals lower to a sequence");
     };
@@ -621,11 +645,11 @@ fn compound_literal_sequences_use_columnar_storage_when_shape_is_stable() {
     let RuntimeValue::Seq(record_seq) = runtime_sequence_from_literal_values(vec![
         RuntimeValue::Record(vec![RuntimeFieldValue {
             name: "score".to_owned(),
-            value: RuntimeValue::Int(1),
+            value: RuntimeValue::i64(1),
         }]),
         RuntimeValue::Record(vec![RuntimeFieldValue {
             name: "score".to_owned(),
-            value: RuntimeValue::Int(2),
+            value: RuntimeValue::i64(2),
         }]),
     ]) else {
         panic!("record literals lower to a sequence");
@@ -653,12 +677,12 @@ fn compound_literal_sequences_use_columnar_storage_when_shape_is_stable() {
         RuntimeValue::Variant {
             path: None,
             name: "Some".to_owned(),
-            payload: Some(Box::new(RuntimeValue::Int(1))),
+            payload: Some(Box::new(RuntimeValue::i64(1))),
         },
         RuntimeValue::Variant {
             path: None,
             name: "Some".to_owned(),
-            payload: Some(Box::new(RuntimeValue::Int(2))),
+            payload: Some(Box::new(RuntimeValue::i64(2))),
         },
     ]) else {
         panic!("variant literals lower to a sequence");
@@ -669,8 +693,8 @@ fn compound_literal_sequences_use_columnar_storage_when_shape_is_stable() {
 #[test]
 fn compound_literal_sequences_fall_back_when_shape_changes() {
     let RuntimeValue::Seq(tuple_seq) = runtime_sequence_from_literal_values(vec![
-        RuntimeValue::Tuple(vec![RuntimeValue::Int(1)]),
-        RuntimeValue::Tuple(vec![RuntimeValue::Int(2), RuntimeValue::Bool(false)]),
+        RuntimeValue::Tuple(vec![RuntimeValue::i64(1)]),
+        RuntimeValue::Tuple(vec![RuntimeValue::i64(2), RuntimeValue::Bool(false)]),
     ]) else {
         panic!("tuple literals lower to a sequence");
     };
@@ -679,7 +703,7 @@ fn compound_literal_sequences_fall_back_when_shape_changes() {
     let RuntimeValue::Seq(record_seq) = runtime_sequence_from_literal_values(vec![
         RuntimeValue::Record(vec![RuntimeFieldValue {
             name: "score".to_owned(),
-            value: RuntimeValue::Int(1),
+            value: RuntimeValue::i64(1),
         }]),
         RuntimeValue::Record(vec![RuntimeFieldValue {
             name: "label".to_owned(),

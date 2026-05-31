@@ -2,9 +2,10 @@ use crate::plan::RuntimePureHelper;
 use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExactInteger,
-    RuntimeExpr, RuntimeFieldValue, RuntimeSeq, RuntimeUnaryOp, RuntimeValue, evaluate_binary,
-    evaluate_unary, runtime_binary_op_label, runtime_sequence_values, runtime_unary_op_label,
-    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
+    RuntimeExpr, RuntimeFieldValue, RuntimeIntrinsic, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
+    evaluate_binary, evaluate_unary, runtime_binary_op_label, runtime_sequence_values,
+    runtime_unary_op_label, runtime_value_into_sequence_values, runtime_value_label,
+    sum_i64_sequence_ref,
 };
 use std::collections::BTreeMap;
 
@@ -595,7 +596,7 @@ impl PureFunctionBackend for AotPureFunctionBackend {
         let (value, stats) = self.compile_i64(request)?.call();
         Ok(PureFunctionResult {
             backend: self.kind(),
-            value: RuntimeValue::Int(value),
+            value: RuntimeValue::i64(value),
             stats,
         })
     }
@@ -798,7 +799,9 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         self.stats.arg_bytes_copied += args.len() * std::mem::size_of::<i64>();
         let value = self.scratch.evaluate_i64_args(helper, args)?;
         match value {
-            RuntimeValue::Int(value) => Ok(Some(value)),
+            RuntimeValue::Int(value) => value.exact_i64().map(Some).ok_or_else(|| {
+                RuntimeEvalError::ExpectedInt(runtime_value_label(&RuntimeValue::Int(value)))
+            }),
             value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
         }
     }
@@ -820,7 +823,9 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
         let value = self.scratch.evaluate_i64_slice(helper, args)?;
         match value {
-            RuntimeValue::Int(value) => Ok(Some(value)),
+            RuntimeValue::Int(value) => value.exact_i64().map(Some).ok_or_else(|| {
+                RuntimeEvalError::ExpectedInt(runtime_value_label(&RuntimeValue::Int(value)))
+            }),
             value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
         }
     }
@@ -855,7 +860,11 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
             let value = self.scratch.evaluate_i64_args(helper, *row)?;
             match value {
                 RuntimeValue::Int(value) => {
-                    *slot = value;
+                    *slot = value.exact_i64().ok_or_else(|| {
+                        RuntimeEvalError::ExpectedInt(runtime_value_label(&RuntimeValue::Int(
+                            value,
+                        )))
+                    })?;
                     Ok(())
                 }
                 value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
@@ -901,7 +910,11 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
                 let value = self.scratch.evaluate_i64_slice(helper, &[])?;
                 match value {
                     RuntimeValue::Int(value) => {
-                        *slot = value;
+                        *slot = value.exact_i64().ok_or_else(|| {
+                            RuntimeEvalError::ExpectedInt(runtime_value_label(&RuntimeValue::Int(
+                                value,
+                            )))
+                        })?;
                         Ok(())
                     }
                     value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
@@ -915,7 +928,11 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
                 let value = self.scratch.evaluate_i64_slice(helper, row)?;
                 match value {
                     RuntimeValue::Int(value) => {
-                        *slot = value;
+                        *slot = value.exact_i64().ok_or_else(|| {
+                            RuntimeEvalError::ExpectedInt(runtime_value_label(&RuntimeValue::Int(
+                                value,
+                            )))
+                        })?;
                         Ok(())
                     }
                     value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
@@ -959,7 +976,13 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         if arity == 0 {
             for _ in 0..rows {
                 match self.scratch.evaluate_i64_slice(helper, &[])? {
-                    RuntimeValue::Int(value) => sum += value,
+                    RuntimeValue::Int(value) => {
+                        sum += value.exact_i64().ok_or_else(|| {
+                            RuntimeEvalError::ExpectedInt(runtime_value_label(&RuntimeValue::Int(
+                                value,
+                            )))
+                        })?;
+                    }
                     value => {
                         return Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value)));
                     }
@@ -969,7 +992,13 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         }
         for row in flat_inputs.chunks_exact(arity) {
             match self.scratch.evaluate_i64_slice(helper, row)? {
-                RuntimeValue::Int(value) => sum += value,
+                RuntimeValue::Int(value) => {
+                    sum += value.exact_i64().ok_or_else(|| {
+                        RuntimeEvalError::ExpectedInt(runtime_value_label(&RuntimeValue::Int(
+                            value,
+                        )))
+                    })?;
+                }
                 value => return Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
             }
         }
@@ -1001,7 +1030,9 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
             return Ok(0);
         }
         let value = match self.scratch.evaluate_i64_slice(helper, row)? {
-            RuntimeValue::Int(value) => value,
+            RuntimeValue::Int(value) => value.exact_i64().ok_or_else(|| {
+                RuntimeEvalError::ExpectedInt(runtime_value_label(&RuntimeValue::Int(value)))
+            })?,
             value => return Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
         };
         let rows = i64::try_from(rows).map_err(|_| RuntimeEvalError::UnsupportedPure {
@@ -1190,7 +1221,10 @@ impl AotCompileContext {
     fn from_request(request: &PureFunctionRequest) -> Result<Self, RuntimeEvalError> {
         let mut slots = BTreeMap::new();
         for binding in &request.bindings {
-            if !matches!(binding.value, RuntimeValue::Int(_)) {
+            if !matches!(
+                binding.value,
+                RuntimeValue::Int(crate::value::RuntimeInt::I64(_))
+            ) {
                 return Err(unsupported_aot(
                     &request.name,
                     format!("binding `{}` is not an i64 integer", binding.name),
@@ -1212,7 +1246,12 @@ impl AotCompileContext {
             .bindings
             .iter()
             .map(|binding| match binding.value {
-                RuntimeValue::Int(value) => Ok(value),
+                RuntimeValue::Int(value) => value.exact_i64().ok_or_else(|| {
+                    unsupported_aot(
+                        &request.name,
+                        format!("binding `{}` is not an i64 integer", binding.name),
+                    )
+                }),
                 _ => Err(unsupported_aot(
                     &request.name,
                     format!("binding `{}` is not an i64 integer", binding.name),
@@ -1351,7 +1390,14 @@ fn compile_aot_i64_expr(
     ctx: &mut AotCompileContext,
 ) -> Result<AotI64Expr, RuntimeEvalError> {
     match expr {
-        RuntimeExpr::Value(RuntimeValue::Int(value)) => Ok(AotI64Expr::Const(*value)),
+        RuntimeExpr::Value(RuntimeValue::Int(value)) => {
+            value.exact_i64().map(AotI64Expr::Const).ok_or_else(|| {
+                unsupported_aot(
+                    helper_name,
+                    format!("literal `{value}` is not an i64 integer"),
+                )
+            })
+        }
         RuntimeExpr::Value(value) => Err(unsupported_aot(
             helper_name,
             format!("literal {value:?} is not an i64 integer"),
@@ -1370,7 +1416,9 @@ fn compile_aot_i64_expr(
                 })
             })
         }
-        RuntimeExpr::Call { callee, args } if callee == "add" && args.len() == 2 => {
+        RuntimeExpr::Call { callee, args }
+            if callee.as_intrinsic() == Some(RuntimeIntrinsic::Add) && args.len() == 2 =>
+        {
             Ok(AotI64Expr::AddCall {
                 lhs: Box::new(compile_aot_i64_expr(helper_name, &args[0], ctx)?),
                 rhs: Box::new(compile_aot_i64_expr(helper_name, &args[1], ctx)?),
@@ -1490,18 +1538,18 @@ impl RuntimePureScalar {
     const fn into_runtime_value(self) -> RuntimeValue {
         match self {
             Self::Bool(value) => RuntimeValue::Bool(value),
-            Self::I8(value) => RuntimeValue::Int(value as i64),
-            Self::I16(value) => RuntimeValue::Int(value as i64),
-            Self::I32(value) => RuntimeValue::Int(value as i64),
-            Self::I64(value) => RuntimeValue::Int(value),
-            Self::I128(value) => RuntimeValue::I128(value),
-            Self::ISize(value) => RuntimeValue::ISize(value),
-            Self::U8(value) => RuntimeValue::UInt(value as u64),
-            Self::U16(value) => RuntimeValue::UInt(value as u64),
-            Self::U32(value) => RuntimeValue::UInt(value as u64),
-            Self::U64(value) => RuntimeValue::UInt(value),
-            Self::U128(value) => RuntimeValue::U128(value),
-            Self::USize(value) => RuntimeValue::USize(value),
+            Self::I8(value) => RuntimeValue::i8(value),
+            Self::I16(value) => RuntimeValue::i16(value),
+            Self::I32(value) => RuntimeValue::i32(value),
+            Self::I64(value) => RuntimeValue::i64(value),
+            Self::I128(value) => RuntimeValue::i128(value),
+            Self::ISize(value) => RuntimeValue::isize(value),
+            Self::U8(value) => RuntimeValue::u8(value),
+            Self::U16(value) => RuntimeValue::u16(value),
+            Self::U32(value) => RuntimeValue::u32(value),
+            Self::U64(value) => RuntimeValue::u64(value),
+            Self::U128(value) => RuntimeValue::u128(value),
+            Self::USize(value) => RuntimeValue::usize(value),
             Self::F32(value) => RuntimeValue::F32(value),
             Self::F64(value) => RuntimeValue::F64(value),
         }
@@ -1515,12 +1563,8 @@ impl RuntimePureScalar {
 fn runtime_value_as_scalar(value: &RuntimeValue) -> Option<RuntimePureScalar> {
     match value {
         RuntimeValue::Bool(value) => Some(RuntimePureScalar::Bool(*value)),
-        RuntimeValue::Int(value) => Some(RuntimePureScalar::I64(*value)),
-        RuntimeValue::I128(value) => Some(RuntimePureScalar::I128(*value)),
-        RuntimeValue::ISize(value) => Some(RuntimePureScalar::ISize(*value)),
-        RuntimeValue::UInt(value) => Some(RuntimePureScalar::U64(*value)),
-        RuntimeValue::U128(value) => Some(RuntimePureScalar::U128(*value)),
-        RuntimeValue::USize(value) => Some(RuntimePureScalar::USize(*value)),
+        RuntimeValue::Int(value) => Some(runtime_int_as_scalar(*value)),
+        RuntimeValue::UInt(value) => Some(runtime_uint_as_scalar(*value)),
         RuntimeValue::F32(value) => Some(RuntimePureScalar::F32(*value)),
         RuntimeValue::F64(value) => Some(RuntimePureScalar::F64(*value)),
         _ => None,
@@ -1530,15 +1574,33 @@ fn runtime_value_as_scalar(value: &RuntimeValue) -> Option<RuntimePureScalar> {
 fn runtime_value_into_scalar(value: RuntimeValue) -> Result<RuntimePureScalar, RuntimeEvalError> {
     match value {
         RuntimeValue::Bool(value) => Ok(RuntimePureScalar::Bool(value)),
-        RuntimeValue::Int(value) => Ok(RuntimePureScalar::I64(value)),
-        RuntimeValue::I128(value) => Ok(RuntimePureScalar::I128(value)),
-        RuntimeValue::ISize(value) => Ok(RuntimePureScalar::ISize(value)),
-        RuntimeValue::UInt(value) => Ok(RuntimePureScalar::U64(value)),
-        RuntimeValue::U128(value) => Ok(RuntimePureScalar::U128(value)),
-        RuntimeValue::USize(value) => Ok(RuntimePureScalar::USize(value)),
+        RuntimeValue::Int(value) => Ok(runtime_int_as_scalar(value)),
+        RuntimeValue::UInt(value) => Ok(runtime_uint_as_scalar(value)),
         RuntimeValue::F32(value) => Ok(RuntimePureScalar::F32(value)),
         RuntimeValue::F64(value) => Ok(RuntimePureScalar::F64(value)),
         value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
+    }
+}
+
+fn runtime_int_as_scalar(value: crate::value::RuntimeInt) -> RuntimePureScalar {
+    match value {
+        crate::value::RuntimeInt::I8(value) => RuntimePureScalar::I8(value),
+        crate::value::RuntimeInt::I16(value) => RuntimePureScalar::I16(value),
+        crate::value::RuntimeInt::I32(value) => RuntimePureScalar::I32(value),
+        crate::value::RuntimeInt::I64(value) => RuntimePureScalar::I64(value),
+        crate::value::RuntimeInt::I128(value) => RuntimePureScalar::I128(value),
+        crate::value::RuntimeInt::ISize(value) => RuntimePureScalar::ISize(value),
+    }
+}
+
+fn runtime_uint_as_scalar(value: crate::value::RuntimeUInt) -> RuntimePureScalar {
+    match value {
+        crate::value::RuntimeUInt::U8(value) => RuntimePureScalar::U8(value),
+        crate::value::RuntimeUInt::U16(value) => RuntimePureScalar::U16(value),
+        crate::value::RuntimeUInt::U32(value) => RuntimePureScalar::U32(value),
+        crate::value::RuntimeUInt::U64(value) => RuntimePureScalar::U64(value),
+        crate::value::RuntimeUInt::U128(value) => RuntimePureScalar::U128(value),
+        crate::value::RuntimeUInt::USize(value) => RuntimePureScalar::USize(value),
     }
 }
 
@@ -2067,12 +2129,8 @@ impl PureEvaluator {
         self.stats.evaluated_exprs += 1;
         match expr {
             RuntimeExpr::Value(RuntimeValue::Bool(value)) => Ok(RuntimePureScalar::Bool(*value)),
-            RuntimeExpr::Value(RuntimeValue::Int(value)) => Ok(RuntimePureScalar::I64(*value)),
-            RuntimeExpr::Value(RuntimeValue::I128(value)) => Ok(RuntimePureScalar::I128(*value)),
-            RuntimeExpr::Value(RuntimeValue::ISize(value)) => Ok(RuntimePureScalar::ISize(*value)),
-            RuntimeExpr::Value(RuntimeValue::UInt(value)) => Ok(RuntimePureScalar::U64(*value)),
-            RuntimeExpr::Value(RuntimeValue::U128(value)) => Ok(RuntimePureScalar::U128(*value)),
-            RuntimeExpr::Value(RuntimeValue::USize(value)) => Ok(RuntimePureScalar::USize(*value)),
+            RuntimeExpr::Value(RuntimeValue::Int(value)) => Ok(runtime_int_as_scalar(*value)),
+            RuntimeExpr::Value(RuntimeValue::UInt(value)) => Ok(runtime_uint_as_scalar(*value)),
             RuntimeExpr::Value(RuntimeValue::F32(value)) => Ok(RuntimePureScalar::F32(*value)),
             RuntimeExpr::Value(RuntimeValue::F64(value)) => Ok(RuntimePureScalar::F64(*value)),
             RuntimeExpr::Local(name) => match self.env.get(name) {
@@ -2154,13 +2212,13 @@ impl PureEvaluator {
         if let RuntimeExpr::Local(name) = source
             && let Some(sum) = self.evaluate_i64_local_sequence_sum(name)?
         {
-            return Ok(RuntimeValue::Int(sum));
+            return Ok(RuntimeValue::i64(sum));
         }
         let value = self.evaluate_expr(source)?;
         if let RuntimeValue::Seq(seq) = &value
             && let Some(sum) = seq.sum_as_i64()
         {
-            return Ok(RuntimeValue::Int(sum));
+            return Ok(RuntimeValue::i64(sum));
         }
         let items = match runtime_value_into_sequence_values(value) {
             Ok(items) => items,
@@ -2170,11 +2228,7 @@ impl PureEvaluator {
                 )));
             }
         };
-        items
-            .into_iter()
-            .try_fold(RuntimeValue::Int(0), |acc, item| {
-                evaluate_binary(acc, RuntimeBinaryOp::Add, item)
-            })
+        sum_i64_sequence_ref(&items).map(RuntimeValue::i64)
     }
 
     fn evaluate_i64_local_sequence_sum(&self, name: &str) -> Result<Option<i64>, RuntimeEvalError> {
@@ -2194,17 +2248,21 @@ impl PureEvaluator {
 
     fn evaluate_call_expr(
         &mut self,
-        callee: &str,
+        callee: &crate::value::RuntimeCallTarget,
         args: &[RuntimeExpr],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         self.stats.evaluated_calls += 1;
         let args = self.evaluate_call_args(args)?;
-        match (callee, args.as_slice()) {
-            ("add", [RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)]) => {
-                Ok(RuntimeValue::Int(lhs.saturating_add(*rhs)))
+        match (callee.as_intrinsic(), args.as_slice()) {
+            (Some(RuntimeIntrinsic::Add), [RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)]) => {
+                evaluate_binary(
+                    RuntimeValue::Int(*lhs),
+                    RuntimeBinaryOp::Add,
+                    RuntimeValue::Int(*rhs),
+                )
             }
             _ => Err(RuntimeEvalError::UnsupportedPure {
-                name: callee.to_owned(),
+                name: callee.as_label().to_owned(),
                 reason: "call is not registered as a pure helper".to_owned(),
             }),
         }
@@ -2354,7 +2412,7 @@ impl PureEvaluator {
 }
 
 fn runtime_len_value(len: usize) -> RuntimeValue {
-    RuntimeValue::UInt(u64::try_from(len).unwrap_or(u64::MAX))
+    RuntimeValue::usize(u64::try_from(len).unwrap_or(u64::MAX))
 }
 
 fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {

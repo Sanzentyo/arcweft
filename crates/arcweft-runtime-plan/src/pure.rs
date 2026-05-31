@@ -142,7 +142,7 @@ impl PureHelperCandidate {
                 .zip(values)
                 .map(|(name, value)| RuntimeBinding {
                     name,
-                    value: RuntimeValue::Int(value),
+                    value: RuntimeValue::i64(value),
                 }),
         ))
     }

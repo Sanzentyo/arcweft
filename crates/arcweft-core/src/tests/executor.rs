@@ -75,7 +75,7 @@ fn aot_program_records_nested_dispatch_shape() {
         input_names: Vec::new(),
         input_types: Vec::new(),
         output_type: RuntimePureOutputType::I64,
-        expr: RuntimeExpr::Value(RuntimeValue::Int(1)),
+        expr: RuntimeExpr::Value(RuntimeValue::i64(1)),
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);

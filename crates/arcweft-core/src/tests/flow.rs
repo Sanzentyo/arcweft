@@ -72,8 +72,8 @@ fn engine_executes_runtime_pure_call_from_flow() {
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::PureCall {
                 helper: RuntimePureHelperId(0),
                 args: vec![
-                    RuntimeExpr::Value(RuntimeValue::Int(3)),
-                    RuntimeExpr::Value(RuntimeValue::Int(4)),
+                    RuntimeExpr::Value(RuntimeValue::i64(3)),
+                    RuntimeExpr::Value(RuntimeValue::i64(4)),
                 ],
             })],
         }],
@@ -90,20 +90,20 @@ fn engine_executes_runtime_pure_call_from_flow() {
             condition: Box::new(RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Ge,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(3))),
+                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(3))),
             }),
             then_expr: Box::new(RuntimeExpr::Binary {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Mul,
                 rhs: Box::new(RuntimeExpr::Call {
-                    callee: "add".to_owned(),
+                    callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::Add),
                     args: vec![
                         RuntimeExpr::Local("bonus".to_owned()),
-                        RuntimeExpr::Value(RuntimeValue::Int(2)),
+                        RuntimeExpr::Value(RuntimeValue::i64(2)),
                     ],
                 }),
             }),
-            else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::Int(0))),
+            else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::i64(0))),
         },
         scalar_eval_supported: false,
         origin: RuntimePureHelperOrigin::Annotated,
@@ -174,8 +174,8 @@ fn engine_batches_bracket_sequence_pure_calls() {
     let pure_call = |base, bonus| RuntimeExpr::PureCall {
         helper: RuntimePureHelperId(0),
         args: vec![
-            RuntimeExpr::Value(RuntimeValue::Int(base)),
-            RuntimeExpr::Value(RuntimeValue::Int(bonus)),
+            RuntimeExpr::Value(RuntimeValue::i64(base)),
+            RuntimeExpr::Value(RuntimeValue::i64(bonus)),
         ],
     };
     let plan = RuntimePlan::new(
@@ -234,8 +234,8 @@ fn engine_fuses_bracket_sequence_pure_batch_sum() {
     let pure_call = |base, bonus| RuntimeExpr::PureCall {
         helper: RuntimePureHelperId(0),
         args: vec![
-            RuntimeExpr::Value(RuntimeValue::Int(base)),
-            RuntimeExpr::Value(RuntimeValue::Int(bonus)),
+            RuntimeExpr::Value(RuntimeValue::i64(base)),
+            RuntimeExpr::Value(RuntimeValue::i64(bonus)),
         ],
     };
     let plan = RuntimePlan::new(
@@ -291,16 +291,16 @@ fn engine_batches_map_closure_pure_calls() {
             id: FlowRuntimeId("flow.main".to_owned()),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Map {
                 source: Box::new(RuntimeExpr::BracketSeq(vec![
-                    RuntimeExpr::Value(RuntimeValue::Int(3)),
-                    RuntimeExpr::Value(RuntimeValue::Int(5)),
-                    RuntimeExpr::Value(RuntimeValue::Int(7)),
+                    RuntimeExpr::Value(RuntimeValue::i64(3)),
+                    RuntimeExpr::Value(RuntimeValue::i64(5)),
+                    RuntimeExpr::Value(RuntimeValue::i64(7)),
                 ])),
                 param: "base".to_owned(),
                 body: Box::new(RuntimeExpr::PureCall {
                     helper: RuntimePureHelperId(0),
                     args: vec![
                         RuntimeExpr::Local("base".to_owned()),
-                        RuntimeExpr::Value(RuntimeValue::Int(4)),
+                        RuntimeExpr::Value(RuntimeValue::i64(4)),
                     ],
                 }),
             })],
@@ -355,16 +355,16 @@ fn engine_fuses_map_closure_pure_batch_sum() {
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Sum {
                 source: Box::new(RuntimeExpr::Map {
                     source: Box::new(RuntimeExpr::BracketSeq(vec![
-                        RuntimeExpr::Value(RuntimeValue::Int(3)),
-                        RuntimeExpr::Value(RuntimeValue::Int(5)),
-                        RuntimeExpr::Value(RuntimeValue::Int(7)),
+                        RuntimeExpr::Value(RuntimeValue::i64(3)),
+                        RuntimeExpr::Value(RuntimeValue::i64(5)),
+                        RuntimeExpr::Value(RuntimeValue::i64(7)),
                     ])),
                     param: "base".to_owned(),
                     body: Box::new(RuntimeExpr::PureCall {
                         helper: RuntimePureHelperId(0),
                         args: vec![
                             RuntimeExpr::Local("base".to_owned()),
-                            RuntimeExpr::Value(RuntimeValue::Int(4)),
+                            RuntimeExpr::Value(RuntimeValue::i64(4)),
                         ],
                     }),
                 }),
@@ -418,9 +418,9 @@ fn engine_fuses_local_map_closure_pure_batch_sum() {
                 FlowOp::Let {
                     pattern: RuntimePattern::Ident("values".to_owned()),
                     expr: RuntimeExpr::Value(runtime_sequence_values(vec![
-                        RuntimeValue::Int(3),
-                        RuntimeValue::Int(5),
-                        RuntimeValue::Int(7),
+                        RuntimeValue::i64(3),
+                        RuntimeValue::i64(5),
+                        RuntimeValue::i64(7),
                     ])),
                 },
                 FlowOp::ReturnExpr(RuntimeExpr::Sum {
@@ -431,7 +431,7 @@ fn engine_fuses_local_map_closure_pure_batch_sum() {
                             helper: RuntimePureHelperId(0),
                             args: vec![
                                 RuntimeExpr::Local("base".to_owned()),
-                                RuntimeExpr::Value(RuntimeValue::Int(4)),
+                                RuntimeExpr::Value(RuntimeValue::i64(4)),
                             ],
                         }),
                     }),
@@ -492,7 +492,7 @@ fn assert_dense_i64_map_sum_uses_flat_batch(source: RuntimeValue, expected: &str
                         helper: RuntimePureHelperId(0),
                         args: vec![
                             RuntimeExpr::Local("base".to_owned()),
-                            RuntimeExpr::Value(RuntimeValue::Int(4)),
+                            RuntimeExpr::Value(RuntimeValue::i64(4)),
                         ],
                     }),
                 }),
@@ -554,7 +554,7 @@ fn engine_batches_dense_i32_map_without_widening_flat_inputs() {
                         helper: RuntimePureHelperId(0),
                         args: vec![
                             RuntimeExpr::Local("base".to_owned()),
-                            RuntimeExpr::Value(RuntimeValue::Int(4)),
+                            RuntimeExpr::Value(RuntimeValue::i32(4)),
                         ],
                     }),
                 }),
@@ -611,7 +611,7 @@ fn engine_batches_dense_u32_map_without_widening_flat_inputs() {
                         helper: RuntimePureHelperId(0),
                         args: vec![
                             RuntimeExpr::Local("base".to_owned()),
-                            RuntimeExpr::Value(RuntimeValue::UInt(4)),
+                            RuntimeExpr::Value(RuntimeValue::u32(4)),
                         ],
                     }),
                 }),
@@ -656,14 +656,14 @@ fn engine_batches_dense_u32_map_without_widening_flat_inputs() {
 fn engine_batches_dense_i16_and_u8_map_without_widening_flat_inputs() {
     assert_dense_exact_int_map_sum_uses_flat_batch(
         runtime_sequence_dense_i16(vec![3, 5, 7]),
-        RuntimeValue::Int(4),
+        RuntimeValue::i16(4),
         RuntimePureInputType::I16,
         RuntimePureOutputType::I16,
         6 * std::mem::size_of::<i16>(),
     );
     assert_dense_exact_int_map_sum_uses_flat_batch(
         runtime_sequence_dense_u8(vec![3, 5, 7]),
-        RuntimeValue::UInt(4),
+        RuntimeValue::u8(4),
         RuntimePureInputType::U8,
         RuntimePureOutputType::U8,
         6 * std::mem::size_of::<u8>(),
@@ -722,7 +722,7 @@ fn engine_calls_typed_float_pure_helpers_without_arg_vec_allocation() {
 fn engine_batches_dense_u64_map_without_widening_flat_inputs() {
     assert_dense_exact_int_map_sum_uses_flat_batch(
         runtime_sequence_dense_u64(vec![3, 5, 7]),
-        RuntimeValue::UInt(4),
+        RuntimeValue::u64(4),
         RuntimePureInputType::U64,
         RuntimePureOutputType::U64,
         6 * std::mem::size_of::<u64>(),
@@ -733,14 +733,14 @@ fn engine_batches_dense_u64_map_without_widening_flat_inputs() {
 fn engine_batches_dense_i128_and_u128_map_without_widening_flat_inputs() {
     assert_dense_exact_int_map_sum_uses_flat_batch(
         runtime_sequence_dense_i128(vec![3, 5, 7]),
-        RuntimeValue::I128(4),
+        RuntimeValue::i128(4),
         RuntimePureInputType::I128,
         RuntimePureOutputType::I128,
         6 * std::mem::size_of::<i128>(),
     );
     assert_dense_exact_int_map_sum_uses_flat_batch(
         runtime_sequence_dense_u128(vec![3, 5, 7]),
-        RuntimeValue::U128(4),
+        RuntimeValue::u128(4),
         RuntimePureInputType::U128,
         RuntimePureOutputType::U128,
         6 * std::mem::size_of::<u128>(),
@@ -890,9 +890,9 @@ fn engine_sums_local_i64_sequence_by_borrow() {
                 FlowOp::Let {
                     pattern: RuntimePattern::Ident("scores".to_owned()),
                     expr: RuntimeExpr::BracketSeq(vec![
-                        RuntimeExpr::Value(RuntimeValue::Int(18)),
-                        RuntimeExpr::Value(RuntimeValue::Int(15)),
-                        RuntimeExpr::Value(RuntimeValue::Int(20)),
+                        RuntimeExpr::Value(RuntimeValue::i64(18)),
+                        RuntimeExpr::Value(RuntimeValue::i64(15)),
+                        RuntimeExpr::Value(RuntimeValue::i64(20)),
                     ]),
                 },
                 FlowOp::ReturnExpr(RuntimeExpr::Sum {
@@ -1429,10 +1429,10 @@ fn for_loop_expands_one_iteration_at_a_time() {
             ops: vec![FlowOp::For {
                 pattern: RuntimePattern::Ident("item".to_owned()),
                 source: RuntimeExpr::BracketSeq(vec![
-                    RuntimeExpr::Value(RuntimeValue::Int(1)),
-                    RuntimeExpr::Value(RuntimeValue::Int(2)),
-                    RuntimeExpr::Value(RuntimeValue::Int(3)),
-                    RuntimeExpr::Value(RuntimeValue::Int(4)),
+                    RuntimeExpr::Value(RuntimeValue::i64(1)),
+                    RuntimeExpr::Value(RuntimeValue::i64(2)),
+                    RuntimeExpr::Value(RuntimeValue::i64(3)),
+                    RuntimeExpr::Value(RuntimeValue::i64(4)),
                 ]),
                 body: vec![FlowOp::Effect(call("observe.item"))],
             }],
@@ -1512,8 +1512,8 @@ fn duplicate_pattern_bindings_fail_before_env_mutation() {
                     RuntimePattern::Ident("x".to_owned()),
                 ]),
                 expr: RuntimeExpr::Tuple(vec![
-                    RuntimeExpr::Value(RuntimeValue::Int(1)),
-                    RuntimeExpr::Value(RuntimeValue::Int(2)),
+                    RuntimeExpr::Value(RuntimeValue::i64(1)),
+                    RuntimeExpr::Value(RuntimeValue::i64(2)),
                 ]),
             }],
         }],
@@ -1712,11 +1712,11 @@ fn runtime_call_spread_expands_sequence_arguments() {
         vec![RuntimeFlow {
             id: FlowRuntimeId("flow.spread".to_owned()),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Call {
-                callee: "add".to_owned(),
+                callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::Add),
                 args: vec![RuntimeExpr::SpreadArg(Box::new(RuntimeExpr::BracketSeq(
                     vec![
-                        RuntimeExpr::Value(RuntimeValue::Int(20)),
-                        RuntimeExpr::Value(RuntimeValue::Int(22)),
+                        RuntimeExpr::Value(RuntimeValue::i64(20)),
+                        RuntimeExpr::Value(RuntimeValue::i64(22)),
                     ],
                 )))],
             })],
@@ -1755,7 +1755,7 @@ fn custom_host_request_spread_preserves_concrete_payload_values() {
                             )),
                             HostTaskArgTemplate::spread(RuntimeExpr::BracketSeq(vec![
                                 RuntimeExpr::Value(RuntimeValue::String("bg.room".to_owned())),
-                                RuntimeExpr::Value(RuntimeValue::Int(3)),
+                                RuntimeExpr::Value(RuntimeValue::i64(3)),
                                 RuntimeExpr::Value(RuntimeValue::Duration(
                                     LogicalDuration::from_nanos(120_000_000),
                                 )),
@@ -1791,7 +1791,7 @@ fn custom_host_request_spread_preserves_concrete_payload_values() {
         &vec![
             RuntimePayload::from("loaded"),
             RuntimePayload::from("bg.room"),
-            RuntimePayload::new(RuntimeValue::Int(3)),
+            RuntimePayload::new(RuntimeValue::i64(3)),
             RuntimePayload::new(RuntimeValue::Duration(LogicalDuration::from_nanos(
                 120_000_000
             ))),

@@ -19,8 +19,8 @@ use arcweft_core::{
         VmPureFunctionBackend, VmPureFunctionScratch, compare_pure_function_backend,
     },
     value::{
-        DenseSeq, RuntimeBinaryOp, RuntimeBinding, RuntimeExpr, RuntimeSeq, RuntimeUnaryOp,
-        RuntimeValue, runtime_sequence_values,
+        DenseSeq, RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeExpr,
+        RuntimeIntrinsic, RuntimeSeq, RuntimeUnaryOp, RuntimeValue, runtime_sequence_values,
     },
 };
 use arcweft_lang_hir::lower::lower_to_hir;
@@ -576,7 +576,7 @@ impl JitCheckTarget {
                     local("base"),
                     RuntimeBinaryOp::Mul,
                     RuntimeExpr::Call {
-                        callee: "add".to_owned(),
+                        callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::Add),
                         args: vec![local("bonus"), int(2)],
                     },
                 ),
@@ -761,7 +761,7 @@ impl JitCheckTarget {
                 .zip(inputs.iter().copied())
                 .map(|(name, value)| RuntimeBinding {
                     name,
-                    value: RuntimeValue::Int(value),
+                    value: RuntimeValue::i64(value),
                 }),
         )
     }
@@ -801,7 +801,7 @@ fn local(name: &str) -> RuntimeExpr {
 }
 
 fn int(value: i64) -> RuntimeExpr {
-    RuntimeExpr::Value(RuntimeValue::Int(value))
+    RuntimeExpr::Value(RuntimeValue::i64(value))
 }
 
 fn binary(lhs: RuntimeExpr, op: RuntimeBinaryOp, rhs: RuntimeExpr) -> RuntimeExpr {
@@ -989,7 +989,7 @@ fn measure_jit_check_vm(
                 ExitCode::FAILURE
             })?;
         if let RuntimeValue::Int(value) = value {
-            Ok(value)
+            Ok(value.exact_i64().unwrap_or(0))
         } else {
             Ok(0)
         }
@@ -1158,11 +1158,15 @@ fn julia_i64_expr(expr: &RuntimeExpr) -> Result<String, String> {
             julia_i64_expr(expr)?,
             julia_i64_expr(body)?
         )),
-        RuntimeExpr::Call { callee, args } if callee == "add" && args.len() == 2 => Ok(format!(
-            "(({}) + ({}))",
-            julia_i64_expr(&args[0])?,
-            julia_i64_expr(&args[1])?
-        )),
+        RuntimeExpr::Call { callee, args }
+            if callee.as_intrinsic() == Some(RuntimeIntrinsic::Add) && args.len() == 2 =>
+        {
+            Ok(format!(
+                "(({}) + ({}))",
+                julia_i64_expr(&args[0])?,
+                julia_i64_expr(&args[1])?
+            ))
+        }
         RuntimeExpr::Unary {
             op: RuntimeUnaryOp::Neg,
             expr,
@@ -2170,7 +2174,7 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
     });
     bindings.push(RuntimeBinding {
         name: "argc".to_owned(),
-        value: RuntimeValue::Int(i64::try_from(options.args.len()).unwrap_or(i64::MAX)),
+        value: RuntimeValue::i64(i64::try_from(options.args.len()).unwrap_or(i64::MAX)),
     });
 
     let trace = run_runtime_steps(
@@ -5035,10 +5039,8 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
     match value {
         RuntimeValue::Unit => "()".to_owned(),
         RuntimeValue::Bool(value) => value.to_string(),
-        RuntimeValue::Int(value) | RuntimeValue::ISize(value) => value.to_string(),
-        RuntimeValue::I128(value) => value.to_string(),
-        RuntimeValue::UInt(value) | RuntimeValue::USize(value) => value.to_string(),
-        RuntimeValue::U128(value) => value.to_string(),
+        RuntimeValue::Int(value) => value.to_string(),
+        RuntimeValue::UInt(value) => value.to_string(),
         RuntimeValue::F32(value) => value.to_string(),
         RuntimeValue::F64(value) => value.to_string(),
         RuntimeValue::String(value) => value.clone(),
@@ -5180,7 +5182,7 @@ fn parse_runtime_value(raw: &str) -> RuntimeValue {
         value if value.starts_with('@') => RuntimeValue::EntityRef(value[1..].to_owned()),
         value => value.parse::<i64>().map_or_else(
             |_| RuntimeValue::String(value.to_owned()),
-            RuntimeValue::Int,
+            RuntimeValue::i64,
         ),
     }
 }

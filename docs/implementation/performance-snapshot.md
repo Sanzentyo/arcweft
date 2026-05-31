@@ -139,9 +139,9 @@ cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/b
 
 | fixture | status | median elapsed ns | executed ops | per op ns | parse ns | typecheck ns | runtime plan ns | typecheck exprs | type judgments | arg vec allocs | flatten materializations |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 010_dense_i32_sum.arcw | measured | 7600 | 4 | 1900 | 2882500 | 168200 | 259200 | 6 | 9 | 0 | 0 |
+| 010_dense_i32_sum.arcw | measured | 7900 | 4 | 1975 | 2416500 | 192600 | 301900 | 6 | 9 | 0 | 0 |
 | 011_dense_u64_sum.arcw | measured | 8000 | 4 | 2000 | 2726500 | 237500 | 411000 | 6 | 9 | 0 | 0 |
-| 012_dense_integer_widths_sum.arcw | measured | 19700 | 10 | 1970 | 4429300 | 331100 | 452800 | 30 | 39 | 0 | 0 |
+| 012_dense_integer_widths_sum.arcw | measured | 21900 | 10 | 2190 | 4332600 | 405300 | 600000 | 30 | 39 | 0 | 0 |
 | 013_dense_scalar_len.arcw | measured | 16000 | 8 | 2000 | 2002000 | 335600 | 572800 | 54 | 61 | 0 | 0 |
 | 014_dense_textual_scalar_len.arcw | measured | 17200 | 7 | 2457 | 1317400 | 203500 | 381800 | 21 | 27 | 0 | 0 |
 | 015_dense_wide_numeric_len.arcw | measured | 13600 | 7 | 1942 | 1424200 | 164300 | 263000 | 18 | 24 | 0 | 0 |
@@ -175,6 +175,15 @@ refs, and wide integer length paths run without argument-vector allocation or
 dense flatten materialization. Typed floats are stored as native Rust `f32`
 and `f64`; exact bit identity is measured through explicit `to_bits` checks
 rather than runtime value equality.
+After scalar integer materialization was changed to preserve width tags,
+path-free local remeasurement with the `just bench-010` and `just bench-012`
+targets reported median elapsed times of 7900 ns for
+`010_dense_i32_sum.arcw` and 21900 ns for
+`012_dense_integer_widths_sum.arcw`. Both runs kept
+`pure_flatten_materializations_median = 0`,
+`pure_arg_vec_allocations_median = 0`, and path-free source names, confirming
+that width-preserving scalar fallback did not force dense sequence
+materialization in these benches.
 
 Backend-aware pure batch parallel policy checks:
 
@@ -313,11 +322,15 @@ phase 396400 ns, and runtime median 11500 ns.
 
 Runtime numeric sequence lowering now preserves integer-only bracket literals as
 `RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I64(_)))` instead of eagerly
-materializing `Vec<RuntimeValue::Int>`. The same `DenseSeqStorage<T>` backing
+materializing a row-value vector. Scalar integer runtime values are now
+width-preserving: `RuntimeValue::Int(RuntimeInt::I8/I16/I32/I64/I128/ISize)`
+and `RuntimeValue::UInt(RuntimeUInt::U8/U16/U32/U64/U128/USize)` keep suffix
+evidence across materialization, spread, dynamic arguments, and projection
+fallbacks. The same `DenseSeqStorage<T>` backing
 store also covers fixed-width integer sequences (`i8`, `i16`, `i32`, `i64`,
 `i128`, `u8`, `u16`, `u32`, `u64`, `u128`) and target-sized spellings
 (`isize`, `usize`) plus unit, bool, byte, char, logical-duration, string,
-raw-float-literal, and entity-reference sequences. Target-sized dense storage
+native `f32`/`f64`, and entity-reference sequences. Target-sized dense storage
 uses stable `i64`/`u64` runtime buffers rather than host pointer-width buffers
 so path-free bench output remains cross-platform comparable. Pure map/sum fast paths
 consume i64 dense storage directly, dense

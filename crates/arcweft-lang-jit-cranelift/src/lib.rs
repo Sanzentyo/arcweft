@@ -11,7 +11,8 @@ use arcweft_core::pure::{
     PureFunctionStats, RuntimeI64Args,
 };
 use arcweft_core::value::{
-    RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeUnaryOp, RuntimeValue,
+    RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeIntrinsic,
+    RuntimeUnaryOp, RuntimeValue,
 };
 use cranelift::codegen::ir::{BlockArg, MemFlags, UserFuncName};
 use cranelift::jit::{JITBuilder, JITModule};
@@ -107,7 +108,7 @@ impl CraneliftPureFunctionBackend {
         let value = compiled.call();
         Ok(PureFunctionResult {
             backend: self.kind(),
-            value: RuntimeValue::Int(value),
+            value: RuntimeValue::i64(value),
             stats: compiled.stats().clone(),
         })
     }
@@ -789,7 +790,15 @@ fn int_bindings(
     bindings
         .iter()
         .map(|binding| match binding.value {
-            RuntimeValue::Int(value) => Ok((binding.name.clone(), LoweredI64Binding::Const(value))),
+            RuntimeValue::Int(value) => value
+                .exact_i64()
+                .map(|value| (binding.name.clone(), LoweredI64Binding::Const(value)))
+                .ok_or_else(|| {
+                    CraneliftJitError::UnsupportedExpr(format!(
+                        "binding `{}` is not an i64 integer",
+                        binding.name
+                    ))
+                }),
             _ => Err(CraneliftJitError::UnsupportedExpr(format!(
                 "binding `{}` is not an i64 integer",
                 binding.name
@@ -806,9 +815,14 @@ fn lower_expr(
 ) -> Result<Value, CraneliftJitError> {
     stats.evaluated_exprs += 1;
     match expr {
-        RuntimeExpr::Value(RuntimeValue::Int(value)) => {
-            Ok(builder.ins().iconst(types::I64, *value))
-        }
+        RuntimeExpr::Value(RuntimeValue::Int(value)) => value
+            .exact_i64()
+            .map(|value| builder.ins().iconst(types::I64, value))
+            .ok_or_else(|| {
+                CraneliftJitError::UnsupportedExpr(format!(
+                    "literal `{value}` is not an i64 integer"
+                ))
+            }),
         RuntimeExpr::Value(value) => Err(CraneliftJitError::UnsupportedExpr(format!(
             "literal {value:?} is not an i64 integer"
         ))),
@@ -852,7 +866,9 @@ fn lower_expr(
                 ))),
             }
         }
-        RuntimeExpr::Call { callee, args } if callee == "add" && args.len() == 2 => {
+        RuntimeExpr::Call { callee, args }
+            if callee.as_intrinsic() == Some(RuntimeIntrinsic::Add) && args.len() == 2 =>
+        {
             stats.evaluated_calls += 1;
             let lhs = lower_expr(builder, bindings, &args[0], stats)?;
             let rhs = lower_expr(builder, bindings, &args[1], stats)?;
@@ -956,11 +972,12 @@ mod tests {
     use arcweft_core::pure::{
         PureFunctionBackendKind, VmPureFunctionBackend, compare_pure_function_backend,
     };
+    use arcweft_core::value::RuntimeCallTarget;
 
     fn int_binding(name: &str, value: i64) -> RuntimeBinding {
         RuntimeBinding {
             name: name.to_owned(),
-            value: RuntimeValue::Int(value),
+            value: RuntimeValue::i64(value),
         }
     }
 
@@ -972,10 +989,10 @@ mod tests {
                 lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                 op: RuntimeBinaryOp::Mul,
                 rhs: Box::new(RuntimeExpr::Call {
-                    callee: "add".to_owned(),
+                    callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::Add),
                     args: vec![
                         RuntimeExpr::Local("bonus".to_owned()),
-                        RuntimeExpr::Value(RuntimeValue::Int(2)),
+                        RuntimeExpr::Value(RuntimeValue::i64(2)),
                     ],
                 }),
             },
@@ -991,7 +1008,7 @@ mod tests {
 
         assert!(conformance.matches_vm);
         assert_eq!(conformance.candidate.backend, PureFunctionBackendKind::Jit);
-        assert_eq!(conformance.candidate.value, RuntimeValue::Int(18));
+        assert_eq!(conformance.candidate.value, RuntimeValue::i64(18));
         assert_eq!(conformance.candidate.stats.evaluated_calls, 1);
         assert_eq!(conformance.candidate.stats.evaluated_binary_ops, 1);
     }
@@ -1001,9 +1018,9 @@ mod tests {
         let request = PureFunctionRequest::new(
             "score",
             RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(21))),
+                lhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(21))),
                 op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(21))),
+                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(21))),
             },
             [],
         );
@@ -1025,20 +1042,20 @@ mod tests {
                 condition: Box::new(RuntimeExpr::Binary {
                     lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                     op: RuntimeBinaryOp::Ge,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(3))),
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(3))),
                 }),
                 then_expr: Box::new(RuntimeExpr::Binary {
                     lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                     op: RuntimeBinaryOp::Mul,
                     rhs: Box::new(RuntimeExpr::Call {
-                        callee: "add".to_owned(),
+                        callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::Add),
                         args: vec![
                             RuntimeExpr::Local("bonus".to_owned()),
-                            RuntimeExpr::Value(RuntimeValue::Int(2)),
+                            RuntimeExpr::Value(RuntimeValue::i64(2)),
                         ],
                     }),
                 }),
-                else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::Int(0))),
+                else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::i64(0))),
             },
             [int_binding("base", 3), int_binding("bonus", 4)],
         );
@@ -1078,20 +1095,20 @@ mod tests {
                 condition: Box::new(RuntimeExpr::Binary {
                     lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                     op: RuntimeBinaryOp::Ge,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(3))),
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(3))),
                 }),
                 then_expr: Box::new(RuntimeExpr::Binary {
                     lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
                     op: RuntimeBinaryOp::Mul,
                     rhs: Box::new(RuntimeExpr::Call {
-                        callee: "add".to_owned(),
+                        callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::Add),
                         args: vec![
                             RuntimeExpr::Local("bonus".to_owned()),
-                            RuntimeExpr::Value(RuntimeValue::Int(2)),
+                            RuntimeExpr::Value(RuntimeValue::i64(2)),
                         ],
                     }),
                 }),
-                else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::Int(0))),
+                else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::i64(0))),
             },
             [int_binding("base", 3), int_binding("bonus", 4)],
         );
@@ -1123,10 +1140,10 @@ mod tests {
             RuntimeExpr::Let {
                 name: "boosted".to_owned(),
                 expr: Box::new(RuntimeExpr::Call {
-                    callee: "add".to_owned(),
+                    callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::Add),
                     args: vec![
                         RuntimeExpr::Local("bonus".to_owned()),
-                        RuntimeExpr::Value(RuntimeValue::Int(2)),
+                        RuntimeExpr::Value(RuntimeValue::i64(2)),
                     ],
                 }),
                 body: Box::new(RuntimeExpr::Binary {
@@ -1218,14 +1235,14 @@ mod tests {
                 condition: Box::new(RuntimeExpr::Binary {
                     lhs: Box::new(RuntimeExpr::Local("score".to_owned())),
                     op: RuntimeBinaryOp::Ge,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(10))),
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(10))),
                 }),
                 then_expr: Box::new(RuntimeExpr::Binary {
                     lhs: Box::new(RuntimeExpr::Local("score".to_owned())),
                     op: RuntimeBinaryOp::Mul,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
                 }),
-                else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::Int(0))),
+                else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::i64(0))),
             },
             [int_binding("score", 12)],
         );
@@ -1238,7 +1255,7 @@ mod tests {
         .expect("Cranelift JIT matches VM for integer if helper");
 
         assert!(conformance.matches_vm);
-        assert_eq!(conformance.candidate.value, RuntimeValue::Int(24));
+        assert_eq!(conformance.candidate.value, RuntimeValue::i64(24));
     }
 
     #[test]
@@ -1274,9 +1291,9 @@ mod tests {
         let request = PureFunctionRequest::new(
             "bool_and",
             RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(1))),
+                lhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(1))),
                 op: RuntimeBinaryOp::And,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(1))),
+                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(1))),
             },
             [],
         );

@@ -585,7 +585,12 @@ fn named_payload(args: &[EvaluatedHostArg], name: &str) -> Option<RuntimePayload
 
 fn named_u16(args: &[EvaluatedHostArg], name: &str) -> Option<u16> {
     named_arg(args, name).and_then(|value| match value {
-        RuntimeValue::Int(value) => u16::try_from(*value).ok(),
+        RuntimeValue::Int(value) => value
+            .try_into_i64()
+            .and_then(|value| u16::try_from(value).ok()),
+        RuntimeValue::UInt(value) => value
+            .try_into_i64()
+            .and_then(|value| u16::try_from(value).ok()),
         value => runtime_value_to_string(value).parse().ok(),
     })
 }
@@ -682,10 +687,14 @@ fn runtime_value_to_bytes(value: &RuntimeValue) -> Result<Vec<u8>, String> {
         RuntimeValue::Seq(RuntimeSeq::Values(items)) => items
             .iter()
             .map(|item| match item {
-                RuntimeValue::Int(value) => u8::try_from(*value)
-                    .map_err(|_| format!("byte value `{value}` is outside u8 range")),
-                RuntimeValue::UInt(value) => u8::try_from(*value)
-                    .map_err(|_| format!("byte value `{value}` is outside u8 range")),
+                RuntimeValue::Int(value) => value
+                    .try_into_i64()
+                    .and_then(|value| u8::try_from(value).ok())
+                    .ok_or_else(|| format!("byte value `{value}` is outside u8 range")),
+                RuntimeValue::UInt(value) => value
+                    .try_into_i64()
+                    .and_then(|value| u8::try_from(value).ok())
+                    .ok_or_else(|| format!("byte value `{value}` is outside u8 range")),
                 value => Err(format!(
                     "byte payload item must be Int, found {}",
                     super::runtime_value_label(value)
@@ -732,10 +741,8 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
     match value {
         RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),
-        RuntimeValue::Int(value) | RuntimeValue::ISize(value) => value.to_string(),
-        RuntimeValue::I128(value) => value.to_string(),
-        RuntimeValue::UInt(value) | RuntimeValue::USize(value) => value.to_string(),
-        RuntimeValue::U128(value) => value.to_string(),
+        RuntimeValue::Int(value) => value.to_string(),
+        RuntimeValue::UInt(value) => value.to_string(),
         RuntimeValue::F32(value) => value.to_string(),
         RuntimeValue::F64(value) => value.to_string(),
         RuntimeValue::Bool(value) => value.to_string(),

@@ -10,8 +10,8 @@ use arcweft_core::effect::{
 };
 use arcweft_core::plan::RuntimePureHelperId;
 use arcweft_core::value::{
-    RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeUnaryOp,
-    RuntimeValue, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
+    RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr,
+    RuntimeUnaryOp, RuntimeValue, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
     runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_dense_i128,
     runtime_sequence_dense_isize, runtime_sequence_dense_u8, runtime_sequence_dense_u16,
     runtime_sequence_dense_u32, runtime_sequence_dense_u64, runtime_sequence_dense_u128,
@@ -86,7 +86,7 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
                 .collect(),
         },
         Expr::Call { callee, args } => RuntimeExpr::Call {
-            callee: expr_label(callee),
+            callee: RuntimeCallTarget::from_label(expr_label(callee)),
             args: args.iter().map(lower_runtime_call_arg).collect(),
         },
         Expr::MethodCall {
@@ -393,7 +393,7 @@ fn lower_runtime_path_method_call(
         return None;
     }
     Some(RuntimeExpr::Call {
-        callee: format!("path.{method}"),
+        callee: RuntimeCallTarget::from_label(format!("path.{method}")),
         args: vec![lower_runtime_expr(arg.value())],
     })
 }
@@ -419,7 +419,7 @@ fn lower_strict_path_method_call(
     }
     Some(
         lower_runtime_expr_strict_with_helpers(arg.value(), helpers).map(|arg| RuntimeExpr::Call {
-            callee: format!("path.{method}"),
+            callee: RuntimeCallTarget::from_label(format!("path.{method}")),
             args: vec![arg],
         }),
     )
@@ -441,7 +441,10 @@ fn lower_strict_call_expr(
                 if let Some(helper) = helpers.and_then(|helpers| helpers.get(&callee).copied()) {
                     RuntimeExpr::PureCall { helper, args }
                 } else {
-                    RuntimeExpr::Call { callee, args }
+                    RuntimeExpr::Call {
+                        callee: RuntimeCallTarget::from_label(callee),
+                        args,
+                    }
                 },
             )
         },
@@ -689,30 +692,81 @@ fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
             value,
             suffix: Some(suffix),
             ..
-        } if suffix == "i128" => RuntimeValue::I128(i128::from(*value)),
+        } if suffix == "i8" => {
+            i8::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::i8)
+        }
         Literal::Int {
             value,
             suffix: Some(suffix),
             ..
-        } if suffix == "isize" => RuntimeValue::ISize(*value),
+        } if suffix == "i16" => {
+            i16::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::i16)
+        }
+        Literal::Int {
+            value,
+            suffix: Some(suffix),
+            ..
+        } if suffix == "i32" => {
+            i32::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::i32)
+        }
+        Literal::Int {
+            value,
+            suffix: Some(suffix),
+            ..
+        } if suffix == "i64" => RuntimeValue::i64(*value),
+        Literal::Int {
+            value,
+            suffix: Some(suffix),
+            ..
+        } if suffix == "i128" => RuntimeValue::i128(i128::from(*value)),
+        Literal::Int {
+            value,
+            suffix: Some(suffix),
+            ..
+        } if suffix == "isize" => RuntimeValue::isize(*value),
+        Literal::Int {
+            value,
+            suffix: Some(suffix),
+            ..
+        } if suffix == "u8" => {
+            u8::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::u8)
+        }
+        Literal::Int {
+            value,
+            suffix: Some(suffix),
+            ..
+        } if suffix == "u16" => {
+            u16::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::u16)
+        }
+        Literal::Int {
+            value,
+            suffix: Some(suffix),
+            ..
+        } if suffix == "u32" => {
+            u32::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::u32)
+        }
+        Literal::Int {
+            value,
+            suffix: Some(suffix),
+            ..
+        } if suffix == "u64" => {
+            u64::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::u64)
+        }
         Literal::Int {
             value,
             suffix: Some(suffix),
             ..
         } if suffix == "u128" => {
-            u128::try_from(*value).map_or(RuntimeValue::Int(*value), RuntimeValue::U128)
+            u128::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::u128)
         }
         Literal::Int {
             value,
             suffix: Some(suffix),
             ..
         } if suffix == "usize" => {
-            u64::try_from(*value).map_or(RuntimeValue::Int(*value), RuntimeValue::USize)
+            u64::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::usize)
         }
-        Literal::Int { value, suffix, .. } if suffix.as_deref().is_some_and(is_unsigned_suffix) => {
-            u64::try_from(*value).map_or(RuntimeValue::Int(*value), RuntimeValue::UInt)
-        }
-        Literal::Int { value, .. } => RuntimeValue::Int(*value),
+        Literal::Int { value, .. } => RuntimeValue::i64(*value),
         Literal::Float {
             raw,
             suffix: Some(FloatSuffix::F32),
@@ -731,10 +785,6 @@ fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
             RuntimeValue::Duration,
         ),
     }
-}
-
-fn is_unsigned_suffix(suffix: &str) -> bool {
-    matches!(suffix, "u8" | "u16" | "u32" | "u64")
 }
 
 fn typed_f32_literal(raw: &str, suffix: FloatSuffix) -> Option<f32> {
@@ -963,7 +1013,9 @@ mod tests {
 
         let lowered = lower_runtime_expr_strict(&expr).expect("calls are runtime values");
 
-        assert!(matches!(lowered, RuntimeExpr::Call { callee, .. } if callee == "compute"));
+        assert!(
+            matches!(lowered, RuntimeExpr::Call { callee, .. } if callee.as_label() == "compute")
+        );
     }
 
     #[test]
@@ -985,7 +1037,7 @@ mod tests {
             lowered,
             RuntimeExpr::PureCall { helper, args }
                 if helper == RuntimePureHelperId(2)
-                    && matches!(args.as_slice(), [RuntimeExpr::Value(RuntimeValue::Int(3))])
+                    && matches!(args.as_slice(), [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(3))
         ));
     }
 
@@ -1009,8 +1061,37 @@ mod tests {
         assert!(matches!(
             lowered,
             RuntimeExpr::RepeatSeq { value, len: 4 }
-                if matches!(value.as_ref(), RuntimeExpr::Value(RuntimeValue::Int(2)))
+                if matches!(value.as_ref(), RuntimeExpr::Value(value) if value == &RuntimeValue::i64(2))
         ));
+    }
+
+    #[test]
+    fn suffixed_integer_literals_lower_to_width_preserving_runtime_scalars() {
+        for (suffix, expected) in [
+            ("i8", RuntimeValue::i8(7)),
+            ("i16", RuntimeValue::i16(7)),
+            ("i32", RuntimeValue::i32(7)),
+            ("i64", RuntimeValue::i64(7)),
+            ("i128", RuntimeValue::i128(7)),
+            ("isize", RuntimeValue::isize(7)),
+            ("u8", RuntimeValue::u8(7)),
+            ("u16", RuntimeValue::u16(7)),
+            ("u32", RuntimeValue::u32(7)),
+            ("u64", RuntimeValue::u64(7)),
+            ("u128", RuntimeValue::u128(7)),
+            ("usize", RuntimeValue::usize(7)),
+        ] {
+            let expr = Expr::Literal(Literal::Int {
+                raw: format!("7{suffix}"),
+                value: 7,
+                suffix: Some(suffix.to_owned()),
+            });
+
+            let lowered =
+                lower_runtime_expr_strict(&expr).expect("suffixed integer literal lowers");
+
+            assert_eq!(lowered, RuntimeExpr::Value(expected));
+        }
     }
 
     #[test]

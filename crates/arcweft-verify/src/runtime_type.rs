@@ -608,13 +608,9 @@ fn runtime_value_shape(value: &RuntimeValue) -> RuntimeShape {
     match value {
         RuntimeValue::Unit => RuntimeShape::Unit,
         RuntimeValue::Bool(_) => RuntimeShape::Bool,
-        RuntimeValue::Int(_)
-        | RuntimeValue::I128(_)
-        | RuntimeValue::ISize(_)
-        | RuntimeValue::UInt(_)
-        | RuntimeValue::U128(_)
-        | RuntimeValue::USize(_)
-        | RuntimeValue::Duration(_) => RuntimeShape::Int,
+        RuntimeValue::Int(_) | RuntimeValue::UInt(_) | RuntimeValue::Duration(_) => {
+            RuntimeShape::Int
+        }
         RuntimeValue::F32(_) | RuntimeValue::F64(_) => RuntimeShape::Float,
         RuntimeValue::EntityRef(_) => RuntimeShape::EntityRef,
         RuntimeValue::String(_) | RuntimeValue::Char(_) => RuntimeShape::String,
@@ -709,12 +705,12 @@ mod tests {
                 id: FlowRuntimeId("flow.main".to_owned()),
                 ops: vec![
                     FlowOp::If {
-                        condition: RuntimeExpr::Value(RuntimeValue::Int(1)),
+                        condition: RuntimeExpr::Value(RuntimeValue::i64(1)),
                         then_ops: Vec::new(),
                         else_ops: Vec::new(),
                     },
                     FlowOp::ReturnExpr(RuntimeExpr::Binary {
-                        lhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(1))),
+                        lhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(1))),
                         op: RuntimeBinaryOp::Add,
                         rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Bool(false))),
                     }),

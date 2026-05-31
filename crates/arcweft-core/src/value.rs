@@ -26,12 +26,8 @@ pub struct RuntimePayload(pub RuntimeValue);
 pub enum RuntimeValue {
     Unit,
     Bool(bool),
-    Int(i64),
-    I128(i128),
-    UInt(u64),
-    U128(u128),
-    ISize(i64),
-    USize(u64),
+    Int(RuntimeInt),
+    UInt(RuntimeUInt),
     F32(f32),
     F64(f64),
     String(String),
@@ -46,6 +42,309 @@ pub enum RuntimeValue {
         name: String,
         payload: Option<Box<RuntimeValue>>,
     },
+}
+
+/// Width-preserving signed integer scalar.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuntimeInt {
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    I128(i128),
+    ISize(i64),
+}
+
+impl RuntimeInt {
+    pub const fn i8(value: i8) -> Self {
+        Self::I8(value)
+    }
+
+    pub const fn i16(value: i16) -> Self {
+        Self::I16(value)
+    }
+
+    pub const fn i32(value: i32) -> Self {
+        Self::I32(value)
+    }
+
+    pub const fn i64(value: i64) -> Self {
+        Self::I64(value)
+    }
+
+    pub const fn i128(value: i128) -> Self {
+        Self::I128(value)
+    }
+
+    pub const fn isize(value: i64) -> Self {
+        Self::ISize(value)
+    }
+
+    pub fn try_sum_as_i64(self) -> Option<i64> {
+        match self {
+            Self::I8(value) => Some(i64::from(value)),
+            Self::I16(value) => Some(i64::from(value)),
+            Self::I32(value) => Some(i64::from(value)),
+            Self::I64(value) | Self::ISize(value) => Some(value),
+            Self::I128(value) => i64::try_from(value).ok(),
+        }
+    }
+
+    pub fn try_into_i64(self) -> Option<i64> {
+        self.try_sum_as_i64()
+    }
+
+    pub const fn exact_i64(self) -> Option<i64> {
+        match self {
+            Self::I64(value) => Some(value),
+            Self::I8(_) | Self::I16(_) | Self::I32(_) | Self::I128(_) | Self::ISize(_) => None,
+        }
+    }
+
+    pub const fn exact_i32(self) -> Option<i32> {
+        match self {
+            Self::I32(value) => Some(value),
+            Self::I8(_) | Self::I16(_) | Self::I64(_) | Self::I128(_) | Self::ISize(_) => None,
+        }
+    }
+
+    pub fn try_into_i32(self) -> Option<i32> {
+        match self {
+            Self::I8(value) => Some(i32::from(value)),
+            Self::I16(value) => Some(i32::from(value)),
+            Self::I32(value) => Some(value),
+            Self::I64(value) | Self::ISize(value) => i32::try_from(value).ok(),
+            Self::I128(value) => i32::try_from(value).ok(),
+        }
+    }
+
+    pub fn label(self) -> String {
+        match self {
+            Self::I8(value) => value.to_string(),
+            Self::I16(value) => value.to_string(),
+            Self::I32(value) => value.to_string(),
+            Self::I64(value) | Self::ISize(value) => value.to_string(),
+            Self::I128(value) => value.to_string(),
+        }
+    }
+}
+
+impl fmt::Display for RuntimeInt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.label())
+    }
+}
+
+/// Width-preserving unsigned integer scalar.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuntimeUInt {
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    U128(u128),
+    USize(u64),
+}
+
+impl RuntimeUInt {
+    pub const fn u8(value: u8) -> Self {
+        Self::U8(value)
+    }
+
+    pub const fn u16(value: u16) -> Self {
+        Self::U16(value)
+    }
+
+    pub const fn u32(value: u32) -> Self {
+        Self::U32(value)
+    }
+
+    pub const fn u64(value: u64) -> Self {
+        Self::U64(value)
+    }
+
+    pub const fn u128(value: u128) -> Self {
+        Self::U128(value)
+    }
+
+    pub const fn usize(value: u64) -> Self {
+        Self::USize(value)
+    }
+
+    pub fn try_sum_as_i64(self) -> Option<i64> {
+        match self {
+            Self::U8(value) => Some(i64::from(value)),
+            Self::U16(value) => Some(i64::from(value)),
+            Self::U32(value) => Some(i64::from(value)),
+            Self::U64(value) | Self::USize(value) => i64::try_from(value).ok(),
+            Self::U128(value) => i64::try_from(value).ok(),
+        }
+    }
+
+    pub fn try_into_i64(self) -> Option<i64> {
+        self.try_sum_as_i64()
+    }
+
+    pub fn try_into_i32(self) -> Option<i32> {
+        match self {
+            Self::U8(value) => Some(i32::from(value)),
+            Self::U16(value) => Some(i32::from(value)),
+            Self::U32(value) => i32::try_from(value).ok(),
+            Self::U64(value) | Self::USize(value) => i32::try_from(value).ok(),
+            Self::U128(value) => i32::try_from(value).ok(),
+        }
+    }
+
+    pub fn label(self) -> String {
+        match self {
+            Self::U8(value) => value.to_string(),
+            Self::U16(value) => value.to_string(),
+            Self::U32(value) => value.to_string(),
+            Self::U64(value) | Self::USize(value) => value.to_string(),
+            Self::U128(value) => value.to_string(),
+        }
+    }
+}
+
+impl fmt::Display for RuntimeUInt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.label())
+    }
+}
+
+/// Runtime call target after syntax lowering.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RuntimeCallTarget {
+    Intrinsic(RuntimeIntrinsic),
+    Named(String),
+}
+
+impl RuntimeCallTarget {
+    pub fn from_label(label: impl Into<String>) -> Self {
+        let label = label.into();
+        RuntimeIntrinsic::from_label(&label).map_or(Self::Named(label), Self::Intrinsic)
+    }
+
+    pub const fn intrinsic(intrinsic: RuntimeIntrinsic) -> Self {
+        Self::Intrinsic(intrinsic)
+    }
+
+    pub fn named(label: impl Into<String>) -> Self {
+        Self::Named(label.into())
+    }
+
+    pub const fn as_intrinsic(&self) -> Option<RuntimeIntrinsic> {
+        match self {
+            Self::Intrinsic(intrinsic) => Some(*intrinsic),
+            Self::Named(_) => None,
+        }
+    }
+
+    pub fn as_label(&self) -> &str {
+        match self {
+            Self::Intrinsic(intrinsic) => intrinsic.as_label(),
+            Self::Named(label) => label,
+        }
+    }
+}
+
+impl fmt::Display for RuntimeCallTarget {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_label())
+    }
+}
+
+/// Built-in runtime calls that use typed dispatch instead of string matching.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuntimeIntrinsic {
+    Add,
+    PathSave,
+    PathAsset,
+    PathTemp,
+    PathExport,
+}
+
+impl RuntimeIntrinsic {
+    pub fn from_label(label: &str) -> Option<Self> {
+        match label {
+            "add" => Some(Self::Add),
+            "path.save" => Some(Self::PathSave),
+            "path.asset" => Some(Self::PathAsset),
+            "path.temp" => Some(Self::PathTemp),
+            "path.export" => Some(Self::PathExport),
+            _ => None,
+        }
+    }
+
+    pub const fn as_label(self) -> &'static str {
+        match self {
+            Self::Add => "add",
+            Self::PathSave => "path.save",
+            Self::PathAsset => "path.asset",
+            Self::PathTemp => "path.temp",
+            Self::PathExport => "path.export",
+        }
+    }
+
+    pub const fn path_space(self) -> Option<&'static str> {
+        match self {
+            Self::PathSave => Some("save"),
+            Self::PathAsset => Some("asset"),
+            Self::PathTemp => Some("temp"),
+            Self::PathExport => Some("export"),
+            Self::Add => None,
+        }
+    }
+}
+
+impl RuntimeValue {
+    pub const fn i8(value: i8) -> Self {
+        Self::Int(RuntimeInt::i8(value))
+    }
+
+    pub const fn i16(value: i16) -> Self {
+        Self::Int(RuntimeInt::i16(value))
+    }
+
+    pub const fn i32(value: i32) -> Self {
+        Self::Int(RuntimeInt::i32(value))
+    }
+
+    pub const fn i64(value: i64) -> Self {
+        Self::Int(RuntimeInt::i64(value))
+    }
+
+    pub const fn i128(value: i128) -> Self {
+        Self::Int(RuntimeInt::i128(value))
+    }
+
+    pub const fn isize(value: i64) -> Self {
+        Self::Int(RuntimeInt::isize(value))
+    }
+
+    pub const fn u8(value: u8) -> Self {
+        Self::UInt(RuntimeUInt::u8(value))
+    }
+
+    pub const fn u16(value: u16) -> Self {
+        Self::UInt(RuntimeUInt::u16(value))
+    }
+
+    pub const fn u32(value: u32) -> Self {
+        Self::UInt(RuntimeUInt::u32(value))
+    }
+
+    pub const fn u64(value: u64) -> Self {
+        Self::UInt(RuntimeUInt::u64(value))
+    }
+
+    pub const fn u128(value: u128) -> Self {
+        Self::UInt(RuntimeUInt::u128(value))
+    }
+
+    pub const fn usize(value: u64) -> Self {
+        Self::UInt(RuntimeUInt::usize(value))
+    }
 }
 
 /// Storage strategy for runtime sequence values.
@@ -270,13 +569,13 @@ pub trait RuntimeExactInteger: Copy + 'static {
 }
 
 macro_rules! impl_runtime_exact_signed_integer {
-    ($ty:ty, $input_type:ident, $output_type:ident, $slice:ident, $dense:ident) => {
+    ($ty:ty, $input_type:ident, $output_type:ident, $slice:ident, $dense:ident, $variant:ident) => {
         impl RuntimeExactInteger for $ty {
             const INPUT_TYPE: RuntimePureInputType = RuntimePureInputType::$input_type;
             const OUTPUT_TYPE: RuntimePureOutputType = RuntimePureOutputType::$output_type;
 
             fn into_runtime_value(self) -> RuntimeValue {
-                RuntimeValue::Int(i64::from(self))
+                RuntimeValue::Int(RuntimeInt::$variant(self))
             }
 
             fn try_from_runtime_value(
@@ -284,16 +583,16 @@ macro_rules! impl_runtime_exact_signed_integer {
                 value: RuntimeValue,
             ) -> Result<Self, RuntimeEvalError> {
                 match value {
-                    RuntimeValue::Int(value) => {
-                        <$ty>::try_from(value).map_err(|_| RuntimeEvalError::UnsupportedPure {
-                            name: helper.to_owned(),
-                            reason: format!(
-                                "pure {} result `{value}` is outside {} range",
-                                stringify!($ty),
-                                stringify!($ty)
-                            ),
-                        })
-                    }
+                    RuntimeValue::Int(RuntimeInt::$variant(value)) => Ok(value),
+                    RuntimeValue::Int(value) => Err(RuntimeEvalError::UnsupportedPure {
+                        name: helper.to_owned(),
+                        reason: format!(
+                            "pure {} result expected {}, got {}",
+                            stringify!($ty),
+                            stringify!($ty),
+                            value.label()
+                        ),
+                    }),
                     value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
                 }
             }
@@ -314,13 +613,13 @@ macro_rules! impl_runtime_exact_signed_integer {
 }
 
 macro_rules! impl_runtime_exact_unsigned_integer {
-    ($ty:ty, $input_type:ident, $output_type:ident, $slice:ident, $dense:ident) => {
+    ($ty:ty, $input_type:ident, $output_type:ident, $slice:ident, $dense:ident, $variant:ident) => {
         impl RuntimeExactInteger for $ty {
             const INPUT_TYPE: RuntimePureInputType = RuntimePureInputType::$input_type;
             const OUTPUT_TYPE: RuntimePureOutputType = RuntimePureOutputType::$output_type;
 
             fn into_runtime_value(self) -> RuntimeValue {
-                RuntimeValue::UInt(u64::from(self))
+                RuntimeValue::UInt(RuntimeUInt::$variant(self))
             }
 
             fn try_from_runtime_value(
@@ -328,16 +627,16 @@ macro_rules! impl_runtime_exact_unsigned_integer {
                 value: RuntimeValue,
             ) -> Result<Self, RuntimeEvalError> {
                 match value {
-                    RuntimeValue::UInt(value) => {
-                        <$ty>::try_from(value).map_err(|_| RuntimeEvalError::UnsupportedPure {
-                            name: helper.to_owned(),
-                            reason: format!(
-                                "pure {} result `{value}` is outside {} range",
-                                stringify!($ty),
-                                stringify!($ty)
-                            ),
-                        })
-                    }
+                    RuntimeValue::UInt(RuntimeUInt::$variant(value)) => Ok(value),
+                    RuntimeValue::UInt(value) => Err(RuntimeEvalError::UnsupportedPure {
+                        name: helper.to_owned(),
+                        reason: format!(
+                            "pure {} result expected {}, got {}",
+                            stringify!($ty),
+                            stringify!($ty),
+                            value.label()
+                        ),
+                    }),
                     value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
                 }
             }
@@ -370,7 +669,7 @@ macro_rules! impl_runtime_exact_wide_signed_integer {
             const OUTPUT_TYPE: RuntimePureOutputType = RuntimePureOutputType::$output_type;
 
             fn into_runtime_value(self) -> RuntimeValue {
-                RuntimeValue::$variant(self)
+                RuntimeValue::Int(RuntimeInt::$variant(self))
             }
 
             fn try_from_runtime_value(
@@ -378,7 +677,7 @@ macro_rules! impl_runtime_exact_wide_signed_integer {
                 value: RuntimeValue,
             ) -> Result<Self, RuntimeEvalError> {
                 match value {
-                    RuntimeValue::$variant(value) => Ok(value),
+                    RuntimeValue::Int(RuntimeInt::$variant(value)) => Ok(value),
                     value => Err(RuntimeEvalError::UnsupportedPure {
                         name: helper.to_owned(),
                         reason: format!(
@@ -419,7 +718,7 @@ macro_rules! impl_runtime_exact_wide_unsigned_integer {
             const OUTPUT_TYPE: RuntimePureOutputType = RuntimePureOutputType::$output_type;
 
             fn into_runtime_value(self) -> RuntimeValue {
-                RuntimeValue::$variant(self)
+                RuntimeValue::UInt(RuntimeUInt::$variant(self))
             }
 
             fn try_from_runtime_value(
@@ -427,7 +726,7 @@ macro_rules! impl_runtime_exact_wide_unsigned_integer {
                 value: RuntimeValue,
             ) -> Result<Self, RuntimeEvalError> {
                 match value {
-                    RuntimeValue::$variant(value) => Ok(value),
+                    RuntimeValue::UInt(RuntimeUInt::$variant(value)) => Ok(value),
                     value => Err(RuntimeEvalError::UnsupportedPure {
                         name: helper.to_owned(),
                         reason: format!(
@@ -804,9 +1103,9 @@ impl RuntimeSeq {
     }
 }
 
-impl_runtime_exact_signed_integer!(i8, I8, I8, as_i8_slice, runtime_sequence_dense_i8);
-impl_runtime_exact_signed_integer!(i16, I16, I16, as_i16_slice, runtime_sequence_dense_i16);
-impl_runtime_exact_signed_integer!(i32, I32, I32, as_i32_slice, runtime_sequence_dense_i32);
+impl_runtime_exact_signed_integer!(i8, I8, I8, as_i8_slice, runtime_sequence_dense_i8, I8);
+impl_runtime_exact_signed_integer!(i16, I16, I16, as_i16_slice, runtime_sequence_dense_i16, I16);
+impl_runtime_exact_signed_integer!(i32, I32, I32, as_i32_slice, runtime_sequence_dense_i32, I32);
 impl_runtime_exact_wide_signed_integer!(
     i128,
     I128,
@@ -815,10 +1114,10 @@ impl_runtime_exact_wide_signed_integer!(
     runtime_sequence_dense_i128,
     I128
 );
-impl_runtime_exact_unsigned_integer!(u8, U8, U8, as_u8_slice, runtime_sequence_dense_u8);
-impl_runtime_exact_unsigned_integer!(u16, U16, U16, as_u16_slice, runtime_sequence_dense_u16);
-impl_runtime_exact_unsigned_integer!(u32, U32, U32, as_u32_slice, runtime_sequence_dense_u32);
-impl_runtime_exact_unsigned_integer!(u64, U64, U64, as_u64_slice, runtime_sequence_dense_u64);
+impl_runtime_exact_unsigned_integer!(u8, U8, U8, as_u8_slice, runtime_sequence_dense_u8, U8);
+impl_runtime_exact_unsigned_integer!(u16, U16, U16, as_u16_slice, runtime_sequence_dense_u16, U16);
+impl_runtime_exact_unsigned_integer!(u32, U32, U32, as_u32_slice, runtime_sequence_dense_u32, U32);
+impl_runtime_exact_unsigned_integer!(u64, U64, U64, as_u64_slice, runtime_sequence_dense_u64, U64);
 impl_runtime_exact_wide_unsigned_integer!(
     u128,
     U128,
@@ -1276,55 +1575,61 @@ impl DenseSeq {
     pub fn into_values(self) -> Vec<RuntimeValue> {
         match self {
             Self::Units(len) => vec![RuntimeValue::Unit; len],
-            Self::I8(values) => {
-                materialize_i64_sequence(values.into_vec().into_iter().map(i64::from).collect())
-            }
-            Self::I16(values) => {
-                materialize_i64_sequence(values.into_vec().into_iter().map(i64::from).collect())
-            }
-            Self::I32(values) => {
-                materialize_i64_sequence(values.into_vec().into_iter().map(i64::from).collect())
-            }
+            Self::I8(values) => values
+                .into_vec()
+                .into_iter()
+                .map(RuntimeValue::i8)
+                .collect(),
+            Self::I16(values) => values
+                .into_vec()
+                .into_iter()
+                .map(RuntimeValue::i16)
+                .collect(),
+            Self::I32(values) => values
+                .into_vec()
+                .into_iter()
+                .map(RuntimeValue::i32)
+                .collect(),
             Self::I64(values) => materialize_i64_sequence(values.into_vec()),
             Self::I128(values) => values
                 .into_vec()
                 .into_iter()
-                .map(RuntimeValue::I128)
+                .map(RuntimeValue::i128)
                 .collect(),
             Self::ISize(values) => values
                 .into_vec()
                 .into_iter()
-                .map(RuntimeValue::ISize)
+                .map(RuntimeValue::isize)
                 .collect(),
-            Self::U8(values) => values
+            Self::U8(values) | Self::Bytes(values) => values
                 .into_vec()
                 .into_iter()
-                .map(|value| RuntimeValue::UInt(u64::from(value)))
+                .map(RuntimeValue::u8)
                 .collect(),
             Self::U16(values) => values
                 .into_vec()
                 .into_iter()
-                .map(|value| RuntimeValue::UInt(u64::from(value)))
+                .map(RuntimeValue::u16)
                 .collect(),
             Self::U32(values) => values
                 .into_vec()
                 .into_iter()
-                .map(|value| RuntimeValue::UInt(u64::from(value)))
+                .map(RuntimeValue::u32)
                 .collect(),
             Self::U64(values) => values
                 .into_vec()
                 .into_iter()
-                .map(RuntimeValue::UInt)
+                .map(RuntimeValue::u64)
                 .collect(),
             Self::U128(values) => values
                 .into_vec()
                 .into_iter()
-                .map(RuntimeValue::U128)
+                .map(RuntimeValue::u128)
                 .collect(),
             Self::USize(values) => values
                 .into_vec()
                 .into_iter()
-                .map(RuntimeValue::USize)
+                .map(RuntimeValue::usize)
                 .collect(),
             Self::F32(values) => values
                 .into_vec()
@@ -1340,11 +1645,6 @@ impl DenseSeq {
                 .into_vec()
                 .into_iter()
                 .map(RuntimeValue::Bool)
-                .collect(),
-            Self::Bytes(values) => values
-                .into_vec()
-                .into_iter()
-                .map(|value| RuntimeValue::Int(i64::from(value)))
                 .collect(),
             Self::Chars(values) => values
                 .into_vec()
@@ -1380,22 +1680,21 @@ impl DenseSeq {
                 assert!(index < *len, "unit dense sequence index out of bounds");
                 RuntimeValue::Unit
             }
-            Self::I8(values) => RuntimeValue::Int(i64::from(values.as_slice()[index])),
-            Self::I16(values) => RuntimeValue::Int(i64::from(values.as_slice()[index])),
-            Self::I32(values) => RuntimeValue::Int(i64::from(values.as_slice()[index])),
-            Self::I64(values) => RuntimeValue::Int(values.as_slice()[index]),
-            Self::I128(values) => RuntimeValue::I128(values.as_slice()[index]),
-            Self::ISize(values) => RuntimeValue::ISize(values.as_slice()[index]),
-            Self::U8(values) => RuntimeValue::UInt(u64::from(values.as_slice()[index])),
-            Self::U16(values) => RuntimeValue::UInt(u64::from(values.as_slice()[index])),
-            Self::U32(values) => RuntimeValue::UInt(u64::from(values.as_slice()[index])),
-            Self::U64(values) => RuntimeValue::UInt(values.as_slice()[index]),
-            Self::U128(values) => RuntimeValue::U128(values.as_slice()[index]),
-            Self::USize(values) => RuntimeValue::USize(values.as_slice()[index]),
+            Self::I8(values) => RuntimeValue::i8(values.as_slice()[index]),
+            Self::I16(values) => RuntimeValue::i16(values.as_slice()[index]),
+            Self::I32(values) => RuntimeValue::i32(values.as_slice()[index]),
+            Self::I64(values) => RuntimeValue::i64(values.as_slice()[index]),
+            Self::I128(values) => RuntimeValue::i128(values.as_slice()[index]),
+            Self::ISize(values) => RuntimeValue::isize(values.as_slice()[index]),
+            Self::U8(values) | Self::Bytes(values) => RuntimeValue::u8(values.as_slice()[index]),
+            Self::U16(values) => RuntimeValue::u16(values.as_slice()[index]),
+            Self::U32(values) => RuntimeValue::u32(values.as_slice()[index]),
+            Self::U64(values) => RuntimeValue::u64(values.as_slice()[index]),
+            Self::U128(values) => RuntimeValue::u128(values.as_slice()[index]),
+            Self::USize(values) => RuntimeValue::usize(values.as_slice()[index]),
             Self::F32(values) => RuntimeValue::F32(values.as_slice()[index]),
             Self::F64(values) => RuntimeValue::F64(values.as_slice()[index]),
             Self::Bool(values) => RuntimeValue::Bool(values.as_slice()[index]),
-            Self::Bytes(values) => RuntimeValue::Int(i64::from(values.as_slice()[index])),
             Self::Chars(values) => RuntimeValue::Char(values.as_slice()[index]),
             Self::Durations(values) => RuntimeValue::Duration(values.as_slice()[index]),
             Self::Strings(values) => RuntimeValue::String(values.as_slice()[index].clone()),
@@ -1465,7 +1764,9 @@ impl DenseSeq {
             Self::I128(values) => values.as_slice().iter().try_fold(0_i64, |acc, value| {
                 i64::try_from(*value).ok().map(|value| acc + value)
             }),
-            Self::U8(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
+            Self::U8(values) | Self::Bytes(values) => {
+                Some(values.as_slice().iter().copied().map(i64::from).sum())
+            }
             Self::U16(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
             Self::U32(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
             Self::U64(values) | Self::USize(values) => {
@@ -1480,7 +1781,6 @@ impl DenseSeq {
             | Self::F32(_)
             | Self::F64(_)
             | Self::Bool(_)
-            | Self::Bytes(_)
             | Self::Chars(_)
             | Self::Durations(_)
             | Self::Strings(_)
@@ -1567,7 +1867,7 @@ pub enum RuntimeExpr {
         ordinal: usize,
     },
     Call {
-        callee: String,
+        callee: RuntimeCallTarget,
         args: Vec<RuntimeExpr>,
     },
     PureCall {
@@ -1622,11 +1922,7 @@ impl RuntimeExpr {
             Self::Value(
                 RuntimeValue::Bool(_)
                 | RuntimeValue::Int(_)
-                | RuntimeValue::I128(_)
-                | RuntimeValue::ISize(_)
                 | RuntimeValue::UInt(_)
-                | RuntimeValue::U128(_)
-                | RuntimeValue::USize(_)
                 | RuntimeValue::F32(_)
                 | RuntimeValue::F64(_),
             )
@@ -1873,12 +2169,6 @@ impl RuntimeEnv {
         }
     }
 
-    pub(crate) fn set_i64(&mut self, name: &str, value: i64) {
-        if let Some(scope) = self.scopes.last_mut() {
-            scope.set_i64(name, value);
-        }
-    }
-
     pub fn set_root(&mut self, name: impl Into<String>, value: RuntimeValue) {
         if let Some(scope) = self.scopes.first_mut() {
             scope.set(name.into(), value);
@@ -2042,21 +2332,6 @@ impl RuntimeScope {
         }
     }
 
-    fn set_i64(&mut self, name: &str, value: i64) {
-        if let Some(binding) = self
-            .bindings
-            .iter_mut()
-            .find(|binding| binding.name == name)
-        {
-            binding.value = RuntimeValue::Int(value);
-        } else {
-            self.bindings.push(RuntimeBinding {
-                name: name.to_owned(),
-                value: RuntimeValue::Int(value),
-            });
-        }
-    }
-
     fn get(&self, name: &str) -> Option<&RuntimeValue> {
         self.bindings
             .iter()
@@ -2080,7 +2355,7 @@ impl RuntimeScope {
             self.bindings
                 .iter_mut()
                 .zip(args.iter().copied())
-                .for_each(|(binding, value)| binding.value = RuntimeValue::Int(value));
+                .for_each(|(binding, value)| binding.value = RuntimeValue::i64(value));
             return;
         }
         self.bindings.clear();
@@ -2090,7 +2365,7 @@ impl RuntimeScope {
                 .zip(args.iter().copied())
                 .map(|(name, value)| RuntimeBinding {
                     name: name.clone(),
-                    value: RuntimeValue::Int(value),
+                    value: RuntimeValue::i64(value),
                 }),
         );
     }
@@ -2106,7 +2381,7 @@ impl RuntimeScope {
             self.bindings
                 .iter_mut()
                 .zip(args.iter().copied())
-                .for_each(|(binding, value)| binding.value = RuntimeValue::Int(i64::from(value)));
+                .for_each(|(binding, value)| binding.value = RuntimeValue::i32(value));
             return;
         }
         self.bindings.clear();
@@ -2116,7 +2391,7 @@ impl RuntimeScope {
                 .zip(args.iter().copied())
                 .map(|(name, value)| RuntimeBinding {
                     name: name.clone(),
-                    value: RuntimeValue::Int(i64::from(value)),
+                    value: RuntimeValue::i32(value),
                 }),
         );
     }
@@ -2278,7 +2553,9 @@ pub(crate) fn evaluate_unary(
 ) -> Result<RuntimeValue, RuntimeEvalError> {
     match (op, value) {
         (RuntimeUnaryOp::Not, RuntimeValue::Bool(value)) => Ok(RuntimeValue::Bool(!value)),
-        (RuntimeUnaryOp::Neg, RuntimeValue::Int(value)) => Ok(RuntimeValue::Int(-value)),
+        (RuntimeUnaryOp::Neg, RuntimeValue::Int(value)) => {
+            Ok(RuntimeValue::Int(evaluate_signed_integer_neg(value)))
+        }
         (RuntimeUnaryOp::Neg, RuntimeValue::F32(value)) => Ok(RuntimeValue::F32(-value)),
         (RuntimeUnaryOp::Neg, RuntimeValue::F64(value)) => Ok(RuntimeValue::F64(-value)),
         (op, value) => Err(RuntimeEvalError::UnsupportedUnary {
@@ -2310,19 +2587,11 @@ pub(crate) fn evaluate_binary(
         },
         RuntimeBinaryOp::Lt | RuntimeBinaryOp::Le | RuntimeBinaryOp::Gt | RuntimeBinaryOp::Ge => {
             match (lhs, rhs) {
-                (RuntimeValue::Int(lhs), RuntimeValue::Int(rhs))
-                | (RuntimeValue::ISize(lhs), RuntimeValue::ISize(rhs)) => {
-                    Ok(RuntimeValue::Bool(compare_ordered(&lhs, op, &rhs)))
+                (RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)) => {
+                    evaluate_signed_integer_compare(lhs, op, rhs).map(RuntimeValue::Bool)
                 }
-                (RuntimeValue::I128(lhs), RuntimeValue::I128(rhs)) => {
-                    Ok(RuntimeValue::Bool(compare_ordered(&lhs, op, &rhs)))
-                }
-                (RuntimeValue::UInt(lhs), RuntimeValue::UInt(rhs))
-                | (RuntimeValue::USize(lhs), RuntimeValue::USize(rhs)) => {
-                    Ok(RuntimeValue::Bool(compare_ordered(&lhs, op, &rhs)))
-                }
-                (RuntimeValue::U128(lhs), RuntimeValue::U128(rhs)) => {
-                    Ok(RuntimeValue::Bool(compare_ordered(&lhs, op, &rhs)))
+                (RuntimeValue::UInt(lhs), RuntimeValue::UInt(rhs)) => {
+                    evaluate_unsigned_integer_compare(lhs, op, rhs).map(RuntimeValue::Bool)
                 }
                 (RuntimeValue::F32(lhs), RuntimeValue::F32(rhs)) => {
                     Ok(RuntimeValue::Bool(compare_float(&lhs, op, &rhs)))
@@ -2338,22 +2607,10 @@ pub(crate) fn evaluate_binary(
         | RuntimeBinaryOp::Mul
         | RuntimeBinaryOp::Div => match (lhs, rhs) {
             (RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)) => {
-                Ok(RuntimeValue::Int(evaluate_numeric_op(lhs, op, rhs)))
-            }
-            (RuntimeValue::I128(lhs), RuntimeValue::I128(rhs)) => {
-                Ok(RuntimeValue::I128(evaluate_numeric_op(lhs, op, rhs)))
-            }
-            (RuntimeValue::ISize(lhs), RuntimeValue::ISize(rhs)) => {
-                Ok(RuntimeValue::ISize(evaluate_numeric_op(lhs, op, rhs)))
+                evaluate_signed_integer_op(lhs, op, rhs).map(RuntimeValue::Int)
             }
             (RuntimeValue::UInt(lhs), RuntimeValue::UInt(rhs)) => {
-                Ok(RuntimeValue::UInt(evaluate_numeric_op(lhs, op, rhs)))
-            }
-            (RuntimeValue::U128(lhs), RuntimeValue::U128(rhs)) => {
-                Ok(RuntimeValue::U128(evaluate_numeric_op(lhs, op, rhs)))
-            }
-            (RuntimeValue::USize(lhs), RuntimeValue::USize(rhs)) => {
-                Ok(RuntimeValue::USize(evaluate_numeric_op(lhs, op, rhs)))
+                evaluate_unsigned_integer_op(lhs, op, rhs).map(RuntimeValue::UInt)
             }
             (RuntimeValue::F32(lhs), RuntimeValue::F32(rhs)) => {
                 Ok(RuntimeValue::F32(evaluate_f32_op(lhs, op, rhs)))
@@ -2386,6 +2643,121 @@ fn compare_float<T: PartialOrd>(lhs: &T, op: RuntimeBinaryOp, rhs: &T) -> bool {
     }
 }
 
+fn evaluate_signed_integer_compare(
+    lhs: RuntimeInt,
+    op: RuntimeBinaryOp,
+    rhs: RuntimeInt,
+) -> Result<bool, RuntimeEvalError> {
+    match (lhs, rhs) {
+        (RuntimeInt::I8(lhs), RuntimeInt::I8(rhs)) => Ok(compare_ordered(&lhs, op, &rhs)),
+        (RuntimeInt::I16(lhs), RuntimeInt::I16(rhs)) => Ok(compare_ordered(&lhs, op, &rhs)),
+        (RuntimeInt::I32(lhs), RuntimeInt::I32(rhs)) => Ok(compare_ordered(&lhs, op, &rhs)),
+        (RuntimeInt::I64(lhs), RuntimeInt::I64(rhs))
+        | (RuntimeInt::ISize(lhs), RuntimeInt::ISize(rhs)) => Ok(compare_ordered(&lhs, op, &rhs)),
+        (RuntimeInt::I128(lhs), RuntimeInt::I128(rhs)) => Ok(compare_ordered(&lhs, op, &rhs)),
+        (lhs, rhs) => Err(unsupported_binary_error(
+            op,
+            &RuntimeValue::Int(lhs),
+            &RuntimeValue::Int(rhs),
+        )),
+    }
+}
+
+fn evaluate_unsigned_integer_compare(
+    lhs: RuntimeUInt,
+    op: RuntimeBinaryOp,
+    rhs: RuntimeUInt,
+) -> Result<bool, RuntimeEvalError> {
+    match (lhs, rhs) {
+        (RuntimeUInt::U8(lhs), RuntimeUInt::U8(rhs)) => Ok(compare_ordered(&lhs, op, &rhs)),
+        (RuntimeUInt::U16(lhs), RuntimeUInt::U16(rhs)) => Ok(compare_ordered(&lhs, op, &rhs)),
+        (RuntimeUInt::U32(lhs), RuntimeUInt::U32(rhs)) => Ok(compare_ordered(&lhs, op, &rhs)),
+        (RuntimeUInt::U64(lhs), RuntimeUInt::U64(rhs))
+        | (RuntimeUInt::USize(lhs), RuntimeUInt::USize(rhs)) => Ok(compare_ordered(&lhs, op, &rhs)),
+        (RuntimeUInt::U128(lhs), RuntimeUInt::U128(rhs)) => Ok(compare_ordered(&lhs, op, &rhs)),
+        (lhs, rhs) => Err(unsupported_binary_error(
+            op,
+            &RuntimeValue::UInt(lhs),
+            &RuntimeValue::UInt(rhs),
+        )),
+    }
+}
+
+fn evaluate_signed_integer_neg(value: RuntimeInt) -> RuntimeInt {
+    match value {
+        RuntimeInt::I8(value) => RuntimeInt::I8(-value),
+        RuntimeInt::I16(value) => RuntimeInt::I16(-value),
+        RuntimeInt::I32(value) => RuntimeInt::I32(-value),
+        RuntimeInt::I64(value) => RuntimeInt::I64(-value),
+        RuntimeInt::I128(value) => RuntimeInt::I128(-value),
+        RuntimeInt::ISize(value) => RuntimeInt::ISize(-value),
+    }
+}
+
+fn evaluate_signed_integer_op(
+    lhs: RuntimeInt,
+    op: RuntimeBinaryOp,
+    rhs: RuntimeInt,
+) -> Result<RuntimeInt, RuntimeEvalError> {
+    match (lhs, rhs) {
+        (RuntimeInt::I8(lhs), RuntimeInt::I8(rhs)) => {
+            Ok(RuntimeInt::I8(evaluate_numeric_op(lhs, op, rhs)))
+        }
+        (RuntimeInt::I16(lhs), RuntimeInt::I16(rhs)) => {
+            Ok(RuntimeInt::I16(evaluate_numeric_op(lhs, op, rhs)))
+        }
+        (RuntimeInt::I32(lhs), RuntimeInt::I32(rhs)) => {
+            Ok(RuntimeInt::I32(evaluate_numeric_op(lhs, op, rhs)))
+        }
+        (RuntimeInt::I64(lhs), RuntimeInt::I64(rhs)) => {
+            Ok(RuntimeInt::I64(evaluate_numeric_op(lhs, op, rhs)))
+        }
+        (RuntimeInt::I128(lhs), RuntimeInt::I128(rhs)) => {
+            Ok(RuntimeInt::I128(evaluate_numeric_op(lhs, op, rhs)))
+        }
+        (RuntimeInt::ISize(lhs), RuntimeInt::ISize(rhs)) => {
+            Ok(RuntimeInt::ISize(evaluate_numeric_op(lhs, op, rhs)))
+        }
+        (lhs, rhs) => Err(unsupported_binary_error(
+            op,
+            &RuntimeValue::Int(lhs),
+            &RuntimeValue::Int(rhs),
+        )),
+    }
+}
+
+fn evaluate_unsigned_integer_op(
+    lhs: RuntimeUInt,
+    op: RuntimeBinaryOp,
+    rhs: RuntimeUInt,
+) -> Result<RuntimeUInt, RuntimeEvalError> {
+    match (lhs, rhs) {
+        (RuntimeUInt::U8(lhs), RuntimeUInt::U8(rhs)) => {
+            Ok(RuntimeUInt::U8(evaluate_numeric_op(lhs, op, rhs)))
+        }
+        (RuntimeUInt::U16(lhs), RuntimeUInt::U16(rhs)) => {
+            Ok(RuntimeUInt::U16(evaluate_numeric_op(lhs, op, rhs)))
+        }
+        (RuntimeUInt::U32(lhs), RuntimeUInt::U32(rhs)) => {
+            Ok(RuntimeUInt::U32(evaluate_numeric_op(lhs, op, rhs)))
+        }
+        (RuntimeUInt::U64(lhs), RuntimeUInt::U64(rhs)) => {
+            Ok(RuntimeUInt::U64(evaluate_numeric_op(lhs, op, rhs)))
+        }
+        (RuntimeUInt::U128(lhs), RuntimeUInt::U128(rhs)) => {
+            Ok(RuntimeUInt::U128(evaluate_numeric_op(lhs, op, rhs)))
+        }
+        (RuntimeUInt::USize(lhs), RuntimeUInt::USize(rhs)) => {
+            Ok(RuntimeUInt::USize(evaluate_numeric_op(lhs, op, rhs)))
+        }
+        (lhs, rhs) => Err(unsupported_binary_error(
+            op,
+            &RuntimeValue::UInt(lhs),
+            &RuntimeValue::UInt(rhs),
+        )),
+    }
+}
+
 fn evaluate_f32_op(lhs: f32, op: RuntimeBinaryOp, rhs: f32) -> f32 {
     evaluate_numeric_op(lhs, op, rhs)
 }
@@ -2413,28 +2785,26 @@ where
 
 pub(crate) fn sum_i64_sequence_ref(items: &[RuntimeValue]) -> Result<i64, RuntimeEvalError> {
     items.iter().try_fold(0_i64, |acc, item| match item {
-        RuntimeValue::Int(value) | RuntimeValue::ISize(value) => Ok(acc + value),
-        RuntimeValue::I128(value) => i64::try_from(*value).map(|value| acc + value).map_err(|_| {
-            RuntimeEvalError::UnsupportedBinary {
-                op: "+",
-                lhs: "int".to_owned(),
-                rhs: runtime_value_label(item),
-            }
-        }),
-        RuntimeValue::UInt(value) | RuntimeValue::USize(value) => i64::try_from(*value)
-            .map(|value| acc + value)
-            .map_err(|_| RuntimeEvalError::UnsupportedBinary {
-                op: "+",
-                lhs: "int".to_owned(),
-                rhs: runtime_value_label(item),
-            }),
-        RuntimeValue::U128(value) => i64::try_from(*value).map(|value| acc + value).map_err(|_| {
-            RuntimeEvalError::UnsupportedBinary {
-                op: "+",
-                lhs: "int".to_owned(),
-                rhs: runtime_value_label(item),
-            }
-        }),
+        RuntimeValue::Int(value) => {
+            value
+                .try_sum_as_i64()
+                .map(|value| acc + value)
+                .ok_or_else(|| RuntimeEvalError::UnsupportedBinary {
+                    op: "+",
+                    lhs: "int".to_owned(),
+                    rhs: runtime_value_label(item),
+                })
+        }
+        RuntimeValue::UInt(value) => {
+            value
+                .try_sum_as_i64()
+                .map(|value| acc + value)
+                .ok_or_else(|| RuntimeEvalError::UnsupportedBinary {
+                    op: "+",
+                    lhs: "int".to_owned(),
+                    rhs: runtime_value_label(item),
+                })
+        }
         value => Err(RuntimeEvalError::UnsupportedBinary {
             op: "+",
             lhs: "int".to_owned(),
@@ -2444,7 +2814,7 @@ pub(crate) fn sum_i64_sequence_ref(items: &[RuntimeValue]) -> Result<i64, Runtim
 }
 
 pub(crate) fn materialize_i64_sequence(items: Vec<i64>) -> Vec<RuntimeValue> {
-    items.into_iter().map(RuntimeValue::Int).collect()
+    items.into_iter().map(RuntimeValue::i64).collect()
 }
 
 pub fn runtime_sequence_values(values: Vec<RuntimeValue>) -> RuntimeValue {
@@ -2452,7 +2822,7 @@ pub fn runtime_sequence_values(values: Vec<RuntimeValue>) -> RuntimeValue {
 }
 
 pub fn runtime_sequence_from_literal_values(values: Vec<RuntimeValue>) -> RuntimeValue {
-    match values.first() {
+    match values.first().cloned() {
         Some(RuntimeValue::Unit)
             if values
                 .iter()
@@ -2466,42 +2836,8 @@ pub fn runtime_sequence_from_literal_values(values: Vec<RuntimeValue>) -> Runtim
             RuntimeValue::Bool,
             runtime_sequence_dense_bool,
         ),
-        Some(RuntimeValue::Int(_)) => collect_dense_or_values(
-            values,
-            take_int_value,
-            RuntimeValue::Int,
-            runtime_sequence_dense_i64,
-        ),
-        Some(RuntimeValue::I128(_)) => collect_dense_or_values(
-            values,
-            take_i128_value,
-            RuntimeValue::I128,
-            runtime_sequence_dense_i128,
-        ),
-        Some(RuntimeValue::ISize(_)) => collect_dense_or_values(
-            values,
-            take_isize_value,
-            RuntimeValue::ISize,
-            runtime_sequence_dense_isize,
-        ),
-        Some(RuntimeValue::UInt(_)) => collect_dense_or_values(
-            values,
-            take_uint_value,
-            RuntimeValue::UInt,
-            runtime_sequence_dense_u64,
-        ),
-        Some(RuntimeValue::U128(_)) => collect_dense_or_values(
-            values,
-            take_u128_value,
-            RuntimeValue::U128,
-            runtime_sequence_dense_u128,
-        ),
-        Some(RuntimeValue::USize(_)) => collect_dense_or_values(
-            values,
-            take_usize_value,
-            RuntimeValue::USize,
-            runtime_sequence_dense_usize,
-        ),
+        Some(RuntimeValue::Int(value)) => collect_runtime_int_dense_or_values(values, value),
+        Some(RuntimeValue::UInt(value)) => collect_runtime_uint_dense_or_values(values, value),
         Some(RuntimeValue::F32(_)) => collect_dense_or_values(
             values,
             take_f32_value,
@@ -2573,44 +2909,174 @@ fn take_bool_value(value: RuntimeValue) -> Result<bool, RuntimeValue> {
     }
 }
 
-fn take_int_value(value: RuntimeValue) -> Result<i64, RuntimeValue> {
+fn collect_runtime_int_dense_or_values(
+    values: Vec<RuntimeValue>,
+    first: RuntimeInt,
+) -> RuntimeValue {
+    match first {
+        RuntimeInt::I8(_) => collect_dense_or_values(
+            values,
+            take_i8_value,
+            RuntimeValue::i8,
+            runtime_sequence_dense_i8,
+        ),
+        RuntimeInt::I16(_) => collect_dense_or_values(
+            values,
+            take_i16_value,
+            RuntimeValue::i16,
+            runtime_sequence_dense_i16,
+        ),
+        RuntimeInt::I32(_) => collect_dense_or_values(
+            values,
+            take_i32_value,
+            RuntimeValue::i32,
+            runtime_sequence_dense_i32,
+        ),
+        RuntimeInt::I64(_) => collect_dense_or_values(
+            values,
+            take_i64_value,
+            RuntimeValue::i64,
+            runtime_sequence_dense_i64,
+        ),
+        RuntimeInt::I128(_) => collect_dense_or_values(
+            values,
+            take_i128_value,
+            RuntimeValue::i128,
+            runtime_sequence_dense_i128,
+        ),
+        RuntimeInt::ISize(_) => collect_dense_or_values(
+            values,
+            take_isize_value,
+            RuntimeValue::isize,
+            runtime_sequence_dense_isize,
+        ),
+    }
+}
+
+fn collect_runtime_uint_dense_or_values(
+    values: Vec<RuntimeValue>,
+    first: RuntimeUInt,
+) -> RuntimeValue {
+    match first {
+        RuntimeUInt::U8(_) => collect_dense_or_values(
+            values,
+            take_u8_value,
+            RuntimeValue::u8,
+            runtime_sequence_dense_u8,
+        ),
+        RuntimeUInt::U16(_) => collect_dense_or_values(
+            values,
+            take_u16_value,
+            RuntimeValue::u16,
+            runtime_sequence_dense_u16,
+        ),
+        RuntimeUInt::U32(_) => collect_dense_or_values(
+            values,
+            take_u32_value,
+            RuntimeValue::u32,
+            runtime_sequence_dense_u32,
+        ),
+        RuntimeUInt::U64(_) => collect_dense_or_values(
+            values,
+            take_u64_value,
+            RuntimeValue::u64,
+            runtime_sequence_dense_u64,
+        ),
+        RuntimeUInt::U128(_) => collect_dense_or_values(
+            values,
+            take_u128_value,
+            RuntimeValue::u128,
+            runtime_sequence_dense_u128,
+        ),
+        RuntimeUInt::USize(_) => collect_dense_or_values(
+            values,
+            take_usize_value,
+            RuntimeValue::usize,
+            runtime_sequence_dense_usize,
+        ),
+    }
+}
+
+fn take_i8_value(value: RuntimeValue) -> Result<i8, RuntimeValue> {
     match value {
-        RuntimeValue::Int(value) => Ok(value),
+        RuntimeValue::Int(RuntimeInt::I8(value)) => Ok(value),
+        value => Err(value),
+    }
+}
+
+fn take_i16_value(value: RuntimeValue) -> Result<i16, RuntimeValue> {
+    match value {
+        RuntimeValue::Int(RuntimeInt::I16(value)) => Ok(value),
+        value => Err(value),
+    }
+}
+
+fn take_i32_value(value: RuntimeValue) -> Result<i32, RuntimeValue> {
+    match value {
+        RuntimeValue::Int(RuntimeInt::I32(value)) => Ok(value),
+        value => Err(value),
+    }
+}
+
+fn take_i64_value(value: RuntimeValue) -> Result<i64, RuntimeValue> {
+    match value {
+        RuntimeValue::Int(RuntimeInt::I64(value)) => Ok(value),
         value => Err(value),
     }
 }
 
 fn take_i128_value(value: RuntimeValue) -> Result<i128, RuntimeValue> {
     match value {
-        RuntimeValue::I128(value) => Ok(value),
+        RuntimeValue::Int(RuntimeInt::I128(value)) => Ok(value),
         value => Err(value),
     }
 }
 
 fn take_isize_value(value: RuntimeValue) -> Result<i64, RuntimeValue> {
     match value {
-        RuntimeValue::ISize(value) => Ok(value),
+        RuntimeValue::Int(RuntimeInt::ISize(value)) => Ok(value),
         value => Err(value),
     }
 }
 
-fn take_uint_value(value: RuntimeValue) -> Result<u64, RuntimeValue> {
+fn take_u8_value(value: RuntimeValue) -> Result<u8, RuntimeValue> {
     match value {
-        RuntimeValue::UInt(value) => Ok(value),
+        RuntimeValue::UInt(RuntimeUInt::U8(value)) => Ok(value),
+        value => Err(value),
+    }
+}
+
+fn take_u16_value(value: RuntimeValue) -> Result<u16, RuntimeValue> {
+    match value {
+        RuntimeValue::UInt(RuntimeUInt::U16(value)) => Ok(value),
+        value => Err(value),
+    }
+}
+
+fn take_u32_value(value: RuntimeValue) -> Result<u32, RuntimeValue> {
+    match value {
+        RuntimeValue::UInt(RuntimeUInt::U32(value)) => Ok(value),
+        value => Err(value),
+    }
+}
+
+fn take_u64_value(value: RuntimeValue) -> Result<u64, RuntimeValue> {
+    match value {
+        RuntimeValue::UInt(RuntimeUInt::U64(value)) => Ok(value),
         value => Err(value),
     }
 }
 
 fn take_u128_value(value: RuntimeValue) -> Result<u128, RuntimeValue> {
     match value {
-        RuntimeValue::U128(value) => Ok(value),
+        RuntimeValue::UInt(RuntimeUInt::U128(value)) => Ok(value),
         value => Err(value),
     }
 }
 
 fn take_usize_value(value: RuntimeValue) -> Result<u64, RuntimeValue> {
     match value {
-        RuntimeValue::USize(value) => Ok(value),
+        RuntimeValue::UInt(RuntimeUInt::USize(value)) => Ok(value),
         value => Err(value),
     }
 }
@@ -2776,12 +3242,8 @@ pub fn runtime_sequence_repeat_value(value: &RuntimeValue, len: usize) -> Runtim
     match value {
         RuntimeValue::Unit => runtime_sequence_dense_units(len),
         RuntimeValue::Bool(value) => runtime_sequence_dense_bool(vec![*value; len]),
-        RuntimeValue::Int(value) => runtime_sequence_dense_i64(vec![*value; len]),
-        RuntimeValue::I128(value) => runtime_sequence_dense_i128(vec![*value; len]),
-        RuntimeValue::ISize(value) => runtime_sequence_dense_isize(vec![*value; len]),
-        RuntimeValue::UInt(value) => runtime_sequence_dense_u64(vec![*value; len]),
-        RuntimeValue::U128(value) => runtime_sequence_dense_u128(vec![*value; len]),
-        RuntimeValue::USize(value) => runtime_sequence_dense_usize(vec![*value; len]),
+        RuntimeValue::Int(value) => repeat_runtime_int(*value, len),
+        RuntimeValue::UInt(value) => repeat_runtime_uint(*value, len),
         RuntimeValue::F32(value) => runtime_sequence_dense_f32(vec![*value; len]),
         RuntimeValue::F64(value) => runtime_sequence_dense_f64(vec![*value; len]),
         RuntimeValue::Char(value) => runtime_sequence_dense_chars(vec![*value; len]),
@@ -2791,6 +3253,28 @@ pub fn runtime_sequence_repeat_value(value: &RuntimeValue, len: usize) -> Runtim
             runtime_sequence_dense_entity_refs(vec![value.clone(); len])
         }
         value => runtime_sequence_values(vec![value.clone(); len]),
+    }
+}
+
+fn repeat_runtime_int(value: RuntimeInt, len: usize) -> RuntimeValue {
+    match value {
+        RuntimeInt::I8(value) => runtime_sequence_dense_i8(vec![value; len]),
+        RuntimeInt::I16(value) => runtime_sequence_dense_i16(vec![value; len]),
+        RuntimeInt::I32(value) => runtime_sequence_dense_i32(vec![value; len]),
+        RuntimeInt::I64(value) => runtime_sequence_dense_i64(vec![value; len]),
+        RuntimeInt::I128(value) => runtime_sequence_dense_i128(vec![value; len]),
+        RuntimeInt::ISize(value) => runtime_sequence_dense_isize(vec![value; len]),
+    }
+}
+
+fn repeat_runtime_uint(value: RuntimeUInt, len: usize) -> RuntimeValue {
+    match value {
+        RuntimeUInt::U8(value) => runtime_sequence_dense_u8(vec![value; len]),
+        RuntimeUInt::U16(value) => runtime_sequence_dense_u16(vec![value; len]),
+        RuntimeUInt::U32(value) => runtime_sequence_dense_u32(vec![value; len]),
+        RuntimeUInt::U64(value) => runtime_sequence_dense_u64(vec![value; len]),
+        RuntimeUInt::U128(value) => runtime_sequence_dense_u128(vec![value; len]),
+        RuntimeUInt::USize(value) => runtime_sequence_dense_usize(vec![value; len]),
     }
 }
 
@@ -2893,11 +3377,19 @@ fn unsupported_binary(
     lhs: &RuntimeValue,
     rhs: &RuntimeValue,
 ) -> Result<RuntimeValue, RuntimeEvalError> {
-    Err(RuntimeEvalError::UnsupportedBinary {
+    Err(unsupported_binary_error(op, lhs, rhs))
+}
+
+fn unsupported_binary_error(
+    op: RuntimeBinaryOp,
+    lhs: &RuntimeValue,
+    rhs: &RuntimeValue,
+) -> RuntimeEvalError {
+    RuntimeEvalError::UnsupportedBinary {
         op: runtime_binary_op_label(op),
         lhs: runtime_value_label(lhs),
         rhs: runtime_value_label(rhs),
-    })
+    }
 }
 
 pub(crate) fn runtime_unary_op_label(op: RuntimeUnaryOp) -> &'static str {
@@ -2928,10 +3420,8 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
     match value {
         RuntimeValue::Unit => "()".to_owned(),
         RuntimeValue::Bool(value) => value.to_string(),
-        RuntimeValue::Int(value) | RuntimeValue::ISize(value) => value.to_string(),
-        RuntimeValue::I128(value) => value.to_string(),
-        RuntimeValue::UInt(value) | RuntimeValue::USize(value) => value.to_string(),
-        RuntimeValue::U128(value) => value.to_string(),
+        RuntimeValue::Int(value) => value.label(),
+        RuntimeValue::UInt(value) => value.label(),
         RuntimeValue::F32(value) => value.to_string(),
         RuntimeValue::F64(value) => value.to_string(),
         RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => value.clone(),

@@ -1758,7 +1758,7 @@ mod tests {
             RuntimeValue::Record(vec![
                 RuntimeFieldValue {
                     name: "score".to_owned(),
-                    value: RuntimeValue::Int(1),
+                    value: RuntimeValue::i64(1),
                 },
                 RuntimeFieldValue {
                     name: "active".to_owned(),
@@ -1768,7 +1768,7 @@ mod tests {
             RuntimeValue::Record(vec![
                 RuntimeFieldValue {
                     name: "score".to_owned(),
-                    value: RuntimeValue::Int(2),
+                    value: RuntimeValue::i64(2),
                 },
                 RuntimeFieldValue {
                     name: "active".to_owned(),
