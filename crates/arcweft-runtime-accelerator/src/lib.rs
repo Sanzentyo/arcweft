@@ -195,6 +195,11 @@ impl RuntimePureAccelerator {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += rows.len();
+                self.stats.flatten_materializations += usize::from(!rows.is_empty());
+                self.stats.flatten_bytes_copied += rows
+                    .iter()
+                    .map(|row| row.len() * std::mem::size_of::<i64>())
+                    .sum::<usize>();
                 call_jit_batch(compiled, rows, out, helper, &mut self.flat_i64_inputs)
             }
             Some(RuntimePureCacheEntry::Aot(compiled)) => {
@@ -253,6 +258,9 @@ impl RuntimePureAccelerator {
         }
         self.stats.batch_calls += 1;
         self.stats.batch_items += out.len();
+        self.stats.flat_batch_calls += 1;
+        self.stats.flat_batch_items += out.len();
+        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
         self.stats.pure_calls += out.len();
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
         self.stats.result_bytes_copied += std::mem::size_of_val(out);
@@ -340,6 +348,9 @@ impl RuntimePureAccelerator {
         }
         self.stats.batch_calls += 1;
         self.stats.batch_items += rows;
+        self.stats.flat_batch_calls += 1;
+        self.stats.flat_batch_items += rows;
+        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
         self.stats.pure_calls += rows;
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
         if rows == 0 {
@@ -427,6 +438,9 @@ impl RuntimePureAccelerator {
         }
         self.stats.batch_calls += usize::from(rows > 0);
         self.stats.batch_items += rows;
+        self.stats.flat_batch_calls += usize::from(rows > 0);
+        self.stats.flat_batch_items += rows;
+        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(row);
         self.stats.pure_calls += rows;
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(row);
         if rows == 0 {
@@ -1485,6 +1499,13 @@ mod tests {
         assert_eq!(accelerator.stats().jit_calls, 3);
         assert_eq!(accelerator.stats().arg_stack_packs, 3);
         assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+        assert_eq!(accelerator.stats().flat_batch_calls, 0);
+        assert_eq!(accelerator.stats().flat_batch_items, 0);
+        assert_eq!(accelerator.stats().flatten_materializations, 1);
+        assert_eq!(
+            accelerator.stats().flatten_bytes_copied,
+            6 * std::mem::size_of::<i64>()
+        );
         assert_eq!(accelerator.summary().jit, 1);
     }
 
@@ -1523,9 +1544,17 @@ mod tests {
         assert_eq!(sum, 53);
         assert_eq!(accelerator.stats().batch_calls, 1);
         assert_eq!(accelerator.stats().batch_items, 3);
+        assert_eq!(accelerator.stats().flat_batch_calls, 1);
+        assert_eq!(accelerator.stats().flat_batch_items, 3);
+        assert_eq!(
+            accelerator.stats().flat_batch_bytes_borrowed,
+            6 * std::mem::size_of::<i64>()
+        );
         assert_eq!(accelerator.stats().jit_calls, 3);
         assert_eq!(accelerator.stats().arg_stack_packs, 0);
         assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+        assert_eq!(accelerator.stats().flatten_materializations, 0);
+        assert_eq!(accelerator.stats().flatten_bytes_copied, 0);
         assert_eq!(accelerator.stats().result_bytes_copied, 0);
     }
 

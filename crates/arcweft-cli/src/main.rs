@@ -1912,6 +1912,11 @@ fn add_pure_stats(total: &mut RuntimePureCallStats, stats: RuntimePureCallStats)
     total.pure_calls += stats.pure_calls;
     total.batch_calls += stats.batch_calls;
     total.batch_items += stats.batch_items;
+    total.flat_batch_calls += stats.flat_batch_calls;
+    total.flat_batch_items += stats.flat_batch_items;
+    total.flat_batch_bytes_borrowed += stats.flat_batch_bytes_borrowed;
+    total.flatten_materializations += stats.flatten_materializations;
+    total.flatten_bytes_copied += stats.flatten_bytes_copied;
     total.jit_calls += stats.jit_calls;
     total.aot_calls += stats.aot_calls;
     total.vm_calls += stats.vm_calls;
@@ -3388,6 +3393,11 @@ struct RuntimeBenchSamples {
     pure_calls: Vec<usize>,
     pure_batch_calls: Vec<usize>,
     pure_batch_items: Vec<usize>,
+    pure_flat_batch_calls: Vec<usize>,
+    pure_flat_batch_items: Vec<usize>,
+    pure_flat_batch_bytes_borrowed: Vec<usize>,
+    pure_flatten_materializations: Vec<usize>,
+    pure_flatten_bytes_copied: Vec<usize>,
     pure_jit_calls: Vec<usize>,
     pure_aot_calls: Vec<usize>,
     pure_vm_calls: Vec<usize>,
@@ -3417,6 +3427,11 @@ impl RuntimeBenchSamples {
             pure_calls: Vec::with_capacity(capacity),
             pure_batch_calls: Vec::with_capacity(capacity),
             pure_batch_items: Vec::with_capacity(capacity),
+            pure_flat_batch_calls: Vec::with_capacity(capacity),
+            pure_flat_batch_items: Vec::with_capacity(capacity),
+            pure_flat_batch_bytes_borrowed: Vec::with_capacity(capacity),
+            pure_flatten_materializations: Vec::with_capacity(capacity),
+            pure_flatten_bytes_copied: Vec::with_capacity(capacity),
             pure_jit_calls: Vec::with_capacity(capacity),
             pure_aot_calls: Vec::with_capacity(capacity),
             pure_vm_calls: Vec::with_capacity(capacity),
@@ -3458,6 +3473,16 @@ impl RuntimeBenchSamples {
         self.pure_calls.push(trace.totals.pure.pure_calls);
         self.pure_batch_items.push(trace.totals.pure.batch_items);
         self.pure_batch_calls.push(trace.totals.pure.batch_calls);
+        self.pure_flat_batch_calls
+            .push(trace.totals.pure.flat_batch_calls);
+        self.pure_flat_batch_items
+            .push(trace.totals.pure.flat_batch_items);
+        self.pure_flat_batch_bytes_borrowed
+            .push(trace.totals.pure.flat_batch_bytes_borrowed);
+        self.pure_flatten_materializations
+            .push(trace.totals.pure.flatten_materializations);
+        self.pure_flatten_bytes_copied
+            .push(trace.totals.pure.flatten_bytes_copied);
         self.pure_jit_calls.push(trace.totals.pure.jit_calls);
         self.pure_aot_calls.push(trace.totals.pure.aot_calls);
         self.pure_vm_calls.push(trace.totals.pure.vm_calls);
@@ -3515,6 +3540,15 @@ impl RuntimeBenchSamples {
             pure_calls_median: median_usize(&mut self.pure_calls),
             pure_batch_calls_median: median_usize(&mut self.pure_batch_calls),
             pure_batch_items_median: median_usize(&mut self.pure_batch_items),
+            pure_flat_batch_calls_median: median_usize(&mut self.pure_flat_batch_calls),
+            pure_flat_batch_items_median: median_usize(&mut self.pure_flat_batch_items),
+            pure_flat_batch_bytes_borrowed_median: median_usize(
+                &mut self.pure_flat_batch_bytes_borrowed,
+            ),
+            pure_flatten_materializations_median: median_usize(
+                &mut self.pure_flatten_materializations,
+            ),
+            pure_flatten_bytes_copied_median: median_usize(&mut self.pure_flatten_bytes_copied),
             pure_jit_calls_median: median_usize(&mut self.pure_jit_calls),
             pure_aot_calls_median: median_usize(&mut self.pure_aot_calls),
             pure_vm_calls_median: median_usize(&mut self.pure_vm_calls),

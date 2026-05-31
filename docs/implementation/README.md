@@ -764,8 +764,9 @@ Current high-confidence state:
   shape, so repeated collection-batch eligibility checks no longer rescan helper
   expression trees.
 - Runtime bench deterministic summaries now include median pure batch-call
-  counts plus JIT/AOT/VM/fallback pure-call counts, making backend selection and
-  batch execution visible without inspecting per-step traces.
+  counts, flat-batch row/input counters, flatten materialization/copy counters,
+  and JIT/AOT/VM/fallback pure-call counts, making backend selection and batch
+  execution visible without inspecting per-step traces.
 - Runtime executable expressions now have a typed `map` node lowered from
   one-parameter closure method calls such as `values.map(|item| score(item,
   2i64))`. The VM evaluates ordinary maps sequentially, but maps whose body is a
@@ -793,7 +794,10 @@ Current high-confidence state:
   intermediate `RuntimeI64Args` row vector for measured batches. Flat batch
   stats therefore keep `arg_stack_packs` and `arg_bytes_copied` at zero while
   reporting the shared input slice through `arg_bytes_borrowed` and the output
-  write volume through `result_bytes_copied`.
+  write volume through `result_bytes_copied`. Row-batch JIT fallback remains
+  available, but it now reports `flatten_materializations` and
+  `flatten_bytes_copied` when it has to build the adapter-owned flat input
+  buffer.
   Scalar `i64` pure calls return through the typed call result instead of an
   output buffer, so they no longer report result-byte copies.
 - Sequential AOT pure batches now reuse the accelerator-owned `i64` scratch

@@ -216,13 +216,17 @@ arguments, and bracket patterns materialize only at those dynamic boundaries.
 
 The checked-in nonuniform map pure JIT fixture was remeasured after the
 `RuntimeSeq::Dense(DenseSeq::I64(DenseSeqStorage<i64>))` migration. With the same
-checked-in bench settings, median elapsed time was 11500 ns. That is within
+checked-in bench settings, median elapsed time was 12000 ns. That is within
 normal short-run noise of the previous dense i64 runtime sequence sample at
 12200 ns and still faster than the earlier direct i64 sequence value sample at
 14300 ns.
 Deterministic counters stayed on the borrowed fast path:
-`pure_arg_vec_allocations_median = 0`, `pure_arg_bytes_borrowed_median = 2048`,
-and `pure_result_bytes_copied_median = 0`.
+`pure_flat_batch_calls_median = 1`, `pure_flat_batch_items_median = 128`,
+`pure_flat_batch_bytes_borrowed_median = 2048`,
+`pure_flatten_materializations_median = 0`,
+`pure_flatten_bytes_copied_median = 0`, `pure_arg_vec_allocations_median = 0`,
+`pure_arg_bytes_borrowed_median = 2048`, and
+`pure_result_bytes_copied_median = 0`.
 
 Borrow-state branch tracking now records checkpoint/journal deltas rather than
 full branch maps. The borrow-check JSON includes `state_delta_entries`,

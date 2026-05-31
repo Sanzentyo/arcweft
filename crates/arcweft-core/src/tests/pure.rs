@@ -333,6 +333,10 @@ fn vm_runtime_i64_batch_records_batch_stats() {
     assert_eq!(out, [12, 30]);
     assert_eq!(backend.stats().batch_calls, 1);
     assert_eq!(backend.stats().batch_items, 2);
+    assert_eq!(backend.stats().flat_batch_calls, 0);
+    assert_eq!(backend.stats().flat_batch_items, 0);
+    assert_eq!(backend.stats().flatten_materializations, 0);
+    assert_eq!(backend.stats().flatten_bytes_copied, 0);
     assert_eq!(backend.stats().pure_calls, 2);
     assert_eq!(backend.stats().vm_calls, 2);
     assert_eq!(backend.stats().arg_stack_packs, 2);
@@ -373,6 +377,14 @@ fn vm_runtime_i64_flat_batch_borrows_input_slice() {
     assert_eq!(out, [12, 30]);
     assert_eq!(backend.stats().batch_calls, 1);
     assert_eq!(backend.stats().batch_items, 2);
+    assert_eq!(backend.stats().flat_batch_calls, 1);
+    assert_eq!(backend.stats().flat_batch_items, 2);
+    assert_eq!(
+        backend.stats().flat_batch_bytes_borrowed,
+        std::mem::size_of_val(&inputs)
+    );
+    assert_eq!(backend.stats().flatten_materializations, 0);
+    assert_eq!(backend.stats().flatten_bytes_copied, 0);
     assert_eq!(backend.stats().pure_calls, 2);
     assert_eq!(backend.stats().vm_calls, 2);
     assert_eq!(backend.stats().arg_stack_packs, 0);

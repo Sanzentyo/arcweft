@@ -477,6 +477,9 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         }
         self.stats.batch_calls += 1;
         self.stats.batch_items += out.len();
+        self.stats.flat_batch_calls += 1;
+        self.stats.flat_batch_items += out.len();
+        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
         self.stats.pure_calls += out.len();
         self.stats.vm_calls += out.len();
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
@@ -534,6 +537,9 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         }
         self.stats.batch_calls += 1;
         self.stats.batch_items += rows;
+        self.stats.flat_batch_calls += 1;
+        self.stats.flat_batch_items += rows;
+        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
         self.stats.pure_calls += rows;
         self.stats.vm_calls += rows;
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
@@ -573,6 +579,9 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         }
         self.stats.batch_calls += usize::from(rows > 0);
         self.stats.batch_items += rows;
+        self.stats.flat_batch_calls += usize::from(rows > 0);
+        self.stats.flat_batch_items += rows;
+        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(row);
         self.stats.pure_calls += rows;
         self.stats.vm_calls += rows;
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(row);

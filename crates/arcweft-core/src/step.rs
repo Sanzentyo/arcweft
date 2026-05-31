@@ -90,6 +90,11 @@ pub struct RuntimePureCallStats {
     pub pure_calls: usize,
     pub batch_calls: usize,
     pub batch_items: usize,
+    pub flat_batch_calls: usize,
+    pub flat_batch_items: usize,
+    pub flat_batch_bytes_borrowed: usize,
+    pub flatten_materializations: usize,
+    pub flatten_bytes_copied: usize,
     pub jit_calls: usize,
     pub aot_calls: usize,
     pub vm_calls: usize,
@@ -109,6 +114,21 @@ impl RuntimePureCallStats {
             pure_calls: self.pure_calls.saturating_sub(before.pure_calls),
             batch_calls: self.batch_calls.saturating_sub(before.batch_calls),
             batch_items: self.batch_items.saturating_sub(before.batch_items),
+            flat_batch_calls: self
+                .flat_batch_calls
+                .saturating_sub(before.flat_batch_calls),
+            flat_batch_items: self
+                .flat_batch_items
+                .saturating_sub(before.flat_batch_items),
+            flat_batch_bytes_borrowed: self
+                .flat_batch_bytes_borrowed
+                .saturating_sub(before.flat_batch_bytes_borrowed),
+            flatten_materializations: self
+                .flatten_materializations
+                .saturating_sub(before.flatten_materializations),
+            flatten_bytes_copied: self
+                .flatten_bytes_copied
+                .saturating_sub(before.flatten_bytes_copied),
             jit_calls: self.jit_calls.saturating_sub(before.jit_calls),
             aot_calls: self.aot_calls.saturating_sub(before.aot_calls),
             vm_calls: self.vm_calls.saturating_sub(before.vm_calls),

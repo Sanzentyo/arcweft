@@ -2420,6 +2420,26 @@ flow @flow.bracket_pure bracket_pure {
     assert_eq!(measurement["deterministic"]["pure_calls_median"], 4);
     assert_eq!(measurement["deterministic"]["pure_batch_calls_median"], 1);
     assert_eq!(measurement["deterministic"]["pure_batch_items_median"], 4);
+    assert_eq!(
+        measurement["deterministic"]["pure_flat_batch_calls_median"],
+        1
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_flat_batch_items_median"],
+        4
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_flat_batch_bytes_borrowed_median"],
+        64
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_flatten_materializations_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_flatten_bytes_copied_median"],
+        0
+    );
     assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 4);
     assert_eq!(measurement["deterministic"]["pure_aot_calls_median"], 0);
     assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 0);
@@ -3494,6 +3514,26 @@ fn bench_json_measures_checked_in_nonuniform_map_pure_batch_fixture() {
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["deterministic"]["pure_batch_calls_median"], 1);
     assert_eq!(measurement["deterministic"]["pure_batch_items_median"], 128);
+    assert_eq!(
+        measurement["deterministic"]["pure_flat_batch_calls_median"],
+        1
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_flat_batch_items_median"],
+        128
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_flat_batch_bytes_borrowed_median"],
+        2048
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_flatten_materializations_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_flatten_bytes_copied_median"],
+        0
+    );
     assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 128);
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
