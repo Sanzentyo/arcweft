@@ -581,10 +581,9 @@ impl<'a> Parser<'a> {
             }
         } else if trimmed.ends_with("with:") {
             self.index += 1;
-            let body = self.take_indented_await_body(indentation(&line.text) + 1);
+            let body_range = self.take_indented_line_range(indentation(&line.text) + 1);
             let range = TextRange::new(line.start, line.end);
-            let await_with =
-                parse_await_with(&format!("{trimmed}\n{body}"), range, &mut self.errors);
+            let await_with = self.parse_await_with_line_range(trimmed, range, body_range);
             return Some(FlowItem::AwaitWith(await_with));
         } else {
             let await_with = parse_await_with(

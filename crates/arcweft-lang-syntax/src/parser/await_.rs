@@ -1,11 +1,17 @@
 use super::{
     CstLine, FlowItem, ParseError, Parser, RecoverySuggestion, SourceAnchor, SourceName, Stmt,
-    TextRange, find_matching_punctuation, indentation, parse_expr_lossy, parse_pattern, parse_stmt,
-    source_line_iter, split_top_level_binding, split_top_level_keyword_once,
-    split_top_level_punctuation_sequence_once,
+    SyntaxParseStats, TextRange, find_matching_punctuation, indentation, parse_expr_lossy,
+    parse_pattern, parse_stmt, source_line_iter, split_top_level_binding,
+    split_top_level_keyword_once, split_top_level_punctuation_sequence_once,
 };
 use crate::ast::flow::{AwaitBranch, AwaitBranchKind, AwaitWith};
 use crate::cst::{nonempty_trimmed_source_lines, source_line_count};
+use std::ops::Range;
+
+enum AwaitBody {
+    Source(String),
+    Lines(Range<usize>),
+}
 
 impl Parser<'_> {
     pub(super) fn parse_let_await_with(&mut self) -> Option<Stmt> {
@@ -25,14 +31,17 @@ impl Parser<'_> {
                 );
                 return None;
             }
-            (head.into_owned(), Some(format!("{{ {body} }}")))
+            (
+                head.into_owned(),
+                Some(AwaitBody::Source(format!("{{ {body} }}"))),
+            )
         } else if trimmed.ends_with("with:") {
             self.index += 1;
-            let body = self.take_indented_await_body(indentation(&start_line.text) + 1);
+            let body_range = self.take_indented_line_range(indentation(&start_line.text) + 1);
             let closing = self.take_parenthesized_await_closing();
             (
                 format!("{}{}", trimmed, closing.unwrap_or_default()),
-                Some(body),
+                Some(AwaitBody::Lines(body_range)),
             )
         } else {
             self.take_multiline_let_await_head(&start_line)
@@ -40,25 +49,32 @@ impl Parser<'_> {
 
         let rest = head.trim().strip_prefix("let")?.trim();
         let (pattern, await_head) = split_top_level_binding(rest)?;
-        let await_source = body.map_or_else(
-            || normalize_let_await_source(await_head.trim(), None),
-            |body| {
-                let head = normalize_let_await_source(await_head.trim(), None);
-                if body.trim_start().starts_with('{') {
-                    format!("{head} {body}")
+        let await_head = normalize_let_await_source(await_head.trim(), None);
+        let await_with = match body {
+            Some(AwaitBody::Lines(body_range)) => {
+                self.parse_await_with_line_range(&await_head, range, body_range)
+            }
+            Some(AwaitBody::Source(body)) => {
+                let await_source = if body.trim_start().starts_with('{') {
+                    format!("{await_head} {body}")
                 } else {
-                    format!("{head}\n{body}")
-                }
-            },
-        );
+                    format!("{await_head}\n{body}")
+                };
+                parse_await_with(&await_source, range, &mut self.errors)
+            }
+            None => parse_await_with(&await_head, range, &mut self.errors),
+        };
 
         Some(Stmt::LetAwait {
             pattern: parse_pattern(pattern.trim()),
-            await_with: parse_await_with(&await_source, range, &mut self.errors),
+            await_with,
         })
     }
 
-    fn take_multiline_let_await_head(&mut self, start_line: &CstLine) -> (String, Option<String>) {
+    fn take_multiline_let_await_head(
+        &mut self,
+        start_line: &CstLine,
+    ) -> (String, Option<AwaitBody>) {
         let base_indent = indentation(&start_line.text);
         let mut head = start_line.text.trim().to_owned();
         self.index += 1;
@@ -72,11 +88,11 @@ impl Parser<'_> {
             }
             if trimmed == "with:" {
                 self.index += 1;
-                let body = self.take_indented_await_body(base_indent + 1);
+                let body_range = self.take_indented_line_range(base_indent + 1);
                 let closing = self.take_parenthesized_await_closing();
                 return (
                     format!("{head} with:{}", closing.unwrap_or_default()),
-                    Some(body),
+                    Some(AwaitBody::Lines(body_range)),
                 );
             }
             if has_standalone_brace_with(trimmed) {
@@ -85,7 +101,7 @@ impl Parser<'_> {
                     let closing = self.take_parenthesized_await_closing();
                     return (
                         format!("{head} {with_head}{}", closing.unwrap_or_default()),
-                        Some(format!("{{ {body} }}")),
+                        Some(AwaitBody::Source(format!("{{ {body} }}"))),
                     );
                 }
             }
@@ -98,6 +114,125 @@ impl Parser<'_> {
         }
 
         (head, None)
+    }
+
+    pub(super) fn parse_await_with_line_range(
+        &mut self,
+        head: &str,
+        range: TextRange,
+        body_range: Range<usize>,
+    ) -> AwaitWith {
+        let source = head.trim();
+        let (applies_try, after_keyword) = parse_await_prefix(source);
+        let (expr_part, inline_branch_part) = split_await_head(after_keyword);
+
+        push_ambiguous_await_question_error(expr_part, range, &mut self.errors);
+
+        let branches = if inline_branch_part.trim().is_empty() {
+            self.parse_await_branches_line_range(body_range)
+        } else {
+            parse_await_branches(inline_branch_part.trim())
+        };
+        AwaitWith::new(
+            parse_expr_lossy(expr_part.trim_end_matches('?').trim()),
+            applies_try,
+            branches,
+        )
+    }
+
+    fn parse_await_branches_line_range(&mut self, range: Range<usize>) -> Vec<AwaitBranch> {
+        if range.clone().any(|index| {
+            self.events
+                .get(index)
+                .is_some_and(|line| is_colon_await_branch_head(line.trimmed()))
+        }) {
+            return self.parse_colon_await_branches_line_range(range);
+        }
+        range
+            .filter_map(|index| self.events.get(index))
+            .map(CstLine::trimmed)
+            .filter(|line| !line.is_empty())
+            .filter_map(parse_await_branch)
+            .collect()
+    }
+
+    fn parse_colon_await_branches_line_range(&mut self, range: Range<usize>) -> Vec<AwaitBranch> {
+        let mut branches = Vec::new();
+        let mut current_head = None::<String>;
+        let mut body_start = range.start;
+
+        for index in range.clone() {
+            let Some(line) = self.events.get(index) else {
+                break;
+            };
+            let trimmed = line.trimmed();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if is_colon_await_branch_head(trimmed) {
+                if let Some(head) = current_head.replace(trimmed.to_owned())
+                    && let Some(branch) =
+                        self.parse_colon_await_branch_line_range(&head, body_start..index)
+                {
+                    branches.push(branch);
+                }
+                body_start = index + 1;
+            }
+        }
+
+        if let Some(head) = current_head
+            && let Some(branch) =
+                self.parse_colon_await_branch_line_range(&head, body_start..range.end)
+        {
+            branches.push(branch);
+        }
+        branches
+    }
+
+    fn parse_colon_await_branch_line_range(
+        &mut self,
+        head: &str,
+        body_range: Range<usize>,
+    ) -> Option<AwaitBranch> {
+        let mut parts = head.trim_end_matches(':').split_whitespace();
+        let kind = await_branch_kind(parts.next()?)?;
+        let pattern = parse_pattern(parts.collect::<Vec<_>>().join(" ").trim());
+        let body = self.parse_await_branch_body_line_range(body_range);
+        Some(AwaitBranch::new(kind, pattern, body))
+    }
+
+    fn parse_await_branch_body_line_range(&mut self, body_range: Range<usize>) -> Vec<FlowItem> {
+        let Some(events) = self.events.relative_line_slice(body_range.clone(), 0) else {
+            let body = self.collect_line_range_source(body_range);
+            return parse_await_branch_body(body.trim());
+        };
+        let mut nested = Parser::from_line_events("", events, SyntaxParseStats::default());
+        let mut items = Vec::new();
+        while nested.index < nested.events.len() {
+            nested.skip_blank_and_comments();
+            if nested.index >= nested.events.len() {
+                break;
+            }
+            let before = nested.index;
+            let item = nested.parse_flow_item_until_indent(0).unwrap_or_else(|| {
+                let stmt = FlowItem::Stmt(parse_stmt(nested.current().text.trim()));
+                nested.index += 1;
+                stmt
+            });
+            items.push(item);
+            if nested.index == before {
+                nested.index += 1;
+            }
+        }
+        self.errors.extend(nested.errors);
+        self.syntax_stats.numeric_seq_summaries += nested.syntax_stats.numeric_seq_summaries;
+        if items.is_empty() {
+            let body = self.collect_line_range_source(body_range);
+            if !body.trim().is_empty() {
+                items.push(parse_inline_await_branch_item(body.trim()));
+            }
+        }
+        items
     }
 
     fn take_parenthesized_await_closing(&mut self) -> Option<String> {
@@ -207,7 +342,20 @@ pub(super) fn parse_await_with(
     errors: &mut Vec<ParseError>,
 ) -> AwaitWith {
     let source = trimmed.trim();
-    let (applies_try, after_keyword) = source
+    let (applies_try, after_keyword) = parse_await_prefix(source);
+    let (expr_part, branch_part) = split_await_head(after_keyword);
+
+    push_ambiguous_await_question_error(expr_part, range, errors);
+
+    AwaitWith::new(
+        parse_expr_lossy(expr_part.trim_end_matches('?').trim()),
+        applies_try,
+        parse_await_branches(branch_part.trim()),
+    )
+}
+
+fn parse_await_prefix(source: &str) -> (bool, &str) {
+    source
         .strip_prefix("try await")
         .map(|rest| (true, rest.trim()))
         .or_else(|| {
@@ -220,9 +368,14 @@ pub(super) fn parse_await_with(
                 .strip_prefix("await")
                 .map(|rest| (false, rest.trim()))
         })
-        .unwrap_or((false, source));
-    let (expr_part, branch_part) = split_await_head(after_keyword);
+        .unwrap_or((false, source))
+}
 
+fn push_ambiguous_await_question_error(
+    expr_part: &str,
+    range: TextRange,
+    errors: &mut Vec<ParseError>,
+) {
     // Postfix `?` remains the ordinary Rust-like propagation operator. The
     // rejected form is only `await expr? with:`, where pending handling must
     // group with the await before propagation is applied.
@@ -238,12 +391,6 @@ pub(super) fn parse_await_with(
             SourceAnchor::new(SourceName::path("<memory>"), range.start()..range.end()),
         ));
     }
-
-    AwaitWith::new(
-        parse_expr_lossy(expr_part.trim_end_matches('?').trim()),
-        applies_try,
-        parse_await_branches(branch_part.trim()),
-    )
 }
 
 fn split_await_head(source: &str) -> (&str, &str) {
@@ -312,13 +459,7 @@ fn is_colon_await_branch_head(trimmed: &str) -> bool {
 
 fn parse_colon_await_branch(head: &str, body: &str) -> Option<AwaitBranch> {
     let mut parts = head.trim_end_matches(':').split_whitespace();
-    let kind = match parts.next()? {
-        "pending" => AwaitBranchKind::Pending,
-        "ready" => AwaitBranchKind::Ready,
-        "error" => AwaitBranchKind::Error,
-        "denied" => AwaitBranchKind::Denied,
-        _ => return None,
-    };
+    let kind = await_branch_kind(parts.next()?)?;
     let pattern = parse_pattern(parts.collect::<Vec<_>>().join(" ").trim());
     Some(AwaitBranch::new(
         kind,
@@ -352,19 +493,23 @@ fn split_await_branch_lines(source: &str) -> Vec<&str> {
 fn parse_await_branch(line: &str) -> Option<AwaitBranch> {
     let (head, body) = split_top_level_punctuation_sequence_once(line, &["=", ">"])?;
     let mut parts = head.split_whitespace();
-    let kind = match parts.next()? {
-        "pending" => AwaitBranchKind::Pending,
-        "ready" => AwaitBranchKind::Ready,
-        "error" => AwaitBranchKind::Error,
-        "denied" => AwaitBranchKind::Denied,
-        _ => return None,
-    };
+    let kind = await_branch_kind(parts.next()?)?;
     let pattern = parse_pattern(parts.collect::<Vec<_>>().join(" ").trim());
     Some(AwaitBranch::new(
         kind,
         pattern,
         parse_await_branch_body(body.trim()),
     ))
+}
+
+fn await_branch_kind(source: &str) -> Option<AwaitBranchKind> {
+    match source {
+        "pending" => Some(AwaitBranchKind::Pending),
+        "ready" => Some(AwaitBranchKind::Ready),
+        "error" => Some(AwaitBranchKind::Error),
+        "denied" => Some(AwaitBranchKind::Denied),
+        _ => None,
+    }
 }
 
 fn parse_await_branch_body(body: &str) -> Vec<FlowItem> {
