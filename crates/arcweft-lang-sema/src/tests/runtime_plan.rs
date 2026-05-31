@@ -401,19 +401,24 @@ flow @flow.next next {
 fn runtime_plan_lowers_stream_and_source_plans_separately_from_flow_ops() {
     let tree = parse_ok(
         r"
-stream fn rms_level(frames: Stream<AudioFrame, AudioError>) -> Stream<f32, AudioError> {
+#[pure]
+fn score(base: i64, bonus: i64) -> i64 {
+    return base + bonus
+}
+
+stream fn rms_level(frames: Stream<i64, String>) -> Stream<i64, String> {
     for frame in frames {
-        yield rms(frame)
+        yield score(frame, 2i64)
     }
 }
 
-pub source @source.player_mic_frames: Source<AudioFrameHandle, CaptureError> {
+pub source @source.player_mic_frames: Source<i64, String> {
     from capture.microphone(@capture.player_microphone)
     backpressure = bounded(capacity = 8, overflow = drop_oldest)
     replay = hash_only
     privacy = transient
 
-    on item frame => yield frame
+    on item frame => yield score(frame, 2i64)
 }
 
 flow @flow.opening opening {
@@ -429,13 +434,17 @@ flow @flow.opening opening {
     assert_eq!(plan.stream_plans[0].id.0, "rms_level");
     assert!(matches!(
         plan.stream_plans[0].ops.as_slice(),
-        [StreamOp::ForNext { body, .. }] if matches!(body.as_slice(), [StreamOp::Yield { .. }])
+        [StreamOp::ForNext { body, .. }]
+            if matches!(body.as_slice(), [StreamOp::Yield { expr }]
+                if matches!(expr, RuntimeExpr::PureCall { helper, .. } if helper.0 == 0))
     ));
     assert_eq!(plan.source_plans.len(), 1);
     assert_eq!(plan.source_plans[0].id.0, "source.player_mic_frames");
     assert!(matches!(
         plan.source_plans[0].handlers.as_slice(),
-        [SourceHandlerPlan::Item { ops, .. }] if matches!(ops.as_slice(), [SourceOp::Yield(_)])
+        [SourceHandlerPlan::Item { ops, .. }]
+            if matches!(ops.as_slice(), [SourceOp::Yield(expr)]
+                if matches!(expr, RuntimeExpr::PureCall { helper, .. } if helper.0 == 0))
     ));
 }
 

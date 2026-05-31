@@ -206,11 +206,9 @@ impl TypeChecker<'_> {
     }
 
     fn snapshot_runtime_scope(&mut self) -> TypeCheckerScopeSnapshot {
-        self.stats.borrow_state_snapshots += 1;
-        self.stats.borrow_state_full_clones += 1;
-        self.stats.borrow_state_cloned_bindings += self.borrow_local_lifetimes.len();
+        let borrow_checkpoint = self.checkpoint_borrow_state();
         TypeCheckerScopeSnapshot {
-            borrow_local_lifetimes: self.borrow_local_lifetimes.clone(),
+            borrow_checkpoint,
             active_presentation_defaults: self.active_presentation_defaults.clone(),
             lifetime_guarantees: self.lifetime_guarantees.clone(),
             dropped_lifetime_keys: self.dropped_lifetime_keys.clone(),
@@ -219,9 +217,7 @@ impl TypeChecker<'_> {
     }
 
     fn restore_runtime_scope(&mut self, snapshot: TypeCheckerScopeSnapshot) {
-        self.stats.borrow_state_restores += 1;
-        self.borrow_local_lifetimes = snapshot.borrow_local_lifetimes;
-        self.rebuild_active_borrows();
+        self.restore_borrow_state(snapshot.borrow_checkpoint);
         self.active_presentation_defaults = snapshot.active_presentation_defaults;
         self.lifetime_guarantees = snapshot.lifetime_guarantees;
         self.dropped_lifetime_keys = snapshot.dropped_lifetime_keys;

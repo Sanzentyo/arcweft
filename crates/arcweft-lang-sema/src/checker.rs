@@ -248,7 +248,7 @@ struct TypeChecker<'a> {
 
 #[derive(Clone, Debug)]
 struct TypeCheckerScopeSnapshot {
-    borrow_local_lifetimes: HashMap<String, BorrowLocalState>,
+    borrow_checkpoint: BorrowStateCheckpoint,
     active_presentation_defaults: HashMap<String, String>,
     lifetime_guarantees: HashSet<LifetimeKey>,
     dropped_lifetime_keys: HashSet<LifetimeKey>,

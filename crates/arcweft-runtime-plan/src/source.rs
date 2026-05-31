@@ -1,10 +1,11 @@
 //! Source declaration lowering into core source runtime data.
 
 use crate::errors::RuntimePlanLowerError;
-use crate::expr::{lower_runtime_expr, runtime_call_effect};
+use crate::expr::{lower_runtime_expr, lower_runtime_expr_strict_with_pure, runtime_call_effect};
 use crate::labels::{expr_label, type_label};
 use crate::pattern::lower_runtime_pattern;
 use arcweft_core::effect::{LineEffectRequest, RuntimeAssignment};
+use arcweft_core::plan::RuntimePureHelperId;
 use arcweft_core::source::{
     BackpressurePolicy, OverflowPolicy, PrivacyPolicy, ReplayPolicy, SourceHandlerPlan, SourceId,
     SourceOp, SourcePlan, SourcePolicy,
@@ -20,10 +21,12 @@ use arcweft_lang_hir::syntax::{
     },
     types::TypeRef,
 };
+use std::collections::BTreeMap;
 
 /// Lowers a checked source declaration into a Sans I/O source plan.
 pub(crate) fn lower_source_plan(
     source: &SourceItem,
+    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
 ) -> Result<SourcePlan, Vec<RuntimePlanLowerError>> {
     let mut errors = Vec::new();
     let id = source.id().map_or_else(
@@ -43,7 +46,7 @@ pub(crate) fn lower_source_plan(
         .headers()
         .iter()
         .find_map(|header| match header {
-            SourceHeader::From(expr) => Some(lower_runtime_expr(expr)),
+            SourceHeader::From(expr) => Some(lower_runtime_expr_with_pure(expr, pure_helpers)),
             _ => None,
         })
         .unwrap_or_else(|| {
@@ -61,7 +64,7 @@ pub(crate) fn lower_source_plan(
     let handlers = source
         .handlers()
         .iter()
-        .map(lower_source_handler)
+        .map(|handler| lower_source_handler(handler, pure_helpers))
         .collect::<Vec<_>>();
     if errors.is_empty() {
         Ok(SourcePlan {
@@ -77,8 +80,11 @@ pub(crate) fn lower_source_plan(
     }
 }
 
-fn lower_source_handler(handler: &SourceHandler) -> SourceHandlerPlan {
-    let ops = lower_source_stmt_list(handler.body());
+fn lower_source_handler(
+    handler: &SourceHandler,
+    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
+) -> SourceHandlerPlan {
+    let ops = lower_source_stmt_list(handler.body(), pure_helpers);
     match handler.event() {
         SourceEventPattern::Item(pattern) => SourceHandlerPlan::Item {
             pattern: lower_runtime_pattern(pattern),
@@ -98,13 +104,22 @@ fn lower_source_handler(handler: &SourceHandler) -> SourceHandlerPlan {
     }
 }
 
-fn lower_source_stmt_list(statements: &[Stmt]) -> Vec<SourceOp> {
-    statements.iter().map(lower_source_stmt).collect()
+fn lower_source_stmt_list(
+    statements: &[Stmt],
+    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
+) -> Vec<SourceOp> {
+    statements
+        .iter()
+        .map(|stmt| lower_source_stmt(stmt, pure_helpers))
+        .collect()
 }
 
-fn lower_source_stmt(stmt: &Stmt) -> SourceOp {
+fn lower_source_stmt(
+    stmt: &Stmt,
+    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
+) -> SourceOp {
     match stmt {
-        Stmt::Yield(expr) => SourceOp::Yield(lower_runtime_expr(expr)),
+        Stmt::Yield(expr) => SourceOp::Yield(lower_runtime_expr_with_pure(expr, pure_helpers)),
         Stmt::Signal { target, value } => SourceOp::SignalWrite(RuntimeAssignment {
             target: expr_label(target),
             value: expr_label(value),
@@ -116,6 +131,14 @@ fn lower_source_stmt(stmt: &Stmt) -> SourceOp {
         Stmt::Close(expr) => SourceOp::Close(SourceId(expr_label(expr))),
         _ => SourceOp::Noop,
     }
+}
+
+fn lower_runtime_expr_with_pure(
+    expr: &arcweft_lang_hir::syntax::expr::Expr,
+    pure_helpers: &BTreeMap<String, RuntimePureHelperId>,
+) -> RuntimeExpr {
+    lower_runtime_expr_strict_with_pure(expr, pure_helpers)
+        .unwrap_or_else(|_| lower_runtime_expr(expr))
 }
 
 fn source_type_labels(ty: &TypeRef) -> Option<(String, String)> {

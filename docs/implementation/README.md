@@ -690,11 +690,11 @@ Current high-confidence state:
   candidate. It also fuses the common `let values = [...]; let tmp =
   values.map(...); let total = tmp.sum()` window in one rewrite while keeping
   the sequence binding when the map body itself reads that local.
-- Runtime-plan flow lowering now receives the pure-helper map before it lowers
-  flow expressions, so ordinary calls to known pure helpers become
-  `RuntimeExpr::PureCall` at expression construction time. The later
-  plan-finalization pass no longer walks flow ops just to rewrite pure calls;
-  it is kept for source/stream plans that are still lowered separately.
+- Runtime-plan flow, source, and stream lowering now receive the pure-helper
+  map before they lower expressions, so ordinary calls to known pure helpers
+  become `RuntimeExpr::PureCall` at expression construction time. The later
+  plan-finalization pass optimizes flow map/sum windows without walking flow,
+  source, or stream ops just to rewrite pure calls.
 - The fused runtime map batch path now borrows local or literal tuple/bracket
   sequence sources while packing flat `i64` inputs, avoiding a `RuntimeValue`
   sequence clone before crossing into VM/AOT/JIT pure helper backends.
@@ -1047,6 +1047,9 @@ Current high-confidence state:
   touched-key deltas. If/match/loop restore paths replay only changes made after
   the checkpoint, and branch merges inspect the union of changed borrow locals
   instead of cloning and merging a full `HashMap` snapshot for every path.
+  Dialogue-line and child-task runtime scopes also keep borrow state as a
+  checkpoint rather than cloning the tracked borrow map; their snapshots still
+  preserve presentation and lifetime-scope state explicitly.
 - `arcweft-verify` exposes `validate_runtime_plan_types(plan, report)` for the
   post-lowering runtime plan consumed by the VM. `arcw profile --json` now runs
   this pass between runtime-plan lowering and bytecode lowering and reports
