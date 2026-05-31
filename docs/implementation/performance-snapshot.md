@@ -221,7 +221,7 @@ Runtime numeric sequence lowering now preserves integer-only bracket literals as
 materializing `Vec<RuntimeValue::Int>`. The same `DenseSeqStorage<T>` backing
 store also covers fixed-width integer sequences (`i8`, `i16`, `i32`, `i64`,
 `i128`, `u8`, `u16`, `u32`, `u64`, `u128`) and target-sized spellings
-(`isize`, `usize`) plus bool, byte, char, logical-duration, string,
+(`isize`, `usize`) plus unit, bool, byte, char, logical-duration, string,
 raw-float-literal, and entity-reference sequences. Target-sized dense storage
 uses stable `i64`/`u64` runtime buffers rather than host pointer-width buffers
 so path-free bench output remains cross-platform comparable. Pure map/sum fast paths
@@ -269,12 +269,13 @@ these fixtures because they intentionally measure the VM dense sequence
 reduction path, not the pure helper accelerator.
 
 The dense scalar length fixture covers the non-integer deterministic scalar
-storage cases. It lowers bool, char, logical-duration, and `u8` sequences into
-dense storage, checks `len()` as `usize`, and evaluates length through
+storage cases. It lowers unit, bool, char, logical-duration, and `u8` sequences
+into dense storage, checks `len()` as `usize`, and evaluates length through
 `RuntimeSeq::len()` rather than materializing `RuntimeValue` elements. The local
-path-free bench run reported median elapsed time 13800 ns for seven executed
-ops, with `pure_arg_vec_allocations_median = 0` and
-`pure_result_bytes_copied_median = 0`.
+path-free `just bench-013` run reported median elapsed time 14900 ns for eight
+executed ops, with `pure_flatten_materializations_median = 0`,
+`pure_arg_vec_allocations_median = 0`, `pure_result_bytes_copied_median = 0`,
+and no source path in the JSON output.
 
 The dense textual scalar length fixture covers the remaining homogeneous scalar
 runtime values. It keeps `String`, raw `f64` literal text, and entity-reference

@@ -4989,6 +4989,7 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         RuntimeValue::EntityRef(value) => format!("@{value}"),
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
         RuntimeValue::Seq(RuntimeSeq::Values(values)) => format!("seq/values/{}", values.len()),
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Units(len))) => format!("seq/units/{len}"),
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I8(values))) => {
             format!("seq/i8/{}", values.len())
         }

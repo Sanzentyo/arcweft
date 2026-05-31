@@ -596,6 +596,7 @@ fn named_string_seq(args: &[EvaluatedHostArg], name: &str) -> Option<Vec<String>
             items.iter().map(runtime_value_to_string).collect()
         }
         RuntimeValue::Seq(RuntimeSeq::Dense(items)) => match items {
+            DenseSeq::Units(len) => (0..*len).map(|_| "()".to_owned()).collect(),
             DenseSeq::I8(items) => items.as_slice().iter().map(i8::to_string).collect(),
             DenseSeq::I16(items) => items.as_slice().iter().map(i16::to_string).collect(),
             DenseSeq::I32(items) => items.as_slice().iter().map(i32::to_string).collect(),
@@ -693,7 +694,8 @@ fn runtime_value_to_bytes(value: &RuntimeValue) -> Result<Vec<u8>, String> {
                         .map_err(|_| format!("byte value `{value}` is outside u8 range"))
                 })
                 .collect(),
-            DenseSeq::I8(_)
+            DenseSeq::Units(_)
+            | DenseSeq::I8(_)
             | DenseSeq::I16(_)
             | DenseSeq::I32(_)
             | DenseSeq::I128(_)

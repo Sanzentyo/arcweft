@@ -8,8 +8,9 @@ use crate::{
         runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
         runtime_sequence_dense_i128, runtime_sequence_dense_isize, runtime_sequence_dense_strings,
         runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
-        runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_sequence_dense_usize,
-        runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_value_label,
+        runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_sequence_dense_units,
+        runtime_sequence_dense_usize, runtime_sequence_from_literal_values,
+        runtime_sequence_repeat_value, runtime_value_label,
     },
 };
 
@@ -127,6 +128,7 @@ fn dense_integer_sequences_expose_width_specific_views() {
 
 #[test]
 fn dense_sequences_expose_typed_views_and_materialize_values() {
+    let unit_seq = runtime_sequence_dense_units(3);
     let i32_seq = runtime_sequence_dense_i32(vec![1, 2, 3]);
     let i64_seq = runtime_sequence_dense_i64(vec![1, 2, 3]);
     let u64_seq = runtime_sequence_dense_u64(vec![1, 2]);
@@ -135,12 +137,23 @@ fn dense_sequences_expose_typed_views_and_materialize_values() {
     let chars_seq = runtime_sequence_dense_chars(vec!['a', 'b']);
     let duration_seq = runtime_sequence_dense_durations(vec![LogicalDuration::from_nanos(3)]);
 
+    assert_eq!(runtime_value_label(&unit_seq), "seq/units/3");
     assert_eq!(runtime_value_label(&i32_seq), "seq/i32/3");
     assert_eq!(runtime_value_label(&u64_seq), "seq/u64/2");
     assert_eq!(runtime_value_label(&bool_seq), "seq/bool/2");
     assert_eq!(runtime_value_label(&bytes_seq), "seq/bytes/2");
     assert_eq!(runtime_value_label(&chars_seq), "seq/chars/2");
     assert_eq!(runtime_value_label(&duration_seq), "seq/durations/1");
+
+    let RuntimeValue::Seq(unit_seq) = unit_seq else {
+        panic!("dense units helper returns a sequence");
+    };
+    assert_eq!(unit_seq.unit_len(), Some(3));
+    assert_eq!(unit_seq.len(), 3);
+    assert_eq!(
+        unit_seq.into_values(),
+        vec![RuntimeValue::Unit, RuntimeValue::Unit, RuntimeValue::Unit]
+    );
 
     let RuntimeValue::Seq(i64_seq) = &i64_seq else {
         panic!("dense i64 helper returns a sequence");
@@ -332,6 +345,15 @@ fn dense_textual_sequences_expose_typed_views_and_materialize_values() {
 
 #[test]
 fn literal_and_repeat_sequences_choose_dense_scalar_storage() {
+    let RuntimeValue::Seq(unit_seq) = runtime_sequence_from_literal_values(vec![
+        RuntimeValue::Unit,
+        RuntimeValue::Unit,
+        RuntimeValue::Unit,
+    ]) else {
+        panic!("unit literals lower to a sequence");
+    };
+    assert_eq!(unit_seq.unit_len(), Some(3));
+
     let RuntimeValue::Seq(bool_seq) = runtime_sequence_from_literal_values(vec![
         RuntimeValue::Bool(true),
         RuntimeValue::Bool(false),
@@ -382,6 +404,12 @@ fn literal_and_repeat_sequences_choose_dense_scalar_storage() {
     };
     assert_eq!(usize_seq.as_usize_values(), Some([4, 4].as_slice()));
 
+    let RuntimeValue::Seq(unit_repeat_seq) = runtime_sequence_repeat_value(&RuntimeValue::Unit, 2)
+    else {
+        panic!("unit repeat lowers to a sequence");
+    };
+    assert_eq!(unit_repeat_seq.unit_len(), Some(2));
+
     let RuntimeValue::Seq(float_seq) =
         runtime_sequence_repeat_value(&RuntimeValue::Float("1.5f64".to_owned()), 2)
     else {
@@ -405,6 +433,16 @@ fn literal_and_repeat_sequences_choose_dense_scalar_storage() {
 
 #[test]
 fn dense_sequence_tail_preserves_storage_strategy() {
+    let RuntimeValue::Seq(units) = runtime_sequence_dense_units(3) else {
+        panic!("dense units helper returns a sequence");
+    };
+
+    let RuntimeSeq::Dense(unit_tail) = units.tail_from(1) else {
+        panic!("dense unit tail remains dense");
+    };
+
+    assert_eq!(unit_tail.unit_len(), Some(2));
+
     let RuntimeValue::Seq(seq) = runtime_sequence_dense_chars(vec!['a', 'b', 'c']) else {
         panic!("dense chars helper returns a sequence");
     };

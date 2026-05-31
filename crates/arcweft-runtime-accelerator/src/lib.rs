@@ -704,6 +704,7 @@ fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::EntityRef(_) => "entity_ref",
         RuntimeValue::Tuple(_) => "tuple",
         RuntimeValue::Seq(RuntimeSeq::Values(_)) => "seq_values",
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Units(_))) => "seq_units",
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I8(_))) => "seq_i8",
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I16(_))) => "seq_i16",
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I32(_))) => "seq_i32",

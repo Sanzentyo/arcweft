@@ -3642,10 +3642,10 @@ fn bench_json_measures_checked_in_dense_scalar_len_fixture() {
     assert_eq!(json["compiler"]["typecheck"]["warnings"], 0);
     assert_eq!(
         json["compiler"]["typecheck"]["judgment_rules"]["let_binding"],
-        5
+        6
     );
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
-    assert_eq!(measurement["deterministic"]["executed_ops_median"], 7);
+    assert_eq!(measurement["deterministic"]["executed_ops_median"], 8);
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
         0

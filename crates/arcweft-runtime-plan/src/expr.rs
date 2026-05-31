@@ -29,6 +29,7 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
         Expr::Literal(literal) => RuntimeExpr::Value(lower_runtime_literal(literal)),
         Expr::EntityRef(entity) => RuntimeExpr::EntityRef(entity.body().to_owned()),
         Expr::Path(path) => RuntimeExpr::Local(path.clone()),
+        Expr::Tuple(items) if items.is_empty() => RuntimeExpr::Value(RuntimeValue::Unit),
         Expr::Tuple(items) => RuntimeExpr::Tuple(items.iter().map(lower_runtime_expr).collect()),
         Expr::BracketSeq(items) => lower_runtime_bracket_seq(items),
         Expr::NumericBracketSeq(seq) => lower_runtime_numeric_bracket_seq(seq),
@@ -121,6 +122,7 @@ pub(crate) fn lower_runtime_expr_strict(expr: &Expr) -> Result<RuntimeExpr, Stri
                 payload: None,
             },
         )),
+        Expr::Tuple(items) if items.is_empty() => Ok(RuntimeExpr::Value(RuntimeValue::Unit)),
         Expr::Tuple(items) => items
             .iter()
             .map(lower_runtime_expr_strict)
@@ -819,6 +821,19 @@ mod tests {
 
     #[test]
     fn strict_runtime_bracket_seq_folds_literal_values_to_dense_storage() {
+        let unit_expr = Expr::BracketSeq(vec![
+            Expr::Tuple(Vec::new()),
+            Expr::Tuple(Vec::new()),
+            Expr::Tuple(Vec::new()),
+        ]);
+
+        let lowered = lower_runtime_expr_strict(&unit_expr).expect("unit bracket seq lowers");
+
+        assert!(matches!(
+            lowered,
+            RuntimeExpr::Value(RuntimeValue::Seq(seq)) if seq.unit_len() == Some(3)
+        ));
+
         let i64_expr = Expr::BracketSeq(vec![
             Expr::Literal(Literal::Int {
                 raw: "1i64".to_owned(),

@@ -59,6 +59,10 @@ impl RuntimeSeq {
         Self::Values(values)
     }
 
+    pub const fn dense_units(len: usize) -> Self {
+        Self::Dense(DenseSeq::units(len))
+    }
+
     pub fn dense_i64(values: Vec<i64>) -> Self {
         Self::Dense(DenseSeq::i64(values))
     }
@@ -150,6 +154,13 @@ impl RuntimeSeq {
         match self {
             Self::Values(values) => Some(values),
             Self::Dense(_) => None,
+        }
+    }
+
+    pub fn unit_len(&self) -> Option<usize> {
+        match self {
+            Self::Dense(values) => values.unit_len(),
+            Self::Values(_) => None,
         }
     }
 
@@ -319,6 +330,7 @@ impl RuntimeSeq {
 /// Dense sequence storage for homogeneous scalar data.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DenseSeq {
+    Units(usize),
     I8(DenseSeqStorage<i8>),
     I16(DenseSeqStorage<i16>),
     I32(DenseSeqStorage<i32>),
@@ -341,6 +353,10 @@ pub enum DenseSeq {
 }
 
 impl DenseSeq {
+    pub const fn units(len: usize) -> Self {
+        Self::Units(len)
+    }
+
     pub fn i8(values: Vec<i8>) -> Self {
         Self::I8(DenseSeqStorage::new(values))
     }
@@ -419,6 +435,7 @@ impl DenseSeq {
 
     pub fn len(&self) -> usize {
         match self {
+            Self::Units(len) => *len,
             Self::I8(values) => values.len(),
             Self::I16(values) => values.len(),
             Self::I32(values) => values.len(),
@@ -440,6 +457,31 @@ impl DenseSeq {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    pub const fn unit_len(&self) -> Option<usize> {
+        match self {
+            Self::Units(len) => Some(*len),
+            Self::I8(_)
+            | Self::I16(_)
+            | Self::I32(_)
+            | Self::I64(_)
+            | Self::I128(_)
+            | Self::ISize(_)
+            | Self::U8(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::U128(_)
+            | Self::USize(_)
+            | Self::Bool(_)
+            | Self::Bytes(_)
+            | Self::Chars(_)
+            | Self::Durations(_)
+            | Self::Strings(_)
+            | Self::FloatLiterals(_)
+            | Self::EntityRefs(_) => None,
+        }
     }
 
     pub fn as_i64_slice(&self) -> Option<&[i64]> {
@@ -577,6 +619,7 @@ impl DenseSeq {
 
     pub fn into_values(self) -> Vec<RuntimeValue> {
         match self {
+            Self::Units(len) => vec![RuntimeValue::Unit; len],
             Self::I8(values) => {
                 materialize_i64_sequence(values.into_vec().into_iter().map(i64::from).collect())
             }
@@ -665,8 +708,17 @@ impl DenseSeq {
         }
     }
 
+    /// Returns the runtime value at `index`.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `index` is outside this sequence.
     pub fn value_at(&self, index: usize) -> RuntimeValue {
         match self {
+            Self::Units(len) => {
+                assert!(index < *len, "unit dense sequence index out of bounds");
+                RuntimeValue::Unit
+            }
             Self::I8(values) => RuntimeValue::Int(i64::from(values.as_slice()[index])),
             Self::I16(values) => RuntimeValue::Int(i64::from(values.as_slice()[index])),
             Self::I32(values) => RuntimeValue::Int(i64::from(values.as_slice()[index])),
@@ -692,6 +744,7 @@ impl DenseSeq {
     #[must_use]
     pub fn tail_from(&self, index: usize) -> Self {
         match self {
+            Self::Units(len) => Self::Units(len.saturating_sub(index)),
             Self::I8(values) => Self::I8(values.tail_from(index)),
             Self::I16(values) => Self::I16(values.tail_from(index)),
             Self::I32(values) => Self::I32(values.tail_from(index)),
@@ -717,7 +770,8 @@ impl DenseSeq {
     pub fn into_i64_vec(self) -> Option<Vec<i64>> {
         match self {
             Self::I64(values) => Some(values.into_vec()),
-            Self::I8(_)
+            Self::Units(_)
+            | Self::I8(_)
             | Self::I16(_)
             | Self::I32(_)
             | Self::I128(_)
@@ -758,7 +812,8 @@ impl DenseSeq {
             Self::U128(values) => values.as_slice().iter().try_fold(0_i64, |acc, value| {
                 i64::try_from(*value).ok().map(|value| acc + value)
             }),
-            Self::Bool(_)
+            Self::Units(_)
+            | Self::Bool(_)
             | Self::Bytes(_)
             | Self::Chars(_)
             | Self::Durations(_)
@@ -1499,6 +1554,13 @@ pub fn runtime_sequence_values(values: Vec<RuntimeValue>) -> RuntimeValue {
 
 pub fn runtime_sequence_from_literal_values(values: Vec<RuntimeValue>) -> RuntimeValue {
     match values.first() {
+        Some(RuntimeValue::Unit)
+            if values
+                .iter()
+                .all(|value| matches!(value, RuntimeValue::Unit)) =>
+        {
+            runtime_sequence_dense_units(values.len())
+        }
         Some(RuntimeValue::Bool(_)) => collect_dense_or_values(
             values,
             take_bool_value,
@@ -1683,6 +1745,7 @@ fn take_entity_ref_value(value: RuntimeValue) -> Result<String, RuntimeValue> {
 
 pub fn runtime_sequence_repeat_value(value: &RuntimeValue, len: usize) -> RuntimeValue {
     match value {
+        RuntimeValue::Unit => runtime_sequence_dense_units(len),
         RuntimeValue::Bool(value) => runtime_sequence_dense_bool(vec![*value; len]),
         RuntimeValue::Int(value) => runtime_sequence_dense_i64(vec![*value; len]),
         RuntimeValue::I128(value) => runtime_sequence_dense_i128(vec![*value; len]),
@@ -1701,6 +1764,10 @@ pub fn runtime_sequence_repeat_value(value: &RuntimeValue, len: usize) -> Runtim
         }
         value => runtime_sequence_values(vec![value.clone(); len]),
     }
+}
+
+pub fn runtime_sequence_dense_units(len: usize) -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::dense_units(len))
 }
 
 pub fn runtime_sequence_dense_i64(values: Vec<i64>) -> RuntimeValue {
@@ -1867,6 +1934,7 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
         RuntimeValue::Seq(seq) => match seq {
             RuntimeSeq::Values(values) => format!("seq/values/{}", values.len()),
+            RuntimeSeq::Dense(DenseSeq::Units(len)) => format!("seq/units/{len}"),
             RuntimeSeq::Dense(DenseSeq::I8(values)) => format!("seq/i8/{}", values.len()),
             RuntimeSeq::Dense(DenseSeq::I16(values)) => format!("seq/i16/{}", values.len()),
             RuntimeSeq::Dense(DenseSeq::I32(values)) => format!("seq/i32/{}", values.len()),

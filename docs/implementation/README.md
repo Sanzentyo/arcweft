@@ -714,28 +714,30 @@ Current high-confidence state:
 - Dense sequence storage is generic at the backing-store layer and exposes
   borrowed views for deterministic scalar integer widths accepted by the
   runtime (`i8`, `i16`, `i32`, `i64`, `i128`, `isize`, `u8`, `u16`, `u32`,
-  `u64`, `u128`, `usize`) plus bool, byte, char, logical duration, `String`,
-  raw float literal, and entity reference sequences. `isize`/`usize` dense
-  storage uses stable `i64`/`u64` backing values at the runtime boundary rather
-  than host pointer-width buffers. `u8` dense storage is also available through
-  the byte view so byte-oriented host paths can borrow it without materializing
+  `u64`, `u128`, `usize`) plus unit, bool, byte, char, logical duration,
+  `String`, raw float literal, and entity reference sequences. Unit dense
+  storage is length-only, so `Vec<Unit>` and repeated unit arrays do not
+  allocate element storage. `isize`/`usize` dense storage uses stable
+  `i64`/`u64` backing values at the runtime boundary rather than host
+  pointer-width buffers. `u8` dense storage is also available through the byte
+  view so byte-oriented host paths can borrow it without materializing
   `RuntimeValue` elements. Textual/entity dense storage is intentionally a
   homogeneous backing store, not a numeric ABI path; string interning or
   columnar record storage remains a separate optimization.
 - `Vec<T>.len()` / `Seq<T>.len()` / fixed array length calls typecheck as
   `usize` and read `RuntimeSeq::len()` directly in the VM and pure VM. The
-  checked-in dense scalar length bench exercises bool, char, duration, and
-  `u8` dense storage without crossing a dynamic materialization boundary.
+  checked-in dense scalar length bench exercises unit, bool, char, duration,
+  and `u8` dense storage without crossing a dynamic materialization boundary.
 - Literal array repeats now lower to a structured runtime repeat expression
   instead of materializing a large sequence in the runtime plan. Fused
   `map(...).sum()` paths over repeated sources call the repeated-row pure batch
   boundary directly, so `[value; N]` keeps logical batch counters without
   cloning or scanning `N` runtime values.
 - Runtime evaluation now keeps repeated scalar values dense when the repeated
-  value is a deterministic scalar (`bool`, signed/unsigned integer, `char`,
-  logical duration, string, raw float literal, or entity reference). Dynamic
-  bracket sequences also fold homogeneous evaluated scalar values into dense
-  storage instead of leaving them as `Vec<RuntimeValue>`.
+  value is a deterministic scalar (`unit`, `bool`, signed/unsigned integer,
+  `char`, logical duration, string, raw float literal, or entity reference).
+  Dynamic bracket sequences also fold homogeneous evaluated scalar values into
+  dense storage instead of leaving them as `Vec<RuntimeValue>`.
 - Fast-path scalar pure calls read local integer arguments by borrow when
   packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
   VM/AOT/JIT pure backends.
