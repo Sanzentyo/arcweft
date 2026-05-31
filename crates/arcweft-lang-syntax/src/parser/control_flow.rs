@@ -1,11 +1,13 @@
 use super::{
-    BorrowBlock, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchArm, MatchBlock,
-    ParseError, Parser, SelectBlock, SelectBranch, SelectBranchHead, Stmt, StmtMatchArm, TextRange,
-    WhileBlock, WhileLetBlock, collect_logical_block_items, indentation, is_typed_stmt,
-    parse_binding_pattern, parse_expr_lossy, parse_pattern, parse_stmt, raw_stmt, split_brace_item,
-    split_optional_block_label, split_top_level_binding, split_top_level_keyword_once,
-    split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
+    BorrowBlock, CstBlockEvent, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchArm,
+    MatchBlock, ParseError, Parser, SelectBlock, SelectBranch, SelectBranchHead, Stmt,
+    StmtMatchArm, TextRange, WhileBlock, WhileLetBlock, collect_logical_block_items, indentation,
+    is_typed_stmt, parse_binding_pattern, parse_expr_lossy, parse_pattern, parse_stmt, raw_stmt,
+    split_brace_item, split_optional_block_label, split_top_level_binding,
+    split_top_level_keyword_once, split_top_level_punctuation_once,
+    split_top_level_punctuation_sequence_once,
 };
+use std::ops::Range;
 
 impl Parser<'_> {
     pub(super) fn parse_let_loop(&mut self) -> Option<Stmt> {
@@ -476,8 +478,8 @@ impl Parser<'_> {
 
     pub(super) fn parse_select_block(&mut self) -> Option<SelectBlock> {
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing select",
@@ -487,13 +489,95 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
         if !head.trim().starts_with("select") {
             return None;
         }
         Some(SelectBlock::new(
-            parse_select_branches(&body, start_line.start, &mut self.errors),
-            TextRange::new(start_line.start, end),
+            self.parse_select_branches_from_block(&block, start_line.start),
+            TextRange::new(start_line.start, block.end),
         ))
+    }
+
+    fn parse_select_branches_from_block(
+        &mut self,
+        block: &CstBlockEvent<'_>,
+        base: usize,
+    ) -> Vec<SelectBranch> {
+        if let Some(range) = block.body_line_range.clone() {
+            self.parse_select_branches_from_line_range(range, base)
+        } else {
+            parse_select_branches(&block.body, base, &mut self.errors)
+        }
+    }
+
+    fn parse_select_branches_from_line_range(
+        &mut self,
+        range: Range<usize>,
+        base: usize,
+    ) -> Vec<SelectBranch> {
+        let mut branches = Vec::new();
+        let mut index = range.start;
+        while index < range.end {
+            let Some(line) = self.events.get(index).cloned() else {
+                break;
+            };
+            let trimmed = line.trimmed();
+            if trimmed.is_empty() {
+                index += 1;
+                continue;
+            }
+            let Some(head) = trimmed
+                .strip_suffix("=> {")
+                .or_else(|| trimmed.strip_suffix("=>"))
+            else {
+                index += 1;
+                continue;
+            };
+            let branch_indent = indentation(line.text());
+            index += 1;
+            let body_start = index;
+            while index < range.end {
+                let Some(child) = self.events.get(index) else {
+                    break;
+                };
+                if child.trimmed() == "}" && indentation(child.text()) <= branch_indent {
+                    break;
+                }
+                index += 1;
+            }
+            let body_end = index;
+            if index < range.end {
+                index += 1;
+            }
+            let parsed = if let Some(parsed) =
+                self.parse_flow_body_from_line_range(body_start..body_end, base)
+            {
+                parsed
+            } else {
+                let body_source = self.collect_line_range_source(body_start..body_end);
+                self.parse_flow_body(&body_source, base)
+            };
+            branches.push(SelectBranch::new(
+                parse_select_branch_head(head.trim()),
+                parsed,
+            ));
+        }
+        branches
+    }
+
+    fn collect_line_range_source(&self, range: Range<usize>) -> String {
+        let mut source = String::new();
+        for index in range {
+            let Some(line) = self.events.get(index) else {
+                break;
+            };
+            if !source.is_empty() {
+                source.push('\n');
+            }
+            source.push_str(line.text());
+        }
+        source
     }
 }
 
@@ -583,7 +667,7 @@ fn parse_select_branches(
         }
         let body_source = body_lines.join("\n");
         let mut nested = Parser::new(&body_source);
-        let parsed = nested.parse_flow_body(&body_lines.join("\n"), base);
+        let parsed = nested.parse_flow_body(&body_source, base);
         errors.extend(nested.errors.into_iter().map(|err| err.rebased(base)));
         branches.push(SelectBranch::new(
             parse_select_branch_head(head.trim()),

@@ -14,6 +14,7 @@ use super::{
     split_call_head, split_leading_ident,
 };
 use std::borrow::Cow;
+use std::ops::Range;
 
 impl<'a> Parser<'a> {
     pub(super) fn parse_flow(&mut self) -> Option<Flow> {
@@ -80,11 +81,20 @@ impl<'a> Parser<'a> {
         base_offset: usize,
     ) -> Vec<FlowItem> {
         if let Some(range) = block.body_line_range.clone()
-            && let Some(events) = self.events.relative_line_slice(range, base_offset)
+            && let Some(items) = self.parse_flow_body_from_line_range(range, base_offset)
         {
-            return self.parse_flow_body_events(events, base_offset);
+            return items;
         }
         self.parse_flow_body(&block.body, base_offset)
+    }
+
+    pub(super) fn parse_flow_body_from_line_range(
+        &mut self,
+        range: Range<usize>,
+        base_offset: usize,
+    ) -> Option<Vec<FlowItem>> {
+        let events = self.events.relative_line_slice(range, base_offset)?;
+        Some(self.parse_flow_body_events(events, base_offset))
     }
 
     pub(super) fn parse_flow_body(&mut self, body: &str, base_offset: usize) -> Vec<FlowItem> {
