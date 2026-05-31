@@ -195,11 +195,13 @@ Deterministic counters stayed on the borrowed fast path:
 `pure_arg_vec_allocations_median = 0`, `pure_arg_bytes_borrowed_median = 2048`,
 and `pure_result_bytes_copied_median = 0`.
 
-The checked-in dense i32 sum fixture measured the non-JIT fixed-width integer
-path. It lowered `[... i32]` to `DenseSeq::I32`, validated as `Vec(I32)`, and
-ran `sum()` with median elapsed time 6800 ns. The pure-call counters remained
-zero because this bench is intentionally measuring the VM dense sequence
-reduction path, not the pure helper accelerator.
+The checked-in dense i32 and u64 sum fixtures measure the non-JIT fixed-width
+integer path. The i32 fixture lowered `[... i32]` to `DenseSeq::I32`, validated
+as `Vec(I32)`, and ran `sum()` with median elapsed time 7200 ns in the latest
+local run. The matching u64 fixture lowered `[... u64]` to `DenseSeq::U64`,
+validated as `Vec(U64)`, and ran with median elapsed time 7800 ns. The pure-call
+counters remained zero for both fixtures because these benches intentionally
+measure the VM dense sequence reduction path, not the pure helper accelerator.
 
 `DenseSeq::F64` is intentionally not present yet because `RuntimeValue::Float`
 still preserves raw source text for deterministic numeric semantics. Dense
