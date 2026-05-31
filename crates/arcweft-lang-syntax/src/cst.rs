@@ -51,6 +51,9 @@ pub struct CstLine<'a> {
     pub(crate) text: Cow<'a, str>,
     pub(crate) start: usize,
     pub(crate) end: usize,
+    trim_start: usize,
+    trim_end: usize,
+    leading_trim_start: usize,
     punctuation: CstLinePunctuationSummary,
     kind: CstLineKind,
 }
@@ -763,10 +766,14 @@ impl<'a> CstLine<'a> {
         }
         let kind = classify_line(&text);
         let punctuation = CstLinePunctuationSummary::from_node(node);
+        let trim = line_trim_ranges(&text);
         Self {
             text: Cow::Owned(text),
             start,
             end,
+            trim_start: trim.trim_start,
+            trim_end: trim.trim_end,
+            leading_trim_start: trim.leading_trim_start,
             punctuation,
             kind,
         }
@@ -783,10 +790,14 @@ impl<'a> CstLine<'a> {
         let text = &source[start..end];
         let kind = classify_line(text);
         let punctuation = CstLinePunctuationSummary::from_node(node);
+        let trim = line_trim_ranges(text);
         Self {
             text: Cow::Borrowed(text),
             start,
             end,
+            trim_start: trim.trim_start,
+            trim_end: trim.trim_end,
+            leading_trim_start: trim.leading_trim_start,
             punctuation,
             kind,
         }
@@ -804,12 +815,12 @@ impl<'a> CstLine<'a> {
 
     /// Trimmed line text.
     pub fn trimmed(&self) -> &str {
-        self.text.trim()
+        &self.text[self.trim_start..self.trim_end]
     }
 
     /// Line text with leading whitespace removed.
     pub fn trim_start(&self) -> &str {
-        self.text.trim_start()
+        &self.text[self.leading_trim_start..]
     }
 
     /// Returns true when the line should be skipped as trivia by grammar parsing.
@@ -878,6 +889,29 @@ impl<'a> CstLine<'a> {
 
     pub(crate) const fn last_brace_close(&self) -> Option<usize> {
         self.punctuation.last_brace_close
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CstLineTrimRanges {
+    trim_start: usize,
+    trim_end: usize,
+    leading_trim_start: usize,
+}
+
+fn line_trim_ranges(text: &str) -> CstLineTrimRanges {
+    let leading_trim_start = text.len() - text.trim_start().len();
+    let trimmed = text.trim();
+    let trim_start = if trimmed.is_empty() {
+        text.len()
+    } else {
+        text.find(trimmed)
+            .expect("trimmed text must be a substring of the original line")
+    };
+    CstLineTrimRanges {
+        trim_start,
+        trim_end: trim_start + trimmed.len(),
+        leading_trim_start,
     }
 }
 
