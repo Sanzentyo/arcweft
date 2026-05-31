@@ -4,11 +4,11 @@ use super::headers::{
     parse_required_entity_ref_syntax, parse_visibility_prefix,
 };
 use super::{
-    BlockStyle, ContentCall, CstFlowItemKind, CstLetFlowItemKind, CstLine,
-    CstStructuredFlowBlockKind, DeferOutcome, Flow, FlowInit, FlowItem, Parser, RawSyntax,
-    ScopeBlock, Stmt, TextRange, flat_block_head, indentation, is_await_with_head,
-    is_expression_statement_call, is_typed_stmt, is_with_brace_head, parse_await_with,
-    parse_defer_outcome, parse_expr_lossy, parse_flat_fence, parse_line_options,
+    BlockStyle, ContentCall, CstBlockEvent, CstFlowItemKind, CstLetFlowItemKind, CstLine,
+    CstLineEvents, CstStructuredFlowBlockKind, DeferOutcome, Flow, FlowInit, FlowItem, Parser,
+    RawSyntax, ScopeBlock, Stmt, SyntaxParseStats, TextRange, flat_block_head, indentation,
+    is_await_with_head, is_expression_statement_call, is_typed_stmt, is_with_brace_head,
+    parse_await_with, parse_defer_outcome, parse_expr_lossy, parse_flat_fence, parse_line_options,
     parse_line_plan_attachment, parse_scope_head, parse_stmt, parse_stmt_lines,
     parse_stmt_with_stats, parse_thread_block, parse_unsafe_lifetime_block, parse_with_brace_label,
     split_call_head, split_leading_ident,
@@ -20,8 +20,8 @@ impl<'a> Parser<'a> {
         let doc = self.take_pending_doc();
         let start_line = self.current().clone();
         let header = start_line.text.trim();
-        let (head, body, end, ok) = self.take_flow_block();
-        if !ok {
+        let block = self.take_flow_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing flow",
@@ -32,6 +32,7 @@ impl<'a> Parser<'a> {
             return None;
         }
 
+        let head = &block.head;
         let header_lines = head
             .lines()
             .map(str::trim)
@@ -57,7 +58,7 @@ impl<'a> Parser<'a> {
                 .skip(1)
                 .filter_map(|line| parse_contract_clause(line)),
         );
-        let body_items = self.parse_flow_body(&body, start_line.start + head.len());
+        let body_items = self.parse_flow_body_from_block(&block, start_line.start + head.len());
 
         Some(Flow::new(FlowInit {
             doc,
@@ -69,12 +70,42 @@ impl<'a> Parser<'a> {
             signature,
             contracts,
             body: body_items,
-            range: TextRange::new(start_line.start, end),
+            range: TextRange::new(start_line.start, block.end),
         }))
+    }
+
+    pub(super) fn parse_flow_body_from_block(
+        &mut self,
+        block: &CstBlockEvent<'a>,
+        base_offset: usize,
+    ) -> Vec<FlowItem> {
+        if let Some(range) = block.body_line_range.clone()
+            && let Some(events) = self.events.relative_line_slice(range, base_offset)
+        {
+            return self.parse_flow_body_events(events, base_offset);
+        }
+        self.parse_flow_body(&block.body, base_offset)
     }
 
     pub(super) fn parse_flow_body(&mut self, body: &str, base_offset: usize) -> Vec<FlowItem> {
         let mut nested = Parser::new(body);
+        self.parse_nested_flow_body(&mut nested, base_offset)
+    }
+
+    fn parse_flow_body_events(
+        &mut self,
+        events: CstLineEvents<'a>,
+        base_offset: usize,
+    ) -> Vec<FlowItem> {
+        let mut nested = Parser::from_line_events("", events, SyntaxParseStats::default());
+        self.parse_nested_flow_body(&mut nested, base_offset)
+    }
+
+    fn parse_nested_flow_body(
+        &mut self,
+        nested: &mut Parser<'_>,
+        base_offset: usize,
+    ) -> Vec<FlowItem> {
         let mut items = Vec::new();
         while !nested.pending_flow_items.is_empty() || nested.index < nested.events.len() {
             if nested.pending_flow_items.is_empty() {
@@ -95,12 +126,8 @@ impl<'a> Parser<'a> {
                 nested.index += 1;
             }
         }
-        self.errors.extend(
-            nested
-                .errors
-                .into_iter()
-                .map(|err| err.rebased(base_offset)),
-        );
+        self.errors
+            .extend(nested.errors.drain(..).map(|err| err.rebased(base_offset)));
         self.syntax_stats.numeric_seq_summaries += nested.syntax_stats.numeric_seq_summaries;
         items
     }

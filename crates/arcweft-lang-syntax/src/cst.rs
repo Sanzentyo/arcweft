@@ -7,7 +7,7 @@
 
 use rowan::{GreenNodeBuilder, Language};
 use std::borrow::Cow;
-use std::ops::Index;
+use std::ops::{Index, Range};
 
 /// Rowan language marker for Arcweft syntax nodes.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -282,6 +282,7 @@ pub(crate) struct CstBlockEvent<'a> {
     pub(crate) end: usize,
     pub(crate) ok: bool,
     pub(crate) next_index: usize,
+    pub(crate) body_line_range: Option<Range<usize>>,
 }
 
 /// Ordered line-event stream projected from the lossless CST.
@@ -454,6 +455,28 @@ impl<'a> CstLineEvents<'a> {
         self.stats
     }
 
+    /// Reuses a complete line-event range as parser input with offsets rebased
+    /// to a virtual fragment. This avoids reparsing nested flow bodies when the
+    /// body is already represented by whole CST lines.
+    pub(crate) fn relative_line_slice(
+        &self,
+        range: Range<usize>,
+        base_offset: usize,
+    ) -> Option<CstLineEvents<'a>> {
+        if range.start > range.end || range.end > self.lines.len() {
+            return None;
+        }
+        let mut lines = Vec::with_capacity(range.end - range.start);
+        for line in &self.lines[range] {
+            lines.push(line.with_relative_offsets(base_offset)?);
+        }
+        Some(CstLineEvents {
+            lines,
+            source: None,
+            stats: SyntaxParseStats::default(),
+        })
+    }
+
     /// Collects a balanced brace block beginning at a line-event index.
     pub(crate) fn collect_brace_block(
         &self,
@@ -544,7 +567,65 @@ impl<'a> CstLineEvents<'a> {
         }
         let head = self.collect_virtual_fragment(start, index, 0, open);
         let body = self.collect_virtual_fragment(start, index, open + 1, close);
-        CstBlockEvent::new(trim_cow(head), body, end, true, index)
+        CstBlockEvent::new(trim_cow(head), body, end, true, index).with_body_line_range(
+            self.full_line_range_for_virtual_fragment(start, index, open + 1, close),
+        )
+    }
+
+    fn full_line_range_for_virtual_fragment(
+        &self,
+        start: usize,
+        end: usize,
+        range_start: usize,
+        range_end: usize,
+    ) -> Option<Range<usize>> {
+        if range_start > range_end {
+            return None;
+        }
+
+        let line_ranges = self.virtual_line_ranges(start, end);
+        let first = line_ranges
+            .iter()
+            .find(|(_, line_start, line_end)| *line_start >= range_start && *line_end <= range_end)
+            .map(|(index, _, _)| *index);
+        let Some(first) = first else {
+            let fragment = self.collect_virtual_fragment(start, end, range_start, range_end);
+            return fragment.trim().is_empty().then_some(start..start);
+        };
+        let last = line_ranges
+            .iter()
+            .rev()
+            .find(|(_, line_start, line_end)| *line_start >= range_start && *line_end <= range_end)
+            .map(|(index, _, _)| *index + 1)?;
+        let prefix_end = line_ranges
+            .iter()
+            .find(|(index, _, _)| *index == first)
+            .map(|(_, line_start, _)| *line_start)?;
+        let suffix_start = line_ranges
+            .iter()
+            .find(|(index, _, _)| *index + 1 == last)
+            .map(|(_, _, line_end)| *line_end)?;
+        let prefix = self.collect_virtual_fragment(start, end, range_start, prefix_end);
+        let suffix = self.collect_virtual_fragment(start, end, suffix_start, range_end);
+        (prefix.trim().is_empty() && suffix.trim().is_empty()).then_some(first..last)
+    }
+
+    fn virtual_line_ranges(&self, start: usize, end: usize) -> Vec<(usize, usize, usize)> {
+        let mut ranges = Vec::new();
+        let mut virtual_offset = 0usize;
+        for index in start..end {
+            if index > start {
+                virtual_offset += 1;
+            }
+            let Some(line) = self.get(index) else {
+                break;
+            };
+            let line_start = virtual_offset;
+            let line_end = line_start + line.text.len();
+            ranges.push((index, line_start, line_end));
+            virtual_offset = line_end;
+        }
+        ranges
     }
 
     fn collect_virtual_fragment(
@@ -889,6 +970,19 @@ impl<'a> CstLine<'a> {
 
     pub(crate) const fn last_brace_close(&self) -> Option<usize> {
         self.punctuation.last_brace_close
+    }
+
+    fn with_relative_offsets(&self, base_offset: usize) -> Option<Self> {
+        Some(Self {
+            text: self.text.clone(),
+            start: self.start.checked_sub(base_offset)?,
+            end: self.end.checked_sub(base_offset)?,
+            trim_start: self.trim_start,
+            trim_end: self.trim_end,
+            leading_trim_start: self.leading_trim_start,
+            punctuation: self.punctuation,
+            kind: self.kind,
+        })
     }
 }
 
@@ -1439,7 +1533,13 @@ impl<'a> CstBlockEvent<'a> {
             end,
             ok,
             next_index,
+            body_line_range: None,
         }
+    }
+
+    fn with_body_line_range(mut self, body_line_range: Option<Range<usize>>) -> Self {
+        self.body_line_range = body_line_range;
+        self
     }
 
     pub(crate) fn owned_bytes(&self) -> usize {

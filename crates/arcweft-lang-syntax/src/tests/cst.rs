@@ -196,6 +196,35 @@ fn cst_flow_block_event_keeps_effects_prelude_out_of_body() {
     assert!(block.head.contains("effects { asset.read }"));
     assert!(!block.body.contains("effects { asset.read }"));
     assert!(block.body.contains("goto @flow.next"));
+    assert_eq!(block.body_line_range, Some(4..5));
+}
+
+#[test]
+fn cst_flow_block_event_reuses_complete_body_line_events_only() {
+    let source = "flow @flow.opening opening {\n    goto @flow.next\n}\n";
+    let root = crate::cst::parse_cst(source);
+    let lines = crate::cst::cst_lines_for_source(&root, source);
+    let block = lines.collect_flow_block(0);
+
+    assert!(block.ok);
+    assert_eq!(block.body_line_range, Some(1..2));
+    let base = source.find('{').expect("open brace");
+    let nested = lines
+        .relative_line_slice(
+            block.body_line_range.clone().expect("body line range"),
+            base,
+        )
+        .expect("relative nested lines");
+    let line = nested.get(0).expect("nested line");
+    assert_eq!(line.text(), "    goto @flow.next");
+    assert_eq!(line.start(), 2);
+
+    let inline_source = "flow @flow.inline inline { goto @flow.next }\n";
+    let inline_root = crate::cst::parse_cst(inline_source);
+    let inline_lines = crate::cst::cst_lines_for_source(&inline_root, inline_source);
+    let inline = inline_lines.collect_flow_block(0);
+    assert!(inline.ok);
+    assert_eq!(inline.body_line_range, None);
 }
 
 #[test]

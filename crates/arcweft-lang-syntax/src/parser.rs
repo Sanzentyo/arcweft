@@ -9,8 +9,8 @@ use crate::ast::ids::{IdRef, RelativeId, RelativeIdSpelling};
 use crate::ast::items::{RawSyntax, TypedSyntaxTree};
 use crate::ast::line_plan::{BlockStyle, DeferOutcome, LinePlan};
 use crate::cst::{
-    CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineEvents, CstStmtKind,
-    CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxNode,
+    CstBlockEvent, CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineEvents,
+    CstStmtKind, CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxNode,
     SyntaxParseStats, classify_stmt, cst_lines_for_source, find_matching_punctuation,
     find_top_level_punctuation, parse_flat_fence, source_line_iter, split_leading_ident,
     split_top_level_keyword_once, split_top_level_punctuation_once,
@@ -115,6 +115,14 @@ impl<'a> Parser<'a> {
     fn from_syntax(source: &'a str, syntax: &SyntaxNode) -> Self {
         let events = cst_lines_for_source(syntax, source);
         let syntax_stats = events.stats();
+        Self::from_line_events(source, events, syntax_stats)
+    }
+
+    fn from_line_events(
+        source: &'a str,
+        events: CstLineEvents<'a>,
+        syntax_stats: SyntaxParseStats,
+    ) -> Self {
         Self {
             source,
             events,
@@ -169,10 +177,15 @@ impl<'a> Parser<'a> {
     }
 
     fn take_flow_block(&mut self) -> (Cow<'a, str>, Cow<'a, str>, usize, bool) {
+        let event = self.take_flow_block_event();
+        (event.head, event.body, event.end, event.ok)
+    }
+
+    fn take_flow_block_event(&mut self) -> CstBlockEvent<'a> {
         let event = self.events.collect_flow_block(self.index);
         self.index = event.next_index;
         self.syntax_stats.block_owned_bytes += event.owned_bytes();
-        (event.head, event.body, event.end, event.ok)
+        event
     }
 
     fn take_function_block(&mut self) -> (Cow<'a, str>, Cow<'a, str>, usize, bool) {
