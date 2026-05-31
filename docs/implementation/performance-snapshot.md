@@ -421,11 +421,21 @@ when accumulating the `u64` pure-helper result into an `i64` sum. The
 fixtures cover wide integer storage with
 `pure_flat_batch_bytes_borrowed_median = 4096` and the same checked sum
 conversion. This confirms the hot boundary is not doing
-`.map(i64::from)`. Native JIT remains the exact i64 tier; scalar AOT is the
-width-preserving native tier for non-i64 helpers while the
-width-preserving VM fast path is the semantic execution tier for the other
-integer widths. Target-sized dense storage already uses stable `i64`/`u64`
-backing at the runtime boundary.
+`.map(i64::from)`. Native JIT covers exact i64 and now has the first
+width-preserving non-i64 ABI for `i32`; scalar AOT remains the native tier for
+the other non-i64 helpers while the width-preserving VM fast path is the
+semantic execution tier for the remaining integer widths. Target-sized dense
+storage already uses stable `i64`/`u64` backing at the runtime boundary.
+
+The i32 JIT ABI emits `extern "C" fn(i32, ...) -> i32` helpers plus row-major
+`*const i32` flat batch and batch-sum entry points. A local path-free bench run
+of `016_dense_i32_map_pure_batch.arcw` with the default auto backend promoted
+the helper to native i32 JIT, reported median elapsed time 12800 ns, and kept
+`pure_jit_calls_median = 128`, `pure_aot_calls_median = 0`,
+`pure_vm_calls_median = 0`, `pure_arg_vec_allocations_median = 0`, and
+`auto_jit_promotions = 1`. The same fixture with `--pure-backend aot` reported
+median elapsed time 43900 ns and `pure_aot_calls_median = 128`, so the i32 JIT
+ABI is the expected natural fast tier for that shape.
 
 The dense scalar length fixture covers the non-integer deterministic scalar
 storage cases. It lowers unit, bool, char, logical-duration, and `u8` sequences
@@ -459,7 +469,7 @@ borrowed slice ABI in the VM flow path and scalar AOT path, so a natural
 `pure` call in a flow can avoid `Vec<RuntimeValue>` argument allocation when
 the helper signature and expression are float-scalar only. Exact-width integer
 helpers use the same scalar AOT boundary for non-i64 widths; native Cranelift
-JIT remains i64-only until the JIT ABI grows typed scalar inputs. Record/tuple
+JIT covers i64 and the first width-preserving i32 scalar/batch ABI. Record/tuple
 storage should be designed separately as columnar storage rather than as scalar
 `DenseSeqStorage<T>`. The scalar dense coverage is encoded in `DenseSeqKind`,
 so adding another dense class requires extending the typed kind and its borrowed

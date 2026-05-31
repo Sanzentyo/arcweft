@@ -1424,12 +1424,8 @@ impl Engine {
         ) {
             Ok(Some(row_count)) => {
                 let helper = &self.plan.pure_helpers[helper_id.0];
-                let batch_result = pure_backend.call_exact_int_flat_batch_sum::<i32>(
-                    helper,
-                    &flat_inputs,
-                    arity,
-                    row_count,
-                );
+                let batch_result =
+                    pure_backend.call_i32_flat_batch_sum(helper, &flat_inputs, arity, row_count);
                 self.pure_i32_batch_inputs = flat_inputs;
                 let sum = batch_result?;
                 Ok(Some(sum))
