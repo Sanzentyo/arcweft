@@ -1001,7 +1001,7 @@ impl ExprParser {
 
     fn parse_flat_literal_bracket_seq(&mut self) -> Option<Expr> {
         let start = self.cursor;
-        let mut items = Vec::new();
+        let mut fallback_items = None;
         let mut int_values = Vec::new();
         let mut int_suffix = None;
         let mut int_suffix_seen = false;
@@ -1023,7 +1023,13 @@ impl ExprParser {
                 }
                 _ => all_int = false,
             }
-            items.push(Expr::Literal(literal.clone()));
+            if !all_int {
+                fallback_items
+                    .get_or_insert_with(|| {
+                        literal_exprs_from_tokens(&self.tokens[start..self.cursor])
+                    })
+                    .push(Expr::Literal(literal.clone()));
+            }
             self.bump();
             match self.peek() {
                 Token::Comma => {
@@ -1031,14 +1037,20 @@ impl ExprParser {
                     if self.peek() == &Token::RBracket {
                         self.bump();
                         return Some(flat_literal_bracket_seq_expr(
-                            all_int, int_values, int_suffix, items,
+                            all_int,
+                            int_values,
+                            int_suffix,
+                            fallback_items,
                         ));
                     }
                 }
                 Token::RBracket => {
                     self.bump();
                     return Some(flat_literal_bracket_seq_expr(
-                        all_int, int_values, int_suffix, items,
+                        all_int,
+                        int_values,
+                        int_suffix,
+                        fallback_items,
                     ));
                 }
                 _ => {
@@ -1300,13 +1312,23 @@ fn flat_literal_bracket_seq_expr(
     all_int: bool,
     int_values: Vec<i64>,
     int_suffix: Option<String>,
-    items: Vec<Expr>,
+    fallback_items: Option<Vec<Expr>>,
 ) -> Expr {
-    if all_int && int_values.len() == items.len() {
+    if all_int {
         Expr::NumericBracketSeq(NumericBracketSeq::new(int_values, int_suffix))
     } else {
-        Expr::BracketSeq(items)
+        Expr::BracketSeq(fallback_items.unwrap_or_default())
     }
+}
+
+fn literal_exprs_from_tokens(tokens: &[Token]) -> Vec<Expr> {
+    tokens
+        .iter()
+        .filter_map(|token| match token {
+            Token::Literal(literal) => Some(Expr::Literal(literal.clone())),
+            _ => None,
+        })
+        .collect()
 }
 
 fn token_source(token: &Token) -> String {

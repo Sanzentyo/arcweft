@@ -225,6 +225,15 @@ fn large_flat_literal_sequences_parse_as_bracket_seq() {
 
     let mixed = parse_expr("[1i64, false]").expect("mixed sequence falls back");
     assert!(matches!(mixed, Expr::BracketSeq(_)));
+
+    let mixed_suffix = parse_expr("[1i32, 2i64]").expect("mixed suffix sequence falls back");
+    assert!(matches!(
+        mixed_suffix,
+        Expr::BracketSeq(items)
+            if items.len() == 2
+                && matches!(&items[0], Expr::Literal(Literal::Int { suffix, .. }) if suffix.as_deref() == Some("i32"))
+                && matches!(&items[1], Expr::Literal(Literal::Int { suffix, .. }) if suffix.as_deref() == Some("i64"))
+    ));
 }
 
 #[test]
