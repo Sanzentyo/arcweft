@@ -2620,6 +2620,7 @@ flow @flow.bracket_pure bracket_pure {
             .is_some_and(|jobs| jobs >= 2),
         "AOT bracket batch should use the configured worker pool: {measurement}"
     );
+    assert_aot_parallel_policy(measurement, "AOT bracket batch");
     assert_eq!(
         measurement["deterministic"]["pure_arg_stack_packs_median"],
         0
@@ -2878,6 +2879,7 @@ flow @flow.map_pure map_pure {
             .is_some_and(|jobs| jobs >= 2),
         "AOT map batch should use the configured worker pool: {measurement}"
     );
+    assert_aot_parallel_policy(measurement, "AOT map batch");
     assert_eq!(
         measurement["deterministic"]["pure_arg_vec_allocations_median"],
         0
@@ -3174,6 +3176,31 @@ fn assert_native_bridge_phase_timings(measurement: &serde_json::Value) {
             "bench JSON should expose native bridge timing field `{field}`: {measurement}"
         );
     }
+}
+
+fn assert_aot_parallel_policy(measurement: &serde_json::Value, label: &str) {
+    assert_eq!(
+        measurement["deterministic"]["pure_parallel_policy_checks_median"],
+        1
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_parallel_batches_median"],
+        1
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_parallel_skipped_backend_median"],
+        0
+    );
+    assert_eq!(
+        measurement["deterministic"]["pure_parallel_skipped_small_median"],
+        0
+    );
+    assert!(
+        measurement["deterministic"]["pure_parallel_work_units_median"]
+            .as_u64()
+            .is_some_and(|work| work > 4),
+        "{label} should report weighted parallel work: {measurement}"
+    );
 }
 
 #[test]

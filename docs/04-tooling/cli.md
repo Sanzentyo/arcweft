@@ -326,8 +326,9 @@ inside measured headless bench iterations, so `fs.read_text`, `fs.read_bytes`,
 `fs.write_text`, and `fs.write_bytes` can participate in correctness and timing
 runs through source-local virtual paths. Bench deterministic counters include
 median task requests, task events consumed, pure call counts, pure batch item
-counts, pure thread-pool jobs, and pure argument Vec allocations in addition to
-executed VM ops. Native I/O counters include scheduler submitted/dispatched
+counts, pure thread-pool jobs, pure argument Vec allocations, pure batch
+parallel policy checks, weighted work units, backend/small-batch skips, and
+thread-pool build time in addition to executed VM ops. Native I/O counters include scheduler submitted/dispatched
 task counts and `max_in_flight`, so `traverse(...).parallel(limit = N)` bench
 sections expose both total task volume and bounded fanout behavior.
 Measured bench runs go through the bytecode VM artifact boundary, and that

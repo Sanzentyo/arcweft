@@ -10,7 +10,7 @@ use arcweft_core::{
         RuntimePureCallBackend, VmPureFunctionScratch,
     },
     step::RuntimePureCallStats,
-    value::{DenseSeq, RuntimeBinding, RuntimeEvalError, RuntimeSeq, RuntimeValue},
+    value::{DenseSeq, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeSeq, RuntimeValue},
 };
 use arcweft_lang_jit_cranelift::{CompiledPureI64Inputs, CraneliftPureFunctionBackend};
 use rayon::{ThreadPool, ThreadPoolBuilder, prelude::*};
@@ -64,6 +64,7 @@ pub struct RuntimePureAccelerator {
     stats: RuntimePureCallStats,
     compile_stats: RuntimePureCompileStats,
     helper_summary: RuntimePureAccelerationSummary,
+    helper_work_units: Vec<usize>,
     pool: Option<ThreadPool>,
     resolved_workers: usize,
     flat_i64_inputs: Vec<i64>,
@@ -75,6 +76,14 @@ enum RuntimePureCacheEntry {
     Jit(Box<CompiledPureI64Inputs>),
     Aot(AotPureI64Plan),
     Vm,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RuntimeBatchBackendKind {
+    Jit,
+    Aot,
+    Vm,
+    Missing,
 }
 
 impl fmt::Debug for RuntimePureAccelerator {
@@ -109,6 +118,7 @@ impl RuntimePureAccelerator {
         let started = std::time::Instant::now();
         let mut compile_stats = RuntimePureCompileStats::default();
         let helper_summary = helper_summary_from_helpers(helpers);
+        let helper_work_units = helper_work_unit_slots(helpers);
         let resolved_workers = resolve_worker_count(config.workers);
         let mut cache = helper_cache_slots(helpers);
         for helper in helpers {
@@ -121,6 +131,7 @@ impl RuntimePureAccelerator {
             stats: RuntimePureCallStats::default(),
             compile_stats,
             helper_summary,
+            helper_work_units,
             pool: None,
             resolved_workers,
             flat_i64_inputs: Vec::new(),
@@ -183,11 +194,8 @@ impl RuntimePureAccelerator {
         if rows.is_empty() {
             return Ok(());
         }
-        let wants_parallel = self.can_parallelize(rows.len())
-            && matches!(
-                cache_entry(&self.cache, helper.id),
-                Some(RuntimePureCacheEntry::Aot(_) | RuntimePureCacheEntry::Vm)
-            );
+        let backend = self.batch_backend_kind(helper.id);
+        let wants_parallel = self.should_parallelize_batch(helper, rows.len(), backend);
         if wants_parallel {
             self.ensure_thread_pool();
         }
@@ -267,11 +275,8 @@ impl RuntimePureAccelerator {
         if out.is_empty() {
             return Ok(());
         }
-        let wants_parallel = self.can_parallelize(out.len())
-            && matches!(
-                cache_entry(&self.cache, helper.id),
-                Some(RuntimePureCacheEntry::Aot(_) | RuntimePureCacheEntry::Vm)
-            );
+        let backend = self.batch_backend_kind(helper.id);
+        let wants_parallel = self.should_parallelize_batch(helper, out.len(), backend);
         if wants_parallel {
             self.ensure_thread_pool();
         }
@@ -356,11 +361,8 @@ impl RuntimePureAccelerator {
         if rows == 0 {
             return Ok(0);
         }
-        let wants_parallel = self.can_parallelize(rows)
-            && matches!(
-                cache_entry(&self.cache, helper.id),
-                Some(RuntimePureCacheEntry::Aot(_) | RuntimePureCacheEntry::Vm)
-            );
+        let backend = self.batch_backend_kind(helper.id);
+        let wants_parallel = self.should_parallelize_batch(helper, rows, backend);
         if wants_parallel {
             self.ensure_thread_pool();
         }
@@ -494,18 +496,63 @@ impl RuntimePureAccelerator {
             })
     }
 
-    fn can_parallelize(&self, len: usize) -> bool {
-        self.resolved_workers > 1
-            && len
-                > self
-                    .config
-                    .batch_min_len
-                    .saturating_mul(self.resolved_workers)
+    fn batch_backend_kind(&self, id: RuntimePureHelperId) -> RuntimeBatchBackendKind {
+        match cache_entry(&self.cache, id) {
+            Some(RuntimePureCacheEntry::Jit(_)) => RuntimeBatchBackendKind::Jit,
+            Some(RuntimePureCacheEntry::Aot(_)) => RuntimeBatchBackendKind::Aot,
+            Some(RuntimePureCacheEntry::Vm) => RuntimeBatchBackendKind::Vm,
+            None => RuntimeBatchBackendKind::Missing,
+        }
+    }
+
+    fn should_parallelize_batch(
+        &mut self,
+        helper: &RuntimePureHelper,
+        rows: usize,
+        backend: RuntimeBatchBackendKind,
+    ) -> bool {
+        self.stats.parallel_policy_checks += 1;
+        let work_units = rows.saturating_mul(self.helper_work_units(helper));
+        self.stats.parallel_work_units = self.stats.parallel_work_units.saturating_add(work_units);
+        if !matches!(
+            backend,
+            RuntimeBatchBackendKind::Aot | RuntimeBatchBackendKind::Vm
+        ) {
+            self.stats.parallel_skipped_backend += 1;
+            return false;
+        }
+        if self.resolved_workers <= 1 {
+            self.stats.parallel_skipped_small += 1;
+            return false;
+        }
+        let per_worker_min = self.config.batch_min_len.max(1);
+        let base_threshold = per_worker_min.saturating_mul(self.resolved_workers);
+        let threshold = match backend {
+            RuntimeBatchBackendKind::Aot => base_threshold.saturating_mul(4),
+            RuntimeBatchBackendKind::Vm => base_threshold,
+            RuntimeBatchBackendKind::Jit | RuntimeBatchBackendKind::Missing => unreachable!(),
+        };
+        if work_units <= threshold {
+            self.stats.parallel_skipped_small += 1;
+            return false;
+        }
+        self.stats.parallel_batches += 1;
+        true
+    }
+
+    fn helper_work_units(&self, helper: &RuntimePureHelper) -> usize {
+        self.helper_work_units
+            .get(helper.id.0)
+            .copied()
+            .filter(|weight| *weight > 0)
+            .unwrap_or_else(|| runtime_expr_work_units(&helper.expr))
     }
 
     fn ensure_thread_pool(&mut self) {
         if self.pool.is_none() {
+            let started = std::time::Instant::now();
             self.pool = build_thread_pool(self.resolved_workers);
+            self.stats.thread_pool_build_elapsed_ns += started.elapsed().as_nanos();
         }
     }
 
@@ -824,6 +871,89 @@ fn helper_cache_slots(helpers: &[RuntimePureHelper]) -> Vec<Option<RuntimePureCa
     let mut cache = Vec::with_capacity(slots);
     cache.resize_with(slots, || None);
     cache
+}
+
+fn helper_work_unit_slots(helpers: &[RuntimePureHelper]) -> Vec<usize> {
+    let slots = helpers
+        .iter()
+        .map(|helper| helper.id.0)
+        .max()
+        .map_or(0, |max_id| max_id + 1);
+    let mut weights = vec![0; slots];
+    for helper in helpers {
+        weights[helper.id.0] = runtime_expr_work_units(&helper.expr);
+    }
+    weights
+}
+
+fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
+    match expr {
+        RuntimeExpr::Value(_) | RuntimeExpr::Local(_) | RuntimeExpr::EntityRef(_) => 1,
+        RuntimeExpr::Unary { expr, .. } => 1 + runtime_expr_work_units(expr),
+        RuntimeExpr::Binary { lhs, rhs, .. } => {
+            2 + runtime_expr_work_units(lhs) + runtime_expr_work_units(rhs)
+        }
+        RuntimeExpr::If {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            3 + runtime_expr_work_units(condition)
+                + runtime_expr_work_units(then_expr)
+                + runtime_expr_work_units(else_expr)
+        }
+        RuntimeExpr::Let { expr, body, .. } => {
+            2 + runtime_expr_work_units(expr) + runtime_expr_work_units(body)
+        }
+        RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
+            1 + items.iter().map(runtime_expr_work_units).sum::<usize>()
+        }
+        RuntimeExpr::RepeatSeq { value, .. } => 2 + runtime_expr_work_units(value),
+        RuntimeExpr::Record(fields) => {
+            1 + fields
+                .iter()
+                .map(|field| runtime_expr_work_units(&field.value))
+                .sum::<usize>()
+        }
+        RuntimeExpr::Variant { payload, .. } => {
+            1 + payload.as_deref().map_or(0, runtime_expr_work_units)
+        }
+        RuntimeExpr::SpreadArg(payload) => 1 + runtime_expr_work_units(payload),
+        RuntimeExpr::Field { target, .. } => 1 + runtime_expr_work_units(target),
+        RuntimeExpr::Call { args, .. } | RuntimeExpr::PureCall { args, .. } => {
+            8 + args.iter().map(runtime_expr_work_units).sum::<usize>()
+        }
+        RuntimeExpr::MethodCall { receiver, args, .. } => {
+            8 + runtime_expr_work_units(receiver)
+                + args.iter().map(runtime_expr_work_units).sum::<usize>()
+        }
+        RuntimeExpr::Map { source, body, .. } => {
+            8 + runtime_expr_work_units(source) + runtime_expr_work_units(body)
+        }
+        RuntimeExpr::Sum { source } => 4 + runtime_expr_work_units(source),
+        RuntimeExpr::IfLet {
+            expr,
+            guard,
+            then_expr,
+            else_expr,
+            ..
+        } => {
+            4 + runtime_expr_work_units(expr)
+                + guard.as_deref().map_or(0, runtime_expr_work_units)
+                + runtime_expr_work_units(then_expr)
+                + runtime_expr_work_units(else_expr)
+        }
+        RuntimeExpr::Match { scrutinee, arms } => {
+            6 + runtime_expr_work_units(scrutinee)
+                + arms
+                    .iter()
+                    .map(|arm| {
+                        arm.guard.as_ref().map_or(0, runtime_expr_work_units)
+                            + runtime_expr_work_units(&arm.value)
+                    })
+                    .sum::<usize>()
+        }
+    }
 }
 
 fn cache_entry(
@@ -1397,6 +1527,11 @@ mod tests {
         assert_eq!(accelerator.stats().arg_vec_allocations, 0);
         assert_eq!(accelerator.resolved_worker_count(), 2);
         assert!(accelerator.has_worker_pool());
+        assert_eq!(accelerator.stats().parallel_policy_checks, 1);
+        assert_eq!(accelerator.stats().parallel_batches, 1);
+        assert_eq!(accelerator.stats().parallel_skipped_small, 0);
+        assert_eq!(accelerator.stats().parallel_skipped_backend, 0);
+        assert!(accelerator.stats().parallel_work_units > rows.len());
         assert!(accelerator.stats().thread_pool_jobs > 0);
     }
 
@@ -1439,6 +1574,8 @@ mod tests {
 
         assert_eq!(small_out, [18, 15]);
         assert!(!accelerator.has_worker_pool());
+        assert_eq!(accelerator.stats().parallel_policy_checks, 1);
+        assert_eq!(accelerator.stats().parallel_skipped_small, 1);
         assert_eq!(accelerator.stats().thread_pool_jobs, 0);
 
         let mut small_flat_out = [0; 2];
@@ -1448,6 +1585,8 @@ mod tests {
 
         assert_eq!(small_flat_out, [18, 15]);
         assert!(!accelerator.has_worker_pool());
+        assert_eq!(accelerator.stats().parallel_policy_checks, 2);
+        assert_eq!(accelerator.stats().parallel_skipped_small, 2);
         assert_eq!(accelerator.stats().thread_pool_jobs, 0);
 
         let large_rows = [
@@ -1465,6 +1604,9 @@ mod tests {
 
         assert_eq!(large_out, [18, 15, 20, 14, 27]);
         assert!(accelerator.has_worker_pool());
+        assert_eq!(accelerator.stats().parallel_policy_checks, 3);
+        assert_eq!(accelerator.stats().parallel_batches, 1);
+        assert_eq!(accelerator.stats().parallel_skipped_small, 2);
         assert_eq!(accelerator.stats().thread_pool_jobs, 2);
     }
 
@@ -1514,6 +1656,9 @@ mod tests {
         assert_eq!(accelerator.stats().flat_batch_calls, 0);
         assert_eq!(accelerator.stats().flat_batch_items, 0);
         assert_eq!(accelerator.stats().flatten_materializations, 1);
+        assert_eq!(accelerator.stats().parallel_policy_checks, 1);
+        assert_eq!(accelerator.stats().parallel_skipped_backend, 1);
+        assert_eq!(accelerator.stats().parallel_batches, 0);
         assert_eq!(
             accelerator.stats().flatten_bytes_copied,
             6 * std::mem::size_of::<i64>()
@@ -1568,6 +1713,9 @@ mod tests {
         assert_eq!(accelerator.stats().flatten_materializations, 0);
         assert_eq!(accelerator.stats().flatten_bytes_copied, 0);
         assert_eq!(accelerator.stats().result_bytes_copied, 0);
+        assert_eq!(accelerator.stats().parallel_policy_checks, 1);
+        assert_eq!(accelerator.stats().parallel_skipped_backend, 1);
+        assert_eq!(accelerator.stats().parallel_batches, 0);
     }
 
     #[test]
@@ -1615,6 +1763,8 @@ mod tests {
         assert_eq!(accelerator.stats().fallbacks, 3);
         assert_eq!(accelerator.stats().arg_stack_packs, 3);
         assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+        assert_eq!(accelerator.stats().parallel_policy_checks, 1);
+        assert_eq!(accelerator.stats().parallel_batches, 1);
         assert_eq!(accelerator.stats().thread_pool_jobs, 2);
     }
 }

@@ -128,6 +128,14 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `pure_config.worker_pool_active` makes this boundary visible: scalar calls,
   JIT-only helpers, and sub-threshold AOT/VM batches avoid worker-pool setup
   overhead, while parallel batches still create and report the pool.
+- Runtime pure batch parallelization now uses backend-aware weighted work units
+  instead of row count alone. The accelerator computes a deterministic helper
+  expression weight at construction time, then evaluates `rows * weight`
+  against a lower VM threshold and a higher AOT threshold; JIT flat batches stay
+  single native calls and report a backend skip instead of constructing the
+  worker pool. Runtime and bench JSON expose policy checks, weighted work,
+  parallel batches, backend skips, small-batch skips, and pool build time so
+  threshold decisions can be tuned from path-free measurements.
 - AOT pure scratch calls reset caller-owned slot buffers in place when the
   compiled slot count is unchanged, so repeated scalar and batch helper calls do
   not rebuild the slot vector before writing dynamic inputs.

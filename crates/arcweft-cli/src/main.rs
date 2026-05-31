@@ -1925,7 +1925,13 @@ fn add_pure_stats(total: &mut RuntimePureCallStats, stats: RuntimePureCallStats)
     total.arg_bytes_copied += stats.arg_bytes_copied;
     total.arg_bytes_borrowed += stats.arg_bytes_borrowed;
     total.result_bytes_copied += stats.result_bytes_copied;
+    total.parallel_policy_checks += stats.parallel_policy_checks;
+    total.parallel_work_units += stats.parallel_work_units;
+    total.parallel_batches += stats.parallel_batches;
+    total.parallel_skipped_backend += stats.parallel_skipped_backend;
+    total.parallel_skipped_small += stats.parallel_skipped_small;
     total.thread_pool_jobs += stats.thread_pool_jobs;
+    total.thread_pool_build_elapsed_ns += stats.thread_pool_build_elapsed_ns;
     total.fallbacks += stats.fallbacks;
 }
 
@@ -3401,7 +3407,13 @@ struct RuntimeBenchSamples {
     pure_jit_calls: Vec<usize>,
     pure_aot_calls: Vec<usize>,
     pure_vm_calls: Vec<usize>,
+    pure_parallel_policy_checks: Vec<usize>,
+    pure_parallel_work_units: Vec<usize>,
+    pure_parallel_batches: Vec<usize>,
+    pure_parallel_skipped_backend: Vec<usize>,
+    pure_parallel_skipped_small: Vec<usize>,
     pure_thread_pool_jobs: Vec<usize>,
+    pure_thread_pool_build_elapsed_ns: Vec<u128>,
     pure_arg_stack_packs: Vec<usize>,
     pure_arg_vec_allocations: Vec<usize>,
     pure_arg_bytes_copied: Vec<usize>,
@@ -3435,7 +3447,13 @@ impl RuntimeBenchSamples {
             pure_jit_calls: Vec::with_capacity(capacity),
             pure_aot_calls: Vec::with_capacity(capacity),
             pure_vm_calls: Vec::with_capacity(capacity),
+            pure_parallel_policy_checks: Vec::with_capacity(capacity),
+            pure_parallel_work_units: Vec::with_capacity(capacity),
+            pure_parallel_batches: Vec::with_capacity(capacity),
+            pure_parallel_skipped_backend: Vec::with_capacity(capacity),
+            pure_parallel_skipped_small: Vec::with_capacity(capacity),
             pure_thread_pool_jobs: Vec::with_capacity(capacity),
+            pure_thread_pool_build_elapsed_ns: Vec::with_capacity(capacity),
             pure_arg_stack_packs: Vec::with_capacity(capacity),
             pure_arg_vec_allocations: Vec::with_capacity(capacity),
             pure_arg_bytes_copied: Vec::with_capacity(capacity),
@@ -3486,8 +3504,20 @@ impl RuntimeBenchSamples {
         self.pure_jit_calls.push(trace.totals.pure.jit_calls);
         self.pure_aot_calls.push(trace.totals.pure.aot_calls);
         self.pure_vm_calls.push(trace.totals.pure.vm_calls);
+        self.pure_parallel_policy_checks
+            .push(trace.totals.pure.parallel_policy_checks);
+        self.pure_parallel_work_units
+            .push(trace.totals.pure.parallel_work_units);
+        self.pure_parallel_batches
+            .push(trace.totals.pure.parallel_batches);
+        self.pure_parallel_skipped_backend
+            .push(trace.totals.pure.parallel_skipped_backend);
+        self.pure_parallel_skipped_small
+            .push(trace.totals.pure.parallel_skipped_small);
         self.pure_thread_pool_jobs
             .push(trace.totals.pure.thread_pool_jobs);
+        self.pure_thread_pool_build_elapsed_ns
+            .push(trace.totals.pure.thread_pool_build_elapsed_ns);
         self.pure_arg_stack_packs
             .push(trace.totals.pure.arg_stack_packs);
         self.pure_arg_vec_allocations
@@ -3552,7 +3582,17 @@ impl RuntimeBenchSamples {
             pure_jit_calls_median: median_usize(&mut self.pure_jit_calls),
             pure_aot_calls_median: median_usize(&mut self.pure_aot_calls),
             pure_vm_calls_median: median_usize(&mut self.pure_vm_calls),
+            pure_parallel_policy_checks_median: median_usize(&mut self.pure_parallel_policy_checks),
+            pure_parallel_work_units_median: median_usize(&mut self.pure_parallel_work_units),
+            pure_parallel_batches_median: median_usize(&mut self.pure_parallel_batches),
+            pure_parallel_skipped_backend_median: median_usize(
+                &mut self.pure_parallel_skipped_backend,
+            ),
+            pure_parallel_skipped_small_median: median_usize(&mut self.pure_parallel_skipped_small),
             pure_thread_pool_jobs_median: median_usize(&mut self.pure_thread_pool_jobs),
+            pure_thread_pool_build_elapsed_ns_median: median_u128(
+                &mut self.pure_thread_pool_build_elapsed_ns,
+            ),
             pure_arg_stack_packs_median: median_usize(&mut self.pure_arg_stack_packs),
             pure_arg_vec_allocations_median: median_usize(&mut self.pure_arg_vec_allocations),
             pure_arg_bytes_copied_median: median_usize(&mut self.pure_arg_bytes_copied),

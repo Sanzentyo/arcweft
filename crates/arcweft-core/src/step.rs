@@ -103,7 +103,13 @@ pub struct RuntimePureCallStats {
     pub arg_bytes_copied: usize,
     pub arg_bytes_borrowed: usize,
     pub result_bytes_copied: usize,
+    pub parallel_policy_checks: usize,
+    pub parallel_work_units: usize,
+    pub parallel_batches: usize,
+    pub parallel_skipped_backend: usize,
+    pub parallel_skipped_small: usize,
     pub thread_pool_jobs: usize,
+    pub thread_pool_build_elapsed_ns: u128,
     pub fallbacks: usize,
 }
 
@@ -145,9 +151,27 @@ impl RuntimePureCallStats {
             result_bytes_copied: self
                 .result_bytes_copied
                 .saturating_sub(before.result_bytes_copied),
+            parallel_policy_checks: self
+                .parallel_policy_checks
+                .saturating_sub(before.parallel_policy_checks),
+            parallel_work_units: self
+                .parallel_work_units
+                .saturating_sub(before.parallel_work_units),
+            parallel_batches: self
+                .parallel_batches
+                .saturating_sub(before.parallel_batches),
+            parallel_skipped_backend: self
+                .parallel_skipped_backend
+                .saturating_sub(before.parallel_skipped_backend),
+            parallel_skipped_small: self
+                .parallel_skipped_small
+                .saturating_sub(before.parallel_skipped_small),
             thread_pool_jobs: self
                 .thread_pool_jobs
                 .saturating_sub(before.thread_pool_jobs),
+            thread_pool_build_elapsed_ns: self
+                .thread_pool_build_elapsed_ns
+                .saturating_sub(before.thread_pool_build_elapsed_ns),
             fallbacks: self.fallbacks.saturating_sub(before.fallbacks),
         }
     }

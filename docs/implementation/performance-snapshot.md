@@ -132,6 +132,23 @@ there is a measured hot path. The checked-in benches above confirm that `i32`,
 values, float literals, entity refs, and wide integer length paths run without
 argument-vector allocation or dense flatten materialization.
 
+Backend-aware pure batch parallel policy checks:
+
+```bash
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/009_nonuniform_map_pure_batch.arcw --json --iterations 6 --warmup 2 --samples 5 --steps 64 --max-ops 64 --pure-backend jit --pure-workers 4 --pure-batch-min-len 64
+cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/009_nonuniform_map_pure_batch.arcw --json --iterations 4 --warmup 1 --samples 5 --steps 64 --max-ops 64 --pure-backend aot --pure-workers 2 --pure-batch-min-len 1
+```
+
+| fixture | backend | median elapsed ns | batch items | policy checks | parallel batches | skipped backend | skipped small | weighted work units | thread pool jobs |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 009_nonuniform_map_pure_batch.arcw | jit | 11700 | 128 | 1 | 0 | 1 | 0 | 896 | 0 |
+| 009_nonuniform_map_pure_batch.arcw | aot | 72800 | 128 | 1 | 1 | 0 | 0 | 896 | 2 |
+
+The JIT run keeps the compiled flat batch as one native call and records the
+backend skip instead of touching the worker pool. The AOT run uses the weighted
+work threshold and creates two jobs for the same 128-row workload. The source
+field in both JSON reports is the fixture filename only.
+
 ## 2026-05-30 JST
 
 Host summary reported by Arcweft:
