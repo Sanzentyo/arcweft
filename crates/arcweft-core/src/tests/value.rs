@@ -1,7 +1,7 @@
 use crate::{
     time::LogicalDuration,
     value::{
-        DenseSeqKind, RuntimeBinding, RuntimeEnv, RuntimeSeq, RuntimeValue,
+        DenseSeqKind, RuntimeBinding, RuntimeEnv, RuntimeFieldValue, RuntimeSeq, RuntimeValue,
         runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
         runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
         runtime_sequence_dense_float_literals, runtime_sequence_dense_i8,
@@ -486,6 +486,47 @@ fn literal_and_repeat_sequences_choose_dense_scalar_storage() {
         entity_seq.as_entity_refs(),
         Some(["char.alice".to_owned(), "char.alice".to_owned()].as_slice())
     );
+}
+
+#[test]
+fn compound_literal_sequences_remain_value_sequences() {
+    let RuntimeValue::Seq(tuple_seq) = runtime_sequence_from_literal_values(vec![
+        RuntimeValue::Tuple(vec![RuntimeValue::Int(1), RuntimeValue::Bool(true)]),
+        RuntimeValue::Tuple(vec![RuntimeValue::Int(2), RuntimeValue::Bool(false)]),
+    ]) else {
+        panic!("tuple literals lower to a sequence");
+    };
+    assert_eq!(tuple_seq.dense_kind(), None);
+
+    let RuntimeValue::Seq(record_seq) = runtime_sequence_from_literal_values(vec![
+        RuntimeValue::Record(vec![RuntimeFieldValue {
+            name: "score".to_owned(),
+            value: RuntimeValue::Int(1),
+        }]),
+        RuntimeValue::Record(vec![RuntimeFieldValue {
+            name: "score".to_owned(),
+            value: RuntimeValue::Int(2),
+        }]),
+    ]) else {
+        panic!("record literals lower to a sequence");
+    };
+    assert_eq!(record_seq.dense_kind(), None);
+
+    let RuntimeValue::Seq(variant_seq) = runtime_sequence_from_literal_values(vec![
+        RuntimeValue::Variant {
+            path: None,
+            name: "Some".to_owned(),
+            payload: Some(Box::new(RuntimeValue::Int(1))),
+        },
+        RuntimeValue::Variant {
+            path: None,
+            name: "Some".to_owned(),
+            payload: Some(Box::new(RuntimeValue::Int(2))),
+        },
+    ]) else {
+        panic!("variant literals lower to a sequence");
+    };
+    assert_eq!(variant_seq.dense_kind(), None);
 }
 
 #[test]

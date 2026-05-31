@@ -101,6 +101,19 @@ same-line `with { ... }` attachments and trailing bare scopes reuse that scan
 for the brace-depth check and the split itself; multiline continuations add the
 stored per-line punctuation summaries before the final fragment split.
 
+Auto pure backend tiering now separates cold scalar execution from warm flat
+batch execution. With `--pure-backend auto`, the scalar for-loop pure fixture
+kept one helper on typed AOT and did not attempt JIT compilation:
+`003_for_pure_jit.arcw` reported median elapsed time `47600 ns`,
+`pure_calls_median = 16`, `pure_aot_calls_median = 16`,
+`pure_jit_calls_median = 0`, `auto_aot_selected = 1`,
+`auto_jit_deferred = 1`, and `jit_attempts = 0`. The large nonuniform map
+fixture started on AOT but promoted the same helper to JIT once the flat-batch
+work crossed the Auto threshold: `009_nonuniform_map_pure_batch.arcw` reported
+median elapsed time `14200 ns`, `pure_batch_items_median = 128`,
+`pure_jit_calls_median = 128`, `auto_jit_promotions = 1`, `jit_attempts = 1`,
+and `aot_attempts = 1`.
+
 Dense scalar sequence benches:
 
 ```bash
@@ -114,12 +127,12 @@ cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/b
 
 | fixture | status | median elapsed ns | executed ops | per op ns | parse ns | typecheck ns | runtime plan ns | typecheck exprs | type judgments | arg vec allocs | flatten materializations |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 010_dense_i32_sum.arcw | measured | 8100 | 4 | 2025 | 3010400 | 192800 | 288900 | 6 | 9 | 0 | 0 |
-| 011_dense_u64_sum.arcw | measured | 8200 | 4 | 2050 | 2887000 | 185500 | 244700 | 6 | 9 | 0 | 0 |
-| 012_dense_integer_widths_sum.arcw | measured | 19600 | 10 | 1960 | 4346200 | 204600 | 303900 | 30 | 39 | 0 | 0 |
-| 013_dense_scalar_len.arcw | measured | 16700 | 8 | 2087 | 1600800 | 225400 | 367400 | 54 | 61 | 0 | 0 |
-| 014_dense_textual_scalar_len.arcw | measured | 17300 | 7 | 2471 | 1632400 | 255600 | 450400 | 21 | 27 | 0 | 0 |
-| 015_dense_wide_numeric_len.arcw | measured | 14200 | 7 | 2028 | 1469700 | 183500 | 300900 | 18 | 24 | 0 | 0 |
+| 010_dense_i32_sum.arcw | measured | 7600 | 4 | 1900 | 2882500 | 168200 | 259200 | 6 | 9 | 0 | 0 |
+| 011_dense_u64_sum.arcw | measured | 8000 | 4 | 2000 | 2726500 | 237500 | 411000 | 6 | 9 | 0 | 0 |
+| 012_dense_integer_widths_sum.arcw | measured | 19700 | 10 | 1970 | 4429300 | 331100 | 452800 | 30 | 39 | 0 | 0 |
+| 013_dense_scalar_len.arcw | measured | 16000 | 8 | 2000 | 2002000 | 335600 | 572800 | 54 | 61 | 0 | 0 |
+| 014_dense_textual_scalar_len.arcw | measured | 17200 | 7 | 2457 | 1305500 | 270400 | 420800 | 21 | 27 | 0 | 0 |
+| 015_dense_wide_numeric_len.arcw | measured | 13600 | 7 | 1942 | 1424200 | 164300 | 263000 | 18 | 24 | 0 | 0 |
 
 The dense eligibility rule is scalar-first: deterministic homogeneous scalar
 runtime values use `RuntimeSeq::Dense(DenseSeq::...)`, with generic

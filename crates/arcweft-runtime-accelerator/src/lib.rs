@@ -52,6 +52,12 @@ pub struct RuntimePureCompileStats {
     pub aot_attempts: usize,
     pub aot_successes: usize,
     pub aot_failures: usize,
+    pub auto_jit_selected: usize,
+    pub auto_aot_selected: usize,
+    pub auto_vm_selected: usize,
+    pub auto_jit_deferred: usize,
+    pub auto_jit_promotions: usize,
+    pub auto_jit_skipped_small: usize,
     pub cache_hits: usize,
     pub cache_misses: usize,
     pub compile_elapsed_ns: u128,
@@ -75,6 +81,11 @@ pub struct RuntimePureAccelerator {
 enum RuntimePureCacheEntry {
     Jit(Box<CompiledPureI64Inputs>),
     Aot(AotPureI64Plan),
+    AutoAot {
+        aot: AotPureI64Plan,
+        jit: Option<Box<CompiledPureI64Inputs>>,
+        jit_failed: bool,
+    },
     Vm,
 }
 
@@ -85,6 +96,23 @@ enum RuntimeBatchBackendKind {
     Vm,
     Missing,
 }
+
+#[derive(Clone, Copy)]
+struct FlatBatchSumShape<'a> {
+    flat_inputs: &'a [i64],
+    arity: usize,
+    rows: usize,
+}
+
+#[derive(Clone, Copy)]
+struct FlatBatchSumPolicy<'a> {
+    pool: Option<&'a ThreadPool>,
+    wants_parallel: bool,
+    parallel_jobs: usize,
+}
+
+const AUTO_EAGER_JIT_WORK_UNITS: usize = 64;
+const AUTO_JIT_FLAT_BATCH_WORK_UNITS: usize = 512;
 
 impl fmt::Debug for RuntimePureAccelerator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -122,7 +150,16 @@ impl RuntimePureAccelerator {
         let resolved_workers = resolve_worker_count(config.workers);
         let mut cache = helper_cache_slots(helpers);
         for helper in helpers {
-            cache[helper.id.0] = Some(compile_helper(config.backend, helper, &mut compile_stats));
+            let work_units = helper_work_units
+                .get(helper.id.0)
+                .copied()
+                .unwrap_or_else(|| runtime_expr_work_units(&helper.expr));
+            cache[helper.id.0] = Some(compile_helper(
+                config.backend,
+                helper,
+                work_units,
+                &mut compile_stats,
+            ));
         }
         compile_stats.compile_elapsed_ns = started.elapsed().as_nanos();
         Self {
@@ -220,6 +257,26 @@ impl RuntimePureAccelerator {
                     call_aot_batch(compiled, rows, out, &mut self.aot_i64_slots)
                 }
             }
+            Some(RuntimePureCacheEntry::AutoAot { aot, jit, .. }) => {
+                self.compile_stats.cache_hits += 1;
+                if let Some(compiled) = jit {
+                    self.stats.jit_calls += rows.len();
+                    self.stats.flatten_materializations += usize::from(!rows.is_empty());
+                    self.stats.flatten_bytes_copied += rows
+                        .iter()
+                        .map(|row| row.len() * std::mem::size_of::<i64>())
+                        .sum::<usize>();
+                    call_jit_batch(compiled, rows, out, helper, &mut self.flat_i64_inputs)
+                } else {
+                    self.stats.aot_calls += rows.len();
+                    if wants_parallel {
+                        self.stats.thread_pool_jobs += self.parallel_jobs(rows.len());
+                        call_aot_batch_parallel(self.pool.as_ref(), aot, rows, out)
+                    } else {
+                        call_aot_batch(aot, rows, out, &mut self.aot_i64_slots)
+                    }
+                }
+            }
             Some(RuntimePureCacheEntry::Vm) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.vm_calls += rows.len();
@@ -247,33 +304,13 @@ impl RuntimePureAccelerator {
         arity: usize,
         out: &mut [i64],
     ) -> Result<(), RuntimeEvalError> {
-        if arity > RuntimeI64Args::MAX {
-            return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.name.clone(),
-                max: RuntimeI64Args::MAX,
-                found: arity,
-            });
-        }
-        if flat_inputs.len() != out.len().saturating_mul(arity) {
-            return Err(RuntimeEvalError::UnsupportedPure {
-                name: helper.name.clone(),
-                reason: format!(
-                    "pure flat batch expected {} input value(s), got {}",
-                    out.len().saturating_mul(arity),
-                    flat_inputs.len()
-                ),
-            });
-        }
-        self.stats.batch_calls += 1;
-        self.stats.batch_items += out.len();
-        self.stats.flat_batch_calls += 1;
-        self.stats.flat_batch_items += out.len();
-        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
-        self.stats.pure_calls += out.len();
-        self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
-        self.stats.result_bytes_copied += std::mem::size_of_val(out);
+        validate_flat_batch_shape(helper, flat_inputs.len(), arity, out.len())?;
+        self.record_flat_batch_stats(flat_inputs, out.len(), true);
         if out.is_empty() {
             return Ok(());
+        }
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_flat_batch(helper, out.len());
         }
         let backend = self.batch_backend_kind(helper.id);
         let wants_parallel = self.should_parallelize_batch(helper, out.len(), backend);
@@ -307,6 +344,32 @@ impl RuntimePureAccelerator {
                     call_aot_flat_batch(compiled, flat_inputs, arity, out, &mut self.aot_i64_slots)
                 }
             }
+            Some(RuntimePureCacheEntry::AutoAot { aot, jit, .. }) => {
+                self.compile_stats.cache_hits += 1;
+                if let Some(compiled) = jit {
+                    self.stats.jit_calls += out.len();
+                    compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
+                        RuntimeEvalError::UnsupportedPure {
+                            name: helper.name.clone(),
+                            reason: error.to_string(),
+                        }
+                    })
+                } else {
+                    self.stats.aot_calls += out.len();
+                    if wants_parallel {
+                        self.stats.thread_pool_jobs += self.parallel_jobs(out.len());
+                        call_aot_flat_batch_parallel(
+                            self.pool.as_ref(),
+                            aot,
+                            flat_inputs,
+                            arity,
+                            out,
+                        )
+                    } else {
+                        call_aot_flat_batch(aot, flat_inputs, arity, out, &mut self.aot_i64_slots)
+                    }
+                }
+            }
             Some(RuntimePureCacheEntry::Vm) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.vm_calls += out.len();
@@ -334,67 +397,58 @@ impl RuntimePureAccelerator {
         arity: usize,
         rows: usize,
     ) -> Result<i64, RuntimeEvalError> {
-        if arity > RuntimeI64Args::MAX {
-            return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.name.clone(),
-                max: RuntimeI64Args::MAX,
-                found: arity,
-            });
-        }
-        if flat_inputs.len() != rows.saturating_mul(arity) {
-            return Err(RuntimeEvalError::UnsupportedPure {
-                name: helper.name.clone(),
-                reason: format!(
-                    "pure flat batch expected {} input value(s), got {}",
-                    rows.saturating_mul(arity),
-                    flat_inputs.len()
-                ),
-            });
-        }
-        self.stats.batch_calls += 1;
-        self.stats.batch_items += rows;
-        self.stats.flat_batch_calls += 1;
-        self.stats.flat_batch_items += rows;
-        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
-        self.stats.pure_calls += rows;
-        self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        validate_flat_batch_shape(helper, flat_inputs.len(), arity, rows)?;
+        self.record_flat_batch_stats(flat_inputs, rows, false);
         if rows == 0 {
             return Ok(0);
+        }
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_flat_batch(helper, rows);
         }
         let backend = self.batch_backend_kind(helper.id);
         let wants_parallel = self.should_parallelize_batch(helper, rows, backend);
         if wants_parallel {
             self.ensure_thread_pool();
         }
+        let shape = FlatBatchSumShape {
+            flat_inputs,
+            arity,
+            rows,
+        };
+        let policy = FlatBatchSumPolicy {
+            pool: self.pool.as_ref(),
+            wants_parallel,
+            parallel_jobs: self.parallel_jobs(rows),
+        };
         match cache_entry(&self.cache, helper.id) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += rows;
-                compiled
-                    .call_flat_batch_sum(flat_inputs, rows)
-                    .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
-                        reason: error.to_string(),
-                    })
+                call_jit_flat_batch_sum(compiled, helper, flat_inputs, rows)
             }
             Some(RuntimePureCacheEntry::Aot(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.aot_calls += rows;
-                if wants_parallel {
-                    self.stats.thread_pool_jobs += self.parallel_jobs(rows);
-                    call_aot_flat_batch_sum_parallel(
-                        self.pool.as_ref(),
-                        compiled,
-                        flat_inputs,
-                        arity,
-                        rows,
-                    )
+                call_aot_flat_batch_sum_with_policy(
+                    policy,
+                    &mut self.stats,
+                    compiled,
+                    shape,
+                    &mut self.aot_i64_slots,
+                )
+            }
+            Some(RuntimePureCacheEntry::AutoAot { aot, jit, .. }) => {
+                self.compile_stats.cache_hits += 1;
+                if let Some(compiled) = jit {
+                    self.stats.jit_calls += rows;
+                    call_jit_flat_batch_sum(compiled, helper, flat_inputs, rows)
                 } else {
-                    call_aot_flat_batch_sum(
-                        compiled,
-                        flat_inputs,
-                        arity,
-                        rows,
+                    self.stats.aot_calls += rows;
+                    call_aot_flat_batch_sum_with_policy(
+                        policy,
+                        &mut self.stats,
+                        aot,
+                        shape,
                         &mut self.aot_i64_slots,
                     )
                 }
@@ -403,18 +457,13 @@ impl RuntimePureAccelerator {
                 self.compile_stats.cache_hits += 1;
                 self.stats.vm_calls += rows;
                 self.stats.fallbacks += rows;
-                if wants_parallel {
-                    self.stats.thread_pool_jobs += self.parallel_jobs(rows);
-                    call_vm_flat_batch_sum_parallel(
-                        self.pool.as_ref(),
-                        helper,
-                        flat_inputs,
-                        arity,
-                        rows,
-                    )
-                } else {
-                    call_vm_flat_batch_sum(helper, flat_inputs, arity, rows, &mut self.vm_scratch)
-                }
+                call_vm_flat_batch_sum_with_policy(
+                    policy,
+                    &mut self.stats,
+                    helper,
+                    shape,
+                    &mut self.vm_scratch,
+                )
             }
             None => {
                 self.compile_stats.cache_misses += 1;
@@ -469,6 +518,22 @@ impl RuntimePureAccelerator {
                 let (value, _) = compiled.call_with_inputs_scratch(row, &mut self.aot_i64_slots)?;
                 value
             }
+            Some(RuntimePureCacheEntry::AutoAot { aot, jit, .. }) => {
+                self.compile_stats.cache_hits += 1;
+                if let Some(compiled) = jit {
+                    self.stats.jit_calls += rows;
+                    compiled
+                        .call(row)
+                        .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                            name: helper.name.clone(),
+                            reason: error.to_string(),
+                        })?
+                } else {
+                    self.stats.aot_calls += rows;
+                    let (value, _) = aot.call_with_inputs_scratch(row, &mut self.aot_i64_slots)?;
+                    value
+                }
+            }
             Some(RuntimePureCacheEntry::Vm) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.vm_calls += rows;
@@ -500,8 +565,42 @@ impl RuntimePureAccelerator {
         match cache_entry(&self.cache, id) {
             Some(RuntimePureCacheEntry::Jit(_)) => RuntimeBatchBackendKind::Jit,
             Some(RuntimePureCacheEntry::Aot(_)) => RuntimeBatchBackendKind::Aot,
+            Some(RuntimePureCacheEntry::AutoAot { jit, .. }) => {
+                if jit.is_some() {
+                    RuntimeBatchBackendKind::Jit
+                } else {
+                    RuntimeBatchBackendKind::Aot
+                }
+            }
             Some(RuntimePureCacheEntry::Vm) => RuntimeBatchBackendKind::Vm,
             None => RuntimeBatchBackendKind::Missing,
+        }
+    }
+
+    fn promote_auto_jit_for_flat_batch(&mut self, helper: &RuntimePureHelper, rows: usize) {
+        let work_units = rows.saturating_mul(self.helper_work_units(helper));
+        let threshold = AUTO_JIT_FLAT_BATCH_WORK_UNITS.max(1);
+        if work_units <= threshold {
+            self.compile_stats.auto_jit_skipped_small += 1;
+            return;
+        }
+        let Some(RuntimePureCacheEntry::AutoAot {
+            jit, jit_failed, ..
+        }) = self.cache.get_mut(helper.id.0).and_then(Option::as_mut)
+        else {
+            return;
+        };
+        if jit.is_some() || *jit_failed {
+            return;
+        }
+        let request = compile_request(helper);
+        match compile_jit(&request, helper, &mut self.compile_stats) {
+            Some(RuntimePureCacheEntry::Jit(compiled)) => {
+                *jit = Some(compiled);
+                self.compile_stats.auto_jit_promotions += 1;
+            }
+            Some(_) => unreachable!("compile_jit only returns JIT entries"),
+            None => *jit_failed = true,
         }
     }
 
@@ -559,6 +658,19 @@ impl RuntimePureAccelerator {
     fn parallel_jobs(&self, len: usize) -> usize {
         self.resolved_workers.min(len)
     }
+
+    fn record_flat_batch_stats(&mut self, flat_inputs: &[i64], rows: usize, copies_result: bool) {
+        self.stats.batch_calls += 1;
+        self.stats.batch_items += rows;
+        self.stats.flat_batch_calls += 1;
+        self.stats.flat_batch_items += rows;
+        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        self.stats.pure_calls += rows;
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        if copies_result {
+            self.stats.result_bytes_copied += rows * std::mem::size_of::<i64>();
+        }
+    }
 }
 
 impl RuntimePureCallBackend for RuntimePureAccelerator {
@@ -587,6 +699,22 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                 compiled
                     .call_with_inputs_scratch(args.as_slice(), &mut self.aot_i64_slots)
                     .map(|(value, _)| Some(value))
+            }
+            Some(RuntimePureCacheEntry::AutoAot { aot, jit, .. }) => {
+                self.compile_stats.cache_hits += 1;
+                if let Some(compiled) = jit {
+                    self.stats.jit_calls += 1;
+                    compiled.call_i64_args(args).map(Some).map_err(|error| {
+                        RuntimeEvalError::UnsupportedPure {
+                            name: helper.name.clone(),
+                            reason: error.to_string(),
+                        }
+                    })
+                } else {
+                    self.stats.aot_calls += 1;
+                    aot.call_with_inputs_scratch(args.as_slice(), &mut self.aot_i64_slots)
+                        .map(|(value, _)| Some(value))
+                }
             }
             Some(RuntimePureCacheEntry::Vm) => {
                 self.compile_stats.cache_hits += 1;
@@ -635,6 +763,22 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                 compiled
                     .call_with_inputs_scratch(args, &mut self.aot_i64_slots)
                     .map(|(value, _)| Some(value))
+            }
+            Some(RuntimePureCacheEntry::AutoAot { aot, jit, .. }) => {
+                self.compile_stats.cache_hits += 1;
+                if let Some(compiled) = jit {
+                    self.stats.jit_calls += 1;
+                    compiled.call(args).map(Some).map_err(|error| {
+                        RuntimeEvalError::UnsupportedPure {
+                            name: helper.name.clone(),
+                            reason: error.to_string(),
+                        }
+                    })
+                } else {
+                    self.stats.aot_calls += 1;
+                    aot.call_with_inputs_scratch(args, &mut self.aot_i64_slots)
+                        .map(|(value, _)| Some(value))
+                }
             }
             Some(RuntimePureCacheEntry::Vm) => {
                 self.compile_stats.cache_hits += 1;
@@ -780,9 +924,13 @@ fn runtime_value_kind(value: &RuntimeValue) -> String {
 fn compile_helper(
     mode: RuntimePureBackendMode,
     helper: &RuntimePureHelper,
+    work_units: usize,
     stats: &mut RuntimePureCompileStats,
 ) -> RuntimePureCacheEntry {
     if mode == RuntimePureBackendMode::Vm || !helper_has_only_i64_inputs(helper) {
+        if mode == RuntimePureBackendMode::Auto {
+            stats.auto_vm_selected += 1;
+        }
         return RuntimePureCacheEntry::Vm;
     }
     let request = compile_request(helper);
@@ -794,9 +942,65 @@ fn compile_helper(
         RuntimePureBackendMode::Jit => {
             compile_jit(&request, helper, stats).unwrap_or(RuntimePureCacheEntry::Vm)
         }
-        RuntimePureBackendMode::Auto => compile_jit(&request, helper, stats)
-            .or_else(|| compile_aot(&request, helper, stats))
-            .unwrap_or(RuntimePureCacheEntry::Vm),
+        RuntimePureBackendMode::Auto => compile_auto(&request, helper, work_units, stats),
+    }
+}
+
+fn validate_flat_batch_shape(
+    helper: &RuntimePureHelper,
+    flat_input_len: usize,
+    arity: usize,
+    rows: usize,
+) -> Result<(), RuntimeEvalError> {
+    if arity > RuntimeI64Args::MAX {
+        return Err(RuntimeEvalError::TooManyPureArgs {
+            helper: helper.name.clone(),
+            max: RuntimeI64Args::MAX,
+            found: arity,
+        });
+    }
+    let expected = rows.saturating_mul(arity);
+    if flat_input_len != expected {
+        return Err(RuntimeEvalError::UnsupportedPure {
+            name: helper.name.clone(),
+            reason: format!(
+                "pure flat batch expected {expected} input value(s), got {flat_input_len}"
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn compile_auto(
+    request: &PureFunctionRequest,
+    helper: &RuntimePureHelper,
+    work_units: usize,
+    stats: &mut RuntimePureCompileStats,
+) -> RuntimePureCacheEntry {
+    if work_units >= AUTO_EAGER_JIT_WORK_UNITS {
+        stats.auto_jit_selected += 1;
+        return compile_jit(request, helper, stats)
+            .or_else(|| compile_aot(request, helper, stats))
+            .unwrap_or_else(|| {
+                stats.auto_vm_selected += 1;
+                RuntimePureCacheEntry::Vm
+            });
+    }
+    match compile_aot(request, helper, stats) {
+        Some(RuntimePureCacheEntry::Aot(aot)) => {
+            stats.auto_aot_selected += 1;
+            stats.auto_jit_deferred += 1;
+            RuntimePureCacheEntry::AutoAot {
+                aot,
+                jit: None,
+                jit_failed: false,
+            }
+        }
+        Some(_) => unreachable!("compile_aot only returns AOT entries"),
+        None => {
+            stats.auto_vm_selected += 1;
+            RuntimePureCacheEntry::Vm
+        }
     }
 }
 
@@ -984,6 +1188,20 @@ fn call_jit_batch(
         })
 }
 
+fn call_jit_flat_batch_sum(
+    compiled: &CompiledPureI64Inputs,
+    helper: &RuntimePureHelper,
+    flat_inputs: &[i64],
+    rows: usize,
+) -> Result<i64, RuntimeEvalError> {
+    compiled
+        .call_flat_batch_sum(flat_inputs, rows)
+        .map_err(|error| RuntimeEvalError::UnsupportedPure {
+            name: helper.name.clone(),
+            reason: error.to_string(),
+        })
+}
+
 fn call_aot_batch(
     compiled: &AotPureI64Plan,
     rows: &[RuntimeI64Args],
@@ -1132,6 +1350,27 @@ fn call_aot_flat_batch_sum_parallel(
     match pool {
         Some(pool) => pool.install(run),
         None => run(),
+    }
+}
+
+fn call_aot_flat_batch_sum_with_policy(
+    policy: FlatBatchSumPolicy<'_>,
+    stats: &mut RuntimePureCallStats,
+    compiled: &AotPureI64Plan,
+    shape: FlatBatchSumShape<'_>,
+    slots: &mut Vec<i64>,
+) -> Result<i64, RuntimeEvalError> {
+    if policy.wants_parallel {
+        stats.thread_pool_jobs += policy.parallel_jobs;
+        call_aot_flat_batch_sum_parallel(
+            policy.pool,
+            compiled,
+            shape.flat_inputs,
+            shape.arity,
+            shape.rows,
+        )
+    } else {
+        call_aot_flat_batch_sum(compiled, shape.flat_inputs, shape.arity, shape.rows, slots)
     }
 }
 
@@ -1325,6 +1564,27 @@ fn call_vm_flat_batch_sum_parallel(
     }
 }
 
+fn call_vm_flat_batch_sum_with_policy(
+    policy: FlatBatchSumPolicy<'_>,
+    stats: &mut RuntimePureCallStats,
+    helper: &RuntimePureHelper,
+    shape: FlatBatchSumShape<'_>,
+    scratch: &mut VmPureFunctionScratch,
+) -> Result<i64, RuntimeEvalError> {
+    if policy.wants_parallel {
+        stats.thread_pool_jobs += policy.parallel_jobs;
+        call_vm_flat_batch_sum_parallel(
+            policy.pool,
+            helper,
+            shape.flat_inputs,
+            shape.arity,
+            shape.rows,
+        )
+    } else {
+        call_vm_flat_batch_sum(helper, shape.flat_inputs, shape.arity, shape.rows, scratch)
+    }
+}
+
 fn compile_request(helper: &RuntimePureHelper) -> PureFunctionRequest {
     PureFunctionRequest::new(
         helper.name.clone(),
@@ -1357,8 +1617,12 @@ impl RuntimePureAccelerator {
         let mut vm = 0;
         for entry in self.cache.iter().filter_map(Option::as_ref) {
             match entry {
-                RuntimePureCacheEntry::Jit(_) => jit += 1,
-                RuntimePureCacheEntry::Aot(_) => aot += 1,
+                RuntimePureCacheEntry::Jit(_)
+                | RuntimePureCacheEntry::AutoAot { jit: Some(_), .. } => jit += 1,
+                RuntimePureCacheEntry::Aot(_)
+                | RuntimePureCacheEntry::AutoAot { jit: None, .. } => {
+                    aot += 1;
+                }
                 RuntimePureCacheEntry::Vm => vm += 1,
             }
         }
@@ -1405,7 +1669,7 @@ mod tests {
     };
 
     #[test]
-    fn auto_accelerator_calls_jit_without_value_vec_allocation() {
+    fn auto_accelerator_uses_aot_for_cold_scalar_calls_without_value_vec_allocation() {
         let helper = RuntimePureHelper {
             id: RuntimePureHelperId(0),
             name: "score".to_owned(),
@@ -1443,7 +1707,63 @@ mod tests {
         assert_eq!(accelerator.stats().result_bytes_copied, 0);
         assert!(accelerator.resolved_worker_count() >= 1);
         assert!(!accelerator.has_worker_pool());
+        assert_eq!(accelerator.summary().aot, 1);
+        assert_eq!(accelerator.summary().jit, 0);
+        assert_eq!(accelerator.compile_stats().auto_aot_selected, 1);
+        assert_eq!(accelerator.compile_stats().auto_jit_deferred, 1);
+    }
+
+    #[test]
+    fn auto_accelerator_promotes_large_flat_batches_to_jit() {
+        let helper = RuntimePureHelper {
+            id: RuntimePureHelperId(0),
+            name: "score".to_owned(),
+            input_names: vec!["base".to_owned(), "bonus".to_owned()],
+            input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
+            expr: RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+                op: RuntimeBinaryOp::Mul,
+                rhs: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::Int(2))),
+                }),
+            },
+            scalar_eval_supported: true,
+            origin: RuntimePureHelperOrigin::Annotated,
+        };
+        let mut accelerator = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                backend: RuntimePureBackendMode::Auto,
+                workers: RuntimePureWorkerCount::Fixed(1),
+                batch_min_len: 1024,
+            },
+            std::slice::from_ref(&helper),
+        );
+        let mut flat_inputs = Vec::new();
+        for value in 1..=128 {
+            flat_inputs.extend([value, 2]);
+        }
+        let mut out = [0; 128];
+
+        accelerator
+            .call_i64_flat_batch(&helper, &flat_inputs, 2, &mut out)
+            .expect("large auto flat batch succeeds");
+
+        assert_eq!(out[0], 4);
+        assert_eq!(out[127], 512);
+        assert_eq!(accelerator.stats().jit_calls, 128);
+        assert_eq!(accelerator.stats().aot_calls, 0);
+        assert_eq!(accelerator.stats().arg_vec_allocations, 0);
+        assert_eq!(accelerator.stats().flatten_materializations, 0);
+        assert_eq!(accelerator.stats().flatten_bytes_copied, 0);
+        assert_eq!(
+            accelerator.stats().flat_batch_bytes_borrowed,
+            flat_inputs.len() * std::mem::size_of::<i64>()
+        );
         assert_eq!(accelerator.summary().jit, 1);
+        assert_eq!(accelerator.compile_stats().auto_aot_selected, 1);
+        assert_eq!(accelerator.compile_stats().auto_jit_promotions, 1);
     }
 
     #[test]

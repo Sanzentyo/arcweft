@@ -178,14 +178,16 @@ state machine for unsupported or stateful cases. JSON reports
 `executor = "bytecode_vm"` or `executor = "aot"` so performance and correctness
 runs can confirm the execution tier. `--pure-backend auto` is the default and
 lets ordinary flow code call lowered pure helpers through the runtime
-accelerator cache. Supported deterministic `i64` helpers use JIT first, then
-AOT, then VM; `--pure-backend vm|aot|jit` pins that selection for measurement.
+accelerator cache. Supported deterministic `i64` helpers start on the cold AOT
+tier, then promote large flat batches to JIT; unsupported helpers stay on the
+VM. `--pure-backend vm|aot|jit` pins that selection for measurement.
 Per-step JSON includes child fiber counts and `stats.pure` counters for scalar
 and batch pure calls, batch item counts, backend call counts, stack-packed
 integer arguments, copied argument/result bytes, thread-pool jobs, Vec argument
 allocations, and fallback counts. Executor JSON also reports the selected pure backend, worker policy,
-resolved worker count, per-worker batch threshold, helper acceleration summary, compile
-attempts, cache hits and misses, and compile elapsed time. `--pure-workers auto|N` controls the runtime
+resolved worker count, per-worker batch threshold, helper acceleration summary,
+compile attempts, Auto tier decisions/promotions, cache hits and misses, and
+compile elapsed time. `--pure-workers auto|N` controls the runtime
 accelerator's Rayon pool for batchable pure helpers. `--pure-batch-min-len N`
 sets the minimum rows per resolved worker before the dedicated pool is used. If `--entry` or
 `--flow` is omitted, the first lowered flow is used as a deterministic fallback

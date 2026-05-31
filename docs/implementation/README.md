@@ -979,6 +979,11 @@ Current high-confidence state:
   entries, line-task groups, and source/stream plans. `arcw bench` and
   `arcw profile` therefore exercise the same automatic pure JIT/AOT call path
   as `arcw run`, including natural `for` loop bodies that call pure helpers.
+  Auto pure helpers now separate cold and warm tiers: supported i64 helpers
+  start from typed AOT with JIT deferred, and large flat batches promote the
+  helper to JIT at runtime. Executor JSON reports the Auto decisions and
+  promotions so the JIT compile cost stays visible instead of being hidden
+  inside the default path.
 - Gap audit result: broad runtime docs still exceed the Phase 2.0 headless
   target. Full story VM value execution, complete expression evaluation, source
   adapter execution, hook/memo runtime tables, save/replay traces, activities,
