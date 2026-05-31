@@ -5,7 +5,7 @@ use super::{
 use crate::aot::{AotDispatchShape, AotProgram, aot_linear_supported_op};
 use crate::effect::LineEffectRequest;
 use crate::pattern::RuntimePattern;
-use crate::pure::RuntimePureCallBackend;
+use crate::pure::RuntimeCallBackend;
 use crate::value::{RuntimeBinding, RuntimeExpr};
 
 enum AotLinearStepOp {
@@ -81,7 +81,7 @@ impl Engine {
         input: RuntimeStepInput,
         root_bindings: &[crate::value::RuntimeBinding],
         options: RuntimeStepOptions,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
         let mut output = RuntimeStepOutput::default();
         let mut executed_ops = 0;
@@ -178,7 +178,7 @@ impl Engine {
         op: AotLinearStepOp,
         next_op_index: usize,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) {
         match op {
             AotLinearStepOp::Bind(bindings) => {

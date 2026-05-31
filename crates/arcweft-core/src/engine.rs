@@ -6,7 +6,7 @@ use crate::plan::{
     ChoiceRuntimeOption, FlowEvent, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeMatchArm,
     RuntimeMatchSelection, RuntimePlan,
 };
-use crate::pure::{RuntimePureCallBackend, VmRuntimePureCallBackend};
+use crate::pure::{RuntimeCallBackend, VmRuntimePureCallBackend};
 use crate::source::{
     RuntimeSourceEvent, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp, SourcePlan,
     SourcePolicy, SourceRuntimeState, normalize_source_events,
@@ -355,7 +355,7 @@ impl Engine {
         &mut self,
         input: RuntimeStepInput,
         options: RuntimeStepOptions,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
         self.step_with_root_bindings_and_pure_backend(input, &[], options, pure_backend)
     }
@@ -365,7 +365,7 @@ impl Engine {
         mut input: RuntimeStepInput,
         root_bindings: &[RuntimeBinding],
         options: RuntimeStepOptions,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
         let mut output = RuntimeStepOutput::default();
         let mut executed_ops = 0;
@@ -423,7 +423,7 @@ impl Engine {
         input: &RuntimeStepInput,
         events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) {
         if self.run_child_next && self.step_next_child_fiber(input, events, output, pure_backend) {
             self.run_child_next = false;
@@ -495,7 +495,7 @@ impl Engine {
         input: &RuntimeStepInput,
         events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
         let Some(mut child) = self.child_fibers.pop_front() else {
             return false;
@@ -519,7 +519,7 @@ impl Engine {
         input: &RuntimeStepInput,
         events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) {
         if self.resume_suspended(input, events, output, pure_backend) {
             return;

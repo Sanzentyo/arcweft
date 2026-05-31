@@ -2,7 +2,7 @@ use crate::aot::AotProgram;
 use crate::bytecode::BytecodeProgram;
 use crate::engine::{Engine, FlowFiber};
 use crate::plan::{RuntimePlan, RuntimePlanError};
-use crate::pure::RuntimePureCallBackend;
+use crate::pure::RuntimeCallBackend;
 use crate::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult};
 use crate::value::RuntimeBinding;
 
@@ -65,7 +65,7 @@ impl VmExecutor {
         &mut self,
         input: RuntimeStepInput,
         options: RuntimeStepOptions,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
         self.engine
             .step_with_pure_backend(input, options, pure_backend)
@@ -76,7 +76,7 @@ impl VmExecutor {
         input: RuntimeStepInput,
         root_bindings: &[RuntimeBinding],
         options: RuntimeStepOptions,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
         self.engine.step_with_root_bindings_and_pure_backend(
             input,
@@ -127,7 +127,7 @@ impl AotExecutor {
         &mut self,
         input: RuntimeStepInput,
         options: RuntimeStepOptions,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
         self.step_with_root_bindings_and_pure_backend(input, &[], options, pure_backend)
     }
@@ -137,7 +137,7 @@ impl AotExecutor {
         input: RuntimeStepInput,
         root_bindings: &[RuntimeBinding],
         options: RuntimeStepOptions,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
         if self
             .vm
@@ -201,7 +201,7 @@ impl BytecodeVmExecutor {
         &mut self,
         input: RuntimeStepInput,
         options: RuntimeStepOptions,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
         self.vm.step_with_pure_backend(input, options, pure_backend)
     }
@@ -211,7 +211,7 @@ impl BytecodeVmExecutor {
         input: RuntimeStepInput,
         root_bindings: &[RuntimeBinding],
         options: RuntimeStepOptions,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
         self.vm.step_with_root_bindings_and_pure_backend(
             input,

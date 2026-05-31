@@ -3,7 +3,7 @@ use super::{
     RuntimeStepOutput, RuntimeStreamEvent, RuntimeValue, SourceEventKind, SourceId, StreamMatchArm,
     StreamOp, StreamRuntimeId, StreamRuntimeState, match_runtime_pattern, runtime_value_label,
 };
-use crate::pure::RuntimePureCallBackend;
+use crate::pure::RuntimeCallBackend;
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct StreamForNext<'a> {
@@ -17,7 +17,7 @@ impl Engine {
     pub(super) fn step_stream_plans(
         &mut self,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) {
         let stream_plans = std::mem::take(&mut self.plan.stream_plans);
         for plan in &stream_plans {
@@ -40,7 +40,7 @@ impl Engine {
         ops: &[StreamOp],
         budget: &mut usize,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
         for op in ops {
             if *budget == 0 {
@@ -60,7 +60,7 @@ impl Engine {
         op: &StreamOp,
         budget: &mut usize,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
         match op {
             StreamOp::Let { pattern, expr } => {
@@ -113,7 +113,7 @@ impl Engine {
         pattern: &RuntimePattern,
         expr: &RuntimeExpr,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
         match self.evaluate_expr_with_backend(expr, pure_backend) {
             Ok(value) => match self.try_bind_pattern(pattern, &value) {
@@ -144,7 +144,7 @@ impl Engine {
         args: StreamForNext<'_>,
         budget: &mut usize,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
         let Ok(source_key) = self.evaluate_queue_target_with_backend(args.source, pure_backend)
         else {
@@ -183,7 +183,7 @@ impl Engine {
         stream: &StreamRuntimeId,
         expr: &RuntimeExpr,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
         match self.evaluate_expr_with_backend(expr, pure_backend) {
             Ok(value) => {
@@ -212,7 +212,7 @@ impl Engine {
         arms: &[StreamMatchArm],
         budget: &mut usize,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
         let value = match self.evaluate_expr_with_backend(scrutinee, pure_backend) {
             Ok(value) => value,
@@ -277,7 +277,7 @@ impl Engine {
     pub(super) fn evaluate_queue_target_with_backend(
         &mut self,
         expr: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<String, RuntimeEvalError> {
         match self.evaluate_expr_with_backend(expr, pure_backend)? {
             RuntimeValue::EntityRef(target) | RuntimeValue::String(target) => {

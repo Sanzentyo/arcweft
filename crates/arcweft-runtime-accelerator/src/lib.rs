@@ -14,8 +14,8 @@ use arcweft_core::{
     pure::{
         AotPureFunctionBackend, AotPureI64Plan, AotPureScalarPlan, PureFunctionRequest,
         PureFunctionStats, RuntimeFixedArgs, RuntimeFloat32Args, RuntimeFloat64Args,
-        RuntimeI32Args, RuntimeI64Args, RuntimePureCallBackend, RuntimePureScalar,
-        RuntimePureScalarInteger, VmPureFunctionScratch,
+        RuntimeI32Args, RuntimeI64Args, RuntimeMathCallBackend, RuntimePureCallBackend,
+        RuntimePureScalar, RuntimePureScalarInteger, VmPureFunctionScratch,
     },
     step::RuntimePureCallStats,
     value::{
@@ -1917,6 +1917,24 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         }
     }
 
+    fn call_values(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[RuntimeValue],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        self.stats.pure_calls += 1;
+        self.stats.vm_calls += 1;
+        self.stats.fallbacks += 1;
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        self.vm_scratch.evaluate_values(helper, args)
+    }
+
+    fn stats(&self) -> RuntimePureCallStats {
+        self.stats
+    }
+}
+
+impl RuntimeMathCallBackend for RuntimePureAccelerator {
     fn call_math_matmul_f32(
         &mut self,
         lhs: &DenseMatrixF32,
@@ -1966,22 +1984,6 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             })?;
         self.record_math_result(result.values().len());
         Ok(result)
-    }
-
-    fn call_values(
-        &mut self,
-        helper: &RuntimePureHelper,
-        args: &[RuntimeValue],
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
-        self.stats.pure_calls += 1;
-        self.stats.vm_calls += 1;
-        self.stats.fallbacks += 1;
-        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
-        self.vm_scratch.evaluate_values(helper, args)
-    }
-
-    fn stats(&self) -> RuntimePureCallStats {
-        self.stats
     }
 }
 
@@ -3740,7 +3742,7 @@ mod tests {
             &[],
         );
 
-        let Ok(first) = RuntimePureCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs)
+        let Ok(first) = RuntimeMathCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs)
         else {
             return;
         };
@@ -3749,7 +3751,7 @@ mod tests {
         assert_eq!(accelerator.math_stats().gpu_buffer_creations, 4);
 
         accelerator.reset_runtime_counters();
-        let second = RuntimePureCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs)
+        let second = RuntimeMathCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs)
             .expect("prepared runtime math matmul cache is reusable");
 
         assert_eq!(second.values(), first.values());
@@ -3788,7 +3790,7 @@ mod tests {
             &[],
         );
 
-        let Ok(first) = RuntimePureCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs)
+        let Ok(first) = RuntimeMathCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs)
         else {
             return;
         };
@@ -3798,7 +3800,7 @@ mod tests {
         );
 
         accelerator.reset_runtime_counters();
-        let second = RuntimePureCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs)
+        let second = RuntimeMathCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs)
             .expect("auto-selected wgpu matmul reuses prepared runtime cache");
 
         assert_eq!(second.values(), first.values());
@@ -3829,14 +3831,14 @@ mod tests {
         );
 
         let Ok(first) =
-            RuntimePureCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs)
+            RuntimeMathCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs)
         else {
             return;
         };
         assert_eq!(first.values(), vec![3.0; 32].as_slice());
 
         accelerator.reset_runtime_counters();
-        let second = RuntimePureCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs)
+        let second = RuntimeMathCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs)
             .expect("prepared runtime tensor add cache is reusable");
 
         assert_eq!(second.values(), vec![3.0; 32].as_slice());
@@ -3867,7 +3869,7 @@ mod tests {
         );
 
         let Ok(first) =
-            RuntimePureCallBackend::call_math_matrix_add_f32(&mut accelerator, &lhs, &rhs)
+            RuntimeMathCallBackend::call_math_matrix_add_f32(&mut accelerator, &lhs, &rhs)
         else {
             return;
         };
@@ -3877,7 +3879,7 @@ mod tests {
         );
 
         accelerator.reset_runtime_counters();
-        let second = RuntimePureCallBackend::call_math_matrix_add_f32(&mut accelerator, &lhs, &rhs)
+        let second = RuntimeMathCallBackend::call_math_matrix_add_f32(&mut accelerator, &lhs, &rhs)
             .expect("auto-selected wgpu matrix add reuses prepared runtime cache");
 
         assert_eq!(second.values(), first.values());
@@ -3908,7 +3910,7 @@ mod tests {
         );
 
         let Ok(first) =
-            RuntimePureCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs)
+            RuntimeMathCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs)
         else {
             return;
         };
@@ -3918,7 +3920,7 @@ mod tests {
         );
 
         accelerator.reset_runtime_counters();
-        let second = RuntimePureCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs)
+        let second = RuntimeMathCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs)
             .expect("auto-selected wgpu tensor add reuses prepared runtime cache");
 
         assert_eq!(second.values(), first.values());

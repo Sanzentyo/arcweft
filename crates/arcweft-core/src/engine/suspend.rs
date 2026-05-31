@@ -5,7 +5,7 @@ use super::{
     RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
     TaskSpec, runtime_sequence_values, runtime_value_into_sequence_values,
 };
-use crate::pure::RuntimePureCallBackend;
+use crate::pure::RuntimeCallBackend;
 use crate::task::{
     AssetRequest, AudioDecodeRequest, AwaitManyTarget, FileReadBytesRequest, FileReadTextRequest,
     FileWriteBytesRequest, FileWriteTextRequest, HostTaskArgTemplate, HostTaskRequest,
@@ -20,7 +20,7 @@ impl Engine {
         input: &RuntimeStepInput,
         events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
         let status = std::mem::replace(&mut self.fiber.status, FlowFiberStatus::Running);
         match status {
@@ -144,7 +144,7 @@ impl Engine {
         &mut self,
         target: &AwaitTarget,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Option<TaskSpec> {
         let request = match self.evaluate_host_task_request(target, pure_backend) {
             Ok(request) => request,
@@ -170,7 +170,7 @@ impl Engine {
         target: AwaitManyTarget,
         resume: Option<crate::engine::FlowCursor>,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) {
         let items = match self.evaluate_expr_with_backend(&target.source, pure_backend) {
             Ok(value) => match runtime_value_into_sequence_values(value) {
@@ -207,7 +207,7 @@ impl Engine {
         mut state: AwaitManyState,
         events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) {
         for event in events {
             let Some(position) = state
@@ -265,7 +265,7 @@ impl Engine {
         &mut self,
         state: &mut AwaitManyState,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
         while state.in_flight.len() < state.target.limit && state.next_index < state.items.len() {
             let index = state.next_index;
@@ -334,7 +334,7 @@ impl Engine {
         item: &RuntimeValue,
         task: &TaskId,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Option<TaskSpec> {
         let request = match self.with_temp_binding_ref(&target.item_binding, item, |this| {
             this.evaluate_host_task_request_template(&target.request, pure_backend)
@@ -359,7 +359,7 @@ impl Engine {
     fn evaluate_host_task_request(
         &mut self,
         target: &AwaitTarget,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<HostTaskRequest, String> {
         self.evaluate_host_task_request_template(&target.request, pure_backend)
     }
@@ -367,7 +367,7 @@ impl Engine {
     fn evaluate_host_task_request_template(
         &mut self,
         template: &HostTaskRequestTemplate,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<HostTaskRequest, String> {
         let args = self.evaluate_host_task_args(&template.args, pure_backend)?;
         let call = EvaluatedHostCall {
@@ -381,7 +381,7 @@ impl Engine {
     fn evaluate_host_task_args(
         &mut self,
         args: &[HostTaskArgTemplate],
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Vec<EvaluatedHostArg>, String> {
         let mut evaluated = Vec::new();
         for arg in args {

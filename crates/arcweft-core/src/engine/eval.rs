@@ -9,8 +9,8 @@ use super::{
 };
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::pure::{
-    RuntimeFixedArgs, RuntimeFloat32Args, RuntimeFloat64Args, RuntimeI32Args, RuntimeI64Args,
-    RuntimePureCallBackend, RuntimePureScalarInteger, VmRuntimePureCallBackend,
+    RuntimeCallBackend, RuntimeFixedArgs, RuntimeFloat32Args, RuntimeFloat64Args, RuntimeI32Args,
+    RuntimeI64Args, RuntimePureScalarInteger, VmRuntimePureCallBackend,
 };
 use crate::value::RuntimeBinaryOp;
 use crate::value::RuntimeExactInteger;
@@ -24,7 +24,7 @@ impl Engine {
         pattern: &RuntimePattern,
         expr: &RuntimeExpr,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) {
         match self
             .evaluate_expr_with_backend(expr, pure_backend)
@@ -48,7 +48,7 @@ impl Engine {
         pattern: &RuntimePattern,
         expr: &RuntimeExpr,
         guard: Option<&RuntimeExpr>,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<Vec<RuntimeBinding>>, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
         let Some(bindings) = match_runtime_pattern(pattern, &value)? else {
@@ -69,7 +69,7 @@ impl Engine {
         &mut self,
         scrutinee: &RuntimeExpr,
         arms: Vec<RuntimeMatchArm>,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeMatchSelection, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(scrutinee, pure_backend)?;
         for arm in arms {
@@ -99,7 +99,7 @@ impl Engine {
     pub(super) fn evaluate_expr_with_backend(
         &mut self,
         expr: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         match expr {
             RuntimeExpr::Value(value) => Ok(value.clone()),
@@ -182,7 +182,7 @@ impl Engine {
     fn evaluate_data_expr(
         &mut self,
         expr: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         match expr {
             RuntimeExpr::Tuple(items) => items
@@ -226,7 +226,7 @@ impl Engine {
     fn evaluate_bracket_seq_expr(
         &mut self,
         items: &[RuntimeExpr],
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if let Some((helper_id, arity)) = self.bracket_seq_i64_batch_shape(items) {
             let mut flat_inputs = std::mem::take(&mut self.pure_i64_batch_inputs);
@@ -259,7 +259,7 @@ impl Engine {
         &mut self,
         value: &RuntimeExpr,
         len: usize,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if let RuntimeExpr::Value(value) = value {
             return Ok(runtime_sequence_repeat_value(value, len));
@@ -310,7 +310,7 @@ impl Engine {
         &mut self,
         items: &[RuntimeExpr],
         arity: usize,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
         flat_inputs: &mut Vec<i64>,
     ) -> Result<(), RuntimeEvalError> {
         flat_inputs.clear();
@@ -332,7 +332,7 @@ impl Engine {
         flat_inputs: &[i64],
         arity: usize,
         row_count: usize,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
         map_outputs: impl FnOnce(&[i64]) -> T,
     ) -> Result<T, RuntimeEvalError> {
         let mut out = std::mem::take(&mut self.pure_i64_batch_outputs);
@@ -355,7 +355,7 @@ impl Engine {
         flat_inputs: &[i32],
         arity: usize,
         row_count: usize,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
         map_outputs: impl FnOnce(&[i32]) -> T,
     ) -> Result<T, RuntimeEvalError> {
         let mut out = std::mem::take(&mut self.pure_i32_batch_outputs);
@@ -378,7 +378,7 @@ impl Engine {
         flat_inputs: &[u32],
         arity: usize,
         row_count: usize,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
         map_outputs: impl FnOnce(&[u32]) -> T,
     ) -> Result<T, RuntimeEvalError> {
         let mut out = std::mem::take(&mut self.pure_u32_batch_outputs);
@@ -401,7 +401,7 @@ impl Engine {
         flat_inputs: &[f32],
         arity: usize,
         row_count: usize,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
         map_outputs: impl FnOnce(&[f32]) -> T,
     ) -> Result<T, RuntimeEvalError> {
         let mut out = std::mem::take(&mut self.pure_f32_batch_outputs);
@@ -424,7 +424,7 @@ impl Engine {
         flat_inputs: &[f64],
         arity: usize,
         row_count: usize,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
         map_outputs: impl FnOnce(&[f64]) -> T,
     ) -> Result<T, RuntimeEvalError> {
         let mut out = std::mem::take(&mut self.pure_f64_batch_outputs);
@@ -447,7 +447,7 @@ impl Engine {
         flat_inputs: &[i64],
         arity: usize,
         row_count: usize,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<i64, RuntimeEvalError> {
         let helper = &self.plan.pure_helpers[helper_id.0];
         pure_backend.call_i64_flat_batch_sum(helper, flat_inputs, arity, row_count)
@@ -458,7 +458,7 @@ impl Engine {
         helper_id: crate::plan::RuntimePureHelperId,
         row: &[i64],
         row_count: usize,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<i64, RuntimeEvalError> {
         let helper = &self.plan.pure_helpers[helper_id.0];
         pure_backend.call_i64_repeated_flat_batch_sum(helper, row, row_count)
@@ -467,7 +467,7 @@ impl Engine {
     fn evaluate_record_expr(
         &mut self,
         fields: &[RuntimeFieldExpr],
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         fields
             .iter()
@@ -485,7 +485,7 @@ impl Engine {
         &mut self,
         target: &RuntimeExpr,
         field: &str,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(target, pure_backend)?;
         match value {
@@ -516,7 +516,7 @@ impl Engine {
         &mut self,
         target: &RuntimeExpr,
         ordinal: usize,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(target, pure_backend)?;
         match value {
@@ -548,7 +548,7 @@ impl Engine {
         &mut self,
         target: &RuntimeExpr,
         ordinal: usize,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(target, pure_backend)?;
         match value {
@@ -580,7 +580,7 @@ impl Engine {
         &mut self,
         callee: &RuntimeCallTarget,
         args: &[RuntimeExpr],
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let args = self.evaluate_call_args(args, pure_backend)?;
         Ok(evaluate_runtime_call(callee, &args, pure_backend))
@@ -590,7 +590,7 @@ impl Engine {
         &mut self,
         helper_id: crate::plan::RuntimePureHelperId,
         args: &[RuntimeExpr],
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if helper_id.0 >= self.plan.pure_helpers.len() {
             return Err(RuntimeEvalError::UnknownPureHelper(helper_id.0));
@@ -684,7 +684,7 @@ impl Engine {
         &mut self,
         helper_id: crate::plan::RuntimePureHelperId,
         args: &[RuntimeExpr],
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         if let Some(value) =
             self.evaluate_exact_int_pure_call::<i8>(helper_id, args, pure_backend)?
@@ -743,7 +743,7 @@ impl Engine {
         &mut self,
         helper_id: crate::plan::RuntimePureHelperId,
         args: &[RuntimeExpr],
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError>
     where
         T: RuntimePureScalarInteger + Default,
@@ -770,7 +770,7 @@ impl Engine {
     fn evaluate_exact_int_arg_with_backend<T>(
         &mut self,
         expr: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<T, RuntimeEvalError>
     where
         T: RuntimePureScalarInteger,
@@ -793,7 +793,7 @@ impl Engine {
     fn evaluate_i64_arg_with_backend(
         &mut self,
         expr: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<i64, RuntimeEvalError> {
         match expr {
             RuntimeExpr::Value(RuntimeValue::Int(value)) => value.exact_i64().ok_or_else(|| {
@@ -818,7 +818,7 @@ impl Engine {
     fn evaluate_f32_arg_with_backend(
         &mut self,
         expr: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<f32, RuntimeEvalError> {
         match expr {
             RuntimeExpr::Value(RuntimeValue::F32(value)) => Ok(*value),
@@ -843,7 +843,7 @@ impl Engine {
     fn evaluate_f64_arg_with_backend(
         &mut self,
         expr: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<f64, RuntimeEvalError> {
         match expr {
             RuntimeExpr::Value(RuntimeValue::F64(value)) => Ok(*value),
@@ -870,7 +870,7 @@ impl Engine {
         receiver: &RuntimeExpr,
         method: &str,
         args: &[RuntimeExpr],
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let receiver = self.evaluate_expr_with_backend(receiver, pure_backend)?;
         let args = self.evaluate_call_args(args, pure_backend)?;
@@ -882,7 +882,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if let Some(value) = self.evaluate_i8_map_expr(source, param, body, pure_backend)? {
             return Ok(value);
@@ -952,7 +952,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_i8_batch_inputs);
         let mut out = std::mem::take(&mut self.pure_i8_batch_outputs);
@@ -974,7 +974,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_i16_batch_inputs);
         let mut out = std::mem::take(&mut self.pure_i16_batch_outputs);
@@ -996,7 +996,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_i128_batch_inputs);
         let mut out = std::mem::take(&mut self.pure_i128_batch_outputs);
@@ -1018,7 +1018,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_isize_batch_inputs);
         let mut out = std::mem::take(&mut self.pure_isize_batch_outputs);
@@ -1040,7 +1040,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_u8_batch_inputs);
         let mut out = std::mem::take(&mut self.pure_u8_batch_outputs);
@@ -1062,7 +1062,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_u16_batch_inputs);
         let mut out = std::mem::take(&mut self.pure_u16_batch_outputs);
@@ -1084,7 +1084,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         let Some((helper_id, arity)) = self.map_u32_batch_shape(body) else {
             return Ok(None);
@@ -1120,7 +1120,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_u64_batch_inputs);
         let mut out = std::mem::take(&mut self.pure_u64_batch_outputs);
@@ -1142,7 +1142,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_u128_batch_inputs);
         let mut out = std::mem::take(&mut self.pure_u128_batch_outputs);
@@ -1164,7 +1164,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_usize_batch_inputs);
         let mut out = std::mem::take(&mut self.pure_usize_batch_outputs);
@@ -1186,7 +1186,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
         flat_inputs: &mut Vec<T>,
         out: &mut Vec<T>,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError>
@@ -1223,7 +1223,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         let Some((helper_id, arity)) = self.map_i32_batch_shape(body) else {
             return Ok(None);
@@ -1259,7 +1259,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         let Some((helper_id, arity)) = self.map_f32_batch_shape(body) else {
             return Ok(None);
@@ -1294,7 +1294,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         let Some((helper_id, arity)) = self.map_f64_batch_shape(body) else {
             return Ok(None);
@@ -1329,7 +1329,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
         let Some((helper_id, arity)) = self.map_i64_batch_shape(body) else {
             return Ok(None);
@@ -1396,7 +1396,7 @@ impl Engine {
     fn evaluate_sum_expr(
         &mut self,
         source: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if let Some(sum) = self.evaluate_map_sum_expr(source, pure_backend)? {
             return Ok(RuntimeValue::i64(sum));
@@ -1429,7 +1429,7 @@ impl Engine {
     fn evaluate_map_sum_expr(
         &mut self,
         source: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         let RuntimeExpr::Map {
             source: map_source,
@@ -1495,7 +1495,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_i8_batch_inputs);
         let result = self.evaluate_exact_int_map_sum_with_inputs::<i8>(
@@ -1514,7 +1514,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_i16_batch_inputs);
         let result = self.evaluate_exact_int_map_sum_with_inputs::<i16>(
@@ -1533,7 +1533,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         let Some((helper_id, arity)) = self.map_i32_batch_shape(body) else {
             return Ok(None);
@@ -1570,7 +1570,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_i128_batch_inputs);
         let result = self.evaluate_exact_int_map_sum_with_inputs::<i128>(
@@ -1589,7 +1589,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_isize_batch_inputs);
         let result = self.evaluate_exact_int_map_sum_with_inputs::<RuntimeISizeValue>(
@@ -1608,7 +1608,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_u8_batch_inputs);
         let result = self.evaluate_exact_int_map_sum_with_inputs::<u8>(
@@ -1627,7 +1627,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_u16_batch_inputs);
         let result = self.evaluate_exact_int_map_sum_with_inputs::<u16>(
@@ -1646,7 +1646,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         let Some((helper_id, arity)) = self.map_u32_batch_shape(body) else {
             return Ok(None);
@@ -1677,7 +1677,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_u64_batch_inputs);
         let result = self.evaluate_exact_int_map_sum_with_inputs::<u64>(
@@ -1696,7 +1696,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_u128_batch_inputs);
         let result = self.evaluate_exact_int_map_sum_with_inputs::<u128>(
@@ -1715,7 +1715,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         let mut flat_inputs = std::mem::take(&mut self.pure_usize_batch_inputs);
         let result = self.evaluate_exact_int_map_sum_with_inputs::<RuntimeUSizeValue>(
@@ -1734,7 +1734,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
         flat_inputs: &mut Vec<T>,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         let Some((helper_id, arity)) = self.map_exact_int_batch_shape::<T>(body) else {
@@ -1762,7 +1762,7 @@ impl Engine {
         source: &RuntimeExpr,
         param: &str,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         let Some((helper_id, arity)) = self.map_i64_batch_shape(body) else {
             return Ok(None);
@@ -2185,7 +2185,7 @@ impl Engine {
     fn evaluate_i64_bracket_seq_sum(
         &mut self,
         source: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         match source {
             RuntimeExpr::BracketSeq(items) => {
@@ -2389,7 +2389,7 @@ impl Engine {
         param: &str,
         body: &RuntimeExpr,
         arity: usize,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
         flat_inputs: &mut Vec<i64>,
     ) -> Result<(), RuntimeEvalError> {
         let RuntimeExpr::PureCall { args, .. } = body else {
@@ -2706,7 +2706,7 @@ impl Engine {
     fn evaluate_call_args(
         &mut self,
         args: &[RuntimeExpr],
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {
         let mut values = Vec::with_capacity(args.len());
         for arg in args {
@@ -2726,7 +2726,7 @@ impl Engine {
         name: &str,
         expr: &RuntimeExpr,
         body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
         self.fiber.env.push_scope_with_capacity(1);
@@ -2743,7 +2743,7 @@ impl Engine {
         guard: Option<&RuntimeExpr>,
         then_expr: &RuntimeExpr,
         else_expr: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
         let Some(bindings) = match_runtime_pattern(pattern, &value)? else {
@@ -2769,7 +2769,7 @@ impl Engine {
         &mut self,
         scrutinee: &RuntimeExpr,
         arms: &[RuntimeExprMatchArm],
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(scrutinee, pure_backend)?;
         for arm in arms {
@@ -2795,7 +2795,7 @@ impl Engine {
     pub(super) fn evaluate_bool_with_backend(
         &mut self,
         expr: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<bool, RuntimeEvalError> {
         match self.evaluate_expr_with_backend(expr, pure_backend)? {
             RuntimeValue::Bool(value) => Ok(value),
@@ -3192,7 +3192,7 @@ fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, Runti
 fn evaluate_runtime_call(
     callee: &RuntimeCallTarget,
     args: &[RuntimeValue],
-    pure_backend: &mut impl RuntimePureCallBackend,
+    pure_backend: &mut impl RuntimeCallBackend,
 ) -> RuntimeValue {
     match (callee.as_intrinsic(), args) {
         (Some(RuntimeIntrinsic::Add), [RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)]) => {

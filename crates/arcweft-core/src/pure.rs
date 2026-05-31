@@ -112,6 +112,27 @@ impl RuntimePureScalarInteger for RuntimeUSizeValue {
     }
 }
 
+/// Runtime-facing backend for deterministic built-in math calls.
+pub trait RuntimeMathCallBackend {
+    fn call_math_matmul_f32(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeEvalError>;
+
+    fn call_math_matrix_add_f32(
+        &mut self,
+        lhs: &DenseMatrixF32,
+        rhs: &DenseMatrixF32,
+    ) -> Result<DenseMatrixF32, RuntimeEvalError>;
+
+    fn call_math_tensor_add_f32(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, RuntimeEvalError>;
+}
+
 /// Runtime-facing backend for deterministic pure helper calls.
 pub trait RuntimePureCallBackend {
     fn call_i32(
@@ -256,24 +277,6 @@ pub trait RuntimePureCallBackend {
         out: &mut [f64],
     ) -> Result<(), RuntimeEvalError>;
 
-    fn call_math_matmul_f32(
-        &mut self,
-        lhs: &DenseMatrixF32,
-        rhs: &DenseMatrixF32,
-    ) -> Result<DenseMatrixF32, RuntimeEvalError>;
-
-    fn call_math_matrix_add_f32(
-        &mut self,
-        lhs: &DenseMatrixF32,
-        rhs: &DenseMatrixF32,
-    ) -> Result<DenseMatrixF32, RuntimeEvalError>;
-
-    fn call_math_tensor_add_f32(
-        &mut self,
-        lhs: &DenseTensorF32,
-        rhs: &DenseTensorF32,
-    ) -> Result<DenseTensorF32, RuntimeEvalError>;
-
     fn call_values(
         &mut self,
         helper: &RuntimePureHelper,
@@ -282,6 +285,11 @@ pub trait RuntimePureCallBackend {
 
     fn stats(&self) -> RuntimePureCallStats;
 }
+
+/// Backend accepted by runtime expression evaluation.
+pub trait RuntimeCallBackend: RuntimePureCallBackend + RuntimeMathCallBackend {}
+
+impl<T> RuntimeCallBackend for T where T: RuntimePureCallBackend + RuntimeMathCallBackend {}
 
 /// Backend contract for pure deterministic helper evaluation.
 pub trait PureFunctionBackend {
@@ -1407,6 +1415,31 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
             })
     }
 
+    fn call_values(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[RuntimeValue],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if args.len() != helper.input_names.len() {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: helper.input_names.len(),
+                found: args.len(),
+            });
+        }
+        self.stats.pure_calls += 1;
+        self.stats.vm_calls += 1;
+        self.stats.fallbacks += 1;
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        self.scratch.evaluate_values(helper, args)
+    }
+
+    fn stats(&self) -> RuntimePureCallStats {
+        self.stats
+    }
+}
+
+impl RuntimeMathCallBackend for VmRuntimePureCallBackend {
     fn call_math_matmul_f32(
         &mut self,
         lhs: &DenseMatrixF32,
@@ -1444,29 +1477,6 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
                 name: RuntimeIntrinsic::MathTensorAddF32.as_label().to_owned(),
                 reason: error.to_string(),
             })
-    }
-
-    fn call_values(
-        &mut self,
-        helper: &RuntimePureHelper,
-        args: &[RuntimeValue],
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
-        if args.len() != helper.input_names.len() {
-            return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.name.clone(),
-                max: helper.input_names.len(),
-                found: args.len(),
-            });
-        }
-        self.stats.pure_calls += 1;
-        self.stats.vm_calls += 1;
-        self.stats.fallbacks += 1;
-        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
-        self.scratch.evaluate_values(helper, args)
-    }
-
-    fn stats(&self) -> RuntimePureCallStats {
-        self.stats
     }
 }
 

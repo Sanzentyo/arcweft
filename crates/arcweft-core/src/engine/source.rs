@@ -3,14 +3,14 @@ use super::{
     RuntimeSourceEvent, RuntimeStepOutput, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp,
     SourcePlan, SourcePolicy, SourceRuntimeState, match_runtime_pattern,
 };
-use crate::pure::RuntimePureCallBackend;
+use crate::pure::RuntimeCallBackend;
 
 impl Engine {
     pub(super) fn apply_source_events(
         &mut self,
         events: Vec<RuntimeSourceEvent>,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) {
         for event in events {
             output.effects.source_events.push(event.clone());
@@ -33,7 +33,7 @@ impl Engine {
         plan: &SourcePlan,
         event: RuntimeSourceEvent,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) {
         self.record_source_event_state(&event, output);
         let mut handled = false;
@@ -98,7 +98,7 @@ impl Engine {
         ops: &[SourceOp],
         bindings: Vec<RuntimeBinding>,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) {
         self.with_temp_bindings(bindings, |this| {
             for op in ops {
@@ -112,7 +112,7 @@ impl Engine {
         source: &SourceId,
         op: &SourceOp,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) {
         match op {
             SourceOp::Yield(expr) => match self.evaluate_expr_with_backend(expr, pure_backend) {

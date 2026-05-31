@@ -6,7 +6,7 @@ use super::{
     runtime_value_label,
 };
 use crate::pattern::pattern_binding_capacity;
-use crate::pure::RuntimePureCallBackend;
+use crate::pure::RuntimeCallBackend;
 use crate::task::{
     CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
 };
@@ -20,7 +20,7 @@ impl Engine {
         &mut self,
         input: &RuntimeStepInput,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimePureCallBackend,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) {
         let (op, next_op_index) = if let Some(op) = self.fiber.pending_ops.pop_front() {
             (op, None)
