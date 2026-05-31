@@ -461,9 +461,14 @@ pub(super) fn parse_expr_lossy(source: &str) -> crate::expr::Expr {
 
 pub(super) fn parse_expr_lossy_with_stats(
     source: &str,
-    stats: Option<&mut SyntaxParseStats>,
+    mut stats: Option<&mut SyntaxParseStats>,
 ) -> crate::expr::Expr {
     let normalized = normalize_dot_continuations(source);
+    if matches!(normalized, Cow::Owned(_))
+        && let Some(stats) = stats.as_deref_mut()
+    {
+        stats.dot_normalization_owned += 1;
+    }
     let source = normalized.trim();
     if let Some(value) = parse_raw_string_literal(source) {
         return crate::expr::Expr::Literal(crate::expr::Literal::String(value));
@@ -618,8 +623,10 @@ pub(super) fn parse_expr_with_inline_line_plan_with_stats(
     mut stats: Option<&mut SyntaxParseStats>,
 ) -> Expr {
     let Some((expr_source, trailing_plan)) = split_inline_dialogue_line_plan(source) else {
-        return parse_dialogue_call_expr_surface(source)
-            .unwrap_or_else(|| parse_expr_lossy_with_stats(source, stats));
+        if let Some(expr) = parse_dialogue_call_expr_surface(source, stats.as_deref_mut()) {
+            return expr;
+        }
+        return parse_expr_lossy_with_stats(source, stats);
     };
     let mut expr = parse_dialogue_call_expr_source(expr_source.trim())
         .unwrap_or_else(|| parse_expr_lossy_with_stats(expr_source.trim(), stats.as_deref_mut()));
@@ -633,14 +640,20 @@ pub(super) fn parse_expr_with_inline_line_plan_with_stats(
     }
 }
 
-fn parse_dialogue_call_expr_surface(source: &str) -> Option<Expr> {
-    if !looks_like_dialogue_call_expr_surface(source) {
+fn parse_dialogue_call_expr_surface(
+    source: &str,
+    stats: Option<&mut SyntaxParseStats>,
+) -> Option<Expr> {
+    if !looks_like_dialogue_call_expr_surface(source, stats) {
         return None;
     }
     parse_dialogue_call_expr_source(source)
 }
 
-fn looks_like_dialogue_call_expr_surface(source: &str) -> bool {
+fn looks_like_dialogue_call_expr_surface(
+    source: &str,
+    stats: Option<&mut SyntaxParseStats>,
+) -> bool {
     let source = source.trim();
     let source = source.strip_prefix("try ").map_or(source, str::trim);
     let Some(open) = find_content_bracket(source) else {
@@ -658,7 +671,13 @@ fn looks_like_dialogue_call_expr_surface(source: &str) -> bool {
     // call-like dialogue surface or the bracket payload is not a valid typed
     // expression. This keeps `nums[0]` out of dialogue parsing while preserving
     // `alice.say()[text]` and `alice[おはよう。[p]]` surfaces.
-    callee.contains('(') || !content_may_be_typed_expr(content) || parse_expr(content).is_err()
+    if callee.contains('(') || !content_may_be_typed_expr(content) {
+        return true;
+    }
+    if let Some(stats) = stats {
+        stats.dialogue_rescue_expr_parse_attempts += 1;
+    }
+    parse_expr(content).is_err()
 }
 
 fn content_may_be_typed_expr(source: &str) -> bool {
@@ -752,7 +771,10 @@ pub(super) fn indentation(text: &str) -> usize {
 mod tests {
     use super::{
         collect_logical_block_items, content_may_be_typed_expr, normalize_dot_continuations,
+        parse_expr_lossy_with_stats, parse_expr_with_inline_line_plan_with_stats,
     };
+    use crate::cst::SyntaxParseStats;
+    use crate::expr::Expr;
     use std::borrow::Cow;
 
     #[test]
@@ -772,10 +794,33 @@ mod tests {
     }
 
     #[test]
+    fn dot_continuation_stats_count_owned_normalizations_only() {
+        let mut stats = SyntaxParseStats::default();
+        let _ = parse_expr_lossy_with_stats("alpha +\nbeta", Some(&mut stats));
+        assert_eq!(stats.dot_normalization_owned, 0);
+
+        let _ = parse_expr_lossy_with_stats("value\n    .map(f)", Some(&mut stats));
+        assert_eq!(stats.dot_normalization_owned, 1);
+    }
+
+    #[test]
     fn dialogue_rescue_skips_expression_parse_for_obvious_text() {
         assert!(!content_may_be_typed_expr("おはよう。[p]"));
         assert!(content_may_be_typed_expr("0"));
         assert!(content_may_be_typed_expr("name"));
+    }
+
+    #[test]
+    fn dialogue_rescue_stats_count_only_expression_disambiguation_attempts() {
+        let mut stats = SyntaxParseStats::default();
+        let obvious =
+            parse_expr_with_inline_line_plan_with_stats("alice[おはよう。[p]]", Some(&mut stats));
+        assert!(matches!(obvious, Expr::DialogueCall { .. }));
+        assert_eq!(stats.dialogue_rescue_expr_parse_attempts, 0);
+
+        let indexed = parse_expr_with_inline_line_plan_with_stats("items[0]", Some(&mut stats));
+        assert!(!matches!(indexed, Expr::DialogueCall { .. }));
+        assert_eq!(stats.dialogue_rescue_expr_parse_attempts, 1);
     }
 
     #[test]

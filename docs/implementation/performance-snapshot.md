@@ -84,8 +84,10 @@ expression-kind labels, and expected-type evidence is a rule on the expression
 subject instead of a second context-only judgment. The parser also records a compact integer-only
 `numeric_bracket_seq` AST node instead of allocating per-item expression nodes
 for that literal family. Syntax stats are always present in the JSON schema, but
-default parsing updates only counters available as normal parser by-products.
-Detailed fields that would require timing, tracing, or additional attribution
+default parsing updates only counters available as normal parser by-products,
+including whether dot-continuation normalization had to allocate and whether
+dialogue/index disambiguation had to try parsing bracket content as an
+expression. Detailed fields that would require timing, tracing, or extra scans
 remain zero until a detailed instrumentation mode is added. CST line punctuation
 summaries are built from the existing rowan line-token walk, not by re-lexing
 each line for stats. The parser's line events borrow slices from the original

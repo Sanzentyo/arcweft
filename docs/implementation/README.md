@@ -395,6 +395,10 @@ Current high-confidence state:
   string-literal extraction. Future grammar behavior should continue to enter
   through CST helpers or grammar-level rowan events rather than parser module
   scans.
+  Cheap parser instrumentation now counts dot-continuation normalizations that
+  actually allocate and dialogue/index disambiguation attempts that actually
+  parse bracket content as an expression; both counters are collected from
+  existing parser decisions rather than from additional scans.
 - Parser recovery for flow items, choice-body items, choice-plan items, and
   line-plan items now uses a typed `RawSyntax` recovery node with grammar
   family and source span metadata. Statement parsing also enters through a
