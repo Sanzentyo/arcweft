@@ -56,7 +56,7 @@ impl Parser<'_> {
             visibility,
             signature,
             options,
-            body,
+            body.into_owned(),
             body_statements,
             body_value,
             TextRange::new(start_line.start, end),
@@ -102,7 +102,7 @@ impl Parser<'_> {
             visibility,
             name.unwrap_or_default(),
             tail,
-            body,
+            body.into_owned(),
             body_statements,
             body_value,
             TextRange::new(start_line.start, end),
@@ -176,7 +176,7 @@ impl Parser<'_> {
             signature,
             signature_text,
             contracts,
-            body,
+            body: body.into_owned(),
             body_statements,
             body_value,
             range: TextRange::new(start_line.start, end),
@@ -242,7 +242,7 @@ impl Parser<'_> {
             name: name.unwrap_or_default(),
             signature_tail: signature_tail.clone(),
             contracts,
-            body,
+            body: body.into_owned(),
             body_statements,
             body_value,
             range: TextRange::new(start_line.start, end),
@@ -325,7 +325,7 @@ impl Parser<'_> {
             trait_name,
             target.to_owned(),
             parse_impl_members(&body),
-            body,
+            body.into_owned(),
             TextRange::new(start_line.start, end),
         ))
     }
@@ -422,7 +422,7 @@ impl Parser<'_> {
             name,
             surface_alias,
             signature_tail,
-            Some(body),
+            Some(body.into_owned()),
             TextRange::new(start_line.start, end),
         ))
     }
@@ -491,7 +491,7 @@ impl Parser<'_> {
             visibility,
             id,
             parse_capability_fns(&body),
-            body,
+            body.into_owned(),
             TextRange::new(start_line.start, end),
         ))
     }
@@ -514,7 +514,7 @@ impl Parser<'_> {
             abi,
             path,
             source,
-            body,
+            body.into_owned(),
             TextRange::new(start_line.start, end),
         ))
     }

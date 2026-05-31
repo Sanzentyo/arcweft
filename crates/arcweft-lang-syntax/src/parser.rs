@@ -21,6 +21,7 @@ use crate::pattern::parse_pattern;
 use crate::source::ParsedSource;
 use crate::text::parse_dialogue_text;
 use arcweft_source::{SourceAnchor, SourceName};
+use std::borrow::Cow;
 
 pub mod await_;
 pub mod choice;
@@ -172,14 +173,14 @@ impl<'a> Parser<'a> {
         (tree, core::mem::take(&mut self.errors), self.syntax_stats)
     }
 
-    fn take_flow_block(&mut self) -> (String, String, usize, bool) {
+    fn take_flow_block(&mut self) -> (Cow<'a, str>, Cow<'a, str>, usize, bool) {
         let event = self.events.collect_flow_block(self.index);
         self.index = event.next_index;
-        self.syntax_stats.block_owned_bytes += event.head.len() + event.body.len();
+        self.syntax_stats.block_owned_bytes += event.owned_bytes();
         (event.head, event.body, event.end, event.ok)
     }
 
-    fn take_function_block(&mut self) -> (String, String, usize, bool) {
+    fn take_function_block(&mut self) -> (Cow<'a, str>, Cow<'a, str>, usize, bool) {
         self.take_block_event(CstBlockOpenRule::FunctionBody)
     }
 
@@ -217,14 +218,17 @@ impl<'a> Parser<'a> {
         raw
     }
 
-    fn take_brace_block(&mut self) -> (String, String, usize, bool) {
+    fn take_brace_block(&mut self) -> (Cow<'a, str>, Cow<'a, str>, usize, bool) {
         self.take_block_event(CstBlockOpenRule::FirstTopLevel)
     }
 
-    fn take_block_event(&mut self, rule: CstBlockOpenRule) -> (String, String, usize, bool) {
+    fn take_block_event(
+        &mut self,
+        rule: CstBlockOpenRule,
+    ) -> (Cow<'a, str>, Cow<'a, str>, usize, bool) {
         let event = self.events.collect_brace_block(self.index, rule);
         self.index = event.next_index;
-        self.syntax_stats.block_owned_bytes += event.head.len() + event.body.len();
+        self.syntax_stats.block_owned_bytes += event.owned_bytes();
         (event.head, event.body, event.end, event.ok)
     }
 

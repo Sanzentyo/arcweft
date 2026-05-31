@@ -359,6 +359,10 @@ Current high-confidence state:
   instead of allocating a second owned `String` for every line, so parser bench
   JSON reports `line_owned_bytes = 0`. The standalone `cst_lines(root)` helper
   still owns line text for tooling contexts that only have a CST root.
+  Balanced block events also borrow source-backed head/body fragments when the
+  original line endings can be preserved exactly, so the checked-in parser bench
+  now reports `block_owned_bytes = 0` for the normal LF source path. AST fields
+  that intentionally store source text still own at the typed AST boundary.
   Non-line body fragments use `CstPunctuationScan` when a parser needs multiple
   punctuation queries over the same slice, avoiding repeated fragment lexing in
   shared helpers such as `split_brace_item`.
@@ -723,7 +727,10 @@ Current high-confidence state:
   view so byte-oriented host paths can borrow it without materializing
   `RuntimeValue` elements. Textual/entity dense storage is intentionally a
   homogeneous backing store, not a numeric ABI path; string interning or
-  columnar record storage remains a separate optimization.
+  columnar record storage remains a separate optimization. `DenseSeqKind`
+  records this scalar coverage explicitly so adding a new dense class requires
+  extending the typed kind, borrowed view, materialization fallback, and tests
+  together.
 - `Vec<T>.len()` / `Seq<T>.len()` / fixed array length calls typecheck as
   `usize` and read `RuntimeSeq::len()` directly in the VM and pure VM. The
   checked-in dense scalar length bench exercises unit, bool, char, duration,

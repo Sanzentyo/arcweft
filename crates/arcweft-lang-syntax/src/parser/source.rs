@@ -104,6 +104,7 @@ impl Parser<'_> {
         let source_ty = parse_source_type_from_tail(&signature_tail);
         let headers = parse_source_headers(&body);
         let handlers = parse_source_handlers(&body);
+        let body_statements = parse_source_stmt_lines(&body);
         Some(SourceItem::from_parts(SourceItemParts {
             visibility,
             id,
@@ -112,8 +113,8 @@ impl Parser<'_> {
             source_ty,
             headers,
             handlers,
-            body: body.clone(),
-            body_statements: parse_source_stmt_lines(&body),
+            body: body.into_owned(),
+            body_statements,
             range: TextRange::new(start_line.start, end),
         }))
     }

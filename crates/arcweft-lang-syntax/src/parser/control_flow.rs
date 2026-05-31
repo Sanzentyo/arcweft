@@ -55,7 +55,7 @@ impl Parser<'_> {
         let (then_body, else_body) = split_embedded_else_body(&body).map_or_else(
             || {
                 self.take_optional_else_block(start_line.start)
-                    .map(|else_body| (body, else_body))
+                    .map(|else_body| (body.into_owned(), else_body))
             },
             Some,
         )?;
@@ -91,7 +91,7 @@ impl Parser<'_> {
         let (then_body, else_body) = split_embedded_else_body(&body).map_or_else(
             || {
                 self.take_optional_else_block(start_line.start)
-                    .map(|else_body| (body, else_body))
+                    .map(|else_body| (body.into_owned(), else_body))
             },
             Some,
         )?;
@@ -168,7 +168,7 @@ impl Parser<'_> {
         }
         let (_, body, _, ok) = self.take_brace_block();
         if ok {
-            Some(body)
+            Some(body.into_owned())
         } else {
             self.push_error(
                 TextRange::new(line.start, line.end),
@@ -227,7 +227,7 @@ impl Parser<'_> {
             let else_body = self
                 .take_optional_statement_else_block()
                 .unwrap_or_default();
-            (body, else_body)
+            (body.into_owned(), else_body)
         };
         let body_items = self.parse_flow_body(&body, start_line.start + head.len());
         let else_items = self.parse_flow_body(&else_body, start_line.start + head.len());
@@ -262,7 +262,7 @@ impl Parser<'_> {
             let else_body = self
                 .take_optional_statement_else_block()
                 .unwrap_or_default();
-            (body, else_body)
+            (body.into_owned(), else_body)
         };
         Some(IfLetBlock::new(
             parse_pattern(pattern.trim()),
@@ -285,7 +285,7 @@ impl Parser<'_> {
             return None;
         }
         let (_, body, _, ok) = self.take_brace_block();
-        ok.then_some(body)
+        ok.then(|| body.into_owned())
     }
 
     pub(super) fn parse_borrow_block(&mut self) -> Option<BorrowBlock> {

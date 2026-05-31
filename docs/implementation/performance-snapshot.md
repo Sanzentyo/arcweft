@@ -67,13 +67,13 @@ sequence AST summary:
 
 | fixture | executor | pure backend | median elapsed ns | parse ns | typecheck ns | runtime plan ns | typecheck exprs | type judgments | pure calls | batch calls | batch items | arg vec allocs | borrowed arg bytes |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 009_nonuniform_map_pure_batch.arcw | bytecode_vm | jit | 12300 | 3964500 | 334100 | 314000 | 16 | 21 | 128 | 1 | 128 | 0 | 2048 |
+| 009_nonuniform_map_pure_batch.arcw | bytecode_vm | jit | 12000 | 3379900 | 389800 | 448700 | 16 | 21 | 128 | 1 | 128 | 0 | 2048 |
 
 Syntax counters from the same run:
 
 | cst lex passes | punctuation summaries | punctuation bytes | line owned bytes | block owned bytes | wiki scans | raw owned bytes |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 14 | 1330 | 0 | 1324 | 0 | 0 |
+| 1 | 14 | 1330 | 0 | 0 | 0 | 0 |
 
 The scalar pure fixtures remain on borrowed slice calls: `stack_packs = 0`,
 `arg_vec_allocs = 0`, and `copied_arg_bytes = 0`. The nonuniform map fixture
@@ -212,9 +212,10 @@ unless a dot-continuation line is actually present, and avoids rescue
 expression parsing for dialogue bracket payloads that are obvious narrative
 text. The checked-in `009_nonuniform_map_pure_batch.arcw` bench still reports a
 path-free source name, `wiki_scan_performed = 0`,
-`dot_normalization_owned = 0`, `dialogue_rescue_expr_parse_attempts = 0`, and
-`pure_flatten_bytes_copied_median = 0`; the local run after this change reported
-parse phase 3853000 ns and runtime median 12100 ns.
+`dot_normalization_owned = 0`, `dialogue_rescue_expr_parse_attempts = 0`,
+`line_owned_bytes = 0`, `block_owned_bytes = 0`, and
+`pure_flatten_bytes_copied_median = 0`; the local run after source-backed block
+fragments reported parse phase 3649400 ns and runtime median 11700 ns.
 
 Runtime numeric sequence lowering now preserves integer-only bracket literals as
 `RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I64(_)))` instead of eagerly
@@ -236,7 +237,7 @@ stay in `Vec<RuntimeValue>` after evaluation.
 
 The checked-in nonuniform map pure JIT fixture was remeasured after the
 `RuntimeSeq::Dense(DenseSeq::I64(DenseSeqStorage<i64>))` migration. With the same
-checked-in bench settings, median elapsed time was 12000 ns. That is within
+checked-in bench settings, median elapsed time was 11700 ns. That is within
 normal short-run noise of the previous dense i64 runtime sequence sample at
 12200 ns and still faster than the earlier direct i64 sequence value sample at
 14300 ns.
@@ -257,9 +258,9 @@ the whole borrow map. The targeted branch-drop regression keeps
 
 The checked-in dense i32 and u64 sum fixtures measure the non-JIT fixed-width
 integer path. The i32 fixture lowered `[... i32]` to `DenseSeq::I32`, validated
-as `Vec(I32)`, and ran `sum()` with median elapsed time 7600 ns in the latest
+as `Vec(I32)`, and ran `sum()` with median elapsed time 7500 ns in the latest
 local run. The matching u64 fixture lowered `[... u64]` to `DenseSeq::U64`,
-validated as `Vec(U64)`, and ran with median elapsed time 8300 ns. The
+validated as `Vec(U64)`, and ran with median elapsed time 7900 ns. The
 multi-width fixture lowered i8/i16/i32/u8/u16/u32/u64 literal sequences to the
 matching dense storage, validated the first visible JSON samples as `Vec(I8)`,
 `Vec(I16)`, `Vec(I32)`, and `Vec(U8)`, and reduced seven dense sequences in one
@@ -272,7 +273,7 @@ The dense scalar length fixture covers the non-integer deterministic scalar
 storage cases. It lowers unit, bool, char, logical-duration, and `u8` sequences
 into dense storage, checks `len()` as `usize`, and evaluates length through
 `RuntimeSeq::len()` rather than materializing `RuntimeValue` elements. The local
-path-free `just bench-013` run reported median elapsed time 14900 ns for eight
+path-free `just bench-013` run reported median elapsed time 14600 ns for eight
 executed ops, with `pure_flatten_materializations_median = 0`,
 `pure_arg_vec_allocations_median = 0`, `pure_result_bytes_copied_median = 0`,
 and no source path in the JSON output.
@@ -288,7 +289,7 @@ The dense wide numeric length fixture covers the remaining integer primitive
 spellings. It lowers `i128`, `u128`, `isize`, and `usize` bracket literals to
 `DenseSeq::I128`, `DenseSeq::U128`, `DenseSeq::ISize`, and `DenseSeq::USize`,
 then reads `RuntimeSeq::len()` without materializing scalar runtime values.
-The local path-free `just bench-015` run reported median elapsed time 13600 ns
+The local path-free `just bench-015` run reported median elapsed time 13200 ns
 for seven executed ops, with `pure_flatten_materializations_median = 0`,
 `pure_arg_vec_allocations_median = 0`, `pure_result_bytes_copied_median = 0`,
 and no source path in the JSON output.
@@ -297,4 +298,6 @@ and no source path in the JSON output.
 `RuntimeValue::Float` still preserves raw source text for deterministic numeric
 semantics; raw float literals are dense only as homogeneous textual storage.
 Record/tuple storage should be designed separately as columnar storage rather
-than as scalar `DenseSeqStorage<T>`.
+than as scalar `DenseSeqStorage<T>`. The scalar dense coverage is encoded in
+`DenseSeqKind`, so adding another dense class requires extending the typed kind
+and its borrowed view/materialization tests together.

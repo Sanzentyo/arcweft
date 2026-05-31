@@ -164,6 +164,13 @@ impl RuntimeSeq {
         }
     }
 
+    pub fn dense_kind(&self) -> Option<DenseSeqKind> {
+        match self {
+            Self::Dense(values) => Some(values.kind()),
+            Self::Values(_) => None,
+        }
+    }
+
     pub fn as_i64_slice(&self) -> Option<&[i64]> {
         match self {
             Self::Dense(values) => values.as_i64_slice(),
@@ -327,6 +334,31 @@ impl RuntimeSeq {
     }
 }
 
+/// Homogeneous storage kind used by a dense runtime sequence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DenseSeqKind {
+    Units,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    ISize,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    USize,
+    Bool,
+    Bytes,
+    Chars,
+    Durations,
+    Strings,
+    FloatLiterals,
+    EntityRefs,
+}
+
 /// Dense sequence storage for homogeneous scalar data.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DenseSeq {
@@ -457,6 +489,31 @@ impl DenseSeq {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    pub const fn kind(&self) -> DenseSeqKind {
+        match self {
+            Self::Units(_) => DenseSeqKind::Units,
+            Self::I8(_) => DenseSeqKind::I8,
+            Self::I16(_) => DenseSeqKind::I16,
+            Self::I32(_) => DenseSeqKind::I32,
+            Self::I64(_) => DenseSeqKind::I64,
+            Self::I128(_) => DenseSeqKind::I128,
+            Self::ISize(_) => DenseSeqKind::ISize,
+            Self::U8(_) => DenseSeqKind::U8,
+            Self::U16(_) => DenseSeqKind::U16,
+            Self::U32(_) => DenseSeqKind::U32,
+            Self::U64(_) => DenseSeqKind::U64,
+            Self::U128(_) => DenseSeqKind::U128,
+            Self::USize(_) => DenseSeqKind::USize,
+            Self::Bool(_) => DenseSeqKind::Bool,
+            Self::Bytes(_) => DenseSeqKind::Bytes,
+            Self::Chars(_) => DenseSeqKind::Chars,
+            Self::Durations(_) => DenseSeqKind::Durations,
+            Self::Strings(_) => DenseSeqKind::Strings,
+            Self::FloatLiterals(_) => DenseSeqKind::FloatLiterals,
+            Self::EntityRefs(_) => DenseSeqKind::EntityRefs,
+        }
     }
 
     pub const fn unit_len(&self) -> Option<usize> {

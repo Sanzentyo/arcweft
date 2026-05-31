@@ -101,7 +101,7 @@ impl Parser<'_> {
             priority,
             once,
             effects,
-            body,
+            body: body.into_owned(),
             body_statements,
             range: TextRange::new(start_line.start, end),
         }))

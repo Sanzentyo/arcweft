@@ -273,9 +273,9 @@ pub(crate) enum CstBlockOpenRule {
 
 /// Balanced brace block projected from CST line events.
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) struct CstBlockEvent {
-    pub(crate) head: String,
-    pub(crate) body: String,
+pub(crate) struct CstBlockEvent<'a> {
+    pub(crate) head: Cow<'a, str>,
+    pub(crate) body: Cow<'a, str>,
     pub(crate) end: usize,
     pub(crate) ok: bool,
     pub(crate) next_index: usize,
@@ -289,6 +289,7 @@ pub(crate) struct CstBlockEvent {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CstLineEvents<'a> {
     lines: Vec<CstLine<'a>>,
+    source: Option<&'a str>,
     stats: SyntaxParseStats,
 }
 
@@ -395,6 +396,7 @@ impl From<&SyntaxNode> for CstLineEvents<'static> {
                 ..SyntaxParseStats::default()
             },
             lines,
+            source: None,
         }
     }
 }
@@ -406,10 +408,10 @@ impl<'a> CstLineEvents<'a> {
             .filter(|node| node.kind() == SyntaxKind::Line)
             .map(|node| CstLine::from_node_and_source(&node, source))
             .collect::<Vec<_>>();
-        Self::from_borrowed_lines(lines)
+        Self::from_borrowed_lines(lines, source)
     }
 
-    fn from_borrowed_lines(lines: Vec<CstLine<'a>>) -> Self {
+    fn from_borrowed_lines(lines: Vec<CstLine<'a>>, source: &'a str) -> Self {
         let punctuation_scan_bytes = lines.iter().map(|line| line.text.len()).sum();
         Self {
             stats: SyntaxParseStats {
@@ -420,6 +422,7 @@ impl<'a> CstLineEvents<'a> {
                 ..SyntaxParseStats::default()
             },
             lines,
+            source: Some(source),
         }
     }
 
@@ -453,9 +456,9 @@ impl<'a> CstLineEvents<'a> {
         &self,
         start: usize,
         rule: CstBlockOpenRule,
-    ) -> CstBlockEvent {
+    ) -> CstBlockEvent<'a> {
         let Some(first) = self.get(start) else {
-            return CstBlockEvent::new(String::new(), String::new(), 0, false, start);
+            return CstBlockEvent::new(Cow::Borrowed(""), Cow::Borrowed(""), 0, false, start);
         };
         let mut end = first.end;
         let mut depth = 0_i32;
@@ -512,7 +515,7 @@ impl<'a> CstLineEvents<'a> {
         let Some(open) = open else {
             return CstBlockEvent::new(
                 self.collect_virtual_fragment(start, index, 0, virtual_len),
-                String::new(),
+                Cow::Borrowed(""),
                 end,
                 false,
                 start + 1,
@@ -521,7 +524,7 @@ impl<'a> CstLineEvents<'a> {
         let Some(close) = last_brace_close else {
             return CstBlockEvent::new(
                 self.collect_virtual_fragment(start, index, 0, virtual_len),
-                String::new(),
+                Cow::Borrowed(""),
                 end,
                 false,
                 index,
@@ -530,7 +533,7 @@ impl<'a> CstLineEvents<'a> {
         if depth != 0 {
             return CstBlockEvent::new(
                 self.collect_virtual_fragment(start, index, 0, virtual_len),
-                String::new(),
+                Cow::Borrowed(""),
                 end,
                 false,
                 index,
@@ -538,7 +541,7 @@ impl<'a> CstLineEvents<'a> {
         }
         let head = self.collect_virtual_fragment(start, index, 0, open);
         let body = self.collect_virtual_fragment(start, index, open + 1, close);
-        CstBlockEvent::new(head.trim().to_owned(), body, end, true, index)
+        CstBlockEvent::new(trim_cow(head), body, end, true, index)
     }
 
     fn collect_virtual_fragment(
@@ -547,7 +550,10 @@ impl<'a> CstLineEvents<'a> {
         end: usize,
         range_start: usize,
         range_end: usize,
-    ) -> String {
+    ) -> Cow<'a, str> {
+        if let Some(fragment) = self.borrow_virtual_fragment(start, end, range_start, range_end) {
+            return Cow::Borrowed(fragment);
+        }
         let mut fragment = String::new();
         let mut virtual_offset = 0usize;
         for index in start..end {
@@ -576,15 +582,59 @@ impl<'a> CstLineEvents<'a> {
                 break;
             }
         }
-        fragment
+        Cow::Owned(fragment)
+    }
+
+    fn borrow_virtual_fragment(
+        &self,
+        start: usize,
+        end: usize,
+        range_start: usize,
+        range_end: usize,
+    ) -> Option<&'a str> {
+        let source = self.source?;
+        let source_start = self.source_pos_for_virtual_offset(start, end, range_start)?;
+        let source_end = self.source_pos_for_virtual_offset(start, end, range_end)?;
+        let fragment = source.get(source_start..source_end)?;
+        (!fragment.contains('\r')).then_some(fragment)
+    }
+
+    fn source_pos_for_virtual_offset(
+        &self,
+        start: usize,
+        end: usize,
+        offset: usize,
+    ) -> Option<usize> {
+        let mut virtual_offset = 0usize;
+        let mut previous_line_end = None;
+        for index in start..end {
+            if index > start {
+                if offset == virtual_offset {
+                    return previous_line_end;
+                }
+                virtual_offset += 1;
+            }
+            let line = self.get(index)?;
+            let line_len = line.text.len();
+            if offset <= virtual_offset + line_len {
+                return Some(line.start + offset - virtual_offset);
+            }
+            virtual_offset += line_len;
+            previous_line_end = Some(line.end);
+        }
+        (offset == virtual_offset).then_some(previous_line_end?)
     }
 
     /// Collects a flow-like header prelude followed by a balanced brace body.
-    pub(crate) fn collect_flow_block(&self, start: usize) -> CstBlockEvent {
+    pub(crate) fn collect_flow_block(&self, start: usize) -> CstBlockEvent<'a> {
         let Some(first) = self.get(start) else {
-            return CstBlockEvent::new(String::new(), String::new(), 0, false, start);
+            return CstBlockEvent::new(Cow::Borrowed(""), Cow::Borrowed(""), 0, false, start);
         };
+        let header_start = first.start;
+        let mut header_end = first.end;
         let mut header = String::new();
+        let mut header_owned = false;
+        let mut header_has_lines = false;
         let mut end = first.end;
         let mut index = start;
 
@@ -592,27 +642,87 @@ impl<'a> CstLineEvents<'a> {
             if flow_line_starts_body(line, index == start) {
                 break;
             }
-            if !header.is_empty() {
-                header.push('\n');
+            header_has_lines = true;
+            if header_owned {
+                if !header.is_empty() {
+                    header.push('\n');
+                }
+                header.push_str(&line.text);
+            } else if self.source.is_none() || line.text.contains('\r') {
+                header_owned = true;
+                header.push_str(&line.text);
             }
-            header.push_str(&line.text);
+            header_end = line.end;
             end = line.end;
             index += 1;
         }
 
         if index >= self.len() {
-            return CstBlockEvent::new(header, String::new(), end, false, index);
+            let header = if header_owned {
+                Cow::Owned(header)
+            } else {
+                self.source
+                    .and_then(|source| source.get(header_start..header_end))
+                    .map_or_else(|| Cow::Owned(header), Cow::Borrowed)
+            };
+            return CstBlockEvent::new(header, Cow::Borrowed(""), end, false, index);
         }
 
         let mut body = self.collect_brace_block(index, CstBlockOpenRule::FlowBody);
-        if !body.head.is_empty() {
-            if !header.is_empty() {
-                header.push('\n');
-            }
-            header.push_str(&body.head);
-        }
-        body.head = header;
+        body.head = merge_flow_header(
+            header_owned,
+            header_has_lines,
+            header,
+            self.source,
+            header_start,
+            header_end,
+            body.head,
+        );
         body
+    }
+}
+
+fn trim_cow(source: Cow<'_, str>) -> Cow<'_, str> {
+    match source {
+        Cow::Borrowed(source) => Cow::Borrowed(source.trim()),
+        Cow::Owned(source) => Cow::Owned(source.trim().to_owned()),
+    }
+}
+
+fn merge_flow_header<'a>(
+    header_owned: bool,
+    header_has_lines: bool,
+    mut header: String,
+    source: Option<&'a str>,
+    header_start: usize,
+    header_end: usize,
+    body_head: Cow<'a, str>,
+) -> Cow<'a, str> {
+    if body_head.is_empty() {
+        if header_owned {
+            Cow::Owned(header)
+        } else if !header_has_lines {
+            Cow::Borrowed("")
+        } else {
+            source
+                .and_then(|source| source.get(header_start..header_end))
+                .map_or_else(|| Cow::Owned(header), Cow::Borrowed)
+        }
+    } else {
+        if !header_has_lines && !header_owned {
+            return body_head;
+        }
+        if !header.is_empty() {
+            header.push('\n');
+        } else if !header_owned
+            && header_has_lines
+            && let Some(source) = source.and_then(|source| source.get(header_start..header_end))
+        {
+            header.push_str(source);
+            header.push('\n');
+        }
+        header.push_str(&body_head);
+        Cow::Owned(header)
     }
 }
 
@@ -1281,8 +1391,14 @@ fn is_typed_stmt(trimmed: &str) -> bool {
     )
 }
 
-impl CstBlockEvent {
-    fn new(head: String, body: String, end: usize, ok: bool, next_index: usize) -> Self {
+impl<'a> CstBlockEvent<'a> {
+    fn new(
+        head: Cow<'a, str>,
+        body: Cow<'a, str>,
+        end: usize,
+        ok: bool,
+        next_index: usize,
+    ) -> Self {
         Self {
             head,
             body,
@@ -1290,6 +1406,18 @@ impl CstBlockEvent {
             ok,
             next_index,
         }
+    }
+
+    pub(crate) fn owned_bytes(&self) -> usize {
+        let head = match &self.head {
+            Cow::Owned(value) => value.len(),
+            Cow::Borrowed(_) => 0,
+        };
+        let body = match &self.body {
+            Cow::Owned(value) => value.len(),
+            Cow::Borrowed(_) => 0,
+        };
+        head + body
     }
 }
 

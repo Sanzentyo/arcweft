@@ -1,8 +1,8 @@
 use crate::{
     time::LogicalDuration,
     value::{
-        RuntimeBinding, RuntimeEnv, RuntimeSeq, RuntimeValue, runtime_sequence_dense_bool,
-        runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
+        DenseSeqKind, RuntimeBinding, RuntimeEnv, RuntimeSeq, RuntimeValue,
+        runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
         runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
         runtime_sequence_dense_float_literals, runtime_sequence_dense_i8,
         runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
@@ -87,6 +87,51 @@ fn spare_scopes_do_not_affect_runtime_env_semantics() {
 
     env.push_scope_with_capacity(1);
     assert!(env.get("scoped").is_none());
+}
+
+#[test]
+fn dense_sequence_kind_covers_deterministic_scalar_storage() {
+    let cases = [
+        (runtime_sequence_dense_units(1), DenseSeqKind::Units),
+        (runtime_sequence_dense_i8(vec![1]), DenseSeqKind::I8),
+        (runtime_sequence_dense_i16(vec![1]), DenseSeqKind::I16),
+        (runtime_sequence_dense_i32(vec![1]), DenseSeqKind::I32),
+        (runtime_sequence_dense_i64(vec![1]), DenseSeqKind::I64),
+        (runtime_sequence_dense_i128(vec![1]), DenseSeqKind::I128),
+        (runtime_sequence_dense_isize(vec![1]), DenseSeqKind::ISize),
+        (runtime_sequence_dense_u8(vec![1]), DenseSeqKind::U8),
+        (runtime_sequence_dense_u16(vec![1]), DenseSeqKind::U16),
+        (runtime_sequence_dense_u32(vec![1]), DenseSeqKind::U32),
+        (runtime_sequence_dense_u64(vec![1]), DenseSeqKind::U64),
+        (runtime_sequence_dense_u128(vec![1]), DenseSeqKind::U128),
+        (runtime_sequence_dense_usize(vec![1]), DenseSeqKind::USize),
+        (runtime_sequence_dense_bool(vec![true]), DenseSeqKind::Bool),
+        (runtime_sequence_dense_bytes(vec![1]), DenseSeqKind::Bytes),
+        (runtime_sequence_dense_chars(vec!['a']), DenseSeqKind::Chars),
+        (
+            runtime_sequence_dense_durations(vec![LogicalDuration::from_nanos(1)]),
+            DenseSeqKind::Durations,
+        ),
+        (
+            runtime_sequence_dense_strings(vec!["a".to_owned()]),
+            DenseSeqKind::Strings,
+        ),
+        (
+            runtime_sequence_dense_float_literals(vec!["1.0f64".to_owned()]),
+            DenseSeqKind::FloatLiterals,
+        ),
+        (
+            runtime_sequence_dense_entity_refs(vec!["char.alice".to_owned()]),
+            DenseSeqKind::EntityRefs,
+        ),
+    ];
+
+    for (value, expected) in cases {
+        let RuntimeValue::Seq(seq) = value else {
+            panic!("dense helper returns a sequence");
+        };
+        assert_eq!(seq.dense_kind(), Some(expected));
+    }
 }
 
 #[test]

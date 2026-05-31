@@ -25,7 +25,7 @@ impl Parser<'_> {
                 );
                 return None;
             }
-            (head, Some(format!("{{ {body} }}")))
+            (head.into_owned(), Some(format!("{{ {body} }}")))
         } else if trimmed.ends_with("with:") {
             self.index += 1;
             let body = self.take_indented_await_body(indentation(&start_line.text) + 1);

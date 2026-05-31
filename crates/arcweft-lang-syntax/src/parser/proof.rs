@@ -33,7 +33,7 @@ impl Parser<'_> {
         let clauses = parse_proof_clauses(&body);
         Some(ProofItem::new(
             id,
-            body,
+            body.into_owned(),
             clauses,
             TextRange::new(start_line.start, end),
         ))
@@ -65,7 +65,7 @@ impl Parser<'_> {
         }
         Some(TrustedAxiomItem::new(
             id,
-            body,
+            body.into_owned(),
             TextRange::new(start_line.start, end),
         ))
     }
@@ -89,7 +89,7 @@ impl Parser<'_> {
         Some(TestItem::new(
             id,
             kind,
-            body,
+            body.into_owned(),
             TextRange::new(start_line.start, end),
         ))
     }
@@ -120,7 +120,7 @@ impl Parser<'_> {
         }
         Some(BenchItem::new(
             id,
-            body,
+            body.into_owned(),
             TextRange::new(start_line.start, end),
         ))
     }
