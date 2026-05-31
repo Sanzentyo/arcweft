@@ -312,10 +312,17 @@ impl<'a> Parser<'a> {
         let start_line = self.current().clone();
         if start_line.text.trim().ends_with(':') {
             self.index += 1;
-            let body = self.take_indented_await_body(indentation(&start_line.text) + 1);
             let head = start_line.text.trim().trim_end_matches(':').trim();
             let name = parse_scope_head(head)?.as_option().map(str::to_owned);
-            let body = self.parse_flow_body(&body, start_line.start + head.len());
+            let body_range = self.take_indented_line_range(indentation(&start_line.text) + 1);
+            let body = if let Some(body) = self
+                .parse_flow_body_from_line_range(body_range.clone(), start_line.start + head.len())
+            {
+                body
+            } else {
+                let body_source = self.collect_line_range_source(body_range);
+                self.parse_flow_body(&body_source, start_line.start + head.len())
+            };
             return Some(ScopeBlock::new(
                 name,
                 body,
@@ -349,9 +356,16 @@ impl<'a> Parser<'a> {
         let trimmed = start_line.text.trim();
         if trimmed.ends_with(':') {
             self.index += 1;
-            let body = self.take_indented_await_body(indentation(&start_line.text) + 1);
             let head = trimmed.trim_end_matches(':').trim();
-            let body = self.parse_flow_body(&body, start_line.start + head.len());
+            let body_range = self.take_indented_line_range(indentation(&start_line.text) + 1);
+            let body = if let Some(body) = self
+                .parse_flow_body_from_line_range(body_range.clone(), start_line.start + head.len())
+            {
+                body
+            } else {
+                let body_source = self.collect_line_range_source(body_range);
+                self.parse_flow_body(&body_source, start_line.start + head.len())
+            };
             let thread = super::parse_thread_block_items(head, body);
             return Some(FlowItem::Stmt(Stmt::Thread(thread)));
         }

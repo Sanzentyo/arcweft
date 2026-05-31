@@ -22,6 +22,7 @@ use crate::source::ParsedSource;
 use crate::text::parse_dialogue_text;
 use arcweft_source::{SourceAnchor, SourceName};
 use std::borrow::Cow;
+use std::ops::Range;
 
 pub mod await_;
 pub mod choice;
@@ -225,6 +226,36 @@ impl<'a> Parser<'a> {
             self.index += 1;
         }
         raw
+    }
+
+    fn take_indented_line_range(&mut self, min_indent: usize) -> Range<usize> {
+        let start = self.index;
+        while self.index < self.events.len() {
+            let line = self.current();
+            if line.text.trim().is_empty() {
+                self.index += 1;
+                continue;
+            }
+            if indentation(&line.text) < min_indent {
+                break;
+            }
+            self.index += 1;
+        }
+        start..self.index
+    }
+
+    fn collect_line_range_source(&self, range: Range<usize>) -> String {
+        let mut source = String::new();
+        for index in range {
+            let Some(line) = self.events.get(index) else {
+                break;
+            };
+            if !source.is_empty() {
+                source.push('\n');
+            }
+            source.push_str(line.text());
+        }
+        source
     }
 
     fn take_brace_block(&mut self) -> (Cow<'a, str>, Cow<'a, str>, usize, bool) {

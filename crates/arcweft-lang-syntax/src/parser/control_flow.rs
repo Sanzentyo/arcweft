@@ -565,20 +565,6 @@ impl Parser<'_> {
         }
         branches
     }
-
-    fn collect_line_range_source(&self, range: Range<usize>) -> String {
-        let mut source = String::new();
-        for index in range {
-            let Some(line) = self.events.get(index) else {
-                break;
-            };
-            if !source.is_empty() {
-                source.push('\n');
-            }
-            source.push_str(line.text());
-        }
-        source
-    }
 }
 
 fn parse_match_arms(body: &str, base: usize, errors: &mut Vec<ParseError>) -> Vec<MatchArm> {
