@@ -392,11 +392,11 @@ impl<'a> Parser<'a> {
         let trimmed = start_line.text.trim();
         if trimmed.ends_with(':') || trimmed == "defer" {
             self.index += 1;
-            let body = self.take_indented_await_body(indentation(&start_line.text) + 1);
+            let body_range = self.take_indented_line_range(indentation(&start_line.text) + 1);
             return Some(FlowItem::Stmt(Stmt::DeferBlock {
                 outcome: parse_defer_outcome(trimmed.trim_end_matches(':'))
                     .unwrap_or(DeferOutcome::Always),
-                statements: parse_stmt_lines(&body),
+                statements: self.parse_stmt_line_range(body_range),
             }));
         }
         if trimmed.starts_with("defer ") && !trimmed.contains('{') {

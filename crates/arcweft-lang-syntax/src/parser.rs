@@ -10,10 +10,10 @@ use crate::ast::items::{RawSyntax, TypedSyntaxTree};
 use crate::ast::line_plan::{BlockStyle, DeferOutcome, LinePlan};
 use crate::cst::{
     CstBlockEvent, CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineEvents,
-    CstStmtKind, CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxNode,
-    SyntaxParseStats, classify_stmt, cst_lines_for_source, find_matching_punctuation,
-    find_top_level_punctuation, parse_flat_fence, source_line_iter, split_leading_ident,
-    split_top_level_keyword_once, split_top_level_punctuation_once,
+    CstPunctuationDeltas, CstStmtKind, CstStructuredFlowBlockKind, CstTopLevelItemKind,
+    CstTopLevelLineKind, SyntaxNode, SyntaxParseStats, classify_stmt, cst_lines_for_source,
+    find_matching_punctuation, find_top_level_punctuation, parse_flat_fence, source_line_iter,
+    split_leading_ident, split_top_level_keyword_once, split_top_level_punctuation_once,
     split_top_level_punctuation_sequence_once,
 };
 use crate::expr::Expr;
@@ -250,6 +250,90 @@ impl<'a> Parser<'a> {
             let Some(line) = self.events.get(index) else {
                 break;
             };
+            if !source.is_empty() {
+                source.push('\n');
+            }
+            source.push_str(line.text());
+        }
+        source
+    }
+
+    fn parse_stmt_line_range(&self, range: Range<usize>) -> Vec<Stmt> {
+        self.logical_stmt_line_ranges(range)
+            .into_iter()
+            .filter_map(|range| self.parse_stmt_line_group(range))
+            .collect()
+    }
+
+    fn logical_stmt_line_ranges(&self, range: Range<usize>) -> Vec<Range<usize>> {
+        let mut groups: Vec<Range<usize>> = Vec::new();
+        let mut start = None;
+        let mut end = range.start;
+        let mut depth = CstPunctuationDeltas::default();
+
+        for index in range {
+            let Some(line) = self.events.get(index) else {
+                break;
+            };
+            let trimmed = line.trimmed();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if start.is_none()
+                && trimmed.starts_with('.')
+                && let Some(previous) = groups.pop()
+            {
+                start = Some(previous.start);
+            }
+            if start.is_none() {
+                start = Some(index);
+            }
+            end = index + 1;
+
+            let line_depth = line.punctuation_deltas();
+            depth.brace += line_depth.brace;
+            depth.paren += line_depth.paren;
+            depth.bracket += line_depth.bracket;
+            if depth.brace + depth.paren + depth.bracket <= 0 {
+                if let Some(start) = start.take() {
+                    groups.push(start..end);
+                }
+                depth = CstPunctuationDeltas::default();
+            }
+        }
+
+        if let Some(start) = start
+            && start < end
+        {
+            groups.push(start..end);
+        }
+        groups
+    }
+
+    fn parse_stmt_line_group(&self, range: Range<usize>) -> Option<Stmt> {
+        if range.is_empty() {
+            return None;
+        }
+        if range.end == range.start + 1 {
+            return self
+                .events
+                .get(range.start)
+                .map(|line| parse_stmt(line.trimmed()));
+        }
+        let source = self.collect_stmt_line_group_source(range);
+        let trimmed = source.trim();
+        (!trimmed.is_empty()).then(|| parse_stmt(trimmed))
+    }
+
+    fn collect_stmt_line_group_source(&self, range: Range<usize>) -> String {
+        let mut source = String::new();
+        for index in range {
+            let Some(line) = self.events.get(index) else {
+                break;
+            };
+            if line.trimmed().is_empty() {
+                continue;
+            }
             if !source.is_empty() {
                 source.push('\n');
             }

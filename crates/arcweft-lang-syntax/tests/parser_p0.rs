@@ -82,6 +82,34 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn indented_defer_body_groups_multiline_statements_from_cst_lines() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    defer:
+        let saved = compute(
+            1
+        )
+        metrics
+            .record(saved)
+}
+",
+    );
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    let FlowItem::Stmt(Stmt::DeferBlock { statements, .. }) = &flow.body()[0] else {
+        panic!("expected defer block");
+    };
+    assert_eq!(statements.len(), 2);
+    assert!(matches!(&statements[0], Stmt::Let { .. }));
+    assert!(matches!(
+        &statements[1],
+        Stmt::Expr(Expr::MethodCall { method, .. }) if method == "record"
+    ));
+}
+
+#[test]
 fn speaker_preset_call_arguments_are_typed_expressions() {
     let expr = parse_expr("alice(face=.smile, voice=auto, window=@textbox:.side)")
         .expect("speaker preset argument list parses");
