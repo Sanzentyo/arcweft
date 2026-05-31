@@ -12,6 +12,15 @@ pub enum RuntimeMathBackend {
     Auto,
 }
 
+/// Reason recorded when `Auto` chooses a concrete math backend.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeMathAutoSelectionReason {
+    Matmul4x4Glam,
+    MatmulWgpuWorkThreshold,
+    MatmulCpuDefault,
+    ElementwiseCpuDefault,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RuntimeMathAcceleratorConfig {
     pub backend: RuntimeMathBackend,
@@ -43,6 +52,13 @@ pub struct RuntimeMathStats {
     pub gpu_buffer_reuse_hits: usize,
     pub gpu_reused_dispatches: usize,
     pub last_backend: Option<RuntimeMathBackend>,
+    pub last_auto_reason: Option<RuntimeMathAutoSelectionReason>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RuntimeMathBackendSelection {
+    backend: RuntimeMathBackend,
+    auto_reason: Option<RuntimeMathAutoSelectionReason>,
 }
 
 /// Adapter-owned accelerator for dense `f32` matrix/tensor kernels.
@@ -116,7 +132,9 @@ impl RuntimeMathAccelerator {
         rhs: &DenseMatrixF32,
     ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
         self.record_matrix_inputs(lhs, rhs);
-        match self.selected_matmul_backend(lhs, rhs) {
+        let selection = self.select_matmul_backend(lhs, rhs);
+        self.stats.last_auto_reason = selection.auto_reason;
+        match selection.backend {
             RuntimeMathBackend::Scalar => self.matmul_scalar(lhs, rhs),
             RuntimeMathBackend::Glam => self.matmul_glam(lhs, rhs),
             RuntimeMathBackend::Ndarray => self.matmul_ndarray(lhs, rhs),
@@ -131,7 +149,9 @@ impl RuntimeMathAccelerator {
         rhs: &DenseMatrixF32,
     ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
         self.record_matrix_inputs(lhs, rhs);
-        match self.selected_elementwise_backend(lhs.values().len()) {
+        let selection = self.select_elementwise_backend(lhs.values().len());
+        self.stats.last_auto_reason = selection.auto_reason;
+        match selection.backend {
             RuntimeMathBackend::Scalar => self.matrix_add_scalar(lhs, rhs),
             RuntimeMathBackend::Glam => self.matrix_add_glam(lhs, rhs),
             RuntimeMathBackend::Ndarray => self.matrix_add_ndarray(lhs, rhs),
@@ -146,7 +166,9 @@ impl RuntimeMathAccelerator {
         rhs: &DenseTensorF32,
     ) -> Result<DenseTensorF32, RuntimeMathAcceleratorError> {
         self.record_tensor_inputs(lhs, rhs);
-        match self.selected_elementwise_backend(lhs.values().len()) {
+        let selection = self.select_elementwise_backend(lhs.values().len());
+        self.stats.last_auto_reason = selection.auto_reason;
+        match selection.backend {
             RuntimeMathBackend::Scalar => self.tensor_add_scalar(lhs, rhs),
             RuntimeMathBackend::Glam => self.tensor_add_glam(lhs, rhs),
             RuntimeMathBackend::Ndarray => self.tensor_add_ndarray(lhs, rhs),
@@ -308,30 +330,48 @@ impl RuntimeMathAccelerator {
         }
     }
 
-    fn selected_matmul_backend(
+    fn select_matmul_backend(
         &self,
         lhs: &DenseMatrixF32,
         rhs: &DenseMatrixF32,
-    ) -> RuntimeMathBackend {
+    ) -> RuntimeMathBackendSelection {
         match self.config.backend {
             RuntimeMathBackend::Auto if lhs.rows() == 4 && lhs.cols() == 4 && rhs.cols() == 4 => {
-                RuntimeMathBackend::Glam
+                RuntimeMathBackendSelection {
+                    backend: RuntimeMathBackend::Glam,
+                    auto_reason: Some(RuntimeMathAutoSelectionReason::Matmul4x4Glam),
+                }
             }
             RuntimeMathBackend::Auto
                 if wgpu_backend_enabled()
                     && matmul_work_items(lhs, rhs) >= self.config.wgpu_min_elements =>
             {
-                RuntimeMathBackend::Wgpu
+                RuntimeMathBackendSelection {
+                    backend: RuntimeMathBackend::Wgpu,
+                    auto_reason: Some(RuntimeMathAutoSelectionReason::MatmulWgpuWorkThreshold),
+                }
             }
-            RuntimeMathBackend::Auto => RuntimeMathBackend::Ndarray,
-            backend => backend,
+            RuntimeMathBackend::Auto => RuntimeMathBackendSelection {
+                backend: RuntimeMathBackend::Ndarray,
+                auto_reason: Some(RuntimeMathAutoSelectionReason::MatmulCpuDefault),
+            },
+            backend => RuntimeMathBackendSelection {
+                backend,
+                auto_reason: None,
+            },
         }
     }
 
-    fn selected_elementwise_backend(&self, _elements: usize) -> RuntimeMathBackend {
+    fn select_elementwise_backend(&self, _elements: usize) -> RuntimeMathBackendSelection {
         match self.config.backend {
-            RuntimeMathBackend::Auto => RuntimeMathBackend::Ndarray,
-            backend => backend,
+            RuntimeMathBackend::Auto => RuntimeMathBackendSelection {
+                backend: RuntimeMathBackend::Ndarray,
+                auto_reason: Some(RuntimeMathAutoSelectionReason::ElementwiseCpuDefault),
+            },
+            backend => RuntimeMathBackendSelection {
+                backend,
+                auto_reason: None,
+            },
         }
     }
 
@@ -1233,7 +1273,79 @@ mod tests {
             accelerator.stats().last_backend,
             Some(RuntimeMathBackend::Ndarray)
         );
+        assert_eq!(
+            accelerator.stats().last_auto_reason,
+            Some(RuntimeMathAutoSelectionReason::MatmulCpuDefault)
+        );
         assert_eq!(accelerator.stats().wgpu_calls, 0);
+    }
+
+    #[test]
+    fn auto_4x4_matmul_records_glam_policy_reason() {
+        let lhs = DenseMatrixF32::new(4, 4, (0_u8..16).map(f32::from).collect()).unwrap();
+        let rhs = DenseMatrixF32::new(
+            4,
+            4,
+            (0_u8..16).map(|value| f32::from(value) * 0.5).collect(),
+        )
+        .unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig::default());
+
+        let out = accelerator.matmul_f32(&lhs, &rhs).unwrap();
+
+        assert_eq!(out, lhs.matmul_scalar(&rhs).unwrap());
+        assert_eq!(
+            accelerator.stats().last_backend,
+            Some(RuntimeMathBackend::Glam)
+        );
+        assert_eq!(
+            accelerator.stats().last_auto_reason,
+            Some(RuntimeMathAutoSelectionReason::Matmul4x4Glam)
+        );
+    }
+
+    #[test]
+    fn auto_elementwise_records_cpu_policy_reason() {
+        let lhs = DenseMatrixF32::new(2, 2, vec![1.0; 4]).unwrap();
+        let rhs = DenseMatrixF32::new(2, 2, vec![2.0; 4]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig::default());
+
+        let out = accelerator.matrix_add_f32(&lhs, &rhs).unwrap();
+
+        assert_eq!(out.values(), &[3.0; 4]);
+        assert_eq!(
+            accelerator.stats().last_backend,
+            Some(RuntimeMathBackend::Ndarray)
+        );
+        assert_eq!(
+            accelerator.stats().last_auto_reason,
+            Some(RuntimeMathAutoSelectionReason::ElementwiseCpuDefault)
+        );
+    }
+
+    #[cfg(feature = "math-wgpu")]
+    #[test]
+    fn auto_large_matmul_records_wgpu_threshold_policy_reason() {
+        let lhs = DenseMatrixF32::new(8, 8, vec![1.0; 64]).unwrap();
+        let rhs = DenseMatrixF32::new(8, 8, vec![2.0; 64]).unwrap();
+        let mut accelerator = RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+            wgpu_min_elements: 1,
+            ..RuntimeMathAcceleratorConfig::default()
+        });
+
+        let Ok(out) = accelerator.matmul_f32(&lhs, &rhs) else {
+            return;
+        };
+
+        assert_eq!(out, lhs.matmul_scalar(&rhs).unwrap());
+        assert_eq!(
+            accelerator.stats().last_backend,
+            Some(RuntimeMathBackend::Wgpu)
+        );
+        assert_eq!(
+            accelerator.stats().last_auto_reason,
+            Some(RuntimeMathAutoSelectionReason::MatmulWgpuWorkThreshold)
+        );
     }
 
     #[cfg(feature = "math-wgpu")]

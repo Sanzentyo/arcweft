@@ -1,6 +1,7 @@
 use arcweft_core::math::{DenseMatrixF32, DenseTensorF32};
 use arcweft_runtime_accelerator::math::{
-    RuntimeMathAccelerator, RuntimeMathAcceleratorConfig, RuntimeMathBackend,
+    RuntimeMathAccelerator, RuntimeMathAcceleratorConfig, RuntimeMathAutoSelectionReason,
+    RuntimeMathBackend,
 };
 use std::time::Instant;
 
@@ -471,9 +472,18 @@ impl BackendReport {
             );
             match stats.last_backend {
                 Some(backend) => {
-                    println!("        \"last_backend\": \"{}\"", backend_label(backend));
+                    println!("        \"last_backend\": \"{}\",", backend_label(backend));
                 }
-                None => println!("        \"last_backend\": null"),
+                None => println!("        \"last_backend\": null,"),
+            }
+            match stats.last_auto_reason {
+                Some(reason) => {
+                    println!(
+                        "        \"last_auto_reason\": \"{}\"",
+                        auto_reason_label(reason)
+                    );
+                }
+                None => println!("        \"last_auto_reason\": null"),
             }
             println!("      }},");
         } else {
@@ -502,6 +512,15 @@ const fn backend_label(value: RuntimeMathBackend) -> &'static str {
         RuntimeMathBackend::Ndarray => "ndarray",
         RuntimeMathBackend::Wgpu => "wgpu",
         RuntimeMathBackend::Auto => "auto",
+    }
+}
+
+const fn auto_reason_label(value: RuntimeMathAutoSelectionReason) -> &'static str {
+    match value {
+        RuntimeMathAutoSelectionReason::Matmul4x4Glam => "matmul_4x4_glam",
+        RuntimeMathAutoSelectionReason::MatmulWgpuWorkThreshold => "matmul_wgpu_work_threshold",
+        RuntimeMathAutoSelectionReason::MatmulCpuDefault => "matmul_cpu_default",
+        RuntimeMathAutoSelectionReason::ElementwiseCpuDefault => "elementwise_cpu_default",
     }
 }
 

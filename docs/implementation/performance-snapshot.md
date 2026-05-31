@@ -484,10 +484,10 @@ and no source path in the JSON output.
 
 `DenseSeq::F32`/`DenseSeq::F64` use `DenseSeqStorage<f32>` and
 `DenseSeqStorage<f64>` directly. Typed f32/f64 pure helper calls now use
-borrowed slice ABI in the VM flow path and scalar AOT path, and f32 helpers can
-promote from auto AOT to native Cranelift JIT for flat batches without
-materializing `Vec<RuntimeValue>` arguments. f64 helpers use the same native JIT
-promotion shape with double-width borrowed argument/output accounting.
+borrowed slice ABI in the VM flow path and scalar AOT path, and both f32 and
+f64 helpers can promote from auto AOT to native Cranelift JIT for flat batches
+without materializing `Vec<RuntimeValue>` arguments. f64 helpers use the same
+native JIT promotion shape with double-width borrowed argument/output accounting.
 Exact-width integer helpers use the same scalar AOT boundary for non-i64 widths;
 native Cranelift JIT covers i64, width-preserving i32 scalar/batch ABI, and
 f32/f64 scalar/batch ABI.
@@ -567,8 +567,10 @@ dispatch.
 
 The math bench JSON reports the requested backend, measured status,
 correctness-checked timing samples, the backend that actually executed last,
-and accelerator copy counters split into borrowed bytes, copied bytes, uploaded
-bytes, downloaded bytes, GPU buffer creations, GPU buffer reuse hits, and reused
-dispatches. Explicit `wgpu` requests remain explicit: unavailable adapters or
-disabled features produce a structured skip/error, while `auto` records the
-fallback path through the backend counters.
+and the `last_auto_reason` policy label when `auto` made the choice. The same
+report includes accelerator copy counters split into borrowed bytes, copied
+bytes, uploaded bytes, downloaded bytes, GPU buffer creations, GPU buffer reuse
+hits, and reused dispatches. Explicit `wgpu` requests remain explicit:
+unavailable adapters or disabled features produce a structured skip/error,
+while `auto` records the chosen policy and fallback path through the backend
+counters.
