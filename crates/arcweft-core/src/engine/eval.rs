@@ -642,76 +642,7 @@ impl Engine {
         source: &RuntimeExpr,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        if let RuntimeExpr::Map {
-            source: map_source,
-            param,
-            body,
-        } = source
-            && let Some(sum) = self.evaluate_i8_map_sum(map_source, param, body, pure_backend)?
-        {
-            return Ok(RuntimeValue::Int(sum));
-        }
-        if let RuntimeExpr::Map {
-            source: map_source,
-            param,
-            body,
-        } = source
-            && let Some(sum) = self.evaluate_i16_map_sum(map_source, param, body, pure_backend)?
-        {
-            return Ok(RuntimeValue::Int(sum));
-        }
-        if let RuntimeExpr::Map {
-            source: map_source,
-            param,
-            body,
-        } = source
-            && let Some(sum) = self.evaluate_i32_map_sum(map_source, param, body, pure_backend)?
-        {
-            return Ok(RuntimeValue::Int(sum));
-        }
-        if let RuntimeExpr::Map {
-            source: map_source,
-            param,
-            body,
-        } = source
-            && let Some(sum) = self.evaluate_u8_map_sum(map_source, param, body, pure_backend)?
-        {
-            return Ok(RuntimeValue::Int(sum));
-        }
-        if let RuntimeExpr::Map {
-            source: map_source,
-            param,
-            body,
-        } = source
-            && let Some(sum) = self.evaluate_u16_map_sum(map_source, param, body, pure_backend)?
-        {
-            return Ok(RuntimeValue::Int(sum));
-        }
-        if let RuntimeExpr::Map {
-            source: map_source,
-            param,
-            body,
-        } = source
-            && let Some(sum) = self.evaluate_u32_map_sum(map_source, param, body, pure_backend)?
-        {
-            return Ok(RuntimeValue::Int(sum));
-        }
-        if let RuntimeExpr::Map {
-            source: map_source,
-            param,
-            body,
-        } = source
-            && let Some(sum) = self.evaluate_u64_map_sum(map_source, param, body, pure_backend)?
-        {
-            return Ok(RuntimeValue::Int(sum));
-        }
-        if let RuntimeExpr::Map {
-            source: map_source,
-            param,
-            body,
-        } = source
-            && let Some(sum) = self.evaluate_i64_map_sum(map_source, param, body, pure_backend)?
-        {
+        if let Some(sum) = self.evaluate_map_sum_expr(source, pure_backend)? {
             return Ok(RuntimeValue::Int(sum));
         }
         if let Some(sum) = self.evaluate_i64_bracket_seq_sum(source, pure_backend)? {
@@ -741,6 +672,49 @@ impl Engine {
             .try_fold(RuntimeValue::Int(0), |acc, item| {
                 evaluate_binary(acc, RuntimeBinaryOp::Add, item)
             })
+    }
+
+    fn evaluate_map_sum_expr(
+        &mut self,
+        source: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<i64>, RuntimeEvalError> {
+        let RuntimeExpr::Map {
+            source: map_source,
+            param,
+            body,
+        } = source
+        else {
+            return Ok(None);
+        };
+        if let Some(sum) = self.evaluate_i8_map_sum(map_source, param, body, pure_backend)? {
+            return Ok(Some(sum));
+        }
+        if let Some(sum) = self.evaluate_i16_map_sum(map_source, param, body, pure_backend)? {
+            return Ok(Some(sum));
+        }
+        if let Some(sum) = self.evaluate_i32_map_sum(map_source, param, body, pure_backend)? {
+            return Ok(Some(sum));
+        }
+        if let Some(sum) = self.evaluate_i128_map_sum(map_source, param, body, pure_backend)? {
+            return Ok(Some(sum));
+        }
+        if let Some(sum) = self.evaluate_u8_map_sum(map_source, param, body, pure_backend)? {
+            return Ok(Some(sum));
+        }
+        if let Some(sum) = self.evaluate_u16_map_sum(map_source, param, body, pure_backend)? {
+            return Ok(Some(sum));
+        }
+        if let Some(sum) = self.evaluate_u32_map_sum(map_source, param, body, pure_backend)? {
+            return Ok(Some(sum));
+        }
+        if let Some(sum) = self.evaluate_u64_map_sum(map_source, param, body, pure_backend)? {
+            return Ok(Some(sum));
+        }
+        if let Some(sum) = self.evaluate_u128_map_sum(map_source, param, body, pure_backend)? {
+            return Ok(Some(sum));
+        }
+        self.evaluate_i64_map_sum(map_source, param, body, pure_backend)
     }
 
     fn evaluate_i64_local_sequence_sum(&self, name: &str) -> Result<Option<i64>, RuntimeEvalError> {
@@ -836,6 +810,25 @@ impl Engine {
         }
     }
 
+    fn evaluate_i128_map_sum(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<i64>, RuntimeEvalError> {
+        let mut flat_inputs = std::mem::take(&mut self.pure_i128_batch_inputs);
+        let result = self.evaluate_exact_int_map_sum_with_inputs::<i128>(
+            source,
+            param,
+            body,
+            pure_backend,
+            &mut flat_inputs,
+        );
+        self.pure_i128_batch_inputs = flat_inputs;
+        result
+    }
+
     fn evaluate_u8_map_sum(
         &mut self,
         source: &RuntimeExpr,
@@ -909,6 +902,25 @@ impl Engine {
             &mut flat_inputs,
         );
         self.pure_u64_batch_inputs = flat_inputs;
+        result
+    }
+
+    fn evaluate_u128_map_sum(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<i64>, RuntimeEvalError> {
+        let mut flat_inputs = std::mem::take(&mut self.pure_u128_batch_inputs);
+        let result = self.evaluate_exact_int_map_sum_with_inputs::<u128>(
+            source,
+            param,
+            body,
+            pure_backend,
+            &mut flat_inputs,
+        );
+        self.pure_u128_batch_inputs = flat_inputs;
         result
     }
 
@@ -1936,7 +1948,12 @@ fn pure_helper_has_only_exact_int_inputs<T: RuntimeExactInteger>(
 
 fn expr_returns_i64<'a>(expr: &'a RuntimeExpr, int_names: &mut Vec<&'a str>) -> bool {
     match expr {
-        RuntimeExpr::Value(RuntimeValue::Int(_) | RuntimeValue::UInt(_)) => true,
+        RuntimeExpr::Value(
+            RuntimeValue::Int(_)
+            | RuntimeValue::I128(_)
+            | RuntimeValue::UInt(_)
+            | RuntimeValue::U128(_),
+        ) => true,
         RuntimeExpr::Local(name) => int_names.contains(&name.as_str()),
         RuntimeExpr::Let { name, expr, body } => {
             if !expr_returns_i64(expr, int_names) {

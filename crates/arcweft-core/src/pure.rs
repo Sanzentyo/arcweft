@@ -1317,7 +1317,9 @@ struct PureEvaluator {
 enum PureScalar {
     Bool(bool),
     Int(i64),
+    I128(i128),
     UInt(u64),
+    U128(u128),
 }
 
 impl PureScalar {
@@ -1325,7 +1327,9 @@ impl PureScalar {
         match self {
             Self::Bool(value) => RuntimeValue::Bool(value),
             Self::Int(value) => RuntimeValue::Int(value),
+            Self::I128(value) => RuntimeValue::I128(value),
             Self::UInt(value) => RuntimeValue::UInt(value),
+            Self::U128(value) => RuntimeValue::U128(value),
         }
     }
 
@@ -1333,7 +1337,9 @@ impl PureScalar {
         match self {
             Self::Bool(value) => runtime_value_label(&RuntimeValue::Bool(value)),
             Self::Int(value) => runtime_value_label(&RuntimeValue::Int(value)),
+            Self::I128(value) => runtime_value_label(&RuntimeValue::I128(value)),
             Self::UInt(value) => runtime_value_label(&RuntimeValue::UInt(value)),
+            Self::U128(value) => runtime_value_label(&RuntimeValue::U128(value)),
         }
     }
 }
@@ -1342,7 +1348,9 @@ fn runtime_value_as_scalar(value: &RuntimeValue) -> Option<PureScalar> {
     match value {
         RuntimeValue::Bool(value) => Some(PureScalar::Bool(*value)),
         RuntimeValue::Int(value) => Some(PureScalar::Int(*value)),
+        RuntimeValue::I128(value) => Some(PureScalar::I128(*value)),
         RuntimeValue::UInt(value) => Some(PureScalar::UInt(*value)),
+        RuntimeValue::U128(value) => Some(PureScalar::U128(*value)),
         _ => None,
     }
 }
@@ -1351,7 +1359,9 @@ fn runtime_value_into_scalar(value: RuntimeValue) -> Result<PureScalar, RuntimeE
     match value {
         RuntimeValue::Bool(value) => Ok(PureScalar::Bool(value)),
         RuntimeValue::Int(value) => Ok(PureScalar::Int(value)),
+        RuntimeValue::I128(value) => Ok(PureScalar::I128(value)),
         RuntimeValue::UInt(value) => Ok(PureScalar::UInt(value)),
+        RuntimeValue::U128(value) => Ok(PureScalar::U128(value)),
         value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
     }
 }
@@ -1408,7 +1418,8 @@ fn evaluate_scalar_unary(
     match (op, value) {
         (RuntimeUnaryOp::Not, PureScalar::Bool(value)) => Ok(PureScalar::Bool(!value)),
         (RuntimeUnaryOp::Neg, PureScalar::Int(value)) => Ok(PureScalar::Int(-value)),
-        (RuntimeUnaryOp::Neg, value @ PureScalar::UInt(_)) => {
+        (RuntimeUnaryOp::Neg, PureScalar::I128(value)) => Ok(PureScalar::I128(-value)),
+        (RuntimeUnaryOp::Neg, value @ (PureScalar::UInt(_) | PureScalar::U128(_))) => {
             Err(RuntimeEvalError::UnsupportedUnary {
                 op: runtime_unary_op_label(op),
                 value: value.label(),
@@ -1453,6 +1464,20 @@ fn evaluate_scalar_binary(
                     RuntimeBinaryOp::Ge => lhs >= rhs,
                     _ => unreachable!(),
                 })),
+                (PureScalar::I128(lhs), PureScalar::I128(rhs)) => Ok(PureScalar::Bool(match op {
+                    RuntimeBinaryOp::Lt => lhs < rhs,
+                    RuntimeBinaryOp::Le => lhs <= rhs,
+                    RuntimeBinaryOp::Gt => lhs > rhs,
+                    RuntimeBinaryOp::Ge => lhs >= rhs,
+                    _ => unreachable!(),
+                })),
+                (PureScalar::U128(lhs), PureScalar::U128(rhs)) => Ok(PureScalar::Bool(match op {
+                    RuntimeBinaryOp::Lt => lhs < rhs,
+                    RuntimeBinaryOp::Le => lhs <= rhs,
+                    RuntimeBinaryOp::Gt => lhs > rhs,
+                    RuntimeBinaryOp::Ge => lhs >= rhs,
+                    _ => unreachable!(),
+                })),
                 (lhs, rhs) => unsupported_scalar_binary(op, lhs, rhs),
             }
         }
@@ -1468,6 +1493,20 @@ fn evaluate_scalar_binary(
                 _ => unreachable!(),
             })),
             (PureScalar::UInt(lhs), PureScalar::UInt(rhs)) => Ok(PureScalar::UInt(match op {
+                RuntimeBinaryOp::Add => lhs + rhs,
+                RuntimeBinaryOp::Sub => lhs - rhs,
+                RuntimeBinaryOp::Mul => lhs * rhs,
+                RuntimeBinaryOp::Div => lhs / rhs,
+                _ => unreachable!(),
+            })),
+            (PureScalar::I128(lhs), PureScalar::I128(rhs)) => Ok(PureScalar::I128(match op {
+                RuntimeBinaryOp::Add => lhs + rhs,
+                RuntimeBinaryOp::Sub => lhs - rhs,
+                RuntimeBinaryOp::Mul => lhs * rhs,
+                RuntimeBinaryOp::Div => lhs / rhs,
+                _ => unreachable!(),
+            })),
+            (PureScalar::U128(lhs), PureScalar::U128(rhs)) => Ok(PureScalar::U128(match op {
                 RuntimeBinaryOp::Add => lhs + rhs,
                 RuntimeBinaryOp::Sub => lhs - rhs,
                 RuntimeBinaryOp::Mul => lhs * rhs,
@@ -1630,6 +1669,9 @@ impl PureEvaluator {
         match expr {
             RuntimeExpr::Value(RuntimeValue::Bool(value)) => Ok(PureScalar::Bool(*value)),
             RuntimeExpr::Value(RuntimeValue::Int(value)) => Ok(PureScalar::Int(*value)),
+            RuntimeExpr::Value(RuntimeValue::I128(value)) => Ok(PureScalar::I128(*value)),
+            RuntimeExpr::Value(RuntimeValue::UInt(value)) => Ok(PureScalar::UInt(*value)),
+            RuntimeExpr::Value(RuntimeValue::U128(value)) => Ok(PureScalar::U128(*value)),
             RuntimeExpr::Local(name) => match self.env.get(name) {
                 Some(value) => runtime_value_as_scalar(value)
                     .ok_or_else(|| RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
@@ -1671,9 +1713,10 @@ impl PureEvaluator {
     fn evaluate_scalar_bool(&mut self, expr: &RuntimeExpr) -> Result<bool, RuntimeEvalError> {
         match self.evaluate_scalar_expr(expr)? {
             PureScalar::Bool(value) => Ok(value),
-            value @ (PureScalar::Int(_) | PureScalar::UInt(_)) => {
-                Err(RuntimeEvalError::ExpectedBool(value.label()))
-            }
+            value @ (PureScalar::Int(_)
+            | PureScalar::I128(_)
+            | PureScalar::UInt(_)
+            | PureScalar::U128(_)) => Err(RuntimeEvalError::ExpectedBool(value.label())),
         }
     }
 

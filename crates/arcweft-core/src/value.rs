@@ -160,6 +160,104 @@ macro_rules! impl_runtime_exact_unsigned_integer {
     };
 }
 
+macro_rules! impl_runtime_exact_wide_signed_integer {
+    ($ty:ty, $input_type:ident, $output_type:ident, $slice:ident, $dense:ident, $variant:ident) => {
+        impl RuntimeExactInteger for $ty {
+            const INPUT_TYPE: RuntimePureInputType = RuntimePureInputType::$input_type;
+            const OUTPUT_TYPE: RuntimePureOutputType = RuntimePureOutputType::$output_type;
+
+            fn into_runtime_value(self) -> RuntimeValue {
+                RuntimeValue::$variant(self)
+            }
+
+            fn try_from_runtime_value(
+                helper: &str,
+                value: RuntimeValue,
+            ) -> Result<Self, RuntimeEvalError> {
+                match value {
+                    RuntimeValue::$variant(value) => Ok(value),
+                    value => Err(RuntimeEvalError::UnsupportedPure {
+                        name: helper.to_owned(),
+                        reason: format!(
+                            "pure {} result expected {}, got {}",
+                            stringify!($ty),
+                            stringify!($ty),
+                            runtime_value_label(&value)
+                        ),
+                    }),
+                }
+            }
+
+            fn try_sum_as_i64(self, helper: &str) -> Result<i64, RuntimeEvalError> {
+                i64::try_from(self).map_err(|_| RuntimeEvalError::UnsupportedPure {
+                    name: helper.to_owned(),
+                    reason: format!(
+                        "pure {} result `{self}` cannot be represented as an i64 sum",
+                        stringify!($ty)
+                    ),
+                })
+            }
+
+            fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
+                seq.$slice()
+            }
+
+            fn dense_sequence(values: Vec<Self>) -> RuntimeValue {
+                $dense(values)
+            }
+        }
+    };
+}
+
+macro_rules! impl_runtime_exact_wide_unsigned_integer {
+    ($ty:ty, $input_type:ident, $output_type:ident, $slice:ident, $dense:ident, $variant:ident) => {
+        impl RuntimeExactInteger for $ty {
+            const INPUT_TYPE: RuntimePureInputType = RuntimePureInputType::$input_type;
+            const OUTPUT_TYPE: RuntimePureOutputType = RuntimePureOutputType::$output_type;
+
+            fn into_runtime_value(self) -> RuntimeValue {
+                RuntimeValue::$variant(self)
+            }
+
+            fn try_from_runtime_value(
+                helper: &str,
+                value: RuntimeValue,
+            ) -> Result<Self, RuntimeEvalError> {
+                match value {
+                    RuntimeValue::$variant(value) => Ok(value),
+                    value => Err(RuntimeEvalError::UnsupportedPure {
+                        name: helper.to_owned(),
+                        reason: format!(
+                            "pure {} result expected {}, got {}",
+                            stringify!($ty),
+                            stringify!($ty),
+                            runtime_value_label(&value)
+                        ),
+                    }),
+                }
+            }
+
+            fn try_sum_as_i64(self, helper: &str) -> Result<i64, RuntimeEvalError> {
+                i64::try_from(self).map_err(|_| RuntimeEvalError::UnsupportedPure {
+                    name: helper.to_owned(),
+                    reason: format!(
+                        "pure {} result `{self}` cannot be represented as an i64 sum",
+                        stringify!($ty)
+                    ),
+                })
+            }
+
+            fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
+                seq.$slice()
+            }
+
+            fn dense_sequence(values: Vec<Self>) -> RuntimeValue {
+                $dense(values)
+            }
+        }
+    };
+}
+
 impl RuntimeSeq {
     pub fn values(values: Vec<RuntimeValue>) -> Self {
         Self::Values(values)
@@ -464,10 +562,26 @@ impl RuntimeSeq {
 impl_runtime_exact_signed_integer!(i8, I8, I8, as_i8_slice, runtime_sequence_dense_i8);
 impl_runtime_exact_signed_integer!(i16, I16, I16, as_i16_slice, runtime_sequence_dense_i16);
 impl_runtime_exact_signed_integer!(i32, I32, I32, as_i32_slice, runtime_sequence_dense_i32);
+impl_runtime_exact_wide_signed_integer!(
+    i128,
+    I128,
+    I128,
+    as_i128_slice,
+    runtime_sequence_dense_i128,
+    I128
+);
 impl_runtime_exact_unsigned_integer!(u8, U8, U8, as_u8_slice, runtime_sequence_dense_u8);
 impl_runtime_exact_unsigned_integer!(u16, U16, U16, as_u16_slice, runtime_sequence_dense_u16);
 impl_runtime_exact_unsigned_integer!(u32, U32, U32, as_u32_slice, runtime_sequence_dense_u32);
 impl_runtime_exact_unsigned_integer!(u64, U64, U64, as_u64_slice, runtime_sequence_dense_u64);
+impl_runtime_exact_wide_unsigned_integer!(
+    u128,
+    U128,
+    U128,
+    as_u128_slice,
+    runtime_sequence_dense_u128,
+    U128
+);
 
 /// Homogeneous storage kind used by a dense runtime sequence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
