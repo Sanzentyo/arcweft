@@ -437,9 +437,10 @@ the helper to native i32 JIT, reported median elapsed time 12800 ns, and kept
 median elapsed time 43900 ns and `pure_aot_calls_median = 128`, so the i32 JIT
 ABI is the expected natural fast tier for that shape.
 
-The f32 JIT ABI now mirrors the exact integer path for float-scalar helpers:
-it emits native `extern "C" fn(f32, ...) -> f32` calls plus row-major
-`*const f32` flat batch entry points. A local path-free bench run of
+The float JIT ABI now mirrors the exact integer path for scalar helpers:
+it emits native `extern "C" fn(f32, ...) -> f32` and
+`extern "C" fn(f64, ...) -> f64` calls plus row-major `*const f32` and
+`*const f64` flat batch entry points. A local path-free bench run of
 `022_dense_f32_map_pure_batch.arcw` with the default auto backend promoted the
 natural flow map to native f32 JIT, reported median elapsed time 16200 ns, and
 kept `pure_jit_calls_median = 128`, `pure_aot_calls_median = 0`,
@@ -447,9 +448,13 @@ kept `pure_jit_calls_median = 128`, `pure_aot_calls_median = 0`,
 `pure_arg_bytes_borrowed_median = 1024`, and
 `pure_result_bytes_copied_median = 512`. The same fixture with
 `--pure-backend aot` reported median elapsed time 46100 ns and
-`pure_aot_calls_median = 128`, so the f32 JIT ABI is also the natural fast tier
-for this batched map shape while still preserving the `Vec<f32>` result copy
-as the only measured output movement.
+`pure_aot_calls_median = 128`. The checked f64 fixture
+`023_dense_f64_map_pure_batch.arcw` reported median elapsed time 15900 ns with
+default auto JIT, `pure_arg_bytes_borrowed_median = 2048`, and
+`pure_result_bytes_copied_median = 1024`; the same fixture with
+`--pure-backend aot` reported median elapsed time 44700 ns. The f32/f64 JIT ABI
+is therefore the natural fast tier for these batched map shapes while still
+preserving the typed result vector copy as the only measured output movement.
 
 The dense scalar length fixture covers the non-integer deterministic scalar
 storage cases. It lowers unit, bool, char, logical-duration, and `u8` sequences
@@ -481,9 +486,11 @@ and no source path in the JSON output.
 `DenseSeqStorage<f64>` directly. Typed f32/f64 pure helper calls now use
 borrowed slice ABI in the VM flow path and scalar AOT path, and f32 helpers can
 promote from auto AOT to native Cranelift JIT for flat batches without
-materializing `Vec<RuntimeValue>` arguments. Exact-width integer helpers use
-the same scalar AOT boundary for non-i64 widths; native Cranelift JIT covers
-i64, width-preserving i32 scalar/batch ABI, and f32 scalar/batch ABI.
+materializing `Vec<RuntimeValue>` arguments. f64 helpers use the same native JIT
+promotion shape with double-width borrowed argument/output accounting.
+Exact-width integer helpers use the same scalar AOT boundary for non-i64 widths;
+native Cranelift JIT covers i64, width-preserving i32 scalar/batch ABI, and
+f32/f64 scalar/batch ABI.
 Record/tuple storage should be designed separately as columnar storage rather
 than as scalar `DenseSeqStorage<T>`. The scalar dense coverage is encoded in
 `DenseSeqKind`, so adding another dense class requires extending the typed kind

@@ -21,6 +21,12 @@ type JitF32BinaryFn = extern "C" fn(f32, f32) -> f32;
 type JitF32TernaryFn = extern "C" fn(f32, f32, f32) -> f32;
 type JitF32QuaternaryFn = extern "C" fn(f32, f32, f32, f32) -> f32;
 type JitF32RowsBatchFn = extern "C" fn(*const f32, i64, *mut f32);
+type JitF64Fn = extern "C" fn() -> f64;
+type JitF64UnaryFn = extern "C" fn(f64) -> f64;
+type JitF64BinaryFn = extern "C" fn(f64, f64) -> f64;
+type JitF64TernaryFn = extern "C" fn(f64, f64, f64) -> f64;
+type JitF64QuaternaryFn = extern "C" fn(f64, f64, f64, f64) -> f64;
+type JitF64RowsBatchFn = extern "C" fn(*const f64, i64, *mut f64);
 
 #[derive(Clone, Copy)]
 pub(crate) enum I64InputCaller {
@@ -224,6 +230,65 @@ impl F32InputCaller {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum F64InputCaller {
+    Nullary(JitF64Fn),
+    Unary(JitF64UnaryFn),
+    Binary(JitF64BinaryFn),
+    Ternary(JitF64TernaryFn),
+    Quaternary(JitF64QuaternaryFn),
+}
+
+impl F64InputCaller {
+    pub(crate) fn from_code(code: *const u8, arity: usize) -> Option<Self> {
+        match arity {
+            0 => {
+                // SAFETY: `code` is emitted in this crate with signature
+                // `extern "C" fn() -> f64`, and the owning JIT module is
+                // stored next to the typed caller.
+                let function = unsafe { mem::transmute::<*const u8, JitF64Fn>(code) };
+                Some(Self::Nullary(function))
+            }
+            1 => {
+                // SAFETY: see the nullary case; the emitted signature is
+                // `extern "C" fn(f64) -> f64`.
+                let function = unsafe { mem::transmute::<*const u8, JitF64UnaryFn>(code) };
+                Some(Self::Unary(function))
+            }
+            2 => {
+                // SAFETY: see the nullary case; the emitted signature is
+                // `extern "C" fn(f64, f64) -> f64`.
+                let function = unsafe { mem::transmute::<*const u8, JitF64BinaryFn>(code) };
+                Some(Self::Binary(function))
+            }
+            3 => {
+                // SAFETY: see the nullary case; the emitted signature is
+                // `extern "C" fn(f64, f64, f64) -> f64`.
+                let function = unsafe { mem::transmute::<*const u8, JitF64TernaryFn>(code) };
+                Some(Self::Ternary(function))
+            }
+            4 => {
+                // SAFETY: see the nullary case; the emitted signature is
+                // `extern "C" fn(f64, f64, f64, f64) -> f64`.
+                let function = unsafe { mem::transmute::<*const u8, JitF64QuaternaryFn>(code) };
+                Some(Self::Quaternary(function))
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn call(self, inputs: &[f64]) -> Option<f64> {
+        match (self, inputs) {
+            (Self::Nullary(function), []) => Some(function()),
+            (Self::Unary(function), [value]) => Some(function(*value)),
+            (Self::Binary(function), [lhs, rhs]) => Some(function(*lhs, *rhs)),
+            (Self::Ternary(function), [a, b, c]) => Some(function(*a, *b, *c)),
+            (Self::Quaternary(function), [a, b, c, d]) => Some(function(*a, *b, *c, *d)),
+            _ => None,
+        }
+    }
+}
+
 pub(crate) fn call_i64(code: *const u8) -> i64 {
     // SAFETY: `code` is returned by `JITModule::get_finalized_function` for a
     // function emitted in this crate with signature `extern "C" fn() -> i64`.
@@ -342,6 +407,27 @@ pub(crate) fn call_f32_rows_batch(
     // `extern "C" fn(*const f32, i64, *mut f32)`. Slice shape is checked before
     // passing pointers, and the owning JIT module outlives the call.
     let function = unsafe { mem::transmute::<*const u8, JitF32RowsBatchFn>(code) };
+    function(inputs.as_ptr(), rows, out.as_mut_ptr());
+    true
+}
+
+pub(crate) fn call_f64_rows_batch(
+    code: *const u8,
+    inputs: &[f64],
+    arity: usize,
+    out: &mut [f64],
+) -> bool {
+    if inputs.len() != arity.saturating_mul(out.len()) {
+        return false;
+    }
+    let Ok(rows) = i64::try_from(out.len()) else {
+        return false;
+    };
+    // SAFETY: `code` is returned by `JITModule::get_finalized_function` for a
+    // function emitted in this crate with signature
+    // `extern "C" fn(*const f64, i64, *mut f64)`. Slice shape is checked before
+    // passing pointers, and the owning JIT module outlives the call.
+    let function = unsafe { mem::transmute::<*const u8, JitF64RowsBatchFn>(code) };
     function(inputs.as_ptr(), rows, out.as_mut_ptr());
     true
 }
