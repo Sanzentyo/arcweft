@@ -596,6 +596,141 @@ fn engine_batches_dense_i32_map_without_widening_flat_inputs() {
 }
 
 #[test]
+fn engine_batches_dense_u32_map_without_widening_flat_inputs() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Sum {
+                source: Box::new(RuntimeExpr::Map {
+                    source: Box::new(RuntimeExpr::Value(runtime_sequence_dense_u32(vec![
+                        3, 5, 7,
+                    ]))),
+                    param: "base".to_owned(),
+                    body: Box::new(RuntimeExpr::PureCall {
+                        helper: RuntimePureHelperId(0),
+                        args: vec![
+                            RuntimeExpr::Local("base".to_owned()),
+                            RuntimeExpr::Value(RuntimeValue::UInt(4)),
+                        ],
+                    }),
+                }),
+            })],
+        }],
+        Vec::new(),
+    )
+    .expect("flow plan is valid")
+    .with_pure_helpers(vec![RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "score_u32".to_owned(),
+        input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        input_types: vec![RuntimePureInputType::U32, RuntimePureInputType::U32],
+        output_type: RuntimePureOutputType::U32,
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+            op: RuntimeBinaryOp::Mul,
+            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+        },
+        scalar_eval_supported: true,
+        origin: RuntimePureHelperOrigin::Annotated,
+    }]);
+    let mut engine = Engine::new(plan);
+
+    let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+
+    assert!(matches!(
+        result.fiber_status,
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "60"
+    ));
+    assert_eq!(result.stats.pure.batch_calls, 1);
+    assert_eq!(result.stats.pure.batch_items, 3);
+    assert_eq!(result.stats.pure.arg_vec_allocations, 0);
+    assert_eq!(
+        result.stats.pure.arg_bytes_borrowed,
+        6 * std::mem::size_of::<u32>()
+    );
+    assert_eq!(result.stats.pure.result_bytes_copied, 0);
+}
+
+#[test]
+fn engine_batches_dense_i16_and_u8_map_without_widening_flat_inputs() {
+    assert_dense_exact_int_map_sum_uses_flat_batch(
+        runtime_sequence_dense_i16(vec![3, 5, 7]),
+        RuntimeValue::Int(4),
+        RuntimePureInputType::I16,
+        RuntimePureOutputType::I16,
+        6 * std::mem::size_of::<i16>(),
+    );
+    assert_dense_exact_int_map_sum_uses_flat_batch(
+        runtime_sequence_dense_u8(vec![3, 5, 7]),
+        RuntimeValue::UInt(4),
+        RuntimePureInputType::U8,
+        RuntimePureOutputType::U8,
+        6 * std::mem::size_of::<u8>(),
+    );
+}
+
+fn assert_dense_exact_int_map_sum_uses_flat_batch(
+    source: RuntimeValue,
+    bonus: RuntimeValue,
+    input_type: RuntimePureInputType,
+    output_type: RuntimePureOutputType,
+    expected_borrowed_bytes: usize,
+) {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Sum {
+                source: Box::new(RuntimeExpr::Map {
+                    source: Box::new(RuntimeExpr::Value(source)),
+                    param: "base".to_owned(),
+                    body: Box::new(RuntimeExpr::PureCall {
+                        helper: RuntimePureHelperId(0),
+                        args: vec![
+                            RuntimeExpr::Local("base".to_owned()),
+                            RuntimeExpr::Value(bonus),
+                        ],
+                    }),
+                }),
+            })],
+        }],
+        Vec::new(),
+    )
+    .expect("flow plan is valid")
+    .with_pure_helpers(vec![RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "score_exact".to_owned(),
+        input_names: vec!["base".to_owned(), "bonus".to_owned()],
+        input_types: vec![input_type, input_type],
+        output_type,
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+            op: RuntimeBinaryOp::Mul,
+            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
+        },
+        scalar_eval_supported: true,
+        origin: RuntimePureHelperOrigin::Annotated,
+    }]);
+    let mut engine = Engine::new(plan);
+
+    let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+
+    assert!(matches!(
+        result.fiber_status,
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "60"
+    ));
+    assert_eq!(result.stats.pure.batch_calls, 1);
+    assert_eq!(result.stats.pure.batch_items, 3);
+    assert_eq!(result.stats.pure.arg_vec_allocations, 0);
+    assert_eq!(
+        result.stats.pure.arg_bytes_borrowed,
+        expected_borrowed_bytes
+    );
+    assert_eq!(result.stats.pure.result_bytes_copied, 0);
+}
+
+#[test]
 fn engine_keeps_dynamic_homogeneous_textual_sequences_dense() {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.main".to_owned())),

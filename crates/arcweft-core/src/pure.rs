@@ -1,9 +1,9 @@
 use crate::plan::RuntimePureHelper;
 use crate::step::RuntimePureCallStats;
 use crate::value::{
-    RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeFieldValue,
-    RuntimeSeq, RuntimeUnaryOp, RuntimeValue, evaluate_binary, evaluate_unary,
-    runtime_binary_op_label, runtime_sequence_values, runtime_unary_op_label,
+    RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExactInteger,
+    RuntimeExpr, RuntimeFieldValue, RuntimeSeq, RuntimeUnaryOp, RuntimeValue, evaluate_binary,
+    evaluate_unary, runtime_binary_op_label, runtime_sequence_values, runtime_unary_op_label,
     runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
 use std::collections::BTreeMap;
@@ -77,6 +77,14 @@ pub trait RuntimePureCallBackend {
         &mut self,
         helper: &RuntimePureHelper,
         flat_inputs: &[i32],
+        arity: usize,
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError>;
+
+    fn call_exact_int_flat_batch_sum<T: RuntimeExactInteger>(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[T],
         arity: usize,
         rows: usize,
     ) -> Result<i64, RuntimeEvalError>;
@@ -318,6 +326,32 @@ impl VmPureFunctionScratch {
         }
         self.env
             .replace_root_i32_bindings(&helper.input_names, args);
+        let mut evaluator = PureEvaluator::with_env(std::mem::take(&mut self.env));
+        let result = if helper.scalar_eval_supported {
+            evaluator
+                .evaluate_scalar_expr(&helper.expr)
+                .map(PureScalar::into_runtime_value)
+        } else {
+            evaluator.evaluate_expr(&helper.expr)
+        };
+        self.env = evaluator.into_env();
+        result
+    }
+
+    pub fn evaluate_exact_int_slice<T: RuntimeExactInteger>(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[T],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if args.len() != helper.input_names.len() {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: helper.input_names.len(),
+                found: args.len(),
+            });
+        }
+        self.env
+            .replace_root_exact_int_bindings(&helper.input_names, args);
         let mut evaluator = PureEvaluator::with_env(std::mem::take(&mut self.env));
         let result = if helper.scalar_eval_supported {
             evaluator
@@ -582,6 +616,37 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         for row in flat_inputs.chunks_exact(arity) {
             let value = self.scratch.evaluate_i32_slice(helper, row)?;
             sum += i64::from(runtime_value_into_i32_result(helper, value)?);
+        }
+        Ok(sum)
+    }
+
+    fn call_exact_int_flat_batch_sum<T: RuntimeExactInteger>(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[T],
+        arity: usize,
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError> {
+        validate_exact_int_flat_batch_shape::<T>(helper, flat_inputs.len(), arity, rows)?;
+        self.stats.batch_calls += 1;
+        self.stats.batch_items += rows;
+        self.stats.flat_batch_calls += 1;
+        self.stats.flat_batch_items += rows;
+        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        self.stats.pure_calls += rows;
+        self.stats.vm_calls += rows;
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
+        let mut sum = 0_i64;
+        if arity == 0 {
+            for _ in 0..rows {
+                let value = self.scratch.evaluate_exact_int_slice::<T>(helper, &[])?;
+                sum += T::try_from_runtime_value(&helper.name, value)?.sum_as_i64();
+            }
+            return Ok(sum);
+        }
+        for row in flat_inputs.chunks_exact(arity) {
+            let value = self.scratch.evaluate_exact_int_slice::<T>(helper, row)?;
+            sum += T::try_from_runtime_value(&helper.name, value)?.sum_as_i64();
         }
         Ok(sum)
     }
@@ -1251,6 +1316,7 @@ struct PureEvaluator {
 enum PureScalar {
     Bool(bool),
     Int(i64),
+    UInt(u64),
 }
 
 impl PureScalar {
@@ -1258,6 +1324,7 @@ impl PureScalar {
         match self {
             Self::Bool(value) => RuntimeValue::Bool(value),
             Self::Int(value) => RuntimeValue::Int(value),
+            Self::UInt(value) => RuntimeValue::UInt(value),
         }
     }
 
@@ -1265,6 +1332,7 @@ impl PureScalar {
         match self {
             Self::Bool(value) => runtime_value_label(&RuntimeValue::Bool(value)),
             Self::Int(value) => runtime_value_label(&RuntimeValue::Int(value)),
+            Self::UInt(value) => runtime_value_label(&RuntimeValue::UInt(value)),
         }
     }
 }
@@ -1273,6 +1341,7 @@ fn runtime_value_as_scalar(value: &RuntimeValue) -> Option<PureScalar> {
     match value {
         RuntimeValue::Bool(value) => Some(PureScalar::Bool(*value)),
         RuntimeValue::Int(value) => Some(PureScalar::Int(*value)),
+        RuntimeValue::UInt(value) => Some(PureScalar::UInt(*value)),
         _ => None,
     }
 }
@@ -1281,6 +1350,7 @@ fn runtime_value_into_scalar(value: RuntimeValue) -> Result<PureScalar, RuntimeE
     match value {
         RuntimeValue::Bool(value) => Ok(PureScalar::Bool(value)),
         RuntimeValue::Int(value) => Ok(PureScalar::Int(value)),
+        RuntimeValue::UInt(value) => Ok(PureScalar::UInt(value)),
         value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
     }
 }
@@ -1289,15 +1359,45 @@ fn runtime_value_into_i32_result(
     helper: &RuntimePureHelper,
     value: RuntimeValue,
 ) -> Result<i32, RuntimeEvalError> {
-    match value {
-        RuntimeValue::Int(value) => {
-            i32::try_from(value).map_err(|_| RuntimeEvalError::UnsupportedPure {
-                name: helper.name.clone(),
-                reason: format!("pure i32 result `{value}` is outside i32 range"),
-            })
-        }
-        value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
+    i32::try_from_runtime_value(&helper.name, value)
+}
+
+fn validate_exact_int_flat_batch_shape<T: RuntimeExactInteger>(
+    helper: &RuntimePureHelper,
+    flat_input_len: usize,
+    arity: usize,
+    rows: usize,
+) -> Result<(), RuntimeEvalError> {
+    if arity > RuntimeFixedArgs::<T>::MAX {
+        return Err(RuntimeEvalError::TooManyPureArgs {
+            helper: helper.name.clone(),
+            max: RuntimeFixedArgs::<T>::MAX,
+            found: arity,
+        });
     }
+    if helper.output_type != T::OUTPUT_TYPE
+        || helper.input_types.len() != helper.input_names.len()
+        || !helper
+            .input_types
+            .iter()
+            .all(|input| *input == T::INPUT_TYPE)
+    {
+        return Err(RuntimeEvalError::UnsupportedPure {
+            name: helper.name.clone(),
+            reason: "exact integer batch type does not match helper signature".to_owned(),
+        });
+    }
+    if flat_input_len != rows.saturating_mul(arity) {
+        return Err(RuntimeEvalError::UnsupportedPure {
+            name: helper.name.clone(),
+            reason: format!(
+                "pure flat batch expected {} input value(s), got {}",
+                rows.saturating_mul(arity),
+                flat_input_len
+            ),
+        });
+    }
+    Ok(())
 }
 
 fn evaluate_scalar_unary(
@@ -1307,6 +1407,12 @@ fn evaluate_scalar_unary(
     match (op, value) {
         (RuntimeUnaryOp::Not, PureScalar::Bool(value)) => Ok(PureScalar::Bool(!value)),
         (RuntimeUnaryOp::Neg, PureScalar::Int(value)) => Ok(PureScalar::Int(-value)),
+        (RuntimeUnaryOp::Neg, value @ PureScalar::UInt(_)) => {
+            Err(RuntimeEvalError::UnsupportedUnary {
+                op: runtime_unary_op_label(op),
+                value: value.label(),
+            })
+        }
         (op, value) => Err(RuntimeEvalError::UnsupportedUnary {
             op: runtime_unary_op_label(op),
             value: value.label(),
@@ -1339,6 +1445,13 @@ fn evaluate_scalar_binary(
                     RuntimeBinaryOp::Ge => lhs >= rhs,
                     _ => unreachable!(),
                 })),
+                (PureScalar::UInt(lhs), PureScalar::UInt(rhs)) => Ok(PureScalar::Bool(match op {
+                    RuntimeBinaryOp::Lt => lhs < rhs,
+                    RuntimeBinaryOp::Le => lhs <= rhs,
+                    RuntimeBinaryOp::Gt => lhs > rhs,
+                    RuntimeBinaryOp::Ge => lhs >= rhs,
+                    _ => unreachable!(),
+                })),
                 (lhs, rhs) => unsupported_scalar_binary(op, lhs, rhs),
             }
         }
@@ -1347,6 +1460,13 @@ fn evaluate_scalar_binary(
         | RuntimeBinaryOp::Mul
         | RuntimeBinaryOp::Div => match (lhs, rhs) {
             (PureScalar::Int(lhs), PureScalar::Int(rhs)) => Ok(PureScalar::Int(match op {
+                RuntimeBinaryOp::Add => lhs + rhs,
+                RuntimeBinaryOp::Sub => lhs - rhs,
+                RuntimeBinaryOp::Mul => lhs * rhs,
+                RuntimeBinaryOp::Div => lhs / rhs,
+                _ => unreachable!(),
+            })),
+            (PureScalar::UInt(lhs), PureScalar::UInt(rhs)) => Ok(PureScalar::UInt(match op {
                 RuntimeBinaryOp::Add => lhs + rhs,
                 RuntimeBinaryOp::Sub => lhs - rhs,
                 RuntimeBinaryOp::Mul => lhs * rhs,
@@ -1550,7 +1670,9 @@ impl PureEvaluator {
     fn evaluate_scalar_bool(&mut self, expr: &RuntimeExpr) -> Result<bool, RuntimeEvalError> {
         match self.evaluate_scalar_expr(expr)? {
             PureScalar::Bool(value) => Ok(value),
-            value @ PureScalar::Int(_) => Err(RuntimeEvalError::ExpectedBool(value.label())),
+            value @ (PureScalar::Int(_) | PureScalar::UInt(_)) => {
+                Err(RuntimeEvalError::ExpectedBool(value.label()))
+            }
         }
     }
 

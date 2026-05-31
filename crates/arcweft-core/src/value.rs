@@ -1,5 +1,5 @@
 use crate::pattern::RuntimePattern;
-use crate::plan::RuntimePureHelperId;
+use crate::plan::{RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType};
 use crate::time::LogicalDuration;
 use thiserror::Error;
 
@@ -52,6 +52,106 @@ pub enum RuntimeValue {
 pub enum RuntimeSeq {
     Values(Vec<RuntimeValue>),
     Dense(DenseSeq),
+}
+
+/// Exact integer storage that can cross runtime pure-helper fast paths without widening.
+pub trait RuntimeExactInteger: Copy + 'static {
+    const INPUT_TYPE: RuntimePureInputType;
+    const OUTPUT_TYPE: RuntimePureOutputType;
+
+    fn into_runtime_value(self) -> RuntimeValue;
+    fn try_from_runtime_value(helper: &str, value: RuntimeValue) -> Result<Self, RuntimeEvalError>;
+    fn sum_as_i64(self) -> i64;
+    fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]>;
+    fn dense_sequence(values: Vec<Self>) -> RuntimeValue;
+}
+
+macro_rules! impl_runtime_exact_signed_integer {
+    ($ty:ty, $input_type:ident, $output_type:ident, $slice:ident, $dense:ident) => {
+        impl RuntimeExactInteger for $ty {
+            const INPUT_TYPE: RuntimePureInputType = RuntimePureInputType::$input_type;
+            const OUTPUT_TYPE: RuntimePureOutputType = RuntimePureOutputType::$output_type;
+
+            fn into_runtime_value(self) -> RuntimeValue {
+                RuntimeValue::Int(i64::from(self))
+            }
+
+            fn try_from_runtime_value(
+                helper: &str,
+                value: RuntimeValue,
+            ) -> Result<Self, RuntimeEvalError> {
+                match value {
+                    RuntimeValue::Int(value) => {
+                        <$ty>::try_from(value).map_err(|_| RuntimeEvalError::UnsupportedPure {
+                            name: helper.to_owned(),
+                            reason: format!(
+                                "pure {} result `{value}` is outside {} range",
+                                stringify!($ty),
+                                stringify!($ty)
+                            ),
+                        })
+                    }
+                    value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
+                }
+            }
+
+            fn sum_as_i64(self) -> i64 {
+                i64::from(self)
+            }
+
+            fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
+                seq.$slice()
+            }
+
+            fn dense_sequence(values: Vec<Self>) -> RuntimeValue {
+                $dense(values)
+            }
+        }
+    };
+}
+
+macro_rules! impl_runtime_exact_unsigned_integer {
+    ($ty:ty, $input_type:ident, $output_type:ident, $slice:ident, $dense:ident) => {
+        impl RuntimeExactInteger for $ty {
+            const INPUT_TYPE: RuntimePureInputType = RuntimePureInputType::$input_type;
+            const OUTPUT_TYPE: RuntimePureOutputType = RuntimePureOutputType::$output_type;
+
+            fn into_runtime_value(self) -> RuntimeValue {
+                RuntimeValue::UInt(u64::from(self))
+            }
+
+            fn try_from_runtime_value(
+                helper: &str,
+                value: RuntimeValue,
+            ) -> Result<Self, RuntimeEvalError> {
+                match value {
+                    RuntimeValue::UInt(value) => {
+                        <$ty>::try_from(value).map_err(|_| RuntimeEvalError::UnsupportedPure {
+                            name: helper.to_owned(),
+                            reason: format!(
+                                "pure {} result `{value}` is outside {} range",
+                                stringify!($ty),
+                                stringify!($ty)
+                            ),
+                        })
+                    }
+                    value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
+                }
+            }
+
+            fn sum_as_i64(self) -> i64 {
+                i64::from(self)
+            }
+
+            fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
+                seq.$slice()
+            }
+
+            fn dense_sequence(values: Vec<Self>) -> RuntimeValue {
+                $dense(values)
+            }
+        }
+    };
 }
 
 impl RuntimeSeq {
@@ -354,6 +454,13 @@ impl RuntimeSeq {
         }
     }
 }
+
+impl_runtime_exact_signed_integer!(i8, I8, I8, as_i8_slice, runtime_sequence_dense_i8);
+impl_runtime_exact_signed_integer!(i16, I16, I16, as_i16_slice, runtime_sequence_dense_i16);
+impl_runtime_exact_signed_integer!(i32, I32, I32, as_i32_slice, runtime_sequence_dense_i32);
+impl_runtime_exact_unsigned_integer!(u8, U8, U8, as_u8_slice, runtime_sequence_dense_u8);
+impl_runtime_exact_unsigned_integer!(u16, U16, U16, as_u16_slice, runtime_sequence_dense_u16);
+impl_runtime_exact_unsigned_integer!(u32, U32, U32, as_u32_slice, runtime_sequence_dense_u32);
 
 /// Homogeneous storage kind used by a dense runtime sequence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1391,6 +1498,20 @@ impl RuntimeEnv {
         }
     }
 
+    pub(crate) fn replace_root_exact_int_bindings<T: RuntimeExactInteger>(
+        &mut self,
+        input_names: &[String],
+        args: &[T],
+    ) {
+        if self.scopes.is_empty() {
+            self.scopes.push(RuntimeScope::default());
+        }
+        self.scopes.truncate(1);
+        if let Some(scope) = self.scopes.first_mut() {
+            scope.replace_exact_int_bindings(input_names, args);
+        }
+    }
+
     pub(crate) fn replace_root_value_bindings_ref(
         &mut self,
         input_names: &[String],
@@ -1520,6 +1641,36 @@ impl RuntimeScope {
                 .map(|(name, value)| RuntimeBinding {
                     name: name.clone(),
                     value: RuntimeValue::Int(i64::from(value)),
+                }),
+        );
+    }
+
+    fn replace_exact_int_bindings<T: RuntimeExactInteger>(
+        &mut self,
+        input_names: &[String],
+        args: &[T],
+    ) {
+        if self.bindings.len() == input_names.len()
+            && self
+                .bindings
+                .iter()
+                .zip(input_names)
+                .all(|(binding, name)| binding.name == *name)
+        {
+            self.bindings
+                .iter_mut()
+                .zip(args.iter().copied())
+                .for_each(|(binding, value)| binding.value = value.into_runtime_value());
+            return;
+        }
+        self.bindings.clear();
+        self.bindings.extend(
+            input_names
+                .iter()
+                .zip(args.iter().copied())
+                .map(|(name, value)| RuntimeBinding {
+                    name: name.clone(),
+                    value: value.into_runtime_value(),
                 }),
         );
     }

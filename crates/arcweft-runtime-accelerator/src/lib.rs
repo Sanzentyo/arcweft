@@ -13,6 +13,7 @@ use arcweft_core::{
         RuntimeI64Args, RuntimePureCallBackend, VmPureFunctionScratch,
     },
     step::RuntimePureCallStats,
+    value::RuntimeExactInteger,
     value::{DenseSeq, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeSeq, RuntimeValue},
 };
 use arcweft_lang_jit_cranelift::{CompiledPureI64Inputs, CraneliftPureFunctionBackend};
@@ -737,6 +738,20 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         call_vm_i32_flat_batch_sum(helper, flat_inputs, arity, rows, &mut self.vm_scratch)
     }
 
+    fn call_exact_int_flat_batch_sum<T: RuntimeExactInteger>(
+        &mut self,
+        helper: &RuntimePureHelper,
+        flat_inputs: &[T],
+        arity: usize,
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError> {
+        validate_exact_int_flat_batch_shape::<T>(helper, flat_inputs.len(), arity, rows)?;
+        self.record_flat_batch_stats(flat_inputs, rows, false);
+        self.stats.vm_calls += rows;
+        self.stats.fallbacks += usize::from(rows > 0);
+        call_vm_exact_int_flat_batch_sum(helper, flat_inputs, arity, rows, &mut self.vm_scratch)
+    }
+
     fn call_i64(
         &mut self,
         helper: &RuntimePureHelper,
@@ -1052,6 +1067,44 @@ fn validate_flat_batch_shape(
             name: helper.name.clone(),
             reason: format!(
                 "pure flat batch expected {expected} input value(s), got {flat_input_len}"
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn validate_exact_int_flat_batch_shape<T: RuntimeExactInteger>(
+    helper: &RuntimePureHelper,
+    flat_input_len: usize,
+    arity: usize,
+    rows: usize,
+) -> Result<(), RuntimeEvalError> {
+    if arity > RuntimeI64Args::MAX {
+        return Err(RuntimeEvalError::TooManyPureArgs {
+            helper: helper.name.clone(),
+            max: RuntimeI64Args::MAX,
+            found: arity,
+        });
+    }
+    if helper.output_type != T::OUTPUT_TYPE
+        || helper.input_types.len() != helper.input_names.len()
+        || !helper
+            .input_types
+            .iter()
+            .all(|input| *input == T::INPUT_TYPE)
+    {
+        return Err(RuntimeEvalError::UnsupportedPure {
+            name: helper.name.clone(),
+            reason: "exact integer batch type does not match helper signature".to_owned(),
+        });
+    }
+    if flat_input_len != rows.saturating_mul(arity) {
+        return Err(RuntimeEvalError::UnsupportedPure {
+            name: helper.name.clone(),
+            reason: format!(
+                "pure flat batch expected {} input value(s), got {}",
+                rows.saturating_mul(arity),
+                flat_input_len
             ),
         });
     }
@@ -1579,6 +1632,28 @@ fn call_vm_i32_flat_batch_sum(
             helper,
             scratch.evaluate_i32_slice(helper, row)?,
         )?);
+    }
+    Ok(sum)
+}
+
+fn call_vm_exact_int_flat_batch_sum<T: RuntimeExactInteger>(
+    helper: &RuntimePureHelper,
+    flat_inputs: &[T],
+    arity: usize,
+    rows: usize,
+    scratch: &mut VmPureFunctionScratch,
+) -> Result<i64, RuntimeEvalError> {
+    let mut sum = 0_i64;
+    if arity == 0 {
+        for _ in 0..rows {
+            let value = scratch.evaluate_exact_int_slice::<T>(helper, &[])?;
+            sum += T::try_from_runtime_value(&helper.name, value)?.sum_as_i64();
+        }
+        return Ok(sum);
+    }
+    for row in flat_inputs.chunks_exact(arity) {
+        let value = scratch.evaluate_exact_int_slice::<T>(helper, row)?;
+        sum += T::try_from_runtime_value(&helper.name, value)?.sum_as_i64();
     }
     Ok(sum)
 }

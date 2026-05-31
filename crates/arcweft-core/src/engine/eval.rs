@@ -1,14 +1,16 @@
 use super::{
-    Engine, FlowFiberStatus, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
-    RuntimeExprMatchArm, RuntimeFieldValue, RuntimeMatchArm, RuntimeMatchSelection, RuntimePattern,
-    RuntimeSeq, RuntimeStepOutput, RuntimeValue, evaluate_binary, evaluate_unary,
-    match_runtime_pattern, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
-    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_sequence_values,
-    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
+    Engine, FlowFiberStatus, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError,
+    RuntimeExactInteger, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldValue, RuntimeMatchArm,
+    RuntimeMatchSelection, RuntimePattern, RuntimeSeq, RuntimeStepOutput, RuntimeValue,
+    evaluate_binary, evaluate_unary, match_runtime_pattern, runtime_sequence_dense_i32,
+    runtime_sequence_dense_i64, runtime_sequence_from_literal_values,
+    runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
+    runtime_value_label, sum_i64_sequence_ref,
 };
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::pure::{
-    RuntimeI32Args, RuntimeI64Args, RuntimePureCallBackend, VmRuntimePureCallBackend,
+    RuntimeFixedArgs, RuntimeI32Args, RuntimeI64Args, RuntimePureCallBackend,
+    VmRuntimePureCallBackend,
 };
 use crate::value::RuntimeBinaryOp;
 use crate::value::RuntimeFieldExpr;
@@ -371,18 +373,6 @@ impl Engine {
         pure_backend.call_i64_flat_batch_sum(helper, flat_inputs, arity, row_count)
     }
 
-    fn call_i32_flat_batch_sum(
-        &mut self,
-        helper_id: crate::plan::RuntimePureHelperId,
-        flat_inputs: &[i32],
-        arity: usize,
-        row_count: usize,
-        pure_backend: &mut impl RuntimePureCallBackend,
-    ) -> Result<i64, RuntimeEvalError> {
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        pure_backend.call_i32_flat_batch_sum(helper, flat_inputs, arity, row_count)
-    }
-
     fn call_i64_repeated_flat_batch_sum(
         &mut self,
         helper_id: crate::plan::RuntimePureHelperId,
@@ -657,7 +647,52 @@ impl Engine {
             param,
             body,
         } = source
+            && let Some(sum) = self.evaluate_i8_map_sum(map_source, param, body, pure_backend)?
+        {
+            return Ok(RuntimeValue::Int(sum));
+        }
+        if let RuntimeExpr::Map {
+            source: map_source,
+            param,
+            body,
+        } = source
+            && let Some(sum) = self.evaluate_i16_map_sum(map_source, param, body, pure_backend)?
+        {
+            return Ok(RuntimeValue::Int(sum));
+        }
+        if let RuntimeExpr::Map {
+            source: map_source,
+            param,
+            body,
+        } = source
             && let Some(sum) = self.evaluate_i32_map_sum(map_source, param, body, pure_backend)?
+        {
+            return Ok(RuntimeValue::Int(sum));
+        }
+        if let RuntimeExpr::Map {
+            source: map_source,
+            param,
+            body,
+        } = source
+            && let Some(sum) = self.evaluate_u8_map_sum(map_source, param, body, pure_backend)?
+        {
+            return Ok(RuntimeValue::Int(sum));
+        }
+        if let RuntimeExpr::Map {
+            source: map_source,
+            param,
+            body,
+        } = source
+            && let Some(sum) = self.evaluate_u16_map_sum(map_source, param, body, pure_backend)?
+        {
+            return Ok(RuntimeValue::Int(sum));
+        }
+        if let RuntimeExpr::Map {
+            source: map_source,
+            param,
+            body,
+        } = source
+            && let Some(sum) = self.evaluate_u32_map_sum(map_source, param, body, pure_backend)?
         {
             return Ok(RuntimeValue::Int(sum));
         }
@@ -713,6 +748,44 @@ impl Engine {
         }
     }
 
+    fn evaluate_i8_map_sum(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<i64>, RuntimeEvalError> {
+        let mut flat_inputs = std::mem::take(&mut self.pure_i8_batch_inputs);
+        let result = self.evaluate_exact_int_map_sum_with_inputs::<i8>(
+            source,
+            param,
+            body,
+            pure_backend,
+            &mut flat_inputs,
+        );
+        self.pure_i8_batch_inputs = flat_inputs;
+        result
+    }
+
+    fn evaluate_i16_map_sum(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<i64>, RuntimeEvalError> {
+        let mut flat_inputs = std::mem::take(&mut self.pure_i16_batch_inputs);
+        let result = self.evaluate_exact_int_map_sum_with_inputs::<i16>(
+            source,
+            param,
+            body,
+            pure_backend,
+            &mut flat_inputs,
+        );
+        self.pure_i16_batch_inputs = flat_inputs;
+        result
+    }
+
     fn evaluate_i32_map_sum(
         &mut self,
         source: &RuntimeExpr,
@@ -732,12 +805,12 @@ impl Engine {
             &mut flat_inputs,
         ) {
             Ok(Some(row_count)) => {
-                let batch_result = self.call_i32_flat_batch_sum(
-                    helper_id,
+                let helper = &self.plan.pure_helpers[helper_id.0];
+                let batch_result = pure_backend.call_exact_int_flat_batch_sum::<i32>(
+                    helper,
                     &flat_inputs,
                     arity,
                     row_count,
-                    pure_backend,
                 );
                 self.pure_i32_batch_inputs = flat_inputs;
                 let sum = batch_result?;
@@ -751,6 +824,91 @@ impl Engine {
                 self.pure_i32_batch_inputs = flat_inputs;
                 Err(error)
             }
+        }
+    }
+
+    fn evaluate_u8_map_sum(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<i64>, RuntimeEvalError> {
+        let mut flat_inputs = std::mem::take(&mut self.pure_u8_batch_inputs);
+        let result = self.evaluate_exact_int_map_sum_with_inputs::<u8>(
+            source,
+            param,
+            body,
+            pure_backend,
+            &mut flat_inputs,
+        );
+        self.pure_u8_batch_inputs = flat_inputs;
+        result
+    }
+
+    fn evaluate_u16_map_sum(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<i64>, RuntimeEvalError> {
+        let mut flat_inputs = std::mem::take(&mut self.pure_u16_batch_inputs);
+        let result = self.evaluate_exact_int_map_sum_with_inputs::<u16>(
+            source,
+            param,
+            body,
+            pure_backend,
+            &mut flat_inputs,
+        );
+        self.pure_u16_batch_inputs = flat_inputs;
+        result
+    }
+
+    fn evaluate_u32_map_sum(
+        &mut self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<Option<i64>, RuntimeEvalError> {
+        let mut flat_inputs = std::mem::take(&mut self.pure_u32_batch_inputs);
+        let result = self.evaluate_exact_int_map_sum_with_inputs::<u32>(
+            source,
+            param,
+            body,
+            pure_backend,
+            &mut flat_inputs,
+        );
+        self.pure_u32_batch_inputs = flat_inputs;
+        result
+    }
+
+    fn evaluate_exact_int_map_sum_with_inputs<T: RuntimeExactInteger>(
+        &self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+        flat_inputs: &mut Vec<T>,
+    ) -> Result<Option<i64>, RuntimeEvalError> {
+        let Some((helper_id, arity)) = self.map_exact_int_batch_shape::<T>(body) else {
+            return Ok(None);
+        };
+        match self.collect_exact_int_map_batch_inputs_from_borrowed_source(
+            source,
+            param,
+            body,
+            arity,
+            flat_inputs,
+        )? {
+            Some(row_count) => {
+                let helper = &self.plan.pure_helpers[helper_id.0];
+                pure_backend
+                    .call_exact_int_flat_batch_sum(helper, flat_inputs, arity, row_count)
+                    .map(Some)
+            }
+            None => Ok(None),
         }
     }
 
@@ -946,6 +1104,44 @@ impl Engine {
         for item in items.iter().copied() {
             for arg in args.iter().take(arity) {
                 let Some(value) = self.evaluate_i32_map_arg_from_i32_source(arg, param, item)?
+                else {
+                    flat_inputs.clear();
+                    return Ok(None);
+                };
+                flat_inputs.push(value);
+            }
+        }
+        Ok(Some(items.len()))
+    }
+
+    fn collect_exact_int_map_batch_inputs_from_borrowed_source<T: RuntimeExactInteger>(
+        &self,
+        source: &RuntimeExpr,
+        param: &str,
+        body: &RuntimeExpr,
+        arity: usize,
+        flat_inputs: &mut Vec<T>,
+    ) -> Result<Option<usize>, RuntimeEvalError> {
+        let RuntimeExpr::PureCall { args, .. } = body else {
+            unreachable!("exact integer map batch shape checked before borrowed source collection");
+        };
+        let seq = match source {
+            RuntimeExpr::Value(RuntimeValue::Seq(seq)) => seq,
+            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
+                Some(RuntimeValue::Seq(seq)) => seq,
+                _ => return Ok(None),
+            },
+            _ => return Ok(None),
+        };
+        let Some(items) = T::seq_slice(seq) else {
+            return Ok(None);
+        };
+        flat_inputs.clear();
+        flat_inputs.reserve(items.len().saturating_mul(arity));
+        for item in items.iter().copied() {
+            for arg in args.iter().take(arity) {
+                let Some(value) =
+                    self.evaluate_exact_int_map_arg_from_exact_source(arg, param, item)?
                 else {
                     flat_inputs.clear();
                     return Ok(None);
@@ -1166,6 +1362,25 @@ impl Engine {
                 .get(helper.0)
                 .copied()
                 .unwrap_or(false)
+        {
+            return None;
+        }
+        Some((*helper, args.len()))
+    }
+
+    fn map_exact_int_batch_shape<T: RuntimeExactInteger>(
+        &self,
+        body: &RuntimeExpr,
+    ) -> Option<(crate::plan::RuntimePureHelperId, usize)> {
+        let RuntimeExpr::PureCall { helper, args } = body else {
+            return None;
+        };
+        if helper.0 >= self.plan.pure_helpers.len()
+            || args.len() > RuntimeFixedArgs::<T>::MAX
+            || args
+                .iter()
+                .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
+            || !pure_helper_has_exact_int_call_shape::<T>(&self.plan.pure_helpers[helper.0])
         {
             return None;
         }
@@ -1425,6 +1640,27 @@ impl Engine {
         }
     }
 
+    fn evaluate_exact_int_map_arg_from_exact_source<T: RuntimeExactInteger>(
+        &self,
+        expr: &RuntimeExpr,
+        param: &str,
+        item: T,
+    ) -> Result<Option<T>, RuntimeEvalError> {
+        match expr {
+            RuntimeExpr::Value(value) => {
+                T::try_from_runtime_value("exact integer map batch", value.clone()).map(Some)
+            }
+            RuntimeExpr::Local(name) if name == param => Ok(Some(item)),
+            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
+                Some(value) => {
+                    T::try_from_runtime_value("exact integer map batch", value.clone()).map(Some)
+                }
+                None => Err(RuntimeEvalError::UnknownBinding(name.clone())),
+            },
+            _ => Ok(None),
+        }
+    }
+
     fn evaluate_call_args(
         &mut self,
         args: &[RuntimeExpr],
@@ -1632,6 +1868,21 @@ pub(super) fn pure_helper_has_i32_call_shape(helper: &crate::plan::RuntimePureHe
     expr_returns_i64(&helper.expr, &mut int_names)
 }
 
+fn pure_helper_has_exact_int_call_shape<T: RuntimeExactInteger>(
+    helper: &crate::plan::RuntimePureHelper,
+) -> bool {
+    if helper.output_type != T::OUTPUT_TYPE || !pure_helper_has_only_exact_int_inputs::<T>(helper) {
+        return false;
+    }
+    let mut int_names = helper
+        .input_names
+        .iter()
+        .zip(helper.input_types.iter())
+        .filter_map(|(name, ty)| (*ty == T::INPUT_TYPE).then_some(name.as_str()))
+        .collect::<Vec<_>>();
+    expr_returns_i64(&helper.expr, &mut int_names)
+}
+
 fn pure_helper_has_only_i64_inputs(helper: &crate::plan::RuntimePureHelper) -> bool {
     helper.input_names.len() == helper.input_types.len()
         && helper
@@ -1648,9 +1899,16 @@ fn pure_helper_has_only_i32_inputs(helper: &crate::plan::RuntimePureHelper) -> b
             .all(|ty| matches!(ty, RuntimePureInputType::I32))
 }
 
+fn pure_helper_has_only_exact_int_inputs<T: RuntimeExactInteger>(
+    helper: &crate::plan::RuntimePureHelper,
+) -> bool {
+    helper.input_names.len() == helper.input_types.len()
+        && helper.input_types.iter().all(|ty| *ty == T::INPUT_TYPE)
+}
+
 fn expr_returns_i64<'a>(expr: &'a RuntimeExpr, int_names: &mut Vec<&'a str>) -> bool {
     match expr {
-        RuntimeExpr::Value(RuntimeValue::Int(_)) => true,
+        RuntimeExpr::Value(RuntimeValue::Int(_) | RuntimeValue::UInt(_)) => true,
         RuntimeExpr::Local(name) => int_names.contains(&name.as_str()),
         RuntimeExpr::Let { name, expr, body } => {
             if !expr_returns_i64(expr, int_names) {
