@@ -41,6 +41,9 @@ bench-012:
 bench-013:
     @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/013_dense_scalar_len.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64
 
+bench-014:
+    @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/014_dense_textual_scalar_len.arcw --json --iterations 15 --warmup 3 --samples 9 --steps 64 --max-ops 64
+
 bench-thread:
     @cargo run -p arcweft-cli --quiet -- bench tests/fixtures/arcw/spec_should_pass/bench/001_thread_scheduling.arcw --json --iterations 10 --warmup 2 --samples 5 --steps 64 --max-ops 64
 

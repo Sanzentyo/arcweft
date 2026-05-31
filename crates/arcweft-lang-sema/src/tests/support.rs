@@ -1,5 +1,6 @@
 pub(super) use crate::check::{
-    TypeJudgmentRule, TypeJudgmentSubject, analyze_types, typecheck_hir, validate_typecheck_ready,
+    TypeJudgmentExpected, TypeJudgmentRule, TypeJudgmentSubject, analyze_types, typecheck_hir,
+    validate_typecheck_ready,
 };
 pub(super) use crate::env::TypeCheckEnv;
 pub(super) use crate::resolve::{NameRegistry, registry_from_hir, validate_hir_references};

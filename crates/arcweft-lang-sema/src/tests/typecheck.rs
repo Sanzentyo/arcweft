@@ -216,11 +216,21 @@ flow @flow.good good(input: i32) -> i32 {
     );
     assert!(report.judgments.iter().any(|judgment| {
         matches!(
-            (&judgment.subject, judgment.rule, judgment.expected.as_ref()),
+            (&judgment.subject, judgment.rule, judgment.expected_type()),
             (
                 TypeJudgmentSubject::Expr { kind },
                 TypeJudgmentRule::Expected,
                 Some(TypeKind::I32)
+            ) if *kind == "literal"
+        )
+    }));
+    assert!(report.judgments.iter().any(|judgment| {
+        matches!(
+            (&judgment.subject, judgment.rule, &judgment.expected),
+            (
+                TypeJudgmentSubject::Expr { kind },
+                TypeJudgmentRule::Expected,
+                Some(TypeJudgmentExpected::SameAsJudgment)
             ) if *kind == "literal"
         )
     }));

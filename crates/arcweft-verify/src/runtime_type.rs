@@ -654,7 +654,9 @@ mod tests {
     use super::*;
     use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow};
     use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeValue};
-    use arcweft_lang_sema::check::{TypeCheckStats, TypeJudgment, TypeJudgmentId};
+    use arcweft_lang_sema::check::{
+        TypeCheckStats, TypeJudgment, TypeJudgmentExpected, TypeJudgmentId,
+    };
     use arcweft_lang_sema::types::TypeKind;
 
     #[test]
@@ -756,7 +758,7 @@ mod tests {
                 subject: TypeJudgmentSubject::Expr { kind: "literal" },
                 ty: TypeKind::Bool,
                 rule: TypeJudgmentRule::Expected,
-                expected: Some(TypeKind::Bool),
+                expected: Some(TypeJudgmentExpected::SameAsJudgment),
             },
             TypeJudgment {
                 id: TypeJudgmentId::from_index(2),
@@ -765,7 +767,7 @@ mod tests {
                 },
                 ty: TypeKind::String,
                 rule: TypeJudgmentRule::Return,
-                expected: Some(TypeKind::String),
+                expected: Some(TypeJudgmentExpected::SameAsJudgment),
             },
         ];
         TypeCheckReport {

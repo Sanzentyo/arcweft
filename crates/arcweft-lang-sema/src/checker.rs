@@ -144,6 +144,15 @@ pub enum TypeJudgmentRule {
     Return,
 }
 
+/// Expected-type evidence attached to a type-check judgment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TypeJudgmentExpected {
+    /// The expected type is identical to the judgment type.
+    SameAsJudgment,
+    /// The expected type differs from the judgment type but was still the check context.
+    Other(TypeKind),
+}
+
 /// Machine-readable evidence for one successful type-check decision.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeJudgment {
@@ -151,7 +160,18 @@ pub struct TypeJudgment {
     pub subject: TypeJudgmentSubject,
     pub ty: TypeKind,
     pub rule: TypeJudgmentRule,
-    pub expected: Option<TypeKind>,
+    pub expected: Option<TypeJudgmentExpected>,
+}
+
+impl TypeJudgment {
+    /// Returns the expected type context for this judgment, if one was present.
+    pub const fn expected_type(&self) -> Option<&TypeKind> {
+        match &self.expected {
+            Some(TypeJudgmentExpected::SameAsJudgment) => Some(&self.ty),
+            Some(TypeJudgmentExpected::Other(expected)) => Some(expected),
+            None => None,
+        }
+    }
 }
 
 /// Machine-readable type-check result used by tooling and profiling.
@@ -369,12 +389,19 @@ impl TypeChecker<'_> {
         expected: Option<&TypeKind>,
     ) -> TypeJudgmentId {
         let id = TypeJudgmentId(self.judgments.len());
+        let stored_expected = expected.map(|expected| {
+            if expected == &ty {
+                TypeJudgmentExpected::SameAsJudgment
+            } else {
+                TypeJudgmentExpected::Other(expected.clone())
+            }
+        });
         self.judgments.push(TypeJudgment {
             id,
             subject,
             ty,
             rule,
-            expected: expected.cloned(),
+            expected: stored_expected,
         });
         self.stats.judgments += 1;
         match rule {

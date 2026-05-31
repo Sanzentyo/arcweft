@@ -534,8 +534,7 @@ impl From<&TypeJudgment> for TypeCheckJudgmentSample {
             rule: type_judgment_rule_label(judgment.rule),
             ty: format!("{:?}", judgment.ty),
             expected: judgment
-                .expected
-                .as_ref()
+                .expected_type()
                 .map(|expected| format!("{expected:?}")),
         }
     }

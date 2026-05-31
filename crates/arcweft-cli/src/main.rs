@@ -5023,6 +5023,15 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Durations(values))) => {
             format!("seq/durations/{}", values.len())
         }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Strings(values))) => {
+            format!("seq/strings/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::FloatLiterals(values))) => {
+            format!("seq/float_literals/{}", values.len())
+        }
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::EntityRefs(values))) => {
+            format!("seq/entity_refs/{}", values.len())
+        }
         RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {

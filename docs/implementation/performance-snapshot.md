@@ -207,12 +207,16 @@ Runtime numeric sequence lowering now preserves integer-only bracket literals as
 `RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I64(_)))` instead of eagerly
 materializing `Vec<RuntimeValue::Int>`. The same `DenseSeqStorage<T>` backing
 store also covers fixed-width integer sequences (`i8`, `i16`, `i32`, `i64`,
-`u8`, `u16`, `u32`, `u64`) plus bool, byte, char, and logical-duration
-sequences. Pure map/sum fast paths consume i64 dense storage directly, dense
+`u8`, `u16`, `u32`, `u64`) plus bool, byte, char, logical-duration, string,
+raw-float-literal, and entity-reference sequences. Pure map/sum fast paths
+consume i64 dense storage directly, dense
 integer `sum()` consumes the storage without materializing `RuntimeValue`
 elements, and byte-oriented host payloads consume dense byte/u8 storage
 directly; dynamic sequence operations such as `for`, `await many`, spread
 arguments, and bracket patterns materialize only at those dynamic boundaries.
+Dynamic bracket evaluation now folds homogeneous scalar results back into dense
+storage, so sequences containing locals or entity references are not forced to
+stay in `Vec<RuntimeValue>` after evaluation.
 
 The checked-in nonuniform map pure JIT fixture was remeasured after the
 `RuntimeSeq::Dense(DenseSeq::I64(DenseSeqStorage<i64>))` migration. With the same
@@ -256,10 +260,18 @@ path-free bench run reported median elapsed time 13800 ns for seven executed
 ops, with `pure_arg_vec_allocations_median = 0` and
 `pure_result_bytes_copied_median = 0`.
 
-`DenseSeq::F64` is intentionally not present yet because `RuntimeValue::Float`
-still preserves raw source text for deterministic numeric semantics. Dense
-`i128`, `u128`, `isize`, and `usize` are also not present yet: the first two need
-runtime scalar materialization and ABI decisions, and the platform-sized types
-are a poor fit for deterministic cross-target bytecode. Dense string/entity/
-record/tuple storage should be designed separately as offset, interned, or
-columnar storage rather than as scalar `DenseSeqStorage<T>`.
+The dense textual scalar length fixture covers the remaining homogeneous scalar
+runtime values. It keeps `String`, raw `f64` literal text, and entity-reference
+sequences dense, including entity references that are only known after runtime
+evaluation. The local path-free bench run reported median elapsed time 17100 ns
+for seven executed ops, with `pure_arg_vec_allocations_median = 0`,
+`pure_result_bytes_copied_median = 0`, and no source path in the JSON output.
+
+`DenseSeq::F32`/`DenseSeq::F64` are intentionally not present yet because
+`RuntimeValue::Float` still preserves raw source text for deterministic numeric
+semantics; raw float literals are dense only as homogeneous textual storage.
+Dense `i128`, `u128`, `isize`, and `usize` are also not present yet: the first
+two need runtime scalar materialization and ABI decisions, and the
+platform-sized types are a poor fit for deterministic cross-target bytecode.
+Record/tuple storage should be designed separately as columnar storage rather
+than as scalar `DenseSeqStorage<T>`.

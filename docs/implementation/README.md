@@ -703,12 +703,19 @@ Current high-confidence state:
   suffix-aware dense sequence storage for fixed-width integer types, so
   non-repeated literal input benches keep runtime type validation proportional
   to the flow shape instead of the literal element count.
+- Type judgments keep expected-type evidence as a compact relation when the
+  expected type matches the inferred judgment type. `expected_type()` preserves
+  the reporting view, but the checker no longer clones another `TypeKind` for
+  the common identical expected/actual case.
 - Dense sequence storage is generic at the backing-store layer and exposes
   borrowed views for all deterministic scalar integer widths currently accepted
   by the runtime (`i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`) plus
-  bool, byte, char, and logical duration sequences. `u8` dense storage is also
-  available through the byte view so byte-oriented host paths can borrow it
-  without materializing `RuntimeValue` elements.
+  bool, byte, char, logical duration, `String`, raw float literal, and entity
+  reference sequences. `u8` dense storage is also available through the byte
+  view so byte-oriented host paths can borrow it without materializing
+  `RuntimeValue` elements. Textual/entity dense storage is intentionally a
+  homogeneous backing store, not a numeric ABI path; string interning or
+  columnar record storage remains a separate optimization.
 - `Vec<T>.len()` / `Seq<T>.len()` / fixed array length calls typecheck as
   `usize` and read `RuntimeSeq::len()` directly in the VM and pure VM. The
   checked-in dense scalar length bench exercises bool, char, duration, and
@@ -719,8 +726,10 @@ Current high-confidence state:
   boundary directly, so `[value; N]` keeps logical batch counters without
   cloning or scanning `N` runtime values.
 - Runtime evaluation now keeps repeated scalar values dense when the repeated
-  value is a deterministic scalar (`bool`, signed/unsigned integer, `char`, or
-  logical duration). Non-scalar repeats still use the dynamic sequence boundary.
+  value is a deterministic scalar (`bool`, signed/unsigned integer, `char`,
+  logical duration, string, raw float literal, or entity reference). Dynamic
+  bracket sequences also fold homogeneous evaluated scalar values into dense
+  storage instead of leaving them as `Vec<RuntimeValue>`.
 - Fast-path scalar pure calls read local integer arguments by borrow when
   packing `RuntimeI64Args`, avoiding a `RuntimeValue` clone before crossing into
   VM/AOT/JIT pure backends.

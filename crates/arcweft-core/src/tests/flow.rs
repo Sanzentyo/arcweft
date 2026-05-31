@@ -473,6 +473,79 @@ fn engine_fuses_local_map_closure_pure_batch_sum() {
 }
 
 #[test]
+fn engine_keeps_dynamic_homogeneous_textual_sequences_dense() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![
+                FlowOp::Let {
+                    pattern: RuntimePattern::Ident("label".to_owned()),
+                    expr: RuntimeExpr::Value(RuntimeValue::String("alpha".to_owned())),
+                },
+                FlowOp::Let {
+                    pattern: RuntimePattern::Ident("target".to_owned()),
+                    expr: RuntimeExpr::EntityRef("character.alice".to_owned()),
+                },
+                FlowOp::Let {
+                    pattern: RuntimePattern::Ident("names".to_owned()),
+                    expr: RuntimeExpr::BracketSeq(vec![
+                        RuntimeExpr::Local("label".to_owned()),
+                        RuntimeExpr::Value(RuntimeValue::String("beta".to_owned())),
+                    ]),
+                },
+                FlowOp::Let {
+                    pattern: RuntimePattern::Ident("targets".to_owned()),
+                    expr: RuntimeExpr::BracketSeq(vec![
+                        RuntimeExpr::Local("target".to_owned()),
+                        RuntimeExpr::EntityRef("character.bob".to_owned()),
+                    ]),
+                },
+                FlowOp::ReturnExpr(RuntimeExpr::Tuple(vec![
+                    RuntimeExpr::MethodCall {
+                        receiver: Box::new(RuntimeExpr::Local("names".to_owned())),
+                        method: "len".to_owned(),
+                        args: Vec::new(),
+                    },
+                    RuntimeExpr::MethodCall {
+                        receiver: Box::new(RuntimeExpr::Local("targets".to_owned())),
+                        method: "len".to_owned(),
+                        args: Vec::new(),
+                    },
+                ])),
+            ],
+        }],
+        Vec::new(),
+    )
+    .expect("flow plan is valid");
+    let mut engine = Engine::new(plan);
+
+    let result = engine.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget { max_ops: 16 },
+        },
+    );
+
+    assert!(matches!(
+        result.fiber_status,
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "tuple/2"
+    ));
+    assert!(matches!(
+        engine.fiber().env.get("names"),
+        Some(RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Strings(values))))
+            if values.as_slice() == ["alpha".to_owned(), "beta".to_owned()].as_slice()
+    ));
+    assert!(matches!(
+        engine.fiber().env.get("targets"),
+        Some(RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::EntityRefs(values))))
+            if values.as_slice() == ["character.alice".to_owned(), "character.bob".to_owned()].as_slice()
+    ));
+    assert_eq!(result.stats.pure.arg_vec_allocations, 0);
+}
+
+#[test]
 fn engine_sums_local_i64_sequence_by_borrow() {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.main".to_owned())),

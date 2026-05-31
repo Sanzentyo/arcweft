@@ -613,6 +613,9 @@ fn named_string_seq(args: &[EvaluatedHostArg], name: &str) -> Option<Vec<String>
                 .iter()
                 .map(|value| format!("{}ns", value.as_nanos()))
                 .collect(),
+            DenseSeq::Strings(items)
+            | DenseSeq::FloatLiterals(items)
+            | DenseSeq::EntityRefs(items) => items.as_slice().to_vec(),
         },
         value => vec![runtime_value_to_string(value)],
     })
@@ -692,7 +695,10 @@ fn runtime_value_to_bytes(value: &RuntimeValue) -> Result<Vec<u8>, String> {
             | DenseSeq::U64(_)
             | DenseSeq::Bool(_)
             | DenseSeq::Chars(_)
-            | DenseSeq::Durations(_) => Err(format!(
+            | DenseSeq::Durations(_)
+            | DenseSeq::Strings(_)
+            | DenseSeq::FloatLiterals(_)
+            | DenseSeq::EntityRefs(_) => Err(format!(
                 "byte payload item must be Int, found {}",
                 super::runtime_value_label(value)
             )),

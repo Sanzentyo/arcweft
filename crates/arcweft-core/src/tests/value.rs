@@ -3,9 +3,11 @@ use crate::{
     value::{
         RuntimeBinding, RuntimeEnv, RuntimeSeq, RuntimeValue, runtime_sequence_dense_bool,
         runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
-        runtime_sequence_dense_durations, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
-        runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_dense_u8,
-        runtime_sequence_dense_u16, runtime_sequence_dense_u32, runtime_sequence_dense_u64,
+        runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
+        runtime_sequence_dense_float_literals, runtime_sequence_dense_i8,
+        runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
+        runtime_sequence_dense_strings, runtime_sequence_dense_u8, runtime_sequence_dense_u16,
+        runtime_sequence_dense_u32, runtime_sequence_dense_u64,
         runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_value_label,
     },
 };
@@ -209,6 +211,64 @@ fn dense_sequences_expose_typed_views_and_materialize_values() {
 }
 
 #[test]
+fn dense_textual_sequences_expose_typed_views_and_materialize_values() {
+    let strings_seq = runtime_sequence_dense_strings(vec!["a".to_owned(), "b".to_owned()]);
+    let floats_seq =
+        runtime_sequence_dense_float_literals(vec!["1.0f64".to_owned(), "2.0f64".to_owned()]);
+    let entities_seq =
+        runtime_sequence_dense_entity_refs(vec!["char.alice".to_owned(), "char.bob".to_owned()]);
+
+    assert_eq!(runtime_value_label(&strings_seq), "seq/strings/2");
+    assert_eq!(runtime_value_label(&floats_seq), "seq/float_literals/2");
+    assert_eq!(runtime_value_label(&entities_seq), "seq/entity_refs/2");
+
+    let RuntimeValue::Seq(strings_seq) = strings_seq else {
+        panic!("dense strings helper returns a sequence");
+    };
+    assert_eq!(
+        strings_seq.as_strings(),
+        Some(["a".to_owned(), "b".to_owned()].as_slice())
+    );
+    assert_eq!(
+        strings_seq.into_values(),
+        vec![
+            RuntimeValue::String("a".to_owned()),
+            RuntimeValue::String("b".to_owned())
+        ]
+    );
+
+    let RuntimeValue::Seq(floats_seq) = floats_seq else {
+        panic!("dense float literal helper returns a sequence");
+    };
+    assert_eq!(
+        floats_seq.as_float_literals(),
+        Some(["1.0f64".to_owned(), "2.0f64".to_owned()].as_slice())
+    );
+    assert_eq!(
+        floats_seq.into_values(),
+        vec![
+            RuntimeValue::Float("1.0f64".to_owned()),
+            RuntimeValue::Float("2.0f64".to_owned())
+        ]
+    );
+
+    let RuntimeValue::Seq(entities_seq) = entities_seq else {
+        panic!("dense entity refs helper returns a sequence");
+    };
+    assert_eq!(
+        entities_seq.as_entity_refs(),
+        Some(["char.alice".to_owned(), "char.bob".to_owned()].as_slice())
+    );
+    assert_eq!(
+        entities_seq.into_values(),
+        vec![
+            RuntimeValue::EntityRef("char.alice".to_owned()),
+            RuntimeValue::EntityRef("char.bob".to_owned())
+        ]
+    );
+}
+
+#[test]
 fn literal_and_repeat_sequences_choose_dense_scalar_storage() {
     let RuntimeValue::Seq(bool_seq) = runtime_sequence_from_literal_values(vec![
         RuntimeValue::Bool(true),
@@ -238,6 +298,33 @@ fn literal_and_repeat_sequences_choose_dense_scalar_storage() {
             ]
             .as_slice()
         )
+    );
+
+    let RuntimeValue::Seq(string_seq) =
+        runtime_sequence_from_literal_values(vec![RuntimeValue::String("ok".to_owned())])
+    else {
+        panic!("string literals lower to a sequence");
+    };
+    assert_eq!(string_seq.as_strings(), Some(["ok".to_owned()].as_slice()));
+
+    let RuntimeValue::Seq(float_seq) =
+        runtime_sequence_repeat_value(&RuntimeValue::Float("1.5f64".to_owned()), 2)
+    else {
+        panic!("float literal repeat lowers to a sequence");
+    };
+    assert_eq!(
+        float_seq.as_float_literals(),
+        Some(["1.5f64".to_owned(), "1.5f64".to_owned()].as_slice())
+    );
+
+    let RuntimeValue::Seq(entity_seq) =
+        runtime_sequence_repeat_value(&RuntimeValue::EntityRef("char.alice".to_owned()), 2)
+    else {
+        panic!("entity ref repeat lowers to a sequence");
+    };
+    assert_eq!(
+        entity_seq.as_entity_refs(),
+        Some(["char.alice".to_owned(), "char.alice".to_owned()].as_slice())
     );
 }
 

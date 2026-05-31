@@ -1,0 +1,16 @@
+pub surface character @character.alice Alice as alice {}
+pub surface character @character.bob Bob as bob {}
+
+bench @bench.dense_textual_scalar_len {
+    measure iterations = 4 { start(@flow.dense_textual_scalar_len) }
+}
+
+flow @flow.dense_textual_scalar_len dense_textual_scalar_len {
+    let label: String = "alpha"
+    let names: Vec<String> = [label, "beta", "gamma", "delta"]
+    let ratios: Vec<f64> = [1.0f64, 2.0f64, 3.0f64, 4.0f64]
+    let cast = [@character.alice, @character.bob]
+    let total: usize = names.len() + ratios.len() + cast.len()
+    log.info(total)
+    return "done"
+}
