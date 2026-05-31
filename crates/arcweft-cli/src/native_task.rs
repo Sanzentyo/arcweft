@@ -7,6 +7,7 @@ use arcweft_runtime_scheduler::{RuntimeScheduler, RuntimeSchedulerStats, TaskCla
 use rayon::prelude::*;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::time::Instant;
 
 #[derive(Clone, Debug)]
 pub(crate) struct NativeTaskBridge {
@@ -32,6 +33,11 @@ pub(crate) struct NativeTaskStats {
     pub(crate) parallel_system_info_tasks: usize,
     pub(crate) parallel_marker_tasks: usize,
     pub(crate) parallel_workers: usize,
+    pub(crate) scheduler_submit_elapsed_ns: u128,
+    pub(crate) scheduler_dispatch_elapsed_ns: u128,
+    pub(crate) host_complete_elapsed_ns: u128,
+    pub(crate) event_build_elapsed_ns: u128,
+    pub(crate) scheduler_complete_elapsed_ns: u128,
     pub(crate) scheduler: NativeSchedulerStats,
 }
 
@@ -106,13 +112,31 @@ impl NativeTaskBridge {
     }
 
     pub(crate) fn complete_tasks(&mut self, tasks: Vec<TaskSpec>) -> Vec<TaskEvent> {
+        let started = Instant::now();
         self.scheduler
             .submit(tasks.into_iter().filter(can_complete_task));
+        self.stats.scheduler_submit_elapsed_ns = self
+            .stats
+            .scheduler_submit_elapsed_ns
+            .saturating_add(started.elapsed().as_nanos());
+
+        let started = Instant::now();
         let dispatch = self.scheduler.dispatch(SchedulerBudget {
             max_events: usize::MAX,
         });
+        self.stats.scheduler_dispatch_elapsed_ns = self
+            .stats
+            .scheduler_dispatch_elapsed_ns
+            .saturating_add(started.elapsed().as_nanos());
+
+        let started = Instant::now();
         let completions =
             complete_dispatched_tasks(&self.io_root, self.host_system, &dispatch.tasks);
+        self.stats.host_complete_elapsed_ns = self
+            .stats
+            .host_complete_elapsed_ns
+            .saturating_add(started.elapsed().as_nanos());
+
         if completions.parallel {
             self.stats.parallel_batches += 1;
             self.stats.parallel_tasks += completions.items.len();
@@ -137,12 +161,25 @@ impl NativeTaskBridge {
                     .max(1),
             );
         }
+
+        let started = Instant::now();
         let events = completions
             .items
             .into_iter()
             .map(|completion| self.task_event(completion))
             .collect::<Vec<_>>();
-        self.scheduler.complete(events)
+        self.stats.event_build_elapsed_ns = self
+            .stats
+            .event_build_elapsed_ns
+            .saturating_add(started.elapsed().as_nanos());
+
+        let started = Instant::now();
+        let events = self.scheduler.complete(events);
+        self.stats.scheduler_complete_elapsed_ns = self
+            .stats
+            .scheduler_complete_elapsed_ns
+            .saturating_add(started.elapsed().as_nanos());
+        events
     }
 
     fn task_event(&mut self, completion: TaskCompletion) -> TaskEvent {

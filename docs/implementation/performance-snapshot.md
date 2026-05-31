@@ -34,7 +34,7 @@ Checked-in system-info threaded native scheduling bench:
 
 | fixture | executor | iterations | median elapsed ns | task requests | task events in | system info ops | scheduler submitted | scheduler max in-flight | parallel system tasks | parallel marker tasks | parallel workers |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 004_system_info_threads.arcw | bytecode_vm | 1 | 1227700 | 6 | 6 | 3 | 6 | 6 | 3 | 3 | 6 |
+| 004_system_info_threads.arcw | bytecode_vm | 1 | 919200 | 6 | 6 | 3 | 6 | 6 | 3 | 3 | 6 |
 
 The scheduler completion counters now split native completion work into
 normalization checks, sort work, joined-event fanout, and final event volume.
@@ -47,6 +47,13 @@ completion surface reported `completion_events_in = 6`,
 `submitted_by_class.cpu = 6`, `dispatched_by_class.cpu = 6`, and
 `completed_by_class.cpu = 6`, giving the scheduler/native bridge a class
 breakdown without recording host paths.
+
+The CLI/native bridge now reports host-side phase timing counters separately
+from Sans I/O scheduler counters. The same system-info threaded run reported
+`scheduler_submit_elapsed_ns = 37500`, `scheduler_dispatch_elapsed_ns = 5900`,
+`host_complete_elapsed_ns = 600100`, `event_build_elapsed_ns = 3700`, and
+`scheduler_complete_elapsed_ns = 49500`. These values are local trend samples
+for bridge overhead attribution, not deterministic replay state.
 
 Scalar for-loop and mixed iterator pure JIT benches:
 

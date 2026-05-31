@@ -3098,6 +3098,7 @@ flow @flow.threads threads {
     assert_eq!(measurement["native_io"]["scheduler"]["submitted"], 3);
     assert_eq!(measurement["native_io"]["scheduler"]["dispatch_sorts"], 0);
     assert_scheduler_completion_counts(measurement, 3);
+    assert_native_bridge_phase_timings(measurement);
     assert_eq!(measurement["native_io"]["completed_tasks"], 3);
     assert!(
         measurement["deterministic"]["child_fiber_ticks_median"]
@@ -3137,6 +3138,22 @@ fn assert_scheduler_completion_counts(measurement: &serde_json::Value, expected_
         "bench JSON should expose skipped completion sort items: {measurement}"
     );
     assert_eq!(scheduler["joined_completion_events_emitted"], 0);
+}
+
+fn assert_native_bridge_phase_timings(measurement: &serde_json::Value) {
+    let native_io = &measurement["native_io"];
+    for field in [
+        "scheduler_submit_elapsed_ns",
+        "scheduler_dispatch_elapsed_ns",
+        "host_complete_elapsed_ns",
+        "event_build_elapsed_ns",
+        "scheduler_complete_elapsed_ns",
+    ] {
+        assert!(
+            native_io[field].as_u64().is_some(),
+            "bench JSON should expose native bridge timing field `{field}`: {measurement}"
+        );
+    }
 }
 
 #[test]
@@ -3179,6 +3196,7 @@ fn bench_json_measures_checked_in_thread_scheduling_fixture() {
     assert_eq!(measurement["native_io"]["parallel_marker_tasks"], 0);
     assert_eq!(measurement["native_io"]["scheduler"]["dispatch_sorts"], 0);
     assert_eq!(measurement["native_io"]["scheduler"]["completion_sorts"], 0);
+    assert_native_bridge_phase_timings(measurement);
     assert_eq!(
         measurement["native_io"]["scheduler"]["completion_events_in"],
         3
@@ -3255,6 +3273,7 @@ fn bench_json_measures_checked_in_system_info_thread_fixture() {
         6
     );
     assert_eq!(measurement["native_io"]["scheduler"]["dispatch_sorts"], 0);
+    assert_native_bridge_phase_timings(measurement);
 }
 
 #[test]
@@ -4102,6 +4121,7 @@ flow @flow.threaded_reads threaded_reads effects { fs.read(save) } {
         measurement["native_io"]["scheduler"]["completion_events_out"],
         4
     );
+    assert_native_bridge_phase_timings(measurement);
     assert!(
         measurement["native_io"]["scheduler"]["completion_normalization_checks"]
             .as_u64()

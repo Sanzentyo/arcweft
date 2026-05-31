@@ -576,6 +576,11 @@ Current high-confidence state:
   `completed_by_class` counters for every `TaskClass`, keeping task-class
   breakdown in the Sans I/O scheduler while host timing and worker-pool work
   stay in the CLI/native bridge layer.
+- The CLI/native bridge reports phase elapsed counters separately from the
+  Sans I/O scheduler: `scheduler_submit_elapsed_ns`,
+  `scheduler_dispatch_elapsed_ns`, `host_complete_elapsed_ns`,
+  `event_build_elapsed_ns`, and `scheduler_complete_elapsed_ns`. These are
+  host-side measurements in `native_io`, not deterministic scheduler state.
 - The CLI native task bridge now completes read-only dispatched task batches
   and host system-info reads on a worker pool and reports path-free
   `parallel_batches`, `parallel_tasks`, `parallel_io_tasks`,

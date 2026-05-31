@@ -3545,6 +3545,11 @@ struct NativeTaskStatsSamples {
     parallel_system_info_tasks: Vec<usize>,
     parallel_marker_tasks: Vec<usize>,
     parallel_workers: Vec<usize>,
+    scheduler_submit_elapsed_ns: Vec<u128>,
+    scheduler_dispatch_elapsed_ns: Vec<u128>,
+    host_complete_elapsed_ns: Vec<u128>,
+    event_build_elapsed_ns: Vec<u128>,
+    scheduler_complete_elapsed_ns: Vec<u128>,
     scheduler: NativeSchedulerStatsSamples,
 }
 
@@ -3564,6 +3569,11 @@ impl NativeTaskStatsSamples {
             parallel_system_info_tasks: Vec::with_capacity(capacity),
             parallel_marker_tasks: Vec::with_capacity(capacity),
             parallel_workers: Vec::with_capacity(capacity),
+            scheduler_submit_elapsed_ns: Vec::with_capacity(capacity),
+            scheduler_dispatch_elapsed_ns: Vec::with_capacity(capacity),
+            host_complete_elapsed_ns: Vec::with_capacity(capacity),
+            event_build_elapsed_ns: Vec::with_capacity(capacity),
+            scheduler_complete_elapsed_ns: Vec::with_capacity(capacity),
             scheduler: NativeSchedulerStatsSamples::with_capacity(capacity),
         }
     }
@@ -3583,6 +3593,16 @@ impl NativeTaskStatsSamples {
             .push(stats.parallel_system_info_tasks);
         self.parallel_marker_tasks.push(stats.parallel_marker_tasks);
         self.parallel_workers.push(stats.parallel_workers);
+        self.scheduler_submit_elapsed_ns
+            .push(stats.scheduler_submit_elapsed_ns);
+        self.scheduler_dispatch_elapsed_ns
+            .push(stats.scheduler_dispatch_elapsed_ns);
+        self.host_complete_elapsed_ns
+            .push(stats.host_complete_elapsed_ns);
+        self.event_build_elapsed_ns
+            .push(stats.event_build_elapsed_ns);
+        self.scheduler_complete_elapsed_ns
+            .push(stats.scheduler_complete_elapsed_ns);
         self.scheduler.push(&stats.scheduler);
     }
 
@@ -3601,6 +3621,11 @@ impl NativeTaskStatsSamples {
             parallel_system_info_tasks: median_usize(&mut self.parallel_system_info_tasks),
             parallel_marker_tasks: median_usize(&mut self.parallel_marker_tasks),
             parallel_workers: median_usize(&mut self.parallel_workers),
+            scheduler_submit_elapsed_ns: median_u128(&mut self.scheduler_submit_elapsed_ns),
+            scheduler_dispatch_elapsed_ns: median_u128(&mut self.scheduler_dispatch_elapsed_ns),
+            host_complete_elapsed_ns: median_u128(&mut self.host_complete_elapsed_ns),
+            event_build_elapsed_ns: median_u128(&mut self.event_build_elapsed_ns),
+            scheduler_complete_elapsed_ns: median_u128(&mut self.scheduler_complete_elapsed_ns),
             scheduler: self.scheduler.median(),
         }
     }
