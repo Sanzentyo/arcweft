@@ -840,6 +840,46 @@ fn engine_batches_dense_i128_and_u128_map_without_widening_flat_inputs() {
     );
 }
 
+#[test]
+fn engine_batches_dense_isize_map_without_widening_flat_inputs() {
+    assert_dense_exact_int_map_sum_uses_flat_batch(
+        runtime_sequence_dense_isize(vec![3, 5, 7]),
+        RuntimeValue::isize(4),
+        RuntimePureInputType::ISize,
+        RuntimePureOutputType::ISize,
+        6 * std::mem::size_of::<i64>(),
+    );
+    assert_dense_exact_int_map_output_uses_flat_batch(
+        runtime_sequence_dense_isize(vec![3, 5, 7]),
+        RuntimeValue::isize(4),
+        RuntimePureInputType::ISize,
+        RuntimePureOutputType::ISize,
+        "seq/isize/3",
+        6 * std::mem::size_of::<i64>(),
+        3 * std::mem::size_of::<i64>(),
+    );
+}
+
+#[test]
+fn engine_batches_dense_usize_map_without_widening_flat_inputs() {
+    assert_dense_exact_int_map_sum_uses_flat_batch(
+        runtime_sequence_dense_usize(vec![3, 5, 7]),
+        RuntimeValue::usize(4),
+        RuntimePureInputType::USize,
+        RuntimePureOutputType::USize,
+        6 * std::mem::size_of::<u64>(),
+    );
+    assert_dense_exact_int_map_output_uses_flat_batch(
+        runtime_sequence_dense_usize(vec![3, 5, 7]),
+        RuntimeValue::usize(4),
+        RuntimePureInputType::USize,
+        RuntimePureOutputType::USize,
+        "seq/usize/3",
+        6 * std::mem::size_of::<u64>(),
+        3 * std::mem::size_of::<u64>(),
+    );
+}
+
 fn assert_dense_exact_int_map_sum_uses_flat_batch(
     source: RuntimeValue,
     bonus: RuntimeValue,

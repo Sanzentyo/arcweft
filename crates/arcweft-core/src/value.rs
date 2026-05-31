@@ -1144,6 +1144,14 @@ impl_runtime_exact_wide_signed_integer!(
     runtime_sequence_dense_i128,
     I128
 );
+impl_runtime_exact_signed_integer!(
+    i64,
+    ISize,
+    ISize,
+    as_isize_values,
+    runtime_sequence_dense_isize,
+    ISize
+);
 impl_runtime_exact_unsigned_integer!(u8, U8, U8, as_u8_slice, runtime_sequence_dense_u8, U8);
 impl_runtime_exact_unsigned_integer!(u16, U16, U16, as_u16_slice, runtime_sequence_dense_u16, U16);
 impl_runtime_exact_unsigned_integer!(u32, U32, U32, as_u32_slice, runtime_sequence_dense_u32, U32);
@@ -2308,6 +2316,16 @@ impl RuntimeEnv {
         }
     }
 
+    pub(crate) fn replace_root_usize_bindings(&mut self, input_names: &[String], args: &[u64]) {
+        if self.scopes.is_empty() {
+            self.scopes.push(RuntimeScope::default());
+        }
+        self.scopes.truncate(1);
+        if let Some(scope) = self.scopes.first_mut() {
+            scope.replace_usize_bindings(input_names, args);
+        }
+    }
+
     pub(crate) fn replace_root_value_bindings_ref(
         &mut self,
         input_names: &[String],
@@ -2491,6 +2509,32 @@ impl RuntimeScope {
                 .map(|(name, value)| RuntimeBinding {
                     name: name.clone(),
                     value: value.into_runtime_value(),
+                }),
+        );
+    }
+
+    fn replace_usize_bindings(&mut self, input_names: &[String], args: &[u64]) {
+        if self.bindings.len() == input_names.len()
+            && self
+                .bindings
+                .iter()
+                .zip(input_names)
+                .all(|(binding, name)| binding.name == *name)
+        {
+            self.bindings
+                .iter_mut()
+                .zip(args.iter().copied())
+                .for_each(|(binding, value)| binding.value = RuntimeValue::usize(value));
+            return;
+        }
+        self.bindings.clear();
+        self.bindings.extend(
+            input_names
+                .iter()
+                .zip(args.iter().copied())
+                .map(|(name, value)| RuntimeBinding {
+                    name: name.clone(),
+                    value: RuntimeValue::usize(value),
                 }),
         );
     }
