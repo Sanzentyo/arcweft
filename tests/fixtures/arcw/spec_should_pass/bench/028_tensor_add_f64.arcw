@@ -1,0 +1,8 @@
+bench @bench.tensor_add_f64 {
+    measure iterations = 4 { start(@flow.tensor_add_f64) }
+}
+
+flow @flow.tensor_add_f64 tensor_add_f64(lhs: TensorF64, rhs: TensorF64) -> TensorF64 {
+    let out = math.tensor_add_f64(lhs, rhs)
+    return out
+}

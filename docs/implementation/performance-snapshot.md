@@ -556,6 +556,8 @@ just bench-024
 just bench-024-wgpu-auto
 just bench-025
 just bench-026
+arcw bench tests/fixtures/arcw/spec_should_pass/bench/027_matrix_matmul_f64.arcw --math-backend ndarray --value lhs=matrix/f64/2x2:1.5,2,3.25,4.5 --value rhs=matrix/f64/2x2:5,6.5,7,8.25 --json
+arcw bench tests/fixtures/arcw/spec_should_pass/bench/028_tensor_add_f64.arcw --math-backend ndarray --value lhs=tensor/f64/2x2:1.5,2.25,3.75,4.5 --value rhs=tensor/f64/2x2:5,6.25,7.5,8.75 --json
 cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op matmul --size 512 --iterations 3 --warmup 1 --reuse
 just bench-math-matrix-add-reuse
 just bench-math-tensor-add-reuse
@@ -573,6 +575,7 @@ Representative release results on the local machine:
 | flow 4x4 matrix_add_f32 | ndarray | measured | 9900 | `--value` matrix input, one ndarray view add, `bytes_borrowed = 128`, `bytes_copied = 0` |
 | flow 2x2x2 tensor_add_f32 | ndarray | measured | 13400 | `--value` tensor input, one ndarray dynamic-view add, `bytes_borrowed = 64`, `bytes_copied = 0` |
 | flow 2x2 matmul_f64 | ndarray | functional | checked by test | `--value` matrix input, `math_calls = 1`, `math_accelerated_calls = 1`, `bytes_borrowed = 64`, `result_bytes_copied = 32` |
+| flow 2x2 tensor_add_f64 | ndarray | functional | checked by test | `--value` tensor input, `math_calls = 1`, `math_accelerated_calls = 1`, `bytes_borrowed = 64`, `result_bytes_copied = 32` |
 | 64x64 matmul_f32 | scalar | measured | 21300 | row-major baseline |
 | 64x64 matmul_f32 | ndarray | measured | 26700 | general CPU matrix backend |
 | 64x64 matmul_f32 | auto | measured | 24200 | selected ndarray without wgpu feature |
