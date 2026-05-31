@@ -15,6 +15,7 @@ use crate::pure::{
 use crate::value::RuntimeBinaryOp;
 use crate::value::RuntimeExactInteger;
 use crate::value::RuntimeFieldExpr;
+use crate::value::evaluate_std_float_intrinsic;
 use crate::value::{RuntimeCallTarget, RuntimeIntrinsic};
 use crate::value::{RuntimeISizeValue, RuntimeUSizeValue};
 
@@ -3194,6 +3195,11 @@ fn evaluate_runtime_call(
     args: &[RuntimeValue],
     pure_backend: &mut impl RuntimeCallBackend,
 ) -> RuntimeValue {
+    if let Some(intrinsic) = callee.as_intrinsic()
+        && let Ok(Some(value)) = evaluate_std_float_intrinsic(intrinsic, args)
+    {
+        return value;
+    }
     match (callee.as_intrinsic(), args) {
         (Some(RuntimeIntrinsic::Add), [RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)]) => {
             evaluate_binary(

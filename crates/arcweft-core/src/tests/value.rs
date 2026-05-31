@@ -3,8 +3,8 @@ use crate::{
     time::LogicalDuration,
     value::{
         DenseSeqKind, RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeExpr, RuntimeFieldValue,
-        RuntimeSeq, RuntimeUnaryOp, RuntimeValue, runtime_sequence_dense_bool,
-        runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
+        RuntimeIntrinsic, RuntimeSeq, RuntimeUnaryOp, RuntimeValue, evaluate_std_float_intrinsic,
+        runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
         runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
         runtime_sequence_dense_f32, runtime_sequence_dense_f64, runtime_sequence_dense_i8,
         runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
@@ -736,4 +736,47 @@ fn dense_sequence_tail_preserves_storage_strategy() {
     };
 
     assert_eq!(tail.as_chars(), Some(['b', 'c'].as_slice()));
+}
+
+#[test]
+fn std_float_intrinsics_use_native_semantics_and_explicit_bit_conversion() {
+    assert_eq!(
+        evaluate_std_float_intrinsic(RuntimeIntrinsic::StdF32Sqrt, &[RuntimeValue::F32(4.0)])
+            .expect("sqrt evaluates"),
+        Some(RuntimeValue::F32(2.0))
+    );
+    assert_eq!(
+        evaluate_std_float_intrinsic(
+            RuntimeIntrinsic::StdF32MulAdd,
+            &[
+                RuntimeValue::F32(2.0),
+                RuntimeValue::F32(3.0),
+                RuntimeValue::F32(4.0)
+            ],
+        )
+        .expect("mul_add evaluates"),
+        Some(RuntimeValue::F32(10.0))
+    );
+    assert_eq!(
+        evaluate_std_float_intrinsic(RuntimeIntrinsic::StdF32ToBits, &[RuntimeValue::F32(-0.0)])
+            .expect("to_bits evaluates"),
+        Some(RuntimeValue::u32((-0.0f32).to_bits()))
+    );
+    assert_eq!(
+        evaluate_std_float_intrinsic(
+            RuntimeIntrinsic::StdF32FromBits,
+            &[RuntimeValue::u32(f32::NAN.to_bits())]
+        )
+        .expect("from_bits evaluates")
+        .and_then(|value| match value {
+            RuntimeValue::F32(value) => Some(value.to_bits()),
+            _ => None,
+        }),
+        Some(f32::NAN.to_bits())
+    );
+    assert_eq!(
+        evaluate_std_float_intrinsic(RuntimeIntrinsic::StdF64ToF32, &[RuntimeValue::F64(1.5)])
+            .expect("to_f32 evaluates"),
+        Some(RuntimeValue::F32(1.5))
+    );
 }

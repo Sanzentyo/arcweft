@@ -732,6 +732,9 @@ impl TypeChecker<'_> {
     }
 
     fn check_builtin_call_name(&mut self, name: &str, args: &[CallArg]) -> Option<TypeKind> {
+        if let Some(ty) = self.check_std_float_call_name(name, args) {
+            return Some(ty);
+        }
         match name {
             "panic" | "fail" | "bail" => {
                 for arg in args {
@@ -756,6 +759,79 @@ impl TypeChecker<'_> {
                 Some(TypeKind::Named("TensorF32".to_owned()))
             }
             _ => None,
+        }
+    }
+
+    fn check_std_float_call_name(&mut self, name: &str, args: &[CallArg]) -> Option<TypeKind> {
+        let (input, output, arity) = match name {
+            "std.f32.abs" | "std.f32.floor" | "std.f32.ceil" | "std.f32.round"
+            | "std.f32.trunc" | "std.f32.fract" | "std.f32.sqrt" | "std.f32.sin"
+            | "std.f32.cos" | "std.f32.tan" | "std.f32.exp" | "std.f32.exp2" | "std.f32.ln"
+            | "std.f32.log2" | "std.f32.log10" => (TypeKind::F32, TypeKind::F32, 1),
+            "std.f32.powf" | "std.f32.atan2" => (TypeKind::F32, TypeKind::F32, 2),
+            "std.f32.mul_add" => (TypeKind::F32, TypeKind::F32, 3),
+            "std.f32.is_nan"
+            | "std.f32.is_infinite"
+            | "std.f32.is_finite"
+            | "std.f32.is_sign_positive"
+            | "std.f32.is_sign_negative" => (TypeKind::F32, TypeKind::Bool, 1),
+            "std.f32.to_bits" => (TypeKind::F32, TypeKind::U32, 1),
+            "std.f32.from_bits" => (TypeKind::U32, TypeKind::F32, 1),
+            "std.f32.to_f64" => (TypeKind::F32, TypeKind::F64, 1),
+            "std.f64.abs" | "std.f64.floor" | "std.f64.ceil" | "std.f64.round"
+            | "std.f64.trunc" | "std.f64.fract" | "std.f64.sqrt" | "std.f64.sin"
+            | "std.f64.cos" | "std.f64.tan" | "std.f64.exp" | "std.f64.exp2" | "std.f64.ln"
+            | "std.f64.log2" | "std.f64.log10" => (TypeKind::F64, TypeKind::F64, 1),
+            "std.f64.powf" | "std.f64.atan2" => (TypeKind::F64, TypeKind::F64, 2),
+            "std.f64.mul_add" => (TypeKind::F64, TypeKind::F64, 3),
+            "std.f64.is_nan"
+            | "std.f64.is_infinite"
+            | "std.f64.is_finite"
+            | "std.f64.is_sign_positive"
+            | "std.f64.is_sign_negative" => (TypeKind::F64, TypeKind::Bool, 1),
+            "std.f64.to_bits" => (TypeKind::F64, TypeKind::U64, 1),
+            "std.f64.from_bits" => (TypeKind::U64, TypeKind::F64, 1),
+            "std.f64.to_f32" => (TypeKind::F64, TypeKind::F32, 1),
+            _ => return None,
+        };
+        self.check_homogeneous_builtin_args(name, args, &input, arity);
+        Some(output)
+    }
+
+    fn check_homogeneous_builtin_args(
+        &mut self,
+        name: &str,
+        args: &[CallArg],
+        expected: &TypeKind,
+        arity: usize,
+    ) {
+        if args.len() != arity {
+            self.errors.push(TypeCheckError::new(format!(
+                "`{name}` expected {arity} positional argument(s), got {}",
+                args.len()
+            )));
+        }
+        for arg in args {
+            match arg {
+                CallArg::Positional(value) => {
+                    self.check_expr_with_expected(value, Some(expected));
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "`{name}` arguments must be positional, got named `{arg_name}`"
+                    )));
+                    self.check_expr(value);
+                }
+                CallArg::Spread { value } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "`{name}` arguments cannot be spread"
+                    )));
+                    self.check_expr(value);
+                }
+            }
         }
     }
 
@@ -1004,9 +1080,12 @@ impl TypeChecker<'_> {
         args: &[CallArg],
     ) -> Option<TypeKind> {
         let method_name = method.split_once('<').map_or(method, |(name, _)| name);
-        if let Expr::Path(receiver_path) = receiver {
+        if let Some(receiver_path) = expr_path_label(receiver) {
             let dotted = format!("{receiver_path}.{method_name}");
             if receiver_path == "math" {
+                return self.check_builtin_call_name(&dotted, args);
+            }
+            if matches!(receiver_path.as_str(), "std.f32" | "std.f64") {
                 return self.check_builtin_call_name(&dotted, args);
             }
             if let Some(ty) = self
@@ -1366,6 +1445,9 @@ impl TypeChecker<'_> {
                 return Some(ty);
             }
             if let Some(ty) = self.env.symbol_type(&path).cloned() {
+                return Some(ty);
+            }
+            if let Some(ty) = std_float_constant_type(&path) {
                 return Some(ty);
             }
         }
@@ -1856,6 +1938,28 @@ fn is_unit_number_type(ty: &TypeKind) -> bool {
         name.as_str(),
         "Length" | "Angle" | "AudioLevel" | "Tempo"
     ))
+}
+
+fn std_float_constant_type(path: &str) -> Option<TypeKind> {
+    Some(match path {
+        "std.f32.nan"
+        | "std.f32.infinity"
+        | "std.f32.neg_infinity"
+        | "std.f32.epsilon"
+        | "std.f32.min"
+        | "std.f32.max"
+        | "std.f32.pi"
+        | "std.f32.tau" => TypeKind::F32,
+        "std.f64.nan"
+        | "std.f64.infinity"
+        | "std.f64.neg_infinity"
+        | "std.f64.epsilon"
+        | "std.f64.min"
+        | "std.f64.max"
+        | "std.f64.pi"
+        | "std.f64.tau" => TypeKind::F64,
+        _ => return None,
+    })
 }
 
 fn looks_like_os_absolute_path(path: &str) -> bool {

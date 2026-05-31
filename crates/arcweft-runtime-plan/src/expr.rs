@@ -45,7 +45,10 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
                 })
                 .collect(),
         ),
-        Expr::Field { target, field } => lower_runtime_field_expr(target, field),
+        Expr::Field { target, field } => lower_std_float_constant(expr).map_or_else(
+            || lower_runtime_field_expr(target, field),
+            RuntimeExpr::Value,
+        ),
         Expr::Unary { op, expr } => RuntimeExpr::Unary {
             op: lower_runtime_unary_op(*op),
             expr: Box::new(lower_runtime_expr(expr)),
@@ -94,6 +97,7 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
             method,
             args,
         } => lower_runtime_math_method_call(receiver, method, args)
+            .or_else(|| lower_runtime_std_float_method_call(receiver, method, args))
             .or_else(|| lower_runtime_path_method_call(receiver, method, args))
             .unwrap_or_else(|| RuntimeExpr::MethodCall {
                 receiver: Box::new(lower_runtime_expr(receiver)),
@@ -156,7 +160,9 @@ fn lower_runtime_expr_strict_with_helpers(
             })
             .collect::<Result<Vec<_>, String>>()
             .map(RuntimeExpr::Record),
-        Expr::Field { target, field } => lower_strict_field_expr(target, field, helpers),
+        Expr::Field { target, field } => lower_std_float_constant(expr)
+            .map(RuntimeExpr::Value)
+            .map_or_else(|| lower_strict_field_expr(target, field, helpers), Ok),
         Expr::Unary { op, expr } => Ok(RuntimeExpr::Unary {
             op: lower_runtime_unary_op(*op),
             expr: Box::new(lower_runtime_expr_strict_with_helpers(expr, helpers)?),
@@ -204,6 +210,7 @@ fn lower_runtime_expr_strict_with_helpers(
             method,
             args,
         } => match lower_strict_math_method_call(receiver, method, args, helpers)
+            .or_else(|| lower_strict_std_float_method_call(receiver, method, args, helpers))
             .or_else(|| lower_strict_path_method_call(receiver, method, args, helpers))
         {
             Some(lowered) => lowered,
@@ -418,6 +425,26 @@ fn lower_runtime_math_method_call(
     })
 }
 
+fn lower_runtime_std_float_method_call(
+    receiver: &Expr,
+    method: &str,
+    args: &[CallArg],
+) -> Option<RuntimeExpr> {
+    let receiver = expr_label(receiver);
+    let method = runtime_method_name(method);
+    if !matches!(receiver.as_str(), "std.f32" | "std.f64")
+        || RuntimeCallTarget::from_label(format!("{receiver}.{method}"))
+            .as_intrinsic()
+            .is_none()
+    {
+        return None;
+    }
+    Some(RuntimeExpr::Call {
+        callee: RuntimeCallTarget::from_label(format!("{receiver}.{method}")),
+        args: args.iter().map(lower_runtime_call_arg).collect(),
+    })
+}
+
 fn lower_strict_path_method_call(
     receiver: &Expr,
     method: &str,
@@ -464,6 +491,32 @@ fn lower_strict_math_method_call(
             .collect::<Result<Vec<_>, _>>()
             .map(|args| RuntimeExpr::Call {
                 callee: RuntimeCallTarget::from_label(format!("math.{method}")),
+                args,
+            }),
+    )
+}
+
+fn lower_strict_std_float_method_call(
+    receiver: &Expr,
+    method: &str,
+    args: &[CallArg],
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Option<Result<RuntimeExpr, String>> {
+    let receiver = expr_label(receiver);
+    let method = runtime_method_name(method);
+    if !matches!(receiver.as_str(), "std.f32" | "std.f64")
+        || RuntimeCallTarget::from_label(format!("{receiver}.{method}"))
+            .as_intrinsic()
+            .is_none()
+    {
+        return None;
+    }
+    Some(
+        args.iter()
+            .map(|arg| lower_strict_call_arg(arg, helpers))
+            .collect::<Result<Vec<_>, _>>()
+            .map(|args| RuntimeExpr::Call {
+                callee: RuntimeCallTarget::from_label(format!("{receiver}.{method}")),
                 args,
             }),
     )
@@ -829,6 +882,28 @@ fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
             RuntimeValue::Duration,
         ),
     }
+}
+
+fn lower_std_float_constant(expr: &Expr) -> Option<RuntimeValue> {
+    Some(match expr_label(expr).as_str() {
+        "std.f32.nan" => RuntimeValue::F32(f32::NAN),
+        "std.f32.infinity" => RuntimeValue::F32(f32::INFINITY),
+        "std.f32.neg_infinity" => RuntimeValue::F32(f32::NEG_INFINITY),
+        "std.f32.epsilon" => RuntimeValue::F32(f32::EPSILON),
+        "std.f32.min" => RuntimeValue::F32(f32::MIN),
+        "std.f32.max" => RuntimeValue::F32(f32::MAX),
+        "std.f32.pi" => RuntimeValue::F32(std::f32::consts::PI),
+        "std.f32.tau" => RuntimeValue::F32(std::f32::consts::TAU),
+        "std.f64.nan" => RuntimeValue::F64(f64::NAN),
+        "std.f64.infinity" => RuntimeValue::F64(f64::INFINITY),
+        "std.f64.neg_infinity" => RuntimeValue::F64(f64::NEG_INFINITY),
+        "std.f64.epsilon" => RuntimeValue::F64(f64::EPSILON),
+        "std.f64.min" => RuntimeValue::F64(f64::MIN),
+        "std.f64.max" => RuntimeValue::F64(f64::MAX),
+        "std.f64.pi" => RuntimeValue::F64(std::f64::consts::PI),
+        "std.f64.tau" => RuntimeValue::F64(std::f64::consts::TAU),
+        _ => return None,
+    })
 }
 
 fn typed_f32_literal(raw: &str, suffix: FloatSuffix) -> Option<f32> {
@@ -1265,6 +1340,41 @@ mod tests {
                     (3.25),
                     (-0.0),
                 ].as_slice())
+        ));
+    }
+
+    #[test]
+    fn strict_runtime_lowers_std_float_constants_and_intrinsic_calls() {
+        let nan_expr = Expr::Field {
+            target: Box::new(Expr::Field {
+                target: Box::new(Expr::Path("std".to_owned())),
+                field: "f32".to_owned(),
+            }),
+            field: "nan".to_owned(),
+        };
+        let nan_lowered = lower_runtime_expr_strict(&nan_expr).expect("std f32 nan lowers");
+        assert!(matches!(
+            nan_lowered,
+            RuntimeExpr::Value(RuntimeValue::F32(value)) if value.is_nan()
+        ));
+
+        let sqrt_expr = Expr::Call {
+            callee: Box::new(Expr::Field {
+                target: Box::new(Expr::Field {
+                    target: Box::new(Expr::Path("std".to_owned())),
+                    field: "f64".to_owned(),
+                }),
+                field: "sqrt".to_owned(),
+            }),
+            args: vec![CallArg::Positional(Expr::Literal(Literal::Float {
+                raw: "4.0f64".to_owned(),
+                suffix: Some(FloatSuffix::F64),
+            }))],
+        };
+        let sqrt_lowered = lower_runtime_expr_strict(&sqrt_expr).expect("std f64 sqrt lowers");
+        assert!(matches!(
+            sqrt_lowered,
+            RuntimeExpr::Call { callee, .. } if callee.as_label() == "std.f64.sqrt"
         ));
     }
 

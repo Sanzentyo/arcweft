@@ -198,6 +198,30 @@ impl RuntimeUInt {
         }
     }
 
+    pub const fn exact_u32(self) -> Option<u32> {
+        match self {
+            Self::U32(value) => Some(value),
+            Self::U8(_) | Self::U16(_) | Self::U64(_) | Self::U128(_) | Self::USize(_) => None,
+        }
+    }
+
+    pub fn try_into_u32(self) -> Option<u32> {
+        match self {
+            Self::U8(value) => Some(u32::from(value)),
+            Self::U16(value) => Some(u32::from(value)),
+            Self::U32(value) => Some(value),
+            Self::U64(value) | Self::USize(value) => u32::try_from(value).ok(),
+            Self::U128(value) => u32::try_from(value).ok(),
+        }
+    }
+
+    pub const fn exact_u64(self) -> Option<u64> {
+        match self {
+            Self::U64(value) => Some(value),
+            Self::U8(_) | Self::U16(_) | Self::U32(_) | Self::U128(_) | Self::USize(_) => None,
+        }
+    }
+
     pub fn label(self) -> String {
         match self {
             Self::U8(value) => value.to_string(),
@@ -261,6 +285,58 @@ impl fmt::Display for RuntimeCallTarget {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RuntimeIntrinsic {
     Add,
+    StdF32Abs,
+    StdF32Floor,
+    StdF32Ceil,
+    StdF32Round,
+    StdF32Trunc,
+    StdF32Fract,
+    StdF32Sqrt,
+    StdF32Sin,
+    StdF32Cos,
+    StdF32Tan,
+    StdF32Exp,
+    StdF32Exp2,
+    StdF32Ln,
+    StdF32Log2,
+    StdF32Log10,
+    StdF32Powf,
+    StdF32Atan2,
+    StdF32MulAdd,
+    StdF32IsNan,
+    StdF32IsInfinite,
+    StdF32IsFinite,
+    StdF32IsSignPositive,
+    StdF32IsSignNegative,
+    StdF32ToBits,
+    StdF32FromBits,
+    StdF32ToF64,
+    StdF64Abs,
+    StdF64Floor,
+    StdF64Ceil,
+    StdF64Round,
+    StdF64Trunc,
+    StdF64Fract,
+    StdF64Sqrt,
+    StdF64Sin,
+    StdF64Cos,
+    StdF64Tan,
+    StdF64Exp,
+    StdF64Exp2,
+    StdF64Ln,
+    StdF64Log2,
+    StdF64Log10,
+    StdF64Powf,
+    StdF64Atan2,
+    StdF64MulAdd,
+    StdF64IsNan,
+    StdF64IsInfinite,
+    StdF64IsFinite,
+    StdF64IsSignPositive,
+    StdF64IsSignNegative,
+    StdF64ToBits,
+    StdF64FromBits,
+    StdF64ToF32,
     MathMatmulF32,
     MathMatrixAddF32,
     MathTensorAddF32,
@@ -274,6 +350,58 @@ impl RuntimeIntrinsic {
     pub fn from_label(label: &str) -> Option<Self> {
         match label {
             "add" => Some(Self::Add),
+            "std.f32.abs" => Some(Self::StdF32Abs),
+            "std.f32.floor" => Some(Self::StdF32Floor),
+            "std.f32.ceil" => Some(Self::StdF32Ceil),
+            "std.f32.round" => Some(Self::StdF32Round),
+            "std.f32.trunc" => Some(Self::StdF32Trunc),
+            "std.f32.fract" => Some(Self::StdF32Fract),
+            "std.f32.sqrt" => Some(Self::StdF32Sqrt),
+            "std.f32.sin" => Some(Self::StdF32Sin),
+            "std.f32.cos" => Some(Self::StdF32Cos),
+            "std.f32.tan" => Some(Self::StdF32Tan),
+            "std.f32.exp" => Some(Self::StdF32Exp),
+            "std.f32.exp2" => Some(Self::StdF32Exp2),
+            "std.f32.ln" => Some(Self::StdF32Ln),
+            "std.f32.log2" => Some(Self::StdF32Log2),
+            "std.f32.log10" => Some(Self::StdF32Log10),
+            "std.f32.powf" => Some(Self::StdF32Powf),
+            "std.f32.atan2" => Some(Self::StdF32Atan2),
+            "std.f32.mul_add" => Some(Self::StdF32MulAdd),
+            "std.f32.is_nan" => Some(Self::StdF32IsNan),
+            "std.f32.is_infinite" => Some(Self::StdF32IsInfinite),
+            "std.f32.is_finite" => Some(Self::StdF32IsFinite),
+            "std.f32.is_sign_positive" => Some(Self::StdF32IsSignPositive),
+            "std.f32.is_sign_negative" => Some(Self::StdF32IsSignNegative),
+            "std.f32.to_bits" => Some(Self::StdF32ToBits),
+            "std.f32.from_bits" => Some(Self::StdF32FromBits),
+            "std.f32.to_f64" => Some(Self::StdF32ToF64),
+            "std.f64.abs" => Some(Self::StdF64Abs),
+            "std.f64.floor" => Some(Self::StdF64Floor),
+            "std.f64.ceil" => Some(Self::StdF64Ceil),
+            "std.f64.round" => Some(Self::StdF64Round),
+            "std.f64.trunc" => Some(Self::StdF64Trunc),
+            "std.f64.fract" => Some(Self::StdF64Fract),
+            "std.f64.sqrt" => Some(Self::StdF64Sqrt),
+            "std.f64.sin" => Some(Self::StdF64Sin),
+            "std.f64.cos" => Some(Self::StdF64Cos),
+            "std.f64.tan" => Some(Self::StdF64Tan),
+            "std.f64.exp" => Some(Self::StdF64Exp),
+            "std.f64.exp2" => Some(Self::StdF64Exp2),
+            "std.f64.ln" => Some(Self::StdF64Ln),
+            "std.f64.log2" => Some(Self::StdF64Log2),
+            "std.f64.log10" => Some(Self::StdF64Log10),
+            "std.f64.powf" => Some(Self::StdF64Powf),
+            "std.f64.atan2" => Some(Self::StdF64Atan2),
+            "std.f64.mul_add" => Some(Self::StdF64MulAdd),
+            "std.f64.is_nan" => Some(Self::StdF64IsNan),
+            "std.f64.is_infinite" => Some(Self::StdF64IsInfinite),
+            "std.f64.is_finite" => Some(Self::StdF64IsFinite),
+            "std.f64.is_sign_positive" => Some(Self::StdF64IsSignPositive),
+            "std.f64.is_sign_negative" => Some(Self::StdF64IsSignNegative),
+            "std.f64.to_bits" => Some(Self::StdF64ToBits),
+            "std.f64.from_bits" => Some(Self::StdF64FromBits),
+            "std.f64.to_f32" => Some(Self::StdF64ToF32),
             "math.matmul_f32" => Some(Self::MathMatmulF32),
             "math.matrix_add_f32" => Some(Self::MathMatrixAddF32),
             "math.tensor_add_f32" => Some(Self::MathTensorAddF32),
@@ -288,6 +416,58 @@ impl RuntimeIntrinsic {
     pub const fn as_label(self) -> &'static str {
         match self {
             Self::Add => "add",
+            Self::StdF32Abs => "std.f32.abs",
+            Self::StdF32Floor => "std.f32.floor",
+            Self::StdF32Ceil => "std.f32.ceil",
+            Self::StdF32Round => "std.f32.round",
+            Self::StdF32Trunc => "std.f32.trunc",
+            Self::StdF32Fract => "std.f32.fract",
+            Self::StdF32Sqrt => "std.f32.sqrt",
+            Self::StdF32Sin => "std.f32.sin",
+            Self::StdF32Cos => "std.f32.cos",
+            Self::StdF32Tan => "std.f32.tan",
+            Self::StdF32Exp => "std.f32.exp",
+            Self::StdF32Exp2 => "std.f32.exp2",
+            Self::StdF32Ln => "std.f32.ln",
+            Self::StdF32Log2 => "std.f32.log2",
+            Self::StdF32Log10 => "std.f32.log10",
+            Self::StdF32Powf => "std.f32.powf",
+            Self::StdF32Atan2 => "std.f32.atan2",
+            Self::StdF32MulAdd => "std.f32.mul_add",
+            Self::StdF32IsNan => "std.f32.is_nan",
+            Self::StdF32IsInfinite => "std.f32.is_infinite",
+            Self::StdF32IsFinite => "std.f32.is_finite",
+            Self::StdF32IsSignPositive => "std.f32.is_sign_positive",
+            Self::StdF32IsSignNegative => "std.f32.is_sign_negative",
+            Self::StdF32ToBits => "std.f32.to_bits",
+            Self::StdF32FromBits => "std.f32.from_bits",
+            Self::StdF32ToF64 => "std.f32.to_f64",
+            Self::StdF64Abs => "std.f64.abs",
+            Self::StdF64Floor => "std.f64.floor",
+            Self::StdF64Ceil => "std.f64.ceil",
+            Self::StdF64Round => "std.f64.round",
+            Self::StdF64Trunc => "std.f64.trunc",
+            Self::StdF64Fract => "std.f64.fract",
+            Self::StdF64Sqrt => "std.f64.sqrt",
+            Self::StdF64Sin => "std.f64.sin",
+            Self::StdF64Cos => "std.f64.cos",
+            Self::StdF64Tan => "std.f64.tan",
+            Self::StdF64Exp => "std.f64.exp",
+            Self::StdF64Exp2 => "std.f64.exp2",
+            Self::StdF64Ln => "std.f64.ln",
+            Self::StdF64Log2 => "std.f64.log2",
+            Self::StdF64Log10 => "std.f64.log10",
+            Self::StdF64Powf => "std.f64.powf",
+            Self::StdF64Atan2 => "std.f64.atan2",
+            Self::StdF64MulAdd => "std.f64.mul_add",
+            Self::StdF64IsNan => "std.f64.is_nan",
+            Self::StdF64IsInfinite => "std.f64.is_infinite",
+            Self::StdF64IsFinite => "std.f64.is_finite",
+            Self::StdF64IsSignPositive => "std.f64.is_sign_positive",
+            Self::StdF64IsSignNegative => "std.f64.is_sign_negative",
+            Self::StdF64ToBits => "std.f64.to_bits",
+            Self::StdF64FromBits => "std.f64.from_bits",
+            Self::StdF64ToF32 => "std.f64.to_f32",
             Self::MathMatmulF32 => "math.matmul_f32",
             Self::MathMatrixAddF32 => "math.matrix_add_f32",
             Self::MathTensorAddF32 => "math.tensor_add_f32",
@@ -304,9 +484,62 @@ impl RuntimeIntrinsic {
             Self::PathAsset => Some("asset"),
             Self::PathTemp => Some("temp"),
             Self::PathExport => Some("export"),
-            Self::Add | Self::MathMatmulF32 | Self::MathMatrixAddF32 | Self::MathTensorAddF32 => {
-                None
-            }
+            Self::Add
+            | Self::StdF32Abs
+            | Self::StdF32Floor
+            | Self::StdF32Ceil
+            | Self::StdF32Round
+            | Self::StdF32Trunc
+            | Self::StdF32Fract
+            | Self::StdF32Sqrt
+            | Self::StdF32Sin
+            | Self::StdF32Cos
+            | Self::StdF32Tan
+            | Self::StdF32Exp
+            | Self::StdF32Exp2
+            | Self::StdF32Ln
+            | Self::StdF32Log2
+            | Self::StdF32Log10
+            | Self::StdF32Powf
+            | Self::StdF32Atan2
+            | Self::StdF32MulAdd
+            | Self::StdF32IsNan
+            | Self::StdF32IsInfinite
+            | Self::StdF32IsFinite
+            | Self::StdF32IsSignPositive
+            | Self::StdF32IsSignNegative
+            | Self::StdF32ToBits
+            | Self::StdF32FromBits
+            | Self::StdF32ToF64
+            | Self::StdF64Abs
+            | Self::StdF64Floor
+            | Self::StdF64Ceil
+            | Self::StdF64Round
+            | Self::StdF64Trunc
+            | Self::StdF64Fract
+            | Self::StdF64Sqrt
+            | Self::StdF64Sin
+            | Self::StdF64Cos
+            | Self::StdF64Tan
+            | Self::StdF64Exp
+            | Self::StdF64Exp2
+            | Self::StdF64Ln
+            | Self::StdF64Log2
+            | Self::StdF64Log10
+            | Self::StdF64Powf
+            | Self::StdF64Atan2
+            | Self::StdF64MulAdd
+            | Self::StdF64IsNan
+            | Self::StdF64IsInfinite
+            | Self::StdF64IsFinite
+            | Self::StdF64IsSignPositive
+            | Self::StdF64IsSignNegative
+            | Self::StdF64ToBits
+            | Self::StdF64FromBits
+            | Self::StdF64ToF32
+            | Self::MathMatmulF32
+            | Self::MathMatrixAddF32
+            | Self::MathTensorAddF32 => None,
         }
     }
 }
@@ -2823,6 +3056,291 @@ pub(crate) fn evaluate_binary(
             }
             (lhs, rhs) => unsupported_binary(op, &lhs, &rhs),
         },
+    }
+}
+
+pub fn evaluate_std_float_intrinsic(
+    intrinsic: RuntimeIntrinsic,
+    args: &[RuntimeValue],
+) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+    if let Some(value) = evaluate_std_f32_intrinsic(intrinsic, args)? {
+        return Ok(Some(value));
+    }
+    evaluate_std_f64_intrinsic(intrinsic, args)
+}
+
+fn evaluate_std_f32_intrinsic(
+    intrinsic: RuntimeIntrinsic,
+    args: &[RuntimeValue],
+) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+    let value = match intrinsic {
+        RuntimeIntrinsic::StdF32Abs => RuntimeValue::F32(expect_unary_f32(intrinsic, args)?.abs()),
+        RuntimeIntrinsic::StdF32Floor => {
+            RuntimeValue::F32(expect_unary_f32(intrinsic, args)?.floor())
+        }
+        RuntimeIntrinsic::StdF32Ceil => {
+            RuntimeValue::F32(expect_unary_f32(intrinsic, args)?.ceil())
+        }
+        RuntimeIntrinsic::StdF32Round => {
+            RuntimeValue::F32(expect_unary_f32(intrinsic, args)?.round())
+        }
+        RuntimeIntrinsic::StdF32Trunc => {
+            RuntimeValue::F32(expect_unary_f32(intrinsic, args)?.trunc())
+        }
+        RuntimeIntrinsic::StdF32Fract => {
+            RuntimeValue::F32(expect_unary_f32(intrinsic, args)?.fract())
+        }
+        RuntimeIntrinsic::StdF32Sqrt => {
+            RuntimeValue::F32(expect_unary_f32(intrinsic, args)?.sqrt())
+        }
+        RuntimeIntrinsic::StdF32Sin => RuntimeValue::F32(expect_unary_f32(intrinsic, args)?.sin()),
+        RuntimeIntrinsic::StdF32Cos => RuntimeValue::F32(expect_unary_f32(intrinsic, args)?.cos()),
+        RuntimeIntrinsic::StdF32Tan => RuntimeValue::F32(expect_unary_f32(intrinsic, args)?.tan()),
+        RuntimeIntrinsic::StdF32Exp => RuntimeValue::F32(expect_unary_f32(intrinsic, args)?.exp()),
+        RuntimeIntrinsic::StdF32Exp2 => {
+            RuntimeValue::F32(expect_unary_f32(intrinsic, args)?.exp2())
+        }
+        RuntimeIntrinsic::StdF32Ln => RuntimeValue::F32(expect_unary_f32(intrinsic, args)?.ln()),
+        RuntimeIntrinsic::StdF32Log2 => {
+            RuntimeValue::F32(expect_unary_f32(intrinsic, args)?.log2())
+        }
+        RuntimeIntrinsic::StdF32Log10 => {
+            RuntimeValue::F32(expect_unary_f32(intrinsic, args)?.log10())
+        }
+        RuntimeIntrinsic::StdF32Powf => {
+            let (lhs, rhs) = expect_binary_f32(intrinsic, args)?;
+            RuntimeValue::F32(lhs.powf(rhs))
+        }
+        RuntimeIntrinsic::StdF32Atan2 => {
+            let (lhs, rhs) = expect_binary_f32(intrinsic, args)?;
+            RuntimeValue::F32(lhs.atan2(rhs))
+        }
+        RuntimeIntrinsic::StdF32MulAdd => {
+            let (a, b, c) = expect_ternary_f32(intrinsic, args)?;
+            RuntimeValue::F32(a.mul_add(b, c))
+        }
+        RuntimeIntrinsic::StdF32IsNan => {
+            RuntimeValue::Bool(expect_unary_f32(intrinsic, args)?.is_nan())
+        }
+        RuntimeIntrinsic::StdF32IsInfinite => {
+            RuntimeValue::Bool(expect_unary_f32(intrinsic, args)?.is_infinite())
+        }
+        RuntimeIntrinsic::StdF32IsFinite => {
+            RuntimeValue::Bool(expect_unary_f32(intrinsic, args)?.is_finite())
+        }
+        RuntimeIntrinsic::StdF32IsSignPositive => {
+            RuntimeValue::Bool(expect_unary_f32(intrinsic, args)?.is_sign_positive())
+        }
+        RuntimeIntrinsic::StdF32IsSignNegative => {
+            RuntimeValue::Bool(expect_unary_f32(intrinsic, args)?.is_sign_negative())
+        }
+        RuntimeIntrinsic::StdF32ToBits => {
+            RuntimeValue::u32(expect_unary_f32(intrinsic, args)?.to_bits())
+        }
+        RuntimeIntrinsic::StdF32FromBits => {
+            RuntimeValue::F32(f32::from_bits(expect_unary_u32(intrinsic, args)?))
+        }
+        RuntimeIntrinsic::StdF32ToF64 => {
+            RuntimeValue::F64(f64::from(expect_unary_f32(intrinsic, args)?))
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(value))
+}
+
+fn evaluate_std_f64_intrinsic(
+    intrinsic: RuntimeIntrinsic,
+    args: &[RuntimeValue],
+) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+    let value = match intrinsic {
+        RuntimeIntrinsic::StdF64Abs => RuntimeValue::F64(expect_unary_f64(intrinsic, args)?.abs()),
+        RuntimeIntrinsic::StdF64Floor => {
+            RuntimeValue::F64(expect_unary_f64(intrinsic, args)?.floor())
+        }
+        RuntimeIntrinsic::StdF64Ceil => {
+            RuntimeValue::F64(expect_unary_f64(intrinsic, args)?.ceil())
+        }
+        RuntimeIntrinsic::StdF64Round => {
+            RuntimeValue::F64(expect_unary_f64(intrinsic, args)?.round())
+        }
+        RuntimeIntrinsic::StdF64Trunc => {
+            RuntimeValue::F64(expect_unary_f64(intrinsic, args)?.trunc())
+        }
+        RuntimeIntrinsic::StdF64Fract => {
+            RuntimeValue::F64(expect_unary_f64(intrinsic, args)?.fract())
+        }
+        RuntimeIntrinsic::StdF64Sqrt => {
+            RuntimeValue::F64(expect_unary_f64(intrinsic, args)?.sqrt())
+        }
+        RuntimeIntrinsic::StdF64Sin => RuntimeValue::F64(expect_unary_f64(intrinsic, args)?.sin()),
+        RuntimeIntrinsic::StdF64Cos => RuntimeValue::F64(expect_unary_f64(intrinsic, args)?.cos()),
+        RuntimeIntrinsic::StdF64Tan => RuntimeValue::F64(expect_unary_f64(intrinsic, args)?.tan()),
+        RuntimeIntrinsic::StdF64Exp => RuntimeValue::F64(expect_unary_f64(intrinsic, args)?.exp()),
+        RuntimeIntrinsic::StdF64Exp2 => {
+            RuntimeValue::F64(expect_unary_f64(intrinsic, args)?.exp2())
+        }
+        RuntimeIntrinsic::StdF64Ln => RuntimeValue::F64(expect_unary_f64(intrinsic, args)?.ln()),
+        RuntimeIntrinsic::StdF64Log2 => {
+            RuntimeValue::F64(expect_unary_f64(intrinsic, args)?.log2())
+        }
+        RuntimeIntrinsic::StdF64Log10 => {
+            RuntimeValue::F64(expect_unary_f64(intrinsic, args)?.log10())
+        }
+        RuntimeIntrinsic::StdF64Powf => {
+            let (lhs, rhs) = expect_binary_f64(intrinsic, args)?;
+            RuntimeValue::F64(lhs.powf(rhs))
+        }
+        RuntimeIntrinsic::StdF64Atan2 => {
+            let (lhs, rhs) = expect_binary_f64(intrinsic, args)?;
+            RuntimeValue::F64(lhs.atan2(rhs))
+        }
+        RuntimeIntrinsic::StdF64MulAdd => {
+            let (a, b, c) = expect_ternary_f64(intrinsic, args)?;
+            RuntimeValue::F64(a.mul_add(b, c))
+        }
+        RuntimeIntrinsic::StdF64IsNan => {
+            RuntimeValue::Bool(expect_unary_f64(intrinsic, args)?.is_nan())
+        }
+        RuntimeIntrinsic::StdF64IsInfinite => {
+            RuntimeValue::Bool(expect_unary_f64(intrinsic, args)?.is_infinite())
+        }
+        RuntimeIntrinsic::StdF64IsFinite => {
+            RuntimeValue::Bool(expect_unary_f64(intrinsic, args)?.is_finite())
+        }
+        RuntimeIntrinsic::StdF64IsSignPositive => {
+            RuntimeValue::Bool(expect_unary_f64(intrinsic, args)?.is_sign_positive())
+        }
+        RuntimeIntrinsic::StdF64IsSignNegative => {
+            RuntimeValue::Bool(expect_unary_f64(intrinsic, args)?.is_sign_negative())
+        }
+        RuntimeIntrinsic::StdF64ToBits => {
+            RuntimeValue::u64(expect_unary_f64(intrinsic, args)?.to_bits())
+        }
+        RuntimeIntrinsic::StdF64FromBits => {
+            RuntimeValue::F64(f64::from_bits(expect_unary_u64(intrinsic, args)?))
+        }
+        RuntimeIntrinsic::StdF64ToF32 => {
+            RuntimeValue::F32(narrow_f64_to_f32(expect_unary_f64(intrinsic, args)?))
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(value))
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "std.f64.to_f32 is the explicit Arcweft narrowing operation"
+)]
+fn narrow_f64_to_f32(value: f64) -> f32 {
+    value as f32
+}
+
+fn expect_unary_f32(
+    intrinsic: RuntimeIntrinsic,
+    args: &[RuntimeValue],
+) -> Result<f32, RuntimeEvalError> {
+    match args {
+        [RuntimeValue::F32(value)] => Ok(*value),
+        _ => Err(float_intrinsic_arg_error(intrinsic, "f32", args)),
+    }
+}
+
+fn expect_binary_f32(
+    intrinsic: RuntimeIntrinsic,
+    args: &[RuntimeValue],
+) -> Result<(f32, f32), RuntimeEvalError> {
+    match args {
+        [RuntimeValue::F32(lhs), RuntimeValue::F32(rhs)] => Ok((*lhs, *rhs)),
+        _ => Err(float_intrinsic_arg_error(intrinsic, "f32, f32", args)),
+    }
+}
+
+fn expect_ternary_f32(
+    intrinsic: RuntimeIntrinsic,
+    args: &[RuntimeValue],
+) -> Result<(f32, f32, f32), RuntimeEvalError> {
+    match args {
+        [
+            RuntimeValue::F32(a),
+            RuntimeValue::F32(b),
+            RuntimeValue::F32(c),
+        ] => Ok((*a, *b, *c)),
+        _ => Err(float_intrinsic_arg_error(intrinsic, "f32, f32, f32", args)),
+    }
+}
+
+fn expect_unary_f64(
+    intrinsic: RuntimeIntrinsic,
+    args: &[RuntimeValue],
+) -> Result<f64, RuntimeEvalError> {
+    match args {
+        [RuntimeValue::F64(value)] => Ok(*value),
+        _ => Err(float_intrinsic_arg_error(intrinsic, "f64", args)),
+    }
+}
+
+fn expect_binary_f64(
+    intrinsic: RuntimeIntrinsic,
+    args: &[RuntimeValue],
+) -> Result<(f64, f64), RuntimeEvalError> {
+    match args {
+        [RuntimeValue::F64(lhs), RuntimeValue::F64(rhs)] => Ok((*lhs, *rhs)),
+        _ => Err(float_intrinsic_arg_error(intrinsic, "f64, f64", args)),
+    }
+}
+
+fn expect_ternary_f64(
+    intrinsic: RuntimeIntrinsic,
+    args: &[RuntimeValue],
+) -> Result<(f64, f64, f64), RuntimeEvalError> {
+    match args {
+        [
+            RuntimeValue::F64(a),
+            RuntimeValue::F64(b),
+            RuntimeValue::F64(c),
+        ] => Ok((*a, *b, *c)),
+        _ => Err(float_intrinsic_arg_error(intrinsic, "f64, f64, f64", args)),
+    }
+}
+
+fn expect_unary_u32(
+    intrinsic: RuntimeIntrinsic,
+    args: &[RuntimeValue],
+) -> Result<u32, RuntimeEvalError> {
+    match args {
+        [RuntimeValue::UInt(value)] => value
+            .try_into_u32()
+            .ok_or_else(|| float_intrinsic_arg_error(intrinsic, "u32", args)),
+        _ => Err(float_intrinsic_arg_error(intrinsic, "u32", args)),
+    }
+}
+
+fn expect_unary_u64(
+    intrinsic: RuntimeIntrinsic,
+    args: &[RuntimeValue],
+) -> Result<u64, RuntimeEvalError> {
+    match args {
+        [RuntimeValue::UInt(value)] => value
+            .exact_u64()
+            .ok_or_else(|| float_intrinsic_arg_error(intrinsic, "u64", args)),
+        _ => Err(float_intrinsic_arg_error(intrinsic, "u64", args)),
+    }
+}
+
+fn float_intrinsic_arg_error(
+    intrinsic: RuntimeIntrinsic,
+    expected: &'static str,
+    args: &[RuntimeValue],
+) -> RuntimeEvalError {
+    RuntimeEvalError::UnsupportedPure {
+        name: intrinsic.as_label().to_owned(),
+        reason: format!(
+            "expected ({expected}), got ({})",
+            args.iter()
+                .map(runtime_value_label)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
     }
 }
 

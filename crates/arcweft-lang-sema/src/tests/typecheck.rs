@@ -74,6 +74,25 @@ flow @flow.borrow_stats borrow_stats {
 }
 
 #[test]
+fn typechecks_std_float_constants_and_functions() {
+    let tree = parse_ok(
+        r"
+flow @flow.float_std float_std {
+    let root = std.f32.sqrt(4.0f32)
+    let exact = std.f32.to_bits(std.f32.nan)
+    let restored = std.f32.from_bits(exact)
+    let widened = std.f32.to_f64(root)
+    let narrowed = std.f64.to_f32(widened)
+    let ok = std.f64.is_nan(std.f64.nan)
+    return narrowed
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("std float fixture lowers");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("std float calls typecheck");
+}
+
+#[test]
 fn borrow_branch_merge_records_delta_without_full_clone() {
     let tree = parse_ok(
         r#"

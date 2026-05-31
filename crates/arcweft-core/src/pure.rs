@@ -5,8 +5,9 @@ use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExactInteger,
     RuntimeExpr, RuntimeFieldValue, RuntimeISizeValue, RuntimeIntrinsic, RuntimeSeq,
     RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue, evaluate_binary, evaluate_numeric_op,
-    evaluate_unary, runtime_binary_op_label, runtime_sequence_values, runtime_unary_op_label,
-    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
+    evaluate_std_float_intrinsic, evaluate_unary, runtime_binary_op_label, runtime_sequence_values,
+    runtime_unary_op_label, runtime_value_into_sequence_values, runtime_value_label,
+    sum_i64_sequence_ref,
 };
 use std::collections::BTreeMap;
 
@@ -3073,6 +3074,11 @@ impl PureEvaluator {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         self.stats.evaluated_calls += 1;
         let args = self.evaluate_call_args(args)?;
+        if let Some(intrinsic) = callee.as_intrinsic()
+            && let Some(value) = evaluate_std_float_intrinsic(intrinsic, &args)?
+        {
+            return Ok(value);
+        }
         match (callee.as_intrinsic(), args.as_slice()) {
             (Some(RuntimeIntrinsic::Add), [RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)]) => {
                 evaluate_binary(
