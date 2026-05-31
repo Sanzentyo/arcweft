@@ -199,7 +199,7 @@ impl TypeChecker<'_> {
             arcweft_lang_syntax::expr::Literal::Duration { .. } => TypeKind::Duration,
             arcweft_lang_syntax::expr::Literal::Int { suffix, .. } => {
                 if let Some(suffix) = suffix {
-                    let Some(ty) = numeric_literal_suffix_type(Some(suffix)) else {
+                    let Some(ty) = numeric_literal_suffix_type(Some(suffix.as_str())) else {
                         self.errors.push(TypeCheckError::new(format!(
                             "unknown integer literal suffix `{suffix}`"
                         )));
@@ -229,7 +229,7 @@ impl TypeChecker<'_> {
             }
             arcweft_lang_syntax::expr::Literal::Float { suffix, .. } => {
                 if let Some(suffix) = suffix {
-                    let Some(ty) = numeric_literal_suffix_type(Some(suffix)) else {
+                    let Some(ty) = numeric_literal_suffix_type(Some(suffix.as_str())) else {
                         self.errors.push(TypeCheckError::new(format!(
                             "unknown float literal suffix `{suffix}`"
                         )));
@@ -256,6 +256,10 @@ impl TypeChecker<'_> {
                     ));
                     TypeKind::Named("_".to_owned())
                 }
+            }
+            arcweft_lang_syntax::expr::Literal::UnitNumber { suffix, .. } => {
+                numeric_literal_suffix_type(Some(suffix.as_str()))
+                    .unwrap_or_else(|| TypeKind::Named("_".to_owned()))
             }
         }
     }
@@ -494,7 +498,7 @@ impl TypeChecker<'_> {
                 suffix: Some(suffix),
                 ..
             } => {
-                let Some(ty) = numeric_literal_suffix_type(Some(suffix)) else {
+                let Some(ty) = numeric_literal_suffix_type(Some(suffix.as_str())) else {
                     self.errors.push(TypeCheckError::new(format!(
                         "unknown integer literal suffix `{suffix}`"
                     )));
@@ -513,7 +517,7 @@ impl TypeChecker<'_> {
                 suffix: Some(suffix),
                 ..
             } => {
-                let Some(ty) = numeric_literal_suffix_type(Some(suffix)) else {
+                let Some(ty) = numeric_literal_suffix_type(Some(suffix.as_str())) else {
                     self.errors.push(TypeCheckError::new(format!(
                         "unknown float literal suffix `{suffix}`"
                     )));
@@ -527,6 +531,10 @@ impl TypeChecker<'_> {
                     )));
                     TypeKind::Named("_".to_owned())
                 }
+            }
+            Literal::UnitNumber { suffix, .. } => {
+                numeric_literal_suffix_type(Some(suffix.as_str()))
+                    .unwrap_or_else(|| TypeKind::Named("_".to_owned()))
             }
             _ => TypeKind::Named("_".to_owned()),
         }

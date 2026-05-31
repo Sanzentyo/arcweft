@@ -679,8 +679,8 @@ fn engine_calls_typed_float_pure_helpers_without_arg_vec_allocation() {
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::PureCall {
                 helper: RuntimePureHelperId(0),
                 args: vec![
-                    RuntimeExpr::Value(RuntimeValue::F32(RuntimeF32::from_f32(1.5))),
-                    RuntimeExpr::Value(RuntimeValue::F32(RuntimeF32::from_f32(2.0))),
+                    RuntimeExpr::Value(RuntimeValue::F32(1.5)),
+                    RuntimeExpr::Value(RuntimeValue::F32(2.0)),
                 ],
             })],
         }],
@@ -714,7 +714,7 @@ fn engine_calls_typed_float_pure_helpers_without_arg_vec_allocation() {
     assert_eq!(result.stats.pure.arg_bytes_copied, 0);
     assert_eq!(
         result.stats.pure.arg_bytes_borrowed,
-        2 * std::mem::size_of::<RuntimeF32>()
+        2 * std::mem::size_of::<f32>()
     );
 }
 

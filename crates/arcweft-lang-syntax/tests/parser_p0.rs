@@ -282,6 +282,48 @@ fn large_flat_literal_sequences_parse_as_bracket_seq() {
 }
 
 #[test]
+fn float_suffix_and_unit_number_literals_are_typed_syntax() {
+    let f32_lit = parse_expr("1.5f32").expect("f32 literal parses");
+    assert!(matches!(
+        f32_lit,
+        Expr::Literal(Literal::Float {
+            suffix: Some(arcweft_lang_syntax::expr::FloatSuffix::F32),
+            ..
+        })
+    ));
+
+    let f64_lit = parse_expr("1e3f64").expect("exponent f64 literal parses");
+    assert!(matches!(
+        f64_lit,
+        Expr::Literal(Literal::Float {
+            suffix: Some(arcweft_lang_syntax::expr::FloatSuffix::F64),
+            ..
+        })
+    ));
+
+    let pt_lit = parse_expr("12pt").expect("point unit literal parses");
+    assert!(matches!(
+        pt_lit,
+        Expr::Literal(Literal::UnitNumber {
+            suffix: arcweft_lang_syntax::expr::UnitNumberSuffix::Pt,
+            ..
+        })
+    ));
+
+    let rad_lit = parse_expr("2rad").expect("radian unit literal parses");
+    assert!(matches!(
+        rad_lit,
+        Expr::Literal(Literal::UnitNumber {
+            suffix: arcweft_lang_syntax::expr::UnitNumberSuffix::Rad,
+            ..
+        })
+    ));
+
+    assert!(parse_expr("1.0NaN").is_err());
+    assert!(parse_expr("1.0Inf").is_err());
+}
+
+#[test]
 fn flow_recovery_nodes_keep_family_and_source_range() {
     let tree = parse_ok(
         r"

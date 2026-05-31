@@ -10,7 +10,7 @@ use crate::cst::{
     split_leading_relative_entity_ref,
 };
 use arcweft_source::{SourceAnchor, SourceName};
-use std::ops::Add;
+use std::{fmt, ops::Add};
 use thiserror::Error;
 
 /// Expression syntax preserved for type checking and HIR lowering.
@@ -172,13 +172,77 @@ pub enum Literal {
     },
     Float {
         raw: String,
-        suffix: Option<String>,
+        suffix: Option<FloatSuffix>,
+    },
+    UnitNumber {
+        raw: String,
+        suffix: UnitNumberSuffix,
     },
     Bool(bool),
     Duration {
         amount: String,
         unit: DurationUnit,
     },
+}
+
+/// Floating-point literal width suffix.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FloatSuffix {
+    F32,
+    F64,
+}
+
+impl FloatSuffix {
+    pub fn parse(source: &str) -> Option<Self> {
+        match source {
+            "f32" => Some(Self::F32),
+            "f64" => Some(Self::F64),
+            _ => None,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+        }
+    }
+}
+
+impl fmt::Display for FloatSuffix {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Numeric literal suffix that carries presentation or geometry units.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnitNumberSuffix {
+    Pt,
+    Rad,
+}
+
+impl UnitNumberSuffix {
+    pub fn parse(source: &str) -> Option<Self> {
+        match source {
+            "pt" => Some(Self::Pt),
+            "rad" => Some(Self::Rad),
+            _ => None,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pt => "pt",
+            Self::Rad => "rad",
+        }
+    }
+}
+
+impl fmt::Display for UnitNumberSuffix {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// Duration suffix recognized by the syntax parser.
@@ -660,6 +724,7 @@ impl<'a> Lexer<'a> {
                 }
             }
         }
+        self.consume_exponent();
         if self.starts_with("ms") {
             self.cursor += 2;
         } else if self.starts_with("s") {
@@ -676,14 +741,26 @@ impl<'a> Lexer<'a> {
         let raw = &self.source[start..self.cursor];
         let (number, suffix) = split_number_suffix(raw);
         let suffix = (!suffix.is_empty()).then(|| suffix.trim_start_matches('_').to_owned());
+        let float_suffix = suffix.as_deref().and_then(FloatSuffix::parse);
+        let unit_suffix = suffix.as_deref().and_then(UnitNumberSuffix::parse);
+        let has_float_body = number.contains('.') || number.contains('e') || number.contains('E');
         if let Some(duration) = parse_duration(raw) {
             Token::Literal(duration)
-        } else if number.contains('.')
-            || matches!(suffix.as_deref(), Some("f32" | "f64" | "pt" | "rad"))
-        {
+        } else if let Some(unit_suffix) = unit_suffix {
+            Token::Literal(Literal::UnitNumber {
+                raw: raw.to_owned(),
+                suffix: unit_suffix,
+            })
+        } else if has_float_body || float_suffix.is_some() {
+            if suffix.is_some() && float_suffix.is_none() {
+                return Token::Invalid(format!(
+                    "unknown float literal suffix `{}`",
+                    suffix.as_deref().unwrap_or_default()
+                ));
+            }
             Token::Literal(Literal::Float {
                 raw: raw.to_owned(),
-                suffix,
+                suffix: float_suffix,
             })
         } else {
             Token::Literal(Literal::Int {
@@ -691,6 +768,24 @@ impl<'a> Lexer<'a> {
                 value: number.parse().unwrap_or(0),
                 suffix,
             })
+        }
+    }
+
+    fn consume_exponent(&mut self) {
+        if !matches!(self.peek_char(), Some('e' | 'E')) {
+            return;
+        }
+        let exponent_start = self.cursor;
+        self.bump_char();
+        if matches!(self.peek_char(), Some('+' | '-')) {
+            self.bump_char();
+        }
+        let digits_start = self.cursor;
+        while self.peek_char().is_some_and(|ch| ch.is_ascii_digit()) {
+            self.bump_char();
+        }
+        if digits_start == self.cursor {
+            self.cursor = exponent_start;
         }
     }
 
@@ -1398,7 +1493,9 @@ fn token_source(token: &Token) -> String {
     match token {
         Token::Ident(value)
         | Token::RelativePath(value)
-        | Token::Literal(Literal::Float { raw: value, .. }) => value.clone(),
+        | Token::Literal(
+            Literal::Float { raw: value, .. } | Literal::UnitNumber { raw: value, .. },
+        ) => value.clone(),
         Token::Entity(entity) => format!("@{}", entity.body()),
         Token::LifetimePath { key, optional } => {
             format!("'{}{}", key.as_dotted(), if *optional { "?" } else { "" })
@@ -1465,10 +1562,32 @@ fn parse_duration(source: &str) -> Option<Literal> {
 }
 
 fn split_number_suffix(source: &str) -> (&str, &str) {
-    let split = source
-        .char_indices()
-        .find(|(_, ch)| ch.is_ascii_alphabetic() || *ch == '_')
-        .map_or(source.len(), |(index, _)| index);
+    let bytes = source.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() && bytes[index].is_ascii_digit() {
+        index += 1;
+    }
+    if bytes.get(index) == Some(&b'.') {
+        index += 1;
+        while index < bytes.len() && bytes[index].is_ascii_digit() {
+            index += 1;
+        }
+    }
+    if matches!(bytes.get(index), Some(b'e' | b'E')) {
+        let exponent_start = index;
+        index += 1;
+        if matches!(bytes.get(index), Some(b'+' | b'-')) {
+            index += 1;
+        }
+        let digits_start = index;
+        while index < bytes.len() && bytes[index].is_ascii_digit() {
+            index += 1;
+        }
+        if digits_start == index {
+            index = exponent_start;
+        }
+    }
+    let split = index;
     (&source[..split], &source[split..])
 }
 

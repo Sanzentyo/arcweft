@@ -10,8 +10,8 @@ use arcweft_core::effect::{
 };
 use arcweft_core::plan::RuntimePureHelperId;
 use arcweft_core::value::{
-    RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeF32, RuntimeF64, RuntimeFieldExpr,
-    RuntimeUnaryOp, RuntimeValue, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
+    RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeUnaryOp,
+    RuntimeValue, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
     runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_dense_i128,
     runtime_sequence_dense_isize, runtime_sequence_dense_u8, runtime_sequence_dense_u16,
     runtime_sequence_dense_u32, runtime_sequence_dense_u64, runtime_sequence_dense_u128,
@@ -20,7 +20,7 @@ use arcweft_core::value::{
 use arcweft_lang_hir::syntax::{
     ast::line_plan::LinePlanItem,
     ast::pattern::Pattern,
-    expr::{BinaryOp, CallArg, Expr, Literal, MatchExprArm, UnaryOp},
+    expr::{BinaryOp, CallArg, Expr, FloatSuffix, Literal, MatchExprArm, UnaryOp},
 };
 use std::collections::BTreeMap;
 
@@ -640,15 +640,16 @@ fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
         Literal::Int { value, .. } => RuntimeValue::Int(*value),
         Literal::Float {
             raw,
-            suffix: Some(suffix),
-        } if suffix == "f32" => typed_f32_literal(raw, suffix)
-            .map_or_else(|| RuntimeValue::Float(raw.clone()), RuntimeValue::F32),
+            suffix: Some(FloatSuffix::F32),
+        } => RuntimeValue::F32(
+            typed_f32_literal(raw, FloatSuffix::F32).expect("syntax parser accepted f32 literal"),
+        ),
         Literal::Float {
             raw,
-            suffix: Some(suffix),
-        } if suffix == "f64" => typed_f64_literal(raw, suffix)
-            .map_or_else(|| RuntimeValue::Float(raw.clone()), RuntimeValue::F64),
-        Literal::Float { raw, .. } => RuntimeValue::Float(raw.clone()),
+            suffix: Some(FloatSuffix::F64),
+        } => RuntimeValue::F64(typed_f64_literal(raw, FloatSuffix::F64)),
+        Literal::Float { raw, .. } => RuntimeValue::F64(parse_f64_literal(raw)),
+        Literal::UnitNumber { raw, .. } => RuntimeValue::String(raw.clone()),
         Literal::Bool(value) => RuntimeValue::Bool(*value),
         Literal::Duration { .. } => duration_expr(&Expr::Literal(literal.clone())).map_or_else(
             || RuntimeValue::String(literal_label(literal)),
@@ -661,16 +662,21 @@ fn is_unsigned_suffix(suffix: &str) -> bool {
     matches!(suffix, "u8" | "u16" | "u32" | "u64")
 }
 
-fn typed_f32_literal(raw: &str, suffix: &str) -> Option<RuntimeF32> {
-    raw.strip_suffix(suffix)
+fn typed_f32_literal(raw: &str, suffix: FloatSuffix) -> Option<f32> {
+    raw.strip_suffix(suffix.as_str())
         .and_then(|value| value.parse::<f32>().ok())
-        .map(RuntimeF32::from_f32)
 }
 
-fn typed_f64_literal(raw: &str, suffix: &str) -> Option<RuntimeF64> {
-    raw.strip_suffix(suffix)
-        .and_then(|value| value.parse::<f64>().ok())
-        .map(RuntimeF64::from_f64)
+fn typed_f64_literal(raw: &str, suffix: FloatSuffix) -> f64 {
+    raw.strip_suffix(suffix.as_str())
+        .map_or(raw, str::trim)
+        .parse::<f64>()
+        .expect("syntax parser accepted f64 literal")
+}
+
+fn parse_f64_literal(raw: &str) -> f64 {
+    raw.parse::<f64>()
+        .expect("syntax parser accepted unsuffixed float literal")
 }
 
 fn lower_runtime_unary_op(op: UnaryOp) -> RuntimeUnaryOp {
@@ -1023,21 +1029,21 @@ mod tests {
         let f32_expr = Expr::BracketSeq(vec![
             Expr::Literal(Literal::Float {
                 raw: "1.5f32".to_owned(),
-                suffix: Some("f32".to_owned()),
+                suffix: Some(FloatSuffix::F32),
             }),
             Expr::Literal(Literal::Float {
                 raw: "2.5f32".to_owned(),
-                suffix: Some("f32".to_owned()),
+                suffix: Some(FloatSuffix::F32),
             }),
         ]);
         let f64_expr = Expr::BracketSeq(vec![
             Expr::Literal(Literal::Float {
                 raw: "3.25f64".to_owned(),
-                suffix: Some("f64".to_owned()),
+                suffix: Some(FloatSuffix::F64),
             }),
             Expr::Literal(Literal::Float {
                 raw: "-0.0f64".to_owned(),
-                suffix: Some("f64".to_owned()),
+                suffix: Some(FloatSuffix::F64),
             }),
         ]);
 
@@ -1048,16 +1054,16 @@ mod tests {
             f32_lowered,
             RuntimeExpr::Value(RuntimeValue::Seq(seq))
                 if seq.as_f32_slice() == Some([
-                    RuntimeF32::from_f32(1.5),
-                    RuntimeF32::from_f32(2.5),
+                    (1.5),
+                    (2.5),
                 ].as_slice())
         ));
         assert!(matches!(
             f64_lowered,
             RuntimeExpr::Value(RuntimeValue::Seq(seq))
                 if seq.as_f64_slice() == Some([
-                    RuntimeF64::from_f64(3.25),
-                    RuntimeF64::from_f64(-0.0),
+                    (3.25),
+                    (-0.0),
                 ].as_slice())
         ));
     }

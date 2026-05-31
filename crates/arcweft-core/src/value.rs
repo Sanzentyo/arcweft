@@ -4,7 +4,7 @@ use crate::time::LogicalDuration;
 use std::fmt;
 use thiserror::Error;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeBinding {
     pub name: String,
     pub value: RuntimeValue,
@@ -15,59 +15,14 @@ pub struct RuntimeBinding {
 /// Payloads intentionally retain `RuntimeValue` shape instead of collapsing
 /// source and stream items to debug strings. Hosts may still display `label()`
 /// for logs, but replay and downstream runtime consumers keep typed data.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimePayload(pub RuntimeValue);
-
-/// Deterministic `f32` value stored by IEEE-754 bits.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct RuntimeF32(u32);
-
-impl RuntimeF32 {
-    pub const fn from_bits(bits: u32) -> Self {
-        Self(bits)
-    }
-
-    pub const fn to_bits(self) -> u32 {
-        self.0
-    }
-
-    pub fn from_f32(value: f32) -> Self {
-        Self(value.to_bits())
-    }
-
-    pub fn to_f32(self) -> f32 {
-        f32::from_bits(self.0)
-    }
-}
-
-/// Deterministic `f64` value stored by IEEE-754 bits.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct RuntimeF64(u64);
-
-impl RuntimeF64 {
-    pub const fn from_bits(bits: u64) -> Self {
-        Self(bits)
-    }
-
-    pub const fn to_bits(self) -> u64 {
-        self.0
-    }
-
-    pub fn from_f64(value: f64) -> Self {
-        Self(value.to_bits())
-    }
-
-    pub fn to_f64(self) -> f64 {
-        f64::from_bits(self.0)
-    }
-}
 
 /// Deterministic value domain used by the Sans I/O flow runtime.
 ///
-/// Typed floats are stored by bits to keep equality and replay deterministic.
-/// Untyped float literals remain as source strings until a later semantic pass
-/// chooses their concrete representation and unit rules.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// Typed floats use Rust's native `f32`/`f64` values. Exact bit identity is an
+/// explicit operation rather than language equality.
+#[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeValue {
     Unit,
     Bool(bool),
@@ -77,9 +32,8 @@ pub enum RuntimeValue {
     U128(u128),
     ISize(i64),
     USize(u64),
-    F32(RuntimeF32),
-    F64(RuntimeF64),
-    Float(String),
+    F32(f32),
+    F64(f64),
     String(String),
     Char(char),
     Duration(LogicalDuration),
@@ -95,7 +49,7 @@ pub enum RuntimeValue {
 }
 
 /// Storage strategy for runtime sequence values.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeSeq {
     Values(Vec<RuntimeValue>),
     Dense(DenseSeq),
@@ -362,11 +316,11 @@ impl RuntimeSeq {
         Self::Dense(DenseSeq::usize(values))
     }
 
-    pub fn dense_f32(values: Vec<RuntimeF32>) -> Self {
+    pub fn dense_f32(values: Vec<f32>) -> Self {
         Self::Dense(DenseSeq::f32(values))
     }
 
-    pub fn dense_f64(values: Vec<RuntimeF64>) -> Self {
+    pub fn dense_f64(values: Vec<f64>) -> Self {
         Self::Dense(DenseSeq::f64(values))
     }
 
@@ -388,10 +342,6 @@ impl RuntimeSeq {
 
     pub fn dense_strings(values: Vec<String>) -> Self {
         Self::Dense(DenseSeq::strings(values))
-    }
-
-    pub fn dense_float_literals(values: Vec<String>) -> Self {
-        Self::Dense(DenseSeq::float_literals(values))
     }
 
     pub fn dense_entity_refs(values: Vec<String>) -> Self {
@@ -535,14 +485,14 @@ impl RuntimeSeq {
         }
     }
 
-    pub fn as_f32_slice(&self) -> Option<&[RuntimeF32]> {
+    pub fn as_f32_slice(&self) -> Option<&[f32]> {
         match self {
             Self::Dense(values) => values.as_f32_slice(),
             Self::Values(_) => None,
         }
     }
 
-    pub fn as_f64_slice(&self) -> Option<&[RuntimeF64]> {
+    pub fn as_f64_slice(&self) -> Option<&[f64]> {
         match self {
             Self::Dense(values) => values.as_f64_slice(),
             Self::Values(_) => None,
@@ -580,13 +530,6 @@ impl RuntimeSeq {
     pub fn as_strings(&self) -> Option<&[String]> {
         match self {
             Self::Dense(values) => values.as_strings(),
-            Self::Values(_) => None,
-        }
-    }
-
-    pub fn as_float_literals(&self) -> Option<&[String]> {
-        match self {
-            Self::Dense(values) => values.as_float_literals(),
             Self::Values(_) => None,
         }
     }
@@ -653,7 +596,7 @@ impl_runtime_exact_wide_unsigned_integer!(
 );
 
 /// Homogeneous storage kind used by a dense runtime sequence.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DenseSeqKind {
     Units,
     I8,
@@ -675,12 +618,11 @@ pub enum DenseSeqKind {
     Chars,
     Durations,
     Strings,
-    FloatLiterals,
     EntityRefs,
 }
 
 /// Dense sequence storage for homogeneous scalar data.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DenseSeq {
     Units(usize),
     I8(DenseSeqStorage<i8>),
@@ -695,14 +637,13 @@ pub enum DenseSeq {
     U64(DenseSeqStorage<u64>),
     U128(DenseSeqStorage<u128>),
     USize(DenseSeqStorage<u64>),
-    F32(DenseSeqStorage<RuntimeF32>),
-    F64(DenseSeqStorage<RuntimeF64>),
+    F32(DenseSeqStorage<f32>),
+    F64(DenseSeqStorage<f64>),
     Bool(DenseSeqStorage<bool>),
     Bytes(DenseSeqStorage<u8>),
     Chars(DenseSeqStorage<char>),
     Durations(DenseSeqStorage<LogicalDuration>),
     Strings(DenseSeqStorage<String>),
-    FloatLiterals(DenseSeqStorage<String>),
     EntityRefs(DenseSeqStorage<String>),
 }
 
@@ -759,11 +700,11 @@ impl DenseSeq {
         Self::USize(DenseSeqStorage::new(values))
     }
 
-    pub fn f32(values: Vec<RuntimeF32>) -> Self {
+    pub fn f32(values: Vec<f32>) -> Self {
         Self::F32(DenseSeqStorage::new(values))
     }
 
-    pub fn f64(values: Vec<RuntimeF64>) -> Self {
+    pub fn f64(values: Vec<f64>) -> Self {
         Self::F64(DenseSeqStorage::new(values))
     }
 
@@ -785,10 +726,6 @@ impl DenseSeq {
 
     pub fn strings(values: Vec<String>) -> Self {
         Self::Strings(DenseSeqStorage::new(values))
-    }
-
-    pub fn float_literals(values: Vec<String>) -> Self {
-        Self::FloatLiterals(DenseSeqStorage::new(values))
     }
 
     pub fn entity_refs(values: Vec<String>) -> Self {
@@ -813,9 +750,7 @@ impl DenseSeq {
             Self::Bool(values) => values.len(),
             Self::Chars(values) => values.len(),
             Self::Durations(values) => values.len(),
-            Self::Strings(values) | Self::FloatLiterals(values) | Self::EntityRefs(values) => {
-                values.len()
-            }
+            Self::Strings(values) | Self::EntityRefs(values) => values.len(),
         }
     }
 
@@ -845,7 +780,6 @@ impl DenseSeq {
             Self::Chars(_) => DenseSeqKind::Chars,
             Self::Durations(_) => DenseSeqKind::Durations,
             Self::Strings(_) => DenseSeqKind::Strings,
-            Self::FloatLiterals(_) => DenseSeqKind::FloatLiterals,
             Self::EntityRefs(_) => DenseSeqKind::EntityRefs,
         }
     }
@@ -872,7 +806,6 @@ impl DenseSeq {
             | Self::Chars(_)
             | Self::Durations(_)
             | Self::Strings(_)
-            | Self::FloatLiterals(_)
             | Self::EntityRefs(_) => None,
         }
     }
@@ -909,7 +842,6 @@ impl DenseSeq {
             | Self::Chars(_)
             | Self::Durations(_)
             | Self::Strings(_)
-            | Self::FloatLiterals(_)
             | Self::EntityRefs(_) => false,
         }
     }
@@ -944,7 +876,6 @@ impl DenseSeq {
             | Self::Chars(_)
             | Self::Durations(_)
             | Self::Strings(_)
-            | Self::FloatLiterals(_)
             | Self::EntityRefs(_) => Ok(false),
         }
     }
@@ -971,7 +902,6 @@ impl DenseSeq {
             | Self::Chars(_)
             | Self::Durations(_)
             | Self::Strings(_)
-            | Self::FloatLiterals(_)
             | Self::EntityRefs(_) => return None,
         };
         Some(first)
@@ -1054,14 +984,14 @@ impl DenseSeq {
         }
     }
 
-    pub fn as_f32_slice(&self) -> Option<&[RuntimeF32]> {
+    pub fn as_f32_slice(&self) -> Option<&[f32]> {
         match self {
             Self::F32(values) => Some(values.as_slice()),
             _ => None,
         }
     }
 
-    pub fn as_f64_slice(&self) -> Option<&[RuntimeF64]> {
+    pub fn as_f64_slice(&self) -> Option<&[f64]> {
         match self {
             Self::F64(values) => Some(values.as_slice()),
             _ => None,
@@ -1099,13 +1029,6 @@ impl DenseSeq {
     pub fn as_strings(&self) -> Option<&[String]> {
         match self {
             Self::Strings(values) => Some(values.as_slice()),
-            _ => None,
-        }
-    }
-
-    pub fn as_float_literals(&self) -> Option<&[String]> {
-        match self {
-            Self::FloatLiterals(values) => Some(values.as_slice()),
             _ => None,
         }
     }
@@ -1205,11 +1128,6 @@ impl DenseSeq {
                 .into_iter()
                 .map(RuntimeValue::String)
                 .collect(),
-            Self::FloatLiterals(values) => values
-                .into_vec()
-                .into_iter()
-                .map(RuntimeValue::Float)
-                .collect(),
             Self::EntityRefs(values) => values
                 .into_vec()
                 .into_iter()
@@ -1248,7 +1166,6 @@ impl DenseSeq {
             Self::Chars(values) => RuntimeValue::Char(values.as_slice()[index]),
             Self::Durations(values) => RuntimeValue::Duration(values.as_slice()[index]),
             Self::Strings(values) => RuntimeValue::String(values.as_slice()[index].clone()),
-            Self::FloatLiterals(values) => RuntimeValue::Float(values.as_slice()[index].clone()),
             Self::EntityRefs(values) => RuntimeValue::EntityRef(values.as_slice()[index].clone()),
         }
     }
@@ -1276,7 +1193,6 @@ impl DenseSeq {
             Self::Chars(values) => Self::Chars(values.tail_from(index)),
             Self::Durations(values) => Self::Durations(values.tail_from(index)),
             Self::Strings(values) => Self::Strings(values.tail_from(index)),
-            Self::FloatLiterals(values) => Self::FloatLiterals(values.tail_from(index)),
             Self::EntityRefs(values) => Self::EntityRefs(values.tail_from(index)),
         }
     }
@@ -1303,7 +1219,6 @@ impl DenseSeq {
             | Self::Chars(_)
             | Self::Durations(_)
             | Self::Strings(_)
-            | Self::FloatLiterals(_)
             | Self::EntityRefs(_) => None,
         }
     }
@@ -1336,14 +1251,13 @@ impl DenseSeq {
             | Self::Chars(_)
             | Self::Durations(_)
             | Self::Strings(_)
-            | Self::FloatLiterals(_)
             | Self::EntityRefs(_) => None,
         }
     }
 }
 
 /// Generic backing store for one dense homogeneous sequence.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DenseSeqStorage<T> {
     values: Vec<T>,
 }
@@ -1378,14 +1292,14 @@ impl<T: Clone> DenseSeqStorage<T> {
 }
 
 /// One field inside a runtime record value.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFieldValue {
     pub name: String,
     pub value: RuntimeValue,
 }
 
 /// Expression subset executable by the Sans I/O flow runtime.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeExpr {
     Value(RuntimeValue),
     Local(String),
@@ -1553,7 +1467,7 @@ impl fmt::Display for RuntimeBinaryOp {
 }
 
 /// One value-producing `match` arm in a runtime expression.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeExprMatchArm {
     pub pattern: RuntimePattern,
     pub guard: Option<RuntimeExpr>,
@@ -1561,21 +1475,21 @@ pub struct RuntimeExprMatchArm {
 }
 
 /// One field inside a runtime record expression.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFieldExpr {
     pub name: String,
     pub value: RuntimeExpr,
 }
 
 /// Unary operator supported by the Sans I/O expression evaluator.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RuntimeUnaryOp {
     Not,
     Neg,
 }
 
 /// Binary operator supported by the Sans I/O expression evaluator.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RuntimeBinaryOp {
     Eq,
     Ne,
@@ -1591,20 +1505,20 @@ pub enum RuntimeBinaryOp {
     Or,
 }
 
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct RuntimeEnv {
     scopes: Vec<RuntimeScope>,
     spare_scopes: Vec<RuntimeScope>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 struct RuntimeScope {
     bindings: Vec<RuntimeBinding>,
 }
 
 /// Pure runtime program consumed by the minimal Sans I/O engine.
 
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeEvalError {
     #[error("unknown runtime binding `{0}`")]
     UnknownBinding(String),
@@ -1795,11 +1709,7 @@ impl RuntimeEnv {
         }
     }
 
-    pub(crate) fn replace_root_f32_bindings(
-        &mut self,
-        input_names: &[String],
-        args: &[RuntimeF32],
-    ) {
+    pub(crate) fn replace_root_f32_bindings(&mut self, input_names: &[String], args: &[f32]) {
         if self.scopes.is_empty() {
             self.scopes.push(RuntimeScope::default());
         }
@@ -1809,11 +1719,7 @@ impl RuntimeEnv {
         }
     }
 
-    pub(crate) fn replace_root_f64_bindings(
-        &mut self,
-        input_names: &[String],
-        args: &[RuntimeF64],
-    ) {
+    pub(crate) fn replace_root_f64_bindings(&mut self, input_names: &[String], args: &[f64]) {
         if self.scopes.is_empty() {
             self.scopes.push(RuntimeScope::default());
         }
@@ -1970,11 +1876,11 @@ impl RuntimeScope {
         );
     }
 
-    fn replace_f32_bindings(&mut self, input_names: &[String], args: &[RuntimeF32]) {
+    fn replace_f32_bindings(&mut self, input_names: &[String], args: &[f32]) {
         self.replace_float_bindings(input_names, args, RuntimeValue::F32);
     }
 
-    fn replace_f64_bindings(&mut self, input_names: &[String], args: &[RuntimeF64]) {
+    fn replace_f64_bindings(&mut self, input_names: &[String], args: &[f64]) {
         self.replace_float_bindings(input_names, args, RuntimeValue::F64);
     }
 
@@ -2128,12 +2034,8 @@ pub(crate) fn evaluate_unary(
     match (op, value) {
         (RuntimeUnaryOp::Not, RuntimeValue::Bool(value)) => Ok(RuntimeValue::Bool(!value)),
         (RuntimeUnaryOp::Neg, RuntimeValue::Int(value)) => Ok(RuntimeValue::Int(-value)),
-        (RuntimeUnaryOp::Neg, RuntimeValue::F32(value)) => {
-            Ok(RuntimeValue::F32(RuntimeF32::from_f32(-value.to_f32())))
-        }
-        (RuntimeUnaryOp::Neg, RuntimeValue::F64(value)) => {
-            Ok(RuntimeValue::F64(RuntimeF64::from_f64(-value.to_f64())))
-        }
+        (RuntimeUnaryOp::Neg, RuntimeValue::F32(value)) => Ok(RuntimeValue::F32(-value)),
+        (RuntimeUnaryOp::Neg, RuntimeValue::F64(value)) => Ok(RuntimeValue::F64(-value)),
         (op, value) => Err(RuntimeEvalError::UnsupportedUnary {
             op: runtime_unary_op_label(op),
             value: runtime_value_label(&value),
@@ -2177,12 +2079,12 @@ pub(crate) fn evaluate_binary(
                 (RuntimeValue::U128(lhs), RuntimeValue::U128(rhs)) => {
                     Ok(RuntimeValue::Bool(compare_ordered(&lhs, op, &rhs)))
                 }
-                (RuntimeValue::F32(lhs), RuntimeValue::F32(rhs)) => Ok(RuntimeValue::Bool(
-                    compare_float(&lhs.to_f32(), op, &rhs.to_f32()),
-                )),
-                (RuntimeValue::F64(lhs), RuntimeValue::F64(rhs)) => Ok(RuntimeValue::Bool(
-                    compare_float(&lhs.to_f64(), op, &rhs.to_f64()),
-                )),
+                (RuntimeValue::F32(lhs), RuntimeValue::F32(rhs)) => {
+                    Ok(RuntimeValue::Bool(compare_float(&lhs, op, &rhs)))
+                }
+                (RuntimeValue::F64(lhs), RuntimeValue::F64(rhs)) => {
+                    Ok(RuntimeValue::Bool(compare_float(&lhs, op, &rhs)))
+                }
                 (lhs, rhs) => unsupported_binary(op, &lhs, &rhs),
             }
         }
@@ -2239,12 +2141,12 @@ fn compare_float<T: PartialOrd>(lhs: &T, op: RuntimeBinaryOp, rhs: &T) -> bool {
     }
 }
 
-fn evaluate_f32_op(lhs: RuntimeF32, op: RuntimeBinaryOp, rhs: RuntimeF32) -> RuntimeF32 {
-    RuntimeF32::from_f32(evaluate_numeric_op(lhs.to_f32(), op, rhs.to_f32()))
+fn evaluate_f32_op(lhs: f32, op: RuntimeBinaryOp, rhs: f32) -> f32 {
+    evaluate_numeric_op(lhs, op, rhs)
 }
 
-fn evaluate_f64_op(lhs: RuntimeF64, op: RuntimeBinaryOp, rhs: RuntimeF64) -> RuntimeF64 {
-    RuntimeF64::from_f64(evaluate_numeric_op(lhs.to_f64(), op, rhs.to_f64()))
+fn evaluate_f64_op(lhs: f64, op: RuntimeBinaryOp, rhs: f64) -> f64 {
+    evaluate_numeric_op(lhs, op, rhs)
 }
 
 fn evaluate_numeric_op<T>(lhs: T, op: RuntimeBinaryOp, rhs: T) -> T
@@ -2385,12 +2287,6 @@ pub fn runtime_sequence_from_literal_values(values: Vec<RuntimeValue>) -> Runtim
             RuntimeValue::String,
             runtime_sequence_dense_strings,
         ),
-        Some(RuntimeValue::Float(_)) => collect_dense_or_values(
-            values,
-            take_float_value,
-            RuntimeValue::Float,
-            runtime_sequence_dense_float_literals,
-        ),
         Some(RuntimeValue::EntityRef(_)) => collect_dense_or_values(
             values,
             take_entity_ref_value,
@@ -2472,14 +2368,14 @@ fn take_usize_value(value: RuntimeValue) -> Result<u64, RuntimeValue> {
     }
 }
 
-fn take_f32_value(value: RuntimeValue) -> Result<RuntimeF32, RuntimeValue> {
+fn take_f32_value(value: RuntimeValue) -> Result<f32, RuntimeValue> {
     match value {
         RuntimeValue::F32(value) => Ok(value),
         value => Err(value),
     }
 }
 
-fn take_f64_value(value: RuntimeValue) -> Result<RuntimeF64, RuntimeValue> {
+fn take_f64_value(value: RuntimeValue) -> Result<f64, RuntimeValue> {
     match value {
         RuntimeValue::F64(value) => Ok(value),
         value => Err(value),
@@ -2507,13 +2403,6 @@ fn take_string_value(value: RuntimeValue) -> Result<String, RuntimeValue> {
     }
 }
 
-fn take_float_value(value: RuntimeValue) -> Result<String, RuntimeValue> {
-    match value {
-        RuntimeValue::Float(value) => Ok(value),
-        value => Err(value),
-    }
-}
-
 fn take_entity_ref_value(value: RuntimeValue) -> Result<String, RuntimeValue> {
     match value {
         RuntimeValue::EntityRef(value) => Ok(value),
@@ -2536,9 +2425,6 @@ pub fn runtime_sequence_repeat_value(value: &RuntimeValue, len: usize) -> Runtim
         RuntimeValue::Char(value) => runtime_sequence_dense_chars(vec![*value; len]),
         RuntimeValue::Duration(value) => runtime_sequence_dense_durations(vec![*value; len]),
         RuntimeValue::String(value) => runtime_sequence_dense_strings(vec![value.clone(); len]),
-        RuntimeValue::Float(value) => {
-            runtime_sequence_dense_float_literals(vec![value.clone(); len])
-        }
         RuntimeValue::EntityRef(value) => {
             runtime_sequence_dense_entity_refs(vec![value.clone(); len])
         }
@@ -2598,11 +2484,11 @@ pub fn runtime_sequence_dense_usize(values: Vec<u64>) -> RuntimeValue {
     RuntimeValue::Seq(RuntimeSeq::dense_usize(values))
 }
 
-pub fn runtime_sequence_dense_f32(values: Vec<RuntimeF32>) -> RuntimeValue {
+pub fn runtime_sequence_dense_f32(values: Vec<f32>) -> RuntimeValue {
     RuntimeValue::Seq(RuntimeSeq::dense_f32(values))
 }
 
-pub fn runtime_sequence_dense_f64(values: Vec<RuntimeF64>) -> RuntimeValue {
+pub fn runtime_sequence_dense_f64(values: Vec<f64>) -> RuntimeValue {
     RuntimeValue::Seq(RuntimeSeq::dense_f64(values))
 }
 
@@ -2624,10 +2510,6 @@ pub fn runtime_sequence_dense_durations(values: Vec<LogicalDuration>) -> Runtime
 
 pub fn runtime_sequence_dense_strings(values: Vec<String>) -> RuntimeValue {
     RuntimeValue::Seq(RuntimeSeq::dense_strings(values))
-}
-
-pub fn runtime_sequence_dense_float_literals(values: Vec<String>) -> RuntimeValue {
-    RuntimeValue::Seq(RuntimeSeq::dense_float_literals(values))
 }
 
 pub fn runtime_sequence_dense_entity_refs(values: Vec<String>) -> RuntimeValue {
@@ -2688,11 +2570,9 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
         RuntimeValue::I128(value) => value.to_string(),
         RuntimeValue::UInt(value) | RuntimeValue::USize(value) => value.to_string(),
         RuntimeValue::U128(value) => value.to_string(),
-        RuntimeValue::F32(value) => value.to_f32().to_string(),
-        RuntimeValue::F64(value) => value.to_f64().to_string(),
-        RuntimeValue::Float(value)
-        | RuntimeValue::String(value)
-        | RuntimeValue::EntityRef(value) => value.clone(),
+        RuntimeValue::F32(value) => value.to_string(),
+        RuntimeValue::F64(value) => value.to_string(),
+        RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
@@ -2720,9 +2600,6 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
                 format!("seq/durations/{}", values.len())
             }
             RuntimeSeq::Dense(DenseSeq::Strings(values)) => format!("seq/strings/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::FloatLiterals(values)) => {
-                format!("seq/float_literals/{}", values.len())
-            }
             RuntimeSeq::Dense(DenseSeq::EntityRefs(values)) => {
                 format!("seq/entity_refs/{}", values.len())
             }

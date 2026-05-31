@@ -4,7 +4,7 @@ use crate::value::{
 use std::collections::BTreeSet;
 
 /// Pattern subset executable by the Sans I/O flow runtime.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RuntimePattern {
     Ident(String),
     MutIdent(String),
@@ -37,7 +37,7 @@ pub enum RuntimePattern {
 }
 
 /// One field inside a runtime record pattern.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeRecordPatternField {
     pub name: String,
     pub pattern: RuntimePattern,
@@ -280,7 +280,6 @@ fn runtime_value_matches_type_label(value: &RuntimeValue, ty: &str) -> bool {
             )
             | (RuntimeValue::F32(_), "f32")
             | (RuntimeValue::F64(_), "f64")
-            | (RuntimeValue::Float(_), "f32" | "f64")
             | (RuntimeValue::String(_), "String")
             | (RuntimeValue::Char(_), "Char" | "char")
             | (RuntimeValue::Duration(_), "Duration")

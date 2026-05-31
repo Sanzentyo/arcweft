@@ -773,9 +773,11 @@ fn expr_type_label(expr: &Expr) -> String {
         Expr::Literal(Literal::Int { suffix, .. }) => {
             suffix.as_deref().unwrap_or("unsuffixed-int").to_owned()
         }
-        Expr::Literal(Literal::Float { suffix, .. }) => {
-            suffix.as_deref().unwrap_or("unsuffixed-float").to_owned()
-        }
+        Expr::Literal(Literal::Float { suffix, .. }) => suffix
+            .as_ref()
+            .map_or("unsuffixed-float", |suffix| suffix.as_str())
+            .to_owned(),
+        Expr::Literal(Literal::UnitNumber { suffix, .. }) => suffix.as_str().to_owned(),
         Expr::Literal(Literal::Bool(_)) => "Bool".to_owned(),
         Expr::Literal(Literal::Duration { .. }) => "Duration".to_owned(),
         Expr::Tuple(items) => {

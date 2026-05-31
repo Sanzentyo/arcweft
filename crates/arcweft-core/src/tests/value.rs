@@ -2,12 +2,11 @@ use crate::{
     plan::RuntimePureHelperId,
     time::LogicalDuration,
     value::{
-        DenseSeqKind, RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeExpr, RuntimeF32,
-        RuntimeF64, RuntimeFieldValue, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
-        runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
+        DenseSeqKind, RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeExpr, RuntimeFieldValue,
+        RuntimeSeq, RuntimeUnaryOp, RuntimeValue, runtime_sequence_dense_bool,
+        runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
         runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
-        runtime_sequence_dense_f32, runtime_sequence_dense_f64,
-        runtime_sequence_dense_float_literals, runtime_sequence_dense_i8,
+        runtime_sequence_dense_f32, runtime_sequence_dense_f64, runtime_sequence_dense_i8,
         runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
         runtime_sequence_dense_i128, runtime_sequence_dense_isize, runtime_sequence_dense_strings,
         runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
@@ -133,14 +132,8 @@ fn dense_sequence_kind_covers_deterministic_scalar_storage() {
         (runtime_sequence_dense_u64(vec![1]), DenseSeqKind::U64),
         (runtime_sequence_dense_u128(vec![1]), DenseSeqKind::U128),
         (runtime_sequence_dense_usize(vec![1]), DenseSeqKind::USize),
-        (
-            runtime_sequence_dense_f32(vec![RuntimeF32::from_f32(1.0)]),
-            DenseSeqKind::F32,
-        ),
-        (
-            runtime_sequence_dense_f64(vec![RuntimeF64::from_f64(1.0)]),
-            DenseSeqKind::F64,
-        ),
+        (runtime_sequence_dense_f32(vec![(1.0)]), DenseSeqKind::F32),
+        (runtime_sequence_dense_f64(vec![(1.0)]), DenseSeqKind::F64),
         (runtime_sequence_dense_bool(vec![true]), DenseSeqKind::Bool),
         (runtime_sequence_dense_bytes(vec![1]), DenseSeqKind::Bytes),
         (runtime_sequence_dense_chars(vec!['a']), DenseSeqKind::Chars),
@@ -151,10 +144,6 @@ fn dense_sequence_kind_covers_deterministic_scalar_storage() {
         (
             runtime_sequence_dense_strings(vec!["a".to_owned()]),
             DenseSeqKind::Strings,
-        ),
-        (
-            runtime_sequence_dense_float_literals(vec!["1.0f64".to_owned()]),
-            DenseSeqKind::FloatLiterals,
         ),
         (
             runtime_sequence_dense_entity_refs(vec!["char.alice".to_owned()]),
@@ -405,14 +394,8 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
 
 #[test]
 fn dense_float_sequences_expose_bit_exact_views_and_materialize_values() {
-    let f32_values = [
-        RuntimeF32::from_f32(1.5),
-        RuntimeF32::from_bits(f32::NAN.to_bits()),
-    ];
-    let f64_values = [
-        RuntimeF64::from_f64(2.25),
-        RuntimeF64::from_bits((-0.0f64).to_bits()),
-    ];
+    let f32_values = [1.5_f32, f32::from_bits(f32::NAN.to_bits())];
+    let f64_values = [2.25_f64, f64::from_bits((-0.0f64).to_bits())];
     let f32_seq = runtime_sequence_dense_f32(f32_values.to_vec());
     let f64_seq = runtime_sequence_dense_f64(f64_values.to_vec());
 
@@ -422,13 +405,14 @@ fn dense_float_sequences_expose_bit_exact_views_and_materialize_values() {
     let RuntimeValue::Seq(f32_seq) = f32_seq else {
         panic!("dense f32 helper returns a sequence");
     };
-    assert_eq!(f32_seq.as_f32_slice(), Some(f32_values.as_slice()));
-    assert_eq!(
-        f32_seq.into_values(),
-        vec![
-            RuntimeValue::F32(f32_values[0]),
-            RuntimeValue::F32(f32_values[1])
-        ]
+    let f32_slice = f32_seq.as_f32_slice().expect("dense f32 slice exists");
+    assert_eq!(f32_slice.len(), f32_values.len());
+    assert_eq!(f32_slice[0].to_bits(), f32_values[0].to_bits());
+    assert_eq!(f32_slice[1].to_bits(), f32_values[1].to_bits());
+    let f32_values_out = f32_seq.into_values();
+    assert_eq!(f32_values_out[0], RuntimeValue::F32(f32_values[0]));
+    assert!(
+        matches!(f32_values_out[1], RuntimeValue::F32(value) if value.to_bits() == f32_values[1].to_bits())
     );
 
     let RuntimeValue::Seq(f64_seq) = f64_seq else {
@@ -485,13 +469,10 @@ fn dense_non_i64_integer_storage_does_not_widen_into_i64_projection() {
 #[test]
 fn dense_textual_sequences_expose_typed_views_and_materialize_values() {
     let strings_seq = runtime_sequence_dense_strings(vec!["a".to_owned(), "b".to_owned()]);
-    let floats_seq =
-        runtime_sequence_dense_float_literals(vec!["1.0f64".to_owned(), "2.0f64".to_owned()]);
     let entities_seq =
         runtime_sequence_dense_entity_refs(vec!["char.alice".to_owned(), "char.bob".to_owned()]);
 
     assert_eq!(runtime_value_label(&strings_seq), "seq/strings/2");
-    assert_eq!(runtime_value_label(&floats_seq), "seq/float_literals/2");
     assert_eq!(runtime_value_label(&entities_seq), "seq/entity_refs/2");
 
     let RuntimeValue::Seq(strings_seq) = strings_seq else {
@@ -506,21 +487,6 @@ fn dense_textual_sequences_expose_typed_views_and_materialize_values() {
         vec![
             RuntimeValue::String("a".to_owned()),
             RuntimeValue::String("b".to_owned())
-        ]
-    );
-
-    let RuntimeValue::Seq(floats_seq) = floats_seq else {
-        panic!("dense float literal helper returns a sequence");
-    };
-    assert_eq!(
-        floats_seq.as_float_literals(),
-        Some(["1.0f64".to_owned(), "2.0f64".to_owned()].as_slice())
-    );
-    assert_eq!(
-        floats_seq.into_values(),
-        vec![
-            RuntimeValue::Float("1.0f64".to_owned()),
-            RuntimeValue::Float("2.0f64".to_owned())
         ]
     );
 
@@ -607,15 +573,11 @@ fn literal_and_repeat_sequences_choose_dense_scalar_storage() {
     };
     assert_eq!(unit_repeat_seq.unit_len(), Some(2));
 
-    let RuntimeValue::Seq(float_seq) =
-        runtime_sequence_repeat_value(&RuntimeValue::F64(RuntimeF64::from_f64(1.5)), 2)
+    let RuntimeValue::Seq(float_seq) = runtime_sequence_repeat_value(&RuntimeValue::F64(1.5), 2)
     else {
         panic!("typed float repeat lowers to a sequence");
     };
-    assert_eq!(
-        float_seq.as_f64_slice(),
-        Some([RuntimeF64::from_f64(1.5), RuntimeF64::from_f64(1.5)].as_slice())
-    );
+    assert_eq!(float_seq.as_f64_slice(), Some([(1.5), (1.5)].as_slice()));
 
     let RuntimeValue::Seq(entity_seq) =
         runtime_sequence_repeat_value(&RuntimeValue::EntityRef("char.alice".to_owned()), 2)

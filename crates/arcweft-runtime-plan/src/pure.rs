@@ -17,7 +17,7 @@ use arcweft_lang_hir::{
 use thiserror::Error;
 
 /// Runtime-ready pure helper candidate lowered from a checked HIR function.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PureHelperCandidate {
     name: String,
     input_names: Vec<String>,
@@ -29,14 +29,14 @@ pub struct PureHelperCandidate {
 }
 
 /// Lowered pure helper candidates plus discovery counters.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PureHelperCandidateReport {
     pub candidates: Vec<PureHelperCandidate>,
     pub stats: PureHelperCandidateStats,
 }
 
 /// Counters for pure-helper candidate discovery and expression lowering.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PureHelperCandidateStats {
     pub functions_seen: usize,
     pub lower_attempts: usize,
@@ -45,7 +45,7 @@ pub struct PureHelperCandidateStats {
 }
 
 /// Shape summary reused by runtime-plan lowering and backend selection.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PureHelperShape {
     pub input_arity: usize,
     pub supports_scalar_eval: bool,
@@ -55,7 +55,7 @@ pub struct PureHelperShape {
 }
 
 /// Error produced while selecting or lowering a pure helper function.
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub enum PureHelperLowerError {
     #[error("pure helper `{name}` uses unsupported function kind `{kind:?}`")]
     UnsupportedFunctionKind { name: String, kind: FunctionKind },

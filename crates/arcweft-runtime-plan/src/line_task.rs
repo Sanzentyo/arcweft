@@ -26,7 +26,7 @@ use arcweft_lang_hir::syntax::{
 };
 
 /// Runtime task plan produced from one checked dialogue line plan.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LoweredLineTaskGroup {
     pub(crate) flow_id: Option<EntityRef>,
     pub(crate) line_id: Option<EntityRef>,

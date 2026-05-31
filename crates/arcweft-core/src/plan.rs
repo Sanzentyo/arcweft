@@ -8,7 +8,7 @@ use crate::value::{RuntimeBinding, RuntimeExpr, RuntimeValue};
 use std::sync::Arc;
 use thiserror::Error;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct RuntimePlan {
     pub entry_flow: Option<FlowRuntimeId>,
     pub entries: Vec<RuntimeEntrySpec>,
@@ -28,7 +28,7 @@ pub struct FlowRuntimeId(pub String);
 pub struct EntryRuntimeId(pub String);
 
 /// Adapter family of a source-declared entry.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeEntryKind {
     Game,
     Cli,
@@ -40,14 +40,14 @@ pub enum RuntimeEntryKind {
 }
 
 /// Launch target selected by an entry.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeEntryTarget {
     Flow(FlowRuntimeId),
     Routes(Vec<RuntimeRouteSpec>),
 }
 
 /// Route declaration in a server-like entry.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeRouteSpec {
     pub method: String,
     pub path: String,
@@ -56,20 +56,20 @@ pub struct RuntimeRouteSpec {
 }
 
 /// Explicit route parameter binding for a target flow invocation.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeRouteBinding {
     pub name: String,
     pub source: RuntimeRouteBindingSource,
 }
 
 /// Adapter route value source used by a route binding.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeRouteBindingSource {
     PathParam(String),
 }
 
 /// Lowered entry declaration preserved for CLI/LSP/runtime launch selection.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeEntrySpec {
     pub id: EntryRuntimeId,
     pub kind: RuntimeEntryKind,
@@ -81,7 +81,7 @@ pub struct RuntimeEntrySpec {
 pub struct RuntimeLineId(pub String);
 
 /// Lowered flow program.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct RuntimeFlow {
     pub id: FlowRuntimeId,
     pub ops: Vec<FlowOp>,
@@ -92,7 +92,7 @@ pub struct RuntimeFlow {
 pub struct RuntimePureHelperId(pub usize);
 
 /// Lowered deterministic pure helper callable from runtime expressions.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimePureHelper {
     pub id: RuntimePureHelperId,
     pub name: String,
@@ -105,7 +105,7 @@ pub struct RuntimePureHelper {
 }
 
 /// Runtime pure helper input representation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RuntimePureInputType {
     I8,
     I16,
@@ -125,7 +125,7 @@ pub enum RuntimePureInputType {
 }
 
 /// Runtime pure helper output representation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RuntimePureOutputType {
     Bool,
     I8,
@@ -146,7 +146,7 @@ pub enum RuntimePureOutputType {
 }
 
 /// Source of a runtime pure helper candidate.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RuntimePureHelperOrigin {
     Annotated,
     Inferred,
@@ -154,7 +154,7 @@ pub enum RuntimePureHelperOrigin {
 
 /// Runtime identifier for a lowered stream transform.
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FlowOp {
     Bind(Vec<RuntimeBinding>),
     Let {
@@ -268,7 +268,7 @@ pub enum FlowOp {
 }
 
 /// One executable `match` arm in the runtime flow model.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeMatchArm {
     pub pattern: RuntimePattern,
     pub guard: Option<RuntimeExpr>,
@@ -278,7 +278,7 @@ pub struct RuntimeMatchArm {
 pub(crate) type RuntimeMatchSelection = Option<(Vec<RuntimeBinding>, Vec<FlowOp>)>;
 
 /// Runtime choice option visible to adapters and selectable from `RuntimeStepInput`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ChoiceRuntimeOption {
     pub id: Option<String>,
     pub label: String,
@@ -288,7 +288,7 @@ pub struct ChoiceRuntimeOption {
 }
 
 /// Replay-observable flow event emitted by the core runtime.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FlowEvent {
     DialogueLine { line: RuntimeLineId },
     LineCancelled { trigger: String },
@@ -302,7 +302,7 @@ pub enum FlowEvent {
     Done,
 }
 
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimePlanError {
     #[error("entry flow `{0}` does not exist in runtime plan")]
     MissingEntryFlow(String),

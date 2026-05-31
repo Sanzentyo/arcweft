@@ -9,15 +9,12 @@ use arcweft_core::{
         RuntimePureOutputType,
     },
     pure::{
-        AotPureFunctionBackend, AotPureI64Plan, PureFunctionRequest, RuntimeF32Args,
-        RuntimeF64Args, RuntimeI32Args, RuntimeI64Args, RuntimePureCallBackend,
+        AotPureFunctionBackend, AotPureI64Plan, PureFunctionRequest, RuntimeFloat32Args,
+        RuntimeFloat64Args, RuntimeI32Args, RuntimeI64Args, RuntimePureCallBackend,
         RuntimePureScalarInteger, VmPureFunctionScratch,
     },
     step::RuntimePureCallStats,
-    value::{
-        DenseSeq, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeF32, RuntimeF64,
-        RuntimeSeq, RuntimeValue,
-    },
+    value::{DenseSeq, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeSeq, RuntimeValue},
 };
 use arcweft_lang_jit_cranelift::{CompiledPureI64Inputs, CraneliftPureFunctionBackend};
 use rayon::{ThreadPool, ThreadPoolBuilder, prelude::*};
@@ -917,12 +914,12 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
     fn call_f32_slice(
         &mut self,
         helper: &RuntimePureHelper,
-        args: &[RuntimeF32],
-    ) -> Result<Option<RuntimeF32>, RuntimeEvalError> {
-        if args.len() > RuntimeF32Args::MAX {
+        args: &[f32],
+    ) -> Result<Option<f32>, RuntimeEvalError> {
+        if args.len() > RuntimeFloat32Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
                 helper: helper.name.clone(),
-                max: RuntimeF32Args::MAX,
+                max: RuntimeFloat32Args::MAX,
                 found: args.len(),
             });
         }
@@ -936,12 +933,12 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
     fn call_f64_slice(
         &mut self,
         helper: &RuntimePureHelper,
-        args: &[RuntimeF64],
-    ) -> Result<Option<RuntimeF64>, RuntimeEvalError> {
-        if args.len() > RuntimeF64Args::MAX {
+        args: &[f64],
+    ) -> Result<Option<f64>, RuntimeEvalError> {
+        if args.len() > RuntimeFloat64Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
                 helper: helper.name.clone(),
-                max: RuntimeF64Args::MAX,
+                max: RuntimeFloat64Args::MAX,
                 found: args.len(),
             });
         }
@@ -1022,9 +1019,9 @@ impl RuntimePureAccelerator {
 
     fn call_vm_f32_slice(
         helper: &RuntimePureHelper,
-        args: &[RuntimeF32],
+        args: &[f32],
         scratch: &mut VmPureFunctionScratch,
-    ) -> Result<RuntimeF32, RuntimeEvalError> {
+    ) -> Result<f32, RuntimeEvalError> {
         match scratch.evaluate_f32_slice(helper, args)? {
             RuntimeValue::F32(value) => Ok(value),
             value => Err(RuntimeEvalError::UnsupportedPure {
@@ -1039,9 +1036,9 @@ impl RuntimePureAccelerator {
 
     fn call_vm_f64_slice(
         helper: &RuntimePureHelper,
-        args: &[RuntimeF64],
+        args: &[f64],
         scratch: &mut VmPureFunctionScratch,
-    ) -> Result<RuntimeF64, RuntimeEvalError> {
+    ) -> Result<f64, RuntimeEvalError> {
         match scratch.evaluate_f64_slice(helper, args)? {
             RuntimeValue::F64(value) => Ok(value),
             value => Err(RuntimeEvalError::UnsupportedPure {
@@ -1067,7 +1064,6 @@ fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::USize(_) => "usize",
         RuntimeValue::F32(_) => "f32",
         RuntimeValue::F64(_) => "f64",
-        RuntimeValue::Float(_) => "float",
         RuntimeValue::String(_) => "string",
         RuntimeValue::Char(_) => "char",
         RuntimeValue::Duration(_) => "duration",
@@ -1094,7 +1090,6 @@ fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Chars(_))) => "seq_chars",
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Durations(_))) => "seq_durations",
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Strings(_))) => "seq_strings",
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::FloatLiterals(_))) => "seq_float_literals",
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::EntityRefs(_))) => "seq_entity_refs",
         RuntimeValue::Record(_) => "record",
         RuntimeValue::Variant { .. } => "variant",

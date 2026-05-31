@@ -608,9 +608,7 @@ fn runtime_value_shape(value: &RuntimeValue) -> RuntimeShape {
         | RuntimeValue::Duration(_) => RuntimeShape::Int,
         RuntimeValue::F32(_) | RuntimeValue::F64(_) => RuntimeShape::Float,
         RuntimeValue::EntityRef(_) => RuntimeShape::EntityRef,
-        RuntimeValue::String(_) | RuntimeValue::Float(_) | RuntimeValue::Char(_) => {
-            RuntimeShape::String
-        }
+        RuntimeValue::String(_) | RuntimeValue::Char(_) => RuntimeShape::String,
         RuntimeValue::Tuple(_) => RuntimeShape::Tuple,
         RuntimeValue::Seq(_) => RuntimeShape::BracketSeq,
         RuntimeValue::Record(_) => RuntimeShape::Record,

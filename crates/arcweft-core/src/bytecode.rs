@@ -7,7 +7,7 @@ use crate::source::SourcePlan;
 use crate::stream::StreamPlan;
 
 /// Pure executable bytecode bundle used by VM, AOT, replay, and future JIT tiers.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct BytecodeProgram {
     pub entry_flow: Option<FlowRuntimeId>,
     pub entries: Vec<BytecodeEntry>,
@@ -19,7 +19,7 @@ pub struct BytecodeProgram {
 }
 
 /// Lowered launch entry preserved in bytecode bundles.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BytecodeEntry {
     pub id: EntryRuntimeId,
     pub kind: RuntimeEntryKind,
@@ -27,7 +27,7 @@ pub struct BytecodeEntry {
 }
 
 /// One flow's bytecode instruction stream.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct BytecodeFlow {
     pub id: FlowRuntimeId,
     pub instructions: Vec<BytecodeInstruction>,
@@ -38,13 +38,13 @@ pub struct BytecodeFlow {
 /// Phase 2 keeps the structured runtime operation as the instruction payload so
 /// bytecode generation remains semantics-preserving while the evaluator is
 /// still being split from `RuntimePlan`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum BytecodeInstruction {
     Flow(FlowOp),
 }
 
 /// Deterministic bytecode shape counters for profiling and conformance tests.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct BytecodeStats {
     pub flows: usize,
     pub instructions: usize,

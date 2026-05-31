@@ -2,15 +2,14 @@ use crate::plan::RuntimePureHelper;
 use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExactInteger,
-    RuntimeExpr, RuntimeF32, RuntimeF64, RuntimeFieldValue, RuntimeSeq, RuntimeUnaryOp,
-    RuntimeValue, evaluate_binary, evaluate_unary, runtime_binary_op_label,
-    runtime_sequence_values, runtime_unary_op_label, runtime_value_into_sequence_values,
-    runtime_value_label, sum_i64_sequence_ref,
+    RuntimeExpr, RuntimeFieldValue, RuntimeSeq, RuntimeUnaryOp, RuntimeValue, evaluate_binary,
+    evaluate_unary, runtime_binary_op_label, runtime_sequence_values, runtime_unary_op_label,
+    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
 use std::collections::BTreeMap;
 
 /// Request for evaluating a deterministic pure helper expression.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PureFunctionRequest {
     pub name: String,
     pub expr: RuntimeExpr,
@@ -18,7 +17,7 @@ pub struct PureFunctionRequest {
 }
 
 /// Result of one pure helper backend evaluation.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PureFunctionResult {
     pub backend: PureFunctionBackendKind,
     pub value: RuntimeValue,
@@ -26,7 +25,7 @@ pub struct PureFunctionResult {
 }
 
 /// Backend family used for pure helper evaluation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PureFunctionBackendKind {
     Vm,
     Aot,
@@ -34,7 +33,7 @@ pub enum PureFunctionBackendKind {
 }
 
 /// Deterministic counters for pure helper evaluation.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PureFunctionStats {
     pub evaluated_exprs: usize,
     pub evaluated_calls: usize,
@@ -43,7 +42,7 @@ pub struct PureFunctionStats {
 }
 
 /// Fixed-size scalar argument pack for runtime pure helper fast paths.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RuntimeFixedArgs<T> {
     len: usize,
     values: [T; 4],
@@ -51,11 +50,11 @@ pub struct RuntimeFixedArgs<T> {
 
 pub type RuntimeI32Args = RuntimeFixedArgs<i32>;
 pub type RuntimeI64Args = RuntimeFixedArgs<i64>;
-pub type RuntimeF32Args = RuntimeFixedArgs<RuntimeF32>;
-pub type RuntimeF64Args = RuntimeFixedArgs<RuntimeF64>;
+pub type RuntimeFloat32Args = RuntimeFixedArgs<f32>;
+pub type RuntimeFloat64Args = RuntimeFixedArgs<f64>;
 
 /// Exact integer scalar that preserves the helper ABI width during VM pure evaluation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RuntimePureScalar {
     Bool(bool),
     I8(i8),
@@ -70,8 +69,8 @@ pub enum RuntimePureScalar {
     U64(u64),
     U128(u128),
     USize(u64),
-    F32(RuntimeF32),
-    F64(RuntimeF64),
+    F32(f32),
+    F64(f64),
 }
 
 /// Integer widths that can stay typed across pure helper VM fast paths.
@@ -182,14 +181,14 @@ pub trait RuntimePureCallBackend {
     fn call_f32_slice(
         &mut self,
         helper: &RuntimePureHelper,
-        args: &[RuntimeF32],
-    ) -> Result<Option<RuntimeF32>, RuntimeEvalError>;
+        args: &[f32],
+    ) -> Result<Option<f32>, RuntimeEvalError>;
 
     fn call_f64_slice(
         &mut self,
         helper: &RuntimePureHelper,
-        args: &[RuntimeF64],
-    ) -> Result<Option<RuntimeF64>, RuntimeEvalError>;
+        args: &[f64],
+    ) -> Result<Option<f64>, RuntimeEvalError>;
 
     fn call_values(
         &mut self,
@@ -211,28 +210,28 @@ pub trait PureFunctionBackend {
 }
 
 /// VM fallback backend for pure helpers.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct VmPureFunctionBackend;
 
 /// Reusable VM fallback storage for repeated `i64` pure-helper evaluation.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct VmPureFunctionScratch {
     env: RuntimeEnv,
 }
 
 /// AOT backend for deterministic pure helpers.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct AotPureFunctionBackend;
 
 /// VM runtime backend used when no external pure accelerator is provided.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct VmRuntimePureCallBackend {
     stats: RuntimePureCallStats,
     scratch: VmPureFunctionScratch,
 }
 
 /// Compiled AOT plan for the current deterministic `i64` pure-helper subset.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AotPureI64Plan {
     name: String,
     expr: AotI64Expr,
@@ -241,7 +240,7 @@ pub struct AotPureI64Plan {
     slot_count: usize,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum AotI64Expr {
     Const(i64),
     Local(usize),
@@ -270,7 +269,7 @@ enum AotI64Expr {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum AotBoolExpr {
     Const(bool),
     Compare {
@@ -287,7 +286,7 @@ struct AotCompileContext {
 }
 
 /// VM/JIT conformance result for deterministic helper execution.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PureFunctionConformance {
     pub vm: PureFunctionResult,
     pub candidate: PureFunctionResult,
@@ -365,7 +364,7 @@ impl VmPureFunctionBackend {
     pub fn evaluate_f32_slice(
         &self,
         helper: &RuntimePureHelper,
-        args: &[RuntimeF32],
+        args: &[f32],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let mut scratch = VmPureFunctionScratch::default();
         scratch.evaluate_f32_slice(helper, args)
@@ -374,7 +373,7 @@ impl VmPureFunctionBackend {
     pub fn evaluate_f64_slice(
         &self,
         helper: &RuntimePureHelper,
-        args: &[RuntimeF64],
+        args: &[f64],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let mut scratch = VmPureFunctionScratch::default();
         scratch.evaluate_f64_slice(helper, args)
@@ -485,7 +484,7 @@ impl VmPureFunctionScratch {
     pub fn evaluate_f32_slice(
         &mut self,
         helper: &RuntimePureHelper,
-        args: &[RuntimeF32],
+        args: &[f32],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if args.len() != helper.input_names.len() {
             return Err(RuntimeEvalError::TooManyPureArgs {
@@ -511,7 +510,7 @@ impl VmPureFunctionScratch {
     pub fn evaluate_f64_slice(
         &mut self,
         helper: &RuntimePureHelper,
-        args: &[RuntimeF64],
+        args: &[f64],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if args.len() != helper.input_names.len() {
             return Err(RuntimeEvalError::TooManyPureArgs {
@@ -1020,12 +1019,12 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
     fn call_f32_slice(
         &mut self,
         helper: &RuntimePureHelper,
-        args: &[RuntimeF32],
-    ) -> Result<Option<RuntimeF32>, RuntimeEvalError> {
-        if args.len() > RuntimeF32Args::MAX {
+        args: &[f32],
+    ) -> Result<Option<f32>, RuntimeEvalError> {
+        if args.len() > RuntimeFloat32Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
                 helper: helper.name.clone(),
-                max: RuntimeF32Args::MAX,
+                max: RuntimeFloat32Args::MAX,
                 found: args.len(),
             });
         }
@@ -1039,12 +1038,12 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
     fn call_f64_slice(
         &mut self,
         helper: &RuntimePureHelper,
-        args: &[RuntimeF64],
-    ) -> Result<Option<RuntimeF64>, RuntimeEvalError> {
-        if args.len() > RuntimeF64Args::MAX {
+        args: &[f64],
+    ) -> Result<Option<f64>, RuntimeEvalError> {
+        if args.len() > RuntimeFloat64Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
                 helper: helper.name.clone(),
-                max: RuntimeF64Args::MAX,
+                max: RuntimeFloat64Args::MAX,
                 found: args.len(),
             });
         }
@@ -1553,7 +1552,7 @@ fn runtime_value_into_i32_result(
 fn runtime_value_into_f32_result(
     helper: &RuntimePureHelper,
     value: RuntimeValue,
-) -> Result<RuntimeF32, RuntimeEvalError> {
+) -> Result<f32, RuntimeEvalError> {
     match value {
         RuntimeValue::F32(value) => Ok(value),
         value => Err(RuntimeEvalError::UnsupportedPure {
@@ -1569,7 +1568,7 @@ fn runtime_value_into_f32_result(
 fn runtime_value_into_f64_result(
     helper: &RuntimePureHelper,
     value: RuntimeValue,
-) -> Result<RuntimeF64, RuntimeEvalError> {
+) -> Result<f64, RuntimeEvalError> {
     match value {
         RuntimeValue::F64(value) => Ok(value),
         value => Err(RuntimeEvalError::UnsupportedPure {
@@ -1638,12 +1637,8 @@ fn evaluate_scalar_unary(
         (RuntimeUnaryOp::Neg, RuntimePureScalar::ISize(value)) => {
             Ok(RuntimePureScalar::ISize(-value))
         }
-        (RuntimeUnaryOp::Neg, RuntimePureScalar::F32(value)) => Ok(RuntimePureScalar::F32(
-            RuntimeF32::from_f32(-value.to_f32()),
-        )),
-        (RuntimeUnaryOp::Neg, RuntimePureScalar::F64(value)) => Ok(RuntimePureScalar::F64(
-            RuntimeF64::from_f64(-value.to_f64()),
-        )),
+        (RuntimeUnaryOp::Neg, RuntimePureScalar::F32(value)) => Ok(RuntimePureScalar::F32(-value)),
+        (RuntimeUnaryOp::Neg, RuntimePureScalar::F64(value)) => Ok(RuntimePureScalar::F64(-value)),
         (
             RuntimeUnaryOp::Neg,
             value @ (RuntimePureScalar::U8(_)
@@ -1732,10 +1727,10 @@ fn evaluate_scalar_comparison(
             RuntimePureScalar::Bool(compare_scalar_ordered(&lhs, op, &rhs)),
         ),
         (RuntimePureScalar::F32(lhs), RuntimePureScalar::F32(rhs)) => Ok(RuntimePureScalar::Bool(
-            compare_scalar_float(&lhs.to_f32(), op, &rhs.to_f32()),
+            compare_scalar_float(&lhs, op, &rhs),
         )),
         (RuntimePureScalar::F64(lhs), RuntimePureScalar::F64(rhs)) => Ok(RuntimePureScalar::Bool(
-            compare_scalar_float(&lhs.to_f64(), op, &rhs.to_f64()),
+            compare_scalar_float(&lhs, op, &rhs),
         )),
         (lhs, rhs) => unsupported_scalar_binary(op, lhs, rhs),
     }
@@ -1784,10 +1779,10 @@ fn evaluate_scalar_arithmetic(
             RuntimePureScalar::USize(evaluate_scalar_numeric(lhs, op, rhs)),
         ),
         (RuntimePureScalar::F32(lhs), RuntimePureScalar::F32(rhs)) => Ok(RuntimePureScalar::F32(
-            RuntimeF32::from_f32(evaluate_scalar_numeric(lhs.to_f32(), op, rhs.to_f32())),
+            evaluate_scalar_numeric(lhs, op, rhs),
         )),
         (RuntimePureScalar::F64(lhs), RuntimePureScalar::F64(rhs)) => Ok(RuntimePureScalar::F64(
-            RuntimeF64::from_f64(evaluate_scalar_numeric(lhs.to_f64(), op, rhs.to_f64())),
+            evaluate_scalar_numeric(lhs, op, rhs),
         )),
         (lhs, rhs) => unsupported_scalar_binary(op, lhs, rhs),
     }

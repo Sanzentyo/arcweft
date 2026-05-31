@@ -6,7 +6,7 @@ use crate::task::{CancelScopeId, TaskEvent, TaskSpec};
 use crate::time::{LogicalDuration, TickId};
 use crate::value::RuntimeBinding;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct RuntimeStepInput {
     pub tick: TickId,
     pub dt: LogicalDuration,
@@ -23,7 +23,7 @@ pub struct RuntimeStepInput {
 /// Adapters should prefer this view when handing input data into lower runtime
 /// layers. The view keeps ownership at the adapter step boundary and makes it
 /// clear that runtime code must not retain borrowed event slices past the step.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RuntimeStepInputRef<'a> {
     tick: TickId,
     dt: LogicalDuration,
@@ -35,7 +35,7 @@ pub struct RuntimeStepInputRef<'a> {
     source_events: &'a [RuntimeSourceEvent],
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct RuntimeStepOutput {
     pub diagnostics: Vec<RuntimeDiagnostic>,
     pub flow_events: Vec<FlowEvent>,
@@ -44,7 +44,7 @@ pub struct RuntimeStepOutput {
 }
 
 /// Runtime-produced events and effect requests, kept as pure data for hosts.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct RuntimeEffectBatch {
     pub line: Vec<LineEffectRequest>,
     pub source_events: Vec<RuntimeSourceEvent>,
@@ -52,7 +52,7 @@ pub struct RuntimeEffectBatch {
 }
 
 /// Host-facing requests emitted by one deterministic runtime step.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct HostRequestBatch {
     pub tasks: Vec<TaskSpec>,
     pub cancel_scopes: Vec<CancelScopeId>,
@@ -60,7 +60,7 @@ pub struct HostRequestBatch {
 }
 
 /// Result envelope returned by the runtime step boundary.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeStepResult {
     pub output: RuntimeStepOutput,
     pub fiber_status: crate::engine::FlowFiberStatus,
@@ -69,7 +69,7 @@ pub struct RuntimeStepResult {
 }
 
 /// Deterministic counters for one runtime step.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct RuntimeStepStats {
     pub executed_ops: usize,
     pub pending_ops_before: usize,
@@ -85,7 +85,7 @@ pub struct RuntimeStepStats {
 }
 
 /// Deterministic counters for runtime pure helper acceleration.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct RuntimePureCallStats {
     pub pure_calls: usize,
     pub batch_calls: usize,
@@ -178,20 +178,20 @@ impl RuntimePureCallStats {
 }
 
 /// Runtime stepping policy selected by hosts and CLI tooling.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct RuntimeStepOptions {
     pub mode: RuntimeStepMode,
     pub budget: RuntimeStepBudget,
 }
 
 /// Deterministic work budget for one `Engine::step` call.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RuntimeStepBudget {
     pub max_ops: usize,
 }
 
 /// Runtime drain strategy. Adapter loops remain outside `arcweft-core`.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum RuntimeStepMode {
     #[default]
     OneOp,
@@ -201,7 +201,7 @@ pub enum RuntimeStepMode {
 }
 
 /// Reason the runtime stopped returning control to the host.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RuntimeStepStopReason {
     OneOp,
     Blocked,
@@ -219,28 +219,28 @@ pub struct RuntimeStepOutputSink<'a> {
     output: &'a mut RuntimeStepOutput,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeDiagnostic {
     pub message: String,
 }
 
 /// Named value provided by adapters or earlier runtime operations.
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct InputEvent {
     pub kind: String,
     pub payload: Option<String>,
 }
 
 /// UI event placeholder kept as Sans I/O data.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UiEvent {
     pub kind: String,
     pub payload: Option<String>,
 }
 
 /// Audio event placeholder kept as Sans I/O data.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AudioEvent {
     pub kind: String,
     pub payload: Option<String>,

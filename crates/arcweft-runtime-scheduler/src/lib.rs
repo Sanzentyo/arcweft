@@ -11,13 +11,13 @@ use arcweft_core::task::{
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Scheduler policy chosen by a host adapter.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RuntimeSchedulerConfig {
     pub default_budget: SchedulerBudget,
 }
 
 /// Deterministic runtime scheduler state.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeScheduler {
     config: RuntimeSchedulerConfig,
     next_order: u64,
@@ -31,14 +31,14 @@ pub struct RuntimeScheduler {
 }
 
 /// Tasks and cancellations ready for a host adapter.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct SchedulerDispatchBatch {
     pub tasks: Vec<TaskSpec>,
     pub cancel_scopes: Vec<CancelScopeId>,
 }
 
 /// Cumulative scheduler counters.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct RuntimeSchedulerStats {
     pub submitted: usize,
     pub joined: usize,
@@ -68,7 +68,7 @@ pub struct RuntimeSchedulerStats {
 }
 
 /// Cumulative task counters split by scheduler task class.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TaskClassCounts {
     pub local_ui: usize,
     pub io: usize,
@@ -123,13 +123,13 @@ impl TaskClassCounts {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct ScheduledTask {
     spec: TaskSpec,
     order: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct InFlightTask {
     key: TaskKey,
     class: TaskClass,

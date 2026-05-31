@@ -77,9 +77,11 @@ pub(super) fn literal_type(literal: &Literal) -> Option<TypeKind> {
     match literal {
         Literal::String(_) => Some(TypeKind::String),
         Literal::Char { .. } => Some(TypeKind::Char),
-        Literal::Int { suffix, .. } | Literal::Float { suffix, .. } => {
-            numeric_literal_suffix_type(suffix.as_deref())
+        Literal::Int { suffix, .. } => numeric_literal_suffix_type(suffix.as_deref()),
+        Literal::Float { suffix, .. } => {
+            numeric_literal_suffix_type(suffix.as_ref().map(|suffix| suffix.as_str()))
         }
+        Literal::UnitNumber { suffix, .. } => numeric_literal_suffix_type(Some(suffix.as_str())),
         Literal::Bool(_) => Some(TypeKind::Bool),
         Literal::Duration { .. } => Some(TypeKind::Duration),
     }

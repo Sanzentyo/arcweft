@@ -1,15 +1,14 @@
 use super::{
     Engine, FlowFiberStatus, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
-    RuntimeExprMatchArm, RuntimeF32, RuntimeF64, RuntimeFieldValue, RuntimeMatchArm,
-    RuntimeMatchSelection, RuntimePattern, RuntimeSeq, RuntimeStepOutput, RuntimeValue,
-    evaluate_binary, evaluate_unary, match_runtime_pattern, runtime_sequence_dense_i32,
-    runtime_sequence_dense_i64, runtime_sequence_from_literal_values,
-    runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
-    runtime_value_label, sum_i64_sequence_ref,
+    RuntimeExprMatchArm, RuntimeFieldValue, RuntimeMatchArm, RuntimeMatchSelection, RuntimePattern,
+    RuntimeSeq, RuntimeStepOutput, RuntimeValue, evaluate_binary, evaluate_unary,
+    match_runtime_pattern, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
+    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_sequence_values,
+    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::pure::{
-    RuntimeF32Args, RuntimeF64Args, RuntimeFixedArgs, RuntimeI32Args, RuntimeI64Args,
+    RuntimeFixedArgs, RuntimeFloat32Args, RuntimeFloat64Args, RuntimeI32Args, RuntimeI64Args,
     RuntimePureCallBackend, RuntimePureScalarInteger, VmRuntimePureCallBackend,
 };
 use crate::value::RuntimeBinaryOp;
@@ -467,12 +466,12 @@ impl Engine {
             .get(helper_id.0)
             .copied()
             .unwrap_or(false)
-            && args.len() <= RuntimeF32Args::MAX
+            && args.len() <= RuntimeFloat32Args::MAX
             && !args
                 .iter()
                 .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
         {
-            let mut values = [RuntimeF32::from_bits(0); RuntimeF32Args::MAX];
+            let mut values = [f32::from_bits(0); RuntimeFloat32Args::MAX];
             for (index, arg) in args.iter().enumerate() {
                 values[index] = self.evaluate_f32_arg_with_backend(arg, pure_backend)?;
             }
@@ -486,12 +485,12 @@ impl Engine {
             .get(helper_id.0)
             .copied()
             .unwrap_or(false)
-            && args.len() <= RuntimeF64Args::MAX
+            && args.len() <= RuntimeFloat64Args::MAX
             && !args
                 .iter()
                 .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
         {
-            let mut values = [RuntimeF64::from_bits(0); RuntimeF64Args::MAX];
+            let mut values = [f64::from_bits(0); RuntimeFloat64Args::MAX];
             for (index, arg) in args.iter().enumerate() {
                 values[index] = self.evaluate_f64_arg_with_backend(arg, pure_backend)?;
             }
@@ -528,7 +527,7 @@ impl Engine {
         &mut self,
         expr: &RuntimeExpr,
         pure_backend: &mut impl RuntimePureCallBackend,
-    ) -> Result<RuntimeF32, RuntimeEvalError> {
+    ) -> Result<f32, RuntimeEvalError> {
         match expr {
             RuntimeExpr::Value(RuntimeValue::F32(value)) => Ok(*value),
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
@@ -553,7 +552,7 @@ impl Engine {
         &mut self,
         expr: &RuntimeExpr,
         pure_backend: &mut impl RuntimePureCallBackend,
-    ) -> Result<RuntimeF64, RuntimeEvalError> {
+    ) -> Result<f64, RuntimeEvalError> {
         match expr {
             RuntimeExpr::Value(RuntimeValue::F64(value)) => Ok(*value),
             RuntimeExpr::Local(name) => match self.fiber.env.get(name) {

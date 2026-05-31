@@ -616,12 +616,12 @@ fn named_string_seq(args: &[EvaluatedHostArg], name: &str) -> Option<Vec<String>
             DenseSeq::F32(items) => items
                 .as_slice()
                 .iter()
-                .map(|value| value.to_f32().to_string())
+                .map(std::string::ToString::to_string)
                 .collect(),
             DenseSeq::F64(items) => items
                 .as_slice()
                 .iter()
-                .map(|value| value.to_f64().to_string())
+                .map(std::string::ToString::to_string)
                 .collect(),
             DenseSeq::Bool(items) => items.as_slice().iter().map(bool::to_string).collect(),
             DenseSeq::Chars(items) => items.as_slice().iter().map(char::to_string).collect(),
@@ -630,9 +630,7 @@ fn named_string_seq(args: &[EvaluatedHostArg], name: &str) -> Option<Vec<String>
                 .iter()
                 .map(|value| format!("{}ns", value.as_nanos()))
                 .collect(),
-            DenseSeq::Strings(items)
-            | DenseSeq::FloatLiterals(items)
-            | DenseSeq::EntityRefs(items) => items.as_slice().to_vec(),
+            DenseSeq::Strings(items) | DenseSeq::EntityRefs(items) => items.as_slice().to_vec(),
         },
         value => vec![runtime_value_to_string(value)],
     })
@@ -721,7 +719,6 @@ fn runtime_value_to_bytes(value: &RuntimeValue) -> Result<Vec<u8>, String> {
             | DenseSeq::Chars(_)
             | DenseSeq::Durations(_)
             | DenseSeq::Strings(_)
-            | DenseSeq::FloatLiterals(_)
             | DenseSeq::EntityRefs(_) => Err(format!(
                 "byte payload item must be Int, found {}",
                 super::runtime_value_label(value)
@@ -733,16 +730,14 @@ fn runtime_value_to_bytes(value: &RuntimeValue) -> Result<Vec<u8>, String> {
 
 fn runtime_value_to_string(value: &RuntimeValue) -> String {
     match value {
-        RuntimeValue::String(value)
-        | RuntimeValue::EntityRef(value)
-        | RuntimeValue::Float(value) => value.clone(),
+        RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Int(value) | RuntimeValue::ISize(value) => value.to_string(),
         RuntimeValue::I128(value) => value.to_string(),
         RuntimeValue::UInt(value) | RuntimeValue::USize(value) => value.to_string(),
         RuntimeValue::U128(value) => value.to_string(),
-        RuntimeValue::F32(value) => value.to_f32().to_string(),
-        RuntimeValue::F64(value) => value.to_f64().to_string(),
+        RuntimeValue::F32(value) => value.to_string(),
+        RuntimeValue::F64(value) => value.to_string(),
         RuntimeValue::Bool(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::Unit

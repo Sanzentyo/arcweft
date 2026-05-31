@@ -6,7 +6,7 @@ use crate::task::{
 };
 use crate::time::LogicalDuration;
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum ScopeExit {
     #[default]
     Completed,
@@ -15,7 +15,7 @@ pub enum ScopeExit {
 }
 
 /// Sans I/O runtime model for a dialogue line's scoped task group.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct LineTaskGroup {
     /// Root runtime scope for init work, child tasks, and grouped timeline work.
     pub root: LineTaskScope,
@@ -36,7 +36,7 @@ pub struct LineTaskGroup {
 }
 
 /// Runtime scope with a task graph and deterministic cleanup stacks.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct LineTaskScope {
     pub node: LineTaskNode,
     pub defer_stack: Vec<Vec<LineEffectRequest>>,
@@ -46,7 +46,7 @@ pub struct LineTaskScope {
 }
 
 /// Structured line-plan runtime graph.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum LineTaskNode {
     Seq(Vec<LineTaskNode>),
     Start(Vec<LineTaskNode>),
@@ -65,7 +65,7 @@ impl Default for LineTaskNode {
 }
 
 /// Parallel group execution policy.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum ParallelPolicy {
     #[default]
     JoinAll,
@@ -76,7 +76,7 @@ pub enum ParallelPolicy {
 /// Thread-local cleanup is modeled as a scoped defer stack, not as line-level
 /// `finally`. That keeps cancellation semantics identical for flow, handler,
 /// and line-plan threads.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LineChildTask {
     pub id: TaskId,
     pub key: Option<TaskKey>,
@@ -89,7 +89,7 @@ pub struct LineChildTask {
 }
 
 /// Condition that starts a line-scoped child task.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum LineTaskTrigger {
     #[default]
     Immediate,
@@ -98,7 +98,7 @@ pub enum LineTaskTrigger {
 }
 
 /// Whether the parent waits for a child task result.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum ChildJoinPolicy {
     #[default]
     Join,
@@ -106,7 +106,7 @@ pub enum ChildJoinPolicy {
 }
 
 /// How a child task exits when its owning scope is cancelled.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum ChildCancelPolicy {
     #[default]
     CancelAndJoin,
@@ -115,49 +115,49 @@ pub enum ChildCancelPolicy {
 }
 
 /// Option assignment preserved from a line plan.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LineOptionRequest {
     pub name: String,
     pub value: String,
 }
 
 /// Binding preserved from a line plan before full HIR execution exists.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LineBindingRequest {
     pub pattern: String,
     pub value: String,
 }
 
 /// `out` value exported from a line plan or cancel branch.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LineOutRequest {
     pub label: Option<String>,
     pub value: String,
 }
 
 /// Runtime representation of `cancel on ... { ... }`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LineCancelRuleRequest {
     pub trigger: String,
     pub action: Vec<LineEffectRequest>,
 }
 
 /// Line-local memo directive.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LineMemoRequest {
     pub name: String,
     pub options: Vec<RuntimeField>,
 }
 
 /// Runtime-checkable line assertion.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LineAssertionRequest {
     pub debug: bool,
     pub expr: String,
 }
 
 /// Declarative cleanup policy applied when the line scope exits.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct LineCleanupPolicy {
     pub child_tasks: ChildTaskCleanup,
     pub presentation: PresentationCleanup,
@@ -165,7 +165,7 @@ pub struct LineCleanupPolicy {
 }
 
 /// How line-scoped child tasks are treated on cleanup.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum ChildTaskCleanup {
     #[default]
     CancelAndJoin,
@@ -174,7 +174,7 @@ pub enum ChildTaskCleanup {
 }
 
 /// How presentation handles registered in the line lifetime are cleaned up.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum PresentationCleanup {
     #[default]
     DropRegistered,
@@ -182,7 +182,7 @@ pub enum PresentationCleanup {
 }
 
 /// How line-scoped audio handles are cleaned up.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum AudioCleanup {
     #[default]
     StopRegistered,

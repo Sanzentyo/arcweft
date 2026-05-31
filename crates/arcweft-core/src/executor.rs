@@ -18,7 +18,7 @@ pub trait RuntimeExecutor {
 }
 
 /// Runtime executor backed by the built-in Arcweft VM.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct VmExecutor {
     engine: Engine,
 }
@@ -28,7 +28,7 @@ pub struct VmExecutor {
 /// The current backend runs through the VM-compatible state machine after AOT
 /// shape analysis. Generated dispatch can replace that backend without changing
 /// host-facing executor selection.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AotExecutor {
     program: AotProgram,
     vm: VmExecutor,
@@ -36,7 +36,7 @@ pub struct AotExecutor {
 }
 
 /// Runtime executor backed by a bytecode bundle.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BytecodeVmExecutor {
     program: BytecodeProgram,
     vm: VmExecutor,

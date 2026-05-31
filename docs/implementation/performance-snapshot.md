@@ -154,11 +154,11 @@ runtime values and should not be forced into the scalar dense layer; repeated
 shape records or tuples need a separate columnar/struct-array optimization when
 there is a measured hot path. The checked-in benches above confirm that `i32`,
 `u64`, all supported integer widths, unit/bool/char/duration/bytes, textual
-values, typed `f32`/`f64` bit-value sequences, untyped float literals, entity
+values, native `f32`/`f64` sequences, entity
 refs, and wide integer length paths run without argument-vector allocation or
-dense flatten materialization. Typed floats use `RuntimeF32`/`RuntimeF64`
-bit newtypes so the runtime can expose borrowed dense views while keeping
-equality and replay deterministic.
+dense flatten materialization. Typed floats are stored as native Rust `f32`
+and `f64`; exact bit identity is measured through explicit `to_bits` checks
+rather than runtime value equality.
 
 Backend-aware pure batch parallel policy checks:
 
@@ -404,8 +404,8 @@ executed ops, with `pure_flatten_materializations_median = 0`,
 and no source path in the JSON output.
 
 The dense textual scalar length fixture covers homogeneous textual and typed
-float scalar runtime values. It keeps `String`, typed `f64` bit values, raw
-float literal text, and entity-reference sequences dense, including entity
+float scalar runtime values. It keeps `String`, typed native `f64` values,
+and entity-reference sequences dense, including entity
 references that are only known after runtime evaluation. The local path-free
 bench run reported median elapsed time 17200 ns
 for seven executed ops, with `pure_arg_vec_allocations_median = 0`,
@@ -420,10 +420,9 @@ for seven executed ops, with `pure_flatten_materializations_median = 0`,
 `pure_arg_vec_allocations_median = 0`, `pure_result_bytes_copied_median = 0`,
 and no source path in the JSON output.
 
-`DenseSeq::F32`/`DenseSeq::F64` use `RuntimeF32`/`RuntimeF64` bit newtypes,
-while `RuntimeValue::Float` continues to preserve raw source text for untyped
-float literals. Typed f32/f64 pure helper calls now use borrowed slice ABI in
-the VM flow path, so a natural `pure` call in a flow can avoid `Vec<RuntimeValue>`
+`DenseSeq::F32`/`DenseSeq::F64` use `DenseSeqStorage<f32>` and
+`DenseSeqStorage<f64>` directly. Typed f32/f64 pure helper calls now use
+borrowed slice ABI in the VM flow path, so a natural `pure` call in a flow can avoid `Vec<RuntimeValue>`
 argument allocation when the helper signature and expression are float-scalar
 only. Record/tuple storage should be designed separately as columnar storage
 rather than as scalar `DenseSeqStorage<T>`. The scalar dense coverage is

@@ -8,13 +8,12 @@ use crate::pure::{
     compare_pure_function_backend,
 };
 use crate::value::{
-    RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeF32, RuntimeF64,
-    RuntimeValue, runtime_sequence_dense_bool, runtime_sequence_dense_bytes,
-    runtime_sequence_dense_i8, runtime_sequence_dense_i16, runtime_sequence_dense_i32,
-    runtime_sequence_dense_i64, runtime_sequence_dense_i128, runtime_sequence_dense_isize,
-    runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
-    runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_sequence_dense_usize,
-    runtime_sequence_values,
+    RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeValue,
+    runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_i8,
+    runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
+    runtime_sequence_dense_i128, runtime_sequence_dense_isize, runtime_sequence_dense_u8,
+    runtime_sequence_dense_u16, runtime_sequence_dense_u32, runtime_sequence_dense_u64,
+    runtime_sequence_dense_u128, runtime_sequence_dense_usize, runtime_sequence_values,
 };
 
 fn int_binding(name: &str, value: i64) -> RuntimeBinding {
@@ -527,8 +526,8 @@ fn vm_runtime_f32_and_f64_slice_calls_preserve_float_width() {
         origin: RuntimePureHelperOrigin::Annotated,
     };
     let mut backend = VmRuntimePureCallBackend::default();
-    let f32_args = [RuntimeF32::from_f32(1.5), RuntimeF32::from_f32(2.0)];
-    let f64_args = [RuntimeF64::from_f64(1.5), RuntimeF64::from_f64(2.0)];
+    let f32_args = [1.5_f32, 2.0];
+    let f64_args = [1.5_f64, 2.0];
 
     let f32_value = backend
         .call_f32_slice(&f32_helper, &f32_args)
@@ -539,8 +538,8 @@ fn vm_runtime_f32_and_f64_slice_calls_preserve_float_width() {
         .expect("f64 pure call evaluates")
         .expect("f64 pure call returns a value");
 
-    assert_eq!(f32_value, RuntimeF32::from_f32(3.0));
-    assert_eq!(f64_value, RuntimeF64::from_f64(3.5));
+    assert_eq!(f32_value.to_bits(), 3.0_f32.to_bits());
+    assert_eq!(f64_value.to_bits(), 3.5_f64.to_bits());
     assert_eq!(backend.stats().pure_calls, 2);
     assert_eq!(backend.stats().arg_vec_allocations, 0);
     assert_eq!(backend.stats().arg_bytes_copied, 0);

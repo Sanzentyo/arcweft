@@ -12,7 +12,7 @@ pub struct StreamRuntimeId(pub String);
 /// The core runtime keeps this as deterministic data. Host adapters may execute
 /// the state machine or replace it with an equivalent backend implementation,
 /// but device acquisition never happens inside this plan.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct StreamPlan {
     pub id: StreamRuntimeId,
     pub item_ty: String,
@@ -21,7 +21,7 @@ pub struct StreamPlan {
 }
 
 /// One operation in a lowered stream transform.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum StreamOp {
     Let {
         pattern: RuntimePattern,
@@ -52,7 +52,7 @@ pub enum StreamOp {
 }
 
 /// One stream `match` arm.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct StreamMatchArm {
     pub pattern: RuntimePattern,
     pub guard: Option<RuntimeExpr>,
@@ -61,7 +61,7 @@ pub struct StreamMatchArm {
 
 /// Lowered live source declaration.
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct StreamRuntimeState {
     pub id: StreamRuntimeId,
     pub queue: VecDeque<RuntimePayload>,
@@ -71,7 +71,7 @@ pub struct StreamRuntimeState {
 
 /// Runtime stack frame used to make scope exit and loop transfer explicit.
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct StreamEvent<T, E> {
     pub stream: StreamRuntimeId,
     pub sequence: TaskSequence,

@@ -4,7 +4,7 @@ use crate::task::TaskSequence;
 use crate::value::{RuntimeExpr, RuntimePayload};
 use std::collections::VecDeque;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SourcePlan {
     pub id: SourceId,
     pub item_ty: String,
@@ -15,7 +15,7 @@ pub struct SourcePlan {
 }
 
 /// Handler for one live source event kind.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SourceHandlerPlan {
     Item {
         pattern: RuntimePattern,
@@ -41,7 +41,7 @@ pub enum SourceHandlerPlan {
 }
 
 /// Operation inside a source handler.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SourceOp {
     Yield(RuntimeExpr),
     Effect(LineEffectRequest),
@@ -53,7 +53,7 @@ pub enum SourceOp {
 
 /// One deterministic operation in a lowered flow program.
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SourceRuntimeState {
     pub id: SourceId,
     pub policy: SourcePolicy,
@@ -90,7 +90,7 @@ fn compare_source_events<T, E>(
         .then_with(|| left.sequence.cmp(&right.sequence))
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SourcePolicy {
     pub backpressure: BackpressurePolicy,
     pub replay: ReplayPolicy,
@@ -98,7 +98,7 @@ pub struct SourcePolicy {
     pub max_queue: usize,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum BackpressurePolicy {
     LatestOnly,
     BoundedQueue {
@@ -108,7 +108,7 @@ pub enum BackpressurePolicy {
     BlockingNotAllowed,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum OverflowPolicy {
     DropOldest,
     DropNewest,
@@ -116,7 +116,7 @@ pub enum OverflowPolicy {
     Coalesce,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ReplayPolicy {
     Full,
     HashOnly,
@@ -125,7 +125,7 @@ pub enum ReplayPolicy {
     None,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PrivacyPolicy {
     Transient,
     Redacted,
@@ -144,14 +144,14 @@ impl Default for SourcePolicy {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SourceEvent<T, E> {
     pub source: SourceId,
     pub sequence: TaskSequence,
     pub kind: SourceEventKind<T, E>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SourceEventKind<T, E> {
     Item(T),
     Progress(String),

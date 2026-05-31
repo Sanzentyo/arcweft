@@ -42,14 +42,14 @@ pub(crate) struct LoweredRuntimeFlows {
 }
 
 /// Runtime-plan lowering result plus compiler-side optimization counters.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimePlanLowerReport {
     pub plan: RuntimePlan,
     pub stats: RuntimePlanLowerStats,
 }
 
 /// Compiler-side counters for runtime-plan pure and flow optimization work.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct RuntimePlanLowerStats {
     pub pure_helpers: usize,
     pub pure_candidate_functions_seen: usize,

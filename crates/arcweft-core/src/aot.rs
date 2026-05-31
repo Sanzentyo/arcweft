@@ -6,14 +6,14 @@ use crate::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
 /// The artifact is pure data: it records dispatch-shape analysis that hosts can
 /// profile before generated dispatch replaces the VM-compatible executor
 /// backend.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AotProgram {
     flows: Vec<AotFlowBlock>,
     stats: AotProgramStats,
 }
 
 /// Per-flow dispatch shape emitted by AOT lowering.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AotFlowBlock {
     pub id: FlowRuntimeId,
     pub ops: usize,
@@ -22,14 +22,14 @@ pub struct AotFlowBlock {
 }
 
 /// Dispatch shape for a lowered flow.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum AotDispatchShape {
     Linear,
     Mixed,
 }
 
 /// Runtime operation class used by the AOT planner.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum AotOpClass {
     Linear,
     Branch,
@@ -41,7 +41,7 @@ pub enum AotOpClass {
 }
 
 /// Deterministic AOT shape counters for compiler and runtime profiling.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct AotProgramStats {
     pub flows: usize,
     pub ops: usize,

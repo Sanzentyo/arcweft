@@ -23,11 +23,11 @@ use crate::task::{
     TaskPolicy, TaskPriority, TaskSpec, normalize_task_events,
 };
 use crate::value::{
-    RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm, RuntimeF32,
-    RuntimeF64, RuntimeFieldValue, RuntimePayload, RuntimeSeq, RuntimeValue, evaluate_binary,
-    evaluate_unary, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
-    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_sequence_values,
-    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
+    RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm,
+    RuntimeFieldValue, RuntimePayload, RuntimeSeq, RuntimeValue, evaluate_binary, evaluate_unary,
+    runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_from_literal_values,
+    runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
+    runtime_value_label, sum_i64_sequence_ref,
 };
 use std::collections::{BTreeMap, VecDeque};
 pub mod aot;
@@ -38,7 +38,7 @@ pub mod source;
 pub mod stream;
 pub mod suspend;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Engine {
     plan: RuntimePlan,
     flow_positions: BTreeMap<FlowRuntimeId, usize>,
@@ -64,7 +64,7 @@ pub struct Engine {
 }
 
 /// Current flow execution cursor.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FlowFiber {
     pub line_cursor: usize,
     pub cursor: Option<FlowCursor>,
@@ -77,13 +77,13 @@ pub struct FlowFiber {
     pub status: FlowFiberStatus,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FlowControlStackEntry {
     pub kind: FlowControlStackEntryKind,
 }
 
 /// Structured frame kind for the minimal flow executor.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FlowControlStackEntryKind {
     Scope,
     Loop {
@@ -103,14 +103,14 @@ pub enum FlowControlStackEntryKind {
 }
 
 /// Position in a lowered flow program.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct FlowCursor {
     pub flow_index: usize,
     pub op_index: usize,
 }
 
 /// High-level flow status for the minimal runtime spine.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FlowFiberStatus {
     Running,
     Waiting(AwaitState),
@@ -121,7 +121,7 @@ pub enum FlowFiberStatus {
 }
 
 /// Suspended `await ... with` state.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AwaitState {
     pub binding: Option<RuntimePattern>,
     pub target: AwaitTarget,
@@ -129,7 +129,7 @@ pub struct AwaitState {
 }
 
 /// Suspended bounded fanout await state.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AwaitManyState {
     pub binding: Option<RuntimePattern>,
     pub target: AwaitManyTarget,
@@ -141,7 +141,7 @@ pub struct AwaitManyState {
 }
 
 /// One in-flight child task inside a bounded fanout await.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AwaitManyInFlight {
     pub index: usize,
     pub task: TaskId,
@@ -149,7 +149,7 @@ pub struct AwaitManyInFlight {
 }
 
 /// Suspended choice state.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ChoiceState {
     pub id: Option<String>,
     pub options: Vec<ChoiceRuntimeOption>,
@@ -157,7 +157,7 @@ pub struct ChoiceState {
 }
 
 /// Terminal flow result observed by the minimal runtime.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FlowExit {
     Done,
     Return(String),

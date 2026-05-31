@@ -90,7 +90,9 @@ pub(crate) fn call_arg_label(arg: &CallArg) -> String {
 pub(crate) fn literal_label(literal: &Literal) -> String {
     match literal {
         Literal::String(value) => format!("\"{value}\""),
-        Literal::Char { raw, .. } | Literal::Float { raw, .. } => raw.clone(),
+        Literal::Char { raw, .. }
+        | Literal::Float { raw, .. }
+        | Literal::UnitNumber { raw, .. } => raw.clone(),
         Literal::Int { value, .. } => value.to_string(),
         Literal::Bool(value) => value.to_string(),
         Literal::Duration { amount, unit } => format!(

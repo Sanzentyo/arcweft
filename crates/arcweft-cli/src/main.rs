@@ -5039,9 +5039,9 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         RuntimeValue::I128(value) => value.to_string(),
         RuntimeValue::UInt(value) | RuntimeValue::USize(value) => value.to_string(),
         RuntimeValue::U128(value) => value.to_string(),
-        RuntimeValue::F32(value) => value.to_f32().to_string(),
-        RuntimeValue::F64(value) => value.to_f64().to_string(),
-        RuntimeValue::Float(value) | RuntimeValue::String(value) => value.clone(),
+        RuntimeValue::F32(value) => value.to_string(),
+        RuntimeValue::F64(value) => value.to_string(),
+        RuntimeValue::String(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::EntityRef(value) => format!("@{value}"),
@@ -5104,9 +5104,6 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         }
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Strings(values))) => {
             format!("seq/strings/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::FloatLiterals(values))) => {
-            format!("seq/float_literals/{}", values.len())
         }
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::EntityRefs(values))) => {
             format!("seq/entity_refs/{}", values.len())
