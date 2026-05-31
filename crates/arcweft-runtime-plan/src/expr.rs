@@ -1375,7 +1375,7 @@ mod tests {
         assert!(matches!(
             isize_lowered,
             RuntimeExpr::Value(RuntimeValue::Seq(seq))
-                if seq.as_isize_values() == Some([1, 2, 3].as_slice())
+                if seq.as_isize_values() == Some(vec![1, 2, 3])
         ));
         assert!(matches!(
             u8_lowered,
@@ -1405,7 +1405,7 @@ mod tests {
         assert!(matches!(
             usize_lowered,
             RuntimeExpr::Value(RuntimeValue::Seq(seq))
-                if seq.as_usize_values() == Some([1, 2, 3].as_slice())
+                if seq.as_usize_values() == Some(vec![1, 2, 3])
         ));
     }
 

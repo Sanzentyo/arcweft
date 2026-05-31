@@ -348,7 +348,7 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
     let RuntimeValue::Seq(isize_seq) = isize_seq else {
         panic!("dense isize helper returns a sequence");
     };
-    assert_eq!(isize_seq.as_isize_values(), Some([1, 2, 3].as_slice()));
+    assert_eq!(isize_seq.as_isize_values(), Some(vec![1, 2, 3]));
     assert_eq!(isize_seq.sum_as_i64(), Some(6));
     let mut flat = Vec::new();
     assert!(!isize_seq.copy_i64_values_to(&mut flat));
@@ -380,7 +380,7 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
     let RuntimeValue::Seq(usize_seq) = usize_seq else {
         panic!("dense usize helper returns a sequence");
     };
-    assert_eq!(usize_seq.as_usize_values(), Some([1, 2].as_slice()));
+    assert_eq!(usize_seq.as_usize_values(), Some(vec![1, 2]));
     assert_eq!(usize_seq.sum_as_i64(), Some(3));
     let mut flat = Vec::new();
     assert!(!usize_seq.copy_i64_values_to(&mut flat));
@@ -589,7 +589,7 @@ fn literal_and_repeat_sequences_choose_dense_scalar_storage() {
     else {
         panic!("usize repeat lowers to a sequence");
     };
-    assert_eq!(usize_seq.as_usize_values(), Some([4, 4].as_slice()));
+    assert_eq!(usize_seq.as_usize_values(), Some(vec![4, 4]));
 
     let RuntimeValue::Seq(unit_repeat_seq) = runtime_sequence_repeat_value(&RuntimeValue::Unit, 2)
     else {

@@ -605,18 +605,24 @@ fn named_string_seq(args: &[EvaluatedHostArg], name: &str) -> Option<Vec<String>
             DenseSeq::I8(items) => items.as_slice().iter().map(i8::to_string).collect(),
             DenseSeq::I16(items) => items.as_slice().iter().map(i16::to_string).collect(),
             DenseSeq::I32(items) => items.as_slice().iter().map(i32::to_string).collect(),
-            DenseSeq::I64(items) | DenseSeq::ISize(items) => {
-                items.as_slice().iter().map(i64::to_string).collect()
-            }
+            DenseSeq::I64(items) => items.as_slice().iter().map(i64::to_string).collect(),
+            DenseSeq::ISize(items) => items
+                .as_slice()
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
             DenseSeq::I128(items) => items.as_slice().iter().map(i128::to_string).collect(),
             DenseSeq::U8(items) | DenseSeq::Bytes(items) => {
                 items.as_slice().iter().map(u8::to_string).collect()
             }
             DenseSeq::U16(items) => items.as_slice().iter().map(u16::to_string).collect(),
             DenseSeq::U32(items) => items.as_slice().iter().map(u32::to_string).collect(),
-            DenseSeq::U64(items) | DenseSeq::USize(items) => {
-                items.as_slice().iter().map(u64::to_string).collect()
-            }
+            DenseSeq::U64(items) => items.as_slice().iter().map(u64::to_string).collect(),
+            DenseSeq::USize(items) => items
+                .as_slice()
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
             DenseSeq::U128(items) => items.as_slice().iter().map(u128::to_string).collect(),
             DenseSeq::F32(items) => items
                 .as_slice()

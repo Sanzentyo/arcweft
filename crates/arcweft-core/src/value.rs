@@ -586,6 +586,51 @@ pub enum RuntimeSeqError {
     DuplicateRecordField { field: String },
 }
 
+/// Storage value for `isize`-semantic runtime integers.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub struct RuntimeISizeValue(i64);
+
+impl RuntimeISizeValue {
+    pub const fn new(value: i64) -> Self {
+        Self(value)
+    }
+
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+
+    #[must_use]
+    pub fn wrapping_neg(self) -> Self {
+        Self(self.0.wrapping_neg())
+    }
+}
+
+impl std::fmt::Display for RuntimeISizeValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// Storage value for `usize`-semantic runtime integers.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub struct RuntimeUSizeValue(u64);
+
+impl RuntimeUSizeValue {
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for RuntimeUSizeValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Exact integer storage that can cross runtime pure-helper fast paths without widening.
 pub trait RuntimeExactInteger: Copy + 'static {
     const INPUT_TYPE: RuntimePureInputType;
@@ -959,9 +1004,16 @@ impl RuntimeSeq {
         }
     }
 
-    pub fn as_isize_values(&self) -> Option<&[i64]> {
+    pub fn as_isize_values(&self) -> Option<Vec<i64>> {
         match self {
             Self::Dense(values) => values.as_isize_values(),
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
+        }
+    }
+
+    pub fn as_isize_storage(&self) -> Option<&[RuntimeISizeValue]> {
+        match self {
+            Self::Dense(values) => values.as_isize_storage(),
             Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
@@ -1022,9 +1074,16 @@ impl RuntimeSeq {
         }
     }
 
-    pub fn as_usize_values(&self) -> Option<&[u64]> {
+    pub fn as_usize_values(&self) -> Option<Vec<u64>> {
         match self {
             Self::Dense(values) => values.as_usize_values(),
+            Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
+        }
+    }
+
+    pub fn as_usize_storage(&self) -> Option<&[RuntimeUSizeValue]> {
+        match self {
+            Self::Dense(values) => values.as_usize_storage(),
             Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
     }
@@ -1144,14 +1203,6 @@ impl_runtime_exact_wide_signed_integer!(
     runtime_sequence_dense_i128,
     I128
 );
-impl_runtime_exact_signed_integer!(
-    i64,
-    ISize,
-    ISize,
-    as_isize_values,
-    runtime_sequence_dense_isize,
-    ISize
-);
 impl_runtime_exact_unsigned_integer!(u8, U8, U8, as_u8_slice, runtime_sequence_dense_u8, U8);
 impl_runtime_exact_unsigned_integer!(u16, U16, U16, as_u16_slice, runtime_sequence_dense_u16, U16);
 impl_runtime_exact_unsigned_integer!(u32, U32, U32, as_u32_slice, runtime_sequence_dense_u32, U32);
@@ -1164,6 +1215,93 @@ impl_runtime_exact_wide_unsigned_integer!(
     runtime_sequence_dense_u128,
     U128
 );
+
+impl RuntimeExactInteger for RuntimeISizeValue {
+    const INPUT_TYPE: RuntimePureInputType = RuntimePureInputType::ISize;
+    const OUTPUT_TYPE: RuntimePureOutputType = RuntimePureOutputType::ISize;
+
+    fn into_runtime_value(self) -> RuntimeValue {
+        RuntimeValue::isize(self.0)
+    }
+
+    fn try_from_runtime_value(helper: &str, value: RuntimeValue) -> Result<Self, RuntimeEvalError> {
+        match value {
+            RuntimeValue::Int(RuntimeInt::ISize(value)) => Ok(Self(value)),
+            value => Err(RuntimeEvalError::UnsupportedPure {
+                name: helper.to_owned(),
+                reason: format!(
+                    "pure isize result expected isize, got {}",
+                    runtime_value_label(&value)
+                ),
+            }),
+        }
+    }
+
+    fn try_sum_as_i64(self, _helper: &str) -> Result<i64, RuntimeEvalError> {
+        Ok(self.0)
+    }
+
+    fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
+        match seq {
+            RuntimeSeq::Dense(DenseSeq::ISize(values)) => Some(values.as_slice()),
+            RuntimeSeq::Values(_) | RuntimeSeq::TupleColumns(_) | RuntimeSeq::RecordColumns(_) => {
+                None
+            }
+            RuntimeSeq::Dense(_) => None,
+        }
+    }
+
+    fn dense_sequence(values: Vec<Self>) -> RuntimeValue {
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::ISize(DenseSeqStorage::new(
+            values,
+        ))))
+    }
+}
+
+impl RuntimeExactInteger for RuntimeUSizeValue {
+    const INPUT_TYPE: RuntimePureInputType = RuntimePureInputType::USize;
+    const OUTPUT_TYPE: RuntimePureOutputType = RuntimePureOutputType::USize;
+
+    fn into_runtime_value(self) -> RuntimeValue {
+        RuntimeValue::usize(self.0)
+    }
+
+    fn try_from_runtime_value(helper: &str, value: RuntimeValue) -> Result<Self, RuntimeEvalError> {
+        match value {
+            RuntimeValue::UInt(RuntimeUInt::USize(value)) => Ok(Self(value)),
+            value => Err(RuntimeEvalError::UnsupportedPure {
+                name: helper.to_owned(),
+                reason: format!(
+                    "pure usize result expected usize, got {}",
+                    runtime_value_label(&value)
+                ),
+            }),
+        }
+    }
+
+    fn try_sum_as_i64(self, helper: &str) -> Result<i64, RuntimeEvalError> {
+        i64::try_from(self.0).map_err(|_| RuntimeEvalError::UnsupportedPure {
+            name: helper.to_owned(),
+            reason: format!("pure usize result `{self}` cannot be represented as an i64 sum"),
+        })
+    }
+
+    fn seq_slice(seq: &RuntimeSeq) -> Option<&[Self]> {
+        match seq {
+            RuntimeSeq::Dense(DenseSeq::USize(values)) => Some(values.as_slice()),
+            RuntimeSeq::Values(_) | RuntimeSeq::TupleColumns(_) | RuntimeSeq::RecordColumns(_) => {
+                None
+            }
+            RuntimeSeq::Dense(_) => None,
+        }
+    }
+
+    fn dense_sequence(values: Vec<Self>) -> RuntimeValue {
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::USize(DenseSeqStorage::new(
+            values,
+        ))))
+    }
+}
 
 /// Homogeneous storage kind used by a dense runtime sequence.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1200,13 +1338,13 @@ pub enum DenseSeq {
     I32(DenseSeqStorage<i32>),
     I64(DenseSeqStorage<i64>),
     I128(DenseSeqStorage<i128>),
-    ISize(DenseSeqStorage<i64>),
+    ISize(DenseSeqStorage<RuntimeISizeValue>),
     U8(DenseSeqStorage<u8>),
     U16(DenseSeqStorage<u16>),
     U32(DenseSeqStorage<u32>),
     U64(DenseSeqStorage<u64>),
     U128(DenseSeqStorage<u128>),
-    USize(DenseSeqStorage<u64>),
+    USize(DenseSeqStorage<RuntimeUSizeValue>),
     F32(DenseSeqStorage<f32>),
     F64(DenseSeqStorage<f64>),
     Bool(DenseSeqStorage<bool>),
@@ -1243,7 +1381,9 @@ impl DenseSeq {
     }
 
     pub fn isize(values: Vec<i64>) -> Self {
-        Self::ISize(DenseSeqStorage::new(values))
+        Self::ISize(DenseSeqStorage::new(
+            values.into_iter().map(RuntimeISizeValue::new).collect(),
+        ))
     }
 
     pub fn u8(values: Vec<u8>) -> Self {
@@ -1267,7 +1407,9 @@ impl DenseSeq {
     }
 
     pub fn usize(values: Vec<u64>) -> Self {
-        Self::USize(DenseSeqStorage::new(values))
+        Self::USize(DenseSeqStorage::new(
+            values.into_iter().map(RuntimeUSizeValue::new).collect(),
+        ))
     }
 
     pub fn f32(values: Vec<f32>) -> Self {
@@ -1308,12 +1450,14 @@ impl DenseSeq {
             Self::I8(values) => values.len(),
             Self::I16(values) => values.len(),
             Self::I32(values) => values.len(),
-            Self::I64(values) | Self::ISize(values) => values.len(),
+            Self::I64(values) => values.len(),
+            Self::ISize(values) => values.len(),
             Self::I128(values) => values.len(),
             Self::U8(values) | Self::Bytes(values) => values.len(),
             Self::U16(values) => values.len(),
             Self::U32(values) => values.len(),
-            Self::U64(values) | Self::USize(values) => values.len(),
+            Self::U64(values) => values.len(),
+            Self::USize(values) => values.len(),
             Self::U128(values) => values.len(),
             Self::F32(values) => values.len(),
             Self::F64(values) => values.len(),
@@ -1484,7 +1628,12 @@ impl DenseSeq {
         }
     }
 
-    pub fn as_isize_values(&self) -> Option<&[i64]> {
+    pub fn as_isize_values(&self) -> Option<Vec<i64>> {
+        self.as_isize_storage()
+            .map(|values| values.iter().copied().map(RuntimeISizeValue::get).collect())
+    }
+
+    pub fn as_isize_storage(&self) -> Option<&[RuntimeISizeValue]> {
         match self {
             Self::ISize(values) => Some(values.as_slice()),
             _ => None,
@@ -1547,7 +1696,12 @@ impl DenseSeq {
         }
     }
 
-    pub fn as_usize_values(&self) -> Option<&[u64]> {
+    pub fn as_usize_values(&self) -> Option<Vec<u64>> {
+        self.as_usize_storage()
+            .map(|values| values.iter().copied().map(RuntimeUSizeValue::get).collect())
+    }
+
+    pub fn as_usize_storage(&self) -> Option<&[RuntimeUSizeValue]> {
         match self {
             Self::USize(values) => Some(values.as_slice()),
             _ => None,
@@ -1637,6 +1791,7 @@ impl DenseSeq {
             Self::ISize(values) => values
                 .into_vec()
                 .into_iter()
+                .map(RuntimeISizeValue::get)
                 .map(RuntimeValue::isize)
                 .collect(),
             Self::U8(values) | Self::Bytes(values) => values
@@ -1667,6 +1822,7 @@ impl DenseSeq {
             Self::USize(values) => values
                 .into_vec()
                 .into_iter()
+                .map(RuntimeUSizeValue::get)
                 .map(RuntimeValue::usize)
                 .collect(),
             Self::F32(values) => values
@@ -1723,13 +1879,13 @@ impl DenseSeq {
             Self::I32(values) => RuntimeValue::i32(values.as_slice()[index]),
             Self::I64(values) => RuntimeValue::i64(values.as_slice()[index]),
             Self::I128(values) => RuntimeValue::i128(values.as_slice()[index]),
-            Self::ISize(values) => RuntimeValue::isize(values.as_slice()[index]),
+            Self::ISize(values) => RuntimeValue::isize(values.as_slice()[index].get()),
             Self::U8(values) | Self::Bytes(values) => RuntimeValue::u8(values.as_slice()[index]),
             Self::U16(values) => RuntimeValue::u16(values.as_slice()[index]),
             Self::U32(values) => RuntimeValue::u32(values.as_slice()[index]),
             Self::U64(values) => RuntimeValue::u64(values.as_slice()[index]),
             Self::U128(values) => RuntimeValue::u128(values.as_slice()[index]),
-            Self::USize(values) => RuntimeValue::usize(values.as_slice()[index]),
+            Self::USize(values) => RuntimeValue::usize(values.as_slice()[index].get()),
             Self::F32(values) => RuntimeValue::F32(values.as_slice()[index]),
             Self::F64(values) => RuntimeValue::F64(values.as_slice()[index]),
             Self::Bool(values) => RuntimeValue::Bool(values.as_slice()[index]),
@@ -1798,7 +1954,15 @@ impl DenseSeq {
             Self::I8(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
             Self::I16(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
             Self::I32(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
-            Self::I64(values) | Self::ISize(values) => Some(values.as_slice().iter().sum()),
+            Self::I64(values) => Some(values.as_slice().iter().sum()),
+            Self::ISize(values) => Some(
+                values
+                    .as_slice()
+                    .iter()
+                    .copied()
+                    .map(RuntimeISizeValue::get)
+                    .sum(),
+            ),
             Self::I128(values) => values.as_slice().iter().try_fold(0_i64, |acc, value| {
                 i64::try_from(*value).ok().map(|value| acc + value)
             }),
@@ -1807,11 +1971,12 @@ impl DenseSeq {
             }
             Self::U16(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
             Self::U32(values) => Some(values.as_slice().iter().copied().map(i64::from).sum()),
-            Self::U64(values) | Self::USize(values) => {
-                values.as_slice().iter().try_fold(0_i64, |acc, value| {
-                    i64::try_from(*value).ok().map(|value| acc + value)
-                })
-            }
+            Self::U64(values) => values.as_slice().iter().try_fold(0_i64, |acc, value| {
+                i64::try_from(*value).ok().map(|value| acc + value)
+            }),
+            Self::USize(values) => values.as_slice().iter().try_fold(0_i64, |acc, value| {
+                i64::try_from(value.get()).ok().map(|value| acc + value)
+            }),
             Self::U128(values) => values.as_slice().iter().try_fold(0_i64, |acc, value| {
                 i64::try_from(*value).ok().map(|value| acc + value)
             }),
@@ -2316,16 +2481,6 @@ impl RuntimeEnv {
         }
     }
 
-    pub(crate) fn replace_root_usize_bindings(&mut self, input_names: &[String], args: &[u64]) {
-        if self.scopes.is_empty() {
-            self.scopes.push(RuntimeScope::default());
-        }
-        self.scopes.truncate(1);
-        if let Some(scope) = self.scopes.first_mut() {
-            scope.replace_usize_bindings(input_names, args);
-        }
-    }
-
     pub(crate) fn replace_root_value_bindings_ref(
         &mut self,
         input_names: &[String],
@@ -2509,32 +2664,6 @@ impl RuntimeScope {
                 .map(|(name, value)| RuntimeBinding {
                     name: name.clone(),
                     value: value.into_runtime_value(),
-                }),
-        );
-    }
-
-    fn replace_usize_bindings(&mut self, input_names: &[String], args: &[u64]) {
-        if self.bindings.len() == input_names.len()
-            && self
-                .bindings
-                .iter()
-                .zip(input_names)
-                .all(|(binding, name)| binding.name == *name)
-        {
-            self.bindings
-                .iter_mut()
-                .zip(args.iter().copied())
-                .for_each(|(binding, value)| binding.value = RuntimeValue::usize(value));
-            return;
-        }
-        self.bindings.clear();
-        self.bindings.extend(
-            input_names
-                .iter()
-                .zip(args.iter().copied())
-                .map(|(name, value)| RuntimeBinding {
-                    name: name.clone(),
-                    value: RuntimeValue::usize(value),
                 }),
         );
     }
@@ -2897,6 +3026,42 @@ macro_rules! impl_float_numeric {
 
 impl_wrapping_numeric!(i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);
 impl_float_numeric!(f32, f64);
+
+impl RuntimeDeterministicNumeric for RuntimeISizeValue {
+    fn add(lhs: Self, rhs: Self) -> Self {
+        Self(lhs.0.wrapping_add(rhs.0))
+    }
+
+    fn sub(lhs: Self, rhs: Self) -> Self {
+        Self(lhs.0.wrapping_sub(rhs.0))
+    }
+
+    fn mul(lhs: Self, rhs: Self) -> Self {
+        Self(lhs.0.wrapping_mul(rhs.0))
+    }
+
+    fn div(lhs: Self, rhs: Self) -> Self {
+        Self(lhs.0.wrapping_div(rhs.0))
+    }
+}
+
+impl RuntimeDeterministicNumeric for RuntimeUSizeValue {
+    fn add(lhs: Self, rhs: Self) -> Self {
+        Self(lhs.0.wrapping_add(rhs.0))
+    }
+
+    fn sub(lhs: Self, rhs: Self) -> Self {
+        Self(lhs.0.wrapping_sub(rhs.0))
+    }
+
+    fn mul(lhs: Self, rhs: Self) -> Self {
+        Self(lhs.0.wrapping_mul(rhs.0))
+    }
+
+    fn div(lhs: Self, rhs: Self) -> Self {
+        Self(lhs.0.wrapping_div(rhs.0))
+    }
+}
 
 pub(crate) fn evaluate_numeric_op<T: RuntimeDeterministicNumeric>(
     lhs: T,

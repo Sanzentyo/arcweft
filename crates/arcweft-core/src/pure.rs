@@ -3,10 +3,10 @@ use crate::plan::{RuntimePureHelper, RuntimePureInputType, RuntimePureOutputType
 use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExactInteger,
-    RuntimeExpr, RuntimeFieldValue, RuntimeIntrinsic, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
-    evaluate_binary, evaluate_numeric_op, evaluate_unary, runtime_binary_op_label,
-    runtime_sequence_values, runtime_unary_op_label, runtime_value_into_sequence_values,
-    runtime_value_label, sum_i64_sequence_ref,
+    RuntimeExpr, RuntimeFieldValue, RuntimeISizeValue, RuntimeIntrinsic, RuntimeSeq,
+    RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue, evaluate_binary, evaluate_numeric_op,
+    evaluate_unary, runtime_binary_op_label, runtime_sequence_values, runtime_unary_op_label,
+    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
 use std::collections::BTreeMap;
 
@@ -94,12 +94,23 @@ impl_runtime_pure_scalar_integer!(i8, I8);
 impl_runtime_pure_scalar_integer!(i16, I16);
 impl_runtime_pure_scalar_integer!(i32, I32);
 impl_runtime_pure_scalar_integer!(i128, I128);
-impl_runtime_pure_scalar_integer!(i64, ISize);
 impl_runtime_pure_scalar_integer!(u8, U8);
 impl_runtime_pure_scalar_integer!(u16, U16);
 impl_runtime_pure_scalar_integer!(u32, U32);
 impl_runtime_pure_scalar_integer!(u64, U64);
 impl_runtime_pure_scalar_integer!(u128, U128);
+
+impl RuntimePureScalarInteger for RuntimeISizeValue {
+    fn into_pure_scalar(self) -> RuntimePureScalar {
+        RuntimePureScalar::ISize(self.get())
+    }
+}
+
+impl RuntimePureScalarInteger for RuntimeUSizeValue {
+    fn into_pure_scalar(self) -> RuntimePureScalar {
+        RuntimePureScalar::USize(self.get())
+    }
+}
 
 /// Runtime-facing backend for deterministic pure helper calls.
 pub trait RuntimePureCallBackend {
@@ -152,28 +163,6 @@ pub trait RuntimePureCallBackend {
         arity: usize,
         out: &mut [T],
     ) -> Result<(), RuntimeEvalError>;
-
-    fn call_usize_slice(
-        &mut self,
-        helper: &RuntimePureHelper,
-        args: &[u64],
-    ) -> Result<Option<u64>, RuntimeEvalError>;
-
-    fn call_usize_flat_batch(
-        &mut self,
-        helper: &RuntimePureHelper,
-        flat_inputs: &[u64],
-        arity: usize,
-        out: &mut [u64],
-    ) -> Result<(), RuntimeEvalError>;
-
-    fn call_usize_flat_batch_sum(
-        &mut self,
-        helper: &RuntimePureHelper,
-        flat_inputs: &[u64],
-        arity: usize,
-        rows: usize,
-    ) -> Result<i64, RuntimeEvalError>;
 
     fn call_i64(
         &mut self,
@@ -559,32 +548,6 @@ impl VmPureFunctionScratch {
         }
         self.env
             .replace_root_exact_int_bindings(&helper.input_names, args);
-        let mut evaluator = PureEvaluator::with_env(std::mem::take(&mut self.env));
-        let result = if helper.scalar_eval_supported {
-            evaluator
-                .evaluate_scalar_expr(&helper.expr)
-                .map(RuntimePureScalar::into_runtime_value)
-        } else {
-            evaluator.evaluate_expr(&helper.expr)
-        };
-        self.env = evaluator.into_env();
-        result
-    }
-
-    pub fn evaluate_usize_slice(
-        &mut self,
-        helper: &RuntimePureHelper,
-        args: &[u64],
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
-        if args.len() != helper.input_names.len() {
-            return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.name.clone(),
-                max: helper.input_names.len(),
-                found: args.len(),
-            });
-        }
-        self.env
-            .replace_root_usize_bindings(&helper.input_names, args);
         let mut evaluator = PureEvaluator::with_env(std::mem::take(&mut self.env));
         let result = if helper.scalar_eval_supported {
             evaluator
@@ -1009,85 +972,6 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         for row in flat_inputs.chunks_exact(arity) {
             let value = self.scratch.evaluate_exact_int_slice::<T>(helper, row)?;
             sum += T::try_from_runtime_value(&helper.name, value)?.try_sum_as_i64(&helper.name)?;
-        }
-        Ok(sum)
-    }
-
-    fn call_usize_slice(
-        &mut self,
-        helper: &RuntimePureHelper,
-        args: &[u64],
-    ) -> Result<Option<u64>, RuntimeEvalError> {
-        validate_usize_slice_shape(helper, args.len())?;
-        self.stats.pure_calls += 1;
-        self.stats.vm_calls += 1;
-        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
-        let value = self.scratch.evaluate_usize_slice(helper, args)?;
-        runtime_value_into_usize_result(helper, value).map(Some)
-    }
-
-    fn call_usize_flat_batch(
-        &mut self,
-        helper: &RuntimePureHelper,
-        flat_inputs: &[u64],
-        arity: usize,
-        out: &mut [u64],
-    ) -> Result<(), RuntimeEvalError> {
-        validate_usize_flat_batch_shape(helper, flat_inputs.len(), arity, out.len())?;
-        self.stats.batch_calls += 1;
-        self.stats.batch_items += out.len();
-        self.stats.flat_batch_calls += 1;
-        self.stats.flat_batch_items += out.len();
-        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
-        self.stats.pure_calls += out.len();
-        self.stats.vm_calls += out.len();
-        self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
-        self.stats.result_bytes_copied += std::mem::size_of_val(out);
-        if arity == 0 {
-            return out.iter_mut().try_for_each(|slot| {
-                let value = self.scratch.evaluate_usize_slice(helper, &[])?;
-                *slot = runtime_value_into_usize_result(helper, value)?;
-                Ok(())
-            });
-        }
-        flat_inputs
-            .chunks_exact(arity)
-            .zip(out.iter_mut())
-            .try_for_each(|(row, slot)| {
-                let value = self.scratch.evaluate_usize_slice(helper, row)?;
-                *slot = runtime_value_into_usize_result(helper, value)?;
-                Ok(())
-            })
-    }
-
-    fn call_usize_flat_batch_sum(
-        &mut self,
-        helper: &RuntimePureHelper,
-        flat_inputs: &[u64],
-        arity: usize,
-        rows: usize,
-    ) -> Result<i64, RuntimeEvalError> {
-        validate_usize_flat_batch_shape(helper, flat_inputs.len(), arity, rows)?;
-        self.stats.batch_calls += 1;
-        self.stats.batch_items += rows;
-        self.stats.flat_batch_calls += 1;
-        self.stats.flat_batch_items += rows;
-        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(flat_inputs);
-        self.stats.pure_calls += rows;
-        self.stats.vm_calls += rows;
-        self.stats.arg_bytes_borrowed += std::mem::size_of_val(flat_inputs);
-        let mut sum = 0_i64;
-        if arity == 0 {
-            for _ in 0..rows {
-                let value = self.scratch.evaluate_usize_slice(helper, &[])?;
-                sum +=
-                    usize_result_as_i64(helper, runtime_value_into_usize_result(helper, value)?)?;
-            }
-            return Ok(sum);
-        }
-        for row in flat_inputs.chunks_exact(arity) {
-            let value = self.scratch.evaluate_usize_slice(helper, row)?;
-            sum += usize_result_as_i64(helper, runtime_value_into_usize_result(helper, value)?)?;
         }
         Ok(sum)
     }
@@ -1696,37 +1580,6 @@ impl AotPureScalarPlan {
         )?;
         T::try_from_runtime_value(&self.name, value.into_runtime_value())
             .map(|value| (value, stats))
-    }
-
-    /// Calls the compiled helper with `usize`-semantic runtime inputs.
-    pub fn call_usize_with_inputs_scratch(
-        &self,
-        inputs: &[u64],
-        slots: &mut Vec<RuntimePureScalar>,
-    ) -> Result<(u64, PureFunctionStats), RuntimeEvalError> {
-        if self.input_type != RuntimePureInputType::USize
-            || self.output_type != RuntimePureOutputType::USize
-        {
-            return Err(unsupported_aot(
-                &self.name,
-                "AOT scalar helper type does not match usize call",
-            ));
-        }
-        let (value, stats) = self.call_with_scalar_inputs_scratch(
-            inputs.iter().copied().map(RuntimePureScalar::USize),
-            inputs.len(),
-            slots,
-        )?;
-        match value {
-            RuntimePureScalar::USize(value) => Ok((value, stats)),
-            value => Err(unsupported_aot(
-                &self.name,
-                format!(
-                    "AOT scalar usize result expected usize, got {}",
-                    value.label()
-                ),
-            )),
-        }
     }
 
     /// Calls the compiled helper with `f32` inputs.
@@ -2511,75 +2364,6 @@ fn runtime_value_into_f64_result(
             ),
         }),
     }
-}
-
-fn runtime_value_into_usize_result(
-    helper: &RuntimePureHelper,
-    value: RuntimeValue,
-) -> Result<u64, RuntimeEvalError> {
-    match value {
-        RuntimeValue::UInt(crate::value::RuntimeUInt::USize(value)) => Ok(value),
-        value => Err(RuntimeEvalError::UnsupportedPure {
-            name: helper.name.clone(),
-            reason: format!(
-                "pure usize result expected usize, got {}",
-                runtime_value_label(&value)
-            ),
-        }),
-    }
-}
-
-fn usize_result_as_i64(helper: &RuntimePureHelper, value: u64) -> Result<i64, RuntimeEvalError> {
-    i64::try_from(value).map_err(|_| RuntimeEvalError::UnsupportedPure {
-        name: helper.name.clone(),
-        reason: format!("pure usize result `{value}` cannot be represented as an i64 sum"),
-    })
-}
-
-fn validate_usize_slice_shape(
-    helper: &RuntimePureHelper,
-    arg_len: usize,
-) -> Result<(), RuntimeEvalError> {
-    if arg_len > RuntimeFixedArgs::<u64>::MAX {
-        return Err(RuntimeEvalError::TooManyPureArgs {
-            helper: helper.name.clone(),
-            max: RuntimeFixedArgs::<u64>::MAX,
-            found: arg_len,
-        });
-    }
-    if helper.output_type != RuntimePureOutputType::USize
-        || helper.input_types.len() != helper.input_names.len()
-        || !helper
-            .input_types
-            .iter()
-            .all(|input| *input == RuntimePureInputType::USize)
-    {
-        return Err(RuntimeEvalError::UnsupportedPure {
-            name: helper.name.clone(),
-            reason: "usize call type does not match helper signature".to_owned(),
-        });
-    }
-    Ok(())
-}
-
-fn validate_usize_flat_batch_shape(
-    helper: &RuntimePureHelper,
-    flat_input_len: usize,
-    arity: usize,
-    rows: usize,
-) -> Result<(), RuntimeEvalError> {
-    validate_usize_slice_shape(helper, arity)?;
-    if flat_input_len != rows.saturating_mul(arity) {
-        return Err(RuntimeEvalError::UnsupportedPure {
-            name: helper.name.clone(),
-            reason: format!(
-                "pure flat batch expected {} input value(s), got {}",
-                rows.saturating_mul(arity),
-                flat_input_len
-            ),
-        });
-    }
-    Ok(())
 }
 
 fn validate_exact_int_flat_batch_shape<T: RuntimePureScalarInteger>(

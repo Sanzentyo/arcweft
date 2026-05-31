@@ -278,20 +278,6 @@ impl RuntimePureAotPlan {
         }
     }
 
-    fn call_usize_with_inputs_scratch(
-        &self,
-        inputs: &[u64],
-        slots: &mut Vec<RuntimePureScalar>,
-    ) -> Result<(u64, PureFunctionStats), RuntimeEvalError> {
-        match self {
-            Self::Scalar(plan) => plan.call_usize_with_inputs_scratch(inputs, slots),
-            Self::I64(plan) => Err(RuntimeEvalError::UnsupportedPure {
-                name: plan.name().to_owned(),
-                reason: "AOT i64 plan is not a usize scalar plan".to_owned(),
-            }),
-        }
-    }
-
     fn call_f64_with_inputs_scratch(
         &self,
         inputs: &[f64],
@@ -1321,132 +1307,6 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         }
     }
 
-    fn call_usize_slice(
-        &mut self,
-        helper: &RuntimePureHelper,
-        args: &[u64],
-    ) -> Result<Option<u64>, RuntimeEvalError> {
-        validate_usize_slice_shape(helper, args.len())?;
-        self.stats.pure_calls += 1;
-        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
-        match cache_entry(&self.cache, helper.id) {
-            Some(
-                RuntimePureCacheEntry::Aot(compiled)
-                | RuntimePureCacheEntry::AutoAot {
-                    aot: compiled,
-                    jit: None,
-                    ..
-                },
-            ) => {
-                self.compile_stats.cache_hits += 1;
-                self.stats.aot_calls += 1;
-                compiled
-                    .call_usize_with_inputs_scratch(args, &mut self.aot_scalar_slots)
-                    .map(|(value, _)| Some(value))
-            }
-            Some(_) => {
-                self.compile_stats.cache_hits += 1;
-                self.stats.vm_calls += 1;
-                self.stats.fallbacks += 1;
-                vm_usize_result(helper, self.vm_scratch.evaluate_usize_slice(helper, args)?)
-                    .map(Some)
-            }
-            None => {
-                self.compile_stats.cache_misses += 1;
-                self.stats.vm_calls += 1;
-                self.stats.fallbacks += 1;
-                vm_usize_result(helper, self.vm_scratch.evaluate_usize_slice(helper, args)?)
-                    .map(Some)
-            }
-        }
-    }
-
-    fn call_usize_flat_batch(
-        &mut self,
-        helper: &RuntimePureHelper,
-        flat_inputs: &[u64],
-        arity: usize,
-        out: &mut [u64],
-    ) -> Result<(), RuntimeEvalError> {
-        validate_usize_flat_batch_shape(helper, flat_inputs.len(), arity, out.len())?;
-        self.record_flat_batch_stats(flat_inputs, out.len(), true);
-        match cache_entry(&self.cache, helper.id) {
-            Some(
-                RuntimePureCacheEntry::Aot(compiled)
-                | RuntimePureCacheEntry::AutoAot {
-                    aot: compiled,
-                    jit: None,
-                    ..
-                },
-            ) => {
-                self.compile_stats.cache_hits += 1;
-                self.stats.aot_calls += out.len();
-                call_aot_usize_flat_batch(
-                    compiled,
-                    flat_inputs,
-                    arity,
-                    out,
-                    &mut self.aot_scalar_slots,
-                )
-            }
-            Some(_) => {
-                self.compile_stats.cache_hits += 1;
-                self.stats.vm_calls += out.len();
-                self.stats.fallbacks += out.len();
-                call_vm_usize_flat_batch(helper, flat_inputs, arity, out, &mut self.vm_scratch)
-            }
-            None => {
-                self.compile_stats.cache_misses += 1;
-                self.stats.vm_calls += out.len();
-                self.stats.fallbacks += out.len();
-                call_vm_usize_flat_batch(helper, flat_inputs, arity, out, &mut self.vm_scratch)
-            }
-        }
-    }
-
-    fn call_usize_flat_batch_sum(
-        &mut self,
-        helper: &RuntimePureHelper,
-        flat_inputs: &[u64],
-        arity: usize,
-        rows: usize,
-    ) -> Result<i64, RuntimeEvalError> {
-        validate_usize_flat_batch_shape(helper, flat_inputs.len(), arity, rows)?;
-        self.record_flat_batch_stats(flat_inputs, rows, false);
-        match cache_entry(&self.cache, helper.id) {
-            Some(
-                RuntimePureCacheEntry::Aot(compiled)
-                | RuntimePureCacheEntry::AutoAot {
-                    aot: compiled,
-                    jit: None,
-                    ..
-                },
-            ) => {
-                self.compile_stats.cache_hits += 1;
-                self.stats.aot_calls += rows;
-                call_aot_usize_flat_batch_sum(
-                    compiled,
-                    flat_inputs,
-                    arity,
-                    rows,
-                    &mut self.aot_scalar_slots,
-                )
-            }
-            Some(_) => {
-                self.compile_stats.cache_hits += 1;
-                self.stats.vm_calls += rows;
-                self.stats.fallbacks += rows;
-                call_vm_usize_flat_batch_sum(helper, flat_inputs, arity, rows, &mut self.vm_scratch)
-            }
-            None => {
-                self.compile_stats.cache_misses += 1;
-                self.stats.vm_calls += rows;
-                self.stats.fallbacks += rows;
-                call_vm_usize_flat_batch_sum(helper, flat_inputs, arity, rows, &mut self.vm_scratch)
-            }
-        }
-    }
-
     fn call_i64(
         &mut self,
         helper: &RuntimePureHelper,
@@ -2305,61 +2165,6 @@ fn validate_exact_int_slice_shape<T: RuntimePureScalarInteger>(
             reason: format!(
                 "pure slice expected {} input value(s), got {arg_len}",
                 helper.input_names.len()
-            ),
-        });
-    }
-    Ok(())
-}
-
-fn validate_usize_slice_shape(
-    helper: &RuntimePureHelper,
-    arg_len: usize,
-) -> Result<(), RuntimeEvalError> {
-    if arg_len > RuntimeFixedArgs::<u64>::MAX {
-        return Err(RuntimeEvalError::TooManyPureArgs {
-            helper: helper.name.clone(),
-            max: RuntimeFixedArgs::<u64>::MAX,
-            found: arg_len,
-        });
-    }
-    if helper.output_type != RuntimePureOutputType::USize
-        || helper.input_types.len() != helper.input_names.len()
-        || !helper
-            .input_types
-            .iter()
-            .all(|input| *input == RuntimePureInputType::USize)
-    {
-        return Err(RuntimeEvalError::UnsupportedPure {
-            name: helper.name.clone(),
-            reason: "usize slice type does not match helper signature".to_owned(),
-        });
-    }
-    if arg_len != helper.input_names.len() {
-        return Err(RuntimeEvalError::UnsupportedPure {
-            name: helper.name.clone(),
-            reason: format!(
-                "pure slice expected {} input value(s), got {arg_len}",
-                helper.input_names.len()
-            ),
-        });
-    }
-    Ok(())
-}
-
-fn validate_usize_flat_batch_shape(
-    helper: &RuntimePureHelper,
-    flat_input_len: usize,
-    arity: usize,
-    rows: usize,
-) -> Result<(), RuntimeEvalError> {
-    validate_usize_slice_shape(helper, arity)?;
-    if flat_input_len != rows.saturating_mul(arity) {
-        return Err(RuntimeEvalError::UnsupportedPure {
-            name: helper.name.clone(),
-            reason: format!(
-                "pure flat batch expected {} input value(s), got {}",
-                rows.saturating_mul(arity),
-                flat_input_len
             ),
         });
     }
@@ -3239,50 +3044,6 @@ fn call_vm_exact_int_flat_batch<T: RuntimePureScalarInteger>(
         })
 }
 
-fn call_vm_usize_flat_batch_sum(
-    helper: &RuntimePureHelper,
-    flat_inputs: &[u64],
-    arity: usize,
-    rows: usize,
-    scratch: &mut VmPureFunctionScratch,
-) -> Result<i64, RuntimeEvalError> {
-    let mut sum = 0_i64;
-    if arity == 0 {
-        for _ in 0..rows {
-            let value = vm_usize_result(helper, scratch.evaluate_usize_slice(helper, &[])?)?;
-            sum += usize_result_as_i64(helper, value)?;
-        }
-        return Ok(sum);
-    }
-    for row in flat_inputs.chunks_exact(arity) {
-        let value = vm_usize_result(helper, scratch.evaluate_usize_slice(helper, row)?)?;
-        sum += usize_result_as_i64(helper, value)?;
-    }
-    Ok(sum)
-}
-
-fn call_vm_usize_flat_batch(
-    helper: &RuntimePureHelper,
-    flat_inputs: &[u64],
-    arity: usize,
-    out: &mut [u64],
-    scratch: &mut VmPureFunctionScratch,
-) -> Result<(), RuntimeEvalError> {
-    if arity == 0 {
-        return out.iter_mut().try_for_each(|slot| {
-            *slot = vm_usize_result(helper, scratch.evaluate_usize_slice(helper, &[])?)?;
-            Ok(())
-        });
-    }
-    flat_inputs
-        .chunks_exact(arity)
-        .zip(out.iter_mut())
-        .try_for_each(|(row, slot)| {
-            *slot = vm_usize_result(helper, scratch.evaluate_usize_slice(helper, row)?)?;
-            Ok(())
-        })
-}
-
 fn call_aot_exact_int_flat_batch<T: RuntimePureScalarInteger>(
     compiled: &RuntimePureAotPlan,
     flat_inputs: &[T],
@@ -3307,30 +3068,6 @@ fn call_aot_exact_int_flat_batch<T: RuntimePureScalarInteger>(
         })
 }
 
-fn call_aot_usize_flat_batch(
-    compiled: &RuntimePureAotPlan,
-    flat_inputs: &[u64],
-    arity: usize,
-    out: &mut [u64],
-    slots: &mut Vec<RuntimePureScalar>,
-) -> Result<(), RuntimeEvalError> {
-    if arity == 0 {
-        return out.iter_mut().try_for_each(|slot| {
-            let (value, _) = compiled.call_usize_with_inputs_scratch(&[], slots)?;
-            *slot = value;
-            Ok(())
-        });
-    }
-    flat_inputs
-        .chunks_exact(arity)
-        .zip(out.iter_mut())
-        .try_for_each(|(row, slot)| {
-            let (value, _) = compiled.call_usize_with_inputs_scratch(row, slots)?;
-            *slot = value;
-            Ok(())
-        })
-}
-
 fn call_aot_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
     compiled: &RuntimePureAotPlan,
     flat_inputs: &[T],
@@ -3349,28 +3086,6 @@ fn call_aot_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
     for row in flat_inputs.chunks_exact(arity) {
         let (value, _) = compiled.call_exact_int_with_inputs_scratch(row, slots)?;
         sum += value.try_sum_as_i64("aot_exact_int_batch_sum")?;
-    }
-    Ok(sum)
-}
-
-fn call_aot_usize_flat_batch_sum(
-    compiled: &RuntimePureAotPlan,
-    flat_inputs: &[u64],
-    arity: usize,
-    rows: usize,
-    slots: &mut Vec<RuntimePureScalar>,
-) -> Result<i64, RuntimeEvalError> {
-    let mut sum = 0_i64;
-    if arity == 0 {
-        for _ in 0..rows {
-            let (value, _) = compiled.call_usize_with_inputs_scratch(&[], slots)?;
-            sum += usize_result_as_i64_name("aot_usize_batch_sum", value)?;
-        }
-        return Ok(sum);
-    }
-    for row in flat_inputs.chunks_exact(arity) {
-        let (value, _) = compiled.call_usize_with_inputs_scratch(row, slots)?;
-        sum += usize_result_as_i64_name("aot_usize_batch_sum", value)?;
     }
     Ok(sum)
 }
@@ -3505,33 +3220,6 @@ fn vm_f64_result(helper: &RuntimePureHelper, value: RuntimeValue) -> Result<f64,
             ),
         }),
     }
-}
-
-fn vm_usize_result(
-    helper: &RuntimePureHelper,
-    value: RuntimeValue,
-) -> Result<u64, RuntimeEvalError> {
-    match value {
-        RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::USize(value)) => Ok(value),
-        value => Err(RuntimeEvalError::UnsupportedPure {
-            name: helper.name.clone(),
-            reason: format!(
-                "pure usize result expected usize, got {}",
-                runtime_value_kind(&value)
-            ),
-        }),
-    }
-}
-
-fn usize_result_as_i64(helper: &RuntimePureHelper, value: u64) -> Result<i64, RuntimeEvalError> {
-    usize_result_as_i64_name(&helper.name, value)
-}
-
-fn usize_result_as_i64_name(name: &str, value: u64) -> Result<i64, RuntimeEvalError> {
-    i64::try_from(value).map_err(|_| RuntimeEvalError::UnsupportedPure {
-        name: name.to_owned(),
-        reason: format!("pure usize result `{value}` cannot be represented as an i64 sum"),
-    })
 }
 
 fn call_vm_flat_batch_parallel(
@@ -3734,7 +3422,9 @@ mod tests {
         engine::{Engine, FlowExit, FlowFiberStatus},
         plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan, RuntimePureHelperId},
         step::{RuntimeStepInput, RuntimeStepOptions},
-        value::{RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr},
+        value::{
+            RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeISizeValue, RuntimeUSizeValue,
+        },
     };
 
     #[test]
@@ -4465,6 +4155,18 @@ mod tests {
                 RuntimePureInputType::F64,
                 RuntimePureOutputType::F64,
             ),
+            add_helper(
+                4,
+                "isize_add",
+                RuntimePureInputType::ISize,
+                RuntimePureOutputType::ISize,
+            ),
+            add_helper(
+                5,
+                "usize_add",
+                RuntimePureInputType::USize,
+                RuntimePureOutputType::USize,
+            ),
         ];
         let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Aot, &helpers);
 
@@ -4480,15 +4182,29 @@ mod tests {
         let f64_value = accelerator
             .call_f64_slice(&helpers[3], &[3.0, 4.5])
             .expect("f64 AOT call succeeds");
+        let isize_value = accelerator
+            .call_exact_int_slice::<RuntimeISizeValue>(
+                &helpers[4],
+                &[RuntimeISizeValue::new(19), RuntimeISizeValue::new(23)],
+            )
+            .expect("isize AOT call succeeds");
+        let usize_value = accelerator
+            .call_exact_int_slice::<RuntimeUSizeValue>(
+                &helpers[5],
+                &[RuntimeUSizeValue::new(29), RuntimeUSizeValue::new(31)],
+            )
+            .expect("usize AOT call succeeds");
 
         assert_eq!(i32_value, Some(18));
         assert_eq!(u32_value, Some(30));
         assert_eq!(f32_value, Some(3.75));
         assert_eq!(f64_value, Some(7.5));
-        assert_eq!(accelerator.stats().aot_calls, 4);
+        assert_eq!(isize_value, Some(RuntimeISizeValue::new(42)));
+        assert_eq!(usize_value, Some(RuntimeUSizeValue::new(60)));
+        assert_eq!(accelerator.stats().aot_calls, 6);
         assert_eq!(accelerator.stats().vm_calls, 0);
         assert_eq!(accelerator.stats().fallbacks, 0);
-        assert_eq!(accelerator.summary().aot, 4);
+        assert_eq!(accelerator.summary().aot, 6);
     }
 
     #[test]

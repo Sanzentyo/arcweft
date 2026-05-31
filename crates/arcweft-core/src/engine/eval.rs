@@ -15,8 +15,8 @@ use crate::pure::{
 use crate::value::RuntimeBinaryOp;
 use crate::value::RuntimeExactInteger;
 use crate::value::RuntimeFieldExpr;
-use crate::value::runtime_sequence_dense_usize;
 use crate::value::{RuntimeCallTarget, RuntimeIntrinsic};
+use crate::value::{RuntimeISizeValue, RuntimeUSizeValue};
 
 impl Engine {
     pub(super) fn evaluate_let_with_backend(
@@ -664,6 +664,11 @@ impl Engine {
             return Ok(Some(value));
         }
         if let Some(value) =
+            self.evaluate_exact_int_pure_call::<RuntimeISizeValue>(helper_id, args, pure_backend)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) =
             self.evaluate_exact_int_pure_call::<u8>(helper_id, args, pure_backend)?
         {
             return Ok(Some(value));
@@ -688,32 +693,7 @@ impl Engine {
         {
             return Ok(Some(value));
         }
-        self.evaluate_usize_pure_call(helper_id, args, pure_backend)
-    }
-
-    fn evaluate_usize_pure_call(
-        &mut self,
-        helper_id: crate::plan::RuntimePureHelperId,
-        args: &[RuntimeExpr],
-        pure_backend: &mut impl RuntimePureCallBackend,
-    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        if args.len() > RuntimeFixedArgs::<u64>::MAX
-            || args
-                .iter()
-                .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
-            || !pure_helper_has_usize_call_shape(helper)
-        {
-            return Ok(None);
-        }
-        let mut values = [0_u64; RuntimeFixedArgs::<u64>::MAX];
-        for (index, arg) in args.iter().enumerate() {
-            values[index] = self.evaluate_usize_arg_with_backend(arg, pure_backend)?;
-        }
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        pure_backend
-            .call_usize_slice(helper, &values[..args.len()])
-            .map(|value| value.map(RuntimeValue::usize))
+        self.evaluate_exact_int_pure_call::<RuntimeUSizeValue>(helper_id, args, pure_backend)
     }
 
     fn evaluate_exact_int_pure_call<T>(
@@ -764,30 +744,6 @@ impl Engine {
                 let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
                 T::try_from_runtime_value("exact integer pure call", value)
             }
-        }
-    }
-
-    fn evaluate_usize_arg_with_backend(
-        &mut self,
-        expr: &RuntimeExpr,
-        pure_backend: &mut impl RuntimePureCallBackend,
-    ) -> Result<u64, RuntimeEvalError> {
-        match expr {
-            RuntimeExpr::Value(RuntimeValue::UInt(crate::value::RuntimeUInt::USize(value))) => {
-                Ok(*value)
-            }
-            RuntimeExpr::Value(value) => {
-                Err(RuntimeEvalError::ExpectedInt(runtime_value_label(value)))
-            }
-            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
-                Some(RuntimeValue::UInt(crate::value::RuntimeUInt::USize(value))) => Ok(*value),
-                Some(value) => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
-                None => Err(RuntimeEvalError::UnknownBinding(name.clone())),
-            },
-            _ => match self.evaluate_expr_with_backend(expr, pure_backend)? {
-                RuntimeValue::UInt(crate::value::RuntimeUInt::USize(value)) => Ok(value),
-                value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
-            },
         }
     }
 
@@ -1021,9 +977,9 @@ impl Engine {
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
-        let mut flat_inputs = std::mem::take(&mut self.pure_i64_batch_inputs);
-        let mut out = std::mem::take(&mut self.pure_i64_batch_outputs);
-        let result = self.evaluate_exact_int_map_expr_with_buffers::<i64>(
+        let mut flat_inputs = std::mem::take(&mut self.pure_isize_batch_inputs);
+        let mut out = std::mem::take(&mut self.pure_isize_batch_outputs);
+        let result = self.evaluate_exact_int_map_expr_with_buffers::<RuntimeISizeValue>(
             source,
             param,
             body,
@@ -1031,8 +987,8 @@ impl Engine {
             &mut flat_inputs,
             &mut out,
         );
-        self.pure_i64_batch_inputs = flat_inputs;
-        self.pure_i64_batch_outputs = out;
+        self.pure_isize_batch_inputs = flat_inputs;
+        self.pure_isize_batch_outputs = out;
         result
     }
 
@@ -1153,30 +1109,18 @@ impl Engine {
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
-        let Some((helper_id, arity)) = self.map_usize_batch_shape(body) else {
-            return Ok(None);
-        };
-        let mut flat_inputs = std::mem::take(&mut self.pure_u64_batch_inputs);
-        let mut out = std::mem::take(&mut self.pure_u64_batch_outputs);
-        let result = match self.collect_usize_map_batch_inputs_from_borrowed_source(
+        let mut flat_inputs = std::mem::take(&mut self.pure_usize_batch_inputs);
+        let mut out = std::mem::take(&mut self.pure_usize_batch_outputs);
+        let result = self.evaluate_exact_int_map_expr_with_buffers::<RuntimeUSizeValue>(
             source,
             param,
             body,
-            arity,
+            pure_backend,
             &mut flat_inputs,
-        ) {
-            Ok(Some(row_count)) => {
-                out.resize(row_count, 0);
-                let helper = &self.plan.pure_helpers[helper_id.0];
-                pure_backend
-                    .call_usize_flat_batch(helper, &flat_inputs, arity, &mut out)
-                    .map(|()| Some(runtime_sequence_dense_usize(out.clone())))
-            }
-            Ok(None) => Ok(None),
-            Err(error) => Err(error),
-        };
-        self.pure_u64_batch_inputs = flat_inputs;
-        self.pure_u64_batch_outputs = out;
+            &mut out,
+        );
+        self.pure_usize_batch_inputs = flat_inputs;
+        self.pure_usize_batch_outputs = out;
         result
     }
 
@@ -1590,15 +1534,15 @@ impl Engine {
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
-        let mut flat_inputs = std::mem::take(&mut self.pure_i64_batch_inputs);
-        let result = self.evaluate_exact_int_map_sum_with_inputs::<i64>(
+        let mut flat_inputs = std::mem::take(&mut self.pure_isize_batch_inputs);
+        let result = self.evaluate_exact_int_map_sum_with_inputs::<RuntimeISizeValue>(
             source,
             param,
             body,
             pure_backend,
             &mut flat_inputs,
         );
-        self.pure_i64_batch_inputs = flat_inputs;
+        self.pure_isize_batch_inputs = flat_inputs;
         result
     }
 
@@ -1704,27 +1648,15 @@ impl Engine {
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimePureCallBackend,
     ) -> Result<Option<i64>, RuntimeEvalError> {
-        let Some((helper_id, arity)) = self.map_usize_batch_shape(body) else {
-            return Ok(None);
-        };
-        let mut flat_inputs = std::mem::take(&mut self.pure_u64_batch_inputs);
-        let result = match self.collect_usize_map_batch_inputs_from_borrowed_source(
+        let mut flat_inputs = std::mem::take(&mut self.pure_usize_batch_inputs);
+        let result = self.evaluate_exact_int_map_sum_with_inputs::<RuntimeUSizeValue>(
             source,
             param,
             body,
-            arity,
+            pure_backend,
             &mut flat_inputs,
-        ) {
-            Ok(Some(row_count)) => {
-                let helper = &self.plan.pure_helpers[helper_id.0];
-                pure_backend
-                    .call_usize_flat_batch_sum(helper, &flat_inputs, arity, row_count)
-                    .map(Some)
-            }
-            Ok(None) => Ok(None),
-            Err(error) => Err(error),
-        };
-        self.pure_u64_batch_inputs = flat_inputs;
+        );
+        self.pure_usize_batch_inputs = flat_inputs;
         result
     }
 
@@ -2074,44 +2006,6 @@ impl Engine {
         Ok(Some(items.len()))
     }
 
-    fn collect_usize_map_batch_inputs_from_borrowed_source(
-        &self,
-        source: &RuntimeExpr,
-        param: &str,
-        body: &RuntimeExpr,
-        arity: usize,
-        flat_inputs: &mut Vec<u64>,
-    ) -> Result<Option<usize>, RuntimeEvalError> {
-        let RuntimeExpr::PureCall { args, .. } = body else {
-            unreachable!("usize map batch shape checked before borrowed source collection");
-        };
-        let seq = match source {
-            RuntimeExpr::Value(RuntimeValue::Seq(seq)) => seq,
-            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
-                Some(RuntimeValue::Seq(seq)) => seq,
-                _ => return Ok(None),
-            },
-            _ => return Ok(None),
-        };
-        let Some(items) = seq.as_usize_values() else {
-            return Ok(None);
-        };
-        flat_inputs.clear();
-        flat_inputs.reserve(items.len().saturating_mul(arity));
-        for item in items.iter().copied() {
-            for arg in args.iter().take(arity) {
-                let Some(value) =
-                    self.evaluate_usize_map_arg_from_usize_source(arg, param, item)?
-                else {
-                    flat_inputs.clear();
-                    return Ok(None);
-                };
-                flat_inputs.push(value);
-            }
-        }
-        Ok(Some(items.len()))
-    }
-
     fn i64_map_borrowed_source_len(&self, source: &RuntimeExpr) -> Option<usize> {
         match source {
             RuntimeExpr::Value(RuntimeValue::Seq(seq)) => Some(seq.len()),
@@ -2391,25 +2285,6 @@ impl Engine {
                 .iter()
                 .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
             || !pure_helper_has_exact_int_call_shape::<T>(&self.plan.pure_helpers[helper.0])
-        {
-            return None;
-        }
-        Some((*helper, args.len()))
-    }
-
-    fn map_usize_batch_shape(
-        &self,
-        body: &RuntimeExpr,
-    ) -> Option<(crate::plan::RuntimePureHelperId, usize)> {
-        let RuntimeExpr::PureCall { helper, args } = body else {
-            return None;
-        };
-        if helper.0 >= self.plan.pure_helpers.len()
-            || args.len() > RuntimeFixedArgs::<u64>::MAX
-            || args
-                .iter()
-                .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
-            || !pure_helper_has_usize_call_shape(&self.plan.pure_helpers[helper.0])
         {
             return None;
         }
@@ -2736,31 +2611,6 @@ impl Engine {
         }
     }
 
-    fn evaluate_usize_map_arg_from_usize_source(
-        &self,
-        expr: &RuntimeExpr,
-        param: &str,
-        item: u64,
-    ) -> Result<Option<u64>, RuntimeEvalError> {
-        match expr {
-            RuntimeExpr::Value(RuntimeValue::UInt(crate::value::RuntimeUInt::USize(value))) => {
-                Ok(Some(*value))
-            }
-            RuntimeExpr::Value(value) => {
-                Err(RuntimeEvalError::ExpectedInt(runtime_value_label(value)))
-            }
-            RuntimeExpr::Local(name) if name == param => Ok(Some(item)),
-            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
-                Some(RuntimeValue::UInt(crate::value::RuntimeUInt::USize(value))) => {
-                    Ok(Some(*value))
-                }
-                Some(value) => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(value))),
-                None => Err(RuntimeEvalError::UnknownBinding(name.clone())),
-            },
-            _ => Ok(None),
-        }
-    }
-
     fn evaluate_call_args(
         &mut self,
         args: &[RuntimeExpr],
@@ -3011,21 +2861,6 @@ fn pure_helper_has_exact_int_call_shape<T: RuntimePureScalarInteger>(
     expr_returns_integer(&helper.expr, &mut int_names)
 }
 
-fn pure_helper_has_usize_call_shape(helper: &crate::plan::RuntimePureHelper) -> bool {
-    if helper.output_type != RuntimePureOutputType::USize
-        || !pure_helper_has_only_usize_inputs(helper)
-    {
-        return false;
-    }
-    let mut int_names = helper
-        .input_names
-        .iter()
-        .zip(helper.input_types.iter())
-        .filter_map(|(name, ty)| matches!(ty, RuntimePureInputType::USize).then_some(name.as_str()))
-        .collect::<Vec<_>>();
-    expr_returns_integer(&helper.expr, &mut int_names)
-}
-
 fn pure_helper_has_only_i64_inputs(helper: &crate::plan::RuntimePureHelper) -> bool {
     helper.input_names.len() == helper.input_types.len()
         && helper
@@ -3063,14 +2898,6 @@ fn pure_helper_has_only_exact_int_inputs<T: RuntimePureScalarInteger>(
 ) -> bool {
     helper.input_names.len() == helper.input_types.len()
         && helper.input_types.iter().all(|ty| *ty == T::INPUT_TYPE)
-}
-
-fn pure_helper_has_only_usize_inputs(helper: &crate::plan::RuntimePureHelper) -> bool {
-    helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::USize))
 }
 
 fn expr_returns_integer<'a>(expr: &'a RuntimeExpr, int_names: &mut Vec<&'a str>) -> bool {

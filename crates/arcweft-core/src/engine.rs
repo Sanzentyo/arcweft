@@ -24,11 +24,11 @@ use crate::task::{
 };
 use crate::value::{
     RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm,
-    RuntimeFieldValue, RuntimePayload, RuntimeSeq, RuntimeValue, evaluate_binary, evaluate_unary,
-    runtime_sequence_dense_f32, runtime_sequence_dense_f64, runtime_sequence_dense_i32,
-    runtime_sequence_dense_i64, runtime_sequence_from_literal_values,
-    runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
-    runtime_value_label, sum_i64_sequence_ref,
+    RuntimeFieldValue, RuntimeISizeValue, RuntimePayload, RuntimeSeq, RuntimeUSizeValue,
+    RuntimeValue, evaluate_binary, evaluate_unary, runtime_sequence_dense_f32,
+    runtime_sequence_dense_f64, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
+    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_sequence_values,
+    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
 use std::collections::{BTreeMap, VecDeque};
 pub mod aot;
@@ -64,6 +64,10 @@ pub struct Engine {
     pure_u64_batch_outputs: Vec<u64>,
     pure_u128_batch_inputs: Vec<u128>,
     pure_u128_batch_outputs: Vec<u128>,
+    pure_isize_batch_inputs: Vec<RuntimeISizeValue>,
+    pure_isize_batch_outputs: Vec<RuntimeISizeValue>,
+    pure_usize_batch_inputs: Vec<RuntimeUSizeValue>,
+    pure_usize_batch_outputs: Vec<RuntimeUSizeValue>,
     pure_f32_batch_inputs: Vec<f32>,
     pure_f32_batch_outputs: Vec<f32>,
     pure_f64_batch_inputs: Vec<f64>,
@@ -74,6 +78,13 @@ pub struct Engine {
     pure_helper_i64_call_shapes: Vec<bool>,
     pure_helper_f32_call_shapes: Vec<bool>,
     pure_helper_f64_call_shapes: Vec<bool>,
+}
+
+struct PureHelperCallShapes {
+    i32: Vec<bool>,
+    i64: Vec<bool>,
+    f32: Vec<bool>,
+    f64: Vec<bool>,
 }
 
 /// Current flow execution cursor.
@@ -192,6 +203,31 @@ impl Default for FlowFiber {
     }
 }
 
+fn pure_helper_call_shapes(plan: &RuntimePlan) -> PureHelperCallShapes {
+    PureHelperCallShapes {
+        i32: plan
+            .pure_helpers
+            .iter()
+            .map(eval::pure_helper_has_i32_call_shape)
+            .collect(),
+        i64: plan
+            .pure_helpers
+            .iter()
+            .map(eval::pure_helper_has_i64_call_shape)
+            .collect(),
+        f32: plan
+            .pure_helpers
+            .iter()
+            .map(eval::pure_helper_has_f32_call_shape)
+            .collect(),
+        f64: plan
+            .pure_helpers
+            .iter()
+            .map(eval::pure_helper_has_f64_call_shape)
+            .collect(),
+    }
+}
+
 impl Engine {
     pub fn new(plan: RuntimePlan) -> Self {
         let flow_positions: BTreeMap<_, _> = plan
@@ -229,26 +265,7 @@ impl Engine {
             .iter()
             .map(|plan| (plan.id.clone(), StreamRuntimeState::new(plan.id.clone())))
             .collect();
-        let i64_call_shapes = plan
-            .pure_helpers
-            .iter()
-            .map(eval::pure_helper_has_i64_call_shape)
-            .collect();
-        let i32_call_shapes = plan
-            .pure_helpers
-            .iter()
-            .map(eval::pure_helper_has_i32_call_shape)
-            .collect();
-        let f32_call_shapes = plan
-            .pure_helpers
-            .iter()
-            .map(eval::pure_helper_has_f32_call_shape)
-            .collect();
-        let f64_call_shapes = plan
-            .pure_helpers
-            .iter()
-            .map(eval::pure_helper_has_f64_call_shape)
-            .collect();
+        let call_shapes = pure_helper_call_shapes(&plan);
         Self {
             plan,
             flow_positions,
@@ -283,16 +300,20 @@ impl Engine {
             pure_u64_batch_outputs: Vec::new(),
             pure_u128_batch_inputs: Vec::new(),
             pure_u128_batch_outputs: Vec::new(),
+            pure_isize_batch_inputs: Vec::new(),
+            pure_isize_batch_outputs: Vec::new(),
+            pure_usize_batch_inputs: Vec::new(),
+            pure_usize_batch_outputs: Vec::new(),
             pure_f32_batch_inputs: Vec::new(),
             pure_f32_batch_outputs: Vec::new(),
             pure_f64_batch_inputs: Vec::new(),
             pure_f64_batch_outputs: Vec::new(),
             pure_i64_batch_inputs: Vec::new(),
             pure_i64_batch_outputs: Vec::new(),
-            pure_helper_i32_call_shapes: i32_call_shapes,
-            pure_helper_i64_call_shapes: i64_call_shapes,
-            pure_helper_f32_call_shapes: f32_call_shapes,
-            pure_helper_f64_call_shapes: f64_call_shapes,
+            pure_helper_i32_call_shapes: call_shapes.i32,
+            pure_helper_i64_call_shapes: call_shapes.i64,
+            pure_helper_f32_call_shapes: call_shapes.f32,
+            pure_helper_f64_call_shapes: call_shapes.f64,
         }
     }
 
