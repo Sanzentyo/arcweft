@@ -94,14 +94,35 @@ impl Parser<'_> {
         }
         if trimmed == "with:" {
             self.index += 1;
-            let body = self.take_indented_await_body(indentation(&line.text) + 1);
+            let body_range = self.take_indented_line_range(indentation(&line.text) + 1);
             return Some(ChoicePlan::new(
                 BlockStyle::Indent,
-                parse_choice_plan_items(&body),
-                TextRange::new(line.start, base + body.len()),
+                self.parse_choice_plan_items_line_range(body_range),
+                TextRange::new(line.start, self.previous_end().max(base)),
             ));
         }
         None
+    }
+
+    fn parse_choice_plan_items_line_range(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Vec<ChoicePlanItem> {
+        self.logical_stmt_line_ranges(range)
+            .into_iter()
+            .map(|range| {
+                if range.end == range.start + 1 {
+                    self.events
+                        .get(range.start)
+                        .map_or_else(|| "", |line| line.trimmed())
+                        .to_owned()
+                } else {
+                    self.collect_stmt_line_group_source(range).trim().to_owned()
+                }
+            })
+            .filter(|line| !line.is_empty())
+            .map(|line| parse_choice_plan_item(&line))
+            .collect()
     }
 }
 
@@ -223,42 +244,43 @@ fn parse_choice_match_arms(
 fn parse_choice_plan_items(body: &str) -> Vec<ChoicePlanItem> {
     collect_logical_block_items(body)
         .into_iter()
-        .map(|line| {
-            let trimmed = line.trim();
-            if let Some((head, block_body)) = split_brace_item(trimmed) {
-                if let Some(duration) = head.strip_prefix("timeout ") {
-                    return ChoicePlanItem::Timeout {
-                        duration: parse_expr_lossy(duration.trim()),
-                        body: parse_stmt_lines(block_body.trim()),
-                    };
-                }
-                if let Some(trigger) = head.strip_prefix("cancel on ") {
-                    return ChoicePlanItem::Cancel {
-                        trigger: parse_trigger_pattern(trigger.trim()),
-                        body: parse_stmt_lines(block_body.trim()),
-                    };
-                }
-                if let Some(pattern) = head.strip_prefix("on select ") {
-                    return ChoicePlanItem::OnSelect {
-                        pattern: parse_pattern(pattern.trim()),
-                        body: parse_stmt_lines(block_body.trim()),
-                    };
-                }
-            }
-            split_top_level_binding(trimmed).map_or_else(
-                || {
-                    ChoicePlanItem::Raw(RawSyntax::choice_plan_item(
-                        trimmed,
-                        Some(TextRange::new(0, trimmed.len())),
-                    ))
-                },
-                |(name, value)| ChoicePlanItem::Option {
-                    name: name.trim().to_owned(),
-                    value: parse_expr_lossy(value.trim()),
-                },
-            )
-        })
+        .map(|line| parse_choice_plan_item(line.trim()))
         .collect()
+}
+
+fn parse_choice_plan_item(trimmed: &str) -> ChoicePlanItem {
+    if let Some((head, block_body)) = split_brace_item(trimmed) {
+        if let Some(duration) = head.strip_prefix("timeout ") {
+            return ChoicePlanItem::Timeout {
+                duration: parse_expr_lossy(duration.trim()),
+                body: parse_stmt_lines(block_body.trim()),
+            };
+        }
+        if let Some(trigger) = head.strip_prefix("cancel on ") {
+            return ChoicePlanItem::Cancel {
+                trigger: parse_trigger_pattern(trigger.trim()),
+                body: parse_stmt_lines(block_body.trim()),
+            };
+        }
+        if let Some(pattern) = head.strip_prefix("on select ") {
+            return ChoicePlanItem::OnSelect {
+                pattern: parse_pattern(pattern.trim()),
+                body: parse_stmt_lines(block_body.trim()),
+            };
+        }
+    }
+    split_top_level_binding(trimmed).map_or_else(
+        || {
+            ChoicePlanItem::Raw(RawSyntax::choice_plan_item(
+                trimmed,
+                Some(TextRange::new(0, trimmed.len())),
+            ))
+        },
+        |(name, value)| ChoicePlanItem::Option {
+            name: name.trim().to_owned(),
+            value: parse_expr_lossy(value.trim()),
+        },
+    )
 }
 
 fn parse_choice_arm_sugar(

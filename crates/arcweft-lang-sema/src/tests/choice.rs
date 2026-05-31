@@ -287,6 +287,37 @@ with {
 }
 
 #[test]
+fn parses_indented_choice_plan_from_cst_lines() {
+    let tree = parse_ok(
+        r#"
+choice @choice.opening.first {
+    @choice.opening.listen "聞いてみる" -> @flow.alice_intro
+}
+with:
+    window = @choice_window.main
+    timeout 10s {
+        select @choice.opening.listen
+    }
+"#,
+    );
+
+    let Item::FlowItem(item) = &tree.items()[0] else {
+        panic!("expected choice");
+    };
+    let FlowItem::Choice(choice) = item.as_ref() else {
+        panic!("expected choice");
+    };
+    let plan = choice.plan().expect("choice plan");
+    assert_eq!(plan.items().len(), 2);
+    assert!(matches!(&plan.items()[0], ChoicePlanItem::Option { name, .. } if name == "window"));
+    assert!(matches!(
+        &plan.items()[1],
+        ChoicePlanItem::Timeout { body, .. }
+            if matches!(body.first(), Some(Stmt::Select(Expr::EntityRef(_))))
+    ));
+}
+
+#[test]
 fn typechecks_dynamic_choice_option_fields_in_for_sugar() {
     let tree = parse_ok(
         r"

@@ -207,27 +207,6 @@ impl<'a> Parser<'a> {
         false
     }
 
-    fn take_indented_await_body(&mut self, min_indent: usize) -> String {
-        let mut raw = String::new();
-        while self.index < self.events.len() {
-            let line = self.current();
-            if line.text.trim().is_empty() {
-                raw.push('\n');
-                self.index += 1;
-                continue;
-            }
-            if indentation(&line.text) < min_indent {
-                break;
-            }
-            if !raw.is_empty() {
-                raw.push('\n');
-            }
-            raw.push_str(&line.text);
-            self.index += 1;
-        }
-        raw
-    }
-
     fn take_indented_line_range(&mut self, min_indent: usize) -> Range<usize> {
         let start = self.index;
         while self.index < self.events.len() {
