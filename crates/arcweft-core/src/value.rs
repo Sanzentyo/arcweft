@@ -573,21 +573,47 @@ impl DenseSeq {
     }
 
     pub fn copy_int_compatible_i64_values_to(&self, out: &mut Vec<i64>) -> bool {
+        let original_len = out.len();
         match self {
             Self::I8(values) => out.extend(values.as_slice().iter().copied().map(i64::from)),
             Self::I16(values) => out.extend(values.as_slice().iter().copied().map(i64::from)),
             Self::I32(values) => out.extend(values.as_slice().iter().copied().map(i64::from)),
-            Self::I64(values) => out.extend(values.as_slice().iter().copied()),
-            Self::Bytes(values) => out.extend(values.as_slice().iter().copied().map(i64::from)),
+            Self::I64(values) | Self::ISize(values) => {
+                out.extend(values.as_slice().iter().copied());
+            }
+            Self::I128(values) => {
+                for value in values.as_slice() {
+                    let Ok(value) = i64::try_from(*value) else {
+                        out.truncate(original_len);
+                        return false;
+                    };
+                    out.push(value);
+                }
+            }
+            Self::U8(values) | Self::Bytes(values) => {
+                out.extend(values.as_slice().iter().copied().map(i64::from));
+            }
+            Self::U16(values) => out.extend(values.as_slice().iter().copied().map(i64::from)),
+            Self::U32(values) => out.extend(values.as_slice().iter().copied().map(i64::from)),
+            Self::U64(values) | Self::USize(values) => {
+                for value in values.as_slice() {
+                    let Ok(value) = i64::try_from(*value) else {
+                        out.truncate(original_len);
+                        return false;
+                    };
+                    out.push(value);
+                }
+            }
+            Self::U128(values) => {
+                for value in values.as_slice() {
+                    let Ok(value) = i64::try_from(*value) else {
+                        out.truncate(original_len);
+                        return false;
+                    };
+                    out.push(value);
+                }
+            }
             Self::Units(_)
-            | Self::I128(_)
-            | Self::ISize(_)
-            | Self::U8(_)
-            | Self::U16(_)
-            | Self::U32(_)
-            | Self::U64(_)
-            | Self::U128(_)
-            | Self::USize(_)
             | Self::Bool(_)
             | Self::Chars(_)
             | Self::Durations(_)
@@ -618,25 +644,51 @@ impl DenseSeq {
                     visit(value)?;
                 }
             }
-            Self::I64(values) => {
+            Self::I64(values) | Self::ISize(values) => {
                 for value in values.as_slice().iter().copied() {
                     visit(value)?;
                 }
             }
-            Self::Bytes(values) => {
+            Self::I128(values) => {
+                for value in values.as_slice() {
+                    let Ok(value) = i64::try_from(*value) else {
+                        return Ok(false);
+                    };
+                    visit(value)?;
+                }
+            }
+            Self::U8(values) | Self::Bytes(values) => {
                 for value in values.as_slice().iter().copied().map(i64::from) {
                     visit(value)?;
                 }
             }
+            Self::U16(values) => {
+                for value in values.as_slice().iter().copied().map(i64::from) {
+                    visit(value)?;
+                }
+            }
+            Self::U32(values) => {
+                for value in values.as_slice().iter().copied().map(i64::from) {
+                    visit(value)?;
+                }
+            }
+            Self::U64(values) | Self::USize(values) => {
+                for value in values.as_slice() {
+                    let Ok(value) = i64::try_from(*value) else {
+                        return Ok(false);
+                    };
+                    visit(value)?;
+                }
+            }
+            Self::U128(values) => {
+                for value in values.as_slice() {
+                    let Ok(value) = i64::try_from(*value) else {
+                        return Ok(false);
+                    };
+                    visit(value)?;
+                }
+            }
             Self::Units(_)
-            | Self::I128(_)
-            | Self::ISize(_)
-            | Self::U8(_)
-            | Self::U16(_)
-            | Self::U32(_)
-            | Self::U64(_)
-            | Self::U128(_)
-            | Self::USize(_)
             | Self::Bool(_)
             | Self::Chars(_)
             | Self::Durations(_)
@@ -652,17 +704,25 @@ impl DenseSeq {
             Self::I8(values) => values.as_slice().first().copied().map(i64::from),
             Self::I16(values) => values.as_slice().first().copied().map(i64::from),
             Self::I32(values) => values.as_slice().first().copied().map(i64::from),
-            Self::I64(values) => values.as_slice().first().copied(),
-            Self::Bytes(values) => values.as_slice().first().copied().map(i64::from),
+            Self::I64(values) | Self::ISize(values) => values.as_slice().first().copied(),
+            Self::I128(values) => match values.as_slice().first().copied() {
+                Some(value) => Some(i64::try_from(value).ok()?),
+                None => None,
+            },
+            Self::U8(values) | Self::Bytes(values) => {
+                values.as_slice().first().copied().map(i64::from)
+            }
+            Self::U16(values) => values.as_slice().first().copied().map(i64::from),
+            Self::U32(values) => values.as_slice().first().copied().map(i64::from),
+            Self::U64(values) | Self::USize(values) => match values.as_slice().first().copied() {
+                Some(value) => Some(i64::try_from(value).ok()?),
+                None => None,
+            },
+            Self::U128(values) => match values.as_slice().first().copied() {
+                Some(value) => Some(i64::try_from(value).ok()?),
+                None => None,
+            },
             Self::Units(_)
-            | Self::I128(_)
-            | Self::ISize(_)
-            | Self::U8(_)
-            | Self::U16(_)
-            | Self::U32(_)
-            | Self::U64(_)
-            | Self::U128(_)
-            | Self::USize(_)
             | Self::Bool(_)
             | Self::Chars(_)
             | Self::Durations(_)

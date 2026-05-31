@@ -358,14 +358,15 @@ seven dense storage variants directly. The pure-call counters remained zero for
 these fixtures because they intentionally measure the VM dense sequence
 reduction path, not the pure helper accelerator.
 
-The VM now also exposes an `Int`-compatible projection for dense `i8`, `i16`,
-`i32`, `i64`, and byte storage. That projection is narrower than `sum_as_i64()`:
-it only includes storage classes that would materialize elements as
-`RuntimeValue::Int`, so unsigned and wide integer storage keep their distinct
-runtime value variants instead of silently crossing into the pure i64 ABI. The
+The VM now also exposes an i64-compatible projection for every dense integer
+storage class whose current values fit the pure i64 ABI: `i8`, `i16`, `i32`,
+`i64`, `i128`, `isize`, `u8`, `u16`, `u32`, `u64`, `u128`, `usize`, and byte
+storage. Wide signed and unsigned storage use checked conversion, and overflow
+rejects the projection without leaving partial flat input buffers behind. The
 core regression `engine_batches_dense_int_compatible_map_without_value_materialization`
-covers all five projected storage classes and verifies pure-helper flat inputs
-are built without allocating intermediate `RuntimeValue` elements.
+covers all projected storage classes and verifies pure-helper flat inputs are
+built without allocating intermediate `RuntimeValue` elements; the overflow
+regression covers the checked-conversion fallback.
 
 The dense scalar length fixture covers the non-integer deterministic scalar
 storage cases. It lowers unit, bool, char, logical-duration, and `u8` sequences

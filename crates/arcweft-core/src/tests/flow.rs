@@ -532,6 +532,14 @@ fn engine_batches_dense_int_compatible_map_without_value_materialization() {
         (runtime_sequence_dense_i16(vec![3, 5, 7]), "60"),
         (runtime_sequence_dense_i32(vec![3, 5, 7]), "60"),
         (runtime_sequence_dense_i64(vec![3, 5, 7]), "60"),
+        (runtime_sequence_dense_i128(vec![3, 5, 7]), "60"),
+        (runtime_sequence_dense_isize(vec![3, 5, 7]), "60"),
+        (runtime_sequence_dense_u8(vec![3, 5, 7]), "60"),
+        (runtime_sequence_dense_u16(vec![3, 5, 7]), "60"),
+        (runtime_sequence_dense_u32(vec![3, 5, 7]), "60"),
+        (runtime_sequence_dense_u64(vec![3, 5, 7]), "60"),
+        (runtime_sequence_dense_u128(vec![3, 5, 7]), "60"),
+        (runtime_sequence_dense_usize(vec![3, 5, 7]), "60"),
         (runtime_sequence_dense_bytes(vec![3, 5, 7]), "60"),
     ];
 

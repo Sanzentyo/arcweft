@@ -237,6 +237,10 @@ fn dense_sequences_expose_typed_views_and_materialize_values() {
     };
     assert_eq!(u64_seq.as_u64_slice(), Some([1, 2].as_slice()));
     assert_eq!(u64_seq.sum_as_i64(), Some(3));
+    let mut flat = Vec::new();
+    assert!(u64_seq.copy_int_compatible_i64_values_to(&mut flat));
+    assert_eq!(flat, vec![1, 2]);
+    assert_eq!(u64_seq.first_int_compatible_i64(), Some(Some(1)));
     assert_eq!(
         u64_seq.into_values(),
         vec![RuntimeValue::UInt(1), RuntimeValue::UInt(2)]
@@ -295,9 +299,9 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
     assert_eq!(i128_seq.as_i128_slice(), Some([1, 2, 3].as_slice()));
     assert_eq!(i128_seq.sum_as_i64(), Some(6));
     let mut flat = Vec::new();
-    assert!(!i128_seq.copy_int_compatible_i64_values_to(&mut flat));
-    assert!(flat.is_empty());
-    assert_eq!(i128_seq.first_int_compatible_i64(), None);
+    assert!(i128_seq.copy_int_compatible_i64_values_to(&mut flat));
+    assert_eq!(flat, vec![1, 2, 3]);
+    assert_eq!(i128_seq.first_int_compatible_i64(), Some(Some(1)));
     assert_eq!(
         i128_seq.into_values(),
         vec![
@@ -312,6 +316,10 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
     };
     assert_eq!(isize_seq.as_isize_values(), Some([1, 2, 3].as_slice()));
     assert_eq!(isize_seq.sum_as_i64(), Some(6));
+    let mut flat = Vec::new();
+    assert!(isize_seq.copy_int_compatible_i64_values_to(&mut flat));
+    assert_eq!(flat, vec![1, 2, 3]);
+    assert_eq!(isize_seq.first_int_compatible_i64(), Some(Some(1)));
     assert_eq!(
         isize_seq.into_values(),
         vec![
@@ -326,6 +334,10 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
     };
     assert_eq!(u128_seq.as_u128_slice(), Some([1, 2].as_slice()));
     assert_eq!(u128_seq.sum_as_i64(), Some(3));
+    let mut flat = Vec::new();
+    assert!(u128_seq.copy_int_compatible_i64_values_to(&mut flat));
+    assert_eq!(flat, vec![1, 2]);
+    assert_eq!(u128_seq.first_int_compatible_i64(), Some(Some(1)));
     assert_eq!(
         u128_seq.into_values(),
         vec![RuntimeValue::U128(1), RuntimeValue::U128(2)]
@@ -336,10 +348,44 @@ fn dense_wide_integer_sequences_expose_typed_views_and_materialize_values() {
     };
     assert_eq!(usize_seq.as_usize_values(), Some([1, 2].as_slice()));
     assert_eq!(usize_seq.sum_as_i64(), Some(3));
+    let mut flat = Vec::new();
+    assert!(usize_seq.copy_int_compatible_i64_values_to(&mut flat));
+    assert_eq!(flat, vec![1, 2]);
+    assert_eq!(usize_seq.first_int_compatible_i64(), Some(Some(1)));
     assert_eq!(
         usize_seq.into_values(),
         vec![RuntimeValue::USize(1), RuntimeValue::USize(2)]
     );
+}
+
+#[test]
+fn dense_wide_integer_i64_compatible_copy_rejects_overflow_without_partial_output() {
+    let overflow_cases = [
+        runtime_sequence_dense_i128(vec![1, i128::from(i64::MAX) + 1]),
+        runtime_sequence_dense_u64(vec![1, u64::try_from(i64::MAX).expect("i64 max fits") + 1]),
+        runtime_sequence_dense_u128(vec![1, u128::try_from(i64::MAX).expect("i64 max fits") + 1]),
+        runtime_sequence_dense_usize(vec![1, u64::try_from(i64::MAX).expect("i64 max fits") + 1]),
+    ];
+
+    for value in overflow_cases {
+        let RuntimeValue::Seq(seq) = value else {
+            panic!("dense helper returns a sequence");
+        };
+        let mut flat = vec![99];
+        assert!(!seq.copy_int_compatible_i64_values_to(&mut flat));
+        assert_eq!(flat, vec![99]);
+        assert_eq!(seq.first_int_compatible_i64(), Some(Some(1)));
+
+        let mut visited = Vec::new();
+        let compatible = seq
+            .try_for_each_int_compatible_i64::<()>(|value| {
+                visited.push(value);
+                Ok(())
+            })
+            .expect("visitor does not fail");
+        assert!(!compatible);
+        assert_eq!(visited, vec![1]);
+    }
 }
 
 #[test]
