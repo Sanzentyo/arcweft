@@ -1415,7 +1415,7 @@ fn compile_aot_i64_expr(
         )),
         other => Err(unsupported_aot(
             helper_name,
-            format!("expression `{other:?}` is outside the AOT i64 subset"),
+            format!("expression `{other}` is outside the AOT i64 subset"),
         )),
     }
 }
@@ -1436,7 +1436,7 @@ fn compile_aot_bool_expr(
         }
         other => Err(unsupported_aot(
             helper_name,
-            format!("condition `{other:?}` is outside the AOT i64 subset"),
+            format!("condition `{other}` is outside the AOT i64 subset"),
         )),
     }
 }
