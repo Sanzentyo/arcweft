@@ -574,8 +574,8 @@ Representative release results on the local machine:
 | flow 8x8 matmul_f32 | auto wgpu | measured | 473400 | `--features math-wgpu`, `--math-wgpu-min-elements 1`, prepared cache hit after warmup, `bytes_uploaded = 0`, `gpu_buffer_reuse_hits = 4`, `last_auto_reason = matmul_wgpu_work_threshold` |
 | flow 4x4 matrix_add_f32 | ndarray | measured | 9900 | `--value` matrix input, one ndarray view add, `bytes_borrowed = 128`, `bytes_copied = 0` |
 | flow 2x2x2 tensor_add_f32 | ndarray | measured | 13400 | `--value` tensor input, one ndarray dynamic-view add, `bytes_borrowed = 64`, `bytes_copied = 0` |
-| flow 2x2 matmul_f64 | ndarray | functional | checked by test | `--value` matrix input, `math_calls = 1`, `math_accelerated_calls = 1`, `bytes_borrowed = 64`, `result_bytes_copied = 32` |
-| flow 2x2 tensor_add_f64 | ndarray | functional | checked by test | `--value` tensor input, `math_calls = 1`, `math_accelerated_calls = 1`, `bytes_borrowed = 64`, `result_bytes_copied = 32` |
+| flow 2x2 matmul_f64 | ndarray | measured | 2100 | `--value` matrix input, `math_calls_median = 1`, `math_accelerated_calls_median = 1`, `bytes_borrowed = 64`, `result_bytes_copied = 32` |
+| flow 2x2 tensor_add_f64 | ndarray | measured | 2200 | `--value` tensor input, `math_calls_median = 1`, `math_accelerated_calls_median = 1`, `bytes_borrowed = 64`, `result_bytes_copied = 32` |
 | 64x64 matmul_f32 | scalar | measured | 21300 | row-major baseline |
 | 64x64 matmul_f32 | ndarray | measured | 26700 | general CPU matrix backend |
 | 64x64 matmul_f32 | auto | measured | 24200 | selected ndarray without wgpu feature |
