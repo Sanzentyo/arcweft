@@ -238,11 +238,10 @@ impl Parser<'_> {
             return None;
         }
         if is_with_brace_head(trailing) {
-            let mut block_text = trailing.to_owned();
-            let punctuation = CstPunctuationScan::new(&block_text);
+            let punctuation = CstPunctuationScan::new(trailing);
             let mut brace_delta = punctuation.deltas().brace;
             if brace_delta <= 0 {
-                let (head, body) = split_brace_item_with_scan(&block_text, &punctuation)?;
+                let (head, body) = split_brace_item_with_scan(trailing, &punctuation)?;
                 let range = TextRange::new(base + close_bracket + 1, self.events[*cursor].end);
                 return Some(parse_line_plan_attachment(
                     BlockStyle::Brace,
@@ -253,12 +252,14 @@ impl Parser<'_> {
                 ));
             }
             drop(punctuation);
+            let mut block_text = trailing.to_owned();
             while brace_delta > 0 && *cursor + 1 < self.events.len() {
                 *cursor += 1;
                 brace_delta += self.events[*cursor].punctuation_deltas().brace;
                 block_text.push('\n');
                 block_text.push_str(self.events[*cursor].text.trim_end());
             }
+            self.syntax_stats.block_owned_bytes += block_text.len();
             let (head, body) = split_brace_item(&block_text)?;
             let range = TextRange::new(base + close_bracket + 1, self.events[*cursor].end);
             return Some(parse_line_plan_attachment(
@@ -290,14 +291,14 @@ impl Parser<'_> {
         cursor: &mut usize,
         base: usize,
     ) -> Option<ScopeBlock> {
-        let mut block_text = text[close_bracket + 1..].trim().to_owned();
+        let block_text = text[close_bracket + 1..].trim();
         if !block_text.starts_with('{') {
             return None;
         }
-        let punctuation = CstPunctuationScan::new(&block_text);
+        let punctuation = CstPunctuationScan::new(block_text);
         let mut brace_delta = punctuation.deltas().brace;
         if brace_delta <= 0 {
-            let (head, body) = split_brace_item_with_scan(&block_text, &punctuation)?;
+            let (head, body) = split_brace_item_with_scan(block_text, &punctuation)?;
             if !head.trim().is_empty() {
                 return None;
             }
@@ -308,12 +309,14 @@ impl Parser<'_> {
             ));
         }
         drop(punctuation);
+        let mut block_text = block_text.to_owned();
         while brace_delta > 0 && *cursor + 1 < self.events.len() {
             *cursor += 1;
             brace_delta += self.events[*cursor].punctuation_deltas().brace;
             block_text.push('\n');
             block_text.push_str(self.events[*cursor].text.trim_end());
         }
+        self.syntax_stats.block_owned_bytes += block_text.len();
         let (head, body) = split_brace_item(&block_text)?;
         if !head.trim().is_empty() {
             return None;

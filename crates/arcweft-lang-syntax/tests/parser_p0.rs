@@ -82,6 +82,23 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn dialogue_trailing_brace_plan_avoids_owned_block_for_same_line() {
+    let same_line = arcweft_lang_syntax::parser::parse_source(
+        r"
+flow @flow.opening opening {
+    alice.say()[本文です。[p]] with { out handles }
+}
+",
+    );
+    assert!(
+        same_line.errors().is_empty(),
+        "expected same-line line plan to parse, got {:?}",
+        same_line.errors()
+    );
+    assert_eq!(same_line.syntax_stats().block_owned_bytes, 0);
+}
+
+#[test]
 fn indented_defer_body_groups_multiline_statements_from_cst_lines() {
     let tree = parse_ok(
         r"

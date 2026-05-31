@@ -101,7 +101,10 @@ fragment tokenization pass and serves top-level punctuation, matching
 punctuation, and bracket-delta queries from that token buffer. Dialogue
 same-line `with { ... }` attachments and trailing bare scopes reuse that scan
 for the brace-depth check and the split itself; multiline continuations add the
-stored per-line punctuation summaries before the final fragment split. Logical
+stored per-line punctuation summaries before the final fragment split. Same-line
+dialogue attachments now remain borrowed through this path, while multiline
+continuations are the only dialogue attachment cases charged to
+`block_owned_bytes`. Logical
 block item splitting now returns borrowed body slices for single-line items and
 allocates only for multiline or method-chain continuations, so block-body
 parsers avoid creating a `String` for every item before the AST builder needs

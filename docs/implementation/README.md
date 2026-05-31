@@ -377,7 +377,9 @@ Current high-confidence state:
   Dialogue trailing `with { ... }` and bare scope blocks use the same path:
   same-line blocks reuse the fragment scan for both brace depth and brace
   splitting, while multiline continuations add each following line's stored
-  punctuation summary before the final split.
+  punctuation summary before the final split. The same-line path stays on
+  borrowed slices; only multiline continuations assemble an owned block string
+  and charge it to `block_owned_bytes`.
   Logical block item splitting now yields borrowed slices for ordinary
   single-line body items and allocates only when an item spans multiple lines or
   consumes a method-chain continuation. The same splitter scans the whole body
