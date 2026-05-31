@@ -1,6 +1,6 @@
 use super::{
-    Engine, FlowFiberStatus, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError,
-    RuntimeExactInteger, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldValue, RuntimeMatchArm,
+    Engine, FlowFiberStatus, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
+    RuntimeExprMatchArm, RuntimeF32, RuntimeF64, RuntimeFieldValue, RuntimeMatchArm,
     RuntimeMatchSelection, RuntimePattern, RuntimeSeq, RuntimeStepOutput, RuntimeValue,
     evaluate_binary, evaluate_unary, match_runtime_pattern, runtime_sequence_dense_i32,
     runtime_sequence_dense_i64, runtime_sequence_from_literal_values,
@@ -9,8 +9,8 @@ use super::{
 };
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::pure::{
-    RuntimeFixedArgs, RuntimeI32Args, RuntimeI64Args, RuntimePureCallBackend,
-    VmRuntimePureCallBackend,
+    RuntimeF32Args, RuntimeF64Args, RuntimeFixedArgs, RuntimeI32Args, RuntimeI64Args,
+    RuntimePureCallBackend, RuntimePureScalarInteger, VmRuntimePureCallBackend,
 };
 use crate::value::RuntimeBinaryOp;
 use crate::value::RuntimeFieldExpr;
@@ -462,6 +462,44 @@ impl Engine {
                 return Ok(RuntimeValue::Int(value));
             }
         }
+        if self
+            .pure_helper_f32_call_shapes
+            .get(helper_id.0)
+            .copied()
+            .unwrap_or(false)
+            && args.len() <= RuntimeF32Args::MAX
+            && !args
+                .iter()
+                .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
+        {
+            let mut values = [RuntimeF32::from_bits(0); RuntimeF32Args::MAX];
+            for (index, arg) in args.iter().enumerate() {
+                values[index] = self.evaluate_f32_arg_with_backend(arg, pure_backend)?;
+            }
+            let helper = &self.plan.pure_helpers[helper_id.0];
+            if let Some(value) = pure_backend.call_f32_slice(helper, &values[..args.len()])? {
+                return Ok(RuntimeValue::F32(value));
+            }
+        }
+        if self
+            .pure_helper_f64_call_shapes
+            .get(helper_id.0)
+            .copied()
+            .unwrap_or(false)
+            && args.len() <= RuntimeF64Args::MAX
+            && !args
+                .iter()
+                .any(|arg| matches!(arg, RuntimeExpr::SpreadArg(_)))
+        {
+            let mut values = [RuntimeF64::from_bits(0); RuntimeF64Args::MAX];
+            for (index, arg) in args.iter().enumerate() {
+                values[index] = self.evaluate_f64_arg_with_backend(arg, pure_backend)?;
+            }
+            let helper = &self.plan.pure_helpers[helper_id.0];
+            if let Some(value) = pure_backend.call_f64_slice(helper, &values[..args.len()])? {
+                return Ok(RuntimeValue::F64(value));
+            }
+        }
         let args = self.evaluate_call_args(args, pure_backend)?;
         let helper = &self.plan.pure_helpers[helper_id.0];
         pure_backend.call_values(helper, &args)
@@ -482,6 +520,56 @@ impl Engine {
             _ => match self.evaluate_expr_with_backend(expr, pure_backend)? {
                 RuntimeValue::Int(value) => Ok(value),
                 value => Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
+            },
+        }
+    }
+
+    fn evaluate_f32_arg_with_backend(
+        &mut self,
+        expr: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<RuntimeF32, RuntimeEvalError> {
+        match expr {
+            RuntimeExpr::Value(RuntimeValue::F32(value)) => Ok(*value),
+            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
+                Some(RuntimeValue::F32(value)) => Ok(*value),
+                Some(value) => Err(RuntimeEvalError::UnsupportedPure {
+                    name: "f32 pure call".to_owned(),
+                    reason: format!("expected f32 argument, got {}", runtime_value_label(value)),
+                }),
+                None => Err(RuntimeEvalError::UnknownBinding(name.clone())),
+            },
+            _ => match self.evaluate_expr_with_backend(expr, pure_backend)? {
+                RuntimeValue::F32(value) => Ok(value),
+                value => Err(RuntimeEvalError::UnsupportedPure {
+                    name: "f32 pure call".to_owned(),
+                    reason: format!("expected f32 argument, got {}", runtime_value_label(&value)),
+                }),
+            },
+        }
+    }
+
+    fn evaluate_f64_arg_with_backend(
+        &mut self,
+        expr: &RuntimeExpr,
+        pure_backend: &mut impl RuntimePureCallBackend,
+    ) -> Result<RuntimeF64, RuntimeEvalError> {
+        match expr {
+            RuntimeExpr::Value(RuntimeValue::F64(value)) => Ok(*value),
+            RuntimeExpr::Local(name) => match self.fiber.env.get(name) {
+                Some(RuntimeValue::F64(value)) => Ok(*value),
+                Some(value) => Err(RuntimeEvalError::UnsupportedPure {
+                    name: "f64 pure call".to_owned(),
+                    reason: format!("expected f64 argument, got {}", runtime_value_label(value)),
+                }),
+                None => Err(RuntimeEvalError::UnknownBinding(name.clone())),
+            },
+            _ => match self.evaluate_expr_with_backend(expr, pure_backend)? {
+                RuntimeValue::F64(value) => Ok(value),
+                value => Err(RuntimeEvalError::UnsupportedPure {
+                    name: "f64 pure call".to_owned(),
+                    reason: format!("expected f64 argument, got {}", runtime_value_label(&value)),
+                }),
             },
         }
     }
@@ -924,7 +1012,7 @@ impl Engine {
         result
     }
 
-    fn evaluate_exact_int_map_sum_with_inputs<T: RuntimeExactInteger>(
+    fn evaluate_exact_int_map_sum_with_inputs<T: RuntimePureScalarInteger>(
         &self,
         source: &RuntimeExpr,
         param: &str,
@@ -1154,7 +1242,7 @@ impl Engine {
         Ok(Some(items.len()))
     }
 
-    fn collect_exact_int_map_batch_inputs_from_borrowed_source<T: RuntimeExactInteger>(
+    fn collect_exact_int_map_batch_inputs_from_borrowed_source<T: RuntimePureScalarInteger>(
         &self,
         source: &RuntimeExpr,
         param: &str,
@@ -1408,7 +1496,7 @@ impl Engine {
         Some((*helper, args.len()))
     }
 
-    fn map_exact_int_batch_shape<T: RuntimeExactInteger>(
+    fn map_exact_int_batch_shape<T: RuntimePureScalarInteger>(
         &self,
         body: &RuntimeExpr,
     ) -> Option<(crate::plan::RuntimePureHelperId, usize)> {
@@ -1680,7 +1768,7 @@ impl Engine {
         }
     }
 
-    fn evaluate_exact_int_map_arg_from_exact_source<T: RuntimeExactInteger>(
+    fn evaluate_exact_int_map_arg_from_exact_source<T: RuntimePureScalarInteger>(
         &self,
         expr: &RuntimeExpr,
         param: &str,
@@ -1908,7 +1996,35 @@ pub(super) fn pure_helper_has_i32_call_shape(helper: &crate::plan::RuntimePureHe
     expr_returns_i64(&helper.expr, &mut int_names)
 }
 
-fn pure_helper_has_exact_int_call_shape<T: RuntimeExactInteger>(
+pub(super) fn pure_helper_has_f32_call_shape(helper: &crate::plan::RuntimePureHelper) -> bool {
+    if helper.output_type != RuntimePureOutputType::F32 || !pure_helper_has_only_f32_inputs(helper)
+    {
+        return false;
+    }
+    let mut float_names = helper
+        .input_names
+        .iter()
+        .zip(helper.input_types.iter())
+        .filter_map(|(name, ty)| matches!(ty, RuntimePureInputType::F32).then_some(name.as_str()))
+        .collect::<Vec<_>>();
+    expr_returns_f32(&helper.expr, &mut float_names)
+}
+
+pub(super) fn pure_helper_has_f64_call_shape(helper: &crate::plan::RuntimePureHelper) -> bool {
+    if helper.output_type != RuntimePureOutputType::F64 || !pure_helper_has_only_f64_inputs(helper)
+    {
+        return false;
+    }
+    let mut float_names = helper
+        .input_names
+        .iter()
+        .zip(helper.input_types.iter())
+        .filter_map(|(name, ty)| matches!(ty, RuntimePureInputType::F64).then_some(name.as_str()))
+        .collect::<Vec<_>>();
+    expr_returns_f64(&helper.expr, &mut float_names)
+}
+
+fn pure_helper_has_exact_int_call_shape<T: RuntimePureScalarInteger>(
     helper: &crate::plan::RuntimePureHelper,
 ) -> bool {
     if helper.output_type != T::OUTPUT_TYPE || !pure_helper_has_only_exact_int_inputs::<T>(helper) {
@@ -1939,7 +2055,23 @@ fn pure_helper_has_only_i32_inputs(helper: &crate::plan::RuntimePureHelper) -> b
             .all(|ty| matches!(ty, RuntimePureInputType::I32))
 }
 
-fn pure_helper_has_only_exact_int_inputs<T: RuntimeExactInteger>(
+fn pure_helper_has_only_f32_inputs(helper: &crate::plan::RuntimePureHelper) -> bool {
+    helper.input_names.len() == helper.input_types.len()
+        && helper
+            .input_types
+            .iter()
+            .all(|ty| matches!(ty, RuntimePureInputType::F32))
+}
+
+fn pure_helper_has_only_f64_inputs(helper: &crate::plan::RuntimePureHelper) -> bool {
+    helper.input_names.len() == helper.input_types.len()
+        && helper
+            .input_types
+            .iter()
+            .all(|ty| matches!(ty, RuntimePureInputType::F64))
+}
+
+fn pure_helper_has_only_exact_int_inputs<T: RuntimePureScalarInteger>(
     helper: &crate::plan::RuntimePureHelper,
 ) -> bool {
     helper.input_names.len() == helper.input_types.len()
@@ -1989,6 +2121,120 @@ fn expr_returns_i64<'a>(expr: &'a RuntimeExpr, int_names: &mut Vec<&'a str>) -> 
             expr_returns_bool(condition, int_names)
                 && expr_returns_i64(then_expr, int_names)
                 && expr_returns_i64(else_expr, int_names)
+        }
+        _ => false,
+    }
+}
+
+fn expr_returns_f32<'a>(expr: &'a RuntimeExpr, float_names: &mut Vec<&'a str>) -> bool {
+    match expr {
+        RuntimeExpr::Value(RuntimeValue::F32(_)) => true,
+        RuntimeExpr::Local(name) => float_names.contains(&name.as_str()),
+        RuntimeExpr::Let { name, expr, body } => {
+            if !expr_returns_f32(expr, float_names) {
+                return false;
+            }
+            let original_len = float_names.len();
+            float_names.push(name.as_str());
+            let returns_f32 = expr_returns_f32(body, float_names);
+            float_names.truncate(original_len);
+            returns_f32
+        }
+        RuntimeExpr::Unary {
+            op: crate::value::RuntimeUnaryOp::Neg,
+            expr,
+        } => expr_returns_f32(expr, float_names),
+        RuntimeExpr::Binary {
+            lhs,
+            op:
+                RuntimeBinaryOp::Add
+                | RuntimeBinaryOp::Sub
+                | RuntimeBinaryOp::Mul
+                | RuntimeBinaryOp::Div,
+            rhs,
+        } => expr_returns_f32(lhs, float_names) && expr_returns_f32(rhs, float_names),
+        RuntimeExpr::If {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            expr_returns_float_bool(condition, float_names, expr_returns_f32)
+                && expr_returns_f32(then_expr, float_names)
+                && expr_returns_f32(else_expr, float_names)
+        }
+        _ => false,
+    }
+}
+
+fn expr_returns_f64<'a>(expr: &'a RuntimeExpr, float_names: &mut Vec<&'a str>) -> bool {
+    match expr {
+        RuntimeExpr::Value(RuntimeValue::F64(_)) => true,
+        RuntimeExpr::Local(name) => float_names.contains(&name.as_str()),
+        RuntimeExpr::Let { name, expr, body } => {
+            if !expr_returns_f64(expr, float_names) {
+                return false;
+            }
+            let original_len = float_names.len();
+            float_names.push(name.as_str());
+            let returns_f64 = expr_returns_f64(body, float_names);
+            float_names.truncate(original_len);
+            returns_f64
+        }
+        RuntimeExpr::Unary {
+            op: crate::value::RuntimeUnaryOp::Neg,
+            expr,
+        } => expr_returns_f64(expr, float_names),
+        RuntimeExpr::Binary {
+            lhs,
+            op:
+                RuntimeBinaryOp::Add
+                | RuntimeBinaryOp::Sub
+                | RuntimeBinaryOp::Mul
+                | RuntimeBinaryOp::Div,
+            rhs,
+        } => expr_returns_f64(lhs, float_names) && expr_returns_f64(rhs, float_names),
+        RuntimeExpr::If {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            expr_returns_float_bool(condition, float_names, expr_returns_f64)
+                && expr_returns_f64(then_expr, float_names)
+                && expr_returns_f64(else_expr, float_names)
+        }
+        _ => false,
+    }
+}
+
+fn expr_returns_float_bool<'a>(
+    expr: &'a RuntimeExpr,
+    float_names: &mut Vec<&'a str>,
+    expr_returns_float: fn(&'a RuntimeExpr, &mut Vec<&'a str>) -> bool,
+) -> bool {
+    match expr {
+        RuntimeExpr::Value(RuntimeValue::Bool(_)) => true,
+        RuntimeExpr::Unary {
+            op: crate::value::RuntimeUnaryOp::Not,
+            expr,
+        } => expr_returns_float_bool(expr, float_names, expr_returns_float),
+        RuntimeExpr::Binary {
+            lhs,
+            op:
+                RuntimeBinaryOp::Eq
+                | RuntimeBinaryOp::Ne
+                | RuntimeBinaryOp::Lt
+                | RuntimeBinaryOp::Le
+                | RuntimeBinaryOp::Gt
+                | RuntimeBinaryOp::Ge,
+            rhs,
+        } => expr_returns_float(lhs, float_names) && expr_returns_float(rhs, float_names),
+        RuntimeExpr::Binary {
+            lhs,
+            op: RuntimeBinaryOp::And | RuntimeBinaryOp::Or,
+            rhs,
+        } => {
+            expr_returns_float_bool(lhs, float_names, expr_returns_float)
+                && expr_returns_float_bool(rhs, float_names, expr_returns_float)
         }
         _ => false,
     }

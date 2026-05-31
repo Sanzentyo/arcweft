@@ -8,12 +8,13 @@ use crate::pure::{
     compare_pure_function_backend,
 };
 use crate::value::{
-    RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeValue,
-    runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_i8,
-    runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
-    runtime_sequence_dense_i128, runtime_sequence_dense_isize, runtime_sequence_dense_u8,
-    runtime_sequence_dense_u16, runtime_sequence_dense_u32, runtime_sequence_dense_u64,
-    runtime_sequence_dense_u128, runtime_sequence_dense_usize, runtime_sequence_values,
+    RuntimeBinaryOp, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeF32, RuntimeF64,
+    RuntimeValue, runtime_sequence_dense_bool, runtime_sequence_dense_bytes,
+    runtime_sequence_dense_i8, runtime_sequence_dense_i16, runtime_sequence_dense_i32,
+    runtime_sequence_dense_i64, runtime_sequence_dense_i128, runtime_sequence_dense_isize,
+    runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
+    runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_sequence_dense_usize,
+    runtime_sequence_values,
 };
 
 fn int_binding(name: &str, value: i64) -> RuntimeBinding {
@@ -492,6 +493,60 @@ fn vm_runtime_i32_flat_batch_preserves_input_and_output_width() {
     assert_eq!(
         backend.stats().result_bytes_copied,
         std::mem::size_of_val(&out)
+    );
+}
+
+#[test]
+fn vm_runtime_f32_and_f64_slice_calls_preserve_float_width() {
+    let f32_helper = RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "score_f32".to_owned(),
+        input_names: vec!["base".to_owned(), "gain".to_owned()],
+        input_types: vec![RuntimePureInputType::F32, RuntimePureInputType::F32],
+        output_type: RuntimePureOutputType::F32,
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+            op: RuntimeBinaryOp::Mul,
+            rhs: Box::new(RuntimeExpr::Local("gain".to_owned())),
+        },
+        scalar_eval_supported: true,
+        origin: RuntimePureHelperOrigin::Annotated,
+    };
+    let f64_helper = RuntimePureHelper {
+        id: RuntimePureHelperId(1),
+        name: "score_f64".to_owned(),
+        input_names: vec!["base".to_owned(), "gain".to_owned()],
+        input_types: vec![RuntimePureInputType::F64, RuntimePureInputType::F64],
+        output_type: RuntimePureOutputType::F64,
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+            op: RuntimeBinaryOp::Add,
+            rhs: Box::new(RuntimeExpr::Local("gain".to_owned())),
+        },
+        scalar_eval_supported: true,
+        origin: RuntimePureHelperOrigin::Annotated,
+    };
+    let mut backend = VmRuntimePureCallBackend::default();
+    let f32_args = [RuntimeF32::from_f32(1.5), RuntimeF32::from_f32(2.0)];
+    let f64_args = [RuntimeF64::from_f64(1.5), RuntimeF64::from_f64(2.0)];
+
+    let f32_value = backend
+        .call_f32_slice(&f32_helper, &f32_args)
+        .expect("f32 pure call evaluates")
+        .expect("f32 pure call returns a value");
+    let f64_value = backend
+        .call_f64_slice(&f64_helper, &f64_args)
+        .expect("f64 pure call evaluates")
+        .expect("f64 pure call returns a value");
+
+    assert_eq!(f32_value, RuntimeF32::from_f32(3.0));
+    assert_eq!(f64_value, RuntimeF64::from_f64(3.5));
+    assert_eq!(backend.stats().pure_calls, 2);
+    assert_eq!(backend.stats().arg_vec_allocations, 0);
+    assert_eq!(backend.stats().arg_bytes_copied, 0);
+    assert_eq!(
+        backend.stats().arg_bytes_borrowed,
+        std::mem::size_of_val(&f32_args) + std::mem::size_of_val(&f64_args)
     );
 }
 

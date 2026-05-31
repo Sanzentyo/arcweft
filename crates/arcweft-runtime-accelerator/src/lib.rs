@@ -9,12 +9,15 @@ use arcweft_core::{
         RuntimePureOutputType,
     },
     pure::{
-        AotPureFunctionBackend, AotPureI64Plan, PureFunctionRequest, RuntimeI32Args,
-        RuntimeI64Args, RuntimePureCallBackend, VmPureFunctionScratch,
+        AotPureFunctionBackend, AotPureI64Plan, PureFunctionRequest, RuntimeF32Args,
+        RuntimeF64Args, RuntimeI32Args, RuntimeI64Args, RuntimePureCallBackend,
+        RuntimePureScalarInteger, VmPureFunctionScratch,
     },
     step::RuntimePureCallStats,
-    value::RuntimeExactInteger,
-    value::{DenseSeq, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeSeq, RuntimeValue},
+    value::{
+        DenseSeq, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeF32, RuntimeF64,
+        RuntimeSeq, RuntimeValue,
+    },
 };
 use arcweft_lang_jit_cranelift::{CompiledPureI64Inputs, CraneliftPureFunctionBackend};
 use rayon::{ThreadPool, ThreadPoolBuilder, prelude::*};
@@ -738,7 +741,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         call_vm_i32_flat_batch_sum(helper, flat_inputs, arity, rows, &mut self.vm_scratch)
     }
 
-    fn call_exact_int_flat_batch_sum<T: RuntimeExactInteger>(
+    fn call_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
         &mut self,
         helper: &RuntimePureHelper,
         flat_inputs: &[T],
@@ -911,6 +914,44 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         Self::call_i64_repeated_flat_batch_sum(self, helper, row, rows)
     }
 
+    fn call_f32_slice(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[RuntimeF32],
+    ) -> Result<Option<RuntimeF32>, RuntimeEvalError> {
+        if args.len() > RuntimeF32Args::MAX {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: RuntimeF32Args::MAX,
+                found: args.len(),
+            });
+        }
+        self.stats.pure_calls += 1;
+        self.stats.vm_calls += 1;
+        self.stats.fallbacks += 1;
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        Self::call_vm_f32_slice(helper, args, &mut self.vm_scratch).map(Some)
+    }
+
+    fn call_f64_slice(
+        &mut self,
+        helper: &RuntimePureHelper,
+        args: &[RuntimeF64],
+    ) -> Result<Option<RuntimeF64>, RuntimeEvalError> {
+        if args.len() > RuntimeF64Args::MAX {
+            return Err(RuntimeEvalError::TooManyPureArgs {
+                helper: helper.name.clone(),
+                max: RuntimeF64Args::MAX,
+                found: args.len(),
+            });
+        }
+        self.stats.pure_calls += 1;
+        self.stats.vm_calls += 1;
+        self.stats.fallbacks += 1;
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
+        Self::call_vm_f64_slice(helper, args, &mut self.vm_scratch).map(Some)
+    }
+
     fn call_values(
         &mut self,
         helper: &RuntimePureHelper,
@@ -976,6 +1017,40 @@ impl RuntimePureAccelerator {
                 })
             }
             value => Err(RuntimeEvalError::ExpectedInt(runtime_value_kind(&value))),
+        }
+    }
+
+    fn call_vm_f32_slice(
+        helper: &RuntimePureHelper,
+        args: &[RuntimeF32],
+        scratch: &mut VmPureFunctionScratch,
+    ) -> Result<RuntimeF32, RuntimeEvalError> {
+        match scratch.evaluate_f32_slice(helper, args)? {
+            RuntimeValue::F32(value) => Ok(value),
+            value => Err(RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: format!(
+                    "pure f32 result expected f32, got {}",
+                    runtime_value_kind(&value)
+                ),
+            }),
+        }
+    }
+
+    fn call_vm_f64_slice(
+        helper: &RuntimePureHelper,
+        args: &[RuntimeF64],
+        scratch: &mut VmPureFunctionScratch,
+    ) -> Result<RuntimeF64, RuntimeEvalError> {
+        match scratch.evaluate_f64_slice(helper, args)? {
+            RuntimeValue::F64(value) => Ok(value),
+            value => Err(RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: format!(
+                    "pure f64 result expected f64, got {}",
+                    runtime_value_kind(&value)
+                ),
+            }),
         }
     }
 }
@@ -1077,7 +1152,7 @@ fn validate_flat_batch_shape(
     Ok(())
 }
 
-fn validate_exact_int_flat_batch_shape<T: RuntimeExactInteger>(
+fn validate_exact_int_flat_batch_shape<T: RuntimePureScalarInteger>(
     helper: &RuntimePureHelper,
     flat_input_len: usize,
     arity: usize,
@@ -1640,7 +1715,7 @@ fn call_vm_i32_flat_batch_sum(
     Ok(sum)
 }
 
-fn call_vm_exact_int_flat_batch_sum<T: RuntimeExactInteger>(
+fn call_vm_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
     helper: &RuntimePureHelper,
     flat_inputs: &[T],
     arity: usize,

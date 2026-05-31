@@ -383,8 +383,8 @@ fixtures cover wide integer storage with
 `pure_flat_batch_bytes_borrowed_median = 4096` and the same checked sum
 conversion. This confirms the hot boundary is not doing
 `.map(i64::from)`. The remaining typed accelerator work is to add matching JIT
-and AOT kernels for these widths, and to add exact storage wrappers for
-target-sized classes once their deterministic ABI is fixed.
+and AOT kernels for these widths; target-sized dense storage already uses
+stable `i64`/`u64` backing at the runtime boundary.
 
 The dense scalar length fixture covers the non-integer deterministic scalar
 storage cases. It lowers unit, bool, char, logical-duration, and `u8` sequences
@@ -395,10 +395,11 @@ executed ops, with `pure_flatten_materializations_median = 0`,
 `pure_arg_vec_allocations_median = 0`, `pure_result_bytes_copied_median = 0`,
 and no source path in the JSON output.
 
-The dense textual scalar length fixture covers the remaining homogeneous scalar
-runtime values. It keeps `String`, raw `f64` literal text, and entity-reference
-sequences dense, including entity references that are only known after runtime
-evaluation. The local path-free bench run reported median elapsed time 16900 ns
+The dense textual scalar length fixture covers homogeneous textual and typed
+float scalar runtime values. It keeps `String`, typed `f64` bit values, raw
+float literal text, and entity-reference sequences dense, including entity
+references that are only known after runtime evaluation. The local path-free
+bench run reported median elapsed time 17200 ns
 for seven executed ops, with `pure_arg_vec_allocations_median = 0`,
 `pure_result_bytes_copied_median = 0`, and no source path in the JSON output.
 
@@ -411,10 +412,12 @@ for seven executed ops, with `pure_flatten_materializations_median = 0`,
 `pure_arg_vec_allocations_median = 0`, `pure_result_bytes_copied_median = 0`,
 and no source path in the JSON output.
 
-`DenseSeq::F32`/`DenseSeq::F64` are intentionally not present yet because
-`RuntimeValue::Float` still preserves raw source text for deterministic numeric
-semantics; raw float literals are dense only as homogeneous textual storage.
-Record/tuple storage should be designed separately as columnar storage rather
-than as scalar `DenseSeqStorage<T>`. The scalar dense coverage is encoded in
-`DenseSeqKind`, so adding another dense class requires extending the typed kind
-and its borrowed view/materialization tests together.
+`DenseSeq::F32`/`DenseSeq::F64` use `RuntimeF32`/`RuntimeF64` bit newtypes,
+while `RuntimeValue::Float` continues to preserve raw source text for untyped
+float literals. Typed f32/f64 pure helper calls now use borrowed slice ABI in
+the VM flow path, so a natural `pure` call in a flow can avoid `Vec<RuntimeValue>`
+argument allocation when the helper signature and expression are float-scalar
+only. Record/tuple storage should be designed separately as columnar storage
+rather than as scalar `DenseSeqStorage<T>`. The scalar dense coverage is
+encoded in `DenseSeqKind`, so adding another dense class requires extending the
+typed kind and its borrowed view/materialization tests together.

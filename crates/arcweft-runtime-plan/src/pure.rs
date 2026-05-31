@@ -283,6 +283,8 @@ fn pure_helper_input_type(ty: &TypeRef) -> Option<RuntimePureInputType> {
             "u64" => Some(RuntimePureInputType::U64),
             "u128" => Some(RuntimePureInputType::U128),
             "usize" => Some(RuntimePureInputType::USize),
+            "f32" => Some(RuntimePureInputType::F32),
+            "f64" => Some(RuntimePureInputType::F64),
             _ => None,
         },
         _ => None,
@@ -305,6 +307,8 @@ fn pure_helper_output_type(ty: Option<&TypeRef>) -> RuntimePureOutputType {
             "u64" => RuntimePureOutputType::U64,
             "u128" => RuntimePureOutputType::U128,
             "usize" => RuntimePureOutputType::USize,
+            "f32" => RuntimePureOutputType::F32,
+            "f64" => RuntimePureOutputType::F64,
             _ => RuntimePureOutputType::Value,
         },
         _ => RuntimePureOutputType::Value,
@@ -404,6 +408,41 @@ fn pack(byte: u8, index: u32) -> u64 {
             [RuntimePureInputType::U8, RuntimePureInputType::U32]
         );
         assert_eq!(candidates[0].output_type(), RuntimePureOutputType::U64);
+    }
+
+    #[test]
+    fn pure_function_candidate_preserves_typed_float_input_types() {
+        let parsed = parse_source(
+            r"
+#[pure]
+fn blend(base: f32, gain: f32) -> f32 {
+    base + gain
+}
+
+#[pure]
+fn score(base: f64, gain: f64) -> f64 {
+    base * gain
+}
+",
+        );
+        assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+        let tree = parsed.into_typed_tree();
+        let hir = lower_to_hir(&tree).expect("pure functions lower to HIR");
+
+        let candidates =
+            lower_pure_helper_candidates(&hir).expect("pure functions lower to helper candidates");
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(
+            candidates[0].input_types(),
+            [RuntimePureInputType::F32, RuntimePureInputType::F32]
+        );
+        assert_eq!(candidates[0].output_type(), RuntimePureOutputType::F32);
+        assert_eq!(
+            candidates[1].input_types(),
+            [RuntimePureInputType::F64, RuntimePureInputType::F64]
+        );
+        assert_eq!(candidates[1].output_type(), RuntimePureOutputType::F64);
     }
 
     #[test]

@@ -119,6 +119,8 @@ pub enum RuntimePureInputType {
     U64,
     U128,
     USize,
+    F32,
+    F64,
     Value,
 }
 
@@ -138,6 +140,8 @@ pub enum RuntimePureOutputType {
     U64,
     U128,
     USize,
+    F32,
+    F64,
     Value,
 }
 

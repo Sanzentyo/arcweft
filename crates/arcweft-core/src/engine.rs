@@ -23,12 +23,11 @@ use crate::task::{
     TaskPolicy, TaskPriority, TaskSpec, normalize_task_events,
 };
 use crate::value::{
-    RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExactInteger, RuntimeExpr,
-    RuntimeExprMatchArm, RuntimeFieldValue, RuntimePayload, RuntimeSeq, RuntimeValue,
-    evaluate_binary, evaluate_unary, expr_runtime_label, runtime_sequence_dense_i32,
-    runtime_sequence_dense_i64, runtime_sequence_from_literal_values,
-    runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
-    runtime_value_label, sum_i64_sequence_ref,
+    RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm, RuntimeF32,
+    RuntimeF64, RuntimeFieldValue, RuntimePayload, RuntimeSeq, RuntimeValue, evaluate_binary,
+    evaluate_unary, expr_runtime_label, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
+    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_sequence_values,
+    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
 use std::collections::{BTreeMap, VecDeque};
 pub mod aot;
@@ -60,6 +59,8 @@ pub struct Engine {
     pure_i64_batch_outputs: Vec<i64>,
     pure_helper_i32_call_shapes: Vec<bool>,
     pure_helper_i64_call_shapes: Vec<bool>,
+    pure_helper_f32_call_shapes: Vec<bool>,
+    pure_helper_f64_call_shapes: Vec<bool>,
 }
 
 /// Current flow execution cursor.
@@ -215,15 +216,25 @@ impl Engine {
             .iter()
             .map(|plan| (plan.id.clone(), StreamRuntimeState::new(plan.id.clone())))
             .collect();
-        let pure_helper_i64_call_shapes = plan
+        let i64_call_shapes = plan
             .pure_helpers
             .iter()
             .map(eval::pure_helper_has_i64_call_shape)
             .collect();
-        let pure_helper_i32_call_shapes = plan
+        let i32_call_shapes = plan
             .pure_helpers
             .iter()
             .map(eval::pure_helper_has_i32_call_shape)
+            .collect();
+        let f32_call_shapes = plan
+            .pure_helpers
+            .iter()
+            .map(eval::pure_helper_has_f32_call_shape)
+            .collect();
+        let f64_call_shapes = plan
+            .pure_helpers
+            .iter()
+            .map(eval::pure_helper_has_f64_call_shape)
             .collect();
         Self {
             plan,
@@ -253,8 +264,10 @@ impl Engine {
             pure_u128_batch_inputs: Vec::new(),
             pure_i64_batch_inputs: Vec::new(),
             pure_i64_batch_outputs: Vec::new(),
-            pure_helper_i32_call_shapes,
-            pure_helper_i64_call_shapes,
+            pure_helper_i32_call_shapes: i32_call_shapes,
+            pure_helper_i64_call_shapes: i64_call_shapes,
+            pure_helper_f32_call_shapes: f32_call_shapes,
+            pure_helper_f64_call_shapes: f64_call_shapes,
         }
     }
 

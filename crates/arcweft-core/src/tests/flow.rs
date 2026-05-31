@@ -671,6 +671,54 @@ fn engine_batches_dense_i16_and_u8_map_without_widening_flat_inputs() {
 }
 
 #[test]
+fn engine_calls_typed_float_pure_helpers_without_arg_vec_allocation() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![FlowOp::ReturnExpr(RuntimeExpr::PureCall {
+                helper: RuntimePureHelperId(0),
+                args: vec![
+                    RuntimeExpr::Value(RuntimeValue::F32(RuntimeF32::from_f32(1.5))),
+                    RuntimeExpr::Value(RuntimeValue::F32(RuntimeF32::from_f32(2.0))),
+                ],
+            })],
+        }],
+        Vec::new(),
+    )
+    .expect("flow plan is valid")
+    .with_pure_helpers(vec![RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "score_f32".to_owned(),
+        input_names: vec!["base".to_owned(), "gain".to_owned()],
+        input_types: vec![RuntimePureInputType::F32, RuntimePureInputType::F32],
+        output_type: RuntimePureOutputType::F32,
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
+            op: RuntimeBinaryOp::Mul,
+            rhs: Box::new(RuntimeExpr::Local("gain".to_owned())),
+        },
+        scalar_eval_supported: true,
+        origin: RuntimePureHelperOrigin::Annotated,
+    }]);
+    let mut engine = Engine::new(plan);
+
+    let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+
+    assert!(matches!(
+        result.fiber_status,
+        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "3"
+    ));
+    assert_eq!(result.stats.pure.pure_calls, 1);
+    assert_eq!(result.stats.pure.arg_vec_allocations, 0);
+    assert_eq!(result.stats.pure.arg_bytes_copied, 0);
+    assert_eq!(
+        result.stats.pure.arg_bytes_borrowed,
+        2 * std::mem::size_of::<RuntimeF32>()
+    );
+}
+
+#[test]
 fn engine_batches_dense_u64_map_without_widening_flat_inputs() {
     assert_dense_exact_int_map_sum_uses_flat_batch(
         runtime_sequence_dense_u64(vec![3, 5, 7]),

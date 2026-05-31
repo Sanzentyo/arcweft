@@ -1463,7 +1463,18 @@ impl RuntimeExpr {
     /// Returns whether this expression can use the allocation-light scalar pure evaluator.
     pub fn supports_scalar_pure_eval(&self) -> bool {
         match self {
-            Self::Value(RuntimeValue::Bool(_) | RuntimeValue::Int(_)) | Self::Local(_) => true,
+            Self::Value(
+                RuntimeValue::Bool(_)
+                | RuntimeValue::Int(_)
+                | RuntimeValue::I128(_)
+                | RuntimeValue::ISize(_)
+                | RuntimeValue::UInt(_)
+                | RuntimeValue::U128(_)
+                | RuntimeValue::USize(_)
+                | RuntimeValue::F32(_)
+                | RuntimeValue::F64(_),
+            )
+            | Self::Local(_) => true,
             Self::Let { expr, body, .. } => {
                 expr.supports_scalar_pure_eval() && body.supports_scalar_pure_eval()
             }
@@ -1743,6 +1754,34 @@ impl RuntimeEnv {
         }
     }
 
+    pub(crate) fn replace_root_f32_bindings(
+        &mut self,
+        input_names: &[String],
+        args: &[RuntimeF32],
+    ) {
+        if self.scopes.is_empty() {
+            self.scopes.push(RuntimeScope::default());
+        }
+        self.scopes.truncate(1);
+        if let Some(scope) = self.scopes.first_mut() {
+            scope.replace_f32_bindings(input_names, args);
+        }
+    }
+
+    pub(crate) fn replace_root_f64_bindings(
+        &mut self,
+        input_names: &[String],
+        args: &[RuntimeF64],
+    ) {
+        if self.scopes.is_empty() {
+            self.scopes.push(RuntimeScope::default());
+        }
+        self.scopes.truncate(1);
+        if let Some(scope) = self.scopes.first_mut() {
+            scope.replace_f64_bindings(input_names, args);
+        }
+    }
+
     pub(crate) fn replace_root_exact_int_bindings<T: RuntimeExactInteger>(
         &mut self,
         input_names: &[String],
@@ -1886,6 +1925,45 @@ impl RuntimeScope {
                 .map(|(name, value)| RuntimeBinding {
                     name: name.clone(),
                     value: RuntimeValue::Int(i64::from(value)),
+                }),
+        );
+    }
+
+    fn replace_f32_bindings(&mut self, input_names: &[String], args: &[RuntimeF32]) {
+        self.replace_float_bindings(input_names, args, RuntimeValue::F32);
+    }
+
+    fn replace_f64_bindings(&mut self, input_names: &[String], args: &[RuntimeF64]) {
+        self.replace_float_bindings(input_names, args, RuntimeValue::F64);
+    }
+
+    fn replace_float_bindings<T: Copy>(
+        &mut self,
+        input_names: &[String],
+        args: &[T],
+        wrap: impl Fn(T) -> RuntimeValue,
+    ) {
+        if self.bindings.len() == input_names.len()
+            && self
+                .bindings
+                .iter()
+                .zip(input_names)
+                .all(|(binding, name)| binding.name == *name)
+        {
+            self.bindings
+                .iter_mut()
+                .zip(args.iter().copied())
+                .for_each(|(binding, value)| binding.value = wrap(value));
+            return;
+        }
+        self.bindings.clear();
+        self.bindings.extend(
+            input_names
+                .iter()
+                .zip(args.iter().copied())
+                .map(|(name, value)| RuntimeBinding {
+                    name: name.clone(),
+                    value: wrap(value),
                 }),
         );
     }

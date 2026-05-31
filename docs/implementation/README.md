@@ -763,12 +763,15 @@ Current high-confidence state:
   `i32`, `u16`, `u8`, and similar dense storage. Runtime pure helper metadata
   preserves source integer input and output widths (`i8` through `i128`, `u8`
   through `u128`, `isize`, `usize`, and `bool` outputs). The exact i64
-  accelerator still owns JIT/AOT execution, while the VM now also has an exact
-  i32 flat-batch ABI over `&[i32]` / `&mut [i32]`; the checked-in dense i32 pure
-  map bench verifies that the pure boundary borrows 1024 bytes for 128 two-arg
-  rows rather than widening to 2048 bytes. Other integer widths keep their dense
-  storage for `sum()` and `len()` and fall back until a matching typed VM/JIT/AOT
-  backend exists.
+  accelerator still owns JIT/AOT execution, while the VM flat-batch sum path
+  keeps exact integer helper rows typed as `&[i8]`, `&[i16]`, `&[i32]`,
+  `&[u8]`, `&[u16]`, `&[u32]`, `&[u64]`, `&[i128]`, or `&[u128]` instead of
+  widening them with `.map(i64::from)`. The checked-in dense i32 pure map bench
+  verifies that the pure boundary borrows 1024 bytes for 128 two-arg rows
+  rather than widening to 2048 bytes, and the multi-width flow tests assert the
+  same byte accounting for narrower and unsigned integer widths. JIT/AOT
+  specialization remains exact-i64-only until typed accelerator kernels are
+  added for the other widths.
 - `Vec<T>.len()` / `Seq<T>.len()` / fixed array length calls typecheck as
   `usize` and read `RuntimeSeq::len()` directly in the VM and pure VM. The
   checked-in dense scalar length bench exercises unit, bool, char, duration,
