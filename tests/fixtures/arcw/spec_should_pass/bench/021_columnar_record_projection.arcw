@@ -1,0 +1,9 @@
+bench @bench.columnar_record_projection {
+    measure iterations = 4 { start(@flow.columnar_record_projection) }
+}
+
+flow @flow.columnar_record_projection columnar_record_projection {
+    let rows = [{ score = 1i64, active = true }, { score = 2i64, active = false }, { score = 3i64, active = true }, { score = 4i64, active = false }, { score = 5i64, active = true }, { score = 6i64, active = false }, { score = 7i64, active = true }, { score = 8i64, active = false }]
+    log.info(rows.score.sum())
+    return "done"
+}
