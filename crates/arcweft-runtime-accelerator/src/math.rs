@@ -1130,7 +1130,7 @@ const fn wgpu_backend_enabled() -> bool {
 const fn wgpu_unavailable_reason() -> &'static str {
     cfg_select! {
         all(feature = "math-wgpu", target_arch = "wasm32") => {
-            "browser WebGPU math backend is not implemented"
+            "browser WebGPU math requires the async browser_webgpu adapter"
         }
         _ => {
             "math-wgpu feature is disabled"
@@ -1770,6 +1770,427 @@ mod wgpu_backend {
         u32::try_from(value).map_err(|_| {
             RuntimeMathAcceleratorError::Backend(format!(
                 "GPU dispatch dimension {value} exceeds u32"
+            ))
+        })
+    }
+
+    fn add_groups(len: usize) -> (usize, usize) {
+        let groups = len.div_ceil(256).max(1);
+        let groups_x = groups.min(65_535);
+        let groups_y = groups.div_ceil(groups_x);
+        (groups_x, groups_y.max(1))
+    }
+
+    const MATMUL_SHADER: &str = r"
+struct MatrixParams {
+    rows: u32,
+    k_len: u32,
+    cols: u32,
+    pad: u32,
+}
+
+@group(0) @binding(0) var<storage, read> lhs: array<f32>;
+@group(0) @binding(1) var<storage, read> rhs: array<f32>;
+@group(0) @binding(2) var<storage, read_write> out: array<f32>;
+@group(0) @binding(3) var<storage, read> params: MatrixParams;
+
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let col = id.x;
+    let row = id.y;
+    if (row >= params.rows || col >= params.cols) {
+        return;
+    }
+    var acc = 0.0;
+    for (var k = 0u; k < params.k_len; k = k + 1u) {
+        acc = acc + lhs[row * params.k_len + k] * rhs[k * params.cols + col];
+    }
+    out[row * params.cols + col] = acc;
+}
+";
+
+    const ADD_SHADER: &str = r"
+struct AddParams {
+    len: u32,
+    x_threads: u32,
+    pad1: u32,
+    pad2: u32,
+}
+
+@group(0) @binding(0) var<storage, read> lhs: array<f32>;
+@group(0) @binding(1) var<storage, read> rhs: array<f32>;
+@group(0) @binding(2) var<storage, read_write> out: array<f32>;
+@group(0) @binding(3) var<storage, read> params: AddParams;
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let index = id.y * params.x_threads + id.x;
+    if (index >= params.len) {
+        return;
+    }
+    out[index] = lhs[index] + rhs[index];
+}
+";
+}
+
+/// Browser WebGPU math adapter for `wasm32` players.
+///
+/// Browser WebGPU is asynchronous, so this adapter intentionally does not
+/// implement the synchronous runtime math backend. Browser players can await
+/// these calls at their adapter boundary and feed the resulting deterministic
+/// dense values back into the VM.
+#[cfg(all(feature = "math-wgpu", target_arch = "wasm32"))]
+pub mod browser_webgpu {
+    use super::{DenseMatrixF32, DenseTensorF32, RuntimeMathAcceleratorError};
+    use bytemuck::{Pod, Zeroable};
+    use futures_channel::oneshot;
+    use wgpu::util::DeviceExt;
+
+    /// Browser-side WebGPU transfer counters.
+    #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+    pub struct BrowserWebGpuMathStats {
+        pub dispatches: usize,
+        pub bytes_uploaded: usize,
+        pub bytes_downloaded: usize,
+        pub bytes_copied: usize,
+        pub buffer_creations: usize,
+        pub readback_buffer_creations: usize,
+        pub readback_buffer_reuse_hits: usize,
+    }
+
+    /// Async browser WebGPU context for dense `f32` math kernels.
+    pub struct BrowserWebGpuMathContext {
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        matmul_pipeline: wgpu::ComputePipeline,
+        add_pipeline: wgpu::ComputePipeline,
+        readback: Option<ReusableReadbackBuffer>,
+        stats: BrowserWebGpuMathStats,
+    }
+
+    struct ReusableReadbackBuffer {
+        buffer: wgpu::Buffer,
+        byte_len: usize,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Pod, Zeroable)]
+    struct MatmulParams {
+        rows: u32,
+        shared: u32,
+        cols: u32,
+        _pad: u32,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Pod, Zeroable)]
+    struct AddParams {
+        len: u32,
+        x_threads: u32,
+        _pad1: u32,
+        _pad2: u32,
+    }
+
+    impl BrowserWebGpuMathContext {
+        /// Create a browser WebGPU context. This must be awaited by the browser
+        /// adapter before dispatching kernels.
+        pub async fn new() -> Result<Self, RuntimeMathAcceleratorError> {
+            let instance =
+                wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+            let adapter = instance
+                .request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::HighPerformance,
+                    compatible_surface: None,
+                    force_fallback_adapter: false,
+                })
+                .await
+                .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+            let (device, queue) = adapter
+                .request_device(&wgpu::DeviceDescriptor {
+                    label: Some("arcweft-browser-runtime-math"),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                    experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                    memory_hints: wgpu::MemoryHints::Performance,
+                    trace: wgpu::Trace::Off,
+                })
+                .await
+                .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+            let matmul_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("arcweft-browser-matmul-f32"),
+                source: wgpu::ShaderSource::Wgsl(MATMUL_SHADER.into()),
+            });
+            let add_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("arcweft-browser-add-f32"),
+                source: wgpu::ShaderSource::Wgsl(ADD_SHADER.into()),
+            });
+            let matmul_pipeline =
+                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("arcweft-browser-matmul-f32"),
+                    layout: None,
+                    module: &matmul_shader,
+                    entry_point: Some("main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    cache: None,
+                });
+            let add_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("arcweft-browser-add-f32"),
+                layout: None,
+                module: &add_shader,
+                entry_point: Some("main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            });
+            Ok(Self {
+                device,
+                queue,
+                matmul_pipeline,
+                add_pipeline,
+                readback: None,
+                stats: BrowserWebGpuMathStats::default(),
+            })
+        }
+
+        pub const fn stats(&self) -> BrowserWebGpuMathStats {
+            self.stats
+        }
+
+        pub fn reset_stats(&mut self) {
+            self.stats = BrowserWebGpuMathStats::default();
+        }
+
+        pub async fn matmul_f32(
+            &mut self,
+            lhs: &DenseMatrixF32,
+            rhs: &DenseMatrixF32,
+        ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+            if lhs.cols() != rhs.rows() {
+                return lhs.matmul_scalar(rhs).map_err(Into::into);
+            }
+            let mut out = vec![0.0; lhs.rows() * rhs.cols()];
+            let params = MatmulParams {
+                rows: checked_u32(lhs.rows())?,
+                shared: checked_u32(lhs.cols())?,
+                cols: checked_u32(rhs.cols())?,
+                _pad: 0,
+            };
+            let pipeline = self.matmul_pipeline.clone();
+            self.dispatch(
+                &pipeline,
+                &[
+                    bytemuck::cast_slice(lhs.values()),
+                    bytemuck::cast_slice(rhs.values()),
+                ],
+                bytemuck::bytes_of(&params),
+                &mut out,
+                checked_u32(rhs.cols().div_ceil(16))?,
+                checked_u32(lhs.rows().div_ceil(16))?,
+            )
+            .await?;
+            DenseMatrixF32::new(lhs.rows(), rhs.cols(), out).map_err(Into::into)
+        }
+
+        pub async fn matrix_add_f32(
+            &mut self,
+            lhs: &DenseMatrixF32,
+            rhs: &DenseMatrixF32,
+        ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
+            if lhs.shape() != rhs.shape() {
+                return lhs.add_scalar(rhs).map_err(Into::into);
+            }
+            let mut out = vec![0.0; lhs.values().len()];
+            self.dispatch_add(lhs.values(), rhs.values(), &mut out)
+                .await?;
+            DenseMatrixF32::new(lhs.rows(), lhs.cols(), out).map_err(Into::into)
+        }
+
+        pub async fn tensor_add_f32(
+            &mut self,
+            lhs: &DenseTensorF32,
+            rhs: &DenseTensorF32,
+        ) -> Result<DenseTensorF32, RuntimeMathAcceleratorError> {
+            if lhs.shape() != rhs.shape() {
+                return lhs.add_scalar(rhs).map_err(Into::into);
+            }
+            let mut out = vec![0.0; lhs.values().len()];
+            self.dispatch_add(lhs.values(), rhs.values(), &mut out)
+                .await?;
+            DenseTensorF32::new(lhs.shape().dims().to_vec(), out).map_err(Into::into)
+        }
+
+        async fn dispatch_add(
+            &mut self,
+            lhs: &[f32],
+            rhs: &[f32],
+            out: &mut [f32],
+        ) -> Result<(), RuntimeMathAcceleratorError> {
+            let (groups_x, groups_y) = add_groups(out.len());
+            let params = AddParams {
+                len: checked_u32(out.len())?,
+                x_threads: checked_u32(groups_x * 256)?,
+                _pad1: 0,
+                _pad2: 0,
+            };
+            let pipeline = self.add_pipeline.clone();
+            self.dispatch(
+                &pipeline,
+                &[bytemuck::cast_slice(lhs), bytemuck::cast_slice(rhs)],
+                bytemuck::bytes_of(&params),
+                out,
+                checked_u32(groups_x)?,
+                checked_u32(groups_y)?,
+            )
+            .await
+        }
+
+        async fn dispatch(
+            &mut self,
+            pipeline: &wgpu::ComputePipeline,
+            input_bytes: &[&[u8]],
+            params_bytes: &[u8],
+            out: &mut [f32],
+            workgroups_x: u32,
+            workgroups_y: u32,
+        ) -> Result<(), RuntimeMathAcceleratorError> {
+            if out.is_empty() {
+                return Ok(());
+            }
+            let lhs = storage_buffer(&self.device, input_bytes[0], "arcweft-browser-math-lhs");
+            let rhs = storage_buffer(&self.device, input_bytes[1], "arcweft-browser-math-rhs");
+            let out_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("arcweft-browser-math-out"),
+                size: std::mem::size_of_val(out) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            let params = storage_buffer(&self.device, params_bytes, "arcweft-browser-math-params");
+            let layout = pipeline.get_bind_group_layout(0);
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("arcweft-browser-math-bind-group"),
+                layout: &layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: lhs.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: rhs.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: out_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: params.as_entire_binding(),
+                    },
+                ],
+            });
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("arcweft-browser-math-encoder"),
+                });
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("arcweft-browser-math-pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(0, &bind_group, &[]);
+                pass.dispatch_workgroups(workgroups_x.max(1), workgroups_y.max(1), 1);
+            }
+            self.encode_readback(&mut encoder, &out_buffer, out.len());
+            self.queue.submit(Some(encoder.finish()));
+            self.stats.dispatches += 1;
+            self.stats.bytes_uploaded += input_bytes.iter().map(|bytes| bytes.len()).sum::<usize>();
+            self.stats.bytes_downloaded += std::mem::size_of_val(out);
+            self.stats.bytes_copied += input_bytes.iter().map(|bytes| bytes.len()).sum::<usize>()
+                + std::mem::size_of_val(out);
+            self.stats.buffer_creations += 4;
+            self.read_staging_buffer(out).await
+        }
+
+        fn encode_readback(
+            &mut self,
+            encoder: &mut wgpu::CommandEncoder,
+            source: &wgpu::Buffer,
+            elements: usize,
+        ) {
+            let byte_len = elements * std::mem::size_of::<f32>();
+            let readback = self.ensure_readback_buffer(byte_len);
+            encoder.copy_buffer_to_buffer(source, 0, readback, 0, byte_len as u64);
+        }
+
+        fn ensure_readback_buffer(&mut self, byte_len: usize) -> &wgpu::Buffer {
+            let needs_new = self
+                .readback
+                .as_ref()
+                .is_none_or(|buffer| buffer.byte_len < byte_len);
+            if needs_new {
+                self.readback = Some(ReusableReadbackBuffer {
+                    buffer: self.device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some("arcweft-browser-math-readback"),
+                        size: byte_len.max(std::mem::size_of::<f32>()) as u64,
+                        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                        mapped_at_creation: false,
+                    }),
+                    byte_len,
+                });
+                self.stats.readback_buffer_creations += 1;
+            } else {
+                self.stats.readback_buffer_reuse_hits += 1;
+            }
+            &self
+                .readback
+                .as_ref()
+                .expect("browser readback buffer was initialized")
+                .buffer
+        }
+
+        async fn read_staging_buffer(
+            &self,
+            out: &mut [f32],
+        ) -> Result<(), RuntimeMathAcceleratorError> {
+            let byte_len = std::mem::size_of_val(out);
+            let buffer = &self
+                .readback
+                .as_ref()
+                .expect("browser readback buffer was initialized")
+                .buffer;
+            let (sender, receiver) = oneshot::channel();
+            buffer
+                .slice(0..byte_len as u64)
+                .map_async(wgpu::MapMode::Read, move |result| {
+                    let _ = sender.send(result);
+                });
+            receiver
+                .await
+                .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?
+                .map_err(|error| RuntimeMathAcceleratorError::Backend(error.to_string()))?;
+            {
+                let mapped = buffer.slice(0..byte_len as u64).get_mapped_range();
+                let values: &[f32] = bytemuck::cast_slice(&mapped);
+                out.copy_from_slice(values);
+            }
+            buffer.unmap();
+            Ok(())
+        }
+    }
+
+    fn storage_buffer(device: &wgpu::Device, contents: &[u8], label: &'static str) -> wgpu::Buffer {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        })
+    }
+
+    fn checked_u32(value: usize) -> Result<u32, RuntimeMathAcceleratorError> {
+        u32::try_from(value).map_err(|_| {
+            RuntimeMathAcceleratorError::Backend(format!(
+                "browser GPU dispatch dimension {value} exceeds u32"
             ))
         })
     }

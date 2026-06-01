@@ -40,6 +40,7 @@ blake3 = "1.8.5"
 bytemuck = "1.25.0"
 clap = "4.6.1"
 cranelift = { version = "0.121.2", features = ["jit", "module", "native"] }
+futures-channel = "0.3.32"
 glam = "0.33.0"
 lsp-types = "0.97.0"
 ndarray = "0.17.2"

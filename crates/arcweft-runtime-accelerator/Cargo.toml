@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 arcweft-core = { path = "../arcweft-core" }
 bytemuck = { workspace = true, optional = true }
+futures-channel = { workspace = true, optional = true }
 glam = { workspace = true, optional = true }
 ndarray = { workspace = true, optional = true }
 pollster = { workspace = true, optional = true }
@@ -26,7 +27,7 @@ default = ["math-glam", "math-ndarray", "native-jit"]
 native-jit = ["dep:arcweft-lang-jit-cranelift"]
 math-glam = ["dep:glam"]
 math-ndarray = ["dep:ndarray"]
-math-wgpu = ["dep:bytemuck", "dep:pollster", "dep:wgpu"]
+math-wgpu = ["dep:bytemuck", "dep:futures-channel", "dep:pollster", "dep:wgpu", "wgpu/webgpu"]
 
 [lib]
 path = "src/lib.rs"

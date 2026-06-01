@@ -546,11 +546,14 @@ preserve `f64` storage across the runtime boundary. `Auto` never selects wgpu
 for `f64`; explicit `wgpu` requests return a structured portability error for
 those kernels.
 Compile-time selection now also separates native accelerator code from browser
-Wasm builds. `native-jit` is target-specific to non-`wasm32`, and native wgpu
-math dispatch is selected only for non-`wasm32`; `wasm32-unknown-unknown`
-builds keep the accelerator API available but route pure helpers through VM/AOT
-CPU paths and report browser WebGPU math as not implemented instead of linking
-the blocking native adapter.
+Wasm builds. `native-jit` is target-specific to non-`wasm32`, and the blocking
+native wgpu math dispatch is selected only for non-`wasm32`;
+`wasm32-unknown-unknown` builds keep the accelerator API available but route
+pure helpers through VM/AOT CPU paths. Browser WebGPU math is available as a
+separate async adapter module for dense `f32` matmul, matrix add, and tensor
+add. The async path compiles for `wasm32-unknown-unknown --all-features`; it
+still needs an in-browser benchmark harness before its speed can be compared to
+native wgpu or browser CPU execution.
 
 Local path-free measurements:
 

@@ -81,16 +81,21 @@ VM-defined.
 boundary. The `native-jit` feature is a native-only dependency edge to
 `arcweft-lang-jit-cranelift`; on `wasm32` the accelerator crate compiles with
 the same public runtime backend modes, but JIT selection resolves to VM/AOT
-execution instead of linking Cranelift. Native wgpu math kernels are likewise
-selected only for non-`wasm32` targets. Browser WebGPU compute will need its own
-async adapter and benchmark harness before it can be treated as an enabled
-runtime math accelerator.
+execution instead of linking Cranelift. Native wgpu math kernels are selected
+only for non-`wasm32` targets because they use blocking readback. Browser WebGPU
+math is exposed separately as an async `browser_webgpu` adapter for dense
+`f32` matrix/tensor kernels, so browser player code can await GPU work at the
+adapter boundary and then feed deterministic dense values back into the VM.
 
 ## WebGPU / WebGL fallback
 
 - portable shader は WGSL + WebGPU limits。
 - WebGL fallback は別 shader / Vello Hybrid / CPU raster。
 - GPU object は thread 間共有しない。
+- runtime math acceleration on WebGPU requires `math-wgpu` and browser WebGPU
+  availability. The async adapter reports creation/readback errors instead of
+  silently falling back inside the GPU call; product players decide whether to
+  retry with VM/AOT CPU execution.
 
 
 
