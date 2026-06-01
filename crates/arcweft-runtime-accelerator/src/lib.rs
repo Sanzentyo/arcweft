@@ -23,12 +23,207 @@ use arcweft_core::{
         RuntimeIntrinsic, RuntimeSeq, RuntimeValue,
     },
 };
-use arcweft_lang_jit_cranelift::{
+use native_jit::{
     CompiledPureF32Inputs, CompiledPureF64Inputs, CompiledPureI32Inputs, CompiledPureI64Inputs,
     CompiledPureU32Inputs, CraneliftPureFunctionBackend,
 };
 use rayon::{ThreadPool, ThreadPoolBuilder, prelude::*};
 use std::fmt;
+
+#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+mod native_jit {
+    pub use arcweft_lang_jit_cranelift::{
+        CompiledPureF32Inputs, CompiledPureF64Inputs, CompiledPureI32Inputs, CompiledPureI64Inputs,
+        CompiledPureU32Inputs, CraneliftPureFunctionBackend,
+    };
+}
+
+#[cfg(not(all(feature = "native-jit", not(target_arch = "wasm32"))))]
+mod native_jit {
+    use arcweft_core::pure::{PureFunctionRequest, RuntimeFixedArgs};
+    use std::fmt;
+
+    #[derive(Debug)]
+    pub struct NativeJitUnavailable;
+
+    impl fmt::Display for NativeJitUnavailable {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("native Cranelift JIT is unavailable for this target")
+        }
+    }
+
+    impl std::error::Error for NativeJitUnavailable {}
+
+    pub struct CraneliftPureFunctionBackend;
+
+    pub struct CompiledPureI64Inputs;
+    pub struct CompiledPureI32Inputs;
+    pub struct CompiledPureU32Inputs;
+    pub struct CompiledPureF32Inputs;
+    pub struct CompiledPureF64Inputs;
+
+    impl CraneliftPureFunctionBackend {
+        pub fn compile_i64_with_inputs<'a, I>(
+            &self,
+            _request: &PureFunctionRequest,
+            _input_names: I,
+        ) -> Result<CompiledPureI64Inputs, NativeJitUnavailable>
+        where
+            I: IntoIterator<Item = &'a str>,
+        {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn compile_i32_with_inputs<'a, I>(
+            &self,
+            _request: &PureFunctionRequest,
+            _input_names: I,
+        ) -> Result<CompiledPureI32Inputs, NativeJitUnavailable>
+        where
+            I: IntoIterator<Item = &'a str>,
+        {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn compile_u32_with_inputs<'a, I>(
+            &self,
+            _request: &PureFunctionRequest,
+            _input_names: I,
+        ) -> Result<CompiledPureU32Inputs, NativeJitUnavailable>
+        where
+            I: IntoIterator<Item = &'a str>,
+        {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn compile_f32_with_inputs<'a, I>(
+            &self,
+            _request: &PureFunctionRequest,
+            _input_names: I,
+        ) -> Result<CompiledPureF32Inputs, NativeJitUnavailable>
+        where
+            I: IntoIterator<Item = &'a str>,
+        {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn compile_f64_with_inputs<'a, I>(
+            &self,
+            _request: &PureFunctionRequest,
+            _input_names: I,
+        ) -> Result<CompiledPureF64Inputs, NativeJitUnavailable>
+        where
+            I: IntoIterator<Item = &'a str>,
+        {
+            Err(NativeJitUnavailable)
+        }
+    }
+
+    impl CompiledPureI64Inputs {
+        pub fn param_names(&self) -> &[String] {
+            &[]
+        }
+
+        pub fn call(&self, _args: &[i64]) -> Result<i64, NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn call_i64_args(
+            &self,
+            _args: RuntimeFixedArgs<i64>,
+        ) -> Result<i64, NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn call_flat_batch(
+            &self,
+            _flat_inputs: &[i64],
+            _out: &mut [i64],
+        ) -> Result<(), NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn call_flat_batch_sum(
+            &self,
+            _flat_inputs: &[i64],
+            _rows: usize,
+        ) -> Result<i64, NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+    }
+
+    impl CompiledPureI32Inputs {
+        pub fn call(&self, _args: &[i32]) -> Result<i32, NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn call_flat_batch(
+            &self,
+            _flat_inputs: &[i32],
+            _out: &mut [i32],
+        ) -> Result<(), NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn call_flat_batch_sum(
+            &self,
+            _flat_inputs: &[i32],
+            _rows: usize,
+        ) -> Result<i64, NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+    }
+
+    impl CompiledPureU32Inputs {
+        pub fn call(&self, _args: &[u32]) -> Result<u32, NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn call_flat_batch(
+            &self,
+            _flat_inputs: &[u32],
+            _out: &mut [u32],
+        ) -> Result<(), NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn call_flat_batch_sum(
+            &self,
+            _flat_inputs: &[u32],
+            _rows: usize,
+        ) -> Result<i64, NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+    }
+
+    impl CompiledPureF32Inputs {
+        pub fn call(&self, _args: &[f32]) -> Result<f32, NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn call_flat_batch(
+            &self,
+            _flat_inputs: &[f32],
+            _out: &mut [f32],
+        ) -> Result<(), NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+    }
+
+    impl CompiledPureF64Inputs {
+        pub fn call(&self, _args: &[f64]) -> Result<f64, NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+
+        pub fn call_flat_batch(
+            &self,
+            _flat_inputs: &[f64],
+            _out: &mut [f64],
+        ) -> Result<(), NativeJitUnavailable> {
+            Err(NativeJitUnavailable)
+        }
+    }
+}
 
 /// Runtime pure backend selection used by CLI/player adapters.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -228,6 +423,13 @@ fn f32_value_bits(values: &[f32]) -> Vec<u32> {
 
 const AUTO_EAGER_JIT_WORK_UNITS: usize = 64;
 const AUTO_JIT_FLAT_BATCH_WORK_UNITS: usize = 512;
+
+const fn native_jit_enabled() -> bool {
+    cfg_select! {
+        all(feature = "native-jit", not(target_arch = "wasm32")) => { true }
+        _ => { false }
+    }
+}
 
 impl RuntimePureAotPlan {
     fn i64_plan(&self) -> Option<&AotPureI64Plan> {
@@ -807,6 +1009,9 @@ impl RuntimePureAccelerator {
     }
 
     fn promote_auto_jit_for_flat_batch(&mut self, helper: &RuntimePureHelper, rows: usize) {
+        if !native_jit_enabled() {
+            return;
+        }
         let work_units = rows.saturating_mul(self.helper_work_units(helper));
         if work_units <= auto_jit_flat_batch_threshold(helper, rows) {
             self.compile_stats.auto_jit_skipped_small += 1;
@@ -2479,7 +2684,7 @@ fn compile_auto(
     work_units: usize,
     stats: &mut RuntimePureCompileStats,
 ) -> RuntimePureCacheEntry {
-    if work_units >= AUTO_EAGER_JIT_WORK_UNITS {
+    if native_jit_enabled() && work_units >= AUTO_EAGER_JIT_WORK_UNITS {
         stats.auto_jit_selected += 1;
         return compile_jit(request, helper, stats)
             .or_else(|| compile_aot_i64(request, helper, stats))
@@ -2572,6 +2777,11 @@ fn compile_jit(
     if !helper_has_only_i64_inputs(helper) {
         return None;
     }
+    if !native_jit_enabled() {
+        stats.jit_attempts += 1;
+        stats.jit_failures += 1;
+        return None;
+    }
     stats.jit_attempts += 1;
     let compiled = CraneliftPureFunctionBackend
         .compile_i64_with_inputs(request, helper.input_names.iter().map(String::as_str))
@@ -2590,6 +2800,9 @@ fn compile_jit_i32(
     stats: &mut RuntimePureCompileStats,
 ) -> Option<RuntimePureCacheEntry> {
     if !helper_has_only_i32_inputs(helper) {
+        return None;
+    }
+    if !native_jit_enabled() {
         return None;
     }
     stats.jit_attempts += 1;
@@ -2612,6 +2825,9 @@ fn compile_jit_u32(
     if !helper_has_only_u32_inputs(helper) {
         return None;
     }
+    if !native_jit_enabled() {
+        return None;
+    }
     stats.jit_attempts += 1;
     let compiled = CraneliftPureFunctionBackend
         .compile_u32_with_inputs(request, helper.input_names.iter().map(String::as_str))
@@ -2632,6 +2848,9 @@ fn compile_jit_f32(
     if !helper_has_only_f32_inputs(helper) {
         return None;
     }
+    if !native_jit_enabled() {
+        return None;
+    }
     stats.jit_attempts += 1;
     let compiled = CraneliftPureFunctionBackend
         .compile_f32_with_inputs(request, helper.input_names.iter().map(String::as_str))
@@ -2650,6 +2869,9 @@ fn compile_jit_f64(
     stats: &mut RuntimePureCompileStats,
 ) -> Option<RuntimePureCacheEntry> {
     if !helper_has_only_f64_inputs(helper) {
+        return None;
+    }
+    if !native_jit_enabled() {
         return None;
     }
     stats.jit_attempts += 1;
@@ -2674,20 +2896,18 @@ fn compile_auto_scalar(
     match compile_aot_scalar(request, helper, input_type, output_type, stats) {
         Some(RuntimePureCacheEntry::Aot(aot)) => {
             stats.auto_aot_selected += 1;
-            if helper_has_only_i32_inputs(helper)
-                || helper_has_only_u32_inputs(helper)
-                || helper_has_only_f32_inputs(helper)
-                || helper_has_only_f64_inputs(helper)
-            {
+            let native_jit_candidate = native_jit_enabled()
+                && (helper_has_only_i32_inputs(helper)
+                    || helper_has_only_u32_inputs(helper)
+                    || helper_has_only_f32_inputs(helper)
+                    || helper_has_only_f64_inputs(helper));
+            if native_jit_candidate {
                 stats.auto_jit_deferred += 1;
             }
             RuntimePureCacheEntry::AutoAot {
                 aot,
                 jit: None,
-                jit_failed: !(helper_has_only_i32_inputs(helper)
-                    || helper_has_only_u32_inputs(helper)
-                    || helper_has_only_f32_inputs(helper)
-                    || helper_has_only_f64_inputs(helper)),
+                jit_failed: !native_jit_candidate,
             }
         }
         Some(_) => unreachable!("compile_aot_scalar only returns AOT entries"),
@@ -3715,16 +3935,26 @@ impl Default for RuntimePureAcceleratorConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(any(feature = "math-glam", feature = "math-ndarray"))]
+    use arcweft_core::value::RuntimeCallTarget;
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+    use arcweft_core::value::runtime_sequence_dense_u32;
+    #[cfg(any(
+        feature = "math-glam",
+        feature = "math-ndarray",
+        all(feature = "native-jit", not(target_arch = "wasm32"))
+    ))]
     use arcweft_core::{
         engine::{Engine, FlowExit, FlowFiberStatus},
-        plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan, RuntimePureHelperId},
+        plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan},
         step::{RuntimeStepInput, RuntimeStepOptions},
-        value::{
-            RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeISizeValue, RuntimeUSizeValue,
-            runtime_sequence_dense_u32,
-        },
+    };
+    use arcweft_core::{
+        plan::RuntimePureHelperId,
+        value::{RuntimeBinaryOp, RuntimeExpr, RuntimeISizeValue, RuntimeUSizeValue},
     };
 
+    #[cfg(feature = "math-glam")]
     #[test]
     fn runtime_flow_math_intrinsic_uses_adapter_math_accelerator() {
         let lhs = DenseMatrixF32::new(
@@ -3780,6 +4010,7 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "math-ndarray")]
     #[test]
     fn runtime_flow_f64_math_intrinsic_uses_width_preserving_adapter_backend() {
         let lhs =
@@ -3835,7 +4066,7 @@ mod tests {
         ));
     }
 
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     #[test]
     fn runtime_wgpu_math_cache_reuses_prepared_matmul_buffers_across_counter_reset() {
         let lhs = DenseMatrixF32::new(16, 16, vec![1.0; 256]).expect("matrix shape is valid");
@@ -3883,7 +4114,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     #[test]
     fn runtime_auto_wgpu_matmul_uses_prepared_cache_when_threshold_selects_gpu() {
         let lhs = DenseMatrixF32::new(8, 8, vec![1.0; 64]).expect("matrix shape is valid");
@@ -3923,7 +4154,7 @@ mod tests {
         assert_eq!(accelerator.math_stats().bytes_uploaded, 0);
     }
 
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     #[test]
     fn runtime_wgpu_math_cache_reuses_prepared_tensor_add_buffers() {
         let lhs = DenseTensorF32::new(vec![32], vec![1.0; 32]).expect("tensor shape is valid");
@@ -3961,7 +4192,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     #[test]
     fn runtime_auto_wgpu_matrix_add_uses_prepared_cache_when_threshold_selects_gpu() {
         let lhs = DenseMatrixF32::new(8, 8, vec![1.0; 64]).expect("matrix shape is valid");
@@ -4002,7 +4233,7 @@ mod tests {
         assert_eq!(accelerator.math_stats().bytes_uploaded, 0);
     }
 
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     #[test]
     fn runtime_auto_wgpu_tensor_add_uses_prepared_cache_when_threshold_selects_gpu() {
         let lhs = DenseTensorF32::new(vec![64], vec![1.0; 64]).expect("tensor shape is valid");
@@ -4190,6 +4421,7 @@ mod tests {
         assert_eq!(accelerator.compile_stats().jit_failures, 1);
     }
 
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     #[test]
     fn explicit_jit_uses_native_i32_for_slice_and_flat_batch() {
         let helper = RuntimePureHelper {
@@ -4240,6 +4472,7 @@ mod tests {
         assert_eq!(accelerator.summary().jit, 1);
     }
 
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     #[test]
     fn explicit_jit_uses_native_u32_for_slice_and_flat_batch() {
         let helper = RuntimePureHelper {
@@ -4298,6 +4531,7 @@ mod tests {
         assert_eq!(accelerator.summary().jit, 1);
     }
 
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     #[test]
     fn explicit_jit_uses_native_f32_for_slice_and_flat_batch() {
         let helper = RuntimePureHelper {
@@ -4355,6 +4589,7 @@ mod tests {
         assert_eq!(accelerator.summary().jit, 1);
     }
 
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     #[test]
     fn explicit_jit_uses_native_f64_for_slice_and_flat_batch() {
         let helper = RuntimePureHelper {
@@ -4412,6 +4647,7 @@ mod tests {
         assert_eq!(accelerator.summary().jit, 1);
     }
 
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     #[test]
     fn auto_promotes_large_i32_flat_batch_to_native_jit() {
         let helper = RuntimePureHelper {
@@ -4452,6 +4688,7 @@ mod tests {
         assert_eq!(accelerator.summary().jit, 1);
     }
 
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     #[test]
     fn auto_promotes_large_u32_flat_batch_to_native_jit() {
         let helper = RuntimePureHelper {
@@ -4492,6 +4729,7 @@ mod tests {
         assert_eq!(accelerator.summary().jit, 1);
     }
 
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     #[test]
     fn runtime_flow_dense_u32_map_sum_uses_native_jit_batch() {
         let helper = RuntimePureHelper {
@@ -4562,6 +4800,7 @@ mod tests {
         assert_eq!(result.stats.pure.arg_vec_allocations, 0);
     }
 
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     #[test]
     fn auto_promotes_large_f32_flat_batch_to_native_jit() {
         let helper = RuntimePureHelper {
@@ -4608,6 +4847,7 @@ mod tests {
         assert_eq!(accelerator.summary().jit, 1);
     }
 
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     #[test]
     fn auto_promotes_large_f64_flat_batch_to_native_jit() {
         let helper = RuntimePureHelper {
@@ -4654,6 +4894,7 @@ mod tests {
         assert_eq!(accelerator.summary().jit, 1);
     }
 
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     #[test]
     fn auto_accelerator_promotes_large_flat_batches_to_jit() {
         let helper = RuntimePureHelper {
@@ -4980,6 +5221,7 @@ mod tests {
         assert_eq!(accelerator.stats().thread_pool_jobs, 2);
     }
 
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     #[test]
     fn jit_batch_matches_scalar_results_without_value_vec_allocation() {
         let helper = RuntimePureHelper {
@@ -5038,6 +5280,7 @@ mod tests {
         assert_eq!(accelerator.summary().jit, 1);
     }
 
+    #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     #[test]
     fn jit_flat_batch_sum_avoids_output_copy() {
         let helper = RuntimePureHelper {

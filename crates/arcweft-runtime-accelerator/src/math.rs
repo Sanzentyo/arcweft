@@ -82,7 +82,7 @@ impl RuntimeMathBackendSelection {
 pub struct RuntimeMathAccelerator {
     config: RuntimeMathAcceleratorConfig,
     stats: RuntimeMathStats,
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     wgpu: Option<wgpu_backend::WgpuMathContext>,
 }
 
@@ -90,7 +90,7 @@ pub struct RuntimeMathAccelerator {
 pub struct RuntimePreparedMatrixAddF32 {
     rows: usize,
     cols: usize,
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     gpu: wgpu_backend::PreparedAddBuffers,
 }
 
@@ -99,14 +99,14 @@ pub struct RuntimePreparedMatrixMatmulF32 {
     rows: usize,
     shared: usize,
     cols: usize,
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     gpu: wgpu_backend::PreparedMatmulBuffers,
 }
 
 /// Prepared GPU storage for repeatedly adding the same `f32` tensors.
 pub struct RuntimePreparedTensorAddF32 {
     dims: Vec<usize>,
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     gpu: wgpu_backend::PreparedAddBuffers,
 }
 
@@ -149,7 +149,7 @@ impl RuntimeMathAccelerator {
         Self {
             config,
             stats: RuntimeMathStats::default(),
-            #[cfg(feature = "math-wgpu")]
+            #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
             wgpu: None,
         }
     }
@@ -305,28 +305,25 @@ impl RuntimeMathAccelerator {
             .into());
         }
         self.record_matrix_inputs(lhs, rhs);
-        #[cfg(feature = "math-wgpu")]
-        {
-            let gpu = self
-                .wgpu_context()
-                .and_then(|context| context.prepare_add(lhs.values(), rhs.values()))?;
-            self.stats.bytes_uploaded +=
-                (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
-            self.stats.bytes_copied +=
-                (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
-            self.stats.gpu_buffer_creations += 4;
-            Ok(RuntimePreparedMatrixAddF32 {
-                rows: lhs.rows(),
-                cols: lhs.cols(),
-                gpu,
-            })
-        }
-        #[cfg(not(feature = "math-wgpu"))]
-        {
-            let _ = (lhs, rhs);
-            Err(RuntimeMathAcceleratorError::Backend(
-                "math-wgpu feature is disabled".to_owned(),
-            ))
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let gpu = self
+                    .wgpu_context()
+                    .and_then(|context| context.prepare_add(lhs.values(), rhs.values()))?;
+                self.stats.bytes_uploaded +=
+                    (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
+                self.stats.bytes_copied +=
+                    (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
+                self.stats.gpu_buffer_creations += 4;
+                Ok(RuntimePreparedMatrixAddF32 {
+                    rows: lhs.rows(),
+                    cols: lhs.cols(),
+                    gpu,
+                })
+            }
+            _ => {
+                Err(wgpu_unavailable_error())
+            }
         }
     }
 
@@ -352,20 +349,18 @@ impl RuntimeMathAccelerator {
             }
             .into());
         }
-        #[cfg(feature = "math-wgpu")]
-        {
-            let readback = self
-                .wgpu_context()
-                .and_then(|context| context.dispatch_prepared_add(&prepared.gpu, out))?;
-            self.record_prepared_gpu_dispatch(prepared.gpu.len(), readback);
-            Ok(())
-        }
-        #[cfg(not(feature = "math-wgpu"))]
-        {
-            let _ = prepared;
-            Err(RuntimeMathAcceleratorError::Backend(
-                "math-wgpu feature is disabled".to_owned(),
-            ))
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let readback = self
+                    .wgpu_context()
+                    .and_then(|context| context.dispatch_prepared_add(&prepared.gpu, out))?;
+                self.record_prepared_gpu_dispatch(prepared.gpu.len(), readback);
+                Ok(())
+            }
+            _ => {
+                let _ = prepared;
+                Err(wgpu_unavailable_error())
+            }
         }
     }
 
@@ -383,35 +378,32 @@ impl RuntimeMathAccelerator {
             .into());
         }
         self.record_matrix_inputs(lhs, rhs);
-        #[cfg(feature = "math-wgpu")]
-        {
-            let gpu = self.wgpu_context().and_then(|context| {
-                context.prepare_matmul(
-                    lhs.values(),
-                    rhs.values(),
-                    lhs.rows(),
-                    lhs.cols(),
-                    rhs.cols(),
-                )
-            })?;
-            self.stats.bytes_uploaded +=
-                (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
-            self.stats.bytes_copied +=
-                (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
-            self.stats.gpu_buffer_creations += 4;
-            Ok(RuntimePreparedMatrixMatmulF32 {
-                rows: lhs.rows(),
-                shared: lhs.cols(),
-                cols: rhs.cols(),
-                gpu,
-            })
-        }
-        #[cfg(not(feature = "math-wgpu"))]
-        {
-            let _ = (lhs, rhs);
-            Err(RuntimeMathAcceleratorError::Backend(
-                "math-wgpu feature is disabled".to_owned(),
-            ))
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let gpu = self.wgpu_context().and_then(|context| {
+                    context.prepare_matmul(
+                        lhs.values(),
+                        rhs.values(),
+                        lhs.rows(),
+                        lhs.cols(),
+                        rhs.cols(),
+                    )
+                })?;
+                self.stats.bytes_uploaded +=
+                    (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
+                self.stats.bytes_copied +=
+                    (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
+                self.stats.gpu_buffer_creations += 4;
+                Ok(RuntimePreparedMatrixMatmulF32 {
+                    rows: lhs.rows(),
+                    shared: lhs.cols(),
+                    cols: rhs.cols(),
+                    gpu,
+                })
+            }
+            _ => {
+                Err(wgpu_unavailable_error())
+            }
         }
     }
 
@@ -437,20 +429,18 @@ impl RuntimeMathAccelerator {
             }
             .into());
         }
-        #[cfg(feature = "math-wgpu")]
-        {
-            let readback = self
-                .wgpu_context()
-                .and_then(|context| context.dispatch_prepared_matmul(&prepared.gpu, out))?;
-            self.record_prepared_gpu_dispatch(prepared.gpu.len(), readback);
-            Ok(())
-        }
-        #[cfg(not(feature = "math-wgpu"))]
-        {
-            let _ = prepared;
-            Err(RuntimeMathAcceleratorError::Backend(
-                "math-wgpu feature is disabled".to_owned(),
-            ))
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let readback = self
+                    .wgpu_context()
+                    .and_then(|context| context.dispatch_prepared_matmul(&prepared.gpu, out))?;
+                self.record_prepared_gpu_dispatch(prepared.gpu.len(), readback);
+                Ok(())
+            }
+            _ => {
+                let _ = prepared;
+                Err(wgpu_unavailable_error())
+            }
         }
     }
 
@@ -468,27 +458,24 @@ impl RuntimeMathAccelerator {
             .into());
         }
         self.record_tensor_inputs(lhs, rhs);
-        #[cfg(feature = "math-wgpu")]
-        {
-            let gpu = self
-                .wgpu_context()
-                .and_then(|context| context.prepare_add(lhs.values(), rhs.values()))?;
-            self.stats.bytes_uploaded +=
-                (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
-            self.stats.bytes_copied +=
-                (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
-            self.stats.gpu_buffer_creations += 4;
-            Ok(RuntimePreparedTensorAddF32 {
-                dims: lhs.shape().dims().to_vec(),
-                gpu,
-            })
-        }
-        #[cfg(not(feature = "math-wgpu"))]
-        {
-            let _ = (lhs, rhs);
-            Err(RuntimeMathAcceleratorError::Backend(
-                "math-wgpu feature is disabled".to_owned(),
-            ))
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let gpu = self
+                    .wgpu_context()
+                    .and_then(|context| context.prepare_add(lhs.values(), rhs.values()))?;
+                self.stats.bytes_uploaded +=
+                    (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
+                self.stats.bytes_copied +=
+                    (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<f32>();
+                self.stats.gpu_buffer_creations += 4;
+                Ok(RuntimePreparedTensorAddF32 {
+                    dims: lhs.shape().dims().to_vec(),
+                    gpu,
+                })
+            }
+            _ => {
+                Err(wgpu_unavailable_error())
+            }
         }
     }
 
@@ -514,20 +501,18 @@ impl RuntimeMathAccelerator {
             }
             .into());
         }
-        #[cfg(feature = "math-wgpu")]
-        {
-            let readback = self
-                .wgpu_context()
-                .and_then(|context| context.dispatch_prepared_add(&prepared.gpu, out))?;
-            self.record_prepared_gpu_dispatch(prepared.gpu.len(), readback);
-            Ok(())
-        }
-        #[cfg(not(feature = "math-wgpu"))]
-        {
-            let _ = prepared;
-            Err(RuntimeMathAcceleratorError::Backend(
-                "math-wgpu feature is disabled".to_owned(),
-            ))
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let readback = self
+                    .wgpu_context()
+                    .and_then(|context| context.dispatch_prepared_add(&prepared.gpu, out))?;
+                self.record_prepared_gpu_dispatch(prepared.gpu.len(), readback);
+                Ok(())
+            }
+            _ => {
+                let _ = prepared;
+                Err(wgpu_unavailable_error())
+            }
         }
     }
 
@@ -941,38 +926,36 @@ impl RuntimeMathAccelerator {
         lhs: &DenseMatrixF32,
         rhs: &DenseMatrixF32,
     ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
-        #[cfg(feature = "math-wgpu")]
-        {
-            let result = self
-                .wgpu_context()
-                .and_then(|context| context.matmul_f32(lhs, rhs));
-            match result {
-                Ok((value, readback)) => {
-                    self.stats.wgpu_calls += 1;
-                    self.stats.last_backend = Some(RuntimeMathBackend::Wgpu);
-                    self.record_gpu_transfer(
-                        lhs.values().len() + rhs.values().len(),
-                        lhs.rows() * rhs.cols(),
-                        readback,
-                    );
-                    return Ok(value);
-                }
-                Err(error) => {
-                    self.stats.fallback_calls += 1;
-                    if self.config.backend == RuntimeMathBackend::Wgpu {
-                        return Err(error);
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let result = self
+                    .wgpu_context()
+                    .and_then(|context| context.matmul_f32(lhs, rhs));
+                match result {
+                    Ok((value, readback)) => {
+                        self.stats.wgpu_calls += 1;
+                        self.stats.last_backend = Some(RuntimeMathBackend::Wgpu);
+                        self.record_gpu_transfer(
+                            lhs.values().len() + rhs.values().len(),
+                            lhs.rows() * rhs.cols(),
+                            readback,
+                        );
+                        return Ok(value);
+                    }
+                    Err(error) => {
+                        self.stats.fallback_calls += 1;
+                        if self.config.backend == RuntimeMathBackend::Wgpu {
+                            return Err(error);
+                        }
                     }
                 }
             }
-        }
-        #[cfg(not(feature = "math-wgpu"))]
-        {
-            if self.config.backend == RuntimeMathBackend::Wgpu {
-                return Err(RuntimeMathAcceleratorError::Backend(
-                    "math-wgpu feature is disabled".to_owned(),
-                ));
+            _ => {
+                if self.config.backend == RuntimeMathBackend::Wgpu {
+                    return Err(wgpu_unavailable_error());
+                }
+                self.stats.fallback_calls += 1;
             }
-            self.stats.fallback_calls += 1;
         }
         self.matmul_ndarray(lhs, rhs)
     }
@@ -982,38 +965,36 @@ impl RuntimeMathAccelerator {
         lhs: &DenseMatrixF32,
         rhs: &DenseMatrixF32,
     ) -> Result<DenseMatrixF32, RuntimeMathAcceleratorError> {
-        #[cfg(feature = "math-wgpu")]
-        {
-            let result = self
-                .wgpu_context()
-                .and_then(|context| context.matrix_add_f32(lhs, rhs));
-            match result {
-                Ok((value, readback)) => {
-                    self.stats.wgpu_calls += 1;
-                    self.stats.last_backend = Some(RuntimeMathBackend::Wgpu);
-                    self.record_gpu_transfer(
-                        lhs.values().len() + rhs.values().len(),
-                        lhs.values().len(),
-                        readback,
-                    );
-                    return Ok(value);
-                }
-                Err(error) => {
-                    self.stats.fallback_calls += 1;
-                    if self.config.backend == RuntimeMathBackend::Wgpu {
-                        return Err(error);
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let result = self
+                    .wgpu_context()
+                    .and_then(|context| context.matrix_add_f32(lhs, rhs));
+                match result {
+                    Ok((value, readback)) => {
+                        self.stats.wgpu_calls += 1;
+                        self.stats.last_backend = Some(RuntimeMathBackend::Wgpu);
+                        self.record_gpu_transfer(
+                            lhs.values().len() + rhs.values().len(),
+                            lhs.values().len(),
+                            readback,
+                        );
+                        return Ok(value);
+                    }
+                    Err(error) => {
+                        self.stats.fallback_calls += 1;
+                        if self.config.backend == RuntimeMathBackend::Wgpu {
+                            return Err(error);
+                        }
                     }
                 }
             }
-        }
-        #[cfg(not(feature = "math-wgpu"))]
-        {
-            if self.config.backend == RuntimeMathBackend::Wgpu {
-                return Err(RuntimeMathAcceleratorError::Backend(
-                    "math-wgpu feature is disabled".to_owned(),
-                ));
+            _ => {
+                if self.config.backend == RuntimeMathBackend::Wgpu {
+                    return Err(wgpu_unavailable_error());
+                }
+                self.stats.fallback_calls += 1;
             }
-            self.stats.fallback_calls += 1;
         }
         self.matrix_add_ndarray(lhs, rhs)
     }
@@ -1023,38 +1004,36 @@ impl RuntimeMathAccelerator {
         lhs: &DenseTensorF32,
         rhs: &DenseTensorF32,
     ) -> Result<DenseTensorF32, RuntimeMathAcceleratorError> {
-        #[cfg(feature = "math-wgpu")]
-        {
-            let result = self
-                .wgpu_context()
-                .and_then(|context| context.tensor_add_f32(lhs, rhs));
-            match result {
-                Ok((value, readback)) => {
-                    self.stats.wgpu_calls += 1;
-                    self.stats.last_backend = Some(RuntimeMathBackend::Wgpu);
-                    self.record_gpu_transfer(
-                        lhs.values().len() + rhs.values().len(),
-                        lhs.values().len(),
-                        readback,
-                    );
-                    return Ok(value);
-                }
-                Err(error) => {
-                    self.stats.fallback_calls += 1;
-                    if self.config.backend == RuntimeMathBackend::Wgpu {
-                        return Err(error);
+        cfg_select! {
+            all(feature = "math-wgpu", not(target_arch = "wasm32")) => {
+                let result = self
+                    .wgpu_context()
+                    .and_then(|context| context.tensor_add_f32(lhs, rhs));
+                match result {
+                    Ok((value, readback)) => {
+                        self.stats.wgpu_calls += 1;
+                        self.stats.last_backend = Some(RuntimeMathBackend::Wgpu);
+                        self.record_gpu_transfer(
+                            lhs.values().len() + rhs.values().len(),
+                            lhs.values().len(),
+                            readback,
+                        );
+                        return Ok(value);
+                    }
+                    Err(error) => {
+                        self.stats.fallback_calls += 1;
+                        if self.config.backend == RuntimeMathBackend::Wgpu {
+                            return Err(error);
+                        }
                     }
                 }
             }
-        }
-        #[cfg(not(feature = "math-wgpu"))]
-        {
-            if self.config.backend == RuntimeMathBackend::Wgpu {
-                return Err(RuntimeMathAcceleratorError::Backend(
-                    "math-wgpu feature is disabled".to_owned(),
-                ));
+            _ => {
+                if self.config.backend == RuntimeMathBackend::Wgpu {
+                    return Err(wgpu_unavailable_error());
+                }
+                self.stats.fallback_calls += 1;
             }
-            self.stats.fallback_calls += 1;
         }
         self.tensor_add_ndarray(lhs, rhs)
     }
@@ -1069,7 +1048,7 @@ impl RuntimeMathAccelerator {
             (lhs.values().len() + rhs.values().len()) * std::mem::size_of::<T>();
     }
 
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     fn record_gpu_transfer(
         &mut self,
         uploaded_elements: usize,
@@ -1085,7 +1064,7 @@ impl RuntimeMathAccelerator {
         self.record_gpu_readback(readback);
     }
 
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     fn record_prepared_gpu_dispatch(
         &mut self,
         downloaded_elements: usize,
@@ -1101,13 +1080,13 @@ impl RuntimeMathAccelerator {
         self.record_gpu_readback(readback);
     }
 
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     fn record_gpu_readback(&mut self, readback: wgpu_backend::GpuReadbackUsage) {
         self.stats.gpu_staging_buffer_creations += usize::from(readback.created);
         self.stats.gpu_staging_buffer_reuse_hits += usize::from(readback.reused);
     }
 
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     fn wgpu_context(
         &mut self,
     ) -> Result<&mut wgpu_backend::WgpuMathContext, RuntimeMathAcceleratorError> {
@@ -1118,6 +1097,7 @@ impl RuntimeMathAccelerator {
     }
 }
 
+#[cfg(feature = "math-glam")]
 fn row_major_4x4_to_cols<T: Copy>(values: &[T]) -> [T; 16] {
     [
         values[0], values[4], values[8], values[12], values[1], values[5], values[9], values[13],
@@ -1125,6 +1105,7 @@ fn row_major_4x4_to_cols<T: Copy>(values: &[T]) -> [T; 16] {
     ]
 }
 
+#[cfg(feature = "math-glam")]
 fn cols_4x4_to_row_major<T: Copy>(values: [T; 16]) -> Vec<T> {
     vec![
         values[0], values[4], values[8], values[12], values[1], values[5], values[9], values[13],
@@ -1139,7 +1120,27 @@ fn matmul_work_items<T>(lhs: &DenseMatrix<T>, rhs: &DenseMatrix<T>) -> usize {
 }
 
 const fn wgpu_backend_enabled() -> bool {
-    cfg!(feature = "math-wgpu")
+    cfg_select! {
+        all(feature = "math-wgpu", not(target_arch = "wasm32")) => { true }
+        _ => { false }
+    }
+}
+
+#[cfg(any(not(feature = "math-wgpu"), target_arch = "wasm32"))]
+const fn wgpu_unavailable_reason() -> &'static str {
+    cfg_select! {
+        all(feature = "math-wgpu", target_arch = "wasm32") => {
+            "browser WebGPU math backend is not implemented"
+        }
+        _ => {
+            "math-wgpu feature is disabled"
+        }
+    }
+}
+
+#[cfg(any(not(feature = "math-wgpu"), target_arch = "wasm32"))]
+fn wgpu_unavailable_error() -> RuntimeMathAcceleratorError {
+    RuntimeMathAcceleratorError::Backend(wgpu_unavailable_reason().to_owned())
 }
 
 #[derive(Debug, Error)]
@@ -1150,7 +1151,7 @@ pub enum RuntimeMathAcceleratorError {
     Backend(String),
 }
 
-#[cfg(feature = "math-wgpu")]
+#[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
 mod wgpu_backend {
     use super::{DenseMatrixF32, DenseTensorF32, RuntimeMathAcceleratorError};
     use bytemuck::{Pod, Zeroable};
@@ -1836,6 +1837,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 mod tests {
     use super::*;
 
+    #[cfg(all(feature = "math-glam", feature = "math-ndarray"))]
     #[test]
     fn scalar_ndarray_and_glam_matmul_match() {
         let lhs = DenseMatrixF32::new(4, 4, (0_u8..16).map(f32::from).collect()).unwrap();
@@ -1867,6 +1869,7 @@ mod tests {
         assert_eq!(ndarray.stats().ndarray_calls, 1);
     }
 
+    #[cfg(all(feature = "math-glam", feature = "math-ndarray"))]
     #[test]
     fn scalar_ndarray_and_glam_f64_matmul_match_without_widening() {
         let lhs = DenseMatrixF64::new(4, 4, (0_u8..16).map(f64::from).collect()).unwrap();
@@ -1898,6 +1901,7 @@ mod tests {
         assert_eq!(ndarray.stats().ndarray_calls, 1);
     }
 
+    #[cfg(feature = "math-ndarray")]
     #[test]
     fn tensor_add_keeps_shape_and_backend_stats() {
         let lhs = DenseTensorF32::new(vec![2, 2, 2], vec![1.0; 8]).unwrap();
@@ -1918,6 +1922,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "math-ndarray")]
     #[test]
     fn f64_tensor_add_keeps_shape_and_backend_stats_without_widening() {
         let lhs = DenseTensorF64::new(vec![2, 2, 2], vec![1.5; 8]).unwrap();
@@ -1942,6 +1947,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "math-ndarray")]
     #[test]
     fn auto_f64_math_stays_on_cpu_even_when_wgpu_threshold_matches() {
         let lhs = DenseMatrixF64::new(8, 8, vec![1.0; 64]).unwrap();
@@ -2008,6 +2014,7 @@ mod tests {
         assert_eq!(accelerator.stats().wgpu_calls, 0);
     }
 
+    #[cfg(feature = "math-glam")]
     #[test]
     fn auto_4x4_matmul_records_glam_policy_reason() {
         let lhs = DenseMatrixF32::new(4, 4, (0_u8..16).map(f32::from).collect()).unwrap();
@@ -2032,6 +2039,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "math-ndarray")]
     #[test]
     fn auto_elementwise_records_cpu_policy_reason() {
         let lhs = DenseMatrixF32::new(2, 2, vec![1.0; 4]).unwrap();
@@ -2051,7 +2059,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     #[test]
     fn auto_large_elementwise_records_wgpu_threshold_policy_reason() {
         let lhs = DenseMatrixF32::new(4, 4, vec![1.0; 16]).unwrap();
@@ -2076,7 +2084,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     #[test]
     fn auto_large_matmul_records_wgpu_threshold_policy_reason() {
         let lhs = DenseMatrixF32::new(8, 8, vec![1.0; 64]).unwrap();
@@ -2101,7 +2109,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     #[test]
     fn prepared_matrix_matmul_reuses_gpu_buffers_when_adapter_is_available() {
         let lhs = DenseMatrixF32::new(
@@ -2154,7 +2162,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     #[test]
     fn one_shot_wgpu_readback_reuses_staging_buffer_when_adapter_is_available() {
         let lhs = DenseMatrixF32::new(16, 16, vec![1.0; 256]).unwrap();
@@ -2178,7 +2186,7 @@ mod tests {
         assert_eq!(accelerator.stats().gpu_staging_buffer_reuse_hits, 1);
     }
 
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     #[test]
     fn prepared_tensor_add_reuses_gpu_buffers_when_adapter_is_available() {
         let lhs = DenseTensorF32::new(vec![1024], vec![1.0; 1024]).unwrap();
@@ -2210,7 +2218,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "math-wgpu")]
+    #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
     #[test]
     fn prepared_matrix_add_can_write_into_reused_output_buffer() {
         let lhs = DenseMatrixF32::new(16, 16, vec![1.0; 256]).unwrap();

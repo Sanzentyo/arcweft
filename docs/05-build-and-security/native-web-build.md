@@ -71,7 +71,20 @@ dist/web/
   game.awfb
 ```
 
-The browser player does not use runtime JIT or Wasmtime. It runs the same bytecode VM compiled to Wasm, with browser adapters for fetch/cache/storage, WebAudio, DOM UI, and WebGPU/WebGL. Future build-time AOT Wasm helpers may be emitted for pure functions, but flow/dialogue/choice/Need semantics remain VM-defined.
+The browser player does not use runtime JIT or Wasmtime. It runs the same
+bytecode VM compiled to Wasm, with browser adapters for fetch/cache/storage,
+WebAudio, DOM UI, and WebGPU/WebGL. Future build-time AOT Wasm helpers may be
+emitted for pure functions, but flow/dialogue/choice/Need semantics remain
+VM-defined.
+
+`arcweft-runtime-accelerator` uses compile-time target selection for this
+boundary. The `native-jit` feature is a native-only dependency edge to
+`arcweft-lang-jit-cranelift`; on `wasm32` the accelerator crate compiles with
+the same public runtime backend modes, but JIT selection resolves to VM/AOT
+execution instead of linking Cranelift. Native wgpu math kernels are likewise
+selected only for non-`wasm32` targets. Browser WebGPU compute will need its own
+async adapter and benchmark harness before it can be treated as an enabled
+runtime math accelerator.
 
 ## WebGPU / WebGL fallback
 

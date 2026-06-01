@@ -545,6 +545,12 @@ matrix/tensor calls stay on scalar, glam 4x4, or ndarray CPU backends and
 preserve `f64` storage across the runtime boundary. `Auto` never selects wgpu
 for `f64`; explicit `wgpu` requests return a structured portability error for
 those kernels.
+Compile-time selection now also separates native accelerator code from browser
+Wasm builds. `native-jit` is target-specific to non-`wasm32`, and native wgpu
+math dispatch is selected only for non-`wasm32`; `wasm32-unknown-unknown`
+builds keep the accelerator API available but route pure helpers through VM/AOT
+CPU paths and report browser WebGPU math as not implemented instead of linking
+the blocking native adapter.
 
 Local path-free measurements:
 

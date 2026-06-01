@@ -8,7 +8,6 @@ repository.workspace = true
 
 [dependencies]
 arcweft-core = { path = "../arcweft-core" }
-arcweft-lang-jit-cranelift = { path = "../arcweft-lang-jit-cranelift" }
 bytemuck = { workspace = true, optional = true }
 glam = { workspace = true, optional = true }
 ndarray = { workspace = true, optional = true }
@@ -19,8 +18,12 @@ serde_json.workspace = true
 thiserror.workspace = true
 wgpu = { workspace = true, optional = true }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+arcweft-lang-jit-cranelift = { path = "../arcweft-lang-jit-cranelift", optional = true }
+
 [features]
-default = ["math-glam", "math-ndarray"]
+default = ["math-glam", "math-ndarray", "native-jit"]
+native-jit = ["dep:arcweft-lang-jit-cranelift"]
 math-glam = ["dep:glam"]
 math-ndarray = ["dep:ndarray"]
 math-wgpu = ["dep:bytemuck", "dep:pollster", "dep:wgpu"]

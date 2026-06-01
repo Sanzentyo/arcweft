@@ -5,6 +5,7 @@ The native Cranelift adapter builds functions with Cranelift's `speed`
 optimization level; VM conformance remains mandatory for every compiled helper.
 
 `arcweft-core` は Cranelift に依存せず、`jit-cranelift` feature も持たない。product feature 名は `native-jit` とし、native player が `arcweft-lang-jit-cranelift` adapter を選択する。
+`native-jit` は `arcweft-runtime-accelerator` 側でも native-only の target-specific dependency であり、`wasm32` build では同じ backend mode enum を保持したまま Cranelift をリンクしない。ブラウザ実行は VM/AOT CPU 経路を使い、runtime JIT は有効化しない。
 
 ## 対象
 
