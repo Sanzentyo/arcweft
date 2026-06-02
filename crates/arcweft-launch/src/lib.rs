@@ -67,6 +67,8 @@ pub struct LaunchProfileSpec {
     listen: Option<String>,
     #[serde(default)]
     pure: Option<LaunchPureProfileSpec>,
+    #[serde(default)]
+    rust_metadata: Vec<PathBuf>,
 }
 
 /// Optional pure-helper execution policy for one launch profile.
@@ -94,6 +96,7 @@ pub struct ResolvedLaunchProfile {
     adapter: Option<String>,
     listen: Option<String>,
     pure: Option<LaunchPureProfileSpec>,
+    rust_metadata: Vec<PathBuf>,
 }
 
 /// Errors from parsing or resolving launch profile data.
@@ -164,6 +167,17 @@ impl LaunchProfileManifest {
         } else {
             manifest_dir.join(&spec.source)
         };
+        let rust_metadata = spec
+            .rust_metadata
+            .iter()
+            .map(|path| {
+                if path.is_absolute() {
+                    path.clone()
+                } else {
+                    manifest_dir.join(path)
+                }
+            })
+            .collect();
         Ok(ResolvedLaunchProfile {
             id: ProfileId::new(id),
             kind: spec.kind,
@@ -172,6 +186,7 @@ impl LaunchProfileManifest {
             adapter: spec.adapter.clone(),
             listen: spec.listen.clone(),
             pure: spec.pure.clone(),
+            rust_metadata,
         })
     }
 
@@ -216,6 +231,11 @@ impl ResolvedLaunchProfile {
     pub const fn pure(&self) -> Option<&LaunchPureProfileSpec> {
         self.pure.as_ref()
     }
+
+    /// Rust ABI metadata files selected by this profile.
+    pub fn rust_metadata(&self) -> &[PathBuf] {
+        &self.rust_metadata
+    }
 }
 
 impl LaunchPureProfileSpec {
@@ -259,6 +279,7 @@ source = "src/server.arcw"
 entry = "http"
 adapter = "native-http"
 listen = "127.0.0.1:8787"
+rust_metadata = ["target/arcweft/truck_game.json"]
 
 [profiles."server.dev".pure]
 backend = "jit"
@@ -279,6 +300,10 @@ batch_min_len = 2048
         assert_eq!(resolved.entry(), Some("http"));
         assert_eq!(resolved.adapter(), Some("native-http"));
         assert_eq!(resolved.listen(), Some("127.0.0.1:8787"));
+        assert_eq!(
+            resolved.rust_metadata(),
+            &[PathBuf::from("game/target/arcweft/truck_game.json")]
+        );
         let pure = resolved.pure().expect("pure profile resolves");
         assert_eq!(pure.backend(), Some(LaunchPureBackend::Jit));
         assert_eq!(pure.math_backend(), Some(LaunchMathBackend::Ndarray));

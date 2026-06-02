@@ -1,0 +1,22 @@
+[package]
+name = "arcweft-rust-abi-macros"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
+proc-macro = true
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+syn = { workspace = true, features = ["full"] }
+
+[dev-dependencies]
+arcweft-rust-abi = { path = "../arcweft-rust-abi" }
+
+[lints]
+workspace = true

@@ -16,6 +16,45 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 }
 
 #[test]
+fn adapter_function_signature_checks_arguments() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    let rank = mini_games.truck.score_to_rank(score = 42i32)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("adapter signature fixture lowers");
+    let env = TypeCheckEnv::new().with_function_signature(
+        "mini_games.truck.score_to_rank",
+        FunctionSignature::new(
+            TypeKind::Named("Rank".to_owned()),
+            [FunctionParam::required("score", TypeKind::I32)],
+        ),
+    );
+    typecheck_hir(&hir, &env).expect("adapter signature typechecks");
+
+    let bad = parse_ok(
+        r#"
+flow @flow.opening opening {
+    let rank = mini_games.truck.score_to_rank(score = "bad")
+}
+"#,
+    );
+    let bad_hir = lower_to_hir(&bad).expect("bad adapter signature fixture lowers");
+    let errors = typecheck_hir(&bad_hir, &env).expect_err("argument mismatch is rejected");
+    assert!(errors.iter().any(|error| matches!(
+        error.kind(),
+        TypeCheckErrorKind::ArgumentTypeMismatch {
+            function,
+            argument,
+            expected: TypeKind::I32,
+            actual: TypeKind::String,
+        } if function == "mini_games.truck.score_to_rank" && argument == "score"
+    )));
+}
+
+#[test]
 fn typecheck_report_counts_type_and_borrow_work() {
     let tree = parse_ok(
         r#"

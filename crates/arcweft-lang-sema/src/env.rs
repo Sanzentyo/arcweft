@@ -1,10 +1,28 @@
 use crate::types::TypeKind;
+use arcweft_lang_syntax::types::FnParamKind;
 use std::collections::{HashMap, HashSet};
+
+/// Function or method signature tracked by the semantic environment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FunctionSignature {
+    pub(crate) return_type: TypeKind,
+    pub(crate) params: Vec<FunctionParam>,
+    pub(crate) checks_args: bool,
+}
+
+/// One function or method parameter in a semantic environment signature.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FunctionParam {
+    pub(crate) name: Option<String>,
+    pub(crate) ty: TypeKind,
+    pub(crate) kind: FnParamKind,
+    pub(crate) has_default: bool,
+}
 
 /// Method signature tracked by the lightweight semantic environment.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MethodSignature {
-    pub(crate) return_type: TypeKind,
+    pub(crate) signature: FunctionSignature,
 }
 
 /// Small, explicit environment used to validate that HIR can feed type checking.
@@ -12,9 +30,92 @@ pub struct MethodSignature {
 pub struct TypeCheckEnv {
     pub(crate) symbols: HashMap<String, TypeKind>,
     pub(crate) functions: HashMap<String, TypeKind>,
+    pub(crate) function_signatures: HashMap<String, FunctionSignature>,
     pub(crate) methods: HashMap<(TypeKind, String), MethodSignature>,
     pub(crate) indexes: HashMap<TypeKind, TypeKind>,
     pub(crate) capabilities: HashSet<String>,
+}
+
+impl FunctionSignature {
+    /// Creates a fixed-arity function signature.
+    pub fn new(return_type: TypeKind, params: impl IntoIterator<Item = FunctionParam>) -> Self {
+        Self {
+            return_type,
+            params: params.into_iter().collect(),
+            checks_args: true,
+        }
+    }
+
+    /// Creates a return-only signature for adapter surfaces whose parameter
+    /// model is supplied by a later typed metadata pass.
+    pub fn return_only(return_type: TypeKind) -> Self {
+        Self {
+            return_type,
+            params: Vec::new(),
+            checks_args: false,
+        }
+    }
+
+    /// Return type produced by the callable.
+    pub const fn return_type(&self) -> &TypeKind {
+        &self.return_type
+    }
+
+    /// Ordered parameters accepted by the callable.
+    pub fn params(&self) -> &[FunctionParam] {
+        &self.params
+    }
+
+    /// Whether this signature has enough parameter information for arg checks.
+    pub const fn checks_args(&self) -> bool {
+        self.checks_args
+    }
+}
+
+impl FunctionParam {
+    /// Creates a required positional/named parameter.
+    pub fn required(name: impl Into<String>, ty: TypeKind) -> Self {
+        Self {
+            name: Some(name.into()),
+            ty,
+            kind: FnParamKind::Fixed,
+            has_default: false,
+        }
+    }
+
+    /// Creates a rest parameter.
+    pub fn rest(name: impl Into<String>, ty: TypeKind) -> Self {
+        Self {
+            name: Some(name.into()),
+            ty,
+            kind: FnParamKind::Rest,
+            has_default: false,
+        }
+    }
+
+    /// Parameter name when one is visible to tooling.
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    /// Parameter type.
+    pub const fn ty(&self) -> &TypeKind {
+        &self.ty
+    }
+
+    /// Surface parameter kind.
+    pub const fn kind(&self) -> FnParamKind {
+        self.kind
+    }
+
+    /// Whether the parameter has a default value.
+    pub const fn has_default(&self) -> bool {
+        self.has_default
+    }
+
+    pub(crate) const fn is_rest(&self) -> bool {
+        matches!(self.kind, FnParamKind::Rest)
+    }
 }
 
 impl TypeCheckEnv {
@@ -37,6 +138,20 @@ impl TypeCheckEnv {
         self
     }
 
+    /// Registers a free function with full argument signature.
+    #[must_use]
+    pub fn with_function_signature(
+        mut self,
+        name: impl Into<String>,
+        signature: FunctionSignature,
+    ) -> Self {
+        let name = name.into();
+        self.functions
+            .insert(name.clone(), signature.return_type().clone());
+        self.function_signatures.insert(name, signature);
+        self
+    }
+
     /// Registers a method return type for a receiver type.
     #[must_use]
     pub fn with_method(
@@ -45,8 +160,25 @@ impl TypeCheckEnv {
         method: impl Into<String>,
         return_type: TypeKind,
     ) -> Self {
+        self.methods.insert(
+            (receiver, method.into()),
+            MethodSignature {
+                signature: FunctionSignature::return_only(return_type),
+            },
+        );
+        self
+    }
+
+    /// Registers a method with full argument signature for a receiver type.
+    #[must_use]
+    pub fn with_method_signature(
+        mut self,
+        receiver: TypeKind,
+        method: impl Into<String>,
+        signature: FunctionSignature,
+    ) -> Self {
         self.methods
-            .insert((receiver, method.into()), MethodSignature { return_type });
+            .insert((receiver, method.into()), MethodSignature { signature });
         self
     }
 
@@ -72,10 +204,24 @@ impl TypeCheckEnv {
         self.functions.get(name)
     }
 
+    pub(crate) fn function_signature(&self, name: &str) -> Option<&FunctionSignature> {
+        self.function_signatures.get(name)
+    }
+
     pub(crate) fn method_type(&self, receiver: &TypeKind, method: &str) -> Option<&TypeKind> {
         self.methods
             .get(&(receiver.clone(), method.to_owned()))
-            .map(|signature| &signature.return_type)
+            .map(|method| method.signature.return_type())
+    }
+
+    pub(crate) fn method_signature(
+        &self,
+        receiver: &TypeKind,
+        method: &str,
+    ) -> Option<&FunctionSignature> {
+        self.methods
+            .get(&(receiver.clone(), method.to_owned()))
+            .map(|method| &method.signature)
     }
 
     pub(crate) fn index_type(&self, target: &TypeKind) -> Option<&TypeKind> {

@@ -91,3 +91,10 @@ expansion actions, relative-ID materialization actions, and inferred-ID inlay
 hints. These helpers return `lsp-types` data only; opening documents, applying
 workspace edits, watching files, and resolving editor capabilities remain
 transport-adapter responsibilities.
+
+Rust adapter completions, hover, and signature help are also Sans I/O. The LSP
+helper consumes an already-resolved adapter context containing
+`arcweft-rust-abi` metadata. It does not parse Rust source, query rust-analyzer,
+or run Cargo by itself. Transport code refreshes metadata when the selected
+profile, metadata JSON, or Cargo build output changes, and can continue showing
+the last valid metadata while reporting stale or missing metadata.

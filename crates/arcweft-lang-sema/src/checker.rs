@@ -3,7 +3,7 @@ use crate::borrow::{
     BorrowStateJournalEntry, merge_borrow_local_states,
 };
 use crate::diagnostics::{TypeCheckError, TypeCheckReadinessError, TypeCheckWarning};
-use crate::env::TypeCheckEnv;
+use crate::env::{FunctionParam, FunctionSignature, TypeCheckEnv};
 use crate::fact_layer::{EffectScope, capability_from_expr};
 use crate::lifetime::{
     collect_type_kind_lifetimes, lifetime_key, lifetime_value_type, type_contains_borrow_ref,
@@ -26,7 +26,7 @@ use arcweft_lang_syntax::{
         },
     },
     expr::{CallArg, Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind, Literal},
-    types::{FnParam, FnParamKind, FnSignature, TypeRef},
+    types::{FnParam, FnSignature, TypeRef},
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -225,7 +225,7 @@ struct TypeChecker<'a> {
     borrow_state_journal: Vec<BorrowStateJournalEntry>,
     global_symbols: HashMap<String, TypeKind>,
     global_functions: HashMap<String, TypeKind>,
-    global_function_signatures: HashMap<String, FunctionSignatureType>,
+    global_function_signatures: HashMap<String, FunctionSignature>,
     global_function_effects: HashMap<String, Vec<String>>,
     global_type_aliases: HashMap<String, TypeKind>,
     flow_params: HashMap<String, HashSet<String>>,
@@ -282,25 +282,6 @@ struct LoopContext {
     label: Option<String>,
     allows_value_break: bool,
     break_types: Vec<TypeKind>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct FunctionSignatureType {
-    params: Vec<FunctionParamType>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct FunctionParamType {
-    name: Option<String>,
-    ty: TypeKind,
-    kind: FnParamKind,
-    has_default: bool,
-}
-
-impl FunctionParamType {
-    const fn is_rest(&self) -> bool {
-        matches!(self.kind, FnParamKind::Rest)
-    }
 }
 
 impl TypeChecker<'_> {
@@ -448,8 +429,10 @@ impl TypeChecker<'_> {
             .or_else(|| self.env.function_type(name))
     }
 
-    fn function_signature(&self, name: &str) -> Option<&FunctionSignatureType> {
-        self.global_function_signatures.get(name)
+    fn function_signature(&self, name: &str) -> Option<&FunctionSignature> {
+        self.global_function_signatures
+            .get(name)
+            .or_else(|| self.env.function_signature(name))
     }
 
     fn is_dialogue_callee(&self, callee: &str) -> bool {
@@ -476,18 +459,21 @@ impl TypeChecker<'_> {
     }
 }
 
-fn function_signature_type(signature: &FnSignature) -> FunctionSignatureType {
+fn function_signature_type(signature: &FnSignature) -> FunctionSignature {
+    let return_type = signature
+        .return_type()
+        .map_or(TypeKind::Unit, type_ref_kind);
     let params = signature
         .param_groups()
         .iter()
         .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
         .map(function_param_type)
-        .collect();
-    FunctionSignatureType { params }
+        .collect::<Vec<_>>();
+    FunctionSignature::new(return_type, params)
 }
 
-fn function_param_type(param: &FnParam) -> FunctionParamType {
-    FunctionParamType {
+fn function_param_type(param: &FnParam) -> FunctionParam {
+    FunctionParam {
         name: pattern_param_name(param.pattern()),
         ty: type_ref_kind(param.ty()),
         kind: param.kind(),

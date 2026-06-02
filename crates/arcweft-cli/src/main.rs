@@ -1,4 +1,4 @@
-use arcweft_adapter_context::native_http_server_context;
+use arcweft_adapter_context::{AdapterTypecheckContext, native_http_server_context};
 use arcweft_core::aot::{AotProgram, AotProgramStats};
 use arcweft_core::bytecode::{BytecodeProgram, BytecodeStats};
 use arcweft_core::engine::FlowFiberStatus;
@@ -52,6 +52,7 @@ use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_grou
 use arcweft_runtime_plan::pure::{
     PureHelperCandidate, PureHelperLowerError, lower_pure_helper_candidates,
 };
+use arcweft_rust_abi::ArcweftRustManifest;
 use arcweft_test::{BenchSection, ScriptBench, ScriptStep, ScriptTest, collect_script_tests};
 use arcweft_tooling::{FormatOptions, ToolingEditReport, format_source, materialize_ids};
 use arcweft_verify::{
@@ -4539,19 +4540,59 @@ fn load_and_check_selection(
     adapter_override: Option<&str>,
 ) -> Result<CheckedModule, ExitCode> {
     let adapter = adapter_override.or(selection.adapter());
-    let env = typecheck_env_for_adapter(adapter)?;
+    let mut context = typecheck_context_for_adapter(adapter)?;
+    if adapter_override.is_none() {
+        for manifest in rust_metadata_for_selection(selection)? {
+            context = context.with_rust_manifest(&manifest);
+        }
+    }
+    let env = context.apply_to_env(TypeCheckEnv::new());
     load_and_check_with_env(selection.path(), &env)
 }
 
 fn typecheck_env_for_adapter(adapter: Option<&str>) -> Result<TypeCheckEnv, ExitCode> {
+    Ok(typecheck_context_for_adapter(adapter)?.apply_to_env(TypeCheckEnv::new()))
+}
+
+fn typecheck_context_for_adapter(
+    adapter: Option<&str>,
+) -> Result<AdapterTypecheckContext, ExitCode> {
     match adapter {
-        None | Some("sans-io") => Ok(TypeCheckEnv::new()),
-        Some("native-http") => Ok(server_adapter_typecheck_env()),
+        None | Some("sans-io") => Ok(AdapterTypecheckContext::new()),
+        Some("native-http") => Ok(server_adapter_typecheck_context()),
         Some(adapter) => {
             eprintln!("error: unknown adapter `{adapter}`");
             Err(ExitCode::from(2))
         }
     }
+}
+
+fn rust_metadata_for_selection(
+    selection: &SourceSelection,
+) -> Result<Vec<ArcweftRustManifest>, ExitCode> {
+    let Some(profile) = selection.profile() else {
+        return Ok(Vec::new());
+    };
+    profile
+        .rust_metadata()
+        .iter()
+        .map(|path| {
+            let source = fs::read_to_string(path).map_err(|error| {
+                eprintln!(
+                    "error: failed to read Rust ABI metadata {}: {error}",
+                    path.display()
+                );
+                ExitCode::FAILURE
+            })?;
+            ArcweftRustManifest::from_json(&source).map_err(|error| {
+                eprintln!(
+                    "error: failed to parse Rust ABI metadata {}: {error}",
+                    path.display()
+                );
+                ExitCode::FAILURE
+            })
+        })
+        .collect()
 }
 
 struct CheckedModule {
@@ -4623,8 +4664,8 @@ fn load_and_check_with_env(path: &Path, env: &TypeCheckEnv) -> Result<CheckedMod
     })
 }
 
-fn server_adapter_typecheck_env() -> TypeCheckEnv {
-    native_http_server_context().apply_to_env(TypeCheckEnv::new())
+fn server_adapter_typecheck_context() -> AdapterTypecheckContext {
+    native_http_server_context()
 }
 
 #[derive(Args, Clone, Debug)]

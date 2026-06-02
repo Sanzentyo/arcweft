@@ -7,8 +7,8 @@ use super::helpers::{
     well_known_field_type, well_known_runtime_method_type,
 };
 use super::{
-    BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr, FunctionParamType,
-    FunctionSignatureType, LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker,
+    BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr, FunctionParam,
+    FunctionSignature, LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker,
     TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext, entity_kind,
     normalize_choice_type,
 };
@@ -650,7 +650,7 @@ impl TypeChecker<'_> {
             let signature = self.function_signature(&name).cloned();
             self.check_virtual_path_call(&name, args);
             self.check_function_effects(&name);
-            if let Some(signature) = signature {
+            if let Some(signature) = signature.filter(FunctionSignature::checks_args) {
                 self.check_signature_call_args(&name, &signature, args);
             } else {
                 self.check_untyped_function_args(&name, args);
@@ -886,7 +886,7 @@ impl TypeChecker<'_> {
     fn check_signature_call_args(
         &mut self,
         name: &str,
-        signature: &FunctionSignatureType,
+        signature: &FunctionSignature,
         args: &[CallArg],
     ) {
         let fixed = signature
@@ -922,10 +922,12 @@ impl TypeChecker<'_> {
                     }
                     if let Some(param) = fixed.get(positional_index) {
                         provided_fixed[positional_index] = true;
+                        let label = signature_param_label(param, positional_index);
                         positional_index += 1;
-                        self.expect_signature_arg_type(name, positional, &param.ty);
+                        self.expect_signature_arg_type(name, &label, positional, &param.ty);
                     } else if let Some(param) = rest {
-                        self.expect_signature_arg_type(name, positional, &param.ty);
+                        let label = param.name.as_deref().unwrap_or("#rest");
+                        self.expect_signature_arg_type(name, label, positional, &param.ty);
                     } else {
                         self.errors.push(TypeCheckError::new(format!(
                             "function `{name}` received too many positional arguments"
@@ -953,8 +955,8 @@ impl TypeChecker<'_> {
         &mut self,
         function_name: &str,
         value: &Expr,
-        rest: Option<&FunctionParamType>,
-        fixed: &[&FunctionParamType],
+        rest: Option<&FunctionParam>,
+        fixed: &[&FunctionParam],
         provided_fixed: &[bool],
     ) {
         let Some(rest) = rest else {
@@ -999,8 +1001,8 @@ impl TypeChecker<'_> {
         function_name: &str,
         arg_name: &str,
         value: &Expr,
-        fixed: &[&FunctionParamType],
-        rest: Option<&FunctionParamType>,
+        fixed: &[&FunctionParam],
+        rest: Option<&FunctionParam>,
         provided_fixed: &mut [bool],
     ) {
         if rest.and_then(|param| param.name.as_deref()) == Some(arg_name) {
@@ -1026,17 +1028,26 @@ impl TypeChecker<'_> {
             )));
         }
         provided_fixed[index] = true;
-        self.expect_signature_arg_type(function_name, value, &fixed[index].ty);
+        self.expect_signature_arg_type(function_name, arg_name, value, &fixed[index].ty);
     }
 
-    fn expect_signature_arg_type(&mut self, function_name: &str, arg: &Expr, expected: &TypeKind) {
+    fn expect_signature_arg_type(
+        &mut self,
+        function_name: &str,
+        arg_label: &str,
+        arg: &Expr,
+        expected: &TypeKind,
+    ) {
         let actual = self.check_expr_with_expected(arg, Some(expected));
         if let Some(actual) = actual.as_ref()
             && !self.types_compatible(expected, actual)
         {
-            self.errors.push(TypeCheckError::new(format!(
-                "function `{function_name}` argument must have type {expected:?}, found {actual:?}"
-            )));
+            self.errors.push(TypeCheckError::argument_type_mismatch(
+                function_name,
+                arg_label,
+                expected.clone(),
+                actual.clone(),
+            ));
         }
     }
 
@@ -1104,7 +1115,7 @@ impl TypeChecker<'_> {
                 let signature = self.function_signature(&dotted).cloned();
                 self.check_virtual_path_call(&dotted, args);
                 self.check_function_effects(&dotted);
-                if let Some(signature) = signature {
+                if let Some(signature) = signature.filter(FunctionSignature::checks_args) {
                     self.check_signature_call_args(&dotted, &signature, args);
                 } else {
                     self.check_untyped_function_args(&dotted, args);
@@ -1155,6 +1166,15 @@ impl TypeChecker<'_> {
         if method_name == "say" && is_character_speaker_type(&receiver_type) {
             self.check_untyped_method_args(args);
             return Some(TypeKind::SpeakerPreset(EntityKind::Character));
+        }
+        if let Some(signature) = self
+            .env
+            .method_signature(&receiver_type, method_name)
+            .filter(|signature| signature.checks_args())
+            .cloned()
+        {
+            self.check_signature_call_args(method_name, &signature, args);
+            return Some(signature.return_type().clone());
         }
         self.check_untyped_method_args(args);
         self.env
@@ -1920,6 +1940,13 @@ fn collection_index_key_type(target_type: &TypeKind) -> Option<TypeKind> {
         TypeKind::Named(name) => map_key_type_from_name(name),
         _ => None,
     }
+}
+
+fn signature_param_label(param: &FunctionParam, index: usize) -> String {
+    param
+        .name
+        .as_deref()
+        .map_or_else(|| format!("#{index}"), ToOwned::to_owned)
 }
 
 fn map_key_type_from_name(name: &str) -> Option<TypeKind> {
