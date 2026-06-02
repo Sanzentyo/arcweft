@@ -4,7 +4,9 @@ import { get } from "node:http";
 import { join, resolve } from "node:path";
 
 const port = readPort();
-const benchUrl = `http://127.0.0.1:${port}/`;
+const preset = readOption("--preset");
+const timeoutMs = readPositiveInteger("--timeout-ms", 60_000);
+const benchUrl = buildBenchUrl(port, preset);
 const cdpPort = port + 1000;
 const server = spawn(hostToolPath(), ["serve", "--port", String(port)], {
   stdio: ["ignore", "pipe", "pipe"],
@@ -30,15 +32,32 @@ try {
 }
 
 function readPort() {
-  const index = process.argv.indexOf("--port");
-  if (index === -1) {
-    return 8787;
+  return readPositiveInteger("--port", 8787);
+}
+
+function readPositiveInteger(name, fallback) {
+  const value = readOption(name);
+  if (value === null) {
+    return fallback;
   }
-  const value = Number.parseInt(process.argv[index + 1], 10);
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new Error("--port requires a positive integer");
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} requires a positive integer`);
   }
-  return value;
+  return parsed;
+}
+
+function readOption(name) {
+  const index = process.argv.indexOf(name);
+  return index === -1 ? null : process.argv[index + 1];
+}
+
+function buildBenchUrl(port, preset) {
+  const url = new URL(`http://127.0.0.1:${port}/`);
+  if (preset) {
+    url.searchParams.set("preset", preset);
+  }
+  return url.toString();
 }
 
 function hostToolPath() {
@@ -174,11 +193,11 @@ async function pollBenchReport(send) {
         return JSON.parse(value);
       }
     } catch (error) {
-      if (Date.now() - started > 60_000) {
+      if (Date.now() - started > timeoutMs) {
         throw error;
       }
     }
-    if (Date.now() - started > 60_000) {
+    if (Date.now() - started > timeoutMs) {
       throw new Error("browser bench timed out");
     }
     await delay(250);
@@ -189,6 +208,7 @@ function summarize(report) {
   const failedCases = report.cases.filter(
     (entry) => entry.fallback_reason === null && !entry.correctness.passed,
   );
+  const speedups = summarizeSpeedups(report);
   return {
     schema_version: report.schema_version,
     webgpu_available: report.run.webgpu.available,
@@ -197,6 +217,7 @@ function summarize(report) {
     measured_cases: report.cases.filter((entry) => entry.median_ms !== null).length,
     skipped_cases: report.cases.filter((entry) => entry.fallback_reason !== null).length,
     failed_cases: failedCases.length,
+    best_speedups: speedups.slice(0, 12),
     representative: report.cases
       .filter((entry) => entry.median_ms !== null)
       .slice(0, 8)
@@ -204,9 +225,58 @@ function summarize(report) {
         case_id: entry.case_id,
         mode: entry.mode,
         median_ms: entry.median_ms,
+        submit_ms: entry.submit_median_ms,
+        readback_ms: entry.readback_median_ms,
         correct: entry.correctness.passed,
       })),
   };
+}
+
+function summarizeSpeedups(report) {
+  const groups = new Map();
+  for (const entry of report.cases) {
+    const key = caseKey(entry);
+    if (!groups.has(key)) {
+      groups.set(key, {});
+    }
+    groups.get(key)[entry.mode] = entry;
+  }
+  const rows = [];
+  for (const [key, modes] of groups) {
+    const cpu = modes.cpu_wasm;
+    if (!cpu || typeof cpu.median_ms !== "number" || cpu.median_ms === 0) {
+      continue;
+    }
+    for (const entry of Object.values(modes)) {
+      if (
+        entry.mode === "cpu_wasm" ||
+        typeof entry.median_ms !== "number" ||
+        entry.median_ms === 0
+      ) {
+        continue;
+      }
+      rows.push({
+        case: key,
+        mode: entry.mode,
+        cpu_ms: cpu.median_ms,
+        gpu_ms: entry.median_ms,
+        speedup: cpu.median_ms / entry.median_ms,
+        submit_ms: entry.submit_median_ms,
+        readback_ms: entry.readback_median_ms,
+        workgroups: entry.workgroups,
+        estimated_flops: entry.estimated_flops,
+      });
+    }
+  }
+  return rows.sort((lhs, rhs) => rhs.speedup - lhs.speedup);
+}
+
+function caseKey(entry) {
+  if (entry.shape.len !== undefined) {
+    return `${entry.op}_len${entry.shape.len.len}`;
+  }
+  const shape = entry.shape.matmul;
+  return `${entry.op}_m${shape.rows}_k${shape.shared}_n${shape.cols}`;
 }
 
 function waitForHttp(url, timeoutMs) {

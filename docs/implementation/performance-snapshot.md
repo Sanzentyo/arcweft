@@ -552,12 +552,13 @@ native wgpu math dispatch is selected only for non-`wasm32`;
 pure helpers through VM/AOT CPU paths. Browser WebGPU math is available as a
 separate async adapter module for dense `f32` matmul, matrix add, and tensor
 add. The async path compiles for `wasm32-unknown-unknown --all-features`; it
-still needs an in-browser benchmark harness before its speed can be compared to
-native wgpu or browser CPU execution.
+is measured by the path-free browser benchmark harness before browser-side
+`Auto` thresholds are changed.
 The browser adapter now exposes structured availability/fallback reasons,
 portable WebGPU default-limit validation, async `map_async` readback counters,
-and prepared/resident buffer APIs. Browser WebGPU is still an explicit async
-adapter optimization, not a synchronous VM math backend.
+prepared/resident buffer APIs, and submitted-work handles that allow browser
+players to submit resident GPU work and await readback later. Browser WebGPU is
+still an explicit async adapter optimization, not a synchronous VM math backend.
 
 `arcweft-browser-bench` provides the first path-free browser benchmark export:
 
@@ -565,15 +566,29 @@ adapter optimization, not a synchronous VM math backend.
 just browser-webgpu-bench-check
 just browser-webgpu-bench-build
 just browser-webgpu-bench-smoke
+just browser-webgpu-bench-perf
 ```
 
 The exported browser function returns JSON with CPU Wasm, WebGPU one-shot,
-prepared upload, and prepared resident cases. If WebGPU is unavailable, the
-report records a structured skip reason instead of failing the whole run. The
-harness still needs real browser measurements before browser production
-`Auto` thresholds are changed. The smoke recipe drives local Chrome/Edge
+prepared upload, prepared resident, async resident, and pipelined resident
+cases. If WebGPU is unavailable, the report records a structured skip reason
+instead of failing the whole run. The smoke recipe drives local Chrome/Edge
 through DevTools when available. If the browser executable is not discoverable
 from the environment, set `CHROME` or `CHROME_BIN` before running the recipe.
+
+Local browser WebGPU measurements on the current Windows/Chrome environment:
+
+| Case | Best browser WebGPU mode | CPU Wasm median ms | GPU median ms | Speedup | Notes |
+| --- | --- | ---: | ---: | ---: | --- |
+| `matmul_f32_m256_k256_n256` | prepared resident pipelined | 6.985 | 1.5225 | 4.59x | submit median 0.035 ms, readback median 0.47 ms, 256 workgroups |
+| `matmul_f32_m128_k128_n128` | prepared resident pipelined | 0.87 | 0.40375 | 2.15x | submit median 0.025 ms, readback median 0.195 ms, 64 workgroups |
+| `matmul_f32_m64_k64_n64` | prepared resident pipelined | 0.305 | 0.47375 | 0.64x | below crossover on this browser |
+| `tensor_add_f32_len4194304` | prepared resident async | 10.01 | 19.26 | 0.52x | readback bandwidth dominates |
+
+The measured browser crossover is currently matmul-oriented: `128x128x128` and
+larger dense `f32` matmul can benefit from pipelined resident WebGPU, while
+simple elementwise add remains CPU-preferred when the result must be read back
+to Wasm each iteration.
 
 Local path-free measurements:
 

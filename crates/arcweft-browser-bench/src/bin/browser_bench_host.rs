@@ -153,11 +153,12 @@ fn handle_connection(mut stream: TcpStream, root: &Path) -> Result<(), String> {
         .read(&mut request)
         .map_err(|error| error.to_string())?;
     let request = String::from_utf8_lossy(&request[..len]);
-    let path = request
+    let raw_path = request
         .lines()
         .next()
         .and_then(|line| line.split_whitespace().nth(1))
         .unwrap_or("/");
+    let path = raw_path.split(['?', '#']).next().unwrap_or(raw_path);
     let relative = match path {
         "/" => "index.html",
         path if path.starts_with('/') && is_safe_relative_path(&path[1..]) => &path[1..],
