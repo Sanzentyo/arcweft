@@ -143,5 +143,11 @@ browser-webgpu-bench-check:
     @cargo check -p arcweft-browser-bench --target wasm32-unknown-unknown --all-features
 
 browser-webgpu-bench-build:
-    @cargo build -p arcweft-browser-bench --release --target wasm32-unknown-unknown --all-features
-    @wasm-bindgen --target web --out-dir target/arcweft-browser-webgpu --out-name arcweft_browser_webgpu target/wasm32-unknown-unknown/release/arcweft_browser_bench.wasm
+    @cargo run -p arcweft-browser-bench --bin browser_bench_host -- build
+
+browser-webgpu-bench-serve port="8787":
+    @cargo run -p arcweft-browser-bench --bin browser_bench_host -- build-and-serve --port {{port}}
+
+browser-webgpu-bench-smoke port="8787":
+    @cargo run -p arcweft-browser-bench --bin browser_bench_host -- build
+    @node crates/arcweft-browser-bench/web/chrome-smoke.mjs --port {{port}}

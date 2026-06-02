@@ -564,13 +564,16 @@ adapter optimization, not a synchronous VM math backend.
 ```bash
 just browser-webgpu-bench-check
 just browser-webgpu-bench-build
+just browser-webgpu-bench-smoke
 ```
 
 The exported browser function returns JSON with CPU Wasm, WebGPU one-shot,
 prepared upload, and prepared resident cases. If WebGPU is unavailable, the
 report records a structured skip reason instead of failing the whole run. The
 harness still needs real browser measurements before browser production
-`Auto` thresholds are changed.
+`Auto` thresholds are changed. The smoke recipe drives local Chrome/Edge
+through DevTools when available. If the browser executable is not discoverable
+from the environment, set `CHROME` or `CHROME_BIN` before running the recipe.
 
 Local path-free measurements:
 

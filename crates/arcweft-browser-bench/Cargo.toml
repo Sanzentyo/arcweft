@@ -23,5 +23,9 @@ web-sys = { workspace = true, features = ["Window", "Performance"] }
 crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
 
+[[bin]]
+name = "browser_bench_host"
+path = "src/bin/browser_bench_host.rs"
+
 [lints]
 workspace = true
