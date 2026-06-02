@@ -1,9 +1,0 @@
-flow @flow.inference_tensor_ops classify(image: TensorF32, kernel: TensorF32, dense_weight: TensorF32) -> Seq<usize> {
-    let features = conv.valid2d_f32(image, kernel, 1usize, 1usize)
-    let hidden = infer.relu_f32(features)
-    let pooled = infer.max_pool2d_f32(hidden, 2usize, 2usize, 2usize, 2usize)
-    let flat = infer.flatten_outer_f32(pooled)
-    let logits = infer.matmul_f32(flat, dense_weight)
-    let class = infer.argmax_last_dim_f32(logits)
-    return class
-}

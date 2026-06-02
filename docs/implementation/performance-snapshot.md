@@ -607,14 +607,13 @@ kernels for non-matmul forward ops. The current deterministic `f32` op set is:
 - last-dimension `argmax`
 - outer-dimension preserving `flatten`
 
-Arcweft flow execution now exposes the same op family as regular
-`conv.*_f32` and `infer.*_f32` intrinsic calls. Users can compose CNN-like structures by
-sequencing `conv.valid2d_f32`, `infer.relu_f32`,
-`infer.max_pool2d_f32`, `infer.flatten_outer_f32`,
-`infer.matmul_f32`, and `infer.argmax_last_dim_f32`; the runtime does not
-hard-code a CNN shape into the language. The VM baseline implements the same
-deterministic ops through `RuntimeInferenceCallBackend`, and
-`RuntimePureAccelerator` implements the adapter with the configured math
+Arcweft flow execution can call the same op family through adapter-contributed
+external calls such as `conv2d.valid_f32`, `infer.relu_f32`,
+`infer.max_pool2d_f32`, `infer.flatten_outer_f32`, `infer.matmul_f32`, and
+`infer.argmax_last_dim_f32`. These names are not Core intrinsics and are not in
+the default prelude. `arcweft-adapter-context` contributes the optional
+type-checking namespace, while `RuntimePureAccelerator` resolves the named
+runtime calls through `RuntimeExternalCallBackend` and uses the configured math
 backend for rank-2 tensor matmul.
 
 The checked tests include a small MNIST-shaped MLP forward graph with input

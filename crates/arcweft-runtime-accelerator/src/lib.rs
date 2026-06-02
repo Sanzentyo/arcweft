@@ -14,14 +14,14 @@ use arcweft_core::{
     },
     pure::{
         AotPureFunctionBackend, AotPureI64Plan, AotPureScalarPlan, PureFunctionRequest,
-        PureFunctionStats, RuntimeFixedArgs, RuntimeFloat32Args, RuntimeFloat64Args,
-        RuntimeI32Args, RuntimeI64Args, RuntimeInferenceCallBackend, RuntimeMathCallBackend,
+        PureFunctionStats, RuntimeExternalCallBackend, RuntimeFixedArgs, RuntimeFloat32Args,
+        RuntimeFloat64Args, RuntimeI32Args, RuntimeI64Args, RuntimeMathCallBackend,
         RuntimePureCallBackend, RuntimePureScalar, RuntimePureScalarInteger, VmPureFunctionScratch,
     },
     step::RuntimePureCallStats,
     value::{
-        DenseSeq, RuntimeBinding, RuntimeEvalError, RuntimeExactInteger, RuntimeExpr,
-        RuntimeIntrinsic, RuntimeSeq, RuntimeValue,
+        DenseSeq, RuntimeBinding, RuntimeCallTarget, RuntimeEvalError, RuntimeExactInteger,
+        RuntimeExpr, RuntimeIntrinsic, RuntimeSeq, RuntimeValue, runtime_sequence_dense_usize,
     },
 };
 use native_jit::{
@@ -2245,7 +2245,7 @@ impl RuntimeMathCallBackend for RuntimePureAccelerator {
     }
 }
 
-impl RuntimeInferenceCallBackend for RuntimePureAccelerator {
+impl RuntimePureAccelerator {
     fn call_infer_matmul_f32(
         &mut self,
         lhs: &DenseTensorF32,
@@ -2294,7 +2294,7 @@ impl RuntimeInferenceCallBackend for RuntimePureAccelerator {
         Ok(result)
     }
 
-    fn call_conv_valid2d_f32(
+    fn call_conv2d_valid_f32(
         &mut self,
         input: &DenseTensorF32,
         kernel: &DenseTensorF32,
@@ -2304,7 +2304,7 @@ impl RuntimeInferenceCallBackend for RuntimePureAccelerator {
         self.stats.math_calls += 1;
         self.record_math_inputs::<f32>(input.values().len(), kernel.values().len());
         let result = inference::conv2d_valid_nchw(input, kernel, stride_y, stride_x)
-            .map_err(|error| infer_runtime_error("conv.valid2d_f32", error))?;
+            .map_err(|error| infer_runtime_error("conv2d.valid_f32", error))?;
         self.record_math_result::<f32>(result.values().len());
         Ok(result)
     }
@@ -2349,13 +2349,10 @@ impl RuntimeInferenceCallBackend for RuntimePureAccelerator {
         Ok(result)
     }
 
-    fn call_infer_argmax_last_dim_f32(
-        &mut self,
-        input: &DenseTensorF32,
-    ) -> Result<Vec<usize>, RuntimeEvalError> {
+    fn call_infer_argmax_last_dim_f32(&mut self, input: &DenseTensorF32) -> Vec<usize> {
         self.stats.math_calls += 1;
         self.record_math_inputs::<f32>(input.values().len(), 0);
-        Ok(inference::argmax_last_dim(input))
+        inference::argmax_last_dim(input)
     }
 
     fn call_infer_flatten_outer_f32(
@@ -2369,6 +2366,172 @@ impl RuntimeInferenceCallBackend for RuntimePureAccelerator {
         self.record_math_result::<f32>(result.values().len());
         Ok(result)
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RuntimeAcceleratorExternalCall {
+    InferMatmulF32,
+    InferAddF32,
+    InferBiasAddF32,
+    Conv2dValidF32,
+    InferReluF32,
+    InferMaxPool2dF32,
+    InferSoftmaxLastDimF32,
+    InferArgmaxLastDimF32,
+    InferFlattenOuterF32,
+}
+
+impl RuntimeAcceleratorExternalCall {
+    fn from_label(label: &str) -> Option<Self> {
+        match label {
+            "infer.matmul_f32" => Some(Self::InferMatmulF32),
+            "infer.add_f32" => Some(Self::InferAddF32),
+            "infer.bias_add_f32" => Some(Self::InferBiasAddF32),
+            "conv2d.valid_f32" => Some(Self::Conv2dValidF32),
+            "infer.relu_f32" => Some(Self::InferReluF32),
+            "infer.max_pool2d_f32" => Some(Self::InferMaxPool2dF32),
+            "infer.softmax_last_dim_f32" => Some(Self::InferSoftmaxLastDimF32),
+            "infer.argmax_last_dim_f32" => Some(Self::InferArgmaxLastDimF32),
+            "infer.flatten_outer_f32" => Some(Self::InferFlattenOuterF32),
+            _ => None,
+        }
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::InferMatmulF32 => "infer.matmul_f32",
+            Self::InferAddF32 => "infer.add_f32",
+            Self::InferBiasAddF32 => "infer.bias_add_f32",
+            Self::Conv2dValidF32 => "conv2d.valid_f32",
+            Self::InferReluF32 => "infer.relu_f32",
+            Self::InferMaxPool2dF32 => "infer.max_pool2d_f32",
+            Self::InferSoftmaxLastDimF32 => "infer.softmax_last_dim_f32",
+            Self::InferArgmaxLastDimF32 => "infer.argmax_last_dim_f32",
+            Self::InferFlattenOuterF32 => "infer.flatten_outer_f32",
+        }
+    }
+}
+
+impl RuntimeExternalCallBackend for RuntimePureAccelerator {
+    fn call_external(
+        &mut self,
+        callee: &RuntimeCallTarget,
+        args: &[RuntimeValue],
+    ) -> Option<Result<RuntimeValue, RuntimeEvalError>> {
+        let call = RuntimeAcceleratorExternalCall::from_label(callee.as_label())?;
+        Some(match (call, args) {
+            (
+                RuntimeAcceleratorExternalCall::InferMatmulF32,
+                [RuntimeValue::TensorF32(lhs), RuntimeValue::TensorF32(rhs)],
+            ) => self
+                .call_infer_matmul_f32(lhs, rhs)
+                .map(RuntimeValue::tensor_f32),
+            (
+                RuntimeAcceleratorExternalCall::InferAddF32,
+                [RuntimeValue::TensorF32(lhs), RuntimeValue::TensorF32(rhs)],
+            ) => self
+                .call_infer_add_f32(lhs, rhs)
+                .map(RuntimeValue::tensor_f32),
+            (
+                RuntimeAcceleratorExternalCall::InferBiasAddF32,
+                [
+                    RuntimeValue::TensorF32(tensor),
+                    RuntimeValue::TensorF32(bias),
+                ],
+            ) => self
+                .call_infer_bias_add_f32(tensor, bias)
+                .map(RuntimeValue::tensor_f32),
+            (
+                RuntimeAcceleratorExternalCall::Conv2dValidF32,
+                [
+                    RuntimeValue::TensorF32(input),
+                    RuntimeValue::TensorF32(kernel),
+                    stride_y,
+                    stride_x,
+                ],
+            ) => runtime_value_to_usize(call, stride_y).and_then(|stride_y| {
+                runtime_value_to_usize(call, stride_x).and_then(|stride_x| {
+                    self.call_conv2d_valid_f32(input, kernel, stride_y, stride_x)
+                        .map(RuntimeValue::tensor_f32)
+                })
+            }),
+            (RuntimeAcceleratorExternalCall::InferReluF32, [RuntimeValue::TensorF32(input)]) => {
+                self.call_infer_relu_f32(input)
+                    .map(RuntimeValue::tensor_f32)
+            }
+            (
+                RuntimeAcceleratorExternalCall::InferMaxPool2dF32,
+                [
+                    RuntimeValue::TensorF32(input),
+                    kernel_y,
+                    kernel_x,
+                    stride_y,
+                    stride_x,
+                ],
+            ) => runtime_value_to_usize(call, kernel_y).and_then(|kernel_y| {
+                runtime_value_to_usize(call, kernel_x).and_then(|kernel_x| {
+                    runtime_value_to_usize(call, stride_y).and_then(|stride_y| {
+                        runtime_value_to_usize(call, stride_x).and_then(|stride_x| {
+                            self.call_infer_max_pool2d_f32(
+                                input, kernel_y, kernel_x, stride_y, stride_x,
+                            )
+                            .map(RuntimeValue::tensor_f32)
+                        })
+                    })
+                })
+            }),
+            (
+                RuntimeAcceleratorExternalCall::InferSoftmaxLastDimF32,
+                [RuntimeValue::TensorF32(input)],
+            ) => self
+                .call_infer_softmax_last_dim_f32(input)
+                .map(RuntimeValue::tensor_f32),
+            (
+                RuntimeAcceleratorExternalCall::InferArgmaxLastDimF32,
+                [RuntimeValue::TensorF32(input)],
+            ) => Ok(runtime_class_indices_value(
+                self.call_infer_argmax_last_dim_f32(input),
+            )),
+            (
+                RuntimeAcceleratorExternalCall::InferFlattenOuterF32,
+                [RuntimeValue::TensorF32(input)],
+            ) => self
+                .call_infer_flatten_outer_f32(input)
+                .map(RuntimeValue::tensor_f32),
+            _ => Err(RuntimeEvalError::UnsupportedPure {
+                name: call.label().to_owned(),
+                reason: "argument shape is not supported by this adapter call".to_owned(),
+            }),
+        })
+    }
+}
+
+fn runtime_class_indices_value(indices: Vec<usize>) -> RuntimeValue {
+    runtime_sequence_dense_usize(
+        indices
+            .into_iter()
+            .map(|index| u64::try_from(index).unwrap_or(u64::MAX))
+            .collect(),
+    )
+}
+
+fn runtime_value_to_usize(
+    call: RuntimeAcceleratorExternalCall,
+    value: &RuntimeValue,
+) -> Result<usize, RuntimeEvalError> {
+    match value {
+        RuntimeValue::Int(value) => value
+            .try_into_i64()
+            .and_then(|value| usize::try_from(value).ok()),
+        RuntimeValue::UInt(value) => value
+            .try_into_i64()
+            .and_then(|value| usize::try_from(value).ok()),
+        _ => None,
+    }
+    .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
+        name: call.label().to_owned(),
+        reason: format!("expected usize-compatible integer, got {value:?}"),
+    })
 }
 
 fn infer_runtime_error(name: &str, error: impl fmt::Display) -> RuntimeEvalError {
@@ -4069,15 +4232,8 @@ impl Default for RuntimePureAcceleratorConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(any(feature = "math-glam", feature = "math-ndarray"))]
-    use arcweft_core::value::RuntimeCallTarget;
     #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     use arcweft_core::value::runtime_sequence_dense_u32;
-    #[cfg(any(
-        feature = "math-glam",
-        feature = "math-ndarray",
-        all(feature = "native-jit", not(target_arch = "wasm32"))
-    ))]
     use arcweft_core::{
         engine::{Engine, FlowExit, FlowFiberStatus},
         plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan},
@@ -4085,8 +4241,108 @@ mod tests {
     };
     use arcweft_core::{
         plan::RuntimePureHelperId,
-        value::{RuntimeBinaryOp, RuntimeExpr, RuntimeISizeValue, RuntimeUSizeValue},
+        value::{
+            RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeISizeValue, RuntimeSeq,
+            RuntimeUSizeValue,
+        },
     };
+
+    #[test]
+    fn runtime_flow_external_inference_call_sequence_uses_adapter_boundary() {
+        let image = DenseTensorF32::new(
+            vec![1, 1, 4, 4],
+            vec![
+                8.0, 1.0, 1.0, 1.0, 1.0, 4.0, 1.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            ],
+        )
+        .expect("image tensor shape is valid");
+        let kernel = DenseTensorF32::new(vec![1, 1, 2, 2], vec![1.0, 0.0, 0.0, -1.0])
+            .expect("kernel tensor shape is valid");
+        let dense = DenseTensorF32::new(vec![4, 2], vec![0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0])
+            .expect("dense tensor shape is valid");
+        let conv_target = RuntimeCallTarget::from_label("conv2d.valid_f32");
+        assert!(matches!(conv_target, RuntimeCallTarget::Named(_)));
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.infer".to_owned())),
+            vec![RuntimeFlow {
+                id: FlowRuntimeId("flow.infer".to_owned()),
+                ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Let {
+                    name: "conv".to_owned(),
+                    expr: Box::new(RuntimeExpr::Call {
+                        callee: conv_target,
+                        args: vec![
+                            RuntimeExpr::Value(RuntimeValue::tensor_f32(image)),
+                            RuntimeExpr::Value(RuntimeValue::tensor_f32(kernel)),
+                            RuntimeExpr::Value(RuntimeValue::usize(1)),
+                            RuntimeExpr::Value(RuntimeValue::usize(1)),
+                        ],
+                    }),
+                    body: Box::new(RuntimeExpr::Let {
+                        name: "pooled".to_owned(),
+                        expr: Box::new(RuntimeExpr::Call {
+                            callee: RuntimeCallTarget::from_label("infer.max_pool2d_f32"),
+                            args: vec![
+                                RuntimeExpr::Call {
+                                    callee: RuntimeCallTarget::from_label("infer.relu_f32"),
+                                    args: vec![RuntimeExpr::Local("conv".to_owned())],
+                                },
+                                RuntimeExpr::Value(RuntimeValue::usize(2)),
+                                RuntimeExpr::Value(RuntimeValue::usize(2)),
+                                RuntimeExpr::Value(RuntimeValue::usize(1)),
+                                RuntimeExpr::Value(RuntimeValue::usize(1)),
+                            ],
+                        }),
+                        body: Box::new(RuntimeExpr::Let {
+                            name: "logits".to_owned(),
+                            expr: Box::new(RuntimeExpr::Call {
+                                callee: RuntimeCallTarget::from_label("infer.matmul_f32"),
+                                args: vec![
+                                    RuntimeExpr::Call {
+                                        callee: RuntimeCallTarget::from_label(
+                                            "infer.flatten_outer_f32",
+                                        ),
+                                        args: vec![RuntimeExpr::Local("pooled".to_owned())],
+                                    },
+                                    RuntimeExpr::Value(RuntimeValue::tensor_f32(dense)),
+                                ],
+                            }),
+                            body: Box::new(RuntimeExpr::Call {
+                                callee: RuntimeCallTarget::from_label("infer.argmax_last_dim_f32"),
+                                args: vec![RuntimeExpr::Local("logits".to_owned())],
+                            }),
+                        }),
+                    }),
+                })],
+            }],
+            Vec::new(),
+        )
+        .expect("runtime plan is valid");
+        let mut engine = Engine::new(plan);
+        let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, &[]);
+
+        let result = engine.step_with_pure_backend(
+            RuntimeStepInput::default(),
+            RuntimeStepOptions::default(),
+            &mut accelerator,
+        );
+
+        assert_eq!(result.stats.pure.math_calls, 6);
+        assert!(matches!(
+            result.fiber_status,
+            FlowFiberStatus::Done(FlowExit::Return(summary)) if summary == "seq/usize/1"
+        ));
+        assert!(matches!(
+            RuntimeExternalCallBackend::call_external(
+                &mut accelerator,
+                &RuntimeCallTarget::from_label("infer.argmax_last_dim_f32"),
+                &[RuntimeValue::tensor_f32(
+                    DenseTensorF32::new(vec![1, 2], vec![0.0, 1.0]).unwrap()
+                )]
+            ),
+            Some(Ok(RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::USize(values)))))
+                if values.as_slice()[0].get() == 1
+        ));
+    }
 
     #[cfg(feature = "math-glam")]
     #[test]

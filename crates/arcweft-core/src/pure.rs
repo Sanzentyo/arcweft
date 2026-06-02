@@ -2,12 +2,12 @@ use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64
 use crate::plan::{RuntimePureHelper, RuntimePureInputType, RuntimePureOutputType};
 use crate::step::RuntimePureCallStats;
 use crate::value::{
-    RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExactInteger,
-    RuntimeExpr, RuntimeFieldValue, RuntimeISizeValue, RuntimeIntrinsic, RuntimeSeq,
-    RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue, evaluate_binary, evaluate_numeric_op,
-    evaluate_std_float_intrinsic, evaluate_unary, runtime_binary_op_label,
-    runtime_sequence_dense_usize, runtime_sequence_values, runtime_unary_op_label,
-    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
+    RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimeEvalError,
+    RuntimeExactInteger, RuntimeExpr, RuntimeFieldValue, RuntimeISizeValue, RuntimeIntrinsic,
+    RuntimeSeq, RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue, evaluate_binary,
+    evaluate_numeric_op, evaluate_std_float_intrinsic, evaluate_unary, runtime_binary_op_label,
+    runtime_sequence_values, runtime_unary_op_label, runtime_value_into_sequence_values,
+    runtime_value_label, sum_i64_sequence_ref,
 };
 use std::collections::BTreeMap;
 
@@ -152,62 +152,17 @@ pub trait RuntimeMathCallBackend {
     ) -> Result<DenseTensorF64, RuntimeEvalError>;
 }
 
-/// Runtime-facing backend for deterministic forward inference tensor calls.
-pub trait RuntimeInferenceCallBackend {
-    fn call_infer_matmul_f32(
+/// Adapter boundary for runtime calls that are not Arcweft Core intrinsics.
+///
+/// This mirrors an FFI boundary: Core evaluates argument expressions and keeps
+/// their typed `RuntimeValue` shape, while adapter crates decide which named
+/// calls they own and how to execute them.
+pub trait RuntimeExternalCallBackend {
+    fn call_external(
         &mut self,
-        lhs: &DenseTensorF32,
-        rhs: &DenseTensorF32,
-    ) -> Result<DenseTensorF32, RuntimeEvalError>;
-
-    fn call_infer_add_f32(
-        &mut self,
-        lhs: &DenseTensorF32,
-        rhs: &DenseTensorF32,
-    ) -> Result<DenseTensorF32, RuntimeEvalError>;
-
-    fn call_infer_bias_add_f32(
-        &mut self,
-        tensor: &DenseTensorF32,
-        bias: &DenseTensorF32,
-    ) -> Result<DenseTensorF32, RuntimeEvalError>;
-
-    fn call_conv_valid2d_f32(
-        &mut self,
-        input: &DenseTensorF32,
-        kernel: &DenseTensorF32,
-        stride_y: usize,
-        stride_x: usize,
-    ) -> Result<DenseTensorF32, RuntimeEvalError>;
-
-    fn call_infer_relu_f32(
-        &mut self,
-        input: &DenseTensorF32,
-    ) -> Result<DenseTensorF32, RuntimeEvalError>;
-
-    fn call_infer_max_pool2d_f32(
-        &mut self,
-        input: &DenseTensorF32,
-        kernel_y: usize,
-        kernel_x: usize,
-        stride_y: usize,
-        stride_x: usize,
-    ) -> Result<DenseTensorF32, RuntimeEvalError>;
-
-    fn call_infer_softmax_last_dim_f32(
-        &mut self,
-        input: &DenseTensorF32,
-    ) -> Result<DenseTensorF32, RuntimeEvalError>;
-
-    fn call_infer_argmax_last_dim_f32(
-        &mut self,
-        input: &DenseTensorF32,
-    ) -> Result<Vec<usize>, RuntimeEvalError>;
-
-    fn call_infer_flatten_outer_f32(
-        &mut self,
-        input: &DenseTensorF32,
-    ) -> Result<DenseTensorF32, RuntimeEvalError>;
+        callee: &RuntimeCallTarget,
+        args: &[RuntimeValue],
+    ) -> Option<Result<RuntimeValue, RuntimeEvalError>>;
 }
 
 /// Runtime-facing backend for deterministic pure helper calls.
@@ -365,12 +320,12 @@ pub trait RuntimePureCallBackend {
 
 /// Backend accepted by runtime expression evaluation.
 pub trait RuntimeCallBackend:
-    RuntimePureCallBackend + RuntimeMathCallBackend + RuntimeInferenceCallBackend
+    RuntimePureCallBackend + RuntimeMathCallBackend + RuntimeExternalCallBackend
 {
 }
 
 impl<T> RuntimeCallBackend for T where
-    T: RuntimePureCallBackend + RuntimeMathCallBackend + RuntimeInferenceCallBackend
+    T: RuntimePureCallBackend + RuntimeMathCallBackend + RuntimeExternalCallBackend
 {
 }
 
@@ -1602,435 +1557,14 @@ impl RuntimeMathCallBackend for VmRuntimePureCallBackend {
     }
 }
 
-impl RuntimeInferenceCallBackend for VmRuntimePureCallBackend {
-    fn call_infer_matmul_f32(
+impl RuntimeExternalCallBackend for VmRuntimePureCallBackend {
+    fn call_external(
         &mut self,
-        lhs: &DenseTensorF32,
-        rhs: &DenseTensorF32,
-    ) -> Result<DenseTensorF32, RuntimeEvalError> {
-        self.stats.math_calls += 1;
-        let lhs = infer_tensor_as_matrix(RuntimeIntrinsic::InferMatmulF32, lhs)?;
-        let rhs = infer_tensor_as_matrix(RuntimeIntrinsic::InferMatmulF32, rhs)?;
-        lhs.matmul_scalar(&rhs)
-            .map(DenseTensorF32::from_matrix)
-            .map_err(|error| infer_eval_error(RuntimeIntrinsic::InferMatmulF32, error))
+        _callee: &RuntimeCallTarget,
+        _args: &[RuntimeValue],
+    ) -> Option<Result<RuntimeValue, RuntimeEvalError>> {
+        None
     }
-
-    fn call_infer_add_f32(
-        &mut self,
-        lhs: &DenseTensorF32,
-        rhs: &DenseTensorF32,
-    ) -> Result<DenseTensorF32, RuntimeEvalError> {
-        self.stats.math_calls += 1;
-        lhs.add_scalar(rhs)
-            .map_err(|error| infer_eval_error(RuntimeIntrinsic::InferAddF32, error))
-    }
-
-    fn call_infer_bias_add_f32(
-        &mut self,
-        tensor: &DenseTensorF32,
-        bias: &DenseTensorF32,
-    ) -> Result<DenseTensorF32, RuntimeEvalError> {
-        self.stats.math_calls += 1;
-        infer_bias_add_f32(tensor, bias)
-    }
-
-    fn call_conv_valid2d_f32(
-        &mut self,
-        input: &DenseTensorF32,
-        kernel: &DenseTensorF32,
-        stride_y: usize,
-        stride_x: usize,
-    ) -> Result<DenseTensorF32, RuntimeEvalError> {
-        self.stats.math_calls += 1;
-        conv_valid2d_f32(input, kernel, stride_y, stride_x)
-    }
-
-    fn call_infer_relu_f32(
-        &mut self,
-        input: &DenseTensorF32,
-    ) -> Result<DenseTensorF32, RuntimeEvalError> {
-        self.stats.math_calls += 1;
-        infer_map_tensor_f32(RuntimeIntrinsic::InferReluF32, input, |value| {
-            value.max(0.0)
-        })
-    }
-
-    fn call_infer_max_pool2d_f32(
-        &mut self,
-        input: &DenseTensorF32,
-        kernel_y: usize,
-        kernel_x: usize,
-        stride_y: usize,
-        stride_x: usize,
-    ) -> Result<DenseTensorF32, RuntimeEvalError> {
-        self.stats.math_calls += 1;
-        infer_max_pool2d_f32(input, kernel_y, kernel_x, stride_y, stride_x)
-    }
-
-    fn call_infer_softmax_last_dim_f32(
-        &mut self,
-        input: &DenseTensorF32,
-    ) -> Result<DenseTensorF32, RuntimeEvalError> {
-        self.stats.math_calls += 1;
-        infer_softmax_last_dim_f32(input)
-    }
-
-    fn call_infer_argmax_last_dim_f32(
-        &mut self,
-        input: &DenseTensorF32,
-    ) -> Result<Vec<usize>, RuntimeEvalError> {
-        self.stats.math_calls += 1;
-        Ok(infer_argmax_last_dim_f32(input))
-    }
-
-    fn call_infer_flatten_outer_f32(
-        &mut self,
-        input: &DenseTensorF32,
-    ) -> Result<DenseTensorF32, RuntimeEvalError> {
-        self.stats.math_calls += 1;
-        infer_flatten_outer_f32(input)
-    }
-}
-
-fn infer_tensor_as_matrix(
-    intrinsic: RuntimeIntrinsic,
-    tensor: &DenseTensorF32,
-) -> Result<DenseMatrixF32, RuntimeEvalError> {
-    tensor
-        .as_matrix()
-        .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
-            name: intrinsic.as_label().to_owned(),
-            reason: format!("expected rank-2 tensor, got {:?}", tensor.shape().dims()),
-        })
-}
-
-fn infer_eval_error(
-    intrinsic: RuntimeIntrinsic,
-    error: impl std::fmt::Display,
-) -> RuntimeEvalError {
-    RuntimeEvalError::UnsupportedPure {
-        name: intrinsic.as_label().to_owned(),
-        reason: error.to_string(),
-    }
-}
-
-fn infer_window(
-    intrinsic: RuntimeIntrinsic,
-    first: usize,
-    second: usize,
-) -> Result<(), RuntimeEvalError> {
-    if first == 0 || second == 0 {
-        Err(RuntimeEvalError::UnsupportedPure {
-            name: intrinsic.as_label().to_owned(),
-            reason: "window and stride dimensions must be non-zero".to_owned(),
-        })
-    } else {
-        Ok(())
-    }
-}
-
-fn infer_nchw_dims(
-    intrinsic: RuntimeIntrinsic,
-    tensor: &DenseTensorF32,
-) -> Result<[usize; 4], RuntimeEvalError> {
-    match tensor.shape().dims() {
-        [batch, channels, height, width] => Ok([*batch, *channels, *height, *width]),
-        dims => Err(RuntimeEvalError::UnsupportedPure {
-            name: intrinsic.as_label().to_owned(),
-            reason: format!("expected NCHW rank-4 tensor, got {dims:?}"),
-        }),
-    }
-}
-
-fn infer_oihw_dims(
-    intrinsic: RuntimeIntrinsic,
-    tensor: &DenseTensorF32,
-) -> Result<[usize; 4], RuntimeEvalError> {
-    match tensor.shape().dims() {
-        [output_channels, input_channels, height, width] => {
-            Ok([*output_channels, *input_channels, *height, *width])
-        }
-        dims => Err(RuntimeEvalError::UnsupportedPure {
-            name: intrinsic.as_label().to_owned(),
-            reason: format!("expected OIHW rank-4 kernel tensor, got {dims:?}"),
-        }),
-    }
-}
-
-fn infer_bias_add_f32(
-    tensor: &DenseTensorF32,
-    bias: &DenseTensorF32,
-) -> Result<DenseTensorF32, RuntimeEvalError> {
-    let width = match bias.shape().dims() {
-        [width] => *width,
-        dims => {
-            return Err(RuntimeEvalError::UnsupportedPure {
-                name: RuntimeIntrinsic::InferBiasAddF32.as_label().to_owned(),
-                reason: format!("expected rank-1 bias tensor, got {dims:?}"),
-            });
-        }
-    };
-    if tensor.shape().dims().last().copied() != Some(width) {
-        return Err(RuntimeEvalError::UnsupportedPure {
-            name: RuntimeIntrinsic::InferBiasAddF32.as_label().to_owned(),
-            reason: format!(
-                "bias width {width} does not match tensor shape {:?}",
-                tensor.shape().dims()
-            ),
-        });
-    }
-    let values = tensor
-        .values()
-        .chunks_exact(width)
-        .flat_map(|row| {
-            row.iter()
-                .zip(bias.values())
-                .map(|(value, bias)| value + bias)
-        })
-        .collect();
-    DenseTensorF32::new(tensor.shape().dims().to_vec(), values)
-        .map_err(|error| infer_eval_error(RuntimeIntrinsic::InferBiasAddF32, error))
-}
-
-fn conv_valid2d_f32(
-    input: &DenseTensorF32,
-    kernel: &DenseTensorF32,
-    stride_y: usize,
-    stride_x: usize,
-) -> Result<DenseTensorF32, RuntimeEvalError> {
-    infer_window(RuntimeIntrinsic::ConvValid2dF32, stride_y, stride_x)?;
-    let [batch, input_channels, input_height, input_width] =
-        infer_nchw_dims(RuntimeIntrinsic::ConvValid2dF32, input)?;
-    let [
-        output_channels,
-        kernel_channels,
-        kernel_height,
-        kernel_width,
-    ] = infer_oihw_dims(RuntimeIntrinsic::ConvValid2dF32, kernel)?;
-    if input_channels != kernel_channels
-        || input_height < kernel_height
-        || input_width < kernel_width
-    {
-        return Err(RuntimeEvalError::UnsupportedPure {
-            name: RuntimeIntrinsic::ConvValid2dF32.as_label().to_owned(),
-            reason: format!(
-                "input shape {:?} is incompatible with kernel shape {:?}",
-                input.shape().dims(),
-                kernel.shape().dims()
-            ),
-        });
-    }
-    let output_height = (input_height - kernel_height) / stride_y + 1;
-    let output_width = (input_width - kernel_width) / stride_x + 1;
-    let mut out = vec![0.0; batch * output_channels * output_height * output_width];
-    for batch_index in 0..batch {
-        for output_channel in 0..output_channels {
-            for output_y in 0..output_height {
-                for output_x in 0..output_width {
-                    let mut sum = 0.0_f32;
-                    for input_channel in 0..input_channels {
-                        for kernel_y in 0..kernel_height {
-                            for kernel_x in 0..kernel_width {
-                                let input_y = output_y * stride_y + kernel_y;
-                                let input_x = output_x * stride_x + kernel_x;
-                                let input_index = infer_nchw_index(
-                                    batch_index,
-                                    input_channel,
-                                    input_y,
-                                    input_x,
-                                    input_channels,
-                                    input_height,
-                                    input_width,
-                                );
-                                let kernel_index = infer_oihw_index(
-                                    output_channel,
-                                    input_channel,
-                                    kernel_y,
-                                    kernel_x,
-                                    input_channels,
-                                    kernel_height,
-                                    kernel_width,
-                                );
-                                sum += input.values()[input_index] * kernel.values()[kernel_index];
-                            }
-                        }
-                    }
-                    let output_index = infer_nchw_index(
-                        batch_index,
-                        output_channel,
-                        output_y,
-                        output_x,
-                        output_channels,
-                        output_height,
-                        output_width,
-                    );
-                    out[output_index] = sum;
-                }
-            }
-        }
-    }
-    DenseTensorF32::new(
-        vec![batch, output_channels, output_height, output_width],
-        out,
-    )
-    .map_err(|error| infer_eval_error(RuntimeIntrinsic::ConvValid2dF32, error))
-}
-
-fn infer_max_pool2d_f32(
-    input: &DenseTensorF32,
-    kernel_y: usize,
-    kernel_x: usize,
-    stride_y: usize,
-    stride_x: usize,
-) -> Result<DenseTensorF32, RuntimeEvalError> {
-    infer_window(RuntimeIntrinsic::InferMaxPool2dF32, kernel_y, kernel_x)?;
-    infer_window(RuntimeIntrinsic::InferMaxPool2dF32, stride_y, stride_x)?;
-    let [batch, channels, input_height, input_width] =
-        infer_nchw_dims(RuntimeIntrinsic::InferMaxPool2dF32, input)?;
-    if input_height < kernel_y || input_width < kernel_x {
-        return Err(RuntimeEvalError::UnsupportedPure {
-            name: RuntimeIntrinsic::InferMaxPool2dF32.as_label().to_owned(),
-            reason: format!(
-                "pooling window {kernel_y}x{kernel_x} exceeds input shape {:?}",
-                input.shape().dims()
-            ),
-        });
-    }
-    let output_height = (input_height - kernel_y) / stride_y + 1;
-    let output_width = (input_width - kernel_x) / stride_x + 1;
-    let mut out = vec![0.0; batch * channels * output_height * output_width];
-    for batch_index in 0..batch {
-        for channel in 0..channels {
-            for output_y in 0..output_height {
-                for output_x in 0..output_width {
-                    let mut max = f32::NEG_INFINITY;
-                    for window_y in 0..kernel_y {
-                        for window_x in 0..kernel_x {
-                            let input_y = output_y * stride_y + window_y;
-                            let input_x = output_x * stride_x + window_x;
-                            let input_index = infer_nchw_index(
-                                batch_index,
-                                channel,
-                                input_y,
-                                input_x,
-                                channels,
-                                input_height,
-                                input_width,
-                            );
-                            max = max.max(input.values()[input_index]);
-                        }
-                    }
-                    let output_index = infer_nchw_index(
-                        batch_index,
-                        channel,
-                        output_y,
-                        output_x,
-                        channels,
-                        output_height,
-                        output_width,
-                    );
-                    out[output_index] = max;
-                }
-            }
-        }
-    }
-    DenseTensorF32::new(vec![batch, channels, output_height, output_width], out)
-        .map_err(|error| infer_eval_error(RuntimeIntrinsic::InferMaxPool2dF32, error))
-}
-
-fn infer_map_tensor_f32(
-    intrinsic: RuntimeIntrinsic,
-    tensor: &DenseTensorF32,
-    mut map: impl FnMut(f32) -> f32,
-) -> Result<DenseTensorF32, RuntimeEvalError> {
-    DenseTensorF32::new(
-        tensor.shape().dims().to_vec(),
-        tensor.values().iter().copied().map(&mut map).collect(),
-    )
-    .map_err(|error| infer_eval_error(intrinsic, error))
-}
-
-fn infer_softmax_last_dim_f32(input: &DenseTensorF32) -> Result<DenseTensorF32, RuntimeEvalError> {
-    let width = input
-        .shape()
-        .dims()
-        .last()
-        .copied()
-        .expect("runtime tensor rank is non-zero");
-    let mut out = Vec::with_capacity(input.values().len());
-    for row in input.values().chunks_exact(width) {
-        let max = row.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-        let mut sum = 0.0_f32;
-        let start = out.len();
-        out.extend(row.iter().map(|value| {
-            let exp = (*value - max).exp();
-            sum += exp;
-            exp
-        }));
-        for value in &mut out[start..] {
-            *value /= sum;
-        }
-    }
-    DenseTensorF32::new(input.shape().dims().to_vec(), out)
-        .map_err(|error| infer_eval_error(RuntimeIntrinsic::InferSoftmaxLastDimF32, error))
-}
-
-fn infer_argmax_last_dim_f32(input: &DenseTensorF32) -> Vec<usize> {
-    let width = input
-        .shape()
-        .dims()
-        .last()
-        .copied()
-        .expect("runtime tensor rank is non-zero");
-    input
-        .values()
-        .chunks_exact(width)
-        .map(|row| {
-            row.iter()
-                .copied()
-                .enumerate()
-                .max_by(|lhs, rhs| lhs.1.total_cmp(&rhs.1))
-                .map(|(index, _)| index)
-                .expect("argmax row is non-empty")
-        })
-        .collect()
-}
-
-fn infer_flatten_outer_f32(input: &DenseTensorF32) -> Result<DenseTensorF32, RuntimeEvalError> {
-    let dims = input.shape().dims();
-    if dims.len() == 1 {
-        return DenseTensorF32::new(vec![1, dims[0]], input.values().to_vec())
-            .map_err(|error| infer_eval_error(RuntimeIntrinsic::InferFlattenOuterF32, error));
-    }
-    let outer = dims[0];
-    let inner = dims[1..].iter().product();
-    DenseTensorF32::new(vec![outer, inner], input.values().to_vec())
-        .map_err(|error| infer_eval_error(RuntimeIntrinsic::InferFlattenOuterF32, error))
-}
-
-fn infer_nchw_index(
-    batch: usize,
-    channel: usize,
-    y: usize,
-    x: usize,
-    channels: usize,
-    height: usize,
-    width: usize,
-) -> usize {
-    ((batch * channels + channel) * height + y) * width + x
-}
-
-fn infer_oihw_index(
-    output_channel: usize,
-    input_channel: usize,
-    y: usize,
-    x: usize,
-    input_channels: usize,
-    height: usize,
-    width: usize,
-) -> usize {
-    ((output_channel * input_channels + input_channel) * height + y) * width + x
 }
 
 impl AotPureI64Plan {
@@ -3631,9 +3165,6 @@ impl PureEvaluator {
         {
             return Ok(value);
         }
-        if let Some(value) = evaluate_inference_pure_call(callee.as_intrinsic(), &args) {
-            return value;
-        }
         match (callee.as_intrinsic(), args.as_slice()) {
             (Some(RuntimeIntrinsic::Add), [RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)]) => {
                 evaluate_binary(
@@ -3854,144 +3385,6 @@ impl PureEvaluator {
 
 fn runtime_len_value(len: usize) -> RuntimeValue {
     RuntimeValue::usize(u64::try_from(len).unwrap_or(u64::MAX))
-}
-
-fn evaluate_inference_pure_call(
-    intrinsic: Option<RuntimeIntrinsic>,
-    args: &[RuntimeValue],
-) -> Option<Result<RuntimeValue, RuntimeEvalError>> {
-    let value = match (intrinsic, args) {
-        (
-            Some(RuntimeIntrinsic::InferMatmulF32),
-            [RuntimeValue::TensorF32(lhs), RuntimeValue::TensorF32(rhs)],
-        ) => infer_tensor_matmul_f32(lhs, rhs).map(RuntimeValue::tensor_f32),
-        (
-            Some(RuntimeIntrinsic::InferAddF32),
-            [RuntimeValue::TensorF32(lhs), RuntimeValue::TensorF32(rhs)],
-        ) => lhs
-            .add_scalar(rhs)
-            .map(RuntimeValue::tensor_f32)
-            .map_err(|error| infer_eval_error(RuntimeIntrinsic::InferAddF32, error)),
-        (
-            Some(RuntimeIntrinsic::InferBiasAddF32),
-            [
-                RuntimeValue::TensorF32(tensor),
-                RuntimeValue::TensorF32(bias),
-            ],
-        ) => infer_bias_add_f32(tensor, bias).map(RuntimeValue::tensor_f32),
-        (
-            Some(RuntimeIntrinsic::ConvValid2dF32),
-            [
-                RuntimeValue::TensorF32(input),
-                RuntimeValue::TensorF32(kernel),
-                stride_y,
-                stride_x,
-            ],
-        ) => evaluate_inference_pure_conv2d(input, kernel, stride_y, stride_x),
-        (Some(RuntimeIntrinsic::InferReluF32), [RuntimeValue::TensorF32(input)]) => {
-            infer_map_tensor_f32(RuntimeIntrinsic::InferReluF32, input, |value| {
-                value.max(0.0)
-            })
-            .map(RuntimeValue::tensor_f32)
-        }
-        (
-            Some(RuntimeIntrinsic::InferMaxPool2dF32),
-            [
-                RuntimeValue::TensorF32(input),
-                kernel_y,
-                kernel_x,
-                stride_y,
-                stride_x,
-            ],
-        ) => evaluate_inference_pure_max_pool(input, kernel_y, kernel_x, stride_y, stride_x),
-        (Some(RuntimeIntrinsic::InferSoftmaxLastDimF32), [RuntimeValue::TensorF32(input)]) => {
-            infer_softmax_last_dim_f32(input).map(RuntimeValue::tensor_f32)
-        }
-        (Some(RuntimeIntrinsic::InferArgmaxLastDimF32), [RuntimeValue::TensorF32(input)]) => Ok(
-            runtime_inference_class_indices_value(infer_argmax_last_dim_f32(input)),
-        ),
-        (Some(RuntimeIntrinsic::InferFlattenOuterF32), [RuntimeValue::TensorF32(input)]) => {
-            infer_flatten_outer_f32(input).map(RuntimeValue::tensor_f32)
-        }
-        _ => return None,
-    };
-    Some(value)
-}
-
-fn infer_tensor_matmul_f32(
-    lhs: &DenseTensorF32,
-    rhs: &DenseTensorF32,
-) -> Result<DenseTensorF32, RuntimeEvalError> {
-    infer_tensor_as_matrix(RuntimeIntrinsic::InferMatmulF32, lhs)?
-        .matmul_scalar(&infer_tensor_as_matrix(
-            RuntimeIntrinsic::InferMatmulF32,
-            rhs,
-        )?)
-        .map(DenseTensorF32::from_matrix)
-        .map_err(|error| infer_eval_error(RuntimeIntrinsic::InferMatmulF32, error))
-}
-
-fn evaluate_inference_pure_conv2d(
-    input: &DenseTensorF32,
-    kernel: &DenseTensorF32,
-    stride_y: &RuntimeValue,
-    stride_x: &RuntimeValue,
-) -> Result<RuntimeValue, RuntimeEvalError> {
-    conv_valid2d_f32(
-        input,
-        kernel,
-        runtime_infer_usize_arg(RuntimeIntrinsic::ConvValid2dF32, stride_y)?,
-        runtime_infer_usize_arg(RuntimeIntrinsic::ConvValid2dF32, stride_x)?,
-    )
-    .map(RuntimeValue::tensor_f32)
-}
-
-fn evaluate_inference_pure_max_pool(
-    input: &DenseTensorF32,
-    kernel_y: &RuntimeValue,
-    kernel_x: &RuntimeValue,
-    stride_y: &RuntimeValue,
-    stride_x: &RuntimeValue,
-) -> Result<RuntimeValue, RuntimeEvalError> {
-    infer_max_pool2d_f32(
-        input,
-        runtime_infer_usize_arg(RuntimeIntrinsic::InferMaxPool2dF32, kernel_y)?,
-        runtime_infer_usize_arg(RuntimeIntrinsic::InferMaxPool2dF32, kernel_x)?,
-        runtime_infer_usize_arg(RuntimeIntrinsic::InferMaxPool2dF32, stride_y)?,
-        runtime_infer_usize_arg(RuntimeIntrinsic::InferMaxPool2dF32, stride_x)?,
-    )
-    .map(RuntimeValue::tensor_f32)
-}
-
-fn runtime_inference_class_indices_value(indices: Vec<usize>) -> RuntimeValue {
-    runtime_sequence_dense_usize(
-        indices
-            .into_iter()
-            .map(|index| u64::try_from(index).unwrap_or(u64::MAX))
-            .collect(),
-    )
-}
-
-fn runtime_infer_usize_arg(
-    intrinsic: RuntimeIntrinsic,
-    value: &RuntimeValue,
-) -> Result<usize, RuntimeEvalError> {
-    match value {
-        RuntimeValue::Int(value) => value
-            .try_into_i64()
-            .and_then(|value| usize::try_from(value).ok()),
-        RuntimeValue::UInt(value) => value
-            .try_into_i64()
-            .and_then(|value| usize::try_from(value).ok()),
-        _ => None,
-    }
-    .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
-        name: intrinsic.as_label().to_owned(),
-        reason: format!(
-            "expected usize-compatible integer, got {}",
-            runtime_value_label(value)
-        ),
-    })
 }
 
 fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {

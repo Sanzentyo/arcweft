@@ -86,13 +86,16 @@ Runtime CLI values use path-free typed payload strings:
 The portable `wgpu` math backend is currently `f32`-only. `f64` matrix/tensor
 kernels use scalar, glam 4x4, or ndarray CPU backends.
 
-## Forward Inference Tensor Ops
+## Adapter-Contributed Tensor Ops
 
-Forward inference uses the same dense `TensorF32` runtime value and is exposed
-as regular intrinsic calls rather than a hard-coded CNN surface form:
+Forward inference uses the same dense `TensorF32` runtime value, but inference
+namespaces are not part of Arcweft Core or the default prelude. A runner may
+inject adapter-provided namespaces such as `conv2d` and `infer` into the
+type-checking environment, and execution resolves those calls through a
+runtime external-call adapter:
 
 ```arcw
-let features = conv.valid2d_f32(image, kernel, 1usize, 1usize)
+let features = conv2d.valid_f32(image, kernel, 1usize, 1usize)
 let hidden = infer.relu_f32(features)
 let pooled = infer.max_pool2d_f32(hidden, 2usize, 2usize, 2usize, 2usize)
 let flat = infer.flatten_outer_f32(pooled)
@@ -100,15 +103,15 @@ let logits = infer.matmul_f32(flat, dense_weight)
 let class = infer.argmax_last_dim_f32(logits)
 ```
 
-The current deterministic `f32` op set is valid NCHW/OIHW
-`conv.valid2d_f32`, `infer.matmul_f32`, `infer.add_f32`,
+The current optional native inference adapter contributes valid NCHW/OIHW
+`conv2d.valid_f32`, `infer.matmul_f32`, `infer.add_f32`,
 last-dimension `infer.bias_add_f32`, `infer.relu_f32`,
 `infer.max_pool2d_f32`, `infer.softmax_last_dim_f32`,
 `infer.argmax_last_dim_f32`, and outer-preserving
-`infer.flatten_outer_f32`. Shape validation is performed by the runtime tensor
-ops and by the Rust-side inference graph builder. The language type checker
-checks the value families (`TensorF32` plus integer window/stride arguments)
-without embedding CNN-specific structure into the surface syntax.
+`infer.flatten_outer_f32`. Shape validation is performed by the adapter tensor
+ops and by the Rust-side inference graph builder. The parser treats these as
+ordinary dotted method calls; the language checker only accepts them when an
+adapter profile injects the corresponding symbols and methods.
 
 ## References and Handles
 

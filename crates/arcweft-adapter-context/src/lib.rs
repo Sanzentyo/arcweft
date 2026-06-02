@@ -14,10 +14,19 @@ pub struct AdapterSymbol {
     ty: TypeKind,
 }
 
+/// A method injected by a host adapter for a receiver type it contributes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdapterMethod {
+    receiver: TypeKind,
+    name: String,
+    return_type: TypeKind,
+}
+
 /// Type-checking facts supplied by a host adapter profile.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct AdapterTypecheckContext {
     symbols: Vec<AdapterSymbol>,
+    methods: Vec<AdapterMethod>,
 }
 
 impl AdapterSymbol {
@@ -53,10 +62,33 @@ impl AdapterTypecheckContext {
         self
     }
 
+    /// Adds one injected method.
+    #[must_use]
+    pub fn with_method(
+        mut self,
+        receiver: TypeKind,
+        name: impl Into<String>,
+        return_type: TypeKind,
+    ) -> Self {
+        self.methods.push(AdapterMethod {
+            receiver,
+            name: name.into(),
+            return_type,
+        });
+        self
+    }
+
     /// Applies this adapter context to an existing checker environment.
     pub fn apply_to_env(&self, env: TypeCheckEnv) -> TypeCheckEnv {
-        self.symbols.iter().fold(env, |env, symbol| {
+        let env = self.symbols.iter().fold(env, |env, symbol| {
             env.with_symbol(symbol.name(), symbol.ty().clone())
+        });
+        self.methods.iter().fold(env, |env, method| {
+            env.with_method(
+                method.receiver.clone(),
+                method.name.clone(),
+                method.return_type.clone(),
+            )
         })
     }
 
@@ -64,10 +96,99 @@ impl AdapterTypecheckContext {
     pub fn symbols(&self) -> &[AdapterSymbol] {
         &self.symbols
     }
+
+    /// Injected methods, preserved for tooling and diagnostics.
+    pub fn methods(&self) -> &[AdapterMethod] {
+        &self.methods
+    }
 }
 
 /// Semantic context used by the built-in native HTTP server adapter.
 pub fn native_http_server_context() -> AdapterTypecheckContext {
     AdapterTypecheckContext::new()
         .with_symbol("request", TypeKind::Named("HttpRequestContext".to_owned()))
+}
+
+/// Semantic context for the optional forward-inference tensor adapter.
+pub fn inference_tensor_context() -> AdapterTypecheckContext {
+    let tensor = TypeKind::Named("TensorF32".to_owned());
+    AdapterTypecheckContext::new()
+        .with_symbol("conv2d", TypeKind::Named("Conv2dApi".to_owned()))
+        .with_symbol("infer", TypeKind::Named("InferApi".to_owned()))
+        .with_method(
+            TypeKind::Named("Conv2dApi".to_owned()),
+            "valid_f32",
+            tensor.clone(),
+        )
+        .with_method(
+            TypeKind::Named("InferApi".to_owned()),
+            "matmul_f32",
+            tensor.clone(),
+        )
+        .with_method(
+            TypeKind::Named("InferApi".to_owned()),
+            "add_f32",
+            tensor.clone(),
+        )
+        .with_method(
+            TypeKind::Named("InferApi".to_owned()),
+            "bias_add_f32",
+            tensor.clone(),
+        )
+        .with_method(
+            TypeKind::Named("InferApi".to_owned()),
+            "relu_f32",
+            tensor.clone(),
+        )
+        .with_method(
+            TypeKind::Named("InferApi".to_owned()),
+            "max_pool2d_f32",
+            tensor.clone(),
+        )
+        .with_method(
+            TypeKind::Named("InferApi".to_owned()),
+            "softmax_last_dim_f32",
+            tensor.clone(),
+        )
+        .with_method(
+            TypeKind::Named("InferApi".to_owned()),
+            "argmax_last_dim_f32",
+            TypeKind::Seq(Box::new(TypeKind::USize)),
+        )
+        .with_method(
+            TypeKind::Named("InferApi".to_owned()),
+            "flatten_outer_f32",
+            tensor,
+        )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inference_tensor_context_injects_namespaced_methods_without_core_prelude() {
+        let context = inference_tensor_context();
+        let tensor = TypeKind::Named("TensorF32".to_owned());
+        let env = context.apply_to_env(TypeCheckEnv::new());
+
+        assert_eq!(
+            context.symbols(),
+            &[
+                AdapterSymbol::new("conv2d", TypeKind::Named("Conv2dApi".to_owned())),
+                AdapterSymbol::new("infer", TypeKind::Named("InferApi".to_owned()))
+            ]
+        );
+        assert!(context.methods().iter().any(|method| {
+            method.receiver == TypeKind::Named("Conv2dApi".to_owned())
+                && method.name == "valid_f32"
+                && method.return_type == tensor
+        }));
+        assert!(context.methods().iter().any(|method| {
+            method.receiver == TypeKind::Named("InferApi".to_owned())
+                && method.name == "argmax_last_dim_f32"
+                && method.return_type == TypeKind::Seq(Box::new(TypeKind::USize))
+        }));
+        assert_eq!(env, context.clone().apply_to_env(TypeCheckEnv::new()));
+    }
 }

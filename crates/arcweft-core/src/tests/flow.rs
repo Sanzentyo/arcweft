@@ -2054,6 +2054,66 @@ fn custom_host_request_spread_preserves_concrete_payload_values() {
 }
 
 #[test]
+fn custom_host_request_preserves_nested_record_variant_and_refs() {
+    let nested_payload = RuntimeValue::Record(vec![
+        RuntimeFieldValue {
+            name: "actor".to_owned(),
+            value: RuntimeValue::EntityRef("character.alice".to_owned()),
+        },
+        RuntimeFieldValue {
+            name: "state".to_owned(),
+            value: RuntimeValue::Variant {
+                path: Some("Emotion".to_owned()),
+                name: "Focused".to_owned(),
+                payload: Some(Box::new(RuntimeValue::Tuple(vec![
+                    RuntimeValue::i32(3),
+                    RuntimeValue::String("line.ready".to_owned()),
+                ]))),
+            },
+        },
+        RuntimeFieldValue {
+            name: "routes".to_owned(),
+            value: runtime_sequence_values(vec![
+                RuntimeValue::EntityRef("flow.next".to_owned()),
+                RuntimeValue::EntityRef("flow.fallback".to_owned()),
+            ]),
+        },
+    ]);
+    let expected = RuntimePayload::new(nested_payload.clone());
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.inspect".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.inspect".to_owned()),
+            ops: vec![FlowOp::Await {
+                binding: None,
+                target: AwaitTarget {
+                    need: NeedId("need.inspect".to_owned()),
+                    task: TaskId("task.inspect".to_owned()),
+                    request: HostTaskRequestTemplate::new(
+                        "adapter",
+                        "inspect",
+                        [HostTaskArgTemplate::positional(RuntimeExpr::Value(
+                            nested_payload,
+                        ))],
+                    ),
+                },
+                pending: Vec::new(),
+            }],
+        }],
+        Vec::new(),
+    )
+    .expect("custom host request plan is valid");
+    let mut engine = Engine::new(plan);
+
+    let output = super::runtime_step(&mut engine, RuntimeStepInput::default());
+    let HostTaskRequest::Custom { args, .. } = &output.requests.tasks[0].request else {
+        panic!("expected custom host request");
+    };
+
+    assert_eq!(args, &vec![expected]);
+}
+
+#[test]
 fn if_let_expression_binds_only_success_branch() {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.if_let".to_owned())),
