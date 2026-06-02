@@ -38,6 +38,7 @@ pub struct TypeCheckEnv {
     pub(crate) symbols: HashMap<String, TypeKind>,
     pub(crate) functions: HashMap<String, TypeKind>,
     pub(crate) function_signatures: HashMap<String, FunctionSignature>,
+    pub(crate) function_effects: HashMap<String, Vec<String>>,
     pub(crate) methods: HashMap<(TypeKind, String), MethodSignature>,
     pub(crate) indexes: HashMap<TypeKind, TypeKind>,
     pub(crate) capabilities: HashSet<String>,
@@ -160,6 +161,18 @@ impl TypeCheckEnv {
         self
     }
 
+    /// Registers effects required by one free function.
+    #[must_use]
+    pub fn with_function_effects<I, S>(mut self, name: impl Into<String>, effects: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.function_effects
+            .insert(name.into(), effects.into_iter().map(Into::into).collect());
+        self
+    }
+
     /// Registers a method return type for a receiver type.
     #[must_use]
     pub fn with_method(
@@ -245,6 +258,11 @@ impl TypeCheckEnv {
 
     pub(crate) fn function_signature(&self, name: &str) -> Option<&FunctionSignature> {
         self.function_signatures.get(name)
+    }
+
+    /// Returns effects required by a function supplied by the environment.
+    pub fn function_effects(&self, name: &str) -> Option<&[String]> {
+        self.function_effects.get(name).map(Vec::as_slice)
     }
 
     pub(crate) fn method_type(&self, receiver: &TypeKind, method: &str) -> Option<&TypeKind> {

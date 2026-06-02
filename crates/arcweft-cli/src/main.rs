@@ -1,4 +1,4 @@
-use arcweft_adapter_context::{AdapterTypecheckContext, native_http_server_context};
+use arcweft_adapter_context::{manifest::AdapterManifest, standard};
 use arcweft_core::aot::{AotProgram, AotProgramStats};
 use arcweft_core::bytecode::{BytecodeProgram, BytecodeStats};
 use arcweft_core::engine::FlowFiberStatus;
@@ -93,8 +93,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::Instant;
 use toolchain_profile::ToolchainProfileOptions;
-
-const KNOWN_ADAPTERS: &[&str] = &["sans-io", "native-http"];
 
 #[derive(Debug, Parser)]
 #[command(name = "arcw", about = "Arcweft language and runtime tooling")]
@@ -4490,8 +4488,10 @@ fn resolve_source_selection(
                 ExitCode::FAILURE
             })?;
             let manifest_dir = profile.manifest.parent().unwrap_or_else(|| Path::new("."));
+            let adapter_registry = standard::standard_registry();
+            let adapter_ids = adapter_registry.adapter_ids();
             let resolved = manifest
-                .resolve_profile_with_adapters(profile_id, manifest_dir, KNOWN_ADAPTERS)
+                .resolve_profile_with_adapters(profile_id, manifest_dir, &adapter_ids)
                 .map_err(|error| {
                     eprintln!("error: {error}");
                     ExitCode::FAILURE
@@ -4549,29 +4549,26 @@ fn typecheck_env_for_selection(
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<TypeCheckEnv, ExitCode> {
     let adapter = adapter_override.or(selection.adapter());
-    let mut context = typecheck_context_for_adapter(adapter)?;
+    let mut manifest = adapter_manifest_for_adapter(adapter)?;
     if adapter_override.is_none() && selection.profile().is_some() {
         let manifests = run_profile_phase(phases, "rust_metadata", || {
             rust_metadata_for_selection(selection)
         })?;
-        for manifest in manifests {
-            context = context.with_rust_manifest(&manifest);
+        for rust_manifest in manifests {
+            manifest = manifest.with_rust_manifest(&rust_manifest);
         }
     }
-    Ok(context.apply_to_env(TypeCheckEnv::new()))
+    Ok(manifest.apply_to_env(TypeCheckEnv::new()))
 }
 
-fn typecheck_context_for_adapter(
-    adapter: Option<&str>,
-) -> Result<AdapterTypecheckContext, ExitCode> {
-    match adapter {
-        None | Some("sans-io") => Ok(AdapterTypecheckContext::new()),
-        Some("native-http") => Ok(server_adapter_typecheck_context()),
-        Some(adapter) => {
-            eprintln!("error: unknown adapter `{adapter}`");
-            Err(ExitCode::from(2))
-        }
+fn adapter_manifest_for_adapter(adapter: Option<&str>) -> Result<AdapterManifest, ExitCode> {
+    let adapter_id = adapter.unwrap_or(standard::SANS_IO_ADAPTER_ID);
+    let registry = standard::standard_registry();
+    if let Some(manifest) = registry.get(adapter_id) {
+        return Ok(manifest.clone());
     }
+    eprintln!("error: unknown adapter `{adapter_id}`");
+    Err(ExitCode::from(2))
 }
 
 fn rust_metadata_for_selection(
@@ -4672,10 +4669,6 @@ fn load_and_check_with_env(
         typecheck_report,
         phases,
     })
-}
-
-fn server_adapter_typecheck_context() -> AdapterTypecheckContext {
-    native_http_server_context()
 }
 
 #[derive(Args, Clone, Debug)]

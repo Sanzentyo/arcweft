@@ -55,6 +55,46 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn adapter_function_effects_require_matching_capability() {
+    let tree = parse_ok(
+        r#"
+flow @flow.opening opening {
+    let body = adapter.read_text(path = "story.arcw")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("adapter effect fixture lowers");
+    let env = TypeCheckEnv::new()
+        .with_function_signature(
+            "adapter.read_text",
+            FunctionSignature::new(
+                TypeKind::String,
+                [FunctionParam::required("path", TypeKind::String)],
+            ),
+        )
+        .with_function_effects("adapter.read_text", ["fs.read".to_owned()]);
+
+    let errors = typecheck_hir(&hir, &env).expect_err("missing adapter effect is rejected");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("calling `adapter.read_text` requires effect capability `fs.read`")
+    }));
+
+    let allowed_tree = parse_ok(
+        r#"
+flow @flow.opening opening
+effects { fs.read }
+{
+    let body = adapter.read_text(path = "story.arcw")
+}
+"#,
+    );
+    let allowed_hir = lower_to_hir(&allowed_tree).expect("allowed adapter effect fixture lowers");
+    typecheck_hir(&allowed_hir, &env).expect("flow effect contract grants adapter call");
+}
+
+#[test]
 fn typecheck_report_counts_type_and_borrow_work() {
     let tree = parse_ok(
         r#"

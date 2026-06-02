@@ -40,6 +40,15 @@ selected package metadata. A direct source check, or a profile that omits the
 matching `rust_metadata` file, rejects the extern declaration instead of
 creating dynamic fallback bindings.
 
+Adapter metadata is carried by `arcweft-adapter-context` as an
+`AdapterManifest`. Standard manifests such as `sans-io`, `native-http`,
+`inference-tensor`, `system-info`, `native-file`, and `math` are resolved
+through the standard adapter registry. A manifest can contribute source-visible
+symbols and methods, typed free functions, granted or required effect
+capabilities, host-call identifiers, tooling docs, and merged Rust ABI exports.
+This keeps core language parsing independent from adapter-specific names while
+still giving CLI, verifier, and LSP one typed source of truth.
+
 Minimal adapter build scripts construct the manifest explicitly and delegate
 file I/O to `arcweft-rust-abi-build`:
 

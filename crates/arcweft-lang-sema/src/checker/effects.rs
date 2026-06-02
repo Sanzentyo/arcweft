@@ -7,11 +7,14 @@ use std::collections::HashSet;
 
 impl TypeChecker<'_> {
     pub(super) fn check_function_effects(&mut self, name: &str) {
-        let Some(effects) = self.global_function_effects.get(name) else {
-            return;
-        };
-        let missing = effects
+        let source_effects = self
+            .global_function_effects
+            .get(name)
+            .map_or(&[][..], Vec::as_slice);
+        let env_effects = self.env.function_effects(name).unwrap_or(&[]);
+        let missing = source_effects
             .iter()
+            .chain(env_effects.iter())
             .filter(|capability| {
                 !self.effect_capabilities.contains(capability.as_str())
                     && !self.env.has_capability(capability)

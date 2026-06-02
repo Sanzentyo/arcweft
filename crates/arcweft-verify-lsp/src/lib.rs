@@ -4,7 +4,7 @@
 //! converts verifier reports into `lsp-types` values that a future server,
 //! editor plugin, or tests can reuse.
 
-use arcweft_adapter_context::AdapterTypecheckContext;
+use arcweft_adapter_context::manifest::AdapterManifest;
 use arcweft_lang_sema::env::FunctionSignature;
 use arcweft_lang_sema::types::TypeKind;
 use arcweft_verify::{
@@ -19,17 +19,17 @@ use lsp_types::{
 
 /// Sans I/O LSP context supplied by the caller after resolving profiles.
 pub struct ArcweftLspContext<'a> {
-    adapter: &'a AdapterTypecheckContext,
+    adapter: &'a AdapterManifest,
 }
 
 impl<'a> ArcweftLspContext<'a> {
     /// Creates an LSP context from already-resolved adapter metadata.
-    pub const fn new(adapter: &'a AdapterTypecheckContext) -> Self {
+    pub const fn new(adapter: &'a AdapterManifest) -> Self {
         Self { adapter }
     }
 
     /// Adapter metadata visible to tooling.
-    pub const fn adapter(&self) -> &'a AdapterTypecheckContext {
+    pub const fn adapter(&self) -> &'a AdapterManifest {
         self.adapter
     }
 }
@@ -306,7 +306,7 @@ fn type_kind_label(ty: &TypeKind) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_adapter_context::AdapterTypecheckContext;
+    use arcweft_adapter_context::manifest::AdapterManifest;
     use arcweft_rust_abi::{
         ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustParam,
         ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeRef,
@@ -386,7 +386,7 @@ mod tests {
             purity: ArcweftRustPurity::Pure,
             effects: Vec::new(),
         });
-        let adapter = AdapterTypecheckContext::new().with_rust_manifest(&manifest);
+        let adapter = AdapterManifest::new("fixture", "Fixture").with_rust_manifest(&manifest);
         let context = ArcweftLspContext::new(&adapter);
 
         let completions = rust_adapter_completions(&context);

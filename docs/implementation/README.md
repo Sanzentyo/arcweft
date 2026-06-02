@@ -41,17 +41,19 @@ Phase 0 / Phase 1 minimal Rust workspace:
   consumes lowered server route plans and executes matched flows through
   `RuntimeStepMode::Server`; `arcweft-core` remains free of network I/O.
 - `arcw check`, `arcw verify`, `arcw unsafe`, and plan/report generation now
-  pass the resolved profile adapter `TypeCheckEnv` through both type checking
-  and semantic verification. Generic direct-path mode still uses the empty
-  Sans I/O environment.
+  resolve profile adapters through the standard `arcweft-adapter-context`
+  manifest registry, then pass the resulting `TypeCheckEnv` through both type
+  checking and semantic verification. Generic direct-path mode still uses the
+  Sans I/O manifest.
 - Rust adapter metadata is now an explicit profile-selected input. The
   `arcweft-rust-abi` data crate defines deterministic JSON metadata for Rust
   exported functions and ADTs, `arcweft-rust-abi-macros` provides opt-in
   function/type metadata generation, and `arcweft-rust-abi-build` owns the
   build-script file I/O helper so the data crate stays Sans I/O.
-  `arcweft-adapter-context` converts that metadata into full sema signatures and
+  `arcweft-adapter-context` merges that metadata into typed adapter manifests
+  alongside standard symbols, methods, effect capabilities, host calls, and
   package export tables, and `arcweft-verify-lsp` exposes Sans I/O completion,
-  hover, and signature-help helpers from the same context. `extern rust mod`
+  hover, and signature-help helpers from the same manifest. `extern rust mod`
   declarations parse as structured type/function/activity members and are
   checked against the profile-selected package metadata. The CLI reads
   `rust_metadata` entries from launch profiles; direct-path checks remain
