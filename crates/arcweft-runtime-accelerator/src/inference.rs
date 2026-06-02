@@ -82,7 +82,17 @@ pub enum InferenceOp {
     Matmul,
     Add,
     BiasAdd,
+    Conv2dValid {
+        stride_y: usize,
+        stride_x: usize,
+    },
     Relu,
+    MaxPool2d {
+        kernel_y: usize,
+        kernel_x: usize,
+        stride_y: usize,
+        stride_x: usize,
+    },
     SoftmaxLastDim,
     ArgmaxLastDim,
     FlattenOuter,
@@ -249,12 +259,89 @@ impl InferenceGraphBuilder {
         )
     }
 
+    pub fn add_conv2d_valid(
+        &mut self,
+        input: InferenceTensorId,
+        kernel: InferenceTensorId,
+        stride_y: usize,
+        stride_x: usize,
+    ) -> Result<InferenceTensorId, InferenceError> {
+        validate_window(stride_y, stride_x)?;
+        let input_shape = self.shape(input)?;
+        let kernel_shape = self.shape(kernel)?;
+        let [batch, input_channels, height, width] =
+            nchw_dims(input_shape, InferenceOp::Conv2dValid { stride_y, stride_x })?;
+        let [
+            output_channels,
+            kernel_channels,
+            kernel_height,
+            kernel_width,
+        ] = oihw_dims(
+            kernel_shape,
+            InferenceOp::Conv2dValid { stride_y, stride_x },
+        )?;
+        if input_channels != kernel_channels || height < kernel_height || width < kernel_width {
+            return Err(InferenceError::Conv2dShapeMismatch {
+                input: input_shape.clone(),
+                kernel: kernel_shape.clone(),
+            });
+        }
+        let output_height = (height - kernel_height) / stride_y + 1;
+        let output_width = (width - kernel_width) / stride_x + 1;
+        self.add_node(
+            InferenceOp::Conv2dValid { stride_y, stride_x },
+            vec![input, kernel],
+            InferenceShape::new(vec![batch, output_channels, output_height, output_width])?,
+        )
+    }
+
     pub fn add_relu(
         &mut self,
         input: InferenceTensorId,
     ) -> Result<InferenceTensorId, InferenceError> {
         let shape = self.shape(input)?.clone();
         self.add_node(InferenceOp::Relu, vec![input], shape)
+    }
+
+    pub fn add_max_pool2d(
+        &mut self,
+        input: InferenceTensorId,
+        kernel_y: usize,
+        kernel_x: usize,
+        stride_y: usize,
+        stride_x: usize,
+    ) -> Result<InferenceTensorId, InferenceError> {
+        validate_window(kernel_y, kernel_x)?;
+        validate_window(stride_y, stride_x)?;
+        let input_shape = self.shape(input)?;
+        let [batch, channels, height, width] = nchw_dims(
+            input_shape,
+            InferenceOp::MaxPool2d {
+                kernel_y,
+                kernel_x,
+                stride_y,
+                stride_x,
+            },
+        )?;
+        if height < kernel_y || width < kernel_x {
+            return Err(InferenceError::PoolingShapeMismatch {
+                input: input_shape.clone(),
+                kernel_y,
+                kernel_x,
+            });
+        }
+        let output_height = (height - kernel_y) / stride_y + 1;
+        let output_width = (width - kernel_x) / stride_x + 1;
+        self.add_node(
+            InferenceOp::MaxPool2d {
+                kernel_y,
+                kernel_x,
+                stride_y,
+                stride_x,
+            },
+            vec![input],
+            InferenceShape::new(vec![batch, channels, output_height, output_width])?,
+        )
     }
 
     pub fn add_softmax_last_dim(
@@ -349,19 +436,63 @@ impl InferenceGraphBuilder {
     }
 }
 
-/// Forward-only inference session using the configured math accelerator.
-pub struct InferenceSession {
-    graph: InferenceGraph,
+/// Adapter boundary for forward-only inference execution.
+pub trait InferenceAdapter {
+    fn matmul(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, InferenceError>;
+
+    fn add(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, InferenceError>;
+
+    fn bias_add(
+        &mut self,
+        tensor: &DenseTensorF32,
+        bias: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, InferenceError>;
+
+    fn conv2d_valid(
+        &mut self,
+        input: &DenseTensorF32,
+        kernel: &DenseTensorF32,
+        stride_y: usize,
+        stride_x: usize,
+    ) -> Result<DenseTensorF32, InferenceError>;
+
+    fn relu(&mut self, input: &DenseTensorF32) -> Result<DenseTensorF32, InferenceError>;
+
+    fn max_pool2d(
+        &mut self,
+        input: &DenseTensorF32,
+        kernel_y: usize,
+        kernel_x: usize,
+        stride_y: usize,
+        stride_x: usize,
+    ) -> Result<DenseTensorF32, InferenceError>;
+
+    fn softmax_last_dim(
+        &mut self,
+        input: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, InferenceError>;
+
+    fn argmax_last_dim(&mut self, input: &DenseTensorF32) -> Vec<usize>;
+
+    fn flatten_outer(&mut self, input: &DenseTensorF32) -> Result<DenseTensorF32, InferenceError>;
+}
+
+/// Default inference adapter backed by `RuntimeMathAccelerator` for dense matmul.
+pub struct AcceleratedInferenceAdapter {
     accelerator: RuntimeMathAccelerator,
 }
 
-impl InferenceSession {
-    pub fn new(graph: InferenceGraph, accelerator: RuntimeMathAccelerator) -> Self {
-        Self { graph, accelerator }
-    }
-
-    pub fn graph(&self) -> &InferenceGraph {
-        &self.graph
+impl AcceleratedInferenceAdapter {
+    pub fn new(accelerator: RuntimeMathAccelerator) -> Self {
+        Self { accelerator }
     }
 
     pub fn accelerator(&self) -> &RuntimeMathAccelerator {
@@ -370,6 +501,105 @@ impl InferenceSession {
 
     pub fn accelerator_mut(&mut self) -> &mut RuntimeMathAccelerator {
         &mut self.accelerator
+    }
+}
+
+impl InferenceAdapter for AcceleratedInferenceAdapter {
+    fn matmul(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, InferenceError> {
+        let lhs = tensor_as_matrix(lhs, InferenceOp::Matmul)?;
+        let rhs = tensor_as_matrix(rhs, InferenceOp::Matmul)?;
+        let out = self.accelerator.matmul_f32(&lhs, &rhs)?;
+        Ok(DenseTensorF32::from_matrix(out))
+    }
+
+    fn add(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, InferenceError> {
+        lhs.add_scalar(rhs).map_err(Into::into)
+    }
+
+    fn bias_add(
+        &mut self,
+        tensor: &DenseTensorF32,
+        bias: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, InferenceError> {
+        bias_add(tensor, bias)
+    }
+
+    fn conv2d_valid(
+        &mut self,
+        input: &DenseTensorF32,
+        kernel: &DenseTensorF32,
+        stride_y: usize,
+        stride_x: usize,
+    ) -> Result<DenseTensorF32, InferenceError> {
+        conv2d_valid_nchw(input, kernel, stride_y, stride_x)
+    }
+
+    fn relu(&mut self, input: &DenseTensorF32) -> Result<DenseTensorF32, InferenceError> {
+        map_tensor(input, |value| value.max(0.0))
+    }
+
+    fn max_pool2d(
+        &mut self,
+        input: &DenseTensorF32,
+        kernel_y: usize,
+        kernel_x: usize,
+        stride_y: usize,
+        stride_x: usize,
+    ) -> Result<DenseTensorF32, InferenceError> {
+        max_pool2d_nchw(input, kernel_y, kernel_x, stride_y, stride_x)
+    }
+
+    fn softmax_last_dim(
+        &mut self,
+        input: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, InferenceError> {
+        softmax_last_dim(input)
+    }
+
+    fn argmax_last_dim(&mut self, input: &DenseTensorF32) -> Vec<usize> {
+        argmax_last_dim(input)
+    }
+
+    fn flatten_outer(&mut self, input: &DenseTensorF32) -> Result<DenseTensorF32, InferenceError> {
+        flatten_outer(input)
+    }
+}
+
+/// Forward-only inference session using a concrete execution adapter.
+pub struct InferenceSession<A = AcceleratedInferenceAdapter>
+where
+    A: InferenceAdapter,
+{
+    graph: InferenceGraph,
+    adapter: A,
+}
+
+impl<A> InferenceSession<A>
+where
+    A: InferenceAdapter,
+{
+    pub fn new(graph: InferenceGraph, adapter: A) -> Self {
+        Self { graph, adapter }
+    }
+
+    pub fn graph(&self) -> &InferenceGraph {
+        &self.graph
+    }
+
+    pub fn adapter(&self) -> &A {
+        &self.adapter
+    }
+
+    pub fn adapter_mut(&mut self) -> &mut A {
+        &mut self.adapter
     }
 
     pub fn run<I>(&mut self, inputs: I) -> Result<Vec<InferenceValue>, InferenceError>
@@ -418,38 +648,56 @@ impl InferenceSession {
             InferenceOp::Matmul => {
                 let lhs = tensor_value(values, node.inputs[0])?;
                 let rhs = tensor_value(values, node.inputs[1])?;
-                let lhs = tensor_as_matrix(lhs)?;
-                let rhs = tensor_as_matrix(rhs)?;
-                let out = self.accelerator.matmul_f32(&lhs, &rhs)?;
-                Ok(InferenceValue::Tensor(DenseTensorF32::from_matrix(out)))
+                Ok(InferenceValue::Tensor(self.adapter.matmul(lhs, rhs)?))
             }
             InferenceOp::Add => {
                 let lhs = tensor_value(values, node.inputs[0])?;
                 let rhs = tensor_value(values, node.inputs[1])?;
-                Ok(InferenceValue::Tensor(lhs.add_scalar(rhs)?))
+                Ok(InferenceValue::Tensor(self.adapter.add(lhs, rhs)?))
             }
             InferenceOp::BiasAdd => {
                 let tensor = tensor_value(values, node.inputs[0])?;
                 let bias = tensor_value(values, node.inputs[1])?;
-                Ok(InferenceValue::Tensor(bias_add(tensor, bias)?))
+                Ok(InferenceValue::Tensor(self.adapter.bias_add(tensor, bias)?))
+            }
+            InferenceOp::Conv2dValid { stride_y, stride_x } => {
+                let input = tensor_value(values, node.inputs[0])?;
+                let kernel = tensor_value(values, node.inputs[1])?;
+                Ok(InferenceValue::Tensor(
+                    self.adapter
+                        .conv2d_valid(input, kernel, stride_y, stride_x)?,
+                ))
             }
             InferenceOp::Relu => {
                 let input = tensor_value(values, node.inputs[0])?;
-                Ok(InferenceValue::Tensor(map_tensor(input, |value| {
-                    value.max(0.0)
-                })?))
+                Ok(InferenceValue::Tensor(self.adapter.relu(input)?))
+            }
+            InferenceOp::MaxPool2d {
+                kernel_y,
+                kernel_x,
+                stride_y,
+                stride_x,
+            } => {
+                let input = tensor_value(values, node.inputs[0])?;
+                Ok(InferenceValue::Tensor(self.adapter.max_pool2d(
+                    input, kernel_y, kernel_x, stride_y, stride_x,
+                )?))
             }
             InferenceOp::SoftmaxLastDim => {
                 let input = tensor_value(values, node.inputs[0])?;
-                Ok(InferenceValue::Tensor(softmax_last_dim(input)?))
+                Ok(InferenceValue::Tensor(
+                    self.adapter.softmax_last_dim(input)?,
+                ))
             }
             InferenceOp::ArgmaxLastDim => {
                 let input = tensor_value(values, node.inputs[0])?;
-                Ok(InferenceValue::ClassIndices(argmax_last_dim(input)))
+                Ok(InferenceValue::ClassIndices(
+                    self.adapter.argmax_last_dim(input),
+                ))
             }
             InferenceOp::FlattenOuter => {
                 let input = tensor_value(values, node.inputs[0])?;
-                Ok(InferenceValue::Tensor(flatten_outer(input)?))
+                Ok(InferenceValue::Tensor(self.adapter.flatten_outer(input)?))
             }
         }
     }
@@ -523,6 +771,19 @@ pub enum InferenceError {
         tensor: InferenceShape,
         bias: InferenceShape,
     },
+    #[error("conv2d shape mismatch: input {input:?}, kernel {kernel:?}")]
+    Conv2dShapeMismatch {
+        input: InferenceShape,
+        kernel: InferenceShape,
+    },
+    #[error("pooling shape mismatch: input {input:?}, kernel {kernel_y}x{kernel_x}")]
+    PoolingShapeMismatch {
+        input: InferenceShape,
+        kernel_y: usize,
+        kernel_x: usize,
+    },
+    #[error("inference window dimensions must be non-zero")]
+    InvalidWindow,
     #[error("inference tensor shape mismatch: expected {expected:?}, found {found:?}")]
     TensorShapeMismatch {
         expected: InferenceShape,
@@ -550,11 +811,14 @@ fn tensor_value(
         .ok_or(InferenceError::ExpectedTensorValue { id })
 }
 
-fn tensor_as_matrix(tensor: &DenseTensorF32) -> Result<DenseMatrixF32, InferenceError> {
+fn tensor_as_matrix(
+    tensor: &DenseTensorF32,
+    op: InferenceOp,
+) -> Result<DenseMatrixF32, InferenceError> {
     tensor
         .as_matrix()
         .ok_or_else(|| InferenceError::ExpectedMatrix {
-            op: InferenceOp::Matmul,
+            op,
             shape: InferenceShape::new(tensor.shape().dims().to_vec())
                 .expect("runtime tensor shape has non-zero rank"),
         })
@@ -567,6 +831,36 @@ fn matrix_dims(shape: &InferenceShape, op: InferenceOp) -> Result<[usize; 2], In
             op,
             shape: shape.clone(),
         }),
+    }
+}
+
+fn nchw_dims(shape: &InferenceShape, op: InferenceOp) -> Result<[usize; 4], InferenceError> {
+    match shape.dims() {
+        [batch, channels, height, width] => Ok([*batch, *channels, *height, *width]),
+        _ => Err(InferenceError::ExpectedMatrix {
+            op,
+            shape: shape.clone(),
+        }),
+    }
+}
+
+fn oihw_dims(shape: &InferenceShape, op: InferenceOp) -> Result<[usize; 4], InferenceError> {
+    match shape.dims() {
+        [output_channels, input_channels, height, width] => {
+            Ok([*output_channels, *input_channels, *height, *width])
+        }
+        _ => Err(InferenceError::ExpectedMatrix {
+            op,
+            shape: shape.clone(),
+        }),
+    }
+}
+
+fn validate_window(first: usize, second: usize) -> Result<(), InferenceError> {
+    if first == 0 || second == 0 {
+        Err(InferenceError::InvalidWindow)
+    } else {
+        Ok(())
     }
 }
 
@@ -585,7 +879,7 @@ fn validate_tensor_shape(
     }
 }
 
-fn bias_add(
+pub(crate) fn bias_add(
     tensor: &DenseTensorF32,
     bias: &DenseTensorF32,
 ) -> Result<DenseTensorF32, InferenceError> {
@@ -614,7 +908,185 @@ fn bias_add(
     DenseTensorF32::new(tensor.shape().dims().to_vec(), values).map_err(Into::into)
 }
 
-fn map_tensor(
+pub(crate) fn conv2d_valid_nchw(
+    input: &DenseTensorF32,
+    kernel: &DenseTensorF32,
+    stride_y: usize,
+    stride_x: usize,
+) -> Result<DenseTensorF32, InferenceError> {
+    validate_window(stride_y, stride_x)?;
+    let input_shape = InferenceShape::new(input.shape().dims().to_vec())?;
+    let kernel_shape = InferenceShape::new(kernel.shape().dims().to_vec())?;
+    let [batch, input_channels, input_height, input_width] = nchw_dims(
+        &input_shape,
+        InferenceOp::Conv2dValid { stride_y, stride_x },
+    )?;
+    let [
+        output_channels,
+        kernel_channels,
+        kernel_height,
+        kernel_width,
+    ] = oihw_dims(
+        &kernel_shape,
+        InferenceOp::Conv2dValid { stride_y, stride_x },
+    )?;
+    if input_channels != kernel_channels
+        || input_height < kernel_height
+        || input_width < kernel_width
+    {
+        return Err(InferenceError::Conv2dShapeMismatch {
+            input: input_shape,
+            kernel: kernel_shape,
+        });
+    }
+    let output_height = (input_height - kernel_height) / stride_y + 1;
+    let output_width = (input_width - kernel_width) / stride_x + 1;
+    let mut out = vec![0.0; batch * output_channels * output_height * output_width];
+    for batch_index in 0..batch {
+        for output_channel in 0..output_channels {
+            for output_y in 0..output_height {
+                for output_x in 0..output_width {
+                    let mut sum = 0.0_f32;
+                    for input_channel in 0..input_channels {
+                        for kernel_y in 0..kernel_height {
+                            for kernel_x in 0..kernel_width {
+                                let input_y = output_y * stride_y + kernel_y;
+                                let input_x = output_x * stride_x + kernel_x;
+                                let input_index = nchw_index(
+                                    batch_index,
+                                    input_channel,
+                                    input_y,
+                                    input_x,
+                                    input_channels,
+                                    input_height,
+                                    input_width,
+                                );
+                                let kernel_index = oihw_index(
+                                    output_channel,
+                                    input_channel,
+                                    kernel_y,
+                                    kernel_x,
+                                    input_channels,
+                                    kernel_height,
+                                    kernel_width,
+                                );
+                                sum += input.values()[input_index] * kernel.values()[kernel_index];
+                            }
+                        }
+                    }
+                    let output_index = nchw_index(
+                        batch_index,
+                        output_channel,
+                        output_y,
+                        output_x,
+                        output_channels,
+                        output_height,
+                        output_width,
+                    );
+                    out[output_index] = sum;
+                }
+            }
+        }
+    }
+    DenseTensorF32::new(
+        vec![batch, output_channels, output_height, output_width],
+        out,
+    )
+    .map_err(Into::into)
+}
+
+pub(crate) fn max_pool2d_nchw(
+    input: &DenseTensorF32,
+    kernel_y: usize,
+    kernel_x: usize,
+    stride_y: usize,
+    stride_x: usize,
+) -> Result<DenseTensorF32, InferenceError> {
+    validate_window(kernel_y, kernel_x)?;
+    validate_window(stride_y, stride_x)?;
+    let input_shape = InferenceShape::new(input.shape().dims().to_vec())?;
+    let [batch, channels, input_height, input_width] = nchw_dims(
+        &input_shape,
+        InferenceOp::MaxPool2d {
+            kernel_y,
+            kernel_x,
+            stride_y,
+            stride_x,
+        },
+    )?;
+    if input_height < kernel_y || input_width < kernel_x {
+        return Err(InferenceError::PoolingShapeMismatch {
+            input: input_shape,
+            kernel_y,
+            kernel_x,
+        });
+    }
+    let output_height = (input_height - kernel_y) / stride_y + 1;
+    let output_width = (input_width - kernel_x) / stride_x + 1;
+    let mut out = vec![0.0; batch * channels * output_height * output_width];
+    for batch_index in 0..batch {
+        for channel in 0..channels {
+            for output_y in 0..output_height {
+                for output_x in 0..output_width {
+                    let mut max = f32::NEG_INFINITY;
+                    for window_y in 0..kernel_y {
+                        for window_x in 0..kernel_x {
+                            let input_y = output_y * stride_y + window_y;
+                            let input_x = output_x * stride_x + window_x;
+                            let input_index = nchw_index(
+                                batch_index,
+                                channel,
+                                input_y,
+                                input_x,
+                                channels,
+                                input_height,
+                                input_width,
+                            );
+                            max = max.max(input.values()[input_index]);
+                        }
+                    }
+                    let output_index = nchw_index(
+                        batch_index,
+                        channel,
+                        output_y,
+                        output_x,
+                        channels,
+                        output_height,
+                        output_width,
+                    );
+                    out[output_index] = max;
+                }
+            }
+        }
+    }
+    DenseTensorF32::new(vec![batch, channels, output_height, output_width], out).map_err(Into::into)
+}
+
+fn nchw_index(
+    batch: usize,
+    channel: usize,
+    y: usize,
+    x: usize,
+    channels: usize,
+    height: usize,
+    width: usize,
+) -> usize {
+    ((batch * channels + channel) * height + y) * width + x
+}
+
+fn oihw_index(
+    output_channel: usize,
+    input_channel: usize,
+    y: usize,
+    x: usize,
+    input_channels: usize,
+    height: usize,
+    width: usize,
+) -> usize {
+    ((output_channel * input_channels + input_channel) * height + y) * width + x
+}
+
+pub(crate) fn map_tensor(
     tensor: &DenseTensorF32,
     mut map: impl FnMut(f32) -> f32,
 ) -> Result<DenseTensorF32, InferenceError> {
@@ -625,7 +1097,7 @@ fn map_tensor(
     .map_err(Into::into)
 }
 
-fn softmax_last_dim(tensor: &DenseTensorF32) -> Result<DenseTensorF32, InferenceError> {
+pub(crate) fn softmax_last_dim(tensor: &DenseTensorF32) -> Result<DenseTensorF32, InferenceError> {
     let width = tensor
         .shape()
         .dims()
@@ -649,7 +1121,7 @@ fn softmax_last_dim(tensor: &DenseTensorF32) -> Result<DenseTensorF32, Inference
     DenseTensorF32::new(tensor.shape().dims().to_vec(), out).map_err(Into::into)
 }
 
-fn argmax_last_dim(tensor: &DenseTensorF32) -> Vec<usize> {
+pub(crate) fn argmax_last_dim(tensor: &DenseTensorF32) -> Vec<usize> {
     let width = tensor
         .shape()
         .dims()
@@ -670,7 +1142,7 @@ fn argmax_last_dim(tensor: &DenseTensorF32) -> Vec<usize> {
         .collect()
 }
 
-fn flatten_outer(tensor: &DenseTensorF32) -> Result<DenseTensorF32, InferenceError> {
+pub(crate) fn flatten_outer(tensor: &DenseTensorF32) -> Result<DenseTensorF32, InferenceError> {
     let dims = tensor.shape().dims();
     if dims.len() == 1 {
         return DenseTensorF32::new(vec![1, dims[0]], tensor.values().to_vec()).map_err(Into::into);
@@ -713,10 +1185,12 @@ mod tests {
         let graph = builder.build().unwrap();
         let mut session = InferenceSession::new(
             graph,
-            RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
-                backend: RuntimeMathBackend::Scalar,
-                ..RuntimeMathAcceleratorConfig::default()
-            }),
+            AcceleratedInferenceAdapter::new(RuntimeMathAccelerator::new(
+                RuntimeMathAcceleratorConfig {
+                    backend: RuntimeMathBackend::Scalar,
+                    ..RuntimeMathAcceleratorConfig::default()
+                },
+            )),
         );
 
         let out = session
@@ -731,6 +1205,103 @@ mod tests {
         assert_eq!(probabilities.shape().dims(), &[1, 2]);
         assert_eq!(class, &[0]);
         assert!((probabilities.values().iter().sum::<f32>() - 1.0).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn adapter_runs_conv2d_relu_and_max_pool() {
+        let mut builder = InferenceGraph::builder();
+        let image = builder.add_input("image", InferenceShape::new(vec![1, 1, 4, 4]).unwrap());
+        let kernel = builder
+            .add_constant(
+                "kernel",
+                DenseTensorF32::new(vec![1, 1, 2, 2], vec![1.0, 0.0, 0.0, -1.0]).unwrap(),
+            )
+            .unwrap();
+        let conv = builder.add_conv2d_valid(image, kernel, 1, 1).unwrap();
+        let relu = builder.add_relu(conv).unwrap();
+        let pooled = builder.add_max_pool2d(relu, 2, 2, 1, 1).unwrap();
+        builder.set_outputs([pooled]).unwrap();
+        let graph = builder.build().unwrap();
+        let mut session = InferenceSession::new(
+            graph,
+            AcceleratedInferenceAdapter::new(RuntimeMathAccelerator::new(
+                RuntimeMathAcceleratorConfig {
+                    backend: RuntimeMathBackend::Scalar,
+                    ..RuntimeMathAcceleratorConfig::default()
+                },
+            )),
+        );
+
+        let out = session
+            .run([(
+                image,
+                DenseTensorF32::new(
+                    vec![1, 1, 4, 4],
+                    vec![
+                        8.0, 1.0, 1.0, 1.0, 1.0, 4.0, 1.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 1.0,
+                        1.0,
+                    ],
+                )
+                .unwrap(),
+            )])
+            .unwrap();
+
+        let pooled = out[0].as_tensor().unwrap();
+        assert_eq!(pooled.shape().dims(), &[1, 1, 2, 2]);
+        assert_eq!(pooled.values(), &[4.0, 2.0, 2.0, 2.0]);
+    }
+
+    #[test]
+    fn toy_mnist_cnn_can_classify_a_single_image() {
+        let mut builder = InferenceGraph::builder();
+        let image = builder.add_input("image", InferenceShape::new(vec![1, 1, 28, 28]).unwrap());
+        let kernel = builder
+            .add_constant(
+                "conv0.weight",
+                DenseTensorF32::new(vec![2, 1, 3, 3], toy_mnist_conv_weight()).unwrap(),
+            )
+            .unwrap();
+        let dense_weight = builder
+            .add_constant(
+                "dense.weight",
+                DenseTensorF32::new(vec![338, 10], toy_mnist_cnn_dense_weight()).unwrap(),
+            )
+            .unwrap();
+        let dense_bias = builder
+            .add_constant(
+                "dense.bias",
+                DenseTensorF32::new(vec![10], vec![0.0; 10]).unwrap(),
+            )
+            .unwrap();
+        let conv = builder.add_conv2d_valid(image, kernel, 1, 1).unwrap();
+        let conv = builder.add_relu(conv).unwrap();
+        let pooled = builder.add_max_pool2d(conv, 2, 2, 2, 2).unwrap();
+        let flat = builder.add_flatten_outer(pooled).unwrap();
+        let logits = builder.add_matmul(flat, dense_weight).unwrap();
+        let logits = builder.add_bias_add(logits, dense_bias).unwrap();
+        let class = builder.add_argmax_last_dim(logits).unwrap();
+        builder.set_outputs([class]).unwrap();
+        let graph = builder.build().unwrap();
+        let mut pixels = vec![0.0; 28 * 28];
+        pixels[13 * 28 + 14] = 1.0;
+        let mut session = InferenceSession::new(
+            graph,
+            AcceleratedInferenceAdapter::new(RuntimeMathAccelerator::new(
+                RuntimeMathAcceleratorConfig {
+                    backend: RuntimeMathBackend::Scalar,
+                    ..RuntimeMathAcceleratorConfig::default()
+                },
+            )),
+        );
+
+        let out = session
+            .run([(
+                image,
+                DenseTensorF32::new(vec![1, 1, 28, 28], pixels).unwrap(),
+            )])
+            .unwrap();
+
+        assert_eq!(out[0].as_class_indices().unwrap(), &[7]);
     }
 
     #[test]
@@ -774,7 +1345,9 @@ mod tests {
         pixels[13 * 28 + 14] = 1.0;
         let mut session = InferenceSession::new(
             graph,
-            RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig::default()),
+            AcceleratedInferenceAdapter::new(RuntimeMathAccelerator::new(
+                RuntimeMathAcceleratorConfig::default(),
+            )),
         );
 
         let out = session
@@ -795,6 +1368,20 @@ mod tests {
         let error = builder.add_bias_add(input, bias).unwrap_err();
 
         assert!(matches!(error, InferenceError::BiasShapeMismatch { .. }));
+    }
+
+    fn toy_mnist_conv_weight() -> Vec<f32> {
+        let mut values = vec![0.0; 2 * 3 * 3];
+        values[4] = 1.0;
+        values[9 + 4] = -1.0;
+        values
+    }
+
+    fn toy_mnist_cnn_dense_weight() -> Vec<f32> {
+        let mut values = vec![0.0; 338 * 10];
+        let feature_index = 6 * 13 + 6;
+        values[feature_index * 10 + 7] = 3.0;
+        values
     }
 
     fn toy_mnist_first_weight() -> Vec<f32> {

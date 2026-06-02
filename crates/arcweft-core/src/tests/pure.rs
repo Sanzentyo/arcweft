@@ -9,7 +9,7 @@ use crate::pure::{
     compare_pure_function_backend,
 };
 use crate::value::{
-    RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEvalError, RuntimeExpr,
+    DenseSeq, RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEvalError, RuntimeExpr,
     RuntimeFieldValue, RuntimeIntrinsic, RuntimeValue, runtime_sequence_dense_bool,
     runtime_sequence_dense_bytes, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
     runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_dense_i128,
@@ -166,6 +166,83 @@ fn vm_pure_backend_evaluates_builtin_matrix_and_tensor_calls() {
         result.value,
         RuntimeValue::TensorF32(tensor)
             if tensor.shape().dims() == [2, 2] && tensor.values() == [6.0, 8.0, 10.0, 12.0]
+    ));
+}
+
+#[test]
+fn vm_pure_backend_evaluates_inference_op_sequence() {
+    let image = DenseTensorF32::new(
+        vec![1, 1, 4, 4],
+        vec![
+            8.0, 1.0, 1.0, 1.0, 1.0, 4.0, 1.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        ],
+    )
+    .unwrap();
+    let kernel = DenseTensorF32::new(vec![1, 1, 2, 2], vec![1.0, 0.0, 0.0, -1.0]).unwrap();
+    let dense =
+        DenseTensorF32::new(vec![4, 2], vec![0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0]).unwrap();
+    let request = PureFunctionRequest::new(
+        "cnn",
+        RuntimeExpr::Let {
+            name: "conv".to_owned(),
+            expr: Box::new(RuntimeExpr::Call {
+                callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::InferConv2dValidF32),
+                args: vec![
+                    RuntimeExpr::Value(RuntimeValue::tensor_f32(image)),
+                    RuntimeExpr::Value(RuntimeValue::tensor_f32(kernel)),
+                    RuntimeExpr::Value(RuntimeValue::usize(1)),
+                    RuntimeExpr::Value(RuntimeValue::usize(1)),
+                ],
+            }),
+            body: Box::new(RuntimeExpr::Let {
+                name: "pooled".to_owned(),
+                expr: Box::new(RuntimeExpr::Call {
+                    callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::InferMaxPool2dF32),
+                    args: vec![
+                        RuntimeExpr::Call {
+                            callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::InferReluF32),
+                            args: vec![RuntimeExpr::Local("conv".to_owned())],
+                        },
+                        RuntimeExpr::Value(RuntimeValue::usize(2)),
+                        RuntimeExpr::Value(RuntimeValue::usize(2)),
+                        RuntimeExpr::Value(RuntimeValue::usize(1)),
+                        RuntimeExpr::Value(RuntimeValue::usize(1)),
+                    ],
+                }),
+                body: Box::new(RuntimeExpr::Let {
+                    name: "logits".to_owned(),
+                    expr: Box::new(RuntimeExpr::Call {
+                        callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::InferMatmulF32),
+                        args: vec![
+                            RuntimeExpr::Call {
+                                callee: RuntimeCallTarget::intrinsic(
+                                    RuntimeIntrinsic::InferFlattenOuterF32,
+                                ),
+                                args: vec![RuntimeExpr::Local("pooled".to_owned())],
+                            },
+                            RuntimeExpr::Value(RuntimeValue::tensor_f32(dense)),
+                        ],
+                    }),
+                    body: Box::new(RuntimeExpr::Call {
+                        callee: RuntimeCallTarget::intrinsic(
+                            RuntimeIntrinsic::InferArgmaxLastDimF32,
+                        ),
+                        args: vec![RuntimeExpr::Local("logits".to_owned())],
+                    }),
+                }),
+            }),
+        },
+        [],
+    );
+
+    let result = VmPureFunctionBackend
+        .evaluate(&request)
+        .expect("inference op sequence evaluates");
+
+    assert!(matches!(
+        result.value,
+        RuntimeValue::Seq(crate::value::RuntimeSeq::Dense(DenseSeq::USize(values)))
+            if values.as_slice().iter().map(|value| value.get()).collect::<Vec<_>>() == vec![1]
     ));
 }
 

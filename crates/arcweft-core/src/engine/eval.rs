@@ -16,6 +16,7 @@ use crate::value::RuntimeBinaryOp;
 use crate::value::RuntimeExactInteger;
 use crate::value::RuntimeFieldExpr;
 use crate::value::evaluate_std_float_intrinsic;
+use crate::value::runtime_sequence_dense_usize;
 use crate::value::{RuntimeCallTarget, RuntimeIntrinsic};
 use crate::value::{RuntimeISizeValue, RuntimeUSizeValue};
 
@@ -3200,6 +3201,10 @@ fn evaluate_runtime_call(
     {
         return value;
     }
+    if let Some(value) = evaluate_inference_runtime_call(callee.as_intrinsic(), args, pure_backend)
+    {
+        return value;
+    }
     match (callee.as_intrinsic(), args) {
         (Some(RuntimeIntrinsic::Add), [RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)]) => {
             evaluate_binary(
@@ -3274,6 +3279,146 @@ fn evaluate_runtime_call(
     }
 }
 
+fn evaluate_inference_runtime_call(
+    intrinsic: Option<RuntimeIntrinsic>,
+    args: &[RuntimeValue],
+    pure_backend: &mut impl RuntimeCallBackend,
+) -> Option<RuntimeValue> {
+    let value = match (intrinsic, args) {
+        (
+            Some(RuntimeIntrinsic::InferMatmulF32),
+            [RuntimeValue::TensorF32(lhs), RuntimeValue::TensorF32(rhs)],
+        ) => pure_backend.call_infer_matmul_f32(lhs, rhs).map_or_else(
+            |error| RuntimeValue::String(format!("infer.matmul_f32({error})")),
+            RuntimeValue::tensor_f32,
+        ),
+        (
+            Some(RuntimeIntrinsic::InferAddF32),
+            [RuntimeValue::TensorF32(lhs), RuntimeValue::TensorF32(rhs)],
+        ) => pure_backend.call_infer_add_f32(lhs, rhs).map_or_else(
+            |error| RuntimeValue::String(format!("infer.add_f32({error})")),
+            RuntimeValue::tensor_f32,
+        ),
+        (
+            Some(RuntimeIntrinsic::InferBiasAddF32),
+            [
+                RuntimeValue::TensorF32(tensor),
+                RuntimeValue::TensorF32(bias),
+            ],
+        ) => pure_backend
+            .call_infer_bias_add_f32(tensor, bias)
+            .map_or_else(
+                |error| RuntimeValue::String(format!("infer.bias_add_f32({error})")),
+                RuntimeValue::tensor_f32,
+            ),
+        (
+            Some(RuntimeIntrinsic::InferConv2dValidF32),
+            [
+                RuntimeValue::TensorF32(input),
+                RuntimeValue::TensorF32(kernel),
+                stride_y,
+                stride_x,
+            ],
+        ) => evaluate_runtime_conv2d(input, kernel, stride_y, stride_x, pure_backend),
+        (Some(RuntimeIntrinsic::InferReluF32), [RuntimeValue::TensorF32(input)]) => {
+            pure_backend.call_infer_relu_f32(input).map_or_else(
+                |error| RuntimeValue::String(format!("infer.relu_f32({error})")),
+                RuntimeValue::tensor_f32,
+            )
+        }
+        (
+            Some(RuntimeIntrinsic::InferMaxPool2dF32),
+            [
+                RuntimeValue::TensorF32(input),
+                kernel_y,
+                kernel_x,
+                stride_y,
+                stride_x,
+            ],
+        ) => evaluate_runtime_max_pool(input, kernel_y, kernel_x, stride_y, stride_x, pure_backend),
+        (Some(RuntimeIntrinsic::InferSoftmaxLastDimF32), [RuntimeValue::TensorF32(input)]) => {
+            pure_backend
+                .call_infer_softmax_last_dim_f32(input)
+                .map_or_else(
+                    |error| RuntimeValue::String(format!("infer.softmax_last_dim_f32({error})")),
+                    RuntimeValue::tensor_f32,
+                )
+        }
+        (Some(RuntimeIntrinsic::InferArgmaxLastDimF32), [RuntimeValue::TensorF32(input)]) => {
+            pure_backend
+                .call_infer_argmax_last_dim_f32(input)
+                .map_or_else(
+                    |error| RuntimeValue::String(format!("infer.argmax_last_dim_f32({error})")),
+                    runtime_class_indices_value,
+                )
+        }
+        (Some(RuntimeIntrinsic::InferFlattenOuterF32), [RuntimeValue::TensorF32(input)]) => {
+            pure_backend
+                .call_infer_flatten_outer_f32(input)
+                .map_or_else(
+                    |error| RuntimeValue::String(format!("infer.flatten_outer_f32({error})")),
+                    RuntimeValue::tensor_f32,
+                )
+        }
+        _ => return None,
+    };
+    Some(value)
+}
+
+fn evaluate_runtime_conv2d(
+    input: &crate::math::DenseTensorF32,
+    kernel: &crate::math::DenseTensorF32,
+    stride_y: &RuntimeValue,
+    stride_x: &RuntimeValue,
+    pure_backend: &mut impl RuntimeCallBackend,
+) -> RuntimeValue {
+    match (
+        runtime_value_to_usize(stride_y),
+        runtime_value_to_usize(stride_x),
+    ) {
+        (Some(stride_y), Some(stride_x)) => pure_backend
+            .call_infer_conv2d_valid_f32(input, kernel, stride_y, stride_x)
+            .map_or_else(
+                |error| RuntimeValue::String(format!("infer.conv2d_valid_f32({error})")),
+                RuntimeValue::tensor_f32,
+            ),
+        _ => RuntimeValue::String("infer.conv2d_valid_f32(<unsupported>)".to_owned()),
+    }
+}
+
+fn evaluate_runtime_max_pool(
+    input: &crate::math::DenseTensorF32,
+    kernel_y: &RuntimeValue,
+    kernel_x: &RuntimeValue,
+    stride_y: &RuntimeValue,
+    stride_x: &RuntimeValue,
+    pure_backend: &mut impl RuntimeCallBackend,
+) -> RuntimeValue {
+    match (
+        runtime_value_to_usize(kernel_y),
+        runtime_value_to_usize(kernel_x),
+        runtime_value_to_usize(stride_y),
+        runtime_value_to_usize(stride_x),
+    ) {
+        (Some(kernel_y), Some(kernel_x), Some(stride_y), Some(stride_x)) => pure_backend
+            .call_infer_max_pool2d_f32(input, kernel_y, kernel_x, stride_y, stride_x)
+            .map_or_else(
+                |error| RuntimeValue::String(format!("infer.max_pool2d_f32({error})")),
+                RuntimeValue::tensor_f32,
+            ),
+        _ => RuntimeValue::String("infer.max_pool2d_f32(<unsupported>)".to_owned()),
+    }
+}
+
+fn runtime_class_indices_value(indices: Vec<usize>) -> RuntimeValue {
+    runtime_sequence_dense_usize(
+        indices
+            .into_iter()
+            .map(|index| u64::try_from(index).unwrap_or(u64::MAX))
+            .collect(),
+    )
+}
+
 fn evaluate_runtime_method_call(
     receiver: RuntimeValue,
     method: &str,
@@ -3299,4 +3444,16 @@ fn evaluate_runtime_method_call(
 
 fn runtime_len_value(len: usize) -> RuntimeValue {
     RuntimeValue::usize(u64::try_from(len).unwrap_or(u64::MAX))
+}
+
+fn runtime_value_to_usize(value: &RuntimeValue) -> Option<usize> {
+    match value {
+        RuntimeValue::Int(value) => value
+            .try_into_i64()
+            .and_then(|value| usize::try_from(value).ok()),
+        RuntimeValue::UInt(value) => value
+            .try_into_i64()
+            .and_then(|value| usize::try_from(value).ok()),
+        _ => None,
+    }
 }

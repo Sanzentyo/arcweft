@@ -15,8 +15,8 @@ use arcweft_core::{
     pure::{
         AotPureFunctionBackend, AotPureI64Plan, AotPureScalarPlan, PureFunctionRequest,
         PureFunctionStats, RuntimeFixedArgs, RuntimeFloat32Args, RuntimeFloat64Args,
-        RuntimeI32Args, RuntimeI64Args, RuntimeMathCallBackend, RuntimePureCallBackend,
-        RuntimePureScalar, RuntimePureScalarInteger, VmPureFunctionScratch,
+        RuntimeI32Args, RuntimeI64Args, RuntimeInferenceCallBackend, RuntimeMathCallBackend,
+        RuntimePureCallBackend, RuntimePureScalar, RuntimePureScalarInteger, VmPureFunctionScratch,
     },
     step::RuntimePureCallStats,
     value::{
@@ -2242,6 +2242,139 @@ impl RuntimeMathCallBackend for RuntimePureAccelerator {
         })?;
         self.record_math_result::<f64>(result.values().len());
         Ok(result)
+    }
+}
+
+impl RuntimeInferenceCallBackend for RuntimePureAccelerator {
+    fn call_infer_matmul_f32(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        self.record_math_inputs::<f32>(lhs.values().len(), rhs.values().len());
+        let lhs = lhs
+            .as_matrix()
+            .ok_or_else(|| infer_runtime_error("infer.matmul_f32", "expected rank-2 lhs tensor"))?;
+        let rhs = rhs
+            .as_matrix()
+            .ok_or_else(|| infer_runtime_error("infer.matmul_f32", "expected rank-2 rhs tensor"))?;
+        let result = self
+            .call_runtime_math_matmul_f32(&lhs, &rhs)
+            .map(DenseTensorF32::from_matrix)
+            .map_err(|error| infer_runtime_error("infer.matmul_f32", error))?;
+        self.record_math_result::<f32>(result.values().len());
+        Ok(result)
+    }
+
+    fn call_infer_add_f32(
+        &mut self,
+        lhs: &DenseTensorF32,
+        rhs: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        self.record_math_inputs::<f32>(lhs.values().len(), rhs.values().len());
+        let result = lhs
+            .add_scalar(rhs)
+            .map_err(|error| infer_runtime_error("infer.add_f32", error))?;
+        self.record_math_result::<f32>(result.values().len());
+        Ok(result)
+    }
+
+    fn call_infer_bias_add_f32(
+        &mut self,
+        tensor: &DenseTensorF32,
+        bias: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        self.record_math_inputs::<f32>(tensor.values().len(), bias.values().len());
+        let result = inference::bias_add(tensor, bias)
+            .map_err(|error| infer_runtime_error("infer.bias_add_f32", error))?;
+        self.record_math_result::<f32>(result.values().len());
+        Ok(result)
+    }
+
+    fn call_infer_conv2d_valid_f32(
+        &mut self,
+        input: &DenseTensorF32,
+        kernel: &DenseTensorF32,
+        stride_y: usize,
+        stride_x: usize,
+    ) -> Result<DenseTensorF32, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        self.record_math_inputs::<f32>(input.values().len(), kernel.values().len());
+        let result = inference::conv2d_valid_nchw(input, kernel, stride_y, stride_x)
+            .map_err(|error| infer_runtime_error("infer.conv2d_valid_f32", error))?;
+        self.record_math_result::<f32>(result.values().len());
+        Ok(result)
+    }
+
+    fn call_infer_relu_f32(
+        &mut self,
+        input: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        self.record_math_inputs::<f32>(input.values().len(), 0);
+        let result = inference::map_tensor(input, |value| value.max(0.0))
+            .map_err(|error| infer_runtime_error("infer.relu_f32", error))?;
+        self.record_math_result::<f32>(result.values().len());
+        Ok(result)
+    }
+
+    fn call_infer_max_pool2d_f32(
+        &mut self,
+        input: &DenseTensorF32,
+        kernel_y: usize,
+        kernel_x: usize,
+        stride_y: usize,
+        stride_x: usize,
+    ) -> Result<DenseTensorF32, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        self.record_math_inputs::<f32>(input.values().len(), 0);
+        let result = inference::max_pool2d_nchw(input, kernel_y, kernel_x, stride_y, stride_x)
+            .map_err(|error| infer_runtime_error("infer.max_pool2d_f32", error))?;
+        self.record_math_result::<f32>(result.values().len());
+        Ok(result)
+    }
+
+    fn call_infer_softmax_last_dim_f32(
+        &mut self,
+        input: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        self.record_math_inputs::<f32>(input.values().len(), 0);
+        let result = inference::softmax_last_dim(input)
+            .map_err(|error| infer_runtime_error("infer.softmax_last_dim_f32", error))?;
+        self.record_math_result::<f32>(result.values().len());
+        Ok(result)
+    }
+
+    fn call_infer_argmax_last_dim_f32(
+        &mut self,
+        input: &DenseTensorF32,
+    ) -> Result<Vec<usize>, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        self.record_math_inputs::<f32>(input.values().len(), 0);
+        Ok(inference::argmax_last_dim(input))
+    }
+
+    fn call_infer_flatten_outer_f32(
+        &mut self,
+        input: &DenseTensorF32,
+    ) -> Result<DenseTensorF32, RuntimeEvalError> {
+        self.stats.math_calls += 1;
+        self.record_math_inputs::<f32>(input.values().len(), 0);
+        let result = inference::flatten_outer(input)
+            .map_err(|error| infer_runtime_error("infer.flatten_outer_f32", error))?;
+        self.record_math_result::<f32>(result.values().len());
+        Ok(result)
+    }
+}
+
+fn infer_runtime_error(name: &str, error: impl fmt::Display) -> RuntimeEvalError {
+    RuntimeEvalError::UnsupportedPure {
+        name: name.to_owned(),
+        reason: error.to_string(),
     }
 }
 

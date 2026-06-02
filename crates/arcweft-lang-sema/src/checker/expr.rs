@@ -295,6 +295,9 @@ impl TypeChecker<'_> {
                 if path == "line" {
                     return Some(TypeKind::Named("LineContext".to_owned()));
                 }
+                if path == "infer" {
+                    return Some(TypeKind::Named("InferApi".to_owned()));
+                }
                 if path == "auto" {
                     return Some(TypeKind::Named("Auto".to_owned()));
                 }
@@ -766,6 +769,26 @@ impl TypeChecker<'_> {
                 self.check_math_binary_args(args, "TensorF64");
                 Some(TypeKind::Named("TensorF64".to_owned()))
             }
+            "infer.matmul_f32" | "infer.add_f32" | "infer.bias_add_f32" => {
+                self.check_infer_tensor_args(name, args, 2, 0);
+                Some(TypeKind::Named("TensorF32".to_owned()))
+            }
+            "infer.conv2d_valid_f32" => {
+                self.check_infer_tensor_args(name, args, 2, 2);
+                Some(TypeKind::Named("TensorF32".to_owned()))
+            }
+            "infer.relu_f32" | "infer.softmax_last_dim_f32" | "infer.flatten_outer_f32" => {
+                self.check_infer_tensor_args(name, args, 1, 0);
+                Some(TypeKind::Named("TensorF32".to_owned()))
+            }
+            "infer.max_pool2d_f32" => {
+                self.check_infer_tensor_args(name, args, 1, 4);
+                Some(TypeKind::Named("TensorF32".to_owned()))
+            }
+            "infer.argmax_last_dim_f32" => {
+                self.check_infer_tensor_args(name, args, 1, 0);
+                Some(TypeKind::Seq(Box::new(TypeKind::USize)))
+            }
             _ => None,
         }
     }
@@ -866,6 +889,54 @@ impl TypeChecker<'_> {
                     self.errors.push(TypeCheckError::new(
                         "math kernel arguments cannot be spread".to_owned(),
                     ));
+                    self.check_expr(value);
+                }
+            }
+        }
+    }
+
+    fn check_infer_tensor_args(
+        &mut self,
+        name: &str,
+        args: &[CallArg],
+        tensor_args: usize,
+        integer_args: usize,
+    ) {
+        let expected_len = tensor_args + integer_args;
+        if args.len() != expected_len {
+            self.errors.push(TypeCheckError::new(format!(
+                "`{name}` expected {expected_len} positional argument(s), got {}",
+                args.len()
+            )));
+        }
+        let tensor_type = TypeKind::Named("TensorF32".to_owned());
+        for (index, arg) in args.iter().enumerate() {
+            match arg {
+                CallArg::Positional(value) if index < tensor_args => {
+                    self.check_expr_with_expected(value, Some(&tensor_type));
+                }
+                CallArg::Positional(value) => {
+                    let found = self.check_expr(value);
+                    if found.as_ref().is_some_and(|found| !found.is_integer()) {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "`{name}` integer argument {} must be usize-compatible",
+                            index + 1
+                        )));
+                    }
+                }
+                CallArg::Named {
+                    name: arg_name,
+                    value,
+                } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "`{name}` arguments must be positional, got named `{arg_name}`"
+                    )));
+                    self.check_expr(value);
+                }
+                CallArg::Spread { value } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "`{name}` arguments cannot be spread"
+                    )));
                     self.check_expr(value);
                 }
             }
@@ -1090,7 +1161,7 @@ impl TypeChecker<'_> {
         let method_name = method.split_once('<').map_or(method, |(name, _)| name);
         if let Some(receiver_path) = expr_path_label(receiver) {
             let dotted = format!("{receiver_path}.{method_name}");
-            if receiver_path == "math" {
+            if matches!(receiver_path.as_str(), "math" | "infer") {
                 return self.check_builtin_call_name(&dotted, args);
             }
             if matches!(receiver_path.as_str(), "std.f32" | "std.f64") {

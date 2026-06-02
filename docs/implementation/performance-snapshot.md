@@ -592,23 +592,38 @@ to Wasm each iteration.
 
 `arcweft-runtime-accelerator` also contains the first forward-only inference
 graph API. The graph uses typed tensor IDs and validates shapes during graph
-construction. The current deterministic `f32` op set is:
+construction. The session executes through an `InferenceAdapter`, keeping the
+typed graph and backend execution policy separated. The default adapter is
+backed by `RuntimeMathAccelerator` for dense tensor matmul and deterministic CPU
+kernels for non-matmul forward ops. The current deterministic `f32` op set is:
 
 - `matmul`
 - exact-shape `add`
 - last-dimension `bias_add`
+- valid NCHW/OIHW `conv2d`
 - `relu`
+- `max_pool2d`
 - last-dimension `softmax`
 - last-dimension `argmax`
 - outer-dimension preserving `flatten`
 
-The session executes through `RuntimeMathAccelerator`, so dense layers can use
-the configured scalar/glam/ndarray/wgpu policy while non-matmul tensor ops stay
-on deterministic CPU code. The checked tests include a small MNIST-shaped MLP
-forward graph with input shape `1x28x28`, flattening to `1x784`, two dense
-layers, ReLU, and `argmax`; it verifies that a fixed synthetic image classifies
-to class `7`. This is inference-only: no autograd, optimizer, weight loading,
-or training graph is implemented yet.
+Arcweft flow execution now exposes the same op family as regular
+`infer.*_f32` intrinsic calls. Users can compose CNN-like structures by
+sequencing `infer.conv2d_valid_f32`, `infer.relu_f32`,
+`infer.max_pool2d_f32`, `infer.flatten_outer_f32`,
+`infer.matmul_f32`, and `infer.argmax_last_dim_f32`; the runtime does not
+hard-code a CNN shape into the language. The VM baseline implements the same
+deterministic ops through `RuntimeInferenceCallBackend`, and
+`RuntimePureAccelerator` implements the adapter with the configured math
+backend for rank-2 tensor matmul.
+
+The checked tests include a small MNIST-shaped MLP forward graph with input
+shape `1x28x28`, flattening to `1x784`, two dense layers, ReLU, and `argmax`;
+it verifies that a fixed synthetic image classifies to class `7`. A second
+MNIST-shaped CNN test runs `conv2d`, ReLU, `max_pool2d`, flatten, dense matmul,
+and `argmax` over a fixed synthetic image and also classifies to class `7`.
+This is inference-only: no autograd, optimizer, weight loading, or training
+graph is implemented yet.
 
 Local path-free measurements:
 

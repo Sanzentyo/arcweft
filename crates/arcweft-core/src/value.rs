@@ -345,6 +345,15 @@ pub enum RuntimeIntrinsic {
     MathMatmulF64,
     MathMatrixAddF64,
     MathTensorAddF64,
+    InferMatmulF32,
+    InferAddF32,
+    InferBiasAddF32,
+    InferConv2dValidF32,
+    InferReluF32,
+    InferMaxPool2dF32,
+    InferSoftmaxLastDimF32,
+    InferArgmaxLastDimF32,
+    InferFlattenOuterF32,
     PathSave,
     PathAsset,
     PathTemp,
@@ -413,6 +422,15 @@ impl RuntimeIntrinsic {
             "math.matmul_f64" => Some(Self::MathMatmulF64),
             "math.matrix_add_f64" => Some(Self::MathMatrixAddF64),
             "math.tensor_add_f64" => Some(Self::MathTensorAddF64),
+            "infer.matmul_f32" => Some(Self::InferMatmulF32),
+            "infer.add_f32" => Some(Self::InferAddF32),
+            "infer.bias_add_f32" => Some(Self::InferBiasAddF32),
+            "infer.conv2d_valid_f32" => Some(Self::InferConv2dValidF32),
+            "infer.relu_f32" => Some(Self::InferReluF32),
+            "infer.max_pool2d_f32" => Some(Self::InferMaxPool2dF32),
+            "infer.softmax_last_dim_f32" => Some(Self::InferSoftmaxLastDimF32),
+            "infer.argmax_last_dim_f32" => Some(Self::InferArgmaxLastDimF32),
+            "infer.flatten_outer_f32" => Some(Self::InferFlattenOuterF32),
             "path.save" => Some(Self::PathSave),
             "path.asset" => Some(Self::PathAsset),
             "path.temp" => Some(Self::PathTemp),
@@ -482,6 +500,15 @@ impl RuntimeIntrinsic {
             Self::MathMatmulF64 => "math.matmul_f64",
             Self::MathMatrixAddF64 => "math.matrix_add_f64",
             Self::MathTensorAddF64 => "math.tensor_add_f64",
+            Self::InferMatmulF32 => "infer.matmul_f32",
+            Self::InferAddF32 => "infer.add_f32",
+            Self::InferBiasAddF32 => "infer.bias_add_f32",
+            Self::InferConv2dValidF32 => "infer.conv2d_valid_f32",
+            Self::InferReluF32 => "infer.relu_f32",
+            Self::InferMaxPool2dF32 => "infer.max_pool2d_f32",
+            Self::InferSoftmaxLastDimF32 => "infer.softmax_last_dim_f32",
+            Self::InferArgmaxLastDimF32 => "infer.argmax_last_dim_f32",
+            Self::InferFlattenOuterF32 => "infer.flatten_outer_f32",
             Self::PathSave => "path.save",
             Self::PathAsset => "path.asset",
             Self::PathTemp => "path.temp",
@@ -553,7 +580,16 @@ impl RuntimeIntrinsic {
             | Self::MathTensorAddF32
             | Self::MathMatmulF64
             | Self::MathMatrixAddF64
-            | Self::MathTensorAddF64 => None,
+            | Self::MathTensorAddF64
+            | Self::InferMatmulF32
+            | Self::InferAddF32
+            | Self::InferBiasAddF32
+            | Self::InferConv2dValidF32
+            | Self::InferReluF32
+            | Self::InferMaxPool2dF32
+            | Self::InferSoftmaxLastDimF32
+            | Self::InferArgmaxLastDimF32
+            | Self::InferFlattenOuterF32 => None,
         }
     }
 }
