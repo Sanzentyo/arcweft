@@ -381,6 +381,29 @@ impl HostTaskRequest {
         }
     }
 
+    pub fn host_call_id(&self) -> String {
+        match self {
+            Self::FileReadText(_) => "fs.read_text".to_owned(),
+            Self::FileReadBytes(_) => "fs.read_bytes".to_owned(),
+            Self::FileWriteText(_) => "fs.write_text".to_owned(),
+            Self::FileWriteBytes(_) => "fs.write_bytes".to_owned(),
+            Self::HttpFetch(_) => "http.fetch".to_owned(),
+            Self::HttpRespond(_) => "http.respond".to_owned(),
+            Self::ProcessRun(_) => "process.run".to_owned(),
+            Self::AssetLoad(request) => format!("asset.{}", request.kind),
+            Self::ShaderCompile(_) => "shader.compile".to_owned(),
+            Self::AudioDecode(_) => "audio.decode".to_owned(),
+            Self::TtsSynthesis(_) => "tts.synthesize".to_owned(),
+            Self::WasmCall(_) => "wasm.call".to_owned(),
+            Self::SystemInfo(request) => format!("system.{}", request.kind.as_str()),
+            Self::Custom {
+                capability,
+                operation,
+                ..
+            } => format!("{}.{}", capability.0, operation),
+        }
+    }
+
     pub const fn task_class(&self) -> TaskClass {
         match self {
             Self::FileReadText(_)

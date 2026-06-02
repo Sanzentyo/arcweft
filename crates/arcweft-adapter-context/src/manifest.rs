@@ -43,9 +43,13 @@ pub struct AdapterEffectCapability {
 /// Runtime host call exported by an adapter.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdapterHostCall {
-    id: String,
+    id: AdapterHostCallId,
     effects: Vec<AdapterEffectCapability>,
 }
+
+/// Stable runtime host-call identifier.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AdapterHostCallId(String);
 
 /// Tooling-facing docs supplied by an adapter manifest.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -176,19 +180,31 @@ impl AdapterHostCall {
         effects: impl IntoIterator<Item = AdapterEffectCapability>,
     ) -> Self {
         Self {
-            id: id.into(),
+            id: AdapterHostCallId::new(id),
             effects: effects.into_iter().collect(),
         }
     }
 
     /// Stable runtime host-call id.
     pub fn id(&self) -> &str {
-        &self.id
+        self.id.as_str()
     }
 
     /// Effects touched by this host call.
     pub fn effects(&self) -> &[AdapterEffectCapability] {
         &self.effects
+    }
+}
+
+impl AdapterHostCallId {
+    /// Creates a host-call id.
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    /// String form used by runtime task requests.
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 

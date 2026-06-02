@@ -149,4 +149,9 @@ fn host_task_request_covers_sans_io_adapter_work() {
             .iter()
             .all(|request| !request.debug_label().is_empty())
     );
+    assert_eq!(requests[0].host_call_id(), "fs.read_text");
+    assert_eq!(requests[3].host_call_id(), "fs.write_bytes");
+    assert_eq!(requests[5].host_call_id(), "http.respond");
+    assert_eq!(requests[11].host_call_id(), "system.core_count");
+    assert_eq!(requests[12].host_call_id(), "custom.capability.op");
 }

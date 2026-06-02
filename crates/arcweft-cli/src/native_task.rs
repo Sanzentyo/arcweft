@@ -1,10 +1,12 @@
 use crate::native_system::{HostSystemInfo, host_system_info, system_info_value};
+use arcweft_adapter_context::{manifest::AdapterManifest, standard};
 use arcweft_core::task::{
     HostTaskRequest, LogicalEpoch, SchedulerBudget, TaskEvent, TaskEventKind, TaskSequence,
     TaskSpec,
 };
 use arcweft_runtime_scheduler::{RuntimeScheduler, RuntimeSchedulerStats, TaskClassCounts};
 use rayon::prelude::*;
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
@@ -13,9 +15,15 @@ use std::time::Instant;
 pub(crate) struct NativeTaskBridge {
     io_root: PathBuf,
     host_system: HostSystemInfo,
+    host_calls: NativeHostCallSet,
     sequence: u64,
     scheduler: RuntimeScheduler,
     stats: NativeTaskStats,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct NativeHostCallSet {
+    ids: BTreeSet<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, serde::Serialize)]
@@ -88,11 +96,12 @@ pub(crate) struct NativeTaskClassCounts {
 }
 
 impl NativeTaskBridge {
-    pub(crate) fn new(source_path: &Path) -> Self {
+    pub(crate) fn new(source_path: &Path, host_calls: NativeHostCallSet) -> Self {
         let source_dir = source_path.parent().unwrap_or_else(|| Path::new("."));
         Self {
             io_root: source_dir.join(".arcweft"),
             host_system: host_system_info(),
+            host_calls,
             sequence: 0,
             scheduler: RuntimeScheduler::default(),
             stats: NativeTaskStats::default(),
@@ -106,12 +115,20 @@ impl NativeTaskBridge {
     }
 
     pub(crate) fn read_text_snapshot(source_path: &Path, value: &str) -> Result<String, String> {
-        let bridge = Self::new(source_path);
+        let bridge = Self::new(source_path, NativeHostCallSet::standard_cli());
         virtual_path(&bridge.io_root, value)
             .and_then(|path| fs::read_to_string(path).map_err(|error| error.to_string()))
     }
 
     pub(crate) fn complete_tasks(&mut self, tasks: Vec<TaskSpec>) -> Vec<TaskEvent> {
+        let (unauthorized, tasks): (Vec<_>, Vec<_>) = tasks
+            .into_iter()
+            .partition(|task| !self.host_calls.allows_task(task));
+        let unauthorized_events = unauthorized
+            .into_iter()
+            .map(|task| self.rejected_task_event(task))
+            .collect::<Vec<_>>();
+
         let started = Instant::now();
         self.scheduler
             .submit(tasks.into_iter().filter(can_complete_task));
@@ -163,11 +180,12 @@ impl NativeTaskBridge {
         }
 
         let started = Instant::now();
-        let events = completions
+        let mut events = completions
             .items
             .into_iter()
             .map(|completion| self.task_event(completion))
             .collect::<Vec<_>>();
+        events.extend(unauthorized_events);
         self.stats.event_build_elapsed_ns = self
             .stats
             .event_build_elapsed_ns
@@ -180,6 +198,21 @@ impl NativeTaskBridge {
             .scheduler_complete_elapsed_ns
             .saturating_add(started.elapsed().as_nanos());
         events
+    }
+
+    fn rejected_task_event(&mut self, task: TaskSpec) -> TaskEvent {
+        self.stats.failed_tasks += 1;
+        let event = TaskEvent {
+            logical_epoch: LogicalEpoch(0),
+            task_id: task.id,
+            sequence: TaskSequence(self.sequence),
+            kind: TaskEventKind::Err(format!(
+                "host call `{}` is not provided by the active adapter manifest",
+                task.request.host_call_id()
+            )),
+        };
+        self.sequence = self.sequence.saturating_add(1);
+        event
     }
 
     fn task_event(&mut self, completion: TaskCompletion) -> TaskEvent {
@@ -206,6 +239,56 @@ impl NativeTaskBridge {
         };
         self.sequence = self.sequence.saturating_add(1);
         event
+    }
+}
+
+impl NativeHostCallSet {
+    pub(crate) fn standard_cli() -> Self {
+        Self::from_manifests([
+            standard::native_file_manifest(),
+            standard::system_info_manifest(),
+        ])
+        .with_call("line_task.run_child")
+        .with_call("flow_thread.run_child")
+    }
+
+    pub(crate) fn from_manifest(manifest: &AdapterManifest) -> Self {
+        Self::from_manifests([manifest.clone()])
+    }
+
+    pub(crate) fn from_manifests(manifests: impl IntoIterator<Item = AdapterManifest>) -> Self {
+        Self {
+            ids: manifests
+                .into_iter()
+                .flat_map(|manifest| {
+                    manifest
+                        .host_calls()
+                        .iter()
+                        .map(|host_call| host_call.id().to_owned())
+                        .collect::<Vec<_>>()
+                })
+                .collect(),
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn union(mut self, other: Self) -> Self {
+        self.ids.extend(other.ids);
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_call(mut self, id: impl Into<String>) -> Self {
+        self.ids.insert(id.into());
+        self
+    }
+
+    pub(crate) fn contains(&self, id: &str) -> bool {
+        self.ids.contains(id)
+    }
+
+    fn allows_task(&self, task: &TaskSpec) -> bool {
+        self.contains(&task.request.host_call_id())
     }
 }
 
@@ -513,5 +596,85 @@ impl From<TaskClassCounts> for NativeTaskClassCounts {
             lsp: counts.lsp,
             background: counts.background,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_core::task::{
+        CancelScopeId, HostTaskRequest, SystemInfoKind, SystemInfoRequest, TaskClass, TaskId,
+        TaskKey, TaskPolicy, TaskPriority,
+    };
+
+    #[test]
+    fn native_bridge_rejects_host_call_missing_from_manifest() {
+        let source_path = std::env::temp_dir().join("arcweft-native-bridge-reject.arcw");
+        let mut bridge = NativeTaskBridge::new(&source_path, NativeHostCallSet::default());
+        let events = bridge.complete_tasks(vec![task(
+            "missing",
+            HostTaskRequest::SystemInfo(SystemInfoRequest {
+                kind: SystemInfoKind::CoreCount,
+            }),
+        )]);
+
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            &events[0].kind,
+            TaskEventKind::Err(message)
+                if message.contains("host call `system.core_count` is not provided")
+        ));
+        assert_eq!(bridge.stats().failed_tasks, 1);
+        assert_eq!(bridge.stats().scheduler.submitted, 0);
+    }
+
+    #[test]
+    fn native_bridge_completes_system_info_allowed_by_manifest() {
+        let source_path = std::env::temp_dir().join("arcweft-native-bridge-system.arcw");
+        let calls = NativeHostCallSet::from_manifest(&standard::system_info_manifest());
+        let mut bridge = NativeTaskBridge::new(&source_path, calls);
+        let events = bridge.complete_tasks(vec![task(
+            "system",
+            HostTaskRequest::SystemInfo(SystemInfoRequest {
+                kind: SystemInfoKind::AvailableParallelism,
+            }),
+        )]);
+
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0].kind, TaskEventKind::Ready(value) if !value.is_empty()));
+        assert_eq!(bridge.stats().completed_tasks, 1);
+        assert_eq!(bridge.stats().system_info_ops, 1);
+        assert_eq!(bridge.stats().scheduler.submitted, 1);
+    }
+
+    #[test]
+    fn standard_cli_host_call_set_is_manifest_derived() {
+        let calls = NativeHostCallSet::standard_cli();
+
+        for id in [
+            "fs.read_text",
+            "fs.read_bytes",
+            "fs.write_text",
+            "fs.write_bytes",
+            "system.core_count",
+            "system.thread_count",
+            "system.available_parallelism",
+            "line_task.run_child",
+            "flow_thread.run_child",
+        ] {
+            assert!(calls.contains(id), "missing host call {id}");
+        }
+    }
+
+    fn task(id: &str, request: HostTaskRequest) -> TaskSpec {
+        TaskSpec::new(
+            TaskId(id.to_owned()),
+            TaskKey(id.to_owned()),
+            TaskClass::Cpu,
+            TaskPriority(0),
+            CancelScopeId("test".to_owned()),
+            TaskPolicy::JoinSameKey,
+            request,
+        )
     }
 }

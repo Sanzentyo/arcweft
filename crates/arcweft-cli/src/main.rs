@@ -68,7 +68,10 @@ mod output;
 mod server_adapter;
 mod toolchain_profile;
 use native_system::{HostSystemInfo, host_system_info};
-use native_task::{NativeSchedulerStats, NativeTaskBridge, NativeTaskClassCounts, NativeTaskStats};
+use native_task::{
+    NativeHostCallSet, NativeSchedulerStats, NativeTaskBridge, NativeTaskClassCounts,
+    NativeTaskStats,
+};
 use output::{
     AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, CheckReport,
     RuntimeExecutorMathStatsSummary, RuntimeExecutorPureAccelerationSummary,
@@ -1440,13 +1443,7 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
             LaunchKind::Test => {
                 return script_test_selection(
                     &selection,
-                    RuntimeStepRunConfig {
-                        steps: options.steps,
-                        mode: options.mode,
-                        max_ops: options.max_ops,
-                        executor: options.executor,
-                        pure_config,
-                    },
+                    runtime_step_run_config_from_run_options(options, pure_config),
                     &options.values,
                     options.json,
                 );
@@ -1457,6 +1454,7 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
     }
 
     let checked = load_and_check_selection(&selection, None)?;
+    let host_calls = native_host_calls_for_selection(&selection)?;
     let mut plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
         for error in errors {
             eprintln!("error: {}", error.message());
@@ -1468,13 +1466,8 @@ fn runtime_run_command(options: &RuntimeRunOptions) -> Result<(), ExitCode> {
     let trace = run_runtime_steps(
         plan,
         Some(selection.path()),
-        RuntimeStepRunConfig {
-            steps: options.steps,
-            mode: options.mode,
-            max_ops: options.max_ops,
-            executor: options.executor,
-            pure_config,
-        },
+        runtime_step_run_config_from_run_options(options, pure_config),
+        &host_calls,
         &options.values,
     );
     let report = RuntimeRunReport {
@@ -1552,6 +1545,8 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
         options.math_wgpu_min_elements,
     )?;
     let env = typecheck_env_for_selection(&selection, options.adapter.as_deref(), &mut phases)?;
+    let host_calls =
+        native_host_calls_for_adapter(options.adapter.as_deref().or(selection.adapter()))?;
     if !is_arcw_path(selection.path()) {
         eprintln!(
             "error: {} is not an .arcw source file",
@@ -1578,6 +1573,7 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
             options.steps,
             options.mode,
             options.max_ops,
+            &host_calls,
             &options.values,
         ))
     })?;
@@ -1781,6 +1777,7 @@ fn run_runtime_steps(
     plan: RuntimePlan,
     source_path: Option<&Path>,
     config: RuntimeStepRunConfig,
+    host_calls: &NativeHostCallSet,
     values: &[RuntimeBinding],
 ) -> RuntimeRunTrace {
     let mut executor = RuntimeExecutorInstance::new(plan, config.executor, config.pure_config);
@@ -1790,6 +1787,7 @@ fn run_runtime_steps(
         config.steps,
         config.mode,
         config.max_ops,
+        host_calls,
         values,
     )
 }
@@ -1800,9 +1798,10 @@ fn run_runtime_steps_with_executor(
     steps: usize,
     mode: CliRuntimeStepMode,
     max_ops: usize,
+    host_calls: &NativeHostCallSet,
     values: &[RuntimeBinding],
 ) -> RuntimeRunTrace {
-    let mut host = source_path.map(NativeTaskBridge::new);
+    let mut host = source_path.map(|path| NativeTaskBridge::new(path, host_calls.clone()));
     let mut task_events = Vec::new();
     let mut summaries = Vec::new();
     for step_index in 0..steps {
@@ -1852,6 +1851,7 @@ fn run_runtime_bench_steps_with_pure(
     mut executor: RuntimeExecutorCore,
     source_path: Option<&Path>,
     config: RuntimeStepRunConfig,
+    host_calls: &NativeHostCallSet,
     values: &[RuntimeBinding],
     pure: &mut RuntimePureAccelerator,
 ) -> RuntimeBenchTrace {
@@ -1886,7 +1886,8 @@ fn run_runtime_bench_steps_with_pure(
         if let Some(source_path) = source_path
             && !task_requests.is_empty()
         {
-            let host = host.get_or_insert_with(|| NativeTaskBridge::new(source_path));
+            let host =
+                host.get_or_insert_with(|| NativeTaskBridge::new(source_path, host_calls.clone()));
             task_events = host.complete_tasks(task_requests);
         }
     }
@@ -2169,6 +2170,7 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
     )?;
     require_profile_kind(&selection, LaunchKind::Cli, "cli")?;
     let checked = load_and_check_selection(&selection, None)?;
+    let host_calls = native_host_calls_for_selection(&selection)?;
     let mut plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
         for error in errors {
             eprintln!("error: {error}");
@@ -2204,6 +2206,7 @@ fn runtime_cli_command(options: &CliRunOptions) -> Result<(), ExitCode> {
             executor: options.executor,
             pure_config,
         },
+        &host_calls,
         &bindings,
     );
     let report = RuntimeRunReport {
@@ -2507,6 +2510,7 @@ fn script_test_selection(
     json: bool,
 ) -> Result<(), ExitCode> {
     let checked = load_and_check_selection(selection, None)?;
+    let host_calls = native_host_calls_for_selection(selection)?;
     let manifest = collect_script_tests(&checked.hir);
     let plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
         for error in errors {
@@ -2518,7 +2522,7 @@ fn script_test_selection(
         tests: manifest
             .tests
             .iter()
-            .map(|test| run_script_test(test, &plan, selection.path(), config, values))
+            .map(|test| run_script_test(test, &plan, selection.path(), config, &host_calls, values))
             .collect(),
     };
     let failed = output.tests.iter().any(|test| test.status == "failed");
@@ -2552,6 +2556,7 @@ fn run_script_test(
     plan: &RuntimePlan,
     source_path: &Path,
     config: RuntimeStepRunConfig,
+    host_calls: &NativeHostCallSet,
     values: &[RuntimeBinding],
 ) -> ScriptTestRunSummary {
     if test.kind != "scenario" {
@@ -2574,7 +2579,7 @@ fn run_script_test(
     };
     let mut plan = plan.clone();
     plan.entry_flow = Some(FlowRuntimeId(start));
-    let trace = run_runtime_steps(plan, Some(source_path), config, values);
+    let trace = run_runtime_steps(plan, Some(source_path), config, host_calls, values);
     let final_status = flow_status_label(&trace.final_status);
     let mut diagnostics = trace
         .steps
@@ -2606,6 +2611,25 @@ struct RuntimeStepRunConfig {
     max_ops: usize,
     executor: CliRuntimeExecutorTier,
     pure_config: RuntimePureAcceleratorConfig,
+}
+
+#[derive(Clone, Copy)]
+struct BenchRuntimeContext<'a> {
+    pure_config: RuntimePureAcceleratorConfig,
+    host_calls: &'a NativeHostCallSet,
+}
+
+fn runtime_step_run_config_from_run_options(
+    options: &RuntimeRunOptions,
+    pure_config: RuntimePureAcceleratorConfig,
+) -> RuntimeStepRunConfig {
+    RuntimeStepRunConfig {
+        steps: options.steps,
+        mode: options.mode,
+        max_ops: options.max_ops,
+        executor: options.executor,
+        pure_config,
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -2893,6 +2917,7 @@ fn script_bench_selection(
     let mut phases = Vec::new();
     let env = typecheck_env_for_selection(selection, None, &mut phases)?;
     let compiled = compile_profile_runtime_plan(selection, &env, &mut phases)?;
+    let host_calls = native_host_calls_for_selection(selection)?;
     let manifest = collect_script_tests(&compiled.hir);
     let pure_helpers = lower_pure_helper_candidates(&compiled.hir).map(|report| report.candidates);
     let output = ScriptBenchRunReport {
@@ -2922,6 +2947,7 @@ fn script_bench_selection(
                     selection.path(),
                     options,
                     pure_config,
+                    &host_calls,
                 )
             })
             .collect(),
@@ -3000,7 +3026,12 @@ fn run_script_bench(
     source_path: &Path,
     options: &ScriptBenchOptions,
     pure_config: RuntimePureAcceleratorConfig,
+    host_calls: &NativeHostCallSet,
 ) -> ScriptBenchRunSummary {
+    let runtime = BenchRuntimeContext {
+        pure_config,
+        host_calls,
+    };
     let mut summary = validate_script_bench(bench);
     if summary.status != "validated" {
         return summary;
@@ -3009,14 +3040,7 @@ fn run_script_bench(
         .sections
         .iter()
         .map(|section| {
-            run_bench_section(
-                section,
-                plan,
-                pure_helpers,
-                source_path,
-                options,
-                pure_config,
-            )
+            run_bench_section(section, plan, pure_helpers, source_path, options, runtime)
         })
         .collect::<Vec<_>>();
     let section_failures = sections
@@ -3032,8 +3056,7 @@ fn run_script_bench(
     } else if has_measured {
         "measured".clone_into(&mut summary.status);
         summary.sections = sections;
-        let diagnostics =
-            bench_expectation_failures(bench, plan, source_path, options, pure_config);
+        let diagnostics = bench_expectation_failures(bench, plan, source_path, options, runtime);
         if !diagnostics.is_empty() {
             "failed".clone_into(&mut summary.status);
             summary.diagnostics.extend(diagnostics);
@@ -3047,7 +3070,7 @@ fn bench_expectation_failures(
     plan: &RuntimePlan,
     source_path: &Path,
     options: &ScriptBenchOptions,
-    pure_config: RuntimePureAcceleratorConfig,
+    runtime: BenchRuntimeContext<'_>,
 ) -> Vec<String> {
     let assertions = bench
         .sections
@@ -3072,8 +3095,9 @@ fn bench_expectation_failures(
             mode: options.mode,
             max_ops: options.max_ops,
             executor: options.executor,
-            pure_config,
+            pure_config: runtime.pure_config,
         },
+        runtime.host_calls,
         &options.values,
     );
     assertions
@@ -3340,7 +3364,7 @@ fn run_bench_section(
     pure_helpers: &Result<Vec<PureHelperCandidate>, Vec<PureHelperLowerError>>,
     source_path: &Path,
     options: &ScriptBenchOptions,
-    pure_config: RuntimePureAcceleratorConfig,
+    runtime: BenchRuntimeContext<'_>,
 ) -> ScriptBenchSectionRunSummary {
     let validated = validate_bench_section(section);
     if section.name != "measure" || validated.status != "validated" {
@@ -3351,7 +3375,7 @@ fn run_bench_section(
             section,
             pure_helpers,
             options,
-            pure_config,
+            runtime.pure_config,
             validated,
         );
     }
@@ -3364,7 +3388,7 @@ fn run_bench_section(
         &flow,
         source_path,
         options,
-        pure_config,
+        runtime,
         validated,
     )
 }
@@ -3375,14 +3399,15 @@ fn run_bench_flow_section(
     flow: &str,
     source_path: &Path,
     options: &ScriptBenchOptions,
-    pure_config: RuntimePureAcceleratorConfig,
+    runtime: BenchRuntimeContext<'_>,
     validated: ScriptBenchSectionRunSummary,
 ) -> ScriptBenchSectionRunSummary {
     let mut samples = RuntimeBenchSamples::with_capacity(options.iterations);
     let mut selected_plan = plan.clone();
     selected_plan.entry_flow = Some(FlowRuntimeId(flow.to_owned()));
     let executor_template = RuntimeExecutorTemplate::new(&selected_plan, options.executor);
-    let mut pure = RuntimePureAccelerator::with_config(pure_config, &selected_plan.pure_helpers);
+    let mut pure =
+        RuntimePureAccelerator::with_config(runtime.pure_config, &selected_plan.pure_helpers);
     for iteration in 0..options.warmup + options.iterations {
         pure.reset_runtime_counters();
         let executor = executor_template.instantiate();
@@ -3395,8 +3420,9 @@ fn run_bench_flow_section(
                 mode: options.mode,
                 max_ops: options.max_ops,
                 executor: options.executor,
-                pure_config,
+                pure_config: runtime.pure_config,
             },
+            runtime.host_calls,
             &options.values,
             &mut pure,
         );
@@ -4245,6 +4271,7 @@ fn verify_types_runtime_self_check(
             pure_config,
         ))
     })?;
+    let host_calls = native_host_calls_for_selection(selection)?;
     let trace = run_profile_phase(&mut checked.phases, "run", || {
         Ok(run_runtime_steps_with_executor(
             &mut executor,
@@ -4252,6 +4279,7 @@ fn verify_types_runtime_self_check(
             options.steps,
             options.runtime_mode,
             options.max_ops,
+            &host_calls,
             &options.values,
         ))
     })?;
@@ -4569,6 +4597,17 @@ fn adapter_manifest_for_adapter(adapter: Option<&str>) -> Result<AdapterManifest
     }
     eprintln!("error: unknown adapter `{adapter_id}`");
     Err(ExitCode::from(2))
+}
+
+fn native_host_calls_for_selection(
+    selection: &SourceSelection,
+) -> Result<NativeHostCallSet, ExitCode> {
+    native_host_calls_for_adapter(selection.adapter())
+}
+
+fn native_host_calls_for_adapter(adapter: Option<&str>) -> Result<NativeHostCallSet, ExitCode> {
+    let selected = adapter_manifest_for_adapter(adapter)?;
+    Ok(NativeHostCallSet::standard_cli().union(NativeHostCallSet::from_manifest(&selected)))
 }
 
 fn rust_metadata_for_selection(

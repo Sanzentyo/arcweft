@@ -216,6 +216,11 @@ The CLI owns a native task adapter for the first filesystem I/O slice:
 as `TaskEvent` input on the next VM step. Paths must be virtual path values such
 as `path.save("profile.json")`; the adapter resolves them under a source-local
 `.arcweft/<space>/...` root and rejects absolute or parent-relative paths.
+Native task dispatch is gated by a manifest-derived host-call set. The CLI
+native runner builds that set from the standard `native-file` and `system-info`
+manifests, plus the selected profile adapter manifest and internal scheduler
+markers. A task request whose stable host-call id is absent from that set returns
+an explicit task error instead of being silently completed or left pending.
 
 `arcw run --manifest arcw.toml --profile NAME` resolves the same launch profile
 model used by dedicated commands. For `game` and `cli` profiles it runs the

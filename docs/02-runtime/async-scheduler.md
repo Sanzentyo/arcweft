@@ -219,6 +219,11 @@ requests and consumes deterministic task events.
 The native CLI adapter completes read-only dispatch batches on a worker pool and
 reports path-free `native_io.parallel_*` counters; write tasks stay ordered so
 benchmarks can distinguish scheduler fanout from host-side mutation ordering.
+Native dispatch is constrained by adapter manifests: each `HostTaskRequest`
+exposes a stable host-call id, and the CLI bridge completes only ids present in
+its manifest-derived host-call set. Missing ids produce deterministic task error
+events, so an adapter mismatch is observable instead of becoming an implicit
+compatibility fallback.
 
 Recognized capability calls such as `fs.read_text(...)`, `http.fetch(...)`,
 `asset.image(...)`, `shader.compile(...)`, `audio.decode(...)`,

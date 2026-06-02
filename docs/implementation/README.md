@@ -40,6 +40,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - `arcw serve --listen` owns a minimal native HTTP adapter in the CLI layer. It
   consumes lowered server route plans and executes matched flows through
   `RuntimeStepMode::Server`; `arcweft-core` remains free of network I/O.
+- CLI native task dispatch now uses a manifest-derived host-call set. Core
+  `HostTaskRequest` values expose stable ids such as `fs.read_text` and
+  `system.available_parallelism`; the bridge completes only ids present in the
+  standard native manifests, the selected profile adapter manifest, or internal
+  scheduler markers, and reports missing ids as task errors.
 - `arcw check`, `arcw verify`, `arcw unsafe`, and plan/report generation now
   resolve profile adapters through the standard `arcweft-adapter-context`
   manifest registry, then pass the resulting `TypeCheckEnv` through both type
