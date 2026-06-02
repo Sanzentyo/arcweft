@@ -839,7 +839,7 @@ fn jit_check_source_target(
     path: &Path,
     helper_name: Option<&str>,
 ) -> Result<JitCheckTarget, ExitCode> {
-    let checked = load_and_check_with_env(path, &TypeCheckEnv::new())?;
+    let checked = load_and_check_with_env(path, &TypeCheckEnv::new(), Vec::new())?;
     let pure_report = lower_pure_helper_candidates(&checked.hir).map_err(|errors| {
         for error in errors {
             eprintln!("error: {error}");
@@ -1544,6 +1544,7 @@ fn runtime_run_bench_selection(
 
 fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    let mut phases = Vec::new();
     let pure_config = runtime_pure_config_for_selection(
         &selection,
         options.pure_backend,
@@ -1552,8 +1553,7 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
         options.math_backend,
         options.math_wgpu_min_elements,
     )?;
-    let adapter = options.adapter.as_deref().or(selection.adapter());
-    let env = typecheck_env_for_adapter(adapter)?;
+    let env = typecheck_env_for_selection(&selection, options.adapter.as_deref(), &mut phases)?;
     if !is_arcw_path(selection.path()) {
         eprintln!(
             "error: {} is not an .arcw source file",
@@ -1562,7 +1562,6 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
         return Err(ExitCode::from(2));
     }
 
-    let mut phases = Vec::new();
     let compiled = compile_profile_runtime_plan(&selection, &env, &mut phases)?;
     let mut plan = compiled.plan;
     let entry = options.entry.as_deref().or(selection.entry());
@@ -2893,8 +2892,8 @@ fn script_bench_selection(
         options.math_backend,
         options.math_wgpu_min_elements,
     )?;
-    let env = typecheck_env_for_adapter(selection.adapter())?;
     let mut phases = Vec::new();
+    let env = typecheck_env_for_selection(selection, None, &mut phases)?;
     let compiled = compile_profile_runtime_plan(selection, &env, &mut phases)?;
     let manifest = collect_script_tests(&compiled.hir);
     let pure_helpers = lower_pure_helper_candidates(&compiled.hir).map(|report| report.candidates);
@@ -4539,19 +4538,27 @@ fn load_and_check_selection(
     selection: &SourceSelection,
     adapter_override: Option<&str>,
 ) -> Result<CheckedModule, ExitCode> {
+    let mut phases = Vec::new();
+    let env = typecheck_env_for_selection(selection, adapter_override, &mut phases)?;
+    load_and_check_with_env(selection.path(), &env, phases)
+}
+
+fn typecheck_env_for_selection(
+    selection: &SourceSelection,
+    adapter_override: Option<&str>,
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<TypeCheckEnv, ExitCode> {
     let adapter = adapter_override.or(selection.adapter());
     let mut context = typecheck_context_for_adapter(adapter)?;
-    if adapter_override.is_none() {
-        for manifest in rust_metadata_for_selection(selection)? {
+    if adapter_override.is_none() && selection.profile().is_some() {
+        let manifests = run_profile_phase(phases, "rust_metadata", || {
+            rust_metadata_for_selection(selection)
+        })?;
+        for manifest in manifests {
             context = context.with_rust_manifest(&manifest);
         }
     }
-    let env = context.apply_to_env(TypeCheckEnv::new());
-    load_and_check_with_env(selection.path(), &env)
-}
-
-fn typecheck_env_for_adapter(adapter: Option<&str>) -> Result<TypeCheckEnv, ExitCode> {
-    Ok(typecheck_context_for_adapter(adapter)?.apply_to_env(TypeCheckEnv::new()))
+    Ok(context.apply_to_env(TypeCheckEnv::new()))
 }
 
 fn typecheck_context_for_adapter(
@@ -4605,12 +4612,15 @@ struct CheckedModule {
     phases: Vec<RuntimeProfilePhase>,
 }
 
-fn load_and_check_with_env(path: &Path, env: &TypeCheckEnv) -> Result<CheckedModule, ExitCode> {
+fn load_and_check_with_env(
+    path: &Path,
+    env: &TypeCheckEnv,
+    mut phases: Vec<RuntimeProfilePhase>,
+) -> Result<CheckedModule, ExitCode> {
     if !is_arcw_path(path) {
         eprintln!("error: {} is not an .arcw source file", path.display());
         return Err(ExitCode::from(2));
     }
-    let mut phases = Vec::new();
     let source = run_profile_phase(&mut phases, "read_source", || {
         fs::read_to_string(path).map_err(|error| {
             eprintln!("error: failed to read {}: {error}", path.display());

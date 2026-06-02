@@ -40,6 +40,46 @@ selected package metadata. A direct source check, or a profile that omits the
 matching `rust_metadata` file, rejects the extern declaration instead of
 creating dynamic fallback bindings.
 
+Minimal adapter build scripts construct the manifest explicitly and delegate
+file I/O to `arcweft-rust-abi-build`:
+
+```rust
+use arcweft_rust_abi::{
+    ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
+    ArcweftRustParam, ArcweftRustPurity, ArcweftRustTypeRef,
+};
+use arcweft_rust_abi_build::{
+    MetadataBuildOptions, emit_cargo_rerun_hints, write_manifest,
+};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let manifest = ArcweftRustManifest::builder(ArcweftRustPackage {
+        name: "truck_game".to_owned(),
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+        metadata_hash: None,
+    })
+    .with_function(ArcweftRustFunction {
+        name: "mini_games.truck.score_to_rank".to_owned(),
+        rust_path: "truck_game::score_to_rank".to_owned(),
+        params: vec![ArcweftRustParam {
+            name: "score".to_owned(),
+            ty: ArcweftRustTypeRef::I32,
+        }],
+        return_type: ArcweftRustTypeRef::Named {
+            name: "Rank".to_owned(),
+        },
+        purity: ArcweftRustPurity::Pure,
+        effects: Vec::new(),
+    })
+    .build();
+    let options = MetadataBuildOptions::from_out_dir_env("truck_game")?
+        .with_rerun_if_changed("src/lib.rs");
+    emit_cargo_rerun_hints(&options);
+    write_manifest(&manifest, &options)?;
+    Ok(())
+}
+```
+
 Non-Arcweft-aware Rust crates are exposed through a small annotated wrapper
 crate. Raw pointers, unsafe ABIs, non-static borrows, and unsupported generic
 exports are rejected by the metadata macro rather than accepted as dynamic

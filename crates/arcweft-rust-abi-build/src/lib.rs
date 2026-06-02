@@ -28,6 +28,8 @@ pub struct MetadataBuildOutput {
 /// Error produced by build-script metadata emission.
 #[derive(Debug, Error)]
 pub enum MetadataBuildError {
+    #[error("OUT_DIR is not available for Arcweft Rust ABI metadata build output")]
+    MissingOutDir(#[from] std::env::VarError),
     #[error("failed to encode Rust ABI metadata")]
     Abi(#[from] ArcweftRustAbiError),
     #[error("failed to create metadata directory `{path}`: {source}")]
@@ -56,6 +58,17 @@ impl MetadataBuildOptions {
             rerun_if_changed: Vec::new(),
             rerun_if_env_changed: Vec::new(),
         }
+    }
+
+    /// Creates metadata emission options from Cargo's `OUT_DIR` environment.
+    ///
+    /// This is the normal `build.rs` entrypoint. Tests and adapter tooling that
+    /// already have an output directory should use [`Self::new`] directly.
+    pub fn from_out_dir_env(file_stem: impl Into<String>) -> Result<Self, MetadataBuildError> {
+        Ok(Self::new(
+            std::env::var_os("OUT_DIR").ok_or(std::env::VarError::NotPresent)?,
+            file_stem,
+        ))
     }
 
     /// Adds a `cargo:rerun-if-changed=` input path.

@@ -21,6 +21,12 @@ pub struct ArcweftRustManifest {
     pub functions: Vec<ArcweftRustFunction>,
 }
 
+/// Builder for deterministic Rust ABI metadata manifests.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArcweftRustManifestBuilder {
+    manifest: ArcweftRustManifest,
+}
+
 /// Rust package identity for an Arcweft-aware adapter crate.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ArcweftRustPackage {
@@ -224,6 +230,11 @@ impl ArcweftRustManifest {
         }
     }
 
+    /// Starts a manifest builder for one package.
+    pub fn builder(package: ArcweftRustPackage) -> ArcweftRustManifestBuilder {
+        ArcweftRustManifestBuilder::new(package)
+    }
+
     /// Appends one exported type.
     #[must_use]
     pub fn with_type(mut self, ty: ArcweftRustTypeDecl) -> Self {
@@ -253,6 +264,40 @@ impl ArcweftRustManifest {
             });
         }
         Ok(manifest)
+    }
+}
+
+impl ArcweftRustManifestBuilder {
+    /// Creates an empty manifest builder for one package.
+    pub fn new(package: ArcweftRustPackage) -> Self {
+        Self {
+            manifest: ArcweftRustManifest::new(package),
+        }
+    }
+
+    /// Appends one exported type declaration.
+    #[must_use]
+    pub fn with_type(mut self, ty: ArcweftRustTypeDecl) -> Self {
+        self.manifest.types.push(ty);
+        self
+    }
+
+    /// Appends metadata for a Rust ADT implementing `ArcweftTypeMetadata`.
+    #[must_use]
+    pub fn with_type_metadata<T: ArcweftTypeMetadata>(self) -> Self {
+        self.with_type(T::arcweft_type_decl())
+    }
+
+    /// Appends one exported function declaration.
+    #[must_use]
+    pub fn with_function(mut self, function: ArcweftRustFunction) -> Self {
+        self.manifest.functions.push(function);
+        self
+    }
+
+    /// Finishes the manifest.
+    pub fn build(self) -> ArcweftRustManifest {
+        self.manifest
     }
 }
 
@@ -306,5 +351,50 @@ mod tests {
         assert_eq!(decoded, manifest);
         assert!(!json.contains("D:\\"));
         assert!(!json.contains("/tmp/"));
+    }
+
+    #[test]
+    fn builder_collects_type_metadata_and_functions() {
+        struct LocalType;
+
+        impl ArcweftType for LocalType {
+            fn arcweft_type_ref() -> ArcweftRustTypeRef {
+                ArcweftRustTypeRef::Named {
+                    name: "LocalType".to_owned(),
+                }
+            }
+        }
+
+        impl ArcweftTypeMetadata for LocalType {
+            fn arcweft_type_decl() -> ArcweftRustTypeDecl {
+                ArcweftRustTypeDecl {
+                    name: "LocalType".to_owned(),
+                    rust_path: "fixture::LocalType".to_owned(),
+                    kind: ArcweftRustTypeKind::Struct { fields: Vec::new() },
+                }
+            }
+        }
+
+        let manifest = ArcweftRustManifest::builder(ArcweftRustPackage {
+            name: "fixture".to_owned(),
+            version: "0.1.0".to_owned(),
+            metadata_hash: None,
+        })
+        .with_type_metadata::<LocalType>()
+        .with_function(ArcweftRustFunction {
+            name: "fixture.identity".to_owned(),
+            rust_path: "fixture::identity".to_owned(),
+            params: vec![ArcweftRustParam {
+                name: "value".to_owned(),
+                ty: LocalType::arcweft_type_ref(),
+            }],
+            return_type: LocalType::arcweft_type_ref(),
+            purity: ArcweftRustPurity::Pure,
+            effects: Vec::new(),
+        })
+        .build();
+
+        assert_eq!(manifest.types[0].name, "LocalType");
+        assert_eq!(manifest.functions[0].params[0].name, "value");
     }
 }

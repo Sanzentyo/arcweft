@@ -5654,37 +5654,11 @@ flow @flow.opening opening {
 "#,
     )
     .expect("write source using rust metadata");
-    let rust_manifest = ArcweftRustManifest::new(ArcweftRustPackage {
-        name: "truck_game".to_owned(),
-        version: "0.1.0".to_owned(),
-        metadata_hash: None,
-    })
-    .with_type(ArcweftRustTypeDecl {
-        name: "Rank".to_owned(),
-        rust_path: "truck_game::Rank".to_owned(),
-        kind: ArcweftRustTypeKind::Enum {
-            variants: vec![ArcweftRustVariant {
-                name: "Gold".to_owned(),
-                fields: Vec::new(),
-            }],
-        },
-    })
-    .with_function(ArcweftRustFunction {
-        name: "mini_games.truck.score_to_rank".to_owned(),
-        rust_path: "truck_game::score_to_rank".to_owned(),
-        params: vec![ArcweftRustParam {
-            name: "score".to_owned(),
-            ty: ArcweftRustTypeRef::I32,
-        }],
-        return_type: ArcweftRustTypeRef::Named {
-            name: "Rank".to_owned(),
-        },
-        purity: ArcweftRustPurity::Pure,
-        effects: Vec::new(),
-    });
     fs::write(
         &metadata,
-        rust_manifest.to_json_pretty().expect("metadata encodes"),
+        truck_game_rust_manifest()
+            .to_json_pretty()
+            .expect("metadata encodes"),
     )
     .expect("write rust metadata");
     fs::write(
@@ -5709,6 +5683,7 @@ rust_metadata = ["target/arcweft/truck_game.json"]
         .arg(&manifest)
         .arg("--profile")
         .arg("game")
+        .arg("--json")
         .output()
         .expect("arcw check --profile runs");
     fs::remove_dir_all(&dir).expect("remove temp profile project");
@@ -5724,6 +5699,93 @@ rust_metadata = ["target/arcweft/truck_game.json"]
         "profiled check should load rust metadata, stdout: {}, stderr: {}",
         String::from_utf8_lossy(&profiled.stdout),
         String::from_utf8_lossy(&profiled.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&profiled.stdout).expect("profiled check output is JSON");
+    assert!(
+        json["phases"]
+            .as_array()
+            .expect("phases are reported")
+            .iter()
+            .any(|phase| phase["name"] == "rust_metadata"),
+        "profiled check should report rust_metadata phase: {json}"
+    );
+}
+
+#[test]
+fn profile_json_loads_rust_metadata_for_extern_module() {
+    let dir = temp_dir("profile-rust-metadata");
+    let metadata_dir = dir.join("target").join("arcweft");
+    let source = dir.join("game.arcw");
+    let manifest = dir.join("arcw.toml");
+    let metadata = metadata_dir.join("truck_game.json");
+    fs::create_dir_all(&metadata_dir).expect("create metadata dir");
+    fs::write(
+        &source,
+        r#"
+extern rust mod mini_games::truck from crate "truck_game" {
+    pub type Rank
+    pub fn score_to_rank(score: i32) -> Rank
+}
+
+flow @flow.opening opening {
+    return "ok"
+}
+"#,
+    )
+    .expect("write profile source using rust metadata");
+    fs::write(
+        &metadata,
+        truck_game_rust_manifest()
+            .to_json_pretty()
+            .expect("metadata encodes"),
+    )
+    .expect("write rust metadata");
+    fs::write(
+        &manifest,
+        r#"
+[profiles.game]
+kind = "game"
+source = "game.arcw"
+rust_metadata = ["target/arcweft/truck_game.json"]
+"#,
+    )
+    .expect("write launch manifest");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("profile")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("game")
+        .arg("--steps")
+        .arg("1")
+        .arg("--json")
+        .output()
+        .expect("arcw profile --profile runs");
+    fs::remove_dir_all(&dir).expect("remove temp profile project");
+
+    assert!(
+        output.status.success(),
+        "profile should load rust metadata, stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("profile output is JSON");
+    assert!(
+        json["phases"]
+            .as_array()
+            .expect("phases are reported")
+            .iter()
+            .any(|phase| phase["name"] == "rust_metadata"),
+        "profile should report rust_metadata phase: {json}"
+    );
+    assert!(
+        !json
+            .to_string()
+            .contains(&std::env::temp_dir().display().to_string()),
+        "profile JSON must not record absolute temp paths: {json}"
     );
 }
 
@@ -6564,4 +6626,36 @@ fn julia_is_available() -> bool {
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn truck_game_rust_manifest() -> ArcweftRustManifest {
+    ArcweftRustManifest::builder(ArcweftRustPackage {
+        name: "truck_game".to_owned(),
+        version: "0.1.0".to_owned(),
+        metadata_hash: None,
+    })
+    .with_type(ArcweftRustTypeDecl {
+        name: "Rank".to_owned(),
+        rust_path: "truck_game::Rank".to_owned(),
+        kind: ArcweftRustTypeKind::Enum {
+            variants: vec![ArcweftRustVariant {
+                name: "Gold".to_owned(),
+                fields: Vec::new(),
+            }],
+        },
+    })
+    .with_function(ArcweftRustFunction {
+        name: "mini_games.truck.score_to_rank".to_owned(),
+        rust_path: "truck_game::score_to_rank".to_owned(),
+        params: vec![ArcweftRustParam {
+            name: "score".to_owned(),
+            ty: ArcweftRustTypeRef::I32,
+        }],
+        return_type: ArcweftRustTypeRef::Named {
+            name: "Rank".to_owned(),
+        },
+        purity: ArcweftRustPurity::Pure,
+        effects: Vec::new(),
+    })
+    .build()
 }
