@@ -172,7 +172,7 @@ pub trait RuntimeInferenceCallBackend {
         bias: &DenseTensorF32,
     ) -> Result<DenseTensorF32, RuntimeEvalError>;
 
-    fn call_infer_conv2d_valid_f32(
+    fn call_conv_valid2d_f32(
         &mut self,
         input: &DenseTensorF32,
         kernel: &DenseTensorF32,
@@ -1635,7 +1635,7 @@ impl RuntimeInferenceCallBackend for VmRuntimePureCallBackend {
         infer_bias_add_f32(tensor, bias)
     }
 
-    fn call_infer_conv2d_valid_f32(
+    fn call_conv_valid2d_f32(
         &mut self,
         input: &DenseTensorF32,
         kernel: &DenseTensorF32,
@@ -1643,7 +1643,7 @@ impl RuntimeInferenceCallBackend for VmRuntimePureCallBackend {
         stride_x: usize,
     ) -> Result<DenseTensorF32, RuntimeEvalError> {
         self.stats.math_calls += 1;
-        infer_conv2d_valid_f32(input, kernel, stride_y, stride_x)
+        conv_valid2d_f32(input, kernel, stride_y, stride_x)
     }
 
     fn call_infer_relu_f32(
@@ -1793,27 +1793,27 @@ fn infer_bias_add_f32(
         .map_err(|error| infer_eval_error(RuntimeIntrinsic::InferBiasAddF32, error))
 }
 
-fn infer_conv2d_valid_f32(
+fn conv_valid2d_f32(
     input: &DenseTensorF32,
     kernel: &DenseTensorF32,
     stride_y: usize,
     stride_x: usize,
 ) -> Result<DenseTensorF32, RuntimeEvalError> {
-    infer_window(RuntimeIntrinsic::InferConv2dValidF32, stride_y, stride_x)?;
+    infer_window(RuntimeIntrinsic::ConvValid2dF32, stride_y, stride_x)?;
     let [batch, input_channels, input_height, input_width] =
-        infer_nchw_dims(RuntimeIntrinsic::InferConv2dValidF32, input)?;
+        infer_nchw_dims(RuntimeIntrinsic::ConvValid2dF32, input)?;
     let [
         output_channels,
         kernel_channels,
         kernel_height,
         kernel_width,
-    ] = infer_oihw_dims(RuntimeIntrinsic::InferConv2dValidF32, kernel)?;
+    ] = infer_oihw_dims(RuntimeIntrinsic::ConvValid2dF32, kernel)?;
     if input_channels != kernel_channels
         || input_height < kernel_height
         || input_width < kernel_width
     {
         return Err(RuntimeEvalError::UnsupportedPure {
-            name: RuntimeIntrinsic::InferConv2dValidF32.as_label().to_owned(),
+            name: RuntimeIntrinsic::ConvValid2dF32.as_label().to_owned(),
             reason: format!(
                 "input shape {:?} is incompatible with kernel shape {:?}",
                 input.shape().dims(),
@@ -1874,7 +1874,7 @@ fn infer_conv2d_valid_f32(
         vec![batch, output_channels, output_height, output_width],
         out,
     )
-    .map_err(|error| infer_eval_error(RuntimeIntrinsic::InferConv2dValidF32, error))
+    .map_err(|error| infer_eval_error(RuntimeIntrinsic::ConvValid2dF32, error))
 }
 
 fn infer_max_pool2d_f32(
@@ -3880,7 +3880,7 @@ fn evaluate_inference_pure_call(
             ],
         ) => infer_bias_add_f32(tensor, bias).map(RuntimeValue::tensor_f32),
         (
-            Some(RuntimeIntrinsic::InferConv2dValidF32),
+            Some(RuntimeIntrinsic::ConvValid2dF32),
             [
                 RuntimeValue::TensorF32(input),
                 RuntimeValue::TensorF32(kernel),
@@ -3937,11 +3937,11 @@ fn evaluate_inference_pure_conv2d(
     stride_y: &RuntimeValue,
     stride_x: &RuntimeValue,
 ) -> Result<RuntimeValue, RuntimeEvalError> {
-    infer_conv2d_valid_f32(
+    conv_valid2d_f32(
         input,
         kernel,
-        runtime_infer_usize_arg(RuntimeIntrinsic::InferConv2dValidF32, stride_y)?,
-        runtime_infer_usize_arg(RuntimeIntrinsic::InferConv2dValidF32, stride_x)?,
+        runtime_infer_usize_arg(RuntimeIntrinsic::ConvValid2dF32, stride_y)?,
+        runtime_infer_usize_arg(RuntimeIntrinsic::ConvValid2dF32, stride_x)?,
     )
     .map(RuntimeValue::tensor_f32)
 }

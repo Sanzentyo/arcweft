@@ -295,6 +295,9 @@ impl TypeChecker<'_> {
                 if path == "line" {
                     return Some(TypeKind::Named("LineContext".to_owned()));
                 }
+                if path == "conv" {
+                    return Some(TypeKind::Named("ConvApi".to_owned()));
+                }
                 if path == "infer" {
                     return Some(TypeKind::Named("InferApi".to_owned()));
                 }
@@ -773,7 +776,7 @@ impl TypeChecker<'_> {
                 self.check_infer_tensor_args(name, args, 2, 0);
                 Some(TypeKind::Named("TensorF32".to_owned()))
             }
-            "infer.conv2d_valid_f32" => {
+            "conv.valid2d_f32" => {
                 self.check_infer_tensor_args(name, args, 2, 2);
                 Some(TypeKind::Named("TensorF32".to_owned()))
             }
@@ -1161,7 +1164,7 @@ impl TypeChecker<'_> {
         let method_name = method.split_once('<').map_or(method, |(name, _)| name);
         if let Some(receiver_path) = expr_path_label(receiver) {
             let dotted = format!("{receiver_path}.{method_name}");
-            if matches!(receiver_path.as_str(), "math" | "infer") {
+            if matches!(receiver_path.as_str(), "math" | "conv" | "infer") {
                 return self.check_builtin_call_name(&dotted, args);
             }
             if matches!(receiver_path.as_str(), "std.f32" | "std.f64") {

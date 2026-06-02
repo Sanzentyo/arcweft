@@ -186,7 +186,7 @@ fn vm_pure_backend_evaluates_inference_op_sequence() {
         RuntimeExpr::Let {
             name: "conv".to_owned(),
             expr: Box::new(RuntimeExpr::Call {
-                callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::InferConv2dValidF32),
+                callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::ConvValid2dF32),
                 args: vec![
                     RuntimeExpr::Value(RuntimeValue::tensor_f32(image)),
                     RuntimeExpr::Value(RuntimeValue::tensor_f32(kernel)),

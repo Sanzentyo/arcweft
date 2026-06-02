@@ -348,7 +348,7 @@ pub enum RuntimeIntrinsic {
     InferMatmulF32,
     InferAddF32,
     InferBiasAddF32,
-    InferConv2dValidF32,
+    ConvValid2dF32,
     InferReluF32,
     InferMaxPool2dF32,
     InferSoftmaxLastDimF32,
@@ -425,7 +425,7 @@ impl RuntimeIntrinsic {
             "infer.matmul_f32" => Some(Self::InferMatmulF32),
             "infer.add_f32" => Some(Self::InferAddF32),
             "infer.bias_add_f32" => Some(Self::InferBiasAddF32),
-            "infer.conv2d_valid_f32" => Some(Self::InferConv2dValidF32),
+            "conv.valid2d_f32" => Some(Self::ConvValid2dF32),
             "infer.relu_f32" => Some(Self::InferReluF32),
             "infer.max_pool2d_f32" => Some(Self::InferMaxPool2dF32),
             "infer.softmax_last_dim_f32" => Some(Self::InferSoftmaxLastDimF32),
@@ -503,7 +503,7 @@ impl RuntimeIntrinsic {
             Self::InferMatmulF32 => "infer.matmul_f32",
             Self::InferAddF32 => "infer.add_f32",
             Self::InferBiasAddF32 => "infer.bias_add_f32",
-            Self::InferConv2dValidF32 => "infer.conv2d_valid_f32",
+            Self::ConvValid2dF32 => "conv.valid2d_f32",
             Self::InferReluF32 => "infer.relu_f32",
             Self::InferMaxPool2dF32 => "infer.max_pool2d_f32",
             Self::InferSoftmaxLastDimF32 => "infer.softmax_last_dim_f32",
@@ -584,7 +584,7 @@ impl RuntimeIntrinsic {
             | Self::InferMatmulF32
             | Self::InferAddF32
             | Self::InferBiasAddF32
-            | Self::InferConv2dValidF32
+            | Self::ConvValid2dF32
             | Self::InferReluF32
             | Self::InferMaxPool2dF32
             | Self::InferSoftmaxLastDimF32

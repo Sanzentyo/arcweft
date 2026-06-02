@@ -3312,7 +3312,7 @@ fn evaluate_inference_runtime_call(
                 RuntimeValue::tensor_f32,
             ),
         (
-            Some(RuntimeIntrinsic::InferConv2dValidF32),
+            Some(RuntimeIntrinsic::ConvValid2dF32),
             [
                 RuntimeValue::TensorF32(input),
                 RuntimeValue::TensorF32(kernel),
@@ -3377,12 +3377,12 @@ fn evaluate_runtime_conv2d(
         runtime_value_to_usize(stride_x),
     ) {
         (Some(stride_y), Some(stride_x)) => pure_backend
-            .call_infer_conv2d_valid_f32(input, kernel, stride_y, stride_x)
+            .call_conv_valid2d_f32(input, kernel, stride_y, stride_x)
             .map_or_else(
-                |error| RuntimeValue::String(format!("infer.conv2d_valid_f32({error})")),
+                |error| RuntimeValue::String(format!("conv.valid2d_f32({error})")),
                 RuntimeValue::tensor_f32,
             ),
-        _ => RuntimeValue::String("infer.conv2d_valid_f32(<unsupported>)".to_owned()),
+        _ => RuntimeValue::String("conv.valid2d_f32(<unsupported>)".to_owned()),
     }
 }
 

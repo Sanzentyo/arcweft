@@ -608,8 +608,8 @@ kernels for non-matmul forward ops. The current deterministic `f32` op set is:
 - outer-dimension preserving `flatten`
 
 Arcweft flow execution now exposes the same op family as regular
-`infer.*_f32` intrinsic calls. Users can compose CNN-like structures by
-sequencing `infer.conv2d_valid_f32`, `infer.relu_f32`,
+`conv.*_f32` and `infer.*_f32` intrinsic calls. Users can compose CNN-like structures by
+sequencing `conv.valid2d_f32`, `infer.relu_f32`,
 `infer.max_pool2d_f32`, `infer.flatten_outer_f32`,
 `infer.matmul_f32`, and `infer.argmax_last_dim_f32`; the runtime does not
 hard-code a CNN shape into the language. The VM baseline implements the same

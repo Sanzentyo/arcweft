@@ -2294,7 +2294,7 @@ impl RuntimeInferenceCallBackend for RuntimePureAccelerator {
         Ok(result)
     }
 
-    fn call_infer_conv2d_valid_f32(
+    fn call_conv_valid2d_f32(
         &mut self,
         input: &DenseTensorF32,
         kernel: &DenseTensorF32,
@@ -2304,7 +2304,7 @@ impl RuntimeInferenceCallBackend for RuntimePureAccelerator {
         self.stats.math_calls += 1;
         self.record_math_inputs::<f32>(input.values().len(), kernel.values().len());
         let result = inference::conv2d_valid_nchw(input, kernel, stride_y, stride_x)
-            .map_err(|error| infer_runtime_error("infer.conv2d_valid_f32", error))?;
+            .map_err(|error| infer_runtime_error("conv.valid2d_f32", error))?;
         self.record_math_result::<f32>(result.values().len());
         Ok(result)
     }
