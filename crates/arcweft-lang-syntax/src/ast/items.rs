@@ -342,8 +342,48 @@ pub struct ExternModItem {
     abi: String,
     path: String,
     source: Option<String>,
+    members: Vec<ExternModMember>,
     body: String,
     range: TextRange,
+}
+
+/// Structured member declared inside an `extern rust mod` block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExternModMember {
+    Type(ExternModType),
+    Function(ExternModFunction),
+    Activity(ExternModActivity),
+    Raw(String),
+}
+
+/// Rust type-like export declared by an external module.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternModType {
+    visibility: Option<Visibility>,
+    kind: ExternModTypeKind,
+    name: String,
+}
+
+/// Type-like external export category.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExternModTypeKind {
+    Type,
+    Event,
+}
+
+/// Rust function export declared by an external module.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternModFunction {
+    visibility: Option<Visibility>,
+    signature: FnSignature,
+}
+
+/// Runtime activity export declared by an external module.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternModActivity {
+    visibility: Option<Visibility>,
+    name: String,
+    ty: TypeRef,
 }
 
 /// Host capability declaration such as `extern capability cli { fn stdout(...) }`.
@@ -798,6 +838,7 @@ impl ExternModItem {
         abi: String,
         path: String,
         source: Option<String>,
+        members: Vec<ExternModMember>,
         body: String,
         range: TextRange,
     ) -> Self {
@@ -805,6 +846,7 @@ impl ExternModItem {
             abi,
             path,
             source,
+            members,
             body,
             range,
         }
@@ -822,12 +864,85 @@ impl ExternModItem {
         self.source.as_deref()
     }
 
+    pub fn members(&self) -> &[ExternModMember] {
+        &self.members
+    }
+
     pub fn body(&self) -> &str {
         &self.body
     }
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+}
+
+impl ExternModType {
+    pub(crate) fn new(
+        visibility: Option<Visibility>,
+        kind: ExternModTypeKind,
+        name: impl Into<String>,
+    ) -> Self {
+        Self {
+            visibility,
+            kind,
+            name: name.into(),
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub const fn kind(&self) -> ExternModTypeKind {
+        self.kind
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl ExternModFunction {
+    pub(crate) const fn new(visibility: Option<Visibility>, signature: FnSignature) -> Self {
+        Self {
+            visibility,
+            signature,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub const fn signature(&self) -> &FnSignature {
+        &self.signature
+    }
+}
+
+impl ExternModActivity {
+    pub(crate) fn new(
+        visibility: Option<Visibility>,
+        name: impl Into<String>,
+        ty: TypeRef,
+    ) -> Self {
+        Self {
+            visibility,
+            name: name.into(),
+            ty,
+        }
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn ty(&self) -> &TypeRef {
+        &self.ty
     }
 }
 

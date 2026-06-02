@@ -1,0 +1,5 @@
+error: Arcweft Rust ABI metadata does not support borrowed references yet
+ --> tests/ui/reject_reference_export.rs:4:24
+  |
+4 | pub fn borrowed(value: &str) -> i32 {
+  |                        ^

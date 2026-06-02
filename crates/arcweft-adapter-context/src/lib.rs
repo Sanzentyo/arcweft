@@ -29,6 +29,7 @@ pub struct AdapterMethod {
 /// A Rust function export injected into type checking and LSP tooling.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdapterRustFunction {
+    package: String,
     name: String,
     rust_path: String,
     signature: FunctionSignature,
@@ -37,6 +38,7 @@ pub struct AdapterRustFunction {
 /// A Rust ADT export injected into tooling metadata.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdapterRustType {
+    package: String,
     decl: ArcweftRustTypeDecl,
 }
 
@@ -87,6 +89,11 @@ impl AdapterMethod {
 }
 
 impl AdapterRustFunction {
+    /// Rust adapter package that exported this function.
+    pub fn package(&self) -> &str {
+        &self.package
+    }
+
     /// Arcweft-visible function path.
     pub fn name(&self) -> &str {
         &self.name
@@ -104,6 +111,11 @@ impl AdapterRustFunction {
 }
 
 impl AdapterRustType {
+    /// Rust adapter package that exported this type.
+    pub fn package(&self) -> &str {
+        &self.package
+    }
+
     /// Exported Rust ADT declaration.
     pub const fn decl(&self) -> &ArcweftRustTypeDecl {
         &self.decl
@@ -158,15 +170,18 @@ impl AdapterTypecheckContext {
     /// Adds Rust ABI metadata exported by an adapter crate.
     #[must_use]
     pub fn with_rust_manifest(mut self, manifest: &ArcweftRustManifest) -> Self {
-        self.rust_types.extend(
+        let package = manifest.package.name.clone();
+        self.rust_types
+            .extend(manifest.types.iter().cloned().map(|decl| AdapterRustType {
+                package: package.clone(),
+                decl,
+            }));
+        self.rust_functions.extend(
             manifest
-                .types
+                .functions
                 .iter()
-                .cloned()
-                .map(|decl| AdapterRustType { decl }),
+                .map(|function| adapter_rust_function(manifest.package.name.clone(), function)),
         );
-        self.rust_functions
-            .extend(manifest.functions.iter().map(adapter_rust_function));
         self
     }
 
@@ -182,8 +197,16 @@ impl AdapterTypecheckContext {
                 method.signature.clone(),
             )
         });
-        self.rust_functions.iter().fold(env, |env, function| {
+        let env = self.rust_functions.iter().fold(env, |env, function| {
             env.with_function_signature(function.name.clone(), function.signature.clone())
+                .with_rust_function_export(
+                    function.package.clone(),
+                    function.name.clone(),
+                    function.signature.clone(),
+                )
+        });
+        self.rust_types.iter().fold(env, |env, ty| {
+            env.with_rust_type_export(ty.package.clone(), ty.decl.name.clone())
         })
     }
 
@@ -267,8 +290,12 @@ pub fn inference_tensor_context() -> AdapterTypecheckContext {
         )
 }
 
-fn adapter_rust_function(function: &ArcweftRustFunction) -> AdapterRustFunction {
+fn adapter_rust_function(
+    package: impl Into<String>,
+    function: &ArcweftRustFunction,
+) -> AdapterRustFunction {
     AdapterRustFunction {
+        package: package.into(),
         name: function.name.clone(),
         rust_path: function.rust_path.clone(),
         signature: FunctionSignature::new(
@@ -384,13 +411,22 @@ mod tests {
         assert_eq!(context.rust_functions()[0].signature().params().len(), 1);
         assert_eq!(
             env,
-            TypeCheckEnv::new().with_function_signature(
-                "mini_games.truck.score_to_rank",
-                FunctionSignature::new(
-                    TypeKind::Named("Rank".to_owned()),
-                    [FunctionParam::required("score", TypeKind::I32)]
+            TypeCheckEnv::new()
+                .with_function_signature(
+                    "mini_games.truck.score_to_rank",
+                    FunctionSignature::new(
+                        TypeKind::Named("Rank".to_owned()),
+                        [FunctionParam::required("score", TypeKind::I32)]
+                    )
                 )
-            )
+                .with_rust_function_export(
+                    "truck_game",
+                    "mini_games.truck.score_to_rank",
+                    FunctionSignature::new(
+                        TypeKind::Named("Rank".to_owned()),
+                        [FunctionParam::required("score", TypeKind::I32)]
+                    )
+                )
         );
     }
 }

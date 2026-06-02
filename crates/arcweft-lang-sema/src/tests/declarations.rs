@@ -1242,6 +1242,15 @@ extern rust mod mini_games::truck from crate "truck_game" {
     assert_eq!(item.path(), "mini_games::truck");
     assert_eq!(item.source(), Some(r#"crate "truck_game""#));
     assert!(item.body().contains("pub activity truck_game"));
+    assert!(matches!(
+        item.members(),
+        [
+            ExternModMember::Type(_),
+            ExternModMember::Type(_),
+            ExternModMember::Function(function),
+            ExternModMember::Activity(_),
+        ] if function.signature().name() == "score_to_rank"
+    ));
 
     let hir = lower_to_hir(&tree).expect("extern rust module lowers");
     assert!(matches!(
@@ -1249,5 +1258,23 @@ extern rust mod mini_games::truck from crate "truck_game" {
         [HirTopLevelDecl::ExternMod(_)]
     ));
     validate_typecheck_ready(&hir).expect("extern module is typecheck-ready");
-    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("extern module typechecks");
+    let errors =
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("extern module requires metadata");
+    assert!(matches!(
+        errors.first().map(crate::diagnostics::TypeCheckError::kind),
+        Some(TypeCheckErrorKind::MissingRustPackageMetadata { package }) if package == "truck_game"
+    ));
+
+    let env = TypeCheckEnv::new()
+        .with_rust_type_export("truck_game", "TruckEvent")
+        .with_rust_type_export("truck_game", "TruckResult")
+        .with_rust_function_export(
+            "truck_game",
+            "mini_games.truck.score_to_rank",
+            FunctionSignature::new(
+                TypeKind::Named("Rank".to_owned()),
+                [FunctionParam::required("score", TypeKind::I32)],
+            ),
+        );
+    typecheck_hir(&hir, &env).expect("extern module metadata matches declaration");
 }

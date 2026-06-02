@@ -16,6 +16,7 @@ members = [
     "crates/arcweft-need",
     "crates/arcweft-presentation",
     "crates/arcweft-rust-abi",
+    "crates/arcweft-rust-abi-build",
     "crates/arcweft-rust-abi-macros",
     "crates/arcweft-runtime-plan",
     "crates/arcweft-runtime-accelerator",

@@ -46,11 +46,15 @@ Phase 0 / Phase 1 minimal Rust workspace:
   Sans I/O environment.
 - Rust adapter metadata is now an explicit profile-selected input. The
   `arcweft-rust-abi` data crate defines deterministic JSON metadata for Rust
-  exported functions and ADTs, while `arcweft-rust-abi-macros` provides opt-in
-  function/type metadata generation. `arcweft-adapter-context` converts that
-  metadata into full sema signatures, and `arcweft-verify-lsp` exposes Sans I/O
-  completion, hover, and signature-help helpers from the same context. The CLI
-  reads `rust_metadata` entries from launch profiles; direct-path checks remain
+  exported functions and ADTs, `arcweft-rust-abi-macros` provides opt-in
+  function/type metadata generation, and `arcweft-rust-abi-build` owns the
+  build-script file I/O helper so the data crate stays Sans I/O.
+  `arcweft-adapter-context` converts that metadata into full sema signatures and
+  package export tables, and `arcweft-verify-lsp` exposes Sans I/O completion,
+  hover, and signature-help helpers from the same context. `extern rust mod`
+  declarations parse as structured type/function/activity members and are
+  checked against the profile-selected package metadata. The CLI reads
+  `rust_metadata` entries from launch profiles; direct-path checks remain
   strict and do not infer Rust APIs.
 - `arcweft-core::aot` provides a pure `AotProgram` artifact with typed flow
   dispatch-shape analysis and deterministic operation-class counters. Generated

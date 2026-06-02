@@ -2,7 +2,8 @@ use crate::ast::common::TextRange;
 use crate::ast::items::{
     CallableItem, CallableItemInit, CapabilityFn, EntityDeclItem, EntryDeclItem, EntryItem,
     EntryKind, EntryRouteBinding, EntryRouteBindingSource, EnumItem, EnumVariant,
-    ExternCapabilityItem, ExternModItem, FunctionInit, FunctionItem, ImplItem, ImplMember, MemoFn,
+    ExternCapabilityItem, ExternModActivity, ExternModFunction, ExternModItem, ExternModMember,
+    ExternModType, ExternModTypeKind, FunctionInit, FunctionItem, ImplItem, ImplMember, MemoFn,
     ParserItem, StateField, StateItem, StructField, StructItem, TraitItem, TraitMember,
     TypeAliasItem,
 };
@@ -514,6 +515,7 @@ impl Parser<'_> {
             abi,
             path,
             source,
+            parse_extern_mod_members(&body),
             body.into_owned(),
             TextRange::new(start_line.start, end),
         ))
@@ -824,6 +826,54 @@ fn parse_capability_fn(item: &str) -> Option<CapabilityFn> {
         .map(parse_contract_expr_list)
         .unwrap_or_default();
     Some(CapabilityFn::new(signature, effects))
+}
+
+fn parse_extern_mod_members(body: &str) -> Vec<ExternModMember> {
+    collect_logical_block_items(body)
+        .into_iter()
+        .map(|item| parse_extern_mod_member(item.trim()))
+        .collect()
+}
+
+fn parse_extern_mod_member(item: &str) -> ExternModMember {
+    let item = item.trim_end_matches(';').trim();
+    let (visibility, rest) = parse_visibility_prefix(item);
+    let rest = rest.trim();
+    if let Some(name) = rest.strip_prefix("type ").map(str::trim)
+        && let Some((name, tail)) = split_leading_ident(name)
+        && tail.trim().is_empty()
+    {
+        return ExternModMember::Type(ExternModType::new(
+            visibility,
+            ExternModTypeKind::Type,
+            name,
+        ));
+    }
+    if let Some(name) = rest.strip_prefix("event ").map(str::trim)
+        && let Some((name, tail)) = split_leading_ident(name)
+        && tail.trim().is_empty()
+    {
+        return ExternModMember::Type(ExternModType::new(
+            visibility,
+            ExternModTypeKind::Event,
+            name,
+        ));
+    }
+    if rest.starts_with("fn ") {
+        return parse_fn_signature(rest).map_or_else(
+            |_| ExternModMember::Raw(item.to_owned()),
+            |signature| ExternModMember::Function(ExternModFunction::new(visibility, signature)),
+        );
+    }
+    if let Some(activity) = rest.strip_prefix("activity ").map(str::trim)
+        && let Some((name, ty)) = split_top_level_punctuation_once(activity, ':')
+        && let Some((name, tail)) = split_leading_ident(name.trim())
+        && tail.trim().is_empty()
+        && let Ok(ty) = parse_type_ref(ty.trim())
+    {
+        return ExternModMember::Activity(ExternModActivity::new(visibility, name, ty));
+    }
+    ExternModMember::Raw(item.to_owned())
 }
 
 pub(super) fn parse_trait_members(body: &str) -> Vec<TraitMember> {

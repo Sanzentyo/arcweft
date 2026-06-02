@@ -1,18 +1,19 @@
 //! Module, top-level declaration, and dialogue entry checks.
 
 use super::{
-    EffectScope, EntityKind, FlowKind, FunctionKind, HirModule, HirTopLevelDecl, LifetimeKey,
-    LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker, TypeKind, YieldContext,
-    choice_output_type, entity_kind_for_decl, function_param_local_type, function_signature_type,
-    ident_pattern_name, normalize_choice_type, stream_return_types, type_ref_kind,
-    validate_typecheck_ready,
+    EffectScope, EntityKind, FlowKind, FunctionKind, FunctionSignature, HirModule, HirTopLevelDecl,
+    LifetimeKey, LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker, TypeKind,
+    YieldContext, choice_output_type, entity_kind_for_decl, function_param_local_type,
+    function_signature_type, ident_pattern_name, normalize_choice_type, stream_return_types,
+    type_ref_kind, validate_typecheck_ready,
 };
 use crate::checker::helpers::{type_kind_label, type_ref_label};
 use crate::diagnostics::TypeCheckWarning;
 use arcweft_lang_hir::model::{HirFlow, HirFunction};
 use arcweft_lang_syntax::ast::common::Visibility;
 use arcweft_lang_syntax::ast::items::{
-    EntryItem, EntryRouteBinding, EntryRouteBindingSource, TypeAliasItem,
+    EntryItem, EntryRouteBinding, EntryRouteBindingSource, ExternModItem, ExternModMember,
+    TypeAliasItem,
 };
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
 use arcweft_lang_syntax::types::{FnSignature, TypeRef};
@@ -280,8 +281,8 @@ impl TypeChecker<'_> {
             | HirTopLevelDecl::Struct(_)
             | HirTopLevelDecl::Trait(_)
             | HirTopLevelDecl::TrustedAxiom(_)
-            | HirTopLevelDecl::ExternMod(_)
             | HirTopLevelDecl::ExternCapability(_) => {}
+            HirTopLevelDecl::ExternMod(item) => self.check_extern_mod(item),
             HirTopLevelDecl::Entry(item) => {
                 self.expect_entity_kind(item.id(), &EntityKind::Entry, "entry id");
                 for item in item.items() {
@@ -354,6 +355,64 @@ impl TypeChecker<'_> {
                     self.expect_entity_kind(id, &EntityKind::Source, "source id");
                 }
                 self.check_source_item(item);
+            }
+        }
+    }
+
+    fn check_extern_mod(&mut self, item: &ExternModItem) {
+        if item.abi() != "rust" {
+            return;
+        }
+        let Some(package) = item.source().and_then(extern_rust_crate_name) else {
+            self.errors.push(TypeCheckError::new(format!(
+                "extern rust module `{}` must declare `from crate \"name\"`",
+                item.path()
+            )));
+            return;
+        };
+        let Some(exports) = self.env.rust_package(package) else {
+            self.errors
+                .push(TypeCheckError::missing_rust_package_metadata(package));
+            return;
+        };
+        let namespace = item.path().replace("::", ".");
+        for member in item.members() {
+            match member {
+                ExternModMember::Type(ty) => {
+                    if !exports.has_type(ty.name()) {
+                        self.errors.push(TypeCheckError::missing_rust_export(
+                            package,
+                            format!("{namespace}.{}", ty.name()),
+                        ));
+                    }
+                }
+                ExternModMember::Function(function) => {
+                    self.check_signature_type_refs(function.signature());
+                    let export_name = format!("{namespace}.{}", function.signature().name());
+                    let expected = function_signature_type(function.signature());
+                    let Some(actual) = exports.function(&export_name) else {
+                        self.errors
+                            .push(TypeCheckError::missing_rust_export(package, export_name));
+                        continue;
+                    };
+                    if &expected != actual {
+                        self.errors
+                            .push(TypeCheckError::rust_export_signature_mismatch(
+                                package,
+                                export_name,
+                                function_signature_label(&expected),
+                                function_signature_label(actual),
+                            ));
+                    }
+                }
+                ExternModMember::Activity(activity) => {
+                    self.check_type_ref_shape(activity.ty());
+                }
+                ExternModMember::Raw(raw) => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "raw extern rust member is not type-checkable: {raw}"
+                    )));
+                }
             }
         }
     }
@@ -750,4 +809,25 @@ fn route_path_params(path: &str) -> HashSet<String> {
         .filter(|name| !name.is_empty())
         .map(ToOwned::to_owned)
         .collect()
+}
+
+fn extern_rust_crate_name(source: &str) -> Option<&str> {
+    let source = source.trim();
+    let name = source.strip_prefix("crate")?.trim();
+    name.strip_prefix('"')?.strip_suffix('"')
+}
+
+fn function_signature_label(signature: &FunctionSignature) -> String {
+    let params = signature
+        .params()
+        .iter()
+        .map(|param| {
+            param.name().map_or_else(
+                || format!("{:?}", param.ty()),
+                |name| format!("{name}: {:?}", param.ty()),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("fn({params}) -> {:?}", signature.return_type())
 }

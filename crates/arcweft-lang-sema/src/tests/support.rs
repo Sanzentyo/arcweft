@@ -34,8 +34,8 @@ pub(super) use arcweft_lang_syntax::{
             AwaitBranchKind, ContractClause, FlowItem, FlowKind, SelectBranchHead, Stmt, WaitTarget,
         },
         items::{
-            CallableKind, EntityDeclKind, FunctionKind, ImplMember, Item, RawSyntaxFamily,
-            TraitMember,
+            CallableKind, EntityDeclKind, ExternModMember, FunctionKind, ImplMember, Item,
+            RawSyntaxFamily, TraitMember,
         },
         line_plan::{DeferOutcome, LinePlanItem},
         pattern::{Pattern, VariantPatternPayload},

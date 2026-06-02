@@ -25,6 +25,13 @@ pub struct MethodSignature {
     pub(crate) signature: FunctionSignature,
 }
 
+/// Rust exports contributed by one adapter crate metadata manifest.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RustPackageExports {
+    pub(crate) functions: HashMap<String, FunctionSignature>,
+    pub(crate) types: HashSet<String>,
+}
+
 /// Small, explicit environment used to validate that HIR can feed type checking.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TypeCheckEnv {
@@ -34,6 +41,7 @@ pub struct TypeCheckEnv {
     pub(crate) methods: HashMap<(TypeKind, String), MethodSignature>,
     pub(crate) indexes: HashMap<TypeKind, TypeKind>,
     pub(crate) capabilities: HashSet<String>,
+    pub(crate) rust_packages: HashMap<String, RustPackageExports>,
 }
 
 impl FunctionSignature {
@@ -196,6 +204,37 @@ impl TypeCheckEnv {
         self
     }
 
+    /// Registers one Rust function export under the adapter crate package.
+    #[must_use]
+    pub fn with_rust_function_export(
+        mut self,
+        package: impl Into<String>,
+        name: impl Into<String>,
+        signature: FunctionSignature,
+    ) -> Self {
+        self.rust_packages
+            .entry(package.into())
+            .or_default()
+            .functions
+            .insert(name.into(), signature);
+        self
+    }
+
+    /// Registers one Rust type export under the adapter crate package.
+    #[must_use]
+    pub fn with_rust_type_export(
+        mut self,
+        package: impl Into<String>,
+        name: impl Into<String>,
+    ) -> Self {
+        self.rust_packages
+            .entry(package.into())
+            .or_default()
+            .types
+            .insert(name.into());
+        self
+    }
+
     pub(crate) fn symbol_type(&self, name: &str) -> Option<&TypeKind> {
         self.symbols.get(name)
     }
@@ -231,5 +270,19 @@ impl TypeCheckEnv {
     /// Returns whether the environment grants a named effect or state capability.
     pub fn has_capability(&self, capability: &str) -> bool {
         self.capabilities.contains(capability)
+    }
+
+    pub(crate) fn rust_package(&self, package: &str) -> Option<&RustPackageExports> {
+        self.rust_packages.get(package)
+    }
+}
+
+impl RustPackageExports {
+    pub(crate) fn function(&self, name: &str) -> Option<&FunctionSignature> {
+        self.functions.get(name)
+    }
+
+    pub(crate) fn has_type(&self, name: &str) -> bool {
+        self.types.contains(name)
     }
 }

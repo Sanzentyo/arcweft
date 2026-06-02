@@ -15,8 +15,9 @@ Rust exports are opt-in adapter metadata, not source introspection. An
 Arcweft-aware Rust crate annotates exported functions and ADTs with
 `arcweft-rust-abi-macros`; its build writes deterministic
 `arcweft-rust-abi` JSON into Cargo output or another project-relative metadata
-location. `build.rs` is used to aggregate/write metadata and emit Cargo
-rerun hints, while the proc macros remain the source of truth for signatures.
+location. `arcweft-rust-abi-build` is the build-script helper crate for writing
+that JSON and emitting Cargo rerun hints, while `arcweft-rust-abi` remains data
+and codecs only and the proc macros remain the source of truth for signatures.
 
 Arcweft source declares the imported Rust module shape, and a launch profile
 selects the metadata file that makes those names visible to sema and LSP:
@@ -33,6 +34,11 @@ extern rust mod mini_games::truck from crate "truck_game" {
     ensures result.score >= 0
 }
 ```
+
+Semantic checking compares structured `extern rust mod` members against the
+selected package metadata. A direct source check, or a profile that omits the
+matching `rust_metadata` file, rejects the extern declaration instead of
+creating dynamic fallback bindings.
 
 Non-Arcweft-aware Rust crates are exposed through a small annotated wrapper
 crate. Raw pointers, unsafe ABIs, non-static borrows, and unsupported generic
