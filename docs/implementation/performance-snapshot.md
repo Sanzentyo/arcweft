@@ -554,6 +554,23 @@ separate async adapter module for dense `f32` matmul, matrix add, and tensor
 add. The async path compiles for `wasm32-unknown-unknown --all-features`; it
 still needs an in-browser benchmark harness before its speed can be compared to
 native wgpu or browser CPU execution.
+The browser adapter now exposes structured availability/fallback reasons,
+portable WebGPU default-limit validation, async `map_async` readback counters,
+and prepared/resident buffer APIs. Browser WebGPU is still an explicit async
+adapter optimization, not a synchronous VM math backend.
+
+`arcweft-browser-bench` provides the first path-free browser benchmark export:
+
+```bash
+just browser-webgpu-bench-check
+just browser-webgpu-bench-build
+```
+
+The exported browser function returns JSON with CPU Wasm, WebGPU one-shot,
+prepared upload, and prepared resident cases. If WebGPU is unavailable, the
+report records a structured skip reason instead of failing the whole run. The
+harness still needs real browser measurements before browser production
+`Auto` thresholds are changed.
 
 Local path-free measurements:
 

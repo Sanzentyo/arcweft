@@ -86,6 +86,8 @@ only for non-`wasm32` targets because they use blocking readback. Browser WebGPU
 math is exposed separately as an async `browser_webgpu` adapter for dense
 `f32` matrix/tensor kernels, so browser player code can await GPU work at the
 adapter boundary and then feed deterministic dense values back into the VM.
+The browser adapter uses WebGPU-only `wgpu` features (`std`, `webgpu`, `wgsl`)
+and does not inherit native DX12/Vulkan/Metal/GLES backend features.
 
 ## WebGPU / WebGL fallback
 
@@ -96,6 +98,16 @@ adapter boundary and then feed deterministic dense values back into the VM.
   availability. The async adapter reports creation/readback errors instead of
   silently falling back inside the GPU call; product players decide whether to
   retry with VM/AOT CPU execution.
+- Browser math GPU calls return structured availability/fallback reasons such
+  as insecure context, missing `navigator.gpu`, adapter/device failure, storage
+  buffer limit overflow, workgroup limit overflow, validation error, device
+  loss, and map failure.
+- Browser WebGPU uses `Limits::default()` and validates shape, byte length, and
+  dispatch dimensions before allocation. WebGL is not treated as a compute
+  fallback.
+- Browser benchmarks are exported from `arcweft-browser-bench` and report
+  path-free JSON for CPU Wasm, one-shot WebGPU, prepared upload, and prepared
+  resident modes.
 
 
 

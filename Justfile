@@ -138,3 +138,10 @@ bench-math-matrix-add-reuse:
 
 bench-math-tensor-add-reuse:
     @cargo run --release -p arcweft-runtime-accelerator --example math_bench --features math-wgpu --quiet -- --backend wgpu --op tensor-add --size 4096 --iterations 5 --warmup 1 --reuse
+
+browser-webgpu-bench-check:
+    @cargo check -p arcweft-browser-bench --target wasm32-unknown-unknown --all-features
+
+browser-webgpu-bench-build:
+    @cargo build -p arcweft-browser-bench --release --target wasm32-unknown-unknown --all-features
+    @wasm-bindgen --target web --out-dir target/arcweft-browser-webgpu --out-name arcweft_browser_webgpu target/wasm32-unknown-unknown/release/arcweft_browser_bench.wasm

@@ -9,25 +9,46 @@ repository.workspace = true
 [dependencies]
 arcweft-core = { path = "../arcweft-core" }
 bytemuck = { workspace = true, optional = true }
-futures-channel = { workspace = true, optional = true }
 glam = { workspace = true, optional = true }
 ndarray = { workspace = true, optional = true }
-pollster = { workspace = true, optional = true }
 rayon.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
-wgpu = { workspace = true, optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 arcweft-lang-jit-cranelift = { path = "../arcweft-lang-jit-cranelift", optional = true }
+pollster = { workspace = true, optional = true }
+wgpu = { workspace = true, optional = true, features = ["dx12", "vulkan", "metal", "gles"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+futures-channel = { workspace = true, optional = true }
+js-sys = { workspace = true, optional = true }
+wasm-bindgen = { workspace = true, optional = true }
+web-sys = { workspace = true, optional = true, features = [
+    "Window",
+    "Navigator",
+    "WorkerGlobalScope",
+    "WorkerNavigator",
+    "Performance",
+    "console",
+] }
+wgpu = { workspace = true, optional = true, features = ["webgpu"] }
 
 [features]
 default = ["math-glam", "math-ndarray", "native-jit"]
 native-jit = ["dep:arcweft-lang-jit-cranelift"]
 math-glam = ["dep:glam"]
 math-ndarray = ["dep:ndarray"]
-math-wgpu = ["dep:bytemuck", "dep:futures-channel", "dep:pollster", "dep:wgpu", "wgpu/webgpu"]
+math-wgpu = [
+    "dep:bytemuck",
+    "dep:futures-channel",
+    "dep:js-sys",
+    "dep:pollster",
+    "dep:wasm-bindgen",
+    "dep:web-sys",
+    "dep:wgpu",
+]
 
 [lib]
 path = "src/lib.rs"
