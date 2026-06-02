@@ -1,0 +1,811 @@
+//! Deterministic forward inference graph for dense `f32` tensors.
+
+use crate::math::{RuntimeMathAccelerator, RuntimeMathAcceleratorError};
+use arcweft_core::math::{DenseMatrixF32, DenseTensorF32, RuntimeMathError};
+use std::collections::BTreeMap;
+use thiserror::Error;
+
+/// Stable tensor handle inside an inference graph.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct InferenceTensorId(usize);
+
+impl InferenceTensorId {
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
+
+/// Dense tensor shape used by forward graph construction and validation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InferenceShape {
+    dims: Vec<usize>,
+}
+
+impl InferenceShape {
+    pub fn new(dims: Vec<usize>) -> Result<Self, InferenceError> {
+        if dims.is_empty() {
+            return Err(InferenceError::InvalidRank { rank: 0 });
+        }
+        if dims.contains(&0) {
+            return Err(InferenceError::InvalidZeroDimension);
+        }
+        let _ = checked_product(&dims)?;
+        Ok(Self { dims })
+    }
+
+    pub fn matrix(rows: usize, cols: usize) -> Result<Self, InferenceError> {
+        Self::new(vec![rows, cols])
+    }
+
+    pub fn dims(&self) -> &[usize] {
+        &self.dims
+    }
+
+    pub fn rank(&self) -> usize {
+        self.dims.len()
+    }
+
+    pub fn element_count(&self) -> usize {
+        self.dims.iter().product()
+    }
+
+    fn last_dim(&self) -> usize {
+        *self.dims.last().expect("shape rank is non-zero")
+    }
+}
+
+/// One named tensor input supplied at inference time.
+#[derive(Clone, Debug)]
+pub struct InferenceInput {
+    id: InferenceTensorId,
+    name: String,
+    shape: InferenceShape,
+}
+
+impl InferenceInput {
+    pub fn id(&self) -> InferenceTensorId {
+        self.id
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn shape(&self) -> &InferenceShape {
+        &self.shape
+    }
+}
+
+/// Supported forward-only tensor operations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InferenceOp {
+    Matmul,
+    Add,
+    BiasAdd,
+    Relu,
+    SoftmaxLastDim,
+    ArgmaxLastDim,
+    FlattenOuter,
+}
+
+/// Inference output value.
+#[derive(Clone, Debug, PartialEq)]
+pub enum InferenceValue {
+    Tensor(DenseTensorF32),
+    ClassIndices(Vec<usize>),
+}
+
+impl InferenceValue {
+    pub fn as_tensor(&self) -> Option<&DenseTensorF32> {
+        match self {
+            Self::Tensor(tensor) => Some(tensor),
+            Self::ClassIndices(_) => None,
+        }
+    }
+
+    pub fn as_class_indices(&self) -> Option<&[usize]> {
+        match self {
+            Self::Tensor(_) => None,
+            Self::ClassIndices(indices) => Some(indices),
+        }
+    }
+}
+
+/// Fully validated forward graph.
+#[derive(Clone, Debug)]
+pub struct InferenceGraph {
+    tensors: Vec<TensorSpec>,
+    nodes: Vec<InferenceNode>,
+    inputs: Vec<InferenceTensorId>,
+    outputs: Vec<InferenceTensorId>,
+}
+
+impl InferenceGraph {
+    pub fn builder() -> InferenceGraphBuilder {
+        InferenceGraphBuilder::default()
+    }
+
+    pub fn inputs(&self) -> impl Iterator<Item = &InferenceInput> {
+        self.inputs
+            .iter()
+            .map(|id| match &self.tensors[id.index()] {
+                TensorSpec::Input(input) => input,
+                TensorSpec::Constant { .. } | TensorSpec::NodeOutput { .. } => {
+                    unreachable!("input list only contains input tensors")
+                }
+            })
+    }
+
+    pub fn outputs(&self) -> &[InferenceTensorId] {
+        &self.outputs
+    }
+
+    pub fn tensor_shape(&self, id: InferenceTensorId) -> Option<&InferenceShape> {
+        self.tensors.get(id.index()).map(TensorSpec::shape)
+    }
+
+    pub fn tensor_name(&self, id: InferenceTensorId) -> Option<&str> {
+        self.tensors.get(id.index()).and_then(TensorSpec::name)
+    }
+}
+
+/// Builder for a validated topological inference graph.
+#[derive(Default)]
+pub struct InferenceGraphBuilder {
+    tensors: Vec<TensorSpec>,
+    nodes: Vec<InferenceNode>,
+    inputs: Vec<InferenceTensorId>,
+    outputs: Vec<InferenceTensorId>,
+}
+
+impl InferenceGraphBuilder {
+    pub fn add_input(
+        &mut self,
+        name: impl Into<String>,
+        shape: InferenceShape,
+    ) -> InferenceTensorId {
+        let id = InferenceTensorId(self.tensors.len());
+        self.tensors.push(TensorSpec::Input(InferenceInput {
+            id,
+            name: name.into(),
+            shape,
+        }));
+        self.inputs.push(id);
+        id
+    }
+
+    pub fn add_constant(
+        &mut self,
+        name: impl Into<String>,
+        tensor: DenseTensorF32,
+    ) -> Result<InferenceTensorId, InferenceError> {
+        let shape = InferenceShape::new(tensor.shape().dims().to_vec())?;
+        let id = InferenceTensorId(self.tensors.len());
+        self.tensors.push(TensorSpec::Constant {
+            name: name.into(),
+            shape,
+            tensor,
+        });
+        Ok(id)
+    }
+
+    pub fn add_matmul(
+        &mut self,
+        lhs: InferenceTensorId,
+        rhs: InferenceTensorId,
+    ) -> Result<InferenceTensorId, InferenceError> {
+        let lhs_shape = self.shape(lhs)?;
+        let rhs_shape = self.shape(rhs)?;
+        let [rows, shared_lhs] = matrix_dims(lhs_shape, InferenceOp::Matmul)?;
+        let [shared_rhs, cols] = matrix_dims(rhs_shape, InferenceOp::Matmul)?;
+        if shared_lhs != shared_rhs {
+            return Err(InferenceError::ShapeMismatch {
+                op: InferenceOp::Matmul,
+                lhs: lhs_shape.clone(),
+                rhs: rhs_shape.clone(),
+            });
+        }
+        self.add_node(
+            InferenceOp::Matmul,
+            vec![lhs, rhs],
+            InferenceShape::matrix(rows, cols)?,
+        )
+    }
+
+    pub fn add_add(
+        &mut self,
+        lhs: InferenceTensorId,
+        rhs: InferenceTensorId,
+    ) -> Result<InferenceTensorId, InferenceError> {
+        let lhs_shape = self.shape(lhs)?;
+        let rhs_shape = self.shape(rhs)?;
+        if lhs_shape != rhs_shape {
+            return Err(InferenceError::ShapeMismatch {
+                op: InferenceOp::Add,
+                lhs: lhs_shape.clone(),
+                rhs: rhs_shape.clone(),
+            });
+        }
+        self.add_node(InferenceOp::Add, vec![lhs, rhs], lhs_shape.clone())
+    }
+
+    pub fn add_bias_add(
+        &mut self,
+        tensor: InferenceTensorId,
+        bias: InferenceTensorId,
+    ) -> Result<InferenceTensorId, InferenceError> {
+        let tensor_shape = self.shape(tensor)?;
+        let bias_shape = self.shape(bias)?;
+        if bias_shape.rank() != 1 || bias_shape.last_dim() != tensor_shape.last_dim() {
+            return Err(InferenceError::BiasShapeMismatch {
+                tensor: tensor_shape.clone(),
+                bias: bias_shape.clone(),
+            });
+        }
+        self.add_node(
+            InferenceOp::BiasAdd,
+            vec![tensor, bias],
+            tensor_shape.clone(),
+        )
+    }
+
+    pub fn add_relu(
+        &mut self,
+        input: InferenceTensorId,
+    ) -> Result<InferenceTensorId, InferenceError> {
+        let shape = self.shape(input)?.clone();
+        self.add_node(InferenceOp::Relu, vec![input], shape)
+    }
+
+    pub fn add_softmax_last_dim(
+        &mut self,
+        input: InferenceTensorId,
+    ) -> Result<InferenceTensorId, InferenceError> {
+        let shape = self.shape(input)?.clone();
+        self.add_node(InferenceOp::SoftmaxLastDim, vec![input], shape)
+    }
+
+    pub fn add_argmax_last_dim(
+        &mut self,
+        input: InferenceTensorId,
+    ) -> Result<InferenceTensorId, InferenceError> {
+        let shape = self.shape(input)?;
+        if shape.last_dim() == 0 {
+            return Err(InferenceError::InvalidZeroDimension);
+        }
+        let out_shape = if shape.rank() == 1 {
+            InferenceShape::new(vec![1])?
+        } else {
+            InferenceShape::new(shape.dims[..shape.rank() - 1].to_vec())?
+        };
+        self.add_node(InferenceOp::ArgmaxLastDim, vec![input], out_shape)
+    }
+
+    pub fn add_flatten_outer(
+        &mut self,
+        input: InferenceTensorId,
+    ) -> Result<InferenceTensorId, InferenceError> {
+        let shape = self.shape(input)?;
+        if shape.rank() == 1 {
+            return self.add_node(
+                InferenceOp::FlattenOuter,
+                vec![input],
+                InferenceShape::matrix(1, shape.element_count())?,
+            );
+        }
+        let outer = shape.dims[0];
+        let inner = checked_product(&shape.dims[1..])?;
+        self.add_node(
+            InferenceOp::FlattenOuter,
+            vec![input],
+            InferenceShape::matrix(outer, inner)?,
+        )
+    }
+
+    pub fn set_outputs<I>(&mut self, outputs: I) -> Result<(), InferenceError>
+    where
+        I: IntoIterator<Item = InferenceTensorId>,
+    {
+        let outputs = outputs.into_iter().collect::<Vec<_>>();
+        for output in &outputs {
+            let _ = self.shape(*output)?;
+        }
+        self.outputs = outputs;
+        Ok(())
+    }
+
+    pub fn build(self) -> Result<InferenceGraph, InferenceError> {
+        if self.outputs.is_empty() {
+            return Err(InferenceError::NoOutputs);
+        }
+        Ok(InferenceGraph {
+            tensors: self.tensors,
+            nodes: self.nodes,
+            inputs: self.inputs,
+            outputs: self.outputs,
+        })
+    }
+
+    fn add_node(
+        &mut self,
+        op: InferenceOp,
+        inputs: Vec<InferenceTensorId>,
+        shape: InferenceShape,
+    ) -> Result<InferenceTensorId, InferenceError> {
+        for input in &inputs {
+            let _ = self.shape(*input)?;
+        }
+        let output = InferenceTensorId(self.tensors.len());
+        self.tensors.push(TensorSpec::NodeOutput { shape });
+        self.nodes.push(InferenceNode { op, inputs, output });
+        Ok(output)
+    }
+
+    fn shape(&self, id: InferenceTensorId) -> Result<&InferenceShape, InferenceError> {
+        self.tensors
+            .get(id.index())
+            .map(TensorSpec::shape)
+            .ok_or(InferenceError::UnknownTensor { id })
+    }
+}
+
+/// Forward-only inference session using the configured math accelerator.
+pub struct InferenceSession {
+    graph: InferenceGraph,
+    accelerator: RuntimeMathAccelerator,
+}
+
+impl InferenceSession {
+    pub fn new(graph: InferenceGraph, accelerator: RuntimeMathAccelerator) -> Self {
+        Self { graph, accelerator }
+    }
+
+    pub fn graph(&self) -> &InferenceGraph {
+        &self.graph
+    }
+
+    pub fn accelerator(&self) -> &RuntimeMathAccelerator {
+        &self.accelerator
+    }
+
+    pub fn accelerator_mut(&mut self) -> &mut RuntimeMathAccelerator {
+        &mut self.accelerator
+    }
+
+    pub fn run<I>(&mut self, inputs: I) -> Result<Vec<InferenceValue>, InferenceError>
+    where
+        I: IntoIterator<Item = (InferenceTensorId, DenseTensorF32)>,
+    {
+        let supplied = inputs.into_iter().collect::<BTreeMap<_, _>>();
+        let mut values = vec![None; self.graph.tensors.len()];
+        for (index, spec) in self.graph.tensors.iter().enumerate() {
+            if let TensorSpec::Constant { tensor, .. } = spec {
+                values[index] = Some(InferenceValue::Tensor(tensor.clone()));
+            }
+        }
+        for input in self.graph.inputs() {
+            let tensor = supplied
+                .get(&input.id())
+                .ok_or_else(|| InferenceError::MissingInput {
+                    name: input.name().to_owned(),
+                })?;
+            validate_tensor_shape(tensor, input.shape())?;
+            values[input.id().index()] = Some(InferenceValue::Tensor(tensor.clone()));
+        }
+        let nodes = self.graph.nodes.clone();
+        for node in &nodes {
+            let output = node.output;
+            let value = self.eval_node(node, &values)?;
+            values[output.index()] = Some(value);
+        }
+        self.graph
+            .outputs
+            .iter()
+            .map(|id| {
+                values[id.index()]
+                    .clone()
+                    .ok_or(InferenceError::UncomputedTensor { id: *id })
+            })
+            .collect()
+    }
+
+    fn eval_node(
+        &mut self,
+        node: &InferenceNode,
+        values: &[Option<InferenceValue>],
+    ) -> Result<InferenceValue, InferenceError> {
+        match node.op {
+            InferenceOp::Matmul => {
+                let lhs = tensor_value(values, node.inputs[0])?;
+                let rhs = tensor_value(values, node.inputs[1])?;
+                let lhs = tensor_as_matrix(lhs)?;
+                let rhs = tensor_as_matrix(rhs)?;
+                let out = self.accelerator.matmul_f32(&lhs, &rhs)?;
+                Ok(InferenceValue::Tensor(DenseTensorF32::from_matrix(out)))
+            }
+            InferenceOp::Add => {
+                let lhs = tensor_value(values, node.inputs[0])?;
+                let rhs = tensor_value(values, node.inputs[1])?;
+                Ok(InferenceValue::Tensor(lhs.add_scalar(rhs)?))
+            }
+            InferenceOp::BiasAdd => {
+                let tensor = tensor_value(values, node.inputs[0])?;
+                let bias = tensor_value(values, node.inputs[1])?;
+                Ok(InferenceValue::Tensor(bias_add(tensor, bias)?))
+            }
+            InferenceOp::Relu => {
+                let input = tensor_value(values, node.inputs[0])?;
+                Ok(InferenceValue::Tensor(map_tensor(input, |value| {
+                    value.max(0.0)
+                })?))
+            }
+            InferenceOp::SoftmaxLastDim => {
+                let input = tensor_value(values, node.inputs[0])?;
+                Ok(InferenceValue::Tensor(softmax_last_dim(input)?))
+            }
+            InferenceOp::ArgmaxLastDim => {
+                let input = tensor_value(values, node.inputs[0])?;
+                Ok(InferenceValue::ClassIndices(argmax_last_dim(input)))
+            }
+            InferenceOp::FlattenOuter => {
+                let input = tensor_value(values, node.inputs[0])?;
+                Ok(InferenceValue::Tensor(flatten_outer(input)?))
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct InferenceNode {
+    op: InferenceOp,
+    inputs: Vec<InferenceTensorId>,
+    output: InferenceTensorId,
+}
+
+#[derive(Clone, Debug)]
+enum TensorSpec {
+    Input(InferenceInput),
+    Constant {
+        name: String,
+        shape: InferenceShape,
+        tensor: DenseTensorF32,
+    },
+    NodeOutput {
+        shape: InferenceShape,
+    },
+}
+
+impl TensorSpec {
+    fn shape(&self) -> &InferenceShape {
+        match self {
+            Self::Input(input) => input.shape(),
+            Self::Constant { shape, .. } | Self::NodeOutput { shape, .. } => shape,
+        }
+    }
+
+    fn name(&self) -> Option<&str> {
+        match self {
+            Self::Input(input) => Some(input.name()),
+            Self::Constant { name, .. } => Some(name),
+            Self::NodeOutput { .. } => None,
+        }
+    }
+}
+
+/// Error for graph validation and forward execution.
+#[derive(Debug, Error)]
+pub enum InferenceError {
+    #[error("inference tensor rank {rank} is invalid")]
+    InvalidRank { rank: usize },
+    #[error("inference tensor dimension must be non-zero")]
+    InvalidZeroDimension,
+    #[error("inference tensor shape element count overflowed")]
+    ShapeOverflow,
+    #[error("unknown inference tensor {id:?}")]
+    UnknownTensor { id: InferenceTensorId },
+    #[error("inference graph has no outputs")]
+    NoOutputs,
+    #[error("missing inference input `{name}`")]
+    MissingInput { name: String },
+    #[error("inference op {op:?} expected matrix tensors, got {shape:?}")]
+    ExpectedMatrix {
+        op: InferenceOp,
+        shape: InferenceShape,
+    },
+    #[error("inference op {op:?} shape mismatch: lhs {lhs:?}, rhs {rhs:?}")]
+    ShapeMismatch {
+        op: InferenceOp,
+        lhs: InferenceShape,
+        rhs: InferenceShape,
+    },
+    #[error("bias add shape mismatch: tensor {tensor:?}, bias {bias:?}")]
+    BiasShapeMismatch {
+        tensor: InferenceShape,
+        bias: InferenceShape,
+    },
+    #[error("inference tensor shape mismatch: expected {expected:?}, found {found:?}")]
+    TensorShapeMismatch {
+        expected: InferenceShape,
+        found: InferenceShape,
+    },
+    #[error("inference tensor {id:?} was not computed")]
+    UncomputedTensor { id: InferenceTensorId },
+    #[error("inference value for tensor {id:?} is not a dense tensor")]
+    ExpectedTensorValue { id: InferenceTensorId },
+    #[error(transparent)]
+    Math(#[from] RuntimeMathError),
+    #[error(transparent)]
+    Accelerator(#[from] RuntimeMathAcceleratorError),
+}
+
+fn tensor_value(
+    values: &[Option<InferenceValue>],
+    id: InferenceTensorId,
+) -> Result<&DenseTensorF32, InferenceError> {
+    values
+        .get(id.index())
+        .and_then(Option::as_ref)
+        .ok_or(InferenceError::UncomputedTensor { id })?
+        .as_tensor()
+        .ok_or(InferenceError::ExpectedTensorValue { id })
+}
+
+fn tensor_as_matrix(tensor: &DenseTensorF32) -> Result<DenseMatrixF32, InferenceError> {
+    tensor
+        .as_matrix()
+        .ok_or_else(|| InferenceError::ExpectedMatrix {
+            op: InferenceOp::Matmul,
+            shape: InferenceShape::new(tensor.shape().dims().to_vec())
+                .expect("runtime tensor shape has non-zero rank"),
+        })
+}
+
+fn matrix_dims(shape: &InferenceShape, op: InferenceOp) -> Result<[usize; 2], InferenceError> {
+    match shape.dims() {
+        [rows, cols] => Ok([*rows, *cols]),
+        _ => Err(InferenceError::ExpectedMatrix {
+            op,
+            shape: shape.clone(),
+        }),
+    }
+}
+
+fn validate_tensor_shape(
+    tensor: &DenseTensorF32,
+    expected: &InferenceShape,
+) -> Result<(), InferenceError> {
+    let found = InferenceShape::new(tensor.shape().dims().to_vec())?;
+    if &found == expected {
+        Ok(())
+    } else {
+        Err(InferenceError::TensorShapeMismatch {
+            expected: expected.clone(),
+            found,
+        })
+    }
+}
+
+fn bias_add(
+    tensor: &DenseTensorF32,
+    bias: &DenseTensorF32,
+) -> Result<DenseTensorF32, InferenceError> {
+    if bias.shape().rank() != 1 {
+        return Err(InferenceError::BiasShapeMismatch {
+            tensor: InferenceShape::new(tensor.shape().dims().to_vec())?,
+            bias: InferenceShape::new(bias.shape().dims().to_vec())?,
+        });
+    }
+    let width = bias.shape().dims()[0];
+    if tensor.shape().dims().last().copied() != Some(width) {
+        return Err(InferenceError::BiasShapeMismatch {
+            tensor: InferenceShape::new(tensor.shape().dims().to_vec())?,
+            bias: InferenceShape::new(bias.shape().dims().to_vec())?,
+        });
+    }
+    let values = tensor
+        .values()
+        .chunks_exact(width)
+        .flat_map(|row| {
+            row.iter()
+                .zip(bias.values())
+                .map(|(value, bias)| value + bias)
+        })
+        .collect();
+    DenseTensorF32::new(tensor.shape().dims().to_vec(), values).map_err(Into::into)
+}
+
+fn map_tensor(
+    tensor: &DenseTensorF32,
+    mut map: impl FnMut(f32) -> f32,
+) -> Result<DenseTensorF32, InferenceError> {
+    DenseTensorF32::new(
+        tensor.shape().dims().to_vec(),
+        tensor.values().iter().copied().map(&mut map).collect(),
+    )
+    .map_err(Into::into)
+}
+
+fn softmax_last_dim(tensor: &DenseTensorF32) -> Result<DenseTensorF32, InferenceError> {
+    let width = tensor
+        .shape()
+        .dims()
+        .last()
+        .copied()
+        .expect("runtime tensor rank is non-zero");
+    let mut out = Vec::with_capacity(tensor.values().len());
+    for row in tensor.values().chunks_exact(width) {
+        let max = row.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let mut sum = 0.0_f32;
+        let start = out.len();
+        out.extend(row.iter().map(|value| {
+            let exp = (*value - max).exp();
+            sum += exp;
+            exp
+        }));
+        for value in &mut out[start..] {
+            *value /= sum;
+        }
+    }
+    DenseTensorF32::new(tensor.shape().dims().to_vec(), out).map_err(Into::into)
+}
+
+fn argmax_last_dim(tensor: &DenseTensorF32) -> Vec<usize> {
+    let width = tensor
+        .shape()
+        .dims()
+        .last()
+        .copied()
+        .expect("runtime tensor rank is non-zero");
+    tensor
+        .values()
+        .chunks_exact(width)
+        .map(|row| {
+            row.iter()
+                .copied()
+                .enumerate()
+                .max_by(|lhs, rhs| lhs.1.total_cmp(&rhs.1))
+                .map(|(index, _)| index)
+                .expect("argmax row is non-empty")
+        })
+        .collect()
+}
+
+fn flatten_outer(tensor: &DenseTensorF32) -> Result<DenseTensorF32, InferenceError> {
+    let dims = tensor.shape().dims();
+    if dims.len() == 1 {
+        return DenseTensorF32::new(vec![1, dims[0]], tensor.values().to_vec()).map_err(Into::into);
+    }
+    let outer = dims[0];
+    let inner = checked_product(&dims[1..])?;
+    DenseTensorF32::new(vec![outer, inner], tensor.values().to_vec()).map_err(Into::into)
+}
+
+fn checked_product(dims: &[usize]) -> Result<usize, InferenceError> {
+    dims.iter().try_fold(1_usize, |acc, dim| {
+        acc.checked_mul(*dim).ok_or(InferenceError::ShapeOverflow)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::math::{RuntimeMathAcceleratorConfig, RuntimeMathBackend};
+
+    #[test]
+    fn forward_graph_runs_dense_relu_softmax_argmax() {
+        let mut builder = InferenceGraph::builder();
+        let input = builder.add_input("x", InferenceShape::matrix(1, 3).unwrap());
+        let weights = builder
+            .add_constant(
+                "w",
+                DenseTensorF32::new(vec![3, 2], vec![1.0, -1.0, 2.0, 0.5, -1.0, 3.0]).unwrap(),
+            )
+            .unwrap();
+        let bias = builder
+            .add_constant("b", DenseTensorF32::new(vec![2], vec![0.5, -0.25]).unwrap())
+            .unwrap();
+        let logits = builder.add_matmul(input, weights).unwrap();
+        let logits = builder.add_bias_add(logits, bias).unwrap();
+        let logits = builder.add_relu(logits).unwrap();
+        let probabilities = builder.add_softmax_last_dim(logits).unwrap();
+        let class = builder.add_argmax_last_dim(probabilities).unwrap();
+        builder.set_outputs([probabilities, class]).unwrap();
+        let graph = builder.build().unwrap();
+        let mut session = InferenceSession::new(
+            graph,
+            RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig {
+                backend: RuntimeMathBackend::Scalar,
+                ..RuntimeMathAcceleratorConfig::default()
+            }),
+        );
+
+        let out = session
+            .run([(
+                input,
+                DenseTensorF32::new(vec![1, 3], vec![1.0, 2.0, 0.5]).unwrap(),
+            )])
+            .unwrap();
+
+        let probabilities = out[0].as_tensor().unwrap();
+        let class = out[1].as_class_indices().unwrap();
+        assert_eq!(probabilities.shape().dims(), &[1, 2]);
+        assert_eq!(class, &[0]);
+        assert!((probabilities.values().iter().sum::<f32>() - 1.0).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn toy_mnist_mlp_can_classify_a_single_image() {
+        let mut builder = InferenceGraph::builder();
+        let image = builder.add_input("image", InferenceShape::new(vec![1, 28, 28]).unwrap());
+        let flat = builder.add_flatten_outer(image).unwrap();
+        let first_weight = builder
+            .add_constant(
+                "dense0.weight",
+                DenseTensorF32::new(vec![784, 16], toy_mnist_first_weight()).unwrap(),
+            )
+            .unwrap();
+        let first_bias = builder
+            .add_constant(
+                "dense0.bias",
+                DenseTensorF32::new(vec![16], vec![0.0; 16]).unwrap(),
+            )
+            .unwrap();
+        let second_weight = builder
+            .add_constant(
+                "dense1.weight",
+                DenseTensorF32::new(vec![16, 10], toy_mnist_second_weight()).unwrap(),
+            )
+            .unwrap();
+        let second_bias = builder
+            .add_constant(
+                "dense1.bias",
+                DenseTensorF32::new(vec![10], vec![0.0; 10]).unwrap(),
+            )
+            .unwrap();
+        let hidden = builder.add_matmul(flat, first_weight).unwrap();
+        let hidden = builder.add_bias_add(hidden, first_bias).unwrap();
+        let hidden = builder.add_relu(hidden).unwrap();
+        let logits = builder.add_matmul(hidden, second_weight).unwrap();
+        let logits = builder.add_bias_add(logits, second_bias).unwrap();
+        let class = builder.add_argmax_last_dim(logits).unwrap();
+        builder.set_outputs([class]).unwrap();
+        let graph = builder.build().unwrap();
+        let mut pixels = vec![0.0; 28 * 28];
+        pixels[13 * 28 + 14] = 1.0;
+        let mut session = InferenceSession::new(
+            graph,
+            RuntimeMathAccelerator::new(RuntimeMathAcceleratorConfig::default()),
+        );
+
+        let out = session
+            .run([(image, DenseTensorF32::new(vec![1, 28, 28], pixels).unwrap())])
+            .unwrap();
+
+        assert_eq!(out[0].as_class_indices().unwrap(), &[7]);
+    }
+
+    #[test]
+    fn builder_rejects_bad_bias_shape() {
+        let mut builder = InferenceGraph::builder();
+        let input = builder.add_input("x", InferenceShape::matrix(1, 4).unwrap());
+        let bias = builder
+            .add_constant("b", DenseTensorF32::new(vec![3], vec![0.0; 3]).unwrap())
+            .unwrap();
+
+        let error = builder.add_bias_add(input, bias).unwrap_err();
+
+        assert!(matches!(error, InferenceError::BiasShapeMismatch { .. }));
+    }
+
+    fn toy_mnist_first_weight() -> Vec<f32> {
+        let mut values = vec![0.0; 784 * 16];
+        values[(13 * 28 + 14) * 16 + 3] = 2.0;
+        values
+    }
+
+    fn toy_mnist_second_weight() -> Vec<f32> {
+        let mut values = vec![0.0; 16 * 10];
+        values[3 * 10 + 7] = 3.0;
+        values
+    }
+}

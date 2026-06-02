@@ -590,6 +590,26 @@ larger dense `f32` matmul can benefit from pipelined resident WebGPU, while
 simple elementwise add remains CPU-preferred when the result must be read back
 to Wasm each iteration.
 
+`arcweft-runtime-accelerator` also contains the first forward-only inference
+graph API. The graph uses typed tensor IDs and validates shapes during graph
+construction. The current deterministic `f32` op set is:
+
+- `matmul`
+- exact-shape `add`
+- last-dimension `bias_add`
+- `relu`
+- last-dimension `softmax`
+- last-dimension `argmax`
+- outer-dimension preserving `flatten`
+
+The session executes through `RuntimeMathAccelerator`, so dense layers can use
+the configured scalar/glam/ndarray/wgpu policy while non-matmul tensor ops stay
+on deterministic CPU code. The checked tests include a small MNIST-shaped MLP
+forward graph with input shape `1x28x28`, flattening to `1x784`, two dense
+layers, ReLU, and `argmax`; it verifies that a fixed synthetic image classifies
+to class `7`. This is inference-only: no autograd, optimizer, weight loading,
+or training graph is implemented yet.
+
 Local path-free measurements:
 
 ```bash

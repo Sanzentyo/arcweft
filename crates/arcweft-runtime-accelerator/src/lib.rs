@@ -3,6 +3,7 @@
 //! This crate owns native acceleration state so `arcweft-core` can stay Sans I/O
 //! and dependency-light.
 
+pub mod inference;
 pub mod math;
 
 use arcweft_core::{
