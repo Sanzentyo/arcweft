@@ -25,6 +25,7 @@ use std::collections::BTreeSet;
 /// Sans I/O LSP context supplied by the caller after resolving profiles.
 pub struct ArcweftLspContext<'a> {
     adapter: &'a AdapterManifest,
+    runtime_host: Option<&'a RuntimeHostCallSet>,
 }
 
 /// Runtime-host capabilities supplied by the embedding runner.
@@ -50,12 +51,27 @@ pub enum AdapterManifestRequirement {
 impl<'a> ArcweftLspContext<'a> {
     /// Creates an LSP context from already-resolved adapter metadata.
     pub const fn new(adapter: &'a AdapterManifest) -> Self {
-        Self { adapter }
+        Self {
+            adapter,
+            runtime_host: None,
+        }
     }
 
     /// Adapter metadata visible to tooling.
     pub const fn adapter(&self) -> &'a AdapterManifest {
         self.adapter
+    }
+
+    /// Creates a context that also includes the selected runner's capabilities.
+    #[must_use]
+    pub const fn with_runtime_host(mut self, runtime_host: &'a RuntimeHostCallSet) -> Self {
+        self.runtime_host = Some(runtime_host);
+        self
+    }
+
+    /// Runtime-host call set supplied by the selected runner, when known.
+    pub const fn runtime_host(&self) -> Option<&'a RuntimeHostCallSet> {
+        self.runtime_host
     }
 }
 
@@ -140,6 +156,21 @@ pub fn adapter_manifest_requirement_diagnostics(
         .collect()
 }
 
+/// Diagnoses adapter and runtime-host requirements for the active LSP context.
+pub fn profile_requirement_diagnostics(
+    context: &ArcweftLspContext<'_>,
+    requirements: &[AdapterManifestRequirement],
+) -> Vec<Diagnostic> {
+    let mut diagnostics = adapter_manifest_requirement_diagnostics(context, requirements);
+    if let Some(runtime_host) = context.runtime_host() {
+        diagnostics.extend(runtime_host_requirement_diagnostics(
+            runtime_host,
+            requirements,
+        ));
+    }
+    diagnostics
+}
+
 /// Diagnoses host calls required by source or profile metadata but missing from
 /// the selected runtime host implementation.
 pub fn runtime_host_requirement_diagnostics(
@@ -150,6 +181,15 @@ pub fn runtime_host_requirement_diagnostics(
         .iter()
         .filter_map(|requirement| runtime_host_requirement_diagnostic(runtime_host, requirement))
         .collect()
+}
+
+/// Completes adapter manifest facts and selected runtime-host calls together.
+pub fn profile_completions(context: &ArcweftLspContext<'_>) -> Vec<CompletionItem> {
+    let mut completions = adapter_manifest_completions(context);
+    if let Some(runtime_host) = context.runtime_host() {
+        completions.extend(runtime_host_completions(runtime_host));
+    }
+    completions
 }
 
 /// Completes runtime-host calls provided by the selected embedding runner.
@@ -163,6 +203,15 @@ pub fn runtime_host_completions(runtime_host: &RuntimeHostCallSet) -> Vec<Comple
             ..CompletionItem::default()
         })
         .collect()
+}
+
+/// Builds hover text for adapter facts, Rust exports, or selected runtime-host calls.
+pub fn profile_hover(context: &ArcweftLspContext<'_>, name: &str) -> Option<Hover> {
+    adapter_manifest_hover(context, name).or_else(|| {
+        context
+            .runtime_host()
+            .and_then(|runtime_host| runtime_host_hover(runtime_host, name))
+    })
 }
 
 /// Builds hover text for a runtime-host call supplied by the selected runner.
@@ -884,5 +933,48 @@ mod tests {
             Some("arcweft-runtime-host".to_owned())
         );
         assert!(diagnostics[0].message.contains("custom.read"));
+    }
+
+    #[test]
+    fn profile_context_wires_adapter_manifest_and_runtime_host_helpers() {
+        let adapter = AdapterManifest::new("custom", "Custom")
+            .with_effect(AdapterEffectCapability::new("custom.read"))
+            .with_host_call(AdapterHostCall::new(
+                "custom.read",
+                [AdapterEffectCapability::new("custom.read")],
+            ));
+        let runtime_host = RuntimeHostCallSet::standard_native();
+        let context = ArcweftLspContext::new(&adapter).with_runtime_host(&runtime_host);
+
+        let diagnostics = profile_requirement_diagnostics(
+            &context,
+            &[
+                AdapterManifestRequirement::host_call("custom.read"),
+                AdapterManifestRequirement::effect_capability("custom.read"),
+            ],
+        );
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].code,
+            Some(NumberOrString::String(
+                "runtime_host.host_call.missing".to_owned()
+            ))
+        );
+        assert!(diagnostics[0].message.contains("custom.read"));
+
+        let completions = profile_completions(&context);
+        assert!(completions.iter().any(|item| item.label == "custom.read"));
+        assert!(
+            completions
+                .iter()
+                .any(|item| item.label == "system.core_count")
+        );
+
+        assert!(profile_hover(&context, "custom.read").is_some());
+        let host_hover = profile_hover(&context, "system.core_count").expect("runtime host hover");
+        assert!(
+            matches!(host_hover.contents, HoverContents::Scalar(MarkedString::String(text)) if text.contains("runtime host call system.core_count"))
+        );
     }
 }

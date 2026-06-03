@@ -109,3 +109,20 @@ planning, runtime host tasks, or effect analysis, such as `http.respond` or
 resolved manifest and reports missing host calls or effect capabilities as
 `arcweft-adapter` diagnostics. It does not add parser branches or implicit
 fallback bindings for missing adapter features.
+
+When the transport knows the selected runner, it should build an
+`ArcweftLspContext` with both the resolved adapter manifest and a
+`RuntimeHostCallSet`:
+
+```rust
+let runtime_host = RuntimeHostCallSet::standard_native();
+let context = ArcweftLspContext::new(&adapter).with_runtime_host(&runtime_host);
+```
+
+The combined helpers `profile_requirement_diagnostics`,
+`profile_completions`, and `profile_hover` then expose both surfaces. Adapter
+manifest diagnostics still report declarations missing from the selected
+profile, while runtime-host diagnostics report declarations that type-check but
+cannot be completed by the selected runner. The runtime-host set is a tooling
+fact; it does not grant effects, add fallback bindings, or make unsupported
+host calls executable.
