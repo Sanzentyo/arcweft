@@ -4,7 +4,7 @@ use crate::pattern::RuntimePattern;
 use crate::source::SourcePlan;
 use crate::stream::StreamPlan;
 use crate::task::{AwaitManyTarget, AwaitTarget, NeedId, TaskId};
-use crate::value::{RuntimeBinding, RuntimeExpr, RuntimeValue};
+use crate::value::{RuntimeBinding, RuntimeExpr, RuntimePayload, RuntimeValue};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -290,15 +290,37 @@ pub struct ChoiceRuntimeOption {
 /// Replay-observable flow event emitted by the core runtime.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FlowEvent {
-    DialogueLine { line: RuntimeLineId },
-    LineCancelled { trigger: String },
-    ChoicePresented { id: Option<String> },
-    ChoiceSelected { id: Option<String>, option: String },
-    AwaitStarted { need: NeedId, task: TaskId },
-    AwaitReady { need: NeedId, value: String },
-    AwaitProgress { need: NeedId, progress: String },
-    Goto { target: FlowRuntimeId },
-    Return { value: String },
+    DialogueLine {
+        line: RuntimeLineId,
+    },
+    LineCancelled {
+        trigger: String,
+    },
+    ChoicePresented {
+        id: Option<String>,
+    },
+    ChoiceSelected {
+        id: Option<String>,
+        option: String,
+    },
+    AwaitStarted {
+        need: NeedId,
+        task: TaskId,
+    },
+    AwaitReady {
+        need: NeedId,
+        value: RuntimePayload,
+    },
+    AwaitProgress {
+        need: NeedId,
+        progress: RuntimePayload,
+    },
+    Goto {
+        target: FlowRuntimeId,
+    },
+    Return {
+        value: String,
+    },
     Done,
 }
 

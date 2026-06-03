@@ -1,4 +1,4 @@
-use crate::CheckedModule;
+use crate::app::CheckedModule;
 use crate::native_system::HostSystemInfo;
 use crate::native_task::NativeTaskStats;
 use arcweft_core::aot::AotProgramStats;
@@ -831,11 +831,26 @@ pub(crate) struct ScriptTestRunReport {
 pub(crate) struct ScriptTestRunSummary {
     pub(crate) id: String,
     pub(crate) kind: String,
-    pub(crate) status: String,
+    pub(crate) status: ScriptTestStatus,
     pub(crate) steps_run: usize,
-    pub(crate) final_status: Option<String>,
+    pub(crate) final_status: Option<ScriptTestFinalStatus>,
     pub(crate) diagnostics: Vec<String>,
     pub(crate) steps: Vec<RuntimeStepRunSummary>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ScriptTestStatus {
+    Passed,
+    Failed,
+    Skipped,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ScriptTestFinalStatus {
+    NotStarted,
+    AdapterError,
+    Flow(String),
 }
 
 #[derive(serde::Serialize)]
@@ -1068,7 +1083,7 @@ impl ScriptTestRunSummary {
         Self {
             id: test.id.clone(),
             kind: test.kind.clone(),
-            status: "skipped".to_owned(),
+            status: ScriptTestStatus::Skipped,
             steps_run: 0,
             final_status: None,
             diagnostics: vec![reason.into()],
@@ -1079,19 +1094,53 @@ impl ScriptTestRunSummary {
     pub(crate) fn completed(
         test: &ScriptTest,
         passed: bool,
-        final_status: String,
+        final_status: ScriptTestFinalStatus,
         diagnostics: Vec<String>,
         steps: Vec<RuntimeStepRunSummary>,
     ) -> Self {
         Self {
             id: test.id.clone(),
             kind: test.kind.clone(),
-            status: if passed { "passed" } else { "failed" }.to_owned(),
+            status: if passed {
+                ScriptTestStatus::Passed
+            } else {
+                ScriptTestStatus::Failed
+            },
             steps_run: steps.len(),
             final_status: Some(final_status),
             diagnostics,
             steps,
         }
+    }
+}
+
+impl ScriptTestFinalStatus {
+    fn as_str(&self) -> &str {
+        match self {
+            Self::NotStarted => "not_started",
+            Self::AdapterError => "adapter_error",
+            Self::Flow(status) => status,
+        }
+    }
+}
+
+impl std::fmt::Display for ScriptTestStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let label = match self {
+            Self::Passed => "passed",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+        };
+        f.write_str(label)
+    }
+}
+
+impl serde::Serialize for ScriptTestFinalStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
     }
 }
 
@@ -1359,9 +1408,11 @@ fn flow_event_label(event: &FlowEvent) -> String {
             format!("choice_selected {} {option}", id.as_deref().unwrap_or("-"))
         }
         FlowEvent::AwaitStarted { need, task } => format!("await_started {} {}", need.0, task.0),
-        FlowEvent::AwaitReady { need, value } => format!("await_ready {} {value}", need.0),
+        FlowEvent::AwaitReady { need, value } => {
+            format!("await_ready {} {}", need.0, value.label())
+        }
         FlowEvent::AwaitProgress { need, progress } => {
-            format!("await_progress {} {progress}", need.0)
+            format!("await_progress {} {}", need.0, progress.label())
         }
         FlowEvent::Goto { target } => format!("goto {}", target.0),
         FlowEvent::Return { value } => format!("return {value}"),

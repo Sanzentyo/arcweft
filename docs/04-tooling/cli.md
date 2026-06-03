@@ -246,11 +246,14 @@ The CLI owns a native task adapter for the first filesystem I/O slice:
 as `TaskEvent` input on the next VM step. Paths must be virtual path values such
 as `path.save("profile.json")`; the adapter resolves them under a source-local
 `.arcweft/<space>/...` root and rejects absolute or parent-relative paths.
-Native task dispatch is gated by a manifest-derived host-call set. The CLI
-native runner builds that set from the standard `native-file` and `system-info`
-manifests, plus the selected profile adapter manifest and internal scheduler
-markers. A task request whose stable host-call id is absent from that set returns
-an explicit task error instead of being silently completed or left pending.
+Native task dispatch is gated by a manifest-derived `HostCallPolicy`. The CLI
+native runner builds that policy from the standard `native-file` and
+`system-info` manifests, plus the selected profile adapter manifest and an
+internal scheduler-marker manifest. Concrete completion is a separate native
+adapter registry. A task request whose stable host-call id is absent from the
+policy returns an explicit task error, and a policy-allowed id without a
+registered native implementation also returns an explicit task error instead of
+being silently completed or left pending.
 
 `arcw run --manifest arcw.toml --profile NAME` resolves the same launch profile
 model used by dedicated commands. For `game` and `cli` profiles it runs the
@@ -452,6 +455,17 @@ Awaited `system.core_count()`, `system.thread_count()`, and
 path-free system-info tasks. The native adapter reports physical cores for
 `core_count`, logical CPUs for `thread_count`, and the current process
 parallelism limit for `available_parallelism`.
+
+The `arcweft-cli` crate also exposes a library runner:
+
+```rust
+arcweft_cli::run(std::env::args_os());
+arcweft_cli::run_with_native_adapters(std::env::args_os(), &[register_adapter]);
+```
+
+Additional static adapter registration functions receive the source path and a
+`HostAdapterRegistryBuilder`; they register concrete implementations only.
+Permission remains manifest-driven through the selected profile adapter context.
 
 ## JIT
 

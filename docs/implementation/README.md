@@ -43,11 +43,17 @@ Phase 0 / Phase 1 minimal Rust workspace:
   listening path is now gated by the active adapter manifest's `http.respond`
   host call, matching native task dispatch rather than relying on an implicit
   server shim.
-- CLI native task dispatch now uses a manifest-derived host-call set. Core
-  `HostTaskRequest` values expose stable ids such as `fs.read_text` and
-  `system.available_parallelism`; the bridge completes only ids present in the
-  standard native manifests, the selected profile adapter manifest, or internal
-  scheduler markers, and reports missing ids as task errors.
+- CLI native task dispatch now uses a manifest-derived `HostCallPolicy` plus a
+  separate native adapter registry. Core `HostTaskRequest` values expose stable
+  ids such as `fs.read_text` and `system.available_parallelism`; the bridge
+  rejects requests missing from the active policy and also rejects policy-allowed
+  ids that have no registered native implementation. Standard native file,
+  system-info, selected profile, and internal scheduler-marker manifests define
+  permission explicitly instead of relying on Rust pattern matches.
+- `arcweft-host-adapter` owns the Sans I/O host-adapter policy/registry types.
+  `arcweft-cli` is now both a library and a binary; embedding runners can call
+  `run_with_native_adapters` to add static native adapter implementations while
+  keeping permission in adapter manifests.
 - `arcw check`, `arcw verify`, `arcw unsafe`, and plan/report generation now
   resolve profile adapters through the standard `arcweft-adapter-context`
   manifest registry plus profile-local `adapter_manifests`, then pass the

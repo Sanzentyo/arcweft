@@ -1328,14 +1328,14 @@ fn engine_waits_for_await_task_event() {
                 logical_epoch: LogicalEpoch(0),
                 task_id: TaskId("task.bg".to_owned()),
                 sequence: TaskSequence(0),
-                kind: TaskEventKind::Ready("bg_handle".to_owned()),
+                kind: TaskEventKind::Ready(RuntimePayload::from("bg_handle")),
             }],
             ..RuntimeStepInput::default()
         },
     );
     assert!(ready.flow_events.iter().any(|event| matches!(
         event,
-        FlowEvent::AwaitReady { value, .. } if value == "bg_handle"
+        FlowEvent::AwaitReady { value, .. } if value.label() == "bg_handle"
     )));
     assert!(matches!(engine.fiber().status, FlowFiberStatus::Running));
 }
@@ -1390,7 +1390,11 @@ fn engine_runs_bounded_await_many_tasks_in_source_order() {
         third.flow_events.last(),
         Some(&FlowEvent::AwaitReady {
             need: NeedId("need.read_many".to_owned()),
-            value: "3 item(s)".to_owned(),
+            value: RuntimePayload::new(runtime_sequence_values(vec![
+                RuntimeValue::String("A".to_owned()),
+                RuntimeValue::String("B".to_owned()),
+                RuntimeValue::String("C".to_owned()),
+            ])),
         })
     );
 
@@ -1448,7 +1452,7 @@ fn ready_event(task_id: &str, sequence: u64, value: &str) -> TaskEvent {
         logical_epoch: LogicalEpoch(0),
         task_id: TaskId(task_id.to_owned()),
         sequence: TaskSequence(sequence),
-        kind: TaskEventKind::Ready(value.to_owned()),
+        kind: TaskEventKind::Ready(RuntimePayload::from(value)),
     }
 }
 
@@ -1939,7 +1943,7 @@ fn fs_write_dispatches_string_and_bytes_payloads() {
                 logical_epoch: LogicalEpoch(0),
                 task_id: TaskId("task.text".to_owned()),
                 sequence: TaskSequence(0),
-                kind: TaskEventKind::Ready("ok".to_owned()),
+                kind: TaskEventKind::Ready(RuntimePayload::from("ok")),
             }],
             ..RuntimeStepInput::default()
         },

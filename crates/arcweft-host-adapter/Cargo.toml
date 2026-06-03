@@ -1,0 +1,15 @@
+[package]
+name = "arcweft-host-adapter"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arcweft-adapter-context = { path = "../arcweft-adapter-context" }
+arcweft-core = { path = "../arcweft-core" }
+thiserror.workspace = true
+
+[lints]
+workspace = true

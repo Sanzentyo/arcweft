@@ -1,29 +1,33 @@
 use crate::native_system::{HostSystemInfo, host_system_info, system_info_value};
-use arcweft_adapter_context::{manifest::AdapterManifest, standard};
+use arcweft_adapter_context::{
+    manifest::{AdapterHostCall, AdapterManifest},
+    standard,
+};
 use arcweft_core::task::{
     HostTaskRequest, LogicalEpoch, SchedulerBudget, TaskEvent, TaskEventKind, TaskSequence,
     TaskSpec,
 };
+use arcweft_core::value::{RuntimePayload, RuntimeValue, runtime_sequence_dense_bytes};
+use arcweft_host_adapter::{
+    HostAdapter, HostAdapterError, HostAdapterRegistry, HostAdapterRegistryBuilder, HostCallPolicy,
+    HostTaskMetrics, HostTaskOutcome,
+};
 use arcweft_runtime_scheduler::{RuntimeScheduler, RuntimeSchedulerStats, TaskClassCounts};
 use rayon::prelude::*;
-use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
 
+pub type NativeAdapterRegistrar =
+    fn(&Path, HostAdapterRegistryBuilder) -> Result<HostAdapterRegistryBuilder, HostAdapterError>;
+
 #[derive(Clone, Debug)]
 pub(crate) struct NativeTaskBridge {
-    io_root: PathBuf,
-    host_system: HostSystemInfo,
-    host_calls: NativeHostCallSet,
+    policy: HostCallPolicy,
+    registry: HostAdapterRegistry,
     sequence: u64,
     scheduler: RuntimeScheduler,
     stats: NativeTaskStats,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct NativeHostCallSet {
-    ids: BTreeSet<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, serde::Serialize)]
@@ -96,16 +100,44 @@ pub(crate) struct NativeTaskClassCounts {
 }
 
 impl NativeTaskBridge {
-    pub(crate) fn new(source_path: &Path, host_calls: NativeHostCallSet) -> Self {
-        let source_dir = source_path.parent().unwrap_or_else(|| Path::new("."));
+    pub(crate) fn try_new(
+        source_path: &Path,
+        policy: HostCallPolicy,
+        registrars: &[NativeAdapterRegistrar],
+    ) -> Result<Self, HostAdapterError> {
+        let registry = registry_with_registrars(source_path, registrars)?;
+        Ok(Self::with_registry(policy, registry))
+    }
+
+    pub(crate) fn with_registry(policy: HostCallPolicy, registry: HostAdapterRegistry) -> Self {
         Self {
-            io_root: source_dir.join(".arcweft"),
-            host_system: host_system_info(),
-            host_calls,
+            policy,
+            registry,
             sequence: 0,
             scheduler: RuntimeScheduler::default(),
             stats: NativeTaskStats::default(),
         }
+    }
+
+    pub(crate) fn standard_policy() -> HostCallPolicy {
+        HostCallPolicy::from_manifests([
+            standard::native_file_manifest(),
+            standard::system_info_manifest(),
+            internal_scheduler_manifest(),
+        ])
+    }
+
+    pub(crate) fn policy_from_manifest(manifest: &AdapterManifest) -> HostCallPolicy {
+        HostCallPolicy::from_manifests([manifest.clone()])
+    }
+
+    pub(crate) fn standard_cli_policy_for_manifest(manifest: &AdapterManifest) -> HostCallPolicy {
+        Self::standard_policy().union(Self::policy_from_manifest(manifest))
+    }
+
+    pub(crate) fn source_io_root(source_path: &Path) -> PathBuf {
+        let source_dir = source_path.parent().unwrap_or_else(|| Path::new("."));
+        source_dir.join(".arcweft")
     }
 
     pub(crate) fn stats(&self) -> NativeTaskStats {
@@ -115,23 +147,28 @@ impl NativeTaskBridge {
     }
 
     pub(crate) fn read_text_snapshot(source_path: &Path, value: &str) -> Result<String, String> {
-        let bridge = Self::new(source_path, NativeHostCallSet::standard_cli());
-        virtual_path(&bridge.io_root, value)
+        virtual_path(&Self::source_io_root(source_path), value)
             .and_then(|path| fs::read_to_string(path).map_err(|error| error.to_string()))
     }
 
     pub(crate) fn complete_tasks(&mut self, tasks: Vec<TaskSpec>) -> Vec<TaskEvent> {
         let (unauthorized, tasks): (Vec<_>, Vec<_>) = tasks
             .into_iter()
-            .partition(|task| !self.host_calls.allows_task(task));
+            .partition(|task| !self.policy.allows(&task.request));
         let unauthorized_events = unauthorized
             .into_iter()
             .map(|task| self.rejected_task_event(task))
             .collect::<Vec<_>>();
+        let (unimplemented, tasks): (Vec<_>, Vec<_>) = tasks
+            .into_iter()
+            .partition(|task| !self.registry.contains(&task.request.host_call_id()));
+        let unimplemented_events = unimplemented
+            .into_iter()
+            .map(|task| self.unimplemented_task_event(task))
+            .collect::<Vec<_>>();
 
         let started = Instant::now();
-        self.scheduler
-            .submit(tasks.into_iter().filter(can_complete_task));
+        self.scheduler.submit(tasks);
         self.stats.scheduler_submit_elapsed_ns = self
             .stats
             .scheduler_submit_elapsed_ns
@@ -147,8 +184,7 @@ impl NativeTaskBridge {
             .saturating_add(started.elapsed().as_nanos());
 
         let started = Instant::now();
-        let completions =
-            complete_dispatched_tasks(&self.io_root, self.host_system, &dispatch.tasks);
+        let completions = complete_dispatched_tasks(&self.registry, &dispatch.tasks);
         self.stats.host_complete_elapsed_ns = self
             .stats
             .host_complete_elapsed_ns
@@ -160,17 +196,17 @@ impl NativeTaskBridge {
             self.stats.parallel_io_tasks += dispatch
                 .tasks
                 .iter()
-                .filter(|task| is_io_task(task))
+                .filter(|task| is_io_task(&task.request))
                 .count();
             self.stats.parallel_system_info_tasks += dispatch
                 .tasks
                 .iter()
-                .filter(|task| is_system_info_task(task))
+                .filter(|task| is_system_info_task(&task.request))
                 .count();
             self.stats.parallel_marker_tasks += dispatch
                 .tasks
                 .iter()
-                .filter(|task| is_scheduler_marker_task(task))
+                .filter(|task| is_scheduler_marker_task(&task.request))
                 .count();
             self.stats.parallel_workers = self.stats.parallel_workers.max(
                 rayon::current_num_threads()
@@ -186,6 +222,7 @@ impl NativeTaskBridge {
             .map(|completion| self.task_event(completion))
             .collect::<Vec<_>>();
         events.extend(unauthorized_events);
+        events.extend(unimplemented_events);
         self.stats.event_build_elapsed_ns = self
             .stats
             .event_build_elapsed_ns
@@ -208,6 +245,21 @@ impl NativeTaskBridge {
             sequence: TaskSequence(self.sequence),
             kind: TaskEventKind::Err(format!(
                 "host call `{}` is not provided by the active adapter manifest",
+                task.request.host_call_id()
+            )),
+        };
+        self.sequence = self.sequence.saturating_add(1);
+        event
+    }
+
+    fn unimplemented_task_event(&mut self, task: TaskSpec) -> TaskEvent {
+        self.stats.failed_tasks += 1;
+        let event = TaskEvent {
+            logical_epoch: LogicalEpoch(0),
+            task_id: task.id,
+            sequence: TaskSequence(self.sequence),
+            kind: TaskEventKind::Err(format!(
+                "host call `{}` is provided by the active adapter manifest but no native adapter implementation is registered",
                 task.request.host_call_id()
             )),
         };
@@ -242,56 +294,6 @@ impl NativeTaskBridge {
     }
 }
 
-impl NativeHostCallSet {
-    pub(crate) fn standard_cli() -> Self {
-        Self::from_manifests([
-            standard::native_file_manifest(),
-            standard::system_info_manifest(),
-        ])
-        .with_call("line_task.run_child")
-        .with_call("flow_thread.run_child")
-    }
-
-    pub(crate) fn from_manifest(manifest: &AdapterManifest) -> Self {
-        Self::from_manifests([manifest.clone()])
-    }
-
-    pub(crate) fn from_manifests(manifests: impl IntoIterator<Item = AdapterManifest>) -> Self {
-        Self {
-            ids: manifests
-                .into_iter()
-                .flat_map(|manifest| {
-                    manifest
-                        .host_calls()
-                        .iter()
-                        .map(|host_call| host_call.id().to_owned())
-                        .collect::<Vec<_>>()
-                })
-                .collect(),
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn union(mut self, other: Self) -> Self {
-        self.ids.extend(other.ids);
-        self
-    }
-
-    #[must_use]
-    pub(crate) fn with_call(mut self, id: impl Into<String>) -> Self {
-        self.ids.insert(id.into());
-        self
-    }
-
-    pub(crate) fn contains(&self, id: &str) -> bool {
-        self.ids.contains(id)
-    }
-
-    fn allows_task(&self, task: &TaskSpec) -> bool {
-        self.contains(&task.request.host_call_id())
-    }
-}
-
 #[derive(Clone, Debug)]
 struct TaskCompletions {
     parallel: bool,
@@ -301,124 +303,217 @@ struct TaskCompletions {
 #[derive(Clone, Debug)]
 struct TaskCompletion {
     task_id: arcweft_core::task::TaskId,
-    result: Result<String, String>,
-    stats: TaskCompletionStats,
+    result: Result<RuntimePayload, String>,
+    stats: HostTaskMetrics,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-struct TaskCompletionStats {
-    read_ops: usize,
-    write_ops: usize,
-    system_info_ops: usize,
-    bytes_read: usize,
-    bytes_written: usize,
+#[derive(Clone, Debug)]
+struct NativeFileAdapter {
+    manifest: AdapterManifest,
+    io_root: PathBuf,
+}
+
+#[derive(Clone, Debug)]
+struct NativeSystemInfoAdapter {
+    manifest: AdapterManifest,
+    host_system: HostSystemInfo,
+}
+
+#[derive(Clone, Debug)]
+struct InternalSchedulerMarkerAdapter {
+    manifest: AdapterManifest,
+}
+
+impl HostAdapter for NativeFileAdapter {
+    fn manifest(&self) -> &AdapterManifest {
+        &self.manifest
+    }
+
+    fn complete(&self, task: &TaskSpec) -> Option<HostTaskOutcome> {
+        let (result, metrics) = match &task.request {
+            HostTaskRequest::FileReadText(request) => {
+                complete_read_text(&self.io_root, &request.path)
+            }
+            HostTaskRequest::FileWriteText(request) => {
+                complete_write_text(&self.io_root, &request.path, &request.text)
+            }
+            HostTaskRequest::FileReadBytes(request) => {
+                complete_read_bytes(&self.io_root, &request.path)
+            }
+            HostTaskRequest::FileWriteBytes(request) => {
+                complete_write_bytes(&self.io_root, &request.path, &request.bytes)
+            }
+            _ => return None,
+        };
+        Some(HostTaskOutcome { result, metrics })
+    }
+
+    fn can_complete_in_parallel(&self, request: &HostTaskRequest) -> bool {
+        matches!(
+            request,
+            HostTaskRequest::FileReadText(_) | HostTaskRequest::FileReadBytes(_)
+        )
+    }
+}
+
+impl HostAdapter for NativeSystemInfoAdapter {
+    fn manifest(&self) -> &AdapterManifest {
+        &self.manifest
+    }
+
+    fn complete(&self, task: &TaskSpec) -> Option<HostTaskOutcome> {
+        let HostTaskRequest::SystemInfo(request) = &task.request else {
+            return None;
+        };
+        Some(HostTaskOutcome {
+            result: Ok(RuntimePayload::new(RuntimeValue::usize(usize_to_u64(
+                system_info_value(self.host_system, request.kind),
+            )))),
+            metrics: HostTaskMetrics {
+                system_info_ops: 1,
+                ..HostTaskMetrics::default()
+            },
+        })
+    }
+
+    fn can_complete_in_parallel(&self, request: &HostTaskRequest) -> bool {
+        matches!(request, HostTaskRequest::SystemInfo(_))
+    }
+}
+
+impl HostAdapter for InternalSchedulerMarkerAdapter {
+    fn manifest(&self) -> &AdapterManifest {
+        &self.manifest
+    }
+
+    fn complete(&self, task: &TaskSpec) -> Option<HostTaskOutcome> {
+        is_scheduler_marker_task(&task.request).then(|| HostTaskOutcome {
+            result: Ok(RuntimePayload::new(RuntimeValue::Unit)),
+            metrics: HostTaskMetrics::default(),
+        })
+    }
+
+    fn can_complete_in_parallel(&self, request: &HostTaskRequest) -> bool {
+        is_scheduler_marker_task(request)
+    }
+}
+
+pub(crate) fn standard_cli_registry_builder(source_path: &Path) -> HostAdapterRegistryBuilder {
+    let io_root = NativeTaskBridge::source_io_root(source_path);
+    HostAdapterRegistry::builder()
+        .register(NativeFileAdapter {
+            manifest: standard::native_file_manifest(),
+            io_root,
+        })
+        .expect("standard file adapter host calls are unique")
+        .register(NativeSystemInfoAdapter {
+            manifest: standard::system_info_manifest(),
+            host_system: host_system_info(),
+        })
+        .expect("standard system info adapter host calls are unique")
+        .register(InternalSchedulerMarkerAdapter {
+            manifest: internal_scheduler_manifest(),
+        })
+        .expect("internal scheduler marker host calls are unique")
+}
+
+fn registry_with_registrars(
+    source_path: &Path,
+    registrars: &[NativeAdapterRegistrar],
+) -> Result<HostAdapterRegistry, HostAdapterError> {
+    registrars
+        .iter()
+        .try_fold(
+            standard_cli_registry_builder(source_path),
+            |builder, register| register(source_path, builder),
+        )
+        .map(HostAdapterRegistryBuilder::build)
+}
+
+fn internal_scheduler_manifest() -> AdapterManifest {
+    AdapterManifest::new("internal-scheduler", "Internal Scheduler")
+        .with_host_call(AdapterHostCall::new("line_task.run_child", []))
+        .with_host_call(AdapterHostCall::new("flow_thread.run_child", []))
 }
 
 fn complete_dispatched_tasks(
-    io_root: &Path,
-    host_system: HostSystemInfo,
+    registry: &HostAdapterRegistry,
     tasks: &[TaskSpec],
 ) -> TaskCompletions {
-    let parallel = should_complete_in_parallel(tasks);
+    let parallel = should_complete_in_parallel(registry, tasks);
     let items = if parallel {
         tasks
             .par_iter()
-            .filter_map(|task| complete_task(io_root, host_system, task))
+            .filter_map(|task| complete_task(registry, task))
             .collect()
     } else {
         tasks
             .iter()
-            .filter_map(|task| complete_task(io_root, host_system, task))
+            .filter_map(|task| complete_task(registry, task))
             .collect()
     };
     TaskCompletions { parallel, items }
 }
 
-fn should_complete_in_parallel(tasks: &[TaskSpec]) -> bool {
+fn should_complete_in_parallel(registry: &HostAdapterRegistry, tasks: &[TaskSpec]) -> bool {
     tasks.len() > 1
-        && tasks.iter().all(can_complete_in_parallel)
-        && tasks.iter().any(is_parallel_host_work)
+        && tasks
+            .iter()
+            .all(|task| registry.can_complete_in_parallel(&task.request))
+        && tasks
+            .iter()
+            .any(|task| is_parallel_host_work(&task.request))
 }
 
-fn complete_task(
-    io_root: &Path,
-    host_system: HostSystemInfo,
-    task: &TaskSpec,
-) -> Option<TaskCompletion> {
-    let (result, stats) = match &task.request {
-        HostTaskRequest::FileReadText(request) => complete_read_text(io_root, &request.path),
-        HostTaskRequest::FileWriteText(request) => {
-            complete_write_text(io_root, &request.path, &request.text)
-        }
-        HostTaskRequest::FileReadBytes(request) => complete_read_bytes(io_root, &request.path),
-        HostTaskRequest::FileWriteBytes(request) => {
-            complete_write_bytes(io_root, &request.path, &request.bytes)
-        }
-        HostTaskRequest::Custom {
-            capability,
-            operation,
-            ..
-        } if is_scheduler_marker(capability.0.as_str(), operation) => {
-            (Ok(String::new()), TaskCompletionStats::default())
-        }
-        HostTaskRequest::SystemInfo(request) => (
-            Ok(system_info_value(host_system, request.kind).to_string()),
-            TaskCompletionStats {
-                system_info_ops: 1,
-                ..TaskCompletionStats::default()
-            },
-        ),
-        _ => return None,
-    };
-    Some(TaskCompletion {
+fn complete_task(registry: &HostAdapterRegistry, task: &TaskSpec) -> Option<TaskCompletion> {
+    registry.dispatch(task).map(|outcome| TaskCompletion {
         task_id: task.id.clone(),
-        result,
-        stats,
+        result: outcome.result,
+        stats: outcome.metrics,
     })
 }
 
-fn complete_read_text(io_root: &Path, path: &str) -> (Result<String, String>, TaskCompletionStats) {
+fn complete_read_text(
+    io_root: &Path,
+    path: &str,
+) -> (Result<RuntimePayload, String>, HostTaskMetrics) {
     match virtual_path(io_root, path)
         .and_then(|path| fs::read_to_string(path).map_err(|error| error.to_string()))
     {
         Ok(text) => {
             let bytes_read = text.len();
             (
-                Ok(text),
-                TaskCompletionStats {
+                Ok(RuntimePayload::from(text)),
+                HostTaskMetrics {
                     read_ops: 1,
                     bytes_read,
-                    ..TaskCompletionStats::default()
+                    ..HostTaskMetrics::default()
                 },
             )
         }
-        Err(error) => (Err(error), TaskCompletionStats::default()),
+        Err(error) => (Err(error), HostTaskMetrics::default()),
     }
 }
 
 fn complete_read_bytes(
     io_root: &Path,
     path: &str,
-) -> (Result<String, String>, TaskCompletionStats) {
+) -> (Result<RuntimePayload, String>, HostTaskMetrics) {
     match virtual_path(io_root, path)
         .and_then(|path| fs::read(path).map_err(|error| error.to_string()))
     {
         Ok(bytes) => {
             let bytes_read = bytes.len();
             (
-                Ok(bytes
-                    .iter()
-                    .map(u8::to_string)
-                    .collect::<Vec<_>>()
-                    .join(",")),
-                TaskCompletionStats {
+                Ok(RuntimePayload::new(runtime_sequence_dense_bytes(bytes))),
+                HostTaskMetrics {
                     read_ops: 1,
                     bytes_read,
-                    ..TaskCompletionStats::default()
+                    ..HostTaskMetrics::default()
                 },
             )
         }
-        Err(error) => (Err(error), TaskCompletionStats::default()),
+        Err(error) => (Err(error), HostTaskMetrics::default()),
     }
 }
 
@@ -426,20 +521,20 @@ fn complete_write_text(
     io_root: &Path,
     path: &str,
     text: &str,
-) -> (Result<String, String>, TaskCompletionStats) {
+) -> (Result<RuntimePayload, String>, HostTaskMetrics) {
     let result = virtual_path(io_root, path).and_then(|path| {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
         fs::write(path, text).map_err(|error| error.to_string())?;
-        Ok(String::new())
+        Ok(RuntimePayload::new(RuntimeValue::Unit))
     });
     let stats = result.as_ref().map_or_else(
-        |_| TaskCompletionStats::default(),
-        |_| TaskCompletionStats {
+        |_| HostTaskMetrics::default(),
+        |_| HostTaskMetrics {
             write_ops: 1,
             bytes_written: text.len(),
-            ..TaskCompletionStats::default()
+            ..HostTaskMetrics::default()
         },
     );
     (result, stats)
@@ -449,72 +544,46 @@ fn complete_write_bytes(
     io_root: &Path,
     path: &str,
     bytes: &[u8],
-) -> (Result<String, String>, TaskCompletionStats) {
+) -> (Result<RuntimePayload, String>, HostTaskMetrics) {
     let result = virtual_path(io_root, path).and_then(|path| {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
         fs::write(path, bytes).map_err(|error| error.to_string())?;
-        Ok(String::new())
+        Ok(RuntimePayload::new(RuntimeValue::Unit))
     });
     let stats = result.as_ref().map_or_else(
-        |_| TaskCompletionStats::default(),
-        |_| TaskCompletionStats {
+        |_| HostTaskMetrics::default(),
+        |_| HostTaskMetrics {
             write_ops: 1,
             bytes_written: bytes.len(),
-            ..TaskCompletionStats::default()
+            ..HostTaskMetrics::default()
         },
     );
     (result, stats)
 }
 
-fn can_complete_task(task: &TaskSpec) -> bool {
-    match &task.request {
-        HostTaskRequest::FileReadText(_)
-        | HostTaskRequest::FileWriteText(_)
-        | HostTaskRequest::FileReadBytes(_)
-        | HostTaskRequest::FileWriteBytes(_)
-        | HostTaskRequest::SystemInfo(_) => true,
-        HostTaskRequest::Custom {
-            capability,
-            operation,
-            ..
-        } => is_scheduler_marker(capability.0.as_str(), operation),
-        _ => false,
-    }
+fn usize_to_u64(value: usize) -> u64 {
+    u64::try_from(value).map_or(u64::MAX, |value| value)
 }
 
-fn can_complete_in_parallel(task: &TaskSpec) -> bool {
-    match &task.request {
-        HostTaskRequest::FileReadText(_)
-        | HostTaskRequest::FileReadBytes(_)
-        | HostTaskRequest::SystemInfo(_) => true,
-        HostTaskRequest::Custom {
-            capability,
-            operation,
-            ..
-        } => is_scheduler_marker(capability.0.as_str(), operation),
-        _ => false,
-    }
-}
-
-fn is_io_task(task: &TaskSpec) -> bool {
+fn is_io_task(request: &HostTaskRequest) -> bool {
     matches!(
-        &task.request,
+        request,
         HostTaskRequest::FileReadText(_) | HostTaskRequest::FileReadBytes(_)
     )
 }
 
-fn is_system_info_task(task: &TaskSpec) -> bool {
-    matches!(&task.request, HostTaskRequest::SystemInfo(_))
+fn is_system_info_task(request: &HostTaskRequest) -> bool {
+    matches!(request, HostTaskRequest::SystemInfo(_))
 }
 
-fn is_parallel_host_work(task: &TaskSpec) -> bool {
-    is_io_task(task) || is_system_info_task(task)
+fn is_parallel_host_work(request: &HostTaskRequest) -> bool {
+    is_io_task(request) || is_system_info_task(request)
 }
 
-fn is_scheduler_marker_task(task: &TaskSpec) -> bool {
-    match &task.request {
+fn is_scheduler_marker_task(request: &HostTaskRequest) -> bool {
+    match request {
         HostTaskRequest::Custom {
             capability,
             operation,
@@ -610,7 +679,8 @@ mod tests {
     #[test]
     fn native_bridge_rejects_host_call_missing_from_manifest() {
         let source_path = std::env::temp_dir().join("arcweft-native-bridge-reject.arcw");
-        let mut bridge = NativeTaskBridge::new(&source_path, NativeHostCallSet::default());
+        let mut bridge = NativeTaskBridge::try_new(&source_path, HostCallPolicy::default(), &[])
+            .expect("standard native adapters are unique");
         let events = bridge.complete_tasks(vec![task(
             "missing",
             HostTaskRequest::SystemInfo(SystemInfoRequest {
@@ -631,8 +701,9 @@ mod tests {
     #[test]
     fn native_bridge_completes_system_info_allowed_by_manifest() {
         let source_path = std::env::temp_dir().join("arcweft-native-bridge-system.arcw");
-        let calls = NativeHostCallSet::from_manifest(&standard::system_info_manifest());
-        let mut bridge = NativeTaskBridge::new(&source_path, calls);
+        let policy = NativeTaskBridge::policy_from_manifest(&standard::system_info_manifest());
+        let mut bridge = NativeTaskBridge::try_new(&source_path, policy, &[])
+            .expect("standard native adapters are unique");
         let events = bridge.complete_tasks(vec![task(
             "system",
             HostTaskRequest::SystemInfo(SystemInfoRequest {
@@ -641,15 +712,43 @@ mod tests {
         )]);
 
         assert_eq!(events.len(), 1);
-        assert!(matches!(&events[0].kind, TaskEventKind::Ready(value) if !value.is_empty()));
+        assert!(
+            matches!(&events[0].kind, TaskEventKind::Ready(value) if !value.label().is_empty())
+        );
         assert_eq!(bridge.stats().completed_tasks, 1);
         assert_eq!(bridge.stats().system_info_ops, 1);
         assert_eq!(bridge.stats().scheduler.submitted, 1);
     }
 
     #[test]
-    fn standard_cli_host_call_set_is_manifest_derived() {
-        let calls = NativeHostCallSet::standard_cli();
+    fn native_bridge_rejects_allowed_host_call_without_native_implementation() {
+        let source_path = std::env::temp_dir().join("arcweft-native-bridge-unimplemented.arcw");
+        let policy = HostCallPolicy::from_manifests([standard::native_http_manifest()]);
+        let mut bridge = NativeTaskBridge::try_new(&source_path, policy, &[])
+            .expect("standard native adapters are unique");
+        let events = bridge.complete_tasks(vec![task(
+            "http",
+            HostTaskRequest::HttpRespond(arcweft_core::task::HttpRespondRequest {
+                request_id: "request-1".to_owned(),
+                status: 200,
+                headers: Vec::new(),
+                body: None,
+            }),
+        )]);
+
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            &events[0].kind,
+            TaskEventKind::Err(message)
+                if message.contains("no native adapter implementation is registered")
+        ));
+        assert_eq!(bridge.stats().failed_tasks, 1);
+        assert_eq!(bridge.stats().scheduler.submitted, 0);
+    }
+
+    #[test]
+    fn standard_cli_host_policy_is_manifest_derived() {
+        let policy = NativeTaskBridge::standard_policy();
 
         for id in [
             "fs.read_text",
@@ -662,7 +761,7 @@ mod tests {
             "line_task.run_child",
             "flow_thread.run_child",
         ] {
-            assert!(calls.contains(id), "missing host call {id}");
+            assert!(policy.contains(id), "missing host call {id}");
         }
     }
 

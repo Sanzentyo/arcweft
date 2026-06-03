@@ -389,6 +389,7 @@ mod tests {
     use arcweft_core::task::{
         FileReadTextRequest, HostTaskRequest, LogicalEpoch, TaskPriority, TaskSequence,
     };
+    use arcweft_core::value::RuntimePayload;
 
     #[test]
     fn joins_same_key_in_flight_tasks() {
@@ -416,8 +417,11 @@ mod tests {
             task("waiter-b", "asset.bg", TaskPolicy::JoinSameKey, 0),
         ]);
 
-        let events =
-            scheduler.complete([event("owner", 1, TaskEventKind::Ready("shared".to_owned()))]);
+        let events = scheduler.complete([event(
+            "owner",
+            1,
+            TaskEventKind::Ready(RuntimePayload::from("shared")),
+        )]);
         let ids = events
             .iter()
             .map(|event| event.task_id.0.as_str())
@@ -425,7 +429,7 @@ mod tests {
 
         assert_eq!(ids, ["owner", "waiter-a", "waiter-b"]);
         assert!(events.iter().all(|event| {
-            matches!(&event.kind, TaskEventKind::Ready(value) if value == "shared")
+            matches!(&event.kind, TaskEventKind::Ready(value) if value.label() == "shared")
         }));
         assert_eq!(scheduler.stats().completed, 1);
         assert_eq!(scheduler.stats().joined, 2);
@@ -510,7 +514,7 @@ mod tests {
 
         let events = scheduler.complete([
             event("b", 2, TaskEventKind::Err("failed".to_owned())),
-            event("a", 1, TaskEventKind::Ready("ok".to_owned())),
+            event("a", 1, TaskEventKind::Ready(RuntimePayload::from("ok"))),
         ]);
 
         assert_eq!(events[0].task_id, TaskId("a".to_owned()));

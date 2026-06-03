@@ -222,10 +222,10 @@ pub struct TaskEvent {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TaskEventKind {
-    Ready(String),
+    Ready(RuntimePayload),
     Err(String),
     Cancelled,
-    Progress(String),
+    Progress(RuntimePayload),
 }
 
 pub trait TaskHost {

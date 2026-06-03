@@ -62,8 +62,7 @@ impl Engine {
         match event.kind {
             TaskEventKind::Ready(value) => {
                 if let Some(binding) = &state.binding {
-                    let ready_value = RuntimeValue::String(value.clone());
-                    match self.try_bind_pattern(binding, &ready_value) {
+                    match self.try_bind_pattern(binding, value.value()) {
                         Ok(true) => {}
                         Ok(false) => {
                             self.fiber.status = FlowFiberStatus::Failed(
@@ -298,10 +297,10 @@ impl Engine {
         let values = state
             .results
             .iter()
-            .map(|value| RuntimeValue::String(value.clone().unwrap_or_default()))
+            .filter_map(|value| value.as_ref().map(|value| value.value().clone()))
             .collect::<Vec<_>>();
+        let ready_value = runtime_sequence_values(values);
         if let Some(binding) = &state.binding {
-            let ready_value = runtime_sequence_values(values);
             match self.try_bind_pattern(binding, &ready_value) {
                 Ok(true) => {}
                 Ok(false) => {
@@ -321,7 +320,7 @@ impl Engine {
         }
         output.flow_events.push(FlowEvent::AwaitReady {
             need: state.target.need,
-            value: format!("{} item(s)", state.results.len()),
+            value: RuntimePayload::new(ready_value),
         });
         self.fiber.cursor = state.resume;
         self.fiber.status = FlowFiberStatus::Running;

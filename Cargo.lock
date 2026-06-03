@@ -154,6 +154,7 @@ version = "0.1.0"
 dependencies = [
  "arcweft-adapter-context",
  "arcweft-core",
+ "arcweft-host-adapter",
  "arcweft-lang-hir",
  "arcweft-lang-jit-cranelift",
  "arcweft-lang-sema",
@@ -192,6 +193,15 @@ version = "0.1.0"
 dependencies = [
  "arcweft-id",
  "arcweft-source",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "arcweft-host-adapter"
+version = "0.1.0"
+dependencies = [
+ "arcweft-adapter-context",
+ "arcweft-core",
  "thiserror 2.0.18",
 ]
 

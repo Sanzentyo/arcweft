@@ -164,7 +164,7 @@ pub struct AwaitManyState {
     pub items: Vec<RuntimeValue>,
     pub next_index: usize,
     pub in_flight: Vec<AwaitManyInFlight>,
-    pub results: Vec<Option<String>>,
+    pub results: Vec<Option<RuntimePayload>>,
 }
 
 /// One in-flight child task inside a bounded fanout await.

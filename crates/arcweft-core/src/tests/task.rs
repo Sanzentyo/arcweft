@@ -7,19 +7,19 @@ fn normalizes_task_events_by_replay_stable_keys() {
             logical_epoch: LogicalEpoch(1),
             task_id: TaskId("b".to_owned()),
             sequence: TaskSequence(0),
-            kind: TaskEventKind::Ready("b".to_owned()),
+            kind: TaskEventKind::Ready(RuntimePayload::from("b")),
         },
         TaskEvent {
             logical_epoch: LogicalEpoch(0),
             task_id: TaskId("z".to_owned()),
             sequence: TaskSequence(9),
-            kind: TaskEventKind::Ready("z".to_owned()),
+            kind: TaskEventKind::Ready(RuntimePayload::from("z")),
         },
         TaskEvent {
             logical_epoch: LogicalEpoch(1),
             task_id: TaskId("a".to_owned()),
             sequence: TaskSequence(1),
-            kind: TaskEventKind::Ready("a".to_owned()),
+            kind: TaskEventKind::Ready(RuntimePayload::from("a")),
         },
     ];
 
@@ -51,13 +51,13 @@ fn detects_already_normalized_task_events_without_reordering() {
             logical_epoch: LogicalEpoch(0),
             task_id: TaskId("a".to_owned()),
             sequence: TaskSequence(0),
-            kind: TaskEventKind::Ready("a".to_owned()),
+            kind: TaskEventKind::Ready(RuntimePayload::from("a")),
         },
         TaskEvent {
             logical_epoch: LogicalEpoch(0),
             task_id: TaskId("b".to_owned()),
             sequence: TaskSequence(1),
-            kind: TaskEventKind::Ready("b".to_owned()),
+            kind: TaskEventKind::Ready(RuntimePayload::from("b")),
         },
     ];
 
