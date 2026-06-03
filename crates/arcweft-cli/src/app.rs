@@ -99,6 +99,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use thiserror::Error;
 
 #[derive(Debug, Parser)]
 #[command(name = "arcw", about = "Arcweft language and runtime tooling")]
@@ -174,6 +175,213 @@ where
     match run_cli(Cli::parse_from(args), adapter_registrars) {
         Ok(()) => ExitCode::SUCCESS,
         Err(code) => code,
+    }
+}
+
+/// Executes a decoded Arcweft bundle with native adapters supplied by the host.
+pub fn run_bundle_with_native_adapters(
+    bundle: &ArcweftBundle,
+    options: &BundleRunnerOptions,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<BundleRunnerReport, BundleRunnerError> {
+    let mut phases = Vec::new();
+    execute_bundle_with_native_adapters(bundle, options, adapter_registrars, &mut phases)
+        .map(BundleRunnerReport::from)
+}
+
+/// Reads, decodes, and executes an `.awfb` bundle with native adapters supplied by the host.
+pub fn run_bundle_file_with_native_adapters(
+    path: impl AsRef<Path>,
+    options: &BundleRunnerOptions,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<BundleRunnerReport, BundleRunnerError> {
+    let path = path.as_ref();
+    let mut phases = Vec::new();
+    let bytes = run_bundle_runner_phase(&mut phases, "read_bundle", || {
+        fs::read(path).map_err(|source| BundleRunnerError::ReadBundle {
+            path: path.to_path_buf(),
+            source,
+        })
+    })?;
+    let bundle = run_bundle_runner_phase(&mut phases, "decode_bundle", || {
+        ArcweftBundle::from_json_slice(&bytes).map_err(BundleRunnerError::DecodeBundle)
+    })?;
+    execute_bundle_with_native_adapters(&bundle, options, adapter_registrars, &mut phases)
+        .map(BundleRunnerReport::from)
+}
+
+/// Bundle execution options for embedding hosts.
+#[derive(Clone, Debug)]
+pub struct BundleRunnerOptions {
+    pub entry: Option<String>,
+    pub flow: Option<String>,
+    pub executor: BundleRunnerExecutor,
+    pub steps: usize,
+    pub mode: BundleRunnerStepMode,
+    pub max_ops: usize,
+    pub values: Vec<RuntimeBinding>,
+    pub pure_config: RuntimePureAcceleratorConfig,
+}
+
+impl Default for BundleRunnerOptions {
+    fn default() -> Self {
+        Self {
+            entry: None,
+            flow: None,
+            executor: BundleRunnerExecutor::BytecodeVm,
+            steps: 8,
+            mode: BundleRunnerStepMode::Drain,
+            max_ops: 32,
+            values: Vec::new(),
+            pure_config: RuntimePureAcceleratorConfig::default(),
+        }
+    }
+}
+
+/// Runtime execution tier selected by an embedding bundle runner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BundleRunnerExecutor {
+    BytecodeVm,
+    Aot,
+}
+
+/// Step scheduling mode selected by an embedding bundle runner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BundleRunnerStepMode {
+    OneOp,
+    Drain,
+    Game,
+    Server,
+}
+
+/// Result returned to embedding hosts after executing a bundle.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct BundleRunnerReport {
+    pub source: String,
+    pub bytecode_instructions: usize,
+    pub adapter_manifests: usize,
+    pub phases: Vec<BundleRunnerPhase>,
+    pub executor: BundleRunnerExecutor,
+    pub executor_stats: RuntimeExecutorStats,
+    pub native_io: NativeTaskStats,
+    pub steps: Vec<BundleRunnerStepSummary>,
+    pub final_status: String,
+}
+
+/// One measured phase in bundle loading and execution.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct BundleRunnerPhase {
+    pub name: &'static str,
+    pub elapsed_ns: u128,
+}
+
+/// Public step summary for embedding bundle runners.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct BundleRunnerStepSummary {
+    pub index: usize,
+    pub stop_reason: String,
+    pub fiber_status: String,
+    pub executed_ops: usize,
+    pub task_requests: usize,
+    pub diagnostics: Vec<String>,
+}
+
+#[derive(Debug, Error)]
+pub enum BundleRunnerError {
+    #[error("failed to read bundle `{}`: {source}", path.display())]
+    ReadBundle {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to decode bundle: {0}")]
+    DecodeBundle(arcweft_bundle::BundleCodecError),
+    #[error("failed to decode bundle bytecode: {0}")]
+    DecodeBytecode(arcweft_core::plan::RuntimePlanError),
+    #[error("failed to create bundle workspace: {0}")]
+    CreateWorkspace(std::io::Error),
+    #[error("failed to create bundle source directory: {0}")]
+    CreateSourceDirectory(std::io::Error),
+    #[error("failed to materialize bundle source: {0}")]
+    MaterializeSource(std::io::Error),
+    #[error("failed to create bundle virtual file directory: {0}")]
+    CreateVirtualFileDirectory(std::io::Error),
+    #[error("failed to materialize bundle virtual file: {0}")]
+    MaterializeVirtualFile(std::io::Error),
+    #[error("bundle virtual file path must be relative and normalized")]
+    InvalidVirtualFilePath,
+    #[error("entry and flow are mutually exclusive")]
+    ConflictingEntrySelection,
+    #[error("unknown flow `{flow}`")]
+    UnknownFlow { flow: String },
+    #[error("unknown entry `{entry}`")]
+    UnknownEntry { entry: String },
+    #[error("entry `{entry}` does not select a single runnable flow")]
+    NonFlowEntry { entry: String },
+    #[error("native adapter registration failed: {0}")]
+    NativeAdapter(arcweft_host_adapter::HostAdapterError),
+}
+
+impl BundleRunnerError {
+    fn exit_code(&self) -> ExitCode {
+        match self {
+            Self::ConflictingEntrySelection => ExitCode::from(2),
+            Self::ReadBundle { .. }
+            | Self::DecodeBundle(_)
+            | Self::DecodeBytecode(_)
+            | Self::CreateWorkspace(_)
+            | Self::CreateSourceDirectory(_)
+            | Self::MaterializeSource(_)
+            | Self::CreateVirtualFileDirectory(_)
+            | Self::MaterializeVirtualFile(_)
+            | Self::InvalidVirtualFilePath
+            | Self::UnknownFlow { .. }
+            | Self::UnknownEntry { .. }
+            | Self::NonFlowEntry { .. }
+            | Self::NativeAdapter(_) => ExitCode::FAILURE,
+        }
+    }
+}
+
+impl From<BundleRunnerExecutor> for CliRuntimeExecutorTier {
+    fn from(value: BundleRunnerExecutor) -> Self {
+        match value {
+            BundleRunnerExecutor::BytecodeVm => Self::BytecodeVm,
+            BundleRunnerExecutor::Aot => Self::Aot,
+        }
+    }
+}
+
+impl From<CliRuntimeExecutorTier> for BundleRunnerExecutor {
+    fn from(value: CliRuntimeExecutorTier) -> Self {
+        match value {
+            CliRuntimeExecutorTier::BytecodeVm => Self::BytecodeVm,
+            CliRuntimeExecutorTier::Aot => Self::Aot,
+        }
+    }
+}
+
+impl From<BundleRunnerStepMode> for CliRuntimeStepMode {
+    fn from(value: BundleRunnerStepMode) -> Self {
+        match value {
+            BundleRunnerStepMode::OneOp => Self::OneOp,
+            BundleRunnerStepMode::Drain => Self::Drain,
+            BundleRunnerStepMode::Game => Self::Game,
+            BundleRunnerStepMode::Server => Self::Server,
+        }
+    }
+}
+
+impl From<CliRuntimeStepMode> for BundleRunnerStepMode {
+    fn from(value: CliRuntimeStepMode) -> Self {
+        match value {
+            CliRuntimeStepMode::OneOp => Self::OneOp,
+            CliRuntimeStepMode::Drain => Self::Drain,
+            CliRuntimeStepMode::Game => Self::Game,
+            CliRuntimeStepMode::Server => Self::Server,
+        }
     }
 }
 
@@ -1857,6 +2065,21 @@ fn run_runtime_steps_with_executor(
     max_ops: usize,
     values: &[RuntimeBinding],
 ) -> Result<RuntimeRunTrace, ExitCode> {
+    try_run_runtime_steps_with_executor(executor, host_config, steps, mode, max_ops, values)
+        .map_err(|error| {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        })
+}
+
+fn try_run_runtime_steps_with_executor(
+    executor: &mut RuntimeExecutorInstance,
+    host_config: NativeRunHost<'_>,
+    steps: usize,
+    mode: CliRuntimeStepMode,
+    max_ops: usize,
+    values: &[RuntimeBinding],
+) -> Result<RuntimeRunTrace, arcweft_host_adapter::HostAdapterError> {
     let mut host = host_config
         .source_path
         .map(|path| {
@@ -1866,11 +2089,7 @@ fn run_runtime_steps_with_executor(
                 host_config.adapter_registrars,
             )
         })
-        .transpose()
-        .map_err(|error| {
-            eprintln!("error: {error}");
-            ExitCode::FAILURE
-        })?;
+        .transpose()?;
     let mut task_events = Vec::new();
     let mut summaries = Vec::new();
     for step_index in 0..steps {
@@ -2016,6 +2235,57 @@ struct BundleRunReport {
     native_io: NativeTaskStats,
     steps: Vec<RuntimeStepRunSummary>,
     final_status: String,
+}
+
+struct BundleRunnerExecution {
+    source: String,
+    bytecode_instructions: usize,
+    adapter_manifests: usize,
+    phases: Vec<RuntimeProfilePhase>,
+    executor: CliRuntimeExecutorTier,
+    trace: RuntimeRunTrace,
+}
+
+impl From<BundleRunnerExecution> for BundleRunnerReport {
+    fn from(execution: BundleRunnerExecution) -> Self {
+        let final_status = flow_status_label(&execution.trace.final_status);
+        Self {
+            source: execution.source,
+            bytecode_instructions: execution.bytecode_instructions,
+            adapter_manifests: execution.adapter_manifests,
+            phases: execution
+                .phases
+                .into_iter()
+                .map(|phase| BundleRunnerPhase {
+                    name: phase.name,
+                    elapsed_ns: phase.elapsed_ns,
+                })
+                .collect(),
+            executor: BundleRunnerExecutor::from(execution.executor),
+            executor_stats: execution.trace.executor_stats,
+            native_io: execution.trace.native_io,
+            steps: execution
+                .trace
+                .steps
+                .into_iter()
+                .map(BundleRunnerStepSummary::from)
+                .collect(),
+            final_status,
+        }
+    }
+}
+
+impl From<RuntimeStepRunSummary> for BundleRunnerStepSummary {
+    fn from(step: RuntimeStepRunSummary) -> Self {
+        Self {
+            index: step.index,
+            stop_reason: step.stop_reason,
+            fiber_status: step.fiber_status,
+            executed_ops: step.stats.executed_ops,
+            task_requests: step.task_requests.len(),
+            diagnostics: step.diagnostics,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -2176,15 +2446,12 @@ impl RuntimeExecutorInstance {
         }
     }
 
-    fn from_bytecode(
+    fn try_from_bytecode(
         bytecode: BytecodeProgram,
         tier: CliRuntimeExecutorTier,
         pure_config: RuntimePureAcceleratorConfig,
-    ) -> Result<Self, ExitCode> {
-        let plan = bytecode.clone().into_runtime_plan().map_err(|error| {
-            eprintln!("error: failed to decode bundle bytecode: {error}");
-            ExitCode::FAILURE
-        })?;
+    ) -> Result<Self, arcweft_core::plan::RuntimePlanError> {
+        let plan = bytecode.clone().into_runtime_plan()?;
         let pure = RuntimePureAccelerator::with_config(pure_config, &plan.pure_helpers);
         Ok(match tier {
             CliRuntimeExecutorTier::BytecodeVm => Self::BytecodeVm {
@@ -2271,6 +2538,20 @@ fn run_profile_phase<T>(
     name: &'static str,
     run: impl FnOnce() -> Result<T, ExitCode>,
 ) -> Result<T, ExitCode> {
+    let started = Instant::now();
+    let result = run();
+    phases.push(RuntimeProfilePhase {
+        name,
+        elapsed_ns: started.elapsed().as_nanos(),
+    });
+    result
+}
+
+fn run_bundle_runner_phase<T>(
+    phases: &mut Vec<RuntimeProfilePhase>,
+    name: &'static str,
+    run: impl FnOnce() -> Result<T, BundleRunnerError>,
+) -> Result<T, BundleRunnerError> {
     let started = Instant::now();
     let result = run();
     phases.push(RuntimeProfilePhase {
@@ -3252,84 +3533,45 @@ fn run_bundle_command(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<(), ExitCode> {
     let mut phases = Vec::new();
-    let bytes = run_profile_phase(&mut phases, "read_bundle", || {
-        fs::read(&options.bundle).map_err(|error| {
-            eprintln!(
-                "error: failed to read bundle {}: {error}",
-                options.bundle.display()
-            );
-            ExitCode::FAILURE
+    let bytes = run_bundle_runner_phase(&mut phases, "read_bundle", || {
+        fs::read(&options.bundle).map_err(|source| BundleRunnerError::ReadBundle {
+            path: options.bundle.clone(),
+            source,
         })
+    })
+    .map_err(|error| {
+        eprintln!("error: {error}");
+        error.exit_code()
     })?;
-    let bundle = run_profile_phase(&mut phases, "decode_bundle", || {
-        ArcweftBundle::from_json_slice(&bytes).map_err(|error| {
-            eprintln!("error: failed to decode bundle: {error}");
-            ExitCode::FAILURE
-        })
+    let bundle = run_bundle_runner_phase(&mut phases, "decode_bundle", || {
+        ArcweftBundle::from_json_slice(&bytes).map_err(BundleRunnerError::DecodeBundle)
+    })
+    .map_err(|error| {
+        eprintln!("error: {error}");
+        error.exit_code()
     })?;
-    let workspace = run_profile_phase(&mut phases, "materialize_bundle", || {
-        MaterializedBundleWorkspace::create(&bundle)
-    })?;
-    let bytecode = run_profile_phase(&mut phases, "bytecode_decode", || {
-        let mut plan = bundle
-            .bytecode
-            .program
-            .clone()
-            .into_runtime_plan()
-            .map_err(|error| {
-                eprintln!("error: failed to decode bundle bytecode: {error}");
-                ExitCode::FAILURE
-            })?;
-        let entry = options.entry.as_deref().or_else(|| {
-            options
-                .flow
-                .is_none()
-                .then_some(bundle.manifest.entry.as_deref())
-                .flatten()
-        });
-        apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
-        Ok::<_, ExitCode>(BytecodeProgram::from_runtime_plan(plan))
-    })?;
-    let host_policy = bundle_host_policy(&bundle);
-    let entry = options.entry.as_deref().or_else(|| {
-        options
-            .flow
-            .is_none()
-            .then_some(bundle.manifest.entry.as_deref())
-            .flatten()
-    });
-    let direct_bytecode = entry.is_none() && options.flow.is_none();
-    let trace = run_profile_phase(&mut phases, "run", || {
-        run_bytecode_runtime_steps(
-            if direct_bytecode {
-                bundle.bytecode.program.clone()
-            } else {
-                bytecode
-            },
-            Some(workspace.source_path()),
-            RuntimeStepRunConfig {
-                steps: options.steps,
-                mode: options.mode,
-                max_ops: options.max_ops,
-                executor: options.executor,
-                pure_config: RuntimePureAcceleratorConfig::default(),
-            },
-            &host_policy,
-            adapter_registrars,
-            &options.values,
-        )
+    let runner_options = BundleRunnerOptions::from(options);
+    let execution = execute_bundle_with_native_adapters(
+        &bundle,
+        &runner_options,
+        adapter_registrars,
+        &mut phases,
+    )
+    .map_err(|error| {
+        eprintln!("error: {error}");
+        error.exit_code()
     })?;
     let report = BundleRunReport {
         bundle: report_path(&options.bundle),
-        source: bundle.manifest.source_label,
-        bytecode_instructions: bundle.manifest.runtime.bytecode_instructions,
-        adapter_manifests: bundle.adapter_manifests.len(),
-        phases,
-        executor: RuntimeExecutorTier::from(options.executor),
-        executor_stats: trace.executor_stats,
-        native_io: trace.native_io,
-        steps: trace.steps,
-        final_status: flow_status_label(&trace.final_status),
+        source: execution.source,
+        bytecode_instructions: execution.bytecode_instructions,
+        adapter_manifests: execution.adapter_manifests,
+        phases: execution.phases,
+        executor: RuntimeExecutorTier::from(execution.executor),
+        executor_stats: execution.trace.executor_stats,
+        native_io: execution.trace.native_io,
+        steps: execution.trace.steps,
+        final_status: flow_status_label(&execution.trace.final_status),
     };
     if options.json {
         print_json(&report)
@@ -3344,17 +3586,127 @@ fn run_bundle_command(
     }
 }
 
-fn run_bytecode_runtime_steps(
+fn execute_bundle_with_native_adapters(
+    bundle: &ArcweftBundle,
+    options: &BundleRunnerOptions,
+    adapter_registrars: &[NativeAdapterRegistrar],
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<BundleRunnerExecution, BundleRunnerError> {
+    let workspace = run_bundle_runner_phase(phases, "materialize_bundle", || {
+        MaterializedBundleWorkspace::try_create(bundle)
+    })?;
+    let bytecode = run_bundle_runner_phase(phases, "bytecode_decode", || {
+        bundle_runner_bytecode(bundle, options)
+    })?;
+    let entry = bundle_runner_entry(bundle, options);
+    let direct_bytecode = entry.is_none() && options.flow.is_none();
+    let host_policy = bundle_host_policy(bundle);
+    let trace = run_bundle_runner_phase(phases, "run", || {
+        try_run_bytecode_runtime_steps(
+            if direct_bytecode {
+                bundle.bytecode.program.clone()
+            } else {
+                bytecode
+            },
+            Some(workspace.source_path()),
+            RuntimeStepRunConfig {
+                steps: options.steps,
+                mode: options.mode.into(),
+                max_ops: options.max_ops,
+                executor: options.executor.into(),
+                pure_config: options.pure_config,
+            },
+            &host_policy,
+            adapter_registrars,
+            &options.values,
+        )
+    })?;
+    Ok(BundleRunnerExecution {
+        source: bundle.manifest.source_label.clone(),
+        bytecode_instructions: bundle.manifest.runtime.bytecode_instructions,
+        adapter_manifests: bundle.adapter_manifests.len(),
+        phases: std::mem::take(phases),
+        executor: options.executor.into(),
+        trace,
+    })
+}
+
+fn bundle_runner_bytecode(
+    bundle: &ArcweftBundle,
+    options: &BundleRunnerOptions,
+) -> Result<BytecodeProgram, BundleRunnerError> {
+    let mut plan = bundle
+        .bytecode
+        .program
+        .clone()
+        .into_runtime_plan()
+        .map_err(BundleRunnerError::DecodeBytecode)?;
+    apply_bundle_runner_entry_selection(
+        &mut plan,
+        bundle_runner_entry(bundle, options),
+        options.flow.as_deref(),
+    )?;
+    Ok(BytecodeProgram::from_runtime_plan(plan))
+}
+
+fn bundle_runner_entry<'a>(
+    bundle: &'a ArcweftBundle,
+    options: &'a BundleRunnerOptions,
+) -> Option<&'a str> {
+    options.entry.as_deref().or_else(|| {
+        options
+            .flow
+            .is_none()
+            .then_some(bundle.manifest.entry.as_deref())
+            .flatten()
+    })
+}
+
+fn apply_bundle_runner_entry_selection(
+    plan: &mut RuntimePlan,
+    entry: Option<&str>,
+    flow: Option<&str>,
+) -> Result<(), BundleRunnerError> {
+    if entry.is_some() && flow.is_some() {
+        return Err(BundleRunnerError::ConflictingEntrySelection);
+    }
+    if let Some(flow) = flow {
+        let flow = FlowRuntimeId(normalize_flow_id(flow));
+        if !plan.flows.iter().any(|candidate| candidate.id == flow) {
+            return Err(BundleRunnerError::UnknownFlow { flow: flow.0 });
+        }
+        plan.entry_flow = Some(flow);
+        return Ok(());
+    }
+    if let Some(entry) = entry {
+        let entry = normalize_entry_id(entry);
+        let Some(spec) = plan
+            .entries
+            .iter()
+            .find(|candidate| candidate.id.0 == entry)
+        else {
+            return Err(BundleRunnerError::UnknownEntry { entry });
+        };
+        let RuntimeEntryTarget::Flow(flow) = &spec.target else {
+            return Err(BundleRunnerError::NonFlowEntry { entry });
+        };
+        plan.entry_flow = Some(flow.clone());
+    }
+    Ok(())
+}
+
+fn try_run_bytecode_runtime_steps(
     bytecode: BytecodeProgram,
     source_path: Option<&Path>,
     config: RuntimeStepRunConfig,
     host_policy: &HostCallPolicy,
     adapter_registrars: &[NativeAdapterRegistrar],
     values: &[RuntimeBinding],
-) -> Result<RuntimeRunTrace, ExitCode> {
+) -> Result<RuntimeRunTrace, BundleRunnerError> {
     let mut executor =
-        RuntimeExecutorInstance::from_bytecode(bytecode, config.executor, config.pure_config)?;
-    run_runtime_steps_with_executor(
+        RuntimeExecutorInstance::try_from_bytecode(bytecode, config.executor, config.pure_config)
+            .map_err(BundleRunnerError::DecodeBytecode)?;
+    try_run_runtime_steps_with_executor(
         &mut executor,
         NativeRunHost {
             source_path,
@@ -3366,6 +3718,7 @@ fn run_bytecode_runtime_steps(
         config.max_ops,
         values,
     )
+    .map_err(BundleRunnerError::NativeAdapter)
 }
 
 fn bundle_host_policy(bundle: &ArcweftBundle) -> HostCallPolicy {
@@ -3634,7 +3987,7 @@ struct MaterializedBundleWorkspace {
 }
 
 impl MaterializedBundleWorkspace {
-    fn create(bundle: &ArcweftBundle) -> Result<Self, ExitCode> {
+    fn try_create(bundle: &ArcweftBundle) -> Result<Self, BundleRunnerError> {
         let root = std::env::temp_dir().join(format!(
             "arcweft-bundle-{}-{}",
             std::process::id(),
@@ -3642,22 +3995,14 @@ impl MaterializedBundleWorkspace {
                 .duration_since(UNIX_EPOCH)
                 .map_or(0, |duration| duration.as_nanos())
         ));
-        fs::create_dir_all(&root).map_err(|error| {
-            eprintln!("error: failed to create bundle workspace: {error}");
-            ExitCode::FAILURE
-        })?;
+        fs::create_dir_all(&root).map_err(BundleRunnerError::CreateWorkspace)?;
         let source_name = bundle_source_file_name(&bundle.source.label);
         let source_path = root.join(source_name);
         if let Some(parent) = source_path.parent() {
-            fs::create_dir_all(parent).map_err(|error| {
-                eprintln!("error: failed to create bundle source directory: {error}");
-                ExitCode::FAILURE
-            })?;
+            fs::create_dir_all(parent).map_err(BundleRunnerError::CreateSourceDirectory)?;
         }
-        fs::write(&source_path, &bundle.source.text).map_err(|error| {
-            eprintln!("error: failed to materialize bundle source: {error}");
-            ExitCode::FAILURE
-        })?;
+        fs::write(&source_path, &bundle.source.text)
+            .map_err(BundleRunnerError::MaterializeSource)?;
         materialize_bundle_virtual_files(&root, &bundle.virtual_files)?;
         Ok(Self { root, source_path })
     }
@@ -3690,26 +4035,27 @@ fn bundle_source_file_name(label: &str) -> String {
 fn materialize_bundle_virtual_files(
     root: &Path,
     files: &[BundleVirtualFile],
-) -> Result<(), ExitCode> {
+) -> Result<(), BundleRunnerError> {
     for file in files {
         let relative = Path::new(&file.path);
-        validate_relative_virtual_path(relative)?;
+        validate_relative_virtual_path_for_runner(relative)?;
         let path = root
             .join(".arcweft")
             .join(file.space.as_str())
             .join(relative);
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|error| {
-                eprintln!("error: failed to create bundle virtual file directory: {error}");
-                ExitCode::FAILURE
-            })?;
+            fs::create_dir_all(parent).map_err(BundleRunnerError::CreateVirtualFileDirectory)?;
         }
-        fs::write(&path, &file.bytes).map_err(|error| {
-            eprintln!("error: failed to materialize bundle virtual file: {error}");
-            ExitCode::FAILURE
-        })?;
+        fs::write(&path, &file.bytes).map_err(BundleRunnerError::MaterializeVirtualFile)?;
     }
     Ok(())
+}
+
+fn validate_relative_virtual_path_for_runner(path: &Path) -> Result<(), BundleRunnerError> {
+    path.components()
+        .all(|component| matches!(component, Component::Normal(_)))
+        .then_some(())
+        .ok_or(BundleRunnerError::InvalidVirtualFilePath)
 }
 
 fn script_bench_selection(
@@ -5935,6 +6281,21 @@ impl BundleOptions {
             spaces.push(BundleVirtualFileSpace::Export);
         }
         spaces
+    }
+}
+
+impl From<&RunBundleOptions> for BundleRunnerOptions {
+    fn from(options: &RunBundleOptions) -> Self {
+        Self {
+            entry: options.entry.clone(),
+            flow: options.flow.clone(),
+            executor: options.executor.into(),
+            steps: options.steps,
+            mode: options.mode.into(),
+            max_ops: options.max_ops,
+            values: options.values.clone(),
+            pure_config: RuntimePureAcceleratorConfig::default(),
+        }
     }
 }
 

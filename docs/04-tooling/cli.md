@@ -334,9 +334,12 @@ execution. The current implementation supports the standard CLI native file,
 system-info, and internal scheduler adapters; custom profile adapter
 implementations still need an embedding runner or future player adapter to
 provide concrete host code. Embedding runners use
-`arcweft_cli::run_with_native_adapters` to register concrete `HostAdapter`
-implementations. The bundle supplies the manifest host-call surface and
-policy; the runner supplies executable host code for matching ids.
+`arcweft_cli::run_bundle_file_with_native_adapters` or
+`arcweft_cli::run_bundle_with_native_adapters` with concrete `HostAdapter`
+registrars. The bundle supplies the manifest host-call surface and policy; the
+runner supplies executable host code for matching ids and receives a typed
+`BundleRunnerReport` with phases, executor stats, native I/O stats, step
+summaries, and final status.
 
 JSON output includes `phases` for compile/package work on `bundle` and
 read/decode/materialize/bytecode/run work on `run-bundle`. These counters let
@@ -507,11 +510,19 @@ The `arcweft-cli` crate also exposes a library runner:
 ```rust
 arcweft_cli::run(std::env::args_os());
 arcweft_cli::run_with_native_adapters(std::env::args_os(), &[register_adapter]);
+
+let report = arcweft_cli::run_bundle_file_with_native_adapters(
+    "dist/game.awfb",
+    &arcweft_cli::BundleRunnerOptions::default(),
+    &[register_adapter],
+)?;
 ```
 
 Additional static adapter registration functions receive the source path and a
 `HostAdapterRegistryBuilder`; they register concrete implementations only.
 Permission remains manifest-driven through the selected profile adapter context.
+Bundle runner APIs return typed errors and reports instead of printing or
+requiring CLI argument vectors.
 
 ## JIT
 

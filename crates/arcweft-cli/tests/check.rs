@@ -1,13 +1,15 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::Command;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use arcweft_adapter_context::manifest::{
     AdapterEffectCapability, AdapterHostCall, AdapterManifest,
 };
-use arcweft_cli::{NativeAdapterRegistrar, run_with_native_adapters};
+use arcweft_cli::{
+    BundleRunnerOptions, NativeAdapterRegistrar, run_bundle_file_with_native_adapters,
+};
 use arcweft_core::task::{HostTaskRequest, TaskSpec};
 use arcweft_core::value::RuntimePayload;
 use arcweft_host_adapter::{
@@ -1975,20 +1977,27 @@ fn run_bundle_uses_embedding_registered_custom_adapter() {
         "custom bundle artifact must not record absolute temp paths: {bundle_json}"
     );
 
-    let exit = run_with_native_adapters(
-        [
-            "arcw",
-            "run-bundle",
-            fixture.bundle_path.to_str().expect("bundle path is utf8"),
-            "--mode",
-            "drain",
-            "--steps",
-            "8",
-        ],
+    let runner_options = BundleRunnerOptions::default();
+    let report = run_bundle_file_with_native_adapters(
+        &fixture.bundle_path,
+        &runner_options,
         &[register_custom_bundle_adapter as NativeAdapterRegistrar],
-    );
+    )
+    .expect("embedding runner executes custom adapter bundle");
 
-    assert_eq!(exit, ExitCode::SUCCESS);
+    assert_eq!(report.native_io.completed_tasks, 1);
+    assert!(
+        report
+            .phases
+            .iter()
+            .any(|phase| phase.name == "read_bundle")
+            && report
+                .phases
+                .iter()
+                .any(|phase| phase.name == "decode_bundle")
+            && report.phases.iter().any(|phase| phase.name == "run"),
+        "embedding runner report should include load and run phases: {report:?}"
+    );
     assert_eq!(CUSTOM_BUNDLE_ADAPTER_CALLS.load(Ordering::SeqCst), 1);
     assert_eq!(
         fs::read_to_string(&fixture.marker_path).expect("custom adapter marker is written"),
