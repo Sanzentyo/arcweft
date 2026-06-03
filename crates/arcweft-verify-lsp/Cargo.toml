@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 arcweft-adapter-context = { path = "../arcweft-adapter-context" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
+arcweft-runtime-host = { path = "../arcweft-runtime-host" }
 arcweft-tooling = { path = "../arcweft-tooling" }
 arcweft-verify = { path = "../arcweft-verify" }
 lsp-types.workspace = true

@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -9,9 +9,7 @@ use arcweft_adapter_context::manifest::{
 };
 use arcweft_core::task::{HostTaskRequest, TaskSpec};
 use arcweft_core::value::RuntimePayload;
-use arcweft_host_adapter::{
-    HostAdapter, HostAdapterError, HostAdapterRegistryBuilder, HostTaskMetrics, HostTaskOutcome,
-};
+use arcweft_host_adapter::{HostAdapter, HostTaskMetrics, HostTaskOutcome};
 use arcweft_runtime_host::{
     BundleRunnerOptions, NativeAdapterRegistrar, run_bundle_file_with_native_adapters,
 };
@@ -1978,12 +1976,11 @@ fn run_bundle_uses_embedding_registered_custom_adapter() {
     );
 
     let runner_options = BundleRunnerOptions::default();
-    let report = run_bundle_file_with_native_adapters(
-        &fixture.bundle_path,
-        &runner_options,
-        &[register_custom_bundle_adapter as NativeAdapterRegistrar],
-    )
-    .expect("embedding runner executes custom adapter bundle");
+    let registrars: [NativeAdapterRegistrar; 1] =
+        [|_, builder| builder.register(CustomBundleAdapter::new())];
+    let report =
+        run_bundle_file_with_native_adapters(&fixture.bundle_path, &runner_options, &registrars)
+            .expect("embedding runner executes custom adapter bundle");
 
     assert_eq!(report.native_io.completed_tasks, 1);
     assert!(
@@ -2067,18 +2064,22 @@ adapter_manifests = ["custom-adapter.toml"]
     }
 }
 
-fn register_custom_bundle_adapter(
-    _source_path: &Path,
-    builder: HostAdapterRegistryBuilder,
-) -> Result<HostAdapterRegistryBuilder, HostAdapterError> {
-    builder.register(CustomBundleAdapter {
-        manifest: custom_bundle_adapter_manifest(),
-    })
-}
-
 #[derive(Debug)]
 struct CustomBundleAdapter {
     manifest: AdapterManifest,
+}
+
+impl CustomBundleAdapter {
+    fn new() -> Self {
+        Self {
+            manifest: AdapterManifest::new("custom-file", "Custom File")
+                .with_effect(AdapterEffectCapability::new("custom.read"))
+                .with_host_call(AdapterHostCall::new(
+                    "custom.read",
+                    [AdapterEffectCapability::new("custom.read")],
+                )),
+        }
+    }
 }
 
 impl HostAdapter for CustomBundleAdapter {
@@ -2116,15 +2117,6 @@ impl HostAdapter for CustomBundleAdapter {
     fn can_complete_in_parallel(&self, _request: &HostTaskRequest) -> bool {
         false
     }
-}
-
-fn custom_bundle_adapter_manifest() -> AdapterManifest {
-    AdapterManifest::new("custom-file", "Custom File")
-        .with_effect(AdapterEffectCapability::new("custom.read"))
-        .with_host_call(AdapterHostCall::new(
-            "custom.read",
-            [AdapterEffectCapability::new("custom.read")],
-        ))
 }
 
 #[test]

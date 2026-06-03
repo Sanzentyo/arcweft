@@ -54,8 +54,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `arcweft-runtime-host` owns native task bridging, system information, bundle
   materialization, and typed bundle execution reports. Embedding runners, LSP
   tooling, and player adapters can depend on this crate without compiling or
-  linking the CLI binary/argument parser. `arcweft-cli` remains both a library
-  and a binary for argv-compatible execution through `run_with_native_adapters`.
+  linking the CLI binary/argument parser. `arcweft-verify-lsp` now exposes a
+  separate runtime-host call-set context for completions, hover, and diagnostics
+  when a profile's adapter manifest declares a host call that the selected
+  runner does not implement. `arcweft-cli` remains both a library and a binary
+  for argv-compatible execution through `run_with_native_adapters`.
 - `arcweft-bundle` owns the first Sans I/O `.awfb` data model and deterministic
   JSON codec. `arcw bundle` and `arcw build bundle` package source text,
   executable structured bytecode, runtime summary counters, required host-call
@@ -70,7 +73,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   bundle with a project-local custom adapter manifest and executes it directly
   through `arcweft_runtime_host::run_bundle_file_with_native_adapters`, proving
   the bundle supplies policy data while the embedding runner supplies concrete
-  host code and receives a typed `BundleRunnerReport`.
+  host code and receives a typed `BundleRunnerReport`. Runtime-host crate
+  coverage also constructs a custom-adapter bytecode bundle directly and runs it
+  through `arcweft_runtime_host::run_bundle_with_native_adapters`, so this
+  boundary is tested without involving the CLI crate.
 - `arcw check`, `arcw verify`, `arcw unsafe`, and plan/report generation now
   resolve profile adapters through the standard `arcweft-adapter-context`
   manifest registry plus profile-local `adapter_manifests`, then pass the

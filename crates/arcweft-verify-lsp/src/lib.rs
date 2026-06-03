@@ -4,11 +4,13 @@
 //! converts verifier reports into `lsp-types` values that a future server,
 //! editor plugin, or tests can reuse.
 
-use arcweft_adapter_context::manifest::{
-    AdapterEffectCapability, AdapterHostCallId, AdapterManifest,
+use arcweft_adapter_context::{
+    manifest::{AdapterEffectCapability, AdapterHostCallId, AdapterManifest},
+    standard,
 };
 use arcweft_lang_sema::env::FunctionSignature;
 use arcweft_lang_sema::types::TypeKind;
+use arcweft_runtime_host::internal_scheduler_manifest;
 use arcweft_verify::{
     Severity as VerifySeverity, ToolActionKind, VerificationDiagnostic, VerificationReport,
 };
@@ -18,10 +20,22 @@ use lsp_types::{
     ParameterInformation, ParameterLabel, Position, Range, SignatureHelp, SignatureInformation,
     Uri,
 };
+use std::collections::BTreeSet;
 
 /// Sans I/O LSP context supplied by the caller after resolving profiles.
 pub struct ArcweftLspContext<'a> {
     adapter: &'a AdapterManifest,
+}
+
+/// Runtime-host capabilities supplied by the embedding runner.
+///
+/// Adapter manifests describe the Arcweft-visible surface. This set describes
+/// the concrete host calls that the selected native/web runner can actually
+/// complete, so tooling can report a profile that type-checks but cannot run
+/// with the chosen host.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RuntimeHostCallSet {
+    host_calls: BTreeSet<AdapterHostCallId>,
 }
 
 /// Adapter-supplied fact required by a document, profile, or runtime plan.
@@ -42,6 +56,55 @@ impl<'a> ArcweftLspContext<'a> {
     /// Adapter metadata visible to tooling.
     pub const fn adapter(&self) -> &'a AdapterManifest {
         self.adapter
+    }
+}
+
+impl RuntimeHostCallSet {
+    /// Creates an empty runtime-host call set.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Creates a runtime-host call set from stable host-call ids.
+    pub fn from_host_call_ids(ids: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self {
+            host_calls: ids
+                .into_iter()
+                .map(AdapterHostCallId::new)
+                .collect::<BTreeSet<_>>(),
+        }
+    }
+
+    /// Creates a runtime-host call set from adapter manifests.
+    pub fn from_adapter_manifests<'a>(
+        manifests: impl IntoIterator<Item = &'a AdapterManifest>,
+    ) -> Self {
+        Self::from_host_call_ids(
+            manifests
+                .into_iter()
+                .flat_map(AdapterManifest::host_calls)
+                .map(|host_call| host_call.id().to_owned()),
+        )
+    }
+
+    /// Native runtime-host calls provided by the standard embedding runner.
+    pub fn standard_native() -> Self {
+        let manifests = [
+            standard::native_file_manifest(),
+            standard::system_info_manifest(),
+            internal_scheduler_manifest(),
+        ];
+        Self::from_adapter_manifests(&manifests)
+    }
+
+    /// Returns true when the runtime host implements this call id.
+    pub fn has_host_call(&self, id: &AdapterHostCallId) -> bool {
+        self.host_calls.contains(id)
+    }
+
+    /// Stable runtime-host call ids visible to tooling.
+    pub fn host_call_ids(&self) -> impl Iterator<Item = &str> {
+        self.host_calls.iter().map(AdapterHostCallId::as_str)
     }
 }
 
@@ -75,6 +138,39 @@ pub fn adapter_manifest_requirement_diagnostics(
         .iter()
         .filter_map(|requirement| adapter_manifest_requirement_diagnostic(context, requirement))
         .collect()
+}
+
+/// Diagnoses host calls required by source or profile metadata but missing from
+/// the selected runtime host implementation.
+pub fn runtime_host_requirement_diagnostics(
+    runtime_host: &RuntimeHostCallSet,
+    requirements: &[AdapterManifestRequirement],
+) -> Vec<Diagnostic> {
+    requirements
+        .iter()
+        .filter_map(|requirement| runtime_host_requirement_diagnostic(runtime_host, requirement))
+        .collect()
+}
+
+/// Completes runtime-host calls provided by the selected embedding runner.
+pub fn runtime_host_completions(runtime_host: &RuntimeHostCallSet) -> Vec<CompletionItem> {
+    runtime_host
+        .host_call_ids()
+        .map(|id| CompletionItem {
+            label: id.to_owned(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            detail: Some("runtime host call".to_owned()),
+            ..CompletionItem::default()
+        })
+        .collect()
+}
+
+/// Builds hover text for a runtime-host call supplied by the selected runner.
+pub fn runtime_host_hover(runtime_host: &RuntimeHostCallSet, name: &str) -> Option<Hover> {
+    runtime_host
+        .host_call_ids()
+        .any(|id| id == name)
+        .then(|| string_hover(format!("runtime host call {name}")))
 }
 
 /// Completes Rust adapter functions and exported Rust types visible to Arcweft.
@@ -412,12 +508,41 @@ fn adapter_manifest_requirement_diagnostic(
     }
 }
 
+fn runtime_host_requirement_diagnostic(
+    runtime_host: &RuntimeHostCallSet,
+    requirement: &AdapterManifestRequirement,
+) -> Option<Diagnostic> {
+    match requirement {
+        AdapterManifestRequirement::HostCall(id) => (!runtime_host.has_host_call(id)).then(|| {
+            runtime_host_diagnostic(
+                "runtime_host.host_call.missing",
+                format!(
+                    "runtime host does not provide implementation for host call `{}`",
+                    id.as_str()
+                ),
+            )
+        }),
+        AdapterManifestRequirement::EffectCapability(_) => None,
+    }
+}
+
 fn adapter_manifest_diagnostic(code: impl Into<String>, message: String) -> Diagnostic {
     Diagnostic {
         range: default_range(),
         severity: Some(DiagnosticSeverity::ERROR),
         code: Some(NumberOrString::String(code.into())),
         source: Some("arcweft-adapter".to_owned()),
+        message,
+        ..Diagnostic::default()
+    }
+}
+
+fn runtime_host_diagnostic(code: impl Into<String>, message: String) -> Diagnostic {
+    Diagnostic {
+        range: default_range(),
+        severity: Some(DiagnosticSeverity::ERROR),
+        code: Some(NumberOrString::String(code.into())),
+        source: Some("arcweft-runtime-host".to_owned()),
         message,
         ..Diagnostic::default()
     }
@@ -715,5 +840,49 @@ mod tests {
                 ))
                 && diagnostic.message.contains("fs.read")
         }));
+    }
+
+    #[test]
+    fn exposes_runtime_host_completions_and_hover() {
+        let runtime_host = RuntimeHostCallSet::standard_native();
+        let completions = runtime_host_completions(&runtime_host);
+
+        for label in ["fs.read_text", "system.core_count", "flow_thread.run_child"] {
+            assert!(
+                completions.iter().any(|item| item.label == label),
+                "missing runtime-host completion {label}"
+            );
+        }
+        let hover =
+            runtime_host_hover(&runtime_host, "system.core_count").expect("runtime-host hover");
+        assert!(
+            matches!(hover.contents, HoverContents::Scalar(MarkedString::String(text)) if text.contains("runtime host call system.core_count"))
+        );
+    }
+
+    #[test]
+    fn diagnoses_missing_runtime_host_call_implementation() {
+        let runtime_host = RuntimeHostCallSet::standard_native();
+        let diagnostics = runtime_host_requirement_diagnostics(
+            &runtime_host,
+            &[
+                AdapterManifestRequirement::host_call("system.core_count"),
+                AdapterManifestRequirement::host_call("custom.read"),
+                AdapterManifestRequirement::effect_capability("custom.read"),
+            ],
+        );
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].code,
+            Some(NumberOrString::String(
+                "runtime_host.host_call.missing".to_owned()
+            ))
+        );
+        assert_eq!(
+            diagnostics[0].source,
+            Some("arcweft-runtime-host".to_owned())
+        );
+        assert!(diagnostics[0].message.contains("custom.read"));
     }
 }
