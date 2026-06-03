@@ -49,6 +49,14 @@ capabilities, host-call identifiers, tooling docs, and merged Rust ABI exports.
 This keeps core language parsing independent from adapter-specific names while
 still giving CLI, verifier, and LSP one typed source of truth.
 
+Project profiles can also load JSON or TOML adapter manifest files through
+`adapter_manifests`. These manifests use the same typed model as standard
+adapters; effect labels are stored as `EffectCapability` ids with parsed
+family/operation/scope components, while host calls use stable ids such as
+`fs.read_text` or `custom.read`. Unknown adapter ids are accepted by profile
+resolution only when an adapter manifest path is present, then validated against
+the merged registry.
+
 Minimal adapter build scripts construct the manifest explicitly and delegate
 file I/O to `arcweft-rust-abi-build`:
 

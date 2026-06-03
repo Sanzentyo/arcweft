@@ -64,6 +64,8 @@ pub struct LaunchProfileSpec {
     #[serde(default)]
     adapter: Option<String>,
     #[serde(default)]
+    adapter_manifests: Vec<PathBuf>,
+    #[serde(default)]
     listen: Option<String>,
     #[serde(default)]
     pure: Option<LaunchPureProfileSpec>,
@@ -94,6 +96,7 @@ pub struct ResolvedLaunchProfile {
     source: PathBuf,
     entry: Option<String>,
     adapter: Option<String>,
+    adapter_manifests: Vec<PathBuf>,
     listen: Option<String>,
     pure: Option<LaunchPureProfileSpec>,
     rust_metadata: Vec<PathBuf>,
@@ -156,6 +159,7 @@ impl LaunchProfileManifest {
         if let Some(adapter) = spec.adapter.as_deref()
             && !known_adapters.is_empty()
             && !known_adapters.contains(&adapter)
+            && spec.adapter_manifests.is_empty()
         {
             return Err(LaunchProfileError::UnknownAdapter {
                 profile: id.to_owned(),
@@ -178,12 +182,24 @@ impl LaunchProfileManifest {
                 }
             })
             .collect();
+        let adapter_manifests = spec
+            .adapter_manifests
+            .iter()
+            .map(|path| {
+                if path.is_absolute() {
+                    path.clone()
+                } else {
+                    manifest_dir.join(path)
+                }
+            })
+            .collect();
         Ok(ResolvedLaunchProfile {
             id: ProfileId::new(id),
             kind: spec.kind,
             source,
             entry: spec.entry.clone(),
             adapter: spec.adapter.clone(),
+            adapter_manifests,
             listen: spec.listen.clone(),
             pure: spec.pure.clone(),
             rust_metadata,
@@ -220,6 +236,11 @@ impl ResolvedLaunchProfile {
     /// Optional adapter selected by the profile.
     pub fn adapter(&self) -> Option<&str> {
         self.adapter.as_deref()
+    }
+
+    /// Adapter manifest files selected by this profile.
+    pub fn adapter_manifests(&self) -> &[PathBuf] {
+        &self.adapter_manifests
     }
 
     /// Optional listen address selected by the profile.
@@ -278,6 +299,7 @@ kind = "server"
 source = "src/server.arcw"
 entry = "http"
 adapter = "native-http"
+adapter_manifests = ["adapters/http.toml"]
 listen = "127.0.0.1:8787"
 rust_metadata = ["target/arcweft/truck_game.json"]
 
@@ -299,6 +321,10 @@ batch_min_len = 2048
         assert_eq!(resolved.source(), Path::new("game/src/server.arcw"));
         assert_eq!(resolved.entry(), Some("http"));
         assert_eq!(resolved.adapter(), Some("native-http"));
+        assert_eq!(
+            resolved.adapter_manifests(),
+            &[PathBuf::from("game/adapters/http.toml")]
+        );
         assert_eq!(resolved.listen(), Some("127.0.0.1:8787"));
         assert_eq!(
             resolved.rust_metadata(),
@@ -320,6 +346,12 @@ batch_min_len = 2048
 kind = "server"
 source = "server.arcw"
 adapter = "custom-http"
+
+[profiles.custom]
+kind = "server"
+source = "server.arcw"
+adapter = "custom-http"
+adapter_manifests = ["adapters/custom-http.toml"]
 "#,
         )
         .expect("manifest parses");
@@ -333,5 +365,13 @@ adapter = "custom-http"
             Err(LaunchProfileError::UnknownAdapter { profile, adapter })
                 if profile == "bad" && adapter == "custom-http"
         ));
+        let custom = manifest
+            .resolve_profile_with_adapters("custom", Path::new("game"), &["native-http"])
+            .expect("profile with custom adapter manifest resolves");
+        assert_eq!(custom.adapter(), Some("custom-http"));
+        assert_eq!(
+            custom.adapter_manifests(),
+            &[PathBuf::from("game/adapters/custom-http.toml")]
+        );
     }
 }

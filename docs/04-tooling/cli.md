@@ -74,6 +74,35 @@ Direct path and `--profile` are mutually exclusive. This keeps core source mode
 reproducible for verifier, formatter, LSP, and CI use while still allowing
 profile-aware checks for adapter-backed entries.
 
+Profiles may register project-local adapter manifests through
+`adapter_manifests`. These paths are resolved relative to `arcw.toml` and are
+merged with the standard adapter registry before the profile's `adapter` id is
+resolved:
+
+```toml
+[profiles.game]
+kind = "game"
+source = "src/game.arcw"
+adapter = "custom-file"
+adapter_manifests = ["adapters/custom-file.toml"]
+```
+
+```toml
+id = "custom-file"
+display_name = "Custom File"
+effects = ["custom.read"]
+
+[[functions]]
+name = "custom.read"
+return_type = "String"
+effects = ["custom.read"]
+params = [{ name = "path", ty = "String" }]
+
+[[host_calls]]
+id = "custom.read"
+effects = ["custom.read"]
+```
+
 Profiles may also list Rust ABI metadata files through `rust_metadata`. These
 paths are resolved relative to the manifest directory and are merged into the
 selected adapter manifest during `check`/`verify`/runtime planning. The

@@ -1,4 +1,4 @@
-use arcweft_adapter_context::{manifest::AdapterManifest, standard};
+use arcweft_adapter_context::{codec::AdapterManifestFile, manifest::AdapterManifest, standard};
 use arcweft_core::aot::{AotProgram, AotProgramStats};
 use arcweft_core::bytecode::{BytecodeProgram, BytecodeStats};
 use arcweft_core::engine::FlowFiberStatus;
@@ -1546,7 +1546,7 @@ fn runtime_profile_command(options: &RuntimeProfileOptions) -> Result<(), ExitCo
     )?;
     let env = typecheck_env_for_selection(&selection, options.adapter.as_deref(), &mut phases)?;
     let host_calls =
-        native_host_calls_for_adapter(options.adapter.as_deref().or(selection.adapter()))?;
+        native_host_calls_for_selection_with_adapter(&selection, options.adapter.as_deref())?;
     if !is_arcw_path(selection.path()) {
         eprintln!(
             "error: {} is not an .arcw source file",
@@ -4322,7 +4322,7 @@ fn unsafe_command(options: &UnsafeOptions) -> Result<(), ExitCode> {
 #[derive(Clone, Debug)]
 enum SourceSelection {
     Direct { path: PathBuf },
-    Profile(ResolvedLaunchProfile),
+    Profile(Box<ResolvedLaunchProfile>),
 }
 
 impl SourceSelection {
@@ -4524,7 +4524,7 @@ fn resolve_source_selection(
                     eprintln!("error: {error}");
                     ExitCode::FAILURE
                 })?;
-            Ok(SourceSelection::Profile(resolved))
+            Ok(SourceSelection::Profile(Box::new(resolved)))
         }
         (None, None) => {
             eprintln!("error: expected .arcw source path or --profile");
@@ -4576,8 +4576,7 @@ fn typecheck_env_for_selection(
     adapter_override: Option<&str>,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<TypeCheckEnv, ExitCode> {
-    let adapter = adapter_override.or(selection.adapter());
-    let mut manifest = adapter_manifest_for_adapter(adapter)?;
+    let mut manifest = adapter_manifest_for_selection(selection, adapter_override)?;
     if adapter_override.is_none() && selection.profile().is_some() {
         let manifests = run_profile_phase(phases, "rust_metadata", || {
             rust_metadata_for_selection(selection)
@@ -4589,9 +4588,20 @@ fn typecheck_env_for_selection(
     Ok(manifest.apply_to_env(TypeCheckEnv::new()))
 }
 
-fn adapter_manifest_for_adapter(adapter: Option<&str>) -> Result<AdapterManifest, ExitCode> {
+fn adapter_manifest_for_selection(
+    selection: &SourceSelection,
+    adapter_override: Option<&str>,
+) -> Result<AdapterManifest, ExitCode> {
+    let adapter_id = adapter_override.or(selection.adapter());
+    let registry = adapter_registry_for_selection(selection)?;
+    adapter_manifest_from_registry(&registry, adapter_id)
+}
+
+fn adapter_manifest_from_registry(
+    registry: &arcweft_adapter_context::manifest::AdapterRegistry,
+    adapter: Option<&str>,
+) -> Result<AdapterManifest, ExitCode> {
     let adapter_id = adapter.unwrap_or(standard::SANS_IO_ADAPTER_ID);
-    let registry = standard::standard_registry();
     if let Some(manifest) = registry.get(adapter_id) {
         return Ok(manifest.clone());
     }
@@ -4602,12 +4612,52 @@ fn adapter_manifest_for_adapter(adapter: Option<&str>) -> Result<AdapterManifest
 fn native_host_calls_for_selection(
     selection: &SourceSelection,
 ) -> Result<NativeHostCallSet, ExitCode> {
-    native_host_calls_for_adapter(selection.adapter())
+    native_host_calls_for_selection_with_adapter(selection, None)
 }
 
-fn native_host_calls_for_adapter(adapter: Option<&str>) -> Result<NativeHostCallSet, ExitCode> {
-    let selected = adapter_manifest_for_adapter(adapter)?;
+fn native_host_calls_for_selection_with_adapter(
+    selection: &SourceSelection,
+    adapter_override: Option<&str>,
+) -> Result<NativeHostCallSet, ExitCode> {
+    let selected = adapter_manifest_for_selection(selection, adapter_override)?;
     Ok(NativeHostCallSet::standard_cli().union(NativeHostCallSet::from_manifest(&selected)))
+}
+
+fn adapter_registry_for_selection(
+    selection: &SourceSelection,
+) -> Result<arcweft_adapter_context::manifest::AdapterRegistry, ExitCode> {
+    let registry = standard::standard_registry();
+    let Some(profile) = selection.profile() else {
+        return Ok(registry);
+    };
+    profile
+        .adapter_manifests()
+        .iter()
+        .try_fold(registry, |registry, path| {
+            read_adapter_manifest(path).map(|manifest| registry.with_manifest(manifest))
+        })
+}
+
+fn read_adapter_manifest(path: &Path) -> Result<AdapterManifest, ExitCode> {
+    let source = fs::read_to_string(path).map_err(|error| {
+        eprintln!(
+            "error: failed to read adapter manifest {}: {error}",
+            path.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    let file = match path.extension().and_then(|extension| extension.to_str()) {
+        Some("json") => AdapterManifestFile::from_json(&source),
+        _ => AdapterManifestFile::from_toml(&source),
+    }
+    .map_err(|error| {
+        eprintln!(
+            "error: failed to parse adapter manifest {}: {error}",
+            path.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    Ok(file.into_manifest())
 }
 
 fn rust_metadata_for_selection(

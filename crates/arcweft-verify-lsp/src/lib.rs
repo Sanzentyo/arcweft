@@ -72,6 +72,61 @@ pub fn rust_adapter_completions(context: &ArcweftLspContext<'_>) -> Vec<Completi
     functions.chain(types).collect()
 }
 
+/// Completes all adapter manifest facts visible to Arcweft tooling.
+pub fn adapter_manifest_completions(context: &ArcweftLspContext<'_>) -> Vec<CompletionItem> {
+    let adapter = context.adapter();
+    let docs = |subject: &str| tooling_doc(adapter, subject);
+    let symbols = adapter.symbols().iter().map(|symbol| CompletionItem {
+        label: symbol.name().to_owned(),
+        kind: Some(CompletionItemKind::VARIABLE),
+        detail: Some(type_kind_label(symbol.ty())),
+        documentation: docs(symbol.name()),
+        ..CompletionItem::default()
+    });
+    let methods = adapter.methods().iter().map(|method| {
+        let label = method_label(method.receiver(), method.name());
+        CompletionItem {
+            label: label.clone(),
+            kind: Some(CompletionItemKind::METHOD),
+            detail: Some(method_signature_label(
+                method.receiver(),
+                method.name(),
+                method.signature(),
+            )),
+            documentation: docs(&label),
+            ..CompletionItem::default()
+        }
+    });
+    let functions = adapter.functions().iter().map(|function| CompletionItem {
+        label: function.name().to_owned(),
+        kind: Some(CompletionItemKind::FUNCTION),
+        detail: Some(signature_label(function.name(), function.signature())),
+        documentation: docs(function.name()),
+        ..CompletionItem::default()
+    });
+    let effects = adapter.effects().iter().map(|effect| CompletionItem {
+        label: effect.as_str().to_owned(),
+        kind: Some(CompletionItemKind::INTERFACE),
+        detail: Some("effect capability".to_owned()),
+        documentation: docs(effect.as_str()),
+        ..CompletionItem::default()
+    });
+    let host_calls = adapter.host_calls().iter().map(|host_call| CompletionItem {
+        label: host_call.id().to_owned(),
+        kind: Some(CompletionItemKind::FUNCTION),
+        detail: Some("host call".to_owned()),
+        documentation: docs(host_call.id()),
+        ..CompletionItem::default()
+    });
+    symbols
+        .chain(methods)
+        .chain(functions)
+        .chain(effects)
+        .chain(host_calls)
+        .chain(rust_adapter_completions(context))
+        .collect()
+}
+
 /// Builds hover text for one Rust adapter function or type name.
 pub fn rust_adapter_hover(context: &ArcweftLspContext<'_>, name: &str) -> Option<Hover> {
     if let Some(function) = context
@@ -102,6 +157,66 @@ pub fn rust_adapter_hover(context: &ArcweftLspContext<'_>, name: &str) -> Option
             ))),
             range: None,
         })
+}
+
+/// Builds hover text for one adapter manifest fact.
+pub fn adapter_manifest_hover(context: &ArcweftLspContext<'_>, name: &str) -> Option<Hover> {
+    let adapter = context.adapter();
+    if let Some(symbol) = adapter
+        .symbols()
+        .iter()
+        .find(|symbol| symbol.name() == name)
+    {
+        return Some(string_hover(format!(
+            "{}: {}{}",
+            symbol.name(),
+            type_kind_label(symbol.ty()),
+            tooling_doc_text(adapter, name)
+        )));
+    }
+    if let Some(method) = adapter
+        .methods()
+        .iter()
+        .find(|method| method_label(method.receiver(), method.name()) == name)
+    {
+        return Some(string_hover(format!(
+            "{}{}",
+            method_signature_label(method.receiver(), method.name(), method.signature()),
+            tooling_doc_text(adapter, name)
+        )));
+    }
+    if let Some(function) = adapter
+        .functions()
+        .iter()
+        .find(|function| function.name() == name)
+    {
+        return Some(string_hover(format!(
+            "{}{}",
+            signature_label(function.name(), function.signature()),
+            tooling_doc_text(adapter, name)
+        )));
+    }
+    if adapter
+        .effects()
+        .iter()
+        .any(|effect| effect.as_str() == name)
+    {
+        return Some(string_hover(format!(
+            "effect capability {name}{}",
+            tooling_doc_text(adapter, name)
+        )));
+    }
+    if adapter
+        .host_calls()
+        .iter()
+        .any(|host_call| host_call.id() == name)
+    {
+        return Some(string_hover(format!(
+            "host call {name}{}",
+            tooling_doc_text(adapter, name)
+        )));
+    }
+    rust_adapter_hover(context, name)
 }
 
 /// Builds signature help for one Rust adapter function name.
@@ -259,6 +374,40 @@ fn signature_label(name: &str, signature: &FunctionSignature) -> String {
     )
 }
 
+fn method_signature_label(
+    receiver: &TypeKind,
+    name: &str,
+    signature: &FunctionSignature,
+) -> String {
+    signature_label(&method_label(receiver, name), signature)
+}
+
+fn method_label(receiver: &TypeKind, name: &str) -> String {
+    format!("{}.{}", type_kind_label(receiver), name)
+}
+
+fn string_hover(value: String) -> Hover {
+    Hover {
+        contents: HoverContents::Scalar(MarkedString::String(value)),
+        range: None,
+    }
+}
+
+fn tooling_doc(adapter: &AdapterManifest, subject: &str) -> Option<lsp_types::Documentation> {
+    adapter
+        .tooling_docs()
+        .iter()
+        .find(|doc| doc.subject() == subject)
+        .map(|doc| lsp_types::Documentation::String(doc.docs().to_owned()))
+}
+
+fn tooling_doc_text(adapter: &AdapterManifest, subject: &str) -> String {
+    tooling_doc(adapter, subject).map_or_else(String::new, |doc| match doc {
+        lsp_types::Documentation::String(text) => format!("\n{text}"),
+        lsp_types::Documentation::MarkupContent(markup) => format!("\n{}", markup.value),
+    })
+}
+
 fn type_kind_label(ty: &TypeKind) -> String {
     match ty {
         TypeKind::Bool => "Bool".to_owned(),
@@ -306,7 +455,10 @@ fn type_kind_label(ty: &TypeKind) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_adapter_context::manifest::AdapterManifest;
+    use arcweft_adapter_context::manifest::{
+        AdapterEffectCapability, AdapterHostCall, AdapterManifest, AdapterToolingDoc,
+    };
+    use arcweft_lang_sema::env::{FunctionParam, FunctionSignature};
     use arcweft_rust_abi::{
         ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustParam,
         ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeRef,
@@ -406,6 +558,50 @@ mod tests {
         assert_eq!(
             signature.signatures[0].label,
             "mini_games.truck.score_to_rank(score: i32) -> Rank"
+        );
+    }
+
+    #[test]
+    fn exposes_adapter_manifest_completions_and_hover() {
+        let adapter = AdapterManifest::new("custom", "Custom")
+            .with_symbol("custom", TypeKind::Named("CustomApi".to_owned()))
+            .with_method_signature(
+                TypeKind::Named("CustomApi".to_owned()),
+                "read",
+                FunctionSignature::new(
+                    TypeKind::String,
+                    [FunctionParam::required("path", TypeKind::String)],
+                ),
+            )
+            .with_function_signature(
+                "custom.read",
+                FunctionSignature::new(
+                    TypeKind::String,
+                    [FunctionParam::required("path", TypeKind::String)],
+                ),
+                [AdapterEffectCapability::new("custom.read")],
+            )
+            .with_effect(AdapterEffectCapability::new("custom.read"))
+            .with_host_call(AdapterHostCall::new(
+                "custom.read",
+                [AdapterEffectCapability::new("custom.read")],
+            ))
+            .with_tooling_doc(AdapterToolingDoc::new(
+                "custom.read",
+                "Read custom content.",
+            ));
+        let context = ArcweftLspContext::new(&adapter);
+        let completions = adapter_manifest_completions(&context);
+
+        for label in ["custom", "CustomApi.read", "custom.read"] {
+            assert!(
+                completions.iter().any(|item| item.label == label),
+                "missing completion {label}"
+            );
+        }
+        let hover = adapter_manifest_hover(&context, "custom.read").expect("manifest hover");
+        assert!(
+            matches!(hover.contents, HoverContents::Scalar(MarkedString::String(text)) if text.contains("Read custom content."))
         );
     }
 }

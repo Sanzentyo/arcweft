@@ -1,6 +1,6 @@
 //! Typed adapter manifest model shared by CLI, LSP, and semantic checking.
 
-use arcweft_lang_sema::env::{FunctionParam, FunctionSignature, TypeCheckEnv};
+use arcweft_lang_sema::env::{EffectCapability, FunctionParam, FunctionSignature, TypeCheckEnv};
 use arcweft_lang_sema::types::TypeKind;
 use arcweft_rust_abi::{
     ArcweftRustFunction, ArcweftRustManifest, ArcweftRustParam, ArcweftRustTypeDecl,
@@ -37,7 +37,7 @@ pub struct AdapterFunction {
 /// Effect capability granted or required by an adapter surface.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AdapterEffectCapability {
-    name: String,
+    id: EffectCapability,
 }
 
 /// Runtime host call exported by an adapter.
@@ -164,12 +164,19 @@ impl AdapterFunction {
 impl AdapterEffectCapability {
     /// Creates an effect capability.
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into() }
+        Self {
+            id: EffectCapability::new(name),
+        }
     }
 
     /// Canonical capability label.
     pub fn as_str(&self) -> &str {
-        &self.name
+        self.id.as_str()
+    }
+
+    /// Typed semantic capability id.
+    pub const fn id(&self) -> &EffectCapability {
+        &self.id
     }
 }
 
@@ -399,14 +406,15 @@ impl AdapterManifest {
             let effects = function
                 .effects()
                 .iter()
-                .map(|effect| effect.as_str().to_owned())
+                .map(|effect| effect.id().clone())
                 .collect::<Vec<_>>();
             env.with_function_signature(function.name.clone(), function.signature.clone())
                 .with_function_effects(function.name.clone(), effects)
         });
-        let env = self.effects.iter().fold(env, |env, effect| {
-            env.with_capability(effect.as_str().to_owned())
-        });
+        let env = self
+            .effects
+            .iter()
+            .fold(env, |env, effect| env.with_capability(effect.id().clone()));
         let env = self.rust_functions.iter().fold(env, |env, function| {
             env.with_function_signature(function.name.clone(), function.signature.clone())
                 .with_rust_function_export(
@@ -585,8 +593,13 @@ mod tests {
 
         assert!(env.has_capability("fs.read"));
         assert_eq!(
-            env.function_effects("adapter.read_text"),
-            Some(["fs.read".to_owned()].as_slice())
+            env.function_effects("adapter.read_text").map(|effects| {
+                effects
+                    .iter()
+                    .map(EffectCapability::as_str)
+                    .collect::<Vec<_>>()
+            }),
+            Some(vec!["fs.read"])
         );
     }
 

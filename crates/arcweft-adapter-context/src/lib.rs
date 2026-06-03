@@ -4,5 +4,6 @@
 //! profiles, and tests opt into manifests when a host surface injects runtime
 //! bindings such as HTTP request data, host effects, or Rust adapter exports.
 
+pub mod codec;
 pub mod manifest;
 pub mod standard;

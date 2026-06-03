@@ -92,10 +92,12 @@ hints. These helpers return `lsp-types` data only; opening documents, applying
 workspace edits, watching files, and resolving editor capabilities remain
 transport-adapter responsibilities.
 
-Rust adapter completions, hover, and signature help are also Sans I/O. The LSP
-helper consumes an already-resolved adapter manifest containing standard
-adapter facts plus any profile-selected `arcweft-rust-abi` metadata. It does
-not parse Rust source, query rust-analyzer, or run Cargo by itself. Transport
-code refreshes metadata when the selected profile, metadata JSON, or Cargo build
-output changes, and can continue showing the last valid metadata while
-reporting stale or missing metadata.
+Adapter completions, hover, and signature help are also Sans I/O. The LSP helper
+consumes an already-resolved adapter manifest containing standard adapter facts,
+project-local adapter manifests, and any profile-selected `arcweft-rust-abi`
+metadata. It exposes manifest symbols, receiver methods, free functions, effect
+capabilities, host calls, tooling docs, Rust exports, and Rust ADT names from the
+same data source. It does not parse Rust source, query rust-analyzer, or run
+Cargo by itself. Transport code refreshes metadata when the selected profile,
+metadata JSON, adapter manifest, or Cargo build output changes, and can continue
+showing the last valid metadata while reporting stale or missing metadata.

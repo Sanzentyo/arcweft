@@ -5632,6 +5632,88 @@ adapter = "native-http"
 }
 
 #[test]
+fn profile_check_loads_project_adapter_manifest() {
+    let dir = temp_dir("profile-check-custom-adapter-manifest");
+    let source = dir.join("game.arcw");
+    let manifest = dir.join("arcw.toml");
+    let adapter_manifest = dir.join("custom-adapter.toml");
+    fs::write(
+        &source,
+        r#"
+flow @flow.opening opening {
+    let body = custom.read(path = "opening.txt")
+    return body
+}
+"#,
+    )
+    .expect("write source using custom adapter manifest");
+    fs::write(
+        &adapter_manifest,
+        r#"
+id = "custom-file"
+display_name = "Custom File"
+effects = ["custom.read"]
+
+[[functions]]
+name = "custom.read"
+return_type = "String"
+effects = ["custom.read"]
+params = [{ name = "path", ty = "String" }]
+
+[[host_calls]]
+id = "custom.read"
+effects = ["custom.read"]
+"#,
+    )
+    .expect("write adapter manifest");
+    fs::write(
+        &manifest,
+        r#"
+[profiles.game]
+kind = "game"
+source = "game.arcw"
+adapter = "custom-file"
+adapter_manifests = ["custom-adapter.toml"]
+"#,
+    )
+    .expect("write launch manifest");
+
+    let direct = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg(&source)
+        .output()
+        .expect("arcw direct check runs");
+    let profiled = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("game")
+        .arg("--json")
+        .output()
+        .expect("arcw check --profile runs");
+    fs::remove_dir_all(&dir).expect("remove temp profile project");
+
+    assert!(
+        !direct.status.success(),
+        "direct check should not see project adapter manifest, stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&direct.stdout),
+        String::from_utf8_lossy(&direct.stderr)
+    );
+    assert!(
+        profiled.status.success(),
+        "profiled check should load project adapter manifest, stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&profiled.stdout),
+        String::from_utf8_lossy(&profiled.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&profiled.stdout);
+    assert!(
+        !stdout.contains(&std::env::temp_dir().display().to_string()),
+        "profile JSON must not record absolute temp paths: {stdout}"
+    );
+}
+
+#[test]
 fn profile_check_loads_rust_metadata_for_extern_module() {
     let dir = temp_dir("profile-check-rust-metadata");
     let metadata_dir = dir.join("target").join("arcweft");

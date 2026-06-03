@@ -1,7 +1,8 @@
 //! Effect capability checks for contracts and scoped checker state.
 
 use super::{
-    ContractClause, EffectScope, Expr, TypeCheckError, TypeChecker, TypeKind, capability_from_expr,
+    ContractClause, EffectCapability, EffectScope, Expr, TypeCheckError, TypeChecker, TypeKind,
+    capability_from_expr,
 };
 use std::collections::HashSet;
 
@@ -14,12 +15,13 @@ impl TypeChecker<'_> {
         let env_effects = self.env.function_effects(name).unwrap_or(&[]);
         let missing = source_effects
             .iter()
-            .chain(env_effects.iter())
+            .map(String::as_str)
+            .chain(env_effects.iter().map(EffectCapability::as_str))
             .filter(|capability| {
-                !self.effect_capabilities.contains(capability.as_str())
+                !self.effect_capabilities.contains(*capability)
                     && !self.env.has_capability(capability)
             })
-            .cloned()
+            .map(str::to_owned)
             .collect::<Vec<_>>();
         for capability in missing {
             self.errors.push(TypeCheckError::new(format!(

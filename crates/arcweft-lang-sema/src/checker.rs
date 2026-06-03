@@ -3,7 +3,7 @@ use crate::borrow::{
     BorrowStateJournalEntry, merge_borrow_local_states,
 };
 use crate::diagnostics::{TypeCheckError, TypeCheckReadinessError, TypeCheckWarning};
-use crate::env::{FunctionParam, FunctionSignature, TypeCheckEnv};
+use crate::env::{EffectCapability, FunctionParam, FunctionSignature, TypeCheckEnv};
 use crate::fact_layer::{EffectScope, capability_from_expr};
 use crate::lifetime::{
     collect_type_kind_lifetimes, lifetime_key, lifetime_value_type, type_contains_borrow_ref,
@@ -311,7 +311,11 @@ impl TypeChecker<'_> {
             lifetime_guarantees: HashSet::new(),
             dropped_lifetime_keys: HashSet::new(),
             available_lifetimes: Vec::new(),
-            effect_capabilities: env.capabilities.clone(),
+            effect_capabilities: env
+                .capabilities
+                .iter()
+                .map(|capability| capability.as_str().to_owned())
+                .collect(),
             expected_returns: Vec::new(),
             yield_stack: Vec::new(),
             stats: TypeCheckStats::default(),

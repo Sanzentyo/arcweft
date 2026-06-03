@@ -32,16 +32,30 @@ pub struct RustPackageExports {
     pub(crate) types: HashSet<String>,
 }
 
+/// Canonical effect capability label tracked by semantic environments.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct EffectCapability {
+    label: String,
+}
+
+/// Parsed components of a canonical effect capability label.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectCapabilityParts {
+    family: String,
+    operation: String,
+    scope: Option<String>,
+}
+
 /// Small, explicit environment used to validate that HIR can feed type checking.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TypeCheckEnv {
     pub(crate) symbols: HashMap<String, TypeKind>,
     pub(crate) functions: HashMap<String, TypeKind>,
     pub(crate) function_signatures: HashMap<String, FunctionSignature>,
-    pub(crate) function_effects: HashMap<String, Vec<String>>,
+    pub(crate) function_effects: HashMap<String, Vec<EffectCapability>>,
     pub(crate) methods: HashMap<(TypeKind, String), MethodSignature>,
     pub(crate) indexes: HashMap<TypeKind, TypeKind>,
-    pub(crate) capabilities: HashSet<String>,
+    pub(crate) capabilities: HashSet<EffectCapability>,
     pub(crate) rust_packages: HashMap<String, RustPackageExports>,
 }
 
@@ -127,6 +141,54 @@ impl FunctionParam {
     }
 }
 
+impl EffectCapability {
+    /// Creates a canonical effect capability label.
+    pub fn new(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+        }
+    }
+
+    /// Source-level capability label.
+    pub fn as_str(&self) -> &str {
+        &self.label
+    }
+
+    /// Returns the parsed family/operation/scope shape.
+    pub fn parts(&self) -> EffectCapabilityParts {
+        parse_effect_capability_parts(&self.label)
+    }
+}
+
+impl EffectCapabilityParts {
+    /// Capability namespace such as `fs` or `system`.
+    pub fn family(&self) -> &str {
+        &self.family
+    }
+
+    /// Operation such as `read` or `write`.
+    pub fn operation(&self) -> &str {
+        &self.operation
+    }
+
+    /// Optional scoped selector from labels such as `state.write(flow)`.
+    pub fn scope(&self) -> Option<&str> {
+        self.scope.as_deref()
+    }
+}
+
+impl From<&str> for EffectCapability {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<String> for EffectCapability {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
 impl TypeCheckEnv {
     /// Creates an empty type-checking environment.
     pub fn new() -> Self {
@@ -163,10 +225,10 @@ impl TypeCheckEnv {
 
     /// Registers effects required by one free function.
     #[must_use]
-    pub fn with_function_effects<I, S>(mut self, name: impl Into<String>, effects: I) -> Self
+    pub fn with_function_effects<I, E>(mut self, name: impl Into<String>, effects: I) -> Self
     where
-        I: IntoIterator<Item = S>,
-        S: Into<String>,
+        I: IntoIterator<Item = E>,
+        E: Into<EffectCapability>,
     {
         self.function_effects
             .insert(name.into(), effects.into_iter().map(Into::into).collect());
@@ -212,7 +274,7 @@ impl TypeCheckEnv {
 
     /// Registers a checker capability such as `state.write(flow)`.
     #[must_use]
-    pub fn with_capability(mut self, capability: impl Into<String>) -> Self {
+    pub fn with_capability(mut self, capability: impl Into<EffectCapability>) -> Self {
         self.capabilities.insert(capability.into());
         self
     }
@@ -261,7 +323,7 @@ impl TypeCheckEnv {
     }
 
     /// Returns effects required by a function supplied by the environment.
-    pub fn function_effects(&self, name: &str) -> Option<&[String]> {
+    pub fn function_effects(&self, name: &str) -> Option<&[EffectCapability]> {
         self.function_effects.get(name).map(Vec::as_slice)
     }
 
@@ -287,11 +349,29 @@ impl TypeCheckEnv {
 
     /// Returns whether the environment grants a named effect or state capability.
     pub fn has_capability(&self, capability: &str) -> bool {
-        self.capabilities.contains(capability)
+        self.capabilities
+            .contains(&EffectCapability::new(capability))
     }
 
     pub(crate) fn rust_package(&self, package: &str) -> Option<&RustPackageExports> {
         self.rust_packages.get(package)
+    }
+}
+
+fn parse_effect_capability_parts(label: &str) -> EffectCapabilityParts {
+    let (body, scope) = label
+        .strip_suffix(')')
+        .and_then(|value| value.rsplit_once('('))
+        .map_or((label, None), |(body, scope)| {
+            (body, Some(scope.to_owned()))
+        });
+    let (family, operation) = body
+        .split_once('.')
+        .map_or((body, ""), |(family, operation)| (family, operation));
+    EffectCapabilityParts {
+        family: family.to_owned(),
+        operation: operation.to_owned(),
+        scope,
     }
 }
 
@@ -302,5 +382,39 @@ impl RustPackageExports {
 
     pub(crate) fn has_type(&self, name: &str) -> bool {
         self.types.contains(name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn effect_capability_parses_family_operation_and_scope() {
+        let capability = EffectCapability::new("state.write(flow)");
+        let parts = capability.parts();
+
+        assert_eq!(capability.as_str(), "state.write(flow)");
+        assert_eq!(parts.family(), "state");
+        assert_eq!(parts.operation(), "write");
+        assert_eq!(parts.scope(), Some("flow"));
+    }
+
+    #[test]
+    fn typecheck_env_stores_capabilities_as_typed_ids() {
+        let env = TypeCheckEnv::new()
+            .with_capability(EffectCapability::new("fs.read"))
+            .with_function_effects("adapter.read", [EffectCapability::new("fs.read")]);
+
+        assert!(env.has_capability("fs.read"));
+        assert_eq!(
+            env.function_effects("adapter.read").map(|effects| {
+                effects
+                    .iter()
+                    .map(EffectCapability::as_str)
+                    .collect::<Vec<_>>()
+            }),
+            Some(vec!["fs.read"])
+        );
     }
 }
