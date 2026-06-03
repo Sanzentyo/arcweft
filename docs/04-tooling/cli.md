@@ -333,7 +333,10 @@ bundled entry selection by rewriting the decoded runtime entry selection before
 execution. The current implementation supports the standard CLI native file,
 system-info, and internal scheduler adapters; custom profile adapter
 implementations still need an embedding runner or future player adapter to
-provide concrete host code.
+provide concrete host code. Embedding runners use
+`arcweft_cli::run_with_native_adapters` to register concrete `HostAdapter`
+implementations. The bundle supplies the manifest host-call surface and
+policy; the runner supplies executable host code for matching ids.
 
 JSON output includes `phases` for compile/package work on `bundle` and
 read/decode/materialize/bytecode/run work on `run-bundle`. These counters let

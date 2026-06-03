@@ -64,7 +64,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   adapters through the same native task bridge used by `arcw run`. Bundle JSON
   reports compile/package phases, and run-bundle JSON reports read/decode/
   materialize/bytecode/run phases so source compilation cost and bytecode
-  execution cost can be measured separately.
+  execution cost can be measured separately. Integration coverage now builds a
+  bundle with a project-local custom adapter manifest and executes it through
+  `arcweft_cli::run_with_native_adapters`, proving the bundle supplies policy
+  data while the embedding runner supplies concrete host code.
 - `arcw check`, `arcw verify`, `arcw unsafe`, and plan/report generation now
   resolve profile adapters through the standard `arcweft-adapter-context`
   manifest registry plus profile-local `adapter_manifests`, then pass the

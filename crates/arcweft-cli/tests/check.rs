@@ -1,12 +1,26 @@
 use std::fs;
-use std::path::PathBuf;
-use std::process::Command;
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitCode};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
+use arcweft_adapter_context::manifest::{
+    AdapterEffectCapability, AdapterHostCall, AdapterManifest,
+};
+use arcweft_cli::{NativeAdapterRegistrar, run_with_native_adapters};
+use arcweft_core::task::{HostTaskRequest, TaskSpec};
+use arcweft_core::value::RuntimePayload;
+use arcweft_host_adapter::{
+    HostAdapter, HostAdapterError, HostAdapterRegistryBuilder, HostTaskMetrics, HostTaskOutcome,
+};
 use arcweft_rust_abi::{
     ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustParam,
     ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeRef,
     ArcweftRustVariant,
 };
+
+static CUSTOM_BUNDLE_ADAPTER_CALLS: AtomicUsize = AtomicUsize::new(0);
+static CUSTOM_BUNDLE_ADAPTER_OUTPUT: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 #[test]
 fn jit_check_json_compares_cranelift_and_vm() {
@@ -1921,6 +1935,187 @@ fn assert_build_bundle_output(fixture: &BundleNativeFileFixture, build_stdout: &
         !build_stdout.contains(&fixture.dir.display().to_string()),
         "build bundle JSON must not record absolute temp paths: {build_stdout}"
     );
+}
+
+#[test]
+fn run_bundle_uses_embedding_registered_custom_adapter() {
+    let fixture = custom_adapter_bundle_fixture();
+    CUSTOM_BUNDLE_ADAPTER_CALLS.store(0, Ordering::SeqCst);
+    *CUSTOM_BUNDLE_ADAPTER_OUTPUT
+        .lock()
+        .expect("custom adapter output lock") = Some(fixture.marker_path.clone());
+
+    let build_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("build")
+        .arg("bundle")
+        .arg("--manifest")
+        .arg(&fixture.manifest_path)
+        .arg("--profile")
+        .arg("game")
+        .arg("--output")
+        .arg(&fixture.bundle_path)
+        .arg("--json")
+        .output()
+        .expect("arcw build bundle packages custom adapter surface");
+
+    assert!(
+        build_output.status.success(),
+        "custom adapter bundle build should succeed, stderr: {}",
+        String::from_utf8_lossy(&build_output.stderr)
+    );
+    let bundle_json = fs::read_to_string(&fixture.bundle_path).expect("bundle is written");
+    assert!(
+        bundle_json.contains("\"adapter_manifests\"")
+            && bundle_json.contains("custom-file")
+            && bundle_json.contains("custom.read"),
+        "bundle should carry custom adapter manifest body and host call: {bundle_json}"
+    );
+    assert!(
+        !bundle_json.contains(&fixture.dir.display().to_string()),
+        "custom bundle artifact must not record absolute temp paths: {bundle_json}"
+    );
+
+    let exit = run_with_native_adapters(
+        [
+            "arcw",
+            "run-bundle",
+            fixture.bundle_path.to_str().expect("bundle path is utf8"),
+            "--mode",
+            "drain",
+            "--steps",
+            "8",
+        ],
+        &[register_custom_bundle_adapter as NativeAdapterRegistrar],
+    );
+
+    assert_eq!(exit, ExitCode::SUCCESS);
+    assert_eq!(CUSTOM_BUNDLE_ADAPTER_CALLS.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        fs::read_to_string(&fixture.marker_path).expect("custom adapter marker is written"),
+        "custom-ok"
+    );
+}
+
+struct CustomAdapterBundleFixture {
+    dir: PathBuf,
+    manifest_path: PathBuf,
+    bundle_path: PathBuf,
+    marker_path: PathBuf,
+}
+
+fn custom_adapter_bundle_fixture() -> CustomAdapterBundleFixture {
+    let dir = temp_dir("bundle-custom-adapter");
+    let source_path = dir.join("game.arcw");
+    let manifest_path = dir.join("arcw.toml");
+    let adapter_manifest_path = dir.join("custom-adapter.toml");
+    let bundle_path = dir.join("custom.awfb");
+    let marker_path = dir.join("custom-marker.txt");
+    fs::write(
+        &source_path,
+        r#"
+extern capability custom {
+    type CustomError
+    fn read(path: String) -> Need<String, CustomError> effects { custom.read }
+}
+
+flow @flow.opening opening effects { custom.read } {
+    let body = try await custom.read(path = "opening.txt") with { error e => return "failed" }
+    return body
+}
+"#,
+    )
+    .expect("write custom adapter source");
+    fs::write(
+        &adapter_manifest_path,
+        r#"
+schema_version = 1
+id = "custom-file"
+display_name = "Custom File"
+effects = ["custom.read"]
+
+[[host_calls]]
+id = "custom.read"
+effects = ["custom.read"]
+"#,
+    )
+    .expect("write custom adapter manifest");
+    fs::write(
+        &manifest_path,
+        r#"
+[profiles.game]
+kind = "game"
+source = "game.arcw"
+adapter = "custom-file"
+adapter_manifests = ["custom-adapter.toml"]
+"#,
+    )
+    .expect("write launch manifest");
+    CustomAdapterBundleFixture {
+        dir,
+        manifest_path,
+        bundle_path,
+        marker_path,
+    }
+}
+
+fn register_custom_bundle_adapter(
+    _source_path: &Path,
+    builder: HostAdapterRegistryBuilder,
+) -> Result<HostAdapterRegistryBuilder, HostAdapterError> {
+    builder.register(CustomBundleAdapter {
+        manifest: custom_bundle_adapter_manifest(),
+    })
+}
+
+#[derive(Debug)]
+struct CustomBundleAdapter {
+    manifest: AdapterManifest,
+}
+
+impl HostAdapter for CustomBundleAdapter {
+    fn manifest(&self) -> &AdapterManifest {
+        &self.manifest
+    }
+
+    fn complete(&self, task: &TaskSpec) -> Option<HostTaskOutcome> {
+        let HostTaskRequest::Custom {
+            capability,
+            operation,
+            args,
+        } = &task.request
+        else {
+            return None;
+        };
+        if capability.0 != "custom" || operation != "read" {
+            return None;
+        }
+        CUSTOM_BUNDLE_ADAPTER_CALLS.fetch_add(1, Ordering::SeqCst);
+        let result = RuntimePayload::from(format!("custom-ok:{}", args.len()));
+        if let Some(path) = CUSTOM_BUNDLE_ADAPTER_OUTPUT
+            .lock()
+            .expect("custom adapter output lock")
+            .as_ref()
+        {
+            fs::write(path, "custom-ok").expect("write custom adapter marker");
+        }
+        Some(HostTaskOutcome {
+            result: Ok(result),
+            metrics: HostTaskMetrics::default(),
+        })
+    }
+
+    fn can_complete_in_parallel(&self, _request: &HostTaskRequest) -> bool {
+        false
+    }
+}
+
+fn custom_bundle_adapter_manifest() -> AdapterManifest {
+    AdapterManifest::new("custom-file", "Custom File")
+        .with_effect(AdapterEffectCapability::new("custom.read"))
+        .with_host_call(AdapterHostCall::new(
+            "custom.read",
+            [AdapterEffectCapability::new("custom.read")],
+        ))
 }
 
 #[test]
