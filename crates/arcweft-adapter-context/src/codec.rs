@@ -5,12 +5,16 @@ use crate::manifest::{
 };
 use arcweft_lang_sema::env::{FunctionParam, FunctionSignature};
 use arcweft_lang_sema::types::TypeKind;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// Current stable project-local adapter manifest schema version.
+pub const ADAPTER_MANIFEST_SCHEMA_VERSION: u32 = 1;
+
 /// Serializable adapter manifest file.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AdapterManifestFile {
+    schema_version: u32,
     id: String,
     display_name: String,
     #[serde(default)]
@@ -27,13 +31,13 @@ pub struct AdapterManifestFile {
     tooling_docs: Vec<AdapterToolingDocFile>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct AdapterSymbolFile {
     name: String,
     ty: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct AdapterMethodFile {
     receiver: String,
     name: String,
@@ -42,7 +46,7 @@ struct AdapterMethodFile {
     params: Vec<AdapterParamFile>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct AdapterFunctionFile {
     name: String,
     return_type: String,
@@ -52,20 +56,20 @@ struct AdapterFunctionFile {
     effects: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct AdapterParamFile {
     name: String,
     ty: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct AdapterHostCallFile {
     id: String,
     #[serde(default)]
     effects: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct AdapterToolingDocFile {
     subject: String,
     docs: String,
@@ -78,17 +82,28 @@ pub enum AdapterManifestCodecError {
     Json(#[from] serde_json::Error),
     #[error("failed to parse adapter manifest TOML: {0}")]
     Toml(#[from] toml::de::Error),
+    #[error("unsupported adapter manifest schema {found}, expected {expected}")]
+    UnsupportedSchema { found: u32, expected: u32 },
 }
 
 impl AdapterManifestFile {
     /// Parses a JSON adapter manifest.
     pub fn from_json(source: &str) -> Result<Self, AdapterManifestCodecError> {
-        Ok(serde_json::from_str(source)?)
+        let file = serde_json::from_str::<Self>(source)?;
+        file.validate_schema_version()?;
+        Ok(file)
     }
 
     /// Parses a TOML adapter manifest.
     pub fn from_toml(source: &str) -> Result<Self, AdapterManifestCodecError> {
-        Ok(toml::from_str(source)?)
+        let file = toml::from_str::<Self>(source)?;
+        file.validate_schema_version()?;
+        Ok(file)
+    }
+
+    /// Manifest schema version parsed from the source file.
+    pub const fn schema_version(&self) -> u32 {
+        self.schema_version
     }
 
     /// Converts file data into the typed manifest used by sema and tooling.
@@ -138,6 +153,17 @@ impl AdapterManifestFile {
             .fold(manifest, |manifest, doc| {
                 manifest.with_tooling_doc(AdapterToolingDoc::new(doc.subject, doc.docs))
             })
+    }
+
+    fn validate_schema_version(&self) -> Result<(), AdapterManifestCodecError> {
+        if self.schema_version == ADAPTER_MANIFEST_SCHEMA_VERSION {
+            Ok(())
+        } else {
+            Err(AdapterManifestCodecError::UnsupportedSchema {
+                found: self.schema_version,
+                expected: ADAPTER_MANIFEST_SCHEMA_VERSION,
+            })
+        }
     }
 }
 
@@ -201,6 +227,7 @@ mod tests {
     fn parses_toml_adapter_manifest_file() {
         let file = AdapterManifestFile::from_toml(
             r#"
+schema_version = 1
 id = "custom-file"
 display_name = "Custom File"
 effects = ["custom.read"]
@@ -230,6 +257,7 @@ docs = "Read custom content."
 "#,
         )
         .expect("adapter manifest parses");
+        assert_eq!(file.schema_version(), ADAPTER_MANIFEST_SCHEMA_VERSION);
         let manifest = file.into_manifest();
 
         assert_eq!(manifest.id().as_str(), "custom-file");
@@ -239,6 +267,58 @@ docs = "Read custom content."
         assert_eq!(manifest.effects()[0].as_str(), "custom.read");
         assert_eq!(manifest.host_calls()[0].id(), "custom.read");
         assert_eq!(manifest.tooling_docs()[0].subject(), "custom.read");
+    }
+
+    #[test]
+    fn parses_json_adapter_manifest_file() {
+        let file = AdapterManifestFile::from_json(
+            r#"
+{
+  "schema_version": 1,
+  "id": "custom-http",
+  "display_name": "Custom HTTP",
+  "effects": ["http.respond"],
+  "host_calls": [
+    {
+      "id": "http.respond",
+      "effects": ["http.respond"]
+    }
+  ],
+  "tooling_docs": [
+    {
+      "subject": "http.respond",
+      "docs": "Send a server response."
+    }
+  ]
+}
+"#,
+        )
+        .expect("json adapter manifest parses");
+        let manifest = file.into_manifest();
+
+        assert_eq!(manifest.id().as_str(), "custom-http");
+        assert_eq!(manifest.host_calls()[0].id(), "http.respond");
+        assert_eq!(manifest.tooling_docs()[0].subject(), "http.respond");
+    }
+
+    #[test]
+    fn rejects_unsupported_adapter_manifest_schema() {
+        let error = AdapterManifestFile::from_toml(
+            r#"
+schema_version = 2
+id = "custom-file"
+display_name = "Custom File"
+"#,
+        )
+        .expect_err("unsupported schema is rejected");
+
+        assert!(matches!(
+            error,
+            AdapterManifestCodecError::UnsupportedSchema {
+                found: 2,
+                expected: ADAPTER_MANIFEST_SCHEMA_VERSION
+            }
+        ));
     }
 
     #[test]

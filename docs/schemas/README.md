@@ -8,6 +8,7 @@ over strings or byte slices.
 
 - [Agent Protocol](agent-protocol.md)
 - [GraphPatch](graph-patch.md)
+- [Adapter Manifest](adapter-manifest.md)
 - [Module Manifest](module-manifest.md)
 - [Audio Manifest](audio-manifest.md)
 - [Layer Manifest](layer-manifest.md)

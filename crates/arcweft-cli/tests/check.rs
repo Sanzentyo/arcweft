@@ -5650,6 +5650,7 @@ flow @flow.opening opening {
     fs::write(
         &adapter_manifest,
         r#"
+schema_version = 1
 id = "custom-file"
 display_name = "Custom File"
 effects = ["custom.read"]

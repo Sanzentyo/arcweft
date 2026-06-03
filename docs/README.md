@@ -60,6 +60,7 @@
 - [Runtime Hooks and Memoization](02-runtime/hooks-memoization.md)
 - [Runtime Notes: Control Flow, Patterns, and Loops](02-runtime/control-flow-runtime.md)
 - [RuntimeStep and Executors](02-runtime/runtime-step-and-executors.md)
+- [Adapter Manifest](schemas/adapter-manifest.md)
 - [USB Device Manifest](schemas/usb-device-manifest.md)
 - [Virtual Controller Manifest](schemas/virtual-controller-manifest.md)
 - [Hooks / memoization example](examples/hooks-memoization.md)

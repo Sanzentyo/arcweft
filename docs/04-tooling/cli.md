@@ -88,6 +88,7 @@ adapter_manifests = ["adapters/custom-file.toml"]
 ```
 
 ```toml
+schema_version = 1
 id = "custom-file"
 display_name = "Custom File"
 effects = ["custom.read"]
