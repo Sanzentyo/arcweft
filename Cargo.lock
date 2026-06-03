@@ -172,6 +172,7 @@ dependencies = [
  "arcweft-lang-syntax",
  "arcweft-launch",
  "arcweft-runtime-accelerator",
+ "arcweft-runtime-host",
  "arcweft-runtime-plan",
  "arcweft-runtime-scheduler",
  "arcweft-rust-abi",
@@ -181,8 +182,6 @@ dependencies = [
  "arcweft-verify-oxiz",
  "arcweft-verify-z3",
  "clap",
- "num_cpus",
- "rayon",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -315,6 +314,22 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "wgpu",
+]
+
+[[package]]
+name = "arcweft-runtime-host"
+version = "0.1.0"
+dependencies = [
+ "arcweft-adapter-context",
+ "arcweft-bundle",
+ "arcweft-core",
+ "arcweft-host-adapter",
+ "arcweft-runtime-accelerator",
+ "arcweft-runtime-scheduler",
+ "num_cpus",
+ "rayon",
+ "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

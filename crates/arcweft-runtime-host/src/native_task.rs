@@ -21,10 +21,10 @@ use std::time::Instant;
 pub type NativeAdapterRegistrar =
     fn(&Path, HostAdapterRegistryBuilder) -> Result<HostAdapterRegistryBuilder, HostAdapterError>;
 
-pub(crate) const INTERNAL_SCHEDULER_ADAPTER_ID: &str = "internal-scheduler";
+pub const INTERNAL_SCHEDULER_ADAPTER_ID: &str = "internal-scheduler";
 
 #[derive(Clone, Debug)]
-pub(crate) struct NativeTaskBridge {
+pub struct NativeTaskBridge {
     policy: HostCallPolicy,
     registry: HostAdapterRegistry,
     sequence: u64,
@@ -102,7 +102,7 @@ pub struct NativeTaskClassCounts {
 }
 
 impl NativeTaskBridge {
-    pub(crate) fn try_new(
+    pub fn try_new(
         source_path: &Path,
         policy: HostCallPolicy,
         registrars: &[NativeAdapterRegistrar],
@@ -111,7 +111,7 @@ impl NativeTaskBridge {
         Ok(Self::with_registry(policy, registry))
     }
 
-    pub(crate) fn with_registry(policy: HostCallPolicy, registry: HostAdapterRegistry) -> Self {
+    pub fn with_registry(policy: HostCallPolicy, registry: HostAdapterRegistry) -> Self {
         Self {
             policy,
             registry,
@@ -121,7 +121,7 @@ impl NativeTaskBridge {
         }
     }
 
-    pub(crate) fn standard_policy() -> HostCallPolicy {
+    pub fn standard_policy() -> HostCallPolicy {
         HostCallPolicy::from_manifests([
             standard::native_file_manifest(),
             standard::system_info_manifest(),
@@ -129,31 +129,31 @@ impl NativeTaskBridge {
         ])
     }
 
-    pub(crate) fn policy_from_manifest(manifest: &AdapterManifest) -> HostCallPolicy {
+    pub fn policy_from_manifest(manifest: &AdapterManifest) -> HostCallPolicy {
         HostCallPolicy::from_manifests([manifest.clone()])
     }
 
-    pub(crate) fn standard_cli_policy_for_manifest(manifest: &AdapterManifest) -> HostCallPolicy {
+    pub fn standard_cli_policy_for_manifest(manifest: &AdapterManifest) -> HostCallPolicy {
         Self::standard_policy().union(Self::policy_from_manifest(manifest))
     }
 
-    pub(crate) fn source_io_root(source_path: &Path) -> PathBuf {
+    pub fn source_io_root(source_path: &Path) -> PathBuf {
         let source_dir = source_path.parent().unwrap_or_else(|| Path::new("."));
         source_dir.join(".arcweft")
     }
 
-    pub(crate) fn stats(&self) -> NativeTaskStats {
+    pub fn stats(&self) -> NativeTaskStats {
         let mut stats = self.stats;
         stats.scheduler = NativeSchedulerStats::from(self.scheduler.stats());
         stats
     }
 
-    pub(crate) fn read_text_snapshot(source_path: &Path, value: &str) -> Result<String, String> {
+    pub fn read_text_snapshot(source_path: &Path, value: &str) -> Result<String, String> {
         virtual_path(&Self::source_io_root(source_path), value)
             .and_then(|path| fs::read_to_string(path).map_err(|error| error.to_string()))
     }
 
-    pub(crate) fn complete_tasks(&mut self, tasks: Vec<TaskSpec>) -> Vec<TaskEvent> {
+    pub fn complete_tasks(&mut self, tasks: Vec<TaskSpec>) -> Vec<TaskEvent> {
         let (unauthorized, tasks): (Vec<_>, Vec<_>) = tasks
             .into_iter()
             .partition(|task| !self.policy.allows(&task.request));
@@ -400,23 +400,23 @@ impl HostAdapter for InternalSchedulerMarkerAdapter {
     }
 }
 
-pub(crate) fn standard_cli_registry_builder(source_path: &Path) -> HostAdapterRegistryBuilder {
+pub fn standard_cli_registry_builder(
+    source_path: &Path,
+) -> Result<HostAdapterRegistryBuilder, HostAdapterError> {
     let io_root = NativeTaskBridge::source_io_root(source_path);
-    HostAdapterRegistry::builder()
+    let builder = HostAdapterRegistry::builder()
         .register(NativeFileAdapter {
             manifest: standard::native_file_manifest(),
             io_root,
-        })
-        .expect("standard file adapter host calls are unique")
+        })?
         .register(NativeSystemInfoAdapter {
             manifest: standard::system_info_manifest(),
             host_system: host_system_info(),
-        })
-        .expect("standard system info adapter host calls are unique")
+        })?
         .register(InternalSchedulerMarkerAdapter {
             manifest: internal_scheduler_manifest(),
-        })
-        .expect("internal scheduler marker host calls are unique")
+        })?;
+    Ok(builder)
 }
 
 fn registry_with_registrars(
@@ -426,13 +426,13 @@ fn registry_with_registrars(
     registrars
         .iter()
         .try_fold(
-            standard_cli_registry_builder(source_path),
+            standard_cli_registry_builder(source_path)?,
             |builder, register| register(source_path, builder),
         )
         .map(HostAdapterRegistryBuilder::build)
 }
 
-pub(crate) fn internal_scheduler_manifest() -> AdapterManifest {
+pub fn internal_scheduler_manifest() -> AdapterManifest {
     AdapterManifest::new(INTERNAL_SCHEDULER_ADAPTER_ID, "Internal Scheduler")
         .with_host_call(AdapterHostCall::new("line_task.run_child", []))
         .with_host_call(AdapterHostCall::new("flow_thread.run_child", []))

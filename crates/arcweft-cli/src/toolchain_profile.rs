@@ -1,4 +1,4 @@
-use crate::native_system::{HostSystemInfo, host_system_info};
+use arcweft_runtime_host::{HostSystemInfo, host_system_info};
 use clap::{Args, ValueEnum};
 use serde::Serialize;
 use std::process::{Command, ExitCode};

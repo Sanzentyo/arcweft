@@ -1,13 +1,13 @@
 use arcweft_core::task::SystemInfoKind;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
-pub(crate) struct HostSystemInfo {
-    pub(crate) physical_cores: usize,
-    pub(crate) logical_threads: usize,
-    pub(crate) available_parallelism: usize,
+pub struct HostSystemInfo {
+    pub physical_cores: usize,
+    pub logical_threads: usize,
+    pub available_parallelism: usize,
 }
 
-pub(crate) fn host_system_info() -> HostSystemInfo {
+pub fn host_system_info() -> HostSystemInfo {
     HostSystemInfo {
         physical_cores: num_cpus::get_physical().max(1),
         logical_threads: num_cpus::get().max(1),
@@ -16,7 +16,7 @@ pub(crate) fn host_system_info() -> HostSystemInfo {
     }
 }
 
-pub(crate) fn system_info_value(info: HostSystemInfo, kind: SystemInfoKind) -> usize {
+pub fn system_info_value(info: HostSystemInfo, kind: SystemInfoKind) -> usize {
     match kind {
         SystemInfoKind::CoreCount => info.physical_cores,
         SystemInfoKind::ThreadCount => info.logical_threads,

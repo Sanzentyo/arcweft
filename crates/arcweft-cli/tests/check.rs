@@ -7,13 +7,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use arcweft_adapter_context::manifest::{
     AdapterEffectCapability, AdapterHostCall, AdapterManifest,
 };
-use arcweft_cli::{
-    BundleRunnerOptions, NativeAdapterRegistrar, run_bundle_file_with_native_adapters,
-};
 use arcweft_core::task::{HostTaskRequest, TaskSpec};
 use arcweft_core::value::RuntimePayload;
 use arcweft_host_adapter::{
     HostAdapter, HostAdapterError, HostAdapterRegistryBuilder, HostTaskMetrics, HostTaskOutcome,
+};
+use arcweft_runtime_host::{
+    BundleRunnerOptions, NativeAdapterRegistrar, run_bundle_file_with_native_adapters,
 };
 use arcweft_rust_abi::{
     ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustParam,

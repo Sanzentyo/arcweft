@@ -51,10 +51,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   system-info, selected profile, and internal scheduler-marker manifests define
   permission explicitly instead of relying on Rust pattern matches.
 - `arcweft-host-adapter` owns the Sans I/O host-adapter policy/registry types.
-  `arcweft-cli` is now both a library and a binary; embedding runners can call
-  `run_with_native_adapters` for CLI-compatible argv execution or
-  `run_bundle_file_with_native_adapters` / `run_bundle_with_native_adapters` for
-  typed bundle execution while keeping permission in adapter manifests.
+  `arcweft-runtime-host` owns native task bridging, system information, bundle
+  materialization, and typed bundle execution reports. Embedding runners, LSP
+  tooling, and player adapters can depend on this crate without compiling or
+  linking the CLI binary/argument parser. `arcweft-cli` remains both a library
+  and a binary for argv-compatible execution through `run_with_native_adapters`.
 - `arcweft-bundle` owns the first Sans I/O `.awfb` data model and deterministic
   JSON codec. `arcw bundle` and `arcw build bundle` package source text,
   executable structured bytecode, runtime summary counters, required host-call
@@ -66,10 +67,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   reports compile/package phases, and run-bundle JSON reports read/decode/
   materialize/bytecode/run phases so source compilation cost and bytecode
   execution cost can be measured separately. Integration coverage now builds a
-  bundle with a project-local custom adapter manifest and executes it through
-  `arcweft_cli::run_bundle_file_with_native_adapters`, proving the bundle
-  supplies policy data while the embedding runner supplies concrete host code
-  and receives a typed `BundleRunnerReport`.
+  bundle with a project-local custom adapter manifest and executes it directly
+  through `arcweft_runtime_host::run_bundle_file_with_native_adapters`, proving
+  the bundle supplies policy data while the embedding runner supplies concrete
+  host code and receives a typed `BundleRunnerReport`.
 - `arcw check`, `arcw verify`, `arcw unsafe`, and plan/report generation now
   resolve profile adapters through the standard `arcweft-adapter-context`
   manifest registry plus profile-local `adapter_manifests`, then pass the
@@ -630,7 +631,7 @@ Current high-confidence state:
   argument/result bytes, thread-pool jobs, Vec argument allocations, fallback
   counts, compile attempts, cache hits/misses, and compile elapsed time without
   writing host absolute paths.
-- `arcweft-cli::native_task` owns the native task bridge for the first real I/O
+- `arcweft-runtime-host::native_task` owns the native task bridge for the first real I/O
   slice. It completes `fs.read_text`, `fs.read_bytes`, `fs.write_text`, and
   `fs.write_bytes` task requests as VM `TaskEvent` input on the next step,
   resolving virtual paths under source-local `.arcweft/<space>/...` roots while

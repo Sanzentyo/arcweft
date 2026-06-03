@@ -1,6 +1,4 @@
 use crate::app::CheckedModule;
-use crate::native_system::HostSystemInfo;
-use crate::native_task::NativeTaskStats;
 use arcweft_core::aot::AotProgramStats;
 use arcweft_core::bytecode::BytecodeStats;
 use arcweft_core::effect::LineEffectRequest;
@@ -16,6 +14,10 @@ use arcweft_lang_sema::check::{
     TypeCheckReport, TypeCheckStats, TypeJudgment, TypeJudgmentRule, TypeJudgmentSubject,
 };
 use arcweft_lang_syntax::cst::SyntaxParseStats;
+use arcweft_runtime_host::{
+    HostSystemInfo, NativeTaskStats, RuntimeExecutorPureCompileStatsSummary,
+    RuntimeExecutorPureConfigSummary, RuntimeExecutorStats,
+};
 use arcweft_runtime_plan::flow::{RuntimePlanLowerStats, lower_runtime_plan};
 use arcweft_runtime_plan::line_task::LoweredLineTaskGroup;
 use arcweft_test::{ScriptBench, ScriptTest};
@@ -744,82 +746,6 @@ pub(crate) struct RuntimeProfileRuntime {
 pub(crate) enum RuntimeExecutorTier {
     BytecodeVm,
     Aot,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
-pub struct RuntimeExecutorStats {
-    pub aot_fast_path_ops: usize,
-    pub pure_config: RuntimeExecutorPureConfigSummary,
-    pub pure_acceleration: RuntimeExecutorPureAccelerationSummary,
-    pub pure_compile: RuntimeExecutorPureCompileStatsSummary,
-    pub math: RuntimeExecutorMathStatsSummary,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
-pub struct RuntimeExecutorPureConfigSummary {
-    pub backend: &'static str,
-    pub workers: RuntimeExecutorPureWorkerSummary,
-    pub resolved_workers: usize,
-    pub worker_pool_active: bool,
-    pub batch_min_len: usize,
-    pub math_backend: &'static str,
-    pub math_wgpu_min_elements: usize,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RuntimeExecutorPureWorkerSummary {
-    #[default]
-    Auto,
-    Fixed(usize),
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
-pub struct RuntimeExecutorPureAccelerationSummary {
-    pub annotated: usize,
-    pub inferred: usize,
-    pub jit: usize,
-    pub aot: usize,
-    pub vm: usize,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
-pub struct RuntimeExecutorPureCompileStatsSummary {
-    pub jit_attempts: usize,
-    pub jit_successes: usize,
-    pub jit_failures: usize,
-    pub aot_attempts: usize,
-    pub aot_successes: usize,
-    pub aot_failures: usize,
-    pub auto_jit_selected: usize,
-    pub auto_aot_selected: usize,
-    pub auto_vm_selected: usize,
-    pub auto_jit_deferred: usize,
-    pub auto_jit_promotions: usize,
-    pub auto_jit_skipped_small: usize,
-    pub cache_hits: usize,
-    pub cache_misses: usize,
-    pub compile_elapsed_ns: u128,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
-pub struct RuntimeExecutorMathStatsSummary {
-    pub scalar_calls: usize,
-    pub glam_calls: usize,
-    pub ndarray_calls: usize,
-    pub wgpu_calls: usize,
-    pub fallback_calls: usize,
-    pub bytes_borrowed: usize,
-    pub bytes_copied: usize,
-    pub bytes_uploaded: usize,
-    pub bytes_downloaded: usize,
-    pub gpu_buffer_creations: usize,
-    pub gpu_buffer_reuse_hits: usize,
-    pub gpu_staging_buffer_creations: usize,
-    pub gpu_staging_buffer_reuse_hits: usize,
-    pub gpu_reused_dispatches: usize,
-    pub last_backend: Option<&'static str>,
-    pub last_auto_reason: Option<&'static str>,
 }
 
 #[derive(serde::Serialize)]
