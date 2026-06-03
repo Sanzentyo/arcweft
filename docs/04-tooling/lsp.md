@@ -112,11 +112,13 @@ fallback bindings for missing adapter features.
 
 When the transport knows the selected runner, it should build an
 `ArcweftLspContext` with both the resolved adapter manifest and a
-`RuntimeHostCallSet`:
+`RuntimeHostCapabilities`:
 
 ```rust
-let runtime_host = RuntimeHostCallSet::standard_native();
-let context = ArcweftLspContext::new(&adapter).with_runtime_host(&runtime_host);
+let runtime_host = RuntimeHostCapabilities::standard_native();
+let context = ArcweftLspProfileContextBuilder::new(&adapter)
+    .with_runtime_host(&runtime_host)
+    .build();
 ```
 
 The combined helpers `profile_requirement_diagnostics`,
@@ -126,3 +128,20 @@ profile, while runtime-host diagnostics report declarations that type-check but
 cannot be completed by the selected runner. The runtime-host set is a tooling
 fact; it does not grant effects, add fallback bindings, or make unsupported
 host calls executable.
+
+Native and browser runners should use different presets. Native CLI/player
+embeddings use `RuntimeHostCapabilities::standard_native()`, which includes
+native virtual-file calls, host system information, and internal scheduler
+markers. Browser embeddings use `RuntimeHostCapabilities::browser_web()`, which
+keeps host system information and internal scheduler markers but excludes native
+filesystem calls. If an embedding registers additional concrete host adapters,
+it should extend the preset with the implemented adapter manifest:
+
+```rust
+let runtime_host = RuntimeHostCapabilities::browser_web()
+    .with_adapter_manifest(&custom_web_adapter);
+```
+
+WebGPU and math acceleration are not treated as host-task capabilities by this
+preset. Accelerator backends should add only the adapter manifests they actually
+complete through the selected runner.

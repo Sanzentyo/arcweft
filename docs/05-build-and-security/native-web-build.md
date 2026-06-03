@@ -88,6 +88,11 @@ math is exposed separately as an async `browser_webgpu` adapter for dense
 adapter boundary and then feed deterministic dense values back into the VM.
 The browser adapter uses WebGPU-only `wgpu` features (`std`, `webgpu`, `wgsl`)
 and does not inherit native DX12/Vulkan/Metal/GLES backend features.
+LSP/tooling runner diagnostics use `RuntimeHostCapabilities` presets from
+`arcweft-runtime-host`: native embeddings use `standard_native()`, while web
+embeddings use `browser_web()` and add only the concrete adapter manifests they
+actually implement. These presets describe host-task completion surfaces, not
+math accelerator availability; WebGPU math remains an async adapter capability.
 
 ## WebGPU / WebGL fallback
 

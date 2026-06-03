@@ -55,11 +55,13 @@ Phase 0 / Phase 1 minimal Rust workspace:
   materialization, and typed bundle execution reports. Embedding runners, LSP
   tooling, and player adapters can depend on this crate without compiling or
   linking the CLI binary/argument parser. `arcweft-verify-lsp` now exposes a
-  runtime-host call-set on `ArcweftLspContext`, plus combined profile
-  completions, hover, and diagnostics for cases where a profile's adapter
-  manifest declares a host call that the selected runner does not implement.
-  `arcweft-cli` remains both a library and a binary for argv-compatible
-  execution through `run_with_native_adapters`.
+  runtime-host capability set on `ArcweftLspContext`, plus a profile-context
+  builder and combined profile completions, hover, and diagnostics for cases
+  where a profile's adapter manifest declares a host call that the selected
+  runner does not implement. `arcweft-runtime-host` owns native and browser-web
+  capability presets so transports can distinguish native virtual-file support
+  from browser-only host capabilities. `arcweft-cli` remains both a library and
+  a binary for argv-compatible execution through `run_with_native_adapters`.
 - `arcweft-bundle` owns the first Sans I/O `.awfb` data model and deterministic
   JSON codec. `arcw bundle` and `arcw build bundle` package source text,
   executable structured bytecode, runtime summary counters, required host-call

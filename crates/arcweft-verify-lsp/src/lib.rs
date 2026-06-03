@@ -4,13 +4,12 @@
 //! converts verifier reports into `lsp-types` values that a future server,
 //! editor plugin, or tests can reuse.
 
-use arcweft_adapter_context::{
-    manifest::{AdapterEffectCapability, AdapterHostCallId, AdapterManifest},
-    standard,
+use arcweft_adapter_context::manifest::{
+    AdapterEffectCapability, AdapterHostCallId, AdapterManifest,
 };
 use arcweft_lang_sema::env::FunctionSignature;
 use arcweft_lang_sema::types::TypeKind;
-use arcweft_runtime_host::internal_scheduler_manifest;
+use arcweft_runtime_host::RuntimeHostCapabilities;
 use arcweft_verify::{
     Severity as VerifySeverity, ToolActionKind, VerificationDiagnostic, VerificationReport,
 };
@@ -20,23 +19,17 @@ use lsp_types::{
     ParameterInformation, ParameterLabel, Position, Range, SignatureHelp, SignatureInformation,
     Uri,
 };
-use std::collections::BTreeSet;
 
 /// Sans I/O LSP context supplied by the caller after resolving profiles.
 pub struct ArcweftLspContext<'a> {
     adapter: &'a AdapterManifest,
-    runtime_host: Option<&'a RuntimeHostCallSet>,
+    runtime_host: Option<&'a RuntimeHostCapabilities>,
 }
 
-/// Runtime-host capabilities supplied by the embedding runner.
-///
-/// Adapter manifests describe the Arcweft-visible surface. This set describes
-/// the concrete host calls that the selected native/web runner can actually
-/// complete, so tooling can report a profile that type-checks but cannot run
-/// with the chosen host.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct RuntimeHostCallSet {
-    host_calls: BTreeSet<AdapterHostCallId>,
+/// Builder used by transports after resolving a profile and runner.
+pub struct ArcweftLspProfileContextBuilder<'a> {
+    adapter: &'a AdapterManifest,
+    runtime_host: Option<&'a RuntimeHostCapabilities>,
 }
 
 /// Adapter-supplied fact required by a document, profile, or runtime plan.
@@ -64,63 +57,39 @@ impl<'a> ArcweftLspContext<'a> {
 
     /// Creates a context that also includes the selected runner's capabilities.
     #[must_use]
-    pub const fn with_runtime_host(mut self, runtime_host: &'a RuntimeHostCallSet) -> Self {
+    pub const fn with_runtime_host(mut self, runtime_host: &'a RuntimeHostCapabilities) -> Self {
         self.runtime_host = Some(runtime_host);
         self
     }
 
     /// Runtime-host call set supplied by the selected runner, when known.
-    pub const fn runtime_host(&self) -> Option<&'a RuntimeHostCallSet> {
+    pub const fn runtime_host(&self) -> Option<&'a RuntimeHostCapabilities> {
         self.runtime_host
     }
 }
 
-impl RuntimeHostCallSet {
-    /// Creates an empty runtime-host call set.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Creates a runtime-host call set from stable host-call ids.
-    pub fn from_host_call_ids(ids: impl IntoIterator<Item = impl Into<String>>) -> Self {
+impl<'a> ArcweftLspProfileContextBuilder<'a> {
+    /// Creates a profile-context builder from the resolved adapter manifest.
+    pub const fn new(adapter: &'a AdapterManifest) -> Self {
         Self {
-            host_calls: ids
-                .into_iter()
-                .map(AdapterHostCallId::new)
-                .collect::<BTreeSet<_>>(),
+            adapter,
+            runtime_host: None,
         }
     }
 
-    /// Creates a runtime-host call set from adapter manifests.
-    pub fn from_adapter_manifests<'a>(
-        manifests: impl IntoIterator<Item = &'a AdapterManifest>,
-    ) -> Self {
-        Self::from_host_call_ids(
-            manifests
-                .into_iter()
-                .flat_map(AdapterManifest::host_calls)
-                .map(|host_call| host_call.id().to_owned()),
-        )
+    /// Adds the selected runner's capabilities.
+    #[must_use]
+    pub const fn with_runtime_host(mut self, runtime_host: &'a RuntimeHostCapabilities) -> Self {
+        self.runtime_host = Some(runtime_host);
+        self
     }
 
-    /// Native runtime-host calls provided by the standard embedding runner.
-    pub fn standard_native() -> Self {
-        let manifests = [
-            standard::native_file_manifest(),
-            standard::system_info_manifest(),
-            internal_scheduler_manifest(),
-        ];
-        Self::from_adapter_manifests(&manifests)
-    }
-
-    /// Returns true when the runtime host implements this call id.
-    pub fn has_host_call(&self, id: &AdapterHostCallId) -> bool {
-        self.host_calls.contains(id)
-    }
-
-    /// Stable runtime-host call ids visible to tooling.
-    pub fn host_call_ids(&self) -> impl Iterator<Item = &str> {
-        self.host_calls.iter().map(AdapterHostCallId::as_str)
+    /// Builds the Sans I/O LSP context.
+    pub const fn build(self) -> ArcweftLspContext<'a> {
+        ArcweftLspContext {
+            adapter: self.adapter,
+            runtime_host: self.runtime_host,
+        }
     }
 }
 
@@ -174,7 +143,7 @@ pub fn profile_requirement_diagnostics(
 /// Diagnoses host calls required by source or profile metadata but missing from
 /// the selected runtime host implementation.
 pub fn runtime_host_requirement_diagnostics(
-    runtime_host: &RuntimeHostCallSet,
+    runtime_host: &RuntimeHostCapabilities,
     requirements: &[AdapterManifestRequirement],
 ) -> Vec<Diagnostic> {
     requirements
@@ -193,7 +162,7 @@ pub fn profile_completions(context: &ArcweftLspContext<'_>) -> Vec<CompletionIte
 }
 
 /// Completes runtime-host calls provided by the selected embedding runner.
-pub fn runtime_host_completions(runtime_host: &RuntimeHostCallSet) -> Vec<CompletionItem> {
+pub fn runtime_host_completions(runtime_host: &RuntimeHostCapabilities) -> Vec<CompletionItem> {
     runtime_host
         .host_call_ids()
         .map(|id| CompletionItem {
@@ -215,7 +184,7 @@ pub fn profile_hover(context: &ArcweftLspContext<'_>, name: &str) -> Option<Hove
 }
 
 /// Builds hover text for a runtime-host call supplied by the selected runner.
-pub fn runtime_host_hover(runtime_host: &RuntimeHostCallSet, name: &str) -> Option<Hover> {
+pub fn runtime_host_hover(runtime_host: &RuntimeHostCapabilities, name: &str) -> Option<Hover> {
     runtime_host
         .host_call_ids()
         .any(|id| id == name)
@@ -558,7 +527,7 @@ fn adapter_manifest_requirement_diagnostic(
 }
 
 fn runtime_host_requirement_diagnostic(
-    runtime_host: &RuntimeHostCallSet,
+    runtime_host: &RuntimeHostCapabilities,
     requirement: &AdapterManifestRequirement,
 ) -> Option<Diagnostic> {
     match requirement {
@@ -893,7 +862,7 @@ mod tests {
 
     #[test]
     fn exposes_runtime_host_completions_and_hover() {
-        let runtime_host = RuntimeHostCallSet::standard_native();
+        let runtime_host = RuntimeHostCapabilities::standard_native();
         let completions = runtime_host_completions(&runtime_host);
 
         for label in ["fs.read_text", "system.core_count", "flow_thread.run_child"] {
@@ -911,7 +880,7 @@ mod tests {
 
     #[test]
     fn diagnoses_missing_runtime_host_call_implementation() {
-        let runtime_host = RuntimeHostCallSet::standard_native();
+        let runtime_host = RuntimeHostCapabilities::standard_native();
         let diagnostics = runtime_host_requirement_diagnostics(
             &runtime_host,
             &[
@@ -936,6 +905,18 @@ mod tests {
     }
 
     #[test]
+    fn profile_context_builder_accepts_runtime_host_capabilities() {
+        let adapter = AdapterManifest::new("sans-io", "Sans I/O");
+        let runtime_host = RuntimeHostCapabilities::browser_web();
+        let context = ArcweftLspProfileContextBuilder::new(&adapter)
+            .with_runtime_host(&runtime_host)
+            .build();
+
+        assert_eq!(context.adapter().id().as_str(), "sans-io");
+        assert!(context.runtime_host().is_some());
+    }
+
+    #[test]
     fn profile_context_wires_adapter_manifest_and_runtime_host_helpers() {
         let adapter = AdapterManifest::new("custom", "Custom")
             .with_effect(AdapterEffectCapability::new("custom.read"))
@@ -943,8 +924,10 @@ mod tests {
                 "custom.read",
                 [AdapterEffectCapability::new("custom.read")],
             ));
-        let runtime_host = RuntimeHostCallSet::standard_native();
-        let context = ArcweftLspContext::new(&adapter).with_runtime_host(&runtime_host);
+        let runtime_host = RuntimeHostCapabilities::standard_native();
+        let context = ArcweftLspProfileContextBuilder::new(&adapter)
+            .with_runtime_host(&runtime_host)
+            .build();
 
         let diagnostics = profile_requirement_diagnostics(
             &context,
