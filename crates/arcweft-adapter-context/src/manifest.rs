@@ -453,6 +453,16 @@ impl AdapterManifest {
         &self.host_calls
     }
 
+    /// Returns whether this manifest exports a runtime host call.
+    pub fn has_host_call(&self, id: &AdapterHostCallId) -> bool {
+        self.host_calls.iter().any(|host_call| &host_call.id == id)
+    }
+
+    /// Returns whether this manifest grants an effect capability.
+    pub fn has_effect(&self, capability: &AdapterEffectCapability) -> bool {
+        self.effects.iter().any(|effect| effect == capability)
+    }
+
     /// Rust functions exported by adapter metadata.
     pub fn rust_functions(&self) -> &[AdapterRustFunction] {
         &self.rust_functions

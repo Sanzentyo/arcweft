@@ -101,3 +101,11 @@ same data source. It does not parse Rust source, query rust-analyzer, or run
 Cargo by itself. Transport code refreshes metadata when the selected profile,
 metadata JSON, adapter manifest, or Cargo build output changes, and can continue
 showing the last valid metadata while reporting stale or missing metadata.
+
+The helper also exposes adapter requirement diagnostics. The transport or
+profile-aware compiler path supplies typed requirements collected from route
+planning, runtime host tasks, or effect analysis, such as `http.respond` or
+`fs.read_text`. `arcweft-verify-lsp` compares those requirements against the
+resolved manifest and reports missing host calls or effect capabilities as
+`arcweft-adapter` diagnostics. It does not add parser branches or implicit
+fallback bindings for missing adapter features.

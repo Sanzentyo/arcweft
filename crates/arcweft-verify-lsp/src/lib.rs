@@ -4,7 +4,9 @@
 //! converts verifier reports into `lsp-types` values that a future server,
 //! editor plugin, or tests can reuse.
 
-use arcweft_adapter_context::manifest::AdapterManifest;
+use arcweft_adapter_context::manifest::{
+    AdapterEffectCapability, AdapterHostCallId, AdapterManifest,
+};
 use arcweft_lang_sema::env::FunctionSignature;
 use arcweft_lang_sema::types::TypeKind;
 use arcweft_verify::{
@@ -22,6 +24,15 @@ pub struct ArcweftLspContext<'a> {
     adapter: &'a AdapterManifest,
 }
 
+/// Adapter-supplied fact required by a document, profile, or runtime plan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AdapterManifestRequirement {
+    /// A runtime host call must be exported by the active adapter manifest.
+    HostCall(AdapterHostCallId),
+    /// An effect capability must be granted by the active adapter manifest.
+    EffectCapability(AdapterEffectCapability),
+}
+
 impl<'a> ArcweftLspContext<'a> {
     /// Creates an LSP context from already-resolved adapter metadata.
     pub const fn new(adapter: &'a AdapterManifest) -> Self {
@@ -34,12 +45,35 @@ impl<'a> ArcweftLspContext<'a> {
     }
 }
 
+impl AdapterManifestRequirement {
+    /// Requires one runtime host-call id.
+    pub fn host_call(id: impl Into<String>) -> Self {
+        Self::HostCall(AdapterHostCallId::new(id))
+    }
+
+    /// Requires one effect capability.
+    pub fn effect_capability(id: impl Into<String>) -> Self {
+        Self::EffectCapability(AdapterEffectCapability::new(id))
+    }
+}
+
 /// Converts a verifier report into LSP diagnostics for a document.
 pub fn diagnostics_from_report(report: &VerificationReport) -> Vec<Diagnostic> {
     report
         .diagnostics
         .iter()
         .map(diagnostic_from_verify)
+        .collect()
+}
+
+/// Diagnoses adapter manifest requirements not provided by the active manifest.
+pub fn adapter_manifest_requirement_diagnostics(
+    context: &ArcweftLspContext<'_>,
+    requirements: &[AdapterManifestRequirement],
+) -> Vec<Diagnostic> {
+    requirements
+        .iter()
+        .filter_map(|requirement| adapter_manifest_requirement_diagnostic(context, requirement))
         .collect()
 }
 
@@ -346,6 +380,49 @@ fn diagnostic_from_verify(diagnostic: &VerificationDiagnostic) -> Diagnostic {
     }
 }
 
+fn adapter_manifest_requirement_diagnostic(
+    context: &ArcweftLspContext<'_>,
+    requirement: &AdapterManifestRequirement,
+) -> Option<Diagnostic> {
+    match requirement {
+        AdapterManifestRequirement::HostCall(id) => {
+            (!context.adapter().has_host_call(id)).then(|| {
+                adapter_manifest_diagnostic(
+                    "adapter.host_call.missing",
+                    format!(
+                        "adapter manifest `{}` does not provide host call `{}`",
+                        context.adapter().id().as_str(),
+                        id.as_str()
+                    ),
+                )
+            })
+        }
+        AdapterManifestRequirement::EffectCapability(capability) => {
+            (!context.adapter().has_effect(capability)).then(|| {
+                adapter_manifest_diagnostic(
+                    "adapter.effect_capability.missing",
+                    format!(
+                        "adapter manifest `{}` does not grant effect capability `{}`",
+                        context.adapter().id().as_str(),
+                        capability.as_str()
+                    ),
+                )
+            })
+        }
+    }
+}
+
+fn adapter_manifest_diagnostic(code: impl Into<String>, message: String) -> Diagnostic {
+    Diagnostic {
+        range: default_range(),
+        severity: Some(DiagnosticSeverity::ERROR),
+        code: Some(NumberOrString::String(code.into())),
+        source: Some("arcweft-adapter".to_owned()),
+        message,
+        ..Diagnostic::default()
+    }
+}
+
 fn default_range() -> Range {
     Range {
         start: Position::new(0, 0),
@@ -455,9 +532,7 @@ fn type_kind_label(ty: &TypeKind) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_adapter_context::manifest::{
-        AdapterEffectCapability, AdapterHostCall, AdapterManifest, AdapterToolingDoc,
-    };
+    use arcweft_adapter_context::manifest::{AdapterHostCall, AdapterManifest, AdapterToolingDoc};
     use arcweft_lang_sema::env::{FunctionParam, FunctionSignature};
     use arcweft_rust_abi::{
         ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustParam,
@@ -603,5 +678,42 @@ mod tests {
         assert!(
             matches!(hover.contents, HoverContents::Scalar(MarkedString::String(text)) if text.contains("Read custom content."))
         );
+    }
+
+    #[test]
+    fn diagnoses_missing_adapter_manifest_requirements() {
+        let adapter = AdapterManifest::new("native-http", "Native HTTP")
+            .with_effect(AdapterEffectCapability::new("http.respond"))
+            .with_host_call(AdapterHostCall::new(
+                "http.respond",
+                [AdapterEffectCapability::new("http.respond")],
+            ));
+        let context = ArcweftLspContext::new(&adapter);
+
+        let diagnostics = adapter_manifest_requirement_diagnostics(
+            &context,
+            &[
+                AdapterManifestRequirement::host_call("http.respond"),
+                AdapterManifestRequirement::host_call("fs.read_text"),
+                AdapterManifestRequirement::effect_capability("http.respond"),
+                AdapterManifestRequirement::effect_capability("fs.read"),
+            ],
+        );
+
+        assert_eq!(diagnostics.len(), 2);
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code
+                == Some(NumberOrString::String(
+                    "adapter.host_call.missing".to_owned(),
+                ))
+                && diagnostic.message.contains("fs.read_text")
+        }));
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code
+                == Some(NumberOrString::String(
+                    "adapter.effect_capability.missing".to_owned(),
+                ))
+                && diagnostic.message.contains("fs.read")
+        }));
     }
 }
