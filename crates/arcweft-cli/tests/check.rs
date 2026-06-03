@@ -1732,6 +1732,107 @@ flow @flow.main main effects { fs.read(save), fs.write(save) } {
 }
 
 #[test]
+fn bundle_json_packages_save_files_and_run_bundle_executes_native_file_tasks() {
+    let dir = temp_dir("bundle-native-file-task");
+    let source_path = dir.join("main.arcw");
+    let save_dir = dir.join(".arcweft").join("save");
+    let bundle_path = dir.join("game.awfb");
+    fs::create_dir_all(&save_dir).expect("create virtual save root");
+    fs::write(save_dir.join("input.txt"), "bundle-ok").expect("seed virtual input");
+    fs::write(
+        &source_path,
+        r#"
+extern capability fs {
+    type FsError
+    fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
+    fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError> effects { fs.write }
+}
+extern capability path { fn save(path: String) -> VirtualPath }
+entry cli @entry.main { run(@flow.main) }
+flow @flow.main main effects { fs.read(save), fs.write(save) } {
+    let text = try await fs.read_text(path.save("input.txt")) with { error e => return "read_failed" }
+    try await fs.write_text(path.save("output.txt"), text) with { error e => return "write_failed" }
+    return text
+}
+"#,
+    )
+    .expect("write bundle fixture");
+
+    let bundle_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bundle")
+        .arg(&source_path)
+        .arg("--output")
+        .arg(&bundle_path)
+        .arg("--include-save")
+        .arg("--json")
+        .output()
+        .expect("arcw bundle packages native file task");
+
+    assert!(
+        bundle_output.status.success(),
+        "bundle should succeed, stderr: {}",
+        String::from_utf8_lossy(&bundle_output.stderr)
+    );
+    let bundle_stdout = String::from_utf8_lossy(&bundle_output.stdout);
+    assert!(
+        bundle_stdout.contains("\"source\": \"main.arcw\"")
+            && bundle_stdout.contains("\"required_host_calls\"")
+            && bundle_stdout.contains("fs.read_text")
+            && bundle_stdout.contains("fs.write_text")
+            && bundle_stdout.contains("\"virtual_files\": 1"),
+        "bundle JSON should describe native requirements and packaged save input: {bundle_stdout}"
+    );
+    assert!(
+        !bundle_stdout.contains(&dir.display().to_string()),
+        "bundle JSON must not record absolute temp paths: {bundle_stdout}"
+    );
+    let bundle_json = fs::read_to_string(&bundle_path).expect("bundle JSON is written");
+    assert!(
+        bundle_json.contains("\"adapter_manifest_ids\"")
+            && bundle_json.contains("native-file")
+            && bundle_json.contains("save")
+            && bundle_json.contains("input.txt"),
+        "bundle artifact should include native-file adapter metadata and relative save file: {bundle_json}"
+    );
+    assert!(
+        !bundle_json.contains(&dir.display().to_string()),
+        "bundle artifact must not record absolute temp paths: {bundle_json}"
+    );
+
+    let run_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run-bundle")
+        .arg(&bundle_path)
+        .arg("--mode")
+        .arg("drain")
+        .arg("--steps")
+        .arg("8")
+        .arg("--json")
+        .output()
+        .expect("arcw run-bundle executes packaged source");
+
+    assert!(
+        run_output.status.success(),
+        "run-bundle should succeed, stderr: {}",
+        String::from_utf8_lossy(&run_output.stderr)
+    );
+    let run_stdout = String::from_utf8_lossy(&run_output.stdout);
+    assert!(
+        run_stdout.contains("\"source\": \"main.arcw\"")
+            && run_stdout.contains("\"executor\": \"bytecode_vm\"")
+            && run_stdout.contains("\"completed_tasks\": 2")
+            && run_stdout.contains("\"failed_tasks\": 0")
+            && run_stdout.contains("\"read_ops\": 1")
+            && run_stdout.contains("\"write_ops\": 1")
+            && run_stdout.contains("return bundle-ok"),
+        "run-bundle JSON should show packaged native I/O completion: {run_stdout}"
+    );
+    assert!(
+        !run_stdout.contains(&dir.display().to_string()),
+        "run-bundle JSON must not record absolute temp paths: {run_stdout}"
+    );
+}
+
+#[test]
 fn run_json_executes_traverse_parallel_file_tasks() {
     let dir = temp_dir("native-traverse-parallel");
     let source_path = dir.join("main.arcw");

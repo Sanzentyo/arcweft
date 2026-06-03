@@ -40,20 +40,63 @@ dom-ui = []
 
 ## Bundle contents
 
+Current CLI bundle slice:
+
 ```text
 game.awfb
-  manifest.toml
-  program.ir
+  schema_version
+  manifest
+    source_label
+    profile_id
+    profile_kind
+    entry
+    adapter
+    adapter_manifest_ids
+    required_host_calls
+    runtime
+      entry_flow
+      flows
+      bytecode_instructions
+      line_task_groups
+      stream_plans
+      source_plans
+  source
+    label
+    text
+  virtual_files[]
+    space
+    path
+    bytes
+```
+
+The implemented `.awfb` codec is deterministic JSON owned by
+`arcweft-bundle`. The crate performs no filesystem, clock, network, signing, or
+compression work. CLI/build/player adapters are responsible for turning source
+trees and virtual file roots into bundle values, and for materializing bundle
+values into a runnable host workspace.
+
+The CLI includes `.arcweft/asset` by default and can opt into `.arcweft/save`,
+`.arcweft/temp`, and `.arcweft/export`. Packaged virtual paths use only normal
+relative components. Parent traversal, absolute paths, and host path prefixes
+are rejected or omitted before encoding.
+
+Future product bundle slices can add binary bytecode, graph indexes, entity
+tables, source maps, contracts, shaders, UI, audio, and text resources as typed
+bundle sections:
+
+```text
+game.awfb
+  manifest
   bytecode.vm
   graph.index
-  entities.toml
-  assets/
-  shaders/
-  ui/
-  audio/
-  text/
-  source_maps/
-  contracts/
+  entities
+  assets
+  shaders
+  ui
+  audio
+  text
+  source_maps
+  contracts
 ```
 
 ## Debug bundle

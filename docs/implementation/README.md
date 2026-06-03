@@ -54,6 +54,13 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `arcweft-cli` is now both a library and a binary; embedding runners can call
   `run_with_native_adapters` to add static native adapter implementations while
   keeping permission in adapter manifests.
+- `arcweft-bundle` owns the first Sans I/O `.awfb` data model and deterministic
+  JSON codec. `arcw bundle` packages source text, runtime summary counters,
+  required host-call ids, adapter manifest ids, and relative virtual files
+  without recording host absolute paths. `arcw run-bundle` materializes that
+  data into a temporary CLI workspace and can execute the standard native file,
+  system-info, and internal scheduler adapters through the same native task
+  bridge used by `arcw run`.
 - `arcw check`, `arcw verify`, `arcw unsafe`, and plan/report generation now
   resolve profile adapters through the standard `arcweft-adapter-context`
   manifest registry plus profile-local `adapter_manifests`, then pass the

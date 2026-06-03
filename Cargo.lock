@@ -149,10 +149,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-bundle"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arcweft-cli"
 version = "0.1.0"
 dependencies = [
  "arcweft-adapter-context",
+ "arcweft-bundle",
  "arcweft-core",
  "arcweft-host-adapter",
  "arcweft-lang-hir",

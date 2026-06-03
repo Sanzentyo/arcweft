@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 arcweft-core = { path = "../arcweft-core" }
 arcweft-adapter-context = { path = "../arcweft-adapter-context" }
+arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-host-adapter = { path = "../arcweft-host-adapter" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-jit-cranelift = { path = "../arcweft-lang-jit-cranelift" }

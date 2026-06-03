@@ -22,6 +22,7 @@ members = [
     "crates/arcweft-runtime-plan",
     "crates/arcweft-runtime-accelerator",
     "crates/arcweft-browser-bench",
+    "crates/arcweft-bundle",
     "crates/arcweft-runtime-scheduler",
     "crates/arcweft-source",
     "crates/arcweft-test",

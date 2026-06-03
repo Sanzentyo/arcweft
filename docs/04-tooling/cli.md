@@ -302,6 +302,38 @@ CLI/LSP inspection, not host I/O. Matrix/tensor test inputs use
 `--value lhs=matrix/f32/4x4:1,0,...`. Unsupported flow syntax fails with a
 runtime-lowering error instead of being silently dropped.
 
+## Bundle
+
+`arcw bundle <file.arcw> --output game.awfb [--include-save] [--include-temp] [--include-export] [--json]`
+packages the current source, a runtime summary, required host-call ids, adapter
+manifest ids, and selected virtual files into an `.awfb` JSON data artifact.
+The bundle crate is Sans I/O; the CLI owns reading the source, reading
+`.arcweft/<space>/...`, and writing the artifact. Artifact paths are source
+labels and relative virtual paths only, so generated bundle JSON must not carry
+host absolute paths.
+
+`asset` files are included by default. `save`, `temp`, and `export` spaces are
+opt-in because they may contain local state. All packaged virtual file paths are
+validated as normal relative components before encoding.
+
+```bash
+arcw bundle game/main.arcw --output dist/game.awfb --json
+arcw bundle game/main.arcw --output dist/game.awfb --include-save --json
+```
+
+`arcw run-bundle <game.awfb> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]`
+materializes the packaged source and virtual files into a temporary CLI
+workspace, then runs the same native task bridge used by `arcw run`.
+`--entry` and `--flow` override the bundled entry selection. The current
+implementation supports the standard CLI native file, system-info, and
+internal scheduler adapters; custom profile adapter implementations still need
+an embedding runner or future player adapter to provide concrete host code.
+
+```bash
+arcw run-bundle dist/game.awfb --mode drain --steps 8 --json
+arcw run-bundle dist/game.awfb --flow opening --mode drain --steps 8 --json
+```
+
 ## CLI Entry Dry Run
 
 `arcw cli <file.arcw> [--entry entry.id] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json] -- ARGS...`

@@ -21,6 +21,8 @@ use std::time::Instant;
 pub type NativeAdapterRegistrar =
     fn(&Path, HostAdapterRegistryBuilder) -> Result<HostAdapterRegistryBuilder, HostAdapterError>;
 
+pub(crate) const INTERNAL_SCHEDULER_ADAPTER_ID: &str = "internal-scheduler";
+
 #[derive(Clone, Debug)]
 pub(crate) struct NativeTaskBridge {
     policy: HostCallPolicy,
@@ -431,7 +433,7 @@ fn registry_with_registrars(
 }
 
 fn internal_scheduler_manifest() -> AdapterManifest {
-    AdapterManifest::new("internal-scheduler", "Internal Scheduler")
+    AdapterManifest::new(INTERNAL_SCHEDULER_ADAPTER_ID, "Internal Scheduler")
         .with_host_call(AdapterHostCall::new("line_task.run_child", []))
         .with_host_call(AdapterHostCall::new("flow_thread.run_child", []))
 }

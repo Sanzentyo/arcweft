@@ -1,7 +1,7 @@
 use crate::native_system::{HostSystemInfo, host_system_info};
 use crate::native_task::{
-    NativeAdapterRegistrar, NativeSchedulerStats, NativeTaskBridge, NativeTaskClassCounts,
-    NativeTaskStats,
+    INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar, NativeSchedulerStats, NativeTaskBridge,
+    NativeTaskClassCounts, NativeTaskStats,
 };
 use crate::output::{
     AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, CheckReport,
@@ -24,13 +24,17 @@ use crate::server_adapter::{NativeHttpServerConfig, serve_native_http};
 use crate::toolchain_profile::ToolchainProfileOptions;
 use crate::{server_adapter, toolchain_profile};
 use arcweft_adapter_context::{codec::AdapterManifestFile, manifest::AdapterManifest, standard};
+use arcweft_bundle::{
+    ArcweftBundle, BundleLaunchKind, BundleManifest, BundleRuntimeSummary, BundleSource,
+    BundleVirtualFile, BundleVirtualFileSpace,
+};
 use arcweft_core::aot::{AotProgram, AotProgramStats};
 use arcweft_core::bytecode::{BytecodeProgram, BytecodeStats};
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor};
 use arcweft_core::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimePlan,
+    FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimePlan,
     RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
     RuntimePureOutputType, RuntimeRouteSpec,
 };
@@ -92,9 +96,9 @@ use std::ffi::OsString;
 use std::fs;
 use std::net::SocketAddr;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitCode};
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Parser)]
 #[command(name = "arcw", about = "Arcweft language and runtime tooling")]
@@ -116,6 +120,8 @@ enum CliCommand {
     Serve(ServeOptions),
     Test(ScriptTestOptions),
     Bench(ScriptBenchOptions),
+    Bundle(BundleOptions),
+    RunBundle(RunBundleOptions),
     ToolchainProfile(ToolchainProfileOptions),
     Jit {
         #[command(subcommand)]
@@ -175,6 +181,8 @@ fn run_cli(cli: Cli, adapter_registrars: &[NativeAdapterRegistrar]) -> Result<()
         CliCommand::Serve(options) => runtime_serve_command(&options, adapter_registrars),
         CliCommand::Test(options) => script_test_command(&options, adapter_registrars),
         CliCommand::Bench(options) => script_bench_command(&options, adapter_registrars),
+        CliCommand::Bundle(options) => bundle_command(&options),
+        CliCommand::RunBundle(options) => run_bundle_command(&options, adapter_registrars),
         CliCommand::ToolchainProfile(options) => toolchain_profile::run(&options),
         CliCommand::Jit { command } => jit_command(command),
         CliCommand::Fmt(options) => format_command(&options),
@@ -1970,6 +1978,26 @@ struct RuntimeBenchTrace {
     native_io: NativeTaskStats,
 }
 
+#[derive(serde::Serialize)]
+struct BundleCommandReport {
+    bundle: String,
+    source: String,
+    required_host_calls: Vec<String>,
+    virtual_files: usize,
+    runtime: BundleRuntimeSummary,
+}
+
+#[derive(serde::Serialize)]
+struct BundleRunReport {
+    bundle: String,
+    source: String,
+    executor: RuntimeExecutorTier,
+    executor_stats: RuntimeExecutorStats,
+    native_io: NativeTaskStats,
+    steps: Vec<RuntimeStepRunSummary>,
+    final_status: String,
+}
+
 #[derive(Default)]
 struct RuntimeBenchStepTotals {
     executed_ops: usize,
@@ -3019,6 +3047,445 @@ fn script_bench_command(
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     require_profile_kind(&selection, LaunchKind::Bench, "bench")?;
     script_bench_selection(&selection, options, adapter_registrars)
+}
+
+fn bundle_command(options: &BundleOptions) -> Result<(), ExitCode> {
+    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    let mut phases = Vec::new();
+    let env = typecheck_env_for_selection(&selection, None, &mut phases)?;
+    let compiled = compile_profile_runtime_plan(&selection, &env, &mut phases)?;
+    let source = fs::read_to_string(selection.path()).map_err(|error| {
+        eprintln!(
+            "error: failed to read bundle source {}: {error}",
+            selection.path().display()
+        );
+        ExitCode::FAILURE
+    })?;
+    let source_label = report_path(selection.path());
+    let mut required_host_calls = compiled
+        .plan
+        .flows
+        .iter()
+        .flat_map(|flow| flow.ops.iter())
+        .flat_map(collect_flow_op_host_calls)
+        .collect::<Vec<_>>();
+    required_host_calls.sort();
+    required_host_calls.dedup();
+    let adapter_manifest = adapter_manifest_for_selection(&selection, None)?;
+    let adapter_manifest_ids = bundle_adapter_manifest_ids(
+        adapter_manifest.id().as_str(),
+        required_host_calls.iter().map(String::as_str),
+    );
+    let bundle = ArcweftBundle::new(
+        BundleManifest {
+            source_label: source_label.clone(),
+            profile_id: selection
+                .profile()
+                .map(|profile| profile.id().as_str().to_owned()),
+            profile_kind: selection
+                .profile()
+                .map(|profile| bundle_launch_kind(profile.kind())),
+            entry: selection.entry().map(str::to_owned),
+            adapter: selection.adapter().map(str::to_owned),
+            adapter_manifest_ids,
+            required_host_calls,
+            runtime: BundleRuntimeSummary {
+                entry_flow: compiled.plan.entry_flow.as_ref().map(|flow| flow.0.clone()),
+                flows: compiled.bytecode_stats.flows,
+                bytecode_instructions: compiled.bytecode_stats.instructions,
+                line_task_groups: compiled.bytecode_stats.line_task_groups,
+                stream_plans: compiled.bytecode_stats.stream_plans,
+                source_plans: compiled.bytecode_stats.source_plans,
+            },
+        },
+        BundleSource {
+            label: source_label,
+            text: source,
+        },
+    )
+    .with_virtual_files(collect_bundle_virtual_files(
+        selection.path(),
+        options.include_spaces(),
+    )?);
+    let bytes = bundle.to_json_bytes().map_err(|error| {
+        eprintln!("error: failed to encode bundle: {error}");
+        ExitCode::FAILURE
+    })?;
+    if let Some(parent) = options.output.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent).map_err(|error| {
+            eprintln!(
+                "error: failed to create bundle output directory {}: {error}",
+                parent.display()
+            );
+            ExitCode::FAILURE
+        })?;
+    }
+    fs::write(&options.output, bytes).map_err(|error| {
+        eprintln!(
+            "error: failed to write bundle {}: {error}",
+            options.output.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    if options.json {
+        print_json(&BundleCommandReport {
+            bundle: report_path(&options.output),
+            source: bundle.manifest.source_label,
+            required_host_calls: bundle.manifest.required_host_calls,
+            virtual_files: bundle.virtual_files.len(),
+            runtime: bundle.manifest.runtime,
+        })
+    } else {
+        println!(
+            "ok: {} (source={}, {} virtual file(s))",
+            options.output.display(),
+            bundle.manifest.source_label,
+            bundle.virtual_files.len()
+        );
+        Ok(())
+    }
+}
+
+fn run_bundle_command(
+    options: &RunBundleOptions,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<(), ExitCode> {
+    let bytes = fs::read(&options.bundle).map_err(|error| {
+        eprintln!(
+            "error: failed to read bundle {}: {error}",
+            options.bundle.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    let bundle = ArcweftBundle::from_json_slice(&bytes).map_err(|error| {
+        eprintln!("error: failed to decode bundle: {error}");
+        ExitCode::FAILURE
+    })?;
+    let workspace = MaterializedBundleWorkspace::create(&bundle)?;
+    let selection = SourceSelection::Direct {
+        path: workspace.source_path().to_path_buf(),
+    };
+    let checked = load_and_check_selection(&selection, None)?;
+    let host_policy = NativeTaskBridge::standard_policy();
+    let mut plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
+        for error in errors {
+            eprintln!("error: {}", error.message());
+        }
+        ExitCode::FAILURE
+    })?;
+    let entry = options.entry.as_deref().or_else(|| {
+        options
+            .flow
+            .is_none()
+            .then_some(bundle.manifest.entry.as_deref())
+            .flatten()
+    });
+    apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
+    let trace = run_runtime_steps(
+        plan,
+        Some(selection.path()),
+        RuntimeStepRunConfig {
+            steps: options.steps,
+            mode: options.mode,
+            max_ops: options.max_ops,
+            executor: options.executor,
+            pure_config: RuntimePureAcceleratorConfig::default(),
+        },
+        &host_policy,
+        adapter_registrars,
+        &options.values,
+    )?;
+    let report = BundleRunReport {
+        bundle: report_path(&options.bundle),
+        source: bundle.manifest.source_label,
+        executor: RuntimeExecutorTier::from(options.executor),
+        executor_stats: trace.executor_stats,
+        native_io: trace.native_io,
+        steps: trace.steps,
+        final_status: flow_status_label(&trace.final_status),
+    };
+    if options.json {
+        print_json(&report)
+    } else {
+        println!(
+            "ok: {} ({} step(s), final_status={})",
+            options.bundle.display(),
+            report.steps.len(),
+            report.final_status
+        );
+        Ok(())
+    }
+}
+
+fn collect_flow_op_host_calls(op: &FlowOp) -> Vec<String> {
+    match op {
+        FlowOp::Await { target, .. } => vec![host_call_id_for_template(
+            target.request.capability.0.as_str(),
+            target.request.operation.as_str(),
+        )],
+        FlowOp::AwaitMany { target, .. } => vec![host_call_id_for_template(
+            target.request.capability.0.as_str(),
+            target.request.operation.as_str(),
+        )],
+        FlowOp::LetElse { else_ops, .. } => collect_flow_ops_host_calls(else_ops),
+        FlowOp::If {
+            then_ops, else_ops, ..
+        }
+        | FlowOp::IfLet {
+            then_ops, else_ops, ..
+        } => collect_flow_ops_host_calls(then_ops)
+            .into_iter()
+            .chain(collect_flow_ops_host_calls(else_ops))
+            .collect(),
+        FlowOp::Match { arms, .. } => arms
+            .iter()
+            .flat_map(|arm| collect_flow_ops_host_calls(&arm.ops))
+            .collect(),
+        FlowOp::Loop { body }
+        | FlowOp::LetLoop { body, .. }
+        | FlowOp::While { body, .. }
+        | FlowOp::WhileLet { body, .. }
+        | FlowOp::For { body, .. }
+        | FlowOp::Thread { body, .. } => {
+            let mut calls = collect_flow_ops_host_calls(body);
+            if matches!(op, FlowOp::Thread { .. }) {
+                calls.push("flow_thread.run_child".to_owned());
+            }
+            calls
+        }
+        FlowOp::LoopNext { body }
+        | FlowOp::WhileNext { body, .. }
+        | FlowOp::WhileLetNext { body, .. }
+        | FlowOp::ForNext { body, .. } => collect_flow_ops_host_calls(body.as_ref().iter()),
+        FlowOp::Scope(ops) | FlowOp::LetScope { ops, .. } => collect_flow_ops_host_calls(ops),
+        FlowOp::Bind(_)
+        | FlowOp::Let { .. }
+        | FlowOp::Dialogue { .. }
+        | FlowOp::Choice { .. }
+        | FlowOp::Break(_)
+        | FlowOp::Continue
+        | FlowOp::Goto(_)
+        | FlowOp::GotoExpr(_)
+        | FlowOp::Return(_)
+        | FlowOp::ReturnExpr(_)
+        | FlowOp::Effect(_)
+        | FlowOp::EnterScope
+        | FlowOp::ExitScope
+        | FlowOp::ExitScopeBind { .. }
+        | FlowOp::Noop => Vec::new(),
+    }
+}
+
+fn collect_flow_ops_host_calls<'a>(ops: impl IntoIterator<Item = &'a FlowOp>) -> Vec<String> {
+    ops.into_iter()
+        .flat_map(collect_flow_op_host_calls)
+        .collect()
+}
+
+fn host_call_id_for_template(capability: &str, operation: &str) -> String {
+    format!("{capability}.{operation}")
+}
+
+fn bundle_adapter_manifest_ids<'a>(
+    selected_adapter_id: &str,
+    required_host_calls: impl IntoIterator<Item = &'a str>,
+) -> Vec<String> {
+    let mut ids = std::iter::once(selected_adapter_id)
+        .chain(required_host_calls.into_iter().filter_map(|host_call| {
+            host_call
+                .strip_prefix("fs.")
+                .map(|_| standard::NATIVE_FILE_ADAPTER_ID)
+                .or_else(|| {
+                    host_call
+                        .strip_prefix("system.")
+                        .map(|_| standard::SYSTEM_INFO_ADAPTER_ID)
+                })
+                .or_else(|| {
+                    matches!(host_call, "line_task.run_child" | "flow_thread.run_child")
+                        .then_some(INTERNAL_SCHEDULER_ADAPTER_ID)
+                })
+        }))
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+fn collect_bundle_virtual_files(
+    source_path: &Path,
+    spaces: impl IntoIterator<Item = BundleVirtualFileSpace>,
+) -> Result<Vec<BundleVirtualFile>, ExitCode> {
+    let root = source_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(".arcweft");
+    spaces
+        .into_iter()
+        .map(|space| collect_bundle_virtual_files_for_space(&root, space))
+        .collect::<Result<Vec<_>, _>>()
+        .map(|groups| groups.into_iter().flatten().collect())
+}
+
+fn collect_bundle_virtual_files_for_space(
+    root: &Path,
+    space: BundleVirtualFileSpace,
+) -> Result<Vec<BundleVirtualFile>, ExitCode> {
+    let dir = root.join(space.as_str());
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut files = Vec::new();
+    collect_bundle_virtual_files_from_dir(&dir, &dir, space, &mut files)?;
+    Ok(files)
+}
+
+fn collect_bundle_virtual_files_from_dir(
+    root: &Path,
+    dir: &Path,
+    space: BundleVirtualFileSpace,
+    files: &mut Vec<BundleVirtualFile>,
+) -> Result<(), ExitCode> {
+    let entries = fs::read_dir(dir).map_err(|error| {
+        eprintln!(
+            "error: failed to read virtual file directory {}: {error}",
+            dir.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            eprintln!("error: failed to read virtual file entry: {error}");
+            ExitCode::FAILURE
+        })?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_bundle_virtual_files_from_dir(root, &path, space, files)?;
+        } else if path.is_file() {
+            let relative = normalized_relative_path(root, &path)?;
+            let bytes = fs::read(&path).map_err(|error| {
+                eprintln!(
+                    "error: failed to read virtual file {}: {error}",
+                    path.display()
+                );
+                ExitCode::FAILURE
+            })?;
+            files.push(BundleVirtualFile {
+                space,
+                path: relative,
+                bytes,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn normalized_relative_path(root: &Path, path: &Path) -> Result<String, ExitCode> {
+    let relative = path.strip_prefix(root).map_err(|error| {
+        eprintln!(
+            "error: virtual file {} is outside {}: {error}",
+            path.display(),
+            root.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    validate_relative_virtual_path(relative)?;
+    Ok(relative
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/"))
+}
+
+fn validate_relative_virtual_path(path: &Path) -> Result<(), ExitCode> {
+    let valid = path
+        .components()
+        .all(|component| matches!(component, Component::Normal(_)));
+    if valid {
+        Ok(())
+    } else {
+        eprintln!("error: bundle virtual file path must be relative and normalized");
+        Err(ExitCode::FAILURE)
+    }
+}
+
+struct MaterializedBundleWorkspace {
+    root: PathBuf,
+    source_path: PathBuf,
+}
+
+impl MaterializedBundleWorkspace {
+    fn create(bundle: &ArcweftBundle) -> Result<Self, ExitCode> {
+        let root = std::env::temp_dir().join(format!(
+            "arcweft-bundle-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |duration| duration.as_nanos())
+        ));
+        fs::create_dir_all(&root).map_err(|error| {
+            eprintln!("error: failed to create bundle workspace: {error}");
+            ExitCode::FAILURE
+        })?;
+        let source_name = if Path::new(&bundle.source.label)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("arcw"))
+        {
+            bundle.source.label.as_str()
+        } else {
+            "bundle.arcw"
+        };
+        let source_path = root.join(source_name);
+        if let Some(parent) = source_path.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                eprintln!("error: failed to create bundle source directory: {error}");
+                ExitCode::FAILURE
+            })?;
+        }
+        fs::write(&source_path, &bundle.source.text).map_err(|error| {
+            eprintln!("error: failed to materialize bundle source: {error}");
+            ExitCode::FAILURE
+        })?;
+        materialize_bundle_virtual_files(&root, &bundle.virtual_files)?;
+        Ok(Self { root, source_path })
+    }
+
+    fn source_path(&self) -> &Path {
+        &self.source_path
+    }
+}
+
+impl Drop for MaterializedBundleWorkspace {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+fn materialize_bundle_virtual_files(
+    root: &Path,
+    files: &[BundleVirtualFile],
+) -> Result<(), ExitCode> {
+    for file in files {
+        let relative = Path::new(&file.path);
+        validate_relative_virtual_path(relative)?;
+        let path = root
+            .join(".arcweft")
+            .join(file.space.as_str())
+            .join(relative);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                eprintln!("error: failed to create bundle virtual file directory: {error}");
+                ExitCode::FAILURE
+            })?;
+        }
+        fs::write(&path, &file.bytes).map_err(|error| {
+            eprintln!("error: failed to materialize bundle virtual file: {error}");
+            ExitCode::FAILURE
+        })?;
+    }
+    Ok(())
 }
 
 fn script_bench_selection(
@@ -5185,6 +5652,76 @@ struct ScriptBenchOptions {
     values: Vec<RuntimeBinding>,
     #[arg(long)]
     json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+struct BundleOptions {
+    path: Option<PathBuf>,
+    #[command(flatten)]
+    profile: ProfileOptions,
+    #[arg(short, long)]
+    output: PathBuf,
+    #[command(flatten)]
+    virtual_files: BundleVirtualFileOptions,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+struct BundleVirtualFileOptions {
+    #[arg(long)]
+    include_save: bool,
+    #[arg(long)]
+    include_temp: bool,
+    #[arg(long)]
+    include_export: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+struct RunBundleOptions {
+    bundle: PathBuf,
+    #[arg(long, conflicts_with = "flow")]
+    entry: Option<String>,
+    #[arg(long, conflicts_with = "entry")]
+    flow: Option<String>,
+    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
+    executor: CliRuntimeExecutorTier,
+    #[arg(long, default_value_t = 8)]
+    steps: usize,
+    #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
+    mode: CliRuntimeStepMode,
+    #[arg(long, default_value_t = 32)]
+    max_ops: usize,
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    values: Vec<RuntimeBinding>,
+    #[arg(long)]
+    json: bool,
+}
+
+impl BundleOptions {
+    fn include_spaces(&self) -> Vec<BundleVirtualFileSpace> {
+        let mut spaces = vec![BundleVirtualFileSpace::Asset];
+        if self.virtual_files.include_save {
+            spaces.push(BundleVirtualFileSpace::Save);
+        }
+        if self.virtual_files.include_temp {
+            spaces.push(BundleVirtualFileSpace::Temp);
+        }
+        if self.virtual_files.include_export {
+            spaces.push(BundleVirtualFileSpace::Export);
+        }
+        spaces
+    }
+}
+
+fn bundle_launch_kind(kind: LaunchKind) -> BundleLaunchKind {
+    match kind {
+        LaunchKind::Game => BundleLaunchKind::Game,
+        LaunchKind::Cli => BundleLaunchKind::Cli,
+        LaunchKind::Server => BundleLaunchKind::Server,
+        LaunchKind::Test => BundleLaunchKind::Test,
+        LaunchKind::Bench => BundleLaunchKind::Bench,
+    }
 }
 
 #[derive(Args, Clone, Debug)]
