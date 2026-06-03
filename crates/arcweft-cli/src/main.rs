@@ -2266,6 +2266,7 @@ fn runtime_serve_selection(
         .or(selection.adapter())
         .unwrap_or("sans-io");
     let checked = load_and_check_selection(selection, Some(adapter))?;
+    let host_calls = native_host_calls_for_selection_with_adapter(selection, Some(adapter))?;
     let plan = lower_runtime_plan(&checked.hir).map_err(|errors| {
         for error in errors {
             eprintln!("error: {error}");
@@ -2311,11 +2312,12 @@ fn runtime_serve_selection(
         let server_report = serve_native_http(
             &plan,
             &routes,
-            NativeHttpServerConfig {
+            &NativeHttpServerConfig {
                 listen,
                 once: config.once,
                 max_ops: config.max_ops,
                 pure_config: config.pure_config,
+                host_calls,
             },
         )
         .map_err(|error| {

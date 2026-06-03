@@ -1,3 +1,4 @@
+use crate::native_task::NativeHostCallSet;
 use arcweft_core::engine::{FlowExit, FlowFiberStatus};
 use arcweft_core::executor::{RuntimeExecutor, VmExecutor};
 use arcweft_core::plan::{RuntimePlan, RuntimeRouteBindingSource, RuntimeRouteSpec};
@@ -10,12 +11,13 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use thiserror::Error;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct NativeHttpServerConfig {
     pub(crate) listen: SocketAddr,
     pub(crate) once: bool,
     pub(crate) max_ops: usize,
     pub(crate) pure_config: RuntimePureAcceleratorConfig,
+    pub(crate) host_calls: NativeHostCallSet,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -40,6 +42,8 @@ pub(crate) enum ServerAdapterError {
     Read(String),
     #[error("native HTTP adapter failed to write a response: {0}")]
     Write(String),
+    #[error("native HTTP adapter requires host call `{0}` from the active adapter manifest")]
+    MissingHostCall(String),
     #[error("invalid HTTP request")]
     InvalidRequest,
 }
@@ -47,7 +51,7 @@ pub(crate) enum ServerAdapterError {
 pub(crate) fn serve_native_http(
     plan: &RuntimePlan,
     routes: &[RuntimeRouteSpec],
-    config: NativeHttpServerConfig,
+    config: &NativeHttpServerConfig,
 ) -> Result<NativeHttpServerReport, ServerAdapterError> {
     let listener = TcpListener::bind(config.listen).map_err(|error| ServerAdapterError::Bind {
         addr: config.listen,
@@ -61,7 +65,14 @@ pub(crate) fn serve_native_http(
         let (stream, _) = listener
             .accept()
             .map_err(|error| ServerAdapterError::Accept(error.to_string()))?;
-        serve_stream(stream, plan, routes, config.max_ops, config.pure_config)?;
+        serve_stream(
+            stream,
+            plan,
+            routes,
+            config.max_ops,
+            config.pure_config,
+            &config.host_calls,
+        )?;
         handled_requests += 1;
         if config.once {
             break;
@@ -79,13 +90,14 @@ fn serve_stream(
     routes: &[RuntimeRouteSpec],
     max_ops: usize,
     pure_config: RuntimePureAcceleratorConfig,
+    host_calls: &NativeHostCallSet,
 ) -> Result<(), ServerAdapterError> {
     let mut buffer = vec![0_u8; 64 * 1024];
     let read = stream
         .read(&mut buffer)
         .map_err(|error| ServerAdapterError::Read(error.to_string()))?;
     let request = String::from_utf8_lossy(&buffer[..read]);
-    let response = handle_http_request(plan, routes, &request, max_ops, pure_config)?;
+    let response = handle_http_request(plan, routes, &request, max_ops, pure_config, host_calls)?;
     stream
         .write_all(http_response_bytes(&response).as_bytes())
         .map_err(|error| ServerAdapterError::Write(error.to_string()))
@@ -97,7 +109,9 @@ pub(crate) fn handle_http_request(
     request: &str,
     max_ops: usize,
     pure_config: RuntimePureAcceleratorConfig,
+    host_calls: &NativeHostCallSet,
 ) -> Result<NativeHttpResponse, ServerAdapterError> {
+    require_host_call(host_calls, "http.respond")?;
     let parsed = parse_http_request(request)?;
     let Some((route, params)) = routes
         .iter()
@@ -116,6 +130,14 @@ pub(crate) fn handle_http_request(
         max_ops,
         pure_config,
     ))
+}
+
+fn require_host_call(host_calls: &NativeHostCallSet, id: &str) -> Result<(), ServerAdapterError> {
+    if host_calls.contains(id) {
+        Ok(())
+    } else {
+        Err(ServerAdapterError::MissingHostCall(id.to_owned()))
+    }
 }
 
 fn run_route_flow(
@@ -303,6 +325,8 @@ fn http_response_bytes(response: &NativeHttpResponse) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native_task::NativeHostCallSet;
+    use arcweft_adapter_context::standard;
     use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow};
 
     #[test]
@@ -321,6 +345,7 @@ mod tests {
             "GET /health HTTP/1.1\r\nhost: localhost\r\n\r\n",
             8,
             RuntimePureAcceleratorConfig::default(),
+            &native_http_host_calls(),
         )
         .expect("request is handled");
 
@@ -352,11 +377,42 @@ mod tests {
             "GET /hello/alice HTTP/1.1\r\nhost: localhost\r\n\r\n",
             8,
             RuntimePureAcceleratorConfig::default(),
+            &native_http_host_calls(),
         )
         .expect("request is handled");
 
         assert_eq!(response.status, 200);
         assert_eq!(response.body, "alice");
+    }
+
+    #[test]
+    fn native_http_adapter_requires_respond_host_call_manifest() {
+        let plan = plan_with_flow("flow.health", vec![FlowOp::Return("ok".to_owned())]);
+        let routes = vec![RuntimeRouteSpec {
+            method: "GET".to_owned(),
+            path: "/health".to_owned(),
+            target: FlowRuntimeId("flow.health".to_owned()),
+            bindings: Vec::new(),
+        }];
+
+        let error = handle_http_request(
+            &plan,
+            &routes,
+            "GET /health HTTP/1.1\r\nhost: localhost\r\n\r\n",
+            8,
+            RuntimePureAcceleratorConfig::default(),
+            &NativeHostCallSet::default(),
+        )
+        .expect_err("missing http.respond manifest is rejected");
+
+        assert!(matches!(
+            error,
+            ServerAdapterError::MissingHostCall(id) if id == "http.respond"
+        ));
+    }
+
+    fn native_http_host_calls() -> NativeHostCallSet {
+        NativeHostCallSet::from_manifest(&standard::native_http_manifest())
     }
 
     fn plan_with_flow(id: &str, ops: Vec<FlowOp>) -> RuntimePlan {

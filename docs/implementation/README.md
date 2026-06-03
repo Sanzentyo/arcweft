@@ -39,7 +39,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   reporting `max_in_flight` without recording host absolute paths.
 - `arcw serve --listen` owns a minimal native HTTP adapter in the CLI layer. It
   consumes lowered server route plans and executes matched flows through
-  `RuntimeStepMode::Server`; `arcweft-core` remains free of network I/O.
+  `RuntimeStepMode::Server`; `arcweft-core` remains free of network I/O. The
+  listening path is now gated by the active adapter manifest's `http.respond`
+  host call, matching native task dispatch rather than relying on an implicit
+  server shim.
 - CLI native task dispatch now uses a manifest-derived host-call set. Core
   `HostTaskRequest` values expose stable ids such as `fs.read_text` and
   `system.available_parallelism`; the bridge completes only ids present in the

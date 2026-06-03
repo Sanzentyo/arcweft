@@ -370,8 +370,10 @@ flow in `RuntimeStepMode::Server`, and writes a plain-text HTTP response from
 the returned flow value. Native HTTP binding remains outside `arcweft-core`; core
 only sees deterministic `RuntimeStepInput` and produces deterministic runtime
 output. The same pure backend selection used by `arcw run` is applied to route
-flow execution. The route-plan report uses `status = "planned"` to make that
-boundary explicit.
+flow execution. A listening native server requires the active adapter manifest
+to provide the `http.respond` host call; otherwise the adapter reports a
+manifest mismatch instead of writing a response. The route-plan report uses
+`status = "planned"` to make that boundary explicit.
 
 ## Test / Bench
 
